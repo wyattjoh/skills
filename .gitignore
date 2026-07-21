@@ -1,0 +1,20 @@
+# macOS
+.DS_Store
+
+# Archives
+*.zip
+*.tar.gz
+
+# Local overrides
+*.local.md
+*.local.json
+__pycache__/
+
+# Skill runtime data (instance-specific config, caches)
+skills/*/data/
+
+# Package manager artifacts (safety net)
+node_modules/
+package-lock.json
+yarn.lock
+pnpm-lock.yaml

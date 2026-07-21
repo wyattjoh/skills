@@ -1,0 +1,18 @@
+{
+  "body": "Reviewed the token-validation change and the two new-file additions.",
+  "event": "COMMENT",
+  "comments": [
+    {
+      "path": "src/auth.ts",
+      "line": 14,
+      "side": "RIGHT",
+      "body": "Raw token exposure in logs."
+    },
+    {
+      "path": "src/new-file.ts",
+      "line": 1,
+      "side": "RIGHT",
+      "body": "MAGIC = 42 has no comment describing why 42."
+    }
+  ]
+}

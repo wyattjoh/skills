@@ -1,0 +1,35 @@
+{
+  "summary": "Reviewed the token-validation change and the two new-file additions.",
+  "findings": [
+    {
+      "id": "SEC-001",
+      "file": "src/auth.ts",
+      "line": 14,
+      "severity": "high",
+      "category": "security",
+      "title": "Token logged before validation",
+      "description": "Raw token exposure in logs.",
+      "evidence": "console.log(\"validating\", trimmed);"
+    },
+    {
+      "id": "STY-001",
+      "file": "src/new-file.ts",
+      "line": 1,
+      "severity": "low",
+      "category": "style",
+      "title": "Magic number has unclear intent",
+      "description": "MAGIC = 42 has no comment describing why 42.",
+      "evidence": "export const MAGIC = 42;"
+    },
+    {
+      "id": "ARCH-001",
+      "file": "src/unrelated.ts",
+      "line": 99,
+      "severity": "medium",
+      "category": "architecture",
+      "title": "Out-of-diff concern",
+      "description": "This file is not part of the PR diff.",
+      "evidence": "n/a"
+    }
+  ]
+}

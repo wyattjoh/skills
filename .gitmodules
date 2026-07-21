@@ -1,0 +1,8 @@
+[submodule ".claude/references/effect"]
+	path = .claude/references/effect
+	url = https://github.com/Effect-TS/effect.git
+	shallow = true
+[submodule ".claude/references/varlock"]
+	path = .claude/references/varlock
+	url = https://github.com/dmno-dev/varlock.git
+	shallow = true

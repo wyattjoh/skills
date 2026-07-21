@@ -1,0 +1,41 @@
+# __WS_NAME__ workspace tasks. Recipes stay thin and delegate to the
+# workspaces skill scripts, the single orchestration binding point shared by
+# every workspace. Override the skill location with WORKSPACES_SKILL_DIR.
+
+skill_dir := env("WORKSPACES_SKILL_DIR", home_directory() / ".claude/skills/workspaces")
+workspace := justfile_directory()
+
+default:
+    @just --list
+
+# Regenerate CLAUDE.md and derived views from workspace.yaml
+sync:
+    bun {{ skill_dir }}/scripts/workspace.ts manifest sync --workspace {{ workspace }}
+
+# Capture member HEAD SHAs into workspace.lock
+freeze:
+    bun {{ skill_dir }}/scripts/workspace.ts manifest freeze --workspace {{ workspace }}
+
+# Cross-repo status: branch, dirtiness, bound stacks per member
+status:
+    bun {{ skill_dir }}/scripts/workspace.ts status --workspace {{ workspace }}
+
+# List stacks bound to this workspace across members
+stacks:
+    bun {{ skill_dir }}/scripts/workspace.ts stacks --workspace {{ workspace }}
+
+# Print the ordered context layers (what the enter flow loads)
+context:
+    bun {{ skill_dir }}/scripts/workspace.ts context --workspace {{ workspace }}
+
+# Run all workspace integrity checks; exits 1 on errors
+audit:
+    bun {{ skill_dir }}/scripts/workspace.ts audit --workspace {{ workspace }}
+
+# Append a journal entry: just journal deviation "Title" "adr/0001, phase 1"
+journal category title links="" body="":
+    bun {{ skill_dir }}/scripts/workspace.ts journal add --workspace {{ workspace }} --category {{ category }} --title "{{ title }}" --links "{{ links }}" --body "{{ body }}"
+
+# Member repository modules give namespaced recipes (`just __PRIMARY_MEMBER__ test`).
+# `mod?` tolerates members that have no justfile of their own.
+mod? __PRIMARY_MEMBER__ '../__PRIMARY_MEMBER__'

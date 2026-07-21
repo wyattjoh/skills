@@ -1,0 +1,9 @@
+{
+  "name": "@skills/skill-name-gen",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "bun test"
+  }
+}

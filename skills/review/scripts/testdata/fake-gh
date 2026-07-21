@@ -1,0 +1,32 @@
+#!/usr/bin/env bash
+# Fake gh for tests. Behavior is driven entirely by env vars.
+#
+# FAKE_GH_INVOCATION_LOG (optional): if set, each invocation appends a line
+#   like "pr diff" or "api" to this file so tests can assert which subcommands
+#   were actually reached. Useful for verifying that abort paths short-circuit
+#   before calling the real gh.
+set -eu
+
+if [ -n "${FAKE_GH_INVOCATION_LOG:-}" ]; then
+  echo "$1 ${2:-}" >> "$FAKE_GH_INVOCATION_LOG"
+fi
+
+case "$1" in
+  pr)
+    if [ "$2" = "diff" ]; then
+      cat "$FAKE_GH_DIFF_FILE"
+      exit 0
+    fi
+    ;;
+  api)
+    if [ -n "${FAKE_GH_CAPTURE_FILE:-}" ]; then
+      cat > "$FAKE_GH_CAPTURE_FILE"
+    fi
+    if [ -n "${FAKE_GH_API_STDOUT_FILE:-}" ]; then
+      cat "$FAKE_GH_API_STDOUT_FILE"
+    fi
+    exit "${FAKE_GH_API_EXIT:-0}"
+    ;;
+esac
+echo "fake-gh: unhandled args: $*" >&2
+exit 2

@@ -1,0 +1,54 @@
+# Workspace manifest: the source of truth for this hub.
+# Generated views (CLAUDE.md) are derived from this file by `just sync`.
+# Every key here is validated by the workspaces skill scripts.
+version: 1
+name: "{{WS_NAME}}"
+slug: "{{WS_SLUG}}"
+description: >-
+  {{WS_DESCRIPTION}}
+
+# Member repositories are sibling checkouts referenced by relative path.
+# They are never vendored into the hub and never carry committed workflow
+# artifacts.
+members:
+  - name: "{{PRIMARY_MEMBER}}"
+    path: "../{{PRIMARY_MEMBER}}"
+    url: "{{PRIMARY_MEMBER_URL}}"
+    ref: main
+
+# Ordered context layers. The `enter` flow loads these top to bottom; `audit`
+# verifies each path exists and is referenced by docs/index.md.
+context:
+  layers:
+    - name: constitution
+      path: docs/constitution.md
+      description: Invariant principles for this body of work
+    - name: spec
+      path: docs/spec
+      description: WHAT and WHY documents seeded from the scoping session
+    - name: decisions
+      path: docs/adr
+      description: Architecture decision records (superseded, never edited)
+    - name: phasing
+      path: plan/phases.md
+      description: Release phases with measurable exit criteria
+    - name: tasks
+      path: plan/tasks.md
+      description: Hub task registry mapping work to members and stacks
+    - name: conventions
+      path: "skills/{{WS_SLUG}}-conventions/SKILL.md"
+      description: Binding, naming, and worktree-ownership conventions
+
+# Project-local skills that live under skills/ in this hub and are linked
+# into the hub's own .claude/skills/ via relative symlinks (never globally).
+skills:
+  - "{{WS_SLUG}}-context"
+  - "{{WS_SLUG}}-domain"
+  - "{{WS_SLUG}}-conventions"
+
+conventions:
+  # Stack names in member repos: <stack-prefix><task-slug>. No dots (stack
+  # names are git-config subsections).
+  stack-prefix: "{{WS_SLUG}}/"
+  # Branch names in member repos: <branch-prefix><task-slug>.
+  branch-prefix: "{{BRANCH_PREFIX}}"

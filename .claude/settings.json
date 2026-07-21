@@ -1,0 +1,11 @@
+{
+  "skillOverrides": {
+    "claude-skills": "on",
+    "claude-skills-update": "user-invocable-only"
+  },
+  "enabledPlugins": {
+    "typescript-lsp@claude-plugins-official": true,
+    "deno-lsp@wyattjoh-marketplace": false,
+    "opentui-testing@wyattjoh-marketplace": true
+  }
+}
