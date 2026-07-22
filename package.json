@@ -22,7 +22,7 @@
     "@types/node": "^26",
     "oxfmt": "^0.55",
     "oxlint": "^1.75",
-    "typescript": "^6"
+    "typescript": "^7"
   },
   "engines": {
     "bun": ">=1.1.0"
