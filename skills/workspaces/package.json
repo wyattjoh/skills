@@ -8,7 +8,7 @@
   },
   "dependencies": {
     "commander": "^15",
-    "effect": "3.21.4",
+    "effect": "3.22.0",
     "yaml": "^2.9.0"
   }
 }
