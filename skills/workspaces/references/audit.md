@@ -25,6 +25,8 @@ manifest) rather than noise to ignore.
 | `member-missing` / `member-not-git`        | error | A member path is absent or not a repo. Clone it, fix `members[].path`, or remove the member (manifest edit + journal scope change).                                                                                                             |
 | `member-workflow-artifacts`                | warn  | A member repo tracks files under `.claude/worktrees/` or `.claude/task-orchestrator/`. Untrack them (`git rm --cached`) in that repo and ensure its local exclude covers the paths — member repos must carry no committed workflow artifacts.   |
 | `lock-unknown-member` / `lock-stale`       | warn  | `workspace.lock` disagrees with the manifest or member HEADs. Run `just freeze` if the drift is intentional; investigate if not.                                                                                                                |
+| `memory-missing`                           | warn  | The hub has no `.claude/memory/MEMORY.md`. Seed it from `$SKILL_DIR/references/templates/memory-index.md` and write the first entries — memory is read before any flow and written as knowledge surfaces (see conventions.md).                  |
+| `memory-unindexed`                         | warn  | A `.claude/memory/*.md` entry is not referenced by `MEMORY.md`. Add its index line; an unindexed memory is invisible memory.                                                                                                                    |
 
 ## Beyond the script
 
@@ -46,6 +48,10 @@ meaning:
   project-local linking step from init.md. The hub's skills must NOT be
   linked globally (`~/.claude/skills/` or `~/.agents/skills/`); a global link
   is drift, remove it.
+- **Memory freshness:** entries that a since-recorded ADR, journal entry, or
+  finding now covers should be pointers to that record, and entries the
+  records contradict are wrong — rewrite or delete them. The script checks
+  that memory exists and is indexed; only reading it catches it being stale.
 
 Finish by reporting findings the way the enter flow reports state: what is
 broken, what was fixed, what needs the user's decision.

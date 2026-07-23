@@ -62,6 +62,13 @@ ${layerRows}
 The curated index at \`docs/index.md\` annotates everything an agent may load.
 If a document is not reachable from the index, it is not workspace context.
 
+## Workspace memory
+
+Before starting any work, read the memory index at \`.claude/memory/MEMORY.md\`
+and the entries touching your task. Record new knowledge there the moment it
+surfaces (ideas, rejections, surprises, open questions); settled entries
+graduate to an ADR, journal entry, or finding. Memory files are committed.
+
 ## Member repositories
 
 Paths are relative to this directory (sibling checkouts).

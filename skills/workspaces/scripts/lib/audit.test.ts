@@ -69,6 +69,8 @@ const makeWorkspace = (): string => {
   writeFileSync(join(root, "docs", "constitution.md"), "# Constitution\n");
   writeFileSync(join(root, "docs", "index.md"), "- [Constitution](constitution.md)\n");
   writeFileSync(join(root, "JOURNAL.md"), "# Journal\n");
+  mkdirSync(join(root, ".claude", "memory"), { recursive: true });
+  writeFileSync(join(root, ".claude", "memory", "MEMORY.md"), "# Memory index\n");
   const manifest = Effect.runSync(loadManifest(root));
   writeFileSync(join(root, "CLAUDE.md"), renderClaudeMd(manifest));
   symlinkSync("CLAUDE.md", join(root, "AGENTS.md"));
@@ -182,6 +184,39 @@ describe("auditWorkspace", () => {
     writeFileSync(
       join(root, "docs", "adr", "archive", "README.md"),
       "# Archive\n\n0001 → dropped\n",
+    );
+    expect(Effect.runSync(auditWorkspace(root))).toEqual([]);
+  });
+
+  it("flags a hub with no memory index", () => {
+    const root = makeWorkspace();
+    rmSync(join(root, ".claude", "memory"), { recursive: true });
+    const findings = Effect.runSync(auditWorkspace(root));
+    expect(findings.map((finding) => finding.id)).toEqual(["memory-missing"]);
+    expect(findings[0]?.level).toBe("warn");
+  });
+
+  it("flags a memory entry not referenced by the index", () => {
+    const root = makeWorkspace();
+    writeFileSync(
+      join(root, ".claude", "memory", "orphan-fact.md"),
+      "# Orphan fact\n\nA fact nobody indexed.\n",
+    );
+    const findings = Effect.runSync(auditWorkspace(root));
+    expect(findings.map((finding) => finding.id)).toEqual(["memory-unindexed"]);
+    expect(findings[0]?.level).toBe("warn");
+    expect(findings[0]?.message).toContain("orphan-fact.md");
+  });
+
+  it("accepts a memory entry referenced by the index", () => {
+    const root = makeWorkspace();
+    writeFileSync(
+      join(root, ".claude", "memory", "known-fact.md"),
+      "# Known fact\n\nA fact with an index line.\n",
+    );
+    writeFileSync(
+      join(root, ".claude", "memory", "MEMORY.md"),
+      "# Memory index\n\n- [Known fact](known-fact.md) — a fact\n",
     );
     expect(Effect.runSync(auditWorkspace(root))).toEqual([]);
   });

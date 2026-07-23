@@ -1,6 +1,6 @@
 ---
 name: workspaces
-description: Creates and operates multi-repo workspace hubs, standalone git repositories that own the docs, ADRs, deviation journal, context manifest, release phasing, plan batches, and project-local skills for a cross-repo body of work. Use when creating a workspace for a multi-repo effort, adding or redesigning a task inside one, entering a workspace to load its context, compacting its ADRs into a minimal set that captures the final vision, or checking workspace integrity. Triggers on "create a workspace", "new workspace", "workspace for", "enter the workspace", "load workspace context", "workspace task", "compact the workspace", "compact ADRs", "consolidate decisions", "audit the workspace", or landing in a directory containing workspace.yaml.
+description: Creates and operates multi-repo workspace hubs, standalone git repositories that own the docs, ADRs, deviation journal, context manifest, release phasing, plan batches, workspace memory, and project-local skills for a cross-repo body of work. Use when creating a workspace for a multi-repo effort, adding or redesigning a task inside one, entering a workspace to load its context, compacting its ADRs into a minimal set that captures the final vision, recording or recalling workspace memory, or checking workspace integrity. Triggers on "create a workspace", "new workspace", "workspace for", "enter the workspace", "load workspace context", "workspace task", "compact the workspace", "compact ADRs", "consolidate decisions", "audit the workspace", "workspace memory", "remember this in the workspace", or landing in a directory containing workspace.yaml.
 argument-hint: "[init|task|enter|audit|compact] [name]"
 effort: high
 ---
@@ -35,7 +35,10 @@ Match the request to a flow and follow its reference document exactly:
 Before any flow, read
 [references/workspace-layout.md](references/workspace-layout.md) for the hub
 anatomy and [references/conventions.md](references/conventions.md) for the
-binding rules. When creating or editing the seeded skills, follow the
+binding rules, then read the hub's workspace memory (`.claude/memory/MEMORY.md`
+and the entries it indexes that touch your task) — memory is the always-read
+working-knowledge layer, and starting work without it repeats settled
+mistakes. When creating or editing the seeded skills, follow the
 `claude-skills` skill.
 
 ## Scripts
@@ -80,12 +83,19 @@ no command enters a worktree.
    phase, ADR, and PR. ADRs are superseded, never edited.
 6. **init is gated.** Always confirm with the user before creating the hub
    repo, touching member git config, or registering sources.
+7. **Memory before work, memory as you think.** The hub's `.claude/memory/`
+   (committed) is read before any flow's first action and written the moment
+   an idea, decision-in-motion, surprise, or open question surfaces — during
+   design especially, where the job is capturing and converging concepts,
+   not generating variant floods. A settled entry graduates to an ADR,
+   journal entry, or finding; the memory then points at that record.
 
 ## Templates
 
 `references/templates/` holds the scaffold for every hub file
 (`workspace.yaml`, `JOURNAL.md`, `constitution.md`, `index.md`, `phases.md`,
-`tasks.md`, `Justfile`) and the three seed skills
+`tasks.md`, `Justfile`, `memory-index.md` → `.claude/memory/MEMORY.md`) and
+the three seed skills
 (`skill-context.md`, `skill-domain.md`, `skill-conventions.md`).
 Markdown and YAML templates use `{{PLACEHOLDER}}` markers; the Justfile
 template alone uses `__PLACEHOLDER__` markers because just owns `{{ }}`

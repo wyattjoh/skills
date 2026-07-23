@@ -92,7 +92,7 @@ Restart Claude Code after adding or changing an agent definition.
 | research-augmented-design     | Interleave background research agents with brainstorming during design            |
 | resticprofile                 | Operate the resticprofile CLI for restic backups                                  |
 | review                        | Comprehensive code review with repository health diagnostics                      |
-| setup-project-memory          | Capture a session learning into .claude/memory, indexed and wired into CLAUDE.md |
+| setup-project-memory          | Capture a session learning into .claude/memory, indexed and wired into CLAUDE.md  |
 | simplify                      | Interactive code simplification with batched approval                             |
 | skill-audit                   | Audit skill execution for permission denials, tool errors, and corrections        |
 | swift-composable-architecture | Adoption index for The Composable Architecture (TCA 1.26.0), mapped by topic      |
@@ -102,7 +102,7 @@ Restart Claude Code after adding or changing an agent definition.
 | task-planner                  | Decompose a settled feature design into validated orchestrator plan files         |
 | varlock                       | Kickstart varlock, the encrypted schema-driven dotenv replacement                 |
 | vhs                           | Interview-driven terminal screencasts rendered to GIF/MP4/WebM                    |
-| workspaces                    | Create, operate, and compact multi-repo workspace hubs                            |
+| workspaces                    | Create, operate, and compact multi-repo workspace hubs with enforced memory       |
 
 ## Claude Code agents
 

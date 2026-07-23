@@ -41,8 +41,14 @@ the hub (create the directory first if the grilling session needs a target):
    `skills/<slug>-conventions/SKILL.md`. Follow the `claude-skills` skill's
    authoring standards when filling them in (third-person descriptions with
    concrete trigger phrases).
-4. `ln -s CLAUDE.md AGENTS.md`.
-5. Fill `workspace.yaml` members and layers, then generate:
+4. Seed the workspace memory: copy `templates/memory-index.md` to
+   `.claude/memory/MEMORY.md`, then write the first entries immediately —
+   the scoping session that just ran (step 2) already surfaced rejected
+   alternatives, open questions, and constraints that belong in memory, not
+   only in the spec. A hub born with empty memory teaches every later
+   session that memory is optional.
+5. `ln -s CLAUDE.md AGENTS.md`.
+6. Fill `workspace.yaml` members and layers, then generate:
    `bun $SKILL_DIR/scripts/workspace.ts manifest sync --workspace <hub>`.
 
 ## 4. Bind the member repositories

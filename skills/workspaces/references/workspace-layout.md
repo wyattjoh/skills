@@ -29,6 +29,11 @@ committed workspace artifacts.
 │       └── <member>/
 │           └── <task-slug>/
 │               └── NN-slug.md   # task-planner output, task-orchestrator input
+├── .claude/
+│   ├── memory/
+│   │   ├── MEMORY.md     # memory index: one line per entry (seeded at init)
+│   │   └── <slug>.md     # one memory entry per file, COMMITTED
+│   └── skills/           # relative symlinks to skills/ (project-local)
 └── skills/
     ├── <slug>-context/SKILL.md      # context loader (seeded at init)
     ├── <slug>-domain/SKILL.md       # domain model summary (seeded at init)
@@ -57,6 +62,11 @@ Validated by `scripts/lib/manifest.ts`; violations are all reported at once.
 (`scripts/lib/generate.ts`). Hand edits are overwritten by `just sync` and
 flagged by `audit` — this is what makes agent context auditable by diff.
 `AGENTS.md` stays a symlink so Claude and Codex read identical context.
+The generated file includes a "Workspace memory" section pointing every
+session at `.claude/memory/MEMORY.md` before any work — so the memory
+mandate reaches even sessions that never invoke this skill. After upgrading
+the skill, run `just sync` in each hub so its CLAUDE.md picks the section
+up (audit reports `claude-md-stale` until then).
 
 ## workspace.lock
 
@@ -72,6 +82,31 @@ Newest date first. Sections `## YYYY-MM-DD`, entries
 `Scope change`, `Cross-repo change`, an optional `**Links:**` line
 (plan/phase, ADR, member PR), and an optional body. Append only via
 `just journal` / `workspace.ts journal add` so the structure stays parseable.
+
+## Workspace memory
+
+`.claude/memory/` is the hub's committed working-knowledge layer — the
+compressed "what you must know before touching this effort" that survives
+context windows, sessions, and machines. It complements the durable records
+rather than duplicating them: ADRs hold decisions, the journal holds
+deviations, findings hold cited discoveries; memory holds the hot digest of
+all three plus the in-flight material none of them accept yet — ideas and
+alternatives still forming, rejected options worth not re-proposing, open
+questions, tooling gotchas, and pointers into the records.
+
+- One entry per file: `.claude/memory/<kebab-slug>.md`. Shape: a `#` title,
+  a few sentences stating the fact or idea, a `**Why it matters:**` line,
+  and a `**See:**` line linking the ADR/journal/spec/ticket it relates to.
+- `MEMORY.md` is the index: one line per entry,
+  `- [Title](<file>.md) — hook`. Every entry is listed; an unindexed entry
+  is invisible and `audit` flags it.
+- Lifecycle: an entry is written the moment the knowledge surfaces (not at
+  session end); when it settles into an ADR, journal entry, or finding, the
+  entry is rewritten to point at that record — or deleted if the record
+  fully covers it. Wrong memories are deleted, not annotated.
+- Memory lives only in the hub — never in member repos (purity rule) and
+  never in a harness's private state, so any agent, harness, or human gets
+  the same recall.
 
 ## Plan batches
 

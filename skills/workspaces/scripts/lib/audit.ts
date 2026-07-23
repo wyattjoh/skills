@@ -174,6 +174,41 @@ const auditAdrArchive = (root: string): AuditFinding[] => {
   return [];
 };
 
+/**
+ * Checks the workspace memory. `.claude/memory/` is the hub's committed
+ * working-knowledge layer: read before any flow, written as knowledge
+ * surfaces. `MEMORY.md` is its index; an entry file the index does not
+ * reference is invisible memory, and a hub with no index at all forces
+ * every session to relearn the effort from scratch.
+ */
+const auditMemory = (root: string): AuditFinding[] => {
+  const memoryDir = join(root, ".claude/memory");
+  const index = readFileOrNull(join(memoryDir, "MEMORY.md"));
+  if (index === null) {
+    return [
+      {
+        id: "memory-missing",
+        level: "warn",
+        message:
+          ".claude/memory/MEMORY.md is missing; seed the workspace memory from the skill template and record what is already known — memory is read before any flow and written as knowledge surfaces",
+      },
+    ];
+  }
+  const indexedPaths = extractIndexedPaths(index, ".claude/memory");
+  const findings: AuditFinding[] = [];
+  for (const entry of readdirSync(memoryDir, { withFileTypes: true })) {
+    if (!entry.isFile() || !entry.name.endsWith(".md") || entry.name === "MEMORY.md") continue;
+    if (!indexedPaths.has(join(".claude/memory", entry.name))) {
+      findings.push({
+        id: "memory-unindexed",
+        level: "warn",
+        message: `memory entry ${entry.name} is not referenced by MEMORY.md; add its index line — an unindexed memory is invisible memory`,
+      });
+    }
+  }
+  return findings;
+};
+
 const auditMembers = (root: string, manifest: WorkspaceManifest): Effect.Effect<AuditFinding[]> =>
   Effect.gen(function* () {
     const findings: AuditFinding[] = [];
@@ -253,6 +288,7 @@ export const auditWorkspace = (
       ...auditGeneratedFiles(root, manifest),
       ...auditLayers(root, manifest),
       ...auditAdrArchive(root),
+      ...auditMemory(root),
       ...(yield* auditMembers(root, manifest)),
       ...(yield* auditLock(root, manifest)),
     ];

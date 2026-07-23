@@ -75,6 +75,24 @@ evidence of it:
   member PR/commit). Redesigns are not failures; unrecorded redesigns are.
 - Phase exit criteria changes are Decisions and are journaled.
 
+## Workspace memory
+
+- `.claude/memory/` in the hub is committed working knowledge: one entry
+  per file, indexed by `MEMORY.md` (format in workspace-layout.md). It is
+  read before any flow's first action and written the moment knowledge
+  surfaces — recording after the fact loses exactly the entries that
+  mattered.
+- Memory is the capture layer; ADRs, the journal, and findings are the
+  ratified layer. An entry that settles graduates into one of those records
+  and is rewritten as a pointer (or deleted). A memory that contradicts a
+  record means one of them is wrong — resolve it, don't let them coexist.
+- During design, divergence is bounded by capture: alternatives and
+  rejections are recorded as they surface, so the process converges on a
+  decision trail instead of producing unrecorded variant floods.
+- Memory never lives in member repos (purity rule) or harness-private
+  state. `audit` flags a hub without a memory index (`memory-missing`) and
+  entries the index doesn't reference (`memory-unindexed`).
+
 ## Context discipline
 
 - `workspace.yaml` is the only source of truth; `CLAUDE.md` is generated.
