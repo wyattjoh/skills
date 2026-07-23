@@ -27,8 +27,11 @@ workspaces rot.
 
 Read each file `context` printed, top to bottom (constitution -> spec ->
 decisions -> phasing -> tasks -> conventions). Order matters: later layers
-narrow earlier ones. For the ADR layer, read `accepted` ADRs; skim
-`superseded` only when tracing why something changed.
+narrow earlier ones. For the ADR layer, read the top-level `docs/adr/*.md`
+(the live set): read `accepted` ADRs, skim `superseded` only when tracing why
+something changed. Never load `docs/adr/archive/`; that is compacted history
+(see the compact flow), not context; open it only when tracing what a past
+compaction dropped.
 
 ## 4. Load the working state
 

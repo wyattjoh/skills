@@ -23,8 +23,10 @@ verifies every manifest context layer appears here.
 
 ## Decisions
 
-- [ADR directory](adr/) — architecture decision records; read every ADR with
-  status `accepted`, skim `superseded` ones only when tracing history
+- [ADR directory](adr/) — architecture decision records; read every top-level
+  ADR with status `accepted`, skim `superseded` ones only when tracing
+  history. `adr/archive/` is compacted history (see the compact flow), not
+  context; do not load it
 
 ## Research
 

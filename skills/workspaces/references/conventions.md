@@ -66,6 +66,10 @@ evidence of it:
   convention) with MADR-style lifecycle semantics: status moves
   proposed -> accepted -> superseded/deprecated; a superseded ADR gains a
   forward link and is never edited.
+- `docs/adr/archive/` is compacted history, not context. The compact flow
+  moves retired ADRs there and records the collapse in
+  `docs/adr/archive/README.md`; only the top-level `docs/adr/*.md` are the
+  live set that `enter` loads. Never point a context layer at the archive.
 - Every deviation from a recorded plan, spec, or ADR gets a JOURNAL.md entry
   before or with the change, cross-linked three ways (plan/phase, ADR,
   member PR/commit). Redesigns are not failures; unrecorded redesigns are.

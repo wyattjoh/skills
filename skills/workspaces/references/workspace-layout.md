@@ -21,6 +21,7 @@ committed workspace artifacts.
 │   ├── spec/             # WHAT/WHY documents from scoping sessions
 │   ├── research/         # research reports (they outlive their sessions)
 │   └── adr/              # NNNN-slug.md decision records (domain-modeling)
+│       └── archive/      # ADRs retired by `compact` + README.md mapping (history, not context)
 ├── plan/
 │   ├── phases.md         # release phases with measurable exit criteria
 │   ├── tasks.md          # task registry: task -> members, batches, stacks

@@ -102,7 +102,7 @@ Restart Claude Code after adding or changing an agent definition.
 | task-planner                  | Decompose a settled feature design into validated orchestrator plan files         |
 | varlock                       | Kickstart varlock, the encrypted schema-driven dotenv replacement                 |
 | vhs                           | Interview-driven terminal screencasts rendered to GIF/MP4/WebM                    |
-| workspaces                    | Create and operate multi-repo workspace hubs                                      |
+| workspaces                    | Create, operate, and compact multi-repo workspace hubs                            |
 
 ## Claude Code agents
 

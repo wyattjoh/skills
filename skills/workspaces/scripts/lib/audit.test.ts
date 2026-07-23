@@ -166,6 +166,26 @@ describe("auditWorkspace", () => {
     expect(findings.map((finding) => finding.id)).toEqual(["member-missing"]);
   });
 
+  it("flags an ADR archive that has no mapping manifest", () => {
+    const root = makeWorkspace();
+    mkdirSync(join(root, "docs", "adr", "archive"), { recursive: true });
+    writeFileSync(join(root, "docs", "adr", "archive", "0001-old.md"), "# Old decision\n");
+    const findings = Effect.runSync(auditWorkspace(root));
+    expect(findings.map((finding) => finding.id)).toEqual(["adr-archive-unmanifested"]);
+    expect(findings[0]?.level).toBe("warn");
+  });
+
+  it("accepts an ADR archive that carries a README mapping manifest", () => {
+    const root = makeWorkspace();
+    mkdirSync(join(root, "docs", "adr", "archive"), { recursive: true });
+    writeFileSync(join(root, "docs", "adr", "archive", "0001-old.md"), "# Old decision\n");
+    writeFileSync(
+      join(root, "docs", "adr", "archive", "README.md"),
+      "# Archive\n\n0001 → dropped\n",
+    );
+    expect(Effect.runSync(auditWorkspace(root))).toEqual([]);
+  });
+
   it("flags missing journal and broken AGENTS.md link as errors", () => {
     const root = makeWorkspace();
     rmSync(join(root, "JOURNAL.md"));

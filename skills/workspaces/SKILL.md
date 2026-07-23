@@ -1,7 +1,7 @@
 ---
 name: workspaces
-description: Creates and operates multi-repo workspace hubs, standalone git repositories that own the docs, ADRs, deviation journal, context manifest, release phasing, plan batches, and project-local skills for a cross-repo body of work. Use when creating a workspace for a multi-repo effort, adding or redesigning a task inside one, entering a workspace to load its context, or checking workspace integrity. Triggers on "create a workspace", "new workspace", "workspace for", "enter the workspace", "load workspace context", "workspace task", "audit the workspace", or landing in a directory containing workspace.yaml.
-argument-hint: "[init|task|enter|audit] [name]"
+description: Creates and operates multi-repo workspace hubs, standalone git repositories that own the docs, ADRs, deviation journal, context manifest, release phasing, plan batches, and project-local skills for a cross-repo body of work. Use when creating a workspace for a multi-repo effort, adding or redesigning a task inside one, entering a workspace to load its context, compacting its ADRs into a minimal set that captures the final vision, or checking workspace integrity. Triggers on "create a workspace", "new workspace", "workspace for", "enter the workspace", "load workspace context", "workspace task", "compact the workspace", "compact ADRs", "consolidate decisions", "audit the workspace", or landing in a directory containing workspace.yaml.
+argument-hint: "[init|task|enter|audit|compact] [name]"
 effort: high
 ---
 
@@ -24,12 +24,13 @@ workspace by naming, `worktrunk` materializes interactive worktrees, and
 
 Match the request to a flow and follow its reference document exactly:
 
-| Flow    | When                                                      | Reference                                  |
-| ------- | --------------------------------------------------------- | ------------------------------------------ |
-| `init`  | Create a new workspace (confirmation-gated)               | [references/init.md](references/init.md)   |
-| `task`  | Create, update, redesign, execute, or drop a unit of work | [references/task.md](references/task.md)   |
-| `enter` | Load workspace context to start or resume work            | [references/enter.md](references/enter.md) |
-| `audit` | Verify integrity, find drift, drive remediation           | [references/audit.md](references/audit.md) |
+| Flow      | When                                                                 | Reference                                      |
+| --------- | -------------------------------------------------------------------- | ---------------------------------------------- |
+| `init`    | Create a new workspace (confirmation-gated)                          | [references/init.md](references/init.md)       |
+| `task`    | Create, update, redesign, execute, or drop a unit of work            | [references/task.md](references/task.md)       |
+| `enter`   | Load workspace context to start or resume work                       | [references/enter.md](references/enter.md)     |
+| `audit`   | Verify integrity, find drift, drive remediation                      | [references/audit.md](references/audit.md)     |
+| `compact` | Collapse the ADR trail into a minimal set capturing the final vision | [references/compact.md](references/compact.md) |
 
 Before any flow, read
 [references/workspace-layout.md](references/workspace-layout.md) for the hub
@@ -46,15 +47,17 @@ every workspace's Justfile delegates here):
 bun $SKILL_DIR/scripts/workspace.ts <command> [--workspace <hub-dir>]
 ```
 
-| Command                                                               | Purpose                                                                                |
-| --------------------------------------------------------------------- | -------------------------------------------------------------------------------------- |
-| `manifest sync [--check]`                                             | Regenerate CLAUDE.md from workspace.yaml (`--check` exits 1 on drift)                  |
-| `manifest freeze`                                                     | Capture member HEAD SHAs into workspace.lock                                           |
-| `status [--json]`                                                     | Per-member branch, dirtiness, and bound stacks                                         |
-| `stacks [--json]`                                                     | All stacks across members matching the workspace stack prefix                          |
-| `context [--json]`                                                    | Ordered context-layer files (fails if any are missing)                                 |
-| `audit [--json]`                                                      | Every integrity check; exits 1 on errors                                               |
-| `journal add --category <c> --title <t> [--links <csv>] [--body <b>]` | Append a structured journal entry (categories: decision, deviation, scope, cross-repo) |
+| Command                                                               | Purpose                                                                                  |
+| --------------------------------------------------------------------- | ---------------------------------------------------------------------------------------- |
+| `manifest sync [--check]`                                             | Regenerate CLAUDE.md from workspace.yaml (`--check` exits 1 on drift)                    |
+| `manifest freeze`                                                     | Capture member HEAD SHAs into workspace.lock                                             |
+| `status [--json]`                                                     | Per-member branch, dirtiness, and bound stacks                                           |
+| `stacks [--json]`                                                     | All stacks across members matching the workspace stack prefix                            |
+| `context [--json]`                                                    | Ordered context-layer files (fails if any are missing)                                   |
+| `audit [--json]`                                                      | Every integrity check; exits 1 on errors                                                 |
+| `journal add --category <c> --title <t> [--links <csv>] [--body <b>]` | Append a structured journal entry (categories: decision, deviation, scope, cross-repo)   |
+| `compact inventory [--json]`                                          | Emit live ADRs (number, title, status, references), journal switches, and context layers |
+| `compact archive [--json]`                                            | Move the live ADRs into `docs/adr/archive/` (clean tree required); print the mapping     |
 
 `--workspace` defaults to walking up from the current directory to the
 nearest `workspace.yaml`. Member state is read via `git -C` from the hub;

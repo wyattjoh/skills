@@ -5,6 +5,14 @@ import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { type AuditFinding, auditWorkspace } from "./lib/audit.ts";
 import {
+  type AdrRecord,
+  archiveAdrs,
+  CompactError,
+  inventoryAdrs,
+  type JournalSwitch,
+  journalSwitches,
+} from "./lib/compact.ts";
+import {
   currentBranch,
   type GitCommandError,
   headSha,
@@ -40,6 +48,7 @@ type CliError =
   | ManifestValidationError
   | GitCommandError
   | UnknownCategoryError
+  | CompactError
   | DriftError;
 
 const formatError = (error: CliError): string =>
@@ -62,6 +71,7 @@ const formatError = (error: CliError): string =>
       (e) =>
         `unknown journal category "${e.category}" (expected decision|deviation|scope|cross-repo)`,
     ),
+    Match.tag("CompactError", (e) => e.message),
     Match.tag("DriftError", (e) => e.message),
     Match.exhaustive,
   );
@@ -147,6 +157,30 @@ const printFindings = (findings: AuditFinding[]): void => {
   for (const finding of findings) {
     const symbol = finding.level === "error" ? "✗" : "⚠";
     console.log(`${symbol} [${finding.id}] ${finding.message}`);
+  }
+};
+
+const printInventory = (
+  adrs: AdrRecord[],
+  switches: JournalSwitch[],
+  layers: WorkspaceManifest["layers"],
+): void => {
+  console.log("Context layers (load order):");
+  for (const [index, layer] of layers.entries()) {
+    console.log(`  ${index + 1}. ${layer.name}: ${layer.path}`);
+  }
+  console.log(`\nLive ADRs (${adrs.length}):`);
+  if (adrs.length === 0) console.log("  (none)");
+  for (const adr of adrs) {
+    const status = adr.status ? ` [${adr.status}]` : "";
+    const refs = adr.references.length > 0 ? ` → refs ${adr.references.join(", ")}` : "";
+    console.log(`  ${adr.file}: ${adr.title}${status}${refs}`);
+  }
+  console.log(`\nJournal switches (${switches.length}):`);
+  if (switches.length === 0) console.log("  (none)");
+  for (const entry of switches) {
+    const links = entry.links.length > 0 ? ` (${entry.links.join(", ")})` : "";
+    console.log(`  ${entry.date} ${entry.category}: ${entry.title}${links}`);
   }
 };
 
@@ -378,6 +412,59 @@ withWorkspaceOption(
         console.log(`✓ journaled ${category}: ${options.title}`);
       }),
     ),
+);
+
+const compactCommand = cli
+  .command("compact")
+  .description("compact the ADR trail into a minimal set (see the compact flow)");
+
+withWorkspaceOption(
+  compactCommand
+    .command("inventory")
+    .description("emit live ADRs, journal switches, and context layers as a structured picture")
+    .option("--json", "emit JSON"),
+).action((options: { workspace?: string; json?: boolean }) =>
+  run(
+    Effect.gen(function* () {
+      const { root, manifest } = yield* loadWorkspace(options.workspace);
+      const adrs = inventoryAdrs(root);
+      const switches = journalSwitches(root);
+      if (options.json) {
+        console.log(
+          JSON.stringify({ adrs, journalSwitches: switches, layers: manifest.layers }, null, 2),
+        );
+        return;
+      }
+      printInventory(adrs, switches, manifest.layers);
+    }),
+  ),
+);
+
+withWorkspaceOption(
+  compactCommand
+    .command("archive")
+    .description(
+      "move current ADRs into docs/adr/archive/ (clean tree required); prints the mapping",
+    )
+    .option("--json", "emit JSON"),
+).action((options: { workspace?: string; json?: boolean }) =>
+  run(
+    Effect.gen(function* () {
+      const { root } = yield* loadWorkspace(options.workspace);
+      const archived = yield* archiveAdrs(root);
+      if (options.json) {
+        console.log(JSON.stringify(archived, null, 2));
+        return;
+      }
+      console.log(`✓ archived ${archived.length} ADR(s) into docs/adr/archive/`);
+      for (const entry of archived) {
+        console.log(`  ${entry.file}`);
+      }
+      console.log(
+        "Next: write the minimal renumbered ADRs into docs/adr/, add docs/adr/archive/README.md, reconcile docs, then audit and commit.",
+      );
+    }),
+  ),
 );
 
 await cli.parseAsync(process.argv);

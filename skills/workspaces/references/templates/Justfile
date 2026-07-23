@@ -32,6 +32,14 @@ context:
 audit:
     bun {{ skill_dir }}/scripts/workspace.ts audit --workspace {{ workspace }}
 
+# Inventory the ADR graph and journal switches (the compact flow's first step)
+compact-inventory:
+    bun {{ skill_dir }}/scripts/workspace.ts compact inventory --workspace {{ workspace }}
+
+# Archive the live ADRs into docs/adr/archive/ (clean tree required; run mid-compact)
+compact-archive:
+    bun {{ skill_dir }}/scripts/workspace.ts compact archive --workspace {{ workspace }}
+
 # Append a journal entry: just journal deviation "Title" "adr/0001, phase 1"
 journal category title links="" body="":
     bun {{ skill_dir }}/scripts/workspace.ts journal add --workspace {{ workspace }} --category {{ category }} --title "{{ title }}" --links "{{ links }}" --body "{{ body }}"

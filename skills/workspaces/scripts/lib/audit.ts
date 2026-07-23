@@ -1,5 +1,5 @@
 import { Effect } from "effect";
-import { existsSync, lstatSync, readFileSync, readlinkSync } from "node:fs";
+import { existsSync, lstatSync, readdirSync, readFileSync, readlinkSync } from "node:fs";
 import { join } from "node:path";
 import { headSha, isGitRepo, trackedWorkflowArtifacts } from "./git.ts";
 import { parseLock, renderClaudeMd } from "./generate.ts";
@@ -149,6 +149,31 @@ const auditLayers = (root: string, manifest: WorkspaceManifest): AuditFinding[] 
   return findings;
 };
 
+/**
+ * Checks the compaction archive. `docs/adr/archive/` holds ADRs retired by
+ * the compact flow; it is history, not context, so it must carry a README.md
+ * mapping manifest recording which archived ADRs collapsed into which live
+ * ones. Archived ADRs without that manifest are untraceable compaction.
+ */
+const auditAdrArchive = (root: string): AuditFinding[] => {
+  const archiveDir = join(root, "docs/adr/archive");
+  if (!existsSync(archiveDir)) return [];
+  const archivedAdrs = readdirSync(archiveDir, { withFileTypes: true }).filter(
+    (entry) => entry.isFile() && entry.name.endsWith(".md") && entry.name !== "README.md",
+  );
+  if (archivedAdrs.length > 0 && !existsSync(join(archiveDir, "README.md"))) {
+    return [
+      {
+        id: "adr-archive-unmanifested",
+        level: "warn",
+        message:
+          "docs/adr/archive/ holds archived ADRs but no README.md mapping manifest; record which archived ADRs collapsed into which live ADR so the compaction stays traceable",
+      },
+    ];
+  }
+  return [];
+};
+
 const auditMembers = (root: string, manifest: WorkspaceManifest): Effect.Effect<AuditFinding[]> =>
   Effect.gen(function* () {
     const findings: AuditFinding[] = [];
@@ -227,6 +252,7 @@ export const auditWorkspace = (
     const findings = [
       ...auditGeneratedFiles(root, manifest),
       ...auditLayers(root, manifest),
+      ...auditAdrArchive(root),
       ...(yield* auditMembers(root, manifest)),
       ...(yield* auditLock(root, manifest)),
     ];
