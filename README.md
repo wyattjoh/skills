@@ -92,6 +92,7 @@ Restart Claude Code after adding or changing an agent definition.
 | research-augmented-design     | Interleave background research agents with brainstorming during design            |
 | resticprofile                 | Operate the resticprofile CLI for restic backups                                  |
 | review                        | Comprehensive code review with repository health diagnostics                      |
+| setup-project-memory          | Capture a session learning into .claude/memory, indexed and wired into CLAUDE.md |
 | simplify                      | Interactive code simplification with batched approval                             |
 | skill-audit                   | Audit skill execution for permission denials, tool errors, and corrections        |
 | swift-composable-architecture | Adoption index for The Composable Architecture (TCA 1.26.0), mapped by topic      |
