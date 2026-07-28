@@ -38,6 +38,13 @@ export const renderClaudeMd = (manifest: WorkspaceManifest): string => {
     manifest.skills.length > 0
       ? manifest.skills.map((skill) => `- \`${skill}\` (in \`skills/${skill}/\`)`).join("\n")
       : "- (none registered)";
+  // Manifest-declared sections render last, after everything the renderer
+  // owns, so a hub can describe what the fixed schema cannot without any
+  // hand edit to the generated file. Empty list renders nothing, which keeps
+  // output byte-identical for hubs that declare none.
+  const sectionBlocks = manifest.sections
+    .map((section) => `\n## ${section.title}\n\n${section.body.trim()}\n`)
+    .join("");
 
   return `${GENERATED_MARKER}
      Do not edit by hand: edit workspace.yaml, then run \`just sync\`. -->
@@ -95,7 +102,7 @@ ${skillLines}
 
 Run \`just\` to list tasks. Core recipes: \`just sync\`, \`just status\`,
 \`just audit\`, \`just freeze\`, \`just journal\`.
-`;
+${sectionBlocks}`;
 };
 
 /**

@@ -53,9 +53,25 @@ describe("validateManifest", () => {
         },
       ],
       skills: ["checkout-redesign-context"],
+      sections: [],
       stackPrefix: "checkout-redesign/",
       branchPrefix: "checkout-redesign/",
     });
+  });
+
+  it("parses declared sections", () => {
+    const manifest = Effect.runSync(
+      validateManifest(
+        {
+          ...VALID_MANIFEST,
+          sections: [{ title: "Review site", body: "An Astro site in `src/`." }],
+        },
+        "workspace.yaml",
+      ),
+    );
+    expect(manifest.sections).toEqual([
+      { title: "Review site", body: "An Astro site in `src/`." },
+    ]);
   });
 
   it("honours explicit convention prefixes", () => {
@@ -102,6 +118,39 @@ describe("validateManifest failures", () => {
       'manifest must include a non-empty "context.layers" list',
       'stack-prefix "a.b/" must not contain dots (stack names are git-config subsections)',
     ]);
+  });
+
+  it("reports malformed and duplicate sections", () => {
+    const result = Effect.runSync(
+      Effect.flip(
+        validateManifest(
+          {
+            ...VALID_MANIFEST,
+            sections: [
+              { title: "Review site", body: "An Astro site." },
+              { title: "Review site", body: "" },
+              "not a mapping",
+            ],
+          },
+          "workspace.yaml",
+        ),
+      ),
+    );
+    expect(result).toBeInstanceOf(ManifestValidationError);
+    expect(result.issues).toEqual([
+      'sections[1] must include a non-empty string "body"',
+      "sections[2] must be a mapping",
+      'duplicate section title "Review site"',
+    ]);
+  });
+
+  it("rejects a non-list sections key", () => {
+    const result = Effect.runSync(
+      Effect.flip(
+        validateManifest({ ...VALID_MANIFEST, sections: "Review site" }, "workspace.yaml"),
+      ),
+    );
+    expect(result.issues).toEqual(['manifest "sections" must be a list when present']);
   });
 });
 

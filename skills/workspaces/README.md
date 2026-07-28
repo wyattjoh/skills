@@ -34,19 +34,34 @@ that explicit, layered, and checkable by script.
 - **Member repo purity** — member repositories never commit workflow
   artifacts; `audit` flags violations.
 
-## Flows
+## Commands: two layers
+
+The skill's subcommands live at two levels. Understanding the split is worth
+the paragraph, because they do different jobs:
+
+- **Flows** are the conversational entry points — high-level intents you route
+  to ("enter the workspace", "add a task"). Each flow follows a reference doc
+  exactly, interpreting results and driving the work.
+- **CLI commands** are the deterministic mechanics each flow delegates to, all
+  through one Bun script. Every hub's Justfile wraps them as `just <recipe>`.
+
+`audit` and `compact` appear in **both** layers: the flow is the human-facing
+procedure (interpret output, drive remediation), while the CLI command is the
+raw mechanical check it runs.
+
+### Flows
 
 Each flow is specified in `references/`; the SKILL.md routes to them.
 
-| Flow      | Purpose                                                              |
-| --------- | -------------------------------------------------------------------- |
-| `init`    | Scaffold a new hub (confirmation-gated; seeds docs, skills, memory)  |
-| `enter`   | Load context to start or resume work (memory first, then layers)     |
-| `task`    | Create, update, redesign, execute, or drop a unit of work            |
-| `audit`   | Run every integrity check and drive remediation                      |
-| `compact` | Collapse the ADR trail into a minimal set capturing the final vision |
+| Flow      | When to use                                     | What it does                                                                                                                          |
+| --------- | ----------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------- |
+| `init`    | Creating a brand-new hub                        | Scaffolds the standalone hub repo (workspace.yaml, constitution, ADRs, phases, tasks, seed skills, memory). Confirmation-gated before creating the repo, touching member git config, or registering sources. |
+| `task`    | Create, update, redesign, execute, or drop work | Manages a task's whole lifecycle: emits plan batches into `plan/batches/<member>/<task-slug>/`, binds branches/stacks by naming, orchestrates execution in member repos.                                      |
+| `enter`   | Starting or resuming work                       | The "get me oriented" flow. Reads workspace memory first, then loads the context layers in fixed order (constitution → spec → ADRs → phasing → tasks → conventions → findings).                               |
+| `audit`   | Verifying integrity                             | Runs every drift check, finds inconsistencies between the manifest and reality, and drives remediation.                                                                                                       |
+| `compact` | Collapsing the ADR trail                        | Archives the live ADRs into a minimal set capturing the _final_ vision (not the full superseded history), with an archive mapping.                                                                            |
 
-## CLI
+### CLI commands
 
 All mechanics go through one Bun CLI; every hub's Justfile delegates to it:
 
@@ -54,10 +69,20 @@ All mechanics go through one Bun CLI; every hub's Justfile delegates to it:
 bun $SKILL_DIR/scripts/workspace.ts <command> [--workspace <hub-dir>]
 ```
 
-Commands: `manifest sync [--check]`, `manifest freeze`, `status`, `stacks`,
-`context`, `audit`, `journal add`, `compact inventory`, `compact archive`.
-Inside a hub, prefer the Justfile recipes (`just sync`, `just audit`,
-`just journal …`, `just compact-inventory`, …).
+`--workspace` defaults to walking up to the nearest `workspace.yaml`. Inside a
+hub, prefer the Justfile recipes.
+
+| Command                                                     | Purpose                                                                             | Justfile recipe       |
+| ----------------------------------------------------------- | ----------------------------------------------------------------------------------- | --------------------- |
+| `manifest sync [--check]`                                   | Regenerate CLAUDE.md from workspace.yaml (`--check` exits 1 on drift). Never hand-edit CLAUDE.md. | `just sync`           |
+| `manifest freeze`                                           | Capture member HEAD SHAs into workspace.lock                                        | `just freeze`         |
+| `status [--json]`                                           | Per-member branch, dirtiness, and bound stacks                                     | `just status`         |
+| `stacks [--json]`                                           | All stacks across members matching the workspace stack prefix                      | `just stacks`         |
+| `context [--json]`                                          | Ordered context-layer files (fails if any are missing)                            | `just context`        |
+| `audit [--json]`                                            | Every integrity check; exits 1 on errors                                          | `just audit`          |
+| `journal add --category <c> --title <t> [--links] [--body]` | Append a structured journal entry (categories: decision, deviation, scope, cross-repo) | `just journal <c> <t>` |
+| `compact inventory [--json]`                                | List live ADRs, journal switches, and context layers                              | `just compact-inventory` |
+| `compact archive [--json]`                                  | Move live ADRs into `docs/adr/archive/` (clean tree required); print the mapping  | `just compact-archive` |
 
 ## Hub anatomy (abridged)
 

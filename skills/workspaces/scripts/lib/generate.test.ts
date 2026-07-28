@@ -21,6 +21,7 @@ const MANIFEST: WorkspaceManifest = {
     { name: "spec", path: "docs/spec", description: "WHAT and WHY" },
   ],
   skills: ["checkout-redesign-context"],
+  sections: [],
   stackPrefix: "checkout-redesign/",
   branchPrefix: "wyattjoh/checkout-redesign/",
 };
@@ -91,6 +92,38 @@ Run \`just\` to list tasks. Core recipes: \`just sync\`, \`just status\`,
 
   it("is deterministic for identical manifests", () => {
     expect(renderClaudeMd(MANIFEST)).toBe(renderClaudeMd({ ...MANIFEST }));
+  });
+
+  it("appends manifest sections after the generated sections", () => {
+    const rendered = renderClaudeMd({
+      ...MANIFEST,
+      sections: [
+        { title: "Review site", body: "An Astro site in `src/`. Run it with `just site`." },
+        { title: "Runtime", body: "Bun 1.2 or newer." },
+      ],
+    });
+    expect(rendered.endsWith(`\`just audit\`, \`just freeze\`, \`just journal\`.
+
+## Review site
+
+An Astro site in \`src/\`. Run it with \`just site\`.
+
+## Runtime
+
+Bun 1.2 or newer.
+`)).toBe(true);
+  });
+
+  it("renders nothing extra when no sections are declared", () => {
+    expect(renderClaudeMd({ ...MANIFEST, sections: [] })).toBe(renderClaudeMd(MANIFEST));
+  });
+
+  it("trims surrounding whitespace from a section body", () => {
+    const rendered = renderClaudeMd({
+      ...MANIFEST,
+      sections: [{ title: "Runtime", body: "\n\nBun 1.2 or newer.\n\n" }],
+    });
+    expect(rendered.endsWith("\n## Runtime\n\nBun 1.2 or newer.\n")).toBe(true);
   });
 });
 

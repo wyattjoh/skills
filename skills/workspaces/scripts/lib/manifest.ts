@@ -50,6 +50,19 @@ export type ContextLayer = {
 };
 
 /**
+ * One free-form section appended to the generated CLAUDE.md after the
+ * sections the renderer owns. This is the manifest's escape hatch: a hub
+ * usually has something the fixed schema cannot express (a site it builds, a
+ * runtime it needs, a service it deploys), and with no home in the manifest
+ * that knowledge gets hand-edited into CLAUDE.md, where `sync` overwrites it
+ * and `audit` reports it as drift.
+ */
+export type ManifestSection = {
+  title: string;
+  body: string;
+};
+
+/**
  * The parsed and validated form of `workspace.yaml`, the workspace's source
  * of truth. Everything generated (CLAUDE.md, lock file) derives from this.
  */
@@ -61,6 +74,7 @@ export type WorkspaceManifest = {
   members: WorkspaceMember[];
   layers: ContextLayer[];
   skills: string[];
+  sections: ManifestSection[];
   stackPrefix: string;
   branchPrefix: string;
 };
@@ -135,6 +149,18 @@ const validateMember = (value: unknown, index: number, issues: string[]): Worksp
   };
 };
 
+const validateSection = (value: unknown, index: number, issues: string[]): ManifestSection => {
+  if (!isRecord(value)) {
+    issues.push(`sections[${index}] must be a mapping`);
+    return { title: "", body: "" };
+  }
+  const label = `sections[${index}]`;
+  return {
+    title: stringAt(value, "title", issues, label),
+    body: stringAt(value, "body", issues, label),
+  };
+};
+
 const validateLayer = (value: unknown, index: number, issues: string[]): ContextLayer => {
   if (!isRecord(value)) {
     issues.push(`context.layers[${index}] must be a mapping`);
@@ -205,6 +231,21 @@ export const validateManifest = (
       issues.push('manifest "skills" must be a list when present');
     }
 
+    const sectionsRaw = raw.sections;
+    const sections = Array.isArray(sectionsRaw)
+      ? sectionsRaw.map((section, index) => validateSection(section, index, issues))
+      : [];
+    if (sectionsRaw !== undefined && !Array.isArray(sectionsRaw)) {
+      issues.push('manifest "sections" must be a list when present');
+    }
+    const sectionTitles = new Set<string>();
+    for (const section of sections) {
+      if (section.title && sectionTitles.has(section.title)) {
+        issues.push(`duplicate section title "${section.title}"`);
+      }
+      sectionTitles.add(section.title);
+    }
+
     const conventionsRaw = isRecord(raw.conventions) ? raw.conventions : {};
     const stackPrefixRaw = conventionsRaw["stack-prefix"];
     const branchPrefixRaw = conventionsRaw["branch-prefix"];
@@ -234,6 +275,7 @@ export const validateManifest = (
       members,
       layers,
       skills,
+      sections,
       stackPrefix,
       branchPrefix,
     };

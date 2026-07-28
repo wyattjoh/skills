@@ -53,6 +53,7 @@ Validated by `scripts/lib/manifest.ts`; violations are all reported at once.
 | `members[]`                 | yes, non-empty | `name`, `path` (relative to hub), optional `url`, `ref` (default `main`) |
 | `context.layers[]`          | yes, non-empty | Ordered `name`/`path`/`description`; the `enter` load order              |
 | `skills[]`                  | no             | Project-local skill names under `skills/`                                |
+| `sections[]`                | no             | `title`/`body` blocks appended verbatim to the generated CLAUDE.md      |
 | `conventions.stack-prefix`  | no             | Default `<slug>/`; must not contain dots                                 |
 | `conventions.branch-prefix` | no             | Default `<slug>/`; set `<user>/<slug>/` to match personal branch rules   |
 
@@ -67,6 +68,30 @@ session at `.claude/memory/MEMORY.md` before any work — so the memory
 mandate reaches even sessions that never invoke this skill. After upgrading
 the skill, run `just sync` in each hub so its CLAUDE.md picks the section
 up (audit reports `claude-md-stale` until then).
+
+### Manifest sections
+
+`sections[]` is the schema's escape hatch. Every hub eventually has something
+the fixed schema cannot express (a site it builds, a runtime it requires, a
+service it deploys), and with nowhere in the manifest to put it that
+knowledge gets hand-edited into CLAUDE.md, where `sync` silently overwrites
+it and `audit` reports it as `claude-md-stale`. Declaring it here keeps
+"manifest is truth, CLAUDE.md is generated" intact:
+
+```yaml
+sections:
+  - title: "Review site"
+    body: >-
+      An Astro site in `src/` presenting the proposed API to reviewers.
+      Run it with `just site`.
+```
+
+Each entry renders as an `## <title>` block appended after the sections the
+renderer owns, in declaration order. Bodies are emitted verbatim (trimmed),
+so they may contain any Markdown. Titles must be unique. Keep bodies short
+and pointing outward at the files that hold the detail: this is generated
+context loaded into every session, not a place to write documentation that
+belongs in `docs/`.
 
 ## workspace.lock
 
