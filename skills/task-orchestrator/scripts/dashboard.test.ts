@@ -579,7 +579,7 @@ describe("serveDashboard", () => {
       expect(health.versionHash).toMatch(/^[a-f0-9]{64}$/);
       expect(health.pid).toBe(process.pid);
 
-      const registerBody = JSON.stringify({ journalPath, pid: process.ppid });
+      const registerBody = JSON.stringify({ journalPath, pid: process.pid });
       const firstRegister = await fetch(`${running.url}register`, {
         method: "POST",
         body: registerBody,
@@ -631,7 +631,7 @@ describe("serveDashboard", () => {
     try {
       const register = await fetch(`${running.url}register`, {
         method: "POST",
-        body: JSON.stringify({ journalPath, pid: process.ppid }),
+        body: JSON.stringify({ journalPath, pid: process.pid }),
         headers: { "content-type": "application/json" },
       });
       expect(register.status).toBe(200);
@@ -639,7 +639,7 @@ describe("serveDashboard", () => {
       const persisted = decodeRegistry(readFileSync(registryPath, "utf8"));
       expect(persisted[journalPath]).toMatchObject({
         journalPath,
-        pid: process.ppid,
+        pid: process.pid,
         repo: join(dir, "repo"),
       });
 
@@ -811,7 +811,7 @@ describe("serveDashboard", () => {
       await sleep(30);
       const register = await fetch(`${running.url}register`, {
         method: "POST",
-        body: JSON.stringify({ journalPath, pid: process.ppid }),
+        body: JSON.stringify({ journalPath, pid: process.pid }),
         headers: { "content-type": "application/json" },
       });
       expect(register.status).toBe(200);
@@ -849,7 +849,7 @@ describe("serveDashboard", () => {
     try {
       const register = await fetch(`${running.url}register`, {
         method: "POST",
-        body: JSON.stringify({ journalPath, pid: process.ppid }),
+        body: JSON.stringify({ journalPath, pid: process.pid }),
         headers: { "content-type": "application/json" },
       });
       expect(register.status).toBe(200);
@@ -901,7 +901,7 @@ describe("serveDashboard", () => {
     try {
       const register = await fetch(`${running.url}register`, {
         method: "POST",
-        body: JSON.stringify({ journalPath, pid: process.ppid }),
+        body: JSON.stringify({ journalPath, pid: process.pid }),
         headers: { "content-type": "application/json" },
       });
       expect(register.status).toBe(200);
@@ -946,7 +946,7 @@ describe("serveDashboard", () => {
       for (const journalPath of [firstJournalPath, secondJournalPath, firstJournalPath]) {
         const register = await fetch(`${running.url}register`, {
           method: "POST",
-          body: JSON.stringify({ journalPath, pid: process.ppid }),
+          body: JSON.stringify({ journalPath, pid: process.pid }),
           headers: { "content-type": "application/json" },
         });
         expect(register.status).toBe(200);
@@ -981,7 +981,7 @@ describe("serveDashboard", () => {
     try {
       const register = await fetch(`${running.url}register`, {
         method: "POST",
-        body: JSON.stringify({ journalPath, pid: process.ppid }),
+        body: JSON.stringify({ journalPath, pid: process.pid }),
         headers: { "content-type": "application/json" },
       });
       expect(register.status).toBe(200);
@@ -1078,7 +1078,7 @@ describe("dashboard CLI", () => {
         "register",
         journalPath,
         "--pid",
-        String(process.ppid),
+        String(process.pid),
         "--port",
         String(port),
         "--registry",
@@ -1171,7 +1171,7 @@ describe("dashboard CLI", () => {
         "register",
         journalPath,
         "--pid",
-        String(process.ppid),
+        String(process.pid),
         "--port",
         String(port),
         "--registry",
@@ -1210,7 +1210,7 @@ describe("dashboard CLI", () => {
         "register",
         journalPath,
         "--pid",
-        String(process.ppid),
+        String(process.pid),
         "--port",
         String(port),
         "--registry",
@@ -1238,7 +1238,7 @@ describe("dashboard CLI", () => {
         "register",
         journalPath,
         "--pid",
-        String(process.ppid),
+        String(process.pid),
         "--port",
         String(port),
         "--registry",
@@ -1285,7 +1285,7 @@ describe("dashboard CLI", () => {
           "register",
           journalPath,
           "--pid",
-          String(process.ppid),
+          String(process.pid),
           "--port",
           String(port),
           "--registry",
