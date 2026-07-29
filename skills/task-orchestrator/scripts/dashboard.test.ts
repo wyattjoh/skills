@@ -33,9 +33,16 @@ import {
 import {
   DAEMON_APP_SIGNATURE,
   decodeRegistry,
+  LEASE_MIN_AGE_MS,
   encodeRegistry,
   repoFromJournalPath,
 } from "./daemon.ts";
+
+const plausibleProcessFacts = () => ({
+  pidAlive: true,
+  pidStartMs: 0,
+  now: LEASE_MIN_AGE_MS,
+});
 
 // Extracts the ordered y coordinates touched by an SVG path so a test can assert
 // the path never moves upward.
@@ -560,14 +567,17 @@ describe("serveDashboard", () => {
     const dir = mkdtempSync(join(tmpdir(), "dashboard-daemon-"));
     const journalPath = join(dir, "repo", ".claude/task-orchestrator/demo/state.json");
     writeState(journalPath, stateFixture());
-    const running = serveDashboard({
-      host: "127.0.0.1",
-      port: 0,
-      registryPath: join(dir, "registry.json"),
-      reapIntervalMs: 1,
-      zeroRegistryGraceMs: 10_000,
-      open: false,
-    });
+    const running = serveDashboard(
+      {
+        host: "127.0.0.1",
+        port: 0,
+        registryPath: join(dir, "registry.json"),
+        reapIntervalMs: 1,
+        zeroRegistryGraceMs: 10_000,
+        open: false,
+      },
+      plausibleProcessFacts,
+    );
 
     try {
       const health = (await (await fetch(`${running.url}healthz`)).json()) as {
@@ -619,14 +629,17 @@ describe("serveDashboard", () => {
     const registryPath = join(dir, "registry.json");
     const journalPath = join(dir, "repo", ".claude/task-orchestrator/demo/state.json");
     writeState(journalPath, stateFixture());
-    const running = serveDashboard({
-      host: "127.0.0.1",
-      port: 0,
-      registryPath,
-      reapIntervalMs: 10_000,
-      zeroRegistryGraceMs: 10_000,
-      open: false,
-    });
+    const running = serveDashboard(
+      {
+        host: "127.0.0.1",
+        port: 0,
+        registryPath,
+        reapIntervalMs: 10_000,
+        zeroRegistryGraceMs: 10_000,
+        open: false,
+      },
+      plausibleProcessFacts,
+    );
 
     try {
       const register = await fetch(`${running.url}register`, {

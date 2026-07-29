@@ -2119,11 +2119,13 @@ export function computeLocalVersionHash(
   return computeVersionHash(sourceText);
 }
 
-function processFactsForPid(pid: number): {
+type ProcessFacts = {
   pidAlive: boolean;
   pidStartMs: number;
   now: number;
-} {
+};
+
+function processFactsForPid(pid: number): ProcessFacts {
   const now = Date.now();
   let pidAlive = false;
   try {
@@ -2183,9 +2185,13 @@ function closeSseClient(clients: Set<SseClient>, client: SseClient): void {
  * Starts the shared machine-local dashboard daemon.
  *
  * @param options Bind address, registry hint path, and future reap tuning.
+ * @param readProcessFacts Process fact reader, injectable for deterministic tests.
  * @returns A handle that can stop the server and release active watchers.
  */
-export function serveDashboard(options: DashboardServeOptions): RunningDashboardServer {
+export function serveDashboard(
+  options: DashboardServeOptions,
+  readProcessFacts: (pid: number) => ProcessFacts = processFactsForPid,
+): RunningDashboardServer {
   const registry = new Map<string, DaemonRegistryEntry>();
   const watchers = new Map<string, RegisteredWatcher>();
   const clients = new Set<SseClient>();
@@ -2343,7 +2349,7 @@ export function serveDashboard(options: DashboardServeOptions): RunningDashboard
   const reapDeadLeases = (): void => {
     const reapedJournalPaths: string[] = [];
     for (const [journalPath, entry] of registry.entries()) {
-      const facts = processFactsForPid(entry.pid);
+      const facts = readProcessFacts(entry.pid);
       if (!shouldReap(entry, facts.pidAlive, facts.now)) continue;
       reapedJournalPaths.push(journalPath);
     }
@@ -2363,7 +2369,7 @@ export function serveDashboard(options: DashboardServeOptions): RunningDashboard
     const journalReadableByPath = new Map<string, boolean>();
     for (const entry of hinted) {
       if (!pidAliveByPid.has(entry.pid)) {
-        pidAliveByPid.set(entry.pid, processFactsForPid(entry.pid).pidAlive);
+        pidAliveByPid.set(entry.pid, readProcessFacts(entry.pid).pidAlive);
       }
       journalReadableByPath.set(entry.journalPath, readState(entry.journalPath) !== null);
     }
@@ -2439,7 +2445,7 @@ export function serveDashboard(options: DashboardServeOptions): RunningDashboard
           if (typeof pid !== "number") {
             return Response.json({ error: "pid must be a number" }, { status: 400 });
           }
-          const facts = processFactsForPid(pid);
+          const facts = readProcessFacts(pid);
           if (!isPlausibleLeasePid(pid, facts.pidAlive, facts.pidStartMs, facts.now)) {
             return Response.json({ error: "pid is not a plausible live lease" }, { status: 400 });
           }
