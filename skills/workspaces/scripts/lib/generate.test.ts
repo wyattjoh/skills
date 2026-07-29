@@ -102,7 +102,8 @@ Run \`just\` to list tasks. Core recipes: \`just sync\`, \`just status\`,
         { title: "Runtime", body: "Bun 1.2 or newer." },
       ],
     });
-    expect(rendered.endsWith(`\`just audit\`, \`just freeze\`, \`just journal\`.
+    expect(
+      rendered.endsWith(`\`just audit\`, \`just freeze\`, \`just journal\`.
 
 ## Review site
 
@@ -111,7 +112,8 @@ An Astro site in \`src/\`. Run it with \`just site\`.
 ## Runtime
 
 Bun 1.2 or newer.
-`)).toBe(true);
+`),
+    ).toBe(true);
   });
 
   it("renders nothing extra when no sections are declared", () => {

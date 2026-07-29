@@ -53,7 +53,7 @@ Validated by `scripts/lib/manifest.ts`; violations are all reported at once.
 | `members[]`                 | yes, non-empty | `name`, `path` (relative to hub), optional `url`, `ref` (default `main`) |
 | `context.layers[]`          | yes, non-empty | Ordered `name`/`path`/`description`; the `enter` load order              |
 | `skills[]`                  | no             | Project-local skill names under `skills/`                                |
-| `sections[]`                | no             | `title`/`body` blocks appended verbatim to the generated CLAUDE.md      |
+| `sections[]`                | no             | `title`/`body` blocks appended verbatim to the generated CLAUDE.md       |
 | `conventions.stack-prefix`  | no             | Default `<slug>/`; must not contain dots                                 |
 | `conventions.branch-prefix` | no             | Default `<slug>/`; set `<user>/<slug>/` to match personal branch rules   |
 

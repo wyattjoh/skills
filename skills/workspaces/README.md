@@ -53,13 +53,13 @@ raw mechanical check it runs.
 
 Each flow is specified in `references/`; the SKILL.md routes to them.
 
-| Flow      | When to use                                     | What it does                                                                                                                          |
-| --------- | ----------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------- |
+| Flow      | When to use                                     | What it does                                                                                                                                                                                                 |
+| --------- | ----------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
 | `init`    | Creating a brand-new hub                        | Scaffolds the standalone hub repo (workspace.yaml, constitution, ADRs, phases, tasks, seed skills, memory). Confirmation-gated before creating the repo, touching member git config, or registering sources. |
-| `task`    | Create, update, redesign, execute, or drop work | Manages a task's whole lifecycle: emits plan batches into `plan/batches/<member>/<task-slug>/`, binds branches/stacks by naming, orchestrates execution in member repos.                                      |
-| `enter`   | Starting or resuming work                       | The "get me oriented" flow. Reads workspace memory first, then loads the context layers in fixed order (constitution → spec → ADRs → phasing → tasks → conventions → findings).                               |
-| `audit`   | Verifying integrity                             | Runs every drift check, finds inconsistencies between the manifest and reality, and drives remediation.                                                                                                       |
-| `compact` | Collapsing the ADR trail                        | Archives the live ADRs into a minimal set capturing the _final_ vision (not the full superseded history), with an archive mapping.                                                                            |
+| `task`    | Create, update, redesign, execute, or drop work | Manages a task's whole lifecycle: emits plan batches into `plan/batches/<member>/<task-slug>/`, binds branches/stacks by naming, orchestrates execution in member repos.                                     |
+| `enter`   | Starting or resuming work                       | The "get me oriented" flow. Reads workspace memory first, then loads the context layers in fixed order (constitution → spec → ADRs → phasing → tasks → conventions → findings).                              |
+| `audit`   | Verifying integrity                             | Runs every drift check, finds inconsistencies between the manifest and reality, and drives remediation.                                                                                                      |
+| `compact` | Collapsing the ADR trail                        | Archives the live ADRs into a minimal set capturing the _final_ vision (not the full superseded history), with an archive mapping.                                                                           |
 
 ### CLI commands
 
@@ -72,17 +72,17 @@ bun $SKILL_DIR/scripts/workspace.ts <command> [--workspace <hub-dir>]
 `--workspace` defaults to walking up to the nearest `workspace.yaml`. Inside a
 hub, prefer the Justfile recipes.
 
-| Command                                                     | Purpose                                                                             | Justfile recipe       |
-| ----------------------------------------------------------- | ----------------------------------------------------------------------------------- | --------------------- |
-| `manifest sync [--check]`                                   | Regenerate CLAUDE.md from workspace.yaml (`--check` exits 1 on drift). Never hand-edit CLAUDE.md. | `just sync`           |
-| `manifest freeze`                                           | Capture member HEAD SHAs into workspace.lock                                        | `just freeze`         |
-| `status [--json]`                                           | Per-member branch, dirtiness, and bound stacks                                     | `just status`         |
-| `stacks [--json]`                                           | All stacks across members matching the workspace stack prefix                      | `just stacks`         |
-| `context [--json]`                                          | Ordered context-layer files (fails if any are missing)                            | `just context`        |
-| `audit [--json]`                                            | Every integrity check; exits 1 on errors                                          | `just audit`          |
-| `journal add --category <c> --title <t> [--links] [--body]` | Append a structured journal entry (categories: decision, deviation, scope, cross-repo) | `just journal <c> <t>` |
-| `compact inventory [--json]`                                | List live ADRs, journal switches, and context layers                              | `just compact-inventory` |
-| `compact archive [--json]`                                  | Move live ADRs into `docs/adr/archive/` (clean tree required); print the mapping  | `just compact-archive` |
+| Command                                                     | Purpose                                                                                           | Justfile recipe          |
+| ----------------------------------------------------------- | ------------------------------------------------------------------------------------------------- | ------------------------ |
+| `manifest sync [--check]`                                   | Regenerate CLAUDE.md from workspace.yaml (`--check` exits 1 on drift). Never hand-edit CLAUDE.md. | `just sync`              |
+| `manifest freeze`                                           | Capture member HEAD SHAs into workspace.lock                                                      | `just freeze`            |
+| `status [--json]`                                           | Per-member branch, dirtiness, and bound stacks                                                    | `just status`            |
+| `stacks [--json]`                                           | All stacks across members matching the workspace stack prefix                                     | `just stacks`            |
+| `context [--json]`                                          | Ordered context-layer files (fails if any are missing)                                            | `just context`           |
+| `audit [--json]`                                            | Every integrity check; exits 1 on errors                                                          | `just audit`             |
+| `journal add --category <c> --title <t> [--links] [--body]` | Append a structured journal entry (categories: decision, deviation, scope, cross-repo)            | `just journal <c> <t>`   |
+| `compact inventory [--json]`                                | List live ADRs, journal switches, and context layers                                              | `just compact-inventory` |
+| `compact archive [--json]`                                  | Move live ADRs into `docs/adr/archive/` (clean tree required); print the mapping                  | `just compact-archive`   |
 
 ## Hub anatomy (abridged)
 

@@ -69,9 +69,7 @@ describe("validateManifest", () => {
         "workspace.yaml",
       ),
     );
-    expect(manifest.sections).toEqual([
-      { title: "Review site", body: "An Astro site in `src/`." },
-    ]);
+    expect(manifest.sections).toEqual([{ title: "Review site", body: "An Astro site in `src/`." }]);
   });
 
   it("honours explicit convention prefixes", () => {
