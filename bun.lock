@@ -15,6 +15,13 @@
         "typescript": "^7",
       },
     },
+    "skills/clean-storage": {
+      "name": "@skills/skill-clean-storage",
+      "version": "1.0.0",
+      "dependencies": {
+        "effect": "^3.21",
+      },
+    },
     "skills/driving-ios-simulator": {
       "name": "@skills/skill-driving-ios-simulator",
       "version": "1.0.0",
@@ -135,6 +142,8 @@
     "@oxlint/binding-win32-ia32-msvc": ["@oxlint/binding-win32-ia32-msvc@1.75.0", "", { "os": "win32", "cpu": "ia32" }, "sha512-QVit2nOEOiPhkmsrksPSkoGCdnZRNkspt8fwoYyP09te1VEbnSj4LAxua4rc8FKTmWkySVe05j8iz9GXYfF1AQ=="],
 
     "@oxlint/binding-win32-x64-msvc": ["@oxlint/binding-win32-x64-msvc@1.75.0", "", { "os": "win32", "cpu": "x64" }, "sha512-DSxnNkBUAYARPwJtR12Ig3deWr8w0H997xP6jy33i+e0SyYJw8FKuz4+cZtpmPEhQmvlPJE3X/2vNxDmLkd/rA=="],
+
+    "@skills/skill-clean-storage": ["@skills/skill-clean-storage@workspace:skills/clean-storage"],
 
     "@skills/skill-driving-ios-simulator": ["@skills/skill-driving-ios-simulator@workspace:skills/driving-ios-simulator"],
 

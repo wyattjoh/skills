@@ -1,7 +1,7 @@
 ---
 name: pr-fix
 description: Fetches PR review comments and failing CI checks, verifies each against the codebase, proposes a triaged plan (fix, push back, clarify, skip) for user approval, then silently implements fixes, posts reasoned replies only on disagreements or clarifications, auto-resolves fixed threads, and optionally commits the result. Triggers on "respond to PR review", "address review comments", "handle PR feedback", "fix PR comments", "fix CI failures", "fix failing checks", "address red CI", "process review", "triage PR comments", "run /pr-fix", or mentions "PR review response", "reply to reviewer", "CI failing on PR".
-argument-hint: "[PR-number or URL]"
+argument-hint: "[PR-number or URL] [--auto]"
 allowed-tools: Bash(gh:*), Bash(git status:*), Bash(git diff:*), Bash(git log:*), Bash(git branch:*), Bash(git rev-parse:*), Bash(git add:*), Bash(git commit:*), Bash(jq:*), Bash(act:*), Bash(npm:*), Bash(bun:*), Bash(pnpm:*), Bash(yarn:*), Read, Edit, Write, Grep, Glob, TodoWrite, AskUserQuestion
 disable-model-invocation: true
 effort: high
@@ -21,6 +21,32 @@ comment and every failed CI check gets checked against codebase reality before
 any code changes or replies. Agreement is expressed through the diff,
 disagreement through reasoned technical comments, and nothing is posted to
 GitHub without explicit user confirmation.
+
+## Non-Interactive Mode (`--auto`)
+
+`--auto` exists so an outer loop — `/pr-land` — can call this skill without a
+human present. It is never the default; a human invocation always gets the full
+interactive flow described below.
+
+When `--auto` is present in `$ARGUMENTS`:
+
+| Phase                     | Behavior under `--auto`                                                                      |
+| ------------------------- | -------------------------------------------------------------------------------------------- |
+| Phase 3 (triage approval) | Gate is not shown. Proceed as if the user chose **"Proceed without posting replies"**        |
+| Phase 4 (apply changes)   | Unchanged — apply `FIX`, `FIX-MODIFIED`, and `CI-FIX` edits                                  |
+| Phase 5 (local verify)    | **Unchanged, and still authoritative.** A failed verification still aborts the pipeline      |
+| Phase 6 (post replies)    | Skipped entirely. Nothing is written to GitHub                                               |
+| Phase 7 (resolve threads) | Skipped entirely                                                                             |
+| Phase 8 (commit)          | Skipped. Leave the worktree dirty                                                            |
+| Phase 9 (summary)         | Print the normal summary **plus an explicit list of every file modified**, one path per line |
+
+Phase 8 is skipped rather than automated because the caller may edit further
+files after this skill returns (retrying a failed verification); a commit made
+here would be stale. The modified-file list is the handoff — the caller stages
+those paths by name.
+
+The triage plan from Phase 3 is still printed, just not gated on. The run
+remains fully auditable in the transcript.
 
 ## Output Contract
 
@@ -222,6 +248,8 @@ Then ask for confirmation using `AskUserQuestion` with these explicit choices:
 4. **Cancel**
 
 Never skip this gate. Even a single-comment, single-failure PR goes through it.
+The sole exception is `--auto`, where option 2 is taken automatically — see
+[Non-Interactive Mode](#non-interactive-mode---auto).
 
 ### Phase 4: Apply Code Changes
 
@@ -351,8 +379,9 @@ the reviewer in those cases. CI buckets have no GitHub thread to resolve.
 
 ### Phase 8: Commit Confirmation
 
-Skip this phase entirely if Phase 4 produced no edits (everything was
-`PUSHBACK`, `CLARIFY`, `SKIP`, `CI-FLAKE`, `CI-INFRA`, or `CI-SKIP`).
+Skip this phase entirely under `--auto` (the caller commits), or if Phase 4
+produced no edits (everything was `PUSHBACK`, `CLARIFY`, `SKIP`, `CI-FLAKE`,
+`CI-INFRA`, or `CI-SKIP`).
 
 Otherwise, draft a Conventional Commits message that summarizes what was
 addressed. Example:
@@ -413,7 +442,9 @@ Print to the user (not to GitHub):
 - In-progress / queued checks omitted from triage (count)
 - Commit status: `committed <sha>: <subject>` | `not committed (user opted out)`
   | `not committed (no code changes)` | `not committed (verification failed)` |
-  `commit failed: <reason>`
+  `not committed (--auto: caller commits)` | `commit failed: <reason>`
+- Under `--auto` only: `Modified files:` followed by one path per line, so the
+  caller can stage exactly these paths
 - Next suggested step:
   - If verification passed and a commit was made: push the branch when ready; CI
     re-runs automatically on push.
