@@ -93,6 +93,7 @@ Restart Claude Code after adding or changing an agent definition.
 | research-augmented-design     | Interleave background research agents with brainstorming during design            |
 | resticprofile                 | Operate the resticprofile CLI for restic backups                                  |
 | review                        | Comprehensive code review with repository health diagnostics                      |
+| setup-pre-commit-hooks        | Set up polyglot Git hooks for Rust and TypeScript/Bun checks                      |
 | setup-project-memory          | Capture a session learning into .claude/memory, indexed and wired into CLAUDE.md  |
 | simplify                      | Interactive code simplification with batched approval                             |
 | skill-audit                   | Audit skill execution for permission denials, tool errors, and corrections        |
