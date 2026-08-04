@@ -1,7 +1,7 @@
 ---
 name: varlock
 description: 'Kickstart `varlock`, the schema-driven, encrypted, AI-safe replacement for dotenv. Triggers on "varlock", ".env.schema", "env-spec", "varlock run", "varlock load", "varlock init", "@sensitive", "@type", "@required decorator", "load and validate .env", "encrypted .env file", "inject env vars into a command".'
-allowed-tools: Bash, Read
+allowed-tools: Bash, Read, Write, Edit
 effort: low
 ---
 
@@ -84,6 +84,10 @@ varlock <command> [options] [-- <child command and args>]
 
 The **`.env.schema` format** (decorators, types, functions, environments, plugins)
 is documented in full in [`references/env-schema.md`](references/env-schema.md).
+Read [`references/patterns.md`](references/patterns.md) before authoring or
+debugging a real schema — it covers the semantics the decorator list does not imply
+(`@optional` governs validation, not resolution; absent vs empty; unsetting a var in
+an overlay).
 
 ## Common workflows
 
@@ -211,3 +215,4 @@ Source: `varlock codegen --help` (v1.10.0); [item decorators](https://varlock.de
 - [`references/commands/security.md`](references/commands/security.md) — `scan`, `audit`.
 - [`references/commands/project.md`](references/commands/project.md) — `init`, `codegen`, `install-plugin`, `complete`, `telemetry`, `help`.
 - [`references/env-schema.md`](references/env-schema.md) — the `.env.schema` / `@env-spec` format: decorators, types, functions, environments, file layering, plugins.
+- [`references/patterns.md`](references/patterns.md) — schema patterns and gotchas: optional secret refs (`allowMissing` + `fallback`), unsetting vars per environment with `undefined`, operator-scoped overlays, absent vs empty, plugin pinning and app auth.
