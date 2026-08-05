@@ -220,9 +220,9 @@ Return a **Build Report** in this structure:
 
 ### Warnings
 
-| #   | Location       | Warning                            |
+| # | Location | Warning |
 | --- | -------------- | ---------------------------------- | ------------------------- |
-| 1   | Model.swift:99 | immutable value 'x' was never used | Remove or prefix with `_` |
+| 1 | Model.swift:99 | immutable value 'x' was never used | Remove or prefix with `_` |
 
 ### App Status (only if install/run was requested)
 
