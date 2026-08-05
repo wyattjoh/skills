@@ -1,10 +1,18 @@
 version: 2
+multi-ecosystem-groups:
+  all-dependencies:
+    schedule:
+      interval: weekly
+
 updates:
   - package-ecosystem: bun
     directory: /
     schedule:
       interval: weekly
     open-pull-requests-limit: 10
+    patterns:
+      - "*"
+    multi-ecosystem-group: all-dependencies
     commit-message:
       prefix: build
       prefix-development: chore
@@ -14,10 +22,9 @@ updates:
     directory: /
     schedule:
       interval: weekly
+    patterns:
+      - "*"
+    multi-ecosystem-group: all-dependencies
     commit-message:
       prefix: ci
       include: scope
-    groups:
-      github-actions:
-        patterns:
-          - "*"
