@@ -138,9 +138,11 @@ Clone the repository and install its development dependencies with Bun:
 git clone https://github.com/wyattjoh/skills.git
 cd skills
 bun install
+bunx lefthook install
 ```
 
-Run the repository checks before submitting changes:
+Lefthook runs staged formatting and lint checks before commits, then runs type checking
+and tests before pushes. Run the repository checks manually before submitting changes:
 
 ```bash
 bun test

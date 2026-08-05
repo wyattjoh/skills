@@ -1,0 +1,17 @@
+pre-commit:
+  parallel: true
+  commands:
+    oxfmt:
+      glob: "*.{js,jsx,ts,tsx,mjs,mts,cjs,cts,json,jsonc,yaml,yml,md,mdx,css,scss,html,vue,svelte,astro}"
+      run: bun run format:check {staged_files}
+    oxlint:
+      glob: "*.{js,jsx,ts,tsx,mjs,mts,cjs,cts,vue,astro,svelte}"
+      run: bun run lint {staged_files}
+
+pre-push:
+  parallel: true
+  commands:
+    typecheck:
+      run: bun run check
+    test:
+      run: bun test

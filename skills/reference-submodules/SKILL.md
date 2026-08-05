@@ -223,25 +223,25 @@ Rules when editing:
   moving branch tip without a recorded sha.
 - **Failed `add` leaves partial state:** if an add fails partway (bad ref,
   interrupted checkout), clean up atomically before retrying — `git submodule
-  deinit -f <dir>` (if registered), `git rm -f <dir>` (if staged), `rm -rf
-  .git/modules/<dir>`, and remove any stray `submodule.<dir>` section from
+deinit -f <dir>` (if registered), `git rm -f <dir>` (if staged), `rm -rf
+.git/modules/<dir>`, and remove any stray `submodule.<dir>` section from
   `.git/config`. Confirm `git status --short` is clean for that path before
   retrying. A partial retry without full cleanup can stage the dependency's
   entire source tree as regular files in the host repo instead of a submodule
   gitlink — this is why step 4 of `add` always verifies with `git ls-files -s`.
 - **Cleanup `rm -rf` blocked by a destructive-command guard:** if `rm -rf
-  .git/modules/<dir>` is blocked in the current environment, prefer salvaging
+.git/modules/<dir>` is blocked in the current environment, prefer salvaging
   over asking the user to run it by hand — a failed tag checkout usually still
   has the objects fetched, so retry `git fetch --depth 1 origin tag <tag>` and
   `git checkout <tag>` directly inside the existing clone instead of deleting
   and re-cloning. Only ask the user to run cleanup manually if salvage isn't
   possible.
 - **Monorepo tag verification:** don't verify a checked-out ref with `git
-  describe --tags` in a repo with multiple co-located scoped tags (e.g.
+describe --tags` in a repo with multiple co-located scoped tags (e.g.
   `agents@0.16.2` and `@cloudflare/think@0.10.0` on the same commit) — it can
   report an arbitrary sibling tag instead of the one you checked out. Verify by
   comparing `git rev-parse HEAD` against the commit resolved from `git
-  ls-remote --tags <url> <tag>` instead.
+ls-remote --tags <url> <tag>` instead.
 - **Don't background the add/upgrade git commands** without checking their
   captured output: a shallow-clone tag failure can still exit 0 at the top
   level even though the checkout underneath failed. Confirm the ref actually
