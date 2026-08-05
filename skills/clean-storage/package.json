@@ -7,6 +7,6 @@
     "test": "bun test"
   },
   "dependencies": {
-    "effect": "^3.21"
+    "effect": "^3.22"
   }
 }
