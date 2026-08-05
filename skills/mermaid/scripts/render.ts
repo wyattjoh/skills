@@ -1,5 +1,7 @@
 #!/usr/bin/env bun
 
+import { createValidationReport, validateContent } from "./validate.ts";
+
 /**
  * Mermaid diagram renderer -- reads mermaid code from stdin, generates an
  * interactive HTML file with pan/zoom support, writes it to /tmp, and opens it.
@@ -13,6 +15,13 @@ function escapeTemplateLiteral(text: string): string {
   return text.replaceAll("\\", "\\\\").replaceAll("`", "\\`").replaceAll("${", "\\${");
 }
 
+/**
+ * Generate an interactive HTML document for validated Mermaid source.
+ *
+ * @param mermaidCode - Mermaid diagram source.
+ * @param options - Rendering options.
+ * @returns A complete interactive HTML document.
+ */
 export function generateHtml(mermaidCode: string, options?: { theme?: Theme }): string {
   const theme = options?.theme ?? "default";
   const escaped = escapeTemplateLiteral(mermaidCode);
@@ -113,6 +122,13 @@ async function main(): Promise<void> {
   if (!code) {
     console.error("Error: no mermaid code provided on stdin");
     process.exit(1);
+  }
+
+  const validation = await validateContent(code);
+  if (!validation.valid) {
+    console.error(JSON.stringify(createValidationReport([validation]), null, 2));
+    process.exitCode = 1;
+    return;
   }
 
   const html = generateHtml(code, { theme });

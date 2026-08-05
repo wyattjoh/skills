@@ -1,14 +1,14 @@
 ---
 name: mermaid
 description: |
-  Creates and renders Mermaid diagrams as PNG images. Triggers on "create a diagram", "draw a flowchart", "sequence diagram", "visualize architecture", "class diagram", "ER diagram", "Gantt chart", "mindmap", or mentions "mermaid syntax", "mermaid.js", "flowchart TD", "graph LR".
+  Creates, validates, and renders Mermaid diagrams as interactive HTML. MUST be used to validate written Mermaid syntax, including Mermaid code fences in Markdown. Triggers on "validate mermaid", "create a diagram", "draw a flowchart", "sequence diagram", "visualize architecture", "class diagram", "ER diagram", "Gantt chart", "mindmap", or mentions "mermaid syntax", "mermaid.js", "flowchart TD", "graph LR".
 effort: low
 allowed-tools: Bash(bun:*), Bash(open:*), Read, Glob
 ---
 
 # Mermaid Diagram Renderer
 
-Generate Mermaid diagrams as HTML files and open them in the browser for instant visualization.
+Validate Mermaid syntax, then generate interactive HTML diagrams and open them in the browser. Rendering always validates first and exits without creating HTML when the syntax is invalid.
 
 ## Quick Start
 
@@ -28,6 +28,8 @@ echo 'flowchart TD
 | `--theme <name>` | Mermaid theme: `default`, `dark`, `forest`, `neutral` |
 | `--no-open`      | Write HTML file without opening in browser            |
 
+The renderer validates Mermaid syntax before writing or opening the HTML file. Invalid input produces a JSON validation report and a nonzero exit code.
+
 ### Examples
 
 ```bash
@@ -37,6 +39,24 @@ echo '...' | bun $SKILL_DIR/scripts/render.ts --theme dark
 # Write file only (no browser)
 echo '...' | bun $SKILL_DIR/scripts/render.ts --no-open
 ```
+
+## Validate Mermaid Syntax
+
+Use [`scripts/validate.ts`](scripts/validate.ts) when syntax validation is needed without rendering. It accepts explicit Mermaid or Markdown file paths, or reads Mermaid or Markdown from stdin when no paths are supplied.
+
+```bash
+# Validate Mermaid source from stdin
+echo 'flowchart TD
+  A --> B' | bun $SKILL_DIR/scripts/validate.ts
+
+# Validate Mermaid fences in Markdown
+bun $SKILL_DIR/scripts/validate.ts README.md docs/architecture.md
+
+# Validate a Mermaid file
+bun $SKILL_DIR/scripts/validate.ts diagram.mmd
+```
+
+The validator writes JSON containing overall validity, detected input files, source types, diagrams, source line ranges, detected diagram types, and normalized errors with line and column locations. It exits `0` when every detected diagram is valid and `1` for syntax or input errors. Markdown files without Mermaid fences are valid and report no diagrams.
 
 ## Critical Syntax Rules
 
