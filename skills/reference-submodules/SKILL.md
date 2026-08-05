@@ -86,17 +86,31 @@ before mutating `.gitmodules`**.
 1. Run the **Preconditions** checks. If the path already exists in `.gitmodules`,
    switch to `upgrade`.
 2. Run **Version resolution**, then confirm.
-3. Add the submodule:
+3. Add the submodule. **Never use `git submodule add -b <tag>`** — `-b` names a
+   branch, and a shallow clone has no history to synthesize a branch from a tag,
+   so it always fails with `fatal: '<tag>' is not a commit`. Clone first, then
+   fetch and check out the tag explicitly:
    - With a tag:
      ```bash
-     git submodule add --depth 1 -b <tag> <repo-url> .claude/references/<dir>
+     git submodule add --depth 1 <repo-url> .claude/references/<dir>
+     cd .claude/references/<dir>
+     git fetch --depth 1 origin tag <tag>
+     git checkout <tag>
+     cd -
+     git submodule set-branch --branch <tag> -- .claude/references/<dir>
+     git add .gitmodules .claude/references/<dir>
      ```
-   - No-tag fallback (default branch): add without `-b`, then record the commit:
+   - No-tag fallback (default branch): add as-is, then record the commit:
      ```bash
      git submodule add --depth 1 <repo-url> .claude/references/<dir>
      ```
-4. Update the **CLAUDE.md table** (see below).
-5. Report the path, pinned ref, and that `.gitmodules` + the gitlink are staged.
+4. Verify the add landed as a submodule, not a flattened directory tree: run
+   `git ls-files -s .claude/references/<dir>` and confirm it shows exactly one
+   `160000` gitlink entry. Many regular-file (`100644`) entries means the index
+   got corrupted during a retry (see Edge cases) — reset and redo the add before
+   continuing.
+5. Update the **CLAUDE.md table** (see below).
+6. Report the path, pinned ref, and that `.gitmodules` + the gitlink are staged.
    Remind the user to commit.
 
 ### `upgrade <name> [version]`
@@ -132,9 +146,16 @@ Submodule removal is multi-step; doing only `git rm` leaves stale config behind.
    ```bash
    rm -rf .git/modules/.claude/references/<name>
    ```
-3. Remove the row from the **CLAUDE.md table**. If it was the last row, remove the
+3. If that was the last reference, `.gitmodules` is now empty — don't leave an
+   empty tracked file staged:
+   - Already committed before this session: stage its deletion with
+     `git rm .gitmodules`.
+   - Newly created earlier in this session (first-ever reference, never
+     committed): unstage and delete it directly with
+     `git restore --staged .gitmodules && rm -f .gitmodules`.
+4. Remove the row from the **CLAUDE.md table**. If it was the last row, remove the
    now-empty "Dependency References" subsection.
-4. Report what was removed. Remind the user to commit (`git rm` already staged
+5. Report what was removed. Remind the user to commit (`git rm` already staged
    `.gitmodules` and the gitlink removal).
 
 ### `sync`
@@ -200,3 +221,32 @@ Rules when editing:
   the table (resolution step 2c).
 - **Reproducibility:** every reference resolves to a fixed tag or commit, never a
   moving branch tip without a recorded sha.
+- **Failed `add` leaves partial state:** if an add fails partway (bad ref,
+  interrupted checkout), clean up atomically before retrying — `git submodule
+  deinit -f <dir>` (if registered), `git rm -f <dir>` (if staged), `rm -rf
+  .git/modules/<dir>`, and remove any stray `submodule.<dir>` section from
+  `.git/config`. Confirm `git status --short` is clean for that path before
+  retrying. A partial retry without full cleanup can stage the dependency's
+  entire source tree as regular files in the host repo instead of a submodule
+  gitlink — this is why step 4 of `add` always verifies with `git ls-files -s`.
+- **Cleanup `rm -rf` blocked by a destructive-command guard:** if `rm -rf
+  .git/modules/<dir>` is blocked in the current environment, prefer salvaging
+  over asking the user to run it by hand — a failed tag checkout usually still
+  has the objects fetched, so retry `git fetch --depth 1 origin tag <tag>` and
+  `git checkout <tag>` directly inside the existing clone instead of deleting
+  and re-cloning. Only ask the user to run cleanup manually if salvage isn't
+  possible.
+- **Monorepo tag verification:** don't verify a checked-out ref with `git
+  describe --tags` in a repo with multiple co-located scoped tags (e.g.
+  `agents@0.16.2` and `@cloudflare/think@0.10.0` on the same commit) — it can
+  report an arbitrary sibling tag instead of the one you checked out. Verify by
+  comparing `git rev-parse HEAD` against the commit resolved from `git
+  ls-remote --tags <url> <tag>` instead.
+- **Don't background the add/upgrade git commands** without checking their
+  captured output: a shallow-clone tag failure can still exit 0 at the top
+  level even though the checkout underneath failed. Confirm the ref actually
+  resolved (the `git ls-files -s` verification) before reporting success.
+- **Parallel worktrees adding different references:** rebasing one branch onto
+  another that also ran `add` can conflict in both `.gitmodules` and the
+  CLAUDE.md table. Both sides are additive — resolve by keeping both entries
+  (both submodule sections, both table rows), not by picking one side.
