@@ -8,7 +8,7 @@
   ],
   "type": "module",
   "scripts": {
-    "test": "bun test",
+    "test": "bun test --parallel",
     "check": "tsc --noEmit",
     "lint": "oxlint",
     "format": "oxfmt",

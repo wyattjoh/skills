@@ -3,9 +3,17 @@
 import { GlobalRegistrator } from "@happy-dom/global-registrator";
 import { Data, Effect } from "effect";
 
-// Mermaid captures DOMPurify when it loads, so browser globals must exist before this import.
+// Mermaid captures DOMPurify when it loads, so browser globals must exist before it is imported.
 GlobalRegistrator.register();
-const { default: mermaid } = await import("mermaid");
+
+type Mermaid = (typeof import("mermaid"))["default"];
+
+let mermaidPromise: Promise<Mermaid> | undefined;
+
+function loadMermaid(): Promise<Mermaid> {
+  mermaidPromise ??= import("mermaid").then(({ default: mermaid }) => mermaid);
+  return mermaidPromise;
+}
 
 /**
  * Supported source formats for Mermaid validation.
@@ -149,6 +157,7 @@ export async function validateMermaid(
   const endLine = startLine + Math.max(lines.length - 1, 0);
 
   try {
+    const mermaid = await loadMermaid();
     const parsed = await mermaid.parse(code);
     return {
       index: diagram,
