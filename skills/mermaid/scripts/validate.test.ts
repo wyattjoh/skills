@@ -41,6 +41,22 @@ describe("validateMermaid", () => {
     });
   });
 
+  test("validates flowchart labels that require DOM sanitization", async () => {
+    const result = await validateMermaid("flowchart TD\n  S1[hello] --> S2[ok]");
+
+    expect(result.valid).toBe(true);
+    expect(result.diagramType).toBe("flowchart-v2");
+    expect(result.error).toBeUndefined();
+  });
+
+  test("validates state diagrams that require DOM sanitization", async () => {
+    const result = await validateMermaid("stateDiagram-v2\n  [*] --> Idle");
+
+    expect(result.valid).toBe(true);
+    expect(result.diagramType).toBe("stateDiagram");
+    expect(result.error).toBeUndefined();
+  });
+
   test("normalizes parser errors with source locations", async () => {
     const result = await validateMermaid("flowchart TD\n  A -->", "README.md", 2, 10);
 

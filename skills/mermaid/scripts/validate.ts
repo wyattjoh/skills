@@ -1,7 +1,11 @@
 #!/usr/bin/env bun
 
+import { GlobalRegistrator } from "@happy-dom/global-registrator";
 import { Data, Effect } from "effect";
-import mermaid from "mermaid";
+
+// Mermaid captures DOMPurify when it loads, so browser globals must exist before this import.
+GlobalRegistrator.register();
+const { default: mermaid } = await import("mermaid");
 
 /**
  * Supported source formats for Mermaid validation.
