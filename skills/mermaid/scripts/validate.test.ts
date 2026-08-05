@@ -4,7 +4,41 @@ import {
   extractMermaidBlocks,
   validateContent,
   validateMermaid,
+  type ValidationReport,
 } from "./validate.ts";
+
+const TESTDATA_DIRECTORY = `${import.meta.dir}/testdata`;
+const VALIDATE_SCRIPT = `${import.meta.dir}/validate.ts`;
+
+async function validateFixture(name: string) {
+  const path = `testdata/${name}`;
+  return validateContent(await Bun.file(`${TESTDATA_DIRECTORY}/${name}`).text(), path);
+}
+
+async function runValidator(paths: string[]): Promise<{
+  exitCode: number;
+  stdout: string;
+  stderr: string;
+  report: ValidationReport;
+}> {
+  const child = Bun.spawn([process.execPath, VALIDATE_SCRIPT, ...paths], {
+    cwd: import.meta.dir,
+    stdout: "pipe",
+    stderr: "pipe",
+  });
+  const [exitCode, stdout, stderr] = await Promise.all([
+    child.exited,
+    new Response(child.stdout).text(),
+    new Response(child.stderr).text(),
+  ]);
+
+  return {
+    exitCode,
+    stdout,
+    stderr,
+    report: JSON.parse(stdout) as ValidationReport,
+  };
+}
 
 describe("extractMermaidBlocks", () => {
   test("extracts fenced diagrams with source line numbers", () => {
@@ -115,5 +149,114 @@ describe("createValidationReport", () => {
     expect(report.files.length).toBe(1);
     expect(report.errors.length).toBe(1);
     expect(report.errors[0]?.path).toBe("diagram.mmd");
+  });
+});
+
+describe("Markdown fixtures", () => {
+  test("validates mixed diagram types and preserves source ranges", async () => {
+    const result = await validateFixture("valid-mixed.md");
+
+    expect(result.valid).toBe(true);
+    expect(
+      result.diagrams.map(({ startLine, endLine, diagramType }) => ({
+        startLine,
+        endLine,
+        diagramType,
+      })),
+    ).toEqual([
+      { startLine: 6, endLine: 9, diagramType: "flowchart-v2" },
+      { startLine: 13, endLine: 17, diagramType: "sequence" },
+      { startLine: 21, endLine: 24, diagramType: "stateDiagram" },
+      { startLine: 28, endLine: 32, diagramType: "class" },
+      { startLine: 36, endLine: 37, diagramType: "er" },
+      { startLine: 41, endLine: 45, diagramType: "gantt" },
+      { startLine: 49, endLine: 51, diagramType: "pie" },
+      { startLine: 55, endLine: 59, diagramType: "gitGraph" },
+      { startLine: 63, endLine: 66, diagramType: "mindmap" },
+      { startLine: 70, endLine: 73, diagramType: "timeline" },
+    ]);
+  });
+
+  test("snapshots multiple syntax failures with Markdown line numbers", async () => {
+    expect(await validateFixture("invalid-multiple.md")).toMatchSnapshot();
+  });
+
+  test("accepts prose and ordinary code fences without Mermaid diagrams", async () => {
+    expect(await validateFixture("no-mermaid.md")).toEqual({
+      path: "testdata/no-mermaid.md",
+      sourceType: "markdown",
+      valid: true,
+      diagrams: [],
+    });
+  });
+
+  test("accepts an empty Markdown file", async () => {
+    expect(await validateFixture("empty.md")).toEqual({
+      path: "testdata/empty.md",
+      sourceType: "markdown",
+      valid: true,
+      diagrams: [],
+    });
+  });
+
+  test("parses case-insensitive tilde and longer backtick fences with CRLF", async () => {
+    const result = await validateFixture("tilde-crlf.md");
+
+    expect(result.valid).toBe(true);
+    expect(
+      result.diagrams.map(({ startLine, endLine, diagramType }) => ({
+        startLine,
+        endLine,
+        diagramType,
+      })),
+    ).toEqual([
+      { startLine: 4, endLine: 5, diagramType: "flowchart-v2" },
+      { startLine: 9, endLine: 10, diagramType: "sequence" },
+    ]);
+  });
+
+  test("validates Mermaid source through the end of an unclosed fence", async () => {
+    const result = await validateFixture("unclosed-mermaid.md");
+
+    expect(result.valid).toBe(true);
+    expect(result.diagrams).toEqual([
+      {
+        index: 1,
+        startLine: 6,
+        endLine: 8,
+        valid: true,
+        diagramType: "flowchart-v2",
+        error: undefined,
+      },
+    ]);
+  });
+
+  test("snapshots an empty Mermaid fence failure", async () => {
+    expect(await validateFixture("empty-mermaid.md")).toMatchSnapshot();
+  });
+});
+
+describe("validate CLI fixtures", () => {
+  test("snapshots structured output for valid and diagram-free Markdown files", async () => {
+    const result = await runValidator([
+      "testdata/valid-mixed.md",
+      "testdata/no-mermaid.md",
+      "testdata/empty.md",
+    ]);
+
+    expect(result.exitCode).toBe(0);
+    expect(result.stderr).toBe("");
+    expect(result.report).toMatchSnapshot();
+  });
+
+  test("snapshots structured output and exit code for invalid Markdown files", async () => {
+    const result = await runValidator([
+      "testdata/invalid-multiple.md",
+      "testdata/empty-mermaid.md",
+    ]);
+
+    expect(result.exitCode).toBe(1);
+    expect(result.stderr).toBe("");
+    expect(result.report).toMatchSnapshot();
   });
 });

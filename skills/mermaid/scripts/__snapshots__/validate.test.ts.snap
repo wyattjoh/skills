@@ -1,0 +1,322 @@
+// Bun Snapshot v1, https://bun.sh/docs/test/snapshots
+
+exports[`Markdown fixtures snapshots multiple syntax failures with Markdown line numbers 1`] = `
+{
+  "diagrams": [
+    {
+      "diagramType": undefined,
+      "endLine": 7,
+      "error": {
+        "column": 8,
+        "diagram": 1,
+        "line": 8,
+        "message": 
+"Parse error on line 3:
+...hart TD  Start -->
+---------------------^
+Expecting 'AMP', 'COLON', 'PIPE', 'TESTSTR', 'DOWN', 'DEFAULT', 'NUM', 'COMMA', 'NODE_STRING', 'BRKT', 'MINUS', 'MULT', 'UNICODE_TEXT', got 'EOF'"
+,
+        "path": "testdata/invalid-multiple.md",
+      },
+      "index": 1,
+      "startLine": 6,
+      "valid": false,
+    },
+    {
+      "diagramType": undefined,
+      "endLine": 14,
+      "error": {
+        "column": 23,
+        "diagram": 2,
+        "line": 15,
+        "message": 
+"Parse error on line 2:
+...->>Bob: hello; world
+-----------------------^
+Expecting '()', 'SOLID_OPEN_ARROW', 'DOTTED_OPEN_ARROW', 'SOLID_ARROW', 'SOLID_ARROW_TOP', 'SOLID_ARROW_BOTTOM', 'STICK_ARROW_TOP', 'STICK_ARROW_BOTTOM', 'SOLID_ARROW_TOP_DOTTED', 'SOLID_ARROW_BOTTOM_DOTTED', 'STICK_ARROW_TOP_DOTTED', 'STICK_ARROW_BOTTOM_DOTTED', 'SOLID_ARROW_TOP_REVERSE', 'SOLID_ARROW_BOTTOM_REVERSE', 'STICK_ARROW_TOP_REVERSE', 'STICK_ARROW_BOTTOM_REVERSE', 'SOLID_ARROW_TOP_REVERSE_DOTTED', 'SOLID_ARROW_BOTTOM_REVERSE_DOTTED', 'STICK_ARROW_TOP_REVERSE_DOTTED', 'STICK_ARROW_BOTTOM_REVERSE_DOTTED', 'BIDIRECTIONAL_SOLID_ARROW', 'DOTTED_ARROW', 'BIDIRECTIONAL_DOTTED_ARROW', 'SOLID_CROSS', 'DOTTED_CROSS', 'SOLID_POINT', 'DOTTED_POINT', got 'NEWLINE'"
+,
+        "path": "testdata/invalid-multiple.md",
+      },
+      "index": 2,
+      "startLine": 13,
+      "valid": false,
+    },
+    {
+      "diagramType": undefined,
+      "endLine": 19,
+      "error": {
+        "column": 7,
+        "diagram": 3,
+        "line": 20,
+        "message": 
+"Parse error on line 2:
+...Diagram-v2  [*] -->
+----------------------^
+Expecting 'ID', 'EDGE_STATE', got 'NL'"
+,
+        "path": "testdata/invalid-multiple.md",
+      },
+      "index": 3,
+      "startLine": 18,
+      "valid": false,
+    },
+  ],
+  "path": "testdata/invalid-multiple.md",
+  "sourceType": "markdown",
+  "valid": false,
+}
+`;
+
+exports[`Markdown fixtures snapshots an empty Mermaid fence failure 1`] = `
+{
+  "diagrams": [
+    {
+      "diagramType": undefined,
+      "endLine": 4,
+      "error": {
+        "column": undefined,
+        "diagram": 1,
+        "line": 4,
+        "message": "No diagram type detected matching given configuration for text: ",
+        "path": "testdata/empty-mermaid.md",
+      },
+      "index": 1,
+      "startLine": 4,
+      "valid": false,
+    },
+  ],
+  "path": "testdata/empty-mermaid.md",
+  "sourceType": "markdown",
+  "valid": false,
+}
+`;
+
+exports[`validate CLI fixtures snapshots structured output for valid and diagram-free Markdown files 1`] = `
+{
+  "errors": [],
+  "files": [
+    {
+      "diagrams": [
+        {
+          "diagramType": "flowchart-v2",
+          "endLine": 9,
+          "index": 1,
+          "startLine": 6,
+          "valid": true,
+        },
+        {
+          "diagramType": "sequence",
+          "endLine": 17,
+          "index": 2,
+          "startLine": 13,
+          "valid": true,
+        },
+        {
+          "diagramType": "stateDiagram",
+          "endLine": 24,
+          "index": 3,
+          "startLine": 21,
+          "valid": true,
+        },
+        {
+          "diagramType": "class",
+          "endLine": 32,
+          "index": 4,
+          "startLine": 28,
+          "valid": true,
+        },
+        {
+          "diagramType": "er",
+          "endLine": 37,
+          "index": 5,
+          "startLine": 36,
+          "valid": true,
+        },
+        {
+          "diagramType": "gantt",
+          "endLine": 45,
+          "index": 6,
+          "startLine": 41,
+          "valid": true,
+        },
+        {
+          "diagramType": "pie",
+          "endLine": 51,
+          "index": 7,
+          "startLine": 49,
+          "valid": true,
+        },
+        {
+          "diagramType": "gitGraph",
+          "endLine": 59,
+          "index": 8,
+          "startLine": 55,
+          "valid": true,
+        },
+        {
+          "diagramType": "mindmap",
+          "endLine": 66,
+          "index": 9,
+          "startLine": 63,
+          "valid": true,
+        },
+        {
+          "diagramType": "timeline",
+          "endLine": 73,
+          "index": 10,
+          "startLine": 70,
+          "valid": true,
+        },
+      ],
+      "path": "testdata/valid-mixed.md",
+      "sourceType": "markdown",
+      "valid": true,
+    },
+    {
+      "diagrams": [],
+      "path": "testdata/no-mermaid.md",
+      "sourceType": "markdown",
+      "valid": true,
+    },
+    {
+      "diagrams": [],
+      "path": "testdata/empty.md",
+      "sourceType": "markdown",
+      "valid": true,
+    },
+  ],
+  "valid": true,
+}
+`;
+
+exports[`validate CLI fixtures snapshots structured output and exit code for invalid Markdown files 1`] = `
+{
+  "errors": [
+    {
+      "column": 8,
+      "diagram": 1,
+      "line": 8,
+      "message": 
+"Parse error on line 3:
+...hart TD  Start -->
+---------------------^
+Expecting 'AMP', 'COLON', 'PIPE', 'TESTSTR', 'DOWN', 'DEFAULT', 'NUM', 'COMMA', 'NODE_STRING', 'BRKT', 'MINUS', 'MULT', 'UNICODE_TEXT', got 'EOF'"
+,
+      "path": "testdata/invalid-multiple.md",
+    },
+    {
+      "column": 23,
+      "diagram": 2,
+      "line": 15,
+      "message": 
+"Parse error on line 2:
+...->>Bob: hello; world
+-----------------------^
+Expecting '()', 'SOLID_OPEN_ARROW', 'DOTTED_OPEN_ARROW', 'SOLID_ARROW', 'SOLID_ARROW_TOP', 'SOLID_ARROW_BOTTOM', 'STICK_ARROW_TOP', 'STICK_ARROW_BOTTOM', 'SOLID_ARROW_TOP_DOTTED', 'SOLID_ARROW_BOTTOM_DOTTED', 'STICK_ARROW_TOP_DOTTED', 'STICK_ARROW_BOTTOM_DOTTED', 'SOLID_ARROW_TOP_REVERSE', 'SOLID_ARROW_BOTTOM_REVERSE', 'STICK_ARROW_TOP_REVERSE', 'STICK_ARROW_BOTTOM_REVERSE', 'SOLID_ARROW_TOP_REVERSE_DOTTED', 'SOLID_ARROW_BOTTOM_REVERSE_DOTTED', 'STICK_ARROW_TOP_REVERSE_DOTTED', 'STICK_ARROW_BOTTOM_REVERSE_DOTTED', 'BIDIRECTIONAL_SOLID_ARROW', 'DOTTED_ARROW', 'BIDIRECTIONAL_DOTTED_ARROW', 'SOLID_CROSS', 'DOTTED_CROSS', 'SOLID_POINT', 'DOTTED_POINT', got 'NEWLINE'"
+,
+      "path": "testdata/invalid-multiple.md",
+    },
+    {
+      "column": 7,
+      "diagram": 3,
+      "line": 20,
+      "message": 
+"Parse error on line 2:
+...Diagram-v2  [*] -->
+----------------------^
+Expecting 'ID', 'EDGE_STATE', got 'NL'"
+,
+      "path": "testdata/invalid-multiple.md",
+    },
+    {
+      "diagram": 1,
+      "line": 4,
+      "message": "No diagram type detected matching given configuration for text: ",
+      "path": "testdata/empty-mermaid.md",
+    },
+  ],
+  "files": [
+    {
+      "diagrams": [
+        {
+          "endLine": 7,
+          "error": {
+            "column": 8,
+            "diagram": 1,
+            "line": 8,
+            "message": 
+"Parse error on line 3:
+...hart TD  Start -->
+---------------------^
+Expecting 'AMP', 'COLON', 'PIPE', 'TESTSTR', 'DOWN', 'DEFAULT', 'NUM', 'COMMA', 'NODE_STRING', 'BRKT', 'MINUS', 'MULT', 'UNICODE_TEXT', got 'EOF'"
+,
+            "path": "testdata/invalid-multiple.md",
+          },
+          "index": 1,
+          "startLine": 6,
+          "valid": false,
+        },
+        {
+          "endLine": 14,
+          "error": {
+            "column": 23,
+            "diagram": 2,
+            "line": 15,
+            "message": 
+"Parse error on line 2:
+...->>Bob: hello; world
+-----------------------^
+Expecting '()', 'SOLID_OPEN_ARROW', 'DOTTED_OPEN_ARROW', 'SOLID_ARROW', 'SOLID_ARROW_TOP', 'SOLID_ARROW_BOTTOM', 'STICK_ARROW_TOP', 'STICK_ARROW_BOTTOM', 'SOLID_ARROW_TOP_DOTTED', 'SOLID_ARROW_BOTTOM_DOTTED', 'STICK_ARROW_TOP_DOTTED', 'STICK_ARROW_BOTTOM_DOTTED', 'SOLID_ARROW_TOP_REVERSE', 'SOLID_ARROW_BOTTOM_REVERSE', 'STICK_ARROW_TOP_REVERSE', 'STICK_ARROW_BOTTOM_REVERSE', 'SOLID_ARROW_TOP_REVERSE_DOTTED', 'SOLID_ARROW_BOTTOM_REVERSE_DOTTED', 'STICK_ARROW_TOP_REVERSE_DOTTED', 'STICK_ARROW_BOTTOM_REVERSE_DOTTED', 'BIDIRECTIONAL_SOLID_ARROW', 'DOTTED_ARROW', 'BIDIRECTIONAL_DOTTED_ARROW', 'SOLID_CROSS', 'DOTTED_CROSS', 'SOLID_POINT', 'DOTTED_POINT', got 'NEWLINE'"
+,
+            "path": "testdata/invalid-multiple.md",
+          },
+          "index": 2,
+          "startLine": 13,
+          "valid": false,
+        },
+        {
+          "endLine": 19,
+          "error": {
+            "column": 7,
+            "diagram": 3,
+            "line": 20,
+            "message": 
+"Parse error on line 2:
+...Diagram-v2  [*] -->
+----------------------^
+Expecting 'ID', 'EDGE_STATE', got 'NL'"
+,
+            "path": "testdata/invalid-multiple.md",
+          },
+          "index": 3,
+          "startLine": 18,
+          "valid": false,
+        },
+      ],
+      "path": "testdata/invalid-multiple.md",
+      "sourceType": "markdown",
+      "valid": false,
+    },
+    {
+      "diagrams": [
+        {
+          "endLine": 4,
+          "error": {
+            "diagram": 1,
+            "line": 4,
+            "message": "No diagram type detected matching given configuration for text: ",
+            "path": "testdata/empty-mermaid.md",
+          },
+          "index": 1,
+          "startLine": 4,
+          "valid": false,
+        },
+      ],
+      "path": "testdata/empty-mermaid.md",
+      "sourceType": "markdown",
+      "valid": false,
+    },
+  ],
+  "valid": false,
+}
+`;
