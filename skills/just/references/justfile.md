@@ -6,11 +6,11 @@ imports, module declarations, and recipes. Comments start with `#`. Recipe bodie
 directory and walking up to the root; filenames `justfile` and `.justfile` (any
 casing) match.
 
-All syntax below is from the [just manual](https://just.systems/man/en/) (read at
-1.56.0). Attribute/setting availability is annotated with the version it was
-introduced ("since"); the pinned local binary is **1.55.1**, so items marked
-`since 1.56.0` are not available on it — verify with `just --version` before relying
-on them.
+All syntax below is from the [just manual](https://just.systems/man/en/). The
+reviewed upstream snapshot includes features annotated through 1.58.0.
+Attribute/setting availability is annotated with the version it was introduced
+("since"); the pinned local binary is **1.57.0**, so verify newer features with `just
+--version` before relying on them.
 
 ## Recipes and dependencies
 
@@ -141,6 +141,30 @@ Source: [functions](https://just.systems/man/en/functions.html).
 Note: backticks evaluate at parse/assignment time; `shell(...)` is a function call
 evaluated where it appears.
 
+## Lists (unstable)
+
+Source: [lists](https://just.systems/man/en/lists.html).
+
+Lists were introduced in 1.53.0 but remain unstable. Enable both gates before using
+them:
+
+```just
+set unstable
+set lists
+
+sources := ["lib.c", "main.c"]
+more := sources ++ ["platform.c"]
+
+[script]
+show *ARGS:
+    printf '%s\n' {{ARGS}}
+```
+
+List literals contain strings and flatten nested lists. With `set lists`, variadic
+parameters are lists instead of space-separated strings. Interpolation joins a list
+with spaces, `++` concatenates lists, and `join_list()` converts a list for built-in
+functions that do not yet accept one. List behavior may still change incompatibly.
+
 ## Settings
 
 Source: [settings](https://just.systems/man/en/settings.html). Written
@@ -179,16 +203,27 @@ set export
 set positional-arguments
 ```
 
-> The current (1.56.0) settings table also lists newer/advanced entries
-> (`default-script`, `guards`, `lazy`, `lists`, `indentation`). Treat these as newer
-> or unstable and verify against the target `just` version before relying on them.
+Put a minimum-version guard at the top of a justfile before syntax that older versions
+may not understand:
+
+```just
+set minimum-version := "1.55.0"
+```
+
+`minimum-version` was added in 1.55.0. It produces a clear version error when the
+file can be parsed, but lexer-level syntax changes may fail before the guard is
+reached.
+
+Advanced settings such as `default-script`, `guards`, `lazy`, `lists`, and
+`indentation` may be unstable or version-gated. Verify them against the target `just`
+version.
 
 ## Attributes
 
 Source: [attributes](https://just.systems/man/en/attributes.html). Attributes go in
 `[brackets]` on the line(s) above a recipe (or module/alias/variable where noted).
-"Since" is the minimum `just` version. **The local binary is 1.55.1** — anything
-marked `since 1.56.0` is unavailable on it.
+"Since" is the minimum `just` version. **The local binary is 1.57.0**; verify
+anything newer against the target environment.
 
 | Attribute                                | Since       | Purpose                                                                     |
 | ---------------------------------------- | ----------- | --------------------------------------------------------------------------- |
@@ -205,10 +240,12 @@ marked `since 1.56.0` is unavailable on it.
 | `[script]` / `[script(COMMAND)]`         | 1.33 / 1.32 | Run the whole body as one script via the interpreter (or `COMMAND`).        |
 | `[extension(EXT)]`                       | 1.32        | Temp-file extension for shebang/script recipes.                             |
 | `[env(NAME, VALUE)]`                     | 1.47        | Set an env var for the recipe.                                              |
+| `[metadata(VALUES...)]`                  | 1.42        | Attach string metadata exposed by JSON dumps.                               |
 | `[parallel]`                             | 1.42        | Run the recipe's dependencies in parallel.                                  |
 | `[linux]` `[macos]` `[windows]` `[unix]` | 1.8         | Recipe runs only on the matching OS; same-named recipes select by platform. |
-| `[cache]` / `[continue(SIGNALS)]`        | 1.54        | Cache results / continue on signals.                                        |
-| `[arg(ARG, ...)]` (min= / max=)          | 1.56.0      | Per-argument constraints. **Not in 1.55.1.**                                |
+| `[cache(...)]`                           | 1.54        | Cache a script recipe by invocation, inputs, outputs, and extra data.       |
+| `[continue(SIGNALS)]`                    | 1.54        | Continue running after selected signals.                                    |
+| `[arg(ARG, ...)]` (min= / max=)          | 1.56.0      | Add per-argument constraints.                                               |
 
 ```just
 [private]
@@ -248,6 +285,53 @@ polyglot:
 Alternatively use `[script('python3')]`, `set script-interpreter`, and
 `[extension('.py')]` to control the interpreter and temp-file extension without a
 shebang.
+
+## Cached recipes
+
+Source: [cached recipes](https://just.systems/man/en/cached-recipes.html),
+[input files](https://just.systems/man/en/input-files.html), and
+[output files](https://just.systems/man/en/output-files.html).
+
+`[cache]` was introduced in 1.54.0, remains unstable, and is only valid on script
+recipes:
+
+```just
+set unstable
+set lists
+
+[script]
+[cache(inputs = ["lib.c", "main.c"], outputs = "main", extra = `cc --version`)]
+build:
+    cc lib.c main.c -o main
+```
+
+- Inputs are BLAKE3-hashed into the cache key. Missing inputs and directories are
+  errors. Relative paths start at the recipe's working directory.
+- Outputs are not part of the cache key. Every output must exist to skip the recipe,
+  and a successful run that does not create every declared output is an error.
+- `extra` adds strings, such as a compiler version, to the cache key.
+- `just --no-cache build` bypasses the cache. `just --clean [RECIPE_PATH...]` deletes
+  cache entries and is a mutating operation.
+
+Caching is inherently fragile. Cache entries do not make outputs portable, inspect
+undeclared dependencies, or replace a build system's dependency graph. Declare every
+relevant input and output, and use it only when those limitations are acceptable.
+
+## Recipe metadata
+
+Source: [metadata](https://just.systems/man/en/metadata.html).
+
+Attach string metadata for tooling and agents, then inspect it in the JSON dump:
+
+```just
+[metadata("category", "release")]
+deploy:
+    ./deploy
+```
+
+```bash
+just --dump --dump-format json
+```
 
 ## Modules and imports
 

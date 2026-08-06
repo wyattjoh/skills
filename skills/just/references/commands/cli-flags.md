@@ -1,13 +1,13 @@
 # just — CLI flag reference
 
 `just` is a single command with no subcommands. Every "mode" is a flag. This table
-is transcribed verbatim from `just --help` on the **pinned local binary, v1.55.1**
+is transcribed from `just --help` on the **pinned local binary, v1.57.0**
 (spellings, short forms, argument placeholders, and `[env: ...]` / `[default: ...]` /
 `[possible values: ...]` annotations are authoritative). Explanations are drawn from
 the [just manual](https://just.systems/man/en/command-line-options.html).
 
-Source of truth: `just --help` (v1.55.1). Where the docs (read at 1.56.0) disagree,
-the binary wins and the discrepancy is noted inline.
+Source of truth: `just --help` (v1.57.0). The reviewed upstream manual snapshot also
+contains newer, version-gated features; the binary wins when they disagree.
 
 ## Invocation
 
@@ -60,6 +60,7 @@ them blindly.**
 | `--alias-style`      |       | `<ALIAS_STYLE>` | `[default: right]` `[possible values: left, right, separate]`                |
 | `--complete-aliases` |       |                 | Auto-complete recipe aliases.                                                |
 | `--default-list`     |       |                 | List recipes when no arguments are given (instead of running the default).   |
+| `--chooser`          |       | `<CHOOSER>`     | Override the chooser command used by `--choose`. `[env: JUST_CHOOSER]`       |
 
 ### Inspection / debugging
 
@@ -98,6 +99,7 @@ them blindly.**
 | `--clear-shell-args` |       |                 | Clear shell arguments.                                         |
 | `--one`              |       |                 | Forbid invoking more than one recipe on the command line.      |
 | `--no-deps`          |       |                 | Don't run recipe dependencies.                                 |
+| `--jobs`             |       | `<N>`           | Limit simultaneous dependencies of `[parallel]` recipes.       |
 | `--no-cache`         |       |                 | Bypass the recipe cache.                                       |
 | `--yes`              |       |                 | Auto-confirm `[confirm]` recipes. `[env: JUST_YES]`            |
 | `--tempdir`          |       | `<TEMPDIR>`     | Directory for shebang/script temp files.                       |
@@ -105,9 +107,8 @@ them blindly.**
 | `--indentation`      |       | `<INDENTATION>` | Indent recipe bodies with `<INDENTATION>`. `[default: "    "]` |
 | `--cygpath`          |       | `<CYGPATH>`     | Binary to convert unix/Windows paths. `[default: cygpath]`     |
 
-> Discrepancy: the docs mention a `--jobs N` flag for parallelism. **v1.55.1 does not
-> expose `--jobs`.** Run dependencies in parallel with the `[parallel]` attribute
-> instead (see [`../justfile.md`](../justfile.md)).
+`--jobs` was added in v1.56.0. It only limits dependencies that are eligible to run
+concurrently, such as dependencies of a recipe with `[parallel]`.
 
 ### Dotenv
 
@@ -132,7 +133,7 @@ them blindly.**
 | Flag        | Short | Notes                          |
 | ----------- | ----- | ------------------------------ |
 | `--help`    | `-h`  | Print help.                    |
-| `--version` | `-V`  | Print version (`just 1.55.1`). |
+| `--version` | `-V`  | Print version (`just 1.57.0`). |
 
 ## Notes
 
