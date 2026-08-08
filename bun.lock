@@ -16,19 +16,32 @@
         "typescript": "^7",
       },
     },
+    "skills/claude-sessions": {
+      "name": "@wyattjoh/claude-sessions-skill",
+      "version": "1.0.0",
+    },
     "skills/clean-storage": {
-      "name": "@skills/skill-clean-storage",
+      "name": "@wyattjoh/clean-storage-skill",
       "version": "1.0.0",
       "dependencies": {
         "effect": "^3.21",
       },
     },
     "skills/driving-ios-simulator": {
-      "name": "@skills/skill-driving-ios-simulator",
+      "name": "@wyattjoh/driving-ios-simulator-skill",
       "version": "1.0.0",
     },
+    "skills/herd": {
+      "name": "@wyattjoh/herd-skill",
+      "version": "1.0.0",
+      "dependencies": {
+        "commander": "^15",
+        "effect": "^3.21",
+        "yaml": "^2.9.0",
+      },
+    },
     "skills/mermaid": {
-      "name": "@skills/skill-mermaid",
+      "name": "@wyattjoh/mermaid-skill",
       "version": "1.0.0",
       "dependencies": {
         "@happy-dom/global-registrator": "^20.11.1",
@@ -37,33 +50,33 @@
       },
     },
     "skills/name-gen": {
-      "name": "@skills/skill-name-gen",
+      "name": "@wyattjoh/name-gen-skill",
       "version": "1.0.0",
     },
     "skills/npm-info": {
-      "name": "@skills/skill-npm-info",
+      "name": "@wyattjoh/npm-info-skill",
       "version": "1.0.0",
     },
     "skills/review": {
-      "name": "@skills/skill-review",
+      "name": "@wyattjoh/review-skill",
       "version": "1.0.0",
     },
     "skills/task-orchestrator": {
-      "name": "@skills/skill-task-orchestrator",
+      "name": "@wyattjoh/task-orchestrator-skill",
       "version": "1.0.0",
       "dependencies": {
         "commander": "^15",
       },
     },
     "skills/task-planner": {
-      "name": "@skills/skill-task-planner",
+      "name": "@wyattjoh/task-planner-skill",
       "version": "1.0.0",
       "dependencies": {
         "commander": "^15",
       },
     },
     "skills/workspaces": {
-      "name": "@skills/skill-workspaces",
+      "name": "@wyattjoh/workspaces-skill",
       "version": "1.0.0",
       "dependencies": {
         "commander": "^15",
@@ -162,24 +175,6 @@
     "@oxlint/binding-win32-ia32-msvc": ["@oxlint/binding-win32-ia32-msvc@1.76.0", "", { "os": "win32", "cpu": "ia32" }, "sha512-Ba0O659kgMv6pwO3z9PdO+K3aMxQRaw9HnG+e6AtOfgwcKFvYilciQYBoUBmxfQvOCKZe1SwjMkuB542NkuDMQ=="],
 
     "@oxlint/binding-win32-x64-msvc": ["@oxlint/binding-win32-x64-msvc@1.76.0", "", { "os": "win32", "cpu": "x64" }, "sha512-5qcirPHO8nKfkoowEVWtpAoVTcYDy6g0UT0NGic450Qv8J2NrOqg4uQ8QppRP4MDTC7Xx47lbZnmadTH03CGGA=="],
-
-    "@skills/skill-clean-storage": ["@skills/skill-clean-storage@workspace:skills/clean-storage"],
-
-    "@skills/skill-driving-ios-simulator": ["@skills/skill-driving-ios-simulator@workspace:skills/driving-ios-simulator"],
-
-    "@skills/skill-mermaid": ["@skills/skill-mermaid@workspace:skills/mermaid"],
-
-    "@skills/skill-name-gen": ["@skills/skill-name-gen@workspace:skills/name-gen"],
-
-    "@skills/skill-npm-info": ["@skills/skill-npm-info@workspace:skills/npm-info"],
-
-    "@skills/skill-review": ["@skills/skill-review@workspace:skills/review"],
-
-    "@skills/skill-task-orchestrator": ["@skills/skill-task-orchestrator@workspace:skills/task-orchestrator"],
-
-    "@skills/skill-task-planner": ["@skills/skill-task-planner@workspace:skills/task-planner"],
-
-    "@skills/skill-workspaces": ["@skills/skill-workspaces@workspace:skills/workspaces"],
 
     "@standard-schema/spec": ["@standard-schema/spec@1.1.0", "", {}, "sha512-l2aFy5jALhniG5HgqrD6jXLi/rUWrKvqN/qJx6yoJsgKhblVd+iqqU4RCXavm/jPityDo5TCvKMnpjKnOriy0w=="],
 
@@ -298,6 +293,28 @@
     "@typescript/typescript-win32-x64": ["@typescript/typescript-win32-x64@7.0.2", "", { "os": "win32", "cpu": "x64" }, "sha512-0BQ3HkAHHlKLSp1qRvf3SUhGpGsDuhB/jgFw75guyqbxJqEaS0Cw/VFO8i2nHglJUzQCRtMMR/IBAKE3ETMC4g=="],
 
     "@upsetjs/venn.js": ["@upsetjs/venn.js@2.0.0", "", { "optionalDependencies": { "d3-selection": "^3.0.0", "d3-transition": "^3.0.1" } }, "sha512-WbBhLrooyePuQ1VZxrJjtLvTc4NVfpOyKx0sKqioq9bX1C1m7Jgykkn8gLrtwumBioXIqam8DLxp88Adbue6Hw=="],
+
+    "@wyattjoh/claude-sessions-skill": ["@wyattjoh/claude-sessions-skill@workspace:skills/claude-sessions"],
+
+    "@wyattjoh/clean-storage-skill": ["@wyattjoh/clean-storage-skill@workspace:skills/clean-storage"],
+
+    "@wyattjoh/driving-ios-simulator-skill": ["@wyattjoh/driving-ios-simulator-skill@workspace:skills/driving-ios-simulator"],
+
+    "@wyattjoh/herd-skill": ["@wyattjoh/herd-skill@workspace:skills/herd"],
+
+    "@wyattjoh/mermaid-skill": ["@wyattjoh/mermaid-skill@workspace:skills/mermaid"],
+
+    "@wyattjoh/name-gen-skill": ["@wyattjoh/name-gen-skill@workspace:skills/name-gen"],
+
+    "@wyattjoh/npm-info-skill": ["@wyattjoh/npm-info-skill@workspace:skills/npm-info"],
+
+    "@wyattjoh/review-skill": ["@wyattjoh/review-skill@workspace:skills/review"],
+
+    "@wyattjoh/task-orchestrator-skill": ["@wyattjoh/task-orchestrator-skill@workspace:skills/task-orchestrator"],
+
+    "@wyattjoh/task-planner-skill": ["@wyattjoh/task-planner-skill@workspace:skills/task-planner"],
+
+    "@wyattjoh/workspaces-skill": ["@wyattjoh/workspaces-skill@workspace:skills/workspaces"],
 
     "buffer-image-size": ["buffer-image-size@0.6.4", "", { "dependencies": { "@types/node": "*" } }, "sha512-nEh+kZOPY1w+gcCMobZ6ETUp9WfibndnosbpwB1iJk/8Gt5ZF2bhS6+B6bPYz424KtwsR6Rflc3tCz1/ghX2dQ=="],
 

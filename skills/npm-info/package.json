@@ -1,5 +1,5 @@
 {
-  "name": "@skills/skill-npm-info",
+  "name": "@wyattjoh/npm-info-skill",
   "version": "1.0.0",
   "private": true,
   "type": "module",
