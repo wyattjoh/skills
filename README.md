@@ -106,6 +106,7 @@ Restart Claude Code after adding or changing an agent definition.
 | varlock                       | Kickstart varlock, the encrypted schema-driven dotenv replacement                 |
 | vhs                           | Interview-driven terminal screencasts rendered to GIF/MP4/WebM                    |
 | workspaces                    | Create, operate, and compact multi-repo workspace hubs with enforced memory       |
+| wrap-up                       | Close out a long session: sweep loose ends, propose commits, report what remains  |
 
 ## Claude Code agents
 

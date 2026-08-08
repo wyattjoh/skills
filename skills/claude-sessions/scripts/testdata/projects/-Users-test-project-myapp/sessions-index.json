@@ -1,0 +1,41 @@
+{
+  "version": 1,
+  "entries": [
+    {
+      "sessionId": "abc-123",
+      "fullPath": "/Users/test/project/.claude/projects/-Users-test-project-myapp/abc-123.jsonl",
+      "fileMtime": 1737205200000,
+      "firstPrompt": "Help me implement user authentication",
+      "messageCount": 5,
+      "created": "2026-01-15T10:00:00.000Z",
+      "modified": "2026-01-18T14:00:00.000Z",
+      "gitBranch": "feature-auth",
+      "projectPath": "/Users/test/project/myapp",
+      "isSidechain": false
+    },
+    {
+      "sessionId": "def-456",
+      "fullPath": "/Users/test/project/.claude/projects/-Users-test-project-myapp/def-456.jsonl",
+      "fileMtime": 1737118800000,
+      "firstPrompt": "Fix the database query performance",
+      "messageCount": 2,
+      "created": "2026-01-16T10:00:00.000Z",
+      "modified": "2026-01-17T10:00:00.000Z",
+      "gitBranch": "main",
+      "projectPath": "/Users/test/project/myapp",
+      "isSidechain": false
+    },
+    {
+      "sessionId": "ghi-789",
+      "fullPath": "/Users/test/project/.claude/projects/-Users-test-project-myapp/ghi-789.jsonl",
+      "fileMtime": 1737291600000,
+      "firstPrompt": "Add authentication tests for edge cases",
+      "messageCount": 3,
+      "created": "2026-01-17T10:00:00.000Z",
+      "modified": "2026-01-19T10:00:00.000Z",
+      "gitBranch": "feature-auth",
+      "projectPath": "/Users/test/project/myapp",
+      "isSidechain": true
+    }
+  ]
+}
