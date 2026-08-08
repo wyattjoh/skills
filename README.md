@@ -115,6 +115,7 @@ Restart Claude Code after adding or changing an agent definition.
 | code-reviewer        | Dual-pipeline code review with parallel reviewers and interactive fix delegation |
 | debug-investigator   | Systematically investigates bugs and unexpected behavior                         |
 | git-history-explorer | Searches git history for code evolution and commit patterns                      |
+| implementor          | Implements one scoped task, drives its own review loop, and verifies the result  |
 | researcher           | Research specialist for online sources and local codebases                       |
 | ui-ux-analyzer       | Expert UI/UX analysis and recommendations                                        |
 | xcode-builder        | Performs Xcode builds with error parsing and structured reports                  |
