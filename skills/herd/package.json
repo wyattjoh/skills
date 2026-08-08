@@ -1,0 +1,14 @@
+{
+  "name": "@wyattjoh/herd-skill",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "bun test"
+  },
+  "dependencies": {
+    "commander": "^15",
+    "effect": "^3.21",
+    "yaml": "^2.9.0"
+  }
+}

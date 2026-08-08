@@ -75,6 +75,7 @@ Restart Claude Code after adding or changing an agent definition.
 | driving-ios-simulator         | Drive a booted iOS Simulator: tap, swipe, type, read elements, screenshot         |
 | effect-ts                     | Effect-TS patterns: services, layers, error handling, composition                 |
 | executing-workflows-manually  | Run Claude Code workflow scripts in harnesses without the Workflow tool           |
+| herd                          | Run tickets in parallel as real agent sessions in sibling herdr tabs              |
 | herdr                         | Control herdr from inside a pane over its unix socket                             |
 | icon-gen                      | Generate app icons with AI (snapai), with refinement and platform resizing        |
 | json-inspect                  | Generate JSON Schema from JSON files with genson                                  |
