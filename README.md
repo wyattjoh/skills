@@ -67,6 +67,7 @@ Restart Claude Code after adding or changing an agent definition.
 
 | Skill                         | Description                                                                       |
 | ----------------------------- | --------------------------------------------------------------------------------- |
+| claude-sessions               | Parse and analyze Claude Code conversation history                                |
 | claude-skills                 | Guidance for authoring Claude Code skills                                         |
 | claude-skills-update          | Periodic check for upstream Claude Code skill API changes                         |
 | clean-storage                 | Reclaim disk space from verified build artifacts and tool caches                  |
@@ -110,16 +111,17 @@ Restart Claude Code after adding or changing an agent definition.
 
 ## Claude Code agents
 
-| Agent                | Description                                                                      |
-| -------------------- | -------------------------------------------------------------------------------- |
-| code-reviewer        | Dual-pipeline code review with parallel reviewers and interactive fix delegation |
-| debug-investigator   | Systematically investigates bugs and unexpected behavior                         |
-| git-history-explorer | Searches git history for code evolution and commit patterns                      |
-| implementor          | Implements one scoped task, drives its own review loop, and verifies the result  |
-| researcher           | Research specialist for online sources and local codebases                       |
-| ui-ux-analyzer       | Expert UI/UX analysis and recommendations                                        |
-| xcode-builder        | Performs Xcode builds with error parsing and structured reports                  |
-| xcode-runner         | Runs Xcode apps on simulators or physical devices                                |
+| Agent                  | Description                                                                      |
+| ---------------------- | -------------------------------------------------------------------------------- |
+| code-reviewer          | Dual-pipeline code review with parallel reviewers and interactive fix delegation |
+| conversation-historian | Analyze Claude Code conversation history and session patterns                    |
+| debug-investigator     | Systematically investigates bugs and unexpected behavior                         |
+| git-history-explorer   | Searches git history for code evolution and commit patterns                      |
+| implementor            | Implements one scoped task, drives its own review loop, and verifies the result  |
+| researcher             | Research specialist for online sources and local codebases                       |
+| ui-ux-analyzer         | Expert UI/UX analysis and recommendations                                        |
+| xcode-builder          | Performs Xcode builds with error parsing and structured reports                  |
+| xcode-runner           | Runs Xcode apps on simulators or physical devices                                |
 
 ## Repository layout
 

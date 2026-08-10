@@ -27,7 +27,7 @@ You are an expert at analyzing Claude Code conversation history. You MUST use th
 
 ### Script Base Path
 
-All scripts are at: `~/.claude/skills/claude-sessions/scripts/`
+All scripts are at: `$SKILL_DIR/scripts/`
 
 ## Standard Workflow
 
@@ -35,21 +35,21 @@ All scripts are at: `~/.claude/skills/claude-sessions/scripts/`
 
 ```bash
 # List all projects (sorted by recent activity)
-bun ~/.claude/skills/claude-sessions/scripts/list-projects.ts
+bun $SKILL_DIR/scripts/list-projects.ts
 
 # Search for a specific project
-bun ~/.claude/skills/claude-sessions/scripts/list-projects.ts --search="project-name"
+bun $SKILL_DIR/scripts/list-projects.ts --search="project-name"
 ```
 
 ### Step 2: Search Across Conversations
 
 ```bash
 # Search all sessions in a project for content
-bun ~/.claude/skills/claude-sessions/scripts/search-content.ts \
+bun $SKILL_DIR/scripts/search-content.ts \
   ~/.claude/projects/<project-dir> --pattern="search term"
 
 # Filter by message type
-bun ~/.claude/skills/claude-sessions/scripts/search-content.ts \
+bun $SKILL_DIR/scripts/search-content.ts \
   ~/.claude/projects/<project-dir> --pattern="error" --type=assistant
 ```
 
@@ -57,15 +57,15 @@ bun ~/.claude/skills/claude-sessions/scripts/search-content.ts \
 
 ```bash
 # List recent sessions
-bun ~/.claude/skills/claude-sessions/scripts/list-sessions.ts \
+bun $SKILL_DIR/scripts/list-sessions.ts \
   ~/.claude/projects/<project-dir> --limit=10
 
 # Search sessions by prompt
-bun ~/.claude/skills/claude-sessions/scripts/list-sessions.ts \
+bun $SKILL_DIR/scripts/list-sessions.ts \
   ~/.claude/projects/<project-dir> --search="feature name"
 
 # Find longest conversations
-bun ~/.claude/skills/claude-sessions/scripts/list-sessions.ts \
+bun $SKILL_DIR/scripts/list-sessions.ts \
   ~/.claude/projects/<project-dir> --sort=messages --limit=5
 ```
 
@@ -73,19 +73,19 @@ bun ~/.claude/skills/claude-sessions/scripts/list-sessions.ts \
 
 ```bash
 # Get statistics (token usage, tool calls, duration)
-bun ~/.claude/skills/claude-sessions/scripts/parse-conversation.ts \
+bun $SKILL_DIR/scripts/parse-conversation.ts \
   <path-to-file.jsonl> --format=stats
 
 # View readable conversation
-bun ~/.claude/skills/claude-sessions/scripts/parse-conversation.ts \
+bun $SKILL_DIR/scripts/parse-conversation.ts \
   <path-to-file.jsonl> --format=readable
 
 # Search within a conversation
-bun ~/.claude/skills/claude-sessions/scripts/parse-conversation.ts \
+bun $SKILL_DIR/scripts/parse-conversation.ts \
   <path-to-file.jsonl> --search="specific term"
 
 # Include tool calls and thinking
-bun ~/.claude/skills/claude-sessions/scripts/parse-conversation.ts \
+bun $SKILL_DIR/scripts/parse-conversation.ts \
   <path-to-file.jsonl> --include-tools --include-thinking
 ```
 
@@ -93,7 +93,7 @@ bun ~/.claude/skills/claude-sessions/scripts/parse-conversation.ts \
 
 ```bash
 # Search research/planning documents
-bun ~/.claude/skills/claude-sessions/scripts/search-plans.ts \
+bun $SKILL_DIR/scripts/search-plans.ts \
   --pattern="architecture"
 ```
 
