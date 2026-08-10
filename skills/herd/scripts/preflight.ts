@@ -119,8 +119,34 @@ export function readSessionRegistry(dir: string): SessionEntry[] {
   return entries;
 }
 
+// Git resolves its repository from these variables in preference to the
+// working directory, and it exports them into hook environments. Preflight run
+// from inside a hook would otherwise report the hook's repository (or a linked
+// worktree's gitdir) rather than the one the coordinator is sitting in.
+//
+// Duplicated from the workspaces skill's `lib/git-env.ts` on purpose: skills are
+// installed independently, so importing across skill directories would break
+// this one when it ships alone.
+const GIT_ENV_KEYS = new Set([
+  "GIT_DIR",
+  "GIT_WORK_TREE",
+  "GIT_INDEX_FILE",
+  "GIT_COMMON_DIR",
+  "GIT_OBJECT_DIRECTORY",
+  "GIT_ALTERNATE_OBJECT_DIRECTORIES",
+  "GIT_CEILING_DIRECTORIES",
+]);
+
+function cleanEnv(): Record<string, string> {
+  return Object.fromEntries(
+    Object.entries(process.env).filter(
+      (entry): entry is [string, string] => entry[1] !== undefined && !GIT_ENV_KEYS.has(entry[0]),
+    ),
+  );
+}
+
 function sh(command: string, args: string[]): { ok: boolean; out: string } {
-  const proc = Bun.spawnSync([command, ...args], { stderr: "pipe" });
+  const proc = Bun.spawnSync([command, ...args], { stderr: "pipe", env: cleanEnv() });
   return { ok: proc.exitCode === 0, out: new TextDecoder().decode(proc.stdout).trim() };
 }
 

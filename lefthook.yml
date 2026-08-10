@@ -13,5 +13,12 @@ pre-push:
   commands:
     typecheck:
       run: bun run check
+    # Git exports GIT_DIR (and often GIT_INDEX_FILE) into hook environments, and
+    # `git -C <dir>` does not override them. A test that shells out to git would
+    # then operate on this repository instead of its temp fixture. The skills'
+    # git spawns sanitize their own environment; unsetting here is the net that
+    # also covers test files added later.
     test:
-      run: bun run test
+      run: env -u GIT_DIR -u GIT_WORK_TREE -u GIT_INDEX_FILE -u GIT_COMMON_DIR
+        -u GIT_OBJECT_DIRECTORY -u GIT_ALTERNATE_OBJECT_DIRECTORIES
+        -u GIT_CEILING_DIRECTORIES bun run test

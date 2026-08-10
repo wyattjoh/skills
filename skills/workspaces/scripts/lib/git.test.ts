@@ -11,16 +11,16 @@ import {
   runGitAllowEmpty,
   trackedWorkflowArtifacts,
 } from "./git.ts";
+import { spawnGit } from "./git-env.ts";
 
 const created: string[] = [];
 
 const makeRepo = (): string => {
   const dir = mkdtempSync(join(tmpdir(), "workspaces-git-"));
   created.push(dir);
-  const init = Bun.spawnSync(["git", "init", "-q", "-b", "main", dir]);
+  const init = spawnGit(["init", "-q", "-b", "main", dir]);
   expect(init.exitCode).toBe(0);
-  const configureUser = Bun.spawnSync([
-    "git",
+  const configureUser = spawnGit([
     "-C",
     dir,
     "-c",
@@ -79,7 +79,7 @@ describe("listStacks", () => {
   it("parses stacked-prs git config into stacks", () => {
     const repo = makeRepo();
     const config = (key: string, value: string) => {
-      const result = Bun.spawnSync(["git", "-C", repo, "config", key, value]);
+      const result = spawnGit(["-C", repo, "config", key, value]);
       expect(result.exitCode).toBe(0);
     };
     config("stack.cw/feature.base-branch", "main");
@@ -113,10 +113,9 @@ describe("trackedWorkflowArtifacts", () => {
     const repo = makeRepo();
     mkdirSync(join(repo, ".claude", "worktrees"), { recursive: true });
     writeFileSync(join(repo, ".claude", "worktrees", "leak.txt"), "leak\n");
-    const add = Bun.spawnSync(["git", "-C", repo, "add", "-f", ".claude/worktrees/leak.txt"]);
+    const add = spawnGit(["-C", repo, "add", "-f", ".claude/worktrees/leak.txt"]);
     expect(add.exitCode).toBe(0);
-    const commit = Bun.spawnSync([
-      "git",
+    const commit = spawnGit([
       "-C",
       repo,
       "-c",
