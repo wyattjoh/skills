@@ -10,6 +10,7 @@ const FAKE_GH = join(HERE, "testdata/fake-gh");
 const DIFF = join(HERE, "testdata/pr-diff.patch");
 const REVIEW = join(HERE, "testdata/review.json");
 const EXPECTED = join(HERE, "testdata/expected-payload.json");
+const ATTRIBUTION_ARGS = ["--agent-name", "Codex", "--human-name", "Wyatt Johnson"];
 
 async function makeTempFile(suffix: string): Promise<string> {
   const dir = await mkdtemp(join(tmpdir(), "review-integration-"));
@@ -20,7 +21,7 @@ async function runScript(
   args: string[],
   env: Record<string, string> = {},
 ): Promise<{ code: number; stdout: string; stderr: string }> {
-  const proc = Bun.spawn(["bun", SCRIPT, ...args], {
+  const proc = Bun.spawn(["bun", SCRIPT, ...args, ...ATTRIBUTION_ARGS], {
     env: {
       ...process.env,
       GH_PATH: FAKE_GH,

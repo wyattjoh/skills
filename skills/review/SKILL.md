@@ -284,7 +284,21 @@ Runs only if **all three** conditions hold:
 
 When all three hold, drive this flow:
 
-1. Assemble a review document and write it to a tempfile using `Write`:
+1. Resolve the attribution values before assembling the review:
+   - `agent_name`: the current executing agent's display name, such as `Codex` or `Claude`.
+   - `human_name`: run `gh api user --jq '.name // .login'` and use its output.
+
+   The submission script appends this footer to the review body and every inline comment:
+
+   ```markdown
+   ###### Sent from <agent name>
+
+   - [ ] reviewed by <human name>
+   ```
+
+   Do not add the footer to the findings file yourself. Pass the resolved values to the submission script with `--agent-name` and `--human-name`.
+
+2. Assemble a review document and write it to a tempfile using `Write`:
 
    ```json
    {
@@ -293,39 +307,41 @@ When all three hold, drive this flow:
    }
    ```
 
-   Findings match the shape in `references/finding-schema.md`. **Only `description` is posted inline** to the PR; the other fields are orchestrator bookkeeping. Inline any code reference the reader needs directly into `description` (backticks or fenced blocks) — there is no separate evidence block. **Strip orchestrator-internal fields** (`sources`, `contested`, `synthesisNote`) before writing. **Do not mention the review methodology** (no "Opus", "Codex", "corroborated", "contested", "synthesis", "second-opinion", "(codex confirmed)", "reviewed with..."). The script rejects these tokens; if your text hits them, rewrite to plain review prose.
+   Findings match the shape in `references/finding-schema.md`. **Only `description` plus the generated footer is posted inline** to the PR; the other fields are orchestrator bookkeeping. Inline any code reference the reader needs directly into `description` (backticks or fenced blocks) — there is no separate evidence block. **Strip orchestrator-internal fields** (`sources`, `contested`, `synthesisNote`) before writing. **Do not mention the review methodology** (no "Opus", "Codex", "corroborated", "contested", "synthesis", "second-opinion", "(codex confirmed)", "reviewed with..."). The script rejects these tokens; if your text hits them, rewrite to plain review prose.
 
-   **Keep `summary` short or empty.** It becomes the review body (no `## Code review` heading is added). One or two sentences max, and only when you have something meaningful to add on top of the inline comments. When there's nothing to add, pass `""`; the review will post with just the inline comments.
+   **Keep `summary` short or empty.** It becomes the review body (before the generated footer, with no `## Code review` heading). One or two sentences max, and only when you have something meaningful to add on top of the inline comments. When there's nothing to add, pass `""`; the required footer still appears in the review body.
 
-2. Invoke the submission script with `--dry-run` to preview the payload:
+3. Invoke the submission script with `--dry-run` to preview the payload:
 
    ```bash
    bun $SKILL_DIR/scripts/submit-pr-review.ts \
      --pr <pr_number> \
      --owner <owner> --repo <repo> \
      --findings <tempfile-path> \
+     --agent-name <agent_name> \
+     --human-name <human_name> \
      --dry-run
    ```
 
    Parse the JSON on stdout. Fields: `payload` (the assembled review), `counters` (`{ inline, dropped, critical_dropped }`), `critical_dropped` (the specific findings, if any).
 
-3. **Critical-drop abort.** If the script exits with code 2 or `counters.critical_dropped > 0`, stop. Show the user the criticals (path:line + title) and explain they would be silently dropped. Offer to re-anchor them (pick a line that IS in the diff) or downgrade severity, then retry. Do not submit.
+4. **Critical-drop abort.** If the script exits with code 2 or `counters.critical_dropped > 0`, stop. Show the user the criticals (path:line + title) and explain they would be silently dropped. Offer to re-anchor them (pick a line that IS in the diff) or downgrade severity, then retry. Do not submit.
 
-4. **Empty-anchorable short-circuit:** if `counters.inline == 0` and `counters.critical_dropped == 0`, do not prompt. Tell the user "no findings anchor to the PR diff; nothing to submit" and stop.
+5. **Empty-anchorable short-circuit:** if `counters.inline == 0` and `counters.critical_dropped == 0`, do not prompt. Tell the user "no findings anchor to the PR diff; nothing to submit" and stop.
 
-5. Otherwise, present to the user:
+6. Otherwise, present to the user:
    - PR URL
-   - First ~15 lines of `payload.body`
+   - First ~15 lines of `payload.body`, including the attribution footer
    - `counters.inline` (inline comments to post)
    - `counters.dropped` (non-critical findings not anchorable, skipped)
 
-6. Ask for confirmation with `AskUserQuestion`:
+7. Ask for confirmation with `AskUserQuestion`:
 
    > "Submit this review to `<pr_url>`?" — options: `yes`, `skip`.
 
-7. On `yes`: re-run the script **without** `--dry-run`. On success the script prints the submitted review's `html_url` to stdout; show it to the user. On non-zero exit, surface the stderr message and do not retry.
+8. On `yes`: re-run the script with the same `--agent-name` and `--human-name` flags, without `--dry-run`. On success the script prints the submitted review's `html_url` to stdout; show it to the user. On non-zero exit, surface the stderr message and do not retry.
 
-8. On `skip`: print nothing further. The markdown report stands.
+9. On `skip`: print nothing further. The markdown report stands.
 
 ### Multi-PR Batch Mode
 

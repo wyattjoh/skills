@@ -197,17 +197,23 @@ check.
 
 ### Drive the submission flow
 
-Follow Step 9 of the review skill (`skills/review/SKILL.md`). In short:
+Follow Step 9 of the review skill (`skills/review/SKILL.md`). Resolve the
+current executing agent's display name and the posting user's name with
+`gh api user --jq '.name // .login'` first. Pass both values as
+`--agent-name` and `--human-name`; the script appends the required attribution
+footer to the review body and every inline comment.
 
-1. Call `submit-pr-review.ts --dry-run` with the findings file; parse
-   `payload`, `counters`, and `critical_dropped` from stdout.
+1. Call `submit-pr-review.ts --dry-run` with the findings file and both
+   attribution flags; parse `payload`, `counters`, and `critical_dropped` from
+   stdout.
 2. **Critical drop abort.** If exit code is 2 or `counters.critical_dropped > 0`,
    stop and present the criticals to the user. Offer to re-anchor or downgrade.
    Do not submit until resolved.
 3. Empty-anchorable short-circuit: if `counters.inline == 0`, tell the user
    nothing anchors and stop.
 4. Otherwise show the preview and use `AskUserQuestion` (yes / skip).
-5. On yes, re-run without `--dry-run` and show the returned `html_url`.
+5. On yes, re-run without `--dry-run`, preserving both attribution flags, and
+   show the returned `html_url`.
 
 ### Multi-PR batch mode
 
