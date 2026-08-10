@@ -2,6 +2,7 @@ import { test, expect } from "bun:test";
 import { mkdtemp, unlink } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { appendFooter } from "./submit-pr-review.ts";
 import { buildPayload } from "./submit-pr-review.ts";
 import { collectCriticalDrops } from "./submit-pr-review.ts";
 import { detectMethodologyLeaks } from "./submit-pr-review.ts";
@@ -118,19 +119,30 @@ test("partitionFindings: keeps in-hunk, drops out-of-hunk", async () => {
   expect(dropped.map((f) => f.id)).toEqual(["ARCH-001"]);
 });
 
-test("renderFinding: emits description only (no badge, title, or evidence)", () => {
-  const body = renderFinding({
-    id: "SEC-001",
-    file: "src/auth.ts",
-    line: 14,
-    severity: "high",
-    category: "security",
-    title: "Token logged before validation",
-    description: "Raw token exposure in logs.",
-    evidence: 'console.log("validating", trimmed);',
-  });
+test("appendFooter: formats the required attribution footer", () => {
+  expect(appendFooter("Summary.", { agentName: "Codex", humanName: "Wyatt Johnson" })).toBe(
+    "Summary.\n\n###### Sent from Codex\n\n- [ ] reviewed by Wyatt Johnson",
+  );
+});
 
-  expect(body).toBe("Raw token exposure in logs.");
+test("renderFinding: emits description and attribution footer", () => {
+  const body = renderFinding(
+    {
+      id: "SEC-001",
+      file: "src/auth.ts",
+      line: 14,
+      severity: "high",
+      category: "security",
+      title: "Token logged before validation",
+      description: "Raw token exposure in logs.",
+      evidence: 'console.log("validating", trimmed);',
+    },
+    { agentName: "Codex", humanName: "Wyatt Johnson" },
+  );
+
+  expect(body).toBe(
+    "Raw token exposure in logs.\n\n###### Sent from Codex\n\n- [ ] reviewed by Wyatt Johnson",
+  );
 });
 
 test("buildPayload: matches golden fixture for auth-diff scenario", async () => {
@@ -139,7 +151,10 @@ test("buildPayload: matches golden fixture for auth-diff scenario", async () => 
   const review = await loadReview(new URL("./testdata/review.json", import.meta.url).pathname);
   const { anchorable } = partitionFindings(review.findings, hunks);
 
-  const payload = buildPayload(review.summary, anchorable);
+  const payload = buildPayload(review.summary, anchorable, {
+    agentName: "Codex",
+    humanName: "Wyatt Johnson",
+  });
 
   const expected = JSON.parse(
     await Bun.file(new URL("./testdata/expected-payload.json", import.meta.url)).text(),

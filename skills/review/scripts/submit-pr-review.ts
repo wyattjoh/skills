@@ -63,6 +63,34 @@ export interface ReviewDocument {
   findings: Finding[];
 }
 
+export interface ReviewAttribution {
+  agentName: string;
+  humanName: string;
+}
+
+function normalizeAttributionName(label: string, value: string): string {
+  const normalized = value.trim();
+  if (normalized.length === 0) {
+    throw new Error(`${label} must not be empty`);
+  }
+  if (/[\r\n]/.test(normalized)) {
+    throw new Error(`${label} must be a single line`);
+  }
+  return normalized;
+}
+
+export function formatFooter(attribution: ReviewAttribution): string {
+  const agentName = normalizeAttributionName("Agent name", attribution.agentName);
+  const humanName = normalizeAttributionName("Human name", attribution.humanName);
+  return `###### Sent from ${agentName}\n\n- [ ] reviewed by ${humanName}`;
+}
+
+export function appendFooter(body: string, attribution: ReviewAttribution): string {
+  const content = body.trim();
+  const footer = formatFooter(attribution);
+  return content.length > 0 ? `${content}\n\n${footer}` : footer;
+}
+
 const SEVERITIES: readonly Severity[] = ["critical", "high", "medium", "low"];
 
 const REQUIRED_STRING_FIELDS = [
@@ -230,8 +258,8 @@ export function formatMethodologyAbort(leaks: MethodologyLeak[]): string {
   ].join("\n");
 }
 
-export function renderFinding(f: Finding): string {
-  return f.description;
+export function renderFinding(f: Finding, attribution: ReviewAttribution): string {
+  return appendFooter(f.description, attribution);
 }
 
 export interface ReviewComment {
@@ -247,15 +275,19 @@ export interface ReviewPayload {
   comments: ReviewComment[];
 }
 
-export function buildPayload(summary: string, anchorable: Finding[]): ReviewPayload {
+export function buildPayload(
+  summary: string,
+  anchorable: Finding[],
+  attribution: ReviewAttribution,
+): ReviewPayload {
   return {
-    body: summary.trim(),
+    body: appendFooter(summary, attribution),
     event: "COMMENT",
     comments: anchorable.map((f) => ({
       path: f.file,
       line: f.line,
       side: "RIGHT",
-      body: renderFinding(f),
+      body: renderFinding(f, attribution),
     })),
   };
 }
@@ -267,6 +299,8 @@ interface CliFlags {
   owner: string;
   repo: string;
   findings: string;
+  agentName: string;
+  humanName: string;
   dryRun: boolean;
 }
 
@@ -278,10 +312,12 @@ function parseCli(args: string[]): CliFlags {
       owner: { type: "string" },
       repo: { type: "string" },
       findings: { type: "string" },
+      "agent-name": { type: "string" },
+      "human-name": { type: "string" },
       "dry-run": { type: "boolean", default: false },
     },
   });
-  for (const required of ["pr", "owner", "repo", "findings"] as const) {
+  for (const required of ["pr", "owner", "repo", "findings", "agent-name", "human-name"] as const) {
     if (typeof values[required] !== "string" || values[required] === "") {
       throw new Error(`Missing required flag --${required}`);
     }
@@ -291,6 +327,8 @@ function parseCli(args: string[]): CliFlags {
     owner: values.owner as string,
     repo: values.repo as string,
     findings: values.findings as string,
+    agentName: values["agent-name"] as string,
+    humanName: values["human-name"] as string,
     dryRun: values["dry-run"] === true,
   };
 }
@@ -335,7 +373,10 @@ async function main() {
   const hunks = parseHunks(diff);
   const { anchorable, dropped } = partitionFindings(review.findings, hunks);
   const criticalDropped = collectCriticalDrops(dropped);
-  const payload = buildPayload(review.summary, anchorable);
+  const payload = buildPayload(review.summary, anchorable, {
+    agentName: cli.agentName,
+    humanName: cli.humanName,
+  });
 
   if (cli.dryRun) {
     const out: DryRunOutput = {
