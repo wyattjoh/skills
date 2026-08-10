@@ -5,6 +5,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { auditWorkspace } from "./audit.ts";
 import { renderClaudeMd } from "./generate.ts";
+import { spawnGit } from "./git-env.ts";
 import { loadManifest } from "./manifest.ts";
 
 const created: string[] = [];
@@ -17,10 +18,9 @@ afterEach(() => {
 
 const makeMemberRepo = (parent: string, name: string): string => {
   const dir = join(parent, name);
-  const init = Bun.spawnSync(["git", "init", "-q", "-b", "main", dir]);
+  const init = spawnGit(["init", "-q", "-b", "main", dir]);
   expect(init.exitCode).toBe(0);
-  const commit = Bun.spawnSync([
-    "git",
+  const commit = spawnGit([
     "-C",
     dir,
     "-c",

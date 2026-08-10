@@ -18,6 +18,7 @@ allowed-tools:
 argument-hint: "[repository-path]"
 disable-model-invocation: true
 effort: high
+memory: user
 ---
 
 # Pre-commit Hooks

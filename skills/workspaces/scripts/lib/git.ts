@@ -1,4 +1,5 @@
 import { Data, Effect } from "effect";
+import { type GitResult, spawnGit } from "./git-env.ts";
 
 /**
  * Raised when a git command exits with a failing status. `stderr` carries
@@ -23,20 +24,10 @@ export type StackInfo = {
   branches: string[];
 };
 
-const runGitRaw = (
-  repo: string,
-  args: string[],
-): { exitCode: number; stdout: string; stderr: string } => {
-  const result = Bun.spawnSync(["git", "-C", repo, ...args], {
-    stdout: "pipe",
-    stderr: "pipe",
-  });
-  return {
-    exitCode: result.exitCode,
-    stdout: result.stdout.toString(),
-    stderr: result.stderr.toString(),
-  };
-};
+// `-C` alone does not pin the repository: an inherited GIT_DIR wins over it.
+// `spawnGit` strips those variables so a skill command invoked from inside a
+// git hook still reads `repo` and not the hook's repository.
+const runGitRaw = (repo: string, args: string[]): GitResult => spawnGit(["-C", repo, ...args]);
 
 /**
  * Runs a git command against `repo` (via `git -C`) and returns trimmed

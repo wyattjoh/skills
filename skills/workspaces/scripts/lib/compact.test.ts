@@ -4,6 +4,7 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { archiveAdrs, inventoryAdrs, journalSwitches, parseAdr } from "./compact.ts";
+import { spawnGit } from "./git-env.ts";
 
 const created: string[] = [];
 
@@ -14,8 +15,7 @@ afterEach(() => {
 });
 
 const git = (dir: string, ...args: string[]): void => {
-  const result = Bun.spawnSync([
-    "git",
+  const result = spawnGit([
     "-C",
     dir,
     "-c",

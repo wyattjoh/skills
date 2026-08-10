@@ -75,6 +75,7 @@ Restart Claude Code after adding or changing an agent definition.
 | driving-ios-simulator         | Drive a booted iOS Simulator: tap, swipe, type, read elements, screenshot         |
 | effect-ts                     | Effect-TS patterns: services, layers, error handling, composition                 |
 | executing-workflows-manually  | Run Claude Code workflow scripts in harnesses without the Workflow tool           |
+| herd                          | Run tickets in parallel as real agent sessions in sibling herdr tabs              |
 | herdr                         | Control herdr from inside a pane over its unix socket                             |
 | icon-gen                      | Generate app icons with AI (snapai), with refinement and platform resizing        |
 | json-inspect                  | Generate JSON Schema from JSON files with genson                                  |
@@ -105,6 +106,7 @@ Restart Claude Code after adding or changing an agent definition.
 | varlock                       | Kickstart varlock, the encrypted schema-driven dotenv replacement                 |
 | vhs                           | Interview-driven terminal screencasts rendered to GIF/MP4/WebM                    |
 | workspaces                    | Create, operate, and compact multi-repo workspace hubs with enforced memory       |
+| wrap-up                       | Close out a long session: sweep loose ends, propose commits, report what remains  |
 
 ## Claude Code agents
 
@@ -113,6 +115,7 @@ Restart Claude Code after adding or changing an agent definition.
 | code-reviewer        | Dual-pipeline code review with parallel reviewers and interactive fix delegation |
 | debug-investigator   | Systematically investigates bugs and unexpected behavior                         |
 | git-history-explorer | Searches git history for code evolution and commit patterns                      |
+| implementor          | Implements one scoped task, drives its own review loop, and verifies the result  |
 | researcher           | Research specialist for online sources and local codebases                       |
 | ui-ux-analyzer       | Expert UI/UX analysis and recommendations                                        |
 | xcode-builder        | Performs Xcode builds with error parsing and structured reports                  |

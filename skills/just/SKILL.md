@@ -8,8 +8,10 @@ effort: low
 # just
 
 `just` is a command runner: a saner `make` for saving and running project-scoped
-commands (called **recipes**) from a `justfile`. Unlike `make`, it does not build
-files or track timestamps; it just runs recipes. It is **flag-driven** — there are
+commands (called **recipes**) from a `justfile`. Unlike `make`, ordinary recipes do
+not infer builds from file targets or timestamps; they just run commands. Unstable
+cached recipes can explicitly track input contents and required outputs. It is
+**flag-driven** — there are
 no subcommands. The first non-flag argument is a recipe name; everything else is a
 recipe argument, a `VAR=value` override, or a mode-switch flag (`--list`, `--fmt`,
 `--init`, ...).
@@ -17,9 +19,9 @@ recipe argument, a `VAR=value` override, or a mode-switch flag (`--list`, `--fmt
 ## Local setup
 
 - Binary: typically installed via mise at `~/.local/share/mise/installs/just/latest/just` (on `PATH` as `just`).
-- **Pinned version explored: `just 1.55.1`.** Everything below is verified against
-  that binary's `--help`. Docs were read at 1.56.0 (one minor ahead); version-gated
-  items are annotated with a "since" version.
+- **Pinned version explored: `just 1.57.0`.** CLI details are verified against that
+  binary's `--help`. The upstream manual snapshot reviewed includes features annotated
+  through 1.58.0; version-gated items are marked with a "since" version.
 - Config file read: **`justfile`** (or `.justfile`; casing like `Justfile` also works).
   `just` searches the current directory and walks **up** to the filesystem root, so
   you can run it from any subdirectory of a project.
@@ -36,11 +38,13 @@ flag has a matching `JUST_*` env var (e.g. `JUST_UNSTABLE`, `JUST_NO_DOTENV`).
 | `--summary`                 |       | One-line, space-separated recipe names.                                       |
 | `--choose`                  |       | Interactively pick a recipe to run (uses `$JUST_CHOOSER`, default `fzf`).     |
 | `--show <RECIPE>`           | `-s`  | Print a recipe's source.                                                      |
+| `--usage <RECIPE>`          |       | Print a recipe's arguments and documentation.                                 |
 | `--dump`                    |       | Print the parsed justfile (`--json` / `--dump-format json` for machine form). |
 | `--evaluate [VAR]`          |       | Print all variable values, or one variable's value.                           |
 | `--fmt`                     |       | Format and **overwrite** the justfile (add `--check` for check-only).         |
 | `--init`                    |       | Scaffold a starter `justfile` in the project root.                            |
 | `--dry-run <RECIPE>`        | `-n`  | Print what would run without executing.                                       |
+| `--jobs <N>`                |       | Limit simultaneous dependencies of `[parallel]` recipes.                      |
 | `--set <VAR> <VALUE>`       |       | Override a variable for this invocation.                                      |
 | `--justfile <FILE>`         | `-f`  | Use a specific justfile (`-` reads stdin).                                    |
 | `--working-directory <DIR>` | `-d`  | Working dir for recipes (**requires `--justfile` too**).                      |
@@ -136,9 +140,11 @@ Source: [recipe parameters](https://just.systems/man/en/recipe-parameters.html).
 ### Inspect before running
 
 ```bash
+just --usage deploy     # print arguments and documentation
 just --show deploy      # print the recipe's source
 just --dry-run deploy   # print the commands without executing them
-just --evaluate         # dump every variable and its value
+just --dump --dump-format json  # machine-readable recipes, attributes, and metadata
+just --evaluate         # dump variables; note that this evaluates backticks
 ```
 
 Source: [command-line options](https://just.systems/man/en/command-line-options.html).
@@ -159,7 +165,7 @@ just --fmt           # rewrite in canonical style, in place
 just --fmt --check   # exit 0 if already formatted, exit 1 + diff otherwise
 ```
 
-`--fmt` is **stable in v1.55.1** (no `--unstable` needed). Older releases required
+`--fmt` is **stable in v1.57.0** (no `--unstable` needed). Older releases required
 `--unstable`; if a pinned older `just` errors, add it.
 Source: [formatting / print](https://just.systems/man/en/print.html).
 
@@ -171,6 +177,27 @@ just target=release build          # positional override form
 ```
 
 Source: [setting variables from the command line](https://just.systems/man/en/setting-variables-from-the-command-line.html).
+
+### Cache an expensive script recipe
+
+```just
+set unstable
+set lists
+
+[script]
+[cache(inputs = ["lib.c", "main.c"], outputs = "main")]
+build:
+    cc lib.c main.c -o main
+```
+
+Cached recipes are unstable and intentionally explicit: input contents are hashed,
+all outputs must exist, and `[cache]` only applies to script recipes. Use `just
+--no-cache build` to force a run or `just --clean build` to clear its cache entries.
+Read the limitations in
+[`references/justfile.md`](references/justfile.md#cached-recipes) before relying on
+caching.
+
+Source: [cached recipes](https://just.systems/man/en/cached-recipes.html).
 
 ### Load env from `.env`
 
@@ -186,8 +213,8 @@ just serve              # env comes from ./.env
 just --no-dotenv serve  # skip .env this run
 ```
 
-Note: on v1.55.1 the binary loads `.env` by default; `set dotenv-load` makes the
-intent explicit and is required by older/stricter configs.
+`just` does not load `.env` by default. Add `set dotenv-load` (or configure an
+explicit dotenv setting) when recipes should receive values from it.
 Source: [settings](https://just.systems/man/en/settings.html).
 
 ### Split a large justfile into modules
@@ -227,7 +254,7 @@ matching the host OS. Not copied verbatim from a single manual code block.
 ## References
 
 - [`references/commands/cli-flags.md`](references/commands/cli-flags.md) — the complete
-  flag surface (v1.55.1 `--help`), grouped by mode, with args, short forms, env vars,
+  flag surface (v1.57.0 `--help`), grouped by mode, with args, short forms, env vars,
   and effect warnings.
 - [`references/justfile.md`](references/justfile.md) — the `justfile` format: recipes,
   parameters, variables, string types, functions, attributes, settings, aliases,
