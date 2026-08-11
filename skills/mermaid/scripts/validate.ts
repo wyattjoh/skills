@@ -3,15 +3,24 @@
 import { GlobalRegistrator } from "@happy-dom/global-registrator";
 import { Data, Effect } from "effect";
 
-// Mermaid captures DOMPurify when it loads, so browser globals must exist before it is imported.
-GlobalRegistrator.register();
-
 type Mermaid = (typeof import("mermaid"))["default"];
 
 let mermaidPromise: Promise<Mermaid> | undefined;
 
 function loadMermaid(): Promise<Mermaid> {
-  mermaidPromise ??= import("mermaid").then(({ default: mermaid }) => mermaid);
+  mermaidPromise ??= (async () => {
+    // Mermaid captures DOMPurify when it loads, so browser globals must exist
+    // before it is imported. Registered lazily, right before that import,
+    // rather than at module load: this file is imported by render.ts even
+    // for callers that never validate (e.g. generateHtml), and eagerly
+    // patching globalThis.fetch/Window there leaked into unrelated test
+    // files sharing the same `bun test` worker.
+    if (!GlobalRegistrator.isRegistered) {
+      GlobalRegistrator.register();
+    }
+    const { default: mermaid } = await import("mermaid");
+    return mermaid;
+  })();
   return mermaidPromise;
 }
 

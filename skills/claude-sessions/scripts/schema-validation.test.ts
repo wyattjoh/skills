@@ -1,5 +1,5 @@
 import { beforeAll, describe, it, expect } from "bun:test";
-import { existsSync, promises as fs } from "node:fs";
+import { existsSync, promises as fs, readdirSync } from "node:fs";
 import { listProjects } from "./list-projects.ts";
 import { loadSessionsIndex } from "./list-sessions.ts";
 import { parseJsonl } from "./search-content.ts";
@@ -8,10 +8,25 @@ import type { AssistantMessage, UserMessage } from "../references/types.ts";
 // Live schema validation tests.
 //
 // These tests read real ~/.claude/ data and validate it conforms to our
-// TypeScript types. They auto-skip when ~/.claude/ is absent (CI, containers,
-// fresh machines) so the rest of the suite stays green.
+// TypeScript types. They auto-skip when no project has a sessions-index.json
+// to validate against — not just when ~/.claude/ itself is absent, since
+// managed/remote Claude Code environments (e.g. CLAUDE_CODE_REMOTE=true) ship
+// a ~/.claude/ directory of their own without any real session history in it.
 const homeDir = process.env.HOME;
-const skipLiveValidation = !homeDir || !existsSync(`${homeDir}/.claude`);
+
+function hasSessionsIndex(projectsDir: string): boolean {
+  if (!existsSync(projectsDir)) return false;
+  try {
+    return readdirSync(projectsDir, { withFileTypes: true }).some(
+      (entry) =>
+        entry.isDirectory() && existsSync(`${projectsDir}/${entry.name}/sessions-index.json`),
+    );
+  } catch {
+    return false;
+  }
+}
+
+const skipLiveValidation = !homeDir || !hasSessionsIndex(`${homeDir}/.claude/projects`);
 
 describe.skipIf(skipLiveValidation)("live schema validation", () => {
   let claudeDir: string;

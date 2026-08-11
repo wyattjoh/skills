@@ -1,4 +1,5 @@
-import { describe, expect, it as test } from "bun:test";
+import { afterAll, describe, expect, it as test } from "bun:test";
+import { GlobalRegistrator } from "@happy-dom/global-registrator";
 import {
   createValidationReport,
   extractMermaidBlocks,
@@ -9,6 +10,17 @@ import {
 
 const TESTDATA_DIRECTORY = `${import.meta.dir}/testdata`;
 const VALIDATE_SCRIPT = `${import.meta.dir}/validate.ts`;
+
+// The tests below exercise validateMermaid/validateContent, which lazily
+// registers happy-dom's browser globals (including a Window-scoped fetch)
+// process-wide on first use. bun test runs all matched files in shared
+// workers, so without this cleanup the patched fetch leaks into unrelated
+// test files that run afterward in the same worker.
+afterAll(async () => {
+  if (GlobalRegistrator.isRegistered) {
+    await GlobalRegistrator.unregister();
+  }
+});
 
 async function validateFixture(name: string) {
   const path = `testdata/${name}`;
