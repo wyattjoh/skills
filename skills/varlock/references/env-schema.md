@@ -54,7 +54,7 @@ Source: [env-spec reference](https://varlock.dev/env-spec/reference/).
 
 | Decorator                                                                                             | Purpose                                                                   |
 | ----------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------- |
-| `@envFlag=<KEY>` / `@currentEnv=$KEY`                                                                 | Which item selects the active environment.                                |
+| `@currentEnv=$KEY`                                                                                    | Which item selects the active environment. (`@envFlag` is a deprecated alias, deprecated since v0.1 — prefer `@currentEnv`.) |
 | `@defaultRequired=true\|false\|infer`                                                                 | Default required-ness (`infer` = required if a value is present).         |
 | `@defaultSensitive=true\|false`                                                                       | Default sensitivity for all items.                                        |
 | `@import(<path>)`                                                                                     | Compose another schema file in.                                           |

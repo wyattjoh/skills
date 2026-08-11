@@ -121,6 +121,7 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: write
+      issues: write
       pull-requests: write
     outputs:
       releases_created: ${{ steps.release.outputs.releases_created }}
@@ -184,7 +185,13 @@ If the project has an existing publish workflow triggered on `push: main`:
 
 ### OIDC-Authenticated Publishing
 
-npm (with provenance) and JSR both support OIDC. Skip long-lived API tokens entirely:
+JSR supports OIDC out of the box. npm requires enabling **Trusted Publishing**
+(GA 2025-07-31) per-package on npmjs.com first — linking the org/repo/workflow
+filename — plus npm CLI >= 11.5.1 and Node.js >= 22.14.0 in the runner. Once
+configured, a plain `npm publish` authenticates via OIDC and attaches
+provenance automatically; `--provenance` alone does **not** replace the need
+for a token without Trusted Publishing configured, since it only adds a build
+attestation, not authentication. Skip long-lived API tokens entirely once set up:
 
 ```yaml
 permissions:
@@ -192,8 +199,8 @@ permissions:
   id-token: write
 steps:
   - uses: actions/checkout@v4
-  # npm with provenance:
-  - run: npm publish --provenance --access public
+  # npm with Trusted Publishing configured on npmjs.com:
+  - run: npm publish --access public
   # OR JSR:
   - run: deno publish
 ```
