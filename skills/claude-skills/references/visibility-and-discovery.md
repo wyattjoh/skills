@@ -74,8 +74,9 @@ Skill
   baseline behavior for all other tools
 - `user-invocable` only controls menu visibility, **not** Skill tool access.
   Use `disable-model-invocation: true` to block programmatic invocation
-- Built-in commands like `/compact` and `/init` are not available through the
-  Skill tool
+- A few built-in commands, including `/init` and `/security-review`, are also
+  available through the Skill tool. Other built-in commands such as
+  `/compact` are not.
 
 ## Skill Precedence & Discovery
 
@@ -93,12 +94,51 @@ conflict with personal or project skills.
 If a skill and a built-in command share the same name, the **skill takes
 precedence**.
 
+### Override Skill Visibility From Settings
+
+The `skillOverrides` setting controls a skill's visibility from `settings.json`
+instead of its own frontmatter — useful for skills checked into a shared repo
+you don't want to edit. The `/skills` menu writes it for you (highlight a
+skill, press `Space` to cycle states, `Enter` to save to
+`.claude/settings.local.json`). Each key is a skill name; each value is one of:
+
+| Value                   | Listed to Claude     | In `/` menu |
+| ------------------------ | --------------------- | ----------- |
+| `"on"`                   | Name and description | Yes         |
+| `"name-only"`            | Name only             | Yes         |
+| `"user-invocable-only"`  | Hidden                | Yes         |
+| `"off"`                  | Hidden                | Hidden      |
+
+A skill absent from `skillOverrides` is treated as `"on"`. As of v2.1.199,
+`"off"` also hides the skill from Remote Control and Agent SDK command
+listings, not just the terminal `/` menu. Plugin skills aren't affected;
+manage those through `/plugin` instead.
+
+```json
+{
+  "skillOverrides": {
+    "legacy-context": "name-only",
+    "deploy": "off"
+  }
+}
+```
+
 ### Nested & Monorepo Discovery
 
 Claude Code automatically discovers skills from nested `.claude/skills/`
 directories when working with files in subdirectories. For example, editing a
 file in `packages/frontend/` also loads skills from
 `packages/frontend/.claude/skills/`.
+
+If a nested skill shares a name with a project-root skill, both stay
+available: the nested one gets a directory-qualified name (e.g.
+`apps/web:deploy`), and invoking the unqualified name still runs the
+project-root skill, which gets a list of the directory-qualified variants
+appended with an instruction to also invoke any variant whose directory holds
+the files Claude is working on (requires Claude Code v2.1.203+). Skills in a
+nested directory aren't available at session start — they load the first time
+Claude touches a file in that subdirectory, and stay available for the rest of
+the session.
 
 ### Additional Directories
 
@@ -107,13 +147,15 @@ automatically and picked up by live change detection.
 
 ## Description Character Budget
 
-Skill descriptions share a character budget (1% of the context window, with a
-fallback of **8,000 characters**). Each entry is capped at **250 characters**,
-so front-load the key use case. If you have many skills, some descriptions may
+Skill descriptions share a character budget (1% of the context window,
+adjustable via `skillListingBudgetFraction`). Each entry — the combined
+`description` + `when_to_use` text — is truncated at **1,536 characters** in
+the skill listing (configurable via `skillListingMaxDescChars`), so
+front-load the key use case. If you have many skills, some descriptions may
 be truncated or omitted from context. To diagnose:
 
 1. Run `/context` to check which skills are loaded
-2. Keep descriptions concise (under 250 characters for the key use case)
+2. Keep the combined `description`/`when_to_use` text concise
 3. Increase the budget via the `SLASH_COMMAND_TOOL_CHAR_BUDGET` environment
    variable if needed
 
@@ -130,7 +172,11 @@ If a skill and a command share the same name, the **skill takes precedence**.
 
 ## Bundled Skills
 
-Claude Code ships with built-in skills available in every session:
+Claude Code ships with built-in skills available in every session, including
+`/doctor`, `/code-review`, `/batch`, `/debug`, `/loop`, `/claude-api`, `/run`,
+`/verify`, and `/run-skill-generator`. To turn them off, use the
+`disableBundledSkills` setting, which disables every bundled skill except
+`/doctor`.
 
 - **`/simplify [focus]`**: Reviews recently changed files for code reuse,
   quality, and efficiency, then fixes issues. Spawns three parallel review
@@ -144,6 +190,18 @@ Claude Code ships with built-in skills available in every session:
   language. Also activates automatically when code imports the Anthropic SDK.
 - **`/loop [interval] <prompt>`**: Runs a prompt repeatedly on an interval.
   Useful for polling deployments or periodic checks.
+- **`/run [description]`**: Launches and drives your app to see a change
+  working, inferring the launch from your project type.
+- **`/verify [description]`**: Builds and runs your app to confirm a code
+  change works, without falling back to tests or type checks.
+- **`/run-skill-generator`**: Records a per-project launch/build recipe at
+  `.claude/skills/run-<name>/` so `/run`, `/verify`, and other agents stop
+  rediscovering it each session.
+- **`/doctor`**: Setup checkup; stays available even when
+  `disableBundledSkills` is on.
+
+**As of v2.1.215**, `/code-review` and `/verify` only run when you invoke
+them directly — Claude used to be able to trigger them automatically.
 
 ## Types of Skill Content
 

@@ -187,7 +187,7 @@ Source: [settings](https://just.systems/man/en/settings.html). Written
 | `positional-arguments`      | bool           | false          | Pass args as `$0`, `$1`, ... inside recipes.          |
 | `quiet`                     | bool           | false          | Don't echo recipe lines.                              |
 | `shell`                     | `[cmd, args…]` | platform sh    | Shell for recipes and backticks.                      |
-| `windows-shell`             | `[cmd, args…]` | –              | Shell on Windows (overrides `shell` there).           |
+| `windows-shell` (deprecated) | `[cmd, args…]` | –             | Shell on Windows. Deprecated since 1.56.0 — use the `[windows]` attribute on `set shell` instead. |
 | `script-interpreter`        | `[cmd, args…]` | `['sh','-eu']` | Interpreter for empty `[script]`.                     |
 | `tempdir`                   | string         | –              | Directory for script temp files.                      |
 | `working-directory`         | string         | –              | Working dir for recipes and backticks.                |
@@ -197,7 +197,10 @@ Source: [settings](https://just.systems/man/en/settings.html). Written
 
 ```just
 set shell := ["zsh", "-cu"]
-set windows-shell := ["powershell.exe", "-NoProfile", "-Command"]
+
+[windows]
+set shell := ["powershell.exe", "-NoLogo", "-Command"]
+
 set dotenv-load
 set export
 set positional-arguments

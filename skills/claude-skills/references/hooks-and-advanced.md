@@ -8,21 +8,17 @@ finishes.
 
 ### Supported Events (Skill-Scoped)
 
-The core tool-lifecycle events always work in skill frontmatter:
+**All hook events are supported** in skill and agent frontmatter — not just
+the core tool-lifecycle ones. This includes `PreToolUse`, `PostToolUse`,
+`Stop`, `SessionStart`, `InstructionsLoaded`, `CwdChanged`, `FileChanged`,
+`PreCompact`/`PostCompact`, the `Permission*` family, and any other event in
+the [official hooks reference](https://code.claude.com/docs/en/hooks.md).
+`SessionStart` is commonly paired with `once: true` to run setup exactly once.
 
-- `PreToolUse`: Before Claude uses any tool
-- `PostToolUse`: After Claude successfully uses a tool
-- `Stop`: When Claude attempts to stop
-
-The official hooks reference also shows `SessionStart` used in skill
-frontmatter (paired with `once: true` to run setup exactly once), so skills
-can hook into broader session lifecycle events. If you need an event beyond
-`PreToolUse`/`PostToolUse`/`Stop`/`SessionStart`, check the
-[official hooks reference](https://code.claude.com/docs/en/hooks.md)
-for the full list and confirm it's supported in skill frontmatter before
-relying on it. Project-level hooks in `settings.json` support the complete
-set of events including `InstructionsLoaded`, `CwdChanged`, `FileChanged`,
-`PreCompact`/`PostCompact`, and the `Permission*` family.
+For subagents, a `Stop` hook is automatically converted to `SubagentStop`,
+since that's the event that actually fires when a subagent completes.
+Frontmatter hooks in a project subagent only run after you accept the
+workspace trust dialog for the folder the agent file came from.
 
 Regardless of event, skill-scoped hooks are automatically cleaned up when
 the skill finishes.
@@ -55,7 +51,13 @@ hooks:
 - type: command
   command: "./scripts/validate.sh"
   timeout: 30 # seconds, default 600
+  async: true # optional: run in the background without blocking
+  shell: bash # optional: bash (default) or powershell
 ```
+
+Command hooks also accept `args` (exec-form argument list, run without a
+shell) and `asyncRewake` (run in the background and wake Claude when the
+command exits with code 2).
 
 **HTTP hooks** send a POST request to an endpoint:
 
@@ -63,6 +65,16 @@ hooks:
 - type: http
   url: "https://example.com/hook"
   timeout: 30 # seconds
+```
+
+**MCP tool hooks** call a tool on a connected MCP server:
+
+```yaml
+- type: mcp_tool
+  server: "my-mcp-server"
+  tool: "validate"
+  input:
+    path: "$TOOL_INPUT"
 ```
 
 **Prompt hooks** evaluate with an LLM:
@@ -177,6 +189,14 @@ agent: Explore
 ---
 ```
 
+As of v2.1.218, a forked skill runs in the **background** by default: the
+invoking turn continues while it runs, and the result arrives when it
+completes. Set `background: false` in the frontmatter to block the turn
+instead. A backgrounded fork also gets the narrower tool set that applies to
+background subagents, so set `background: false` if a step needs a tool
+outside that set. Edits from a background fork bypass the session's
+checkpoints (`/rewind` won't undo them — use git instead).
+
 ### When to Use Forked Context
 
 - Complex analysis that generates verbose output
@@ -188,7 +208,10 @@ agent: Explore
 When using `context: fork`, the `agent` field determines the execution
 environment:
 
-- `Explore`: Fast agent for codebase exploration (read-only tools, Haiku model)
+- `Explore`: Fast, read-only agent for codebase exploration. Model inherits
+  from the main conversation (capped at Opus on the Claude API), not a fixed
+  Haiku model — define a custom `Explore` subagent with `model: haiku` to pin
+  it to a cheaper model.
 - `Plan`: Software architect for planning (read-only tools, inherited model)
 - `general-purpose`: Default multi-purpose agent (all tools, inherited model)
 - Custom agent name from `.claude/agents/`
@@ -197,7 +220,7 @@ environment:
 
 | Approach                     | System prompt            | Task                        | Also loads                   |
 | ---------------------------- | ------------------------ | --------------------------- | ---------------------------- |
-| Skill with `context: fork`   | From agent type          | SKILL.md content            | CLAUDE.md                    |
+| Skill with `context: fork`   | From agent type          | SKILL.md content            | CLAUDE.md, except when the agent is `Explore` or `Plan` (they always skip it) |
 | Subagent with `skills` field | Subagent's markdown body | Claude's delegation message | Preloaded skills + CLAUDE.md |
 
 ## String Substitutions
@@ -205,13 +228,16 @@ environment:
 Skills can use dynamic string substitutions replaced at runtime. These work in
 both the skill body and in hook commands.
 
-| Variable               | Description                                                |
-| ---------------------- | ---------------------------------------------------------- |
-| `$ARGUMENTS`           | All arguments passed when invoking via `/skill-name args`  |
-| `$ARGUMENTS[N]`        | Specific argument by 0-based index (e.g., `$ARGUMENTS[0]`) |
-| `$N`                   | Shorthand for `$ARGUMENTS[N]` (e.g., `$0`, `$1`)           |
-| `${CLAUDE_SESSION_ID}` | Current session ID for logging/correlation                 |
-| `${CLAUDE_SKILL_DIR}`  | Directory containing the skill's SKILL.md file             |
+| Variable                | Description                                                                                                                    |
+| ----------------------- | -------------------------------------------------------------------------------------------------------------------------------- |
+| `$ARGUMENTS`            | All arguments passed when invoking via `/skill-name args`                                                                        |
+| `$ARGUMENTS[N]`         | Specific argument by 0-based index (e.g., `$ARGUMENTS[0]`)                                                                       |
+| `$N`                    | Shorthand for `$ARGUMENTS[N]` (e.g., `$0`, `$1`)                                                                                 |
+| `$name`                 | Named argument declared in the `arguments` frontmatter list (e.g. `arguments: [issue, branch]` → `$issue`, `$branch`)            |
+| `${CLAUDE_SESSION_ID}`  | Current session ID for logging/correlation                                                                                       |
+| `${CLAUDE_EFFORT}`      | Current effort level: `low`, `medium`, `high`, `xhigh`, or `max` (Ultracode reports as `xhigh`)                                  |
+| `${CLAUDE_SKILL_DIR}`   | Directory containing the skill's SKILL.md file                                                                                   |
+| `${CLAUDE_PROJECT_DIR}` | The project root directory (same path hooks and MCP servers receive as `CLAUDE_PROJECT_DIR`). Requires Claude Code v2.1.196+.     |
 
 ### `${CLAUDE_SKILL_DIR}` Details
 
