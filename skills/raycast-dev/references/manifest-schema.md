@@ -13,6 +13,7 @@ This reference covers the structure and configuration of a Raycast extension's `
   "icon": "icon.png",
   "author": "github-username",
   "owner": "organization-name",
+  "platforms": ["macOS", "Windows"],
   "categories": ["Productivity", "Developer Tools"],
   "license": "MIT",
   "commands": [
@@ -77,22 +78,32 @@ This reference covers the structure and configuration of a Raycast extension's `
 **Description:** GitHub username of the primary author
 **Example:** `"github-username"`
 
+### platforms
+
+**Type:** `("macOS" | "Windows")[]`
+**Description:** Platforms the extension supports. Required at the top level
+(in addition to the optional per-command `platforms` override documented
+under [Command Properties](#platforms)).
+**Example:** `["macOS", "Windows"]`
+
 ### categories
 
 **Type:** `string[]`
-**Description:** Categories for the Raycast Store (max 2)
+**Description:** Categories for the Raycast Store. Official docs state only
+"at least one category" — no documented maximum.
 **Valid Values:**
 
 - "Applications"
 - "Communication"
 - "Data"
+- "Design Tools"
 - "Developer Tools"
 - "Documentation"
 - "Finance"
 - "Fun"
 - "Media"
-- "Music"
 - "News"
+- "Other"
 - "Productivity"
 - "Security"
 - "System"
@@ -385,19 +396,23 @@ export default function Command() {
 
 ## AI Extensions
 
-For AI-powered extensions, add AI configuration:
+`tools` is a **top-level manifest array**, separate from `ai` (which is
+reserved for `instructions`/`evals`, optionally moved to a root `ai.yaml`).
+Each tool entry needs `name` (required — maps implicitly to
+`src/tools/<name>.ts`, no `file` property), `title` (required), `description`
+(required), and an optional `icon`:
 
 ```json
 {
+  "tools": [
+    {
+      "name": "get-todos",
+      "title": "Get Todos",
+      "description": "Fetch the user's todo list"
+    }
+  ],
   "ai": {
     "instructions": "General instructions for the AI agent",
-    "tools": [
-      {
-        "name": "get-todos",
-        "description": "Fetch the user's todo list",
-        "file": "src/tools/get-todos.ts"
-      }
-    ],
     "evals": [
       {
         "input": "@todo-list What are my todos?",
@@ -495,7 +510,7 @@ Standard scripts for Raycast extensions:
 
 ### Categories
 
-- Choose the most relevant categories (max 2)
+- Choose the most relevant categories
 - Don't use "Developer Tools" unless it's truly for developers
 
 ### Preferences

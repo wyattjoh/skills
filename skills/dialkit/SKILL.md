@@ -258,10 +258,18 @@ strict, ordered list.
 
 ## Persistence
 
-dialkit has **no built-in persistence**. Its `DialStore` is a module-level
-singleton (`export const DialStore = new DialStoreClass()`) holding panels,
-values, and presets in plain `Map`s. Anything that recreates that singleton
-wipes state:
+> **Note:** dialkit (≥1.x) now ships a built-in `persist` option on
+> `useDialKit`/`useDialKitController` (`persist: true` or
+> `{ key, storage: 'localStorage'|'sessionStorage', presets: boolean }`) that
+> covers much of what the companion component below does. Check the installed
+> package version and its README before instrumenting; the built-in option
+> may let you skip copying `DialKitPersistence.tsx` entirely. The workflow
+> below remains a valid fallback for older versions or finer control.
+
+Historically, dialkit had no built-in persistence: its `DialStore` is a
+module-level singleton (`export const DialStore = new DialStoreClass()`)
+holding panels, values, and presets in plain `Map`s. Anything that recreates
+that singleton wipes state:
 
 | Event                              | Wipes state? | Why                                                                                     |
 | ---------------------------------- | ------------ | --------------------------------------------------------------------------------------- |

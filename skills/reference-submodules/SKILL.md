@@ -23,7 +23,7 @@ the project's `CLAUDE.md` "Dependency References" table stays accurate.
 
 **Arguments provided**: $ARGUMENTS
 
-**Requires:** git 2.13+. `gh` is optional (used for tag listing on private repos).
+**Requires:** git 2.23+ (the workflow uses `git submodule set-branch`, added in 2.22, and `git restore`, added in 2.23). `gh` is optional (used for tag listing on private repos).
 
 This skill manages references. _Consuming_ them (preferring local reference
 source over web docs) is an always-on rule in global `CLAUDE.md`, not this skill.

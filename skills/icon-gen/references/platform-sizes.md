@@ -4,17 +4,27 @@ Complete size tables for each platform. Use these when resizing in Phase 6.
 
 ## iOS
 
-| Size (px) | Usage                                             |
-| --------- | ------------------------------------------------- |
-| 1024      | App Store                                         |
-| 180       | iPhone @3x (60pt)                                 |
-| 120       | iPhone @2x (60pt) / iPad @2x (60pt)               |
-| 87        | iPhone @3x (29pt, Spotlight/Settings)             |
-| 80        | iPad @2x (40pt, Spotlight)                        |
-| 60        | iPhone @2x (20pt, Notification) / iPad @2x (29pt) |
-| 40        | iPhone @2x (20pt) / iPad @1x (40pt)               |
-| 29        | iPad @1x (29pt, Settings)                         |
-| 20        | iPad @1x (20pt, Notification)                     |
+Apple's current Human Interface Guidelines describe a unified 1024x1024
+layered icon (light/dark/tinted/clear appearances) built with Icon Composer in
+current Xcode. This legacy per-size table remains what most non-Xcode-native
+tooling (Expo, React Native, Flutter, manual `.iconset` catalogs) still
+consumes:
+
+| Size (px) | Usage                                                             |
+| --------- | ----------------------------------------------------------------- |
+| 1024      | App Store                                                         |
+| 180       | iPhone @3x (60pt, Home Screen)                                    |
+| 167       | iPad Pro @2x (83.5pt, Home Screen)                                |
+| 152       | iPad @2x (76pt, Home Screen)                                      |
+| 120       | iPhone @2x (60pt, Home Screen) / iPhone @3x (40pt, Spotlight)     |
+| 87        | iPhone/iPad @3x (29pt, Settings)                                  |
+| 80        | iPhone/iPad @2x (40pt, Spotlight)                                 |
+| 76        | iPad @1x (76pt, Home Screen)                                      |
+| 60        | iPhone @3x (20pt, Notification)                                   |
+| 58        | iPhone/iPad @2x (29pt, Settings)                                  |
+| 40        | iPhone/iPad @2x (20pt, Notification) / iPad @1x (40pt, Spotlight) |
+| 29        | iPad @1x (29pt, Settings)                                         |
+| 20        | iPad @1x (20pt, Notification)                                     |
 
 ## Android
 

@@ -93,18 +93,13 @@ instructions: |
   ask them to clarify which one they mean.
 ```
 
-**In ai.json or ai.json5:**
+**`tools` is a top-level manifest array**, not nested under `ai` — see
+[Manifest Configuration](#manifest-configuration) below. `ai.json`/`ai.json5`
+(or `ai.yaml`) hold only `instructions` and `evals`:
 
 ```json
 {
-  "instructions": "Instructions for the AI agent...",
-  "tools": [
-    {
-      "name": "get-todos",
-      "description": "Fetches all todos",
-      "file": "src/tools/get-todos.ts"
-    }
-  ]
+  "instructions": "Instructions for the AI agent..."
 }
 ```
 
@@ -143,36 +138,38 @@ Evals are test cases that verify your AI extension works correctly. They're also
 
 ## Manifest Configuration
 
-Add AI configuration to your `package.json`:
+`tools` is a **top-level** manifest array, separate from `ai`. Each entry
+requires `name` (implicitly maps to `src/tools/<name>.ts`, no `file`
+property), `title`, and `description`:
 
 ```json
 {
   "name": "todo-list",
   "title": "Todo List",
+  "tools": [
+    {
+      "name": "get-todos",
+      "title": "Get Todos",
+      "description": "Fetch all todos from the user's list"
+    },
+    {
+      "name": "add-todo",
+      "title": "Add Todo",
+      "description": "Add a new todo item"
+    },
+    {
+      "name": "mark-complete",
+      "title": "Mark Complete",
+      "description": "Mark a todo as complete"
+    },
+    {
+      "name": "delete-todo",
+      "title": "Delete Todo",
+      "description": "Delete a todo (requires confirmation)"
+    }
+  ],
   "ai": {
     "instructions": "You help users manage their todo list.",
-    "tools": [
-      {
-        "name": "get-todos",
-        "description": "Fetch all todos from the user's list",
-        "file": "src/tools/get-todos.ts"
-      },
-      {
-        "name": "add-todo",
-        "description": "Add a new todo item",
-        "file": "src/tools/add-todo.ts"
-      },
-      {
-        "name": "mark-complete",
-        "description": "Mark a todo as complete",
-        "file": "src/tools/mark-complete.ts"
-      },
-      {
-        "name": "delete-todo",
-        "description": "Delete a todo (requires confirmation)",
-        "file": "src/tools/delete-todo.ts"
-      }
-    ],
     "evals": [
       {
         "input": "@todo-list Add 'Buy milk' to my list",

@@ -171,33 +171,36 @@ Source: [settings](https://just.systems/man/en/settings.html). Written
 `set NAME := VALUE`; boolean settings may be written bare (`set export` ==
 `set export := true`).
 
-| Setting                     | Type           | Default        | Purpose                                               |
-| --------------------------- | -------------- | -------------- | ----------------------------------------------------- |
-| `allow-duplicate-recipes`   | bool           | false          | Later recipe overrides an earlier same-named one.     |
-| `allow-duplicate-variables` | bool           | false          | Later variable overrides an earlier same-named one.   |
-| `dotenv-load`               | bool           | false          | Load a `.env` file if present.                        |
-| `dotenv-filename`           | string/list    | –              | Name(s) of the dotenv file to load.                   |
-| `dotenv-path`               | string/list    | –              | Explicit dotenv path (error if missing).              |
-| `dotenv-override`           | bool           | false          | Dotenv values override existing env vars.             |
-| `dotenv-required`           | bool           | false          | Error if no dotenv file is found.                     |
-| `dotenv-command`            | string         | –              | Run a command, load its stdout as env.                |
-| `export`                    | bool           | false          | Export all justfile variables as env vars.            |
-| `fallback`                  | bool           | false          | Defer unknown recipes to a parent-directory justfile. |
-| `ignore-comments`           | bool           | false          | Drop recipe lines that start with `#`.                |
-| `positional-arguments`      | bool           | false          | Pass args as `$0`, `$1`, ... inside recipes.          |
-| `quiet`                     | bool           | false          | Don't echo recipe lines.                              |
-| `shell`                     | `[cmd, args…]` | platform sh    | Shell for recipes and backticks.                      |
-| `windows-shell`             | `[cmd, args…]` | –              | Shell on Windows (overrides `shell` there).           |
-| `script-interpreter`        | `[cmd, args…]` | `['sh','-eu']` | Interpreter for empty `[script]`.                     |
-| `tempdir`                   | string         | –              | Directory for script temp files.                      |
-| `working-directory`         | string         | –              | Working dir for recipes and backticks.                |
-| `unstable`                  | bool           | false          | Enable unstable features.                             |
-| `no-exit-message`           | bool           | false          | Suppress the "recipe failed" message.                 |
-| `minimum-version`           | string         | –              | Error if `just` is older than the given version.      |
+| Setting                      | Type           | Default        | Purpose                                                                                           |
+| ---------------------------- | -------------- | -------------- | ------------------------------------------------------------------------------------------------- |
+| `allow-duplicate-recipes`    | bool           | false          | Later recipe overrides an earlier same-named one.                                                 |
+| `allow-duplicate-variables`  | bool           | false          | Later variable overrides an earlier same-named one.                                               |
+| `dotenv-load`                | bool           | false          | Load a `.env` file if present.                                                                    |
+| `dotenv-filename`            | string/list    | –              | Name(s) of the dotenv file to load.                                                               |
+| `dotenv-path`                | string/list    | –              | Explicit dotenv path (error if missing).                                                          |
+| `dotenv-override`            | bool           | false          | Dotenv values override existing env vars.                                                         |
+| `dotenv-required`            | bool           | false          | Error if no dotenv file is found.                                                                 |
+| `dotenv-command`             | string         | –              | Run a command, load its stdout as env.                                                            |
+| `export`                     | bool           | false          | Export all justfile variables as env vars.                                                        |
+| `fallback`                   | bool           | false          | Defer unknown recipes to a parent-directory justfile.                                             |
+| `ignore-comments`            | bool           | false          | Drop recipe lines that start with `#`.                                                            |
+| `positional-arguments`       | bool           | false          | Pass args as `$0`, `$1`, ... inside recipes.                                                      |
+| `quiet`                      | bool           | false          | Don't echo recipe lines.                                                                          |
+| `shell`                      | `[cmd, args…]` | platform sh    | Shell for recipes and backticks.                                                                  |
+| `windows-shell` (deprecated) | `[cmd, args…]` | –              | Shell on Windows. Deprecated since 1.56.0 — use the `[windows]` attribute on `set shell` instead. |
+| `script-interpreter`         | `[cmd, args…]` | `['sh','-eu']` | Interpreter for empty `[script]`.                                                                 |
+| `tempdir`                    | string         | –              | Directory for script temp files.                                                                  |
+| `working-directory`          | string         | –              | Working dir for recipes and backticks.                                                            |
+| `unstable`                   | bool           | false          | Enable unstable features.                                                                         |
+| `no-exit-message`            | bool           | false          | Suppress the "recipe failed" message.                                                             |
+| `minimum-version`            | string         | –              | Error if `just` is older than the given version.                                                  |
 
 ```just
 set shell := ["zsh", "-cu"]
-set windows-shell := ["powershell.exe", "-NoProfile", "-Command"]
+
+[windows]
+set shell := ["powershell.exe", "-NoLogo", "-Command"]
+
 set dotenv-load
 set export
 set positional-arguments

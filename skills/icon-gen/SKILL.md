@@ -28,7 +28,9 @@ then resize for target platforms with ImageMagick.
 
 - **snapai CLI** — installed and authenticated (`snapai` on PATH)
 - **ImageMagick** — installed (`magick` on PATH) for resizing
-- **API key** — snapai requires an active API key (configured via `snapai auth`)
+- **API key** — snapai requires an active API key (configured via
+  `snapai config --openai-api-key <key>` or `snapai config --google-api-key <key>`;
+  check with `snapai config --show`)
 
 ## Workflow
 
@@ -124,20 +126,21 @@ the output PNG file with the Read tool.
 
 Present the generated icon and ask the user via `AskUserQuestion`:
 
-| Option                 | Description                                 |
-| ---------------------- | ------------------------------------------- |
-| Keep it                | Accept this icon and proceed to resizing    |
-| Tweak it               | Modify the prompt slightly and regenerate   |
-| Different concept      | Return to Phase 3 for a new concept         |
-| Generate more variants | Run with `-n 3` to produce multiple options |
+| Option                 | Description                                       |
+| ---------------------- | ------------------------------------------------- |
+| Keep it                | Accept this icon and proceed to resizing          |
+| Tweak it               | Modify the prompt slightly and regenerate         |
+| Different concept      | Return to Phase 3 for a new concept               |
+| Generate more variants | Run with `--pro -n 3` to produce multiple options |
 
 **Behavior per choice:**
 
 - **Keep it** → proceed to Phase 6
 - **Tweak it** → ask what to change, update the prompt, re-run Phase 4
 - **Different concept** → return to Phase 3
-- **Generate more variants** → re-run with `-n 3`, show all results, ask user
-  to pick one, then offer the same review options again
+- **Generate more variants** → re-run with `--pro -n 3` (plain `--model banana`
+  without `--pro` only supports `-n 1`), show all results, ask user to pick
+  one, then offer the same review options again
 
 **Loop** until the user selects "Keep it".
 
@@ -186,14 +189,18 @@ When composing the `--prompt` value:
 
 ## Tips
 
-- **Banana is the default model** — it produces the best results for icons and
-  is the only model that should be used unless the user explicitly requests
-  otherwise
+- **This skill defaults to Banana** (`--model banana`) — it produces the best
+  results for icons and is the only model that should be used unless the user
+  explicitly requests otherwise. Note that snapai's own CLI default is
+  `gpt-2`, not Banana, so always pass `--model banana` explicitly.
 - **snapai auto-enhances prompts** — you don't need to over-specify; the CLI
   adds its own refinements
-- **Use `--pro` for quality** — during iteration, if the user wants higher
-  fidelity, add the `--pro` flag
-- **Transparent backgrounds** — only available with `gpt-1.5` model; mention
-  this if the user asks for transparency
+- **Use `--pro` for quality, and for multiple variants** — during iteration,
+  if the user wants higher fidelity, add the `--pro` flag. Plain `--model
+banana` (no `--pro`) only supports `-n 1`; use `--pro` to generate more
+  than one variant.
+- **Transparent backgrounds** — only available with the `gpt-1` and `gpt-1.5`
+  OpenAI models; not supported by the default `gpt-2` or by Banana/Gemini
+  models. Mention this if the user asks for transparency.
 - **Icon composition** — always remind the user that icons should have a single,
   recognizable element; avoid text or complex scenes
