@@ -103,11 +103,11 @@ skill, press `Space` to cycle states, `Enter` to save to
 `.claude/settings.local.json`). Each key is a skill name; each value is one of:
 
 | Value                   | Listed to Claude     | In `/` menu |
-| ------------------------ | --------------------- | ----------- |
-| `"on"`                   | Name and description | Yes         |
-| `"name-only"`            | Name only             | Yes         |
-| `"user-invocable-only"`  | Hidden                | Yes         |
-| `"off"`                  | Hidden                | Hidden      |
+| ----------------------- | -------------------- | ----------- |
+| `"on"`                  | Name and description | Yes         |
+| `"name-only"`           | Name only            | Yes         |
+| `"user-invocable-only"` | Hidden               | Yes         |
+| `"off"`                 | Hidden               | Hidden      |
 
 A skill absent from `skillOverrides` is treated as `"on"`. As of v2.1.199,
 `"off"` also hides the skill from Remote Control and Agent SDK command

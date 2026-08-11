@@ -218,26 +218,26 @@ environment:
 
 ### Skills and Subagents Interaction
 
-| Approach                     | System prompt            | Task                        | Also loads                   |
-| ---------------------------- | ------------------------ | --------------------------- | ---------------------------- |
+| Approach                     | System prompt            | Task                        | Also loads                                                                    |
+| ---------------------------- | ------------------------ | --------------------------- | ----------------------------------------------------------------------------- |
 | Skill with `context: fork`   | From agent type          | SKILL.md content            | CLAUDE.md, except when the agent is `Explore` or `Plan` (they always skip it) |
-| Subagent with `skills` field | Subagent's markdown body | Claude's delegation message | Preloaded skills + CLAUDE.md |
+| Subagent with `skills` field | Subagent's markdown body | Claude's delegation message | Preloaded skills + CLAUDE.md                                                  |
 
 ## String Substitutions
 
 Skills can use dynamic string substitutions replaced at runtime. These work in
 both the skill body and in hook commands.
 
-| Variable                | Description                                                                                                                    |
-| ----------------------- | -------------------------------------------------------------------------------------------------------------------------------- |
-| `$ARGUMENTS`            | All arguments passed when invoking via `/skill-name args`                                                                        |
-| `$ARGUMENTS[N]`         | Specific argument by 0-based index (e.g., `$ARGUMENTS[0]`)                                                                       |
-| `$N`                    | Shorthand for `$ARGUMENTS[N]` (e.g., `$0`, `$1`)                                                                                 |
-| `$name`                 | Named argument declared in the `arguments` frontmatter list (e.g. `arguments: [issue, branch]` → `$issue`, `$branch`)            |
-| `${CLAUDE_SESSION_ID}`  | Current session ID for logging/correlation                                                                                       |
-| `${CLAUDE_EFFORT}`      | Current effort level: `low`, `medium`, `high`, `xhigh`, or `max` (Ultracode reports as `xhigh`)                                  |
-| `${CLAUDE_SKILL_DIR}`   | Directory containing the skill's SKILL.md file                                                                                   |
-| `${CLAUDE_PROJECT_DIR}` | The project root directory (same path hooks and MCP servers receive as `CLAUDE_PROJECT_DIR`). Requires Claude Code v2.1.196+.     |
+| Variable                | Description                                                                                                                   |
+| ----------------------- | ----------------------------------------------------------------------------------------------------------------------------- |
+| `$ARGUMENTS`            | All arguments passed when invoking via `/skill-name args`                                                                     |
+| `$ARGUMENTS[N]`         | Specific argument by 0-based index (e.g., `$ARGUMENTS[0]`)                                                                    |
+| `$N`                    | Shorthand for `$ARGUMENTS[N]` (e.g., `$0`, `$1`)                                                                              |
+| `$name`                 | Named argument declared in the `arguments` frontmatter list (e.g. `arguments: [issue, branch]` → `$issue`, `$branch`)         |
+| `${CLAUDE_SESSION_ID}`  | Current session ID for logging/correlation                                                                                    |
+| `${CLAUDE_EFFORT}`      | Current effort level: `low`, `medium`, `high`, `xhigh`, or `max` (Ultracode reports as `xhigh`)                               |
+| `${CLAUDE_SKILL_DIR}`   | Directory containing the skill's SKILL.md file                                                                                |
+| `${CLAUDE_PROJECT_DIR}` | The project root directory (same path hooks and MCP servers receive as `CLAUDE_PROJECT_DIR`). Requires Claude Code v2.1.196+. |
 
 ### `${CLAUDE_SKILL_DIR}` Details
 

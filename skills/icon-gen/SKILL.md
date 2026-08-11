@@ -126,11 +126,11 @@ the output PNG file with the Read tool.
 
 Present the generated icon and ask the user via `AskUserQuestion`:
 
-| Option                 | Description                                 |
-| ---------------------- | ------------------------------------------- |
-| Keep it                | Accept this icon and proceed to resizing    |
-| Tweak it               | Modify the prompt slightly and regenerate   |
-| Different concept      | Return to Phase 3 for a new concept         |
+| Option                 | Description                                       |
+| ---------------------- | ------------------------------------------------- |
+| Keep it                | Accept this icon and proceed to resizing          |
+| Tweak it               | Modify the prompt slightly and regenerate         |
+| Different concept      | Return to Phase 3 for a new concept               |
 | Generate more variants | Run with `--pro -n 3` to produce multiple options |
 
 **Behavior per choice:**
@@ -197,7 +197,7 @@ When composing the `--prompt` value:
   adds its own refinements
 - **Use `--pro` for quality, and for multiple variants** — during iteration,
   if the user wants higher fidelity, add the `--pro` flag. Plain `--model
-  banana` (no `--pro`) only supports `-n 1`; use `--pro` to generate more
+banana` (no `--pro`) only supports `-n 1`; use `--pro` to generate more
   than one variant.
 - **Transparent backgrounds** — only available with the `gpt-1` and `gpt-1.5`
   OpenAI models; not supported by the default `gpt-2` or by Banana/Gemini

@@ -11,7 +11,7 @@ tooling (Expo, React Native, Flutter, manual `.iconset` catalogs) still
 consumes:
 
 | Size (px) | Usage                                                             |
-| --------- | ------------------------------------------------------------------ |
+| --------- | ----------------------------------------------------------------- |
 | 1024      | App Store                                                         |
 | 180       | iPhone @3x (60pt, Home Screen)                                    |
 | 167       | iPad Pro @2x (83.5pt, Home Screen)                                |

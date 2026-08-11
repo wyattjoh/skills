@@ -52,22 +52,22 @@ Source: [env-spec reference](https://varlock.dev/env-spec/reference/).
 
 ## Root decorators (header, file-wide)
 
-| Decorator                                                                                             | Purpose                                                                   |
-| ----------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------- |
+| Decorator                                                                                             | Purpose                                                                                                                      |
+| ----------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------- |
 | `@currentEnv=$KEY`                                                                                    | Which item selects the active environment. (`@envFlag` is a deprecated alias, deprecated since v0.1 — prefer `@currentEnv`.) |
-| `@defaultRequired=true\|false\|infer`                                                                 | Default required-ness (`infer` = required if a value is present).         |
-| `@defaultSensitive=true\|false`                                                                       | Default sensitivity for all items.                                        |
-| `@import(<path>)`                                                                                     | Compose another schema file in.                                           |
-| `@setValuesBulk(...)`                                                                                 | Bulk-set values from a source.                                            |
-| `@plugin(<pkg>)`                                                                                      | Load a provider plugin (e.g. `@varlock/1password-plugin`).                |
-| `@cache`                                                                                              | Configure the value cache.                                                |
-| `@redactLogs` / `@preventLeaks`                                                                       | Log redaction and leak prevention toggles.                                |
-| `@encryptInjectedEnv`                                                                                 | Encrypt the injected env blob.                                            |
-| `@disableProcessEnvInjection`                                                                         | Do not inject into `process.env`.                                         |
-| `@disable`                                                                                            | Disable an item/section.                                                  |
-| `@auditIgnorePaths(...)`                                                                              | Paths for `varlock audit` to skip.                                        |
-| `@generateTypes(lang=ts, path=...)`                                                                   | Generic typed-accessor generation.                                        |
-| `@generateTsTypes` / `@generatePythonEnv` / `@generateRustEnv` / `@generateGoEnv` / `@generatePhpEnv` | Per-language generators (add `auto=false` to defer to `varlock codegen`). |
+| `@defaultRequired=true\|false\|infer`                                                                 | Default required-ness (`infer` = required if a value is present).                                                            |
+| `@defaultSensitive=true\|false`                                                                       | Default sensitivity for all items.                                                                                           |
+| `@import(<path>)`                                                                                     | Compose another schema file in.                                                                                              |
+| `@setValuesBulk(...)`                                                                                 | Bulk-set values from a source.                                                                                               |
+| `@plugin(<pkg>)`                                                                                      | Load a provider plugin (e.g. `@varlock/1password-plugin`).                                                                   |
+| `@cache`                                                                                              | Configure the value cache.                                                                                                   |
+| `@redactLogs` / `@preventLeaks`                                                                       | Log redaction and leak prevention toggles.                                                                                   |
+| `@encryptInjectedEnv`                                                                                 | Encrypt the injected env blob.                                                                                               |
+| `@disableProcessEnvInjection`                                                                         | Do not inject into `process.env`.                                                                                            |
+| `@disable`                                                                                            | Disable an item/section.                                                                                                     |
+| `@auditIgnorePaths(...)`                                                                              | Paths for `varlock audit` to skip.                                                                                           |
+| `@generateTypes(lang=ts, path=...)`                                                                   | Generic typed-accessor generation.                                                                                           |
+| `@generateTsTypes` / `@generatePythonEnv` / `@generateRustEnv` / `@generateGoEnv` / `@generatePhpEnv` | Per-language generators (add `auto=false` to defer to `varlock codegen`).                                                    |
 
 Source: [root-decorators](https://varlock.dev/reference/root-decorators/).
 
