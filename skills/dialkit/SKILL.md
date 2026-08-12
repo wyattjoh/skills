@@ -52,8 +52,10 @@ When unsure, ask which mode. Default to Exploration.
 
 Before installing anything, gather:
 
-1. **Confirm React project**: read `package.json`, look for `react`. If
-   absent, stop and explain dialkit is React-only in this skill's scope.
+1. **Confirm React project**: read `package.json`, look for `react`. dialkit
+   itself also ships Solid, Svelte, and Vue integrations, but this skill's
+   workflow only covers React. If `react` is absent, stop and explain that
+   this skill's workflow is React-only.
 2. **Check for `motion`**: dialkit requires `motion` (formerly
    `framer-motion`) for spring controls. Record one of:
    - `motion` already in `package.json`: don't reinstall, don't remove on

@@ -517,7 +517,7 @@ instructions: "Use add-todo to add a todo. It takes a title parameter."
 Evaluate your AI extension:
 
 ```bash
-npm run eval
+npm run evals
 ```
 
 This will:

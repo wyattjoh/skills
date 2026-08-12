@@ -25,8 +25,8 @@ This reference covers the structure and configuration of a Raycast extension's `
     }
   ],
   "dependencies": {
-    "@raycast/api": "^1.103.0",
-    "@raycast/utils": "^1.16.0"
+    "@raycast/api": "^1.104.0",
+    "@raycast/utils": "^2.3.0"
   },
   "devDependencies": {
     "@raycast/eslint-config": "^1.0.11",
@@ -459,8 +459,8 @@ List all npm dependencies:
 ```json
 {
   "dependencies": {
-    "@raycast/api": "^1.48.0",
-    "@raycast/utils": "^1.5.0",
+    "@raycast/api": "^1.104.0",
+    "@raycast/utils": "^2.3.0",
     "axios": "^1.4.0",
     "date-fns": "^2.30.0"
   }

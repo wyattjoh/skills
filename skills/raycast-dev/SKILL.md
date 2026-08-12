@@ -554,7 +554,7 @@ npm run fix-lint
 npm run publish
 
 # Run AI extension evals
-npm run eval
+npm run evals
 ```
 
 ## Tips for Effective Extension Development
