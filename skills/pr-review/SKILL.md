@@ -4,6 +4,7 @@ description: Performs comprehensive code review of Git changes with security, pe
 argument-hint: "[focus-area]"
 allowed-tools: Bash(git status:*), Bash(git diff:*), Bash(git log:*), Bash(git show:*), Bash(git shortlog:*), Bash(sort:*), Bash(uniq:*), Bash(head:*), Bash(grep:*), Bash(gh pr view:*), Bash(gh pr diff:*), Bash(gh api:*), Bash(gh api user:*), Bash(bun:*), Read, Write, Grep, Glob, TodoWrite, AskUserQuestion
 effort: high
+disable-model-invocation: true
 ---
 
 # Comprehensive Code Review
