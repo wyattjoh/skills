@@ -6,6 +6,8 @@ import { appendFooter } from "./submit-pr-review.ts";
 import { buildPayload } from "./submit-pr-review.ts";
 import { collectCriticalDrops } from "./submit-pr-review.ts";
 import { detectMethodologyLeaks } from "./submit-pr-review.ts";
+import { formatDroppedNotice } from "./submit-pr-review.ts";
+import { formatHeadMismatchAbort } from "./submit-pr-review.ts";
 import { loadReview } from "./submit-pr-review.ts";
 import { parseHunks } from "./submit-pr-review.ts";
 import { partitionFindings } from "./submit-pr-review.ts";
@@ -52,6 +54,50 @@ test("parseHunks: deletion-only hunk does not advance new-side counter", () => {
 `;
   const hunks = parseHunks(patch);
   expect([...(hunks.get("x.ts") ?? [])]).toEqual([10]);
+});
+
+test("parseHunks: blank context line stripped of its leading space still advances", () => {
+  // Line 11 is a blank context line written as "" rather than " ". Whitespace
+  // stripping anywhere in the pipeline produces that, and every line after it
+  // has to keep its real number.
+  const patch = `diff --git a/x.ts b/x.ts
+--- a/x.ts
++++ b/x.ts
+@@ -10,4 +10,4 @@
+ first
+
+ third
++fourth
+`;
+  const hunks = parseHunks(patch);
+  expect([...(hunks.get("x.ts") ?? [])].toSorted((a, b) => a - b)).toEqual([10, 11, 12, 13]);
+});
+
+test("parseHunks: trailing empty string after the final hunk adds no phantom line", () => {
+  const patch = `diff --git a/x.ts b/x.ts
+--- a/x.ts
++++ b/x.ts
+@@ -1,2 +1,2 @@
+ first
++second
+`;
+  const hunks = parseHunks(patch);
+  expect([...(hunks.get("x.ts") ?? [])].toSorted((a, b) => a - b)).toEqual([1, 2]);
+});
+
+test("parseHunks: content past the declared new-side count is not consumed", () => {
+  // The format-patch signature trails the final hunk. Its version line would
+  // read as a context line if the hunk were not bounded by its header count.
+  const patch = `diff --git a/x.ts b/x.ts
+--- a/x.ts
++++ b/x.ts
+@@ -1,1 +1,1 @@
++only
+--
+2.51.0
+`;
+  const hunks = parseHunks(patch);
+  expect([...(hunks.get("x.ts") ?? [])]).toEqual([1]);
 });
 
 test("loadReview: valid document parses into typed shape", async () => {
@@ -267,4 +313,90 @@ test("detectMethodologyLeaks: catches 'the secondary pass' / 'dual review'", () 
     const leaks = detectMethodologyLeaks(phrase, []);
     expect(leaks.length > 0).toBe(true);
   }
+});
+
+test("loadReview: accepts a finding that omits the optional evidence field", async () => {
+  const path = await makeTempJsonFile();
+  await Bun.write(
+    path,
+    JSON.stringify({
+      summary: "x",
+      findings: [
+        {
+          id: "SEC-001",
+          file: "a.ts",
+          line: 1,
+          severity: "high",
+          category: "security",
+          title: "t",
+          description: "d",
+        },
+      ],
+    }),
+  );
+  try {
+    const doc = await loadReview(path);
+    expect(doc.findings[0].evidence).toBe(undefined);
+  } finally {
+    await unlink(path);
+  }
+});
+
+test("loadReview: rejects a non-string evidence field", async () => {
+  const path = await makeTempJsonFile();
+  await Bun.write(
+    path,
+    JSON.stringify({
+      summary: "x",
+      findings: [
+        {
+          id: "SEC-001",
+          file: "a.ts",
+          line: 1,
+          severity: "high",
+          category: "security",
+          title: "t",
+          description: "d",
+          evidence: 42,
+        },
+      ],
+    }),
+  );
+  try {
+    await loadReview(path);
+    throw new Error("expected loadReview to throw");
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    expect(msg.includes("evidence")).toBe(true);
+  } finally {
+    await unlink(path);
+  }
+});
+
+test("detectMethodologyLeaks: scans evidence when the field is present", () => {
+  const leaks = detectMethodologyLeaks("Clean summary.", [
+    mkFinding({ description: "Clean description.", evidence: "flagged during synthesis" }),
+  ]);
+  expect(leaks.map((l) => l.field)).toEqual(["SEC-001.evidence"]);
+});
+
+test("formatDroppedNotice: names every dropped finding", () => {
+  const notice = formatDroppedNotice([
+    mkFinding({ id: "SEC-001", file: "src/auth.ts", line: 14, title: "Token logged" }),
+    mkFinding({ id: "STY-002", file: "src/ui.tsx", line: 8, title: "Naming" }),
+  ]);
+  expect(notice.includes("2 findings do not anchor")).toBe(true);
+  expect(notice.includes("SEC-001  src/auth.ts:14  Token logged")).toBe(true);
+  expect(notice.includes("STY-002  src/ui.tsx:8  Naming")).toBe(true);
+});
+
+test("formatDroppedNotice: uses singular wording for one finding", () => {
+  const notice = formatDroppedNotice([mkFinding({ id: "SEC-001" })]);
+  expect(notice.includes("1 finding does not anchor")).toBe(true);
+});
+
+test("formatHeadMismatchAbort: reports both revisions", () => {
+  const message = formatHeadMismatchAbort("aaaa111", "bbbb222");
+  expect(message.includes("reviewed at head: aaaa111")).toBe(true);
+  expect(message.includes("current head:     bbbb222")).toBe(true);
 });

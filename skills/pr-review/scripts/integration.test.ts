@@ -58,6 +58,89 @@ test("integration: --dry-run prints payload and counters, does not call gh api",
   expect(parsed.payload).toEqual(expected);
   expect(parsed.counters).toEqual({ inline: 2, dropped: 1, critical_dropped: 0 });
   expect(parsed.critical_dropped).toEqual([]);
+  expect(parsed.head_sha).toBe("1111111111111111111111111111111111111111");
+  expect(parsed.dropped.map((f: { id: string }) => f.id)).toEqual(["ARCH-001"]);
+  expect(result.stderr.includes("ARCH-001  src/unrelated.ts:99")).toBe(true);
+});
+
+test("integration: submit mode names dropped findings on stderr", async () => {
+  const capture = await makeTempFile(".json");
+  const stdoutFile = await makeTempFile(".json");
+  await Bun.write(stdoutFile, JSON.stringify({ html_url: "https://example.test/r/1" }));
+
+  try {
+    const result = await runScript(
+      ["--pr", "123", "--owner", "acme", "--repo", "widgets", "--findings", REVIEW],
+      { FAKE_GH_CAPTURE_FILE: capture, FAKE_GH_API_STDOUT_FILE: stdoutFile },
+    );
+
+    expect(result.code).toBe(0);
+    expect(result.stderr.includes("1 finding does not anchor")).toBe(true);
+    expect(result.stderr.includes("ARCH-001  src/unrelated.ts:99")).toBe(true);
+  } finally {
+    await unlink(capture);
+    await unlink(stdoutFile);
+  }
+});
+
+test("integration: --expect-head mismatch aborts before fetching the diff or posting", async () => {
+  const invocationLog = await makeTempFile(".log");
+  try {
+    const result = await runScript(
+      [
+        "--pr",
+        "123",
+        "--owner",
+        "acme",
+        "--repo",
+        "widgets",
+        "--findings",
+        REVIEW,
+        "--expect-head",
+        "0000000000000000000000000000000000000000",
+      ],
+      { FAKE_GH_INVOCATION_LOG: invocationLog },
+    );
+
+    expect(result.code).toBe(1);
+    expect(result.stderr.includes("moved since this review was written")).toBe(true);
+    const invocations = await readInvocations(invocationLog);
+    expect(invocations).toEqual(["pr view"]);
+  } finally {
+    await unlink(invocationLog).catch(() => {});
+  }
+});
+
+test("integration: --expect-head matching the current head submits normally", async () => {
+  const capture = await makeTempFile(".json");
+  const stdoutFile = await makeTempFile(".json");
+  await Bun.write(stdoutFile, JSON.stringify({ html_url: "https://example.test/r/2" }));
+
+  try {
+    const result = await runScript(
+      [
+        "--pr",
+        "123",
+        "--owner",
+        "acme",
+        "--repo",
+        "widgets",
+        "--findings",
+        REVIEW,
+        "--expect-head",
+        "1111111111111111111111111111111111111111",
+      ],
+      { FAKE_GH_CAPTURE_FILE: capture, FAKE_GH_API_STDOUT_FILE: stdoutFile },
+    );
+
+    expect(result.code).toBe(0);
+    const captured = JSON.parse(await Bun.file(capture).text());
+    const expected = JSON.parse(await Bun.file(EXPECTED).text());
+    expect(captured).toEqual(expected);
+  } finally {
+    await unlink(capture);
+    await unlink(stdoutFile);
+  }
 });
 
 test("integration: submit mode POSTs payload via gh api", async () => {

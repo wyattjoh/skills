@@ -29,6 +29,8 @@ If you find yourself writing markdown headers like "## Code Review" into a tempf
 Additional rules the script enforces at runtime:
 
 - **Abort on critical drop.** If a finding with `severity: "critical"` anchors to a line outside the PR diff, the script aborts instead of silently dropping it. Re-anchor, downgrade, or remove — do not ignore.
+- **Abort on a moved head.** With `--expect-head <sha>`, the script refuses to post when the PR's current head differs from the revision the review was written against. Re-read the new diff and re-verify every anchor before resubmitting.
+- **Non-critical drops are named, not just counted.** Any finding that fails to anchor is printed to stderr as `id file:line title`, in both dry-run and submit mode. Read that list; a drop means the finding was never delivered.
 - **No methodology chrome.** The script rejects review text that mentions the parallel reviewers, synthesis, corroboration, contested findings, or confidence tags. The PR review must read as if a human wrote it. "Reviewed with Opus + Codex second-opinion validation." and "(codex confirmed)" are disallowed. Rewrite into plain review prose.
 
 ## Output Audience
@@ -51,15 +53,17 @@ Before the local-diff pipeline runs, determine whether this invocation is scoped
 1. If `$ARGUMENTS` is a PR number (e.g., `123`) or a PR URL (e.g., `https://github.com/acme/widgets/pull/123`), resolve with:
 
    ```bash
-   gh pr view <n> --json number,headRepository,baseRefName,author,headRefName,url
+   gh pr view <n> --json number,headRepository,baseRefName,author,headRefName,headRefOid,url
    ```
 
-   Capture `pr_number`, `owner` (from `headRepository.owner.login`), `repo` (from `headRepository.name`), `pr_author` (from `author.login`), `pr_url`. Set `pr_mode = true`.
+   Capture `pr_number`, `owner` (from `headRepository.owner.login`), `repo` (from `headRepository.name`), `pr_author` (from `author.login`), `pr_url`, and `head_sha` (from `headRefOid`). Set `pr_mode = true`.
+
+   **`head_sha` matters.** It pins the revision this review is written against. A PR can be force-pushed while you are still reading the diff, and every line anchor you computed then belongs to a revision that no longer exists. Step 9 passes this value back to the submission script, which refuses to post if the PR has moved.
 
 2. Else, try resolving from the current branch:
 
    ```bash
-   gh pr view --json number,headRepository,baseRefName,author,headRefName,url
+   gh pr view --json number,headRepository,baseRefName,author,headRefName,headRefOid,url
    ```
 
    If the command succeeds and returns a PR, capture the same fields and set `pr_mode = true`.
@@ -320,28 +324,37 @@ When all three hold, drive this flow:
      --findings <tempfile-path> \
      --agent-name <agent_name> \
      --human-name <human_name> \
+     --expect-head <head_sha> \
      --dry-run
    ```
 
-   Parse the JSON on stdout. Fields: `payload` (the assembled review), `counters` (`{ inline, dropped, critical_dropped }`), `critical_dropped` (the specific findings, if any).
+   Pass `--expect-head` with the `head_sha` captured in Step 0a. Omitting it is only acceptable when no `head_sha` was resolved.
 
-4. **Critical-drop abort.** If the script exits with code 2 or `counters.critical_dropped > 0`, stop. Show the user the criticals (path:line + title) and explain they would be silently dropped. Offer to re-anchor them (pick a line that IS in the diff) or downgrade severity, then retry. Do not submit.
+   Parse the JSON on stdout. Fields: `payload` (the assembled review), `head_sha` (the revision the script fetched and anchored against), `counters` (`{ inline, dropped, critical_dropped }`), `dropped` (every finding that failed to anchor), `critical_dropped` (the subset of those that are critical).
 
-5. **Empty-anchorable short-circuit:** if `counters.inline == 0` and `counters.critical_dropped == 0`, do not prompt. Tell the user "no findings anchor to the PR diff; nothing to submit" and stop.
+4. **Moved-head abort.** If the script exits non-zero with a "pull request moved" message, the PR was force-pushed or pushed to after Step 1. Do not retry with the new SHA and do not strip `--expect-head`. Re-fetch the diff, re-verify every finding's file and line against it (line numbers shift, and a finding may no longer apply at all), then start the submission flow again with the new `head_sha`.
 
-6. Otherwise, present to the user:
+5. **Critical-drop abort.** If the script exits with code 2 or `counters.critical_dropped > 0`, stop. Show the user the criticals (path:line + title) and explain they would be silently dropped. Offer to re-anchor them (pick a line that IS in the diff) or downgrade severity, then retry. Do not submit.
+
+6. **Non-critical drops.** If `counters.dropped > 0`, read the `dropped` array before going further. Each entry is a finding that will not be delivered. Decide deliberately for each: re-anchor it to a line that IS in the diff, fold it into `summary`, or accept the loss. Do not treat a non-zero `dropped` count as routine.
+
+   A large or surprising `dropped` count usually means the anchors were computed against a different revision than the one the script fetched. Compare the `head_sha` in the output against the `head_sha` from Step 0a before assuming the line numbers were simply wrong.
+
+7. **Empty-anchorable short-circuit:** if `counters.inline == 0` and `counters.critical_dropped == 0`, do not prompt. Tell the user "no findings anchor to the PR diff; nothing to submit" and stop.
+
+8. Otherwise, present to the user:
    - PR URL
    - First ~15 lines of `payload.body`, including the attribution footer
    - `counters.inline` (inline comments to post)
-   - `counters.dropped` (non-critical findings not anchorable, skipped)
+   - Each entry in `dropped` as `file:line title` (findings that will not be posted), or nothing if the array is empty
 
-7. Ask for confirmation with `AskUserQuestion`:
+9. Ask for confirmation with `AskUserQuestion`:
 
    > "Submit this review to `<pr_url>`?" — options: `yes`, `skip`.
 
-8. On `yes`: re-run the script with the same `--agent-name` and `--human-name` flags, without `--dry-run`. On success the script prints the submitted review's `html_url` to stdout; show it to the user. On non-zero exit, surface the stderr message and do not retry.
+10. On `yes`: re-run the script with the same `--agent-name`, `--human-name`, and `--expect-head` flags, without `--dry-run`. On success the script prints the submitted review's `html_url` to stdout; show it to the user. On non-zero exit, surface the stderr message and do not retry.
 
-9. On `skip`: print nothing further. The markdown report stands.
+11. On `skip`: print nothing further. The markdown report stands.
 
 ### Multi-PR Batch Mode
 
@@ -357,7 +370,7 @@ When the parent session is reviewing N PRs in parallel (e.g., "review each of `<
 - **Self-authored PR**: Step 9 is skipped. Markdown report is the only output. No prompt.
 - **PR resolve failure with explicit argument**: abort; do not silently fall back to working-tree mode (see Step 0a).
 - **Orchestrator path**: when dispatched as a sub-reviewer by the `code-reviewer` agent via `references/reviewer-prompt.md`, emit findings as JSON per `references/finding-schema.md` and stop. Sub-reviewers must never run Step 9. Submission is the orchestrator's concern, not individual reviewers'.
-- **Dispatched as a subagent with no direct user**: if you were spawned as a subagent (e.g. the parent session dispatched you in a worktree) and no user is available to answer `AskUserQuestion`, **do not submit**. Instead, write the findings file to a predictable path inside the worktree and return `{ findingsPath, submitCmd }` to your caller. The caller (with the user in the loop) runs the submit flow.
+- **Dispatched as a subagent with no direct user**: if you were spawned as a subagent (e.g. the parent session dispatched you in a worktree) and no user is available to answer `AskUserQuestion`, **do not submit**. Instead, write the findings file to a predictable path inside the worktree and return `{ findingsPath, headSha, submitCmd }` to your caller, with `--expect-head` already baked into `submitCmd`. The caller (with the user in the loop) runs the submit flow. The handoff is exactly where a PR is most likely to move underneath the review, so the pin is not optional here.
 
 ## Internal: Agent-to-Agent Protocol
 

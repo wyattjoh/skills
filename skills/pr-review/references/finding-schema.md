@@ -18,9 +18,14 @@ JSON array. Each finding has the following shape:
   "category": "security | performance | logic | style | testing | documentation | architecture",
   "title": "string (concise, under 80 chars)",
   "description": "string (detailed explanation of the issue)",
-  "evidence": "string (relevant code snippet or reasoning)"
+  "evidence": "string (OPTIONAL: relevant code snippet or reasoning)"
 }
 ```
+
+`evidence` is the only optional field. It is never posted to GitHub, so omit it
+when there is nothing to record rather than writing filler to satisfy the
+schema. Every other field is required and must be a non-empty string, except
+`line`, which must be a positive integer.
 
 ## ID Conventions
 
@@ -36,7 +41,9 @@ Use a category prefix plus a sequential number:
 
 ## Submission Fields vs Internal Fields
 
-The synthesis step (see `synthesis-criteria.md`) adds orchestrator-internal fields — `sources`, `contested`, `synthesisNote` — for adjudication and reporting. **Only the eight base fields above** (`id`, `file`, `line`, `severity`, `category`, `title`, `description`, `evidence`) are consumed by `scripts/submit-pr-review.ts` and posted to GitHub. The internal fields are stripped before the findings file is handed to the script.
+The synthesis step (see `synthesis-criteria.md`) adds orchestrator-internal fields — `sources`, `contested`, `synthesisNote` — for adjudication and reporting. **Only the eight base fields above** (`id`, `file`, `line`, `severity`, `category`, `title`, `description`, `evidence`) are consumed by `scripts/submit-pr-review.ts`. The internal fields are stripped before the findings file is handed to the script.
+
+`id`, `file`, `line`, `severity`, and `title` never reach GitHub either, but they are not dead weight: the script prints `id file:line title` for every finding it has to drop, so those fields are what makes a dropped finding identifiable.
 
 ### What the PR author sees
 

@@ -4,6 +4,7 @@ export function parseHunks(diff: string): HunkMap {
   const map: HunkMap = new Map();
   let currentFile: string | null = null;
   let currentLine = 0;
+  let remaining = 0;
   let inHunk = false;
 
   for (const line of diff.split("\n")) {
@@ -17,10 +18,15 @@ export function parseHunks(diff: string): HunkMap {
       continue;
     }
     if (line.startsWith("@@")) {
-      const match = line.match(/^@@ -\d+(?:,\d+)? \+(\d+)(?:,\d+)? @@/);
+      const match = line.match(/^@@ -\d+(?:,\d+)? \+(\d+)(?:,(\d+))? @@/);
       if (match && currentFile) {
         currentLine = parseInt(match[1], 10);
-        inHunk = true;
+        // The header declares how many lines the hunk covers on the new side.
+        // Consuming exactly that many bounds the hunk, so trailing content
+        // (the "\ No newline" marker, the format-patch signature, the empty
+        // string split() leaves after the final newline) cannot leak in.
+        remaining = match[2] === undefined ? 1 : parseInt(match[2], 10);
+        inHunk = remaining > 0;
       } else {
         inHunk = false;
       }
@@ -29,7 +35,11 @@ export function parseHunks(diff: string): HunkMap {
     if (!inHunk || !currentFile) continue;
 
     const first = line[0];
-    if (first === "+" || first === " ") {
+    // A context line is " ". A blank context line that lost its trailing space
+    // to whitespace stripping arrives as "". Both occupy a line on the new
+    // side, so both advance the counter; skipping "" without advancing would
+    // shift every subsequent anchor in the hunk by one.
+    if (first === "+" || first === " " || first === undefined) {
       let fileLines = map.get(currentFile);
       if (!fileLines) {
         fileLines = new Set();
@@ -37,6 +47,10 @@ export function parseHunks(diff: string): HunkMap {
       }
       fileLines.add(currentLine);
       currentLine++;
+      remaining--;
+      if (remaining === 0) {
+        inHunk = false;
+      }
     }
     // "-" lines exist only on the LEFT side; skip without advancing.
     // "\" lines ("\ No newline at end of file") are informational; skip.
@@ -55,7 +69,11 @@ export interface Finding {
   category: string;
   title: string;
   description: string;
-  evidence: string;
+  /**
+   * Reviewer bookkeeping. Never posted to GitHub, so it is optional: a review
+   * that has nothing to record here omits it rather than inventing filler.
+   */
+  evidence?: string;
 }
 
 export interface ReviewDocument {
@@ -100,7 +118,6 @@ const REQUIRED_STRING_FIELDS = [
   "category",
   "title",
   "description",
-  "evidence",
 ] as const;
 
 export async function loadReview(path: string): Promise<ReviewDocument> {
@@ -134,6 +151,9 @@ export async function loadReview(path: string): Promise<ReviewDocument> {
     if (!SEVERITIES.includes(f.severity as Severity)) {
       throw new Error(`Finding ${i}: invalid severity '${String(f.severity)}'`);
     }
+    if (f.evidence !== undefined && typeof f.evidence !== "string") {
+      throw new Error(`Finding ${i}: 'evidence' must be a string when present`);
+    }
     findings.push({
       id: f.id as string,
       file: f.file as string,
@@ -142,7 +162,7 @@ export async function loadReview(path: string): Promise<ReviewDocument> {
       category: f.category as string,
       title: f.title as string,
       description: f.description as string,
-      evidence: f.evidence as string,
+      evidence: f.evidence as string | undefined,
     });
   }
 
@@ -170,6 +190,38 @@ export function partitionFindings(findings: Finding[], hunks: HunkMap): Partitio
 
 export function collectCriticalDrops(dropped: Finding[]): Finding[] {
   return dropped.filter((f) => f.severity === "critical");
+}
+
+/**
+ * Non-critical drops are skipped rather than fatal, but skipping them silently
+ * reads as "everything posted". Name each one so the caller can re-anchor it or
+ * fold it into the review body deliberately.
+ */
+export function formatDroppedNotice(dropped: Finding[]): string {
+  const noun = dropped.length === 1 ? "finding does" : "findings do";
+  const lines = dropped.map((f) => `  - ${f.id}  ${f.file}:${f.line}  ${f.title}`);
+  return [
+    `${dropped.length} ${noun} not anchor to the PR diff and will not be posted:`,
+    "",
+    ...lines,
+    "",
+    "GitHub review comments attach only to lines present in the PR's right-hand",
+    "hunks. Re-anchor each one to a changed line, or move it into the summary.",
+  ].join("\n");
+}
+
+export function formatHeadMismatchAbort(expected: string, actual: string): string {
+  return [
+    "Aborting: the pull request moved since this review was written.",
+    "",
+    `  reviewed at head: ${expected}`,
+    `  current head:     ${actual}`,
+    "",
+    "Line anchors were computed against the old diff, so they may attach to",
+    "unrelated code or fail to attach at all. Re-fetch the diff, re-verify each",
+    "finding's file and line against it, then resubmit with the new",
+    "--expect-head value.",
+  ].join("\n");
 }
 
 export function formatCriticalAbort(criticals: Finding[]): string {
@@ -237,7 +289,9 @@ export function detectMethodologyLeaks(summary: string, findings: Finding[]): Me
   for (const f of findings) {
     leaks.push(...scanForMethodologyTokens(`${f.id}.title`, f.title));
     leaks.push(...scanForMethodologyTokens(`${f.id}.description`, f.description));
-    leaks.push(...scanForMethodologyTokens(`${f.id}.evidence`, f.evidence));
+    if (f.evidence !== undefined) {
+      leaks.push(...scanForMethodologyTokens(`${f.id}.evidence`, f.evidence));
+    }
   }
   return leaks;
 }
@@ -302,6 +356,7 @@ interface CliFlags {
   agentName: string;
   humanName: string;
   dryRun: boolean;
+  expectHead: string | null;
 }
 
 function parseCli(args: string[]): CliFlags {
@@ -315,6 +370,7 @@ function parseCli(args: string[]): CliFlags {
       "agent-name": { type: "string" },
       "human-name": { type: "string" },
       "dry-run": { type: "boolean", default: false },
+      "expect-head": { type: "string" },
     },
   });
   for (const required of ["pr", "owner", "repo", "findings", "agent-name", "human-name"] as const) {
@@ -330,12 +386,19 @@ function parseCli(args: string[]): CliFlags {
     agentName: values["agent-name"] as string,
     humanName: values["human-name"] as string,
     dryRun: values["dry-run"] === true,
+    expectHead: typeof values["expect-head"] === "string" ? values["expect-head"] : null,
   };
 }
 
-async function fetchPrDiff(pr: string): Promise<string> {
+/**
+ * Every gh call names the repository explicitly. Without --repo, gh infers it
+ * from the working directory, so the script would resolve a different PR (or
+ * fail outright) depending on where it happened to be invoked from, even though
+ * --owner and --repo were supplied.
+ */
+async function fetchPrDiff(pr: string, repo: string): Promise<string> {
   const gh = process.env.GH_PATH ?? "gh";
-  const proc = Bun.spawn([gh, "pr", "diff", pr, "--patch"], {
+  const proc = Bun.spawn([gh, "pr", "diff", pr, "--patch", "--repo", repo], {
     stdout: "pipe",
     stderr: "pipe",
   });
@@ -350,13 +413,49 @@ async function fetchPrDiff(pr: string): Promise<string> {
   return stdout;
 }
 
+/**
+ * The script fetches its own diff, so the revision it anchors against can drift
+ * from the one the review was written against. Reporting the head makes that
+ * drift visible, and --expect-head turns it into a hard stop.
+ */
+async function fetchPrHeadSha(pr: string, repo: string): Promise<string> {
+  const gh = process.env.GH_PATH ?? "gh";
+  const args = [
+    gh,
+    "pr",
+    "view",
+    pr,
+    "--repo",
+    repo,
+    "--json",
+    "headRefOid",
+    "--jq",
+    ".headRefOid",
+  ];
+  const proc = Bun.spawn(args, {
+    stdout: "pipe",
+    stderr: "pipe",
+  });
+  const [stdout, stderr, code] = await Promise.all([
+    new Response(proc.stdout).text(),
+    new Response(proc.stderr).text(),
+    proc.exited,
+  ]);
+  if (code !== 0) {
+    throw new Error(`gh pr view ${pr} failed (exit ${code}): ${stderr}`);
+  }
+  return stdout.trim();
+}
+
 export interface DryRunOutput {
   payload: ReviewPayload;
+  head_sha: string;
   counters: {
     inline: number;
     dropped: number;
     critical_dropped: number;
   };
+  dropped: Finding[];
   critical_dropped: Finding[];
 }
 
@@ -369,7 +468,13 @@ async function main() {
     throw new Error(formatMethodologyAbort(methodologyLeaks));
   }
 
-  const diff = await fetchPrDiff(cli.pr);
+  const repo = `${cli.owner}/${cli.repo}`;
+  const headSha = await fetchPrHeadSha(cli.pr, repo);
+  if (cli.expectHead !== null && cli.expectHead !== headSha) {
+    throw new Error(formatHeadMismatchAbort(cli.expectHead, headSha));
+  }
+
+  const diff = await fetchPrDiff(cli.pr, repo);
   const hunks = parseHunks(diff);
   const { anchorable, dropped } = partitionFindings(review.findings, hunks);
   const criticalDropped = collectCriticalDrops(dropped);
@@ -381,14 +486,19 @@ async function main() {
   if (cli.dryRun) {
     const out: DryRunOutput = {
       payload,
+      head_sha: headSha,
       counters: {
         inline: anchorable.length,
         dropped: dropped.length,
         critical_dropped: criticalDropped.length,
       },
+      dropped,
       critical_dropped: criticalDropped,
     };
     console.log(JSON.stringify(out, null, 2));
+    if (dropped.length > 0) {
+      console.error(formatDroppedNotice(dropped));
+    }
     if (criticalDropped.length > 0) {
       console.error(formatCriticalAbort(criticalDropped));
       process.exit(2);
@@ -398,6 +508,10 @@ async function main() {
 
   if (criticalDropped.length > 0) {
     throw new Error(formatCriticalAbort(criticalDropped));
+  }
+
+  if (dropped.length > 0) {
+    console.error(formatDroppedNotice(dropped));
   }
 
   if (anchorable.length === 0) {
