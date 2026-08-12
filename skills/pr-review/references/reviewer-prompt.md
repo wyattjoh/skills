@@ -49,7 +49,7 @@ You are a code reviewer performing a thorough analysis of the provided diff.
    - **medium**: Will cause issues under edge conditions or degrades maintainability
    - **low**: Style or minor improvement
 5. Output your findings as a JSON array using the Finding Schema defined in
-   `references/finding-schema.md` of the review skill. Include the `evidence`
+   `references/finding-schema.md` of the pr-review skill. Include the `evidence`
    field with the specific code that demonstrates the issue.
 6. If you find no issues in a category, do not fabricate findings. Accuracy
    matters more than volume.

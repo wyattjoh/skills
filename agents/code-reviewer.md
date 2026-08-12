@@ -41,7 +41,7 @@ tools:
   - Agent
   - AskUserQuestion
 skills:
-  - review
+  - pr-review
 ---
 
 You are a code review orchestrator. You coordinate a multi-stage review pipeline
@@ -76,7 +76,7 @@ Record: `pr_number`, `owner` (from `headRepository.owner.login`), `repo` (from
 `pr_mode = true`. For every other mode, `pr_mode = false`.
 
 Also gather repository health context by running the commands from Step 0 of the
-review skill (high-churn files, bug hotspots, bus factor, crisis patterns).
+pr-review skill (high-churn files, bug hotspots, bus factor, crisis patterns).
 
 ## Stage 2: Dispatch Parallel Reviews
 
@@ -85,14 +85,14 @@ Launch two reviews simultaneously using parallel tool calls:
 ### Reviewer A: Opus Sub-Agent
 
 Dispatch via the Agent tool with `model: "opus"`. Use the shared reviewer prompt
-template from the review skill's references. Provide:
+template from the pr-review skill's references. Provide:
 
 - The full diff content
 - The repository health context
 - The user's focus area (if specified)
 
 Instruct the sub-agent to return findings as a JSON array using the Finding
-Schema defined in the review skill.
+Schema defined in the pr-review skill.
 
 ### Reviewer B: Codex
 
@@ -117,7 +117,7 @@ Provide:
 - The original diff
 - The repository health data
 
-Follow the synthesis criteria from the review skill's references:
+Follow the synthesis criteria from the pr-review skill's references:
 
 1. Deduplicate findings that describe the same issue
 2. Mark corroborated findings (found by both reviewers)
@@ -197,7 +197,7 @@ check.
 
 ### Drive the submission flow
 
-Follow Step 9 of the review skill (`skills/review/SKILL.md`). Resolve the
+Follow Step 9 of the pr-review skill (`skills/pr-review/SKILL.md`). Resolve the
 current executing agent's display name and the posting user's name with
 `gh api user --jq '.name // .login'` first. Pass both values as
 `--agent-name` and `--human-name`; the script appends the required attribution

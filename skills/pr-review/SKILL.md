@@ -1,6 +1,6 @@
 ---
-name: review
-description: Performs comprehensive code review of Git changes with security, performance, and quality analysis, including repository health diagnostics (churn, bug hotspots, bus factor, momentum, crisis patterns) cross-referenced against the current diff for risk assessment. Triggers on "review code", "review changes", "check my code", "code review", "run /review", or mentions "security review", "performance review", "code quality", "hotspot analysis", "risk assessment", "bug hotspots".
+name: pr-review
+description: Performs comprehensive code review of Git changes with security, performance, and quality analysis, including repository health diagnostics (churn, bug hotspots, bus factor, momentum, crisis patterns) cross-referenced against the current diff for risk assessment. Triggers on "review code", "review changes", "check my code", "code review", "run /pr-review", or mentions "security review", "performance review", "code quality", "hotspot analysis", "risk assessment", "bug hotspots".
 argument-hint: "[focus-area]"
 allowed-tools: Bash(git status:*), Bash(git diff:*), Bash(git log:*), Bash(git show:*), Bash(git shortlog:*), Bash(sort:*), Bash(uniq:*), Bash(head:*), Bash(grep:*), Bash(gh pr view:*), Bash(gh pr diff:*), Bash(gh api:*), Bash(gh api user:*), Bash(bun:*), Read, Write, Grep, Glob, TodoWrite, AskUserQuestion
 effort: high
@@ -38,7 +38,7 @@ right one before writing a single character of output.
 
 | Invocation                                            | Audience           | Output format                                                                                                                                    |
 | ----------------------------------------------------- | ------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------ |
-| User runs `/review` directly                          | Human              | **Markdown only.** Follow the "Output Format" section below (Executive Summary, Critical Issues, etc.). Do **not** print the JSON finding array. |
+| User runs `/pr-review` directly                       | Human              | **Markdown only.** Follow the "Output Format" section below (Executive Summary, Critical Issues, etc.). Do **not** print the JSON finding array. |
 | `code-reviewer` agent dispatches a reviewer sub-agent | Orchestrator agent | JSON array per [references/finding-schema.md](references/finding-schema.md), for programmatic synthesis.                                         |
 
 If you are uncertain which path you are on, you are on the user-facing path:
@@ -113,7 +113,7 @@ When `pr_mode == true`, the review diff is the PR's own diff:
 gh pr diff <pr_number>
 ```
 
-Note: this is the diff shown on github.com for the PR. Uncommitted local edits to a checked-out PR branch are **not** included; if the user wants those reviewed, they should run `/review` without a PR argument on a branch with no associated PR.
+Note: this is the diff shown on github.com for the PR. Uncommitted local edits to a checked-out PR branch are **not** included; if the user wants those reviewed, they should run `/pr-review` without a PR argument on a branch with no associated PR.
 
 When `pr_mode == false`, analyze the current Git state:
 
@@ -361,7 +361,7 @@ When the parent session is reviewing N PRs in parallel (e.g., "review each of `<
 
 ## Internal: Agent-to-Agent Protocol
 
-The sections below are **not** for direct `/review` invocations. They are used
+The sections below are **not** for direct `/pr-review` invocations. They are used
 only when the `code-reviewer` orchestrator dispatches parallel reviewers that
 need machine-mergeable output. If a human is the audience, ignore these and
 emit the markdown report from "Output Format" above.

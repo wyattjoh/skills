@@ -3,7 +3,7 @@
 > **Audience: other agents, not users.** This schema is consumed by the
 > `code-reviewer` orchestrator when it runs parallel Opus and Codex reviewers
 > and needs mergeable output. **Never print this JSON to a human invoking
-> `/review` directly** -- they should receive the markdown report defined in
+> `/pr-review` directly** -- they should receive the markdown report defined in
 > `SKILL.md` under "Output Format".
 
 When a reviewer sub-agent is asked for structured output, emit findings as a

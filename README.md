@@ -88,13 +88,13 @@ Restart Claude Code after adding or changing an agent definition.
 | pr-create                     | Create a PR from the current branch with a template or generated description      |
 | pr-fix                        | Triage PR review comments and failing CI, then implement agreed fixes             |
 | pr-rebase                     | Rebase onto the latest base, resolve conflicts, force-push with lease             |
+| pr-review                     | Comprehensive code review with repository health diagnostics                      |
 | pr-status                     | Graph of open PRs grouped by stack, plus local cleanup list                       |
 | raycast-dev                   | Build, maintain, and publish Raycast extensions                                   |
 | reference-submodules          | Manage context repos as pinned shallow git submodules under `.claude/references/` |
 | release-please                | Configure, operate, and debug release-please                                      |
 | research-augmented-design     | Interleave background research agents with brainstorming during design            |
 | resticprofile                 | Operate the resticprofile CLI for restic backups                                  |
-| review                        | Comprehensive code review with repository health diagnostics                      |
 | setup-pre-commit-hooks        | Set up polyglot Git hooks for Rust and TypeScript/Bun checks                      |
 | setup-project-memory          | Capture a session learning into .claude/memory, indexed and wired into CLAUDE.md  |
 | simplify                      | Interactive code simplification with batched approval                             |

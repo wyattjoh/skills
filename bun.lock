@@ -57,8 +57,8 @@
       "name": "@wyattjoh/npm-info-skill",
       "version": "1.0.0",
     },
-    "skills/review": {
-      "name": "@wyattjoh/review-skill",
+    "skills/pr-review": {
+      "name": "@wyattjoh/pr-review-skill",
       "version": "1.0.0",
     },
     "skills/task-orchestrator": {
@@ -308,7 +308,7 @@
 
     "@wyattjoh/npm-info-skill": ["@wyattjoh/npm-info-skill@workspace:skills/npm-info"],
 
-    "@wyattjoh/review-skill": ["@wyattjoh/review-skill@workspace:skills/review"],
+    "@wyattjoh/pr-review-skill": ["@wyattjoh/pr-review-skill@workspace:skills/pr-review"],
 
     "@wyattjoh/task-orchestrator-skill": ["@wyattjoh/task-orchestrator-skill@workspace:skills/task-orchestrator"],
 
