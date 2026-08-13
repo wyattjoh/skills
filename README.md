@@ -102,8 +102,6 @@ Restart Claude Code after adding or changing an agent definition.
 | swift-composable-architecture | Adoption index for The Composable Architecture (TCA 1.26.0), mapped by topic      |
 | swift-sql                     | Type-safe Swift SQL with swift-structured-queries                                 |
 | swift-tca                     | TCA reducer and navigation patterns                                               |
-| task-orchestrator             | Coordinate parallel work units across isolated per-task worktree agents           |
-| task-planner                  | Decompose a settled feature design into validated orchestrator plan files         |
 | varlock                       | Kickstart varlock, the encrypted schema-driven dotenv replacement                 |
 | vhs                           | Interview-driven terminal screencasts rendered to GIF/MP4/WebM                    |
 | workspaces                    | Create, operate, and compact multi-repo workspace hubs with enforced memory       |

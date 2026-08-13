@@ -61,20 +61,6 @@
       "name": "@wyattjoh/pr-review-skill",
       "version": "1.0.0",
     },
-    "skills/task-orchestrator": {
-      "name": "@wyattjoh/task-orchestrator-skill",
-      "version": "1.0.0",
-      "dependencies": {
-        "commander": "^15",
-      },
-    },
-    "skills/task-planner": {
-      "name": "@wyattjoh/task-planner-skill",
-      "version": "1.0.0",
-      "dependencies": {
-        "commander": "^15",
-      },
-    },
     "skills/workspaces": {
       "name": "@wyattjoh/workspaces-skill",
       "version": "1.0.0",
@@ -309,10 +295,6 @@
     "@wyattjoh/npm-info-skill": ["@wyattjoh/npm-info-skill@workspace:skills/npm-info"],
 
     "@wyattjoh/pr-review-skill": ["@wyattjoh/pr-review-skill@workspace:skills/pr-review"],
-
-    "@wyattjoh/task-orchestrator-skill": ["@wyattjoh/task-orchestrator-skill@workspace:skills/task-orchestrator"],
-
-    "@wyattjoh/task-planner-skill": ["@wyattjoh/task-planner-skill@workspace:skills/task-planner"],
 
     "@wyattjoh/workspaces-skill": ["@wyattjoh/workspaces-skill@workspace:skills/workspaces"],
 

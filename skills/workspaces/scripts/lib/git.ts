@@ -160,11 +160,10 @@ export const listStacks = (repo: string): Effect.Effect<StackInfo[], GitCommandE
 
 /**
  * Lists committed paths under the workflow-runtime directories that must
- * never be tracked in a member repo (`.claude/worktrees`,
- * `.claude/task-orchestrator`). A non-empty result is workspace drift.
+ * never be tracked in a member repo (`.claude/worktrees`). A non-empty
+ * result is workspace drift.
  */
 export const trackedWorkflowArtifacts = (repo: string): Effect.Effect<string[], GitCommandError> =>
-  Effect.map(
-    runGitAllowEmpty(repo, ["ls-files", "--", ".claude/worktrees", ".claude/task-orchestrator"]),
-    (output) => output.split("\n").filter((line) => line.trim() !== ""),
+  Effect.map(runGitAllowEmpty(repo, ["ls-files", "--", ".claude/worktrees"]), (output) =>
+    output.split("\n").filter((line) => line.trim() !== ""),
   );

@@ -75,8 +75,7 @@ Paths are relative to this directory (sibling checkouts).
 - ADRs live in \`docs/adr/\` and are superseded, never edited.
 - Every deviation from recorded plans/decisions gets a \`JOURNAL.md\` entry
   before or with the change.
-- Plan batches live in \`plan/batches/<member>/<task-slug>/\`; member repos never
-  hold committed plan files.
+- Work plans live in the hub; member repos never hold committed plan files.
 - This file is generated. Edit \`workspace.yaml\` and run \`just sync\`.
 
 ## Workspace skills

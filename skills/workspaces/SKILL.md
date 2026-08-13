@@ -15,10 +15,9 @@ order), and auditable (generated views drift-checked by script).
 
 This skill composes existing skills rather than replacing them:
 `grill-with-docs` scopes, `domain-modeling` owns CONTEXT.md and ADRs,
-`task-planner` emits plan batches (into the hub), `task-orchestrator`
-executes them (in member repos), `stacked-prs` binds branches to the
-workspace by naming, `worktrunk` materializes interactive worktrees, and
-`claude-skills` standards govern the seeded project-local skills.
+`stacked-prs` binds branches to the workspace by naming,
+`worktrunk` materializes interactive worktrees, and `claude-skills` standards
+govern the seeded project-local skills.
 
 ## Routing
 
@@ -69,14 +68,12 @@ no command enters a worktree.
 ## Core rules (full detail in conventions.md)
 
 1. **One creator per branch+worktree pair.** wt owns interactive worktrees,
-   task-orchestrator owns batch worktrees, stacked-prs owns metadata only.
-   Never run stacked-prs `create` for a child branch inside a wt worktree.
-2. **Hub owns planning.** Plan files live in
-   `plan/batches/<member>/<task-slug>/`; task-orchestrator is pointed at
-   that directory from inside the member repo. Member repos never commit
-   workflow artifacts.
-3. **Binding is naming.** Stacks `<stack-prefix><task-slug>` (no dots),
-   branches `<branch-prefix><task-slug>`, batch dirs on the same slug.
+   stacked-prs owns metadata only. Never run stacked-prs `create` for a child
+   branch inside a wt worktree.
+2. **Hub owns planning.** Plan files live in the hub, and member repos never
+   commit workflow artifacts.
+3. **Binding is naming.** Stacks `<stack-prefix><task-slug>` (no dots) and
+   branches `<branch-prefix><task-slug>` use the same task slug.
 4. **Manifest is truth.** Edit `workspace.yaml`, run `just sync`; never
    hand-edit CLAUDE.md. `docs/index.md` is the context allow-list.
 5. **Deviations are journaled** before or with the change, cross-linked to

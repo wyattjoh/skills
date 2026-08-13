@@ -19,30 +19,23 @@ flow. It keeps the hub's records ahead of the member repos' code.
    touched, batch paths, stack names (`<stack-prefix><task-slug>`), and
    cross-member dependencies. If the task does not fit an existing phase,
    that is a phasing change — update `plan/phases.md` and journal it.
-3. **Plan per member.** For each member the task touches, run the
-   `task-planner` skill for that member's portion with
-   `--out <hub>/plan/batches/<member>/<task-slug>`. Plan-file `depends-on`
-   only orders tasks within one batch; ordering between members stays in
+3. **Plan per member.** For each member the task touches, write the member's
+   implementation plan under the hub and record any cross-member ordering in
    `plan/tasks.md`.
 4. **Create the stack.** In each member repo, create the stack via the
    stacked-prs skill with `--stack-name <stack-prefix><task-slug>` and
    branches named `<branch-prefix><task-slug>-<step>`. Respect worktree
    ownership (see conventions.md): register branches with stacked-prs, then
-   materialize with `wt switch`, or hand the whole batch to
-   task-orchestrator — never both for the same unit.
+   materialize them with `wt switch`.
 5. **Journal it.** `just journal decision "Task <slug> planned" "phase N, adr/NNNN"`.
 
 ## Execute a task
 
-1. From inside the member repo, invoke the `task-orchestrator` skill with
-   the hub batch directory as its plans argument:
-
-   ```
-   task-orchestrator <hub>/plan/batches/<member>/<task-slug> --target <integration-branch>
-   ```
+1. From inside each member repo, implement the plan on the bound branch or
+   worktree, following the stack order recorded in `plan/tasks.md`.
 
 2. Run members in the order recorded in `plan/tasks.md` (cross-member
-   dependencies are sequenced here, not in plan files).
+   dependencies are sequenced here).
 3. Brief every executing agent (subagent, orchestrator task, or fresh
    session) with the memory entries touching its work, and fold what
    execution teaches — surprises, tooling gotchas, decisions-in-motion —
@@ -63,8 +56,7 @@ Redesign is a first-class path, not an exception:
 3. Update the task row (and phases if scope moved) in the hub.
 4. Journal the deviation or scope change **before or with** the code change,
    linking plan/phase, ADR, and member PR.
-5. Re-run `task-planner` for affected batches; the orchestrator's plan-graph
-   validation will catch dangling dependencies.
+5. Update the affected implementation plans and validate their dependencies.
 
 ## Dropping a task
 

@@ -21,7 +21,6 @@ attributable to the workspace and auditable from the hub.
 ## Worktree ownership (one creator per branch+worktree)
 
 - `wt` (worktrunk) creates interactive/feature worktrees.
-- `task-orchestrator` creates its own batch worktrees for orchestrated runs.
 - stacked-prs manages stack metadata only; never use its worktree-creating
   options here, and never run `stacked-prs create` for a child branch from
   inside a wt-managed worktree (it moves that worktree's HEAD).
@@ -29,9 +28,8 @@ attributable to the workspace and auditable from the hub.
 ## Member repository purity
 
 Member repos never gain committed workflow artifacts. Runtime residue is
-limited to local-excluded paths (`.claude/worktrees/`,
-`.claude/task-orchestrator/`) and git config (stack metadata). Anything else
-is drift; the workspace `audit` flow flags it.
+limited to local-excluded paths (`.claude/worktrees/`) and git config (stack
+metadata). Anything else is drift; the workspace `audit` flow flags it.
 
 ## Recording changes
 

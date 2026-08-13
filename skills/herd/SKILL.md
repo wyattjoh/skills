@@ -24,11 +24,9 @@ implementation _and their own review loop_ — each spawns its own reviewer
 subagent and iterates until that reviewer approves, then reports back to you
 once. You never review their work round-by-round; you verify the result.
 
-This differs from `task-orchestrator`, which does the same shape of work with
-in-process subagents. Use `herd` when you want the work visible and steerable as
-real panes the user can watch, attach to, and interrupt — and when workers
-should be able to run under a different agent CLI or a non-Claude model. Use
-`task-orchestrator` when in-process subagents are enough.
+Use `herd` when you want the work visible and steerable as real panes the user
+can watch, attach to, and interrupt, and when workers should be able to run
+under a different agent CLI or a non-Claude model.
 
 **Only runs inside herdr.** Check `HERDR_ENV=1` first; stop if it is unset.
 

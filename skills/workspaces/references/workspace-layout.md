@@ -28,7 +28,7 @@ committed workspace artifacts.
 │   └── batches/
 │       └── <member>/
 │           └── <task-slug>/
-│               └── NN-slug.md   # task-planner output, task-orchestrator input
+│               └── NN-slug.md   # implementation plan
 ├── .claude/
 │   ├── memory/
 │   │   ├── MEMORY.md     # memory index: one line per entry (seeded at init)
@@ -133,10 +133,8 @@ questions, tooling gotchas, and pointers into the records.
   never in a harness's private state, so any agent, harness, or human gets
   the same recall.
 
-## Plan batches
+## Work plans
 
-`task-planner` runs with `--out plan/batches/<member>/<task-slug>/` so plan
-files live in the hub. `task-orchestrator` is invoked from inside the member
-repo and pointed at that hub directory (its plans-dir argument accepts any
-path). Plan-file dependencies (`depends-on`) only work within one batch;
-cross-member ordering lives in `plan/tasks.md`.
+Implementation plans live in the hub alongside the task registry. Keep
+cross-member ordering in `plan/tasks.md`, and keep each plan focused on the
+member repository and stack step it describes.

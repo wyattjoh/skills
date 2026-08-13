@@ -27,15 +27,14 @@ inspection: task registry row -> batch dir -> stack -> branches -> PRs.
 
 ## Worktree ownership: one creator per branch+worktree pair
 
-Verified constraint: wt, stacked-prs, and task-orchestrator each know how to
-create worktrees, and they do not coordinate. The workspace assigns
+Verified constraint: wt and stacked-prs each know how to create or manage
+branches and worktrees, and they do not coordinate. The workspace assigns
 exclusive domains:
 
-| Domain                     | Creator             | Notes                                                                                                                                           |
-| -------------------------- | ------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------- |
-| Interactive / feature work | `wt` (worktrunk)    | Per-repo worktree paths via wt config; context injection via a **user** per-project `post-start` hook (project hooks need interactive approval) |
-| Orchestrated batch runs    | `task-orchestrator` | Raw `git worktree add` under `.claude/worktrees/<batch>/<task-id>`, local-excluded                                                              |
-| Stack metadata             | stacked-prs         | Metadata only. Never use its `--create-worktree` options in a workspace                                                                         |
+| Domain                     | Creator          | Notes                                                                                                                                           |
+| -------------------------- | ---------------- | ----------------------------------------------------------------------------------------------------------------------------------------------- |
+| Interactive / feature work | `wt` (worktrunk) | Per-repo worktree paths via wt config; context injection via a **user** per-project `post-start` hook (project hooks need interactive approval) |
+| Stack metadata             | stacked-prs      | Metadata only. Never use its `--create-worktree` options in a workspace                                                                         |
 
 Two hard rules that follow:
 
@@ -43,8 +42,8 @@ Two hard rules that follow:
    wt-managed worktree: it runs `git checkout -b` in place and moves that
    worktree's HEAD off its assigned branch. Create/register the branch
    first, then materialize it with `wt switch <branch>`.
-2. Do not point task-orchestrator and wt at the same branch. One unit of
-   work, one creator.
+2. Do not use stacked-prs worktree creation from inside a wt-managed
+   worktree. One unit of work, one creator.
 
 ## Member repository purity
 
@@ -52,9 +51,9 @@ The workspace is a personal developer workflow tool, not an
 organization-adopted system. Member repositories must show no committed
 evidence of it:
 
-- **Allowed residue:** local-excluded runtime dirs
-  (`.claude/worktrees/`, `.claude/task-orchestrator/`), git config (stack
-  metadata), and user-level wt hooks. None of these appear in `git status`
+- **Allowed residue:** the local-excluded runtime dir `.claude/worktrees/`,
+  git config (stack metadata), and user-level wt hooks. None of these appear
+  in `git status`
   or history.
 - **Forbidden:** committed plan files, workspace docs, generated context, or
   tracked files under the runtime dirs. `audit` flags tracked runtime files
