@@ -23,7 +23,7 @@ Use `WebFetch` on these URLs to get current documentation before proceeding.
 
 **Action version pin:** `@v5` (Apr 2026) and `@v4` are both actively maintained. v5 only changes the runner runtime from Node 20 to Node 24 — no input/output changes. v4 still receives library bumps and is the safer pin for self-hosted runners that haven't upgraded to Node 24. **Avoid `@v3`** — it's deprecated and uses a different output shape (`release_created` singular instead of `releases_created` plural).
 
-**Library version:** release-please-action v5.0.0 bundles release-please library v17.6.0. The library is actively maintained (monthly releases) as of May 2026.
+**Library version:** release-please-action v5.0.0 bundles release-please library v17.6.0. Upstream ships releases roughly weekly to biweekly — the library was at v17.11.1 as of 2026-07-31, several minor versions ahead of what v5.0.0 bundles (source: [release-please releases](https://github.com/googleapis/release-please/releases), [npm registry](https://registry.npmjs.org/release-please)). Check the action's own `package-lock.json` at your pinned tag if you need the exact bundled version.
 
 ## Quick Start
 
@@ -404,7 +404,7 @@ The single most useful debugging signal is the PR label: `autorelease: pending` 
 
 ## Known Upstream Issues (verify if affected)
 
-Spot-checked against open issues as of May 2026. Re-check before recommending workarounds.
+Spot-checked against open issues as of 2026-08-12. Re-check before recommending workarounds.
 
 - **`separate-pull-requests: true` with Go monorepos** can fail with "A pull request already exists" on release-please library v17.6.0. Pin the action to a v4.x release that bundles v17.5.x if affected.
 - **`include-commit-authors`** (v17.5.0) is currently a no-op — author metadata is dropped.

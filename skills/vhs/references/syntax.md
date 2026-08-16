@@ -143,7 +143,7 @@ All key commands accept an optional repeat count, and most accept a `@<duration>
 | --------------------- | ------------------------------------------------------------------------------------- |
 | `Sleep <duration>`    | Fixed pause. `Sleep 0.5`, `Sleep 500ms`, `Sleep 2s`                                   |
 | `Wait`                | Block until last line matches `WaitPattern` (default `/>$/`) or `WaitTimeout` elapses |
-| `Wait /regex/`        | Match anywhere in screen output                                                       |
+| `Wait /regex/`        | Same as `Wait+Line` — matches only the last line, not the whole screen                |
 | `Wait+Screen /regex/` | Search the full visible screen                                                        |
 | `Wait+Line /regex/`   | Search only the last line                                                             |
 | `Wait@<poll> /regex/` | Override poll interval, e.g. `Wait@10ms /ready/`                                      |

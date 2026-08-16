@@ -199,8 +199,10 @@ When composing the `--prompt` value:
   if the user wants higher fidelity, add the `--pro` flag. Plain `--model
 banana` (no `--pro`) only supports `-n 1`; use `--pro` to generate more
   than one variant.
-- **Transparent backgrounds** — only available with the `gpt-1` and `gpt-1.5`
-  OpenAI models; not supported by the default `gpt-2` or by Banana/Gemini
-  models. Mention this if the user asks for transparency.
+- **Transparent backgrounds** — only available with snapai's `gpt-1` and
+  `gpt-1.5` model aliases (snapai's shorthand for OpenAI's `gpt-image-1` and
+  `gpt-image-1.5`); not supported by the default `gpt-2` (OpenAI's
+  `gpt-image-2`) or by Banana/Gemini models. Mention this if the user asks
+  for transparency.
 - **Icon composition** — always remind the user that icons should have a single,
   recognizable element; avoid text or complex scenes
