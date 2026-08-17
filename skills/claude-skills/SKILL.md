@@ -331,7 +331,8 @@ hooks:
 ### Claude Doesn't See All Skills
 
 Skill descriptions share a character budget (1% of context window, fallback of
-**8,000 characters**). Each entry is capped at **250 characters**. Run
+**8,000 characters**). Each entry (`description` + `when_to_use`) is capped at
+**1,536 characters**. Run
 `/context` to check. Increase via `SLASH_COMMAND_TOOL_CHAR_BUDGET` environment
 variable.
 

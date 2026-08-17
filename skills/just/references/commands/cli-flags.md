@@ -79,14 +79,14 @@ them blindly.**
 
 ### File / working directory selection
 
-| Flag                  | Short | Arg          | Notes                                                                           |
-| --------------------- | ----- | ------------ | ------------------------------------------------------------------------------- |
-| `--justfile`          | `-f`  | `<JUSTFILE>` | Use this justfile, or `-` to read from stdin. `[env: JUST_JUSTFILE]`            |
+| Flag                  | Short | Arg          | Notes                                                                               |
+| --------------------- | ----- | ------------ | ----------------------------------------------------------------------------------- |
+| `--justfile`          | `-f`  | `<JUSTFILE>` | Use this justfile, or `-` to read from stdin. `[env: JUST_JUSTFILE]`                |
 | `--justfile-name`     |       | `<NAME>`     | Search for a justfile with this name (comma-separated list accepted, since 1.58.0). |
-| `--working-directory` | `-d`  | `<DIR>`      | Working dir for recipes. **`--justfile` must also be set.**                     |
-| `--global-justfile`   | `-g`  |              | Use the global justfile (`$XDG_CONFIG_HOME/just/justfile`, `~/.justfile`, ...). |
-| `--ceiling`           |       | `<CEILING>`  | Do not ascend above `<CEILING>` when searching upward.                          |
-| `--allow-missing`     |       |              | Ignore missing recipe and module errors.                                        |
+| `--working-directory` | `-d`  | `<DIR>`      | Working dir for recipes. **`--justfile` must also be set.**                         |
+| `--global-justfile`   | `-g`  |              | Use the global justfile (`$XDG_CONFIG_HOME/just/justfile`, `~/.justfile`, ...).     |
+| `--ceiling`           |       | `<CEILING>`  | Do not ascend above `<CEILING>` when searching upward.                              |
+| `--allow-missing`     |       |              | Ignore missing recipe and module errors.                                            |
 
 ### Execution control
 

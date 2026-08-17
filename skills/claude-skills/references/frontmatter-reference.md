@@ -353,8 +353,9 @@ paths:
 - **Options:** `bash`, `powershell`
 
 Shell to use for inline shell commands in this skill. Setting `powershell` runs
-commands via PowerShell on Windows. Requires
-`CLAUDE_CODE_USE_POWERSHELL_TOOL=1`.
+commands via PowerShell on Windows. The PowerShell tool is already on by
+default on Windows without Git Bash; set `CLAUDE_CODE_USE_POWERSHELL_TOOL=1`
+to enable it elsewhere.
 
 ```yaml
 shell: powershell
