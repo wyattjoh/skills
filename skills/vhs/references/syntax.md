@@ -175,6 +175,7 @@ All key commands accept an optional repeat count, and most accept a `@<duration>
 | `vhs themes`             | List installed themes                                                                                              |
 | `vhs serve`              | Run a VHS server; clients submit tapes over SSH. Env: `VHS_PORT`, `VHS_HOST`, `VHS_UID`, `VHS_GID`, `VHS_KEY_PATH` |
 | `vhs new file.tape`      | Scaffold a new tape from the built-in template                                                                     |
+| `vhs manual`             | View full CLI documentation                                                                                        |
 
 ## Dependencies
 

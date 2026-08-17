@@ -176,6 +176,7 @@ vhs validate demo.tape        # parse only, no render
 vhs record > new.tape         # interactively capture a session to a tape
 vhs publish demo.gif          # upload to vhs.charm.sh
 vhs themes                    # list available themes
+vhs manual                    # view full CLI documentation
 ```
 
 If a render fails, the tape parser usually points at the line — `vhs validate` is the fastest way to surface syntax errors without paying the encoding cost.

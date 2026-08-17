@@ -249,6 +249,7 @@ anything newer against the target environment.
 | `[cache(...)]`                           | 1.54        | Cache a script recipe by invocation, inputs, outputs, and extra data.       |
 | `[continue(SIGNALS)]`                    | 1.54        | Continue running after selected signals.                                    |
 | `[arg(ARG, ...)]` (min= / max=)          | 1.56.0      | Add per-argument constraints.                                               |
+| `[timestamp]` / `[timestamp(FORMAT)]`    | 1.58.0      | Prefix this recipe's output lines with a timestamp; optional format arg.    |
 
 ```just
 [private]

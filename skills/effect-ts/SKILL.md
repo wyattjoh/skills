@@ -18,11 +18,13 @@ Before starting any Effect-related work, verify the Effect-TS source code exists
 git clone --depth=1 --branch effect@3.21.4 https://github.com/Effect-TS/effect.git "$SKILL_DIR/.source"
 ```
 
-The `main` branch now tracks Effect v4 (beta), which has breaking API changes
-(e.g. `Context.Tag` consolidating into `ServiceMap.Service`) relative to the v3
-patterns documented in this skill. Pin the clone to a v3 tag — matching the
-`effect@3.21.4` reference submodule pinned in the root `CLAUDE.md` — rather than
-cloning `main` unpinned.
+The `main` branch now tracks Effect v4 (release candidate, e.g. `4.0.0-rc.110`),
+which has breaking API changes relative to the v3 patterns documented in this
+skill — the `ServiceMap` module that briefly replaced `Context` during the v4
+beta was renamed back to `Context`, so service definition is now
+`Context.Service`. Pin the clone to a v3 tag — matching the `effect@3.21.4`
+reference submodule pinned in the root `CLAUDE.md` — rather than cloning `main`
+unpinned.
 
 ## Research Strategy
 
