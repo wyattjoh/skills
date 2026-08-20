@@ -7,7 +7,7 @@
  * re-verified immediately before the delete itself. A directory that cannot be
  * proven regenerable is reported and skipped, never removed.
  *
- *   cargo         must contain CACHEDIR.TAG, which cargo writes into target/
+ *   cargo         must contain CACHEDIR.TAG and sit beside Cargo.toml
  *   xcode         must be ignored by its own repo, per git check-ignore
  *   node-modules  must sit beside a package.json
  *   swift         must sit beside a Package.swift
@@ -24,7 +24,7 @@
 
 import { readdir, rm, stat } from "node:fs/promises";
 import { homedir, platform } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import { $ } from "bun";
 import { Console, Data, Effect } from "effect";
 import {
@@ -54,7 +54,7 @@ class BuildsRunningError extends Data.TaggedError("BuildsRunningError")<{
   readonly processes: readonly string[];
 }> {}
 
-class DeleteFailedError extends Data.TaggedError("DeleteFailedError")<{
+class CleanupFailedError extends Data.TaggedError("CleanupFailedError")<{
   readonly path: string;
   readonly cause: unknown;
 }> {}
@@ -190,8 +190,15 @@ const walk = (root: string, maxDepth: number): Effect.Effect<readonly Discovered
     return found;
   });
 
-/** A real cargo target directory always contains the CACHEDIR.TAG cargo writes. */
-const verifyCargo = (path: string): Effect.Effect<boolean> => exists(join(path, "CACHEDIR.TAG"));
+/**
+ * A Cargo-managed target contains CACHEDIR.TAG and belongs to a project manifest.
+ * Requiring both lets apply mode run `cargo clean` from the owning project instead
+ * of deleting a directory that Cargo may not recognize.
+ */
+const verifyCargo = (path: string): Effect.Effect<boolean> =>
+  Effect.all([exists(join(path, "CACHEDIR.TAG")), exists(join(dirname(path), "Cargo.toml"))]).pipe(
+    Effect.map(([hasCacheTag, hasManifest]) => hasCacheTag && hasManifest),
+  );
 
 /** Gitignored means the repo treats it as regenerable, which is the property we need. */
 const verifyGitIgnored = (path: string): Effect.Effect<boolean> =>
@@ -234,7 +241,7 @@ const proveRegenerable = (item: Discovered): Effect.Effect<boolean> => {
 };
 
 const FAILURE_REASON: Readonly<Record<BuildCategory, string>> = {
-  cargo: "no CACHEDIR.TAG, not a cargo target",
+  cargo: "missing CACHEDIR.TAG or sibling Cargo.toml, not a Cargo project target",
   xcode: "not gitignored, may be tracked output",
   "node-modules": "no sibling package.json",
   swift: "no sibling Package.swift",
@@ -303,19 +310,35 @@ const collectToolCaches: Effect.Effect<readonly ToolCache[]> = Effect.forEach(
   { concurrency: 4 },
 ).pipe(Effect.map((results) => results.filter((item): item is ToolCache => item !== null)));
 
-const removeDirectory = (item: Candidate): Effect.Effect<Candidate, DeleteFailedError> =>
+const cleanCandidate = (item: Candidate): Effect.Effect<Candidate, CleanupFailedError> =>
   Effect.gen(function* () {
     // Re-verify at the last moment, so a stale scan can never widen the blast radius.
     const verdict = yield* verify(item);
     if (!verdict.ok) {
-      return yield* new DeleteFailedError({
+      return yield* new CleanupFailedError({
         path: item.path,
-        cause: `failed re-verification at delete time: ${verdict.reason}`,
+        cause: `failed re-verification at cleanup time: ${verdict.reason}`,
       });
     }
+
+    if (item.category === "cargo") {
+      const projectRoot = dirname(item.path);
+      const result = yield* Effect.tryPromise({
+        try: () => $`cargo clean`.cwd(projectRoot).nothrow(),
+        catch: (cause) => new CleanupFailedError({ path: item.path, cause }),
+      });
+      if (result.exitCode !== 0) {
+        return yield* new CleanupFailedError({
+          path: item.path,
+          cause: `cargo clean exited with status ${result.exitCode}`,
+        });
+      }
+      return item;
+    }
+
     yield* Effect.tryPromise({
       try: () => rm(item.path, { recursive: true, force: true }),
-      catch: (cause) => new DeleteFailedError({ path: item.path, cause }),
+      catch: (cause) => new CleanupFailedError({ path: item.path, cause }),
     });
     return item;
   });
@@ -335,11 +358,12 @@ const reportText = (
 ): Effect.Effect<void> =>
   Effect.gen(function* () {
     yield* Console.log(
-      `Will delete ${plural(deletable.length, "dir")}, ${formatSize(totalKb(deletable))} total:`,
+      `Will clean ${plural(deletable.length, "artifact")}, ${formatSize(totalKb(deletable))} total:`,
     );
     for (const item of deletable) {
       yield* Console.log(
-        `  ${formatSize(item.sizeKb).padStart(7)}  ${item.category.padEnd(13)} ${item.path}`,
+        `  ${formatSize(item.sizeKb).padStart(7)}  ${item.category.padEnd(13)} ${item.path}` +
+          (item.category === "cargo" ? `  (cargo clean in ${dirname(item.path)})` : "  (delete)"),
       );
     }
 
@@ -426,22 +450,23 @@ const program = Effect.gen(function* () {
   }
 
   if (!options.apply) {
-    yield* Console.log("\nNothing deleted. Re-run with --apply to remove the listed directories.");
+    yield* Console.log("\nNothing cleaned. Re-run with --apply to clean the listed artifacts.");
     return;
   }
 
   yield* Console.log("");
-  const [failures, removed] = yield* Effect.partition(deletable, removeDirectory, {
+  const [failures, removed] = yield* Effect.partition(deletable, cleanCandidate, {
     concurrency: 4,
   });
   for (const item of removed) {
-    yield* Console.log(`removed  ${formatSize(item.sizeKb).padStart(7)}  ${item.path}`);
+    const action = item.category === "cargo" ? "cargo clean" : "removed";
+    yield* Console.log(`${action.padEnd(11)} ${formatSize(item.sizeKb).padStart(7)}  ${item.path}`);
   }
   for (const failure of failures) {
     yield* Console.error(`FAILED   ${failure.path}: ${String(failure.cause)}`);
   }
   yield* Console.log(
-    `\nRemoved ${removed.length} of ${plural(deletable.length, "dir")}. Free after: ${yield* freeSpace}`,
+    `\nCleaned ${removed.length} of ${plural(deletable.length, "artifact")}. Free after: ${yield* freeSpace}`,
   );
 });
 

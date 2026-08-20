@@ -8,7 +8,8 @@ effort: high
 # Clean storage
 
 Finds regenerable build artifacts and caches, verifies each one is genuinely
-disposable, reports them, and deletes only after the user agrees.
+disposable, reports them, and cleans only after the user agrees. Cargo projects are
+cleaned through `cargo clean`; other verified artifacts are deleted directly.
 
 Do not add `context: fork`. This workflow depends on `AskUserQuestion` for the
 deletion checkpoint and on the user reading the full path list, and a forked
@@ -41,14 +42,16 @@ package manager stores) live outside any scanned root. They are included only in
 home-wide scan, or when `--caches` is passed. This keeps a scoped request like
 "clean up my Rust project" from proposing deletions across the whole machine.
 
-### 2. Report every path
+### 2. Report every path and action
 
-**Print the complete list of directories that would be deleted, one per line, before
-asking for anything.** The user is authorizing specific paths, not a number. A
+**Print the complete list of artifacts that would be cleaned, one per line, before
+asking for anything.** Include the scanner's action for every path: Cargo targets
+show the project directory where `cargo clean` will run; other artifacts show
+`delete`. The user is authorizing specific paths and actions, not a number. A
 category summary alone is not enough to consent to a deletion, and neither is "the
 largest few entries".
 
-The script already prints the full list under "Will delete". Relay it verbatim. Do
+The script already prints the full list under "Will clean". Relay it verbatim. Do
 not truncate it, do not replace it with the category totals, and do not collapse it
 to the top N. If the list is long, that is information the user needs: a 153-entry
 list is itself a signal about how wide the deletion is.
@@ -62,7 +65,7 @@ Then also surface:
 
 ### 3. Confirm before deleting
 
-Deletion is destructive. Use `AskUserQuestion` to confirm, only after the full path
+Cleanup is destructive. Use `AskUserQuestion` to confirm, only after the full path
 list is on screen. Include the total and the category breakdown in the question so
 the user is deciding on real numbers.
 
@@ -78,13 +81,18 @@ bun $SKILL_DIR/scripts/scan.ts --root ~/Code --apply
 Pass the same roots and filters used for the scan, so the user approves the same set
 that gets deleted.
 
-The script refuses to run `--apply` while a build process is detected, since removing
-a target directory mid-build corrupts it. If it refuses, report which process blocked
-it rather than working around the check.
+The script refuses to run `--apply` while a build process is detected, since cleaning
+build output during a build corrupts or invalidates it. If it refuses, report which
+process blocked it rather than working around the check.
+
+For every verified Cargo target, apply mode runs `cargo clean` with the sibling
+`Cargo.toml` directory as its working directory. It never directly removes a Cargo
+`target/` directory. This preserves Cargo's ownership of its artifacts and respects
+project-specific Cargo configuration.
 
 ### 5. Report the outcome
 
-Give the before and after free space and the count actually removed. If any path
+Give the before and after free space and the count actually cleaned. If any path
 failed, say which and why.
 
 ## Safety model
@@ -93,13 +101,13 @@ Discovery is by directory name, which proves nothing on its own. Every candidate
 pass an independent check before it is eligible, and it is re-verified immediately
 before deletion so a stale scan cannot widen the blast radius.
 
-| Category       | Proof                     |
-| -------------- | ------------------------- |
-| `cargo`        | contains `CACHEDIR.TAG`   |
-| `xcode`        | `git check-ignore` passes |
-| `node-modules` | sibling `package.json`    |
-| `swift`        | sibling `Package.swift`   |
-| `cache`        | known fixed cache path    |
+| Category       | Proof                                                |
+| -------------- | ---------------------------------------------------- |
+| `cargo`        | contains `CACHEDIR.TAG` and has sibling `Cargo.toml` |
+| `xcode`        | `git check-ignore` passes                            |
+| `node-modules` | sibling `package.json`                               |
+| `swift`        | sibling `Package.swift`                              |
+| `cache`        | known fixed cache path                               |
 
 Two exclusions run first and override the proof above:
 
@@ -108,6 +116,10 @@ Two exclusions run first and override the proof above:
   so the proof alone would green-light uninstalling every global package.
 - **Tool-managed caches** (`~/.bun/install/cache`, `~/Library/pnpm/store`, and similar).
   These are reported with the vendor command instead, so they are not also deleted piecemeal.
+
+Cargo is also tool-managed at the project level: verified `target/` directories are
+reported by size, but apply mode invokes `cargo clean` in each owning project rather
+than calling the filesystem deletion API.
 
 Anything that fails is reported and skipped, never deleted. The scanner is built to
 under-report rather than over-delete.
