@@ -325,7 +325,13 @@ export interface ReviewComment {
 
 export interface ReviewPayload {
   body: string;
-  event: "COMMENT";
+  /**
+   * Omitted entirely for a pending (draft) review. GitHub's reviews endpoint
+   * treats a missing `event` as "leave this review in PENDING state", which is
+   * the only way to create a draft the author can keep adding to in the UI
+   * before submitting. Sending `event: "COMMENT"` publishes immediately.
+   */
+  event?: "COMMENT";
   comments: ReviewComment[];
 }
 
@@ -333,10 +339,11 @@ export function buildPayload(
   summary: string,
   anchorable: Finding[],
   attribution: ReviewAttribution,
+  pending = false,
 ): ReviewPayload {
   return {
     body: appendFooter(summary, attribution),
-    event: "COMMENT",
+    ...(pending ? {} : { event: "COMMENT" as const }),
     comments: anchorable.map((f) => ({
       path: f.file,
       line: f.line,
@@ -356,6 +363,7 @@ interface CliFlags {
   agentName: string;
   humanName: string;
   dryRun: boolean;
+  pending: boolean;
   expectHead: string | null;
 }
 
@@ -370,6 +378,7 @@ function parseCli(args: string[]): CliFlags {
       "agent-name": { type: "string" },
       "human-name": { type: "string" },
       "dry-run": { type: "boolean", default: false },
+      pending: { type: "boolean", default: false },
       "expect-head": { type: "string" },
     },
   });
@@ -386,6 +395,7 @@ function parseCli(args: string[]): CliFlags {
     agentName: values["agent-name"] as string,
     humanName: values["human-name"] as string,
     dryRun: values["dry-run"] === true,
+    pending: values.pending === true,
     expectHead: typeof values["expect-head"] === "string" ? values["expect-head"] : null,
   };
 }
@@ -478,10 +488,12 @@ async function main() {
   const hunks = parseHunks(diff);
   const { anchorable, dropped } = partitionFindings(review.findings, hunks);
   const criticalDropped = collectCriticalDrops(dropped);
-  const payload = buildPayload(review.summary, anchorable, {
-    agentName: cli.agentName,
-    humanName: cli.humanName,
-  });
+  const payload = buildPayload(
+    review.summary,
+    anchorable,
+    { agentName: cli.agentName, humanName: cli.humanName },
+    cli.pending,
+  );
 
   if (cli.dryRun) {
     const out: DryRunOutput = {
@@ -520,6 +532,12 @@ async function main() {
   }
 
   const url = await submitReview(cli.owner, cli.repo, cli.pr, payload);
+  if (cli.pending) {
+    console.error(
+      "Left as a PENDING review — visible only to you until you submit it from the " +
+        "PR's Files changed tab. GitHub allows one pending review per user per PR.",
+    );
+  }
   console.log(url);
 }
 
