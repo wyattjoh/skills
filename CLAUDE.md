@@ -64,13 +64,14 @@ agents and skills tables in sync with the actual contents of `agents/` and `skil
 
 ## Dependency References
 
-Two upstream repositories are registered as pinned git submodules under `.claude/references/`.
-They are for read-only reference only; do not edit files inside either path.
+Three upstream repositories are registered as pinned git submodules under `.claude/references/`.
+They are for read-only reference only; do not edit files inside these paths.
 
-| Dependency | Version / Tag    | Path                         | Repository                              | Pin (commit SHA)                           |
-| ---------- | ---------------- | ---------------------------- | --------------------------------------- | ------------------------------------------ |
-| Effect     | `effect@3.21.4`  | `.claude/references/effect`  | https://github.com/Effect-TS/effect.git | `4c5a0e384ad768f5a89d650c1a753504dc9b8735` |
-| Varlock    | `varlock@1.10.0` | `.claude/references/varlock` | https://github.com/dmno-dev/varlock.git | `dd7863b4f319fcf333dfe1c29cb834f8e15313ad` |
+| Dependency | Version / Tag    | Path                            | Repository                                   | Pin (commit SHA)                           |
+| ---------- | ---------------- | ------------------------------- | -------------------------------------------- | ------------------------------------------ |
+| Catppuccin | `v0.2.0`         | `.claude/references/catppuccin` | https://github.com/catppuccin/catppuccin.git | `9de299f8f1702fe4fb4e439adfd04b5623e7b77f` |
+| Effect     | `effect@3.21.4`  | `.claude/references/effect`     | https://github.com/Effect-TS/effect.git      | `4c5a0e384ad768f5a89d650c1a753504dc9b8735` |
+| Varlock    | `varlock@1.10.0` | `.claude/references/varlock`    | https://github.com/dmno-dev/varlock.git      | `dd7863b4f319fcf333dfe1c29cb834f8e15313ad` |
 
 To populate locally after a fresh clone:
 

@@ -6,3 +6,7 @@
 	path = .claude/references/varlock
 	url = https://github.com/dmno-dev/varlock.git
 	shallow = true
+[submodule ".claude/references/catppuccin"]
+	path = .claude/references/catppuccin
+	url = https://github.com/catppuccin/catppuccin.git
+	branch = v0.2.0
