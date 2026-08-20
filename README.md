@@ -67,6 +67,7 @@ Restart Claude Code after adding or changing an agent definition.
 
 | Skill                         | Description                                                                       |
 | ----------------------------- | --------------------------------------------------------------------------------- |
+| catppuccin-interfaces         | Apply Catppuccin colors with semantic, accessible interface tokens                |
 | claude-sessions               | Parse and analyze Claude Code conversation history                                |
 | claude-skills                 | Guidance for authoring Claude Code skills                                         |
 | claude-skills-update          | Periodic check for upstream Claude Code skill API changes                         |
