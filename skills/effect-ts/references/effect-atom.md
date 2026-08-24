@@ -81,24 +81,28 @@ const incrementFn = Atom.fn(
 
 // Invoke with useAtomSet
 const increment = useAtomSet(incrementFn);
-increment(); // Returns Promise<Exit<...>>
+increment(); // Fire-and-forget by default; pass { mode: "promiseExit" } to await a Promise<Exit<...>>
 ```
 
 ### Atom Runtime
 
-Create atom runtime from Effect layers for dependency injection:
+Build a runtime atom from Effect layers for dependency injection, then derive
+atoms from it directly — there is no separate provider component:
 
 ```typescript
-const runtimeAtom = Atom.runtime(ApiLive)
+const runtimeAtom = Atom.runtime(ApiLive);
 
-function App() {
-  return (
-    <AtomProvider runtime={runtimeAtom}>
-      <MyComponent />
-    </AtomProvider>
-  )
-}
+const usersAtom = runtimeAtom.atom(
+  Effect.gen(function* () {
+    const api = yield* Api;
+    return yield* api.fetchUsers();
+  }),
+);
 ```
+
+Wrap the app in `RegistryProvider` only when a non-default registry
+configuration is needed (`initialValues`, `scheduleTask`, `timeoutResolution`,
+`defaultIdleTTL`); it takes no `runtime` prop.
 
 ## Advanced Features
 

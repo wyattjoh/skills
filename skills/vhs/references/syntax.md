@@ -69,7 +69,7 @@ All `Set` directives must appear before the first input command. **Exception:** 
 | `Height`     | pixels    | `600`       |                                                                          |
 | `Padding`    | pixels    | `60`        | Space between terminal edge and content                                  |
 | `Margin`     | pixels    | `0`         | Space outside the terminal (use with `MarginFill`)                       |
-| `MarginFill` | hex color | `"#1e1e2e"` | Background behind the terminal                                           |
+| `MarginFill` | hex color | `"#171717"` | Background behind the terminal                                           |
 
 ### Typography
 
@@ -77,7 +77,7 @@ All `Set` directives must appear before the first input command. **Exception:** 
 | --------------- | ------- | ------------------ | ------------------------------------- |
 | `FontSize`      | number  | `22`               |                                       |
 | `FontFamily`    | string  | `"JetBrains Mono"` | Quoted; must be installed on the host |
-| `LetterSpacing` | pixels  | `0`                |                                       |
+| `LetterSpacing` | pixels  | `1.0`              |                                       |
 | `LineHeight`    | decimal | `1.0`              | e.g. `1.2`, `1.8`                     |
 
 ### Theme

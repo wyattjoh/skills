@@ -30,19 +30,24 @@ Example output:
 {
   "name": "express",
   "description": "Fast, unopinionated, minimalist web framework",
-  "version": "4.21.2",
+  "version": "5.2.1",
   "license": "MIT",
-  "homepage": "http://expressjs.com/",
+  "homepage": "https://expressjs.com/",
   "repository": "https://github.com/expressjs/express",
-  "maintainers": ["dougwilson"],
+  "maintainers": ["wesleytodd", "ulisesgascon", "jonchurch", "..."],
   "keywords": ["framework", "sinatra", "web", "http"],
   "readme": "# Express\n\nFast, unopinionated...",
   "deprecated": false,
-  "engines": { "node": ">= 0.10.0" },
-  "dependencies": { "accepts": "~1.3.8" },
-  "distTags": { "latest": "4.21.2", "next": "5.0.1" }
+  "engines": { "node": ">= 18" },
+  "dependencies": { "accepts": "~2.0.0" },
+  "distTags": { "latest": "5.2.1", "latest-4": "4.22.2" }
 }
 ```
+
+The `readme` field can legitimately come back as an empty string for some
+packages (a known registry quirk where README extraction fails at publish
+time) — fall back to `homepage`/`repository` in that case rather than
+treating it as "this package has no documentation."
 
 ## Usage
 

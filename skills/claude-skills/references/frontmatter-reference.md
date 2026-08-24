@@ -12,9 +12,15 @@ to `true`/`false` (Claude Code v2.1.218+).
 - **Required:** No
 - **Default:** Directory name (e.g., `skills/my-skill/` -> `my-skill`)
 
-Display name and slash-command identifier for the skill. Must use lowercase
-letters, numbers, and hyphens only. Maximum 64 characters. Cannot contain XML
-tags or reserved words ("anthropic", "claude") in published/marketplace skills.
+Display name shown in skill listings. Must use lowercase letters, numbers, and
+hyphens only. Maximum 64 characters. Cannot contain XML tags or reserved words
+("anthropic", "claude") in published/marketplace skills.
+
+For a personal or project skill, `name` does **not** change the invoked
+`/name` command — that always comes from the directory name. Only in a plugin
+skill does `name` become the last segment of the command (the plugin prefix
+stays in place, e.g. `name: fancy` in `my-plugin/skills/review/SKILL.md`
+becomes `/my-plugin:fancy`).
 
 ```yaml
 name: my-skill-name
@@ -69,10 +75,10 @@ patterns with glob syntax (e.g., `Bash(git:*)` allows any git command). To
 actually remove tools from the pool while the skill is active, use
 [`disallowed-tools`](#disallowed-tools) instead.
 
-The official Claude Code docs document a **space-separated** string format.
-Comma-separated strings also work in practice. The **YAML list** form is the
-clearest and is recommended when you have more than two or three tools, since
-it avoids any ambiguity about how the parser splits on spaces or commas.
+The official Claude Code docs document all three forms: a **space-separated**
+string, a **comma-separated** string, and a **YAML list**. The YAML list is
+the clearest and is recommended when you have more than two or three tools,
+since it avoids any ambiguity about how the parser splits on spaces or commas.
 
 ```yaml
 # Space-separated (official format)
@@ -201,7 +207,7 @@ With `context: fork`, this sets the forked subagent's model instead. Model IDs
 change with releases. Check the official documentation for current values.
 
 ```yaml
-model: claude-sonnet-4-6
+model: claude-sonnet-5
 ```
 
 ## `effort`
@@ -353,9 +359,11 @@ paths:
 - **Options:** `bash`, `powershell`
 
 Shell to use for inline shell commands in this skill. Setting `powershell` runs
-commands via PowerShell on Windows. The PowerShell tool is already on by
-default on Windows without Git Bash; set `CLAUDE_CODE_USE_POWERSHELL_TOOL=1`
-to enable it elsewhere.
+commands via PowerShell when the PowerShell tool is enabled: it's on by
+default on Windows without Git Bash, and on by default with Git Bash for
+claude.ai and Console accounts; it needs `CLAUDE_CODE_USE_POWERSHELL_TOOL=1`
+on Amazon Bedrock, Google Cloud's Agent Platform, Microsoft Foundry, and on
+macOS, Linux, and WSL.
 
 ```yaml
 shell: powershell

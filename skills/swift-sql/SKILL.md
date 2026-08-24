@@ -30,7 +30,7 @@ Comprehensive patterns for swift-structured-queries, sqlite-data, and GRDB.swift
 ```swift
 // Simple equality
 let activeDoses = try Dose
-    .where { $0.medicationID == medicationID }
+    .where { $0.medicationID.eq(medicationID) }
     .fetchAll(db)
 
 // Comparison operators

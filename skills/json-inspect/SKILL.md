@@ -31,17 +31,19 @@ For a file `data.json`:
 { "name": "Alice", "age": 30, "tags": ["dev", "lead"] }
 ```
 
-Running `uvx genson data.json` produces:
+Running `uvx genson data.json` produces (compact, single-line by default; add
+`-i 2` for the pretty-printed form shown here):
 
 ```json
 {
+  "$schema": "http://json-schema.org/schema#",
   "type": "object",
   "properties": {
     "name": { "type": "string" },
     "age": { "type": "integer" },
     "tags": { "type": "array", "items": { "type": "string" } }
   },
-  "required": ["name", "age", "tags"]
+  "required": ["age", "name", "tags"]
 }
 ```
 

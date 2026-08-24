@@ -94,8 +94,8 @@ instructions: |
 ```
 
 **`tools` is a top-level manifest array**, not nested under `ai` — see
-[Manifest Configuration](#manifest-configuration) below. `ai.json`/`ai.json5`
-(or `ai.yaml`) hold only `instructions` and `evals`:
+[Manifest Configuration](#manifest-configuration) below. An external
+`ai.yaml` file holds only `instructions` and `evals`:
 
 ```json
 {

@@ -11,17 +11,17 @@ The file is split into top-level blocks:
 
 ## global
 
-| Key                           | Purpose                                                                                    |
-| ----------------------------- | ------------------------------------------------------------------------------------------ |
-| `prevent-sleep: true`         | Keep macOS awake while a profile runs.                                                     |
-| `scheduler: launchd`          | On macOS use launchd (alternatives: `systemd`, `crond`, `taskscheduler`, `crontab:/path`). |
-| `priority: low`               | Process priority (`low`, `background`, `normal`, `high`).                                  |
-| `restic-stale-lock-age: 2h`   | Auto-clear repo locks older than this.                                                     |
-| `restic-lock-retry-after: 1m` | Backoff before retrying a locked repo.                                                     |
-| `default-command: snapshots`  | Command used when none is given.                                                           |
-| `min-memory: 100`             | Refuse to start below MB of free RAM.                                                      |
-| `ionice: true` / `nice: 10`   | Linux-only IO/CPU niceness.                                                                |
-| `schedule-defaults:`          | Defaults merged into every profile's `schedule-*` settings.                                |
+| Key                           | Purpose                                                                                        |
+| ----------------------------- | ---------------------------------------------------------------------------------------------- |
+| `prevent-sleep: true`         | Keep macOS awake while a profile runs.                                                         |
+| `scheduler: launchd`          | On macOS use launchd (alternatives: `systemd`, `crond`, `taskscheduler`, `crontab:/path`).     |
+| `priority: low`               | Process priority (`idle`, `background`, `low`, `normal`, `high`, `highest`; default `normal`). |
+| `restic-stale-lock-age: 2h`   | Auto-clear repo locks older than this.                                                         |
+| `restic-lock-retry-after: 1m` | Backoff before retrying a locked repo.                                                         |
+| `default-command: snapshots`  | Command used when none is given.                                                               |
+| `min-memory: 100`             | Refuse to start below MB of free RAM.                                                          |
+| `ionice: true` / `nice: 10`   | Linux-only IO/CPU niceness.                                                                    |
+| `schedule-defaults:`          | Defaults merged into every profile's `schedule-*` settings.                                    |
 
 `schedule-defaults` fields mirror the `schedule-*` keys documented below (`permission`, `lock-wait`, `log`, `priority`, `capture-environment`, `ignore-on-battery`, ...).
 
@@ -145,18 +145,18 @@ These mirror their restic flags. Only `restore` requires positional context — 
 
 Schedule modifiers (per command section):
 
-| Key                                        | Effect                                                            |
-| ------------------------------------------ | ----------------------------------------------------------------- |
-| `schedule-permission: user_logged_on`      | Run as user, only when logged in. Alternatives: `user`, `system`. |
-| `schedule-lock-wait: 30m`                  | Wait up to this long for the repo lock.                           |
-| `schedule-lock-mode: default`              | `default`, `fail`, `ignore`.                                      |
-| `schedule-log: /path/log`                  | Redirect command output.                                          |
-| `schedule-priority: standard`              | `background`, `standard`.                                         |
-| `schedule-ignore-on-battery: true`         | Skip entirely on battery.                                         |
-| `schedule-ignore-on-battery-less-than: 20` | Skip when charge is <= N%.                                        |
-| `schedule-environment: [ FOO=bar ]`        | Extra env for scheduled run only.                                 |
-| `schedule-capture-environment: HOME`       | Carry-over env names from the user session.                       |
-| `schedule-after-network-online: true`      | macOS/systemd: wait for network.                                  |
+| Key                                        | Effect                                                                              |
+| ------------------------------------------ | ----------------------------------------------------------------------------------- |
+| `schedule-permission: user_logged_on`      | Run as user, only when logged in. Alternatives: `auto` (default), `user`, `system`. |
+| `schedule-lock-wait: 30m`                  | Wait up to this long for the repo lock.                                             |
+| `schedule-lock-mode: default`              | `default`, `fail`, `ignore`.                                                        |
+| `schedule-log: /path/log`                  | Redirect command output.                                                            |
+| `schedule-priority: standard`              | `background`, `standard`.                                                           |
+| `schedule-ignore-on-battery: true`         | Skip entirely on battery.                                                           |
+| `schedule-ignore-on-battery-less-than: 20` | Skip when charge is <= N%.                                                          |
+| `schedule-environment: [ FOO=bar ]`        | Extra env for scheduled run only.                                                   |
+| `schedule-capture-environment: HOME`       | Carry-over env names from the user session.                                         |
+| `schedule-after-network-online: true`      | macOS/systemd: wait for network.                                                    |
 
 After changing any `schedule*` key, run `resticprofile schedule --all` so launchd picks up the new plist.
 

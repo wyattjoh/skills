@@ -265,7 +265,7 @@ import { useExec } from "@raycast/utils";
 import { List } from "@raycast/api";
 
 export default function Command() {
-  const { stdout, stderr, isLoading, error } = useExec(
+  const { data, isLoading, error } = useExec(
     "ls",
     ["-la", "/Users"],
     {
@@ -276,7 +276,7 @@ export default function Command() {
 
   return (
     <List isLoading={isLoading}>
-      {stdout && <List.Item title={stdout} />}
+      {data && <List.Item title={data} />}
       {error && <List.Item title={`Error: ${error.message}`} />}
     </List>
   );
@@ -289,13 +289,10 @@ export default function Command() {
 - `args`: string[] - Command arguments
 - `options`: { shell?: boolean, execute?: boolean, ... }
 
-**Return Values:**
-
-- `stdout`: string - Standard output
-- `stderr`: string - Standard error
-- `isLoading`: boolean
-- `error`: Error | undefined
-- `revalidate`: () => void
+**Return Values:** same shape as `useCachedPromise` (`data`, `isLoading`,
+`error`, `revalidate`, `mutate`). By default `data` holds just `stdout` as a
+string; there is no separate top-level `stdout`/`stderr` — use a custom
+`parseOutput` option if you need both.
 
 ### useSQL
 

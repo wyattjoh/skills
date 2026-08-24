@@ -71,11 +71,14 @@ pass `--check`, which reports formatting problems and exits non-zero without tou
 anything. `--list-different` prints only the offending paths if quieter output is
 wanted.
 
-Lefthook does not stash unstaged changes, so a writing formatter rewrites hunks that
-were never staged, and the committed content stops matching what was reviewed. Adding
-`stage_fixed: true` makes it worse: it re-stages the whole file, silently pulling
-unstaged work into the commit. Keep both tools read-only and let the developer run
-`bun run format` themselves.
+Since Lefthook 2.1.7, `pre-commit` runs hide unstaged/partially-staged hunks before
+the hook and restore them afterward, so this is no longer about correctness the way
+it once was — a writing formatter on an up-to-date Lefthook won't silently pull
+unstaged work into the commit, and `stage_fixed: true` now stages only the fixer's
+edits to already-staged content. Keep both tools read-only anyway: it's faster (no
+rewrite-then-restore round trip), it fails predictably on any Lefthook version, and it
+lets the developer run `bun run format` themselves instead of discovering a rewrite
+after the fact.
 
 The same rule rules out `oxlint --fix`, `--fix-suggestions`, and `--fix-dangerously`.
 

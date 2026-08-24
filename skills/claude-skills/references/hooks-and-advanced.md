@@ -238,6 +238,8 @@ both the skill body and in hook commands.
 | `${CLAUDE_EFFORT}`      | Current effort level: `low`, `medium`, `high`, `xhigh`, or `max` (Ultracode reports as `xhigh`)                               |
 | `${CLAUDE_SKILL_DIR}`   | Directory containing the skill's SKILL.md file                                                                                |
 | `${CLAUDE_PROJECT_DIR}` | The project root directory (same path hooks and MCP servers receive as `CLAUDE_PROJECT_DIR`). Requires Claude Code v2.1.196+. |
+| `${CLAUDE_PLUGIN_ROOT}` | A plugin skill's install directory. Substituted only in plugin skills.                                                        |
+| `${CLAUDE_PLUGIN_DATA}` | A plugin's persistent-data directory, which survives plugin updates. Substituted only in plugin skills.                       |
 
 ### `${CLAUDE_SKILL_DIR}` Details
 
