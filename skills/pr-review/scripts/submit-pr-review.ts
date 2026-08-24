@@ -100,7 +100,7 @@ function normalizeAttributionName(label: string, value: string): string {
 export function formatFooter(attribution: ReviewAttribution): string {
   const agentName = normalizeAttributionName("Agent name", attribution.agentName);
   const humanName = normalizeAttributionName("Human name", attribution.humanName);
-  return `###### Sent from ${agentName}\n\n- [ ] reviewed by ${humanName}`;
+  return `###### Sent from ${agentName}\n\n- [ ] reviewed by @${humanName}`;
 }
 
 export function appendFooter(body: string, attribution: ReviewAttribution): string {

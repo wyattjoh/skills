@@ -291,14 +291,14 @@ When all three hold, drive this flow:
 
 1. Resolve the attribution values before assembling the review:
    - `agent_name`: the current executing agent's display name, such as `Codex` or `Claude`.
-   - `human_name`: run `gh api user --jq '.name // .login'` and use its output.
+   - `human_name`: run `gh api user --jq '.login'` and use its output.
 
    The submission script appends this footer to the review body and every inline comment:
 
    ```markdown
    ###### Sent from <agent name>
 
-   - [ ] reviewed by <human name>
+   - [ ] reviewed by @<human name>
    ```
 
    Do not add the footer to the findings file yourself. Pass the resolved values to the submission script with `--agent-name` and `--human-name`.

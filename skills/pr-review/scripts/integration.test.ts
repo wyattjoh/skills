@@ -10,7 +10,7 @@ const FAKE_GH = join(HERE, "testdata/fake-gh");
 const DIFF = join(HERE, "testdata/pr-diff.patch");
 const REVIEW = join(HERE, "testdata/review.json");
 const EXPECTED = join(HERE, "testdata/expected-payload.json");
-const ATTRIBUTION_ARGS = ["--agent-name", "Codex", "--human-name", "Wyatt Johnson"];
+const ATTRIBUTION_ARGS = ["--agent-name", "Codex", "--human-name", "wyattjoh"];
 
 async function makeTempFile(suffix: string): Promise<string> {
   const dir = await mkdtemp(join(tmpdir(), "review-integration-"));

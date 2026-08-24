@@ -1,18 +1,18 @@
 {
-  "body": "Reviewed the token-validation change and the two new-file additions.\n\n###### Sent from Codex\n\n- [ ] reviewed by Wyatt Johnson",
+  "body": "Reviewed the token-validation change and the two new-file additions.\n\n###### Sent from Codex\n\n- [ ] reviewed by @wyattjoh",
   "event": "COMMENT",
   "comments": [
     {
       "path": "src/auth.ts",
       "line": 14,
       "side": "RIGHT",
-      "body": "Raw token exposure in logs.\n\n###### Sent from Codex\n\n- [ ] reviewed by Wyatt Johnson"
+      "body": "Raw token exposure in logs.\n\n###### Sent from Codex\n\n- [ ] reviewed by @wyattjoh"
     },
     {
       "path": "src/new-file.ts",
       "line": 1,
       "side": "RIGHT",
-      "body": "MAGIC = 42 has no comment describing why 42.\n\n###### Sent from Codex\n\n- [ ] reviewed by Wyatt Johnson"
+      "body": "MAGIC = 42 has no comment describing why 42.\n\n###### Sent from Codex\n\n- [ ] reviewed by @wyattjoh"
     }
   ]
 }

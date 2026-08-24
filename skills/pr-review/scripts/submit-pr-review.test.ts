@@ -166,8 +166,8 @@ test("partitionFindings: keeps in-hunk, drops out-of-hunk", async () => {
 });
 
 test("appendFooter: formats the required attribution footer", () => {
-  expect(appendFooter("Summary.", { agentName: "Codex", humanName: "Wyatt Johnson" })).toBe(
-    "Summary.\n\n###### Sent from Codex\n\n- [ ] reviewed by Wyatt Johnson",
+  expect(appendFooter("Summary.", { agentName: "Codex", humanName: "wyattjoh" })).toBe(
+    "Summary.\n\n###### Sent from Codex\n\n- [ ] reviewed by @wyattjoh",
   );
 });
 
@@ -183,11 +183,11 @@ test("renderFinding: emits description and attribution footer", () => {
       description: "Raw token exposure in logs.",
       evidence: 'console.log("validating", trimmed);',
     },
-    { agentName: "Codex", humanName: "Wyatt Johnson" },
+    { agentName: "Codex", humanName: "wyattjoh" },
   );
 
   expect(body).toBe(
-    "Raw token exposure in logs.\n\n###### Sent from Codex\n\n- [ ] reviewed by Wyatt Johnson",
+    "Raw token exposure in logs.\n\n###### Sent from Codex\n\n- [ ] reviewed by @wyattjoh",
   );
 });
 
@@ -199,7 +199,7 @@ test("buildPayload: matches golden fixture for auth-diff scenario", async () => 
 
   const payload = buildPayload(review.summary, anchorable, {
     agentName: "Codex",
-    humanName: "Wyatt Johnson",
+    humanName: "wyattjoh",
   });
 
   const expected = JSON.parse(
