@@ -304,7 +304,7 @@ export default function Command() {
 
 ### Debouncing Search
 
-Use the built-in `throttle` prop on `List` (or `Grid`) to add a 200ms debounce before `onSearchTextChange` fires. This avoids hand-rolling timers:
+Use the built-in `throttle` prop on `List` (or `Grid`) to debounce `onSearchTextChange`. This avoids hand-rolling timers:
 
 ```typescript
 export default function Command() {

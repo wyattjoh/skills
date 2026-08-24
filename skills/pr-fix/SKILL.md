@@ -98,13 +98,11 @@ Use `TodoWrite` to track each phase as a task.
 4. Pull failing CI checks for the PR's head ref. See
    [references/ci-checks.md](references/ci-checks.md) for exact commands.
 
-   Keep checks where `status == "completed"` AND `conclusion` is anything other
-   than `success`, `neutral`, or `skipped`. The qualifying conclusions are:
-   `failure`, `cancelled`, `timed_out`, `action_required`, `startup_failure`.
-   In-progress (`status != "completed"`) and queued checks are not actionable
-   yet, so omit them and note their count in the terminal summary.
+   Keep checks where `bucket` is `fail` or `cancel`. Checks with `bucket ==
+"pending"` are not actionable yet, so omit them and note their count in the
+   terminal summary.
 
-   For each qualifying check, parse the workflow run ID from `detailsUrl` and
+   For each qualifying check, parse the workflow run ID from `link` and
    pull the failed log slice (`gh run view <runId> --log-failed`, last ~200
    lines retained for the verification step). The log slice is what Phase 2b
    reasons over.
@@ -454,17 +452,17 @@ Print to the user (not to GitHub):
 
 ## Error Handling
 
-| Condition                                                                      | Behavior                                                                                                                                                             |
-| ------------------------------------------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| No PR found for current branch                                                 | Stop, tell user, suggest pushing the branch or supplying a PR number                                                                                                 |
-| Comment references a file not in the worktree                                  | Move to `CLARIFY`, note the mismatch in the draft reply                                                                                                              |
-| Failed log fetch returns nothing (e.g. `gh run view` 404 on a deleted run)     | Move that check to `CI-INFRA` with reason "log unavailable", surface in summary                                                                                      |
-| `detailsUrl` does not match the GitHub Actions URL pattern (third-party check) | Skip log fetch, classify based on `name` + `description` only; bucket conservatively as `CI-INFRA` if uncertain                                                      |
-| GraphQL or REST auth failure                                                   | Stop before Phase 4, report the failing command                                                                                                                      |
-| Pre-existing dirty worktree                                                    | Warn before Phase 4; ask whether to proceed or stash first. If the user proceeds, the Phase 8 commit still stages only files this skill modified                     |
-| `act` or `docker` unavailable in Phase 5                                       | Record verification as `unverified` for affected items, do **not** block; surface in the Phase 9 summary with install hint (`brew install act`, start Docker daemon) |
-| Phase 5 verification fails on any CI-FIX                                       | Skip Phases 6/7/8 entirely; jump to Phase 9 with the fresh log slice and revise/rerun guidance. Working tree keeps the Phase 4 edits                                 |
-| `git commit` fails in Phase 8                                                  | Stop, report the failing command and any hook output, leave files staged for the user                                                                                |
+| Condition                                                                  | Behavior                                                                                                                                                             |
+| -------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| No PR found for current branch                                             | Stop, tell user, suggest pushing the branch or supplying a PR number                                                                                                 |
+| Comment references a file not in the worktree                              | Move to `CLARIFY`, note the mismatch in the draft reply                                                                                                              |
+| Failed log fetch returns nothing (e.g. `gh run view` 404 on a deleted run) | Move that check to `CI-INFRA` with reason "log unavailable", surface in summary                                                                                      |
+| `link` does not match the GitHub Actions URL pattern (third-party check)   | Skip log fetch, classify based on `name` + `description` only; bucket conservatively as `CI-INFRA` if uncertain                                                      |
+| GraphQL or REST auth failure                                               | Stop before Phase 4, report the failing command                                                                                                                      |
+| Pre-existing dirty worktree                                                | Warn before Phase 4; ask whether to proceed or stash first. If the user proceeds, the Phase 8 commit still stages only files this skill modified                     |
+| `act` or `docker` unavailable in Phase 5                                   | Record verification as `unverified` for affected items, do **not** block; surface in the Phase 9 summary with install hint (`brew install act`, start Docker daemon) |
+| Phase 5 verification fails on any CI-FIX                                   | Skip Phases 6/7/8 entirely; jump to Phase 9 with the fresh log slice and revise/rerun guidance. Working tree keeps the Phase 4 edits                                 |
+| `git commit` fails in Phase 8                                              | Stop, report the failing command and any hook output, leave files staged for the user                                                                                |
 
 ## References
 

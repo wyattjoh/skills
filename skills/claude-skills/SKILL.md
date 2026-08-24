@@ -132,7 +132,7 @@ description: Extracts text from PDFs. Use when working with PDF files or when th
 ```yaml
 ---
 allowed-tools: Tool1, Tool2, Bash(command:*)
-model: claude-sonnet-4-6
+model: claude-sonnet-5
 effort: high
 context: fork
 agent: Explore

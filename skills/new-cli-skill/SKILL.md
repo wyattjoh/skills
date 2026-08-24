@@ -1,7 +1,7 @@
 ---
 name: new-cli-skill
 description: 'Generates a new CLI-usage skill for a target CLI. Given a name (searched) or a URL (GitHub repo / package), it maps the CLI''s command surface and config-file formats into a skill that kickstarts common operations. Triggers on "use the new-cli-skill", "create a skill for the [cli] cli", "generate a CLI skill", "make a skill for [tool] and its [config] file", "map this CLI into a skill".'
-allowed-tools: Task, Bash, Read, Write, Edit, Glob, AskUserQuestion
+allowed-tools: Agent, Bash, Read, Write, Edit, Glob, AskUserQuestion
 disable-model-invocation: true
 effort: high
 argument-hint: "<cli-name|url> [config-format...]"
@@ -74,7 +74,7 @@ Never silently clobber a directory that may carry hand-edits.
 
 ### 4. Launch both subagents in parallel
 
-In a **single message**, launch two `Task` subagents. Fill the source set into
+In a **single message**, launch two `Agent` subagents. Fill the source set into
 each prompt template:
 
 - **Research agent** — prompt from `references/research-agent-prompt.md`. Reads

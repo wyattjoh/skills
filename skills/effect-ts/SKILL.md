@@ -28,7 +28,7 @@ unpinned.
 
 ## Research Strategy
 
-Effect-TS has many ways to accomplish the same task. Proactively research best practices using the Task tool to spawn
+Effect-TS has many ways to accomplish the same task. Proactively research best practices using the Agent tool to spawn
 research agents when working with Effect patterns, especially for moderate to high complexity tasks.
 
 ### Research Sources (Priority Order)
@@ -59,7 +59,7 @@ research agents when working with Effect patterns, especially for moderate to hi
 
 ### Research Approach
 
-- Spawn multiple concurrent Task agents when investigating multiple related patterns
+- Spawn multiple concurrent Agent calls when investigating multiple related patterns
 - Focus on finding canonical, readable, and maintainable solutions rather than clever optimizations
 - Verify suggested approaches against existing codebase patterns for consistency (if patterns exist)
 - When multiple approaches are possible, research to find the most idiomatic Effect-TS solution

@@ -198,7 +198,9 @@ Claude Code ships with built-in skills available in every session, including
   `.claude/skills/run-<name>/` so `/run`, `/verify`, and other agents stop
   rediscovering it each session.
 - **`/doctor`**: Setup checkup; stays available even when
-  `disableBundledSkills` is on.
+  `disableBundledSkills` is on (Claude Code v2.1.205+; before that it was a
+  plain built-in command, not a bundled skill). Can still be hidden via
+  `DISABLE_DOCTOR_COMMAND` or a `skillOverrides` entry of `"doctor": "off"`.
 
 **As of v2.1.215**, `/code-review` and `/verify` only run when you invoke
 them directly — Claude used to be able to trigger them automatically.

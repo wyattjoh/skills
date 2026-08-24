@@ -33,17 +33,18 @@ it safe to hand to an AI agent.
 
 ## Common resolution flags
 
-varlock's only true global flags are `-h, --help` and `-v, --version`. But the
-value-resolving commands (`load`, `run`, `printenv`, `explain`, `reveal`, `scan`,
-`audit`, `codegen`) share a common set of flags:
+varlock's only true global flags are `-h, --help` and `-v, --version`. The
+value-resolving commands don't all share the same flag set — each flag below
+is scoped to the commands that actually accept it (verified against each
+command's own `--help`; see the per-command reference files for the full
+tables):
 
-| Flag            | Short | Purpose                                                                                                  |
-| --------------- | ----- | -------------------------------------------------------------------------------------------------------- |
-| `--path <path>` | `-p`  | Use a specific `.env` file or directory as the entry point. Repeatable; later paths take precedence.     |
-| `--env <env>`   |       | Resolve as a named environment (e.g. `production`). **Ignored when `@currentEnv` is set** in the schema. |
-| `--clear-cache` |       | Clear the cache, then re-resolve all values.                                                             |
-| `--skip-cache`  |       | Bypass the cache entirely for this run.                                                                  |
-| `--agent`       |       | (on `init`, `load`) non-interactive / redacted mode for AI agents and CI.                                |
+| Flag                           | Short | Commands                                                                           | Purpose                                                                                                  |
+| ------------------------------ | ----- | ---------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------- |
+| `--path <path>`                | `-p`  | all 8 (`load`, `run`, `printenv`, `explain`, `reveal`, `scan`, `audit`, `codegen`) | Use a specific `.env` file or directory as the entry point. Repeatable; later paths take precedence.     |
+| `--env <env>`                  |       | `load`, `explain`, `reveal`                                                        | Resolve as a named environment (e.g. `production`). **Ignored when `@currentEnv` is set** in the schema. |
+| `--clear-cache`/`--skip-cache` |       | `load`, `run`, `printenv`                                                          | Clear the cache and re-resolve, or bypass the cache entirely, for this run.                              |
+| `--agent`                      |       | `init`, `load`                                                                     | Non-interactive / redacted mode for AI agents and CI.                                                    |
 
 ## Anatomy
 
@@ -192,7 +193,8 @@ DB_PASS=op(op://my-vault/database-password/password)
 ```
 
 Pre-download the plugin in CI with
-`varlock install-plugin @varlock/1password-plugin`. Or, with no plugin, resolve a
+`varlock install-plugin @varlock/1password-plugin@<version>` (an exact version
+is required). Or, with no plugin, resolve a
 secret from any CLI with `exec()`: `MY_SECRET=exec(\`./scripts/fetch-secret.sh\`)`.
 Source: [secrets guide](https://varlock.dev/guides/secrets/); [plugins](https://varlock.dev/plugins/overview/).
 

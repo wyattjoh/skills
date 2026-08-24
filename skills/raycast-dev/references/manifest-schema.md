@@ -25,7 +25,7 @@ This reference covers the structure and configuration of a Raycast extension's `
     }
   ],
   "dependencies": {
-    "@raycast/api": "^1.104.0",
+    "@raycast/api": "^2.0.5",
     "@raycast/utils": "^2.3.0"
   },
   "devDependencies": {
@@ -192,8 +192,8 @@ Each command defines an entry point into your extension.
 
 #### interval
 
-**Type:** `string` (for menu-bar commands)
-**Description:** Update interval for menu bar commands
+**Type:** `string` (for `no-view` or `menu-bar` commands)
+**Description:** Update interval for the command
 **Example:** `"5m"`, `"1h"`, `"30s"`
 
 #### platforms
@@ -459,7 +459,7 @@ List all npm dependencies:
 ```json
 {
   "dependencies": {
-    "@raycast/api": "^1.104.0",
+    "@raycast/api": "^2.0.5",
     "@raycast/utils": "^2.3.0",
     "axios": "^1.4.0",
     "date-fns": "^2.30.0"
@@ -499,6 +499,8 @@ Standard scripts for Raycast extensions:
 ```
 
 > `ray migrate` updates an existing extension to the latest `@raycast/api` version, applying any required code transforms automatically.
+
+Requires Node.js ≥22.22.2, per `@raycast/api`'s `engines` field.
 
 ## Best Practices
 

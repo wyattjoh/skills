@@ -90,15 +90,19 @@ workspace = true
 With that in place the hook becomes `cargo clippy --workspace --all-targets --no-deps`.
 Keep `-- -D warnings` only for repositories that have not adopted the table.
 
-## Never autofix
+## Prefer check-only over autofix
 
-`cargo clippy --fix` and `cargo fmt` without `--check` rewrite files in place. Because
-Lefthook does not stash unstaged changes, they rewrite hunks that were never staged
-and the commit stops matching what was reviewed.
+`cargo clippy --fix` and `cargo fmt` without `--check` rewrite files in place.
+`--fix` refuses to run against a dirty working tree unless given `--allow-dirty`,
+which is exactly the state a pre-commit hook runs in — either it fails constantly or
+it is forced past the one safety check it has. Keep both check-only.
 
-`--fix` compounds this: it refuses to run against a dirty working tree unless given
-`--allow-dirty`, which is exactly the state a pre-commit hook runs in. Either it fails
-constantly or it is forced past the one safety check it has. Keep both check-only.
+Since Lefthook 2.1.7, `pre-commit` runs hide unstaged/partially-staged hunks before
+the hook and restore them afterward, so a rewriting command on an up-to-date Lefthook
+no longer silently pulls unstaged work into the commit (a conflicting restore aborts
+the commit instead). That safety net does not help with `--fix`'s own `--allow-dirty`
+requirement, so check-only remains the simpler, faster choice regardless of Lefthook
+version.
 
 ## Speed
 

@@ -11,7 +11,7 @@ Detailed examples for swift-structured-queries DSL and #sql macro patterns.
 var query = Dose.all
 
 if let medicationID = filterMedicationID {
-    query = query.where { $0.medicationID == medicationID }
+    query = query.where { $0.medicationID.eq(medicationID) }
 }
 
 if onlyActive {

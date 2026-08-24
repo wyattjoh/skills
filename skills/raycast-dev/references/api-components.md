@@ -33,8 +33,8 @@ export default function Command() {
 - `navigationTitle`: string - Title shown in navigation
 - `searchText`: string - Controlled search text
 - `onSearchTextChange`: (text: string) => void - Search change handler
-- `throttle`: boolean - Adds 200ms debounce to `onSearchTextChange` (avoids hand-rolling timers)
-- `pagination`: { onLoadMore: () => void; hasMore: boolean; pageSize?: number } - Enables infinite scroll (pair with `usePromise` pagination support)
+- `throttle`: boolean - Debounces `onSearchTextChange` (avoids hand-rolling timers)
+- `pagination`: { onLoadMore: () => void; hasMore: boolean; pageSize: number } - Enables infinite scroll (pair with `usePromise` pagination support)
 
 **List.Item Props:**
 
@@ -84,7 +84,7 @@ export default function Command() {
 
 **Key Props:**
 
-- `markdown`: string - Markdown content to display (supports CommonMark, GFM, and LaTeX math via `$...$` / `$$...$$` syntax as of v1.81.0)
+- `markdown`: string - Markdown content to display (supports CommonMark, GFM, and LaTeX math as of v1.81.0: inline via `\(...\)`, display via `\[...\]` or `$$...$$`)
 - `isLoading`: boolean - Show loading indicator
 - `metadata`: Detail.Metadata - Structured metadata panel
 - `navigationTitle`: string - Title shown in navigation
@@ -211,7 +211,7 @@ export default function Command() {
 
 - `columns`: number - Number of columns (1-8)
 - `fit`: Grid.Fit - How items fit in cells ("contain" | "fill")
-- `aspectRatio`: string - Aspect ratio (e.g., "16/9")
+- `aspectRatio`: "1" | "3/2" | "2/3" | "4/3" | "3/4" | "16/9" | "9/16" - Aspect ratio
 - `isLoading`: boolean - Show loading indicator
 
 ### ActionPanel

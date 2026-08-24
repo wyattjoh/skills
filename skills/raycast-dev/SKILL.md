@@ -53,10 +53,8 @@ If in an existing extension, analyze `package.json` to determine extension type:
 
 ```json
 {
-  "ai": {  // ← Indicates AI extension
-    "instructions": "...",
-    "tools": [...]
-  }
+  "ai": { "instructions": "..." },  // ← Indicates AI extension
+  "tools": [...]  // top-level, not nested inside "ai"
 }
 ```
 
@@ -236,19 +234,19 @@ ls -la src/utils/ src/components/ src/hooks/ 2>/dev/null
 **Adding AI Tools (for AI extensions):**
 
 1. Create tool file in `src/tools/`: `src/tools/new-tool.ts`
-2. Add tool to manifest:
+2. Add tool to the manifest's top-level `tools` array (not nested inside
+   `ai`); `name` implicitly maps to `src/tools/<name>.ts`, so no `file`
+   property is needed:
 
 ```json
 {
-  "ai": {
-    "tools": [
-      {
-        "name": "new-tool",
-        "description": "What this tool does",
-        "file": "src/tools/new-tool.ts"
-      }
-    ]
-  }
+  "tools": [
+    {
+      "name": "new-tool",
+      "title": "New Tool",
+      "description": "What this tool does"
+    }
+  ]
 }
 ```
 
@@ -463,15 +461,15 @@ export default async function getItems(input: Input) {
 {
   "ai": {
     "instructions": "Help users manage their items. Always confirm before deleting.",
-    "tools": [
-      {
-        "name": "get-items",
-        "description": "Fetch items with optional status filter",
-        "file": "src/tools/get-items.ts"
-      }
-    ],
     "evals": [...]
-  }
+  },
+  "tools": [
+    {
+      "name": "get-items",
+      "title": "Get Items",
+      "description": "Fetch items with optional status filter"
+    }
+  ]
 }
 ```
 

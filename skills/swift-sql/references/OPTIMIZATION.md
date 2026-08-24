@@ -106,7 +106,7 @@ func widgetDatabase() throws -> DatabasePool? {
 // BAD: N+1 queries
 let medications = try Medication.fetchAll(db)
 for medication in medications {
-    let doses = try Dose.where { $0.medicationID == medication.id }.fetchAll(db)
+    let doses = try Dose.where { $0.medicationID.eq(medication.id) }.fetchAll(db)
 }
 
 // GOOD: Single query with JOIN or batch fetch

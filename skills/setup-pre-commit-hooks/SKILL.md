@@ -105,11 +105,14 @@ pre-commit:
 - Leave `{staged_files}` unquoted. Lefthook quotes only the paths that need it.
   Wrapping it in `"..."` forces quoting on every path, which breaks tools that do not
   strip quotes themselves.
-- Never run a command that rewrites files. Lefthook does not stash unstaged changes,
-  so commands see the working tree, not the index. On a partially staged file an
-  autofixer rewrites hunks that were never staged, and the commit stops matching what
-  was reviewed. `stage_fixed: true` exists, but it re-stages the whole file and
-  silently pulls unstaged work into the commit.
+- Prefer check-only commands over autofixers. Since Lefthook 2.1.7, `pre-commit` runs
+  automatically hide unstaged/partially-staged hunks before the hook and restore them
+  afterward, aborting the commit (rather than silently including unreviewed content)
+  if a fixer's changes conflict with the restore; `stage_fixed: true` now stages only
+  the fixer's edits to already-staged content. On an older Lefthook, or one run with
+  `--no-stage-fixed`, that protection is absent and an autofixer can pull unstaged
+  work into the commit — pin `min_version: 2.1.7` in `lefthook.yml` if a command in
+  this config writes files or uses `stage_fixed`.
 - Keep pre-commit fast. Move whole-project analysis that cannot be scoped to staged
   files, such as type checking and test suites, to `pre-push` or CI.
 - Use `root:` only when a tool must run from a subdirectory. It changes the working

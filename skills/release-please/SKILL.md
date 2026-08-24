@@ -21,7 +21,7 @@ Configures [release-please](https://github.com/googleapis/release-please) in a p
 
 Use `WebFetch` on these URLs to get current documentation before proceeding.
 
-**Action version pin:** `@v5` (Apr 2026) and `@v4` are both actively maintained. v5 only changes the runner runtime from Node 20 to Node 24 — no input/output changes. v4 still receives library bumps and is the safer pin for self-hosted runners that haven't upgraded to Node 24. **Avoid `@v3`** — it's deprecated and uses a different output shape (`release_created` singular instead of `releases_created` plural).
+**Action version pin:** `@v5` (Apr 2026) and `@v4` are both usable. v5 only changes the runner runtime from Node 20 to Node 24 — no input/output changes. v4 received library bumps through `v4.4.1` (Feb 2026) and is the safer pin for self-hosted runners that haven't upgraded to Node 24, but no v4 release has shipped since v5.0.0, so treat "still maintained" as provisional and check for a newer v4 tag before relying on it. **Avoid `@v3`** — its last release was `v3.7.13` (Dec 2023), it runs on Node 16, and it predates the config-file-only manifest model (v4 removed most per-input configuration in favor of `release-please-config.json`). Both `release_created` (root) and `releases_created` (aggregate) outputs exist in v3 and v4 alike — the split is root-vs-aggregate, not a version difference.
 
 **Library version:** release-please-action v5.0.0 bundles release-please library v17.6.0. Upstream ships releases roughly weekly to biweekly — the library was at v17.11.1 as of 2026-07-31, several minor versions ahead of what v5.0.0 bundles (source: [release-please releases](https://github.com/googleapis/release-please/releases), [npm registry](https://registry.npmjs.org/release-please)). Check the action's own `package-lock.json` at your pinned tag if you need the exact bundled version.
 
@@ -308,7 +308,7 @@ Useful when paired with `workflow_dispatch` for ad-hoc releases triggered from t
 
 ### Force a bump direction (always-bump-\*)
 
-`versioning-strategy` overrides Conventional Commits parsing entirely. Set in config or as an action input (action input added in v4.4.0):
+`versioning-strategy` overrides Conventional Commits parsing entirely. `versioning-strategy` is the GitHub Action **input** name (added in v4.4.0); the equivalent **config-file** field is `versioning` (e.g. `{ "packages": { ".": { "versioning": "always-bump-minor" } } }`) — both accept the same enum values:
 
 | Strategy            | Effect                                                           |
 | ------------------- | ---------------------------------------------------------------- |

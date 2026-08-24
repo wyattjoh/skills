@@ -6,32 +6,30 @@ and bucketing each `conclusion` value.
 ## Fetch Checks for the PR
 
 ```bash
-gh pr checks <n> --json name,status,conclusion,workflow,link,description,startedAt,completedAt
+gh pr checks <n> --json name,state,bucket,workflow,link,description,startedAt,completedAt
 ```
 
-Field meanings:
+`gh pr checks --json` does not accept `status` or `conclusion` as field names — it
+validates fields up front and errors on an unrecognized one. Use `state` (the raw
+check state) and `bucket` (gh's own categorization of `state`) instead:
 
-| Field                       | Use                                                                                                        |
-| --------------------------- | ---------------------------------------------------------------------------------------------------------- |
-| `name`                      | Job name (sometimes `workflow / job` for workflows with multiple jobs)                                     |
-| `status`                    | `queued`, `in_progress`, `completed`                                                                       |
-| `conclusion`                | `success`, `failure`, `cancelled`, `timed_out`, `action_required`, `startup_failure`, `neutral`, `skipped` |
-| `workflow`                  | Workflow file name (e.g. `CI`, `Deploy`)                                                                   |
-| `link`                      | Browser URL for the check; for GitHub Actions checks this is also where the run ID can be parsed           |
-| `description`               | Short status summary; often contains the proximate reason for non-Actions checks (Vercel, etc.)            |
-| `startedAt` / `completedAt` | Timestamps; useful for cross-referencing whether the failure predates a later commit on the branch         |
+| Field                       | Use                                                                                                |
+| --------------------------- | -------------------------------------------------------------------------------------------------- |
+| `name`                      | Job name (sometimes `workflow / job` for workflows with multiple jobs)                             |
+| `state`                     | Raw check state, e.g. `SUCCESS`, `FAILURE`, `PENDING`, `CANCELLED`, `SKIPPED`                      |
+| `bucket`                    | `state` categorized into `pass`, `fail`, `pending`, `skipping`, `cancel`                           |
+| `workflow`                  | Workflow file name (e.g. `CI`, `Deploy`)                                                           |
+| `link`                      | Browser URL for the check; for GitHub Actions checks this is also where the run ID can be parsed   |
+| `description`               | Short status summary; often contains the proximate reason for non-Actions checks (Vercel, etc.)    |
+| `startedAt` / `completedAt` | Timestamps; useful for cross-referencing whether the failure predates a later commit on the branch |
 
 ## Filter for Triage
 
-Keep checks that match **all** of these:
+Keep checks where `bucket` is `fail` or `cancel`.
 
-- `status == "completed"`
-- `conclusion` is one of: `failure`, `cancelled`, `timed_out`,
-  `action_required`, `startup_failure`
-
-`success`, `neutral`, and `skipped` are not failures. Anything still `queued` or
-`in_progress` is not actionable yet, but its count is reported in the Phase 9
-terminal summary so the user knows triage was incomplete.
+`pass` and `skipping` are not failures. Anything still `bucket == "pending"` is not
+actionable yet, but its count is reported in the Phase 9 terminal summary so the user
+knows triage was incomplete.
 
 ## Parse the Workflow Run ID
 
@@ -63,24 +61,25 @@ summary.
 
 ## Bucketing Heuristics
 
-The user's choice was "everything not green is in scope," so all of the
-conclusions below enter triage. The bucket is decided by the log + code
-investigation in Phase 2b, not the `conclusion` value alone, but each conclusion
-has a default leaning:
+The user's choice was "everything not green is in scope," so everything in the
+`fail`/`cancel` buckets enters triage. The bucket is decided by the log + code
+investigation in Phase 2b, not the `bucket`/`state` value alone, but each raw
+`state` has a default leaning (`bucket` alone is too coarse to distinguish these —
+use `state` for this table):
 
-| Conclusion        | Default leaning                                                               | Rationale                                                                                                                                                                                      |
-| ----------------- | ----------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `failure`         | `CI-FIX`                                                                      | Code is broken; the log usually points at the failing line. Override to `CI-FLAKE` only if there is concrete evidence of flakiness (random network, retried test, timing-dependent assertion). |
-| `timed_out`       | `CI-FIX` if a slow-loop / infinite-await is in the diff, otherwise `CI-FLAKE` | Distinguish "we made it slow" from "the runner was overloaded" by checking whether the timeout scope crosses code added on this branch.                                                        |
-| `cancelled`       | `CI-SKIP`                                                                     | Most often auto-cancelled by a subsequent push or by the user. Only escalate to `CI-INFRA` if the cancellation came from a runner crash (visible in the log preamble).                         |
-| `action_required` | `CI-INFRA`                                                                    | Manual approval gate (deploy environment, third-party permission). Not a code fix; surface for user to handle.                                                                                 |
-| `startup_failure` | `CI-INFRA`                                                                    | Runner crashed before workflow steps ran. No code change available.                                                                                                                            |
+| State (`bucket`)           | Default leaning                                                               | Rationale                                                                                                                                                                                      |
+| -------------------------- | ----------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `FAILURE` (`fail`)         | `CI-FIX`                                                                      | Code is broken; the log usually points at the failing line. Override to `CI-FLAKE` only if there is concrete evidence of flakiness (random network, retried test, timing-dependent assertion). |
+| `TIMED_OUT` (`fail`)       | `CI-FIX` if a slow-loop / infinite-await is in the diff, otherwise `CI-FLAKE` | Distinguish "we made it slow" from "the runner was overloaded" by checking whether the timeout scope crosses code added on this branch.                                                        |
+| `CANCELLED` (`cancel`)     | `CI-SKIP`                                                                     | Most often auto-cancelled by a subsequent push or by the user. Only escalate to `CI-INFRA` if the cancellation came from a runner crash (visible in the log preamble).                         |
+| `ACTION_REQUIRED` (`fail`) | `CI-INFRA`                                                                    | Manual approval gate (deploy environment, third-party permission). Not a code fix; surface for user to handle.                                                                                 |
+| `STARTUP_FAILURE` (`fail`) | `CI-INFRA`                                                                    | Runner crashed before workflow steps ran. No code change available.                                                                                                                            |
 
 Override the default leaning when the log evidence is unambiguous.
 
 ### Flake signals worth recognizing
 
-The following patterns argue for `CI-FLAKE` even on a `failure` conclusion:
+The following patterns argue for `CI-FLAKE` even on a `FAILURE` state:
 
 - A test that retried and only the final attempt failed (look for
   `Attempt 2 failed`, `Retry 1/3`, etc.)

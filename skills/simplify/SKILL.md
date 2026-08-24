@@ -1,7 +1,7 @@
 ---
 name: simplify
 description: This skill should be used when the user asks to "simplify my code", "clean up changes", "refactor for clarity", "run /simplify", "make this code simpler", "review for simplification", or mentions "code simplification", "reduce complexity", "clean up branch", "simplify this function". Analyzes code changes for simplification opportunities. Presents findings with solution options and collects decisions in batches. Use --auto to apply recommended changes without prompts.
-allowed-tools: Bash(git:*), Read, Write, Edit, Grep, Glob, TodoWrite, AskUserQuestion, Task
+allowed-tools: Bash(git:*), Read, Write, Edit, Grep, Glob, TodoWrite, AskUserQuestion, Agent
 effort: high
 ---
 
