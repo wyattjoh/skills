@@ -9,6 +9,6 @@
   "dependencies": {
     "@happy-dom/global-registrator": "^20.11.2",
     "effect": "^3.22.1",
-    "mermaid": "^11.16.1"
+    "mermaid": "^11.17.0"
   }
 }
