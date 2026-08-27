@@ -1,6 +1,6 @@
 ---
 name: workspaces
-description: Creates and operates multi-repo workspace hubs, standalone git repositories that own the docs, ADRs, deviation journal, context manifest, release phasing, plan batches, workspace memory, and project-local skills for a cross-repo body of work. Use when creating a workspace for a multi-repo effort, adding or redesigning a task inside one, entering a workspace to load its context, compacting its ADRs into a minimal set that captures the final vision, recording or recalling workspace memory, or checking workspace integrity. Triggers on "create a workspace", "new workspace", "workspace for", "enter the workspace", "load workspace context", "workspace task", "compact the workspace", "compact ADRs", "consolidate decisions", "audit the workspace", "workspace memory", "remember this in the workspace", or landing in a directory containing workspace.yaml.
+description: Creates and operates multi-repo workspace hubs, standalone git repositories that own the docs, ADRs, deviation journal, context manifest, release phasing, plan batches, workspace memory, and project-local skills for a cross-repo body of work. Use only when the active context explicitly instructs you to use the workspaces skill.
 argument-hint: "[init|task|enter|audit|compact] [name]"
 effort: high
 ---
