@@ -1,4 +1,6 @@
-<!-- source: .claude/references/devenv-full.md lines 11664-11717 -->
+<!-- source: https://devenv.sh/languages/pascal/
+     upstream: docs/src/content/docs/languages/pascal.md
+     llms-full.txt lines 11664-11717 -->
 
 # pascal
 

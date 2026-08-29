@@ -1,4 +1,6 @@
-<!-- source: .claude/references/devenv-full.md lines 6206-6491 -->
+<!-- source: https://devenv.sh/guides/using-with-flakes/
+     upstream: docs/src/content/docs/guides/using-with-flakes.md
+     llms-full.txt lines 6206-6491 -->
 
 # Using devenv with Nix Flakes
 

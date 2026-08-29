@@ -1,4 +1,6 @@
-<!-- source: .claude/references/devenv-full.md lines 11304-11375 -->
+<!-- source: https://devenv.sh/languages/nix/
+     upstream: docs/src/content/docs/languages/nix.md
+     llms-full.txt lines 11304-11375 -->
 
 # nix
 

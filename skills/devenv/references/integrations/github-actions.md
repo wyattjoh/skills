@@ -1,8 +1,12 @@
-<!-- source: .claude/references/devenv-full.md lines 7727-7920 -->
+<!-- source: https://devenv.sh/integrations/github-actions/
+     upstream: docs/src/content/docs/integrations/github-actions.md
+     llms-full.txt lines 7727-7920 -->
 
-# GitHub Actions
+# Using devenv in GitHub Actions
 
 > Use developer environments powered by devenv to check, build, and test code in GitHub Actions workflows.
+
+# GitHub Actions
 
 ### Introduction
 

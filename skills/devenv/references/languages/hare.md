@@ -1,4 +1,6 @@
-<!-- source: .claude/references/devenv-full.md lines 9792-9821 -->
+<!-- source: https://devenv.sh/languages/hare/
+     upstream: docs/src/content/docs/languages/hare.md
+     llms-full.txt lines 9792-9821 -->
 
 # hare
 

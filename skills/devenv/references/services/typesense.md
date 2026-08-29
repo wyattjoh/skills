@@ -1,4 +1,6 @@
-<!-- source: .claude/references/devenv-full.md lines 26379-26522 -->
+<!-- source: https://devenv.sh/services/typesense/
+     upstream: docs/src/content/docs/services/typesense.md
+     llms-full.txt lines 26379-26522 -->
 
 # typesense
 

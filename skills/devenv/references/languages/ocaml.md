@@ -1,4 +1,6 @@
-<!-- source: .claude/references/devenv-full.md lines 11376-11465 -->
+<!-- source: https://devenv.sh/languages/ocaml/
+     upstream: docs/src/content/docs/languages/ocaml.md
+     llms-full.txt lines 11376-11465 -->
 
 # ocaml
 

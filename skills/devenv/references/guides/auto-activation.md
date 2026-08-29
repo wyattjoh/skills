@@ -1,4 +1,6 @@
-<!-- source: .claude/references/devenv-full.md lines 111-255 -->
+<!-- source: https://devenv.sh/auto-activation/
+     upstream: docs/src/content/docs/auto-activation.mdx
+     llms-full.txt lines 111-255 -->
 
 # Auto Activation
 

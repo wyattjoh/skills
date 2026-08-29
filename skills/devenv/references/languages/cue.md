@@ -1,4 +1,6 @@
-<!-- source: .claude/references/devenv-full.md lines 8926-9015 -->
+<!-- source: https://devenv.sh/languages/cue/
+     upstream: docs/src/content/docs/languages/cue.md
+     llms-full.txt lines 8926-9015 -->
 
 # cue
 

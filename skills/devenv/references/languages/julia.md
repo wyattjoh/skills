@@ -1,4 +1,6 @@
-<!-- source: .claude/references/devenv-full.md lines 10908-10955 -->
+<!-- source: https://devenv.sh/languages/julia/
+     upstream: docs/src/content/docs/languages/julia.md
+     llms-full.txt lines 10908-10955 -->
 
 # julia
 

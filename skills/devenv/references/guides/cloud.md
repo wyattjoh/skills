@@ -1,4 +1,6 @@
-<!-- source: .claude/references/devenv-full.md lines 3972-4050 -->
+<!-- source: https://devenv.sh/cloud/
+     upstream: docs/src/content/docs/cloud.md
+     llms-full.txt lines 3972-4050 -->
 
 # Cloud
 

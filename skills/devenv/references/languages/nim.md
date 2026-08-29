@@ -1,4 +1,6 @@
-<!-- source: .claude/references/devenv-full.md lines 11214-11303 -->
+<!-- source: https://devenv.sh/languages/nim/
+     upstream: docs/src/content/docs/languages/nim.md
+     llms-full.txt lines 11214-11303 -->
 
 # nim
 

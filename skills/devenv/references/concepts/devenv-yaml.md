@@ -1,4 +1,6 @@
-<!-- source: .claude/references/devenv-full.md lines 18059-18368 -->
+<!-- source: https://devenv.sh/reference/yaml-options/
+     upstream: docs/src/content/docs/reference/yaml-options.md
+     llms-full.txt lines 18059-18368 -->
 
 # devenv.yaml
 

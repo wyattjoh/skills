@@ -1,4 +1,6 @@
-<!-- source: .claude/references/devenv-full.md lines 16048-16075 -->
+<!-- source: https://devenv.sh/lsp/
+     upstream: docs/src/content/docs/lsp.md
+     llms-full.txt lines 16048-16075 -->
 
 # Language Server
 

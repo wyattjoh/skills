@@ -1,4 +1,6 @@
-<!-- source: .claude/references/devenv-full.md lines 1689-1781 -->
+<!-- source: https://devenv.sh/blog/2025/04/25/devenv-16-extensible-ad-hoc-nix-environments/
+     upstream: docs/src/content/docs/blog/2025/04/25/devenv-16-extensible-ad-hoc-nix-environments.md
+     llms-full.txt lines 1689-1781 -->
 
 # devenv 1.6: Extensible Ad-Hoc Nix Environments
 

@@ -1,4 +1,6 @@
-<!-- source: .claude/references/devenv-full.md lines 7462-7499 -->
+<!-- source: https://devenv.sh/integrations/devenv-container/
+     upstream: docs/src/content/docs/integrations/devenv-container.mdx
+     llms-full.txt lines 7462-7499 -->
 
 # Devenv Container
 

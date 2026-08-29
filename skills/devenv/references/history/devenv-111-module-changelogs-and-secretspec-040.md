@@ -1,4 +1,6 @@
-<!-- source: .claude/references/devenv-full.md lines 2819-3004 -->
+<!-- source: https://devenv.sh/blog/2025/11/26/devenv-111-module-changelogs-and-secretspec-040/
+     upstream: docs/src/content/docs/blog/2025/11/26/devenv-111-module-changelogs-and-secretspec-040.md
+     llms-full.txt lines 2819-3004 -->
 
 # devenv 1.11: Module changelogs and SecretSpec 0.4.0
 

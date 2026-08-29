@@ -1,4 +1,6 @@
-<!-- source: .claude/references/devenv-full.md lines 10230-10409 -->
+<!-- source: https://devenv.sh/languages/java/
+     upstream: docs/src/content/docs/languages/java.md
+     llms-full.txt lines 10230-10409 -->
 
 # java
 

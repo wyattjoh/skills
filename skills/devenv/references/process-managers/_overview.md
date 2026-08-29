@@ -1,4 +1,6 @@
-<!-- source: .claude/references/devenv-full.md lines 26947-26964 -->
+<!-- source: https://devenv.sh/supported-process-managers/
+     upstream: docs/src/content/docs/supported-process-managers/index.md
+     llms-full.txt lines 26947-26964 -->
 
 # Alternative process managers
 

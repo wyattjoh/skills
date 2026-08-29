@@ -1,4 +1,6 @@
-<!-- source: .claude/references/devenv-full.md lines 25451-25492 -->
+<!-- source: https://devenv.sh/services/tailscale/
+     upstream: docs/src/content/docs/services/tailscale.md
+     llms-full.txt lines 25451-25492 -->
 
 # tailscale
 

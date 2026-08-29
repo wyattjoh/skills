@@ -1,4 +1,6 @@
-<!-- source: .claude/references/devenv-full.md lines 20006-20260 -->
+<!-- source: https://devenv.sh/services/elasticsearch/
+     upstream: docs/src/content/docs/services/elasticsearch.md
+     llms-full.txt lines 20006-20260 -->
 
 # elasticsearch
 

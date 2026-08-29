@@ -1,4 +1,6 @@
-<!-- source: .claude/references/devenv-full.md lines 10956-11027 -->
+<!-- source: https://devenv.sh/languages/kotlin/
+     upstream: docs/src/content/docs/languages/kotlin.md
+     llms-full.txt lines 10956-11027 -->
 
 # kotlin
 

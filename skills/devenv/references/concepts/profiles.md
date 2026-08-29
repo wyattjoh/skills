@@ -1,4 +1,6 @@
-<!-- source: .claude/references/devenv-full.md lines 17228-17506 -->
+<!-- source: https://devenv.sh/profiles/
+     upstream: docs/src/content/docs/profiles.md
+     llms-full.txt lines 17228-17506 -->
 
 # Profiles
 

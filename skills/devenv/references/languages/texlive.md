@@ -1,4 +1,6 @@
-<!-- source: .claude/references/devenv-full.md lines 15405-15527 -->
+<!-- source: https://devenv.sh/languages/texlive/
+     upstream: docs/src/content/docs/languages/texlive.md
+     llms-full.txt lines 15405-15527 -->
 
 # texlive
 

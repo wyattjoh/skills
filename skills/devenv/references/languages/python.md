@@ -1,4 +1,6 @@
-<!-- source: .claude/references/devenv-full.md lines 12507-13635 -->
+<!-- source: https://devenv.sh/languages/python/
+     upstream: docs/src/content/docs/languages/python.md
+     llms-full.txt lines 12507-13635 -->
 
 # Python
 

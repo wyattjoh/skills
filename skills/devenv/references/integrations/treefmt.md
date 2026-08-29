@@ -1,4 +1,6 @@
-<!-- source: .claude/references/devenv-full.md lines 8052-8148 -->
+<!-- source: https://devenv.sh/integrations/treefmt/
+     upstream: docs/src/content/docs/integrations/treefmt.md
+     llms-full.txt lines 8052-8148 -->
 
 # treefmt
 

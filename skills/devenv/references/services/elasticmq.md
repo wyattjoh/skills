@@ -1,4 +1,6 @@
-<!-- source: .claude/references/devenv-full.md lines 19940-20005 -->
+<!-- source: https://devenv.sh/services/elasticmq/
+     upstream: docs/src/content/docs/services/elasticmq.md
+     llms-full.txt lines 19940-20005 -->
 
 # elasticmq
 

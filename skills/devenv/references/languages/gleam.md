@@ -1,4 +1,6 @@
-<!-- source: .claude/references/devenv-full.md lines 9570-9617 -->
+<!-- source: https://devenv.sh/languages/gleam/
+     upstream: docs/src/content/docs/languages/gleam.md
+     llms-full.txt lines 9570-9617 -->
 
 # gleam
 

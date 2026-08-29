@@ -1,4 +1,6 @@
-<!-- source: .claude/references/devenv-full.md lines 24547-24868 -->
+<!-- source: https://devenv.sh/services/prometheus/
+     upstream: docs/src/content/docs/services/prometheus.md
+     llms-full.txt lines 24547-24868 -->
 
 # prometheus
 

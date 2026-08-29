@@ -1,4 +1,6 @@
-<!-- source: .claude/references/devenv-full.md lines 4420-4639 -->
+<!-- source: https://devenv.sh/creating-files/
+     upstream: docs/src/content/docs/creating-files.md
+     llms-full.txt lines 4420-4639 -->
 
 # Declarative files
 

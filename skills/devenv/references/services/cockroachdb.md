@@ -1,4 +1,6 @@
-<!-- source: .claude/references/devenv-full.md lines 19560-19643 -->
+<!-- source: https://devenv.sh/services/cockroachdb/
+     upstream: docs/src/content/docs/services/cockroachdb.md
+     llms-full.txt lines 19560-19643 -->
 
 # cockroachdb
 

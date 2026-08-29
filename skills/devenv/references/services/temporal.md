@@ -1,4 +1,6 @@
-<!-- source: .claude/references/devenv-full.md lines 25493-25765 -->
+<!-- source: https://devenv.sh/services/temporal/
+     upstream: docs/src/content/docs/services/temporal.md
+     llms-full.txt lines 25493-25765 -->
 
 # temporal
 

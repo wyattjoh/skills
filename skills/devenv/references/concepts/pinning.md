@@ -1,4 +1,6 @@
-<!-- source: .claude/references/devenv-full.md lines 16519-16661 -->
+<!-- source: https://devenv.sh/pinning/
+     upstream: docs/src/content/docs/pinning.md
+     llms-full.txt lines 16519-16661 -->
 
 # Pinning
 

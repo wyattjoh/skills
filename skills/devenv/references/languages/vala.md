@@ -1,4 +1,6 @@
-<!-- source: .claude/references/devenv-full.md lines 15810-15905 -->
+<!-- source: https://devenv.sh/languages/vala/
+     upstream: docs/src/content/docs/languages/vala.md
+     llms-full.txt lines 15810-15905 -->
 
 # vala
 

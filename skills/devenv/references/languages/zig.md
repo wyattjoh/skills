@@ -1,4 +1,6 @@
-<!-- source: .claude/references/devenv-full.md lines 15906-16047 -->
+<!-- source: https://devenv.sh/languages/zig/
+     upstream: docs/src/content/docs/languages/zig.md
+     llms-full.txt lines 15906-16047 -->
 
 # zig
 

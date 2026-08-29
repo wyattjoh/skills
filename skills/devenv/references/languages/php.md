@@ -1,4 +1,6 @@
-<!-- source: .claude/references/devenv-full.md lines 11816-12284 -->
+<!-- source: https://devenv.sh/languages/php/
+     upstream: docs/src/content/docs/languages/php.md
+     llms-full.txt lines 11816-12284 -->
 
 # php
 

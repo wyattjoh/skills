@@ -1,4 +1,6 @@
-<!-- source: .claude/references/devenv-full.md lines 14106-14762 -->
+<!-- source: https://devenv.sh/languages/rust/
+     upstream: docs/src/content/docs/languages/rust.md
+     llms-full.txt lines 14106-14762 -->
 
 # Rust
 

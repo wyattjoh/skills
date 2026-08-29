@@ -1,4 +1,6 @@
-<!-- source: .claude/references/devenv-full.md lines 26777-26946 -->
+<!-- source: https://devenv.sh/services/wiremock/
+     upstream: docs/src/content/docs/services/wiremock.md
+     llms-full.txt lines 26777-26946 -->
 
 # wiremock
 

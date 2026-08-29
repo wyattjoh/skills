@@ -1,4 +1,6 @@
-<!-- source: .claude/references/devenv-full.md lines 517-549 -->
+<!-- source: https://devenv.sh/blog/2022/11/17/devenv-03/
+     upstream: docs/src/content/docs/blog/2022/11/17/devenv-03.md
+     llms-full.txt lines 517-549 -->
 
 # devenv 0.3
 

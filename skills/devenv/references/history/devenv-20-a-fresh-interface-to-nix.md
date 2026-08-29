@@ -1,4 +1,6 @@
-<!-- source: .claude/references/devenv-full.md lines 3134-3428 -->
+<!-- source: https://devenv.sh/blog/2026/03/05/devenv-20-a-fresh-interface-to-nix/
+     upstream: docs/src/content/docs/blog/2026/03/05/devenv-20-a-fresh-interface-to-nix.md
+     llms-full.txt lines 3134-3428 -->
 
 # devenv 2.0: A Fresh Interface to Nix
 

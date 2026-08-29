@@ -1,4 +1,6 @@
-<!-- source: .claude/references/devenv-full.md lines 15111-15200 -->
+<!-- source: https://devenv.sh/languages/standardml/
+     upstream: docs/src/content/docs/languages/standardml.md
+     llms-full.txt lines 15111-15200 -->
 
 # standardml
 

@@ -1,4 +1,6 @@
-<!-- source: .claude/references/devenv-full.md lines 4902-4928 -->
+<!-- source: https://devenv.sh/garbage-collection/
+     upstream: docs/src/content/docs/garbage-collection.md
+     llms-full.txt lines 4902-4928 -->
 
 # Garbage collection
 

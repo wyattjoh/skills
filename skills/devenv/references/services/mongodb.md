@@ -1,4 +1,6 @@
-<!-- source: .claude/references/devenv-full.md lines 22441-22614 -->
+<!-- source: https://devenv.sh/services/mongodb/
+     upstream: docs/src/content/docs/services/mongodb.md
+     llms-full.txt lines 22441-22614 -->
 
 # mongodb
 

@@ -1,4 +1,6 @@
-<!-- source: .claude/references/devenv-full.md lines 4929-5151 -->
+<!-- source: https://devenv.sh/getting-started/
+     upstream: docs/src/content/docs/getting-started.mdx
+     llms-full.txt lines 4929-5151 -->
 
 # Getting Started
 

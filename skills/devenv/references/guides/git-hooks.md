@@ -1,4 +1,6 @@
-<!-- source: .claude/references/devenv-full.md lines 5152-5285 -->
+<!-- source: https://devenv.sh/git-hooks/
+     upstream: docs/src/content/docs/git-hooks.md
+     llms-full.txt lines 5152-5285 -->
 
 # Git Hooks
 

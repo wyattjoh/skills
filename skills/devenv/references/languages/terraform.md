@@ -1,4 +1,6 @@
-<!-- source: .claude/references/devenv-full.md lines 15291-15404 -->
+<!-- source: https://devenv.sh/languages/terraform/
+     upstream: docs/src/content/docs/languages/terraform.md
+     llms-full.txt lines 15291-15404 -->
 
 # terraform
 

@@ -1,4 +1,6 @@
-<!-- source: .claude/references/devenv-full.md lines 25202-25384 -->
+<!-- source: https://devenv.sh/services/rustfs/
+     upstream: docs/src/content/docs/services/rustfs.md
+     llms-full.txt lines 25202-25384 -->
 
 # rustfs
 

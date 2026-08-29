@@ -1,4 +1,6 @@
-<!-- source: .claude/references/devenv-full.md lines 3-110 -->
+<!-- source: https://devenv.sh/ad-hoc-developer-environments/
+     upstream: docs/src/content/docs/ad-hoc-developer-environments.md
+     llms-full.txt lines 3-110 -->
 
 # Ad-hoc Developer Environments
 

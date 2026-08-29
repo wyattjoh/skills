@@ -1,4 +1,6 @@
-<!-- source: .claude/references/devenv-full.md lines 9016-9063 -->
+<!-- source: https://devenv.sh/languages/dart/
+     upstream: docs/src/content/docs/languages/dart.md
+     llms-full.txt lines 9016-9063 -->
 
 # dart
 

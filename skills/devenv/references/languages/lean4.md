@@ -1,4 +1,6 @@
-<!-- source: .claude/references/devenv-full.md lines 11028-11075 -->
+<!-- source: https://devenv.sh/languages/lean4/
+     upstream: docs/src/content/docs/languages/lean4.md
+     llms-full.txt lines 11028-11075 -->
 
 # lean4
 

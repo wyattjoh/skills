@@ -1,4 +1,6 @@
-<!-- source: .claude/references/devenv-full.md lines 25094-25201 -->
+<!-- source: https://devenv.sh/services/redis/
+     upstream: docs/src/content/docs/services/redis.md
+     llms-full.txt lines 25094-25201 -->
 
 # redis
 

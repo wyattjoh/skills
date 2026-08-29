@@ -1,4 +1,6 @@
-<!-- source: .claude/references/devenv-full.md lines 9198-9287 -->
+<!-- source: https://devenv.sh/languages/elixir/
+     upstream: docs/src/content/docs/languages/elixir.md
+     llms-full.txt lines 9198-9287 -->
 
 # elixir
 

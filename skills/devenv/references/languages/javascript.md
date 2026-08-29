@@ -1,4 +1,6 @@
-<!-- source: .claude/references/devenv-full.md lines 10410-10835 -->
+<!-- source: https://devenv.sh/languages/javascript/
+     upstream: docs/src/content/docs/languages/javascript.md
+     llms-full.txt lines 10410-10835 -->
 
 # javascript
 

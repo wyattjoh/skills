@@ -1,4 +1,6 @@
-<!-- source: .claude/references/devenv-full.md lines 14763-14948 -->
+<!-- source: https://devenv.sh/languages/scala/
+     upstream: docs/src/content/docs/languages/scala.md
+     llms-full.txt lines 14763-14948 -->
 
 # scala
 

@@ -1,4 +1,6 @@
-<!-- source: .claude/references/devenv-full.md lines 1940-2201 -->
+<!-- source: https://devenv.sh/blog/2025/07/21/announcing-secretspec-declarative-secrets-management/
+     upstream: docs/src/content/docs/blog/2025/07/21/announcing-secretspec-declarative-secrets-management.md
+     llms-full.txt lines 1940-2201 -->
 
 # Announcing SecretSpec: Declarative Secrets Management
 

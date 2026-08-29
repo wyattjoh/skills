@@ -1,4 +1,6 @@
-<!-- source: .claude/references/devenv-full.md lines 15600-15713 -->
+<!-- source: https://devenv.sh/languages/typst/
+     upstream: docs/src/content/docs/languages/typst.md
+     llms-full.txt lines 15600-15713 -->
 
 # typst
 

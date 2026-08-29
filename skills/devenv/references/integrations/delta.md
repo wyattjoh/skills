@@ -1,4 +1,6 @@
-<!-- source: .claude/references/devenv-full.md lines 7447-7461 -->
+<!-- source: https://devenv.sh/integrations/delta/
+     upstream: docs/src/content/docs/integrations/delta.md
+     llms-full.txt lines 7447-7461 -->
 
 # Delta
 

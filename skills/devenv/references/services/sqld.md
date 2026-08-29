@@ -1,4 +1,6 @@
-<!-- source: .claude/references/devenv-full.md lines 25385-25450 -->
+<!-- source: https://devenv.sh/services/sqld/
+     upstream: docs/src/content/docs/services/sqld.md
+     llms-full.txt lines 25385-25450 -->
 
 # sqld
 

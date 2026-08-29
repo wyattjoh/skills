@@ -1,4 +1,6 @@
-<!-- source: .claude/references/devenv-full.md lines 28265-28380 -->
+<!-- source: https://devenv.sh/tests/
+     upstream: docs/src/content/docs/tests.md
+     llms-full.txt lines 28265-28380 -->
 
 # Tests
 

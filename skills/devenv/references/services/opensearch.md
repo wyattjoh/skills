@@ -1,4 +1,6 @@
-<!-- source: .claude/references/devenv-full.md lines 23745-23989 -->
+<!-- source: https://devenv.sh/services/opensearch/
+     upstream: docs/src/content/docs/services/opensearch.md
+     llms-full.txt lines 23745-23989 -->
 
 # opensearch
 

@@ -1,4 +1,6 @@
-<!-- source: .claude/references/devenv-full.md lines 8800-8925 -->
+<!-- source: https://devenv.sh/languages/crystal/
+     upstream: docs/src/content/docs/languages/crystal.md
+     llms-full.txt lines 8800-8925 -->
 
 # crystal
 

@@ -1,4 +1,6 @@
-<!-- source: .claude/references/devenv-full.md lines 13894-14105 -->
+<!-- source: https://devenv.sh/languages/ruby/
+     upstream: docs/src/content/docs/languages/ruby.md
+     llms-full.txt lines 13894-14105 -->
 
 # ruby
 

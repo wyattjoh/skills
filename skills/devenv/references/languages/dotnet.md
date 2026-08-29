@@ -1,4 +1,6 @@
-<!-- source: .claude/references/devenv-full.md lines 9112-9197 -->
+<!-- source: https://devenv.sh/languages/dotnet/
+     upstream: docs/src/content/docs/languages/dotnet.md
+     llms-full.txt lines 9112-9197 -->
 
 # dotnet
 

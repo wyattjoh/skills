@@ -1,4 +1,6 @@
-<!-- source: .claude/references/devenv-full.md lines 9540-9569 -->
+<!-- source: https://devenv.sh/languages/gawk/
+     upstream: docs/src/content/docs/languages/gawk.md
+     llms-full.txt lines 9540-9569 -->
 
 # gawk
 

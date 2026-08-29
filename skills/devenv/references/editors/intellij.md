@@ -1,4 +1,6 @@
-<!-- source: .claude/references/devenv-full.md lines 4640-4664 -->
+<!-- source: https://devenv.sh/editor-support/intellij/
+     upstream: docs/src/content/docs/editor-support/intellij.md
+     llms-full.txt lines 4640-4664 -->
 
 # Intellij
 

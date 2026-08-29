@@ -1,4 +1,6 @@
-<!-- source: .claude/references/devenv-full.md lines 7681-7726 -->
+<!-- source: https://devenv.sh/integrations/dotenv/
+     upstream: docs/src/content/docs/integrations/dotenv.md
+     llms-full.txt lines 7681-7726 -->
 
 # Dotenv
 

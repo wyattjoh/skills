@@ -1,4 +1,6 @@
-<!-- source: .claude/references/devenv-full.md lines 27345-27448 -->
+<!-- source: https://devenv.sh/supported-process-managers/native/
+     upstream: docs/src/content/docs/supported-process-managers/native.md
+     llms-full.txt lines 27345-27448 -->
 
 # native
 

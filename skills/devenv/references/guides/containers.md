@@ -1,4 +1,6 @@
-<!-- source: .claude/references/devenv-full.md lines 4205-4419 -->
+<!-- source: https://devenv.sh/containers/
+     upstream: docs/src/content/docs/containers.md
+     llms-full.txt lines 4205-4419 -->
 
 # Containers
 

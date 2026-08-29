@@ -1,4 +1,6 @@
-<!-- source: .claude/references/devenv-full.md lines 7519-7680 -->
+<!-- source: https://devenv.sh/integrations/direnv/
+     upstream: docs/src/content/docs/integrations/direnv.mdx
+     llms-full.txt lines 7519-7680 -->
 
 # Direnv
 

@@ -1,4 +1,6 @@
-<!-- source: .claude/references/devenv-full.md lines 8149-8438 -->
+<!-- source: https://devenv.sh/integrations/wordpress/
+     upstream: docs/src/content/docs/integrations/wordpress.md
+     llms-full.txt lines 8149-8438 -->
 
 # WordPress
 

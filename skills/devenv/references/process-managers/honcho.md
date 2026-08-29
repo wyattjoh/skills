@@ -1,4 +1,6 @@
-<!-- source: .claude/references/devenv-full.md lines 27085-27204 -->
+<!-- source: https://devenv.sh/supported-process-managers/honcho/
+     upstream: docs/src/content/docs/supported-process-managers/honcho.md
+     llms-full.txt lines 27085-27204 -->
 
 # honcho
 

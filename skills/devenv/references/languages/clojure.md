@@ -1,4 +1,6 @@
-<!-- source: .claude/references/devenv-full.md lines 8656-8727 -->
+<!-- source: https://devenv.sh/languages/clojure/
+     upstream: docs/src/content/docs/languages/clojure.md
+     llms-full.txt lines 8656-8727 -->
 
 # clojure
 

@@ -1,4 +1,6 @@
-<!-- source: .claude/references/devenv-full.md lines 9618-9791 -->
+<!-- source: https://devenv.sh/languages/go/
+     upstream: docs/src/content/docs/languages/go.md
+     llms-full.txt lines 9618-9791 -->
 
 # go
 

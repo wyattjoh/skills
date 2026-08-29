@@ -1,4 +1,6 @@
-<!-- source: .claude/references/devenv-full.md lines 2202-2323 -->
+<!-- source: https://devenv.sh/blog/2025/07/22/devenv-18-progress-tui-secretspec-integration-listing-tasks-and-smaller-containers/
+     upstream: docs/src/content/docs/blog/2025/07/22/devenv-18-progress-tui-secretspec-integration-listing-tasks-and-smaller-containers.md
+     llms-full.txt lines 2202-2323 -->
 
 # devenv 1.8: Progress TUI, SecretSpec Integration, Listing Tasks, and Smaller Containers
 

@@ -1,4 +1,6 @@
-<!-- source: .claude/references/devenv-full.md lines 17623-17722 -->
+<!-- source: https://devenv.sh/recipes/macos/
+     upstream: docs/src/content/docs/recipes/macos.md
+     llms-full.txt lines 17623-17722 -->
 
 # Macos
 

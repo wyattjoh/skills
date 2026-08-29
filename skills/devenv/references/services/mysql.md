@@ -1,4 +1,6 @@
-<!-- source: .claude/references/devenv-full.md lines 22766-23047 -->
+<!-- source: https://devenv.sh/services/mysql/
+     upstream: docs/src/content/docs/services/mysql.md
+     llms-full.txt lines 22766-23047 -->
 
 # mysql
 

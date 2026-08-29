@@ -1,4 +1,6 @@
-<!-- source: .claude/references/devenv-full.md lines 7921-8051 -->
+<!-- source: https://devenv.sh/integrations/secretspec/
+     upstream: docs/src/content/docs/integrations/secretspec.md
+     llms-full.txt lines 7921-8051 -->
 
 # SecretSpec
 

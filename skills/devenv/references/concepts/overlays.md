@@ -1,4 +1,6 @@
-<!-- source: .claude/references/devenv-full.md lines 16216-16349 -->
+<!-- source: https://devenv.sh/overlays/
+     upstream: docs/src/content/docs/overlays.md
+     llms-full.txt lines 16216-16349 -->
 
 # Overlays
 

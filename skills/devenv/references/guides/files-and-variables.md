@@ -1,4 +1,6 @@
-<!-- source: .claude/references/devenv-full.md lines 4833-4901 -->
+<!-- source: https://devenv.sh/files-and-variables/
+     upstream: docs/src/content/docs/files-and-variables.md
+     llms-full.txt lines 4833-4901 -->
 
 # Files And Variables
 

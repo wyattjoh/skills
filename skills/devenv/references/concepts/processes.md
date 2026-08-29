@@ -1,4 +1,6 @@
-<!-- source: .claude/references/devenv-full.md lines 16662-17227 -->
+<!-- source: https://devenv.sh/processes/
+     upstream: docs/src/content/docs/processes.md
+     llms-full.txt lines 16662-17227 -->
 
 # Processes
 

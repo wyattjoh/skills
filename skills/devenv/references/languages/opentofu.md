@@ -1,4 +1,6 @@
-<!-- source: .claude/references/devenv-full.md lines 11574-11663 -->
+<!-- source: https://devenv.sh/languages/opentofu/
+     upstream: docs/src/content/docs/languages/opentofu.md
+     llms-full.txt lines 11574-11663 -->
 
 # opentofu
 

@@ -1,4 +1,6 @@
-<!-- source: .claude/references/devenv-full.md lines 9450-9539 -->
+<!-- source: https://devenv.sh/languages/fortran/
+     upstream: docs/src/content/docs/languages/fortran.md
+     llms-full.txt lines 9450-9539 -->
 
 # fortran
 

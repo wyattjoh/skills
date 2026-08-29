@@ -1,4 +1,6 @@
-<!-- source: .claude/references/devenv-full.md lines 4051-4145 -->
+<!-- source: https://devenv.sh/community/contributing/
+     upstream: docs/src/content/docs/community/contributing.md
+     llms-full.txt lines 4051-4145 -->
 
 # Contributing
 

@@ -1,4 +1,6 @@
-<!-- source: .claude/references/devenv-full.md lines 2700-2818 -->
+<!-- source: https://devenv.sh/blog/2025/10/07/devenv-110-monorepo-nix-support-with-devenvyaml-imports/
+     upstream: docs/src/content/docs/blog/2025/10/07/devenv-110-monorepo-nix-support-with-devenvyaml-imports.md
+     llms-full.txt lines 2700-2818 -->
 
 # devenv 1.10: monorepo Nix support with devenv.yaml imports
 

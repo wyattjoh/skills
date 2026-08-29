@@ -1,4 +1,6 @@
-<!-- source: .claude/references/devenv-full.md lines 15528-15599 -->
+<!-- source: https://devenv.sh/languages/typescript/
+     upstream: docs/src/content/docs/languages/typescript.md
+     llms-full.txt lines 15528-15599 -->
 
 # typescript
 

@@ -1,4 +1,6 @@
-<!-- source: .claude/references/devenv-full.md lines 10134-10229 -->
+<!-- source: https://devenv.sh/languages/idris/
+     upstream: docs/src/content/docs/languages/idris.md
+     llms-full.txt lines 10134-10229 -->
 
 # idris
 

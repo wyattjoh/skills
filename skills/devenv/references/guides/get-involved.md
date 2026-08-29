@@ -1,4 +1,6 @@
-<!-- source: .claude/references/devenv-full.md lines 4146-4149 -->
+<!-- source: https://devenv.sh/community/get-involved/
+     upstream: docs/src/content/docs/community/get-involved.md
+     llms-full.txt lines 4146-4149 -->
 
 # Get Involved
 

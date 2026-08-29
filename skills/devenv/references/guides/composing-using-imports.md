@@ -1,4 +1,6 @@
-<!-- source: .claude/references/devenv-full.md lines 4150-4204 -->
+<!-- source: https://devenv.sh/composing-using-imports/
+     upstream: docs/src/content/docs/composing-using-imports.md
+     llms-full.txt lines 4150-4204 -->
 
 # Composing using imports
 

@@ -1,4 +1,6 @@
-<!-- source: .claude/references/devenv-full.md lines 9288-9359 -->
+<!-- source: https://devenv.sh/languages/elm/
+     upstream: docs/src/content/docs/languages/elm.md
+     llms-full.txt lines 9288-9359 -->
 
 # elm
 

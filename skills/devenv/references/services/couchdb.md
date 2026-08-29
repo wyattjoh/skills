@@ -1,4 +1,6 @@
-<!-- source: .claude/references/devenv-full.md lines 19644-19855 -->
+<!-- source: https://devenv.sh/services/couchdb/
+     upstream: docs/src/content/docs/services/couchdb.md
+     llms-full.txt lines 19644-19855 -->
 
 # couchdb
 

@@ -1,4 +1,6 @@
-<!-- source: .claude/references/devenv-full.md lines 5631-5807 -->
+<!-- source: https://devenv.sh/guides/monorepo/
+     upstream: docs/src/content/docs/guides/monorepo.md
+     llms-full.txt lines 5631-5807 -->
 
 # Monorepo with Shared Configurations
 

@@ -1,4 +1,6 @@
-<!-- source: .claude/references/devenv-full.md lines 22209-22440 -->
+<!-- source: https://devenv.sh/services/minio/
+     upstream: docs/src/content/docs/services/minio.md
+     llms-full.txt lines 22209-22440 -->
 
 # minio
 

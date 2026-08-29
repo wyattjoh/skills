@@ -1,4 +1,6 @@
-<!-- source: .claude/references/devenv-full.md lines 1574-1688 -->
+<!-- source: https://devenv.sh/blog/2025/04/13/devenv-15-overlays-support-and-performance-improvements/
+     upstream: docs/src/content/docs/blog/2025/04/13/devenv-15-overlays-support-and-performance-improvements.md
+     llms-full.txt lines 1574-1688 -->
 
 # devenv 1.5: Overlays Support and Performance Improvements
 

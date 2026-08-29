@@ -1,0 +1,84 @@
+name: Refresh devenv skill
+
+# Rebuilds .claude/skills/devenv/references/ from upstream devenv docs.
+#
+# The build is deterministic: it joins https://devenv.sh/llms-full.txt (prose)
+# with the cachix/devenv docs tree (taxonomy). If upstream restructures in a
+# way the parser can't align 1:1, the build fails loudly rather than writing a
+# scrambled corpus.
+#
+# Generated files are committed automatically. The hand-authored judgement
+# layers (SKILL.md, references/*/INDEX.md) are never touched -- if they drift
+# out of sync with the refreshed corpus, the job goes red so a human reviews.
+
+on:
+  schedule:
+    - cron: "0 6 * * 1" # Mondays 06:00 UTC
+  workflow_dispatch:
+
+concurrency:
+  group: refresh-devenv-skill
+  cancel-in-progress: false
+
+jobs:
+  refresh:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # Installed directly rather than via setup-bun so this works on a
+      # self-hosted runner with no access to the GitHub action registry.
+      - name: Install Bun
+        run: |
+          curl -fsSL https://bun.sh/install | bash
+          echo "$HOME/.bun/bin" >> "$GITHUB_PATH"
+
+      - name: Rebuild reference corpus
+        id: build
+        working-directory: .claude/skills/devenv
+        run: |
+          set -o pipefail
+          bun scripts/build-skill.ts 2>&1 | tee /tmp/build.log
+
+      - name: Detect drift needing human review
+        id: drift
+        run: |
+          if grep -qE 'broken link|not mentioned in SKILL\.md|New upstream' /tmp/build.log; then
+            echo "drift=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "drift=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Commit refreshed corpus
+        id: commit
+        run: |
+          if [ -z "$(git status --porcelain)" ]; then
+            echo "No upstream changes."
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          git config user.name "forgejo-actions"
+          git config user.email "actions@noreply.localhost"
+          git add -A .claude/skills/devenv
+          git commit -m "chore(devenv-skill): refresh reference corpus from upstream docs"
+          git push
+          echo "changed=true" >> "$GITHUB_OUTPUT"
+
+      - name: Summary
+        run: |
+          {
+            echo "### devenv skill refresh"
+            echo
+            echo '```'
+            cat /tmp/build.log
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      # Corpus is already committed above; this only flags that the
+      # hand-authored routing layer needs a human pass.
+      - name: Fail if SKILL.md or an INDEX.md needs updating
+        if: steps.drift.outputs.drift == 'true'
+        run: |
+          echo "Upstream changed in a way that affects hand-authored files."
+          echo "Review the summary above, then update SKILL.md / INDEX.md."
+          exit 1

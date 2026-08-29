@@ -1,4 +1,6 @@
-<!-- source: .claude/references/devenv-full.md lines 18413-18594 -->
+<!-- source: https://devenv.sh/scripts/
+     upstream: docs/src/content/docs/scripts.md
+     llms-full.txt lines 18413-18594 -->
 
 # Scripts
 

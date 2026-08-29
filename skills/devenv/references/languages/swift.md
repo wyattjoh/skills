@@ -1,4 +1,6 @@
-<!-- source: .claude/references/devenv-full.md lines 15201-15290 -->
+<!-- source: https://devenv.sh/languages/swift/
+     upstream: docs/src/content/docs/languages/swift.md
+     llms-full.txt lines 15201-15290 -->
 
 # swift
 

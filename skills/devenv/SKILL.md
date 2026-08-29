@@ -231,8 +231,9 @@ Other documented flags: `--reload`/`--no-reload`, `--shell`, `--impure`,
 
 ## Rules
 
-- **Never read `.claude/references/devenv-full.md`** — it is the 690 KB
-  unsplit source and will exhaust context. Every topic file is a slice of it.
+- **Never read `.claude/references/devenv-full.md` or `.cache/llms-full.txt`**
+  — those are the 690 KB unsplit upstream source and will exhaust context.
+  Every topic file is a slice of it.
 - Read the specific topic file, not an `INDEX.md`, once routing is clear.
   `INDEX.md` files are for disambiguation and comparison only.
 - Option names are exact and case-sensitive (`languages.rust.channel`,
@@ -240,8 +241,11 @@ Other documented flags: `--reload`/`--no-reload`, `--shell`, `--impure`,
   option that isn't in the file you read.
 - If the corpus doesn't cover something, say so plainly rather than inventing
   an option. The corpus is a point-in-time snapshot.
-- Regenerate the split after refreshing the source scrape:
-  `bun .claude/skills/devenv/scripts/split-corpus.ts`
+- Each topic file's header carries its upstream URL — cite that when pointing
+  the user at official docs.
+- Refresh the corpus from upstream (fetches devenv.sh + the docs tree, then
+  rebuilds deterministically):
+  `bun .claude/skills/devenv/scripts/build-skill.ts`
 
 ## Output
 

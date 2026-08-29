@@ -1,4 +1,6 @@
-<!-- source: .claude/references/devenv-full.md lines 21932-22092 -->
+<!-- source: https://devenv.sh/services/meilisearch/
+     upstream: docs/src/content/docs/services/meilisearch.md
+     llms-full.txt lines 21932-22092 -->
 
 # meilisearch
 

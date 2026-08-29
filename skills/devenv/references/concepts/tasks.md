@@ -1,4 +1,6 @@
-<!-- source: .claude/references/devenv-full.md lines 27809-28264 -->
+<!-- source: https://devenv.sh/tasks/
+     upstream: docs/src/content/docs/tasks.md
+     llms-full.txt lines 27809-28264 -->
 
 # Tasks
 

@@ -1,4 +1,6 @@
-<!-- source: .claude/references/devenv-full.md lines 27449-27568 -->
+<!-- source: https://devenv.sh/supported-process-managers/overmind/
+     upstream: docs/src/content/docs/supported-process-managers/overmind.md
+     llms-full.txt lines 27449-27568 -->
 
 # overmind
 

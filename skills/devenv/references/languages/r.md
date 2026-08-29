@@ -1,4 +1,6 @@
-<!-- source: .claude/references/devenv-full.md lines 13636-13767 -->
+<!-- source: https://devenv.sh/languages/r/
+     upstream: docs/src/content/docs/languages/r.md
+     llms-full.txt lines 13636-13767 -->
 
 # r
 

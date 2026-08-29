@@ -1,4 +1,6 @@
-<!-- source: .claude/references/devenv-full.md lines 18645-18710 -->
+<!-- source: https://devenv.sh/services/adminer/
+     upstream: docs/src/content/docs/services/adminer.md
+     llms-full.txt lines 18645-18710 -->
 
 # adminer
 

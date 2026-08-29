@@ -1,4 +1,6 @@
-<!-- source: .claude/references/devenv-full.md lines 20261-20545 -->
+<!-- source: https://devenv.sh/services/garage/
+     upstream: docs/src/content/docs/services/garage.md
+     llms-full.txt lines 20261-20545 -->
 
 # garage
 

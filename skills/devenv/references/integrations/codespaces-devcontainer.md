@@ -1,4 +1,6 @@
-<!-- source: .claude/references/devenv-full.md lines 7428-7446 -->
+<!-- source: https://devenv.sh/integrations/codespaces-devcontainer/
+     upstream: docs/src/content/docs/integrations/codespaces-devcontainer.md
+     llms-full.txt lines 7428-7446 -->
 
 # Codespaces Devcontainer
 

@@ -1,4 +1,6 @@
-<!-- source: .claude/references/devenv-full.md lines 5286-5630 -->
+<!-- source: https://devenv.sh/guides/migrating-to-2.0/
+     upstream: docs/src/content/docs/guides/migrating-to-2.0.md
+     llms-full.txt lines 5286-5630 -->
 
 # Migrating to devenv 2.0
 

@@ -1,4 +1,6 @@
-<!-- source: .claude/references/devenv-full.md lines 256-331 -->
+<!-- source: https://devenv.sh/basics/
+     upstream: docs/src/content/docs/basics.md
+     llms-full.txt lines 256-331 -->
 
 # Basics
 

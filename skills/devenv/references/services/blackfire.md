@@ -1,4 +1,6 @@
-<!-- source: .claude/references/devenv-full.md lines 18711-18874 -->
+<!-- source: https://devenv.sh/services/blackfire/
+     upstream: docs/src/content/docs/services/blackfire.md
+     llms-full.txt lines 18711-18874 -->
 
 # blackfire
 

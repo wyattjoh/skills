@@ -1,4 +1,6 @@
-<!-- source: .claude/references/devenv-full.md lines 16350-16518 -->
+<!-- source: https://devenv.sh/packages/
+     upstream: docs/src/content/docs/packages.md
+     llms-full.txt lines 16350-16518 -->
 
 # Packages
 

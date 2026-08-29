@@ -1,4 +1,6 @@
-<!-- source: .claude/references/devenv-full.md lines 19856-19939 -->
+<!-- source: https://devenv.sh/services/dynamodb-local/
+     upstream: docs/src/content/docs/services/dynamodb-local.md
+     llms-full.txt lines 19856-19939 -->
 
 # dynamodb-local
 

@@ -1,4 +1,6 @@
-<!-- source: .claude/references/devenv-full.md lines 25766-25905 -->
+<!-- source: https://devenv.sh/services/tideways/
+     upstream: docs/src/content/docs/services/tideways.md
+     llms-full.txt lines 25766-25905 -->
 
 # tideways
 

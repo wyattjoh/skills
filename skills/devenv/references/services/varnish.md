@@ -1,4 +1,6 @@
-<!-- source: .claude/references/devenv-full.md lines 26523-26656 -->
+<!-- source: https://devenv.sh/services/varnish/
+     upstream: docs/src/content/docs/services/varnish.md
+     llms-full.txt lines 26523-26656 -->
 
 # varnish
 

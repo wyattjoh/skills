@@ -1,4 +1,6 @@
-<!-- source: .claude/references/devenv-full.md lines 23494-23601 -->
+<!-- source: https://devenv.sh/services/nginx/
+     upstream: docs/src/content/docs/services/nginx.md
+     llms-full.txt lines 23494-23601 -->
 
 # nginx
 

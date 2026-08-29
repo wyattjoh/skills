@@ -1,4 +1,6 @@
-<!-- source: .claude/references/devenv-full.md lines 15021-15110 -->
+<!-- source: https://devenv.sh/languages/solidity/
+     upstream: docs/src/content/docs/languages/solidity.md
+     llms-full.txt lines 15021-15110 -->
 
 # solidity
 

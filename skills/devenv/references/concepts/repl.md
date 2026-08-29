@@ -1,4 +1,6 @@
-<!-- source: .claude/references/devenv-full.md lines 18369-18412 -->
+<!-- source: https://devenv.sh/repl/
+     upstream: docs/src/content/docs/repl.md
+     llms-full.txt lines 18369-18412 -->
 
 # REPL
 

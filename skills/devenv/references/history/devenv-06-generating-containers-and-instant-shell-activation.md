@@ -1,4 +1,6 @@
-<!-- source: .claude/references/devenv-full.md lines 654-834 -->
+<!-- source: https://devenv.sh/blog/2023/03/02/devenv-06-generating-containers-and-instant-shell-activation/
+     upstream: docs/src/content/docs/blog/2023/03/02/devenv-06-generating-containers-and-instant-shell-activation.md
+     llms-full.txt lines 654-834 -->
 
 # devenv 0.6: Generating containers and instant shell activation
 

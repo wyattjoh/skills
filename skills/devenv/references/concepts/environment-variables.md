@@ -1,4 +1,6 @@
-<!-- source: .claude/references/devenv-full.md lines 17834-18058 -->
+<!-- source: https://devenv.sh/reference/environment-variables/
+     upstream: docs/src/content/docs/reference/environment-variables.md
+     llms-full.txt lines 17834-18058 -->
 
 # Environment variables
 

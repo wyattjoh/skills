@@ -1,4 +1,6 @@
-<!-- source: .claude/references/devenv-full.md lines 11124-11213 -->
+<!-- source: https://devenv.sh/languages/lua/
+     upstream: docs/src/content/docs/languages/lua.md
+     llms-full.txt lines 11124-11213 -->
 
 # lua
 

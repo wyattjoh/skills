@@ -1,4 +1,6 @@
-<!-- source: .claude/references/devenv-full.md lines 7500-7518 -->
+<!-- source: https://devenv.sh/integrations/difftastic/
+     upstream: docs/src/content/docs/integrations/difftastic.md
+     llms-full.txt lines 7500-7518 -->
 
 # Difftastic
 

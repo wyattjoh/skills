@@ -1,4 +1,6 @@
-<!-- source: .claude/references/devenv-full.md lines 15714-15761 -->
+<!-- source: https://devenv.sh/languages/unison/
+     upstream: docs/src/content/docs/languages/unison.md
+     llms-full.txt lines 15714-15761 -->
 
 # unison
 

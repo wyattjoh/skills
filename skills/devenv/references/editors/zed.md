@@ -1,4 +1,6 @@
-<!-- source: .claude/references/devenv-full.md lines 4671-4676 -->
+<!-- source: https://devenv.sh/editor-support/zed/
+     upstream: docs/src/content/docs/editor-support/zed.md
+     llms-full.txt lines 4671-4676 -->
 
 # Zed
 

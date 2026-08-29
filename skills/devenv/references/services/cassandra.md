@@ -1,4 +1,6 @@
-<!-- source: .claude/references/devenv-full.md lines 19144-19321 -->
+<!-- source: https://devenv.sh/services/cassandra/
+     upstream: docs/src/content/docs/services/cassandra.md
+     llms-full.txt lines 19144-19321 -->
 
 # cassandra
 

@@ -1,4 +1,6 @@
-<!-- source: .claude/references/devenv-full.md lines 4754-4832 -->
+<!-- source: https://devenv.sh/extending/
+     upstream: docs/src/content/docs/extending.md
+     llms-full.txt lines 4754-4832 -->
 
 # Extending devenv
 

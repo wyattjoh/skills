@@ -1,4 +1,6 @@
-<!-- source: .claude/references/devenv-full.md lines 21246-21693 -->
+<!-- source: https://devenv.sh/services/keycloak/
+     upstream: docs/src/content/docs/services/keycloak.md
+     llms-full.txt lines 21246-21693 -->
 
 # keycloak
 

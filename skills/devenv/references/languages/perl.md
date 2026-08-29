@@ -1,4 +1,6 @@
-<!-- source: .claude/references/devenv-full.md lines 11718-11815 -->
+<!-- source: https://devenv.sh/languages/perl/
+     upstream: docs/src/content/docs/languages/perl.md
+     llms-full.txt lines 11718-11815 -->
 
 # perl
 

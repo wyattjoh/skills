@@ -1,4 +1,6 @@
-<!-- source: .claude/references/devenv-full.md lines 11466-11573 -->
+<!-- source: https://devenv.sh/languages/odin/
+     upstream: docs/src/content/docs/languages/odin.md
+     llms-full.txt lines 11466-11573 -->
 
 # odin
 

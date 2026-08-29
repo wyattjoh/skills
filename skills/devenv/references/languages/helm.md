@@ -1,4 +1,6 @@
-<!-- source: .claude/references/devenv-full.md lines 10014-10133 -->
+<!-- source: https://devenv.sh/languages/helm/
+     upstream: docs/src/content/docs/languages/helm.md
+     llms-full.txt lines 10014-10133 -->
 
 # helm
 

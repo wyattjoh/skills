@@ -1,4 +1,6 @@
-<!-- source: .claude/references/devenv-full.md lines 4677-4753 -->
+<!-- source: https://devenv.sh/examples/
+     upstream: docs/src/content/docs/examples.md
+     llms-full.txt lines 4677-4753 -->
 
 # Examples
 

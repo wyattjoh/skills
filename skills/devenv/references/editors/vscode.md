@@ -1,4 +1,6 @@
-<!-- source: .claude/references/devenv-full.md lines 4665-4670 -->
+<!-- source: https://devenv.sh/editor-support/vscode/
+     upstream: docs/src/content/docs/editor-support/vscode.md
+     llms-full.txt lines 4665-4670 -->
 
 # Vscode
 

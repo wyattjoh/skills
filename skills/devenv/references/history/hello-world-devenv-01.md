@@ -1,4 +1,6 @@
-<!-- source: .claude/references/devenv-full.md lines 448-477 -->
+<!-- source: https://devenv.sh/blog/2022/11/11/hello-world-devenv-01/
+     upstream: docs/src/content/docs/blog/2022/11/11/hello-world-devenv-01.md
+     llms-full.txt lines 448-477 -->
 
 # Hello world: devenv 0.1
 

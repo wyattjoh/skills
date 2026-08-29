@@ -1,4 +1,6 @@
-<!-- source: .claude/references/devenv-full.md lines 9822-10013 -->
+<!-- source: https://devenv.sh/languages/haskell/
+     upstream: docs/src/content/docs/languages/haskell.md
+     llms-full.txt lines 9822-10013 -->
 
 # haskell
 

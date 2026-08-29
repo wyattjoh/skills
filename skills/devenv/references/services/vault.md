@@ -1,4 +1,6 @@
-<!-- source: .claude/references/devenv-full.md lines 26657-26776 -->
+<!-- source: https://devenv.sh/services/vault/
+     upstream: docs/src/content/docs/services/vault.md
+     llms-full.txt lines 26657-26776 -->
 
 # vault
 

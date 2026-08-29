@@ -1,4 +1,6 @@
-<!-- source: .claude/references/devenv-full.md lines 13816-13845 -->
+<!-- source: https://devenv.sh/languages/raku/
+     upstream: docs/src/content/docs/languages/raku.md
+     llms-full.txt lines 13816-13845 -->
 
 # raku
 

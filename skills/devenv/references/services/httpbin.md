@@ -1,4 +1,6 @@
-<!-- source: .claude/references/devenv-full.md lines 20546-20613 -->
+<!-- source: https://devenv.sh/services/httpbin/
+     upstream: docs/src/content/docs/services/httpbin.md
+     llms-full.txt lines 20546-20613 -->
 
 # httpbin
 

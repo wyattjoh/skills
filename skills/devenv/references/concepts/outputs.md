@@ -1,4 +1,6 @@
-<!-- source: .claude/references/devenv-full.md lines 16120-16215 -->
+<!-- source: https://devenv.sh/outputs/
+     upstream: docs/src/content/docs/outputs.md
+     llms-full.txt lines 16120-16215 -->
 
 # Outputs
 

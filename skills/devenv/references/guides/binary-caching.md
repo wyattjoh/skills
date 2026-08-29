@@ -1,4 +1,6 @@
-<!-- source: .claude/references/devenv-full.md lines 332-447 -->
+<!-- source: https://devenv.sh/binary-caching/
+     upstream: docs/src/content/docs/binary-caching.md
+     llms-full.txt lines 332-447 -->
 
 # Binary Caching
 

@@ -1,4 +1,6 @@
-<!-- source: .claude/references/devenv-full.md lines 18875-19143 -->
+<!-- source: https://devenv.sh/services/caddy/
+     upstream: docs/src/content/docs/services/caddy.md
+     llms-full.txt lines 18875-19143 -->
 
 # caddy
 

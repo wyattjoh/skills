@@ -1,4 +1,6 @@
-<!-- source: .claude/references/devenv-full.md lines 24082-24546 -->
+<!-- source: https://devenv.sh/services/postgres/
+     upstream: docs/src/content/docs/services/postgres.md
+     llms-full.txt lines 24082-24546 -->
 
 # postgres
 

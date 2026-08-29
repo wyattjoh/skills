@@ -1,4 +1,6 @@
-<!-- source: .claude/references/devenv-full.md lines 10836-10907 -->
+<!-- source: https://devenv.sh/languages/jsonnet/
+     upstream: docs/src/content/docs/languages/jsonnet.md
+     llms-full.txt lines 10836-10907 -->
 
 # jsonnet
 

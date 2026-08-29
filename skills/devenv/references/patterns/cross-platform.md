@@ -1,4 +1,6 @@
-<!-- source: .claude/references/devenv-full.md lines 17529-17622 -->
+<!-- source: https://devenv.sh/recipes/cross-platform/
+     upstream: docs/src/content/docs/recipes/cross-platform.md
+     llms-full.txt lines 17529-17622 -->
 
 # Cross Platform
 

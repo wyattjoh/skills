@@ -1,4 +1,6 @@
-<!-- source: .claude/references/devenv-full.md lines 13846-13893 -->
+<!-- source: https://devenv.sh/languages/robotframework/
+     upstream: docs/src/content/docs/languages/robotframework.md
+     llms-full.txt lines 13846-13893 -->
 
 # robotframework
 

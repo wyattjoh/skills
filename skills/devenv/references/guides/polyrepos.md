@@ -1,4 +1,6 @@
-<!-- source: .claude/references/devenv-full.md lines 5808-5904 -->
+<!-- source: https://devenv.sh/guides/polyrepo/
+     upstream: docs/src/content/docs/guides/polyrepo.md
+     llms-full.txt lines 5808-5904 -->
 
 # Polyrepos
 

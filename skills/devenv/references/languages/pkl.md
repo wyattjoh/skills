@@ -1,4 +1,6 @@
-<!-- source: .claude/references/devenv-full.md lines 12285-12374 -->
+<!-- source: https://devenv.sh/languages/pkl/
+     upstream: docs/src/content/docs/languages/pkl.md
+     llms-full.txt lines 12285-12374 -->
 
 # pkl
 

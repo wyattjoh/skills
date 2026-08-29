@@ -1,4 +1,6 @@
-<!-- source: .claude/references/devenv-full.md lines 21694-21821 -->
+<!-- source: https://devenv.sh/services/mailhog/
+     upstream: docs/src/content/docs/services/mailhog.md
+     llms-full.txt lines 21694-21821 -->
 
 # mailhog
 

@@ -1,4 +1,6 @@
-<!-- source: .claude/references/devenv-full.md lines 22615-22765 -->
+<!-- source: https://devenv.sh/services/mosquitto/
+     upstream: docs/src/content/docs/services/mosquitto.md
+     llms-full.txt lines 22615-22765 -->
 
 # mosquitto
 

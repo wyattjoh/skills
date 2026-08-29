@@ -1,4 +1,6 @@
-<!-- source: .claude/references/devenv-full.md lines 5905-6205 -->
+<!-- source: https://devenv.sh/guides/using-with-flake-parts/
+     upstream: docs/src/content/docs/guides/using-with-flake-parts.md
+     llms-full.txt lines 5905-6205 -->
 
 # Using devenv with flake-parts
 

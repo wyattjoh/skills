@@ -1,4 +1,6 @@
-<!-- source: .claude/references/devenv-full.md lines 11076-11123 -->
+<!-- source: https://devenv.sh/languages/lobster/
+     upstream: docs/src/content/docs/languages/lobster.md
+     llms-full.txt lines 11076-11123 -->
 
 # lobster
 

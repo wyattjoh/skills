@@ -1,4 +1,6 @@
-<!-- source: .claude/references/devenv-full.md lines 21822-21931 -->
+<!-- source: https://devenv.sh/services/mailpit/
+     upstream: docs/src/content/docs/services/mailpit.md
+     llms-full.txt lines 21822-21931 -->
 
 # mailpit
 

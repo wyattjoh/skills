@@ -1,4 +1,6 @@
-<!-- source: .claude/references/devenv-full.md lines 19322-19559 -->
+<!-- source: https://devenv.sh/services/clickhouse/
+     upstream: docs/src/content/docs/services/clickhouse.md
+     llms-full.txt lines 19322-19559 -->
 
 # clickhouse
 

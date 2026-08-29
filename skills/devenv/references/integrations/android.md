@@ -1,4 +1,6 @@
-<!-- source: .claude/references/devenv-full.md lines 6700-6869 -->
+<!-- source: https://devenv.sh/integrations/android/
+     upstream: docs/src/content/docs/integrations/android.md
+     llms-full.txt lines 6700-6869 -->
 
 # Android
 

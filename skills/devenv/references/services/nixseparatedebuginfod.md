@@ -1,4 +1,6 @@
-<!-- source: .claude/references/devenv-full.md lines 23602-23744 -->
+<!-- source: https://devenv.sh/services/nixseparatedebuginfod/
+     upstream: docs/src/content/docs/services/nixseparatedebuginfod.md
+     llms-full.txt lines 23602-23744 -->
 
 # nixseparatedebuginfod
 
