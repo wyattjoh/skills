@@ -1,0 +1,2294 @@
+[
+  {
+    "title": "Ad-hoc Developer Environments",
+    "area": "guides",
+    "slug": "ad-hoc-developer-environments",
+    "path": "references/guides/ad-hoc-developer-environments.md",
+    "srcLines": [
+      3,
+      110
+    ],
+    "lines": 90,
+    "bytes": 2796
+  },
+  {
+    "title": "Auto Activation",
+    "area": "guides",
+    "slug": "auto-activation",
+    "path": "references/guides/auto-activation.md",
+    "srcLines": [
+      111,
+      255
+    ],
+    "lines": 131,
+    "bytes": 4079
+  },
+  {
+    "title": "Basics",
+    "area": "guides",
+    "slug": "basics",
+    "path": "references/guides/basics.md",
+    "srcLines": [
+      256,
+      331
+    ],
+    "lines": 65,
+    "bytes": 1823
+  },
+  {
+    "title": "Binary Caching",
+    "area": "guides",
+    "slug": "binary-caching",
+    "path": "references/guides/binary-caching.md",
+    "srcLines": [
+      332,
+      447
+    ],
+    "lines": 104,
+    "bytes": 3303
+  },
+  {
+    "title": "Hello world: devenv 0.1",
+    "area": "history",
+    "slug": "hello-world-devenv-0-1",
+    "path": "references/history/hello-world-devenv-0-1.md",
+    "srcLines": [
+      448,
+      477
+    ],
+    "lines": 26,
+    "bytes": 1363
+  },
+  {
+    "title": "devenv 0.2",
+    "area": "history",
+    "slug": "devenv-0-2",
+    "path": "references/history/devenv-0-2.md",
+    "srcLines": [
+      478,
+      516
+    ],
+    "lines": 34,
+    "bytes": 1367
+  },
+  {
+    "title": "devenv 0.3",
+    "area": "history",
+    "slug": "devenv-0-3",
+    "path": "references/history/devenv-0-3.md",
+    "srcLines": [
+      517,
+      549
+    ],
+    "lines": 29,
+    "bytes": 1521
+  },
+  {
+    "title": "devenv 0.4",
+    "area": "history",
+    "slug": "devenv-0-4",
+    "path": "references/history/devenv-0-4.md",
+    "srcLines": [
+      550,
+      583
+    ],
+    "lines": 30,
+    "bytes": 1390
+  },
+  {
+    "title": "devenv 0.5",
+    "area": "history",
+    "slug": "devenv-0-5",
+    "path": "references/history/devenv-0-5.md",
+    "srcLines": [
+      584,
+      653
+    ],
+    "lines": 60,
+    "bytes": 4185
+  },
+  {
+    "title": "devenv 0.6: Generating containers and instant shell activation",
+    "area": "history",
+    "slug": "devenv-0-6-generating-containers-and-instant-shell-activation",
+    "path": "references/history/devenv-0-6-generating-containers-and-instant-shell-activation.md",
+    "srcLines": [
+      654,
+      834
+    ],
+    "lines": 163,
+    "bytes": 7161
+  },
+  {
+    "title": "devenv 1.0: Rewrite in Rust",
+    "area": "history",
+    "slug": "devenv-1-0-rewrite-in-rust",
+    "path": "references/history/devenv-1-0-rewrite-in-rust.md",
+    "srcLines": [
+      835,
+      1098
+    ],
+    "lines": 223,
+    "bytes": 8712
+  },
+  {
+    "title": "devenv 1.1: Nested Nix outputs using the module system",
+    "area": "history",
+    "slug": "devenv-1-1-nested-nix-outputs-using-the-module-system",
+    "path": "references/history/devenv-1-1-nested-nix-outputs-using-the-module-system.md",
+    "srcLines": [
+      1099,
+      1196
+    ],
+    "lines": 89,
+    "bytes": 2585
+  },
+  {
+    "title": "devenv 1.2: Tasks for convergent configuration with Nix",
+    "area": "history",
+    "slug": "devenv-1-2-tasks-for-convergent-configuration-with-nix",
+    "path": "references/history/devenv-1-2-tasks-for-convergent-configuration-with-nix.md",
+    "srcLines": [
+      1197,
+      1279
+    ],
+    "lines": 76,
+    "bytes": 3604
+  },
+  {
+    "title": "devenv 1.3: Instant developer environments with Nix caching",
+    "area": "history",
+    "slug": "devenv-1-3-instant-developer-environments-with-nix-caching",
+    "path": "references/history/devenv-1-3-instant-developer-environments-with-nix-caching.md",
+    "srcLines": [
+      1280,
+      1378
+    ],
+    "lines": 86,
+    "bytes": 3982
+  },
+  {
+    "title": "devenv is switching its Nix implementation to Tvix",
+    "area": "history",
+    "slug": "devenv-is-switching-its-nix-implementation-to-tvix",
+    "path": "references/history/devenv-is-switching-its-nix-implementation-to-tvix.md",
+    "srcLines": [
+      1379,
+      1539
+    ],
+    "lines": 145,
+    "bytes": 9248
+  },
+  {
+    "title": "devenv 1.4: Generating Nix Developer Environments Using AI",
+    "area": "history",
+    "slug": "devenv-1-4-generating-nix-developer-environments-using-ai",
+    "path": "references/history/devenv-1-4-generating-nix-developer-environments-using-ai.md",
+    "srcLines": [
+      1540,
+      1573
+    ],
+    "lines": 30,
+    "bytes": 1144
+  },
+  {
+    "title": "devenv 1.5: Overlays Support and Performance Improvements",
+    "area": "history",
+    "slug": "devenv-1-5-overlays-support-and-performance-improvements",
+    "path": "references/history/devenv-1-5-overlays-support-and-performance-improvements.md",
+    "srcLines": [
+      1574,
+      1688
+    ],
+    "lines": 100,
+    "bytes": 2865
+  },
+  {
+    "title": "devenv 1.6: Extensible Ad-Hoc Nix Environments",
+    "area": "history",
+    "slug": "devenv-1-6-extensible-ad-hoc-nix-environments",
+    "path": "references/history/devenv-1-6-extensible-ad-hoc-nix-environments.md",
+    "srcLines": [
+      1689,
+      1781
+    ],
+    "lines": 83,
+    "bytes": 3106
+  },
+  {
+    "title": "devenv 1.7: CUDA Support, Enhanced Tasks, and MCP support",
+    "area": "history",
+    "slug": "devenv-1-7-cuda-support-enhanced-tasks-and-mcp-support",
+    "path": "references/history/devenv-1-7-cuda-support-enhanced-tasks-and-mcp-support.md",
+    "srcLines": [
+      1782,
+      1939
+    ],
+    "lines": 135,
+    "bytes": 4301
+  },
+  {
+    "title": "Announcing SecretSpec: Declarative Secrets Management",
+    "area": "history",
+    "slug": "announcing-secretspec-declarative-secrets-management",
+    "path": "references/history/announcing-secretspec-declarative-secrets-management.md",
+    "srcLines": [
+      1940,
+      2201
+    ],
+    "lines": 226,
+    "bytes": 8430
+  },
+  {
+    "title": "devenv 1.8: Progress TUI, SecretSpec Integration, Listing Tasks, and Smaller Containers",
+    "area": "history",
+    "slug": "devenv-1-8-progress-tui-secretspec-integration-listing-tasks-and-smaller",
+    "path": "references/history/devenv-1-8-progress-tui-secretspec-integration-listing-tasks-and-smaller.md",
+    "srcLines": [
+      2202,
+      2323
+    ],
+    "lines": 102,
+    "bytes": 4224
+  },
+  {
+    "title": "devenv devlog: Processes are now tasks",
+    "area": "history",
+    "slug": "devenv-devlog-processes-are-now-tasks",
+    "path": "references/history/devenv-devlog-processes-are-now-tasks.md",
+    "srcLines": [
+      2324,
+      2394
+    ],
+    "lines": 59,
+    "bytes": 1623
+  },
+  {
+    "title": "Closing the Nix Gap: From Environments to Packaged Applications for Rust",
+    "area": "history",
+    "slug": "closing-the-nix-gap-from-environments-to-packaged-applications-for-rust",
+    "path": "references/history/closing-the-nix-gap-from-environments-to-packaged-applications-for-rust.md",
+    "srcLines": [
+      2395,
+      2498
+    ],
+    "lines": 93,
+    "bytes": 3291
+  },
+  {
+    "title": "devenv 1.9: Scaling Nix projects using modules and profiles",
+    "area": "history",
+    "slug": "devenv-1-9-scaling-nix-projects-using-modules-and-profiles",
+    "path": "references/history/devenv-1-9-scaling-nix-projects-using-modules-and-profiles.md",
+    "srcLines": [
+      2499,
+      2699
+    ],
+    "lines": 179,
+    "bytes": 5668
+  },
+  {
+    "title": "devenv 1.10: monorepo Nix support with devenv.yaml imports",
+    "area": "history",
+    "slug": "devenv-1-10-monorepo-nix-support-with-devenv-yaml-imports",
+    "path": "references/history/devenv-1-10-monorepo-nix-support-with-devenv-yaml-imports.md",
+    "srcLines": [
+      2700,
+      2818
+    ],
+    "lines": 108,
+    "bytes": 3096
+  },
+  {
+    "title": "devenv 1.11: Module changelogs and SecretSpec 0.4.0",
+    "area": "history",
+    "slug": "devenv-1-11-module-changelogs-and-secretspec-0-4-0",
+    "path": "references/history/devenv-1-11-module-changelogs-and-secretspec-0-4-0.md",
+    "srcLines": [
+      2819,
+      3004
+    ],
+    "lines": 166,
+    "bytes": 5466
+  },
+  {
+    "title": "SecretSpec 0.7: Declarative Secret Generation",
+    "area": "history",
+    "slug": "secretspec-0-7-declarative-secret-generation",
+    "path": "references/history/secretspec-0-7-declarative-secret-generation.md",
+    "srcLines": [
+      3005,
+      3133
+    ],
+    "lines": 109,
+    "bytes": 4869
+  },
+  {
+    "title": "devenv 2.0: A Fresh Interface to Nix",
+    "area": "history",
+    "slug": "devenv-2-0-a-fresh-interface-to-nix",
+    "path": "references/history/devenv-2-0-a-fresh-interface-to-nix.md",
+    "srcLines": [
+      3134,
+      3428
+    ],
+    "lines": 259,
+    "bytes": 12296
+  },
+  {
+    "title": "devenv 2.1: Nix with zsh, fish, and nushell via libghostty",
+    "area": "history",
+    "slug": "devenv-2-1-nix-with-zsh-fish-and-nushell-via-libghostty",
+    "path": "references/history/devenv-2-1-nix-with-zsh-fish-and-nushell-via-libghostty.md",
+    "srcLines": [
+      3429,
+      3603
+    ],
+    "lines": 149,
+    "bytes": 7857
+  },
+  {
+    "title": "Making devenv start fast, and the whole nixpkgs with it",
+    "area": "history",
+    "slug": "making-devenv-start-fast-and-the-whole-nixpkgs-with-it",
+    "path": "references/history/making-devenv-start-fast-and-the-whole-nixpkgs-with-it.md",
+    "srcLines": [
+      3604,
+      3783
+    ],
+    "lines": 160,
+    "bytes": 19130
+  },
+  {
+    "title": "devenv 2.2: attach to running processes and persistent out-of-tree environments",
+    "area": "history",
+    "slug": "devenv-2-2-attach-to-running-processes-and-persistent-out-of-tree-enviro",
+    "path": "references/history/devenv-2-2-attach-to-running-processes-and-persistent-out-of-tree-enviro.md",
+    "srcLines": [
+      3784,
+      3971
+    ],
+    "lines": 168,
+    "bytes": 13815
+  },
+  {
+    "title": "Cloud",
+    "area": "guides",
+    "slug": "cloud",
+    "path": "references/guides/cloud.md",
+    "srcLines": [
+      3972,
+      4050
+    ],
+    "lines": 69,
+    "bytes": 1220
+  },
+  {
+    "title": "Contributing",
+    "area": "guides",
+    "slug": "contributing",
+    "path": "references/guides/contributing.md",
+    "srcLines": [
+      4051,
+      4145
+    ],
+    "lines": 83,
+    "bytes": 4239
+  },
+  {
+    "title": "Get Involved",
+    "area": "guides",
+    "slug": "get-involved",
+    "path": "references/guides/get-involved.md",
+    "srcLines": [
+      4146,
+      4149
+    ],
+    "lines": 4,
+    "bytes": 184
+  },
+  {
+    "title": "Composing using imports",
+    "area": "guides",
+    "slug": "composing-using-imports",
+    "path": "references/guides/composing-using-imports.md",
+    "srcLines": [
+      4150,
+      4204
+    ],
+    "lines": 53,
+    "bytes": 1799
+  },
+  {
+    "title": "Containers",
+    "area": "guides",
+    "slug": "containers",
+    "path": "references/guides/containers.md",
+    "srcLines": [
+      4205,
+      4419
+    ],
+    "lines": 196,
+    "bytes": 5391
+  },
+  {
+    "title": "Declarative files",
+    "area": "guides",
+    "slug": "declarative-files",
+    "path": "references/guides/declarative-files.md",
+    "srcLines": [
+      4420,
+      4639
+    ],
+    "lines": 197,
+    "bytes": 3948
+  },
+  {
+    "title": "Intellij",
+    "area": "editors",
+    "slug": "intellij",
+    "path": "references/editors/intellij.md",
+    "srcLines": [
+      4640,
+      4664
+    ],
+    "lines": 23,
+    "bytes": 1067
+  },
+  {
+    "title": "Vscode",
+    "area": "editors",
+    "slug": "vscode",
+    "path": "references/editors/vscode.md",
+    "srcLines": [
+      4665,
+      4670
+    ],
+    "lines": 6,
+    "bytes": 228
+  },
+  {
+    "title": "Zed",
+    "area": "editors",
+    "slug": "zed",
+    "path": "references/editors/zed.md",
+    "srcLines": [
+      4671,
+      4676
+    ],
+    "lines": 6,
+    "bytes": 173
+  },
+  {
+    "title": "Examples",
+    "area": "guides",
+    "slug": "examples",
+    "path": "references/guides/examples.md",
+    "srcLines": [
+      4677,
+      4753
+    ],
+    "lines": 77,
+    "bytes": 5466
+  },
+  {
+    "title": "Extending devenv",
+    "area": "guides",
+    "slug": "extending-devenv",
+    "path": "references/guides/extending-devenv.md",
+    "srcLines": [
+      4754,
+      4832
+    ],
+    "lines": 72,
+    "bytes": 1757
+  },
+  {
+    "title": "Files And Variables",
+    "area": "guides",
+    "slug": "files-and-variables",
+    "path": "references/guides/files-and-variables.md",
+    "srcLines": [
+      4833,
+      4901
+    ],
+    "lines": 52,
+    "bytes": 1464
+  },
+  {
+    "title": "Garbage collection",
+    "area": "guides",
+    "slug": "garbage-collection",
+    "path": "references/guides/garbage-collection.md",
+    "srcLines": [
+      4902,
+      4928
+    ],
+    "lines": 23,
+    "bytes": 1041
+  },
+  {
+    "title": "Getting Started",
+    "area": "guides",
+    "slug": "getting-started",
+    "path": "references/guides/getting-started.md",
+    "srcLines": [
+      4929,
+      5151
+    ],
+    "lines": 193,
+    "bytes": 5046
+  },
+  {
+    "title": "Git Hooks",
+    "area": "guides",
+    "slug": "git-hooks",
+    "path": "references/guides/git-hooks.md",
+    "srcLines": [
+      5152,
+      5285
+    ],
+    "lines": 113,
+    "bytes": 3101
+  },
+  {
+    "title": "Migrating to devenv 2.0",
+    "area": "guides",
+    "slug": "migrating-to-devenv-2-0",
+    "path": "references/guides/migrating-to-devenv-2-0.md",
+    "srcLines": [
+      5286,
+      5630
+    ],
+    "lines": 317,
+    "bytes": 7447
+  },
+  {
+    "title": "Monorepo with Shared Configurations",
+    "area": "guides",
+    "slug": "monorepo-with-shared-configurations",
+    "path": "references/guides/monorepo-with-shared-configurations.md",
+    "srcLines": [
+      5631,
+      5807
+    ],
+    "lines": 157,
+    "bytes": 3393
+  },
+  {
+    "title": "Polyrepos",
+    "area": "guides",
+    "slug": "polyrepos",
+    "path": "references/guides/polyrepos.md",
+    "srcLines": [
+      5808,
+      5904
+    ],
+    "lines": 89,
+    "bytes": 2766
+  },
+  {
+    "title": "Using devenv with flake-parts",
+    "area": "guides",
+    "slug": "using-devenv-with-flake-parts",
+    "path": "references/guides/using-devenv-with-flake-parts.md",
+    "srcLines": [
+      5905,
+      6205
+    ],
+    "lines": 263,
+    "bytes": 8512
+  },
+  {
+    "title": "Using devenv with Nix Flakes",
+    "area": "guides",
+    "slug": "using-devenv-with-nix-flakes",
+    "path": "references/guides/using-devenv-with-nix-flakes.md",
+    "srcLines": [
+      6206,
+      6491
+    ],
+    "lines": 255,
+    "bytes": 9136
+  },
+  {
+    "title": "Inputs",
+    "area": "guides",
+    "slug": "inputs",
+    "path": "references/guides/inputs.md",
+    "srcLines": [
+      6492,
+      6699
+    ],
+    "lines": 182,
+    "bytes": 5395
+  },
+  {
+    "title": "Android",
+    "area": "integrations",
+    "slug": "android",
+    "path": "references/integrations/android.md",
+    "srcLines": [
+      6700,
+      6869
+    ],
+    "lines": 154,
+    "bytes": 4394
+  },
+  {
+    "title": "Claude Code",
+    "area": "integrations",
+    "slug": "claude-code",
+    "path": "references/integrations/claude-code.md",
+    "srcLines": [
+      6870,
+      7427
+    ],
+    "lines": 482,
+    "bytes": 17295
+  },
+  {
+    "title": "Codespaces Devcontainer",
+    "area": "integrations",
+    "slug": "codespaces-devcontainer",
+    "path": "references/integrations/codespaces-devcontainer.md",
+    "srcLines": [
+      7428,
+      7446
+    ],
+    "lines": 18,
+    "bytes": 363
+  },
+  {
+    "title": "Delta",
+    "area": "integrations",
+    "slug": "delta",
+    "path": "references/integrations/delta.md",
+    "srcLines": [
+      7447,
+      7461
+    ],
+    "lines": 14,
+    "bytes": 220
+  },
+  {
+    "title": "Devenv Container",
+    "area": "integrations",
+    "slug": "devenv-container",
+    "path": "references/integrations/devenv-container.md",
+    "srcLines": [
+      7462,
+      7499
+    ],
+    "lines": 38,
+    "bytes": 853
+  },
+  {
+    "title": "Difftastic",
+    "area": "integrations",
+    "slug": "difftastic",
+    "path": "references/integrations/difftastic.md",
+    "srcLines": [
+      7500,
+      7518
+    ],
+    "lines": 18,
+    "bytes": 419
+  },
+  {
+    "title": "Direnv",
+    "area": "integrations",
+    "slug": "direnv",
+    "path": "references/integrations/direnv.md",
+    "srcLines": [
+      7519,
+      7680
+    ],
+    "lines": 142,
+    "bytes": 4376
+  },
+  {
+    "title": "Dotenv",
+    "area": "integrations",
+    "slug": "dotenv",
+    "path": "references/integrations/dotenv.md",
+    "srcLines": [
+      7681,
+      7726
+    ],
+    "lines": 45,
+    "bytes": 1795
+  },
+  {
+    "title": "GitHub Actions",
+    "area": "integrations",
+    "slug": "github-actions",
+    "path": "references/integrations/github-actions.md",
+    "srcLines": [
+      7727,
+      7920
+    ],
+    "lines": 168,
+    "bytes": 4888
+  },
+  {
+    "title": "SecretSpec",
+    "area": "integrations",
+    "slug": "secretspec",
+    "path": "references/integrations/secretspec.md",
+    "srcLines": [
+      7921,
+      8051
+    ],
+    "lines": 116,
+    "bytes": 4130
+  },
+  {
+    "title": "treefmt",
+    "area": "integrations",
+    "slug": "treefmt",
+    "path": "references/integrations/treefmt.md",
+    "srcLines": [
+      8052,
+      8148
+    ],
+    "lines": 83,
+    "bytes": 1700
+  },
+  {
+    "title": "WordPress",
+    "area": "integrations",
+    "slug": "wordpress",
+    "path": "references/integrations/wordpress.md",
+    "srcLines": [
+      8149,
+      8438
+    ],
+    "lines": 247,
+    "bytes": 7292
+  },
+  {
+    "title": "Languages",
+    "area": "languages",
+    "slug": "_overview",
+    "path": "references/languages/_overview.md",
+    "srcLines": [
+      8439,
+      8475
+    ],
+    "lines": 30,
+    "bytes": 510
+  },
+  {
+    "title": "ansible",
+    "area": "languages",
+    "slug": "ansible",
+    "path": "references/languages/ansible.md",
+    "srcLines": [
+      8476,
+      8565
+    ],
+    "lines": 80,
+    "bytes": 995
+  },
+  {
+    "title": "c",
+    "area": "languages",
+    "slug": "c",
+    "path": "references/languages/c.md",
+    "srcLines": [
+      8566,
+      8655
+    ],
+    "lines": 80,
+    "bytes": 1001
+  },
+  {
+    "title": "clojure",
+    "area": "languages",
+    "slug": "clojure",
+    "path": "references/languages/clojure.md",
+    "srcLines": [
+      8656,
+      8727
+    ],
+    "lines": 64,
+    "bytes": 763
+  },
+  {
+    "title": "cplusplus",
+    "area": "languages",
+    "slug": "cplusplus",
+    "path": "references/languages/cplusplus.md",
+    "srcLines": [
+      8728,
+      8799
+    ],
+    "lines": 64,
+    "bytes": 758
+  },
+  {
+    "title": "crystal",
+    "area": "languages",
+    "slug": "crystal",
+    "path": "references/languages/crystal.md",
+    "srcLines": [
+      8800,
+      8925
+    ],
+    "lines": 112,
+    "bytes": 1402
+  },
+  {
+    "title": "cue",
+    "area": "languages",
+    "slug": "cue",
+    "path": "references/languages/cue.md",
+    "srcLines": [
+      8926,
+      9015
+    ],
+    "lines": 80,
+    "bytes": 914
+  },
+  {
+    "title": "dart",
+    "area": "languages",
+    "slug": "dart",
+    "path": "references/languages/dart.md",
+    "srcLines": [
+      9016,
+      9063
+    ],
+    "lines": 42,
+    "bytes": 464
+  },
+  {
+    "title": "deno",
+    "area": "languages",
+    "slug": "deno",
+    "path": "references/languages/deno.md",
+    "srcLines": [
+      9064,
+      9111
+    ],
+    "lines": 42,
+    "bytes": 469
+  },
+  {
+    "title": "dotnet",
+    "area": "languages",
+    "slug": "dotnet",
+    "path": "references/languages/dotnet.md",
+    "srcLines": [
+      9112,
+      9197
+    ],
+    "lines": 76,
+    "bytes": 1015
+  },
+  {
+    "title": "elixir",
+    "area": "languages",
+    "slug": "elixir",
+    "path": "references/languages/elixir.md",
+    "srcLines": [
+      9198,
+      9287
+    ],
+    "lines": 80,
+    "bytes": 987
+  },
+  {
+    "title": "elm",
+    "area": "languages",
+    "slug": "elm",
+    "path": "references/languages/elm.md",
+    "srcLines": [
+      9288,
+      9359
+    ],
+    "lines": 64,
+    "bytes": 743
+  },
+  {
+    "title": "erlang",
+    "area": "languages",
+    "slug": "erlang",
+    "path": "references/languages/erlang.md",
+    "srcLines": [
+      9360,
+      9449
+    ],
+    "lines": 80,
+    "bytes": 989
+  },
+  {
+    "title": "fortran",
+    "area": "languages",
+    "slug": "fortran",
+    "path": "references/languages/fortran.md",
+    "srcLines": [
+      9450,
+      9539
+    ],
+    "lines": 80,
+    "bytes": 973
+  },
+  {
+    "title": "gawk",
+    "area": "languages",
+    "slug": "gawk",
+    "path": "references/languages/gawk.md",
+    "srcLines": [
+      9540,
+      9569
+    ],
+    "lines": 26,
+    "bytes": 267
+  },
+  {
+    "title": "gleam",
+    "area": "languages",
+    "slug": "gleam",
+    "path": "references/languages/gleam.md",
+    "srcLines": [
+      9570,
+      9617
+    ],
+    "lines": 42,
+    "bytes": 472
+  },
+  {
+    "title": "go",
+    "area": "languages",
+    "slug": "go",
+    "path": "references/languages/go.md",
+    "srcLines": [
+      9618,
+      9791
+    ],
+    "lines": 156,
+    "bytes": 2031
+  },
+  {
+    "title": "hare",
+    "area": "languages",
+    "slug": "hare",
+    "path": "references/languages/hare.md",
+    "srcLines": [
+      9792,
+      9821
+    ],
+    "lines": 26,
+    "bytes": 264
+  },
+  {
+    "title": "haskell",
+    "area": "languages",
+    "slug": "haskell",
+    "path": "references/languages/haskell.md",
+    "srcLines": [
+      9822,
+      10013
+    ],
+    "lines": 172,
+    "bytes": 2223
+  },
+  {
+    "title": "helm",
+    "area": "languages",
+    "slug": "helm",
+    "path": "references/languages/helm.md",
+    "srcLines": [
+      10014,
+      10133
+    ],
+    "lines": 108,
+    "bytes": 1338
+  },
+  {
+    "title": "idris",
+    "area": "languages",
+    "slug": "idris",
+    "path": "references/languages/idris.md",
+    "srcLines": [
+      10134,
+      10229
+    ],
+    "lines": 86,
+    "bytes": 996
+  },
+  {
+    "title": "java",
+    "area": "languages",
+    "slug": "java",
+    "path": "references/languages/java.md",
+    "srcLines": [
+      10230,
+      10409
+    ],
+    "lines": 162,
+    "bytes": 2283
+  },
+  {
+    "title": "javascript",
+    "area": "languages",
+    "slug": "javascript",
+    "path": "references/languages/javascript.md",
+    "srcLines": [
+      10410,
+      10835
+    ],
+    "lines": 386,
+    "bytes": 5057
+  },
+  {
+    "title": "jsonnet",
+    "area": "languages",
+    "slug": "jsonnet",
+    "path": "references/languages/jsonnet.md",
+    "srcLines": [
+      10836,
+      10907
+    ],
+    "lines": 64,
+    "bytes": 775
+  },
+  {
+    "title": "julia",
+    "area": "languages",
+    "slug": "julia",
+    "path": "references/languages/julia.md",
+    "srcLines": [
+      10908,
+      10955
+    ],
+    "lines": 42,
+    "bytes": 476
+  },
+  {
+    "title": "kotlin",
+    "area": "languages",
+    "slug": "kotlin",
+    "path": "references/languages/kotlin.md",
+    "srcLines": [
+      10956,
+      11027
+    ],
+    "lines": 64,
+    "bytes": 764
+  },
+  {
+    "title": "lean4",
+    "area": "languages",
+    "slug": "lean4",
+    "path": "references/languages/lean4.md",
+    "srcLines": [
+      11028,
+      11075
+    ],
+    "lines": 42,
+    "bytes": 472
+  },
+  {
+    "title": "lobster",
+    "area": "languages",
+    "slug": "lobster",
+    "path": "references/languages/lobster.md",
+    "srcLines": [
+      11076,
+      11123
+    ],
+    "lines": 42,
+    "bytes": 490
+  },
+  {
+    "title": "lua",
+    "area": "languages",
+    "slug": "lua",
+    "path": "references/languages/lua.md",
+    "srcLines": [
+      11124,
+      11213
+    ],
+    "lines": 80,
+    "bytes": 927
+  },
+  {
+    "title": "nim",
+    "area": "languages",
+    "slug": "nim",
+    "path": "references/languages/nim.md",
+    "srcLines": [
+      11214,
+      11303
+    ],
+    "lines": 80,
+    "bytes": 921
+  },
+  {
+    "title": "nix",
+    "area": "languages",
+    "slug": "nix",
+    "path": "references/languages/nix.md",
+    "srcLines": [
+      11304,
+      11375
+    ],
+    "lines": 64,
+    "bytes": 716
+  },
+  {
+    "title": "ocaml",
+    "area": "languages",
+    "slug": "ocaml",
+    "path": "references/languages/ocaml.md",
+    "srcLines": [
+      11376,
+      11465
+    ],
+    "lines": 80,
+    "bytes": 994
+  },
+  {
+    "title": "odin",
+    "area": "languages",
+    "slug": "odin",
+    "path": "references/languages/odin.md",
+    "srcLines": [
+      11466,
+      11573
+    ],
+    "lines": 96,
+    "bytes": 1210
+  },
+  {
+    "title": "opentofu",
+    "area": "languages",
+    "slug": "opentofu",
+    "path": "references/languages/opentofu.md",
+    "srcLines": [
+      11574,
+      11663
+    ],
+    "lines": 80,
+    "bytes": 990
+  },
+  {
+    "title": "pascal",
+    "area": "languages",
+    "slug": "pascal",
+    "path": "references/languages/pascal.md",
+    "srcLines": [
+      11664,
+      11717
+    ],
+    "lines": 48,
+    "bytes": 552
+  },
+  {
+    "title": "perl",
+    "area": "languages",
+    "slug": "perl",
+    "path": "references/languages/perl.md",
+    "srcLines": [
+      11718,
+      11815
+    ],
+    "lines": 88,
+    "bytes": 981
+  },
+  {
+    "title": "php",
+    "area": "languages",
+    "slug": "php",
+    "path": "references/languages/php.md",
+    "srcLines": [
+      11816,
+      12284
+    ],
+    "lines": 425,
+    "bytes": 7184
+  },
+  {
+    "title": "pkl",
+    "area": "languages",
+    "slug": "pkl",
+    "path": "references/languages/pkl.md",
+    "srcLines": [
+      12285,
+      12374
+    ],
+    "lines": 80,
+    "bytes": 915
+  },
+  {
+    "title": "purescript",
+    "area": "languages",
+    "slug": "purescript",
+    "path": "references/languages/purescript.md",
+    "srcLines": [
+      12375,
+      12506
+    ],
+    "lines": 118,
+    "bytes": 1931
+  },
+  {
+    "title": "Python",
+    "area": "languages",
+    "slug": "python",
+    "path": "references/languages/python.md",
+    "srcLines": [
+      12507,
+      13635
+    ],
+    "lines": 1013,
+    "bytes": 20064
+  },
+  {
+    "title": "r",
+    "area": "languages",
+    "slug": "r",
+    "path": "references/languages/r.md",
+    "srcLines": [
+      13636,
+      13767
+    ],
+    "lines": 118,
+    "bytes": 1358
+  },
+  {
+    "title": "racket",
+    "area": "languages",
+    "slug": "racket",
+    "path": "references/languages/racket.md",
+    "srcLines": [
+      13768,
+      13815
+    ],
+    "lines": 42,
+    "bytes": 488
+  },
+  {
+    "title": "raku",
+    "area": "languages",
+    "slug": "raku",
+    "path": "references/languages/raku.md",
+    "srcLines": [
+      13816,
+      13845
+    ],
+    "lines": 26,
+    "bytes": 264
+  },
+  {
+    "title": "robotframework",
+    "area": "languages",
+    "slug": "robotframework",
+    "path": "references/languages/robotframework.md",
+    "srcLines": [
+      13846,
+      13893
+    ],
+    "lines": 42,
+    "bytes": 529
+  },
+  {
+    "title": "ruby",
+    "area": "languages",
+    "slug": "ruby",
+    "path": "references/languages/ruby.md",
+    "srcLines": [
+      13894,
+      14105
+    ],
+    "lines": 192,
+    "bytes": 2830
+  },
+  {
+    "title": "Rust",
+    "area": "languages",
+    "slug": "rust",
+    "path": "references/languages/rust.md",
+    "srcLines": [
+      14106,
+      14762
+    ],
+    "lines": 582,
+    "bytes": 10702
+  },
+  {
+    "title": "scala",
+    "area": "languages",
+    "slug": "scala",
+    "path": "references/languages/scala.md",
+    "srcLines": [
+      14763,
+      14948
+    ],
+    "lines": 166,
+    "bytes": 2127
+  },
+  {
+    "title": "shell",
+    "area": "languages",
+    "slug": "shell",
+    "path": "references/languages/shell.md",
+    "srcLines": [
+      14949,
+      15020
+    ],
+    "lines": 64,
+    "bytes": 752
+  },
+  {
+    "title": "solidity",
+    "area": "languages",
+    "slug": "solidity",
+    "path": "references/languages/solidity.md",
+    "srcLines": [
+      15021,
+      15110
+    ],
+    "lines": 80,
+    "bytes": 1005
+  },
+  {
+    "title": "standardml",
+    "area": "languages",
+    "slug": "standardml",
+    "path": "references/languages/standardml.md",
+    "srcLines": [
+      15111,
+      15200
+    ],
+    "lines": 80,
+    "bytes": 1011
+  },
+  {
+    "title": "swift",
+    "area": "languages",
+    "slug": "swift",
+    "path": "references/languages/swift.md",
+    "srcLines": [
+      15201,
+      15290
+    ],
+    "lines": 80,
+    "bytes": 949
+  },
+  {
+    "title": "terraform",
+    "area": "languages",
+    "slug": "terraform",
+    "path": "references/languages/terraform.md",
+    "srcLines": [
+      15291,
+      15404
+    ],
+    "lines": 102,
+    "bytes": 1399
+  },
+  {
+    "title": "texlive",
+    "area": "languages",
+    "slug": "texlive",
+    "path": "references/languages/texlive.md",
+    "srcLines": [
+      15405,
+      15527
+    ],
+    "lines": 111,
+    "bytes": 1290
+  },
+  {
+    "title": "typescript",
+    "area": "languages",
+    "slug": "typescript",
+    "path": "references/languages/typescript.md",
+    "srcLines": [
+      15528,
+      15599
+    ],
+    "lines": 64,
+    "bytes": 808
+  },
+  {
+    "title": "typst",
+    "area": "languages",
+    "slug": "typst",
+    "path": "references/languages/typst.md",
+    "srcLines": [
+      15600,
+      15713
+    ],
+    "lines": 102,
+    "bytes": 1232
+  },
+  {
+    "title": "unison",
+    "area": "languages",
+    "slug": "unison",
+    "path": "references/languages/unison.md",
+    "srcLines": [
+      15714,
+      15761
+    ],
+    "lines": 42,
+    "bytes": 488
+  },
+  {
+    "title": "v",
+    "area": "languages",
+    "slug": "v",
+    "path": "references/languages/v.md",
+    "srcLines": [
+      15762,
+      15809
+    ],
+    "lines": 42,
+    "bytes": 444
+  },
+  {
+    "title": "vala",
+    "area": "languages",
+    "slug": "vala",
+    "path": "references/languages/vala.md",
+    "srcLines": [
+      15810,
+      15905
+    ],
+    "lines": 86,
+    "bytes": 981
+  },
+  {
+    "title": "zig",
+    "area": "languages",
+    "slug": "zig",
+    "path": "references/languages/zig.md",
+    "srcLines": [
+      15906,
+      16047
+    ],
+    "lines": 128,
+    "bytes": 1920
+  },
+  {
+    "title": "Language Server",
+    "area": "concepts",
+    "slug": "language-server",
+    "path": "references/concepts/language-server.md",
+    "srcLines": [
+      16048,
+      16075
+    ],
+    "lines": 24,
+    "bytes": 869
+  },
+  {
+    "title": "MCP Server",
+    "area": "concepts",
+    "slug": "mcp-server",
+    "path": "references/concepts/mcp-server.md",
+    "srcLines": [
+      16076,
+      16119
+    ],
+    "lines": 34,
+    "bytes": 838
+  },
+  {
+    "title": "Outputs",
+    "area": "concepts",
+    "slug": "outputs",
+    "path": "references/concepts/outputs.md",
+    "srcLines": [
+      16120,
+      16215
+    ],
+    "lines": 86,
+    "bytes": 2607
+  },
+  {
+    "title": "Overlays",
+    "area": "concepts",
+    "slug": "overlays",
+    "path": "references/concepts/overlays.md",
+    "srcLines": [
+      16216,
+      16349
+    ],
+    "lines": 115,
+    "bytes": 2565
+  },
+  {
+    "title": "Packages",
+    "area": "concepts",
+    "slug": "packages",
+    "path": "references/concepts/packages.md",
+    "srcLines": [
+      16350,
+      16518
+    ],
+    "lines": 149,
+    "bytes": 5707
+  },
+  {
+    "title": "Pinning",
+    "area": "concepts",
+    "slug": "pinning",
+    "path": "references/concepts/pinning.md",
+    "srcLines": [
+      16519,
+      16661
+    ],
+    "lines": 127,
+    "bytes": 4235
+  },
+  {
+    "title": "Processes",
+    "area": "concepts",
+    "slug": "processes",
+    "path": "references/concepts/processes.md",
+    "srcLines": [
+      16662,
+      17227
+    ],
+    "lines": 522,
+    "bytes": 18344
+  },
+  {
+    "title": "Profiles",
+    "area": "concepts",
+    "slug": "profiles",
+    "path": "references/concepts/profiles.md",
+    "srcLines": [
+      17228,
+      17506
+    ],
+    "lines": 247,
+    "bytes": 6517
+  },
+  {
+    "title": "Containers",
+    "area": "patterns",
+    "slug": "containers",
+    "path": "references/patterns/containers.md",
+    "srcLines": [
+      17507,
+      17528
+    ],
+    "lines": 18,
+    "bytes": 251
+  },
+  {
+    "title": "Cross Platform",
+    "area": "patterns",
+    "slug": "cross-platform",
+    "path": "references/patterns/cross-platform.md",
+    "srcLines": [
+      17529,
+      17622
+    ],
+    "lines": 85,
+    "bytes": 2638
+  },
+  {
+    "title": "Macos",
+    "area": "patterns",
+    "slug": "macos",
+    "path": "references/patterns/macos.md",
+    "srcLines": [
+      17623,
+      17722
+    ],
+    "lines": 88,
+    "bytes": 1973
+  },
+  {
+    "title": "Nix",
+    "area": "patterns",
+    "slug": "nix",
+    "path": "references/patterns/nix.md",
+    "srcLines": [
+      17723,
+      17833
+    ],
+    "lines": 97,
+    "bytes": 2374
+  },
+  {
+    "title": "Environment variables",
+    "area": "concepts",
+    "slug": "environment-variables",
+    "path": "references/concepts/environment-variables.md",
+    "srcLines": [
+      17834,
+      18058
+    ],
+    "lines": 165,
+    "bytes": 6005
+  },
+  {
+    "title": "devenv.yaml",
+    "area": "concepts",
+    "slug": "devenv-yaml",
+    "path": "references/concepts/devenv-yaml.md",
+    "srcLines": [
+      18059,
+      18368
+    ],
+    "lines": 244,
+    "bytes": 5572
+  },
+  {
+    "title": "REPL",
+    "area": "concepts",
+    "slug": "repl",
+    "path": "references/concepts/repl.md",
+    "srcLines": [
+      18369,
+      18412
+    ],
+    "lines": 38,
+    "bytes": 1080
+  },
+  {
+    "title": "Scripts",
+    "area": "concepts",
+    "slug": "scripts",
+    "path": "references/concepts/scripts.md",
+    "srcLines": [
+      18413,
+      18594
+    ],
+    "lines": 162,
+    "bytes": 3657
+  },
+  {
+    "title": "Services",
+    "area": "services",
+    "slug": "_overview",
+    "path": "references/services/_overview.md",
+    "srcLines": [
+      18595,
+      18644
+    ],
+    "lines": 43,
+    "bytes": 1180
+  },
+  {
+    "title": "adminer",
+    "area": "services",
+    "slug": "adminer",
+    "path": "references/services/adminer.md",
+    "srcLines": [
+      18645,
+      18710
+    ],
+    "lines": 58,
+    "bytes": 691
+  },
+  {
+    "title": "blackfire",
+    "area": "services",
+    "slug": "blackfire",
+    "path": "references/services/blackfire.md",
+    "srcLines": [
+      18711,
+      18874
+    ],
+    "lines": 146,
+    "bytes": 2379
+  },
+  {
+    "title": "caddy",
+    "area": "services",
+    "slug": "caddy",
+    "path": "references/services/caddy.md",
+    "srcLines": [
+      18875,
+      19143
+    ],
+    "lines": 244,
+    "bytes": 3884
+  },
+  {
+    "title": "cassandra",
+    "area": "services",
+    "slug": "cassandra",
+    "path": "references/services/cassandra.md",
+    "srcLines": [
+      19144,
+      19321
+    ],
+    "lines": 160,
+    "bytes": 2108
+  },
+  {
+    "title": "clickhouse",
+    "area": "services",
+    "slug": "clickhouse",
+    "path": "references/services/clickhouse.md",
+    "srcLines": [
+      19322,
+      19559
+    ],
+    "lines": 211,
+    "bytes": 3365
+  },
+  {
+    "title": "cockroachdb",
+    "area": "services",
+    "slug": "cockroachdb",
+    "path": "references/services/cockroachdb.md",
+    "srcLines": [
+      19560,
+      19643
+    ],
+    "lines": 74,
+    "bytes": 1014
+  },
+  {
+    "title": "couchdb",
+    "area": "services",
+    "slug": "couchdb",
+    "path": "references/services/couchdb.md",
+    "srcLines": [
+      19644,
+      19855
+    ],
+    "lines": 190,
+    "bytes": 3742
+  },
+  {
+    "title": "dynamodb-local",
+    "area": "services",
+    "slug": "dynamodb-local",
+    "path": "references/services/dynamodb-local.md",
+    "srcLines": [
+      19856,
+      19939
+    ],
+    "lines": 74,
+    "bytes": 1242
+  },
+  {
+    "title": "elasticmq",
+    "area": "services",
+    "slug": "elasticmq",
+    "path": "references/services/elasticmq.md",
+    "srcLines": [
+      19940,
+      20005
+    ],
+    "lines": 58,
+    "bytes": 750
+  },
+  {
+    "title": "elasticsearch",
+    "area": "services",
+    "slug": "elasticsearch",
+    "path": "references/services/elasticsearch.md",
+    "srcLines": [
+      20006,
+      20260
+    ],
+    "lines": 229,
+    "bytes": 3519
+  },
+  {
+    "title": "garage",
+    "area": "services",
+    "slug": "garage",
+    "path": "references/services/garage.md",
+    "srcLines": [
+      20261,
+      20545
+    ],
+    "lines": 255,
+    "bytes": 3906
+  },
+  {
+    "title": "httpbin",
+    "area": "services",
+    "slug": "httpbin",
+    "path": "references/services/httpbin.md",
+    "srcLines": [
+      20546,
+      20613
+    ],
+    "lines": 60,
+    "bytes": 702
+  },
+  {
+    "title": "influxdb",
+    "area": "services",
+    "slug": "influxdb",
+    "path": "references/services/influxdb.md",
+    "srcLines": [
+      20614,
+      20705
+    ],
+    "lines": 82,
+    "bytes": 1048
+  },
+  {
+    "title": "kafka",
+    "area": "services",
+    "slug": "kafka",
+    "path": "references/services/kafka.md",
+    "srcLines": [
+      20706,
+      21245
+    ],
+    "lines": 481,
+    "bytes": 9518
+  },
+  {
+    "title": "keycloak",
+    "area": "services",
+    "slug": "keycloak",
+    "path": "references/services/keycloak.md",
+    "srcLines": [
+      21246,
+      21693
+    ],
+    "lines": 408,
+    "bytes": 7529
+  },
+  {
+    "title": "mailhog",
+    "area": "services",
+    "slug": "mailhog",
+    "path": "references/services/mailhog.md",
+    "srcLines": [
+      21694,
+      21821
+    ],
+    "lines": 114,
+    "bytes": 1429
+  },
+  {
+    "title": "mailpit",
+    "area": "services",
+    "slug": "mailpit",
+    "path": "references/services/mailpit.md",
+    "srcLines": [
+      21822,
+      21931
+    ],
+    "lines": 98,
+    "bytes": 1209
+  },
+  {
+    "title": "meilisearch",
+    "area": "services",
+    "slug": "meilisearch",
+    "path": "references/services/meilisearch.md",
+    "srcLines": [
+      21932,
+      22092
+    ],
+    "lines": 143,
+    "bytes": 2755
+  },
+  {
+    "title": "memcached",
+    "area": "services",
+    "slug": "memcached",
+    "path": "references/services/memcached.md",
+    "srcLines": [
+      22093,
+      22208
+    ],
+    "lines": 104,
+    "bytes": 1436
+  },
+  {
+    "title": "minio",
+    "area": "services",
+    "slug": "minio",
+    "path": "references/services/minio.md",
+    "srcLines": [
+      22209,
+      22440
+    ],
+    "lines": 206,
+    "bytes": 3087
+  },
+  {
+    "title": "mongodb",
+    "area": "services",
+    "slug": "mongodb",
+    "path": "references/services/mongodb.md",
+    "srcLines": [
+      22441,
+      22614
+    ],
+    "lines": 158,
+    "bytes": 2222
+  },
+  {
+    "title": "mosquitto",
+    "area": "services",
+    "slug": "mosquitto",
+    "path": "references/services/mosquitto.md",
+    "srcLines": [
+      22615,
+      22765
+    ],
+    "lines": 137,
+    "bytes": 2054
+  },
+  {
+    "title": "mysql",
+    "area": "services",
+    "slug": "mysql",
+    "path": "references/services/mysql.md",
+    "srcLines": [
+      22766,
+      23047
+    ],
+    "lines": 254,
+    "bytes": 5005
+  },
+  {
+    "title": "nats",
+    "area": "services",
+    "slug": "nats",
+    "path": "references/services/nats.md",
+    "srcLines": [
+      23048,
+      23493
+    ],
+    "lines": 406,
+    "bytes": 6114
+  },
+  {
+    "title": "nginx",
+    "area": "services",
+    "slug": "nginx",
+    "path": "references/services/nginx.md",
+    "srcLines": [
+      23494,
+      23601
+    ],
+    "lines": 96,
+    "bytes": 1366
+  },
+  {
+    "title": "nixseparatedebuginfod",
+    "area": "services",
+    "slug": "nixseparatedebuginfod",
+    "path": "references/services/nixseparatedebuginfod.md",
+    "srcLines": [
+      23602,
+      23744
+    ],
+    "lines": 127,
+    "bytes": 2035
+  },
+  {
+    "title": "opensearch",
+    "area": "services",
+    "slug": "opensearch",
+    "path": "references/services/opensearch.md",
+    "srcLines": [
+      23745,
+      23989
+    ],
+    "lines": 219,
+    "bytes": 3636
+  },
+  {
+    "title": "opentelemetry-collector",
+    "area": "services",
+    "slug": "opentelemetry-collector",
+    "path": "references/services/opentelemetry-collector.md",
+    "srcLines": [
+      23990,
+      24081
+    ],
+    "lines": 82,
+    "bytes": 1705
+  },
+  {
+    "title": "postgres",
+    "area": "services",
+    "slug": "postgres",
+    "path": "references/services/postgres.md",
+    "srcLines": [
+      24082,
+      24546
+    ],
+    "lines": 431,
+    "bytes": 7650
+  },
+  {
+    "title": "prometheus",
+    "area": "services",
+    "slug": "prometheus",
+    "path": "references/services/prometheus.md",
+    "srcLines": [
+      24547,
+      24868
+    ],
+    "lines": 286,
+    "bytes": 4004
+  },
+  {
+    "title": "rabbitmq",
+    "area": "services",
+    "slug": "rabbitmq",
+    "path": "references/services/rabbitmq.md",
+    "srcLines": [
+      24869,
+      25093
+    ],
+    "lines": 201,
+    "bytes": 4256
+  },
+  {
+    "title": "redis",
+    "area": "services",
+    "slug": "redis",
+    "path": "references/services/redis.md",
+    "srcLines": [
+      25094,
+      25201
+    ],
+    "lines": 96,
+    "bytes": 1404
+  },
+  {
+    "title": "rustfs",
+    "area": "services",
+    "slug": "rustfs",
+    "path": "references/services/rustfs.md",
+    "srcLines": [
+      25202,
+      25384
+    ],
+    "lines": 163,
+    "bytes": 2416
+  },
+  {
+    "title": "sqld",
+    "area": "services",
+    "slug": "sqld",
+    "path": "references/services/sqld.md",
+    "srcLines": [
+      25385,
+      25450
+    ],
+    "lines": 58,
+    "bytes": 683
+  },
+  {
+    "title": "tailscale",
+    "area": "services",
+    "slug": "tailscale",
+    "path": "references/services/tailscale.md",
+    "srcLines": [
+      25451,
+      25492
+    ],
+    "lines": 36,
+    "bytes": 474
+  },
+  {
+    "title": "temporal",
+    "area": "services",
+    "slug": "temporal",
+    "path": "references/services/temporal.md",
+    "srcLines": [
+      25493,
+      25765
+    ],
+    "lines": 245,
+    "bytes": 3255
+  },
+  {
+    "title": "tideways",
+    "area": "services",
+    "slug": "tideways",
+    "path": "references/services/tideways.md",
+    "srcLines": [
+      25766,
+      25905
+    ],
+    "lines": 124,
+    "bytes": 1707
+  },
+  {
+    "title": "trafficserver",
+    "area": "services",
+    "slug": "trafficserver",
+    "path": "references/services/trafficserver.md",
+    "srcLines": [
+      25906,
+      26378
+    ],
+    "lines": 433,
+    "bytes": 8668
+  },
+  {
+    "title": "typesense",
+    "area": "services",
+    "slug": "typesense",
+    "path": "references/services/typesense.md",
+    "srcLines": [
+      26379,
+      26522
+    ],
+    "lines": 128,
+    "bytes": 1663
+  },
+  {
+    "title": "varnish",
+    "area": "services",
+    "slug": "varnish",
+    "path": "references/services/varnish.md",
+    "srcLines": [
+      26523,
+      26656
+    ],
+    "lines": 119,
+    "bytes": 1507
+  },
+  {
+    "title": "vault",
+    "area": "services",
+    "slug": "vault",
+    "path": "references/services/vault.md",
+    "srcLines": [
+      26657,
+      26776
+    ],
+    "lines": 106,
+    "bytes": 1369
+  },
+  {
+    "title": "wiremock",
+    "area": "services",
+    "slug": "wiremock",
+    "path": "references/services/wiremock.md",
+    "srcLines": [
+      26777,
+      26946
+    ],
+    "lines": 154,
+    "bytes": 2302
+  },
+  {
+    "title": "Alternative process managers",
+    "area": "process-managers",
+    "slug": "_overview",
+    "path": "references/process-managers/_overview.md",
+    "srcLines": [
+      26947,
+      26964
+    ],
+    "lines": 18,
+    "bytes": 877
+  },
+  {
+    "title": "hivemind",
+    "area": "process-managers",
+    "slug": "hivemind",
+    "path": "references/process-managers/hivemind.md",
+    "srcLines": [
+      26965,
+      27084
+    ],
+    "lines": 100,
+    "bytes": 2326
+  },
+  {
+    "title": "honcho",
+    "area": "process-managers",
+    "slug": "honcho",
+    "path": "references/process-managers/honcho.md",
+    "srcLines": [
+      27085,
+      27204
+    ],
+    "lines": 100,
+    "bytes": 2284
+  },
+  {
+    "title": "mprocs",
+    "area": "process-managers",
+    "slug": "mprocs",
+    "path": "references/process-managers/mprocs.md",
+    "srcLines": [
+      27205,
+      27344
+    ],
+    "lines": 118,
+    "bytes": 2571
+  },
+  {
+    "title": "native",
+    "area": "process-managers",
+    "slug": "native",
+    "path": "references/process-managers/native.md",
+    "srcLines": [
+      27345,
+      27448
+    ],
+    "lines": 86,
+    "bytes": 2350
+  },
+  {
+    "title": "overmind",
+    "area": "process-managers",
+    "slug": "overmind",
+    "path": "references/process-managers/overmind.md",
+    "srcLines": [
+      27449,
+      27568
+    ],
+    "lines": 100,
+    "bytes": 2326
+  },
+  {
+    "title": "process-compose",
+    "area": "process-managers",
+    "slug": "process-compose",
+    "path": "references/process-managers/process-compose.md",
+    "srcLines": [
+      27569,
+      27808
+    ],
+    "lines": 210,
+    "bytes": 4283
+  },
+  {
+    "title": "Tasks",
+    "area": "concepts",
+    "slug": "tasks",
+    "path": "references/concepts/tasks.md",
+    "srcLines": [
+      27809,
+      28264
+    ],
+    "lines": 413,
+    "bytes": 13760
+  },
+  {
+    "title": "Tests",
+    "area": "concepts",
+    "slug": "tests",
+    "path": "references/concepts/tests.md",
+    "srcLines": [
+      28265,
+      28380
+    ],
+    "lines": 107,
+    "bytes": 2490
+  }
+]

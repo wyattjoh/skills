@@ -1,0 +1,81 @@
+<!-- source: .claude/references/devenv-full.md lines 11376-11465 -->
+
+# ocaml
+
+## Options
+
+### languages.ocaml.enable
+
+Whether to enable tools for OCaml development.
+
+*Type:* boolean
+
+*Default:*
+
+```nix
+false
+```
+
+*Example:*
+
+```nix
+true
+```
+
+*Declared by:*
+
+* <https://github.com/cachix/devenv/blob/main/src/modules/languages/ocaml.nix>
+
+### languages.ocaml.packages
+
+The package set of OCaml to use
+
+*Type:* attribute set
+
+*Default:*
+
+```nix
+pkgs.ocaml-ng.ocamlPackages_4_12
+```
+
+*Declared by:*
+
+* <https://github.com/cachix/devenv/blob/main/src/modules/languages/ocaml.nix>
+
+### languages.ocaml.lsp.enable
+
+Whether to enable OCaml Language Server.
+
+*Type:* boolean
+
+*Default:*
+
+```nix
+true
+```
+
+*Example:*
+
+```nix
+true
+```
+
+*Declared by:*
+
+* <https://github.com/cachix/devenv/blob/main/src/modules/languages/ocaml.nix>
+
+### languages.ocaml.lsp.package
+
+The OCaml language server package to use.
+
+*Type:* package
+
+*Default:*
+
+```nix
+pkgs.ocamlPackages.ocaml-lsp
+```
+
+*Declared by:*
+
+* <https://github.com/cachix/devenv/blob/main/src/modules/languages/ocaml.nix>
