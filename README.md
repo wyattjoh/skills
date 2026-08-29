@@ -73,6 +73,7 @@ Restart Claude Code after adding or changing an agent definition.
 | claude-skills-update          | Periodic check for upstream Claude Code skill API changes                         |
 | clean-storage                 | Reclaim disk space from verified build artifacts and tool caches                  |
 | conductor                     | Navigate Conductor worktree environments for parallel agents                      |
+| devenv                        | Answer devenv.sh questions from an indexed local copy of the full documentation   |
 | dialkit                       | Live parameter tweaking and design exploration in React via dialkit               |
 | driving-ios-simulator         | Drive a booted iOS Simulator: tap, swipe, type, read elements, screenshot         |
 | effect-ts                     | Effect-TS patterns: services, layers, error handling, composition                 |

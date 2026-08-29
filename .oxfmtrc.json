@@ -4,6 +4,7 @@
     "node_modules",
     "bun.lock",
     "**/testdata/**",
+    "skills/devenv/references/**",
     ".pi/**",
     ".claude/agents/**",
     ".claude/skills/**",

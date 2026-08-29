@@ -24,7 +24,7 @@ across 9 areas.
    snippets and exact option names.
 4. **Cite** each reference file you used by path.
 
-If the answer is already covered by *Core mental model* or *Command surface*
+If the answer is already covered by _Core mental model_ or _Command surface_
 below, answer directly and read nothing.
 
 ## Routing
@@ -42,6 +42,7 @@ Resolve common aliases first: `postgresql`/`pg` -> `postgres`, `node`/`nodejs`
 `rabbit` -> `rabbitmq`, `mongo` -> `mongodb`.
 
 **Languages (58)** — `references/languages/`
+
 ```
 ansible c clojure cplusplus crystal cue dart deno dotnet elixir elm erlang
 fortran gawk gleam go hare haskell helm idris java javascript jsonnet julia
@@ -49,6 +50,7 @@ kotlin lean4 lobster lua nim nix ocaml odin opentofu pascal perl php pkl
 purescript python r racket raku robotframework ruby rust scala shell solidity
 standardml swift terraform texlive typescript typst unison v vala zig
 ```
+
 Deep ones with machinery beyond `enable`/`package`: **python** (venv/poetry/uv),
 **rust** (channel/toolchain/fenix, mold/lld/wild linkers), **php**
 (extensions/ini/composer + FPM pools), **javascript** (npm/pnpm/yarn/bun),
@@ -56,6 +58,7 @@ Deep ones with machinery beyond `enable`/`package`: **python** (venv/poetry/uv),
 (delve). See `references/languages/INDEX.md` for the grouped table.
 
 **Services (42)** — `references/services/`
+
 ```
 adminer blackfire caddy cassandra clickhouse cockroachdb couchdb dynamodb-local
 elasticmq elasticsearch garage httpbin influxdb kafka keycloak mailhog mailpit
@@ -64,8 +67,10 @@ nixseparatedebuginfod opensearch opentelemetry-collector postgres prometheus
 rabbitmq redis rustfs sqld tailscale temporal tideways trafficserver typesense
 varnish vault wiremock
 ```
+
 Picking between overlapping options (full rationale in
 `references/services/INDEX.md`):
+
 - **postgres** is the default relational choice; **mysql** when the ORM assumes
   MySQL; **cockroachdb** only to test distributed-SQL behavior.
 - **mailpit** over **mailhog** (maintained successor, same SMTP-catcher shape).
@@ -76,77 +81,77 @@ Picking between overlapping options (full rationale in
 
 ### Concepts — `references/concepts/`
 
-| Load when the question is about... | File |
-|---|---|
-| background daemons, dev servers, `devenv up`, readiness probes, restart policy, port allocation | `processes.md` |
-| build/setup steps, dependency DAG, `before`/`after`, caching a step, shell/test lifecycle hooks | `tasks.md` |
-| `devenv.yaml` keys: inputs, imports, `allow_unfree`, `strict_ports`, default profile/shell | `devenv-yaml.md` |
-| adding executables to PATH, package outputs, pinning one package version, `devenv search` | `packages.md` |
-| custom `/`-style helper commands on shell entry | `scripts.md` |
-| env variants per host/user/flag, `--profile`, `extends` | `profiles.md` |
-| `devenv.lock`, reproducibility, `devenv update`, pinning a nixpkgs rev | `pinning.md` |
-| patching/overriding a package, adding a custom derivation to `pkgs` | `overlays.md` |
-| packaging an app as a derivation, `devenv build` | `outputs.md` |
-| `$DEVENV_*` variables, proxy/cache/tracing behavior | `environment-variables.md` |
-| environment validation tests, `enterTest`, `devenv test` | `tests.md` |
-| inspecting resolved config interactively | `repl.md` |
-| editor autocomplete for `devenv.nix` (`devenv lsp`, nixd) | `language-server.md` |
-| exposing devenv package/option search to an AI tool (`devenv mcp`) | `mcp-server.md` |
+| Load when the question is about...                                                              | File                       |
+| ----------------------------------------------------------------------------------------------- | -------------------------- |
+| background daemons, dev servers, `devenv up`, readiness probes, restart policy, port allocation | `processes.md`             |
+| build/setup steps, dependency DAG, `before`/`after`, caching a step, shell/test lifecycle hooks | `tasks.md`                 |
+| `devenv.yaml` keys: inputs, imports, `allow_unfree`, `strict_ports`, default profile/shell      | `devenv-yaml.md`           |
+| adding executables to PATH, package outputs, pinning one package version, `devenv search`       | `packages.md`              |
+| custom `/`-style helper commands on shell entry                                                 | `scripts.md`               |
+| env variants per host/user/flag, `--profile`, `extends`                                         | `profiles.md`              |
+| `devenv.lock`, reproducibility, `devenv update`, pinning a nixpkgs rev                          | `pinning.md`               |
+| patching/overriding a package, adding a custom derivation to `pkgs`                             | `overlays.md`              |
+| packaging an app as a derivation, `devenv build`                                                | `outputs.md`               |
+| `$DEVENV_*` variables, proxy/cache/tracing behavior                                             | `environment-variables.md` |
+| environment validation tests, `enterTest`, `devenv test`                                        | `tests.md`                 |
+| inspecting resolved config interactively                                                        | `repl.md`                  |
+| editor autocomplete for `devenv.nix` (`devenv lsp`, nixd)                                       | `language-server.md`       |
+| exposing devenv package/option search to an AI tool (`devenv mcp`)                              | `mcp-server.md`            |
 
 Grouped table with per-topic option lists: `references/concepts/INDEX.md`.
 
 ### Patterns — `references/patterns/`
 
-| Trigger | File |
-|---|---|
-| keep dev-only packages out of a container image (`config.container.isBuilding`) | `containers.md` |
-| branch config on OS/arch; the `//` + `optionalAttrs` infinite-recursion trap | `cross-platform.md` |
-| link macOS system frameworks (`apple.sdk`); x86 via Rosetta | `macos.md` |
-| pull from `nixpkgs-unstable`, extend `$PATH`, escape `${...}` in Nix strings | `nix.md` |
+| Trigger                                                                         | File                |
+| ------------------------------------------------------------------------------- | ------------------- |
+| keep dev-only packages out of a container image (`config.container.isBuilding`) | `containers.md`     |
+| branch config on OS/arch; the `//` + `optionalAttrs` infinite-recursion trap    | `cross-platform.md` |
+| link macOS system frameworks (`apple.sdk`); x86 via Rosetta                     | `macos.md`          |
+| pull from `nixpkgs-unstable`, extend `$PATH`, escape `${...}` in Nix strings    | `nix.md`            |
 
 ### Guides — `references/guides/`
 
 Newcomer path: `getting-started.md` -> `basics.md` -> `files-and-variables.md`
 -> `auto-activation.md`.
 
-| Load when the question is about... | File |
-|---|---|
-| installing devenv, `devenv init`, first project | `getting-started.md` |
-| anatomy of `devenv.nix` (`env`, `packages`, `enterShell`) | `basics.md` |
-| what each project file is for (nix/yaml/lock/.local/.envrc) | `files-and-variables.md` |
-| auto-entering the shell on `cd` (`devenv hook`, `devenv allow`) | `auto-activation.md` |
-| **upgrading from 1.x to 2.0** | `migrating-to-devenv-2-0.md` |
-| sharing config across many projects in one repo | `monorepo-with-shared-configurations.md` |
-| sharing config across separate repos | `polyrepos.md` |
-| composing config via `imports` | `composing-using-imports.md` |
-| declaring external inputs | `inputs.md` |
-| using devenv from a Nix flake | `using-devenv-with-nix-flakes.md` |
-| flake-parts integration | `using-devenv-with-flake-parts.md` |
-| writing a custom devenv module | `extending-devenv.md` |
-| building/publishing OCI images | `containers.md` |
-| Cachix / binary cache setup | `binary-caching.md` |
-| generating files into the project tree | `declarative-files.md` |
-| pre-commit hooks (`prek`) | `git-hooks.md` |
-| disk usage, `devenv gc` | `garbage-collection.md` |
-| running one-off envs without a `devenv.nix` | `ad-hoc-developer-environments.md` |
-| example projects | `examples.md` |
-| devenv Cloud, contributing | `cloud.md`, `contributing.md`, `get-involved.md` |
+| Load when the question is about...                              | File                                             |
+| --------------------------------------------------------------- | ------------------------------------------------ |
+| installing devenv, `devenv init`, first project                 | `getting-started.md`                             |
+| anatomy of `devenv.nix` (`env`, `packages`, `enterShell`)       | `basics.md`                                      |
+| what each project file is for (nix/yaml/lock/.local/.envrc)     | `files-and-variables.md`                         |
+| auto-entering the shell on `cd` (`devenv hook`, `devenv allow`) | `auto-activation.md`                             |
+| **upgrading from 1.x to 2.0**                                   | `migrating-to-devenv-2-0.md`                     |
+| sharing config across many projects in one repo                 | `monorepo-with-shared-configurations.md`         |
+| sharing config across separate repos                            | `polyrepos.md`                                   |
+| composing config via `imports`                                  | `composing-using-imports.md`                     |
+| declaring external inputs                                       | `inputs.md`                                      |
+| using devenv from a Nix flake                                   | `using-devenv-with-nix-flakes.md`                |
+| flake-parts integration                                         | `using-devenv-with-flake-parts.md`               |
+| writing a custom devenv module                                  | `extending-devenv.md`                            |
+| building/publishing OCI images                                  | `containers.md`                                  |
+| Cachix / binary cache setup                                     | `binary-caching.md`                              |
+| generating files into the project tree                          | `declarative-files.md`                           |
+| pre-commit hooks (`prek`)                                       | `git-hooks.md`                                   |
+| disk usage, `devenv gc`                                         | `garbage-collection.md`                          |
+| running one-off envs without a `devenv.nix`                     | `ad-hoc-developer-environments.md`               |
+| example projects                                                | `examples.md`                                    |
+| devenv Cloud, contributing                                      | `cloud.md`, `contributing.md`, `get-involved.md` |
 
 Full table plus the 2.0 breaking-change checklist: `references/guides/INDEX.md`.
 
 ### Integrations — `references/integrations/`
 
-| Load when the question is about... | File |
-|---|---|
-| devenv in CI | `github-actions.md` |
-| shell auto-activation via direnv | `direnv.md` |
-| `.env` loading | `dotenv.md` |
-| declarative secrets (`secretspec.toml`, profiles, providers) | `secretspec.md` |
-| generating Claude Code hooks/skills/agents/MCP config from `devenv.nix` | `claude-code.md` |
-| repo-wide formatting | `treefmt.md` |
-| git diff tooling | `delta.md`, `difftastic.md` |
-| dev containers / Codespaces | `codespaces-devcontainer.md`, `devenv-container.md` |
-| Android SDK/NDK, WordPress stacks | `android.md`, `wordpress.md` |
+| Load when the question is about...                                      | File                                                |
+| ----------------------------------------------------------------------- | --------------------------------------------------- |
+| devenv in CI                                                            | `github-actions.md`                                 |
+| shell auto-activation via direnv                                        | `direnv.md`                                         |
+| `.env` loading                                                          | `dotenv.md`                                         |
+| declarative secrets (`secretspec.toml`, profiles, providers)            | `secretspec.md`                                     |
+| generating Claude Code hooks/skills/agents/MCP config from `devenv.nix` | `claude-code.md`                                    |
+| repo-wide formatting                                                    | `treefmt.md`                                        |
+| git diff tooling                                                        | `delta.md`, `difftastic.md`                         |
+| dev containers / Codespaces                                             | `codespaces-devcontainer.md`, `devenv-container.md` |
+| Android SDK/NDK, WordPress stacks                                       | `android.md`, `wordpress.md`                        |
 
 Editors: `references/editors/intellij.md` (Python venv symlink for IDE
 detection). `vscode.md` and `zed.md` are two-line link stubs — say so rather
@@ -162,7 +167,7 @@ others are compatibility options only: `process-compose` (TUI, feature-rich),
 ### History — `references/history/`
 
 27 release notes and engineering posts, devenv 0.1 -> 2.2. **Historical only.**
-Load *only* for "which version introduced X", migration questions, or design
+Load _only_ for "which version introduced X", migration questions, or design
 rationale — never to answer how devenv works today. Start at
 `references/history/INDEX.md`.
 
@@ -171,7 +176,7 @@ rationale — never to answer how devenv works today. Start at
 - **`devenv.nix`** — the Nix module config for one project: `packages`, `env`,
   `scripts`, `processes`, `services`, `languages`, `tasks`, `enterShell`,
   `enterTest`, `outputs`, `profiles`.
-- **`devenv.yaml`** — configures the *inputs* to that evaluation: `inputs`,
+- **`devenv.yaml`** — configures the _inputs_ to that evaluation: `inputs`,
   `imports`, nixpkgs policy (`allow_unfree`, `allow_broken`, licenses), and
   CLI-adjacent defaults (`profile`, `shell`, `reload`, `strict_ports`,
   `secretspec.*`).
@@ -191,7 +196,7 @@ rationale — never to answer how devenv works today. Start at
   `processes.<name>` is also a task named `devenv:processes:<name>`, so
   `before`/`after` edges connect them interchangeably. `services.*` are
   pre-configured processes with health checks. `devenv up` schedules only
-  *upstream* deps (`--mode all` for downstream too); `devenv test` runs the
+  _upstream_ deps (`--mode all` for downstream too); `devenv test` runs the
   full graph and starts/stops declared processes around `enterTest`.
 
 ## Command surface
@@ -231,9 +236,8 @@ Other documented flags: `--reload`/`--no-reload`, `--shell`, `--impure`,
 
 ## Rules
 
-- **Never read `.claude/references/devenv-full.md` or `.cache/llms-full.txt`**
-  — those are the 690 KB unsplit upstream source and will exhaust context.
-  Every topic file is a slice of it.
+- **Never read `.cache/llms-full.txt`** — that is the 690 KB unsplit
+  upstream source and will exhaust context. Every topic file is a slice of it.
 - Read the specific topic file, not an `INDEX.md`, once routing is clear.
   `INDEX.md` files are for disambiguation and comparison only.
 - Option names are exact and case-sensitive (`languages.rust.channel`,
@@ -245,7 +249,7 @@ Other documented flags: `--reload`/`--no-reload`, `--shell`, `--impure`,
   the user at official docs.
 - Refresh the corpus from upstream (fetches devenv.sh + the docs tree, then
   rebuilds deterministically):
-  `bun .claude/skills/devenv/scripts/build-skill.ts`
+  `bun $SKILL_DIR/scripts/build-skill.ts`
 
 ## Output
 
