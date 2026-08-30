@@ -1,0 +1,76 @@
+<!-- source: https://alchemy.run/cli/aws
+     upstream: website/src/content/docs/cli/aws.mdx
+     alchemy 2.0.0-beta.75 @ 808ef69 -->
+
+# aws
+
+> AWS provider commands — bootstrap the per-account assets bucket that Lambda deployments rely on.
+
+```sh
+alchemy aws <subcommand> [options]
+```
+
+Cloud-provider commands for AWS — managing the per-account
+infrastructure that Alchemy itself relies on.
+
+## `aws bootstrap`
+
+```sh
+alchemy aws bootstrap [options]
+```
+
+Set up the AWS assets bucket required for deploying Lambda functions
+and other AWS resources that need artifact storage.
+
+```text
+✓ Created assets bucket: alchemy-assets-123456789012-us-west-2-an
+```
+
+Re-running is a no-op:
+
+```text
+✓ Assets bucket already exists: alchemy-assets-123456789012-us-west-2-an
+```
+
+| Option              | Description                                                                     |
+| ------------------- | ------------------------------------------------------------------------------- |
+| `--profile <name>`  | AWS profile to use for credentials (default: `default`)                        |
+| `--region <region>` | AWS region to bootstrap. Defaults to the SSO profile's region, then `us-east-1`. |
+| `--destroy`         | Destroy all bootstrap buckets in the selected region                            |
+| `--env-file <path>` | Load environment variables from a file                                          |
+
+Bootstrap requires an AWS **SSO profile** with `sso_account_id` set —
+it fails with a clear error if the profile is missing one.
+
+Logs are written to `.alchemy/log/bootstrap.txt`.
+
+### `--destroy`
+
+Removes every bootstrap bucket in the selected region and reports the
+count:
+
+```text
+✓ Destroyed 1 bootstrap bucket(s): alchemy-assets-123456789012-us-west-2-an
+```
+
+If there's nothing to remove:
+
+```text
+✓ No bootstrap buckets found to destroy
+```
+
+```sh
+# Bootstrap with the default profile
+alchemy aws bootstrap
+
+# Bootstrap a specific region and profile
+alchemy aws bootstrap --profile prod --region us-west-2
+
+# Remove bootstrap resources
+alchemy aws bootstrap --destroy
+```
+
+## Where next
+
+- [cloudflare](/cli/cloudflare) — provider commands for Cloudflare
+- [AWS](/aws) — the AWS provider hub

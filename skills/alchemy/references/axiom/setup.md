@@ -1,0 +1,33 @@
+<!-- source: https://alchemy.run/axiom/setup
+     upstream: website/src/content/docs/axiom/setup.mdx
+     alchemy 2.0.0-beta.75 @ 808ef69 -->
+
+# Setup
+
+> Connect alchemy to Axiom — account, credentials, and profiles.
+
+Sign up at [axiom.co](https://axiom.co) and create an API token in
+the [Axiom app](https://app.axiom.co). Register the provider next to
+your cloud's:
+
+```typescript
+// alchemy.run.ts
+import * as Axiom from "alchemy/Axiom";
+
+providers: Layer.mergeAll(Cloudflare.providers(), Axiom.providers()),
+```
+
+The next `alchemy login` adds an `Axiom` step with two options:
+
+- **Environment variables** — reads `AXIOM_TOKEN` (or
+  `AXIOM_API_KEY`), plus optional `AXIOM_ORG_ID` and `AXIOM_URL`
+  (good for CI).
+- **Stored token** — an API token or personal access token entered
+  interactively, saved under `~/.alchemy/credentials/<profile>/`.
+
+See [Profiles](/environments/profiles) for how credentials are stored
+and switched.
+
+## Next steps
+
+- [Axiom overview](/axiom) — resources and compositions.

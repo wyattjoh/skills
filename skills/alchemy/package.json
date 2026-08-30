@@ -1,0 +1,13 @@
+{
+  "name": "@wyattjoh/alchemy-skill",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "bun scripts/build-skill.ts",
+    "check": "bun scripts/build-skill.ts --check"
+  },
+  "dependencies": {
+    "yaml": "^2.9.0"
+  }
+}
