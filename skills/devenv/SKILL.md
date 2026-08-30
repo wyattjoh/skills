@@ -2,9 +2,6 @@
 name: devenv
 description: Answers devenv.sh questions from an indexed local copy of the full devenv documentation. Covers devenv.nix and devenv.yaml options, 58 languages, 42 services, processes, tasks, profiles, containers, outputs, overlays, pinning, SecretSpec, direnv, and GitHub Actions. Use when the user mentions "devenv", "devenv.nix", "devenv.yaml", "devenv up", "devenv shell", "devenv test", or asks how to add a language, database, service, background process, or task to a Nix-based developer environment.
 argument-hint: "[topic]"
-context: fork
-agent: Explore
-background: false
 ---
 
 # devenv documentation index

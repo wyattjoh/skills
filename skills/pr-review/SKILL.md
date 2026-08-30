@@ -312,7 +312,11 @@ When all three hold, drive this flow:
    }
    ```
 
-   Findings match the shape in `references/finding-schema.md`. **Only `description` plus the generated footer is posted inline** to the PR; the other fields are orchestrator bookkeeping. Inline any code reference the reader needs directly into `description` (backticks or fenced blocks) — there is no separate evidence block. **Strip orchestrator-internal fields** (`sources`, `contested`, `synthesisNote`) before writing. **Do not mention the review methodology** (no "Opus", "Codex", "corroborated", "contested", "synthesis", "second-opinion", "(codex confirmed)", "reviewed with..."). The script rejects these tokens; if your text hits them, rewrite to plain review prose.
+   Findings match the shape in `references/finding-schema.md`. **Only `severity`, `description`, and `fix`, plus the generated footer, are posted inline** to the PR; the other fields are orchestrator bookkeeping. Inline any code reference the reader needs directly into `description` (backticks or fenced blocks) — there is no separate evidence block.
+
+   - **Keep each `description` under ~900 characters** — three or four short paragraphs at most, one or two below `high`. Comments are read inline in a cramped column; length reads as importance, so a padded `medium` drowns out the `high` above it. State the defect, the concrete path to it, and stop.
+   - `severity` renders as a `**[HIGH]**`-style badge above the description. Set it honestly per finding — it is what tells the author whether a comment blocks the merge. Do not hand-write a badge or restate the severity in prose.
+   - `fix` renders as a collapsed **Recommended fix** block: a one-to-two-sentence `fix.summary` plus an optional `fix.diff` shown as a unified diff. Pass the **diff body only** — the script adds the ` ```diff ` fence and rejects a pre-fenced value. Omit `fix` entirely when the finding needs a decision rather than a patch; a fabricated diff the author trusts and applies is worse than no block. **Strip orchestrator-internal fields** (`sources`, `contested`, `synthesisNote`) before writing. **Do not mention the review methodology** (no "Opus", "Codex", "corroborated", "contested", "synthesis", "second-opinion", "(codex confirmed)", "reviewed with..."). The script rejects these tokens; if your text hits them, rewrite to plain review prose.
 
    **Keep `summary` short or empty.** It becomes the review body (before the generated footer, with no `## Code review` heading). One or two sentences max, and only when you have something meaningful to add on top of the inline comments. When there's nothing to add, pass `""`; the required footer still appears in the review body.
 
@@ -356,6 +360,29 @@ When all three hold, drive this flow:
 10. On `yes`: re-run the script with the same `--agent-name`, `--human-name`, and `--expect-head` flags, without `--dry-run`. On success the script prints the submitted review's `html_url` to stdout; show it to the user. On non-zero exit, surface the stderr message and do not retry.
 
 11. On `skip`: print nothing further. The markdown report stands.
+
+### Amending a Review You Already Posted
+
+To change comments already on the PR — you refined a finding, or the rendering changed — re-run the script with `--update-existing`. It rewrites matching comments in place rather than posting a second review that talks past the first.
+
+```bash
+bun $SKILL_DIR/scripts/submit-pr-review.ts \
+  --pr <pr_number> --owner <owner> --repo <repo> \
+  --findings <tempfile-path> \
+  --agent-name <agent_name> --human-name <human_name> \
+  --expect-head <head_sha> \
+  --update-existing
+```
+
+Matching is by `(path, line)`, restricted to comments carrying your attribution footer. Everything else in the pipeline is unchanged: head pin, methodology scan, and critical-drop abort all still apply.
+
+Three consequences worth knowing before you run it:
+
+- **The findings file must keep the same anchors.** A finding whose `line` moved has no counterpart to update and is reported as unmatched, not posted. Re-run without `--update-existing` to add those as a new review.
+- **Human comments are never touched.** A line whose only comment lacks the footer is left alone, as is a line carrying two agent comments — ambiguity is skipped rather than guessed at.
+- **`PATCH` keeps no history the author can recover.** Preview with `--dry-run` first and confirm with the user, exactly as for a first submission.
+
+If the script reports that it matched nothing, do not fall back to `gh pr comment` — the submission invariant at the top of this file still holds. Diagnose the mismatch (wrong `--agent-name`, moved anchors, review never posted) and re-run.
 
 ### Multi-PR Batch Mode
 

@@ -61,6 +61,24 @@ export function parseHunks(diff: string): HunkMap {
 
 export type Severity = "critical" | "high" | "medium" | "low";
 
+/**
+ * The concrete change being proposed, rendered into a collapsed <details> block
+ * so the diff never competes with the finding itself for the author's
+ * attention. Optional: plenty of findings ("this needs a decision", "this needs
+ * a test we cannot write for you") have no mechanical fix, and inventing a
+ * plausible-looking diff for one is worse than omitting the block.
+ */
+export interface FindingFix {
+  /** One or two sentences. The reader has already read `description`. */
+  summary: string;
+  /**
+   * Diff body only — no ```diff fence, the renderer adds it. Unified-diff
+   * markers (`-`/`+`/context) are what make the block skimmable; a plain
+   * after-the-change snippet forces the reader to diff it by eye.
+   */
+  diff?: string;
+}
+
 export interface Finding {
   id: string;
   file: string;
@@ -74,6 +92,7 @@ export interface Finding {
    * that has nothing to record here omits it rather than inventing filler.
    */
   evidence?: string;
+  fix?: FindingFix;
 }
 
 export interface ReviewDocument {
@@ -107,6 +126,39 @@ export function appendFooter(body: string, attribution: ReviewAttribution): stri
   const content = body.trim();
   const footer = formatFooter(attribution);
   return content.length > 0 ? `${content}\n\n${footer}` : footer;
+}
+
+function escapeRegExp(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+/**
+ * Recognises our own footer with the review checkbox in either state.
+ *
+ * The footer is not inert text: it ends in a checkbox the human reviewer is
+ * expected to tick. Matching `formatFooter` verbatim therefore stops matching
+ * the moment the review is actually acted on, which is exactly when an amend is
+ * most likely — so identification deliberately ignores the box.
+ */
+export function footerPattern(attribution: ReviewAttribution): RegExp {
+  const agentName = escapeRegExp(normalizeAttributionName("Agent name", attribution.agentName));
+  const humanName = escapeRegExp(normalizeAttributionName("Human name", attribution.humanName));
+  return new RegExp(
+    `###### Sent from ${agentName}\\s*\\n\\s*\\n- \\[[ xX]\\] reviewed by @${humanName}`,
+  );
+}
+
+/**
+ * Carries the reviewer's checkbox state across an amend. Rewriting the body
+ * would otherwise reset a ticked box to unticked, quietly discarding the
+ * reviewer's signal that they had already looked at the comment.
+ */
+export function preserveReviewCheckbox(rendered: string, existingBody: string): string {
+  const alreadyChecked = /- \[[xX]\] reviewed by @/.test(existingBody);
+  if (!alreadyChecked) {
+    return rendered;
+  }
+  return rendered.replace(/- \[ \] (reviewed by @)/, "- [x] $1");
 }
 
 const SEVERITIES: readonly Severity[] = ["critical", "high", "medium", "low"];
@@ -163,10 +215,44 @@ export async function loadReview(path: string): Promise<ReviewDocument> {
       title: f.title as string,
       description: f.description as string,
       evidence: f.evidence as string | undefined,
+      fix: parseFix(i, f.fix),
     });
   }
 
   return { summary: obj.summary, findings };
+}
+
+/**
+ * Rejects a `fix` that is present but unusable rather than rendering an empty
+ * "Recommended fix" block. A collapsed section the author expands to find
+ * nothing is worse than no section at all.
+ */
+function parseFix(index: number, raw: unknown): FindingFix | undefined {
+  if (raw === undefined) {
+    return undefined;
+  }
+  if (typeof raw !== "object" || raw === null || Array.isArray(raw)) {
+    throw new Error(`Finding ${index}: 'fix' must be an object when present`);
+  }
+  const fix = raw as Record<string, unknown>;
+  if (typeof fix.summary !== "string" || fix.summary.trim().length === 0) {
+    throw new Error(`Finding ${index}: 'fix.summary' must be a non-empty string`);
+  }
+  if (fix.diff !== undefined) {
+    if (typeof fix.diff !== "string" || fix.diff.trim().length === 0) {
+      throw new Error(`Finding ${index}: 'fix.diff' must be a non-empty string when present`);
+    }
+    if (/^\s*```/.test(fix.diff)) {
+      throw new Error(
+        `Finding ${index}: 'fix.diff' must be the diff body only — the renderer adds the ` +
+          "```diff fence, so a pre-fenced value nests and renders as literal backticks",
+      );
+    }
+  }
+  return {
+    summary: fix.summary,
+    diff: fix.diff as string | undefined,
+  };
 }
 
 export interface Partition {
@@ -312,8 +398,38 @@ export function formatMethodologyAbort(leaks: MethodologyLeak[]): string {
   ].join("\n");
 }
 
+/**
+ * Renders the severity badge that opens every inline comment. The author reads
+ * comments one at a time, out of order, with no access to the findings file, so
+ * the badge is the only thing telling them whether a comment blocks the merge
+ * or is a nit they can wave through.
+ */
+export function formatSeverityBadge(severity: Severity): string {
+  return `**[${severity.toUpperCase()}]**`;
+}
+
+/**
+ * The fix goes in a collapsed <details> so the comment still reads as a review
+ * at a glance. An author scanning ten comments wants the finding; an author who
+ * has accepted one wants the patch. Blank lines around the block are required —
+ * GitHub stops parsing markdown inside <details> without them, and the diff
+ * would render as one run-on line.
+ */
+export function renderFix(fix: FindingFix): string {
+  const parts = ["<details>", "<summary>Recommended fix</summary>", "", fix.summary.trim()];
+  if (fix.diff !== undefined) {
+    parts.push("", "```diff", fix.diff.replace(/\n+$/, ""), "```");
+  }
+  parts.push("", "</details>");
+  return parts.join("\n");
+}
+
 export function renderFinding(f: Finding, attribution: ReviewAttribution): string {
-  return appendFooter(f.description, attribution);
+  const sections = [formatSeverityBadge(f.severity), f.description];
+  if (f.fix !== undefined) {
+    sections.push(renderFix(f.fix));
+  }
+  return appendFooter(sections.join("\n\n"), attribution);
 }
 
 export interface ReviewComment {
@@ -365,6 +481,7 @@ interface CliFlags {
   dryRun: boolean;
   pending: boolean;
   expectHead: string | null;
+  updateExisting: boolean;
 }
 
 function parseCli(args: string[]): CliFlags {
@@ -380,6 +497,7 @@ function parseCli(args: string[]): CliFlags {
       "dry-run": { type: "boolean", default: false },
       pending: { type: "boolean", default: false },
       "expect-head": { type: "string" },
+      "update-existing": { type: "boolean", default: false },
     },
   });
   for (const required of ["pr", "owner", "repo", "findings", "agent-name", "human-name"] as const) {
@@ -397,6 +515,7 @@ function parseCli(args: string[]): CliFlags {
     dryRun: values["dry-run"] === true,
     pending: values.pending === true,
     expectHead: typeof values["expect-head"] === "string" ? values["expect-head"] : null,
+    updateExisting: values["update-existing"] === true,
   };
 }
 
@@ -408,7 +527,12 @@ function parseCli(args: string[]): CliFlags {
  */
 async function fetchPrDiff(pr: string, repo: string): Promise<string> {
   const gh = process.env.GH_PATH ?? "gh";
-  const proc = Bun.spawn([gh, "pr", "diff", pr, "--patch", "--repo", repo], {
+  // Plain `gh pr diff`, never `--patch`. `--patch` emits format-patch output:
+  // one diff per commit, each numbered against that commit's parent. On a
+  // multi-commit PR a line touched by an early commit and re-touched later
+  // resolves to an intermediate line number, so anchors computed from it miss
+  // the PR's final right-hand side and GitHub silently drops the comment.
+  const proc = Bun.spawn([gh, "pr", "diff", pr, "--repo", repo], {
     stdout: "pipe",
     stderr: "pipe",
   });
@@ -531,6 +655,31 @@ async function main() {
     return;
   }
 
+  if (cli.updateExisting) {
+    const existing = await fetchExistingComments(cli.owner, cli.repo, cli.pr);
+    const { matched, unmatched } = matchExistingComments(payload.comments, existing, {
+      agentName: cli.agentName,
+      humanName: cli.humanName,
+    });
+    if (matched.length === 0) {
+      throw new Error(
+        "--update-existing matched no comments on this PR. Nothing was changed. Either the " +
+          "review was never posted, its anchors have moved, or it was posted under a " +
+          "different --agent-name/--human-name than the footer it carries.",
+      );
+    }
+    await updateExistingComments(cli.owner, cli.repo, matched);
+    if (unmatched.length > 0) {
+      console.error(
+        `\n${unmatched.length} finding(s) had no existing comment to update and were NOT ` +
+          "posted. Re-run without --update-existing to add them as a new review:\n" +
+          unmatched.map((c) => `  ${c.path}:${c.line}`).join("\n"),
+      );
+    }
+    console.log(`updated ${matched.length} comment(s) on PR #${cli.pr}`);
+    return;
+  }
+
   const url = await submitReview(cli.owner, cli.repo, cli.pr, payload);
   if (cli.pending) {
     console.error(
@@ -539,6 +688,152 @@ async function main() {
     );
   }
   console.log(url);
+}
+
+export interface ExistingComment {
+  id: number;
+  path: string;
+  line: number;
+  body: string;
+}
+
+export interface CommentMatch {
+  comment: ReviewComment;
+  existingId: number;
+}
+
+export interface MatchResult {
+  matched: CommentMatch[];
+  unmatched: ReviewComment[];
+}
+
+/**
+ * Pairs freshly rendered comments with the ones already on the PR, keyed by
+ * (path, line).
+ *
+ * Only comments carrying the attribution footer are candidates. Without that
+ * filter an amend would silently overwrite a human reviewer's comment that
+ * happened to sit on the same line — the one failure mode here that cannot be
+ * undone from the API, since PATCH keeps no history the author can recover.
+ *
+ * A line matched twice is left alone rather than guessed at: two agent comments
+ * on one line means the review changed shape, and picking one arbitrarily would
+ * rewrite the wrong finding.
+ */
+export function matchExistingComments(
+  rendered: ReviewComment[],
+  existing: ExistingComment[],
+  attribution: ReviewAttribution,
+): MatchResult {
+  const footer = footerPattern(attribution);
+  const byAnchor = new Map<string, ExistingComment[]>();
+  for (const c of existing) {
+    if (!footer.test(c.body)) {
+      continue;
+    }
+    const key = `${c.path}:${c.line}`;
+    byAnchor.set(key, [...(byAnchor.get(key) ?? []), c]);
+  }
+
+  const matched: CommentMatch[] = [];
+  const unmatched: ReviewComment[] = [];
+  for (const comment of rendered) {
+    const candidates = byAnchor.get(`${comment.path}:${comment.line}`) ?? [];
+    if (candidates.length === 1) {
+      matched.push({
+        comment: {
+          ...comment,
+          body: preserveReviewCheckbox(comment.body, candidates[0].body),
+        },
+        existingId: candidates[0].id,
+      });
+    } else {
+      unmatched.push(comment);
+    }
+  }
+  return { matched, unmatched };
+}
+
+async function fetchExistingComments(
+  owner: string,
+  repo: string,
+  pr: string,
+): Promise<ExistingComment[]> {
+  const stdout = await runGh([
+    "api",
+    "--paginate",
+    `/repos/${owner}/${repo}/pulls/${pr}/comments`,
+    "-H",
+    "Accept: application/vnd.github+json",
+  ]);
+  // --paginate concatenates JSON arrays across pages; gh emits them as separate
+  // top-level arrays, so parse per-array rather than assuming a single value.
+  const chunks = stdout.replace(/\]\s*\[/g, "],[");
+  const parsed: unknown = JSON.parse(`[${chunks}]`);
+  const flat = (Array.isArray(parsed) ? parsed : []).flat();
+  const comments: ExistingComment[] = [];
+  for (const entry of flat) {
+    if (typeof entry !== "object" || entry === null) {
+      continue;
+    }
+    const c = entry as Record<string, unknown>;
+    const line = typeof c.line === "number" ? c.line : c.original_line;
+    if (typeof c.id !== "number" || typeof c.path !== "string" || typeof line !== "number") {
+      continue;
+    }
+    comments.push({
+      id: c.id,
+      path: c.path,
+      line,
+      body: typeof c.body === "string" ? c.body : "",
+    });
+  }
+  return comments;
+}
+
+async function updateExistingComments(
+  owner: string,
+  repo: string,
+  matched: CommentMatch[],
+): Promise<void> {
+  for (const { comment, existingId } of matched) {
+    await runGh(
+      [
+        "api",
+        "-X",
+        "PATCH",
+        `/repos/${owner}/${repo}/pulls/comments/${existingId}`,
+        "-H",
+        "Accept: application/vnd.github+json",
+        "--input",
+        "-",
+      ],
+      JSON.stringify({ body: comment.body }),
+    );
+    console.error(`updated ${comment.path}:${comment.line} (comment ${existingId})`);
+  }
+}
+
+async function runGh(args: string[], stdin?: string): Promise<string> {
+  const gh = process.env.GH_PATH ?? "gh";
+  const proc = Bun.spawn([gh, ...args], {
+    stdin: stdin === undefined ? "ignore" : "pipe",
+    stdout: "pipe",
+    stderr: "pipe",
+  });
+  if (stdin !== undefined && proc.stdin) {
+    proc.stdin.write(stdin);
+    proc.stdin.end();
+  }
+  const [stdout, stderr, code] = await Promise.all([
+    new Response(proc.stdout).text(),
+    new Response(proc.stderr).text(),
+    proc.exited,
+  ]);
+  if (code !== 0) {
+    throw new Error(`gh ${args.join(" ")} failed (exit ${code}): ${stderr || stdout}`);
+  }
+  return stdout;
 }
 
 async function submitReview(
