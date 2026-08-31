@@ -108,6 +108,7 @@ Restart Claude Code after adding or changing an agent definition.
 | swift-tca                     | TCA reducer and navigation patterns                                               |
 | varlock                       | Kickstart varlock, the encrypted schema-driven dotenv replacement                 |
 | vhs                           | Interview-driven terminal screencasts rendered to GIF/MP4/WebM                    |
+| whats-next                    | Emit the copy-ready prompt for the next agent session on a wayfinder map          |
 | workspaces                    | Create, operate, and compact multi-repo workspace hubs with enforced memory       |
 | wrap-up                       | Close out a long session: sweep loose ends, propose commits, report what remains  |
 
