@@ -71,7 +71,6 @@ Restart Claude Code after adding or changing an agent definition.
 | catppuccin-interfaces         | Apply Catppuccin colors with semantic, accessible interface tokens                |
 | claude-sessions               | Parse and analyze Claude Code conversation history                                |
 | claude-skills                 | Guidance for authoring Claude Code skills                                         |
-| claude-skills-update          | Periodic check for upstream Claude Code skill API changes                         |
 | clean-storage                 | Reclaim disk space from verified build artifacts and tool caches                  |
 | conductor                     | Navigate Conductor worktree environments for parallel agents                      |
 | devenv                        | Answer devenv.sh questions from an indexed local copy of the full documentation   |
@@ -129,14 +128,15 @@ Restart Claude Code after adding or changing an agent definition.
 ## Repository layout
 
 ```text
-skills/         # One directory per skill, with SKILL.md and optional supporting files
-agents/         # Claude Code subagent definitions
-references/     # Shared authoring documentation
-.claude/rules/  # Repository-specific authoring conventions
+skills/              # One directory per published skill, with SKILL.md and optional supporting files
+agents/              # Claude Code subagent definitions
+.claude/skills/      # Skills internal to this repository, not published
+.claude/references/  # Shared authoring documentation and pinned dependency submodules
+.claude/rules/       # Repository-specific authoring conventions
 ```
 
 For details about how Claude Code loads skills, agents, rules, and memory, see
-[`references/claude-code-loading.md`](references/claude-code-loading.md).
+[`.claude/references/claude-code-loading.md`](.claude/references/claude-code-loading.md).
 
 ## Contributing
 

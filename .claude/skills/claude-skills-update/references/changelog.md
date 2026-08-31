@@ -1,0 +1,39 @@
+# Changelog
+
+## 2026-08-31
+
+- **Sources checked:** Skills Overview (code.claude.com), Best Practices (platform.claude.com), Agent Skills Overview (platform.claude.com), Sub-agents Reference (code.claude.com), Plugins Reference (code.claude.com), Hooks Reference (code.claude.com), `anthropics/claude-code` `CHANGELOG.md` v2.1.185 through v2.1.251, 2 community web searches. Docs fetched as raw markdown via `curl` because `WebFetch` is intercepted by the context-mode plugin in this environment.
+- **Note on the gap:** the previous tracked sync was 2026-04-06 (releases v2.1.89-v2.1.92), but the skill files already carried facts up to v2.1.246, so untracked edits happened in between. This entry reconciles against upstream as of today rather than against the last recorded entry.
+- **Changes applied:**
+  - `frontmatter-reference.md`: corrected the `hooks` lifetime (skill hooks stay registered for the rest of the session; only subagent hooks are removed on completion, `once: true` is the removal mechanism); added the frontmatter-must-start-on-line-1 rule; added the workspace-trust security note for `allowed-tools` plus `${CLAUDE_*}` substitution inside its Bash rules; noted `availableModels` allowlist behavior for `model`; noted the `disable-model-invocation` refusal behavior; completed the plugin command-name rules (bare `/name`, prefix doubling in v2.1.216-v2.1.245 fixed in v2.1.246, plugin-root fallback); leveled the three `allowed-tools` formats as equally official
+  - `hooks-and-advanced.md`: same hook-lifetime correction plus the asymmetric workspace-trust rule for skill vs subagent frontmatter hooks and the `/hooks` browser; added "How Injected Commands Run" (CWD, stderr merge, 2-min timeout, output ceiling, missing-bash failure); added "When an Injected Command Fails" (abort-the-whole-invocation, non-zero exit rule with the exit-1 search/comparison carveout, `|| true`, never prompts, non-allow permission aborts); added "Pre-approving a Bundled Script" (`Bash(${CLAUDE_SKILL_DIR}/scripts/x.sh *)`); added argument quoting and `\$` escaping semantics
+  - `SKILL.md`: added a "Skill Content Lifecycle" section (content persists across turns, never re-read, dedup on identical re-invocation, 5,000-token-per-skill / 25,000-token combined compaction budget); added `claude plugin validate` and the line-1 frontmatter check to Step 7; expanded YAML troubleshooting with the empty-metadata failure mode, `--debug`, and `--safe-mode`; corrected the description budget (dropped the stale 8,000-char fallback, added least-invoked-first eviction, `/doctor`, `skillListingBudgetFraction`)
+  - `visibility-and-discovery.md`: added precedence details (bundled aliases are never overridden, reserved `synced` folder, symlinked skill dirs, `.claude-plugin/plugin.json` skills-dir plugins); added stacked invocations (up to 5); added `/reload-skills` and the `reloadSkills: true` SessionStart hook output; added a Live Change Detection section (SKILL.md text only, new top-level dirs need a restart); added a Cowork/cloud/synced-skills section covering portability and the locally degraded synced body; noted that `.claude/commands/` ignores `name` and `paths`; refreshed the bundled skills list (`/dataviz`, `/simplify`, feature-gated `/workflow-authoring`, `CLAUDE_CODE_DISABLE_BUNDLED_SKILLS`, `/verify` self-recording its recipe); corrected the same description-budget text
+  - `best-practices.md`: added the recurring-token-cost framing tied to the content lifecycle; added baseline-comparison eval guidance and an "Automating the Loop with skill-creator" subsection (`evals/evals.json`, `grading.json`, `benchmark.json`, blind A/B, description tuning); added "Observe How Claude Navigates the Skill"
+- **Community suggestions reviewed:** 2 searches, 0 accepted. Results were dominated by reposts of the official docs; the only distinct framing ("description as a routing rule", "one job per skill", "worked examples over abstract rules") is already covered.
+- **Deprecations found:** none. No frontmatter field, substitution variable, or setting was removed or renamed in this window.
+- **No changes needed:** `context: fork` / `background` / `agent` semantics (already current, including the narrower background tool set and the `/rewind` caveat), all frontmatter field names and types (no additions upstream), hook handler types and options, progressive disclosure patterns 1/2/3, naming conventions, description style guidance, `skillOverrides`, nested/monorepo discovery, anti-patterns list, effectiveness checklist
+
+## 2026-04-06
+
+- **Sources checked:** Skills Overview (code.claude.com), Best Practices (platform.claude.com), Agent Skills Overview (platform.claude.com), Sub-agents Reference (code.claude.com), Plugins Reference (code.claude.com), Hooks Reference (code.claude.com), GitHub releases v2.1.89-v2.1.92, 2 community web searches
+- **Changes applied:**
+  - frontmatter-reference.md: Updated `allowed-tools` to document space-separated as the current official format while noting comma-separated still works and recommending the YAML list form for clarity
+  - hooks-and-advanced.md: Added multi-line ` ```! ` fenced code block form for dynamic injection, documented the new `disableSkillShellExecution` setting from v2.1.91, relaxed the skill-scoped hooks event restriction since the upstream hooks reference now shows `SessionStart` used in skill frontmatter
+  - best-practices.md: Added Workflow Patterns section (checklists, feedback loops, plan-validate-execute), added Script-Authoring Guidelines section (solve don't punt, verbose error messages), updated "Legacy (deprecated)" terminology to "Old patterns" with a collapsible `<details>` block example
+- **Community suggestions reviewed:** 2 (0 accepted — searches surfaced only the same official docs already in Tier 1 plus GitHub issues about `context: fork` bugs, no novel best practices)
+- **Broader scan (Phase 7) findings:** Found 6 stale references to the `Task` tool (renamed to `Agent` in v2.1.63, 2026-02-28). Updated one other skill file (4 lines, not part of this snapshot) and `agents/xcode-runner.md` (2 lines) to use the current `Agent` terminology. Old `Task(...)` syntax still works as an alias, so nothing was broken — just drifted terminology that the previous sync missed.
+- **Broader scan clean:** No `docs.anthropic.com` or `docs.claude.com` URLs in the toolkit. No stale frontmatter field names. Character budget numbers correct toolkit-wide.
+- **No changes needed:** SKILL.md body structure (still accurate), naming conventions, description writing guidance, progressive disclosure patterns 1/2/3, bundled skills list, string substitutions, visibility fields, character budget numbers (already updated last sync), `paths` and `shell` frontmatter fields (already added last sync), HTTP/prompt/agent hook types
+
+## 2026-03-29
+
+- **Sources checked:** Skills Overview (code.claude.com), Best Practices (platform.claude.com), Agent Skills Overview (platform.claude.com), Hooks Reference (code.claude.com), GitHub releases v2.1.83-v2.1.87, 2 community web searches
+- **Changes applied:**
+  - frontmatter-reference.md: Added `paths` field, `shell` field, 250-char description truncation note
+  - hooks-and-advanced.md: Added HTTP hook type, `if` conditional field, `async: true` option
+  - best-practices.md: Added MCP tool references best practice
+  - visibility-and-discovery.md: Fixed description budget from 2%/16K to 1%/8K, added 250-char per-entry cap
+  - SKILL.md: Fixed description budget numbers in troubleshooting section
+- **Community suggestions reviewed:** 2 (0 accepted, 2 noted as already covered by official guidance)
+- **No changes needed:** SKILL.md body structure, string substitutions, naming conventions, description style guidance, progressive disclosure patterns, visibility controls, dynamic injection, bundled skills list

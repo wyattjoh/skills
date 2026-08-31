@@ -10,17 +10,22 @@ development workflows. There is no application to build: skills are Markdown (`S
 with optional Bun/TypeScript helper scripts, and agents are single Markdown files.
 
 For how Claude Code auto-loads skills, agents, rules, and memory, see
-[`references/claude-code-loading.md`](references/claude-code-loading.md).
+[`.claude/references/claude-code-loading.md`](.claude/references/claude-code-loading.md).
 
 ## Repository structure
 
 ```
-skills/         # one directory per skill, each with a SKILL.md (plus optional scripts/ and references/)
-agents/         # one Markdown file per agent
-references/     # shared reference docs for authoring in this repo
-.claude/rules/  # path-scoped authoring conventions for this repo
-package.json    # Bun workspace root (workspaces: ["skills/*"]) for skill helper scripts
+skills/              # one directory per published skill, each with a SKILL.md (plus optional scripts/ and references/)
+agents/              # one Markdown file per agent
+.claude/skills/      # skills internal to this repo, not published (e.g. claude-skills-update)
+.claude/references/  # shared reference docs for authoring in this repo, plus pinned dependency submodules
+.claude/rules/       # path-scoped authoring conventions for this repo
+package.json         # Bun workspace root (workspaces: ["skills/*"]) for skill helper scripts
 ```
+
+Skills under `skills/` are the published collection and belong in the `README.md`
+table. Skills under `.claude/skills/` are repo-internal tooling: they load
+automatically when working in this repository and are not listed in `README.md`.
 
 ## Path-scoped rules
 
