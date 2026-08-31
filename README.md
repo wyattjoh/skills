@@ -76,7 +76,8 @@ Restart Claude Code after adding or changing an agent definition.
 | devenv                        | Answer devenv.sh questions from an indexed local copy of the full documentation   |
 | dialkit                       | Live parameter tweaking and design exploration in React via dialkit               |
 | driving-ios-simulator         | Drive a booted iOS Simulator: tap, swipe, type, read elements, screenshot         |
-| effect-ts                     | Effect-TS patterns: services, layers, error handling, composition                 |
+| effect-ts                     | Effect-TS v3 patterns: services, layers, error handling, composition              |
+| effect-ts-beta                | Effect v4 beta patterns, plus the v3 to v4 migration map                          |
 | executing-workflows-manually  | Run Claude Code workflow scripts in harnesses without the Workflow tool           |
 | herd                          | Run tickets in parallel as real agent sessions in sibling herdr tabs              |
 | herdr                         | Control herdr from inside a pane over its unix socket                             |
