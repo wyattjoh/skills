@@ -2,9 +2,26 @@
 
 ## Skill-Scoped Hooks
 
-Skills can define hooks that run during the skill's lifecycle using the `hooks`
-frontmatter field. These hooks are automatically cleaned up when the skill
-finishes.
+Skills can register hooks using the `hooks` frontmatter field.
+
+### Lifetime
+
+How long Claude Code keeps a frontmatter hook registered depends on where it
+was defined:
+
+- **Skill hooks** are registered when you or Claude invoke the skill and keep
+  running **for the rest of the session**, including on turns after the skill's
+  own turn. They are not removed when the skill's turn ends. To remove one after
+  its first successful run, set `once: true` on it.
+- **Subagent hooks** run only while that subagent is running and are removed
+  when it finishes.
+
+Workspace trust applies asymmetrically: a project **skill's** frontmatter hooks
+register whenever the skill is invoked, including in a `-p` run inside a folder
+you have never trusted. A project **subagent's** frontmatter hooks run only
+after you accept the workspace trust dialog for the folder the agent file came
+from, and a `-p` session doesn't count as accepting it (before v2.1.218 these
+could run untrusted).
 
 ### Supported Events (Skill-Scoped)
 
@@ -17,11 +34,9 @@ the [official hooks reference](https://code.claude.com/docs/en/hooks.md).
 
 For subagents, a `Stop` hook is automatically converted to `SubagentStop`,
 since that's the event that actually fires when a subagent completes.
-Frontmatter hooks in a project subagent only run after you accept the
-workspace trust dialog for the folder the agent file came from.
 
-Regardless of event, skill-scoped hooks are automatically cleaned up when
-the skill finishes.
+`/hooks` opens a read-only browser showing every registered hook, its type, and
+its source; hooks a skill registered appear there as `Session Hooks`.
 
 ### Hook Configuration Example
 
@@ -163,6 +178,64 @@ Each line inside the block is run, and the combined stdout replaces the block
 in the skill content Claude receives. Use this form whenever a single inline
 command would be too awkward to read.
 
+### How Injected Commands Run
+
+Injected commands go through the Bash tool (or the PowerShell tool when
+`shell: powershell` is set and that tool is enabled), and inherit its behavior:
+
+- **Working directory:** the session shell's current directory, which moves when
+  Claude runs `cd`. Use `${CLAUDE_SKILL_DIR}` or `${CLAUDE_PROJECT_DIR}` in any
+  path that must resolve the same way every time.
+- **stderr:** merged into stdout under the default `bash` shell, so anything the
+  command writes to stderr lands in the injected text.
+- **Timeout:** the Bash tool's default 2 minutes. If the tool backgrounds the
+  timed-out command the skill still renders, and the injected text names the
+  background task and its output file. Otherwise the command is killed and the
+  invocation aborts.
+- **Output size:** output past the inline ceiling arrives as a file path plus a
+  short preview rather than truncated text.
+- `shell: bash` on a machine without bash (Windows without Git Bash) fails the
+  invocation before any command runs.
+
+### When an Injected Command Fails
+
+A failed command **aborts the entire skill invocation**, not just its own
+placeholder. Claude never sees the skill content for that invocation. The abort
+shows `Shell command failed for pattern "..."` with the command's output under
+`[stderr]`.
+
+Under the default `bash` shell, any non-zero exit code counts as a failure. The
+one carveout: exit code 1 from search and comparison commands (`grep`, `diff`,
+and friends) is treated as a normal result and its output is injected. Exit
+codes of 2 or higher fail even for those. **Append `|| true` to any other
+command you expect to exit non-zero**, such as a check script that exits 1 when
+it finds problems.
+
+Injected commands never prompt for permission. If a command's permission check
+returns anything other than allow, including a rule that would normally ask, the
+invocation aborts with `Shell command permission check failed for pattern
+"..."`. Pre-approve the command with `allowed-tools`; a matching ask or deny
+rule still aborts regardless.
+
+### Pre-approving a Bundled Script
+
+`${CLAUDE_SKILL_DIR}` and `${CLAUDE_PROJECT_DIR}` are substituted in two places:
+the skill body, and Bash rules in `allowed-tools`. Using the same variable in
+both lets a skill run a bundled script with no permission prompt, because the
+rule matches the exact command the body tells Claude to run:
+
+```yaml
+---
+name: render-chart
+description: Render a chart from a CSV file
+allowed-tools: Bash(${CLAUDE_SKILL_DIR}/scripts/render.sh *)
+---
+Run `${CLAUDE_SKILL_DIR}/scripts/render.sh <csv-file>` to render the chart.
+```
+
+In a plugin skill, `${CLAUDE_PLUGIN_ROOT}` and `${CLAUDE_PLUGIN_DATA}` work the
+same way in both places.
+
 ### Disabling Inline Shell Execution
 
 Set `"disableSkillShellExecution": true` in `settings.json` to disable the `!`
@@ -277,6 +350,24 @@ Deploy version `$1` to `$0` environment.
 
 **If `$ARGUMENTS` is not present in the content**, arguments are appended as
 `ARGUMENTS: <value>` automatically.
+
+### Argument Quoting and Escaping
+
+- Indexed arguments use **shell-style quoting**, so wrap multi-word values in
+  quotes to pass them as one argument. `/my-skill "hello world" second` makes
+  `$0` expand to `hello world` and `$1` to `second`. `$ARGUMENTS` always expands
+  to the full argument string as typed.
+- An **indexed** placeholder with no matching argument (`$2` when only one was
+  passed) stays in the content unchanged. A **named** placeholder from
+  `arguments` with no matching argument expands to an empty string.
+- Argument values are inserted as literal text and never re-expanded. If a skill
+  body contains `Summarize $0` and you run `/summarize "$ARGUMENTS from
+yesterday"`, Claude receives `Summarize $ARGUMENTS from yesterday`.
+  `${CLAUDE_*}` variables are still substituted after arguments are inserted.
+- To write a literal `$` before a digit, `ARGUMENTS`, or a declared argument
+  name, escape it with a backslash: `\$1.00`. A backslash before any other `$`
+  is left as-is, and a doubled backslash (`\\$1`) does not escape. The backslash
+  escape does not apply to `${CLAUDE_*}` variables.
 
 ## Extended Thinking
 

@@ -19,6 +19,13 @@ doesn't already have. Challenge each piece of information:
 - "Can I assume Claude knows this?"
 - "Does this paragraph justify its token cost?"
 
+That cost is **recurring, not one-time**. Once a skill is invoked, its rendered
+content stays in the conversation across later turns and is re-attached after
+compaction within a bounded budget. State what to do rather than narrating how
+or why, and write standing instructions rather than one-time steps, since Claude
+Code never re-reads the file. See the Skill Content Lifecycle section of
+[../SKILL.md](../SKILL.md) for the compaction budget.
+
 ### Set Appropriate Degrees of Freedom
 
 Match the level of specificity to the task's fragility and variability:
@@ -117,6 +124,38 @@ skill solves real problems.
 4. **Write minimal instructions:** Create just enough content to pass evaluations
 5. **Iterate:** Execute evaluations, compare against baseline, refine
 
+Seeing a skill trigger tells you Claude found it, not that it did what you
+intended. Measure the two separately: whether Claude **invokes** it on the
+prompts it should, and whether the **output** matches expectations when it does.
+The check for both is a baseline comparison. Run each realistic prompt in a
+**fresh session** with the skill available and again with it disabled (via
+`skillOverrides`), then compare. A fresh session matters because leftover
+context from authoring the skill masks gaps in the written instructions.
+
+### Automating the Loop with skill-creator
+
+The official `skill-creator` plugin runs this comparison inside Claude Code:
+
+```text
+/plugin marketplace add anthropics/claude-plugins-official
+/plugin install skill-creator@claude-plugins-official
+```
+
+Run `/reload-plugins` if the install summary asks for it, then ask Claude to
+evaluate a skill (e.g. "evaluate my summarize-changes skill with
+skill-creator"). It provides:
+
+- **Test cases** in `evals/evals.json` inside the skill directory (prompts,
+  input files, expected behavior)
+- **Isolated runs**, one subagent per test case, recording tokens and duration
+- **Grading** of each assertion into `grading.json` with evidence
+- **Benchmark** in `benchmark.json` aggregating pass rate, time, and tokens for
+  with-skill versus without-skill, so you can weigh the pass-rate gain against
+  the token and time overhead
+- **Version comparison**, a blind A/B between two versions of the skill
+- **Description tuning**, generating should-trigger and should-not-trigger
+  prompts, measuring hit rate, and proposing description edits
+
 ## Iterative Development with Claude
 
 Work with one Claude instance ("Claude A") to create a skill used by others
@@ -128,6 +167,19 @@ Work with one Claude instance ("Claude A") to create a skill used by others
 4. Test on similar tasks with Claude B (fresh instance with skill loaded)
 5. If Claude B struggles, return to Claude A with specifics
 6. Repeat based on usage
+
+### Observe How Claude Navigates the Skill
+
+Iterate on what Claude actually does, not on assumptions. Watch for:
+
+- **Unexpected exploration paths:** reading files in an order you didn't
+  anticipate means the structure isn't as intuitive as you thought
+- **Missed connections:** failing to follow a reference means the link needs to
+  be more explicit or more prominent
+- **Overreliance:** repeatedly reading the same reference file means that
+  content probably belongs in SKILL.md
+- **Ignored content:** never accessing a bundled file means it's unnecessary or
+  poorly signaled
 
 ## Content Guidelines
 
