@@ -69,15 +69,16 @@ agents and skills tables in sync with the actual contents of `agents/` and `skil
 
 ## Dependency References
 
-Four upstream repositories are registered as pinned git submodules under `.claude/references/`.
+Five upstream repositories are registered as pinned git submodules under `.claude/references/`.
 They are for read-only reference only; do not edit files inside these paths.
 
-| Dependency  | Version / Tag           | Path                             | Repository                                   | Pin (commit SHA)                           |
-| ----------- | ----------------------- | -------------------------------- | -------------------------------------------- | ------------------------------------------ |
-| Catppuccin  | `v0.2.0`                | `.claude/references/catppuccin`  | https://github.com/catppuccin/catppuccin.git | `9de299f8f1702fe4fb4e439adfd04b5623e7b77f` |
-| Effect      | `effect@3.22.1`         | `.claude/references/effect`      | https://github.com/Effect-TS/effect.git      | `417e0faa80e471d77fc4a67452e68b09ae0ee861` |
-| Effect beta | `effect@4.0.0-beta.107` | `.claude/references/effect-beta` | https://github.com/Effect-TS/effect.git      | `3c495ae7c96d43bfc3b8020250562a194c2c895e` |
-| Varlock     | `varlock@1.10.0`        | `.claude/references/varlock`     | https://github.com/dmno-dev/varlock.git      | `dd7863b4f319fcf333dfe1c29cb834f8e15313ad` |
+| Dependency              | Version / Tag           | Path                                               | Repository                                                       | Pin (commit SHA)                           |
+| ----------------------- | ----------------------- | -------------------------------------------------- | ---------------------------------------------------------------- | ------------------------------------------ |
+| Catppuccin              | `v0.2.0`                | `.claude/references/catppuccin`                    | https://github.com/catppuccin/catppuccin.git                     | `9de299f8f1702fe4fb4e439adfd04b5623e7b77f` |
+| Composable Architecture | `1.26.2`                | `.claude/references/swift-composable-architecture` | https://github.com/pointfreeco/swift-composable-architecture.git | `377da4061db10d26337a71bb279c506bb951f50f` |
+| Effect                  | `effect@3.22.1`         | `.claude/references/effect`                        | https://github.com/Effect-TS/effect.git                          | `417e0faa80e471d77fc4a67452e68b09ae0ee861` |
+| Effect beta             | `effect@4.0.0-beta.107` | `.claude/references/effect-beta`                   | https://github.com/Effect-TS/effect.git                          | `3c495ae7c96d43bfc3b8020250562a194c2c895e` |
+| Varlock                 | `varlock@1.10.0`        | `.claude/references/varlock`                       | https://github.com/dmno-dev/varlock.git                          | `dd7863b4f319fcf333dfe1c29cb834f8e15313ad` |
 
 The Effect repository is vendored twice because the `effect-ts` and `effect-ts-beta` skills document two
 incompatible major versions. `effect` tracks the npm `latest` line (v3); `effect-beta` tracks the npm `beta`

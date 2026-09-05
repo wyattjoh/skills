@@ -16,3 +16,8 @@
 	url = https://github.com/Effect-TS/effect.git
 	branch = effect@4.0.0-beta.107
 	shallow = true
+[submodule ".claude/references/swift-composable-architecture"]
+	path = .claude/references/swift-composable-architecture
+	url = https://github.com/pointfreeco/swift-composable-architecture.git
+	branch = 1.26.2
+	shallow = true

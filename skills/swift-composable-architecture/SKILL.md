@@ -1,12 +1,12 @@
 ---
 name: swift-composable-architecture
 description: >-
-  Index for adopting The Composable Architecture (TCA, swift-composable-architecture 1.26.0)
+  Index for adopting The Composable Architecture (TCA, swift-composable-architecture 1.26.2)
   in a SwiftUI app. Use this whenever implementing or reviewing a feature in TCA, or whenever the
   task touches reducers, `@Reducer`/`@ObservableState`, `Store`/`StoreOf`, scoping, `@Dependency`,
   effects, bindings, navigation (sheets/alerts/`@Presents`/`NavigationStack`/`StackState`),
   `@Shared` state, or `TestStore` tests, even when the prompt does not say "TCA" by name. Each topic
-  points at the authoritative TCA 1.26.0 example and a copied real-world example from a production
+  points at the authoritative TCA 1.26.2 example and a copied real-world example from a production
   reference app, so you can jump from "I need navigation / a dependency / an effect / a testable
   reducer" to a concrete, current pattern. Also triggers on "create a TCA feature", "add a TCA
   reducer", "implement TCA navigation", "present a TCA sheet", "add a TCA modal", "use
@@ -17,29 +17,29 @@ description: >-
   below).
 ---
 
-# Adopting The Composable Architecture (TCA 1.26.0)
+# Adopting The Composable Architecture (TCA 1.26.2)
 
 ## Prerequisite: the TCA source must be vendored
 
 This skill depends on the **swift-composable-architecture source being available locally** as a
 reference submodule. Nearly every topic below points at an exact path inside
-`.claude/references/swift-composable-architecture/`, pinned to tag **1.26.0**, and those paths only
+`.claude/references/swift-composable-architecture/`, pinned to tag **1.26.2**, and those paths only
 resolve if the submodule has been vendored. (The copied `examples/reference-app/` files are
 self-contained and work regardless; it is only the authoritative TCA paths that need the source.)
 
 If it is missing, vendor it with the **`reference-submodules`** skill (the `/reference-submodules`
 slash command): add [`pointfreeco/swift-composable-architecture`](https://github.com/pointfreeco/swift-composable-architecture)
-as a reference repo pinned to tag **1.26.0**. That skill clones it under `.claude/references/` and
+as a reference repo pinned to tag **1.26.2**. That skill clones it under `.claude/references/` and
 records it in the project's "Dependency References" table.
 
 **Live check (runs when this skill loads):**
 
-!`d=.claude/references/swift-composable-architecture; if [ -d "$d" ] && [ -n "$(ls -A "$d" 2>/dev/null)" ]; then echo "✅ TCA 1.26.0 source PRESENT at $d/ — the referenced paths below resolve; read them directly."; else echo "⚠️  TCA source MISSING — the paths below under $d/ do not exist yet. Vendor it first with the reference-submodules skill (/reference-submodules): add pointfreeco/swift-composable-architecture pinned to tag 1.26.0."; fi`
+!`d=.claude/references/swift-composable-architecture; if [ -d "$d" ] && [ -n "$(ls -A "$d" 2>/dev/null)" ]; then echo "✅ TCA 1.26.2 source PRESENT at $d/ — the referenced paths below resolve; read them directly."; else echo "⚠️  TCA source MISSING — the paths below under $d/ do not exist yet. Vendor it first with the reference-submodules skill (/reference-submodules): add pointfreeco/swift-composable-architecture pinned to tag 1.26.2."; fi`
 
 This skill is an **adoption index**, not an API reference. For each TCA concept you pair:
 
-1. **The authoritative TCA 1.26.0 example** — an exact path into the vendored submodule at
-   `.claude/references/swift-composable-architecture/` (pinned to tag **1.26.0**). Read it to
+1. **The authoritative TCA 1.26.2 example** — an exact path into the vendored submodule at
+   `.claude/references/swift-composable-architecture/` (pinned to tag **1.26.2**). Read it to
    confirm the current API shape.
 2. **A real-world example from a reference app** — a production app that uses TCA heavily. The
    relevant snippets are **copied into `examples/reference-app/`** (domain renamed to a neutral
@@ -48,12 +48,12 @@ This skill is an **adoption index**, not an API reference. For each TCA concept 
 ## How to use this index
 
 When you start a feature, find the topic that matches what you need, read the authoritative TCA path
-to confirm the 1.26.0 API, then skim the copied reference-app example for a real-world shape. Keep
+to confirm the 1.26.2 API, then skim the copied reference-app example for a real-world shape. Keep
 the example files in `examples/reference-app/` open as you write; they are trimmed but faithful. The
 module import is always `import ComposableArchitecture` (it re-exports CasePaths, Dependencies,
 Sharing, IdentifiedCollections, and the navigation libraries).
 
-## 1.26.0 idioms to internalize first
+## 1.26.2 idioms to internalize first
 
 These shape everything below; they are the "modern" TCA that differs from older tutorials:
 
@@ -104,7 +104,7 @@ For a _list of independently-stateful rows_ (as opposed to one child, or a navig
 
 ### 5. Effects and async work
 
-- **TCA:** `.claude/references/swift-composable-architecture/Examples/CaseStudies/SwiftUICaseStudies/03-Effects-Basics.swift:70-77` (`.run`), `03-Effects-Cancellation.swift:47-54` (`.cancellable`), and `Examples/Search/Search/SearchView.swift:164-169` (debounce via `.task(id:)` + `Task.sleep`, the 1.26.0 idiom).
+- **TCA:** `.claude/references/swift-composable-architecture/Examples/CaseStudies/SwiftUICaseStudies/03-Effects-Basics.swift:70-77` (`.run`), `03-Effects-Cancellation.swift:47-54` (`.cancellable`), and `Examples/Search/Search/SearchView.swift:164-169` (debounce via `.task(id:)` + `Task.sleep`, the 1.26.2 idiom).
 - **Reference app:** `examples/reference-app/NoteListFeature.swift` — `.run(name:)`, a `CancelID` enum, and inline `@Dependency(\.defaultDatabase)` reads inside an effect.
 - **Effect vocabulary** (return one from `Reduce`): `.none` (state change only); `.run { send in }` (async); `.cancellable(id:cancelInFlight:)` + `.cancel(id:)` (replaceable/long-running — `cancelInFlight: true` supersedes a same-id effect in flight, the reducer-side way to debounce); `.merge(...)` (run several effects in parallel); `.concatenate(...)` (run them in order). Combinator definitions: `Sources/ComposableArchitecture/Effect.swift:229` (`merge`) and `:313` (`concatenate`). `.merge`/`.concatenate` usage in a feature: `Examples/VoiceMemos/VoiceMemos/VoiceMemo.swift`.
 

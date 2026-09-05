@@ -1,4 +1,4 @@
-# TCA 1.26.0 DocC documentation index
+# TCA 1.26.2 DocC documentation index
 
 The vendored submodule ships TCA's full DocC documentation as prose Markdown. These are the
 **authoritative conceptual guides** (the "why" and the modeling tradeoffs), complementing the
@@ -49,14 +49,14 @@ Each line: file -> what it teaches, and which `SKILL.md` topic it backs.
 ## Migration guides (version-to-version upgrade notes)
 
 `Articles/MigrationGuides.md` is the index. Individual guides under `Articles/MigrationGuides/` cover
-`MigratingTo1.4.md` through `MigratingTo1.25.md` (the submodule is pinned to **1.26.0**, so 1.25 is the
+`MigratingTo1.4.md` through `MigratingTo1.25.md` (the submodule is pinned to **1.26.2**, so 1.25 is the
 latest applicable guide). Read these when an example or older snippet uses a pre-1.26 API and you need
 the modern replacement. The highest-leverage ones for the idioms this skill teaches:
 
 - `MigratingTo1.7.md` — the `@Reducer` macro and the move off manual `Reducer` conformances.
 - `MigratingTo1.16.md` / `MigratingTo1.17.md` / `MigratingTo1.17.1.md` — observation and the shift away
   from `ViewStore`/`WithViewStore` to `@ObservableState` + direct `store.field` access.
-- `MigratingTo1.25.md` — the most recent changes before the pinned 1.26.0.
+- `MigratingTo1.25.md` — the most recent changes before the pinned 1.26.2.
 
 (Use these to recognize and replace legacy patterns — `WithViewStore`, `@PresentationState`,
 `IfLetStore`/`ForEachStore`, `Effect.task` — none of which should appear in new code.)
@@ -72,4 +72,4 @@ symbol's exact documentation.
 
 Note: `Extensions/Deprecations/*` and the `ViewStore.md`/`WithViewStore.md`/`SwitchStore.md` pages
 document **legacy** APIs. They are useful for understanding old code you encounter, but do not adopt
-those APIs in new code (see `SKILL.md` "1.26.0 idioms to internalize first").
+those APIs in new code (see `SKILL.md` "1.26.2 idioms to internalize first").

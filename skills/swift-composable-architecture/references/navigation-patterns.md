@@ -2,7 +2,7 @@
 
 Practical guidance that sits on top of topics 7 (tree-based navigation) and 8
 (stack-based navigation) in `SKILL.md`. Read `SKILL.md` first for the API
-shapes and the authoritative TCA 1.26.0 paths; read this when you are deciding
+shapes and the authoritative TCA 1.26.2 paths; read this when you are deciding
 _which_ pattern to reach for, or when navigation is misbehaving at runtime.
 
 ## Choosing a pattern
