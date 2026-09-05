@@ -105,7 +105,6 @@ Restart Claude Code after adding or changing an agent definition.
 | skill-audit                   | Audit skill execution for permission denials, tool errors, and corrections        |
 | swift-composable-architecture | Adoption index for The Composable Architecture (TCA 1.26.0), mapped by topic      |
 | swift-sql                     | Type-safe Swift SQL with swift-structured-queries                                 |
-| swift-tca                     | TCA reducer and navigation patterns                                               |
 | varlock                       | Kickstart varlock, the encrypted schema-driven dotenv replacement                 |
 | vhs                           | Interview-driven terminal screencasts rendered to GIF/MP4/WebM                    |
 | whats-next                    | Emit the copy-ready prompt for the next agent session on a wayfinder map          |

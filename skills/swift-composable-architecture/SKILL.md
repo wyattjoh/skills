@@ -8,8 +8,13 @@ description: >-
   `@Shared` state, or `TestStore` tests, even when the prompt does not say "TCA" by name. Each topic
   points at the authoritative TCA 1.26.0 example and a copied real-world example from a production
   reference app, so you can jump from "I need navigation / a dependency / an effect / a testable
-  reducer" to a concrete, current pattern. Requires the swift-composable-architecture source vendored
-  as a reference submodule (see the prerequisite check below).
+  reducer" to a concrete, current pattern. Also triggers on "create a TCA feature", "add a TCA
+  reducer", "implement TCA navigation", "present a TCA sheet", "add a TCA modal", "use
+  @ObservableState", "add StackState navigation", "implement @Presents", "handle TCA effects", "use
+  Effect.run", "add BindableAction for forms", "create TCA bindings", "use the Delegate pattern",
+  "child-to-parent communication in TCA", "pointfree TCA", "TCA state", "TCA action". Requires the
+  swift-composable-architecture source vendored as a reference submodule (see the prerequisite check
+  below).
 ---
 
 # Adopting The Composable Architecture (TCA 1.26.0)
@@ -113,12 +118,14 @@ For a _list of independently-stateful rows_ (as opposed to one child, or a navig
 - **TCA:** `.claude/references/swift-composable-architecture/Examples/CaseStudies/SwiftUICaseStudies/04-Navigation-Multiple-Destinations.swift` (reducer `:9-47`, view `:69-83`). Production usage: `Examples/SyncUps/SyncUps/SyncUpDetail.swift`.
 - **Reference app:** `examples/reference-app/RootFeature.swift` (the `@Reducer enum Destination` + single `@Presents var destination` + `.ifLet`) and `examples/reference-app/RootView.swift` (presenting with `$store.scope(state:action:)`). The reference app is **100% tree-based**.
 - Sheets and alerts are `@Presents` slots on the parent. A deep link or router can drive navigation by setting the `Destination` directly.
+- **Patterns and pitfalls** in `references/navigation-patterns.md`: why one `Destination` enum beats several `@Presents` optionals, preloading a child's state so the sheet animates in already populated, and the store-lifecycle trap where a `Store` built inside a view closure is silently rebuilt on re-render.
 
 ### 8. Stack-based navigation (`StackState` / `NavigationStack(path:)`)
 
 - **TCA:** `.claude/references/swift-composable-architecture/Examples/CaseStudies/SwiftUICaseStudies/04-NavigationStack.swift` (`@Reducer enum Path`, `StackState`, `.forEach(\.path, action: \.path)` `:8-66`, view `:74-109`). Coordinator: `Examples/SyncUps/SyncUps/AppFeature.swift`.
 - **Reference app:** **Not used** — the reference app is entirely tree-based; multi-step editors are a single reducer with a `step` enum (see `examples/reference-app/NoteEditorFeatureTests.swift` for the shape). So the authoritative example here is the TCA case study, not the reference app.
 - For a drill-down stack (list -> detail -> sub-detail), model the path with `StackState<Path.State>` and `NavigationStack(path: $store.scope(\.path, action: \.path))`, and a deep link appends a case onto the path. If the hierarchy is shallow (a list plus a presented detail), tree-based navigation (topic 7) is enough; reach for a stack when you need arbitrary-depth drill-down.
+- **Choosing between them:** `references/navigation-patterns.md` opens with a decision tree covering tree vs. stack vs. both, plus the delegate hand-back and preloading cases.
 
 ### 9. `@Shared` state and persistence keys
 
@@ -154,7 +161,8 @@ A compact review checklist; each line traces to a topic above.
 **Do not:**
 
 - Mutate state outside a reducer, or run async work directly in a reducer.
-- Create a `Store` inside a view, or mix `@State`/`@StateObject` with TCA-managed state.
+- Create a `Store` inside a view, or mix `@State`/`@StateObject` with TCA-managed state. A `Store` built inside a `sheet`/`navigationDestination` closure is rebuilt from initial state on every re-render; scope from the parent instead. (topics 7, 8)
+- Give a feature one `@Presents` optional per modal. Use a single `@Presents var destination: Destination.State?` so two modals cannot be active at once. (topic 7)
 - Introduce `ViewStore`/`WithViewStore` or `@PresentationState` — both are legacy; use `@ObservableState` + `@Bindable var store` and `@Presents`.
 - Hold reference types or externally-mutated objects in TCA `State`; keep it value types so equality and replay hold. (topic 1)
 
@@ -162,6 +170,10 @@ A compact review checklist; each line traces to a topic above.
 
 Read these when the topic comes up:
 
+- `references/navigation-patterns.md`: the navigation decision tree, the single-`Destination`-enum
+  rule, the preloading pattern for presenting a child with its data already loaded, and the
+  store-lifecycle pitfall (a `Store` constructed inside a `navigationDestination`/`sheet` closure is
+  rebuilt from initial state on every re-render). Read it alongside topics 7 and 8.
 - `references/docc-index.md` — a map of TCA's own DocC documentation (the conceptual Articles, the
   version migration guides, and the per-symbol Extensions) vendored in the submodule. Use it when you
   want the **reasoning and modeling tradeoffs** behind a pattern, not just the code shape — e.g.
