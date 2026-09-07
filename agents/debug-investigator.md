@@ -85,11 +85,3 @@ git diff <last-known-good-commit>..HEAD -- <affected-files>
 - [ ] Test case to add
 - [ ] Related areas to check
 ```
-
-## Key Principles
-
-1. **Don't assume** - Verify each hypothesis with evidence
-2. **Trace backwards** - Start from the symptom, work back to the cause
-3. **Check recent changes first** - Most bugs are introduced by recent code
-4. **Consider the full stack** - Bugs often span multiple components
-5. **Document the journey** - Your investigation helps future debugging

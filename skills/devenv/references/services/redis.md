@@ -1,0 +1,99 @@
+<!-- source: https://devenv.sh/services/redis/
+     upstream: docs/src/content/docs/services/redis.md
+     llms-full.txt lines 25094-25201 -->
+
+# redis
+
+## Options
+
+### services.redis.enable
+
+Whether to enable Redis process and expose utilities.
+
+*Type:* boolean
+
+*Default:*
+
+```nix
+false
+```
+
+*Example:*
+
+```nix
+true
+```
+
+*Declared by:*
+
+* <https://github.com/cachix/devenv/blob/main/src/modules/services/redis.nix>
+
+### services.redis.package
+
+Which package of Redis to use
+
+*Type:* package
+
+*Default:*
+
+```nix
+pkgs.redis
+```
+
+*Declared by:*
+
+* <https://github.com/cachix/devenv/blob/main/src/modules/services/redis.nix>
+
+### services.redis.bind
+
+The IP interface to bind to. `null` means “all interfaces”.
+
+*Type:* null or string
+
+*Default:*
+
+```nix
+"127.0.0.1"
+```
+
+*Example:*
+
+```nix
+"127.0.0.1"
+```
+
+*Declared by:*
+
+* <https://github.com/cachix/devenv/blob/main/src/modules/services/redis.nix>
+
+### services.redis.extraConfig
+
+Additional text to be appended to `redis.conf`.
+
+*Type:* strings concatenated with “\n”
+
+*Default:*
+
+```nix
+"locale-collate C"
+```
+
+*Declared by:*
+
+* <https://github.com/cachix/devenv/blob/main/src/modules/services/redis.nix>
+
+### services.redis.port
+
+The TCP port to accept connections. If port 0 is specified, Redis will not listen on a TCP socket and a unix socket file will be found at $REDIS\_UNIX\_SOCKET.
+
+*Type:* 16 bit unsigned integer; between 0 and 65535 (both inclusive)
+
+*Default:*
+
+```nix
+6379
+```
+
+*Declared by:*
+
+* <https://github.com/cachix/devenv/blob/main/src/modules/services/redis.nix>

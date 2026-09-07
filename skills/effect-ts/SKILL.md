@@ -1,12 +1,20 @@
 ---
 name: effect-ts
-description: This skill should be used when the user asks about Effect-TS patterns, services, layers, error handling, service composition, or writing/refactoring code that imports from 'effect'.
+description: This skill should be used when the user asks about Effect-TS patterns, services, layers, error handling, service composition, or writing/refactoring code that imports from 'effect'. Covers stable Effect v3 (3.22.x), the current npm "latest" line. For projects on effect@4.x, including "Effect v4", "Effect beta", or "migrate to Effect v4", use the effect-ts-beta skill instead.
 ---
 
 # Effect-TS Expert
 
 Expert guidance for functional programming with the Effect library, covering error handling, dependency injection,
 composability, and testing patterns.
+
+This skill documents **Effect v3** (`3.22.1`), the current npm `latest`. If the project depends on `effect@4.x`, stop
+and use the `effect-ts-beta` skill: v4 renames a large part of the API surface and removes Effect subtyping, so the
+patterns here will not compile. Check with:
+
+```bash
+node -p "require('./package.json').dependencies?.effect ?? require('./package.json').devDependencies?.effect"
+```
 
 ## Prerequisites Check
 
@@ -15,16 +23,16 @@ Before starting any Effect-related work, verify the Effect-TS source code exists
 **If missing, stop immediately and inform the user.** Clone it before proceeding:
 
 ```bash
-git clone --depth=1 --branch effect@3.21.4 https://github.com/Effect-TS/effect.git "$SKILL_DIR/.source"
+git clone --depth=1 --branch effect@3.22.1 https://github.com/Effect-TS/effect.git "$SKILL_DIR/.source"
 ```
 
-The `main` branch now tracks Effect v4 (release candidate, e.g. `4.0.0-rc.110`),
-which has breaking API changes relative to the v3 patterns documented in this
-skill — the `ServiceMap` module that briefly replaced `Context` during the v4
-beta was renamed back to `Context`, so service definition is now
-`Context.Service`. Pin the clone to a v3 tag — matching the `effect@3.21.4`
-reference submodule pinned in the root `CLAUDE.md` — rather than cloning `main`
-unpinned.
+The `main` branch now tracks Effect v4 (currently `4.0.0-beta.107` on the npm
+`beta` dist-tag, with release candidates ahead of it on `rc`), which has
+breaking API changes relative to the v3 patterns documented in this skill.
+Service definition alone moved from `Context.Tag` to `Context.Service`, with the
+identifier and type parameters in the opposite order. Pin the clone to a v3 tag,
+matching the `effect@3.22.1` reference submodule pinned in the root `CLAUDE.md`,
+rather than cloning `main` unpinned.
 
 ## Research Strategy
 
@@ -470,6 +478,11 @@ eventEmitter.on("event", noop); // Register empty handler
 ### External Resources
 
 - **Effect-Atom** — https://github.com/tim-smart/effect-atom (open in browser for reactive state management patterns)
+
+### Related Skills
+
+- **`effect-ts-beta`** — Effect v4 beta (`4.0.0-beta.107`). Use it when the project is on `effect@4.x`, or when
+  migrating a v3 codebase to v4. Its `references/migration-from-v3.md` holds the v3 to v4 rename tables.
 
 ### Reference Files
 

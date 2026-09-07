@@ -1,40 +1,45 @@
 ---
 name: swift-composable-architecture
 description: >-
-  Index for adopting The Composable Architecture (TCA, swift-composable-architecture 1.26.0)
+  Index for adopting The Composable Architecture (TCA, swift-composable-architecture 1.26.2)
   in a SwiftUI app. Use this whenever implementing or reviewing a feature in TCA, or whenever the
   task touches reducers, `@Reducer`/`@ObservableState`, `Store`/`StoreOf`, scoping, `@Dependency`,
   effects, bindings, navigation (sheets/alerts/`@Presents`/`NavigationStack`/`StackState`),
   `@Shared` state, or `TestStore` tests, even when the prompt does not say "TCA" by name. Each topic
-  points at the authoritative TCA 1.26.0 example and a copied real-world example from a production
+  points at the authoritative TCA 1.26.2 example and a copied real-world example from a production
   reference app, so you can jump from "I need navigation / a dependency / an effect / a testable
-  reducer" to a concrete, current pattern. Requires the swift-composable-architecture source vendored
-  as a reference submodule (see the prerequisite check below).
+  reducer" to a concrete, current pattern. Also triggers on "create a TCA feature", "add a TCA
+  reducer", "implement TCA navigation", "present a TCA sheet", "add a TCA modal", "use
+  @ObservableState", "add StackState navigation", "implement @Presents", "handle TCA effects", "use
+  Effect.run", "add BindableAction for forms", "create TCA bindings", "use the Delegate pattern",
+  "child-to-parent communication in TCA", "pointfree TCA", "TCA state", "TCA action". Requires the
+  swift-composable-architecture source vendored as a reference submodule (see the prerequisite check
+  below).
 ---
 
-# Adopting The Composable Architecture (TCA 1.26.0)
+# Adopting The Composable Architecture (TCA 1.26.2)
 
 ## Prerequisite: the TCA source must be vendored
 
 This skill depends on the **swift-composable-architecture source being available locally** as a
 reference submodule. Nearly every topic below points at an exact path inside
-`.claude/references/swift-composable-architecture/`, pinned to tag **1.26.0**, and those paths only
+`.claude/references/swift-composable-architecture/`, pinned to tag **1.26.2**, and those paths only
 resolve if the submodule has been vendored. (The copied `examples/reference-app/` files are
 self-contained and work regardless; it is only the authoritative TCA paths that need the source.)
 
 If it is missing, vendor it with the **`reference-submodules`** skill (the `/reference-submodules`
 slash command): add [`pointfreeco/swift-composable-architecture`](https://github.com/pointfreeco/swift-composable-architecture)
-as a reference repo pinned to tag **1.26.0**. That skill clones it under `.claude/references/` and
+as a reference repo pinned to tag **1.26.2**. That skill clones it under `.claude/references/` and
 records it in the project's "Dependency References" table.
 
 **Live check (runs when this skill loads):**
 
-!`d=.claude/references/swift-composable-architecture; if [ -d "$d" ] && [ -n "$(ls -A "$d" 2>/dev/null)" ]; then echo "✅ TCA 1.26.0 source PRESENT at $d/ — the referenced paths below resolve; read them directly."; else echo "⚠️  TCA source MISSING — the paths below under $d/ do not exist yet. Vendor it first with the reference-submodules skill (/reference-submodules): add pointfreeco/swift-composable-architecture pinned to tag 1.26.0."; fi`
+!`d=.claude/references/swift-composable-architecture; if [ -d "$d" ] && [ -n "$(ls -A "$d" 2>/dev/null)" ]; then echo "✅ TCA 1.26.2 source PRESENT at $d/ — the referenced paths below resolve; read them directly."; else echo "⚠️  TCA source MISSING — the paths below under $d/ do not exist yet. Vendor it first with the reference-submodules skill (/reference-submodules): add pointfreeco/swift-composable-architecture pinned to tag 1.26.2."; fi`
 
 This skill is an **adoption index**, not an API reference. For each TCA concept you pair:
 
-1. **The authoritative TCA 1.26.0 example** — an exact path into the vendored submodule at
-   `.claude/references/swift-composable-architecture/` (pinned to tag **1.26.0**). Read it to
+1. **The authoritative TCA 1.26.2 example** — an exact path into the vendored submodule at
+   `.claude/references/swift-composable-architecture/` (pinned to tag **1.26.2**). Read it to
    confirm the current API shape.
 2. **A real-world example from a reference app** — a production app that uses TCA heavily. The
    relevant snippets are **copied into `examples/reference-app/`** (domain renamed to a neutral
@@ -43,12 +48,12 @@ This skill is an **adoption index**, not an API reference. For each TCA concept 
 ## How to use this index
 
 When you start a feature, find the topic that matches what you need, read the authoritative TCA path
-to confirm the 1.26.0 API, then skim the copied reference-app example for a real-world shape. Keep
+to confirm the 1.26.2 API, then skim the copied reference-app example for a real-world shape. Keep
 the example files in `examples/reference-app/` open as you write; they are trimmed but faithful. The
 module import is always `import ComposableArchitecture` (it re-exports CasePaths, Dependencies,
 Sharing, IdentifiedCollections, and the navigation libraries).
 
-## 1.26.0 idioms to internalize first
+## 1.26.2 idioms to internalize first
 
 These shape everything below; they are the "modern" TCA that differs from older tutorials:
 
@@ -99,7 +104,7 @@ For a _list of independently-stateful rows_ (as opposed to one child, or a navig
 
 ### 5. Effects and async work
 
-- **TCA:** `.claude/references/swift-composable-architecture/Examples/CaseStudies/SwiftUICaseStudies/03-Effects-Basics.swift:70-77` (`.run`), `03-Effects-Cancellation.swift:47-54` (`.cancellable`), and `Examples/Search/Search/SearchView.swift:164-169` (debounce via `.task(id:)` + `Task.sleep`, the 1.26.0 idiom).
+- **TCA:** `.claude/references/swift-composable-architecture/Examples/CaseStudies/SwiftUICaseStudies/03-Effects-Basics.swift:70-77` (`.run`), `03-Effects-Cancellation.swift:47-54` (`.cancellable`), and `Examples/Search/Search/SearchView.swift:164-169` (debounce via `.task(id:)` + `Task.sleep`, the 1.26.2 idiom).
 - **Reference app:** `examples/reference-app/NoteListFeature.swift` — `.run(name:)`, a `CancelID` enum, and inline `@Dependency(\.defaultDatabase)` reads inside an effect.
 - **Effect vocabulary** (return one from `Reduce`): `.none` (state change only); `.run { send in }` (async); `.cancellable(id:cancelInFlight:)` + `.cancel(id:)` (replaceable/long-running — `cancelInFlight: true` supersedes a same-id effect in flight, the reducer-side way to debounce); `.merge(...)` (run several effects in parallel); `.concatenate(...)` (run them in order). Combinator definitions: `Sources/ComposableArchitecture/Effect.swift:229` (`merge`) and `:313` (`concatenate`). `.merge`/`.concatenate` usage in a feature: `Examples/VoiceMemos/VoiceMemos/VoiceMemo.swift`.
 
@@ -113,12 +118,14 @@ For a _list of independently-stateful rows_ (as opposed to one child, or a navig
 - **TCA:** `.claude/references/swift-composable-architecture/Examples/CaseStudies/SwiftUICaseStudies/04-Navigation-Multiple-Destinations.swift` (reducer `:9-47`, view `:69-83`). Production usage: `Examples/SyncUps/SyncUps/SyncUpDetail.swift`.
 - **Reference app:** `examples/reference-app/RootFeature.swift` (the `@Reducer enum Destination` + single `@Presents var destination` + `.ifLet`) and `examples/reference-app/RootView.swift` (presenting with `$store.scope(state:action:)`). The reference app is **100% tree-based**.
 - Sheets and alerts are `@Presents` slots on the parent. A deep link or router can drive navigation by setting the `Destination` directly.
+- **Patterns and pitfalls** in `references/navigation-patterns.md`: why one `Destination` enum beats several `@Presents` optionals, preloading a child's state so the sheet animates in already populated, and the store-lifecycle trap where a `Store` built inside a view closure is silently rebuilt on re-render.
 
 ### 8. Stack-based navigation (`StackState` / `NavigationStack(path:)`)
 
 - **TCA:** `.claude/references/swift-composable-architecture/Examples/CaseStudies/SwiftUICaseStudies/04-NavigationStack.swift` (`@Reducer enum Path`, `StackState`, `.forEach(\.path, action: \.path)` `:8-66`, view `:74-109`). Coordinator: `Examples/SyncUps/SyncUps/AppFeature.swift`.
 - **Reference app:** **Not used** — the reference app is entirely tree-based; multi-step editors are a single reducer with a `step` enum (see `examples/reference-app/NoteEditorFeatureTests.swift` for the shape). So the authoritative example here is the TCA case study, not the reference app.
 - For a drill-down stack (list -> detail -> sub-detail), model the path with `StackState<Path.State>` and `NavigationStack(path: $store.scope(\.path, action: \.path))`, and a deep link appends a case onto the path. If the hierarchy is shallow (a list plus a presented detail), tree-based navigation (topic 7) is enough; reach for a stack when you need arbitrary-depth drill-down.
+- **Choosing between them:** `references/navigation-patterns.md` opens with a decision tree covering tree vs. stack vs. both, plus the delegate hand-back and preloading cases.
 
 ### 9. `@Shared` state and persistence keys
 
@@ -154,7 +161,8 @@ A compact review checklist; each line traces to a topic above.
 **Do not:**
 
 - Mutate state outside a reducer, or run async work directly in a reducer.
-- Create a `Store` inside a view, or mix `@State`/`@StateObject` with TCA-managed state.
+- Create a `Store` inside a view, or mix `@State`/`@StateObject` with TCA-managed state. A `Store` built inside a `sheet`/`navigationDestination` closure is rebuilt from initial state on every re-render; scope from the parent instead. (topics 7, 8)
+- Give a feature one `@Presents` optional per modal. Use a single `@Presents var destination: Destination.State?` so two modals cannot be active at once. (topic 7)
 - Introduce `ViewStore`/`WithViewStore` or `@PresentationState` — both are legacy; use `@ObservableState` + `@Bindable var store` and `@Presents`.
 - Hold reference types or externally-mutated objects in TCA `State`; keep it value types so equality and replay hold. (topic 1)
 
@@ -162,6 +170,10 @@ A compact review checklist; each line traces to a topic above.
 
 Read these when the topic comes up:
 
+- `references/navigation-patterns.md`: the navigation decision tree, the single-`Destination`-enum
+  rule, the preloading pattern for presenting a child with its data already loaded, and the
+  store-lifecycle pitfall (a `Store` constructed inside a `navigationDestination`/`sheet` closure is
+  rebuilt from initial state on every re-render). Read it alongside topics 7 and 8.
 - `references/docc-index.md` — a map of TCA's own DocC documentation (the conceptual Articles, the
   version migration guides, and the per-symbol Extensions) vendored in the submodule. Use it when you
   want the **reasoning and modeling tradeoffs** behind a pattern, not just the code shape — e.g.

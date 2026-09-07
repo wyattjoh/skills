@@ -1,6 +1,6 @@
 // Adapted (trimmed) from a production TCA reference app. Domain renamed to a neutral "notes"
 // example; the structure and APIs are faithful to the original.
-// Illustrates the MODERN 1.26.0 view idiom: a SwiftUI view holds `@Bindable var store: StoreOf<...>`
+// Illustrates the MODERN 1.26.2 view idiom: a SwiftUI view holds `@Bindable var store: StoreOf<...>`
 // and reads/binds it directly — NO ViewStore / WithViewStore. Form controls bind with `$store.field`,
 // actions are sent with `store.send(...)`, and a presented alert is wired with
 // `$store.scope(state:action:)`.

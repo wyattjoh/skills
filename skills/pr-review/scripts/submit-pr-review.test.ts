@@ -11,8 +11,10 @@ import { formatHeadMismatchAbort } from "./submit-pr-review.ts";
 import { loadReview } from "./submit-pr-review.ts";
 import { parseHunks } from "./submit-pr-review.ts";
 import { partitionFindings } from "./submit-pr-review.ts";
+import { matchExistingComments } from "./submit-pr-review.ts";
 import { renderFinding } from "./submit-pr-review.ts";
-import type { Finding } from "./submit-pr-review.ts";
+import { renderFix } from "./submit-pr-review.ts";
+import type { ExistingComment, Finding, ReviewComment } from "./submit-pr-review.ts";
 
 async function makeTempJsonFile(): Promise<string> {
   const dir = await mkdtemp(join(tmpdir(), "review-test-"));
@@ -171,7 +173,7 @@ test("appendFooter: formats the required attribution footer", () => {
   );
 });
 
-test("renderFinding: emits description and attribution footer", () => {
+test("renderFinding: emits severity badge, description, and attribution footer", () => {
   const body = renderFinding(
     {
       id: "SEC-001",
@@ -187,8 +189,167 @@ test("renderFinding: emits description and attribution footer", () => {
   );
 
   expect(body).toBe(
-    "Raw token exposure in logs.\n\n###### Sent from Codex\n\n- [ ] reviewed by @wyattjoh",
+    "**[HIGH]**\n\nRaw token exposure in logs.\n\n###### Sent from Codex\n\n- [ ] reviewed by @wyattjoh",
   );
+});
+
+test("renderFinding: badges every severity so the author can triage a comment in isolation", () => {
+  const badges = (["critical", "high", "medium", "low"] as const).map(
+    (severity) =>
+      renderFinding(
+        {
+          id: "SEC-001",
+          file: "src/auth.ts",
+          line: 14,
+          severity,
+          category: "security",
+          title: "Token logged before validation",
+          description: "Raw token exposure in logs.",
+        },
+        { agentName: "Codex", humanName: "wyattjoh" },
+      ).split("\n")[0],
+  );
+
+  expect(badges).toEqual(["**[CRITICAL]**", "**[HIGH]**", "**[MEDIUM]**", "**[LOW]**"]);
+});
+
+test("renderFix: wraps the diff in a collapsed block with blank lines GitHub needs", () => {
+  expect(
+    renderFix({ summary: "Validate before logging.", diff: "-log(token)\n+log(redact(token))" }),
+  ).toBe(
+    [
+      "<details>",
+      "<summary>Recommended fix</summary>",
+      "",
+      "Validate before logging.",
+      "",
+      "```diff",
+      "-log(token)",
+      "+log(redact(token))",
+      "```",
+      "",
+      "</details>",
+    ].join("\n"),
+  );
+});
+
+test("renderFix: omits the code fence when the fix is prose-only", () => {
+  const rendered = renderFix({ summary: "Needs a product decision before any code change." });
+  expect(rendered).not.toContain("```");
+  expect(rendered).toContain("Needs a product decision before any code change.");
+  expect(rendered.endsWith("\n</details>")).toBe(true);
+});
+
+test("renderFinding: orders badge, description, fix, then footer", () => {
+  const body = renderFinding(
+    {
+      ...mkFinding(),
+      description: "Raw token exposure in logs.",
+      fix: { summary: "Redact first.", diff: "-log(token)\n+log(redact(token))" },
+    },
+    { agentName: "Codex", humanName: "wyattjoh" },
+  );
+
+  expect(body.indexOf("**[HIGH]**")).toBeLessThan(body.indexOf("Raw token exposure"));
+  expect(body.indexOf("Raw token exposure")).toBeLessThan(body.indexOf("<details>"));
+  expect(body.indexOf("</details>")).toBeLessThan(body.indexOf("###### Sent from Codex"));
+});
+
+test("renderFinding: omits the details block entirely when no fix is supplied", () => {
+  const body = renderFinding(mkFinding(), { agentName: "Codex", humanName: "wyattjoh" });
+  expect(body).not.toContain("<details>");
+});
+
+test("loadReview: rejects a pre-fenced fix.diff that would nest inside the added fence", async () => {
+  const path = await makeTempJsonFile();
+  await Bun.write(
+    path,
+    JSON.stringify({
+      summary: "",
+      findings: [{ ...mkFinding(), fix: { summary: "s", diff: "```diff\n-a\n+b\n```" } }],
+    }),
+  );
+  await expect(loadReview(path)).rejects.toThrow(/diff body only/);
+  await unlink(path);
+});
+
+test("loadReview: rejects a fix with no summary rather than rendering an empty block", async () => {
+  const path = await makeTempJsonFile();
+  await Bun.write(
+    path,
+    JSON.stringify({ summary: "", findings: [{ ...mkFinding(), fix: { diff: "-a\n+b" } }] }),
+  );
+  await expect(loadReview(path)).rejects.toThrow(/fix\.summary/);
+  await unlink(path);
+});
+
+function mkComment(over: Partial<ReviewComment> = {}): ReviewComment {
+  return { path: "src/auth.ts", line: 14, side: "RIGHT", body: "new body", ...over };
+}
+
+const ATTRIBUTION = { agentName: "Codex", humanName: "wyattjoh" };
+const FOOTERED = "old body\n\n###### Sent from Codex\n\n- [ ] reviewed by @wyattjoh";
+
+test("matchExistingComments: pairs a rendered comment with the agent comment on that line", () => {
+  const existing: ExistingComment[] = [{ id: 7, path: "src/auth.ts", line: 14, body: FOOTERED }];
+  const { matched, unmatched } = matchExistingComments([mkComment()], existing, ATTRIBUTION);
+  expect(matched).toEqual([{ comment: mkComment(), existingId: 7 }]);
+  expect(unmatched).toEqual([]);
+});
+
+test("matchExistingComments: never overwrites a human comment sharing the line", () => {
+  const existing: ExistingComment[] = [
+    { id: 7, path: "src/auth.ts", line: 14, body: "please rename this" },
+  ];
+  const { matched, unmatched } = matchExistingComments([mkComment()], existing, ATTRIBUTION);
+  expect(matched).toEqual([]);
+  expect(unmatched).toEqual([mkComment()]);
+});
+
+test("matchExistingComments: skips an ambiguous line rather than rewriting the wrong finding", () => {
+  const existing: ExistingComment[] = [
+    { id: 7, path: "src/auth.ts", line: 14, body: FOOTERED },
+    { id: 8, path: "src/auth.ts", line: 14, body: FOOTERED },
+  ];
+  const { matched, unmatched } = matchExistingComments([mkComment()], existing, ATTRIBUTION);
+  expect(matched).toEqual([]);
+  expect(unmatched).toEqual([mkComment()]);
+});
+
+test("matchExistingComments: still matches after the reviewer ticks the checkbox", () => {
+  const checked = FOOTERED.replace("- [ ]", "- [x]");
+  const existing: ExistingComment[] = [{ id: 7, path: "src/auth.ts", line: 14, body: checked }];
+  const { matched } = matchExistingComments([mkComment()], existing, ATTRIBUTION);
+  expect(matched.map((m) => m.existingId)).toEqual([7]);
+});
+
+test("matchExistingComments: an amend preserves a ticked checkbox rather than resetting it", () => {
+  const checked = FOOTERED.replace("- [ ]", "- [x]");
+  const existing: ExistingComment[] = [{ id: 7, path: "src/auth.ts", line: 14, body: checked }];
+  const rendered = mkComment({ body: appendFooter("revised finding", ATTRIBUTION) });
+  const { matched } = matchExistingComments([rendered], existing, ATTRIBUTION);
+  expect(matched[0].comment.body).toContain("- [x] reviewed by @wyattjoh");
+  expect(matched[0].comment.body).toContain("revised finding");
+});
+
+test("matchExistingComments: an unticked box stays unticked through an amend", () => {
+  const existing: ExistingComment[] = [{ id: 7, path: "src/auth.ts", line: 14, body: FOOTERED }];
+  const rendered = mkComment({ body: appendFooter("revised finding", ATTRIBUTION) });
+  const { matched } = matchExistingComments([rendered], existing, ATTRIBUTION);
+  expect(matched[0].comment.body).toContain("- [ ] reviewed by @wyattjoh");
+});
+
+test("matchExistingComments: a comment from a different agent is not a match", () => {
+  const existing: ExistingComment[] = [
+    {
+      id: 7,
+      path: "src/auth.ts",
+      line: 14,
+      body: "old\n\n###### Sent from Someone\n\n- [ ] reviewed by @wyattjoh",
+    },
+  ];
+  const { matched } = matchExistingComments([mkComment()], existing, ATTRIBUTION);
+  expect(matched).toEqual([]);
 });
 
 test("buildPayload: matches golden fixture for auth-diff scenario", async () => {

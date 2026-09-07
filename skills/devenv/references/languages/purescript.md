@@ -1,0 +1,121 @@
+<!-- source: https://devenv.sh/languages/purescript/
+     upstream: docs/src/content/docs/languages/purescript.md
+     llms-full.txt lines 12375-12506 -->
+
+# purescript
+
+## Options
+
+### languages.purescript.enable
+
+Whether to enable tools for PureScript development.
+
+*Type:* boolean
+
+*Default:*
+
+```nix
+false
+```
+
+*Example:*
+
+```nix
+true
+```
+
+*Declared by:*
+
+* <https://github.com/cachix/devenv/blob/main/src/modules/languages/purescript.nix>
+
+### languages.purescript.package
+
+The PureScript compiler package to use. Uses [purescript-overlay](https://github.com/thomashoneyman/purescript-overlay) by default.
+
+*Type:* package
+
+*Default:*
+
+```nix
+purescript-overlay.packages.${pkgs.stdenv.system}.purs
+```
+
+*Declared by:*
+
+* <https://github.com/cachix/devenv/blob/main/src/modules/languages/purescript.nix>
+
+### languages.purescript.lsp.enable
+
+Whether to enable PureScript Language Server.
+
+*Type:* boolean
+
+*Default:*
+
+```nix
+true
+```
+
+*Example:*
+
+```nix
+true
+```
+
+*Declared by:*
+
+* <https://github.com/cachix/devenv/blob/main/src/modules/languages/purescript.nix>
+
+### languages.purescript.lsp.package
+
+The PureScript language server package to use. Uses [purescript-overlay](https://github.com/thomashoneyman/purescript-overlay) by default.
+
+*Type:* package
+
+*Default:*
+
+```nix
+purescript-overlay.packages.${pkgs.stdenv.system}.purescript-language-server
+```
+
+*Declared by:*
+
+* <https://github.com/cachix/devenv/blob/main/src/modules/languages/purescript.nix>
+
+### languages.purescript.spago.enable
+
+Whether to enable Spago package manager.
+
+*Type:* boolean
+
+*Default:*
+
+```nix
+true
+```
+
+*Example:*
+
+```nix
+true
+```
+
+*Declared by:*
+
+* <https://github.com/cachix/devenv/blob/main/src/modules/languages/purescript.nix>
+
+### languages.purescript.spago.package
+
+The Spago package manager to use. Uses [purescript-overlay](https://github.com/thomashoneyman/purescript-overlay) by default.
+
+*Type:* package
+
+*Default:*
+
+```nix
+purescript-overlay.packages.${pkgs.stdenv.system}.spago
+```
+
+*Declared by:*
+
+* <https://github.com/cachix/devenv/blob/main/src/modules/languages/purescript.nix>

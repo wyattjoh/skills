@@ -1,0 +1,89 @@
+<!-- source: https://devenv.sh/languages/vala/
+     upstream: docs/src/content/docs/languages/vala.md
+     llms-full.txt lines 15810-15905 -->
+
+# vala
+
+## Options
+
+### languages.vala.enable
+
+Whether to enable tools for Vala development.
+
+*Type:* boolean
+
+*Default:*
+
+```nix
+false
+```
+
+*Example:*
+
+```nix
+true
+```
+
+*Declared by:*
+
+* <https://github.com/cachix/devenv/blob/main/src/modules/languages/vala.nix>
+
+### languages.vala.package
+
+The Vala package to use.
+
+*Type:* package
+
+*Default:*
+
+```nix
+pkgs.vala
+```
+
+*Example:*
+
+```nix
+pkgs.vala_0_54
+```
+
+*Declared by:*
+
+* <https://github.com/cachix/devenv/blob/main/src/modules/languages/vala.nix>
+
+### languages.vala.lsp.enable
+
+Whether to enable Vala Language Server.
+
+*Type:* boolean
+
+*Default:*
+
+```nix
+true
+```
+
+*Example:*
+
+```nix
+true
+```
+
+*Declared by:*
+
+* <https://github.com/cachix/devenv/blob/main/src/modules/languages/vala.nix>
+
+### languages.vala.lsp.package
+
+The Vala language server package to use.
+
+*Type:* package
+
+*Default:*
+
+```nix
+pkgs.vala-language-server
+```
+
+*Declared by:*
+
+* <https://github.com/cachix/devenv/blob/main/src/modules/languages/vala.nix>

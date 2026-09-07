@@ -27,6 +27,10 @@
         "effect": "^3.21",
       },
     },
+    "skills/devenv": {
+      "name": "@wyattjoh/devenv-skill",
+      "version": "1.0.0",
+    },
     "skills/driving-ios-simulator": {
       "name": "@wyattjoh/driving-ios-simulator-skill",
       "version": "1.0.0",
@@ -283,6 +287,8 @@
     "@wyattjoh/claude-sessions-skill": ["@wyattjoh/claude-sessions-skill@workspace:skills/claude-sessions"],
 
     "@wyattjoh/clean-storage-skill": ["@wyattjoh/clean-storage-skill@workspace:skills/clean-storage"],
+
+    "@wyattjoh/devenv-skill": ["@wyattjoh/devenv-skill@workspace:skills/devenv"],
 
     "@wyattjoh/driving-ios-simulator-skill": ["@wyattjoh/driving-ios-simulator-skill@workspace:skills/driving-ios-simulator"],
 

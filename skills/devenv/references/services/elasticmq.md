@@ -1,0 +1,61 @@
+<!-- source: https://devenv.sh/services/elasticmq/
+     upstream: docs/src/content/docs/services/elasticmq.md
+     llms-full.txt lines 19940-20005 -->
+
+# elasticmq
+
+## Options
+
+### services.elasticmq.enable
+
+Whether to enable elasticmq-server.
+
+*Type:* boolean
+
+*Default:*
+
+```nix
+false
+```
+
+*Example:*
+
+```nix
+true
+```
+
+*Declared by:*
+
+* <https://github.com/cachix/devenv/blob/main/src/modules/services/elasticmq.nix>
+
+### services.elasticmq.package
+
+Which package of elasticmq-server-bin to use
+
+*Type:* package
+
+*Default:*
+
+```nix
+pkgs.elasticmq-server-bin
+```
+
+*Declared by:*
+
+* <https://github.com/cachix/devenv/blob/main/src/modules/services/elasticmq.nix>
+
+### services.elasticmq.settings
+
+Configuration for elasticmq-server
+
+*Type:* strings concatenated with “\n”
+
+*Default:*
+
+```nix
+""
+```
+
+*Declared by:*
+
+* <https://github.com/cachix/devenv/blob/main/src/modules/services/elasticmq.nix>

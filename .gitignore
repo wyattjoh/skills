@@ -12,9 +12,11 @@ __pycache__/
 
 # Skill runtime data (instance-specific config, caches)
 skills/*/data/
+skills/devenv/.cache/
 
 # Package manager artifacts (safety net)
 node_modules/
 package-lock.json
 yarn.lock
 pnpm-lock.yaml
+skills/alchemy/.cache/

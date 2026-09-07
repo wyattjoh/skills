@@ -5,7 +5,7 @@ paths:
 alwaysApply: false
 ---
 
-When creating, modifying, or reviewing any files in `skills/*/`, ALWAYS invoke the `claude-skills` skill first to ensure you're following current best practices and conventions.
+When creating, modifying, or reviewing any files in `skills/*/`, invoke the `claude-skills` skill first. It carries the current authoring conventions and fetches upstream docs so the frontmatter and structure match what Claude Code loads.
 
 ## SKILL.md frontmatter
 
@@ -44,7 +44,7 @@ skills/<name>/
 | **Separation**    | `scripts/` = executable code, `references/` = docs/templates/static data                                                                                 |
 | **File naming**   | Use lowercase with hyphens for all reference files (e.g., `error-patterns.md`)                                                                           |
 
-**IMPORTANT**: All skill scripts MUST be written in Bun (TypeScript). Bash scripts are not allowed. This ensures:
+All skill scripts are written in Bun (TypeScript); bash scripts are not allowed. This ensures:
 
 - Cross-platform compatibility (macOS, Linux, Windows)
 - Type safety and better error handling

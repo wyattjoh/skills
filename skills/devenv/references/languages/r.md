@@ -1,0 +1,121 @@
+<!-- source: https://devenv.sh/languages/r/
+     upstream: docs/src/content/docs/languages/r.md
+     llms-full.txt lines 13636-13767 -->
+
+# r
+
+## Options
+
+### languages.r.enable
+
+Whether to enable tools for R development.
+
+*Type:* boolean
+
+*Default:*
+
+```nix
+false
+```
+
+*Example:*
+
+```nix
+true
+```
+
+*Declared by:*
+
+* <https://github.com/cachix/devenv/blob/main/src/modules/languages/r.nix>
+
+### languages.r.package
+
+The R package to use.
+
+*Type:* package
+
+*Default:*
+
+```nix
+pkgs.R
+```
+
+*Declared by:*
+
+* <https://github.com/cachix/devenv/blob/main/src/modules/languages/r.nix>
+
+### languages.r.lsp.enable
+
+Whether to enable R Language Server.
+
+*Type:* boolean
+
+*Default:*
+
+```nix
+true
+```
+
+*Example:*
+
+```nix
+true
+```
+
+*Declared by:*
+
+* <https://github.com/cachix/devenv/blob/main/src/modules/languages/r.nix>
+
+### languages.r.lsp.package
+
+The R language server package to use.
+
+*Type:* package
+
+*Default:*
+
+```nix
+pkgs.rPackages.languageserver
+```
+
+*Declared by:*
+
+* <https://github.com/cachix/devenv/blob/main/src/modules/languages/r.nix>
+
+### languages.r.radian.enable
+
+Whether to enable a 21 century R console.
+
+*Type:* boolean
+
+*Default:*
+
+```nix
+false
+```
+
+*Example:*
+
+```nix
+true
+```
+
+*Declared by:*
+
+* <https://github.com/cachix/devenv/blob/main/src/modules/languages/r.nix>
+
+### languages.r.radian.package
+
+The radian package to use.
+
+*Type:* package
+
+*Default:*
+
+```nix
+pkgs.radianWrapper
+```
+
+*Declared by:*
+
+* <https://github.com/cachix/devenv/blob/main/src/modules/languages/r.nix>

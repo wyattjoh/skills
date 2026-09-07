@@ -16,9 +16,10 @@ up-to-date best practices from official documentation.
 
 ## Frontmatter Review (Required Behavior)
 
-**When creating or modifying any skill, you MUST review the full set of
-available frontmatter fields (see [references/frontmatter-reference.md](references/frontmatter-reference.md))
-and proactively suggest fields that would be valuable for the skill.**
+When creating or modifying any skill, review the full set of available
+frontmatter fields (see [references/frontmatter-reference.md](references/frontmatter-reference.md))
+and suggest the ones that would be valuable for this skill. Fields that are
+not suggested are easy to forget later, so cover the common ones below every time.
 
 For each suggested field, present:
 
@@ -31,7 +32,7 @@ multiple fields could be valuable. Group related fields together (e.g.,
 `context`/`agent` are a natural pair; `disable-model-invocation`/`user-invocable`
 control visibility).
 
-**Do not silently skip fields.** Common fields to consider for every skill:
+Common fields to consider for every skill:
 
 - `allowed-tools` -- should this skill restrict tool access?
 - `argument-hint` -- does this skill accept arguments?
@@ -41,7 +42,7 @@ control visibility).
 
 ## When to Fetch Documentation
 
-**ALWAYS fetch fresh documentation when:**
+Fetch fresh documentation when:
 
 - Creating a new skill from scratch
 - Modifying skill frontmatter fields
@@ -201,9 +202,35 @@ Claude doesn't already have. Challenge each piece of information: "Does Claude
 really need this explanation?" Keep SKILL.md under 500 lines; move detailed
 content to `references/`.
 
+### Skill Content Lifecycle
+
+Invoked skill content enters the conversation as a single message and **stays
+there across later turns**. Claude Code does not re-read the file, so every line
+is a recurring token cost, and guidance meant to apply throughout a task must be
+written as standing instructions rather than one-time steps.
+
+Two consequences for authoring:
+
+- Re-invoking a skill whose rendered content is identical adds only a short
+  "already loaded" note. Content is appended again only when it differs, because
+  arguments changed or a dynamic-injection command produced new output.
+- Auto-compaction re-attaches the most recent invocation of each skill after the
+  summary, keeping the first **5,000 tokens** of each within a combined
+  **25,000-token** budget, filled from the most recently invoked. Skills invoked
+  early in a long session can be dropped entirely, so front-load what matters.
+
+If a skill seems to stop influencing behavior, the content is usually still
+present and the model is choosing other approaches. Strengthen the `description`
+and instructions, or enforce the behavior with `hooks`.
+
 ### Step 7: Validate the Skill
 
+Run `claude plugin validate .claude/skills` (or `~/.claude/skills`) to find
+`SKILL.md` files whose frontmatter doesn't parse. Requires Claude Code v2.1.233+.
+
 - [ ] File is named exactly `SKILL.md`
+- [ ] Opening `---` is the file's first line (otherwise the whole file, markers
+      included, is treated as body)
 - [ ] YAML frontmatter is valid (proper quoting, no tabs)
 - [ ] Name uses kebab-case
 - [ ] Description contains specific trigger phrases in quotes
@@ -322,6 +349,13 @@ hooks:
 2. No tabs, use spaces only
 3. Check for unescaped special characters
 
+Malformed frontmatter fails quietly: Claude Code loads the skill **body with
+empty metadata**, so `/skill-name` still works but there is no `description` for
+Claude to match against, and the skill never auto-triggers. Run with `--debug`
+to see the parse error, or `claude plugin validate` over the skills directory.
+Use `--safe-mode` (or `CLAUDE_CODE_SAFE_MODE`) to start with all CLAUDE.md,
+plugins, skills, hooks, and MCP servers disabled when isolating a problem.
+
 ### Skill Too Long
 
 1. Move detailed content to `references/`
@@ -330,11 +364,13 @@ hooks:
 
 ### Claude Doesn't See All Skills
 
-Skill descriptions share a character budget (1% of context window, fallback of
-**8,000 characters**). Each entry (`description` + `when_to_use`) is capped at
-**1,536 characters**. Run
-`/context` to check. Increase via `SLASH_COMMAND_TOOL_CHAR_BUDGET` environment
-variable.
+Skill descriptions share a character budget that scales at **1% of the model's
+context window**. Each entry (`description` + `when_to_use`) is separately capped
+at **1,536 characters**. The listing always keeps every skill _name_; on
+overflow Claude Code drops _descriptions_, starting with the skills you invoke
+least. Run `/doctor` for the breakdown and biggest contributors. Raise the budget
+with the `skillListingBudgetFraction` setting or the
+`SLASH_COMMAND_TOOL_CHAR_BUDGET` environment variable.
 
 ## References
 

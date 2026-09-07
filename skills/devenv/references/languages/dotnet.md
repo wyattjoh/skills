@@ -1,0 +1,79 @@
+<!-- source: https://devenv.sh/languages/dotnet/
+     upstream: docs/src/content/docs/languages/dotnet.md
+     llms-full.txt lines 9112-9197 -->
+
+# dotnet
+
+## Options
+
+### languages.dotnet.enable
+
+Whether to enable tools for .NET development.
+
+*Type:* boolean
+
+*Default:*
+
+```nix
+false
+```
+
+*Example:*
+
+```nix
+true
+```
+
+*Declared by:*
+
+* <https://github.com/cachix/devenv/blob/main/src/modules/languages/dotnet.nix>
+
+### languages.dotnet.package
+
+The .NET SDK package to use.
+
+*Type:* package
+
+*Default:*
+
+```nix
+pkgs.dotnet-sdk
+```
+
+*Declared by:*
+
+* <https://github.com/cachix/devenv/blob/main/src/modules/languages/dotnet.nix>
+
+### languages.dotnet.lsp.enable
+
+Whether to enable .NET Language Server.
+
+*Type:* boolean
+
+*Default:* `true` if csharp-ls is available on the host platform, `false` otherwise
+
+*Example:*
+
+```nix
+true
+```
+
+*Declared by:*
+
+* <https://github.com/cachix/devenv/blob/main/src/modules/languages/dotnet.nix>
+
+### languages.dotnet.lsp.package
+
+The .NET language server package to use.
+
+*Type:* package
+
+*Default:*
+
+```nix
+pkgs.csharp-ls
+```
+
+*Declared by:*
+
+* <https://github.com/cachix/devenv/blob/main/src/modules/languages/dotnet.nix>

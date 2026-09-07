@@ -10,17 +10,22 @@ development workflows. There is no application to build: skills are Markdown (`S
 with optional Bun/TypeScript helper scripts, and agents are single Markdown files.
 
 For how Claude Code auto-loads skills, agents, rules, and memory, see
-[`references/claude-code-loading.md`](references/claude-code-loading.md).
+[`.claude/references/claude-code-loading.md`](.claude/references/claude-code-loading.md).
 
 ## Repository structure
 
 ```
-skills/         # one directory per skill, each with a SKILL.md (plus optional scripts/ and references/)
-agents/         # one Markdown file per agent
-references/     # shared reference docs for authoring in this repo
-.claude/rules/  # path-scoped authoring conventions for this repo
-package.json    # Bun workspace root (workspaces: ["skills/*"]) for skill helper scripts
+skills/              # one directory per published skill, each with a SKILL.md (plus optional scripts/ and references/)
+agents/              # one Markdown file per agent
+.claude/skills/      # skills internal to this repo, not published (e.g. claude-skills-update)
+.claude/references/  # shared reference docs for authoring in this repo, plus pinned dependency submodules
+.claude/rules/       # path-scoped authoring conventions for this repo
+package.json         # Bun workspace root (workspaces: ["skills/*"]) for skill helper scripts
 ```
+
+Skills under `skills/` are the published collection and belong in the `README.md`
+table. Skills under `.claude/skills/` are repo-internal tooling: they load
+automatically when working in this repository and are not listed in `README.md`.
 
 ## Path-scoped rules
 
@@ -59,19 +64,26 @@ Claude edits matching files:
 
 ## Documentation
 
-ALWAYS update `README.md` when adding, removing, or renaming a skill or agent. Keep the
-agents and skills tables in sync with the actual contents of `agents/` and `skills/`.
+Update `README.md` whenever a skill or agent is added, removed, or renamed, so the
+agents and skills tables match the actual contents of `agents/` and `skills/`.
 
 ## Dependency References
 
-Three upstream repositories are registered as pinned git submodules under `.claude/references/`.
+Five upstream repositories are registered as pinned git submodules under `.claude/references/`.
 They are for read-only reference only; do not edit files inside these paths.
 
-| Dependency | Version / Tag    | Path                            | Repository                                   | Pin (commit SHA)                           |
-| ---------- | ---------------- | ------------------------------- | -------------------------------------------- | ------------------------------------------ |
-| Catppuccin | `v0.2.0`         | `.claude/references/catppuccin` | https://github.com/catppuccin/catppuccin.git | `9de299f8f1702fe4fb4e439adfd04b5623e7b77f` |
-| Effect     | `effect@3.21.4`  | `.claude/references/effect`     | https://github.com/Effect-TS/effect.git      | `4c5a0e384ad768f5a89d650c1a753504dc9b8735` |
-| Varlock    | `varlock@1.10.0` | `.claude/references/varlock`    | https://github.com/dmno-dev/varlock.git      | `dd7863b4f319fcf333dfe1c29cb834f8e15313ad` |
+| Dependency              | Version / Tag           | Path                                               | Repository                                                       | Pin (commit SHA)                           |
+| ----------------------- | ----------------------- | -------------------------------------------------- | ---------------------------------------------------------------- | ------------------------------------------ |
+| Catppuccin              | `v0.2.0`                | `.claude/references/catppuccin`                    | https://github.com/catppuccin/catppuccin.git                     | `9de299f8f1702fe4fb4e439adfd04b5623e7b77f` |
+| Composable Architecture | `1.26.2`                | `.claude/references/swift-composable-architecture` | https://github.com/pointfreeco/swift-composable-architecture.git | `377da4061db10d26337a71bb279c506bb951f50f` |
+| Effect                  | `effect@3.22.1`         | `.claude/references/effect`                        | https://github.com/Effect-TS/effect.git                          | `417e0faa80e471d77fc4a67452e68b09ae0ee861` |
+| Effect beta             | `effect@4.0.0-beta.107` | `.claude/references/effect-beta`                   | https://github.com/Effect-TS/effect.git                          | `3c495ae7c96d43bfc3b8020250562a194c2c895e` |
+| Varlock                 | `varlock@1.10.0`        | `.claude/references/varlock`                       | https://github.com/dmno-dev/varlock.git                          | `dd7863b4f319fcf333dfe1c29cb834f8e15313ad` |
+
+The Effect repository is vendored twice because the `effect-ts` and `effect-ts-beta` skills document two
+incompatible major versions. `effect` tracks the npm `latest` line (v3); `effect-beta` tracks the npm `beta`
+dist-tag (v4). The v4 checkout also carries upstream `MIGRATION.md`, `migration/`, `LLMS.md`, and `ai-docs/`
+directories that the v3 checkout does not.
 
 To populate locally after a fresh clone:
 

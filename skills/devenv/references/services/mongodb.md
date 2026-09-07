@@ -1,0 +1,161 @@
+<!-- source: https://devenv.sh/services/mongodb/
+     upstream: docs/src/content/docs/services/mongodb.md
+     llms-full.txt lines 22441-22614 -->
+
+# mongodb
+
+## Options
+
+### services.mongodb.enable
+
+Whether to enable MongoDB process and expose utilities.
+
+*Type:* boolean
+
+*Default:*
+
+```nix
+false
+```
+
+*Example:*
+
+```nix
+true
+```
+
+*Declared by:*
+
+* <https://github.com/cachix/devenv/blob/main/src/modules/services/mongodb.nix>
+
+### services.mongodb.package
+
+Which MongoDB package to use.
+
+*Type:* package
+
+*Default:*
+
+```nix
+pkgs.mongodb-ce
+```
+
+*Declared by:*
+
+* <https://github.com/cachix/devenv/blob/main/src/modules/services/mongodb.nix>
+
+### services.mongodb.additionalArgs
+
+Additional arguments passed to `mongod`.
+
+*Type:* list of strings concatenated with “\n”
+
+*Default:*
+
+```nix
+[
+  "--noauth"
+]
+```
+
+*Example:*
+
+```nix
+[
+  "--port"
+  "27017"
+  "--noauth"
+]
+```
+
+*Declared by:*
+
+* <https://github.com/cachix/devenv/blob/main/src/modules/services/mongodb.nix>
+
+### services.mongodb.initDatabasePassword
+
+This used in conjunction with initDatabaseUsername, create a new user and set that user’s password. This user is created in the admin authentication database and given the role of root, which is a “superuser” role.
+
+*Type:* string
+
+*Default:*
+
+```nix
+""
+```
+
+*Example:*
+
+```nix
+"secret"
+```
+
+*Declared by:*
+
+* <https://github.com/cachix/devenv/blob/main/src/modules/services/mongodb.nix>
+
+### services.mongodb.initDatabaseUsername
+
+This used in conjunction with initDatabasePassword, create a new user and set that user’s password. This user is created in the admin authentication database and given the role of root, which is a “superuser” role.
+
+*Type:* string
+
+*Default:*
+
+```nix
+""
+```
+
+*Example:*
+
+```nix
+"mongoadmin"
+```
+
+*Declared by:*
+
+* <https://github.com/cachix/devenv/blob/main/src/modules/services/mongodb.nix>
+
+### services.mongodb.replication.enable
+
+Whether to enable MongoDB replication with a 1-node replica-set…
+
+*Type:* boolean
+
+*Default:*
+
+```nix
+false
+```
+
+*Example:*
+
+```nix
+true
+```
+
+*Declared by:*
+
+* <https://github.com/cachix/devenv/blob/main/src/modules/services/mongodb.nix>
+
+### services.mongodb.replication.replSet
+
+Replica-set name
+
+*Type:* string
+
+*Default:*
+
+```nix
+"rs0"
+```
+
+*Example:*
+
+```nix
+"rs0"
+```
+
+*Declared by:*
+
+* <https://github.com/cachix/devenv/blob/main/src/modules/services/mongodb.nix>

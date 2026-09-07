@@ -67,15 +67,17 @@ Restart Claude Code after adding or changing an agent definition.
 
 | Skill                         | Description                                                                       |
 | ----------------------------- | --------------------------------------------------------------------------------- |
+| alchemy                       | Answer Alchemy (alchemy.run) questions from an indexed local copy of the docs     |
 | catppuccin-interfaces         | Apply Catppuccin colors with semantic, accessible interface tokens                |
 | claude-sessions               | Parse and analyze Claude Code conversation history                                |
 | claude-skills                 | Guidance for authoring Claude Code skills                                         |
-| claude-skills-update          | Periodic check for upstream Claude Code skill API changes                         |
 | clean-storage                 | Reclaim disk space from verified build artifacts and tool caches                  |
 | conductor                     | Navigate Conductor worktree environments for parallel agents                      |
+| devenv                        | Answer devenv.sh questions from an indexed local copy of the full documentation   |
 | dialkit                       | Live parameter tweaking and design exploration in React via dialkit               |
 | driving-ios-simulator         | Drive a booted iOS Simulator: tap, swipe, type, read elements, screenshot         |
-| effect-ts                     | Effect-TS patterns: services, layers, error handling, composition                 |
+| effect-ts                     | Effect-TS v3 patterns: services, layers, error handling, composition              |
+| effect-ts-beta                | Effect v4 beta patterns, plus the v3 to v4 migration map                          |
 | executing-workflows-manually  | Run Claude Code workflow scripts in harnesses without the Workflow tool           |
 | herd                          | Run tickets in parallel as real agent sessions in sibling herdr tabs              |
 | herdr                         | Control herdr from inside a pane over its unix socket                             |
@@ -96,15 +98,16 @@ Restart Claude Code after adding or changing an agent definition.
 | release-please                | Configure, operate, and debug release-please                                      |
 | research-augmented-design     | Interleave background research agents with brainstorming during design            |
 | resticprofile                 | Operate the resticprofile CLI for restic backups                                  |
+| screenshots                   | Capture app windows atomically without disrupting the user's desktop              |
 | setup-pre-commit-hooks        | Set up polyglot Git hooks for Rust and TypeScript/Bun checks                      |
 | setup-project-memory          | Capture a session learning into .claude/memory, indexed and wired into CLAUDE.md  |
 | simplify                      | Interactive code simplification with batched approval                             |
 | skill-audit                   | Audit skill execution for permission denials, tool errors, and corrections        |
-| swift-composable-architecture | Adoption index for The Composable Architecture (TCA 1.26.0), mapped by topic      |
+| swift-composable-architecture | Adoption index for The Composable Architecture (TCA 1.26.2), mapped by topic      |
 | swift-sql                     | Type-safe Swift SQL with swift-structured-queries                                 |
-| swift-tca                     | TCA reducer and navigation patterns                                               |
 | varlock                       | Kickstart varlock, the encrypted schema-driven dotenv replacement                 |
 | vhs                           | Interview-driven terminal screencasts rendered to GIF/MP4/WebM                    |
+| whats-next                    | Emit the copy-ready prompt for the next agent session on a wayfinder map          |
 | workspaces                    | Create, operate, and compact multi-repo workspace hubs with enforced memory       |
 | wrap-up                       | Close out a long session: sweep loose ends, propose commits, report what remains  |
 
@@ -125,14 +128,15 @@ Restart Claude Code after adding or changing an agent definition.
 ## Repository layout
 
 ```text
-skills/         # One directory per skill, with SKILL.md and optional supporting files
-agents/         # Claude Code subagent definitions
-references/     # Shared authoring documentation
-.claude/rules/  # Repository-specific authoring conventions
+skills/              # One directory per published skill, with SKILL.md and optional supporting files
+agents/              # Claude Code subagent definitions
+.claude/skills/      # Skills internal to this repository, not published
+.claude/references/  # Shared authoring documentation and pinned dependency submodules
+.claude/rules/       # Repository-specific authoring conventions
 ```
 
 For details about how Claude Code loads skills, agents, rules, and memory, see
-[`references/claude-code-loading.md`](references/claude-code-loading.md).
+[`.claude/references/claude-code-loading.md`](.claude/references/claude-code-loading.md).
 
 ## Contributing
 

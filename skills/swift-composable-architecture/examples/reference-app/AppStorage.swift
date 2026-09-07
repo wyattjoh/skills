@@ -2,7 +2,7 @@
 // example; the structure and APIs are faithful to the original.
 // Illustrates `@Shared` user-preference keys: type-safe extensions on `SharedReaderKey` over
 // `.appStorage`, so features write `@Shared(.hidePreviewText) var hidePreviewText = false`
-// and mutate with `state.$hidePreviewText.withLock { $0 = true }` (1.26.0 requires withLock).
+// and mutate with `state.$hidePreviewText.withLock { $0 = true }` (1.26.2 requires withLock).
 // Use this for DEVICE-LOCAL user preferences only; domain data belongs in the persistence layer.
 
 import Foundation

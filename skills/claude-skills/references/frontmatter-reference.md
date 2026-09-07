@@ -2,6 +2,10 @@
 
 All frontmatter fields are optional. Only `description` is strongly recommended.
 
+Claude Code reads the frontmatter only when the opening `---` is the file's
+**first line**. Otherwise it treats the whole file, `---` markers included, as
+skill content, so the skill loads with no metadata at all.
+
 Boolean fields (`disable-model-invocation`, `user-invocable`, `background`)
 accept `yes`, `no`, `on`, `off`, `1`, and `0` in any letter case, in addition
 to `true`/`false` (Claude Code v2.1.218+).
@@ -20,7 +24,14 @@ For a personal or project skill, `name` does **not** change the invoked
 `/name` command — that always comes from the directory name. Only in a plugin
 skill does `name` become the last segment of the command (the plugin prefix
 stays in place, e.g. `name: fancy` in `my-plugin/skills/review/SKILL.md`
-becomes `/my-plugin:fancy`).
+becomes `/my-plugin:fancy`). The bare `/fancy` also invokes it unless another
+command already uses that name. If the `name` you write already starts with the
+plugin's own prefix (`name: my-plugin:fancy`), Claude Code doesn't add the
+prefix again on v2.1.246+; v2.1.216 through v2.1.245 doubled it.
+
+For a plugin-root `SKILL.md` there is no skill directory to take the name from,
+so `name` supplies the whole final segment, falling back to the plugin's
+directory name.
 
 ```yaml
 name: my-skill-name
@@ -75,16 +86,17 @@ patterns with glob syntax (e.g., `Bash(git:*)` allows any git command). To
 actually remove tools from the pool while the skill is active, use
 [`disallowed-tools`](#disallowed-tools) instead.
 
-The official Claude Code docs document all three forms: a **space-separated**
-string, a **comma-separated** string, and a **YAML list**. The YAML list is
-the clearest and is recommended when you have more than two or three tools,
-since it avoids any ambiguity about how the parser splits on spaces or commas.
+The official Claude Code docs treat all three forms as equally valid: a
+**space-separated** string, a **comma-separated** string, and a **YAML list**.
+The YAML list is the clearest and is recommended when you have more than two or
+three tools, since it avoids any ambiguity about how the parser splits on
+spaces or commas.
 
 ```yaml
-# Space-separated (official format)
+# Space-separated
 allowed-tools: Read Grep Glob Bash(git:*)
 
-# Comma-separated (also works)
+# Comma-separated
 allowed-tools: Read, Grep, Glob, Bash(git:*)
 
 # YAML list (recommended for clarity)
@@ -94,6 +106,18 @@ allowed-tools:
   - Glob
   - Bash(git:*)
 ```
+
+`${CLAUDE_SKILL_DIR}`, `${CLAUDE_PROJECT_DIR}`, and (in plugin skills)
+`${CLAUDE_PLUGIN_ROOT}`/`${CLAUDE_PLUGIN_DATA}` are substituted inside Bash
+rules here, not just in the body. Using the same variable in both places lets a
+skill run a bundled script with no permission prompt (see
+[hooks-and-advanced.md](hooks-and-advanced.md#pre-approving-a-bundled-script)).
+
+**Security:** workspace trust does not gate this field. Claude Code applies a
+project skill's `allowed-tools` whenever the skill is invoked, including in a
+`-p` run inside a folder you have never trusted. A skill checked into a
+repository can therefore grant itself broad tool access, so review the
+`allowed-tools` of repo skills before running Claude Code there.
 
 ### Common Tool Sets
 
@@ -174,7 +198,8 @@ by the user. The skill's description is also removed from Claude's context
 entirely. Also prevents the skill from being preloaded into subagents, and
 (as of v2.1.196) from running when a scheduled task fires with the skill as
 its prompt. Use for workflows with side effects (deploy, commit, send
-messages).
+messages). When Claude tries to invoke one anyway, it is told to ask you to run
+the skill rather than replicate its workflow inline.
 
 ```yaml
 disable-model-invocation: true
@@ -203,8 +228,10 @@ user-invocable: false
 Override the model used for the rest of the current turn while this skill is
 active (not saved to settings; the session model resumes on the next prompt).
 Accepts the same values as `/model`, or `inherit` to keep the active model.
-With `context: fork`, this sets the forked subagent's model instead. Model IDs
-change with releases. Check the official documentation for current values.
+With `context: fork`, this sets the forked subagent's model instead. A value
+excluded by your organization's `availableModels` allowlist is not used and the
+session keeps its current model (Claude Code warns when this happens). Model
+IDs change with releases. Check the official documentation for current values.
 
 ```yaml
 model: claude-sonnet-5
@@ -295,10 +322,13 @@ agent: Explore
 - **Required:** No
 - **Default:** None
 
-Skill-scoped lifecycle hooks that run during the skill's execution. Hooks are
-automatically cleaned up when the skill finishes. All hook events are
-supported in skill frontmatter (not just `PreToolUse`/`PostToolUse`/`Stop`) —
-see [hooks-and-advanced.md](hooks-and-advanced.md) for the full event list and
+Lifecycle hooks registered when you or Claude invoke the skill. They keep
+running **for the rest of the session**, on turns after the skill's own turn as
+well; set `once: true` on a hook to have Claude Code remove it after its first
+successful run. (Subagent frontmatter hooks are the ones removed on completion.)
+All hook events are supported in skill frontmatter (not just
+`PreToolUse`/`PostToolUse`/`Stop`).
+See [hooks-and-advanced.md](hooks-and-advanced.md) for the full event list and
 handler types (`command`, `http`, `mcp_tool`, `prompt`, `agent`). Each event
 contains an array of matcher/hook pairs.
 

@@ -6,13 +6,13 @@
       "path": "src/auth.ts",
       "line": 14,
       "side": "RIGHT",
-      "body": "Raw token exposure in logs.\n\n###### Sent from Codex\n\n- [ ] reviewed by @wyattjoh"
+      "body": "**[HIGH]**\n\nRaw token exposure in logs.\n\n###### Sent from Codex\n\n- [ ] reviewed by @wyattjoh"
     },
     {
       "path": "src/new-file.ts",
       "line": 1,
       "side": "RIGHT",
-      "body": "MAGIC = 42 has no comment describing why 42.\n\n###### Sent from Codex\n\n- [ ] reviewed by @wyattjoh"
+      "body": "**[LOW]**\n\nMAGIC = 42 has no comment describing why 42.\n\n###### Sent from Codex\n\n- [ ] reviewed by @wyattjoh"
     }
   ]
 }
