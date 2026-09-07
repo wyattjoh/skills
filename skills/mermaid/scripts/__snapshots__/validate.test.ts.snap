@@ -119,7 +119,7 @@ exports[`validate CLI fixtures snapshots structured output for valid and diagram
           "valid": true,
         },
         {
-          "diagramType": "class",
+          "diagramType": "classDiagram",
           "endLine": 32,
           "index": 4,
           "startLine": 28,
