@@ -179,7 +179,7 @@ describe("Markdown fixtures", () => {
       { startLine: 6, endLine: 9, diagramType: "flowchart-v2" },
       { startLine: 13, endLine: 17, diagramType: "sequence" },
       { startLine: 21, endLine: 24, diagramType: "stateDiagram" },
-      { startLine: 28, endLine: 32, diagramType: "class" },
+      { startLine: 28, endLine: 32, diagramType: "classDiagram" },
       { startLine: 36, endLine: 37, diagramType: "er" },
       { startLine: 41, endLine: 45, diagramType: "gantt" },
       { startLine: 49, endLine: 51, diagramType: "pie" },
