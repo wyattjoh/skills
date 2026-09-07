@@ -16,9 +16,10 @@ up-to-date best practices from official documentation.
 
 ## Frontmatter Review (Required Behavior)
 
-**When creating or modifying any skill, you MUST review the full set of
-available frontmatter fields (see [references/frontmatter-reference.md](references/frontmatter-reference.md))
-and proactively suggest fields that would be valuable for the skill.**
+When creating or modifying any skill, review the full set of available
+frontmatter fields (see [references/frontmatter-reference.md](references/frontmatter-reference.md))
+and suggest the ones that would be valuable for this skill. Fields that are
+not suggested are easy to forget later, so cover the common ones below every time.
 
 For each suggested field, present:
 
@@ -31,7 +32,7 @@ multiple fields could be valuable. Group related fields together (e.g.,
 `context`/`agent` are a natural pair; `disable-model-invocation`/`user-invocable`
 control visibility).
 
-**Do not silently skip fields.** Common fields to consider for every skill:
+Common fields to consider for every skill:
 
 - `allowed-tools` -- should this skill restrict tool access?
 - `argument-hint` -- does this skill accept arguments?
@@ -41,7 +42,7 @@ control visibility).
 
 ## When to Fetch Documentation
 
-**ALWAYS fetch fresh documentation when:**
+Fetch fresh documentation when:
 
 - Creating a new skill from scratch
 - Modifying skill frontmatter fields
