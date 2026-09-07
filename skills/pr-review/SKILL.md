@@ -266,11 +266,7 @@ For each issue, include:
 
 ## Guidelines
 
-- Be thorough but constructive
-- Prioritize issues by impact
-- Provide specific line references where applicable
-- Suggest solutions, not just problems
-- Acknowledge good practices
+Call out what the change does well alongside the findings. Reviews that only list problems read as hostile, and the author needs to know which patterns to keep.
 
 ## Step 9: PR Submission (conditional)
 

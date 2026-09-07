@@ -64,8 +64,8 @@ Claude edits matching files:
 
 ## Documentation
 
-ALWAYS update `README.md` when adding, removing, or renaming a skill or agent. Keep the
-agents and skills tables in sync with the actual contents of `agents/` and `skills/`.
+Update `README.md` whenever a skill or agent is added, removed, or renamed, so the
+agents and skills tables match the actual contents of `agents/` and `skills/`.
 
 ## Dependency References
 

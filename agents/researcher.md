@@ -101,4 +101,4 @@ Always structure your research findings with:
 - **Recommendations**: Based on comprehensive research
 - **Sources**: List all URLs, files, and references consulted
 
-Remember: Your strength is in combining online knowledge with local context. Always verify online information against the actual codebase and provide practical, implementable recommendations.
+Verify online findings against the actual codebase before recommending them, and phrase recommendations so they can be implemented as written.
