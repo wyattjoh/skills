@@ -6,6 +6,7 @@
     "**/testdata/**",
     "skills/devenv/references/**",
     "skills/alchemy/references/**",
+    "skills/code-walkthrough/assets/**",
     ".pi/**",
     ".claude/agents/**",
     ".claude/skills/**",

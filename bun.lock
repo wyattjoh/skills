@@ -34,6 +34,10 @@
         "effect": "^3.21",
       },
     },
+    "skills/code-walkthrough": {
+      "name": "@wyattjoh/code-walkthrough-skill",
+      "version": "1.0.0",
+    },
     "skills/devenv": {
       "name": "@wyattjoh/devenv-skill",
       "version": "1.0.0",
@@ -296,6 +300,8 @@
     "@wyattjoh/claude-sessions-skill": ["@wyattjoh/claude-sessions-skill@workspace:skills/claude-sessions"],
 
     "@wyattjoh/clean-storage-skill": ["@wyattjoh/clean-storage-skill@workspace:skills/clean-storage"],
+
+    "@wyattjoh/code-walkthrough-skill": ["@wyattjoh/code-walkthrough-skill@workspace:skills/code-walkthrough"],
 
     "@wyattjoh/devenv-skill": ["@wyattjoh/devenv-skill@workspace:skills/devenv"],
 
