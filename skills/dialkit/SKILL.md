@@ -28,6 +28,13 @@ source as inline literals.
 > dialkit is **never** committed to source control. It exists only for the
 > duration of an exploration session.
 
+> **Terminology:** as of dialkit 2.x, the panel's own UI labels saved entries
+> "versions" (e.g. "Version 1", a version menu reached from the toolbar's
+> "+") rather than "presets". Say "version" when describing the panel to the
+> user throughout this workflow. The config option and `DialStore` methods
+> referenced below (`savePreset`, `getPresets`, `seedPresets`, etc.) still use
+> the name "preset" in code, so no code or field name here needs to change.
+
 ## Two Modes
 
 ### Exploration Mode (primary)

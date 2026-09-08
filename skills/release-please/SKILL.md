@@ -21,9 +21,9 @@ Configures [release-please](https://github.com/googleapis/release-please) in a p
 
 Use `WebFetch` on these URLs to get current documentation before proceeding.
 
-**Action version pin:** `@v5` (Apr 2026) and `@v4` are both usable. v5 only changes the runner runtime from Node 20 to Node 24 — no input/output changes. v4 received library bumps through `v4.4.1` (Feb 2026) and is the safer pin for self-hosted runners that haven't upgraded to Node 24, but no v4 release has shipped since v5.0.0, so treat "still maintained" as provisional and check for a newer v4 tag before relying on it. **Avoid `@v3`** — its last release was `v3.7.13` (Dec 2023), it runs on Node 16, and it predates the config-file-only manifest model (v4 removed most per-input configuration in favor of `release-please-config.json`). Both `release_created` (root) and `releases_created` (aggregate) outputs exist in v3 and v4 alike — the split is root-vs-aggregate, not a version difference.
+**Action version pin:** `@v5` (Apr 2026) and `@v4` are both usable. v5 only changes the runner runtime from Node 20 to Node 24 — no input/output changes. v4 received library bumps through `v4.4.1` (Feb 2026) and is the safer pin for self-hosted runners that haven't upgraded to Node 24, but no v4 release has shipped since v5.0.0, so treat "still maintained" as provisional and check for a newer v4 tag before relying on it. **Avoid `@v3`** — its last release was `v3.7.13` (Nov 2023), it runs on Node 16, and it predates the config-file-only manifest model (v4 removed most per-input configuration in favor of `release-please-config.json`). Both `release_created` (root) and `releases_created` (aggregate) outputs exist in v3 and v4 alike — the split is root-vs-aggregate, not a version difference.
 
-**Library version:** release-please-action v5.0.0 bundles release-please library v17.6.0. Upstream ships releases roughly weekly to biweekly — the library was at v17.11.1 as of 2026-07-31, several minor versions ahead of what v5.0.0 bundles (source: [release-please releases](https://github.com/googleapis/release-please/releases), [npm registry](https://registry.npmjs.org/release-please)). Check the action's own `package-lock.json` at your pinned tag if you need the exact bundled version.
+**Library version:** release-please-action v5.0.0 bundles release-please library v17.6.0 (still the latest action release as of 2026-09-08, re-verified today). Upstream ships releases roughly weekly to biweekly — the library was at v17.11.1 as of 2026-07-31, and has since moved to v17.11.2 (released 2026-08-24, verified against the [release-please CHANGELOG](https://github.com/googleapis/release-please/blob/main/CHANGELOG.md) on 2026-09-08), several minor versions ahead of what v5.0.0 bundles. Check the action's own `package-lock.json` at your pinned tag if you need the exact bundled version.
 
 ## Quick Start
 
@@ -398,18 +398,18 @@ The single most useful debugging signal is the PR label: `autorelease: pending` 
 
 5. **After merging a release PR, pull locally.** The PR modifies the manifest and `CHANGELOG.md`. Pull before pushing new commits.
 
-6. **Conventional commits are required.** `feat:` = minor, `fix:` = patch, `feat!:` or `BREAKING CHANGE:` = major. Default releasable types are `feat`, `fix`, `perf`, and `deps`. Everything else (`chore`, `build`, `docs`, `style`, `test`, `ci`, `refactor`) is non-releasable by default — customize via `changelog-sections`.
+6. **Conventional commits are required.** `feat:` = minor, `fix:` = patch, `feat!:` or `BREAKING CHANGE:` = major. Default releasable types are `feat`, `fix`, and `deps` (source: [release-please README, "Release Please bot does not create a release PR"](https://github.com/googleapis/release-please#readme), verified 2026-09-08; the README lists these three prefixes explicitly and does not include `perf`). Everything else (`chore`, `build`, `docs`, `style`, `test`, `ci`, `refactor`, `perf`) is non-releasable by default — customize via `changelog-sections`.
 
 7. **The config JSON schema lags reality.** Upstream tracks this in [release-please#2518](https://github.com/googleapis/release-please/issues/2518). Verify config field support against the library version your action pin bundles, not against the schema alone.
 
 ## Known Upstream Issues (verify if affected)
 
-Spot-checked against open issues as of 2026-08-12. Re-check before recommending workarounds.
+Spot-checked against open issues as of 2026-08-12; re-verified against the live issue tracker on 2026-09-08 (all four remain open/unresolved as of that date). Re-check before recommending workarounds.
 
-- **`separate-pull-requests: true` with Go monorepos** can fail with "A pull request already exists" on release-please library v17.6.0. Pin the action to a v4.x release that bundles v17.5.x if affected.
-- **`include-commit-authors`** (v17.5.0) is currently a no-op — author metadata is dropped.
-- **`chore(deps)` commits** are recognized by the dependency manifest plugin but don't trigger releases. Use `fix(deps):` to trigger a patch release from a dependency bump.
-- **Label-application races**: occasional 422s when release-please tries to label a freshly created PR. Workflow retry usually clears it.
+- **`separate-pull-requests: true` with Go monorepos** can fail with "A pull request already exists" on release-please library v17.6.0. Confirmed open as [release-please#2773](https://github.com/googleapis/release-please/issues/2773) (opened 2026-05-09, explicitly reproduces on v17.6.0). Pin the action to a v4.x release that bundles v17.5.x if affected.
+- **`include-commit-authors`** (v17.5.0) is currently a no-op — author metadata is dropped. Confirmed open as [release-please#2761](https://github.com/googleapis/release-please/issues/2761) (P2, opened 2026-04-22); a fix, [PR #2892](https://github.com/googleapis/release-please/pull/2892), exists but is unmerged as of 2026-09-08.
+- **`chore(deps)` commits** are recognized by the dependency manifest plugin but don't trigger releases. Use `fix(deps):` to trigger a patch release from a dependency bump. Confirmed open as [release-please#2764](https://github.com/googleapis/release-please/issues/2764) (P2, "DependencyManifest recognizes chore(deps) commits but never releases them").
+- **Label-application races**: occasional 422s when release-please tries to label a freshly created PR. Workflow retry usually clears it. Could not find a specific open or closed upstream issue matching this claim as of 2026-09-08 (left unchanged, unverified either way).
 
 ## References
 

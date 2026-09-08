@@ -125,7 +125,8 @@ These apply to most apps and are worth checking for the one you're driving:
 ## Setup notes (one-time)
 
 - Install the tooling: `brew tap facebook/fb && brew install idb-companion` (not in
-  homebrew-core, the tap is required) and `pip3 install fb-idb` (requires Python 3.11+).
+  homebrew-core, the tap is required) and `pip3 install fb-idb` (requires Python 3.10+,
+  per idb's official README).
   This puts `idb` on your PATH (commonly `~/.local/bin/idb`) and `idb_companion` in
   Homebrew's bin. The scripts prepend `~/.local/bin` to `PATH` so `idb` resolves
   regardless of shell.

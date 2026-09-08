@@ -171,7 +171,8 @@ and `--yes`.
 | `aws bootstrap`                                             | per-account assets bucket that Lambda needs        | `--region`, `--destroy`                                      |
 | `cloudflare bootstrap\|create-token\|state logs`            | state-store worker, API tokens, its logs           | `--force`, `--all-permissions`                               |
 
-Plan symbols: `+` create, `~` update, `-` delete, `·` no-op, `λ` action run.
+Plan symbols: `+` create, `~` update, `±` replace, `-` delete, `•` no-op, `λ`
+action run, `·` action skip.
 
 `deploy`, `destroy`, and `plan` render an Ink TUI interactively. A known agent
 env var (including `CLAUDECODE`) forces plain output, and **plain mode never

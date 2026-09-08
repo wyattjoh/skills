@@ -210,15 +210,28 @@ Central index of all sessions for a project containing metadata like session ID,
 
 ### Conversation Files (.jsonl)
 
-JSON Lines format where each line is a message event:
+JSON Lines format where each line is an event. This is Claude Code's internal
+format and it evolves across releases: the table below reflects a 2.1.x
+session and is not exhaustive; `references/types.ts` is a best-effort
+snapshot, not a guarantee. Current sessions also no longer carry the `slug`
+field documented there on `BaseMessage`, and `system` entries now carry
+hook/lifecycle fields (`subtype`, `hookInfos`, `stopReason`, ...) rather than
+the simpler `{system, allowedTools}` shape.
 
-| Type                    | Description                                    |
-| ----------------------- | ---------------------------------------------- |
-| `file-history-snapshot` | File state snapshots for undo/redo             |
-| `user`                  | User messages (text or tool_result)            |
-| `assistant`             | Assistant responses (text, thinking, tool_use) |
-| `system`                | System configuration messages                  |
-| `summary`               | Collapsed/summarized message sections          |
+| Type                    | Description                                                     |
+| ----------------------- | --------------------------------------------------------------- |
+| `file-history-snapshot` | File state snapshots for undo/redo                              |
+| `user`                  | User messages (text or tool_result)                             |
+| `assistant`             | Assistant responses (text, thinking, tool_use)                  |
+| `system`                | Hook and lifecycle notifications (e.g. stop-hook summaries)     |
+| `summary`               | Collapsed/summarized message sections                           |
+| `queue-operation`       | Queued-message enqueue/dequeue events                           |
+| `attachment`            | An attachment linked to a message                               |
+| `last-prompt`           | Pointer to the most recently submitted prompt                   |
+| `atis-latch`            | Internal marker observed in current session files; undocumented |
+
+Subagent transcripts live under `<session-id>/subagents/agent-*.jsonl`, next
+to the parent session file, one per dispatched subagent.
 
 ### Plans Directory
 
