@@ -107,12 +107,13 @@ pre-commit:
   strip quotes themselves.
 - Prefer check-only commands over autofixers. Since Lefthook 2.1.7, `pre-commit` runs
   automatically hide unstaged/partially-staged hunks before the hook and restore them
-  afterward, aborting the commit (rather than silently including unreviewed content)
-  if a fixer's changes conflict with the restore; `stage_fixed: true` now stages only
-  the fixer's edits to already-staged content. On an older Lefthook, or one run with
-  `--no-stage-fixed`, that protection is absent and an autofixer can pull unstaged
-  work into the commit — pin `min_version: 2.1.7` in `lefthook.yml` if a command in
-  this config writes files or uses `stage_fixed`.
+  afterward, and `stage_fixed: true` stages only the fixer's edits to already-staged
+  content. That restore only reliably fails the hook (rather than silently succeeding)
+  when staging the fixed files errors as of 2.1.12, which fixed that exact gap. On an
+  older Lefthook, or one run with `--no-stage-fixed`, the protection is absent or
+  incomplete and an autofixer can pull unstaged work into the commit — pin
+  `min_version: 2.1.12` in `lefthook.yml` if a command in this config writes files or
+  uses `stage_fixed`.
 - Keep pre-commit fast. Move whole-project analysis that cannot be scoped to staged
   files, such as type checking and test suites, to `pre-push` or CI.
 - Use `root:` only when a tool must run from a subdirectory. It changes the working

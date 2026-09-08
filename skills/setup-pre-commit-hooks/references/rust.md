@@ -98,11 +98,11 @@ which is exactly the state a pre-commit hook runs in — either it fails constan
 it is forced past the one safety check it has. Keep both check-only.
 
 Since Lefthook 2.1.7, `pre-commit` runs hide unstaged/partially-staged hunks before
-the hook and restore them afterward, so a rewriting command on an up-to-date Lefthook
-no longer silently pulls unstaged work into the commit (a conflicting restore aborts
-the commit instead). That safety net does not help with `--fix`'s own `--allow-dirty`
-requirement, so check-only remains the simpler, faster choice regardless of Lefthook
-version.
+the hook and restore them afterward, and since 2.1.12 the hook fails outright, rather
+than succeeding silently, if that restore errors, so a rewriting command on an
+up-to-date Lefthook no longer silently pulls unstaged work into the commit. That
+safety net does not help with `--fix`'s own `--allow-dirty` requirement, so check-only
+remains the simpler, faster choice regardless of Lefthook version.
 
 ## Speed
 

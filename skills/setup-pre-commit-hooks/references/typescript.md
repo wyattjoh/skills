@@ -72,12 +72,13 @@ anything. `--list-different` prints only the offending paths if quieter output i
 wanted.
 
 Since Lefthook 2.1.7, `pre-commit` runs hide unstaged/partially-staged hunks before
-the hook and restore them afterward, so this is no longer about correctness the way
-it once was — a writing formatter on an up-to-date Lefthook won't silently pull
-unstaged work into the commit, and `stage_fixed: true` now stages only the fixer's
-edits to already-staged content. Keep both tools read-only anyway: it's faster (no
-rewrite-then-restore round trip), it fails predictably on any Lefthook version, and it
-lets the developer run `bun run format` themselves instead of discovering a rewrite
+the hook and restore them afterward, and since 2.1.12 the hook fails outright, rather
+than succeeding silently, if that restore errors, so this is no longer about
+correctness the way it once was — a writing formatter on an up-to-date Lefthook won't
+silently pull unstaged work into the commit, and `stage_fixed: true` stages only the
+fixer's edits to already-staged content. Keep both tools read-only anyway: it's faster
+(no rewrite-then-restore round trip), it fails predictably on any Lefthook version, and
+it lets the developer run `bun run format` themselves instead of discovering a rewrite
 after the fact.
 
 The same rule rules out `oxlint --fix`, `--fix-suggestions`, and `--fix-dangerously`.
