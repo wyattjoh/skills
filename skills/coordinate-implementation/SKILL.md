@@ -1,6 +1,6 @@
 ---
 name: coordinate-implementation
-description: Orchestrates a multi-ticket implementation run. Points at a `.scratch/<slug>/` folder holding a spec and numbered issues, then runs one Claude Code Opus high-effort implementor session per ticket inside herdr, reviews each result on two axes, loops fixes back, and fast-forwards main. Also resumes a run from its RESUME.md after a session handoff. Triggers on "/coordinate-implementation", "implement the tickets in", "orchestrate the run", "resume the implementation run".
+description: Orchestrates a multi-ticket implementation run. Points at a `.scratch/<slug>/` folder holding a spec and numbered issues, then runs one implementor session per ticket inside herdr, reviews each result on two axes, loops fixes back, and fast-forwards main. Model, harness, effort, and worker skills are recorded in RESUME.md so they survive a handoff and mid-run changes. Also resumes a run from its RESUME.md after a session handoff. Triggers on "/coordinate-implementation", "implement the tickets in", "orchestrate the run", "resume the implementation run".
 argument-hint: "[.scratch/<slug> | resume .scratch/<slug>] [--base <branch>] [--implementor '<model> <effort>']"
 disable-model-invocation: true
 effort: low
@@ -9,7 +9,7 @@ effort: low
 # Coordinate an implementation run
 
 You are the **orchestrator**. You never implement a ticket yourself. You run
-one implementor session per ticket, using `claude` for Anthropic models and `pi` for non-Anthropic models, review its single commit, send fixes back
+one implementor session per ticket, review its single commit, send fixes back
 into the same session, and land it on `main`. Requires herdr (`HERDR_ENV=1`);
 load the `herdr` skill in the same message: `/coordinate-implementation /herdr <args>`.
 
@@ -21,17 +21,22 @@ Arguments: `$ARGUMENTS`
 - `--base <branch>` names the integration branch workers branch from and the
   coordinator fast-forwards. Default `main`. Recorded as `Base:` in RESUME.md
   on first run; later invocations read it from there.
-- `--implementor '<model> <effort>'` overrides the default
-  `claude --model claude-opus-5 --effort high` launch (see
-  [session-launch.md](references/session-launch.md)).
+- `--implementor '<model> <effort>'` sets the implementor model and effort.
+  The harness is resolved from the model and persisted; everything else about
+  the record (worker skills, coordinator settings) is changed in prose.
 
-If the invocation does not explicitly provide the run folder, base branch, or
-implementor model/effort, ask a structured clarification question before
-creating state or launching workers. Offer the documented defaults (`.scratch/<slug>`
-from the prompt, `main`, and the configured default implementor) as the first,
-recommended choices, but do not silently infer a missing option when multiple
-projects, branches, or model families could apply. If the user explicitly
-names a run folder and says to use defaults, proceed without asking again.
+If the invocation does not explicitly provide the run folder, base branch,
+implementor model/effort, or your own coordinator effort, ask a structured
+clarification question before creating state or launching workers. Offer the
+documented defaults (`.scratch/<slug>` from the prompt, `main`, the configured
+default implementor, coordinator effort `low`) as the first, recommended
+choices, but do not silently infer a missing option when multiple projects,
+branches, or model families could apply. If the user explicitly names a run
+folder and says to use defaults, proceed without asking again.
+
+Your own harness and model are introspected; your effort is the one value you
+cannot see, which is why it joins that question. Successors inherit the whole
+`Coordinator:` record and are never asked again.
 
 Everywhere below, `<base>` means that branch. The main checkout is never
 `<base>` unless `<base>` is `main`.
@@ -44,7 +49,7 @@ Everywhere below, `<base>` means that branch. The main checkout is never
   issues/NN-*.md     # one ticket per file, `Blocked by:` + `Status:` lines, checkboxes
   briefs/common.md   # shared implementor brief; create from references/common-brief.md if absent
   briefs/fixes-NN.md # long fix requests, one per round
-  RESUME.md          # the ONLY state file: `Prefix:`, `Base:`, `Implementor:` lines, decisions, per-ticket table
+  RESUME.md          # the ONLY state file; format: references/resume-format.md
   xdg-sandbox/       # XDG_DATA_HOME / XDG_CONFIG_HOME for implementor sessions
 .scratch/coordinators.md   # repo-wide registry of active runs (below)
 ```
@@ -53,15 +58,46 @@ Ticket order is dependency order from the `Blocked by:` lines. Run **one
 ticket at a time** unless RESUME.md records that the user allowed parallel
 tickets.
 
+## Preferences
+
+Which model, which harness, which effort, and which skills each side runs are
+**recorded state**, not conversational memory. The canonical format, the
+harness vocabulary table, and the validation rules are in
+[resume-format.md](references/resume-format.md). The rules for keeping the
+record true:
+
+- **The write is the acknowledgement.** A preference the user states and you
+  have not yet written to RESUME.md does not exist. Write the file _before_
+  you reply, then reply. This is not negotiable: the alternative is a
+  preference that survives only as long as your context does.
+- **Resolve once, persist the resolution.** You have the conversation; a
+  successor does not. Derive the harness from the model at record time and
+  write `harness`, `model`, `effort`, and `skills` explicitly. Never make a
+  later reader re-derive a field you could have recorded.
+- **On resume, an explicit flag wins and is written back.** `--implementor`
+  passed at a resume is a preference change: apply it, write it, log it.
+  `--base` is the exception and the file wins; resume-format.md says why.
+- **A ticket binds its record at start.** The run-wide `Implementor:` governs
+  the next ticket to _start_. A ticket already running keeps the record in its
+  table row for its whole life, through fix rounds and crash-restarts.
+- **Log every change.** Append a dated line to `## Decisions` with the reason.
+- **Re-read RESUME.md at each progress tick**, so a hand edit is honored and
+  you never overwrite one blindly.
+- **Never bake a preference value into a scheduled prompt.** See
+  [Progress loop](#progress-loop).
+
 ## Several coordinators on one repo
 
 Each run has a unique `Prefix:` (for example `dcs`) that names its branches
 `wyattjoh/<prefix>-NN-<slug>`, its worker sessions `<prefix>-NN`, its herdr
 tabs `claude <prefix> NN <slug>`, and its coordinator pane label
 `coordinator <prefix>`.
-The coordinator's own herdr tab is always labelled `coordinator`: on start
-and on resume, find your tab (`herdr pane list` gives your pane's `tab_id`)
-and run `herdr tab rename <tab> "coordinator"` before anything else.
+The coordinator's own herdr tab is always labelled `coordinator`: on start and
+on resume, run `herdr tab rename "$HERDR_TAB_ID" "coordinator"` before anything
+else. Identify yourself from the `HERDR_PANE_ID` / `HERDR_TAB_ID` /
+`HERDR_WORKSPACE_ID` environment variables injected into every managed pane,
+never by inspecting `herdr pane list` for the focused pane: focus can belong to
+the user or another client and can move at any time.
 
 `.scratch/coordinators.md` is the registry, one line per active run:
 
@@ -87,9 +123,13 @@ Before the first iteration, rename your own tab to `coordinator` and label
 your pane `coordinator <prefix>` (see above). Then repeat until every ticket
 is landed:
 
-1. **Start** the next unblocked ticket. Prefix the worker prompt with `/implement` for Claude or `/skill:implement` for Pi so the user-only implementation skill is loaded. Then create the worktree
+1. **Start** the next unblocked ticket. Bind the current `Implementor:` record
+   into the ticket's table row first; that row, not the run-wide record, is
+   what governs this ticket from now on. Render the row's `skills` list into
+   the worker prompt prefix for its harness. Then create the worktree
    `.claude/worktrees/wyattjoh/<prefix>-NN-<slug>` on branch
-   `wyattjoh/<prefix>-NN-<slug>` from `<base>`, a herdr tab, a worker session (`claude` for Anthropic models, `pi` for non-Anthropic models) for `<prefix>-NN`, then arm a background monitor. Exact commands:
+   `wyattjoh/<prefix>-NN-<slug>` from `<base>`, a herdr tab, a worker session,
+   then arm a background monitor. Exact commands:
    [session-launch.md](references/session-launch.md).
 2. **Wait.** A 10-minute progress loop (below) plus the monitor are the only
    wake signals. Do not poll faster. While waiting, keep your own context low:
@@ -116,27 +156,34 @@ not marker text; implementors forget to print it.
 
 Immediately after starting or resuming, schedule this with `/loop 10m`
 (plain text, never a skill invocation: a scheduled fire cannot run a
-`disable-model-invocation` skill):
+`disable-model-invocation` skill).
+
+**A scheduled prompt carries the run folder path and nothing else.** Never
+write a preference value into it: a cron is scheduled once and fires for
+hours, so an inlined threshold or model keeps firing after the record has
+changed. Every value the prompt needs is read from RESUME.md at fire time,
+which makes the crons stateless and a preference change self-propagating.
 
 > Progress check for the <slug> implementation run. For every active worker session
 > (see `herdr pane list` agent_status and the RESUME.md table at
 > .scratch/<slug>/RESUME.md): if agent_status is idle or done, or the branch has
-> a new commit, the ticket is at a safe point — proceed with the agreed
+> a new commit, the ticket is at a safe point: proceed with the agreed
 > review / fix-loop / landing workflow and start the next ticket in dependency
 > order. Also verify each background monitor (Bash wait / herdr agent wait) is
 > still running and matches the current pane id; if one has fired spuriously or
 > hung, replace it with
 > `herdr agent wait <pane> --until idle --until done --until blocked`.
-> If a session is stuck or crashed, apply the fallback rule.
-> Also read your own context usage from `herdr pane read <own pane> --lines 6`
-> (the `🧠` statusline figure). Only if the coordinator is running in Claude
-> and exceeds 200,000 tokens, follow the handoff procedure at the next safe
-> point. A coordinator running in Pi stays in the current session and never
-> launches a successor for context usage. Report briefly.
+> If a session is stuck or crashed, apply the crash-restart rule.
+> Also read your own context usage from
+> `herdr pane read "$HERDR_PANE_ID" --lines 6` (the `🧠` statusline figure).
+> Read `Coordinator.handoff` and `Coordinator.threshold` from RESUME.md and
+> compare your context against them: only if `handoff` is `yes` and your
+> context exceeds `threshold`, follow the handoff procedure at the next safe
+> point. Report briefly.
 
-Each tick: pane list, own context figure, per-ticket `git status --short` and
-`git log --oneline <base>..HEAD` in the worktree, last 40 pane lines. Report in
-three lines or fewer when nothing changed.
+Each tick: re-read RESUME.md, pane list, own context figure, per-ticket
+`git status --short` and `git log --oneline <base>..HEAD` in the worktree, last
+40 pane lines. Report in three lines or fewer when nothing changed.
 
 ## Stall check
 
@@ -147,37 +194,65 @@ a worker whose `agent_status` stays `working` while nothing moves: an API
 network error, a permission prompt, or a question waiting on input. Both crons
 are session-only, so every start, resume, and handoff re-creates both.
 
-## Worker fallback
+## Crash-restart
 
-Only when a worker session actually fails (crash, unrecoverable context loss,
-repeated review failures) restart that ticket as a fresh
-a same-family worker session: `claude --model claude-opus-5 --effort high --permission-mode auto` for Anthropic models, or `pi --model <model> --thinking <effort>` for non-Anthropic models, in
-the same worktree, with the partial work described in its `IMPORTANT CONTEXT`
-clause. A network outage or a compaction is not a failure: resume the same
-session with a prompt first (or `claude --resume` in its worktree). Re-prompt
-only if a compaction is followed by no edits for two ticks.
+Only when a worker session actually fails (crash, unrecoverable context loss)
+restart that ticket in the same worktree, **with the record bound in its table
+row**: same harness, same model, same effort, same skills, with the partial
+work described in its `IMPORTANT CONTEXT` clause. Never escalate here and never
+read the run-wide `Implementor:`. A crash is evidence about a process, not
+about a model, and silently substituting a different one is how an override
+gets lost to a network blip.
 
-## Handoff at 200,000 tokens (Claude coordinators only)
+A network outage or a compaction is not a failure: resume the same session with
+a prompt first (or `claude --resume` in its worktree). Re-prompt only if a
+compaction is followed by no edits for two ticks.
 
-Determine this from the **coordinator's runtime**, not the implementor's model.
-Coordinators running in **Pi do not hand off**: continue in the current session,
-keep RESUME.md current, and let Pi manage context compaction. Do not launch a
-successor or stop loops and monitors because of context usage.
+## Escalation
 
-For coordinators running in **Claude**, when your own context passes
-**200,000 tokens**, hand off at the **next safe point** (finish the in-flight
-review / fix / land step; do not start the next ticket). Procedure and
-successor launch command: [handoff.md](references/handoff.md).
+Distinct from crash-restart, and never call either one "the fallback rule".
+Trigger: a ticket is still failing review after a **third** fix round. That is
+evidence the bound model is not converging on this ticket.
+
+- Escalation is **per ticket**. Record it in the ticket's `esc` column and in
+  `## Decisions`. Never rewrite the run-wide `Implementor:`: one ticket's
+  difficulty is not a judgement about the remaining tickets.
+- `Coordinator.unattended` decides whether you may act alone. Default `block`:
+  set the ticket's status to `blocked`, log what you would escalate to and why,
+  start the next unblocked ticket, and surface it at the next progress tick.
+  The run keeps moving and no model changes without the user. `escalate`
+  pre-authorizes it for overnight runs.
+- `unattended` governs this decision only. A `TICKET BLOCKED` question, a scope
+  decision, and an invalid-record prompt always wait for the user.
+
+## Handoff
+
+Driven by `Coordinator.handoff` and `Coordinator.threshold` in RESUME.md, never
+by a number written here. `handoff` defaults from the coordinator's own harness
+(`claude` -> `yes`, `pi` -> `no`), because Pi manages its own context
+compaction and has nothing to hand off to.
+
+When `handoff` is `yes` and your own context passes `threshold`, hand off at the
+**next safe point** (finish the in-flight review / fix / land step; do not start
+the next ticket). When it is `no`, stay in the current session, keep RESUME.md
+current, and never launch a successor or stop loops and monitors for context
+usage. Procedure and successor launch: [handoff.md](references/handoff.md).
 
 ## Resume
 
 When invoked as `resume .scratch/<slug>` or from a handoff:
 
-1. Read `RESUME.md` in the run folder; it names the prefix, base, active
-   ticket, worktree, pane id, and what remains.
+1. Read `RESUME.md` in the run folder and validate it against
+   [resume-format.md](references/resume-format.md). It names the prefix, base,
+   both records, the active ticket, worktree, pane id, and what remains. A file
+   that does not match the template stops the resume with an explanation; there
+   is no migration path and nothing is guessed.
+   If this invocation also passed `--implementor` and it differs from the
+   record, that is a preference change: validate it, write it, log it in
+   `## Decisions`, and use it for the next ticket you start.
 2. `herdr pane list`; pane ids compact, so trust the list over RESUME.md.
-   Rename your own tab to `coordinator` (`herdr tab rename`) and label your
-   own pane `coordinator <prefix>` (`herdr pane rename`).
+   Rename your own tab to `coordinator` and label your own pane
+   `coordinator <prefix>`, using `$HERDR_TAB_ID` and `$HERDR_PANE_ID`.
 3. Update your line in `.scratch/coordinators.md`.
 4. For each active ticket: `git status --short` and `git log <base>..HEAD` in
    its worktree; re-arm the monitor on its pane.
@@ -186,6 +261,10 @@ When invoked as `resume .scratch/<slug>` or from a handoff:
 
 ## Rules that are not negotiable
 
+- A preference the user states and you have not written to RESUME.md does not
+  exist. Write before you reply.
+- Never substitute a default model, effort, or skills list to keep a run
+  moving. A record that will not launch stops the ticket and is reported.
 - One commit per ticket branch; fixes amend it.
 - Every commit passes CI's exact invocations before review
   ([review-and-land.md](references/review-and-land.md) lists them).

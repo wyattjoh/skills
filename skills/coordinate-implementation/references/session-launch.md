@@ -36,10 +36,19 @@ Write the launch line to `<run>/briefs/launch-NN.sh` with the Write tool (a
 full inline line overflows the pane), then `herdr pane run <pane> "bash
 <repo>/<run>/briefs/launch-NN.sh"`.
 
-Use `claude` only for Anthropic models. For a non-Anthropic request such as
-`openai-codex/gpt-5.6-luna`, use `pi` instead:
+Build the launch line from the ticket's **table row** in RESUME.md, never from
+the run-wide `Implementor:` and never from a value you remember. The row's
+`harness` chooses the binary and the flag, and its `skills` render into the
+prompt prefix. See [resume-format.md](resume-format.md) for the vocabulary
+table.
 
 ```sh
+# harness: claude
+cd <worktree> && export PATH="$HOME/.cargo/bin:$PATH" XDG_DATA_HOME=<repo>/<run>/xdg-sandbox/data XDG_CONFIG_HOME=<repo>/<run>/xdg-sandbox/config && claude --model <model> --effort <effort> --permission-mode auto '/implement You are implementing ticket NN of the <slug> run. Read <repo>/<run>/briefs/common.md, <repo>/<run>/spec.md, and <repo>/<run>/issues/NN-<slug>.md first, then implement the ticket per the brief. IMPORTANT CONTEXT: <what earlier tickets already landed and what remains for this one>'
+```
+
+```sh
+# harness: pi
 cd <worktree> && export PATH="$HOME/.cargo/bin:$PATH" XDG_DATA_HOME=<repo>/<run>/xdg-sandbox/data XDG_CONFIG_HOME=<repo>/<run>/xdg-sandbox/config && pi --model openai-codex/gpt-5.6-luna --thinking max '/skill:implement You are implementing ticket NN of the <slug> run. Read <repo>/<run>/briefs/common.md, <repo>/<run>/spec.md, and <repo>/<run>/issues/NN-<slug>.md first, then implement the ticket per the brief. IMPORTANT CONTEXT: <what earlier tickets already landed and what remains for this one>'
 ```
 
@@ -52,14 +61,20 @@ Never pass a non-Anthropic model to `claude`.
 - The `IMPORTANT CONTEXT` clause matters when an earlier ticket pulled in part
   of this one: tell the session to verify-then-implement only what remains.
 
-### Implementor override
+### Implementor record
 
-Default: `claude --model claude-opus-5 --effort high --permission-mode auto` for Anthropic; non-Anthropic overrides use `pi --model <model> --thinking <effort>`.
-(user decision 2026-09-04). `--implementor '<model> <effort>'` on the skill
-invocation, or an `Implementor:` line in `<run>/RESUME.md`, replaces the
-`--model`/`--effort` pair for new sessions. pi is not a fallback; a worker
-that fails restarts as a fresh Claude session in the same worktree (edits are
-kept) with the partial work described in the `IMPORTANT CONTEXT` clause.
+Default: `claude` / `claude-opus-5` / `high` / `[implement]`, launched with
+`--permission-mode auto` (user decision 2026-09-04).
+
+`--implementor '<model> <effort>'` on the skill invocation sets the model and
+effort; you resolve the harness from the model and persist all four fields.
+Worker skills are changed in prose. Either way the change is written to
+RESUME.md before you reply, and it governs **the next ticket to start** only.
+
+A launch that fails is reported and stops that ticket. Do not retry it with a
+different model, a different effort, or a shorter skills list: `claude` accepts
+an unknown `--effort` with only a warning and runs at its default, so a silent
+substitution here is indistinguishable from success.
 
 ## 4. Monitor
 
@@ -84,6 +99,9 @@ When it fires:
 session back up. If no transcript is available (a new machine, a wiped
 config dir), relaunch step 3 as a fresh session whose `IMPORTANT CONTEXT`
 clause describes the edits and commits already in the worktree.
+
+A relaunch uses the ticket's bound row, unchanged, even if the run-wide
+`Implementor:` has moved on since the ticket started.
 
 ## Command-guard gotchas
 

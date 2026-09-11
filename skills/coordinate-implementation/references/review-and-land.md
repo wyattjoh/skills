@@ -45,7 +45,10 @@ the pane is pointed at the file. Every request ends with:
 
 Then re-arm the monitor. When it settles: grep-verify mechanical items
 yourself, spawn one verification agent for the judgment items, rerun gates.
-Two rounds is normal; a third suggests the fallback-model rule.
+Two rounds is normal. A ticket still failing review after a **third** round
+triggers the escalation rule in the skill (per ticket, logged, gated on
+`Coordinator.unattended`), which is not the same thing as a crash-restart.
+Increment the ticket row's `rounds` column each round.
 
 ## Landing
 
@@ -79,13 +82,18 @@ herdr tab close <tab>
 
 Worktree removal goes through `pando remove` (user decision 2026-09-04), never
 raw `git worktree remove`: it keeps the branch ref and runs pre-remove hooks.
-Never pass `--force`. Do not delete the branch. Record the landed sha, fix-round count, and any
-scope decision in RESUME.md's table, update `.scratch/coordinators.md`, then
-start the next ticket.
+Never pass `--force`. Do not delete the branch. Set the ticket row's `status`
+to `landed` and fill its `sha`, leaving its bound record columns untouched as
+the provenance of what built it. Log any scope decision in `## Decisions`,
+update `.scratch/coordinators.md`, then start the next ticket, binding the
+current `Implementor:` into its row.
 
 ## Scope decisions
 
 When a ticket pulls in later tickets' work and the result is sound, keep it
 and shrink the later tickets to verify-then-implement what remains. Record the
-decision in RESUME.md and in the later tickets' `IMPORTANT CONTEXT` clause.
-Unwinding costs more than a narrowed follow-up.
+decision in `## Decisions` and in the later tickets' `IMPORTANT CONTEXT`
+clause. Unwinding costs more than a narrowed follow-up.
+
+A scope decision always waits for the user; `Coordinator.unattended` does not
+authorise it.
