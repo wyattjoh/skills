@@ -21,6 +21,7 @@ agents/              # one Markdown file per agent
 .claude/references/  # shared reference docs for authoring in this repo, plus pinned dependency submodules
 .claude/rules/       # path-scoped authoring conventions for this repo
 package.json         # Bun workspace root (workspaces: ["skills/*"]) for skill helper scripts
+justfile             # symlink management for installing agents/ into ~/.claude/agents/
 ```
 
 Skills under `skills/` are the published collection and belong in the `README.md`
@@ -61,6 +62,8 @@ Claude edits matching files:
 | `bun run lint`         | Lint with oxlint (config: `.oxlintrc.json`)        |
 | `bun run format`       | Format with oxfmt (config: `.oxfmtrc.json`)        |
 | `bun run format:check` | Verify formatting without writing                  |
+| `just link`            | Symlink `agents/*.md` into `~/.claude/agents/`     |
+| `just unlink`          | Remove agent symlinks pointing at this checkout    |
 
 ## Documentation
 

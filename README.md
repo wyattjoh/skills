@@ -52,11 +52,20 @@ skill's `SKILL.md` for its requirements before installing it.
 The Skills CLI installs the entries under `skills/`. The definitions under `agents/` are
 Claude Code subagents and must be installed separately.
 
-Clone the repository, then symlink the agents you want into `~/.claude/agents/`:
+Clone the repository, then run `just link` to symlink every agent into `~/.claude/agents/`:
 
 ```bash
 git clone https://github.com/wyattjoh/skills.git
 cd skills
+just link
+```
+
+`just link` skips any target that already exists, so it never clobbers an agent you wrote
+yourself. `just unlink` removes only the symlinks that still point at this checkout.
+
+To install a single agent instead, symlink it directly:
+
+```bash
 mkdir -p ~/.claude/agents
 ln -sfn "$PWD/agents/code-reviewer.md" ~/.claude/agents/code-reviewer.md
 ```
