@@ -96,6 +96,7 @@ Restart Claude Code after adding or changing an agent definition.
 | icon-gen                      | Generate app icons with AI (snapai), with refinement and platform resizing          |
 | json-inspect                  | Generate JSON Schema from JSON files with genson                                    |
 | just                          | Kickstart the just command runner and author justfiles                              |
+| land-local                    | Rebase, verify, and fast-forward a worktree branch into local main atomically       |
 | mermaid                       | Validate, create, and render Mermaid diagrams                                       |
 | name-gen                      | Brainstorm project names, check domains, research conflicts                         |
 | new-cli-skill                 | Generate a CLI-usage skill from a name or URL                                       |
