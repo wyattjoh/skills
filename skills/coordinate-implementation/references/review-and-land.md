@@ -65,28 +65,39 @@ From the base checkout (the main checkout when `<base>` is `main`, otherwise
 `.claude/worktrees/wyattjoh/<base>`):
 
 ```sh
-cd <base checkout> && git merge --ff-only wyattjoh/<prefix>-NN-<slug>
+cd <base checkout> && git merge --ff-only <branch>
 ```
 
 If the fast-forward is refused, another coordinator landed on `<base>` in
 between: go back to the ticket worktree, `git rebase <base>` again, rerun the
 gates, and retry. No lock file; the retry loop is the serialization.
 
-Then:
+Then close the worker tab and finish the worktree lifecycle according to the
+**coordinator's** harness:
 
 ```sh
-cd <repo>
-printf '%s\n' '{"schema_version":1,"input":{"branches":["wyattjoh/<prefix>-NN-<slug>"]}}' | pando remove --input-output json
 herdr tab close <tab>
 ```
 
-Worktree removal goes through `pando remove` (user decision 2026-09-04), never
-raw `git worktree remove`: it keeps the branch ref and runs pre-remove hooks.
-Never pass `--force`. Do not delete the branch. Set the ticket row's `status`
-to `landed` and fill its `sha`, leaving its bound record columns untouched as
-the provenance of what built it. Log any scope decision in `## Decisions`,
-update `.scratch/coordinators.md`, then start the next ticket, binding the
-current `Implementor:` into its row.
+- **Claude Code:** stay in the ticket worktree through the merge, then call
+  `ExitWorktree` and choose removal. If a resumed coordinator is not currently
+  inside it, call `EnterWorktree(path: <worktree>)` first. Native cleanup may
+  remove both the worktree and its `worktree-*` branch.
+- **Pi:** return to `<repo>`, then remove the worktree through Pando:
+
+  ```sh
+  printf '%s\n' '{"schema_version":1,"input":{"branches":["<branch>"]}}' \
+    | pando remove --input-output json
+  ```
+
+  Never pass `--force`. Pando retains the branch ref and runs pre-remove hooks;
+  do not delete the retained branch separately.
+
+Never use raw `git worktree remove`. Set the ticket row's `status` to `landed`
+and fill its `sha`, leaving its bound record columns untouched as the
+provenance of what built it. Log any scope decision in `## Decisions`, update
+`.scratch/coordinators.md`, then start the next ticket, binding the current
+`Implementor:` into its row.
 
 ## Scope decisions
 

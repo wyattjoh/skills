@@ -1,6 +1,6 @@
 ---
 name: land-local
-description: Lands the current worktree branch into the local main branch atomically. Commits outstanding work, rebases onto local main, resolves conflicts in the worktree, runs the repo's pre-push gates, then takes an exclusive flock and fast-forwards main. If main advanced meanwhile the fast-forward is refused and the whole cycle restarts, so main is never left conflicted or half merged and many worktrees can land in parallel. Local only, it never fetches, pushes, or opens a PR. Triggers on "/land-local", "land this branch locally", "land it into main", "merge my worktree into local main", "ff-only merge into main", "land without pushing", "integrate this branch locally".
+description: Lands the current worktree branch into the local main branch atomically. Captures the source worktree, leaves Claude Code worktree isolation when needed, commits outstanding work, rebases onto local main, resolves conflicts in the worktree, runs the repo's pre-push gates, then takes an exclusive flock and fast-forwards main. Pi stays in place and uses the Git CLI directly. If main advanced meanwhile the fast-forward is refused and the whole cycle restarts, so main is never left conflicted or half merged and many worktrees can land in parallel. Local only, it never fetches, pushes, or opens a PR. Triggers on "/land-local", "land this branch locally", "land it into main", "merge my worktree into local main", "ff-only merge into main", "land without pushing", "integrate this branch locally".
 effort: high
 ---
 
@@ -21,11 +21,11 @@ it does.
 
 **Arguments**: $ARGUMENTS
 
-| Argument       | Effect                                                                             |
-| -------------- | ---------------------------------------------------------------------------------- |
-| `<branch>`     | Land that branch instead of the current one (must be checked out in this worktree) |
-| `--no-gates`   | Skip Phase 3. Only when the caller already verified the tree                       |
-| `--attempts N` | Bound on rebase/land cycles, default 3                                             |
+| Argument       | Effect                                                                                                                          |
+| -------------- | ------------------------------------------------------------------------------------------------------------------------------- |
+| `<branch>`     | Land that branch instead of the current one; it overrides the `BRANCH` Phase 0a captured and must be checked out in `$WORKTREE` |
+| `--no-gates`   | Skip Phase 3. Only when the caller already verified the tree                                                                    |
+| `--attempts N` | Bound on rebase/land cycles, default 3                                                                                          |
 
 Track the phases with `TodoWrite`; a land that loops twice is easy to lose
 your place in.
@@ -33,8 +33,9 @@ your place in.
 ## The cycle
 
 ```
-Phase 0  preflight            once
-Phase 1  commit the worktree  once
+Phase 0a capture source worktree     once, first
+Phase 0  preflight                 once
+Phase 1  commit the worktree       once
   Phase 2  rebase onto main   |
   Phase 3  gates              | repeat until landed or attempts exhausted
   Phase 4  locked ff-only land|
@@ -44,20 +45,53 @@ Phase 5  report
 Phase 4 returning `REBASE_REQUIRED` is the normal outcome under contention,
 not an error. It means another lander won the race; go back to Phase 2.
 
+## Phase 0a: Capture the source worktree
+
+**Do this before anything else.** Capture what you are landing with the Git
+CLI before any harness changes the current directory:
+
+```bash
+git rev-parse --show-toplevel   # -> WORKTREE
+git rev-parse --abbrev-ref HEAD # -> BRANCH
+```
+
+Then follow the current harness:
+
+- **Claude Code:** if this session entered the source worktree with
+  `EnterWorktree`, call `ExitWorktree` with `action: "keep"`. Never
+  `"remove"`; this skill does not delete the user's worktree or branch. If no
+  native worktree session is active, do not require the tool, continue from
+  the current directory. If a pinned Claude Code session cannot exit, complete
+  Phases 0 through 3, then stop at Phase 4 and give the user its filled-in
+  locked block to run with `!`.
+- **Pi:** do not call `ExitWorktree` and do not use Pando. Stay in the current
+  directory and use the Git CLI directly. Git can address both the source and
+  trunk worktrees through their explicit paths.
+
+Regardless of harness, every later command that acts on the branch starts with
+`cd "$WORKTREE"`, and Phase 4 starts from `MAINWT`. Shell state does not persist
+between calls, so repeat the appropriate `cd` in each command.
+
 ## Phase 0: Preflight
 
-Substitute the repo's trunk for `main` in every snippet if it differs.
+Substitute the repo's trunk for `main` in every snippet if it differs. Run
+this from `$WORKTREE`; `BRANCH` is the one Phase 0a captured, not whatever
+`HEAD` says now.
 
 ```bash
 set -euo pipefail
 
 TRUNK=main
+WORKTREE=<from Phase 0a>
+BRANCH=<from Phase 0a>
+
+cd "$WORKTREE"
 
 command -v flock >/dev/null || { echo "ERROR: flock not installed (brew install flock)"; exit 3; }
 
-BRANCH="$(git rev-parse --abbrev-ref HEAD)"
 [ "$BRANCH" = "HEAD" ] && { echo "ERROR: detached HEAD; check out the branch to land"; exit 3; }
-[ "$BRANCH" = "$TRUNK" ] && { echo "ERROR: already on $TRUNK; nothing to land"; exit 3; }
+[ "$BRANCH" = "$TRUNK" ] && { echo "ERROR: nothing to land; $TRUNK is the trunk"; exit 3; }
+git show-ref --verify --quiet "refs/heads/$BRANCH" || { echo "ERROR: no such branch $BRANCH"; exit 3; }
 
 for s in rebase-merge rebase-apply MERGE_HEAD CHERRY_PICK_HEAD; do
   [ -e "$(git rev-parse --path-format=absolute --git-path "$s")" ] && {
@@ -67,12 +101,27 @@ done
 MAINWT="$(git worktree list --porcelain | awk -v t="branch refs/heads/$TRUNK" '
   /^worktree /{wt=substr($0,10)} $0==t {print wt; exit}')"
 [ -n "$MAINWT" ] || { echo "ERROR: $TRUNK is not checked out in any worktree"; exit 3; }
-[ "$MAINWT" = "$(git rev-parse --show-toplevel)" ] && { echo "ERROR: this is the $TRUNK worktree; land from a feature worktree"; exit 3; }
+[ "$MAINWT" = "$WORKTREE" ] && { echo "ERROR: the branch to land lives in the $TRUNK worktree; land from a feature worktree"; exit 3; }
 
-echo "branch=$BRANCH trunk=$TRUNK mainwt=$MAINWT"
+COMMONDIR="$(git rev-parse --path-format=absolute --git-common-dir)"
+
+echo "branch=$BRANCH trunk=$TRUNK worktree=$WORKTREE mainwt=$MAINWT commondir=$COMMONDIR"
 git status --porcelain=v1 -uall
-git log --oneline "$TRUNK..HEAD"
+git log --oneline "$TRUNK..$BRANCH"
 ```
+
+Keep `MAINWT` and `COMMONDIR` from this run's output: Phase 4 pastes them in as
+literals rather than re-deriving them.
+
+The trunk-worktree check compares `MAINWT` against `WORKTREE`, not against the
+current directory. Claude Code may now be in the trunk checkout, while Pi
+remains in the source worktree. Either is valid because every command uses an
+explicit path. What must not happen is landing a branch that is itself checked
+out in the trunk worktree.
+
+If Claude Code's isolation guard still refuses this script for being compound,
+split it into plain one-line commands rather than rewriting it. Pi does not
+attempt to lift isolation; run the same commands directly through the Git CLI.
 
 `ERROR: main is not checked out in any worktree` has a lock-free variant; see
 [references/contention.md](references/contention.md).
@@ -81,6 +130,11 @@ git log --oneline "$TRUNK..HEAD"
 
 Nothing lands that is not committed, and nothing is left behind. Default
 behavior is unattended: stage everything not ignored and commit it.
+
+Every command in Phases 1 through 3 runs in the branch's own worktree, so each
+one starts with `cd "$WORKTREE"`. Claude Code may be in the trunk checkout and
+Pi may remain in the source worktree; never rely on the session's current
+directory.
 
 1. Read the work before writing a message: `git diff`, `git diff --cached`,
    and `git ls-files --others --exclude-standard`.
@@ -120,7 +174,7 @@ If the tree was clean, say so and move on.
 ## Phase 2: Rebase onto local main
 
 ```bash
-git rebase main
+cd "$WORKTREE" && git rebase main
 ```
 
 Local ref only. No fetch, and no `origin/main`: this skill integrates what is
@@ -128,7 +182,7 @@ on this machine.
 
 **Clean replay:** go to Phase 3.
 
-**Conflicts:** resolve them here, in this worktree. Use the
+**Conflicts:** resolve them in `$WORKTREE`, never in the trunk. Use the
 `resolving-merge-conflicts` skill. Resolve by reading both sides' intent
 (`git log -p $(git merge-base ORIG_HEAD main)..ORIG_HEAD -- <file>` for your
 side, the same range against `main` for theirs), never by picking a textual
@@ -149,7 +203,7 @@ report that `main` is untouched. It is: nothing has been written to it yet.
 
 ## Phase 3: Gates
 
-Run what this repo runs before a push, in the worktree. Skip only with
+Run what this repo runs before a push, in `$WORKTREE`. Skip only with
 `--no-gates`.
 
 Detection order, first hit wins:
@@ -198,15 +252,19 @@ fixtures.
 One `Bash` call. Everything that touches `main` happens inside the lock; the
 lock is held for a merge, not for a test suite.
 
+Claude Code must leave native worktree isolation before this step; Pi runs it
+directly with the Git CLI. Fill `BRANCH`, `LOCK`, and `MAINWT` in as **literal
+paths** from the values Phase 0a and Phase 0 already resolved. Deriving them
+here with nested `$(git ...)` can make Claude Code's command guard treat the
+command as escaping the source worktree.
+
 ```bash
 set -euo pipefail
 
 TRUNK=main
-BRANCH="$(git rev-parse --abbrev-ref HEAD)"
-LOCK="$(git rev-parse --path-format=absolute --git-common-dir)/land-local.lock"
-MAINWT="$(git worktree list --porcelain | awk -v t="branch refs/heads/$TRUNK" '
-  /^worktree /{wt=substr($0,10)} $0==t {print wt; exit}')"
-[ -n "$MAINWT" ] || { echo "ERROR: $TRUNK is not checked out in any worktree"; exit 3; }
+BRANCH=<from Phase 0a>
+LOCK=<COMMONDIR from Phase 0>/land-local.lock
+MAINWT=<from Phase 0>
 
 rc=0
 flock -w 110 "$LOCK" bash -c '
@@ -279,7 +337,13 @@ that the worktree and branch still exist.
 - Never clean or stash the `main` worktree. A dirty `main` is a human's
   problem; report it verbatim and stop.
 - Never delete the branch or its worktree. The user decides when that happens.
+  On Claude Code, `ExitWorktree` is `action: "keep"` when it is needed. Pi does
+  not call it.
 - Never `--no-verify`. Gates exist to be passed.
+- Never work around Claude Code's worktree isolation guard by moving a refused
+  command into a script file and running that. If Phase 0a could not lift
+  isolation, hand the user the Phase 4 block and stop. Pi uses the Git CLI
+  directly and does not need this workaround.
 
 ## References
 

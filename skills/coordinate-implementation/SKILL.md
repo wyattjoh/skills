@@ -88,10 +88,12 @@ record true:
 
 ## Several coordinators on one repo
 
-Each run has a unique `Prefix:` (for example `dcs`) that names its branches
-`wyattjoh/<prefix>-NN-<slug>`, its worker sessions `<prefix>-NN`, its herdr
-tabs `claude <prefix> NN <slug>`, and its coordinator pane label
-`coordinator <prefix>`.
+Each run has a unique `Prefix:` (for example `dcs`) that names its worker
+sessions `<prefix>-NN`, its herdr tabs `claude <prefix> NN <slug>`, and its
+coordinator pane label `coordinator <prefix>`. Pi also uses it for branches
+`wyattjoh/<prefix>-NN-<slug>`. Claude Code lets `EnterWorktree` generate its
+native worktree name and `worktree-*` branch. Always use the actual worktree
+path and branch returned by the coordinator harness.
 The coordinator's own herdr tab is always labelled `coordinator`: on start and
 on resume, run `herdr tab rename "$HERDR_TAB_ID" "coordinator"` before anything
 else. Identify yourself from the `HERDR_PANE_ID` / `HERDR_TAB_ID` /
@@ -112,10 +114,12 @@ the user or another client and can move at any time.
 - Update your line whenever a ticket starts or lands and at handoff.
 - Remove your line when the run finishes.
 
-Runs that share a `<base>` land through one dedicated base worktree at
-`.claude/worktrees/wyattjoh/<base>` and serialize by rebase-and-retry, no
-lock: [review-and-land.md](references/review-and-land.md). Runs on different
-repos need nothing beyond their own herdr workspace.
+Runs that share a `<base>` land through one dedicated base checkout and
+serialize by rebase-and-retry, no lock. The main checkout holds `main`;
+non-main base checkouts follow the coordinator harness's native worktree
+lifecycle: [session-launch.md](references/session-launch.md) and
+[review-and-land.md](references/review-and-land.md). Runs on different repos
+need nothing beyond their own herdr workspace.
 
 ## Core loop (standing instructions)
 
@@ -126,10 +130,10 @@ is landed:
 1. **Start** the next unblocked ticket. Bind the current `Implementor:` record
    into the ticket's table row first; that row, not the run-wide record, is
    what governs this ticket from now on. Render the row's `skills` list into
-   the worker prompt prefix for its harness. Then create the worktree
-   `.claude/worktrees/wyattjoh/<prefix>-NN-<slug>` on branch
-   `wyattjoh/<prefix>-NN-<slug>` from `<base>`, a herdr tab, a worker session,
-   then arm a background monitor. Exact commands:
+   the worker prompt prefix for its harness. Then create the ticket worktree
+   from `<base>` using the **coordinator's** harness: Claude Code uses
+   `EnterWorktree`; Pi uses Pando. Create a herdr tab and worker session, then
+   arm a background monitor. Exact procedure:
    [session-launch.md](references/session-launch.md).
 2. **Wait.** A 10-minute progress loop (below) plus the monitor are the only
    wake signals. Do not poll faster. While waiting, keep your own context low:
@@ -142,9 +146,11 @@ is landed:
    Verify mechanically (grep) and with a verification agent.
 5. **Land.** Rebase the branch on `<base>` yourself, resolve conflicts yourself
    (`resolving-merge-conflicts` skill), rerun gates, `git merge --ff-only`
-   in the base checkout, remove the worktree, close the tab. If the
+   in the base checkout, close the tab, then finish through the coordinator's
+   harness: Claude Code uses `ExitWorktree`; Pi uses `pando remove`. If the
    fast-forward is refused because `<base>` moved, rebase again and retry.
-   Never delete the branch (the command guard blocks it; the user does it).
+   Claude Code may delete its native `worktree-*` branch during cleanup. Pando
+   retains its `wyattjoh/*` branch; never delete that branch separately.
 6. **Record** the outcome in RESUME.md's table and the registry line before
    starting the next ticket.
 

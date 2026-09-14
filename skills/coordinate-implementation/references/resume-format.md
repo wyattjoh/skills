@@ -45,9 +45,9 @@ Implementor:
 - 2026-09-11 implementor -> claude-fable-5-1 / low (opus overkill for the
   remaining UI tickets)
 
-## Landed, not deleted
+## Retained landed branches (Pi)
 
-- wyattjoh/dcs-01-schema (a1b2c3d)
+- wyattjoh/dcs-01-schema (a1b2c3d) (Pi/Pando retained this branch)
 ```
 
 ## Field reference
@@ -122,12 +122,59 @@ Validate every write against this table. The harnesses do **not** validate for
 you: `claude --effort bogus` prints a warning and silently runs at the default
 effort, which is the exact silent substitution this skill forbids.
 
-| Harness  | Launch                | Effort flag  | Effort values                                       | Skill prefix     | Skill source                        |
-| -------- | --------------------- | ------------ | --------------------------------------------------- | ---------------- | ----------------------------------- |
-| `claude` | Anthropic models only | `--effort`   | `low` `medium` `high` `xhigh` `max`                 | `/<skill>`       | `~/.claude/skills/`, project skills |
-| `pi`     | any model             | `--thinking` | `off` `minimal` `low` `medium` `high` `xhigh` `max` | `/skill:<skill>` | discovered, or `--skill <path>`     |
+| Harness  | Model form           | Effort flag  | Effort values                                       | Skill prefix     | Skill source                        | Permission flag          |
+| -------- | -------------------- | ------------ | --------------------------------------------------- | ---------------- | ----------------------------------- | ------------------------ |
+| `claude` | `<model>`            | `--effort`   | `low` `medium` `high` `xhigh` `max`                 | `/<skill>`       | `~/.claude/skills/`, project skills | `--permission-mode auto` |
+| `pi`     | `<provider>/<model>` | `--thinking` | `off` `minimal` `low` `medium` `high` `xhigh` `max` | `/skill:<skill>` | `--skill <path>`, or discovered     | **none — omit it**       |
 
 Never pass a non-Anthropic model to `claude`.
+
+### Model form, and the `:<level>` suffix
+
+**`pi` requires a provider prefix** — `openai-codex/gpt-5.6-sol`, never a bare
+`gpt-5.6-sol`. **`claude` takes the model alone** — `claude-opus-5`, never a
+provider prefix.
+
+Either harness's `model:` field may carry an optional **`:<level>` suffix**:
+`openai-codex/gpt-5.6-sol:low`, `claude-opus-5:high`. That suffix is _record
+notation_, and it exists because a human may type it. **Always split it and emit
+the harness's own effort flag.** Never pass a colon through to either CLI:
+
+```
+model: openai-codex/gpt-5.6-sol:low   ->  pi --model openai-codex/gpt-5.6-sol --thinking low
+model: claude-opus-5:high             ->  claude --model claude-opus-5 --effort high
+```
+
+Note the split point is the **last** colon, and only when what follows it is an
+effort value for that harness — a provider prefix uses `/`, so
+`openai-codex/gpt-5.6-sol` has no colon to confuse it, but do not assume a model
+id can never contain one.
+
+When a record carries both a suffix and a separate `effort:` field, the two must
+agree. If they disagree the record is malformed: stop and ask rather than
+picking one. Prefer writing the split form (`model:` plus `effort:`) when you
+author a record yourself.
+
+### Two pi facts that bite
+
+- **pi has no `--permission-mode`.** Its whole flag surface offers only
+  `--approve` ("Trust project-local files for this run"), which is a different
+  thing. **Omit the permission flag from every pi launch line**; do not
+  substitute `--approve` for it. (Checked against pi 0.85.1.)
+- **Read the vocabulary off the installed pi, not off this table.** pi's
+  `--thinking` levels are version-specific: 0.80.3 offered
+  `off minimal low medium high xhigh`, and 0.85.1 added `max`. The same is true
+  of the model catalog — `openai-codex/gpt-5.6-*` does not exist before 0.85.1.
+  When a record looks invalid, run `pi --help` and `pi --list-models` before
+  concluding it is wrong; the installed pi may simply be behind.
+
+### Reject only after checking the installed harness
+
+An effort value or model that this table does not list may mean the record is
+wrong, or may mean the harness on this machine is old. Distinguish them before
+stopping a ticket: `pi --version`, `pi --help`, `pi --list-models`. In this
+repository pi is pinned declaratively (`devenv.nix`, task `atk:pi-install`), so
+"the model does not exist" has been a stale pin at least once.
 
 A skills list renders into the worker prompt as the prefix, in order:
 
@@ -142,8 +189,11 @@ pi       skills: [implement, codebase-design]  ->  /skill:implement /skill:codeb
 
 Reject and ask the user rather than writing a record that cannot launch:
 
-- `effort` is not in the harness's vocabulary.
+- `effort` is not in the harness's vocabulary (remember `pi` has no `max`).
 - `model` is non-Anthropic while `harness` is `claude`.
+- `model` lacks a `<provider>/` prefix while `harness` is `pi`, or carries one
+  while `harness` is `claude`.
+- a `:<level>` suffix disagrees with the record's own `effort:` field.
 - a named skill is not available in that harness.
 
 **A harness change re-validates the entire record**, not just the changed

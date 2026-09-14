@@ -28,7 +28,8 @@ format, fields, and validation rules are in
   where it is (reading / editing / committed / in fix round N).
 - Remaining tickets in order and any parallelism the user allowed.
 - A `## Decisions` entry for every preference change and scope decision.
-- Branches landed but not yet deleted by the user.
+- Landed Pi/Pando branches retained for the user. Claude Code's native
+  `worktree-*` branches may already be removed by `ExitWorktree`.
 
 If a preference changed and you have been following the write-before-you-reply
 rule, this step finds nothing to add. That is the intended outcome: handoff is

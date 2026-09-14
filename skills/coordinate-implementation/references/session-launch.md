@@ -1,23 +1,47 @@
 # Starting and monitoring an implementor session
 
-All paths below: `<repo>` is the main checkout, `<run>` is `.scratch/<slug>`,
-`<prefix>` is a short run tag (for example `dcs`), `<ws>` is the herdr
-workspace id from `herdr pane list`.
+All paths below: `<repo>` is the main checkout, `<base checkout>` holds the
+integration branch, `<run>` is `.scratch/<slug>`, `<prefix>` is a short run tag
+(for example `dcs`), and `<ws>` is the herdr workspace id from
+`herdr pane list`.
 
 ## 1. Worktree
 
+The lifecycle follows the **coordinator's** harness, not the implementor
+record bound to the ticket.
+
+### Claude Code coordinator
+
+With the Claude Code session rooted at `<base checkout>`, call
+`EnterWorktree`. Record the generated path as `<worktree>` and its generated
+`worktree-*` branch as `<branch>`. Do not assume either name, and do not run
+raw `git worktree` commands or Pando from Claude Code.
+
+Claude Code's configured `worktree.baseRef` must create the ticket from
+`<base>`. Verify that `<base>` is an ancestor of `<branch>` before launching
+the implementor. If it is not, exit and remove the invalid worktree, then stop
+and ask the user to correct the base configuration rather than silently using
+the wrong branch.
+
+### Pi coordinator
+
+Load the `pando` skill. From `<base checkout>`, create the ticket branch and
+capture the returned worktree path:
+
 ```sh
-cd <repo>
-git worktree add .claude/worktrees/wyattjoh/<prefix>-NN-<slug> -b wyattjoh/<prefix>-NN-<slug> <base>
+printf '%s\n' '{"schema_version":1,"input":{"branch":"wyattjoh/<prefix>-NN-<slug>","description":"Implement ticket NN for the <slug> run"}}' \
+  | pando create --input-output json
 ```
 
-When `<base>` is not `main` and no worktree holds it yet, create the base
-worktree first (once per base, shared by every run on it):
+Use `wyattjoh/<prefix>-NN-<slug>` as `<branch>` and the response path as
+`<worktree>`. Pi uses Pando for the entire worktree lifecycle, never raw
+`git worktree` commands.
 
-```sh
-git show-ref --verify --quiet refs/heads/<base> || git branch <base> main
-git worktree add .claude/worktrees/wyattjoh/<base> <base>
-```
+When `<base>` is not `main` and no checkout holds it yet, Pi uses
+`pando switch <base>` and captures the printed path. Claude Code's native tool
+cannot attach a new worktree to an arbitrary existing branch by name, so stop
+and ask the user to provide the base checkout rather than falling back to raw
+Git or Pando.
 
 If `just crsqlite` fails inside the new worktree, copy `.crsqlite/` from the
 main checkout instead of rebuilding (see the project memory on archive reuse).
@@ -49,10 +73,23 @@ cd <worktree> && export PATH="$HOME/.cargo/bin:$PATH" XDG_DATA_HOME=<repo>/<run>
 
 ```sh
 # harness: pi
-cd <worktree> && export PATH="$HOME/.cargo/bin:$PATH" XDG_DATA_HOME=<repo>/<run>/xdg-sandbox/data XDG_CONFIG_HOME=<repo>/<run>/xdg-sandbox/config && pi --model openai-codex/gpt-5.6-luna --thinking max '/skill:implement You are implementing ticket NN of the <slug> run. Read <repo>/<run>/briefs/common.md, <repo>/<run>/spec.md, and <repo>/<run>/issues/NN-<slug>.md first, then implement the ticket per the brief. IMPORTANT CONTEXT: <what earlier tickets already landed and what remains for this one>'
+cd <worktree> && export PATH="$HOME/.cargo/bin:$PATH" XDG_DATA_HOME=<repo>/<run>/xdg-sandbox/data XDG_CONFIG_HOME=<repo>/<run>/xdg-sandbox/config && pi --model <provider>/<model> --thinking <effort> --skill <path-to-each-skill> '/skill:implement You are implementing ticket NN of the <slug> run. Read <repo>/<run>/briefs/common.md, <repo>/<run>/spec.md, and <repo>/<run>/issues/NN-<slug>.md first, then implement the ticket per the brief. IMPORTANT CONTEXT: <what earlier tickets already landed and what remains for this one>'
 ```
 
 Never pass a non-Anthropic model to `claude`.
+
+**The two lines differ in three ways, not one.** Build each from the row's
+`harness`; do not adapt one into the other by swapping the binary:
+
+|             | `claude`                 | `pi`                           |
+| ----------- | ------------------------ | ------------------------------ |
+| model       | `--model <model>`        | `--model <provider>/<model>`   |
+| effort      | `--effort <effort>`      | `--thinking <effort>`          |
+| permissions | `--permission-mode auto` | **omit — pi has no such flag** |
+
+A `model:` carrying a `:<level>` suffix is **split** into `--model` plus the
+effort flag; a colon never reaches either CLI. See
+[resume-format.md](resume-format.md).
 
 - `PATH` must put rustup's cargo first or `just crsqlite` fails on the
   nightly override (a no-op inside the devenv shell, where cargo already
@@ -60,6 +97,30 @@ Never pass a non-Anthropic model to `claude`.
 - The XDG variables sandbox any accidental binary run.
 - The `IMPORTANT CONTEXT` clause matters when an earlier ticket pulled in part
   of this one: tell the session to verify-then-implement only what remains.
+
+### pi loads no skill you do not hand it
+
+**Check `pi --help` and the skill directories before the first pi launch of a
+run.** If pi discovers no skills on this machine — no `~/.pi/skills`, no
+`~/.config/pi/skills` — then `/skill:implement` in the prompt resolves to
+nothing and **the session starts anyway, silently, with the brief absent**. That
+is a worker implementing a ticket it never read. Nothing errors.
+
+Pass `--skill <path>` once per entry in the row's `skills:` list, resolving each
+against `~/.claude/skills/<name>`, and record the resolved paths in RESUME.md —
+a successor coordinator inherits that file and nothing else. A skill whose
+`SKILL.md` carries `disable-model-invocation: true` (`implement` does) must also
+be invoked explicitly by its `/skill:<name>` prefix rather than relied on to
+trigger.
+
+### Validate the model before the first launch of a run
+
+`pi --list-models` prints every model pi can resolve, as `provider  model`.
+Check the row's model appears there. If it does not, **say so and ask** — a
+model absent from the catalog may mean a stale catalog (pi does startup network
+work; `pi update` refreshes it) or a typo, and those want opposite fixes. Do not
+substitute a neighbouring model to get moving; that silent downgrade is
+invisible in every artifact the run later produces.
 
 ### Implementor record
 
