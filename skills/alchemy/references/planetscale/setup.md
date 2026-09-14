@@ -1,6 +1,6 @@
 <!-- source: https://alchemy.run/planetscale/setup
      upstream: website/src/content/docs/planetscale/setup.mdx
-     alchemy 2.0.0-beta.75 @ 808ef69 -->
+     alchemy 2.0.0-beta.77 @ c83b454 -->
 
 # Setup
 
@@ -17,18 +17,15 @@ import * as Planetscale from "alchemy/Planetscale";
 providers: Layer.mergeAll(Cloudflare.providers(), Planetscale.providers()),
 ```
 
-The next `alchemy login` adds a `Planetscale` step with two options:
+Run `alchemy profile edit --add Planetscale` and pick between two local options:
 
-- **Environment variables** — reads `PLANETSCALE_API_TOKEN_ID`,
-  `PLANETSCALE_API_TOKEN`, and `PLANETSCALE_ORGANIZATION` (good for CI).
-- **Stored service token** — entered interactively, saved under
+- **OAuth.** Sign in through a browser. Alchemy refreshes the token automatically.
+- **Stored service token.** Enter the token interactively. Alchemy saves it under
   `~/.alchemy/credentials/<profile>/planetscale-stored.json`.
 
-When `CI=true`, the login step skips the prompt and selects the
-environment-variables method automatically.
-
-There is no OAuth option — intentionally. PlanetScale does not publish a
-redirect-based OAuth client, so service tokens are the canonical credential.
+When `CI=true`, profiles are bypassed. Set `PLANETSCALE_API_TOKEN_ID`,
+`PLANETSCALE_API_TOKEN`, and `PLANETSCALE_ORGANIZATION`; Alchemy reads them
+directly and persists nothing.
 
 See [Profiles](/environments/profiles) for how credentials are stored
 and switched.

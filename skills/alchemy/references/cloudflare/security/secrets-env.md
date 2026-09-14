@@ -1,6 +1,6 @@
 <!-- source: https://alchemy.run/cloudflare/security/secrets-env
      upstream: website/src/content/docs/cloudflare/security/secrets-env.mdx
-     alchemy 2.0.0-beta.75 @ 808ef69 -->
+     alchemy 2.0.0-beta.77 @ c83b454 -->
 
 # Secrets & env
 
@@ -8,13 +8,13 @@
 
 Three ways to get a secret into a Worker, by where the value lives.
 A value from your `.env` that belongs to one Worker —
-`Config.redacted`. A token your infrastructure mints —
+`Config.Redacted`. A token your infrastructure mints —
 `Alchemy.Random`. A secret shared across Workers that must rotate
 without a redeploy — [Secrets Store](#graduate-to-secrets-store).
 
 ## Bind a secret from .env
 
-Any `Config` yielded in the Worker's init phase is read from your
+Any `Config` yielded in the Worker's Construction phase is read from your
 environment at deploy time, bound to the Worker, and resolved from
 that binding at runtime:
 
@@ -28,7 +28,7 @@ export default Cloudflare.Worker(
   "Worker",
   { main: import.meta.url },
   Effect.gen(function* () {
-    const apiKey = yield* Config.redacted("API_KEY");
+    const apiKey = yield* Config.Redacted("API_KEY");
 
     return {
       fetch: Effect.gen(function* () {
@@ -63,11 +63,11 @@ string `"<redacted>"` — `` `Bearer ${apiKey}` `` sends
 
 ## Plain vars and defaults
 
-Non-secret config uses `Config.string` / `Config.number`, and any
+Non-secret config uses `Config.String` / `Config.Number`, and any
 combinator works:
 
 ```typescript
-const port = yield* Config.number("PORT").pipe(
+const port = yield* Config.Number("PORT").pipe(
   Config.withDefault(3000),
 );
 ```
@@ -76,7 +76,7 @@ The raw source value is bound; combinators re-run at runtime against
 it, and a default is never bound. See
 [Secrets and Config](/environments/secrets) for the full semantics.
 
-## Resolve Config in init, not in fetch
+## Resolve Config in the constructor, not in fetch
 
 `fetch` never runs at deploy time, so a `Config` yielded only there
 is never discovered or bound:
@@ -86,7 +86,7 @@ is never discovered or bound:
 Effect.gen(function* () {
   return {
     fetch: Effect.gen(function* () {
-      const apiKey = yield* Config.redacted("API_KEY");
+      const apiKey = yield* Config.Redacted("API_KEY");
       // ...
     }),
   };
@@ -97,9 +97,9 @@ Resolve it in the outer `Effect.gen` and reference the `const` from
 the handler:
 
 ```typescript
-// ✅ bound in init, used in runtime
+// ✅ bound in Construction, used in Runtime
 Effect.gen(function* () {
-  const apiKey = yield* Config.redacted("API_KEY");
+  const apiKey = yield* Config.Redacted("API_KEY");
   return {
     fetch: Effect.gen(function* () {
       return new Response(Redacted.value(apiKey));
@@ -110,7 +110,7 @@ Effect.gen(function* () {
 
 ## Async Workers: the env prop
 
-Async (non-Effect) Workers have no init phase — declare bindings on
+Async (non-Effect) Workers have no Construction phase — declare bindings on
 the `env` prop and type the handler with `InferEnv`:
 
 ```typescript
@@ -121,8 +121,8 @@ import * as Config from "effect/Config";
 export const Worker = Cloudflare.Worker("Worker", {
   main: "./src/worker.ts",
   env: {
-    API_KEY: Config.redacted("API_KEY"),
-    HOST: Config.string("HOST"),
+    API_KEY: Config.Redacted("API_KEY"),
+    HOST: Config.String("HOST"),
     Bucket, // resource references work the same
   },
 });

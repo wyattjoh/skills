@@ -1,13 +1,13 @@
 <!-- source: https://alchemy.run/fly/data/secrets
      upstream: website/src/content/docs/fly/data/secrets.mdx
-     alchemy 2.0.0-beta.75 @ 808ef69 -->
+     alchemy 2.0.0-beta.77 @ c83b454 -->
 
 # Secrets
 
-> Config.redacted on a Service, Fly.Secret when Fly should own the value, and KMS keys.
+> Config.Redacted on a Service, Fly.Secret when Fly should own the value, and KMS keys.
 
 Most secrets in a [`Service`](/fly/compute/services) come from your
-`.env`. Yield `Config.redacted` in init. Alchemy binds the value
+`.env`. Yield `Config.Redacted` in the constructor. Alchemy binds the value
 onto the Machine.
 
 Use [`Fly.Secret`](/providers/fly/secret) when the value should be
@@ -24,7 +24,7 @@ export default class Api extends Fly.Service<Api>()(
   "Api",
   { app: Site, main: import.meta.url, port: 3000 },
   Effect.gen(function* () {
-    const apiKey = yield* Config.redacted("API_KEY");
+    const apiKey = yield* Config.Redacted("API_KEY");
 
     return {
       fetch: Effect.gen(function* () {
@@ -36,7 +36,7 @@ export default class Api extends Fly.Service<Api>()(
 ) {}
 ```
 
-`Config.redacted("API_KEY")` reads `API_KEY` from the env of whoever
+`Config.Redacted("API_KEY")` reads `API_KEY` from the env of whoever
 runs the deploy and writes it onto the Machine. At runtime the same
 line resolves from that env var.
 
@@ -178,7 +178,7 @@ a Service, not a laptop Action.
 
 The [tutorial](/fly/tutorial/part-4) stores an App secret and reads
 it from a Service. [Services](/fly/compute/services) covers
-`Config.redacted` for values from `.env`. [Postgres](/fly/data/postgres),
+`Config.Redacted` for values from `.env`. [Postgres](/fly/data/postgres),
 [Redis](/fly/data/redis), and [Tigris](/fly/data/tigris) bind
 typed clients (`ConnectPostgres`, `ReadWriteRedis`, `PutObject`)
 that use Fly-owned secrets internally. See the

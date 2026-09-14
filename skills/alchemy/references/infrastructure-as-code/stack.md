@@ -1,6 +1,6 @@
 <!-- source: https://alchemy.run/infrastructure-as-code/stack
      upstream: website/src/content/docs/infrastructure-as-code/stack.mdx
-     alchemy 2.0.0-beta.75 @ 808ef69 -->
+     alchemy 2.0.0-beta.77 @ c83b454 -->
 
 # Stacks
 
@@ -43,8 +43,8 @@ file with a default-exported Stack works**. Pass the path as the
 first positional argument:
 
 ```sh
-alchemy deploy infra/my-stack.ts
-alchemy destroy stacks/github.ts
+alchemy deploy --config infra/my-stack.ts
+alchemy destroy --config stacks/github.ts
 ```
 
 See the [CLI reference](/cli/deploy) for the full invocation

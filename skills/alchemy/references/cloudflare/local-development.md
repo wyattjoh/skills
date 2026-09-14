@@ -1,6 +1,6 @@
 <!-- source: https://alchemy.run/cloudflare/local-development
      upstream: website/src/content/docs/cloudflare/local-development.mdx
-     alchemy 2.0.0-beta.75 @ 808ef69 -->
+     alchemy 2.0.0-beta.77 @ c83b454 -->
 
 # Local development
 
@@ -191,6 +191,27 @@ export default Cloudflare.Worker("Worker", {
 });
 ```
 
+## Test against the local stack
+
+The [test harness](/testing/test-harness) has the same dev mode —
+`Test.make({ dev: true })` (available on both the Bun and Vitest
+adapters, off by default) runs the suite's `deploy(Stack)` against
+the local simulators instead of the cloud, no separate
+`alchemy dev` terminal needed:
+
+```typescript
+const { test, beforeAll, afterAll, deploy, destroy } = Test.make({
+  providers: Cloudflare.providers(),
+  dev: true,
+});
+```
+
+Workers, Durable Objects, Workflows, and the simulated bindings all
+run in workerd exactly as described above, and the stack's `url`
+points at `http://localhost:<port>`. See
+[Test harness → dev](/testing/test-harness#dev) and
+[Tutorial Part 4](/cloudflare/tutorial/part-4).
+
 ## Where next
 
 - [Local development](/environments/local-development) — the
@@ -200,5 +221,7 @@ export default Cloudflare.Worker("Worker", {
   framework dev servers under `alchemy dev`.
 - [Stages](/environments/stages) — how live-in-dev resources stay
   isolated per developer.
+- [Testing](/testing) — run the same test suite against the local
+  simulators with `Test.make({ dev: true })`.
 - [Local Providers](/infrastructure-as-code/local-provider) —
   build the local implementation of a resource.

@@ -1,6 +1,6 @@
 <!-- source: https://alchemy.run/aws/tutorial/part-2
      upstream: website/src/content/docs/aws/tutorial/part-2.mdx
-     alchemy 2.0.0-beta.75 @ 808ef69 -->
+     alchemy 2.0.0-beta.77 @ c83b454 -->
 
 # Part 2: Add a Lambda
 
@@ -70,7 +70,7 @@ event envelope under the hood, so your handler never sees the raw
 
 :::note
 Notice the "Effect returning an Effect" pattern. The outer generator
-is the **Init phase** — it runs at both plan time and runtime. The
+is the **Construction phase** — it runs at both plan time and runtime. The
 inner `fetch` generator is the **Runtime phase** — it runs only when
 handling a request.
 :::
@@ -101,8 +101,8 @@ carrying that endpoint — we'll surface it from the Stack in a moment.
 
 In Part 1 the Bucket lived in `alchemy.run.ts`, but resources can be
 declared inside any Effect the Stack runs — including a function's
-Init phase. Declaring the bucket next to the code that uses it keeps
-everything about the function in one file. Add it to the outer init:
+Construction phase. Declaring the bucket next to the code that uses it keeps
+everything about the function in one file. Add it to the constructor:
 
 ```diff lang="typescript"
 // src/api.ts
@@ -134,7 +134,7 @@ S3 operations like `s3:PutObject` and `s3:GetObject` are exposed as
 **bindings** — a typed runtime function you call from your handler,
 plus an IAM policy statement that gets attached to the function role
 automatically, scoped to the exact bucket ARN. Bind them in the outer
-init, alongside the bucket:
+constructor, alongside the bucket:
 
 ```diff lang="typescript"
   Effect.gen(function* () {
@@ -323,7 +323,7 @@ ARN, role ARN, and the public Function URL we asked for with
 
 ## Retire the inline Bucket
 
-The Bucket is now declared inside `Api`'s init, so the copy in
+The Bucket is now declared inside `Api`'s constructor, so the copy in
 `alchemy.run.ts` is redundant — remove it:
 
 ```diff lang="typescript"
@@ -339,7 +339,7 @@ The Bucket is now declared inside `Api`'s init, so the copy in
 ```
 
 The bucket is still part of the Stack — it's registered when `Api`'s
-Init phase runs — it just isn't surfaced as a stack output anymore.
+Construction phase runs — it just isn't surfaced as a stack output anymore.
 
 ## Deploy
 

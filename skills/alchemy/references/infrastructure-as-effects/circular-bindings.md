@@ -1,6 +1,6 @@
 <!-- source: https://alchemy.run/infrastructure-as-effects/circular-bindings
      upstream: website/src/content/docs/infrastructure-as-effects/circular-bindings.mdx
-     alchemy 2.0.0-beta.75 @ 808ef69 -->
+     alchemy 2.0.0-beta.77 @ c83b454 -->
 
 # Circular Bindings
 
@@ -76,7 +76,7 @@ triggers any runtime code by importing the other's class.
 
 ## Add A's runtime, binding B
 
-Attach A's implementation with `A.make(...)`. Inside the Init phase,
+Attach A's implementation with `A.make(...)`. Inside the Construction phase,
 `yield* Cloudflare.Workers.bindWorker(B)` produces a typed stub whose
 methods dispatch to B's deployed Worker at runtime. A also exposes its
 own `work` RPC method so B can call back into it.
@@ -206,7 +206,7 @@ Diagram (nodes and edges as authored):
 
 The same pattern works for Lambda↔Lambda, Worker↔Container, or any
 mix — the Tag/Layer split is a property of every Function resource
-([Functions & Servers](/infrastructure-as-effects/functions-and-servers)), not just Workers.
+([Runtime](/infrastructure-as-effects/runtime)), not just Workers.
 
 ## When you don't need this
 

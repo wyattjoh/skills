@@ -1,6 +1,6 @@
 <!-- source: https://alchemy.run/cloudflare/compute/containers
      upstream: website/src/content/docs/cloudflare/compute/containers.mdx
-     alchemy 2.0.0-beta.75 @ 808ef69 -->
+     alchemy 2.0.0-beta.77 @ c83b454 -->
 
 # Containers
 
@@ -76,7 +76,7 @@ through the typed handle.
 
 ## Run it from a Durable Object
 
-Yield the class inside a DO's init phase and provide
+Yield the class inside a DO's Construction phase and provide
 `Cloudflare.Containers.layer` — that layer binds, starts, and
 monitors the container, then hands you a running instance:
 
@@ -162,7 +162,7 @@ still booting, so you don't coordinate readiness yourself.
 Unlike Workers, a Container is a **real process** — and that changes
 what the instance scope means. The bundled program runs under a root
 scope that closes when the process shuts down gracefully, so
-resources acquired at init (a connection kept warm across requests,
+resources acquired in the constructor (a connection kept warm across requests,
 a background consumer) are genuinely released on exit. Serverless
 runtimes only approximate this: workerd never closes its instance
 scope at all, and Lambda gets a best-effort 500 ms SIGTERM window at
@@ -172,7 +172,7 @@ process, so treat instance-level cleanup as best-effort.
 Each incoming request to the container's HTTP server still gets its
 own request `Scope`, released when the response settles — the same
 per-event contract as every other runtime. See
-[Instance scope vs request scope](/infrastructure-as-effects/functions-and-servers#instance-scope-vs-request-scope)
+[Instance scope vs request scope](/infrastructure-as-effects/runtime#instance-scope-vs-request-scope)
 for the model across all runtimes.
 
 ## Bring your own image
@@ -465,7 +465,7 @@ The Durable Object class name defaults to the binding name (the
 differently. The type parameter (`Container<Sandbox>`) is the class
 from `worker.ts` above — it types `env.Sandbox` as
 `DurableObjectNamespace<Sandbox>` through
-[`InferEnv`](/cloudflare/compute/workers#typed-env-for-async-workers),
+[`InferEnv`](/cloudflare/compute/workers#async-workers),
 so the handler reaches the container with full types:
 
 ```typescript

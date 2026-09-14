@@ -1,6 +1,6 @@
 <!-- source: https://alchemy.run/cloudflare/messaging/cron
      upstream: website/src/content/docs/cloudflare/messaging/cron.mdx
-     alchemy 2.0.0-beta.75 @ 808ef69 -->
+     alchemy 2.0.0-beta.77 @ c83b454 -->
 
 # Scheduled jobs with Cron Triggers
 
@@ -13,9 +13,13 @@ handler)` attaches the cron expression to the Worker at deploy time
 *and* registers the runtime `scheduled` listener that runs your
 Effect on each fire.
 
+To run a [Workflow](/cloudflare/compute/workflows#schedule-a-workflow)
+on a schedule, attach `schedules` to the Workflow itself instead of
+wrapping `workflow.create()` in a `scheduled` handler.
+
 ## Declare a cron on the Worker
 
-Call `cron` in the Worker's init phase and provide
+Call `cron` in the Worker's Construction phase and provide
 `CronEventSourceLive` as a layer:
 
 ```typescript
@@ -280,6 +284,6 @@ interruption and hides intent.
   cron handlers live inside.
 - [Durable Objects](/cloudflare/compute/durable-objects) — the stateful
   building block the test uses to record fires.
-- [Workflows](/cloudflare/compute/workflows) — for multi-step jobs
-  that outgrow a single scheduled handler.
+- [Workflows](/cloudflare/compute/workflows#schedule-a-workflow) —
+  native cron schedules on the Workflow itself.
 - [cron API reference](/providers/cloudflare/workers/cron)

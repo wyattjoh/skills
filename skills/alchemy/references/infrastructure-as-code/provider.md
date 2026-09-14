@@ -1,6 +1,6 @@
 <!-- source: https://alchemy.run/infrastructure-as-code/provider
      upstream: website/src/content/docs/infrastructure-as-code/provider.mdx
-     alchemy 2.0.0-beta.75 @ 808ef69 -->
+     alchemy 2.0.0-beta.77 @ c83b454 -->
 
 # Providers
 
@@ -274,7 +274,7 @@ or `nuke.skip` (the resource can never actually be deleted).
 
 ### `tail` / `logs`
 
-Optional. Power `alchemy tail` (live log streaming) and
+Optional. Powers `alchemy logs --tail` (live log streaming) and
 `alchemy logs` (historical fetch). Each returns a `Stream` or
 `Effect` of `LogLine` values respectively.
 

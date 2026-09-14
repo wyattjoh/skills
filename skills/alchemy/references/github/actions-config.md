@@ -1,6 +1,6 @@
 <!-- source: https://alchemy.run/github/actions-config
      upstream: website/src/content/docs/github/actions-config.mdx
-     alchemy 2.0.0-beta.75 @ 808ef69 -->
+     alchemy 2.0.0-beta.77 @ c83b454 -->
 
 # Actions secrets & variables
 
@@ -223,7 +223,7 @@ export default Alchemy.Stack(
 Deploy it once from your laptop under an elevated profile:
 
 ```sh
-alchemy deploy stacks/github.ts --profile admin
+alchemy deploy --config stacks/github.ts --profile admin
 ```
 
 Re-run it only when you want to rotate the credential or change its

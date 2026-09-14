@@ -1,6 +1,6 @@
 <!-- source: https://alchemy.run/aws/data/rds
      upstream: website/src/content/docs/aws/data/rds.mdx
-     alchemy 2.0.0-beta.75 @ 808ef69 -->
+     alchemy 2.0.0-beta.77 @ c83b454 -->
 
 # RDS & Aurora
 
@@ -208,7 +208,7 @@ export const DatabaseAurora = Layer.effect(
 ```
 
 `yield* AWS.RDS.Connect(db.cluster, ...)` runs in the function's
-init phase and returns an inner Effect; each `yield*` of that
+Construction phase and returns an inner Effect; each `yield*` of that
 inner Effect at runtime resolves fresh `ConnectionInfo` from the
 secret. `Network` here is the same network from the prerequisite
 section, wrapped in its own layer (see the
@@ -290,7 +290,7 @@ default, and the `AWS.RDSData` bindings expose it the same way
 as any other capability:
 
 ```typescript
-// init
+// Construction
 const execute = yield* AWS.RDSData.ExecuteStatement(db.cluster, {
   secret: db.secret,
   database: "app",

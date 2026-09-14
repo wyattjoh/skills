@@ -1,6 +1,6 @@
 <!-- source: https://alchemy.run/aws/compute/eks
      upstream: website/src/content/docs/aws/compute/eks.mdx
-     alchemy 2.0.0-beta.75 @ 808ef69 -->
+     alchemy 2.0.0-beta.77 @ c83b454 -->
 
 # EKS
 
@@ -157,7 +157,7 @@ a path, defaulting to `${context}/Dockerfile`).
 
 ## Effect servers with bindings
 
-Pass `main: import.meta.url` and an init Effect and the program is
+Pass `main: import.meta.url` and a constructor Effect and the program is
 bundled into a generated image instead — the same authoring model as
 [Lambda](/aws/compute/lambda). Bindings work identically too:
 `Deployment` accepts the same `{ env, policyStatements }` binding

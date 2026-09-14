@@ -1,8 +1,8 @@
 <!-- source: https://alchemy.run/infrastructure-as-code/resource-lifecycle
      upstream: website/src/content/docs/infrastructure-as-code/resource-lifecycle.mdx
-     alchemy 2.0.0-beta.75 @ 808ef69 -->
+     alchemy 2.0.0-beta.77 @ c83b454 -->
 
-# Resource lifecycle
+# Resource Lifecycle
 
 > How alchemy plans, applies, replaces, and destroys resources — and how to think about idempotency and recovery.
 

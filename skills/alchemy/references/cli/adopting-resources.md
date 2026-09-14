@@ -1,6 +1,6 @@
 <!-- source: https://alchemy.run/cli/adopting-resources
      upstream: website/src/content/docs/cli/adopting-resources.mdx
-     alchemy 2.0.0-beta.75 @ 808ef69 -->
+     alchemy 2.0.0-beta.77 @ c83b454 -->
 
 # Adopting Resources
 
@@ -83,7 +83,7 @@ deployEffect.pipe(adopt(decidePolicy));  // Effect<boolean>, resolved at plan ti
 
 Providers with no tag concept (e.g. APIs that always return a singleton by name) always return plain attrs from `read`, so they silently adopt unconditionally — `--adopt` is a no-op for them.
 
-For the full lost-state-store recovery walkthrough (state tree → state clear → deploy), see [Inspecting State](/cli/inspecting-state).
+For the full lost-state-store recovery walkthrough (state explorer → state delete → deploy), see [Inspecting State](/cli/inspecting-state).
 
 ## Where next
 

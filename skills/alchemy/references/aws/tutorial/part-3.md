@@ -1,6 +1,6 @@
 <!-- source: https://alchemy.run/aws/tutorial/part-3
      upstream: website/src/content/docs/aws/tutorial/part-3.mdx
-     alchemy 2.0.0-beta.75 @ 808ef69 -->
+     alchemy 2.0.0-beta.77 @ c83b454 -->
 
 # Part 3: Testing
 
@@ -91,10 +91,11 @@ already deployed). Subsequent runs are fast because Alchemy diffs and
 skips unchanged resources.
 
 :::note[Which stage do tests deploy to?]
-The test harness defaults to a stage named `test`, separate from the
-`dev_<user>` stage your `alchemy deploy` runs target — so tests never
-clobber your working deployment. More on stages in
-[Part 4](/aws/tutorial/part-4).
+The test harness defaults to `test_$USER` (e.g. `test_sam`),
+separate from the `live_$USER` / `dev_$USER` stages your
+`alchemy deploy` / `alchemy dev` runs target — so tests never
+clobber your working deployment, and two people running the suite
+don't collide. More on stages in [Part 4](/aws/tutorial/part-4).
 :::
 
 ## Add HTTP assertions

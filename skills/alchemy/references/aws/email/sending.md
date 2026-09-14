@@ -1,6 +1,6 @@
 <!-- source: https://alchemy.run/aws/email/sending
      upstream: website/src/content/docs/aws/email/sending.mdx
-     alchemy 2.0.0-beta.75 @ 808ef69 -->
+     alchemy 2.0.0-beta.77 @ c83b454 -->
 
 # Sending & managing email
 
@@ -232,7 +232,7 @@ account-level binding (the template has no ARN to scope to) whose
 implementation is `SES.SendCustomVerificationEmailHttp`:
 
 ```typescript
-// init — inside the Lambda's Effect.gen body
+// Construction — inside the Lambda's Effect.gen body
 const sendVerification = yield* SES.SendCustomVerificationEmail();
 
 // runtime
@@ -348,7 +348,7 @@ bindings you can call from a Lambda. Look up a single message's
 per-recipient event timeline with `GetMessageInsights`:
 
 ```typescript
-// init — account-level binding, no resource argument
+// Construction — account-level binding, no resource argument
 const getInsights = yield* SES.GetMessageInsights();
 
 // runtime — MessageId returned by a prior SendEmail

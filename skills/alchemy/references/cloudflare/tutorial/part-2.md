@@ -1,6 +1,6 @@
 <!-- source: https://alchemy.run/cloudflare/tutorial/part-2
      upstream: website/src/content/docs/cloudflare/tutorial/part-2.mdx
-     alchemy 2.0.0-beta.75 @ 808ef69 -->
+     alchemy 2.0.0-beta.77 @ c83b454 -->
 
 # Part 2: Add a Worker
 
@@ -39,7 +39,7 @@ export default Cloudflare.Worker(
 
 :::note
 Notice the "Effect returning an Effect" pattern. The outer generator
-is the **Init phase** — it runs at both plan time and runtime. The
+is the **Construction phase** — it runs at both plan time and runtime. The
 inner `fetch` generator is the **Runtime phase** — it runs only when
 handling a request.
 :::
@@ -92,7 +92,7 @@ descriptions — they don't execute until you `yield*` them inside a
 Stack. You can safely import them from multiple files.
 :::
 
-Now the Worker can import `Bucket` and bind it in the Init phase:
+Now the Worker can import `Bucket` and bind it in the Construction phase:
 
 ```diff lang="typescript"
 import * as Cloudflare from "alchemy/Cloudflare";

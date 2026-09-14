@@ -1,6 +1,6 @@
 <!-- source: https://alchemy.run/docker/build-and-push
      upstream: website/src/content/docs/docker/build-and-push.mdx
-     alchemy 2.0.0-beta.75 @ 808ef69 -->
+     alchemy 2.0.0-beta.77 @ c83b454 -->
 
 # Build & push images
 
@@ -73,7 +73,7 @@ const image = yield* Docker.Image("app", {
   registry: {
     server: "ghcr.io",
     username: "octocat",
-    password: Config.redacted("GITHUB_TOKEN"),
+    password: Config.Redacted("GITHUB_TOKEN"),
   },
 });
 ```
@@ -97,7 +97,7 @@ const mirrored = yield* Docker.RemoteImage("nginx-mirror", {
   registry: {
     server: "ghcr.io",
     username: "octocat",
-    password: Config.redacted("GITHUB_TOKEN"),
+    password: Config.Redacted("GITHUB_TOKEN"),
   },
 });
 ```

@@ -1,6 +1,6 @@
 <!-- source: https://alchemy.run/cloudflare/data/hyperdrive
      upstream: website/src/content/docs/cloudflare/data/hyperdrive.mdx
-     alchemy 2.0.0-beta.75 @ 808ef69 -->
+     alchemy 2.0.0-beta.77 @ c83b454 -->
 
 # Hyperdrive
 
@@ -52,8 +52,8 @@ export default Alchemy.Stack(
 );
 ```
 
-Neon's auth is API-key-based. The first `bun alchemy login` after
-this change adds a `Neon` step that either reads `NEON_API_KEY`
+Neon's auth is API-key-based. After this change,
+`bun alchemy profile edit --add Neon` either reads `NEON_API_KEY`
 from the environment (good for CI) or stores a key under
 `~/.alchemy/credentials/<profile>/neon-stored.json`.
 
@@ -77,8 +77,8 @@ export default Alchemy.Stack(
 );
 ```
 
-PlanetScale's auth uses an API token id + secret. `bun alchemy login`
-adds a `Planetscale` step that either reads `PLANETSCALE_API_TOKEN_ID`,
+PlanetScale's auth uses an API token id + secret.
+`bun alchemy profile edit --add Planetscale` either reads `PLANETSCALE_API_TOKEN_ID`,
 `PLANETSCALE_API_TOKEN`, and `PLANETSCALE_ORGANIZATION` from the
 environment (good for CI) or stores the credentials under
 `~/.alchemy/credentials/<profile>/planetscale-stored.json`.
@@ -103,8 +103,8 @@ export default Alchemy.Stack(
 );
 ```
 
-PlanetScale's auth uses an API token id + secret. `bun alchemy login`
-adds a `Planetscale` step that either reads `PLANETSCALE_API_TOKEN_ID`,
+PlanetScale's auth uses an API token id + secret.
+`bun alchemy profile edit --add Planetscale` either reads `PLANETSCALE_API_TOKEN_ID`,
 `PLANETSCALE_API_TOKEN`, and `PLANETSCALE_ORGANIZATION` from the
 environment (good for CI) or stores the credentials under
 `~/.alchemy/credentials/<profile>/planetscale-stored.json`.

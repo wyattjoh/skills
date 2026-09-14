@@ -1,6 +1,6 @@
 <!-- source: https://alchemy.run/aws/tutorial/part-4
      upstream: website/src/content/docs/aws/tutorial/part-4.mdx
-     alchemy 2.0.0-beta.75 @ 808ef69 -->
+     alchemy 2.0.0-beta.77 @ c83b454 -->
 
 # Part 4: Stages
 
@@ -16,23 +16,23 @@ the infrastructure.
 ## The default stage
 
 You've been using stages all along. If you don't pass `--stage`,
-Alchemy deploys to **`dev_$USER`** (e.g. `dev_sam`):
+Alchemy deploys to **`live_$USER`** (e.g. `live_sam`):
 
 ```sh
 $ whoami
 sam
 
 $ bun alchemy deploy
-# deploys to stage `dev_sam`
+# deploys to stage `live_sam`
 ```
 
 Each developer on your team automatically gets a personal sandbox
 without any config. The resolution order is:
 
 1. `--stage <name>` flag
-2. `$STAGE` environment variable
-3. `dev_${USER}` (or `dev_${USERNAME}` on Windows)
-4. `dev_unknown` if no user is set
+2. `$ALCHEMY_STAGE` environment variable
+3. `live_${USER}` (or `live_${USERNAME}` on Windows)
+4. `live_unknown` if no user is set
 
 ## Deploy a second stage
 
@@ -129,17 +129,17 @@ other stage alone.
 
 ## Stages in tests
 
-The test harness from Part 3 defaults to a stage named `test`. You
-can override it per file — or per call — which is how multiple CI
-runs can test in parallel against the same AWS account without
-colliding:
+The test harness from Part 3 defaults to `test_$USER` (e.g.
+`test_sam`). Override it per file — or per call — which is how
+multiple CI runs can test in parallel against the same AWS account
+without colliding:
 
 ```diff lang="typescript"
 // test/integ.test.ts
 const { test, beforeAll, afterAll, deploy, destroy } = Test.make({
   providers: AWS.providers(),
   state: AWS.state(),
-+  stage: process.env.STAGE ?? "test",
++  stage: `pr-${process.env.PR_NUMBER}`,
 });
 ```
 

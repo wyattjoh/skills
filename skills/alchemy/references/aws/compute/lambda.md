@@ -1,6 +1,6 @@
 <!-- source: https://alchemy.run/aws/compute/lambda
      upstream: website/src/content/docs/aws/compute/lambda.mdx
-     alchemy 2.0.0-beta.75 @ 808ef69 -->
+     alchemy 2.0.0-beta.77 @ c83b454 -->
 
 # Lambda
 
@@ -272,7 +272,7 @@ You now have a deployable Lambda with a public URL.
 
 ## Sandbox scope vs invocation scope
 
-The init closure runs **once per sandbox**, at cold start —
+The constructor runs **once per sandbox**, at cold start —
 everything it builds (bindings, SDK clients) is reused by every
 invocation. Each invocation then runs with a **fresh `Scope`** that
 is settled *inline* before the handler returns — so
@@ -296,7 +296,7 @@ the response, keep them cheap, and anything that must not be lost
 gets written durably (a queue, a table) inside the handler itself.
 :::
 
-Init-level finalizers run at **sandbox shutdown**. A Lambda sandbox
+Construction-level finalizers run at **sandbox shutdown**. A Lambda sandbox
 with no registered extensions is killed with no signal at all, so
 the generated entry registers an internal extension with the
 Extensions API — that makes Lambda send `SIGTERM` and allow 500 ms
@@ -305,7 +305,7 @@ instance scope:
 
 ```typescript
 Effect.gen(function* () {
-  // init: runs once per sandbox
+  // Construction: runs once per sandbox
   yield* Effect.addFinalizer(() =>
     // runs in the 500 ms SIGTERM window at sandbox spin-down
     flushTelemetry().pipe(Effect.ignore),
@@ -319,7 +319,7 @@ delivered on hard failures (a timeout reset kills the runtime
 without the signal). Flush caches and close connections there;
 anything that *must* happen belongs in the handler, scoped to the
 invocation. See
-[Instance scope vs request scope](/infrastructure-as-effects/functions-and-servers#instance-scope-vs-request-scope)
+[Instance scope vs request scope](/infrastructure-as-effects/runtime#instance-scope-vs-request-scope)
 for the model across all runtimes.
 
 ## Where next

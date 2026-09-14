@@ -1,6 +1,6 @@
 <!-- source: https://alchemy.run/cloudflare/data/artifacts
      upstream: website/src/content/docs/cloudflare/data/artifacts.mdx
-     alchemy 2.0.0-beta.75 @ 808ef69 -->
+     alchemy 2.0.0-beta.77 @ c83b454 -->
 
 # Store Git Repos with Artifacts
 
@@ -26,7 +26,7 @@ export const Repos = Cloudflare.Artifacts.Namespace("Repos");
 
 ## Create a repo from the Worker
 
-Bind the namespace in the Worker's init phase, then call
+Bind the namespace in the Worker's Construction phase, then call
 `artifacts.create(name)` inside `fetch`. It returns the repo's
 `remote` URL and a clone `token`:
 

@@ -1,6 +1,6 @@
 <!-- source: https://alchemy.run/axiom/data/ingest
      upstream: website/src/content/docs/axiom/data/ingest.mdx
-     alchemy 2.0.0-beta.75 @ 808ef69 -->
+     alchemy 2.0.0-beta.77 @ c83b454 -->
 
 # Datasets & ingest
 
@@ -70,7 +70,7 @@ export const Ingest = Axiom.ApiToken("Ingest", {
   },
 });
 
-// src/worker.ts — on the Worker's init Effect, merged with its other binding layers:
+// src/worker.ts — on the Worker's constructor Effect, merged with its other binding layers:
 Effect.provide(
   Layer.mergeAll(
     Cloudflare.R2.ReadWriteBucketBinding,

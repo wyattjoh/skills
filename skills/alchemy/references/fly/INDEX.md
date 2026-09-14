@@ -24,7 +24,7 @@
 | --- | --- | --- |
 | Postgres | `data/postgres.md` | A billed Managed Postgres cluster. Bind Fly.ConnectPostgres and query with Drizzle or SQL. |
 | Redis | `data/redis.md` | Managed Upstash Redis. Bind Fly.ReadRedis / WriteRedis / ReadWriteRedis on a Service. |
-| Secrets | `data/secrets.md` | Config.redacted on a Service, Fly.Secret when Fly should own the value, and KMS keys. |
+| Secrets | `data/secrets.md` | Config.Redacted on a Service, Fly.Secret when Fly should own the value, and KMS keys. |
 | Tigris | `data/tigris.md` | S3-compatible object storage billed through Fly. Bind Fly.PutObject / Fly.GetObject. |
 | Volumes | `data/volumes.md` | A disk in one region, attached to one Machine. |
 

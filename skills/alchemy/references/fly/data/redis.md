@@ -1,6 +1,6 @@
 <!-- source: https://alchemy.run/fly/data/redis
      upstream: website/src/content/docs/fly/data/redis.mdx
-     alchemy 2.0.0-beta.75 @ 808ef69 -->
+     alchemy 2.0.0-beta.77 @ c83b454 -->
 
 # Redis
 
@@ -51,7 +51,7 @@ because the name cannot exist twice.
 ## Bind from a Service
 
 Yield `Fly.ReadWriteRedis` (or `ReadRedis` / `WriteRedis`) in
-Service init. Provide the matching `*Http` layer.
+the Service's constructor. Provide the matching `*Http` layer.
 
 ```typescript
 import * as HttpServerResponse from "effect/unstable/http/HttpServerResponse";

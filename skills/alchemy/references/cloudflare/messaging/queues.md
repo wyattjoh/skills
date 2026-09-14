@@ -1,6 +1,6 @@
 <!-- source: https://alchemy.run/cloudflare/messaging/queues
      upstream: website/src/content/docs/cloudflare/messaging/queues.mdx
-     alchemy 2.0.0-beta.75 @ 808ef69 -->
+     alchemy 2.0.0-beta.77 @ c83b454 -->
 
 # Queues
 
@@ -54,7 +54,7 @@ test can read it back.
 
 ## Bind the Queue producer
 
-In the Worker init phase, yield the queue resource and ask
+In the Worker's Construction phase, yield the queue resource and ask
 `Cloudflare.Queues.WriteQueue` for a typed sender. The sender exposes `send` /
 `sendBatch` that round-trip through Cloudflare's runtime.
 

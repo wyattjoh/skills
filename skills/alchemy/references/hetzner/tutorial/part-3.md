@@ -1,6 +1,6 @@
 <!-- source: https://alchemy.run/hetzner/tutorial/part-3
      upstream: website/src/content/docs/hetzner/tutorial/part-3.mdx
-     alchemy 2.0.0-beta.75 @ 808ef69 -->
+     alchemy 2.0.0-beta.77 @ c83b454 -->
 
 # Part 3: Persist Data with a Volume
 
@@ -42,7 +42,7 @@ the Server's — volumes attach over the local network. Note what's
 
 ## Mount it into the Service
 
-Inside the Service's init, bind the Volume with
+Inside the Service's constructor, bind the Volume with
 `Hetzner.MountVolume` — pass the declaration directly, no yielding
 required:
 
@@ -75,7 +75,7 @@ runtime it hands you the resolved `mount.path` and `mount.device`.
 ## Provide the binding layer
 
 Bindings declare a capability; layers implement it. Provide
-`MountVolumeLive` on the Service's init Effect:
+`MountVolumeLive` on the Service's constructor Effect:
 
 ```diff lang="typescript"
   Effect.gen(function* () {
@@ -130,7 +130,7 @@ if (request.method === "PUT") {
 
 +if (request.method === "GET") {
 +  const text = yield* fs.readFileString(file).pipe(
-+    Effect.catchAll(() => Effect.succeed(undefined)),
++    Effect.catch(() => Effect.succeed(undefined)),
 +  );
 +  if (text === undefined) {
 +    return HttpServerResponse.text("Not found", { status: 404 });

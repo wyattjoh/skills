@@ -1,6 +1,6 @@
 <!-- source: https://alchemy.run/aws/security/secrets-env
      upstream: website/src/content/docs/aws/security/secrets-env.mdx
-     alchemy 2.0.0-beta.75 @ 808ef69 -->
+     alchemy 2.0.0-beta.77 @ c83b454 -->
 
 # Secrets & env
 
@@ -16,7 +16,7 @@ shared, generated, or rotated → Secrets Manager.
 
 ## Bind a secret from .env
 
-`yield* Config.redacted(...)` in the function's init phase reads
+`yield* Config.Redacted(...)` in the function's Construction phase reads
 your `.env` at deploy time and binds the value as a Lambda
 environment variable:
 
@@ -31,7 +31,7 @@ export default class Api extends AWS.Lambda.Function<Api>()(
   "Api",
   { main: import.meta.url, functionUrl: true },
   Effect.gen(function* () {
-    const apiKey = yield* Config.redacted("OPENAI_API_KEY");
+    const apiKey = yield* Config.Redacted("OPENAI_API_KEY");
 
     return {
       fetch: Effect.gen(function* () {
@@ -61,12 +61,12 @@ the literal text `<redacted>`, not the value — that's the point.
 
 ## Plain vars and defaults
 
-Non-secret config uses the same mechanism with `Config.string` and
-`Config.number`:
+Non-secret config uses the same mechanism with `Config.String` and
+`Config.Number`:
 
 ```typescript
-const host = yield* Config.string("HOST");
-const port = yield* Config.number("PORT").pipe(Config.withDefault(3000));
+const host = yield* Config.String("HOST");
+const port = yield* Config.Number("PORT").pipe(Config.withDefault(3000));
 ```
 
 Values JSON round-trip through the environment, so `port` comes
@@ -74,7 +74,7 @@ back as a number. Combinators re-run at runtime against the bound
 source, and a default is never bound — see
 [Secrets and Config](/environments/secrets) for the full semantics.
 
-## Resolve Config in init, not in fetch
+## Resolve Config in the constructor, not in fetch
 
 A `Config` yielded only inside `fetch` is never discovered at
 deploy time, so the env var won't exist at runtime:
@@ -87,7 +87,7 @@ export default class Api extends AWS.Lambda.Function<Api>()(
     return {
       fetch: Effect.gen(function* () {
         // 🚫 never bound — API_KEY won't exist at runtime
-        const apiKey = yield* Config.redacted("API_KEY");
+        const apiKey = yield* Config.Redacted("API_KEY");
       }),
     };
   }),
@@ -154,7 +154,7 @@ never lives in your repo, `.env`, or logs.
 
 ## Read it from a Lambda
 
-`GetSecretValue` is a binding: yield it in init to grant IAM at
+`GetSecretValue` is a binding: yield it in the constructor to grant IAM at
 deploy time, call it at runtime for a fresh read:
 
 ```typescript
@@ -209,7 +209,7 @@ Related:
   reads it at request time.
 - [Lambda](/aws/compute/lambda) — the function model env vars and bindings
   attach to.
-- [Secrets and Config](/environments/secrets) — the init/runtime split
+- [Secrets and Config](/environments/secrets) — the Construction/Runtime split
   and transformation semantics.
 - [Secrets & env on Cloudflare](/cloudflare/security/secrets-env) — the same
   spine on Cloudflare.

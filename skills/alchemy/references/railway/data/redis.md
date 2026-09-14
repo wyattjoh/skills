@@ -1,6 +1,6 @@
 <!-- source: https://alchemy.run/railway/data/redis
      upstream: website/src/content/docs/railway/data/redis.mdx
-     alchemy 2.0.0-beta.75 @ 808ef69 -->
+     alchemy 2.0.0-beta.77 @ c83b454 -->
 
 # Redis
 
@@ -55,7 +55,7 @@ const cache = yield* Railway.Redis("Cache", {
 ## Bind from a Service
 
 Yield `Railway.ReadWriteRedis` (or `ReadRedis` / `WriteRedis`) in
-Service init. Provide the matching `*Http` layer. Runtime commands
+the Service's constructor. Provide the matching `*Http` layer. Runtime commands
 use `REDIS_URL` (`{name}.railway.internal`).
 
 ```typescript

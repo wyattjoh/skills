@@ -1,6 +1,6 @@
 <!-- source: https://alchemy.run/aws/tutorial/part-5
      upstream: website/src/content/docs/aws/tutorial/part-5.mdx
-     alchemy 2.0.0-beta.75 @ 808ef69 -->
+     alchemy 2.0.0-beta.77 @ c83b454 -->
 
 # Part 5: CI/CD
 
@@ -56,7 +56,13 @@ Rather than hand those elevated rights to your day-to-day profile,
 create a dedicated `admin` profile:
 
 ```sh
-alchemy login --profile admin
+alchemy profile create admin
+```
+
+Connect AWS to the new profile:
+
+```sh
+alchemy profile edit --profile admin --add AWS
 ```
 
 Choose an AWS credential (SSO, access keys, etc.) that's authorized
@@ -217,7 +223,7 @@ round-trip through your shell.
 Run it once from your laptop, under the `admin` profile:
 
 ```sh
-alchemy deploy stacks/github.ts --profile admin
+alchemy deploy --config stacks/github.ts --profile admin
 ```
 
 You'll see Alchemy plan the OIDC provider, the role, and the two repo

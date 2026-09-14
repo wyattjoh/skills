@@ -1,6 +1,6 @@
 <!-- source: https://alchemy.run/cloudflare/email/send-and-receive
      upstream: website/src/content/docs/cloudflare/email/send-and-receive.mdx
-     alchemy 2.0.0-beta.75 @ 808ef69 -->
+     alchemy 2.0.0-beta.77 @ c83b454 -->
 
 # Send & receive email
 
@@ -175,7 +175,7 @@ attempt.
 
 ## Send from the Worker
 
-Bind the descriptor with `Email.Send` in the Worker's init phase and
+Bind the descriptor with `Email.Send` in the Worker's Construction phase and
 provide `Email.SendBinding` as the implementation layer. The client's
 `send` method takes the familiar `{ from, to, subject, text }` shape
 (plus `html`, `cc`, `bcc`, `replyTo`, `headers`, and `attachments`):

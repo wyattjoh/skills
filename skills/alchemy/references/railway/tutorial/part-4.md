@@ -1,13 +1,13 @@
 <!-- source: https://alchemy.run/railway/tutorial/part-4
      upstream: website/src/content/docs/railway/tutorial/part-4.mdx
-     alchemy 2.0.0-beta.75 @ 808ef69 -->
+     alchemy 2.0.0-beta.77 @ c83b454 -->
 
 # Part 4: Variables and Cleanup
 
 > Store a Project variable, read it from the Service at runtime, and destroy the stack.
 
 A secret only this Service needs from `.env` is
-`Config.redacted`. See [Variables](/railway/data/variables).
+`Config.Redacted`. See [Variables](/railway/data/variables).
 
 This part is for a value Railway should own: a **Variable** Railway
 injects into services. You will read it with `Config`, then tear
@@ -39,7 +39,7 @@ Omit it and Alchemy generates an ownership-stamped name instead.
 
 ## Read it from the Service
 
-Railway injects the Variable as env. Yield it in init so it is
+Railway injects the Variable as env. Yield it in the constructor so it is
 part of the graph, then read the name with `Config` — never the
 plaintext:
 
@@ -54,7 +54,7 @@ plaintext:
     const fs = yield* FileSystem.FileSystem;
 +    yield* ApiToken;
 +    const tokenName = "API_TOKEN";
-+    const token = yield* Config.string(tokenName).pipe(
++    const token = yield* Config.String(tokenName).pipe(
 +      Effect.orElseSucceed(() => ""),
 +    );
 
@@ -157,7 +157,7 @@ Over four parts you built a complete Railway deployment:
   multiple Services per Project, image-based Services.
 - [Volumes](/railway/data/volumes) — attach at create time, region
   rules.
-- [Variables](/railway/data/variables) — `Config.redacted` vs
+- [Variables](/railway/data/variables) — `Config.Redacted` vs
   `Railway.Variable`.
 - [Postgres](/railway/data/postgres) — bind `ConnectPostgres` and
   query with Drizzle.

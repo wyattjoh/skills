@@ -1,6 +1,6 @@
 <!-- source: https://alchemy.run/railway/data/postgres
      upstream: website/src/content/docs/railway/data/postgres.mdx
-     alchemy 2.0.0-beta.75 @ 808ef69 -->
+     alchemy 2.0.0-beta.77 @ c83b454 -->
 
 # Postgres
 
@@ -34,7 +34,7 @@ service and volume are deleted. Data is not copied.
 
 ## Connect from a Service
 
-Yield `ConnectPostgres` in Service init. Provide
+Yield `ConnectPostgres` in the Service's constructor. Provide
 `ConnectPostgresHttp`. Pass `conn.connectionString` to Drizzle or
 SQL.
 
@@ -64,7 +64,7 @@ export default class Api extends Railway.Service<Api>()(
 
 `connectionString` is the private URI
 (`{name}.railway.internal:5432`). Both come from `Railway.Postgres`,
-packed into the Service env — not `Config.redacted`.
+packed into the Service env — not `Config.Redacted`.
 
 To store Railway's `${{Db.DATABASE_URL}}` template instead of a
 resolved URI, pass [`Railway.ref`](/providers/railway/ref)
@@ -141,7 +141,7 @@ the cluster.
 same shape for those engines.
 [Drizzle on Postgres](/sql/drizzle/postgres) is the schema-to-query
 flow.
-[Variables](/railway/data/variables) covers `Config.redacted` and
+[Variables](/railway/data/variables) covers `Config.Redacted` and
 `Railway.ref`.
 The [`Postgres` reference](/providers/railway/postgres) lists every
 prop.

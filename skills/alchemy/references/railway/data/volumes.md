@@ -1,6 +1,6 @@
 <!-- source: https://alchemy.run/railway/data/volumes
      upstream: website/src/content/docs/railway/data/volumes.mdx
-     alchemy 2.0.0-beta.75 @ 808ef69 -->
+     alchemy 2.0.0-beta.77 @ c83b454 -->
 
 # Volumes
 
@@ -34,7 +34,7 @@ The Volume is created in the new Project. The old Volume is deleted.
 
 ## Mount into a Service
 
-Inside a [Service](/railway/compute/services)'s init, bind the Volume
+Inside a [Service](/railway/compute/services)'s constructor, bind the Volume
 to a path and use it as a plain directory at runtime:
 
 ```typescript

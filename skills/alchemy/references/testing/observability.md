@@ -1,6 +1,6 @@
 <!-- source: https://alchemy.run/testing/observability
      upstream: website/src/content/docs/testing/observability.mdx
-     alchemy 2.0.0-beta.75 @ 808ef69 -->
+     alchemy 2.0.0-beta.77 @ c83b454 -->
 
 # Observability
 
@@ -84,7 +84,7 @@ export const Ingest = Axiom.ApiToken("Ingest", {
   },
 });
 
-// src/worker.ts — in the Worker's init Effect:
+// src/worker.ts — in the Worker's constructor Effect:
 import { Ingest, Logs, Traces } from "./observability.ts";
 
 Effect.provide(

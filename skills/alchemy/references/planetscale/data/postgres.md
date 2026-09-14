@@ -1,6 +1,6 @@
 <!-- source: https://alchemy.run/planetscale/data/postgres
      upstream: website/src/content/docs/planetscale/data/postgres.mdx
-     alchemy 2.0.0-beta.75 @ 808ef69 -->
+     alchemy 2.0.0-beta.77 @ c83b454 -->
 
 # Postgres
 
@@ -159,6 +159,31 @@ const hyperdrive = yield* Cloudflare.Hyperdrive.Connection("app-hyperdrive", {
 If you need a URL instead of components, `connectionUrl` and
 `connectionUrlPooled` carry the same direct/pooled endpoints as
 `Redacted` connection strings (`sslmode=verify-full`).
+
+## Connect privately with AWS PrivateLink
+
+Postgres roles expose the branch's provider-neutral private connection
+details. For AWS PrivateLink, pass `privateConnectionServiceName` to
+an Interface VPC endpoint. With private DNS enabled, use
+`privateHost` for workloads in that VPC:
+
+```typescript
+import * as AWS from "alchemy/AWS";
+
+const endpoint = yield* AWS.EC2.VpcEndpoint("postgres-private-link", {
+  vpcId: vpc.vpcId,
+  serviceName: role.privateConnectionServiceName,
+  vpcEndpointType: "Interface",
+  subnetIds: [privateSubnet.subnetId],
+  securityGroupIds: [databaseSecurityGroup.groupId],
+  privateDnsEnabled: true,
+});
+```
+
+For GCP Private Service Connect, `privateHost` is the private DNS zone;
+prepend the endpoint name configured in GCP before connecting.
+`PostgresDefaultRole` exposes the same details, though `PostgresRole`
+remains the safer choice for applications.
 
 ## Where next
 

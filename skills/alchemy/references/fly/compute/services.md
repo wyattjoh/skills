@@ -1,6 +1,6 @@
 <!-- source: https://alchemy.run/fly/compute/services
      upstream: website/src/content/docs/fly/compute/services.mdx
-     alchemy 2.0.0-beta.75 @ 808ef69 -->
+     alchemy 2.0.0-beta.77 @ c83b454 -->
 
 # Services
 
@@ -42,7 +42,7 @@ this file with Rolldown, builds a Docker image (default
 
 ## Serve HTTP with `fetch`
 
-Return `fetch` from the init Effect to boot an HTTP server.
+Return `fetch` from the constructor Effect to boot an HTTP server.
 
 ```diff lang="typescript"
 import * as Fly from "alchemy/Fly";
@@ -183,7 +183,7 @@ Alchemy waits until the Machine is `started`. It does not poll
 
 ## Config
 
-Yield `Config` in init. Alchemy reads the value from the env of
+Yield `Config` in the constructor. Alchemy reads the value from the env of
 whoever deploys and writes it onto the Machine. Do not pass
 `env: { ... }` on a Service.
 
@@ -195,7 +195,7 @@ export default class Api extends Fly.Service<Api>()(
   "Api",
   { app: Site, main: import.meta.url, port: 3000 },
   Effect.gen(function* () {
-    const apiKey = yield* Config.redacted("API_KEY");
+    const apiKey = yield* Config.Redacted("API_KEY");
 
     return {
       fetch: Effect.gen(function* () {
@@ -207,7 +207,7 @@ export default class Api extends Fly.Service<Api>()(
 ) {}
 ```
 
-`Config.redacted("API_KEY")` is `Redacted<string>`. Unwrap with
+`Config.Redacted("API_KEY")` is `Redacted<string>`. Unwrap with
 `Redacted.value` only where you need the raw string.
 
 Alchemy also injects `PORT` (when `port` is set) and stack metadata.
@@ -268,7 +268,7 @@ creates three disks.
 ## Logs
 
 Machine logs live in the Fly dashboard and `fly logs`. `alchemy
-logs` / `alchemy tail` don't support Fly Services yet.
+logs` (including `--tail`) doesn't support Fly Services yet.
 
 ## Where next
 
@@ -280,5 +280,5 @@ hibernate — no parent App, no Docker image.
 [Postgres](/fly/data/postgres) binds with `ConnectPostgres`.
 [Redis](/fly/data/redis) binds with `ReadWriteRedis`.
 [Tigris](/fly/data/tigris) binds with `PutObject` / `GetObject`.
-[Secrets](/fly/data/secrets) covers `Config.redacted` and `Fly.Secret`.
+[Secrets](/fly/data/secrets) covers `Config.Redacted` and `Fly.Secret`.
 The [`Service` reference](/providers/fly/service) lists every prop.

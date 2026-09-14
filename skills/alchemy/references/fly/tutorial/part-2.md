@@ -1,6 +1,6 @@
 <!-- source: https://alchemy.run/fly/tutorial/part-2
      upstream: website/src/content/docs/fly/tutorial/part-2.mdx
-     alchemy 2.0.0-beta.75 @ 808ef69 -->
+     alchemy 2.0.0-beta.77 @ c83b454 -->
 
 # Part 2: Deploy a Service
 
@@ -122,7 +122,7 @@ unchanged on Cloudflare Workers or AWS Lambda.
 
 :::note
 Notice the "Effect returning an Effect" pattern. The outer generator
-is the **Init phase** — it runs at deploy time and at process
+is the **Construction phase** — it runs at deploy time and at process
 startup. The inner `fetch` generator is the **Runtime phase** — it
 runs per request.
 :::

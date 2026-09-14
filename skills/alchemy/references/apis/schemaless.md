@@ -1,6 +1,6 @@
 <!-- source: https://alchemy.run/apis/schemaless
      upstream: website/src/content/docs/apis/schemaless.mdx
-     alchemy 2.0.0-beta.75 @ 808ef69 -->
+     alchemy 2.0.0-beta.77 @ c83b454 -->
 
 # Schemaless RPC
 
@@ -15,7 +15,7 @@ per-request decode cost.
 ## The shape
 
 RPC is a feature of every
-[Functions & Servers](/infrastructure-as-effects/functions-and-servers)
+[Runtime](/infrastructure-as-effects/runtime)
 runtime — the interface its Effectful Constructor returns may
 include methods alongside `fetch`:
 
@@ -90,11 +90,11 @@ return {
 };
 ```
 
-The rejection happens at declaration, not at call time — it surfaces as an assignability error on the init Effect you pass to the host class, so a shape that compiles is a shape every caller can rely on.
+The rejection happens at declaration, not at call time — it surfaces as an assignability error on the constructor Effect you pass to the host class, so a shape that compiles is a shape every caller can rely on.
 
 ## The typed client
 
-There is no schema because the class itself carries the type. `class Greeter extends Cloudflare.Worker<Greeter>()(...)` gives the class a construct signature — `new (_: never): Shape & ...` — that makes its instance type exactly the Shape the init Effect returns, and the value you get by yielding the class carries that Shape as a phantom type (`Rpc<Shape> = { "~alchemy/rpc": Shape }`) that binders read back. Binding the class produces the client:
+There is no schema because the class itself carries the type. `class Greeter extends Cloudflare.Worker<Greeter>()(...)` gives the class a construct signature — `new (_: never): Shape & ...` — that makes its instance type exactly the Shape the constructor Effect returns, and the value you get by yielding the class carries that Shape as a phantom type (`Rpc<Shape> = { "~alchemy/rpc": Shape }`) that binders read back. Binding the class produces the client:
 
 ```typescript
 // in another resource's Effectful Constructor:

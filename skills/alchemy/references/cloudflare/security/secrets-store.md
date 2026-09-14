@@ -1,6 +1,6 @@
 <!-- source: https://alchemy.run/cloudflare/security/secrets-store
      upstream: website/src/content/docs/cloudflare/security/secrets-store.mdx
-     alchemy 2.0.0-beta.75 @ 808ef69 -->
+     alchemy 2.0.0-beta.77 @ c83b454 -->
 
 # Secrets Store & auth tokens
 
@@ -67,7 +67,7 @@ renaming it or moving it to another store replaces it.
 
 ## Read it in a Worker
 
-Bind the secret in the Worker's init phase with `ReadSecret`, then
+Bind the secret in the Worker's Construction phase with `ReadSecret`, then
 check the `Authorization` header in `fetch`:
 
 ```typescript
@@ -184,7 +184,7 @@ curl -H "Authorization: Bearer <authToken from the deploy output>" \
 
 ## Async Workers: bind via `env`
 
-Async (non-Effect) Workers don't have an init phase to `yield*` a
+Async (non-Effect) Workers don't have a Construction phase to `yield*` a
 binding into. Declare the Secret on the Worker's `env` instead — the
 provider maps it to a native `secrets_store_secret` binding, so the
 runtime sees a real `SecretsStoreSecret` with a `.get()` method:
@@ -218,7 +218,7 @@ export default class Api extends Cloudflare.Worker<Api>()(
 Both end up as bindings on the Worker — pick based on where the value
 lives and who shares it:
 
-- **Env vars** ([`Config.redacted`](/environments/secrets)) — the value
+- **Env vars** ([`Config.Redacted`](/environments/secrets)) — the value
   comes from *your* environment (`.env`, CI secrets) at deploy time
   and is baked into that one Worker. Right for third-party API keys
   and per-app config. See [Secrets & env](/cloudflare/security/secrets-env)

@@ -1,6 +1,6 @@
 <!-- source: https://alchemy.run/cloudflare/compute/python-workers
      upstream: website/src/content/docs/cloudflare/compute/python-workers.mdx
-     alchemy 2.0.0-beta.75 @ 808ef69 -->
+     alchemy 2.0.0-beta.77 @ c83b454 -->
 
 # Python Workers
 
@@ -9,8 +9,8 @@
 Cloudflare [Python Workers](https://developers.cloudflare.com/workers/languages/python/)
 (open beta) run CPython inside the Workers runtime via Pyodide. In
 alchemy, a Python Worker is a regular `Cloudflare.Worker` whose `main`
-points at a `.py` file — the infrastructure is still defined in
-TypeScript, only the runtime code is Python.
+points at a `.py` file. The infrastructure is still defined in
+TypeScript. Only the runtime code is Python.
 
 There is no bundling step: the entry and every sibling `.py` module
 upload as-is, the `python_workers` compatibility flag is added
@@ -89,7 +89,7 @@ from util import slugify
 
 Put a `pyproject.toml` next to the entry module. On deploy, alchemy
 vendors `[project.dependencies]` with uv and uploads them under
-`python_modules/` — the same layout Wrangler and
+`python_modules/`, the same layout Wrangler and
 [pywrangler](https://github.com/cloudflare/workers-py) use:
 
 ```toml
@@ -120,7 +120,7 @@ Under the hood, alchemy runs the same steps `pywrangler sync` does:
 
 1. `uv pip compile` resolves the dependencies against the
    [Pyodide wheel index](https://index.pyodide.org) for the runtime's
-   Python version into a `pylock.toml` (prebuilt wheels only —
+   Python version into a `pylock.toml` (prebuilt wheels only, since
    Pyodide-platformed wheels can't be built locally).
 2. `uv venv` + `uv pip install --no-build` install the locked wheels
    into an `emscripten-wasm32` cross-venv.
@@ -138,13 +138,13 @@ must be installed for dependency vendoring. Workers without a
 `pyproject.toml` deploy without uv. Only pure-Python packages,
 packages with `emscripten-wasm32` wheels, and
 [packages built into Pyodide](https://pyodide.org/en/stable/usage/packages-in-pyodide.html)
-resolve — and HTTP clients must be async (`httpx`, `aiohttp`, or JS
+resolve, and HTTP clients must be async (`httpx`, `aiohttp`, or JS
 `fetch` via the FFI).
 :::
 
 ### ASGI apps (FastAPI)
 
-The runtime ships an `asgi` module that serves any ASGI application —
+The runtime ships an `asgi` module that serves any ASGI application,
 so FastAPI (with pydantic validation) works out of the box. Bindings
 and env vars reach your routes through `request.scope["env"]`:
 
@@ -195,14 +195,14 @@ dependencies = ["fastapi"]
 Compiled-extension packages with Pyodide wheels (numpy, pydantic-core,
 and the rest of the
 [Pyodide package set](https://pyodide.org/en/stable/usage/packages-in-pyodide.html))
-vendor the emscripten-wasm32 binary wheel matching the runtime's ABI —
-no build step on your side.
+vendor the emscripten-wasm32 binary wheel matching the runtime's ABI.
+There is no build step on your side.
 
 ### Bring your own python_modules
 
 If the entry's directory already contains a `python_modules/`
-directory — produced by `pywrangler sync` or any other tool that
-emits Wrangler's vendored layout — alchemy uploads it byte-for-byte
+directory, produced by `pywrangler sync` or any other tool that
+emits Wrangler's vendored layout, alchemy uploads it byte-for-byte
 and never invokes uv. This is the escape hatch for teams that manage
 Python dependencies outside of alchemy.
 
@@ -228,8 +228,8 @@ const worker = yield* Cloudflare.Worker("Worker", {
 ## Local dev
 
 `alchemy dev` serves Python Workers from local
-[workerd](https://github.com/cloudflare/workerd), which embeds Pyodide
-— the same module graph that would upload runs locally, bindings
+[workerd](https://github.com/cloudflare/workerd), which embeds Pyodide.
+The same module graph that would upload runs locally, bindings
 included. Edits to any `.py` file under the entry's directory (or to
 `pyproject.toml`, which re-vendors) restart the local Worker.
 
@@ -241,7 +241,7 @@ included. Edits to any `.py` file under the entry's directory (or to
   legacy top-level `on_fetch` style requires an extra compatibility
   flag and is not recommended.
 - Cold starts are mitigated server-side: Cloudflare snapshots the
-  Worker's memory after top-level imports at deploy time — there is
+  Worker's memory after top-level imports at deploy time. There is
   nothing to configure.
 - Vendored `python_modules/` files count toward the Worker size limit
   (3 MiB free / 10 MiB paid, gzipped).

@@ -1,6 +1,6 @@
 <!-- source: https://alchemy.run/aws/ai/bedrock
      upstream: website/src/content/docs/aws/ai/bedrock.mdx
-     alchemy 2.0.0-beta.75 @ 808ef69 -->
+     alchemy 2.0.0-beta.77 @ c83b454 -->
 
 # Bedrock & Effect AI
 
@@ -22,7 +22,7 @@ provision, store, or rotate.
 
 ## Bind a model
 
-`yield* AWS.Bedrock.LanguageModel(model)` in the Function's init
+`yield* AWS.Bedrock.LanguageModel(model)` in the Function's constructor
 phase returns a `LanguageModel` `Layer` and grants the Function
 `bedrock:InvokeModel` and `bedrock:InvokeModelWithResponseStream`
 scoped to exactly that model:
@@ -56,7 +56,7 @@ export default class Api extends AWS.Lambda.Function<Api>()(
 ```
 
 `AWS.Bedrock.LanguageModelHttp` is the binding's implementation
-layer. Provide it once at the bottom of the init chain — it composes
+layer. Provide it once at the bottom of the constructor's layer chain — it composes
 the `Converse` and `ConverseStream` bindings, so it is bundled into
 the Lambda and signs requests with the invocation role's credentials.
 
@@ -166,7 +166,7 @@ Bind a list of models to grant IAM for all of them in one layer —
 the first is the default, and `modelId` picks per call:
 
 ```typescript
-// init: IAM for both models, Nova Micro is the default
+// Construction: IAM for both models, Nova Micro is the default
 const model = yield* AWS.Bedrock.LanguageModel([
   "us.amazon.nova-micro-v1:0",
   "us.anthropic.claude-sonnet-4-20250514-v1:0",

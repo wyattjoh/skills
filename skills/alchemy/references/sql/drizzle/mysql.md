@@ -1,6 +1,6 @@
 <!-- source: https://alchemy.run/sql/drizzle/mysql
      upstream: website/src/content/docs/sql/drizzle/mysql.mdx
-     alchemy 2.0.0-beta.75 @ 808ef69 -->
+     alchemy 2.0.0-beta.77 @ c83b454 -->
 
 # MySQL
 
@@ -147,7 +147,7 @@ const db = yield* Drizzle.MySQL(connectionString, {
 });
 ```
 
-Nothing connects at init — the pool opens on the first query of an
+Nothing connects in the constructor — the pool opens on the first query of an
 event, is reused for every query in that event, and closes when the
 event settles (see
 [Connection lifecycle](/sql/effect-sql/lifecycle)). Plan and deploy

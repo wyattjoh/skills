@@ -1,6 +1,6 @@
 <!-- source: https://alchemy.run/railway/compute/functions
      upstream: website/src/content/docs/railway/compute/functions.mdx
-     alchemy 2.0.0-beta.75 @ 808ef69 -->
+     alchemy 2.0.0-beta.77 @ c83b454 -->
 
 # Functions, templates & VMs
 
@@ -50,7 +50,7 @@ image.
 
 ## Schemaless RPC
 
-Return methods next to `fetch`. Call `enableRailwayRpc()` in init
+Return methods next to `fetch`. Call `enableRailwayRpc()` in the constructor
 (the canvas start command is capped at 96KB, so the dispatcher is
 opt-in). Another Function or Service binds the class and calls
 them over `{name}.railway.internal` with a shared token. Public

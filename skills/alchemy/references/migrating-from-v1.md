@@ -1,6 +1,6 @@
 <!-- source: https://alchemy.run/migrating-from-v1
      upstream: website/src/content/docs/migrating-from-v1.mdx
-     alchemy 2.0.0-beta.75 @ 808ef69 -->
+     alchemy 2.0.0-beta.77 @ c83b454 -->
 
 # Migrating from v1
 
@@ -205,7 +205,7 @@ gives you typed errors, composable retries, and Effect's `HttpServer`
 integration.
 
 Instead of declaring `env` bindings on the resource props, you bind
-resources in the Worker's Init phase using `yield*`:
+resources in the Worker's Construction phase using `yield*`:
 
 ```diff lang="typescript"
 // src/worker.ts

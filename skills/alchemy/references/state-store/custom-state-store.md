@@ -1,6 +1,6 @@
 <!-- source: https://alchemy.run/state-store/custom-state-store
      upstream: website/src/content/docs/state-store/custom-state-store.mdx
-     alchemy 2.0.0-beta.75 @ 808ef69 -->
+     alchemy 2.0.0-beta.77 @ c83b454 -->
 
 # Custom State Store
 
@@ -33,7 +33,7 @@ class State extends Context.Service<State, Effect.Effect<StateService>>()(
 ) {}
 ```
 
-This indirection matters. Commands like `alchemy login` provide the
+This indirection matters. Commands like `alchemy profile show` provide the
 state layer but never touch state, so a store must not connect to its
 backend (open a DB connection, deploy a worker, prompt for
 credentials) just because the layer was built. Wrapping the builder

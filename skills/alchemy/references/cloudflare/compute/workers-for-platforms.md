@@ -1,6 +1,6 @@
 <!-- source: https://alchemy.run/cloudflare/compute/workers-for-platforms
      upstream: website/src/content/docs/cloudflare/compute/workers-for-platforms.mdx
-     alchemy 2.0.0-beta.75 @ 808ef69 -->
+     alchemy 2.0.0-beta.77 @ c83b454 -->
 
 # Workers for Platforms
 
@@ -8,7 +8,7 @@
 
 Workers for Platforms lets you run your customers' code on Cloudflare's
 edge inside your own account. Customer ("user") Workers live in a
-**dispatch namespace** — they get no routes or URLs of their own.
+**dispatch namespace** and get no routes or URLs of their own.
 Instead, a **platform Worker** you control receives every request and
 forwards it to the right user Worker by script name.
 
@@ -32,7 +32,7 @@ export const Customers = Cloudflare.WorkersForPlatforms.DispatchNamespace(
 );
 ```
 
-The `name` is the namespace's identity — there is no rename API, so
+The `name` is the namespace's identity. There is no rename API, so
 changing it triggers a replacement (omit it to get a generated name).
 Deleting a namespace also deletes every script uploaded into it.
 
@@ -73,8 +73,8 @@ export default Alchemy.Stack(
 Referencing the namespace's `name` output establishes the dependency
 edge, so the namespace is created before the user Worker is uploaded
 into it (and the script is deleted first on destroy). The `script`
-form takes raw ESM source — typically whatever code your customer
-uploaded — but `main` with a local entrypoint works too.
+form takes raw ESM source, typically whatever code your customer
+uploaded. `main` with a local entrypoint works too.
 
 ## Dispatch from the platform Worker
 
@@ -128,7 +128,7 @@ edge, never a user-Worker response.
 ## Or bind on `env`
 
 For a plain async handler, pass the namespace on the Worker's `env`
-instead — `InferEnv` types it as the native runtime binding:
+instead. `InferEnv` types it as the native runtime binding:
 
 ```typescript
 const platform = Cloudflare.Worker("Platform", {
@@ -147,7 +147,7 @@ export default {
 ```
 
 `env.DISPATCH.get(name)` returns the same `Fetcher` the Effect-native
-client wraps — pick whichever style matches the rest of the Worker.
+client wraps. Pick whichever style matches the rest of the Worker.
 
 ## Where next
 

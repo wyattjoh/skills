@@ -1,6 +1,6 @@
 <!-- source: https://alchemy.run/aws/email/receiving
      upstream: website/src/content/docs/aws/email/receiving.mdx
-     alchemy 2.0.0-beta.75 @ 808ef69 -->
+     alchemy 2.0.0-beta.77 @ c83b454 -->
 
 # Email receiving
 
@@ -229,7 +229,7 @@ scope to, so it's bound with no argument and its implementation is
 provided as `SES.SendBounceHttp`:
 
 ```typescript
-// init — inside the Lambda's Effect.gen body
+// Construction — inside the Lambda's Effect.gen body
 const sendBounce = yield* SES.SendBounce();
 ```
 

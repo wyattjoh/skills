@@ -1,6 +1,6 @@
 <!-- source: https://alchemy.run/cloudflare/compute/worker-loader
      upstream: website/src/content/docs/cloudflare/compute/worker-loader.mdx
-     alchemy 2.0.0-beta.75 @ 808ef69 -->
+     alchemy 2.0.0-beta.77 @ c83b454 -->
 
 # Worker Loader
 
@@ -14,9 +14,9 @@ untrusted plugins, or executing Workers an AI agent just wrote.
 
 ## Bind a loader to a Worker
 
-`yield*` `Cloudflare.WorkerLoader(name)` in the Worker's init phase.
+`yield*` `Cloudflare.WorkerLoader(name)` in the Worker's Construction phase.
 It registers the `worker_loader` binding on the deployed Worker and
-returns the runtime handle in one step — no layer to provide:
+returns the runtime handle in one step. There is no layer to provide:
 
 ```typescript
 // src/worker.ts
@@ -55,8 +55,8 @@ export default Cloudflare.Worker(
 
 `loader.load()` takes a compatibility date, a main module name, and a
 map of module names to source strings, and returns a stub for the
-freshly loaded Worker. `worker.fetch` speaks Effect-native HTTP —
-it accepts an `HttpClientRequest` (or, as here, forwards the incoming
+freshly loaded Worker. `worker.fetch` speaks Effect-native HTTP. It
+accepts an `HttpClientRequest` (or, as here, forwards the incoming
 server request) and resolves to an `HttpClientResponse`.
 
 ## Sandbox the loaded Worker
@@ -102,8 +102,8 @@ const worker = yield* loader.get("tenant-42", () => ({
 }));
 ```
 
-`getCode` may also return an `Effect` — useful when the source lives
-in R2 or KV and fetching it is itself effectful.
+`getCode` may also return an `Effect`, which is useful when the source
+lives in R2 or KV and fetching it is itself effectful.
 
 ## Call typed entrypoints
 
@@ -122,8 +122,8 @@ const greeting = yield* api.greet("world");
 ```
 
 The caller supplies the shape as a type argument since there is no
-statically bound class to infer it from. The full pattern — what
-makes a member callable and what crosses the wire — is covered in
+statically bound class to infer it from. What makes a member callable
+and what crosses the wire is covered in
 [Schemaless RPC](/cloudflare/apis/schemaless-rpc).
 
 ## Declare the binding as env metadata

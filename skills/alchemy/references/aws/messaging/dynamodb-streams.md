@@ -1,6 +1,6 @@
 <!-- source: https://alchemy.run/aws/messaging/dynamodb-streams
      upstream: website/src/content/docs/aws/messaging/dynamodb-streams.mdx
-     alchemy 2.0.0-beta.75 @ 808ef69 -->
+     alchemy 2.0.0-beta.77 @ c83b454 -->
 
 # Process DynamoDB Streams
 
@@ -155,7 +155,7 @@ Reuse the `PUT /items/:id` route to publish changes, then tail
 the function logs to confirm they arrive:
 
 ```sh
-bun alchemy logs Api --follow
+bun alchemy logs Api --tail
 ```
 
 In another terminal:

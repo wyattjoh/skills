@@ -1,6 +1,6 @@
 <!-- source: https://alchemy.run/cloudflare/compute/cross-worker-durable-object
      upstream: website/src/content/docs/cloudflare/compute/cross-worker-durable-object.mdx
-     alchemy 2.0.0-beta.75 @ 808ef69 -->
+     alchemy 2.0.0-beta.77 @ c83b454 -->
 
 # Bind to another Worker's Durable Object
 
@@ -79,7 +79,7 @@ export class Counter extends Cloudflare.DurableObject<
 ```
 
 :::note
-The `state` *reference* is resolved in the outer (init) Effect, but
+The `state` *reference* is resolved in the outer (Construction) Effect, but
 `state.storage` is
 [colored with `RuntimeContext`](/infrastructure-as-effects/layers#runtime-as-a-colored-function)
 — so the storage reads/writes stay in the inner (runtime) Effect.
@@ -153,7 +153,7 @@ export class WorkerA extends Cloudflare.Worker<WorkerA, {}, Counter>()(
 +);
 ```
 
-`yield* Counter` inside WorkerA's init binds the DO _locally_ —
+`yield* Counter` inside WorkerA's constructor binds the DO _locally_ —
 WorkerA's `env.Counter` is wired up at deploy time and the class
 ships in the bundle.
 

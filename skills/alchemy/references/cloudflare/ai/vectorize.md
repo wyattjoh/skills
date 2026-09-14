@@ -1,6 +1,6 @@
 <!-- source: https://alchemy.run/cloudflare/ai/vectorize
      upstream: website/src/content/docs/cloudflare/ai/vectorize.mdx
-     alchemy 2.0.0-beta.75 @ 808ef69 -->
+     alchemy 2.0.0-beta.77 @ c83b454 -->
 
 # Vector search with Vectorize
 
@@ -62,7 +62,7 @@ immutable, and replacing the parent index replaces it too.
 
 ## Bind the index to a Worker
 
-`Cloudflare.Vectorize.SearchIndex(index)` in the Worker's init phase
+`Cloudflare.Vectorize.SearchIndex(index)` in the Worker's Construction phase
 attaches the native `vectorize` binding at deploy time and resolves
 to an Effect-native client at runtime:
 

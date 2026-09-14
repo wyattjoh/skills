@@ -1,6 +1,6 @@
 <!-- source: https://alchemy.run/infrastructure-as-code/custom-provider
      upstream: website/src/content/docs/infrastructure-as-code/custom-provider.mdx
-     alchemy 2.0.0-beta.75 @ 808ef69 -->
+     alchemy 2.0.0-beta.77 @ c83b454 -->
 
 # Custom Provider
 
@@ -497,7 +497,7 @@ privately. A provider with no credentials service is done here.
 Ours isn't — the handlers' `StripeCredentials` requirement is still
 unmet. The [Custom Auth Provider](/environments/custom-auth-provider)
 guide finishes this bundle by `Layer.provideMerge`-ing in the
-credential bridge and the `alchemy login` registration.
+credential bridge and the auth-provider registration.
 
 Re-export the public surface, dropping the redundant service prefix
 (the namespaced-export convention: callers write `Stripe.Product`):
@@ -530,9 +530,9 @@ export default Alchemy.Stack(
 );
 ```
 
-On first deploy, Alchemy walks them through `alchemy login` (or
-reads env vars on CI) — see
-[Auth Providers](/environments/auth-providers).
+Users connect the provider with `alchemy profile edit --add Stripe` (CI
+reads env vars instead); an unconfigured deploy fails with that exact
+command to run. See [Auth Providers](/environments/auth-providers).
 
 To mix with another cloud, merge the layers:
 
@@ -636,7 +636,7 @@ If you'd rather start from a real provider:
   resource a second, dev-mode implementation that emulates it locally
   (`ProviderLayer.dual`, `LocalProvider.make`).
 - [Custom Auth Provider](/environments/custom-auth-provider) — build
-  the `StripeCredentials` service and `alchemy login` flow this guide
+  the `StripeCredentials` service and login flow this guide
   consumes.
 - [Auth Providers](/environments/auth-providers) — how credentials
   resolve: lazy Effects, Profiles, auto-refresh.

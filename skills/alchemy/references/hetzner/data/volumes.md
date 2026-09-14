@@ -1,6 +1,6 @@
 <!-- source: https://alchemy.run/hetzner/data/volumes
      upstream: website/src/content/docs/hetzner/data/volumes.mdx
-     alchemy 2.0.0-beta.75 @ 808ef69 -->
+     alchemy 2.0.0-beta.77 @ c83b454 -->
 
 # Volumes
 
@@ -31,7 +31,7 @@ its data**. The location must match the Server's.
 ## Mount into a Service (recommended)
 
 The `MountVolume` binding is the highest-level path: inside a
-[Service](/hetzner/compute/services)'s init, bind the Volume to a
+[Service](/hetzner/compute/services)'s constructor, bind the Volume to a
 path and use it as a plain directory at runtime. Pass the `Data`
 declaration directly — no yielding required:
 

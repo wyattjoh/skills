@@ -1,6 +1,6 @@
 <!-- source: https://alchemy.run/apis/effect-http
      upstream: website/src/content/docs/apis/effect-http.mdx
-     alchemy 2.0.0-beta.75 @ 808ef69 -->
+     alchemy 2.0.0-beta.77 @ c83b454 -->
 
 # Effect HTTP
 
@@ -113,7 +113,7 @@ runtime code across.
 `HttpApiBuilder.group` wires handlers into the spec:
 
 ```typescript
-// src/ApiService.ts — inside the host's Init phase (a Cloudflare Worker or Lambda Function)
+// src/ApiService.ts — inside the host's Construction phase (a Cloudflare Worker or Lambda Function)
 import * as Effect from "effect/Effect";
 import * as HttpApiBuilder from "effect/unstable/httpapi/HttpApiBuilder";
 import { TaskApi } from "./ApiSchema.ts";
@@ -138,7 +138,7 @@ const tasksGroup = HttpApiBuilder.group(TaskApi, "Tasks", (handlers) =>
 ```
 
 `HttpApiBuilder.group` *constructs* a handler Layer — it runs
-nothing, which is what makes it safe at init/plan time — and each
+nothing, which is what makes it safe at Construction/plan time — and each
 handler receives the typed request its endpoint declared:
 `params.id` and `payload.title` are `string`s, the handler must
 return a `Task`, and the only allowed failure is `TaskNotFound` — a
@@ -151,7 +151,7 @@ Assemble the API Layer and convert it into the `HttpEffect` that
 `fetch` expects:
 
 ```typescript
-// src/ApiService.ts — end of the Init phase
+// src/ApiService.ts — end of the Construction phase
 import * as Layer from "effect/Layer";
 import * as HttpRouter from "effect/unstable/http/HttpRouter";
 

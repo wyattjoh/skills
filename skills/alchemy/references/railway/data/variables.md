@@ -1,13 +1,13 @@
 <!-- source: https://alchemy.run/railway/data/variables
      upstream: website/src/content/docs/railway/data/variables.mdx
-     alchemy 2.0.0-beta.75 @ 808ef69 -->
+     alchemy 2.0.0-beta.77 @ c83b454 -->
 
 # Variables
 
-> Config.redacted on a Service, Railway.Variable when Railway should own the value.
+> Config.Redacted on a Service, Railway.Variable when Railway should own the value.
 
 Most secrets in a [`Service`](/railway/compute/services) come from
-your `.env`. Yield `Config.redacted` in init. Alchemy binds the
+your `.env`. Yield `Config.Redacted` in the constructor. Alchemy binds the
 value onto the Service.
 
 Use [`Railway.Variable`](/providers/railway/variable) when the value
@@ -28,7 +28,7 @@ export default class Api extends Railway.Service<Api>()(
     port: 3000,
   },
   Effect.gen(function* () {
-    const apiKey = yield* Config.redacted("API_KEY");
+    const apiKey = yield* Config.Redacted("API_KEY");
 
     return {
       fetch: Effect.gen(function* () {
@@ -40,7 +40,7 @@ export default class Api extends Railway.Service<Api>()(
 ) {}
 ```
 
-`Config.redacted("API_KEY")` reads `API_KEY` from the env of whoever
+`Config.Redacted("API_KEY")` reads `API_KEY` from the env of whoever
 runs the deploy and writes it onto the Service. At runtime the same
 line resolves from that env var.
 
@@ -104,7 +104,7 @@ export default class Api extends Railway.Service<Api>()(
   },
   Effect.gen(function* () {
     yield* ApiToken;
-    const name = yield* Config.string("API_TOKEN").pipe(
+    const name = yield* Config.String("API_TOKEN").pipe(
       Effect.orElseSucceed(() => ""),
     );
 
@@ -117,7 +117,7 @@ export default class Api extends Railway.Service<Api>()(
 ) {}
 ```
 
-Yield the Variable in the Stack (or from Service init) so it is
+Yield the Variable in the Stack (or from the Service's constructor) so it is
 part of the graph.
 
 ## Variable references
@@ -176,7 +176,7 @@ const token = yield* Railway.Variable("StagingToken", {
 
 The [tutorial](/railway/tutorial/part-4) stores a Variable and reads
 it from a Service. [Services](/railway/compute/services) covers
-`Config.redacted` for values from `.env`. [Postgres](/railway/data/postgres),
+`Config.Redacted` for values from `.env`. [Postgres](/railway/data/postgres),
 [MySQL](/railway/data/mysql), [Mongo](/railway/data/mongo),
 [Redis](/railway/data/redis), and [Buckets](/railway/data/buckets)
 bind typed clients (`ConnectPostgres`, `ConnectMySQL`,

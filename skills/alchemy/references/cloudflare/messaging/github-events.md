@@ -1,6 +1,6 @@
 <!-- source: https://alchemy.run/cloudflare/messaging/github-events
      upstream: website/src/content/docs/cloudflare/messaging/github-events.mdx
-     alchemy 2.0.0-beta.75 @ 808ef69 -->
+     alchemy 2.0.0-beta.77 @ c83b454 -->
 
 # React to GitHub events from a Worker
 
@@ -17,7 +17,7 @@ This event source is **Cloudflare-only today** — see
 
 ## 1. Subscribe to push events
 
-Call `consumeRepositoryEvents` in the Worker's init phase with the
+Call `consumeRepositoryEvents` in the Worker's Construction phase with the
 repository and the events you want, plus a handler that runs once per
 delivery:
 
@@ -120,7 +120,7 @@ events. Pass one and alchemy rejects any delivery whose
 +import * as Config from "effect/Config";
 
    Effect.gen(function* () {
-+    const secret = yield* Config.redacted("GITHUB_WEBHOOK_SECRET");
++    const secret = yield* Config.Redacted("GITHUB_WEBHOOK_SECRET");
 +
      yield* GitHub.consumeRepositoryEvents(
        {
@@ -136,7 +136,7 @@ events. Pass one and alchemy rejects any delivery whose
 The webhook is provisioned with the secret, so GitHub signs every
 delivery with `HMAC-SHA256`; the Worker recomputes the signature over
 the raw body and compares in constant time, answering `401` on a
-mismatch. `Config.redacted` reads the value from your `.env` at
+mismatch. `Config.Redacted` reads the value from your `.env` at
 deploy time and binds it as a Worker secret — see
 [Secrets & env](/cloudflare/security/secrets-env).
 

@@ -1,13 +1,13 @@
 <!-- source: https://alchemy.run/fly/tutorial/part-4
      upstream: website/src/content/docs/fly/tutorial/part-4.mdx
-     alchemy 2.0.0-beta.75 @ 808ef69 -->
+     alchemy 2.0.0-beta.77 @ c83b454 -->
 
 # Part 4: Secrets and Cleanup
 
 > Store an App secret, read it from the Service at runtime, and destroy the stack.
 
 A secret only this Service needs from `.env` is
-`Config.redacted`. See [Secrets](/fly/data/secrets).
+`Config.Redacted`. See [Secrets](/fly/data/secrets).
 
 This part is for a value Fly should own: an App **Secret** Fly
 injects into every Machine. You will read it with `GetSecret`, then
@@ -39,7 +39,7 @@ it and Alchemy generates an ownership-stamped name instead.
 
 ## Bind `GetSecret`
 
-Inside the Service's init, bind the Secret — pass the declaration
+Inside the Service's constructor, bind the Secret — pass the declaration
 directly, no yielding required:
 
 ```diff lang="typescript"

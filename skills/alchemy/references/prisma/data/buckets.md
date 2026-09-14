@@ -1,6 +1,6 @@
 <!-- source: https://alchemy.run/prisma/data/buckets
      upstream: website/src/content/docs/prisma/data/buckets.mdx
-     alchemy 2.0.0-beta.75 @ 808ef69 -->
+     alchemy 2.0.0-beta.77 @ c83b454 -->
 
 # Buckets
 

@@ -1,6 +1,6 @@
 <!-- source: https://alchemy.run/aws/compute/ecs
      upstream: website/src/content/docs/aws/compute/ecs.mdx
-     alchemy 2.0.0-beta.75 @ 808ef69 -->
+     alchemy 2.0.0-beta.77 @ c83b454 -->
 
 # ECS
 
@@ -90,7 +90,7 @@ Graviton — cheaper per vCPU, and image builds happen to be native
 
 ## Run an Effect program in a Task
 
-Pass `main: import.meta.url` and an init Effect whose impl
+Pass `main: import.meta.url` and a constructor Effect whose impl
 returns `{ run }` — the program runs to completion when the
 container starts, then the container exits. Bindings work exactly
 as on Lambda, attaching environment variables and IAM policy
@@ -121,7 +121,7 @@ Lambda and Cloudflare Workers.
 
 A `Task` is the target of the ECS control-plane bindings. From a
 Lambda function, a Service, or any other host, bind
-[`RunTask`](/providers/aws/ecs/runtask) in the **init phase** —
+[`RunTask`](/providers/aws/ecs/runtask) in the **Construction phase** —
 this grants the host `ecs:RunTask` plus `iam:PassRole` on the
 task's roles — then call it from a handler at **runtime**, where
 the cluster and task definition ARNs are injected automatically:
@@ -131,7 +131,7 @@ const api = yield* AWS.Lambda.Function(
   "Api",
   { main: import.meta.url, functionUrl: true },
   Effect.gen(function* () {
-    // init: bind the launch (IAM grants happen here)
+    // Construction: bind the launch (IAM grants happen here)
     const runTask = yield* AWS.ECS.RunTask(cluster, task);
 
     return {
@@ -282,7 +282,7 @@ stay open across requests.
 An ECS container is a **real process**, and its instance scope
 reflects that: the bundled program runs under a root scope that
 closes when the process shuts down gracefully, so resources
-acquired at init — the connection a `host.run` loop holds open, a
+acquired in the constructor — the connection a `host.run` loop holds open, a
 warm pool shared across requests — are genuinely released on exit.
 Serverless runtimes only approximate this: workerd never closes
 its instance scope at all, and Lambda gets a best-effort 500 ms
@@ -292,7 +292,7 @@ kill still skips finalizers, as in any process).
 Each HTTP request still gets its own request `Scope`, released when
 the response settles — the same per-event contract as every other
 runtime. See
-[Instance scope vs request scope](/infrastructure-as-effects/functions-and-servers#instance-scope-vs-request-scope)
+[Instance scope vs request scope](/infrastructure-as-effects/runtime#instance-scope-vs-request-scope)
 for the model across all runtimes.
 
 ## Bindings

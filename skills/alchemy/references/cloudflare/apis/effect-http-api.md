@@ -1,6 +1,6 @@
 <!-- source: https://alchemy.run/cloudflare/apis/effect-http-api
      upstream: website/src/content/docs/cloudflare/apis/effect-http-api.mdx
-     alchemy 2.0.0-beta.75 @ 808ef69 -->
+     alchemy 2.0.0-beta.77 @ c83b454 -->
 
 # Effect HTTP API
 
@@ -28,8 +28,8 @@ The mental model we'll follow is:
 
 1. **Define the schema and API outside the Worker.** Both are pure
    descriptions and can be imported by clients.
-2. **Construct the service inside the Worker's Init phase.**
-   The Init phase runs at plan time *and* runtime, so we only do
+2. **Construct the service inside the Worker's Construction phase.**
+   The Construction phase runs at plan time *and* runtime, so we only do
    pure construction here — we never `yield*` something that needs
    a request to exist.
 3. **Return `{ fetch }`** where `fetch` is an `HttpEffect` produced
@@ -114,7 +114,7 @@ end of this guide.
 
 ## 3. Build the Worker
 
-Now we wire it up. Create `src/worker.ts` with an empty Init phase:
+Now we wire it up. Create `src/worker.ts` with an empty Construction phase:
 
 ```typescript
 // src/worker.ts
@@ -130,7 +130,7 @@ export default Cloudflare.Worker(
 );
 ```
 
-The generator inside `Cloudflare.Worker` is the **Init phase**. It
+The generator inside `Cloudflare.Worker` is the **Construction phase**. It
 runs both at *plan time* (when Alchemy builds the deployment graph)
 and at *runtime* (when the Worker boots a fresh isolate). Anything
 you `yield*` here must be safe in both contexts — typically resource
@@ -139,7 +139,7 @@ binding factories like `R2.ReadWriteBucket(...)`, never per-request work.
 ### 3a. Bind an R2 bucket for storage
 
 Tasks need to live somewhere durable. Declare an `Bucket` resource
-and bind it inside Init — `bind()` returns a typed handle whose
+and bind it inside the constructor — `bind()` returns a typed handle whose
 `get` / `put` / `delete` / `list` methods we'll call from the
 handlers below.
 
@@ -168,15 +168,15 @@ We'll provide the runtime side of this binding
 (`Cloudflare.R2.ReadWriteBucketBinding`) in step 3c when we wire up the
 `fetch` handler.
 
-### 3b. Construct the handler group inside Init
+### 3b. Construct the handler group inside the constructor
 
 `HttpApiBuilder.group` *constructs* a `Layer` that wires handlers
 into the API spec. It's pure — it doesn't run them. That makes it
-safe to call inside Init.
+safe to call inside the constructor.
 
 > Don't `yield*` `HttpApiBuilder.layer(TaskApi)` here — building the
 > layer is fine, but actually executing the server requires an
-> incoming request. Init only does construction; the work happens
+> incoming request. The constructor only does construction; the work happens
 > later, on each `fetch` call.
 
 ```diff lang="typescript"
@@ -223,7 +223,7 @@ keeping the typed error channel reserved for `TaskNotFound`.
 
 ### 3c. Return `{ fetch }`
 
-The return value of Init is the *Worker's surface* — for a
+The return value of the constructor is the *Worker's surface* — for a
 fetch-style Worker that means an object with a `fetch` field. The
 value of `fetch` must be an `HttpEffect`: an `Effect` that, given an
 `HttpServerRequest`, produces an `HttpServerResponse`.
@@ -262,7 +262,7 @@ const HttpPlatformStub = Layer.succeed(HttpPlatform.HttpPlatform, {
 ```
 
 `HttpRouter.toHttpEffect` returns an `Effect` that builds the Layer
-and hands back the request handler — yielding it once in Init means
+and hands back the request handler — yielding it once in the constructor means
 route construction happens at boot, not per request.
 
 ### 3d. Enable CORS
@@ -493,7 +493,7 @@ export class TaskDOApi extends HttpApi.make("TaskDOApi").add(TasksDOGroup) {}
 
 ### Implement the DO
 
-The DO's Init returns `{ fetch }` — an `HttpEffect` produced exactly
+The DO's constructor returns `{ fetch }` — an `HttpEffect` produced exactly
 the same way the Worker produces one, just scoped to its own
 `TaskDOApi`. Storage is the DO's transactional `state.storage`
 instead of R2.
@@ -555,7 +555,7 @@ export default class TasksObject extends Cloudflare.DurableObject<TasksObject>()
 
 ### Bridge the DO into a typed client
 
-Inside the Worker's Init, `Cloudflare.toHttpClient(stub)` wraps a DO
+Inside the Worker's constructor, `Cloudflare.toHttpClient(stub)` wraps a DO
 stub as an `HttpClient`. Hand that client to `HttpApiClient.makeWith`
 and you get a fully typed client whose every call is a DO `fetch`
 under the hood:
@@ -610,7 +610,7 @@ backends behind the scenes.
 
 - The **schema** (`Task`, `TaskNotFound`) and the **API spec**
   (`TaskApi`) live outside the Worker — they're pure descriptions.
-- The **handlers** are constructed inside the Worker's Init phase
+- The **handlers** are constructed inside the Worker's Construction phase
   closure. We build a `Layer` with `HttpApiBuilder.group` but never
   `yield*` the running server — that only makes sense per-request.
 - The Worker's surface is `{ fetch }`, where `fetch` is an
@@ -625,5 +625,5 @@ backends behind the scenes.
   Effect HTTP.
 - [Effect RPC on Workers](/cloudflare/apis/effect-rpc) — the
   schema-first RPC shape for Effect/TypeScript consumers.
-- [Schemaless RPC](/cloudflare/compute/workers#schemaless-rpc) — the
+- [Schemaless RPC](/cloudflare/compute/workers#call-another-worker) — the
   default for internal Worker-to-Worker calls.

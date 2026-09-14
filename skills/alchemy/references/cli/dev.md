@@ -1,13 +1,13 @@
 <!-- source: https://alchemy.run/cli/dev
      upstream: website/src/content/docs/cli/dev.mdx
-     alchemy 2.0.0-beta.75 @ 808ef69 -->
+     alchemy 2.0.0-beta.77 @ c83b454 -->
 
 # dev
 
 > Run your stack in development mode with hot reloading — resources deploy to the cloud while Workers run in the local dev runtime.
 
 ```sh
-alchemy dev [file] [options]
+alchemy dev [options]
 ```
 
 Run your stack in development mode with hot reloading. Resources are deployed to the cloud while Workers run in the local dev runtime; file changes trigger automatic rebuilds and hot reloads.
@@ -24,25 +24,32 @@ A failed apply keeps dev alive so healthy resources keep serving — fix the err
 
 | Option              | Description                                                        |
 | ------------------- | ------------------------------------------------------------------ |
-| `--stage <name>`    | Stage to use for dev (defaults to `dev_$USER`)                     |
+| `--stage <name>`    | Stage to use for dev (defaults to `$ALCHEMY_STAGE` or `dev_$USER`) |
 | `--force`           | Force updates for resources that would otherwise no-op             |
-| `--profile <name>`  | Auth profile to use (defaults to `default` or `$ALCHEMY_PROFILE`)  |
+| `--profile <name>`  | Auth profile to use (defaults to `$ALCHEMY_PROFILE` or `default`) |
 | `--env-file <path>` | Load environment variables from a file                             |
-| `[file]`            | Stack file to run (defaults to `alchemy.run.ts`)                   |
+| `--config, -c <file>`            | Stack file to run (defaults to `alchemy.run.ts`)                   |
+
+`alchemy deploy` defaults to `live_$USER`. Using a different default
+here means a bare `alchemy dev` will not replace a stage you deployed.
+Pass `--stage` (or `$ALCHEMY_STAGE`) to run local emulation against a specific
+stage — including one you also deploy.
+
+Tear the default local-dev stage down with
+`alchemy destroy --stage dev_$USER`.
 
 ## Examples
 
 ```sh
-# Start dev mode
+# Start dev mode (stage dev_$USER)
 alchemy dev
 
-# Use a custom stage
-alchemy dev --stage dev
+# Emulate the prod program locally (replaces that stage's local/live mode)
+alchemy dev --stage prod
 ```
 
 ## Where next
 
-- [tail](/cli/tail) — stream live logs from deployed resources
-- [logs](/cli/logs) — fetch past log entries
+- [logs](/cli/logs) fetches past logs or tails them with `--tail`
 - [deploy](/cli/deploy) — deploy for real
 - [Local development](/environments/local-development) — how dev mode works under the hood

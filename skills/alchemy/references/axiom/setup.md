@@ -1,6 +1,6 @@
 <!-- source: https://alchemy.run/axiom/setup
      upstream: website/src/content/docs/axiom/setup.mdx
-     alchemy 2.0.0-beta.75 @ 808ef69 -->
+     alchemy 2.0.0-beta.77 @ c83b454 -->
 
 # Setup
 
@@ -17,13 +17,12 @@ import * as Axiom from "alchemy/Axiom";
 providers: Layer.mergeAll(Cloudflare.providers(), Axiom.providers()),
 ```
 
-The next `alchemy login` adds an `Axiom` step with two options:
+Run `alchemy profile edit --add Axiom` and choose an API token or personal
+access token. It is entered interactively and saved under
+`~/.alchemy/credentials/<profile>/`.
 
-- **Environment variables** — reads `AXIOM_TOKEN` (or
-  `AXIOM_API_KEY`), plus optional `AXIOM_ORG_ID` and `AXIOM_URL`
-  (good for CI).
-- **Stored token** — an API token or personal access token entered
-  interactively, saved under `~/.alchemy/credentials/<profile>/`.
+In CI (`CI=true`), profiles are bypassed. Set `AXIOM_TOKEN` or
+`AXIOM_API_KEY`; `AXIOM_ORG_ID` and `AXIOM_URL` are optional.
 
 See [Profiles](/environments/profiles) for how credentials are stored
 and switched.

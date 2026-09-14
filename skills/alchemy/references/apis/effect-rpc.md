@@ -1,6 +1,6 @@
 <!-- source: https://alchemy.run/apis/effect-rpc
      upstream: website/src/content/docs/apis/effect-rpc.mdx
-     alchemy 2.0.0-beta.75 @ 808ef69 -->
+     alchemy 2.0.0-beta.77 @ c83b454 -->
 
 # Effect RPC
 
@@ -112,7 +112,7 @@ export const TaskRpcsLive = TaskRpcs.toLayer({
 ```
 
 `toLayer` is pure construction — it builds a value and never runs the
-server, so it is safe inside a host's Init phase (which also executes
+server, so it is safe inside a host's Construction phase (which also executes
 at plan time); each handler receives the decoded payload and returns
 an `Effect` that succeeds or fails with the declared schemas, and the
 storage-backed bodies live on the hub pages — R2 in

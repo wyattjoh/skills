@@ -1,6 +1,6 @@
 <!-- source: https://alchemy.run/cloudflare/ai/ai-search
      upstream: website/src/content/docs/cloudflare/ai/ai-search.mdx
-     alchemy 2.0.0-beta.75 @ 808ef69 -->
+     alchemy 2.0.0-beta.77 @ c83b454 -->
 
 # Add AI Search (AutoRAG)
 
@@ -191,7 +191,7 @@ straight off it.
 
 `Cloudflare.AI.QuerySearch(search)` attaches the
 single-instance `ai_search` binding and returns a typed Effect client.
-Call it during the Worker's init phase.
+Call it during the Worker's Construction phase.
 
 ```diff lang="typescript"
 // src/Api.ts
@@ -217,7 +217,7 @@ export default class Api extends Cloudflare.Worker<Api>()(
 ```
 
 `Cloudflare.AI.QuerySearchBinding` is the runtime side of the
-binding. Provide it once at the bottom of the Init layer chain and the
+binding. Provide it once at the bottom of the constructor's layer chain and the
 `QuerySearch(...)` above resolves to a live `SearchInstance` handle at runtime.
 
 ## Answer questions on `/ask`

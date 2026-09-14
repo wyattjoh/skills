@@ -1,6 +1,6 @@
 <!-- source: https://alchemy.run/aws/apis/schemaless-rpc
      upstream: website/src/content/docs/aws/apis/schemaless-rpc.mdx
-     alchemy 2.0.0-beta.75 @ 808ef69 -->
+     alchemy 2.0.0-beta.77 @ c83b454 -->
 
 # Schemaless RPC
 
@@ -42,7 +42,7 @@ export default Sandbox.make(
 
 Like Containers on Cloudflare, the MicroVM image declares its Shape as an
 explicit type parameter — the caller reaches it over the network, so nothing
-can be inferred from a binding. The init Effect returns `{ fetch, ...rpcs }`;
+can be inferred from a binding. The constructor Effect returns `{ fetch, ...rpcs }`;
 the in-VM runtime serves the RPC methods over `/__rpc__/*` and falls through
 to `fetch` for everything else, so the same image answers both call surfaces.
 

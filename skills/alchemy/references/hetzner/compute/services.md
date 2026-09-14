@@ -1,6 +1,6 @@
 <!-- source: https://alchemy.run/hetzner/compute/services
      upstream: website/src/content/docs/hetzner/compute/services.mdx
-     alchemy 2.0.0-beta.75 @ 808ef69 -->
+     alchemy 2.0.0-beta.77 @ c83b454 -->
 
 # Services
 
@@ -40,7 +40,7 @@ export default class Api extends Hetzner.Service<Api>()(
 - `main: import.meta.url` — this file is the bundle entrypoint.
 - `port` — written to the `PORT` env var and used to build the
   `url` attribute (`http://<server-ipv4>:<port>`). Default `3000`.
-- `fetch` — returning it from the init Effect boots an HTTP server
+- `fetch` — returning it from the constructor Effect boots an HTTP server
   on that port; omit it for a [background service](#background-services).
 
 The resolved resource exposes `url`, `port`, `unitName`, `serverId`,
@@ -115,7 +115,7 @@ export default class Api extends Hetzner.Service<Api>()(
     env: { GREETING: "hello" },
   },
   Effect.gen(function* () {
-    const greeting = yield* Config.string("GREETING");
+    const greeting = yield* Config.String("GREETING");
     // ...
   }),
 ) {}

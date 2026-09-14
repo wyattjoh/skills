@@ -1,6 +1,6 @@
 <!-- source: https://alchemy.run/cloudflare/compute/cache
      upstream: website/src/content/docs/cloudflare/compute/cache.mdx
-     alchemy 2.0.0-beta.75 @ 808ef69 -->
+     alchemy 2.0.0-beta.77 @ c83b454 -->
 
 # Workers Cache
 
@@ -9,15 +9,15 @@
 Workers Cache sits in front of a Worker: when it's enabled, Cloudflare
 checks the cache before invoking the Worker at all, and a hit is
 served straight from the edge. What gets cached is controlled by
-standard response headers — `Cache-Control` (including
+standard response headers: `Cache-Control` (including
 `stale-while-revalidate`), `Cache-Tag` for tag-based purging, and
 `Vary` for content negotiation.
 
 ## Enable the cache on a Worker
 
-`yield*` `Cloudflare.cache()` in the Worker's init phase. It turns
-Workers Cache on at deploy time and returns the runtime client — no
-layer to provide:
+`yield*` `Cloudflare.cache()` in the Worker's Construction phase. It turns
+Workers Cache on at deploy time and returns the runtime client. There
+is no layer to provide:
 
 ```typescript
 // src/worker.ts
@@ -88,8 +88,8 @@ const { purge } = yield* Cloudflare.cache({ crossVersionCache: true });
 ```
 
 `enabled: false` keeps the binding's purge client available while
-turning the read-through cache off — useful for toggling cache
-behavior per stage.
+turning the read-through cache off, which is useful for toggling
+cache behavior per stage.
 
 ## Enable the cache with the `cache` prop
 
@@ -104,7 +104,7 @@ export const Worker = Cloudflare.Worker("Worker", {
 });
 ```
 
-The handler shapes cache behavior the same way — through
+The handler shapes cache behavior the same way, through
 `Cache-Control`, `Cache-Tag`, and `Vary` headers on its responses.
 
 ## Where next

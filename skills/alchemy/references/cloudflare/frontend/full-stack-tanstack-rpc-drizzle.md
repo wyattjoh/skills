@@ -1,6 +1,6 @@
 <!-- source: https://alchemy.run/cloudflare/frontend/full-stack-tanstack-rpc-drizzle
      upstream: website/src/content/docs/cloudflare/frontend/full-stack-tanstack-rpc-drizzle.mdx
-     alchemy 2.0.0-beta.75 @ 808ef69 -->
+     alchemy 2.0.0-beta.77 @ c83b454 -->
 
 # Full-stack TanStack Start + RPC + Drizzle
 
@@ -176,7 +176,7 @@ its own walk-through in [Shared database across stages](/cloudflare/data/shared-
 `Cloudflare.Workers.RpcWorker` takes the `RpcGroup` directly in props and serves it.
 We pass `workersDev: false` because this backend is only ever reached through the
 private service binding — there's no need for a public `workers.dev` URL. Inside
-Init we bind Hyperdrive once and build a Drizzle client; the handlers then run a
+the constructor we bind Hyperdrive once and build a Drizzle client; the handlers then run a
 query per procedure. Database failures are unexpected, so we `Effect.orDie` them
 into defects — that keeps each handler's typed error channel aligned with its RPC
 schema (`never` for list/create, `TodoNotFound` for toggle/delete).
@@ -514,9 +514,10 @@ hand-written DTOs, no `fetch` URLs, no response parsing.
 ## 9. Deploy
 
 Deploying provisions the Neon branch, runs the generated migrations, creates the
-Hyperdrive pool, and uploads both Workers. If you haven't configured [Cloudflare](/cloudflare/setup/)
-and [Neon](/neon/setup) credentials already (e.g. using `alchemy login` or an `.env` file),
-Alchemy will guide you through this process during your first deploy.
+Hyperdrive pool, and uploads both Workers. Configure [Cloudflare](/cloudflare/setup/)
+and [Neon](/neon/setup) credentials first with `alchemy profile edit` (or an
+`.env` file in CI). A deploy with no credentials fails and prints the command
+to run.
 
 ```sh
 bun install

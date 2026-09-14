@@ -1,6 +1,6 @@
 <!-- source: https://alchemy.run/aws/messaging/sqs
      upstream: website/src/content/docs/aws/messaging/sqs.mdx
-     alchemy 2.0.0-beta.75 @ 808ef69 -->
+     alchemy 2.0.0-beta.77 @ c83b454 -->
 
 # SQS
 
@@ -145,7 +145,7 @@ the shared handle instead of declaring the queue inline:
 
 ## Resolve the queue in the consumer
 
-Yield the same `Jobs` handle in the consumer's outer init to get
+Yield the same `Jobs` handle in the consumer's constructor to get
 a typed `Queue` resource:
 
 ```diff lang="typescript"
@@ -255,7 +255,7 @@ Trigger a write, then watch the consumer's logs:
 
 ```sh
 curl -X PUT --data 'hello queue' "$URL/items/q1"
-bun alchemy logs JobsWorker --follow
+bun alchemy logs JobsWorker --tail
 ```
 
 Within a couple of seconds you'll see:
