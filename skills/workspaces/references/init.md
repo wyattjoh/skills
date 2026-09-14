@@ -36,6 +36,11 @@ the hub (create the directory first if the grilling session needs a target):
    `{{PLACEHOLDER}}` markers (markdown formatters rewrite `__x__` as bold,
    so double underscores are unsafe there); the Justfile template alone uses
    `__PLACEHOLDER__` markers because just owns `{{ }}` interpolation.
+   The Justfile carries one member-forwarding recipe, for the primary member;
+   copy it once per remaining member in `workspace.yaml`, changing both the
+   recipe name and the `--member` argument. Do **not** convert these back to
+   `mod?` directives — a `mod` path is a string literal resolved against the
+   justfile's directory, so it breaks in every hub worktree, silently.
 3. Seed the three skills from `templates/skill-*.md` into
    `skills/<slug>-context/SKILL.md`, `skills/<slug>-domain/SKILL.md`,
    `skills/<slug>-conventions/SKILL.md`. Follow the `claude-skills` skill's

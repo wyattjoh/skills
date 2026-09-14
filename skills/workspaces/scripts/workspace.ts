@@ -42,6 +42,14 @@ class DriftError extends Data.TaggedError("DriftError")<{
   message: string;
 }> {}
 
+/**
+ * Raised by `member-dir` when the named member is absent from workspace.yaml,
+ * or is declared but its resolved path does not exist on disk.
+ */
+class MemberError extends Data.TaggedError("MemberError")<{
+  message: string;
+}> {}
+
 type CliError =
   | WorkspaceRootNotFoundError
   | ManifestParseError
@@ -49,7 +57,8 @@ type CliError =
   | GitCommandError
   | UnknownCategoryError
   | CompactError
-  | DriftError;
+  | DriftError
+  | MemberError;
 
 const formatError = (error: CliError): string =>
   Match.value(error).pipe(
@@ -73,6 +82,7 @@ const formatError = (error: CliError): string =>
     ),
     Match.tag("CompactError", (e) => e.message),
     Match.tag("DriftError", (e) => e.message),
+    Match.tag("MemberError", (e) => e.message),
     Match.exhaustive,
   );
 
@@ -303,6 +313,40 @@ withWorkspaceOption(
           `${row.member} :: ${row.stack.name} [${row.stack.mergeStrategy ?? "squash"}] ${branches}`,
         );
       }
+    }),
+  ),
+);
+
+withWorkspaceOption(
+  cli
+    .command("member-dir")
+    .description("print the absolute path of one member repository")
+    .requiredOption("--member <name>", "member name as declared in workspace.yaml"),
+).action((options: { workspace?: string; member: string }) =>
+  run(
+    Effect.gen(function* () {
+      const { root, manifest } = yield* loadWorkspace(options.workspace);
+      const member = manifest.members.find((candidate) => candidate.name === options.member);
+      if (!member) {
+        const known = manifest.members.map((candidate) => candidate.name).join(", ");
+        return yield* Effect.fail(
+          new MemberError({
+            message: `unknown member "${options.member}" (declared: ${known || "none"})`,
+          }),
+        );
+      }
+      // Resolved through resolveMemberPath so a hub worktree anchors on the
+      // main working tree, which is the whole reason the justfile shells out
+      // here instead of spelling the relative path itself: `just` resolves a
+      // `mod` path against the justfile at parse time, with no way to redirect
+      // it, so from a worktree every member module silently resolved nothing.
+      const path = resolveMemberPath(root, member);
+      if (!existsSync(path)) {
+        return yield* Effect.fail(
+          new MemberError({ message: `member "${member.name}" is not checked out at ${path}` }),
+        );
+      }
+      console.log(path);
     }),
   ),
 );

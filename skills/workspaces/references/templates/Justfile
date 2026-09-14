@@ -1,49 +1,75 @@
 # __WS_NAME__ workspace tasks. Recipes stay thin and delegate to the
 # workspaces skill scripts, the single orchestration binding point shared by
 # every workspace. Override the skill location with WORKSPACES_SKILL_DIR.
+#
+# Every {{ }} interpolation below is wrapped in quote(), with one deliberate
+# exception noted at the member recipes. A bare interpolation is shell *source*,
+# not data: just substitutes it textually and the shell then parses the result,
+# so a backtick runs, a $name expands, and a semicolon starts a second command.
+# That applies to recipe arguments a human types, to skill_dir (which reads an
+# environment variable), and to workspace (a path that may contain spaces).
+# quote() emits a properly escaped single-quoted word.
 
 skill_dir := env("WORKSPACES_SKILL_DIR", home_directory() / ".claude/skills/workspaces")
 workspace := justfile_directory()
+cli := quote(skill_dir / "scripts/workspace.ts")
+ws := quote(workspace)
 
 default:
     @just --list
 
 # Regenerate CLAUDE.md and derived views from workspace.yaml
 sync:
-    bun {{ skill_dir }}/scripts/workspace.ts manifest sync --workspace {{ workspace }}
+    bun {{ cli }} manifest sync --workspace {{ ws }}
 
 # Capture member HEAD SHAs into workspace.lock
 freeze:
-    bun {{ skill_dir }}/scripts/workspace.ts manifest freeze --workspace {{ workspace }}
+    bun {{ cli }} manifest freeze --workspace {{ ws }}
 
 # Cross-repo status: branch, dirtiness, bound stacks per member
 status:
-    bun {{ skill_dir }}/scripts/workspace.ts status --workspace {{ workspace }}
+    bun {{ cli }} status --workspace {{ ws }}
 
 # List stacks bound to this workspace across members
 stacks:
-    bun {{ skill_dir }}/scripts/workspace.ts stacks --workspace {{ workspace }}
+    bun {{ cli }} stacks --workspace {{ ws }}
 
 # Print the ordered context layers (what the enter flow loads)
 context:
-    bun {{ skill_dir }}/scripts/workspace.ts context --workspace {{ workspace }}
+    bun {{ cli }} context --workspace {{ ws }}
 
 # Run all workspace integrity checks; exits 1 on errors
 audit:
-    bun {{ skill_dir }}/scripts/workspace.ts audit --workspace {{ workspace }}
+    bun {{ cli }} audit --workspace {{ ws }}
 
 # Inventory the ADR graph and journal switches (the compact flow's first step)
 compact-inventory:
-    bun {{ skill_dir }}/scripts/workspace.ts compact inventory --workspace {{ workspace }}
+    bun {{ cli }} compact inventory --workspace {{ ws }}
 
 # Archive the live ADRs into docs/adr/archive/ (clean tree required; run mid-compact)
 compact-archive:
-    bun {{ skill_dir }}/scripts/workspace.ts compact archive --workspace {{ workspace }}
+    bun {{ cli }} compact archive --workspace {{ ws }}
 
 # Append a journal entry: just journal deviation "Title" "adr/0001, phase 1"
 journal category title links="" body="":
-    bun {{ skill_dir }}/scripts/workspace.ts journal add --workspace {{ workspace }} --category {{ category }} --title "{{ title }}" --links "{{ links }}" --body "{{ body }}"
+    bun {{ cli }} journal add --workspace {{ ws }} --category {{ quote(category) }} --title {{ quote(title) }} --links {{ quote(links) }} --body {{ quote(body) }}
 
-# Member repository modules give namespaced recipes (`just __PRIMARY_MEMBER__ test`).
-# `mod?` tolerates members that have no justfile of their own.
-mod? __PRIMARY_MEMBER__ '../__PRIMARY_MEMBER__'
+# Member repository forwarding: `just __PRIMARY_MEMBER__ test` runs `just test`
+# in the member checkout. Add one recipe per member declared in workspace.yaml.
+#
+# These were `mod?` directives. `just` resolves a module path against the
+# justfile's own directory at parse time and accepts only a string literal, so
+# from a hub worktree (`.claude/worktrees/<name>/`) every member resolved to a
+# sibling of the worktree that does not exist — and `mod?` tolerating absence
+# meant the namespaced recipe silently did nothing rather than failing. A recipe
+# can shell out, so member-dir resolves the path against the hub's main working
+# tree and this works from the hub and from any worktree alike.
+#
+# `args` is interpolated bare on purpose, unlike every other interpolation in
+# this file: these are recipe arguments meant to become separate shell words for
+# the member's own `just`, not a single datum to protect. Nothing else may
+# follow that pattern.
+
+# Run a recipe in __PRIMARY_MEMBER__ (`just __PRIMARY_MEMBER__ test`); no args lists its recipes
+__PRIMARY_MEMBER__ *args:
+    cd "$(bun {{ cli }} member-dir --workspace {{ ws }} --member __PRIMARY_MEMBER__)" && just {{ args }}
