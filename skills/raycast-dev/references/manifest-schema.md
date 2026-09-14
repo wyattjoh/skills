@@ -81,10 +81,13 @@ This reference covers the structure and configuration of a Raycast extension's `
 ### platforms
 
 **Type:** `("macOS" | "Windows")[]`
-**Description:** Platforms the extension supports. Required at the top level
-(in addition to the optional per-command `platforms` override documented
-under [Command Properties](#platforms)).
+**Description:** Platforms the extension supports. Required at the top level.
+If the extension uses platform-specific APIs, restrict this to the
+corresponding platform; there is no separate per-command `platforms`
+override in the current manifest schema.
 **Example:** `["macOS", "Windows"]`
+
+Source: https://github.com/raycast/extensions/blob/main/docs/information/manifest.md
 
 ### categories
 
@@ -195,12 +198,6 @@ Each command defines an entry point into your extension.
 **Type:** `string` (for `no-view` or `menu-bar` commands)
 **Description:** Update interval for the command
 **Example:** `"5m"`, `"1h"`, `"30s"`
-
-#### platforms
-
-**Type:** `("macOS" | "Windows")[]`
-**Description:** Platforms this command supports (added v1.103.0). Defaults to `["macOS"]`. Omit for macOS-only commands.
-**Example:** `["macOS", "Windows"]`
 
 ## Arguments
 

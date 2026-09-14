@@ -211,8 +211,9 @@ Migrating v3 muscle memory is where most v4 errors come from:
 - **`Effect.catchAll` is not a function**: renamed to `Effect.catch`. See
   [references/migration-from-v3.md](./references/migration-from-v3.md).
 - **`Effect.fork` is not a function**: renamed to `Effect.forkChild`.
-- **`unsafeMake` is not a function**: v4 moved the `unsafe` prefix to a `Unsafe` suffix everywhere
-  (`SubscriptionRef.makeUnsafe`, `Equal.byReferenceUnsafe`, `Duration.fromInputUnsafe`). Zero `unsafe*` exports remain.
+- **`unsafeMake` is not a function**: v4 moved the `unsafe` prefix to a `Unsafe` suffix on the constructors that kept
+  one (`Equal.byReferenceUnsafe`, `Duration.fromInputUnsafe`). `SubscriptionRef` has no unsafe/sync constructor at
+  all in v4 — `SubscriptionRef.make` only returns an `Effect`; use `yield* SubscriptionRef.make(initial)`.
 - **`Either` not exported**: renamed to `Result`.
 - **Type error passing a `Ref` to `Effect.map`**: Yieldable, not Effect. Use the module function.
 - **`Effect.Service` not found**: replaced by `Context.Service` with a `make` option, and no auto-generated `.Default`.

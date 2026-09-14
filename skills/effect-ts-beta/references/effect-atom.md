@@ -147,16 +147,23 @@ const handleSave = async () => {
 ## Persistence and URL State
 
 ```typescript
-// Bind to a URL search parameter
+import { BrowserKeyValueStore } from "@effect/platform-browser";
+import { Schema } from "effect";
+
+// Bind to a URL search parameter. Without `schema` the value is the raw
+// string; a synchronous, context-free schema decodes/encodes it.
 const pageAtom = Atom.searchParam("page", {
-  decode: (s) => parseInt(s ?? "1", 10),
-  encode: (n) => n.toString(),
+  schema: Schema.NumberFromString,
 });
 
-// Persist to key-value storage
+// Persist to key-value storage. `runtime` (built from a KeyValueStore layer)
+// and `schema` are required; `defaultValue` is a thunk.
+const kvsRuntime = Atom.runtime(BrowserKeyValueStore.layerLocalStorage);
 const settingsAtom = Atom.kvs({
+  runtime: kvsRuntime,
   key: "app-settings",
-  defaultValue: { theme: "dark" },
+  schema: Schema.Struct({ theme: Schema.String }),
+  defaultValue: () => ({ theme: "dark" }),
 });
 ```
 

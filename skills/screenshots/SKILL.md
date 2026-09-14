@@ -34,7 +34,7 @@ target window.
 Install it once:
 
 ```bash
-brew install steipete/tap/peekaboo
+brew install openclaw/tap/peekaboo
 ```
 
 For a raw screenshot, use `see` without accessibility elements:

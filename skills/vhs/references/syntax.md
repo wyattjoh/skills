@@ -1,6 +1,8 @@
 # VHS Tape Syntax Reference
 
 Complete reference for `.tape` file directives. See [SKILL.md](../SKILL.md) for workflow guidance.
+Verified against the upstream `token`/`parser` source and README at
+[github.com/charmbracelet/vhs](https://github.com/charmbracelet/vhs) (v0.12.0).
 
 ## Tape Structure
 
@@ -62,14 +64,16 @@ All `Set` directives must appear before the first input command. **Exception:** 
 
 ### Terminal
 
-| Option       | Type      | Default     | Notes                                                                    |
-| ------------ | --------- | ----------- | ------------------------------------------------------------------------ |
-| `Shell`      | string    | `bash`      | `bash`, `zsh`, `fish`, `nu`, `osh`, `powershell`, `pwsh`, `cmd`, `xonsh` |
-| `Width`      | pixels    | `1200`      |                                                                          |
-| `Height`     | pixels    | `600`       |                                                                          |
-| `Padding`    | pixels    | `60`        | Space between terminal edge and content                                  |
-| `Margin`     | pixels    | `0`         | Space outside the terminal (use with `MarginFill`)                       |
-| `MarginFill` | hex color | `"#171717"` | Background behind the terminal                                           |
+| Option       | Type      | Default     | Notes                                                                                                     |
+| ------------ | --------- | ----------- | --------------------------------------------------------------------------------------------------------- |
+| `Shell`      | string    | `bash`      | `bash`, `zsh`, `fish`, `nu`, `osh`, `powershell`, `pwsh`, `cmd`, `xonsh`                                  |
+| `Width`      | pixels    | `1200`      | Cannot combine with `Columns`                                                                             |
+| `Height`     | pixels    | `600`       | Cannot combine with `Rows`                                                                                |
+| `Columns`    | cells     | (unset)     | Terminal width in character cells; derived pixel width from font settings. Cannot combine with `Width`    |
+| `Rows`       | cells     | (unset)     | Terminal height in character cells; derived pixel height from font settings. Cannot combine with `Height` |
+| `Padding`    | pixels    | `60`        | Space between terminal edge and content                                                                   |
+| `Margin`     | pixels    | `0`         | Space outside the terminal (use with `MarginFill`)                                                        |
+| `MarginFill` | hex color | `"#171717"` | Background behind the terminal                                                                            |
 
 ### Typography
 
@@ -90,11 +94,12 @@ Run `vhs themes` for the full installed list. Names are case- and space-sensitiv
 
 ### Window Chrome
 
-| Option         | Type   | Values                                             |
-| -------------- | ------ | -------------------------------------------------- |
-| `WindowBar`    | enum   | `Colorful`, `ColorfulRight`, `Rings`, `RingsRight` |
-| `BorderRadius` | pixels | e.g. `10`                                          |
-| `CursorBlink`  | bool   | `true`, `false`                                    |
+| Option          | Type   | Values                                             |
+| --------------- | ------ | -------------------------------------------------- |
+| `WindowBar`     | enum   | `Colorful`, `ColorfulRight`, `Rings`, `RingsRight` |
+| `WindowBarSize` | pixels | Height of the window bar (default `30`)            |
+| `BorderRadius`  | pixels | e.g. `10`                                          |
+| `CursorBlink`   | bool   | `true`, `false`                                    |
 
 ### Timing & Playback
 
@@ -126,6 +131,8 @@ All key commands accept an optional repeat count, and most accept a `@<duration>
 | ------------------------------------------------ | --------------------------------- |
 | `Enter [N]`                                      | `Enter`, `Enter 3`                |
 | `Backspace [N]`                                  | `Backspace 12`                    |
+| `Delete [N]`                                     | `Delete`, `Delete 5`              |
+| `Insert [N]`                                     | `Insert`, `Insert 5`              |
 | `Tab[@<dur>] [N]`                                | `Tab@200ms`, `Tab 2`              |
 | `Space [N]`                                      |                                   |
 | `Escape [N]`                                     |                                   |

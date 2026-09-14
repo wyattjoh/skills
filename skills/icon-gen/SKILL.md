@@ -155,7 +155,7 @@ Ask the user which platforms to resize for using `AskUserQuestion` with
 | Android       | Play Store and launcher icons (512 down to 48px) |
 | macOS         | App and Finder icons (1024 down to 16px)         |
 | Web / Favicon | PWA, favicon, and Apple touch icons              |
-| Raycast       | Raycast extension icons (512 and 256px)          |
+| Raycast       | Raycast extension icons (512px)                  |
 
 For each selected platform, create a subdirectory and resize:
 

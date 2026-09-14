@@ -61,7 +61,10 @@ consumes:
 
 ## Raycast
 
-| Size (px) | Usage                     |
-| --------- | ------------------------- |
-| 512       | Extension icon (high-res) |
-| 256       | Extension icon (standard) |
+| Size (px) | Usage                                   |
+| --------- | --------------------------------------- |
+| 512       | Extension icon (Store requirement, PNG) |
+
+Raycast's store docs specify only a single 512x512px PNG icon for a published
+extension; no separate 256px tier is documented.
+Source: [Prepare an Extension for Store](https://developers.raycast.com/basics/prepare-an-extension-for-store)

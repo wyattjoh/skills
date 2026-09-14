@@ -108,23 +108,39 @@ configuration is needed (`initialValues`, `scheduleTask`, `timeoutResolution`,
 
 ### URL Search Parameters
 
-Bind atoms to URL search parameters:
+Bind atoms to URL search parameters. Without a `schema` option the atom's value
+is the raw string; pass a synchronous, context-free `Schema` to decode/encode it:
 
 ```typescript
+import { Schema } from "effect";
+
 const pageAtom = Atom.searchParam("page", {
-  decode: (s) => parseInt(s ?? "1", 10),
-  encode: (n) => n.toString(),
+  schema: Schema.NumberFromString,
 });
 ```
+
+Source: `@effect-atom/atom` `Atom.d.ts` (`searchParam` accepts `{ schema? }`, not `decode`/`encode`).
 
 ### Local Storage Persistence
 
+`Atom.kvs` needs a `runtime` built from a `KeyValueStore` layer and a `Schema` for
+the stored value; `defaultValue` is a thunk, not a bare value:
+
 ```typescript
+import { BrowserKeyValueStore } from "@effect/platform-browser";
+import { Schema } from "effect";
+
+const kvsRuntime = Atom.runtime(BrowserKeyValueStore.layerLocalStorage);
+
 const settingsAtom = Atom.kvs({
+  runtime: kvsRuntime,
   key: "app-settings",
-  defaultValue: { theme: "dark" },
+  schema: Schema.Struct({ theme: Schema.String }),
+  defaultValue: () => ({ theme: "dark" }),
 });
 ```
+
+Source: https://github.com/tim-smart/effect-atom (README, "Integration with local storage").
 
 ### Scoped Resources
 
@@ -183,15 +199,17 @@ const httpClient = AtomHttpApi.Tag();
 
 ## Result Handling
 
-Effectful atoms return `Result` types. Handle with pattern matching:
+Effectful atoms return `Result` types. Handle with pattern matching; `Result.match`
+requires all three branches, including `onInitial` (before the effect has run):
 
 ```typescript
 function UserProfile() {
   const userResult = useAtomValue(userAtom)
 
   return Result.match(userResult, {
-    onSuccess: (user) => <div>{user.name}</div>,
-    onFailure: (error) => <div>Error: {error.message}</div>,
+    onInitial: () => <div>Loading...</div>,
+    onSuccess: (result) => <div>{result.value.name}</div>,
+    onFailure: (result) => <div>Error: {String(result.cause)}</div>,
   })
 }
 ```
