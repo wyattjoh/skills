@@ -199,14 +199,18 @@ combinations. v3's `Schema.optionalWith(..., { as: "Option" })` is replaced by w
 
 ## Atom Integration
 
-Effectful atoms surface a `Result`, so React components pattern match on it rather than on `Option`:
+Effectful atoms surface an `AsyncResult` (from `effect/unstable/reactivity`), not `Result` — it adds the `Initial`
+state an atom is in before the effect resolves. React components pattern match on it rather than on `Option`:
 
 ```typescript
-const userResult = useAtomValue(userAtom); // Result<User, FetchError>
+import { AsyncResult } from "effect/unstable/reactivity";
 
-Result.match(userResult, {
-  onSuccess: (user) => user.name,
-  onFailure: (error) => String(error),
+const userResult = useAtomValue(userAtom); // AsyncResult<User, FetchError>
+
+AsyncResult.match(userResult, {
+  onInitial: () => "loading",
+  onSuccess: (result) => result.value.name,
+  onFailure: (result) => String(result.cause),
 });
 ```
 

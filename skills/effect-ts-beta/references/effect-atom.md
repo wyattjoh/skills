@@ -117,16 +117,20 @@ prop.
 
 ## Result Handling
 
-Effectful atoms surface a `Result`. Note this is v4's `Result` (v3's `Either` renamed), the same type
-`Effect.result` produces.
+Effectful atoms surface an `AsyncResult` (from `effect/unstable/reactivity`), not the plain `Result` that
+`Effect.result` produces. `AsyncResult` adds the `Initial` state an atom is in before the effect has resolved, and
+`match` requires all three branches:
 
 ```typescript
+import { AsyncResult } from "effect/unstable/reactivity";
+
 function UserProfile() {
   const userResult = useAtomValue(userAtom);
 
-  return Result.match(userResult, {
-    onSuccess: (user) => <div>{user.name}</div>,
-    onFailure: (error) => <div>Error: {String(error)}</div>,
+  return AsyncResult.match(userResult, {
+    onInitial: () => <div>Loading...</div>,
+    onSuccess: (result) => <div>{result.value.name}</div>,
+    onFailure: (result) => <div>Error: {String(result.cause)}</div>,
   });
 }
 ```
