@@ -27,7 +27,7 @@
 | MySQL | `data/mysql.md` | Official MySQL in a Project. Bind Railway.ConnectMySQL and query with Drizzle or SQL. |
 | Postgres | `data/postgres.md` | Official SSL Postgres in a Project. Bind Railway.ConnectPostgres and query with Drizzle or SQL. |
 | Redis | `data/redis.md` | Redis in a Project. Bind Railway.ReadRedis / WriteRedis / ReadWriteRedis on a Service. |
-| Variables | `data/variables.md` | Config.redacted on a Service, Railway.Variable when Railway should own the value. |
+| Variables | `data/variables.md` | Config.Redacted on a Service, Railway.Variable when Railway should own the value. |
 | Volumes | `data/volumes.md` | Block disk in a Project. Mount it into a Service with MountVolume. |
 
 ## frontend/

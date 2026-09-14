@@ -1,6 +1,6 @@
 <!-- source: https://alchemy.run/aws/messaging/eventbridge
      upstream: website/src/content/docs/aws/messaging/eventbridge.mdx
-     alchemy 2.0.0-beta.75 @ 808ef69 -->
+     alchemy 2.0.0-beta.77 @ c83b454 -->
 
 # EventBridge & Scheduler
 

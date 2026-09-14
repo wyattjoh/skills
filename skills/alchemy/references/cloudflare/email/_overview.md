@@ -1,6 +1,6 @@
 <!-- source: https://alchemy.run/cloudflare/email
      upstream: website/src/content/docs/cloudflare/email/index.mdx
-     alchemy 2.0.0-beta.75 @ 808ef69 -->
+     alchemy 2.0.0-beta.77 @ c83b454 -->
 
 # Email
 
@@ -122,7 +122,7 @@ account.
 
 ## Send from a Worker
 
-Bind the descriptor with `Email.Send` in the Worker's init phase and
+Bind the descriptor with `Email.Send` in the Worker's Construction phase and
 provide `Email.SendBinding` as the implementation layer:
 
 ```typescript

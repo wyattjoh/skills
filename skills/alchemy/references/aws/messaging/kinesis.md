@@ -1,6 +1,6 @@
 <!-- source: https://alchemy.run/aws/messaging/kinesis
      upstream: website/src/content/docs/aws/messaging/kinesis.mdx
-     alchemy 2.0.0-beta.75 @ 808ef69 -->
+     alchemy 2.0.0-beta.77 @ c83b454 -->
 
 # Kinesis
 
@@ -244,7 +244,7 @@ resources its capability and `consume*` calls touched — no
 
 ```sh
 curl -X PUT --data 'audit me' "$URL/items/k1"
-bun alchemy logs Audit --follow
+bun alchemy logs Audit --tail
 ```
 
 You'll see a line like:

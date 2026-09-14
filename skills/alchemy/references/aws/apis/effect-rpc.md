@@ -1,6 +1,6 @@
 <!-- source: https://alchemy.run/aws/apis/effect-rpc
      upstream: website/src/content/docs/aws/apis/effect-rpc.mdx
-     alchemy 2.0.0-beta.75 @ 808ef69 -->
+     alchemy 2.0.0-beta.77 @ c83b454 -->
 
 # Effect RPC on Lambda
 
@@ -30,7 +30,7 @@ wiring story is identical to the HTTP API guide:
 1. **Define schemas outside the Function.** Domain types and tagged
    errors, importable by both server and client.
 2. **Bind resources and construct handlers inside the Function's
-   Init phase.** `RpcGroup.toLayer` is pure construction — safe at
+   Construction phase.** `RpcGroup.toLayer` is pure construction — safe at
    deploy time and at cold start.
 3. **Return `{ fetch }`** where `fetch` is the `HttpEffect` produced
    by `RpcServer.toHttpEffect`.
@@ -108,7 +108,7 @@ export class JobRpcs extends RpcGroup.make(getJob, createJob) {}
 
 ## 3. Build the Function
 
-Create `src/JobFunction.ts` with an empty Init phase and a public
+Create `src/JobFunction.ts` with an empty Construction phase and a public
 Function URL:
 
 ```typescript
@@ -125,7 +125,7 @@ export default class JobFunction extends AWS.Lambda.Function<JobFunction>()(
 ) {}
 ```
 
-The generator is the **Init phase**. It runs at *deploy time* (when
+The generator is the **Construction phase**. It runs at *deploy time* (when
 Alchemy plans the stack and collects bindings into IAM policies and
 environment variables) and again *inside the deployed Lambda* at
 cold start. Only do pure construction here — bindings, layers, never
@@ -134,7 +134,7 @@ per-request work.
 ### 3a. Declare the table and bind operations
 
 Jobs need somewhere durable to live. Yield a DynamoDB `Table` inside
-Init to declare the resource, then bind the two operations the
+the constructor to declare the resource, then bind the two operations the
 handlers will need:
 
 ```diff lang="typescript"
@@ -156,7 +156,7 @@ least-privilege IAM statement to the function's execution role; at
 runtime it returns a typed callable that injects the table name
 automatically.
 
-### 3b. Construct the handlers inside Init
+### 3b. Construct the handlers inside the constructor
 
 `JobRpcs.toLayer` takes one handler per procedure and produces a
 `Layer`. Like `HttpApiBuilder.group`, this is pure construction — it
@@ -335,7 +335,7 @@ export default Alchemy.Stack(
 ```
 
 Yielding `JobFunction` deploys the function *and* everything it
-declared inside Init — the DynamoDB table, the generated IAM role
+declared inside the constructor — the DynamoDB table, the generated IAM role
 with the two table-scoped statements, and the Function URL.
 
 ## 5. Deploy

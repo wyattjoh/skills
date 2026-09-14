@@ -1,8 +1,8 @@
 <!-- source: https://alchemy.run/infrastructure-as-code/local-provider
      upstream: website/src/content/docs/infrastructure-as-code/local-provider.mdx
-     alchemy 2.0.0-beta.75 @ 808ef69 -->
+     alchemy 2.0.0-beta.77 @ c83b454 -->
 
-# Local Providers
+# Local Provider
 
 > Build the local implementation of a resource — dual registration with ProviderLayer.dual and the LocalProvider runner for long-running processes.
 

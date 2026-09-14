@@ -1,6 +1,6 @@
 <!-- source: https://alchemy.run/cloudflare/observability/analytics-engine
      upstream: website/src/content/docs/cloudflare/observability/analytics-engine.mdx
-     alchemy 2.0.0-beta.75 @ 808ef69 -->
+     alchemy 2.0.0-beta.77 @ c83b454 -->
 
 # Analytics Engine
 
@@ -31,7 +31,7 @@ name you'll reference in SQL queries; omit it and the logical ID
 
 ## Write data points from a Worker
 
-Bind the dataset with `WriteDataset` in the Worker's init phase and
+Bind the dataset with `WriteDataset` in the Worker's Construction phase and
 provide `WriteDatasetBinding` as a layer:
 
 ```typescript

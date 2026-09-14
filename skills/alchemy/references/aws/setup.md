@@ -1,10 +1,10 @@
 <!-- source: https://alchemy.run/aws/setup
      upstream: website/src/content/docs/aws/setup.mdx
-     alchemy 2.0.0-beta.75 @ 808ef69 -->
+     alchemy 2.0.0-beta.77 @ c83b454 -->
 
 # Setup
 
-> Install Alchemy and connect it to your AWS account — SSO, environment variables, or stored access keys.
+> Connect Alchemy to AWS with SSO, stored access keys, or CI environment credentials.
 
 ## Prerequisites
 
@@ -26,26 +26,33 @@ bun add "alchemy@latest" "effect@rc" "@effect/platform-bun@rc" "@effect/platform
 
 ## How Alchemy gets AWS credentials
 
-The first time you `alchemy deploy` (or `plan`, `dev`,
-`destroy`) a stack that uses `AWS.providers()`, Alchemy prompts
-you to pick an authentication method. The choice is saved to
-your **`default`** [profile](/environments/profiles) and reused on
-every subsequent command.
+Connect AWS with `alchemy profile edit --add AWS` and pick an
+authentication method. The choice is saved to your **`default`**
+[profile](/environments/profiles) and reused on every subsequent
+command; a deploy with nothing configured fails with that exact
+command to run. Authentication changes only through the `profile` command.
 
-There are three methods:
+There are two local profile methods:
 
 ### SSO (recommended)
 
 Alchemy runs `aws sso login --profile <name>` for you and loads
 credentials from the AWS SSO cache. You pick which profile from
 `~/.aws/config` to use; the account ID and region come from that
-profile. When the SSO session expires, run `alchemy login` to
-refresh it.
+profile. When the SSO session expires, run
+`alchemy profile edit --reconfigure AWS` to refresh it.
 
-### Environment variables
+### Stored access keys
 
-Alchemy reads the standard AWS variables from the environment on
-every run:
+Paste an access key ID, secret access key, optional session
+token, and region into the interactive prompt. Alchemy verifies
+them against STS and saves them under
+`~/.alchemy/credentials/<profile>/` for future runs.
+
+### CI environment credentials
+
+When `CI=true`, Alchemy bypasses profiles and reads the standard AWS
+variables directly:
 
 ```sh
 export AWS_ACCESS_KEY_ID=...
@@ -56,16 +63,7 @@ export AWS_REGION=us-east-1    # or AWS_DEFAULT_REGION
 
 The region is required. The account ID is taken from
 `AWS_ACCOUNT_ID` if set, otherwise resolved once via STS
-`GetCallerIdentity`. This is the method to use in CI — when
-Alchemy detects `CI=true` it skips the interactive prompt and
-uses environment variables automatically.
-
-### Stored access keys
-
-Paste an access key ID, secret access key, optional session
-token, and region into the interactive prompt. Alchemy verifies
-them against STS and saves them under
-`~/.alchemy/credentials/<profile>/` for future runs.
+`GetCallerIdentity`. No profile is created or persisted in CI.
 
 ## Managing credentials
 
@@ -73,8 +71,9 @@ Re-run the setup at any time (e.g. to switch from stored keys to
 SSO, or to configure a separate `prod` profile):
 
 ```sh
-alchemy login --configure
-alchemy login --profile prod --configure
+alchemy profile edit --reconfigure AWS
+alchemy profile create prod
+alchemy profile edit --profile prod --add AWS
 ```
 
 Inspect what's stored (secrets are redacted):

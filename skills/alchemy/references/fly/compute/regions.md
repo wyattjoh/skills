@@ -1,6 +1,6 @@
 <!-- source: https://alchemy.run/fly/compute/regions
      upstream: website/src/content/docs/fly/compute/regions.mdx
-     alchemy 2.0.0-beta.75 @ 808ef69 -->
+     alchemy 2.0.0-beta.77 @ c83b454 -->
 
 # Regions
 
@@ -107,7 +107,7 @@ Fly sets `FLY_REGION` on the Machine. Read it in a Service with
 ```typescript
 import * as Config from "effect/Config";
 
-const region = yield* Config.string("FLY_REGION");
+const region = yield* Config.String("FLY_REGION");
 ```
 
 ## Region codes

@@ -1,14 +1,18 @@
 <!-- source: https://alchemy.run/cloudflare/tutorial/part-1
      upstream: website/src/content/docs/cloudflare/tutorial/part-1.mdx
-     alchemy 2.0.0-beta.75 @ 808ef69 -->
+     alchemy 2.0.0-beta.77 @ c83b454 -->
 
 # Part 1: Your First Stack
 
 > Install Alchemy, create a Stack with a Cloudflare R2 Bucket, and deploy it.
 
 In this first part you'll install Alchemy and Effect, create a Stack
-with a Cloudflare R2 Bucket, and deploy it — all in under five
-minutes.
+with a Cloudflare R2 Bucket, and deploy it, all in under five minutes.
+
+:::tip
+Already deployed the Bucket from [Getting started](/getting-started)?
+That was this part. Skip to [Part 2](/cloudflare/tutorial/part-2).
+:::
 
 ## Prerequisites
 
@@ -203,8 +207,9 @@ Run `alchemy deploy` to create the Bucket on Cloudflare:
 bun alchemy deploy
 ```
 
-The first time you deploy, Alchemy walks each provider in your stack
-through an interactive login and saves the credentials to your
+If you haven't connected Cloudflare yet, the deploy fails with the exact
+`alchemy profile edit` command to run. Use the `profile` command to sign in
+and save credentials to your
 **`default`** [profile](/environments/profiles) at
 `~/.alchemy/profiles.json`. For Cloudflare you can sign in with
 OAuth in the browser or paste an API token — no environment
@@ -212,9 +217,9 @@ variables or `wrangler login` required.
 
 :::tip
 To re-run the credential prompt later (e.g. to switch from OAuth to
-an API token, or to add a `prod` profile) use
-`alchemy login --configure` or
-`alchemy login --profile prod --configure`.
+an API token), use `alchemy profile edit --reconfigure Cloudflare`.
+For a separate profile, run `alchemy profile create prod` followed by
+`alchemy profile edit --profile prod`.
 :::
 
 ```text
@@ -235,7 +240,7 @@ and prints the stack outputs. Your bucket is live on Cloudflare.
 :::tip
 By convention, Alchemy looks for `alchemy.run.ts` at the root of your
 project. You can specify a different file with
-`alchemy deploy <file>`.
+`alchemy deploy --config <file>`.
 :::
 
 ## Verify it worked

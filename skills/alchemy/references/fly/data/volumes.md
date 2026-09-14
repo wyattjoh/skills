@@ -1,6 +1,6 @@
 <!-- source: https://alchemy.run/fly/data/volumes
      upstream: website/src/content/docs/fly/data/volumes.mdx
-     alchemy 2.0.0-beta.75 @ 808ef69 -->
+     alchemy 2.0.0-beta.77 @ c83b454 -->
 
 # Volumes
 
@@ -19,7 +19,7 @@ three Volumes in one name-group, one per replica.
 
 ## Mount into a Service
 
-Inside a [Service](/fly/compute/services)'s init, bind a disk to a
+Inside a [Service](/fly/compute/services)'s constructor, bind a disk to a
 path and use it as a plain directory at runtime. App and region come
 from the parent Service:
 

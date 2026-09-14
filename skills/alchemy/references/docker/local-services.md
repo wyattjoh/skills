@@ -1,6 +1,6 @@
 <!-- source: https://alchemy.run/docker/local-services
      upstream: website/src/content/docs/docker/local-services.mdx
-     alchemy 2.0.0-beta.75 @ 808ef69 -->
+     alchemy 2.0.0-beta.77 @ c83b454 -->
 
 # Local services: Postgres with containers, networks, and volumes
 
@@ -71,7 +71,7 @@ fixed once it holds data you care about.
 import * as Config from "effect/Config";
 import * as Option from "effect/Option";
 
-const configuredPassword = yield* Config.redacted("POSTGRES_PASSWORD").pipe(
+const configuredPassword = yield* Config.Redacted("POSTGRES_PASSWORD").pipe(
   Config.option,
 );
 const password = yield* Option.match(configuredPassword, {

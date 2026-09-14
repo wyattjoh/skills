@@ -1,6 +1,6 @@
 <!-- source: https://alchemy.run/railway/compute/services
      upstream: website/src/content/docs/railway/compute/services.mdx
-     alchemy 2.0.0-beta.75 @ 808ef69 -->
+     alchemy 2.0.0-beta.77 @ c83b454 -->
 
 # Services
 
@@ -62,7 +62,7 @@ image.
 
 ## Serve HTTP with `fetch`
 
-Return `fetch` from the init Effect to boot an HTTP server.
+Return `fetch` from the constructor Effect to boot an HTTP server.
 
 ```diff lang="typescript"
 import * as Railway from "alchemy/Railway";
@@ -249,7 +249,7 @@ is set).
 
 ## Config
 
-Yield `Config` in init. Alchemy reads the value from the env of
+Yield `Config` in the constructor. Alchemy reads the value from the env of
 whoever deploys and writes it onto the Service. Do not pass
 `env: { ... }` on a Service unless you are packing a known-plain
 value.
@@ -266,7 +266,7 @@ export default class Api extends Railway.Service<Api>()(
     port: 3000,
   },
   Effect.gen(function* () {
-    const apiKey = yield* Config.redacted("API_KEY");
+    const apiKey = yield* Config.Redacted("API_KEY");
 
     return {
       fetch: Effect.gen(function* () {
@@ -278,7 +278,7 @@ export default class Api extends Railway.Service<Api>()(
 ) {}
 ```
 
-`Config.redacted("API_KEY")` is `Redacted<string>`. Unwrap with
+`Config.Redacted("API_KEY")` is `Redacted<string>`. Unwrap with
 `Redacted.value` only where you need the raw string.
 
 Alchemy also injects `PORT` (when `port` is set) and stack metadata.
@@ -341,8 +341,8 @@ A Volume attaches to one Service. See
 
 ## Logs
 
-Service logs live in the Railway dashboard. `alchemy logs` /
-`alchemy tail` don't support Railway Services yet.
+Service logs live in the Railway dashboard. `alchemy logs` (including
+`--tail`) doesn't support Railway Services yet.
 
 ## Where next
 
@@ -355,7 +355,7 @@ and canvas Functions, including [schemaless RPC](/railway/compute/functions#sche
 same shape.
 [Redis](/railway/data/redis) binds with `ReadWriteRedis`.
 [Buckets](/railway/data/buckets) bind with `PutObject` / `GetObject`.
-[Variables](/railway/data/variables) covers `Config.redacted`,
+[Variables](/railway/data/variables) covers `Config.Redacted`,
 `Railway.Variable`, and `Railway.ref`.
 The [`Service` reference](/providers/railway/service) lists every
 prop.

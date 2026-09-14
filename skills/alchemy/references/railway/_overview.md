@@ -1,6 +1,6 @@
 <!-- source: https://alchemy.run/railway
      upstream: website/src/content/docs/railway/index.mdx
-     alchemy 2.0.0-beta.75 @ 808ef69 -->
+     alchemy 2.0.0-beta.77 @ c83b454 -->
 
 # Railway
 
@@ -80,7 +80,7 @@ a resource — Alchemy uses `me.workspace ?? me.workspaces[0]`.
 
 ## Variables
 
-- **[Variables](/railway/data/variables)** — `Config.redacted` in a
+- **[Variables](/railway/data/variables)** — `Config.Redacted` in a
   Service for values from `.env`. `Railway.Variable` when Railway
   should own a value shared across services. `Railway.ref(Db,
   "DATABASE_URL")` emits `${{Db.DATABASE_URL}}` (IaC
@@ -114,7 +114,7 @@ a resource — Alchemy uses `me.workspace ?? me.workspaces[0]`.
 | Redis                        | [Redis](/railway/data/redis) + `ReadRedis` / `WriteRedis` / `ReadWriteRedis` |
 | Object storage               | [Bucket](/railway/data/buckets) + `PutObject` / `GetObject`               |
 | Staging next to production   | [Environment](/railway/compute/environments)                              |
-| Config / API tokens          | [`Config.redacted`](/railway/data/variables). [`Railway.Variable`](/railway/data/variables) when Railway should own it |
+| Config / API tokens          | [`Config.Redacted`](/railway/data/variables). [`Railway.Variable`](/railway/data/variables) when Railway should own it |
 | Cross-service env            | [`Railway.ref`](/railway/data/variables#variable-references)              |
 | Your own domain              | [CustomDomain](/railway/networking#custom-domains)                        |
 | Laptop access to Postgres    | [TcpProxy](/railway/networking#tcp-proxies) (or Postgres `public: true`)  |

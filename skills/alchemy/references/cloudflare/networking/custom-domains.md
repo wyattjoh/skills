@@ -1,6 +1,6 @@
 <!-- source: https://alchemy.run/cloudflare/networking/custom-domains
      upstream: website/src/content/docs/cloudflare/networking/custom-domains.mdx
-     alchemy 2.0.0-beta.75 @ 808ef69 -->
+     alchemy 2.0.0-beta.77 @ c83b454 -->
 
 # Custom domains & routes
 
@@ -112,6 +112,12 @@ The canonical domain leads `worker.urls` (ahead of `workers.dev`), and
 redirect hostnames never appear there — they serve no content. Their
 redirect rules live in the zone's `http_request_dynamic_redirect`
 phase, which runs before Workers.
+
+Set `previews: true` so [Worker Previews](/cloudflare/compute/previews)
+of this Worker are served at `<preview-name>.api.example.com`. That is
+a parent setting — enable it on the production Worker, not on the
+Preview Worker. Use a dedicated hostname (`previews.example.com`) if
+production already has subdomains, so the wildcard does not collide.
 
 ## Route a hostname pattern to a Worker
 

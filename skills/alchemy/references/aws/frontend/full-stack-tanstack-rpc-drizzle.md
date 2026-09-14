@@ -1,6 +1,6 @@
 <!-- source: https://alchemy.run/aws/frontend/full-stack-tanstack-rpc-drizzle
      upstream: website/src/content/docs/aws/frontend/full-stack-tanstack-rpc-drizzle.mdx
-     alchemy 2.0.0-beta.75 @ 808ef69 -->
+     alchemy 2.0.0-beta.77 @ c83b454 -->
 
 # Full-stack TanStack Start + RPC + Drizzle
 
@@ -312,7 +312,7 @@ export default Alchemy.Stack(
 ```
 
 Yielding `Backend` deploys the function *and* everything it declared inside
-Init — the DSQL cluster and the execution role with the cluster-scoped
+the constructor — the DSQL cluster and the execution role with the cluster-scoped
 `dsql:DbConnectAdmin` statement.
 
 :::caution

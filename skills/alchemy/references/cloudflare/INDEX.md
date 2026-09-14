@@ -1,6 +1,6 @@
 # cloudflare index
 
-73 pages. Build and deploy full applications on Cloudflare with Alchemy — one Worker runtime plus resources like Durable Objects, D1, R2, Queues, and Hyperdrive, wired together by typed bindings.
+75 pages. Build and deploy full applications on Cloudflare with Alchemy — one Worker runtime plus resources like Durable Objects, D1, R2, Queues, and Hyperdrive, wired together by typed bindings.
 
 | Page | File | Covers |
 | --- | --- | --- |
@@ -39,12 +39,13 @@
 | Durable Objects | `compute/durable-objects.md` | Durable Objects are globally-unique stateful instances with transactional storage — define one as an Effect, persist state per key, expose typed RPC methods, and stream values back to the caller. |
 | Gradual deployments | `compute/gradual-deployments.md` | Roll out Worker deploys incrementally — upload preview versions, canary a percentage of live traffic, ramp to 100%, pin users to a version during the rollout, and verify which version served each request. |
 | Accept WebSockets | `compute/hibernatable-websockets.md` | Accept WebSocket connections in a Durable Object, broadcast between peers, and survive Cloudflare's hibernation. |
+| Worker Previews | `compute/previews.md` | Deploy a branch or pull request as a first-class Preview of another Worker — its own URL, bindings, and isolated Durable Object state, without touching production traffic. |
 | Python Workers | `compute/python-workers.md` | Deploy Cloudflare Python Workers by pointing main at a .py file — alchemy uploads the modules, vendors pyproject.toml dependencies with uv, and serves them locally through workerd's built-in Pyodide. |
 | Rate limiting | `compute/rate-limiting.md` | Throttle requests inside a Worker with Cloudflare's Rate Limiting binding — declare the limit on the binding, count arbitrary keys at runtime, handle failures as typed errors. |
 | Run a Container | `compute/run-a-container.md` | Run a long-lived container alongside a Durable Object, expose RPC methods, and proxy HTTP requests to ports inside the container. |
 | Worker Loader | `compute/worker-loader.md` | Load and run ephemeral Workers at runtime from inline source — each in its own sandboxed isolate, with optional outbound-network control and typed RPC entrypoints. |
 | Workers for Platforms | `compute/workers-for-platforms.md` | Run your customers' Workers in your own account — create a dispatch namespace, upload user Workers into it, and route requests from a platform Worker with the Get binding. |
-| Workers | `compute/workers.md` | Cloudflare Workers are the compute runtime of every alchemy app — define infrastructure and runtime behavior in one Effect program, bind resources with full type safety, and call other Workers over schemaless RPC. |
+| Workers | `compute/workers.md` | Cloudflare Workers are the compute Runtime of every Alchemy app — declare the Worker and its handler in one file, bind resources with full type safety, and call other Workers over schemaless RPC. |
 | Workflows | `compute/workflows.md` | Cloudflare Workflows run durable multi-step jobs — define a typed workflow class, checkpoint steps with task and sleep, trigger instances from a Worker, and poll status until completion. |
 
 ## data/
@@ -112,6 +113,7 @@
 | --- | --- | --- |
 | Analytics Engine | `observability/analytics-engine.md` | Write time-series data points from a Worker with Workers Analytics Engine — declare a dataset, bind it with WriteDataset, and query it later over Cloudflare's SQL API. |
 | Ship Worker telemetry to Axiom | `observability/axiom-observability.md` | Declare Axiom datasets, a least-privilege ingest token, and monitors in the same Stack as the Worker that emits the telemetry — or let Cloudflare push Workers Logs to Axiom natively. |
+| Native Workers tracing | `observability/workers-tracing.md` | Mirror Effect spans into Cloudflare Workers Observability with Cloudflare.Telemetry() — the same Layer shape as Axiom.Telemetry, with Cloudflare owning sampling and export. |
 
 ## security/
 

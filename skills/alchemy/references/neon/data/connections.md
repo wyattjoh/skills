@@ -1,6 +1,6 @@
 <!-- source: https://alchemy.run/neon/data/connections
      upstream: website/src/content/docs/neon/data/connections.mdx
-     alchemy 2.0.0-beta.75 @ 808ef69 -->
+     alchemy 2.0.0-beta.77 @ c83b454 -->
 
 # Connections
 

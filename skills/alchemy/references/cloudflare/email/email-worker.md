@@ -1,6 +1,6 @@
 <!-- source: https://alchemy.run/cloudflare/email/email-worker
      upstream: website/src/content/docs/cloudflare/email/email-worker.mdx
-     alchemy 2.0.0-beta.75 @ 808ef69 -->
+     alchemy 2.0.0-beta.77 @ c83b454 -->
 
 # Receive email in a Worker
 

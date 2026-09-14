@@ -1,6 +1,6 @@
 <!-- source: https://alchemy.run/aws/compute/microvms
      upstream: website/src/content/docs/aws/compute/microvms.mdx
-     alchemy 2.0.0-beta.75 @ 808ef69 -->
+     alchemy 2.0.0-beta.77 @ c83b454 -->
 
 # Lambda MicroVMs
 
@@ -25,7 +25,7 @@ code artifact in one of three modes, selected by which prop you set:
 :::caution
 Lambda MicroVMs are a **preview feature**: your account must be onboarded to
 the preview, and effectful/external builds need a bootstrapped Assets bucket
-(`alchemy aws bootstrap`). Builds are asynchronous and can take several
+(`alchemy provider aws bootstrap`). Builds are asynchronous and can take several
 minutes — the provider polls until the image reaches `CREATED` and streams
 build logs to CloudWatch.
 :::

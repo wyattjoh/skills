@@ -1,13 +1,13 @@
 <!-- source: https://alchemy.run/cli/destroy
      upstream: website/src/content/docs/cli/destroy.mdx
-     alchemy 2.0.0-beta.75 @ 808ef69 -->
+     alchemy 2.0.0-beta.77 @ c83b454 -->
 
 # destroy
 
 > Delete every resource in a stack — plan all existing resources for deletion, ask for approval, and remove them in dependency order.
 
 ```sh
-alchemy destroy [file] [options]
+alchemy destroy [options]
 ```
 
 `destroy` deletes every resource in a stack. It computes a plan where all existing resources are marked for deletion, asks for approval, and removes them in dependency order.
@@ -30,11 +30,11 @@ Proceed?
 
 | Option              | Description                                                       |
 | ------------------- | ----------------------------------------------------------------- |
-| `[file]`            | Stack file to destroy (defaults to `alchemy.run.ts`)              |
-| `--stage <name>`    | Stage to destroy (defaults to `dev_$USER`)                        |
+| `--config, -c <file>`            | Stack file to destroy (defaults to `alchemy.run.ts`)              |
+| `--stage <name>`    | Stage to destroy (defaults to `$ALCHEMY_STAGE` or `live_$USER`)   |
 | `--yes`             | Skip the approval prompt                                          |
 | `--dry-run`         | Show what would be deleted without actually deleting              |
-| `--profile <name>`  | Auth profile to use (defaults to `default` or `$ALCHEMY_PROFILE`) |
+| `--profile <name>`  | Auth profile to use (defaults to `$ALCHEMY_PROFILE` or `default`) |
 | `--env-file <path>` | Load environment variables from a file                            |
 
 ## Examples
@@ -43,7 +43,10 @@ Proceed?
 # Destroy a PR preview environment
 alchemy destroy --stage pr-42 --yes
 
-# Destroy your personal dev stage
+# Destroy your personal cloud sandbox
+alchemy destroy --stage live_sam
+
+# Destroy the local-dev stage created by alchemy dev
 alchemy destroy --stage dev_sam
 ```
 

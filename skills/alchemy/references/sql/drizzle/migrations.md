@@ -1,6 +1,6 @@
 <!-- source: https://alchemy.run/sql/drizzle/migrations
      upstream: website/src/content/docs/sql/drizzle/migrations.mdx
-     alchemy 2.0.0-beta.75 @ 808ef69 -->
+     alchemy 2.0.0-beta.77 @ c83b454 -->
 
 # Migrations
 
@@ -143,7 +143,7 @@ drizzle over the instance's own SQLite storage using the
 `drizzle-orm/effect-sqlite-do` integration — the
 same effect-native query surface as [`Drizzle.D1`](/sql/drizzle/d1)
 and [`Drizzle.Postgres`](/sql/drizzle/postgres). It lives in the
-object's inner Effect — the instance init, which runs only in the
+object's inner Effect — the instance constructor, which runs only in the
 deployed object, before any request reaches its methods. The config
 passes the driver's options through — the `relations` make
 `db.query.users.findMany({ with: { posts: true } })` fully typed.

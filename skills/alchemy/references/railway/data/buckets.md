@@ -1,6 +1,6 @@
 <!-- source: https://alchemy.run/railway/data/buckets
      upstream: website/src/content/docs/railway/data/buckets.mdx
-     alchemy 2.0.0-beta.75 @ 808ef69 -->
+     alchemy 2.0.0-beta.77 @ c83b454 -->
 
 # Buckets
 
@@ -43,7 +43,7 @@ const data = yield* Railway.Bucket("Data", {
 
 ## Put and get objects
 
-Bind `PutObject` / `GetObject` in Service init. Provide the matching
+Bind `PutObject` / `GetObject` in the Service's constructor. Provide the matching
 `*Http` layers.
 
 ```typescript

@@ -1,6 +1,6 @@
 <!-- source: https://alchemy.run/cloudflare/networking/tunnel
      upstream: website/src/content/docs/cloudflare/networking/tunnel.mdx
-     alchemy 2.0.0-beta.75 @ 808ef69 -->
+     alchemy 2.0.0-beta.77 @ c83b454 -->
 
 # Expose private origins with Tunnel
 

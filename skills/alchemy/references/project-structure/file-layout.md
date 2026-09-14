@@ -1,6 +1,6 @@
 <!-- source: https://alchemy.run/project-structure/file-layout
      upstream: website/src/content/docs/project-structure/file-layout.mdx
-     alchemy 2.0.0-beta.75 @ 808ef69 -->
+     alchemy 2.0.0-beta.77 @ c83b454 -->
 
 # File layout
 
@@ -215,7 +215,7 @@ export default Alchemy.Stack(
 It has four jobs: name the Stack, merge Providers, pick a State
 Store, wire units into outputs. The CLI discovers
 `alchemy.run.ts` at the project root automatically; pass a path
-to override (`alchemy deploy ./infra/app.ts`).
+to override (`alchemy deploy --config ./infra/app.ts`).
 
 If `alchemy.run.ts` is growing, something is missing a home in
 `src/`.

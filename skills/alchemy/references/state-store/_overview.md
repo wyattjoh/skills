@@ -1,6 +1,6 @@
 <!-- source: https://alchemy.run/state-store
      upstream: website/src/content/docs/state-store/index.mdx
-     alchemy 2.0.0-beta.75 @ 808ef69 -->
+     alchemy 2.0.0-beta.77 @ c83b454 -->
 
 # State Store
 
@@ -131,7 +131,7 @@ Alchemy.Stack(
   "MyApp",
   {
     providers: Prisma.providers(),
-    state: postgresState({ url: Config.redacted("STATE_DATABASE_URL") }),
+    state: postgresState({ url: Config.Redacted("STATE_DATABASE_URL") }),
   },
   Effect.gen(function* () {
     // ...

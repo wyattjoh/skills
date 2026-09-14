@@ -1,6 +1,6 @@
 <!-- source: https://alchemy.run/cloudflare/frontend/react-router
      upstream: website/src/content/docs/cloudflare/frontend/react-router.mdx
-     alchemy 2.0.0-beta.75 @ 808ef69 -->
+     alchemy 2.0.0-beta.77 @ c83b454 -->
 
 # React Router
 
@@ -182,7 +182,7 @@ secrets:
 export const Website = Cloudflare.Website.Vite("Website", {
 +  env: {
 +    UPLOADS: Uploads,
-+    API_KEY: Config.redacted("API_KEY"),
++    API_KEY: Config.Redacted("API_KEY"),
 +  },
   viteEnvironments: {
     entry: "rsc",
@@ -192,7 +192,7 @@ export const Website = Cloudflare.Website.Vite("Website", {
 ```
 
 `Uploads` is a description, not a deploy — Alchemy provisions the
-real bucket because the Website binds it. `Config.redacted` reads
+real bucket because the Website binds it. `Config.Redacted` reads
 `API_KEY` from your environment at deploy time and binds it as a
 Worker secret — see [Secrets & env](/cloudflare/security/secrets-env).
 

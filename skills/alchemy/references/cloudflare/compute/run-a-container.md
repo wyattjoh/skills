@@ -1,6 +1,6 @@
 <!-- source: https://alchemy.run/cloudflare/compute/run-a-container
      upstream: website/src/content/docs/cloudflare/compute/run-a-container.mdx
-     alchemy 2.0.0-beta.75 @ 808ef69 -->
+     alchemy 2.0.0-beta.77 @ c83b454 -->
 
 # Run a Container
 
@@ -239,7 +239,7 @@ that lives in `Sandbox.runtime.ts` and Rolldown tree-shakes it out.
 
 `yield* Sandbox` hands you a **running** container instance — the
 same typed shape you declared on the class, plus a `getTcpPort`
-helper. Resolve it in the **outer** init phase and expose `exec`
+helper. Resolve it in the **outer** Construction phase and expose `exec`
 from the inner phase as an RPC method:
 
 ```diff lang="typescript"
@@ -266,7 +266,7 @@ captured stdout/stderr/exitCode flow back through the typed shape.
 
 `yield* Sandbox` only resolves once you tell the DO **how** to run
 the container. Provide `Cloudflare.Containers.layer(Sandbox, …)` on
-the DO's init — that layer binds, starts, and monitors the
+the DO's constructor — that layer binds, starts, and monitors the
 container, then satisfies the `Sandbox` tag with the running
 instance:
 

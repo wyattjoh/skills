@@ -1,6 +1,6 @@
 <!-- source: https://alchemy.run/cloudflare/ai/ai-gateway
      upstream: website/src/content/docs/cloudflare/ai/ai-gateway.mdx
-     alchemy 2.0.0-beta.75 @ 808ef69 -->
+     alchemy 2.0.0-beta.77 @ c83b454 -->
 
 # Add an AI Gateway
 
@@ -101,7 +101,7 @@ export default class Api extends Cloudflare.Worker<Api>()(
 ```
 
 `Cloudflare.AI.QueryGatewayBinding` is the runtime side of the
-binding. Provide it once at the bottom of the Init layer chain and
+binding. Provide it once at the bottom of the constructor's layer chain and
 every `QueryGateway(...)` further up will resolve.
 
 ## Build a `LanguageModel` layer
@@ -128,7 +128,7 @@ that satisfies Effect's standard AI service.
 ```
 
 `parameters` is the per-call default; any individual call can still
-override it. The Init phase is the right place to build this layer —
+override it. The Construction phase is the right place to build this layer —
 construction is pure and the binding factory only exists here.
 
 ## Generate text on `/generate`

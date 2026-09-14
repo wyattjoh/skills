@@ -1,6 +1,6 @@
 <!-- source: https://alchemy.run/cloudflare
      upstream: website/src/content/docs/cloudflare/index.mdx
-     alchemy 2.0.0-beta.75 @ 808ef69 -->
+     alchemy 2.0.0-beta.77 @ c83b454 -->
 
 # Cloudflare
 
@@ -74,7 +74,7 @@ New here? [Set up your account](/cloudflare/setup), then start the
 | App shape | Stack |
 | --- | --- |
 | HTTP API | [Worker](/cloudflare/compute/workers) + [D1](/cloudflare/data/d1) — see [Effect HTTP API](/cloudflare/apis/effect-http-api) |
-| Call one Worker from another (internal RPC) | [Worker](/cloudflare/compute/workers) — see [Schemaless RPC](/cloudflare/compute/workers#schemaless-rpc) and the [concept](/apis/schemaless) |
+| Call one Worker from another (internal RPC) | [Worker](/cloudflare/compute/workers) — see [Schemaless RPC](/cloudflare/compute/workers#call-another-worker) and the [concept](/apis/schemaless) |
 | Typed API for external clients | [Effect RPC](/cloudflare/apis/effect-rpc) for Effect clients, [Effect HTTP API](/cloudflare/apis/effect-http-api) for plain HTTP |
 | Real-time / WebSockets | [Durable Objects](/cloudflare/compute/durable-objects) — see [Accept WebSockets](/cloudflare/compute/hibernatable-websockets) |
 | Full-stack app | [Worker](/cloudflare/compute/workers) + a React SPA — see [Add a React SPA](/cloudflare/frontend/vite-spa) or [Frontend frameworks](/cloudflare/frontend/frontends) |

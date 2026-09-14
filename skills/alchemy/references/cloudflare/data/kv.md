@@ -1,6 +1,6 @@
 <!-- source: https://alchemy.run/cloudflare/data/kv
      upstream: website/src/content/docs/cloudflare/data/kv.mdx
-     alchemy 2.0.0-beta.75 @ 808ef69 -->
+     alchemy 2.0.0-beta.77 @ c83b454 -->
 
 # KV
 
@@ -60,7 +60,7 @@ export const Cache = Cloudflare.KV.Namespace("Cache", {
 
 ## Bind it to a Worker
 
-Bind the namespace in the Worker's init phase and use the typed
+Bind the namespace in the Worker's Construction phase and use the typed
 client in the runtime handlers. This Worker stores a value on
 `PUT /?key=` and serves it back on `GET /?key=`:
 

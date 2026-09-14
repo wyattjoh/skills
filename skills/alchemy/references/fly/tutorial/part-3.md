@@ -1,6 +1,6 @@
 <!-- source: https://alchemy.run/fly/tutorial/part-3
      upstream: website/src/content/docs/fly/tutorial/part-3.mdx
-     alchemy 2.0.0-beta.75 @ 808ef69 -->
+     alchemy 2.0.0-beta.77 @ c83b454 -->
 
 # Part 3: Persist Data with a Volume
 
@@ -18,7 +18,7 @@ per replica.
 
 ## Mount a disk into the Service
 
-There is no standalone Volume resource. Inside the Service's init,
+There is no standalone Volume resource. Inside the Service's constructor,
 `Fly.MountVolume({ path, sizeGb })` creates a per-replica disk in
 the Service's app and region:
 
@@ -50,7 +50,7 @@ at runtime it hands you the resolved `mount.path`.
 ## Provide the binding layer
 
 Bindings declare a capability; layers implement it. Provide
-`MountVolumeLive` on the Service's init Effect:
+`MountVolumeLive` on the Service's constructor Effect:
 
 ```diff lang="typescript"
   Effect.gen(function* () {
@@ -64,7 +64,7 @@ Bindings declare a capability; layers implement it. Provide
 ) {}
 ```
 
-## Resolve FileSystem in init
+## Resolve FileSystem in the constructor
 
 Yield `FileSystem` in the outer Effect. Close over it in `fetch`.
 Do not yield it per request.
@@ -85,7 +85,7 @@ Do not yield it per request.
 
 ## Write files with `PUT /:name`
 
-The Volume is a directory. Use `fs` from init:
+The Volume is a directory. Use `fs` from the constructor:
 
 ```diff lang="typescript"
 fetch: Effect.gen(function* () {
@@ -119,7 +119,7 @@ if (request.method === "PUT") {
 
 +if (request.method === "GET") {
 +  const text = yield* fs.readFileString(file).pipe(
-+    Effect.catchAll(() => Effect.succeed(undefined)),
++    Effect.catch(() => Effect.succeed(undefined)),
 +  );
 +  if (text === undefined) {
 +    return HttpServerResponse.text("Not found", { status: 404 });

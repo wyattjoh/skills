@@ -1,6 +1,6 @@
 <!-- source: https://alchemy.run/infrastructure-as-code/resource
      upstream: website/src/content/docs/infrastructure-as-code/resource.mdx
-     alchemy 2.0.0-beta.75 @ 808ef69 -->
+     alchemy 2.0.0-beta.77 @ c83b454 -->
 
 # Resources
 
@@ -358,7 +358,7 @@ alchemy handles it with a two-phase plan; see
 
 Real systems have cycles — two Workers that call each other, a
 Lambda that invokes another Lambda. Alchemy resolves them by
-splitting each Function resource ([Functions & Servers](/infrastructure-as-effects/functions-and-servers)) into a
+splitting each Function resource ([Runtime](/infrastructure-as-effects/runtime)) into a
 **class** that acts as the Tag (the identity) and a **`.make(...)`**
 Layer that supplies the runtime implementation — so the class can be
 referenced before its implementation exists:

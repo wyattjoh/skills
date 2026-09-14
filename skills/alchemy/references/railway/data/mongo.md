@@ -1,6 +1,6 @@
 <!-- source: https://alchemy.run/railway/data/mongo
      upstream: website/src/content/docs/railway/data/mongo.mdx
-     alchemy 2.0.0-beta.75 @ 808ef69 -->
+     alchemy 2.0.0-beta.77 @ c83b454 -->
 
 # Mongo
 
@@ -34,7 +34,7 @@ service and volume are deleted. Data is not copied.
 
 ## Connect from a Service
 
-Yield `ConnectMongo` in Service init. Provide `ConnectMongoHttp`.
+Yield `ConnectMongo` in the Service's constructor. Provide `ConnectMongoHttp`.
 Pass `conn.connectionString` to the MongoDB driver (or
 `Railway.pingMongo`).
 

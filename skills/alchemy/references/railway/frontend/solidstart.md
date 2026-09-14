@@ -1,6 +1,6 @@
 <!-- source: https://alchemy.run/railway/frontend/solidstart
      upstream: website/src/content/docs/railway/frontend/solidstart.mdx
-     alchemy 2.0.0-beta.75 @ 808ef69 -->
+     alchemy 2.0.0-beta.77 @ c83b454 -->
 
 # SolidStart
 

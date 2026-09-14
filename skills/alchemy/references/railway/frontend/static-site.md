@@ -1,6 +1,6 @@
 <!-- source: https://alchemy.run/railway/frontend/static-site
      upstream: website/src/content/docs/railway/frontend/static-site.mdx
-     alchemy 2.0.0-beta.75 @ 808ef69 -->
+     alchemy 2.0.0-beta.77 @ c83b454 -->
 
 # Static sites
 

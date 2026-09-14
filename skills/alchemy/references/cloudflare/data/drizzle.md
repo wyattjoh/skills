@@ -1,6 +1,6 @@
 <!-- source: https://alchemy.run/cloudflare/data/drizzle
      upstream: website/src/content/docs/cloudflare/data/drizzle.mdx
-     alchemy 2.0.0-beta.75 @ 808ef69 -->
+     alchemy 2.0.0-beta.77 @ c83b454 -->
 
 # Add Drizzle ORM
 
@@ -149,7 +149,7 @@ No `drizzle-kit generate` step in your CI — the deploy owns it.
 ## Open the connection with `Drizzle.Postgres`
 
 `Drizzle.Postgres` takes Hyperdrive's connection string and returns a
-typed `EffectPgDatabase`. Bind it once at init and use it directly
+typed `EffectPgDatabase`. Bind it once in the constructor and use it directly
 inside `fetch` — no manual `Client` setup, no `Effect.promise(...)`
 wrappers around queries:
 

@@ -102,19 +102,19 @@ When creating a new extension from scratch:
 
 #### Step 1: Initialize Extension
 
-Use the Raycast CLI to scaffold the extension:
-
-```bash
-npm create raycast-extension@latest
-```
-
-This prompts for:
+Scaffold the extension with Raycast's built-in **Create Extension** command
+(open Raycast, run "Create Extension"), not an npm CLI initializer -- the
+`create-raycast-extension` npm package is unmaintained (last published in 2022) and is not the documented flow. The in-app command prompts for:
 
 - Extension name
-- Extension description
-- Author information
-- Initial command name
-- Template type (TypeScript, AI extension, etc.)
+- One-line description
+- Template (Detail, List, Form, AI extension, etc.)
+- Parent folder to create the extension in
+
+It scaffolds the project locally; from there, `cd` into the extension
+directory and run `npm install`. Requires Node.js 22.14 or higher and npm 7
+or higher.
+(Source: https://developers.raycast.com/basics/create-your-first-extension)
 
 **Alternative: Manual setup** for more control over structure.
 
@@ -557,7 +557,7 @@ npm run evals
 
 ## Tips for Effective Extension Development
 
-1. **Start with templates**: Use `npm create raycast-extension` for best practices out of the box
+1. **Start with templates**: Use Raycast's in-app "Create Extension" command for best practices out of the box
 
 2. **Follow existing patterns**: When adding to existing extensions, match the current code style
 

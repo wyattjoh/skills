@@ -12,7 +12,7 @@ this skill's directory.
 
 <!-- BEGIN GENERATED: corpus-stats -->
 
-Indexed from `alchemy-run/alchemy` @ `808ef69` (2026-08-30), alchemy `2.0.0-beta.75`: **330 topic files** across 23 areas.
+Indexed from `alchemy-run/alchemy` @ `c83b454` (2026-09-14), alchemy `2.0.0-beta.77`: **353 topic files** across 24 areas.
 
 Reference paths mirror site URLs exactly, so a path is derivable without
 searching: `https://alchemy.run/cloudflare/compute/workers` ->
@@ -187,7 +187,7 @@ yourself.
 
 - `references/getting-started.md` -- Install Alchemy and create your first Stack in under two minutes.
 - `references/migrating-from-v1.md` -- Migrate your Alchemy v1 (async/await) project to Alchemy v2.
-- `references/what-is-alchemy.md` -- Alchemy is an Infrastructure-as-Effects framework that combines cloud infrastructure and application logic into a single type-safe program powered by Effect.
+- `references/what-is-alchemy.md` -- Alchemy is Infrastructure as Code built in pure Effect, with Infrastructure as Effects on top. Declare your cloud resources and the code that runs on them in one type-safe TypeScript program, and deploy it with one command.
 
 ### Areas
 
@@ -195,16 +195,17 @@ yourself.
 - `references/aws/` (51) -- Build AWS applications with Alchemy — a runtime (usually Lambda) plus typed resources, wired together by bindings that mint least-privilege IAM policies.
 - `references/axiom/` (6) -- Observability as resources — OTEL datasets, ingest tokens, monitors, notifiers, and dashboards declared next to the code that emits the data.
 - `references/better-auth/` (3) -- Typed authentication as an Effect — one BetterAuth() call, a database Layer per platform, and schema migrations that run themselves at deploy.
-- `references/cli/` (15) -- Every alchemy command at a glance — the command map, common options, and how the interactive TUI decides when to render.
-- `references/cloudflare/` (73) -- Build and deploy full applications on Cloudflare with Alchemy — one Worker runtime plus resources like Durable Objects, D1, R2, Queues, and Hyperdrive, wired together by typed bindings.
+- `references/cli/` (14) -- Every alchemy command at a glance — the command map, common options, and how the interactive TUI decides when to render.
+- `references/cloudflare/` (75) -- Build and deploy full applications on Cloudflare with Alchemy — one Worker runtime plus resources like Durable Objects, D1, R2, Queues, and Hyperdrive, wired together by typed bindings.
 - `references/command/` (3) -- Alchemy's cloud-agnostic primitives for local processes in the deploy graph — memoized builds, one-off commands, and dev servers.
 - `references/docker/` (5) -- Images, containers, networks, and volumes as Stack resources, driven through your active Docker CLI context.
 - `references/environments/` (7) -- Stages, per-environment config, secrets, local dev, and CI.
 - `references/fly/` (31) -- Deploy Effect programs to Fly.io as Apps, Machines, Services, and Sprites.
+- `references/git/` (22) -- A pluggable, embeddable, self-hostable git server on Cloudflare Workers, Durable Objects, and R2. Smart HTTP for any client, a typed REST plane with pull requests, and a GitHub-compatible API, assembled in one file.
 - `references/github/` (5) -- Repositories, Actions secrets and variables, webhooks, and repository event sources as Stack resources — the glue for CI/CD.
 - `references/hetzner/` (25) -- Build applications on Hetzner Cloud with Alchemy — Servers running your Effect programs as Services, plus volumes, networks, firewalls, load balancers, and DNS, all in one typed program.
 - `references/infrastructure-as-code/` (10) -- The noun graph: Stacks, Resources, Actions, Outputs, references, lifecycle, providers.
-- `references/infrastructure-as-effects/` (10) -- One Effect program models both your runtime code and the infrastructure it runs on — Functions carry code, Bindings wire resources into them, Phases split deploy from runtime, Layers package it all behind typed services.
+- `references/infrastructure-as-effects/` (10) -- One Effect program models both your runtime code and the infrastructure it runs on — Runtimes carry code, Bindings wire resources into them, Phases split deploy from runtime, Layers package it all behind typed services.
 - `references/neon/` (7) -- Serverless Postgres with copy-on-write branching — projects and branches as Stack resources, with built-in SQL migrations.
 - `references/planetscale/` (9) -- Serverless MySQL (Vitess) and Postgres with database branching — databases, branches, and credentials as Stack resources.
 - `references/prisma/` (9) -- Prisma Postgres and Prisma Compute — projects, databases, connections, and deployed apps as Stack resources, with a zero-config local database in dev.
@@ -212,7 +213,7 @@ yourself.
 - `references/railway/` (33) -- Deploy Effect programs to Railway as Projects, Services, databases, Volumes, and Buckets.
 - `references/sql/` (10) -- One home for SQL in alchemy — low-level effect-sql clients, Drizzle ORM, schema migrations in the deploy graph, and the per-execution connection lifecycle.
 - `references/state-store/` (2) -- How Alchemy persists resource state between deploys to compute diffs and track infrastructure.
-- `references/testing/` (5) -- How Alchemy tests work — real clouds, one Stack deploy per suite, isolated stages, deploy → assert → destroy.
+- `references/testing/` (5) -- How Alchemy tests work — real clouds by default, local emulators on demand, one Stack deploy per suite, isolated stages, deploy → assert → destroy.
 
 Each area has an `INDEX.md` listing every page with what it covers. Read
 it only to disambiguate; read the topic file to answer.
@@ -244,7 +245,7 @@ axiom/                     _overview data/ingest guides/alerting guides/annotati
                            guides/dashboards setup
 better-auth/               _overview database-layers migrations
 cli/                       _overview adopting-resources aws cloudflare deploy destroy
-                           dev inspecting-state login logs nuke plan profile state tail
+                           dev drift inspecting-state logs nuke plan profile state
 cloudflare/                _overview ai/ai-gateway ai/ai-search ai/effect-ai
                            ai/release-agent ai/vectorize ai/workers-ai
                            apis/effect-http-api apis/effect-rpc apis/schemaless-rpc
@@ -252,7 +253,7 @@ cloudflare/                _overview ai/ai-gateway ai/ai-search ai/effect-ai
                            compute/cache compute/containers
                            compute/cross-worker-durable-object compute/durable-objects
                            compute/gradual-deployments compute/hibernatable-websockets
-                           compute/python-workers compute/rate-limiting
+                           compute/previews compute/python-workers compute/rate-limiting
                            compute/run-a-container compute/worker-loader
                            compute/workers-for-platforms compute/workers
                            compute/workflows data/artifacts
@@ -269,7 +270,8 @@ cloudflare/                _overview ai/ai-gateway ai/ai-search ai/effect-ai
                            messaging/github-events messaging/queues
                            networking/custom-domains networking/domains
                            networking/tunnel observability/analytics-engine
-                           observability/axiom-observability security/access
+                           observability/axiom-observability
+                           observability/workers-tracing security/access
                            security/secrets-env security/secrets-store
                            security/turnstile setup tutorial/part-1 tutorial/part-2
                            tutorial/part-3 tutorial/part-4 tutorial/part-5
@@ -288,6 +290,13 @@ fly/                       _overview compute/apps compute/machines compute/regio
                            frontend/waku frontend/websites networking setup
                            tutorial/part-1 tutorial/part-2 tutorial/part-3
                            tutorial/part-4
+git/                       _overview blocks/_overview blocks/auth blocks/blob-store
+                           blocks/hasher blocks/registry blocks/repositories
+                           blocks/server clone-and-push getting-started github-api
+                           pull-requests recipes/_overview recipes/cloudflare-aws
+                           recipes/cloudflare recipes/scaling recipes/your-own-store
+                           repositories tutorial/part-1 tutorial/part-2 tutorial/part-3
+                           tutorial/part-4
 github/                    _overview actions-config events repository setup
 hetzner/                   _overview compute/servers compute/services data/volumes
                            frontend/astro frontend/foldkit frontend/nextjs frontend/nuxt
@@ -300,8 +309,7 @@ hetzner/                   _overview compute/servers compute/services data/volum
 infrastructure-as-code/    action custom-provider local-provider outputs provider
                            references renaming resource-lifecycle resource stack
 infrastructure-as-effects/ _overview binding circular-bindings custom-runtime
-                           event-sources functions-and-servers layers phases sinks
-                           telemetry
+                           event-sources layers phases runtime sinks telemetry
 neon/                      _overview data/branching data/connections data/migrations
                            guides/drizzle guides/preview-branches setup
 planetscale/               _overview data/backups data/credentials data/migrations

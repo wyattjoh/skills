@@ -1,13 +1,13 @@
 <!-- source: https://alchemy.run/cli/plan
      upstream: website/src/content/docs/cli/plan.mdx
-     alchemy 2.0.0-beta.75 @ 808ef69 -->
+     alchemy 2.0.0-beta.77 @ c83b454 -->
 
 # plan
 
 > Preview what would change without applying anything. Equivalent to alchemy deploy --dry-run.
 
 ```sh
-alchemy plan [file] [options]
+alchemy plan [options]
 ```
 
 `plan` previews what would change without applying anything — it is equivalent to `alchemy deploy --dry-run`.
@@ -23,14 +23,48 @@ The plan uses `+` for creates, `~` for updates, `-` for deletes,
 and `•` for no-ops. No approval prompt is shown and no changes are
 made.
 
+## Detailed property changes
+
+Pass `--detailed` to show declared resource inputs as YAML:
+
+```sh
+alchemy plan --detailed
+```
+
+```text
+Plan: 1 to create, 1 to update
+
++ EventsQueue
+  properties:
+    fifo: true
+    visibilityTimeout: 30
+
+~ OrderHandler
+  before:
+    memorySize: 512
+    env:
+      MODE: development
+  after:
+    memorySize: 1024
+    env:
+      MODE: production
+```
+
+Creates show their desired properties. Updates and replacements show the
+previously persisted declared properties followed by the desired properties;
+this is a declaration diff, not a live-cloud drift read. Outputs appear as
+`(known after apply)`, computed values as `(computed)`, and secrets remain
+redacted. Deletes stay compact.
+
 ## Flags
 
 | Option              | Description                                                       |
 | ------------------- | ----------------------------------------------------------------- |
-| `[file]`            | Stack file to plan (defaults to `alchemy.run.ts`)                 |
-| `--stage <name>`    | Stage to plan against (defaults to `dev_$USER`)                   |
-| `--profile <name>`  | Auth profile to use (defaults to `default` or `$ALCHEMY_PROFILE`) |
+| `--config, -c <file>`            | Stack file to plan (defaults to `alchemy.run.ts`)                 |
+| `--stage <name>`    | Stage to plan against (defaults to `$ALCHEMY_STAGE` or `live_$USER`) |
+| `--profile <name>`  | Auth profile to use (defaults to `$ALCHEMY_PROFILE` or `default`) |
 | `--env-file <path>` | Load environment variables from a file                            |
+| `--detailed`        | Show declared resource properties as YAML                        |
 
 ## Where next
 

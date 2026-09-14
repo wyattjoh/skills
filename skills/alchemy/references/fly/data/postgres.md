@@ -1,6 +1,6 @@
 <!-- source: https://alchemy.run/fly/data/postgres
      upstream: website/src/content/docs/fly/data/postgres.mdx
-     alchemy 2.0.0-beta.75 @ 808ef69 -->
+     alchemy 2.0.0-beta.77 @ c83b454 -->
 
 # Postgres
 
@@ -41,7 +41,7 @@ deleted. Data is not copied.
 
 ## Connect from a Service
 
-Yield `ConnectPostgres` in Service init. Provide
+Yield `ConnectPostgres` in the Service's constructor. Provide
 `ConnectPostgresHttp`. Pass the connection string to Drizzle or
 SQL.
 
@@ -67,7 +67,7 @@ export default class Api extends Fly.Service<Api>()(
 
 `connectionString` is the cluster's pooled PgBouncer URI Output.
 `directConnectionString` is the direct URI. Both come from
-`Fly.Postgres`, packed into the Service env — not `Config.redacted`.
+`Fly.Postgres`, packed into the Service env — not `Config.Redacted`.
 
 ## Migrations
 
@@ -151,7 +151,7 @@ Flipping `postgis` later is ignored.
 binds the cluster.
 [Drizzle on Postgres](/sql/drizzle/postgres) is the schema-to-query
 flow.
-[Secrets](/fly/data/secrets) covers `Config.redacted` for values
+[Secrets](/fly/data/secrets) covers `Config.Redacted` for values
 from `.env`.
 The [`Postgres` reference](/providers/fly/postgres) lists every
 prop.

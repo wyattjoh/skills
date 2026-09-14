@@ -1,6 +1,6 @@
 <!-- source: https://alchemy.run/fly/compute/apps
      upstream: website/src/content/docs/fly/compute/apps.mdx
-     alchemy 2.0.0-beta.75 @ 808ef69 -->
+     alchemy 2.0.0-beta.77 @ c83b454 -->
 
 # Apps
 

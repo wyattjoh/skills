@@ -117,16 +117,20 @@ prop.
 
 ## Result Handling
 
-Effectful atoms surface a `Result`. Note this is v4's `Result` (v3's `Either` renamed), the same type
-`Effect.result` produces.
+Effectful atoms surface an `AsyncResult` (from `effect/unstable/reactivity`), not the plain `Result` that
+`Effect.result` produces. `AsyncResult` adds the `Initial` state an atom is in before the effect has resolved, and
+`match` requires all three branches:
 
 ```typescript
+import { AsyncResult } from "effect/unstable/reactivity";
+
 function UserProfile() {
   const userResult = useAtomValue(userAtom);
 
-  return Result.match(userResult, {
-    onSuccess: (user) => <div>{user.name}</div>,
-    onFailure: (error) => <div>Error: {String(error)}</div>,
+  return AsyncResult.match(userResult, {
+    onInitial: () => <div>Loading...</div>,
+    onSuccess: (result) => <div>{result.value.name}</div>,
+    onFailure: (result) => <div>Error: {String(result.cause)}</div>,
   });
 }
 ```
@@ -147,16 +151,23 @@ const handleSave = async () => {
 ## Persistence and URL State
 
 ```typescript
-// Bind to a URL search parameter
+import { BrowserKeyValueStore } from "@effect/platform-browser";
+import { Schema } from "effect";
+
+// Bind to a URL search parameter. Without `schema` the value is the raw
+// string; a synchronous, context-free schema decodes/encodes it.
 const pageAtom = Atom.searchParam("page", {
-  decode: (s) => parseInt(s ?? "1", 10),
-  encode: (n) => n.toString(),
+  schema: Schema.NumberFromString,
 });
 
-// Persist to key-value storage
+// Persist to key-value storage. `runtime` (built from a KeyValueStore layer)
+// and `schema` are required; `defaultValue` is a thunk.
+const kvsRuntime = Atom.runtime(BrowserKeyValueStore.layerLocalStorage);
 const settingsAtom = Atom.kvs({
+  runtime: kvsRuntime,
   key: "app-settings",
-  defaultValue: { theme: "dark" },
+  schema: Schema.Struct({ theme: Schema.String }),
+  defaultValue: () => ({ theme: "dark" }),
 });
 ```
 

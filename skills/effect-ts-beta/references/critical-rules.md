@@ -45,24 +45,25 @@ the `Ref`", so passing a `Ref` where the value was meant silently compiled.
 
 These fail at runtime or type-check time, and the error messages rarely point at the rename:
 
-| v3                           | v4                                       |
-| ---------------------------- | ---------------------------------------- |
-| `Effect.catchAll`            | `Effect.catch`                           |
-| `Effect.catchAllCause`       | `Effect.catchCause`                      |
-| `Effect.catchAllDefect`      | `Effect.catchDefect`                     |
-| `Effect.catchSome`           | `Effect.catchFilter`                     |
-| `Effect.fork`                | `Effect.forkChild`                       |
-| `Effect.forkDaemon`          | `Effect.forkDetach`                      |
-| `Effect.locally`             | `Effect.provideService` with a Reference |
-| `Effect.Service`             | `Context.Service` with `make`            |
-| `Context.Tag`                | `Context.Service`                        |
-| `Either`                     | `Result`                                 |
-| `FiberRef.*`                 | `References.*`                           |
-| `Scope.extend`               | `Scope.provide`                          |
-| `SubscriptionRef.unsafeMake` | `SubscriptionRef.makeUnsafe`             |
+| v3                      | v4                                       |
+| ----------------------- | ---------------------------------------- |
+| `Effect.catchAll`       | `Effect.catch`                           |
+| `Effect.catchAllCause`  | `Effect.catchCause`                      |
+| `Effect.catchAllDefect` | `Effect.catchDefect`                     |
+| `Effect.catchSome`      | `Effect.catchFilter`                     |
+| `Effect.fork`           | `Effect.forkChild`                       |
+| `Effect.forkDaemon`     | `Effect.forkDetach`                      |
+| `Effect.locally`        | `Effect.provideService` with a Reference |
+| `Effect.Service`        | `Context.Service` with `make`            |
+| `Context.Tag`           | `Context.Service`                        |
+| `Either`                | `Result`                                 |
+| `FiberRef.*`            | `References.*`                           |
+| `Scope.extend`          | `Scope.provide`                          |
 
-The `unsafe` prefix was moved to a `Unsafe` suffix throughout v4. There are zero `unsafe*` exports left in the core
-package, so any `unsafeX` call is a v3 leftover.
+The `unsafe` prefix was moved to a `Unsafe` suffix on the constructors that kept one (`Equal.byReferenceUnsafe`,
+`Duration.fromInputUnsafe`), so any `unsafeX` call is a v3 leftover. `SubscriptionRef` is the exception, not an
+example of the rename: v4's `SubscriptionRef` has no unsafe or synchronous constructor at all, so
+`SubscriptionRef.unsafeMake` has no v4 replacement — always `yield* SubscriptionRef.make(initial)`.
 
 ## INEFFECTIVE: try-catch in Effect.gen
 

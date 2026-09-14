@@ -6,7 +6,7 @@
 | --- | --- | --- |
 | AWS | `_overview.md` | Build AWS applications with Alchemy — a runtime (usually Lambda) plus typed resources, wired together by bindings that mint least-privilege IAM policies. |
 | Local development | `local-development.md` | alchemy dev runs your AWS stack on your machine — Lambda in Docker containers, local S3/DynamoDB/SQS, event sources firing, hot reload — with no AWS account or credentials required. |
-| Setup | `setup.md` | Install Alchemy and connect it to your AWS account — SSO, environment variables, or stored access keys. |
+| Setup | `setup.md` | Connect Alchemy to AWS with SSO, stored access keys, or CI environment credentials. |
 
 ## ai/
 

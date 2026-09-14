@@ -1,6 +1,6 @@
 <!-- source: https://alchemy.run/railway/tutorial/part-1
      upstream: website/src/content/docs/railway/tutorial/part-1.mdx
-     alchemy 2.0.0-beta.75 @ 808ef69 -->
+     alchemy 2.0.0-beta.77 @ c83b454 -->
 
 # Part 1: Your First Project
 

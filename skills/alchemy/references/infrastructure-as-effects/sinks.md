@@ -1,6 +1,6 @@
 <!-- source: https://alchemy.run/infrastructure-as-effects/sinks
      upstream: website/src/content/docs/infrastructure-as-effects/sinks.mdx
-     alchemy 2.0.0-beta.75 @ 808ef69 -->
+     alchemy 2.0.0-beta.77 @ c83b454 -->
 
 # Sinks
 
@@ -18,7 +18,7 @@ minimal IAM to go with it.
 ## A Sink in a constructor
 
 Like every Binding, a Sink is declared in the
-[Effectful Constructor](/infrastructure-as-effects/functions-and-servers#the-effectful-constructor-pattern)
+[Effectful Constructor](/infrastructure-as-effects/runtime#the-effectful-constructor-pattern)
 and used in the interface it returns:
 
 ```typescript

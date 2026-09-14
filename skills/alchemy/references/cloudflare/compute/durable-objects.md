@@ -1,6 +1,6 @@
 <!-- source: https://alchemy.run/cloudflare/compute/durable-objects
      upstream: website/src/content/docs/cloudflare/compute/durable-objects.mdx
-     alchemy 2.0.0-beta.75 @ 808ef69 -->
+     alchemy 2.0.0-beta.77 @ c83b454 -->
 
 # Durable Objects
 
@@ -38,7 +38,7 @@ import * as Effect from "effect/Effect";
 export default class Counter extends Cloudflare.DurableObject<Counter>()(
   "Counter",
   Effect.gen(function* () {
-    // Outer (init): resolve the instance state and shared
+    // Outer (Construction): resolve the instance state and shared
     // dependencies here.
     return Effect.gen(function* () {
       // Inner: return the public API for this instance.
@@ -58,7 +58,7 @@ ceremony — the rest of your DO code looks completely normal.
 
 Each DO instance has its own key/value storage, backed by SQLite.
 Resolve `Cloudflare.DurableObjectState` in the **outer** Effect,
-then pull the current count out of storage in the inner init so it
+then pull the current count out of storage in the inner constructor so it
 survives restarts and hibernation:
 
 ```diff lang="typescript"
@@ -76,7 +76,7 @@ Cloudflare exposes for `storage`, `setAlarm`, `acceptWebSocket`,
 and friends. We'll use it more in the next part for WebSockets.
 
 :::note
-You resolve the *reference* to `state` in the outer (init) Effect,
+You resolve the *reference* to `state` in the outer (Construction) Effect,
 but its methods — like `storage.get` — are
 [colored with `RuntimeContext`](/infrastructure-as-effects/layers#runtime-as-a-colored-function),
 so you can only *use* them in the inner (runtime) Effect. That's why
@@ -114,7 +114,7 @@ fully type-checked through the Cloudflare RPC machinery.
 
 ## Bind the DO to the Worker
 
-Yield the `Counter` class in your Worker's init phase to get a
+Yield the `Counter` class in your Worker's Construction phase to get a
 namespace handle:
 
 ```diff lang="typescript"
@@ -139,7 +139,7 @@ export default Cloudflare.Worker(
 );
 ```
 
-`yield* Counter` in init registers the DO with the Worker
+`yield* Counter` in the constructor registers the DO with the Worker
 (binding + class-migration metadata) and hands you the namespace.
 
 ## Call the DO from `fetch`
@@ -447,7 +447,7 @@ ignored — placement is only observable once deployed.
 ## Call scope vs isolate scope
 
 A Durable Object shares its isolate's layer build with the Worker
-that hosts it — the entrypoint's init runs **once per isolate**, and
+that hosts it — the entrypoint's constructor runs **once per isolate**, and
 every DO activation (including hibernatable-WebSocket wakes, which
 re-run the constructor) reuses it. Each method call, `fetch`,
 `alarm`, or WebSocket event then runs with a **fresh `Scope`**,
@@ -457,11 +457,11 @@ returned, and a returned `Stream` keeps the scope alive until it
 finishes draining.
 
 As everywhere on workerd, there is no isolate-teardown hook: cleanup
-belongs in methods (call scope), not in the constructor or init.
+belongs in methods (call scope), not in the class constructor or the Construction phase.
 Per-call resources like `Drizzle.Postgres` pools open lazily inside
 the method and close with its scope (see the
 [SQL connection lifecycle](/sql/effect-sql/lifecycle)). See
-[Instance scope vs request scope](/infrastructure-as-effects/functions-and-servers#instance-scope-vs-request-scope)
+[Instance scope vs request scope](/infrastructure-as-effects/runtime#instance-scope-vs-request-scope)
 for the model across all runtimes.
 
 ## Where next
@@ -483,7 +483,7 @@ Related:
 - [Workers](/cloudflare/compute/workers) — the runtime every DO is reached
   through.
 - [Drizzle migrations](/sql/drizzle/migrations#durable-object-migrations) —
-  run drizzle-kit's `durable-sqlite` migrations inside the object at init.
+  run drizzle-kit's `durable-sqlite` migrations inside the object in the constructor.
 
 Reference:
 

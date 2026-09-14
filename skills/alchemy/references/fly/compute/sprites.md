@@ -1,6 +1,6 @@
 <!-- source: https://alchemy.run/fly/compute/sprites
      upstream: website/src/content/docs/fly/compute/sprites.mdx
-     alchemy 2.0.0-beta.75 @ 808ef69 -->
+     alchemy 2.0.0-beta.77 @ c83b454 -->
 
 # Sprites
 
@@ -43,7 +43,7 @@ a Sprite service on `port` (default `3000`).
 
 ## Serve HTTP with `fetch`
 
-Return `fetch` from the init Effect to boot an HTTP server. The
+Return `fetch` from the constructor Effect to boot an HTTP server. The
 Sprite URL proxies to `port`.
 
 ```diff lang="typescript"
@@ -98,11 +98,11 @@ Fly's API default is `sprite`. Alchemy defaults to `public` so a
 
 ## Config
 
-Yield `Config` in init. Alchemy reads the value from the env of
+Yield `Config` in the constructor. Alchemy reads the value from the env of
 whoever deploys and writes it onto the Sprite. Do not pass
 `env: { ... }` on a Sprite.
 
-Yield `FileSystem.FileSystem` in init, never inside `fetch`.
+Yield `FileSystem.FileSystem` in the constructor, never inside `fetch`.
 
 ```typescript
 import * as Config from "effect/Config";
@@ -113,7 +113,7 @@ export default class Box extends Fly.Sprite<Box>()(
   "Box",
   { main: import.meta.url },
   Effect.gen(function* () {
-    const apiKey = yield* Config.redacted("API_KEY");
+    const apiKey = yield* Config.Redacted("API_KEY");
     const fs = yield* FileSystem.FileSystem;
     yield* fs.makeDirectory("/tmp", { recursive: true });
 
@@ -185,5 +185,5 @@ deletes the old one.
 ## Where next
 
 [Services](/fly/compute/services) are always-on Machines on an App.
-[Secrets](/fly/data/secrets) covers `Config.redacted`.
+[Secrets](/fly/data/secrets) covers `Config.Redacted`.
 The [`Sprite` reference](/providers/fly/sprite) lists every prop.

@@ -1,6 +1,6 @@
 <!-- source: https://alchemy.run/cloudflare/frontend/astro
      upstream: website/src/content/docs/cloudflare/frontend/astro.mdx
-     alchemy 2.0.0-beta.75 @ 808ef69 -->
+     alchemy 2.0.0-beta.77 @ c83b454 -->
 
 # Astro
 
@@ -104,13 +104,13 @@ secrets:
 export const Website = Cloudflare.Website.Astro("Website", {
 +  env: {
 +    CACHE: Cache,
-+    API_KEY: Config.redacted("API_KEY"),
++    API_KEY: Config.Redacted("API_KEY"),
 +  },
 });
 ```
 
 `Cache` is a description, not a deploy — Alchemy provisions the real
-namespace because the Website binds it. `Config.redacted` reads
+namespace because the Website binds it. `Config.Redacted` reads
 `API_KEY` from your environment at deploy time and binds it as a
 Worker secret — see [Secrets & env](/cloudflare/security/secrets-env).
 

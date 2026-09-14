@@ -1,6 +1,6 @@
 <!-- source: https://alchemy.run/github/events
      upstream: website/src/content/docs/github/events.mdx
-     alchemy 2.0.0-beta.75 @ 808ef69 -->
+     alchemy 2.0.0-beta.77 @ c83b454 -->
 
 # Webhooks & events
 
@@ -34,7 +34,7 @@ yield* GitHub.Webhook("ci-webhook", {
 
 `events` defaults to `["push"]`; pass `["*"]` to receive every event
 GitHub emits. The `secret` (a `Redacted` string, e.g. from
-`Config.redacted` — see [Secrets & env](/cloudflare/security/secrets-env))
+`Config.Redacted` — see [Secrets & env](/cloudflare/security/secrets-env))
 makes GitHub sign each delivery with `HMAC-SHA256` in the
 `X-Hub-Signature-256` header so your receiver can verify the payload
 came from GitHub.

@@ -1,6 +1,6 @@
 <!-- source: https://alchemy.run/railway/data/mysql
      upstream: website/src/content/docs/railway/data/mysql.mdx
-     alchemy 2.0.0-beta.75 @ 808ef69 -->
+     alchemy 2.0.0-beta.77 @ c83b454 -->
 
 # MySQL
 
@@ -33,7 +33,7 @@ service and volume are deleted. Data is not copied.
 
 ## Connect from a Service
 
-Yield `ConnectMySQL` in Service init. Provide
+Yield `ConnectMySQL` in the Service's constructor. Provide
 `ConnectMySQLHttp`. Pass `conn.connectionString` to Drizzle or SQL.
 
 ```typescript
@@ -62,7 +62,7 @@ export default class Api extends Railway.Service<Api>()(
 
 `connectionString` is the private URI
 (`{name}.railway.internal:3306`). Packed into the Service env — not
-`Config.redacted`.
+`Config.Redacted`.
 
 To store Railway's `${{Db.MYSQL_URL}}` template instead of a
 resolved URI, pass [`Railway.ref`](/providers/railway/ref)

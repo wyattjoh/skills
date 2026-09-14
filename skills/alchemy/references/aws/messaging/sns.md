@@ -1,6 +1,6 @@
 <!-- source: https://alchemy.run/aws/messaging/sns
      upstream: website/src/content/docs/aws/messaging/sns.mdx
-     alchemy 2.0.0-beta.75 @ 808ef69 -->
+     alchemy 2.0.0-beta.77 @ c83b454 -->
 
 # SNS
 
@@ -53,7 +53,7 @@ everything else updates in place.
 
 ## Publish from a Lambda
 
-Bind `SNS.Publish(topic)` in the function's init phase and call
+Bind `SNS.Publish(topic)` in the function's Construction phase and call
 it from runtime handlers. The binding quietly attaches
 `sns:Publish` scoped to the topic ARN to the function's
 execution role:

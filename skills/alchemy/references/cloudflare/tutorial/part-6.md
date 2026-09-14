@@ -1,6 +1,6 @@
 <!-- source: https://alchemy.run/cloudflare/tutorial/part-6
      upstream: website/src/content/docs/cloudflare/tutorial/part-6.mdx
-     alchemy 2.0.0-beta.75 @ 808ef69 -->
+     alchemy 2.0.0-beta.77 @ c83b454 -->
 
 # Part 6: Observability
 
@@ -51,7 +51,7 @@ export default Alchemy.Stack(
 ```
 
 If you haven't connected an Axiom account yet, run through
-[Axiom setup](/axiom/setup) first — `alchemy login` picks up
+[Axiom setup](/axiom/setup) first. The Axiom provider reads
 `AXIOM_TOKEN` or a stored credential.
 
 ## Create a dataset for traces
@@ -264,6 +264,9 @@ You've completed the tutorial. You now know how to:
 
 ## What's next
 
+- [Infrastructure as Effects](/infrastructure-as-effects) — the model
+  behind everything you just built: Runtimes, Bindings, Layers, and
+  the two phases
 - [Telemetry](/infrastructure-as-effects/telemetry) — how the
   built-in telemetry works across every runtime (Workers, Durable
   Objects, Workflows, Lambda, containers)

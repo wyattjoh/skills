@@ -1,10 +1,10 @@
 <!-- source: https://alchemy.run/environments/stages
      upstream: website/src/content/docs/environments/stages.mdx
-     alchemy 2.0.0-beta.75 @ 808ef69 -->
+     alchemy 2.0.0-beta.77 @ c83b454 -->
 
 # Stages
 
-> Stages are isolated instances of a Stack — dev_sam, staging, prod, pr-42 — each with their own state and physical names.
+> Stages are isolated instances of a Stack — live_sam, dev_sam, staging, prod, pr-42 — each with their own state and physical names.
 
 A **stage** is an isolated instance of a [Stack](/infrastructure-as-code/stack).
 Every deploy targets exactly one stage, and resources from different
@@ -14,34 +14,51 @@ dedicated environment — all from one program.
 
 ## The default stage
 
-If you don't pass `--stage`, alchemy uses **`dev_$USER`** (e.g.
-`dev_sam`). Each developer on your team automatically gets a
-personal stage without any config.
+If you don't pass `--stage`, **`alchemy deploy`** uses **`live_$USER`**
+(e.g. `live_sam`) and **`alchemy dev`** uses **`dev_$USER`** (e.g.
+`dev_sam`). Each developer gets a personal cloud sandbox and a
+separate local-dev sandbox without any config — so a bare `alchemy
+dev` cannot replace resources you deployed. Existing default `alchemy
+dev` stacks keep the `dev_$USER` name. **`Test.make`** uses
+**`test_$USER`** the same way, so two people running the suite
+against one account don't collide.
 
 ```sh
 $ whoami
 sam
 
 $ alchemy deploy
-# deploys to stage `dev_sam`
+# deploys to stage `live_sam`
+
+$ alchemy dev
+# emulates locally as stage `dev_sam`
+
+$ alchemy destroy --stage dev_sam
+# tears down the local-dev stage
 ```
+
+`--stage` and `$ALCHEMY_STAGE` still work on both commands. Pointing
+`alchemy dev` at the same stage as a deploy (`--stage prod`, or a
+shared `$ALCHEMY_STAGE`) is a live ⇄ local replacement of that stage.
 
 The resolution order is:
 
 1. `--stage <name>` flag
-2. `$STAGE` environment variable
-3. `dev_${USER}` (or `dev_${USERNAME}` on Windows)
-4. `dev_unknown` if no user is set
+2. `$ALCHEMY_STAGE` environment variable (process env, `--env-file`, or `.env`)
+3. `live_${USER}` for deploy / destroy / plan / logs / drift
+   (`dev_${USER}` for `alchemy dev`)
+4. `live_unknown` / `dev_unknown` if no user is set
 
 ## Common stage patterns
 
-| Stage             | Purpose                                  |
-| ----------------- | ---------------------------------------- |
-| `dev_<user>`      | Per-developer sandbox (default)          |
-| `pr-<n>`          | Per-pull-request preview environment     |
-| `staging`         | Shared pre-production                    |
-| `prod`            | Production                               |
-| `dev`             | Shared development                       |
+| Stage             | Purpose                                              |
+| ----------------- | ---------------------------------------------------- |
+| `live_<user>`     | Per-developer cloud sandbox (`alchemy deploy` default) |
+| `dev_<user>`      | Per-developer local-dev sandbox (`alchemy dev` default) |
+| `test_<user>`     | Per-developer test sandbox (`Test.make` default)     |
+| `pr-<n>`          | Per-pull-request preview environment                 |
+| `staging`         | Shared pre-production                                |
+| `prod`            | Production                                           |
 
 Stage names must match `[a-z0-9][-_a-z0-9]*`.
 
@@ -57,14 +74,14 @@ Each stage gets its own:
 
 - **State file** — the persisted record of what's deployed
 - **Physical names** — `myapp-prod-bucket-abc123` vs
-  `myapp-dev_sam-bucket-9b2c`
+  `myapp-live_sam-bucket-9b2c`
 - **Logs and metrics** — scoped per deployed function/worker
 
 Because of this, deploying or destroying one stage **never touches**
 another:
 
 ```sh
-$ alchemy deploy --stage dev_sam     # -> myapp-dev_sam-photos-a3f1
+$ alchemy deploy --stage live_sam    # -> myapp-live_sam-photos-a3f1
 $ alchemy deploy --stage pr-147      # -> myapp-pr_147-photos-9b2c
 $ alchemy deploy --stage prod        # -> myapp-prod-photos-7d4e
 

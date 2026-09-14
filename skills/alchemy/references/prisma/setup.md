@@ -1,6 +1,6 @@
 <!-- source: https://alchemy.run/prisma/setup
      upstream: website/src/content/docs/prisma/setup.mdx
-     alchemy 2.0.0-beta.75 @ 808ef69 -->
+     alchemy 2.0.0-beta.77 @ c83b454 -->
 
 # Setup
 
@@ -34,15 +34,12 @@ export default Alchemy.Stack(
 );
 ```
 
-The next `alchemy login` adds a `Prisma` step with two options:
+Run `alchemy profile edit --add Prisma`. The service token is entered
+interactively and saved under
+`~/.alchemy/credentials/<profile>/prisma-stored.json`.
 
-- **Environment variable** — reads `PRISMA_SERVICE_TOKEN` (or
-  `PRISMA_API_TOKEN`; good for CI).
-- **Service Token** — entered interactively, saved under
-  `~/.alchemy/credentials/<profile>/prisma-stored.json`.
-
-In CI (`CI=true`), the environment-variable method is selected
-automatically — no prompt, just set `PRISMA_SERVICE_TOKEN`.
+In CI (`CI=true`), profiles are bypassed. Set `PRISMA_SERVICE_TOKEN` or
+`PRISMA_API_TOKEN`; Alchemy reads it directly and persists nothing.
 
 See [Profiles](/environments/profiles) for how credentials are stored
 and switched.
