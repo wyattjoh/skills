@@ -75,6 +75,24 @@ export const isGitRepo = (repo: string): boolean =>
   runGitRaw(repo, ["rev-parse", "--is-inside-work-tree"]).stdout.trim() === "true";
 
 /**
+ * Returns the main working tree of the repository containing `dir`, or
+ * undefined when `dir` is not inside a git work tree.
+ *
+ * `git worktree list` prints the main working tree first and always prints
+ * absolute paths, so this answers the same from a linked worktree as from the
+ * main tree itself. A bare main repository is reported too; the caller decides
+ * whether the path it gets back is usable.
+ */
+export const mainWorktree = (dir: string): string | undefined => {
+  const result = runGitRaw(dir, ["worktree", "list", "--porcelain"]);
+  if (result.exitCode !== 0) return undefined;
+  for (const line of result.stdout.split("\n")) {
+    if (line.startsWith("worktree ")) return line.slice("worktree ".length).trim();
+  }
+  return undefined;
+};
+
+/**
  * Returns the currently checked-out branch name (or "HEAD" when detached).
  */
 export const currentBranch = (repo: string): Effect.Effect<string, GitCommandError> =>

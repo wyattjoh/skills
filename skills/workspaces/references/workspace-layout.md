@@ -57,6 +57,12 @@ Validated by `scripts/lib/manifest.ts`; violations are all reported at once.
 | `conventions.stack-prefix`  | no             | Default `<slug>/`; must not contain dots                                 |
 | `conventions.branch-prefix` | no             | Default `<slug>/`; set `<user>/<slug>/` to match personal branch rules   |
 
+`members[].path` is relative to the hub checkout, never to whichever copy of
+it a command was run from. Hub work happens on branches in linked worktrees
+under `.claude/worktrees/`, and each one carries its own committed
+`workspace.yaml`, so the scripts anchor member paths on the main working tree
+and leave hub-internal paths on the directory given to `--workspace`.
+
 ## Generated files
 
 `CLAUDE.md` is rendered deterministically from the manifest

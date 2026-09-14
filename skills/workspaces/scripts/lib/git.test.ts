@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it } from "bun:test";
 import { Effect } from "effect";
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
@@ -8,6 +8,7 @@ import {
   isDirty,
   isGitRepo,
   listStacks,
+  mainWorktree,
   runGitAllowEmpty,
   trackedWorkflowArtifacts,
 } from "./git.ts";
@@ -58,6 +59,24 @@ describe("repo state helpers", () => {
     const dir = mkdtempSync(join(tmpdir(), "workspaces-plain-"));
     created.push(dir);
     expect(isGitRepo(dir)).toBe(false);
+  });
+});
+
+describe("mainWorktree", () => {
+  it("returns the main working tree from the main tree and from a linked worktree", () => {
+    const repo = makeRepo();
+    const linked = join(repo, ".claude", "worktrees", "feature");
+    const add = spawnGit(["-C", repo, "worktree", "add", "-q", "-b", "feature", linked]);
+    expect(add.exitCode).toBe(0);
+
+    expect(mainWorktree(repo)).toBe(realpathSync(repo));
+    expect(mainWorktree(linked)).toBe(realpathSync(repo));
+  });
+
+  it("returns undefined outside a git repository", () => {
+    const dir = mkdtempSync(join(tmpdir(), "workspaces-plain-"));
+    created.push(dir);
+    expect(mainWorktree(dir)).toBe(undefined);
   });
 });
 

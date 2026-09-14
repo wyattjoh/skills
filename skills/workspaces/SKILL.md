@@ -65,6 +65,13 @@ bun $SKILL_DIR/scripts/workspace.ts <command> [--workspace <hub-dir>]
 nearest `workspace.yaml`. Member state is read via `git -C` from the hub;
 no command enters a worktree.
 
+`--workspace` may itself be a linked worktree of the hub, which is how hub
+work is normally done. Member paths then anchor on the hub's main working
+tree, so `../app` still names the sibling checkout and not
+`.claude/worktrees/app`. Hub-internal paths (context layers, `JOURNAL.md`,
+the generated files) stay on the worktree, because those are the files it
+exists to edit.
+
 ## Core rules (full detail in conventions.md)
 
 1. **One creator per branch+worktree pair.** wt owns interactive worktrees,

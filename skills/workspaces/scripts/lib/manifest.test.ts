@@ -1,15 +1,26 @@
-import { describe, expect, it } from "bun:test";
+import { afterEach, describe, expect, it } from "bun:test";
 import { Effect } from "effect";
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
   findWorkspaceRoot,
   loadManifest,
   ManifestValidationError,
+  resolveMemberPath,
   validateManifest,
+  type WorkspaceMember,
   WorkspaceRootNotFoundError,
 } from "./manifest.ts";
+import { spawnGit } from "./git-env.ts";
+
+const created: string[] = [];
+
+afterEach(() => {
+  for (const dir of created.splice(0)) {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
 
 const VALID_MANIFEST = {
   version: 1,
@@ -198,5 +209,98 @@ describe("findWorkspaceRoot and loadManifest", () => {
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }
+  });
+});
+
+const MANIFEST_YAML = [
+  "version: 1",
+  "name: Demo",
+  "slug: demo",
+  "description: Demo workspace.",
+  "members:",
+  "  - name: app",
+  "    path: ../app",
+  "context:",
+  "  layers:",
+  "    - name: spec",
+  "      path: docs/spec.md",
+  "      description: The spec",
+  "",
+].join("\n");
+
+const APP_MEMBER: WorkspaceMember = {
+  name: "app",
+  path: "../app",
+  url: undefined,
+  ref: "main",
+};
+
+const gitInRepo = (repo: string, args: string[]): void => {
+  const result = spawnGit([
+    "-C",
+    repo,
+    "-c",
+    "user.name=Test",
+    "-c",
+    "user.email=test@example.com",
+    ...args,
+  ]);
+  expect(result.exitCode).toBe(0);
+};
+
+/**
+ * Builds the real-world shape: a member checkout beside a hub repository that
+ * carries a committed manifest, plus a linked worktree of that hub under
+ * `.claude/worktrees/`. Temp dirs are realpath'd because git reports resolved
+ * paths and macOS puts `$TMPDIR` behind a symlink.
+ */
+const makeHub = (): { parent: string; hub: string; worktree: string } => {
+  const parent = realpathSync(mkdtempSync(join(tmpdir(), "workspaces-hub-")));
+  created.push(parent);
+  mkdirSync(join(parent, "app"), { recursive: true });
+
+  const hub = join(parent, "hub");
+  mkdirSync(hub, { recursive: true });
+  expect(spawnGit(["init", "-q", "-b", "main", hub]).exitCode).toBe(0);
+  writeFileSync(join(hub, "workspace.yaml"), MANIFEST_YAML);
+  gitInRepo(hub, ["add", "workspace.yaml"]);
+  gitInRepo(hub, ["commit", "-q", "-m", "seed manifest"]);
+
+  const worktree = join(hub, ".claude", "worktrees", "feature");
+  gitInRepo(hub, ["worktree", "add", "-q", "-b", "feature", worktree]);
+
+  return { parent, hub, worktree };
+};
+
+describe("resolveMemberPath", () => {
+  it("resolves a member against the hub checkout", () => {
+    const { parent, hub } = makeHub();
+    expect(resolveMemberPath(hub, APP_MEMBER)).toBe(join(parent, "app"));
+  });
+
+  it("anchors a member on the hub checkout when the workspace is a hub worktree", () => {
+    const { parent, worktree } = makeHub();
+    expect(resolveMemberPath(worktree, APP_MEMBER)).toBe(join(parent, "app"));
+  });
+
+  it("resolves against the given root outside a git repository", () => {
+    const parent = realpathSync(mkdtempSync(join(tmpdir(), "workspaces-plain-hub-")));
+    created.push(parent);
+    const hub = join(parent, "hub");
+    mkdirSync(hub, { recursive: true });
+    writeFileSync(join(hub, "workspace.yaml"), MANIFEST_YAML);
+
+    expect(resolveMemberPath(hub, APP_MEMBER)).toBe(join(parent, "app"));
+  });
+
+  it("resolves against the given root when the main working tree holds no manifest", () => {
+    const repo = realpathSync(mkdtempSync(join(tmpdir(), "workspaces-nested-hub-")));
+    created.push(repo);
+    expect(spawnGit(["init", "-q", "-b", "main", repo]).exitCode).toBe(0);
+    const hub = join(repo, "hub");
+    mkdirSync(hub, { recursive: true });
+    writeFileSync(join(hub, "workspace.yaml"), MANIFEST_YAML);
+
+    expect(resolveMemberPath(hub, APP_MEMBER)).toBe(join(repo, "app"));
   });
 });

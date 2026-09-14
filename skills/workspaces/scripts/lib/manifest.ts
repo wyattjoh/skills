@@ -2,6 +2,7 @@ import { Data, Effect } from "effect";
 import { existsSync, readFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { parse } from "yaml";
+import { mainWorktree } from "./git.ts";
 
 /**
  * Raised when no `workspace.yaml` is found walking upward from the start
@@ -298,7 +299,34 @@ export const loadManifest = (
   });
 
 /**
- * Resolves a member's checkout directory against the workspace root.
+ * Resolves the hub checkout that member paths are relative to.
+ *
+ * Hub work happens on branches in linked worktrees (`.claude/worktrees/<name>/`),
+ * and every worktree carries its own committed `workspace.yaml`, so both
+ * `--workspace` and the upward walk legitimately land on one. Member paths are
+ * relative to the hub checkout itself ("../app" names a sibling of the hub), so
+ * resolving them against a worktree would point every member inside
+ * `.claude/worktrees/` and report the whole workspace as missing.
+ *
+ * Only member paths move. Hub-internal paths (context layers, JOURNAL.md, the
+ * generated files) stay on the given root, because those are the files the
+ * worktree exists to edit.
+ *
+ * Falls back to `rootDir` whenever the main working tree is not itself a hub:
+ * a plain directory, an ordinary checkout, a hub nested inside a larger
+ * repository, or a bare main repository.
+ */
+export const resolveHubRoot = (rootDir: string): string => {
+  const main = mainWorktree(rootDir);
+  if (main === undefined || resolve(main) === resolve(rootDir)) return rootDir;
+  if (!existsSync(join(main, MANIFEST_FILENAME))) return rootDir;
+  return main;
+};
+
+/**
+ * Resolves a member's checkout directory against the hub root, which
+ * `resolveHubRoot` keeps correct when the workspace directory is a worktree of
+ * the hub rather than the hub checkout itself.
  */
 export const resolveMemberPath = (rootDir: string, member: WorkspaceMember): string =>
-  resolve(rootDir, member.path);
+  resolve(resolveHubRoot(rootDir), member.path);
