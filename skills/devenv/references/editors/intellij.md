@@ -1,6 +1,6 @@
 <!-- source: https://devenv.sh/editor-support/intellij/
      upstream: docs/src/content/docs/editor-support/intellij.md
-     llms-full.txt lines 4640-4664 -->
+     llms-full.txt lines 4920-4944 -->
 
 # Intellij
 

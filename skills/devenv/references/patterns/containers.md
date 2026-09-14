@@ -1,6 +1,6 @@
 <!-- source: https://devenv.sh/recipes/containers/
      upstream: docs/src/content/docs/recipes/containers.md
-     llms-full.txt lines 17507-17528 -->
+     llms-full.txt lines 17896-17917 -->
 
 # Containers
 

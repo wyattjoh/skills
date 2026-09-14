@@ -1,6 +1,6 @@
 <!-- source: https://devenv.sh/supported-process-managers/process-compose/
      upstream: docs/src/content/docs/supported-process-managers/process-compose.md
-     llms-full.txt lines 27569-27808 -->
+     llms-full.txt lines 27962-28201 -->
 
 # process-compose
 

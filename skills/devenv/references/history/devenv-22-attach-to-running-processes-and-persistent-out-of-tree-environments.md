@@ -1,6 +1,6 @@
 <!-- source: https://devenv.sh/blog/2026/07/28/devenv-22-attach-to-running-processes-and-persistent-out-of-tree-environments/
      upstream: docs/src/content/docs/blog/2026/07/28/devenv-22-attach-to-running-processes-and-persistent-out-of-tree-environments.md
-     llms-full.txt lines 3784-3971 -->
+     llms-full.txt lines 3878-4065 -->
 
 # devenv 2.2: attach to running processes and persistent out-of-tree environments
 

@@ -1,6 +1,6 @@
 <!-- source: https://devenv.sh/languages/python/
      upstream: docs/src/content/docs/languages/python.md
-     llms-full.txt lines 12507-13635 -->
+     llms-full.txt lines 12782-13910 -->
 
 # Python
 

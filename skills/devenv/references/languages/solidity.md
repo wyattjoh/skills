@@ -1,6 +1,6 @@
 <!-- source: https://devenv.sh/languages/solidity/
      upstream: docs/src/content/docs/languages/solidity.md
-     llms-full.txt lines 15021-15110 -->
+     llms-full.txt lines 15314-15403 -->
 
 # solidity
 

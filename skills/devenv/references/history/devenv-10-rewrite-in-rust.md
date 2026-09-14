@@ -1,6 +1,6 @@
 <!-- source: https://devenv.sh/blog/2024/03/20/devenv-10-rewrite-in-rust/
      upstream: docs/src/content/docs/blog/2024/03/20/devenv-10-rewrite-in-rust.md
-     llms-full.txt lines 835-1098 -->
+     llms-full.txt lines 929-1192 -->
 
 # devenv 1.0: Rewrite in Rust
 

@@ -1,6 +1,6 @@
 <!-- source: https://devenv.sh/garbage-collection/
      upstream: docs/src/content/docs/garbage-collection.md
-     llms-full.txt lines 4902-4928 -->
+     llms-full.txt lines 5182-5208 -->
 
 # Garbage collection
 

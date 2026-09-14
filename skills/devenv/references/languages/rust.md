@@ -1,6 +1,6 @@
 <!-- source: https://devenv.sh/languages/rust/
      upstream: docs/src/content/docs/languages/rust.md
-     llms-full.txt lines 14106-14762 -->
+     llms-full.txt lines 14381-15055 -->
 
 # Rust
 
@@ -372,6 +372,22 @@ mold is a faster drop-in replacement for existing Unix linkers. It is several ti
 
 ```nix
 false
+```
+
+*Declared by:*
+
+* <https://github.com/cachix/devenv/blob/main/src/modules/languages/rust.nix>
+
+### languages.rust.rustdocflags
+
+Extra flags to pass to Rustdoc.
+
+*Type:* string
+
+*Default:*
+
+```nix
+""
 ```
 
 *Declared by:*

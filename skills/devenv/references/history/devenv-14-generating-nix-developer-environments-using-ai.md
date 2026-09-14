@@ -1,6 +1,6 @@
 <!-- source: https://devenv.sh/blog/2025/02/13/devenv-14-generating-nix-developer-environments-using-ai/
      upstream: docs/src/content/docs/blog/2025/02/13/devenv-14-generating-nix-developer-environments-using-ai.md
-     llms-full.txt lines 1540-1573 -->
+     llms-full.txt lines 1634-1667 -->
 
 # devenv 1.4: Generating Nix Developer Environments Using AI
 

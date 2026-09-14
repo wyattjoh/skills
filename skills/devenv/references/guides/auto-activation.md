@@ -1,10 +1,10 @@
 <!-- source: https://devenv.sh/auto-activation/
      upstream: docs/src/content/docs/auto-activation.mdx
-     llms-full.txt lines 111-255 -->
+     llms-full.txt lines 111-277 -->
 
 # Auto Activation
 
-New in version 2.1
+**New in version 2.1**
 
 [Read more about auto activation in the v2.1 release post](/blog/2026/05/07/devenv-21-nix-with-zsh-fish-and-nushell-via-libghostty/)
 
@@ -52,6 +52,26 @@ devenv includes a built in shell hook that automatically activates your develope
   mkdir ($nu.default-config-dir | path join autoload)
   devenv hook nu | save --force ($nu.default-config-dir | path join autoload/devenv-hook.nu)
   ```
+
+### Passing arguments to `devenv shell`
+
+**New in version 2.3**
+
+Place arguments for the auto-activated `devenv shell` after `--`. For example, to disable the TUI in shells started by the Fish hook without changing other `devenv` commands:
+
+\~/.config/fish/config.fish
+
+```fish
+devenv hook fish -- --no-tui | source
+```
+
+The same separator works in every supported shell:
+
+\~/.bashrc
+
+```bash
+eval "$(devenv hook bash -- --no-tui)"
+```
 
 ## Trusting a project
 

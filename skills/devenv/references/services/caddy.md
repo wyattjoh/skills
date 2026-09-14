@@ -1,6 +1,6 @@
 <!-- source: https://devenv.sh/services/caddy/
      upstream: docs/src/content/docs/services/caddy.md
-     llms-full.txt lines 18875-19143 -->
+     llms-full.txt lines 19268-19536 -->
 
 # caddy
 

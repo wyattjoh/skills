@@ -1,6 +1,6 @@
 <!-- source: https://devenv.sh/creating-files/
-     upstream: docs/src/content/docs/creating-files.md
-     llms-full.txt lines 4420-4639 -->
+     upstream: docs/src/content/docs/creating-files.mdx
+     llms-full.txt lines 4700-4919 -->
 
 # Declarative files
 
@@ -174,7 +174,7 @@ The `copyMode` attribute accepts:
 * `seed`: copy the file into place once, only if it does not already exist, and make it writable. Existing files are left untouched, so your edits are preserved. This is useful for seeding configuration files from templates that the user can then edit to fit their project.
 * `copy`: copy the file into place as a writable file, overwriting it with fresh contents on every shell entry. This is useful when a tool must write to the file in place but devenv should remain the source of truth.
 
-New in version 2.2
+**New in version 2.2**
 
 ## Declarative files in Subdirectories
 

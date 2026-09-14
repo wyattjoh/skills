@@ -1,6 +1,6 @@
 <!-- source: https://devenv.sh/guides/migrating-to-2.0/
-     upstream: docs/src/content/docs/guides/migrating-to-2.0.md
-     llms-full.txt lines 5286-5630 -->
+     upstream: docs/src/content/docs/guides/migrating-to-2.0.mdx
+     llms-full.txt lines 5566-5909 -->
 
 # Migrating to devenv 2.0
 
@@ -225,12 +225,9 @@ After
 }
 ```
 
-!!! tip “New in version 2.2.3”
+**New in version 2.2.3**
 
-```plaintext
-`processes.<name>.shutdown` was added in devenv 2.2.3.
-Older 2.x versions send SIGTERM; wrap the process in a script that translates the signal if you need a different one.
-```
+`processes.<name>.shutdown` was added in devenv 2.2.3. Older 2.x versions send SIGTERM; wrap the process in a script that translates the signal if you need a different one.
 
 #### Elevated processes
 
@@ -253,6 +250,8 @@ After
   processes.server.linux.capabilities = [ "net_bind_service" ];
 }
 ```
+
+On first launch, devenv shows the requested capabilities and authenticates with `sudo`. The service itself still runs as your user; only the listed Linux capabilities are retained. In non-interactive environments, authenticate with `sudo -v` before running `devenv up`. A privileged broker remains available for the manager’s lifetime, so detached processes and automatic restarts remain non-interactive.
 
 ## git-hooks input is now optional
 

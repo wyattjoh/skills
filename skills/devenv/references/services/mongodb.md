@@ -1,6 +1,6 @@
 <!-- source: https://devenv.sh/services/mongodb/
      upstream: docs/src/content/docs/services/mongodb.md
-     llms-full.txt lines 22441-22614 -->
+     llms-full.txt lines 22834-23007 -->
 
 # mongodb
 

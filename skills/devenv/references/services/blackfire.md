@@ -1,6 +1,6 @@
 <!-- source: https://devenv.sh/services/blackfire/
      upstream: docs/src/content/docs/services/blackfire.md
-     llms-full.txt lines 18711-18874 -->
+     llms-full.txt lines 19104-19267 -->
 
 # blackfire
 

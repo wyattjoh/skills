@@ -1,6 +1,6 @@
 <!-- source: https://devenv.sh/services/varnish/
      upstream: docs/src/content/docs/services/varnish.md
-     llms-full.txt lines 26523-26656 -->
+     llms-full.txt lines 26916-27049 -->
 
 # varnish
 

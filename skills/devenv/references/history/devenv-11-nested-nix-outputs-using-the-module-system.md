@@ -1,6 +1,6 @@
 <!-- source: https://devenv.sh/blog/2024/09/11/devenv-11-nested-nix-outputs-using-the-module-system/
      upstream: docs/src/content/docs/blog/2024/09/11/devenv-11-nested-nix-outputs-using-the-module-system.md
-     llms-full.txt lines 1099-1196 -->
+     llms-full.txt lines 1193-1290 -->
 
 # devenv 1.1: Nested Nix outputs using the module system
 

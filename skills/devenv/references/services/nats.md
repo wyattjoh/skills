@@ -1,6 +1,6 @@
 <!-- source: https://devenv.sh/services/nats/
      upstream: docs/src/content/docs/services/nats.md
-     llms-full.txt lines 23048-23493 -->
+     llms-full.txt lines 23441-23886 -->
 
 # nats
 

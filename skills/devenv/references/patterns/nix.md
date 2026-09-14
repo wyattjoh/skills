@@ -1,6 +1,6 @@
 <!-- source: https://devenv.sh/recipes/nix/
      upstream: docs/src/content/docs/recipes/nix.md
-     llms-full.txt lines 17723-17833 -->
+     llms-full.txt lines 18112-18222 -->
 
 # Nix
 

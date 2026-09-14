@@ -4,14 +4,14 @@
     "area": "guides",
     "slug": "ad-hoc-developer-environments",
     "path": "references/guides/ad-hoc-developer-environments.md",
-    "upstream": "docs/src/content/docs/ad-hoc-developer-environments.md",
+    "upstream": "docs/src/content/docs/ad-hoc-developer-environments.mdx",
     "url": "https://devenv.sh/ad-hoc-developer-environments/",
     "srcLines": [
       3,
       110
     ],
     "lines": 90,
-    "bytes": 2796
+    "bytes": 2804
   },
   {
     "title": "Auto Activation",
@@ -22,10 +22,10 @@
     "url": "https://devenv.sh/auto-activation/",
     "srcLines": [
       111,
-      255
+      277
     ],
-    "lines": 131,
-    "bytes": 4079
+    "lines": 151,
+    "bytes": 4520
   },
   {
     "title": "Basics",
@@ -35,25 +35,25 @@
     "upstream": "docs/src/content/docs/basics.md",
     "url": "https://devenv.sh/basics/",
     "srcLines": [
-      256,
-      331
+      278,
+      373
     ],
-    "lines": 65,
-    "bytes": 1823
+    "lines": 83,
+    "bytes": 2485
   },
   {
     "title": "Binary Caching",
     "area": "guides",
     "slug": "binary-caching",
     "path": "references/guides/binary-caching.md",
-    "upstream": "docs/src/content/docs/binary-caching.md",
+    "upstream": "docs/src/content/docs/binary-caching.mdx",
     "url": "https://devenv.sh/binary-caching/",
     "srcLines": [
-      332,
-      447
+      374,
+      541
     ],
-    "lines": 104,
-    "bytes": 3303
+    "lines": 150,
+    "bytes": 5457
   },
   {
     "title": "Hello world: devenv 0.1",
@@ -63,8 +63,8 @@
     "upstream": "docs/src/content/docs/blog/2022/11/11/hello-world-devenv-01.md",
     "url": "https://devenv.sh/blog/2022/11/11/hello-world-devenv-01/",
     "srcLines": [
-      448,
-      477
+      542,
+      571
     ],
     "lines": 26,
     "bytes": 1363
@@ -77,8 +77,8 @@
     "upstream": "docs/src/content/docs/blog/2022/11/14/devenv-02.md",
     "url": "https://devenv.sh/blog/2022/11/14/devenv-02/",
     "srcLines": [
-      478,
-      516
+      572,
+      610
     ],
     "lines": 34,
     "bytes": 1367
@@ -91,8 +91,8 @@
     "upstream": "docs/src/content/docs/blog/2022/11/17/devenv-03.md",
     "url": "https://devenv.sh/blog/2022/11/17/devenv-03/",
     "srcLines": [
-      517,
-      549
+      611,
+      643
     ],
     "lines": 29,
     "bytes": 1521
@@ -105,8 +105,8 @@
     "upstream": "docs/src/content/docs/blog/2022/11/27/devenv-04.md",
     "url": "https://devenv.sh/blog/2022/11/27/devenv-04/",
     "srcLines": [
-      550,
-      583
+      644,
+      677
     ],
     "lines": 30,
     "bytes": 1390
@@ -119,8 +119,8 @@
     "upstream": "docs/src/content/docs/blog/2022/12/22/devenv-05.md",
     "url": "https://devenv.sh/blog/2022/12/22/devenv-05/",
     "srcLines": [
-      584,
-      653
+      678,
+      747
     ],
     "lines": 60,
     "bytes": 4185
@@ -133,8 +133,8 @@
     "upstream": "docs/src/content/docs/blog/2023/03/02/devenv-06-generating-containers-and-instant-shell-activation.md",
     "url": "https://devenv.sh/blog/2023/03/02/devenv-06-generating-containers-and-instant-shell-activation/",
     "srcLines": [
-      654,
-      834
+      748,
+      928
     ],
     "lines": 163,
     "bytes": 7161
@@ -147,8 +147,8 @@
     "upstream": "docs/src/content/docs/blog/2024/03/20/devenv-10-rewrite-in-rust.md",
     "url": "https://devenv.sh/blog/2024/03/20/devenv-10-rewrite-in-rust/",
     "srcLines": [
-      835,
-      1098
+      929,
+      1192
     ],
     "lines": 223,
     "bytes": 8712
@@ -161,8 +161,8 @@
     "upstream": "docs/src/content/docs/blog/2024/09/11/devenv-11-nested-nix-outputs-using-the-module-system.md",
     "url": "https://devenv.sh/blog/2024/09/11/devenv-11-nested-nix-outputs-using-the-module-system/",
     "srcLines": [
-      1099,
-      1196
+      1193,
+      1290
     ],
     "lines": 89,
     "bytes": 2585
@@ -175,8 +175,8 @@
     "upstream": "docs/src/content/docs/blog/2024/09/24/devenv-12-tasks-for-convergent-configuration-with-nix.md",
     "url": "https://devenv.sh/blog/2024/09/24/devenv-12-tasks-for-convergent-configuration-with-nix/",
     "srcLines": [
-      1197,
-      1279
+      1291,
+      1373
     ],
     "lines": 76,
     "bytes": 3604
@@ -189,8 +189,8 @@
     "upstream": "docs/src/content/docs/blog/2024/10/03/devenv-13-instant-developer-environments-with-nix-caching.md",
     "url": "https://devenv.sh/blog/2024/10/03/devenv-13-instant-developer-environments-with-nix-caching/",
     "srcLines": [
-      1280,
-      1378
+      1374,
+      1472
     ],
     "lines": 86,
     "bytes": 3982
@@ -203,8 +203,8 @@
     "upstream": "docs/src/content/docs/blog/2024/10/22/devenv-is-switching-its-nix-implementation-to-tvix.md",
     "url": "https://devenv.sh/blog/2024/10/22/devenv-is-switching-its-nix-implementation-to-tvix/",
     "srcLines": [
-      1379,
-      1539
+      1473,
+      1633
     ],
     "lines": 145,
     "bytes": 9248
@@ -217,8 +217,8 @@
     "upstream": "docs/src/content/docs/blog/2025/02/13/devenv-14-generating-nix-developer-environments-using-ai.md",
     "url": "https://devenv.sh/blog/2025/02/13/devenv-14-generating-nix-developer-environments-using-ai/",
     "srcLines": [
-      1540,
-      1573
+      1634,
+      1667
     ],
     "lines": 30,
     "bytes": 1144
@@ -231,8 +231,8 @@
     "upstream": "docs/src/content/docs/blog/2025/04/13/devenv-15-overlays-support-and-performance-improvements.md",
     "url": "https://devenv.sh/blog/2025/04/13/devenv-15-overlays-support-and-performance-improvements/",
     "srcLines": [
-      1574,
-      1688
+      1668,
+      1782
     ],
     "lines": 100,
     "bytes": 2865
@@ -245,8 +245,8 @@
     "upstream": "docs/src/content/docs/blog/2025/04/25/devenv-16-extensible-ad-hoc-nix-environments.md",
     "url": "https://devenv.sh/blog/2025/04/25/devenv-16-extensible-ad-hoc-nix-environments/",
     "srcLines": [
-      1689,
-      1781
+      1783,
+      1875
     ],
     "lines": 83,
     "bytes": 3106
@@ -259,8 +259,8 @@
     "upstream": "docs/src/content/docs/blog/2025/07/03/devenv-17-cuda-support-enhanced-tasks-and-mcp-support.md",
     "url": "https://devenv.sh/blog/2025/07/03/devenv-17-cuda-support-enhanced-tasks-and-mcp-support/",
     "srcLines": [
-      1782,
-      1939
+      1876,
+      2033
     ],
     "lines": 135,
     "bytes": 4301
@@ -273,8 +273,8 @@
     "upstream": "docs/src/content/docs/blog/2025/07/21/announcing-secretspec-declarative-secrets-management.md",
     "url": "https://devenv.sh/blog/2025/07/21/announcing-secretspec-declarative-secrets-management/",
     "srcLines": [
-      1940,
-      2201
+      2034,
+      2295
     ],
     "lines": 226,
     "bytes": 8430
@@ -287,8 +287,8 @@
     "upstream": "docs/src/content/docs/blog/2025/07/22/devenv-18-progress-tui-secretspec-integration-listing-tasks-and-smaller-containers.md",
     "url": "https://devenv.sh/blog/2025/07/22/devenv-18-progress-tui-secretspec-integration-listing-tasks-and-smaller-containers/",
     "srcLines": [
-      2202,
-      2323
+      2296,
+      2417
     ],
     "lines": 102,
     "bytes": 4224
@@ -301,8 +301,8 @@
     "upstream": "docs/src/content/docs/blog/2025/07/25/devenv-devlog-processes-are-now-tasks.md",
     "url": "https://devenv.sh/blog/2025/07/25/devenv-devlog-processes-are-now-tasks/",
     "srcLines": [
-      2324,
-      2394
+      2418,
+      2488
     ],
     "lines": 59,
     "bytes": 1623
@@ -315,8 +315,8 @@
     "upstream": "docs/src/content/docs/blog/2025/08/22/closing-the-nix-gap-from-environments-to-packaged-applications-for-rust.md",
     "url": "https://devenv.sh/blog/2025/08/22/closing-the-nix-gap-from-environments-to-packaged-applications-for-rust/",
     "srcLines": [
-      2395,
-      2498
+      2489,
+      2592
     ],
     "lines": 93,
     "bytes": 3291
@@ -329,8 +329,8 @@
     "upstream": "docs/src/content/docs/blog/2025/09/17/devenv-19-scaling-nix-projects-using-modules-and-profiles.md",
     "url": "https://devenv.sh/blog/2025/09/17/devenv-19-scaling-nix-projects-using-modules-and-profiles/",
     "srcLines": [
-      2499,
-      2699
+      2593,
+      2793
     ],
     "lines": 179,
     "bytes": 5668
@@ -343,8 +343,8 @@
     "upstream": "docs/src/content/docs/blog/2025/10/07/devenv-110-monorepo-nix-support-with-devenvyaml-imports.md",
     "url": "https://devenv.sh/blog/2025/10/07/devenv-110-monorepo-nix-support-with-devenvyaml-imports/",
     "srcLines": [
-      2700,
-      2818
+      2794,
+      2912
     ],
     "lines": 108,
     "bytes": 3096
@@ -357,8 +357,8 @@
     "upstream": "docs/src/content/docs/blog/2025/11/26/devenv-111-module-changelogs-and-secretspec-040.md",
     "url": "https://devenv.sh/blog/2025/11/26/devenv-111-module-changelogs-and-secretspec-040/",
     "srcLines": [
-      2819,
-      3004
+      2913,
+      3098
     ],
     "lines": 166,
     "bytes": 5466
@@ -371,8 +371,8 @@
     "upstream": "docs/src/content/docs/blog/2026/02/09/secretspec-07-declarative-secret-generation.md",
     "url": "https://devenv.sh/blog/2026/02/09/secretspec-07-declarative-secret-generation/",
     "srcLines": [
-      3005,
-      3133
+      3099,
+      3227
     ],
     "lines": 109,
     "bytes": 4869
@@ -385,8 +385,8 @@
     "upstream": "docs/src/content/docs/blog/2026/03/05/devenv-20-a-fresh-interface-to-nix.md",
     "url": "https://devenv.sh/blog/2026/03/05/devenv-20-a-fresh-interface-to-nix/",
     "srcLines": [
-      3134,
-      3428
+      3228,
+      3522
     ],
     "lines": 259,
     "bytes": 12296
@@ -399,8 +399,8 @@
     "upstream": "docs/src/content/docs/blog/2026/05/07/devenv-21-nix-with-zsh-fish-and-nushell-via-libghostty.mdx",
     "url": "https://devenv.sh/blog/2026/05/07/devenv-21-nix-with-zsh-fish-and-nushell-via-libghostty/",
     "srcLines": [
-      3429,
-      3603
+      3523,
+      3697
     ],
     "lines": 149,
     "bytes": 7857
@@ -413,8 +413,8 @@
     "upstream": "docs/src/content/docs/blog/2026/06/26/making-devenv-start-fast-and-the-whole-nixpkgs-with-it.md",
     "url": "https://devenv.sh/blog/2026/06/26/making-devenv-start-fast-and-the-whole-nixpkgs-with-it/",
     "srcLines": [
-      3604,
-      3783
+      3698,
+      3877
     ],
     "lines": 160,
     "bytes": 19130
@@ -427,11 +427,25 @@
     "upstream": "docs/src/content/docs/blog/2026/07/28/devenv-22-attach-to-running-processes-and-persistent-out-of-tree-environments.md",
     "url": "https://devenv.sh/blog/2026/07/28/devenv-22-attach-to-running-processes-and-persistent-out-of-tree-environments/",
     "srcLines": [
-      3784,
-      3971
+      3878,
+      4065
     ],
     "lines": 168,
     "bytes": 13815
+  },
+  {
+    "title": "devenv 2.3: Portless and TUI configuration",
+    "area": "history",
+    "slug": "devenv-23-portless-and-tui-configuration",
+    "path": "references/history/devenv-23-portless-and-tui-configuration.md",
+    "upstream": "docs/src/content/docs/blog/2026/09/07/devenv-23-portless-and-tui-configuration.md",
+    "url": "https://devenv.sh/blog/2026/09/07/devenv-23-portless-and-tui-configuration/",
+    "srcLines": [
+      4066,
+      4251
+    ],
+    "lines": 167,
+    "bytes": 8136
   },
   {
     "title": "Cloud",
@@ -441,8 +455,8 @@
     "upstream": "docs/src/content/docs/cloud.md",
     "url": "https://devenv.sh/cloud/",
     "srcLines": [
-      3972,
-      4050
+      4252,
+      4330
     ],
     "lines": 69,
     "bytes": 1220
@@ -455,8 +469,8 @@
     "upstream": "docs/src/content/docs/community/contributing.md",
     "url": "https://devenv.sh/community/contributing/",
     "srcLines": [
-      4051,
-      4145
+      4331,
+      4425
     ],
     "lines": 83,
     "bytes": 4239
@@ -469,8 +483,8 @@
     "upstream": "docs/src/content/docs/community/get-involved.md",
     "url": "https://devenv.sh/community/get-involved/",
     "srcLines": [
-      4146,
-      4149
+      4426,
+      4429
     ],
     "lines": 4,
     "bytes": 184
@@ -480,42 +494,42 @@
     "area": "guides",
     "slug": "composing-using-imports",
     "path": "references/guides/composing-using-imports.md",
-    "upstream": "docs/src/content/docs/composing-using-imports.md",
+    "upstream": "docs/src/content/docs/composing-using-imports.mdx",
     "url": "https://devenv.sh/composing-using-imports/",
     "srcLines": [
-      4150,
-      4204
+      4430,
+      4484
     ],
     "lines": 53,
-    "bytes": 1799
+    "bytes": 1817
   },
   {
     "title": "Containers",
     "area": "guides",
     "slug": "containers",
     "path": "references/guides/containers.md",
-    "upstream": "docs/src/content/docs/containers.md",
+    "upstream": "docs/src/content/docs/containers.mdx",
     "url": "https://devenv.sh/containers/",
     "srcLines": [
-      4205,
-      4419
+      4485,
+      4699
     ],
     "lines": 196,
-    "bytes": 5391
+    "bytes": 5399
   },
   {
     "title": "Declarative files",
     "area": "guides",
     "slug": "declarative-files",
     "path": "references/guides/declarative-files.md",
-    "upstream": "docs/src/content/docs/creating-files.md",
+    "upstream": "docs/src/content/docs/creating-files.mdx",
     "url": "https://devenv.sh/creating-files/",
     "srcLines": [
-      4420,
-      4639
+      4700,
+      4919
     ],
     "lines": 197,
-    "bytes": 3948
+    "bytes": 3952
   },
   {
     "title": "Intellij",
@@ -525,8 +539,8 @@
     "upstream": "docs/src/content/docs/editor-support/intellij.md",
     "url": "https://devenv.sh/editor-support/intellij/",
     "srcLines": [
-      4640,
-      4664
+      4920,
+      4944
     ],
     "lines": 23,
     "bytes": 1067
@@ -539,8 +553,8 @@
     "upstream": "docs/src/content/docs/editor-support/vscode.md",
     "url": "https://devenv.sh/editor-support/vscode/",
     "srcLines": [
-      4665,
-      4670
+      4945,
+      4950
     ],
     "lines": 6,
     "bytes": 228
@@ -553,8 +567,8 @@
     "upstream": "docs/src/content/docs/editor-support/zed.md",
     "url": "https://devenv.sh/editor-support/zed/",
     "srcLines": [
-      4671,
-      4676
+      4951,
+      4956
     ],
     "lines": 6,
     "bytes": 173
@@ -567,8 +581,8 @@
     "upstream": "docs/src/content/docs/examples.md",
     "url": "https://devenv.sh/examples/",
     "srcLines": [
-      4677,
-      4753
+      4957,
+      5033
     ],
     "lines": 77,
     "bytes": 5466
@@ -581,8 +595,8 @@
     "upstream": "docs/src/content/docs/extending.md",
     "url": "https://devenv.sh/extending/",
     "srcLines": [
-      4754,
-      4832
+      5034,
+      5112
     ],
     "lines": 72,
     "bytes": 1757
@@ -592,14 +606,14 @@
     "area": "guides",
     "slug": "files-and-variables",
     "path": "references/guides/files-and-variables.md",
-    "upstream": "docs/src/content/docs/files-and-variables.md",
+    "upstream": "docs/src/content/docs/files-and-variables.mdx",
     "url": "https://devenv.sh/files-and-variables/",
     "srcLines": [
-      4833,
-      4901
+      5113,
+      5181
     ],
     "lines": 52,
-    "bytes": 1464
+    "bytes": 1472
   },
   {
     "title": "Garbage collection",
@@ -609,8 +623,8 @@
     "upstream": "docs/src/content/docs/garbage-collection.md",
     "url": "https://devenv.sh/garbage-collection/",
     "srcLines": [
-      4902,
-      4928
+      5182,
+      5208
     ],
     "lines": 23,
     "bytes": 1041
@@ -623,8 +637,8 @@
     "upstream": "docs/src/content/docs/getting-started.mdx",
     "url": "https://devenv.sh/getting-started/",
     "srcLines": [
-      4929,
-      5151
+      5209,
+      5431
     ],
     "lines": 193,
     "bytes": 5046
@@ -637,8 +651,8 @@
     "upstream": "docs/src/content/docs/git-hooks.md",
     "url": "https://devenv.sh/git-hooks/",
     "srcLines": [
-      5152,
-      5285
+      5432,
+      5565
     ],
     "lines": 113,
     "bytes": 3101
@@ -648,42 +662,42 @@
     "area": "guides",
     "slug": "migrating-to-devenv-2-0",
     "path": "references/guides/migrating-to-devenv-2-0.md",
-    "upstream": "docs/src/content/docs/guides/migrating-to-2.0.md",
+    "upstream": "docs/src/content/docs/guides/migrating-to-2.0.mdx",
     "url": "https://devenv.sh/guides/migrating-to-2.0/",
     "srcLines": [
-      5286,
-      5630
+      5566,
+      5909
     ],
-    "lines": 317,
-    "bytes": 7447
+    "lines": 316,
+    "bytes": 7828
   },
   {
     "title": "Monorepo with Shared Configurations",
     "area": "guides",
     "slug": "monorepo-with-shared-configurations",
     "path": "references/guides/monorepo-with-shared-configurations.md",
-    "upstream": "docs/src/content/docs/guides/monorepo.md",
+    "upstream": "docs/src/content/docs/guides/monorepo.mdx",
     "url": "https://devenv.sh/guides/monorepo/",
     "srcLines": [
-      5631,
-      5807
+      5910,
+      6086
     ],
     "lines": 157,
-    "bytes": 3393
+    "bytes": 3401
   },
   {
     "title": "Polyrepos",
     "area": "guides",
     "slug": "polyrepos",
     "path": "references/guides/polyrepos.md",
-    "upstream": "docs/src/content/docs/guides/polyrepo.md",
+    "upstream": "docs/src/content/docs/guides/polyrepo.mdx",
     "url": "https://devenv.sh/guides/polyrepo/",
     "srcLines": [
-      5808,
-      5904
+      6087,
+      6183
     ],
     "lines": 89,
-    "bytes": 2766
+    "bytes": 2770
   },
   {
     "title": "Using devenv with flake-parts",
@@ -693,8 +707,8 @@
     "upstream": "docs/src/content/docs/guides/using-with-flake-parts.md",
     "url": "https://devenv.sh/guides/using-with-flake-parts/",
     "srcLines": [
-      5905,
-      6205
+      6184,
+      6484
     ],
     "lines": 263,
     "bytes": 8512
@@ -707,8 +721,8 @@
     "upstream": "docs/src/content/docs/guides/using-with-flakes.md",
     "url": "https://devenv.sh/guides/using-with-flakes/",
     "srcLines": [
-      6206,
-      6491
+      6485,
+      6770
     ],
     "lines": 255,
     "bytes": 9136
@@ -721,8 +735,8 @@
     "upstream": "docs/src/content/docs/inputs.md",
     "url": "https://devenv.sh/inputs/",
     "srcLines": [
-      6492,
-      6699
+      6771,
+      6978
     ],
     "lines": 182,
     "bytes": 5395
@@ -735,8 +749,8 @@
     "upstream": "docs/src/content/docs/integrations/android.md",
     "url": "https://devenv.sh/integrations/android/",
     "srcLines": [
-      6700,
-      6869
+      6979,
+      7148
     ],
     "lines": 154,
     "bytes": 4394
@@ -749,8 +763,8 @@
     "upstream": "docs/src/content/docs/integrations/claude-code.md",
     "url": "https://devenv.sh/integrations/claude-code/",
     "srcLines": [
-      6870,
-      7427
+      7149,
+      7706
     ],
     "lines": 482,
     "bytes": 17295
@@ -763,8 +777,8 @@
     "upstream": "docs/src/content/docs/integrations/codespaces-devcontainer.md",
     "url": "https://devenv.sh/integrations/codespaces-devcontainer/",
     "srcLines": [
-      7428,
-      7446
+      7707,
+      7725
     ],
     "lines": 18,
     "bytes": 363
@@ -777,8 +791,8 @@
     "upstream": "docs/src/content/docs/integrations/delta.md",
     "url": "https://devenv.sh/integrations/delta/",
     "srcLines": [
-      7447,
-      7461
+      7726,
+      7740
     ],
     "lines": 14,
     "bytes": 220
@@ -791,8 +805,8 @@
     "upstream": "docs/src/content/docs/integrations/devenv-container.mdx",
     "url": "https://devenv.sh/integrations/devenv-container/",
     "srcLines": [
-      7462,
-      7499
+      7741,
+      7778
     ],
     "lines": 38,
     "bytes": 853
@@ -805,8 +819,8 @@
     "upstream": "docs/src/content/docs/integrations/difftastic.md",
     "url": "https://devenv.sh/integrations/difftastic/",
     "srcLines": [
-      7500,
-      7518
+      7779,
+      7797
     ],
     "lines": 18,
     "bytes": 419
@@ -819,11 +833,11 @@
     "upstream": "docs/src/content/docs/integrations/direnv.mdx",
     "url": "https://devenv.sh/integrations/direnv/",
     "srcLines": [
-      7519,
-      7680
+      7798,
+      7959
     ],
     "lines": 142,
-    "bytes": 4376
+    "bytes": 4380
   },
   {
     "title": "Dotenv",
@@ -833,8 +847,8 @@
     "upstream": "docs/src/content/docs/integrations/dotenv.md",
     "url": "https://devenv.sh/integrations/dotenv/",
     "srcLines": [
-      7681,
-      7726
+      7960,
+      8005
     ],
     "lines": 45,
     "bytes": 1795
@@ -847,8 +861,8 @@
     "upstream": "docs/src/content/docs/integrations/github-actions.md",
     "url": "https://devenv.sh/integrations/github-actions/",
     "srcLines": [
-      7727,
-      7920
+      8006,
+      8199
     ],
     "lines": 170,
     "bytes": 4922
@@ -858,14 +872,14 @@
     "area": "integrations",
     "slug": "secretspec",
     "path": "references/integrations/secretspec.md",
-    "upstream": "docs/src/content/docs/integrations/secretspec.md",
+    "upstream": "docs/src/content/docs/integrations/secretspec.mdx",
     "url": "https://devenv.sh/integrations/secretspec/",
     "srcLines": [
-      7921,
-      8051
+      8200,
+      8326
     ],
-    "lines": 116,
-    "bytes": 4130
+    "lines": 112,
+    "bytes": 4111
   },
   {
     "title": "treefmt",
@@ -875,8 +889,8 @@
     "upstream": "docs/src/content/docs/integrations/treefmt.md",
     "url": "https://devenv.sh/integrations/treefmt/",
     "srcLines": [
-      8052,
-      8148
+      8327,
+      8423
     ],
     "lines": 83,
     "bytes": 1700
@@ -889,8 +903,8 @@
     "upstream": "docs/src/content/docs/integrations/wordpress.md",
     "url": "https://devenv.sh/integrations/wordpress/",
     "srcLines": [
-      8149,
-      8438
+      8424,
+      8713
     ],
     "lines": 247,
     "bytes": 7292
@@ -903,8 +917,8 @@
     "upstream": "docs/src/content/docs/languages/index.md",
     "url": "https://devenv.sh/languages/",
     "srcLines": [
-      8439,
-      8475
+      8714,
+      8750
     ],
     "lines": 32,
     "bytes": 522
@@ -917,8 +931,8 @@
     "upstream": "docs/src/content/docs/languages/ansible.md",
     "url": "https://devenv.sh/languages/ansible/",
     "srcLines": [
-      8476,
-      8565
+      8751,
+      8840
     ],
     "lines": 80,
     "bytes": 995
@@ -931,8 +945,8 @@
     "upstream": "docs/src/content/docs/languages/c.md",
     "url": "https://devenv.sh/languages/c/",
     "srcLines": [
-      8566,
-      8655
+      8841,
+      8930
     ],
     "lines": 80,
     "bytes": 1001
@@ -945,8 +959,8 @@
     "upstream": "docs/src/content/docs/languages/clojure.md",
     "url": "https://devenv.sh/languages/clojure/",
     "srcLines": [
-      8656,
-      8727
+      8931,
+      9002
     ],
     "lines": 64,
     "bytes": 763
@@ -959,8 +973,8 @@
     "upstream": "docs/src/content/docs/languages/cplusplus.md",
     "url": "https://devenv.sh/languages/cplusplus/",
     "srcLines": [
-      8728,
-      8799
+      9003,
+      9074
     ],
     "lines": 64,
     "bytes": 758
@@ -973,8 +987,8 @@
     "upstream": "docs/src/content/docs/languages/crystal.md",
     "url": "https://devenv.sh/languages/crystal/",
     "srcLines": [
-      8800,
-      8925
+      9075,
+      9200
     ],
     "lines": 112,
     "bytes": 1402
@@ -987,8 +1001,8 @@
     "upstream": "docs/src/content/docs/languages/cue.md",
     "url": "https://devenv.sh/languages/cue/",
     "srcLines": [
-      8926,
-      9015
+      9201,
+      9290
     ],
     "lines": 80,
     "bytes": 914
@@ -1001,8 +1015,8 @@
     "upstream": "docs/src/content/docs/languages/dart.md",
     "url": "https://devenv.sh/languages/dart/",
     "srcLines": [
-      9016,
-      9063
+      9291,
+      9338
     ],
     "lines": 42,
     "bytes": 464
@@ -1015,8 +1029,8 @@
     "upstream": "docs/src/content/docs/languages/deno.md",
     "url": "https://devenv.sh/languages/deno/",
     "srcLines": [
-      9064,
-      9111
+      9339,
+      9386
     ],
     "lines": 42,
     "bytes": 469
@@ -1029,8 +1043,8 @@
     "upstream": "docs/src/content/docs/languages/dotnet.md",
     "url": "https://devenv.sh/languages/dotnet/",
     "srcLines": [
-      9112,
-      9197
+      9387,
+      9472
     ],
     "lines": 76,
     "bytes": 1015
@@ -1043,8 +1057,8 @@
     "upstream": "docs/src/content/docs/languages/elixir.md",
     "url": "https://devenv.sh/languages/elixir/",
     "srcLines": [
-      9198,
-      9287
+      9473,
+      9562
     ],
     "lines": 80,
     "bytes": 987
@@ -1057,8 +1071,8 @@
     "upstream": "docs/src/content/docs/languages/elm.md",
     "url": "https://devenv.sh/languages/elm/",
     "srcLines": [
-      9288,
-      9359
+      9563,
+      9634
     ],
     "lines": 64,
     "bytes": 743
@@ -1071,8 +1085,8 @@
     "upstream": "docs/src/content/docs/languages/erlang.md",
     "url": "https://devenv.sh/languages/erlang/",
     "srcLines": [
-      9360,
-      9449
+      9635,
+      9724
     ],
     "lines": 80,
     "bytes": 989
@@ -1085,8 +1099,8 @@
     "upstream": "docs/src/content/docs/languages/fortran.md",
     "url": "https://devenv.sh/languages/fortran/",
     "srcLines": [
-      9450,
-      9539
+      9725,
+      9814
     ],
     "lines": 80,
     "bytes": 973
@@ -1099,8 +1113,8 @@
     "upstream": "docs/src/content/docs/languages/gawk.md",
     "url": "https://devenv.sh/languages/gawk/",
     "srcLines": [
-      9540,
-      9569
+      9815,
+      9844
     ],
     "lines": 26,
     "bytes": 267
@@ -1113,8 +1127,8 @@
     "upstream": "docs/src/content/docs/languages/gleam.md",
     "url": "https://devenv.sh/languages/gleam/",
     "srcLines": [
-      9570,
-      9617
+      9845,
+      9892
     ],
     "lines": 42,
     "bytes": 472
@@ -1127,8 +1141,8 @@
     "upstream": "docs/src/content/docs/languages/go.md",
     "url": "https://devenv.sh/languages/go/",
     "srcLines": [
-      9618,
-      9791
+      9893,
+      10066
     ],
     "lines": 156,
     "bytes": 2031
@@ -1141,8 +1155,8 @@
     "upstream": "docs/src/content/docs/languages/hare.md",
     "url": "https://devenv.sh/languages/hare/",
     "srcLines": [
-      9792,
-      9821
+      10067,
+      10096
     ],
     "lines": 26,
     "bytes": 264
@@ -1155,8 +1169,8 @@
     "upstream": "docs/src/content/docs/languages/haskell.md",
     "url": "https://devenv.sh/languages/haskell/",
     "srcLines": [
-      9822,
-      10013
+      10097,
+      10288
     ],
     "lines": 172,
     "bytes": 2223
@@ -1169,8 +1183,8 @@
     "upstream": "docs/src/content/docs/languages/helm.md",
     "url": "https://devenv.sh/languages/helm/",
     "srcLines": [
-      10014,
-      10133
+      10289,
+      10408
     ],
     "lines": 108,
     "bytes": 1338
@@ -1183,8 +1197,8 @@
     "upstream": "docs/src/content/docs/languages/idris.md",
     "url": "https://devenv.sh/languages/idris/",
     "srcLines": [
-      10134,
-      10229
+      10409,
+      10504
     ],
     "lines": 86,
     "bytes": 996
@@ -1197,8 +1211,8 @@
     "upstream": "docs/src/content/docs/languages/java.md",
     "url": "https://devenv.sh/languages/java/",
     "srcLines": [
-      10230,
-      10409
+      10505,
+      10684
     ],
     "lines": 162,
     "bytes": 2283
@@ -1211,8 +1225,8 @@
     "upstream": "docs/src/content/docs/languages/javascript.md",
     "url": "https://devenv.sh/languages/javascript/",
     "srcLines": [
-      10410,
-      10835
+      10685,
+      11110
     ],
     "lines": 386,
     "bytes": 5057
@@ -1225,8 +1239,8 @@
     "upstream": "docs/src/content/docs/languages/jsonnet.md",
     "url": "https://devenv.sh/languages/jsonnet/",
     "srcLines": [
-      10836,
-      10907
+      11111,
+      11182
     ],
     "lines": 64,
     "bytes": 775
@@ -1239,8 +1253,8 @@
     "upstream": "docs/src/content/docs/languages/julia.md",
     "url": "https://devenv.sh/languages/julia/",
     "srcLines": [
-      10908,
-      10955
+      11183,
+      11230
     ],
     "lines": 42,
     "bytes": 476
@@ -1253,8 +1267,8 @@
     "upstream": "docs/src/content/docs/languages/kotlin.md",
     "url": "https://devenv.sh/languages/kotlin/",
     "srcLines": [
-      10956,
-      11027
+      11231,
+      11302
     ],
     "lines": 64,
     "bytes": 764
@@ -1267,8 +1281,8 @@
     "upstream": "docs/src/content/docs/languages/lean4.md",
     "url": "https://devenv.sh/languages/lean4/",
     "srcLines": [
-      11028,
-      11075
+      11303,
+      11350
     ],
     "lines": 42,
     "bytes": 472
@@ -1281,8 +1295,8 @@
     "upstream": "docs/src/content/docs/languages/lobster.md",
     "url": "https://devenv.sh/languages/lobster/",
     "srcLines": [
-      11076,
-      11123
+      11351,
+      11398
     ],
     "lines": 42,
     "bytes": 490
@@ -1295,8 +1309,8 @@
     "upstream": "docs/src/content/docs/languages/lua.md",
     "url": "https://devenv.sh/languages/lua/",
     "srcLines": [
-      11124,
-      11213
+      11399,
+      11488
     ],
     "lines": 80,
     "bytes": 927
@@ -1309,8 +1323,8 @@
     "upstream": "docs/src/content/docs/languages/nim.md",
     "url": "https://devenv.sh/languages/nim/",
     "srcLines": [
-      11214,
-      11303
+      11489,
+      11578
     ],
     "lines": 80,
     "bytes": 921
@@ -1323,8 +1337,8 @@
     "upstream": "docs/src/content/docs/languages/nix.md",
     "url": "https://devenv.sh/languages/nix/",
     "srcLines": [
-      11304,
-      11375
+      11579,
+      11650
     ],
     "lines": 64,
     "bytes": 716
@@ -1337,8 +1351,8 @@
     "upstream": "docs/src/content/docs/languages/ocaml.md",
     "url": "https://devenv.sh/languages/ocaml/",
     "srcLines": [
-      11376,
-      11465
+      11651,
+      11740
     ],
     "lines": 80,
     "bytes": 994
@@ -1351,8 +1365,8 @@
     "upstream": "docs/src/content/docs/languages/odin.md",
     "url": "https://devenv.sh/languages/odin/",
     "srcLines": [
-      11466,
-      11573
+      11741,
+      11848
     ],
     "lines": 96,
     "bytes": 1210
@@ -1365,8 +1379,8 @@
     "upstream": "docs/src/content/docs/languages/opentofu.md",
     "url": "https://devenv.sh/languages/opentofu/",
     "srcLines": [
-      11574,
-      11663
+      11849,
+      11938
     ],
     "lines": 80,
     "bytes": 990
@@ -1379,8 +1393,8 @@
     "upstream": "docs/src/content/docs/languages/pascal.md",
     "url": "https://devenv.sh/languages/pascal/",
     "srcLines": [
-      11664,
-      11717
+      11939,
+      11992
     ],
     "lines": 48,
     "bytes": 552
@@ -1393,8 +1407,8 @@
     "upstream": "docs/src/content/docs/languages/perl.md",
     "url": "https://devenv.sh/languages/perl/",
     "srcLines": [
-      11718,
-      11815
+      11993,
+      12090
     ],
     "lines": 88,
     "bytes": 981
@@ -1407,8 +1421,8 @@
     "upstream": "docs/src/content/docs/languages/php.md",
     "url": "https://devenv.sh/languages/php/",
     "srcLines": [
-      11816,
-      12284
+      12091,
+      12559
     ],
     "lines": 425,
     "bytes": 7184
@@ -1421,8 +1435,8 @@
     "upstream": "docs/src/content/docs/languages/pkl.md",
     "url": "https://devenv.sh/languages/pkl/",
     "srcLines": [
-      12285,
-      12374
+      12560,
+      12649
     ],
     "lines": 80,
     "bytes": 915
@@ -1435,8 +1449,8 @@
     "upstream": "docs/src/content/docs/languages/purescript.md",
     "url": "https://devenv.sh/languages/purescript/",
     "srcLines": [
-      12375,
-      12506
+      12650,
+      12781
     ],
     "lines": 118,
     "bytes": 1931
@@ -1449,8 +1463,8 @@
     "upstream": "docs/src/content/docs/languages/python.md",
     "url": "https://devenv.sh/languages/python/",
     "srcLines": [
-      12507,
-      13635
+      12782,
+      13910
     ],
     "lines": 1013,
     "bytes": 20064
@@ -1463,8 +1477,8 @@
     "upstream": "docs/src/content/docs/languages/r.md",
     "url": "https://devenv.sh/languages/r/",
     "srcLines": [
-      13636,
-      13767
+      13911,
+      14042
     ],
     "lines": 118,
     "bytes": 1358
@@ -1477,8 +1491,8 @@
     "upstream": "docs/src/content/docs/languages/racket.md",
     "url": "https://devenv.sh/languages/racket/",
     "srcLines": [
-      13768,
-      13815
+      14043,
+      14090
     ],
     "lines": 42,
     "bytes": 488
@@ -1491,8 +1505,8 @@
     "upstream": "docs/src/content/docs/languages/raku.md",
     "url": "https://devenv.sh/languages/raku/",
     "srcLines": [
-      13816,
-      13845
+      14091,
+      14120
     ],
     "lines": 26,
     "bytes": 264
@@ -1505,8 +1519,8 @@
     "upstream": "docs/src/content/docs/languages/robotframework.md",
     "url": "https://devenv.sh/languages/robotframework/",
     "srcLines": [
-      13846,
-      13893
+      14121,
+      14168
     ],
     "lines": 42,
     "bytes": 529
@@ -1519,8 +1533,8 @@
     "upstream": "docs/src/content/docs/languages/ruby.md",
     "url": "https://devenv.sh/languages/ruby/",
     "srcLines": [
-      13894,
-      14105
+      14169,
+      14380
     ],
     "lines": 192,
     "bytes": 2830
@@ -1533,11 +1547,11 @@
     "upstream": "docs/src/content/docs/languages/rust.md",
     "url": "https://devenv.sh/languages/rust/",
     "srcLines": [
-      14106,
-      14762
+      14381,
+      15055
     ],
-    "lines": 582,
-    "bytes": 10702
+    "lines": 598,
+    "bytes": 10906
   },
   {
     "title": "scala",
@@ -1547,8 +1561,8 @@
     "upstream": "docs/src/content/docs/languages/scala.md",
     "url": "https://devenv.sh/languages/scala/",
     "srcLines": [
-      14763,
-      14948
+      15056,
+      15241
     ],
     "lines": 166,
     "bytes": 2127
@@ -1561,8 +1575,8 @@
     "upstream": "docs/src/content/docs/languages/shell.md",
     "url": "https://devenv.sh/languages/shell/",
     "srcLines": [
-      14949,
-      15020
+      15242,
+      15313
     ],
     "lines": 64,
     "bytes": 752
@@ -1575,8 +1589,8 @@
     "upstream": "docs/src/content/docs/languages/solidity.md",
     "url": "https://devenv.sh/languages/solidity/",
     "srcLines": [
-      15021,
-      15110
+      15314,
+      15403
     ],
     "lines": 80,
     "bytes": 1005
@@ -1589,8 +1603,8 @@
     "upstream": "docs/src/content/docs/languages/standardml.md",
     "url": "https://devenv.sh/languages/standardml/",
     "srcLines": [
-      15111,
-      15200
+      15404,
+      15493
     ],
     "lines": 80,
     "bytes": 1011
@@ -1603,8 +1617,8 @@
     "upstream": "docs/src/content/docs/languages/swift.md",
     "url": "https://devenv.sh/languages/swift/",
     "srcLines": [
-      15201,
-      15290
+      15494,
+      15583
     ],
     "lines": 80,
     "bytes": 949
@@ -1617,8 +1631,8 @@
     "upstream": "docs/src/content/docs/languages/terraform.md",
     "url": "https://devenv.sh/languages/terraform/",
     "srcLines": [
-      15291,
-      15404
+      15584,
+      15697
     ],
     "lines": 102,
     "bytes": 1399
@@ -1631,8 +1645,8 @@
     "upstream": "docs/src/content/docs/languages/texlive.md",
     "url": "https://devenv.sh/languages/texlive/",
     "srcLines": [
-      15405,
-      15527
+      15698,
+      15820
     ],
     "lines": 111,
     "bytes": 1290
@@ -1645,8 +1659,8 @@
     "upstream": "docs/src/content/docs/languages/typescript.md",
     "url": "https://devenv.sh/languages/typescript/",
     "srcLines": [
-      15528,
-      15599
+      15821,
+      15892
     ],
     "lines": 64,
     "bytes": 808
@@ -1659,8 +1673,8 @@
     "upstream": "docs/src/content/docs/languages/typst.md",
     "url": "https://devenv.sh/languages/typst/",
     "srcLines": [
-      15600,
-      15713
+      15893,
+      16006
     ],
     "lines": 102,
     "bytes": 1232
@@ -1673,8 +1687,8 @@
     "upstream": "docs/src/content/docs/languages/unison.md",
     "url": "https://devenv.sh/languages/unison/",
     "srcLines": [
-      15714,
-      15761
+      16007,
+      16054
     ],
     "lines": 42,
     "bytes": 488
@@ -1687,8 +1701,8 @@
     "upstream": "docs/src/content/docs/languages/v.md",
     "url": "https://devenv.sh/languages/v/",
     "srcLines": [
-      15762,
-      15809
+      16055,
+      16102
     ],
     "lines": 42,
     "bytes": 444
@@ -1701,8 +1715,8 @@
     "upstream": "docs/src/content/docs/languages/vala.md",
     "url": "https://devenv.sh/languages/vala/",
     "srcLines": [
-      15810,
-      15905
+      16103,
+      16198
     ],
     "lines": 86,
     "bytes": 981
@@ -1715,8 +1729,8 @@
     "upstream": "docs/src/content/docs/languages/zig.md",
     "url": "https://devenv.sh/languages/zig/",
     "srcLines": [
-      15906,
-      16047
+      16199,
+      16340
     ],
     "lines": 128,
     "bytes": 1920
@@ -1729,8 +1743,8 @@
     "upstream": "docs/src/content/docs/lsp.md",
     "url": "https://devenv.sh/lsp/",
     "srcLines": [
-      16048,
-      16075
+      16341,
+      16368
     ],
     "lines": 24,
     "bytes": 869
@@ -1743,8 +1757,8 @@
     "upstream": "docs/src/content/docs/mcp.md",
     "url": "https://devenv.sh/mcp/",
     "srcLines": [
-      16076,
-      16119
+      16369,
+      16412
     ],
     "lines": 34,
     "bytes": 838
@@ -1754,42 +1768,42 @@
     "area": "concepts",
     "slug": "outputs",
     "path": "references/concepts/outputs.md",
-    "upstream": "docs/src/content/docs/outputs.md",
+    "upstream": "docs/src/content/docs/outputs.mdx",
     "url": "https://devenv.sh/outputs/",
     "srcLines": [
-      16120,
-      16215
+      16413,
+      16508
     ],
     "lines": 86,
-    "bytes": 2607
+    "bytes": 2615
   },
   {
     "title": "Overlays",
     "area": "concepts",
     "slug": "overlays",
     "path": "references/concepts/overlays.md",
-    "upstream": "docs/src/content/docs/overlays.md",
+    "upstream": "docs/src/content/docs/overlays.mdx",
     "url": "https://devenv.sh/overlays/",
     "srcLines": [
-      16216,
-      16349
+      16509,
+      16642
     ],
     "lines": 115,
-    "bytes": 2565
+    "bytes": 2573
   },
   {
     "title": "Packages",
     "area": "concepts",
     "slug": "packages",
     "path": "references/concepts/packages.md",
-    "upstream": "docs/src/content/docs/packages.md",
+    "upstream": "docs/src/content/docs/packages.mdx",
     "url": "https://devenv.sh/packages/",
     "srcLines": [
-      16350,
-      16518
+      16643,
+      16811
     ],
     "lines": 149,
-    "bytes": 5707
+    "bytes": 5711
   },
   {
     "title": "Pinning",
@@ -1799,8 +1813,8 @@
     "upstream": "docs/src/content/docs/pinning.md",
     "url": "https://devenv.sh/pinning/",
     "srcLines": [
-      16519,
-      16661
+      16812,
+      16954
     ],
     "lines": 127,
     "bytes": 4235
@@ -1810,28 +1824,28 @@
     "area": "concepts",
     "slug": "processes",
     "path": "references/concepts/processes.md",
-    "upstream": "docs/src/content/docs/processes.md",
+    "upstream": "docs/src/content/docs/processes.mdx",
     "url": "https://devenv.sh/processes/",
     "srcLines": [
-      16662,
-      17227
+      16955,
+      17616
     ],
-    "lines": 522,
-    "bytes": 18344
+    "lines": 610,
+    "bytes": 22334
   },
   {
     "title": "Profiles",
     "area": "concepts",
     "slug": "profiles",
     "path": "references/concepts/profiles.md",
-    "upstream": "docs/src/content/docs/profiles.md",
+    "upstream": "docs/src/content/docs/profiles.mdx",
     "url": "https://devenv.sh/profiles/",
     "srcLines": [
-      17228,
-      17506
+      17617,
+      17895
     ],
     "lines": 247,
-    "bytes": 6517
+    "bytes": 6525
   },
   {
     "title": "Containers",
@@ -1841,8 +1855,8 @@
     "upstream": "docs/src/content/docs/recipes/containers.md",
     "url": "https://devenv.sh/recipes/containers/",
     "srcLines": [
-      17507,
-      17528
+      17896,
+      17917
     ],
     "lines": 18,
     "bytes": 251
@@ -1855,8 +1869,8 @@
     "upstream": "docs/src/content/docs/recipes/cross-platform.md",
     "url": "https://devenv.sh/recipes/cross-platform/",
     "srcLines": [
-      17529,
-      17622
+      17918,
+      18011
     ],
     "lines": 85,
     "bytes": 2638
@@ -1869,8 +1883,8 @@
     "upstream": "docs/src/content/docs/recipes/macos.md",
     "url": "https://devenv.sh/recipes/macos/",
     "srcLines": [
-      17623,
-      17722
+      18012,
+      18111
     ],
     "lines": 88,
     "bytes": 1973
@@ -1883,8 +1897,8 @@
     "upstream": "docs/src/content/docs/recipes/nix.md",
     "url": "https://devenv.sh/recipes/nix/",
     "srcLines": [
-      17723,
-      17833
+      18112,
+      18222
     ],
     "lines": 97,
     "bytes": 2374
@@ -1894,28 +1908,28 @@
     "area": "concepts",
     "slug": "environment-variables",
     "path": "references/concepts/environment-variables.md",
-    "upstream": "docs/src/content/docs/reference/environment-variables.md",
+    "upstream": "docs/src/content/docs/reference/environment-variables.mdx",
     "url": "https://devenv.sh/reference/environment-variables/",
     "srcLines": [
-      17834,
-      18058
+      18223,
+      18443
     ],
-    "lines": 165,
-    "bytes": 6005
+    "lines": 161,
+    "bytes": 6094
   },
   {
     "title": "devenv.yaml",
     "area": "concepts",
     "slug": "devenv-yaml",
     "path": "references/concepts/devenv-yaml.md",
-    "upstream": "docs/src/content/docs/reference/yaml-options.md",
+    "upstream": "docs/src/content/docs/reference/yaml-options.mdx",
     "url": "https://devenv.sh/reference/yaml-options/",
     "srcLines": [
-      18059,
-      18368
+      18444,
+      18761
     ],
-    "lines": 244,
-    "bytes": 5572
+    "lines": 250,
+    "bytes": 5953
   },
   {
     "title": "REPL",
@@ -1925,8 +1939,8 @@
     "upstream": "docs/src/content/docs/repl.md",
     "url": "https://devenv.sh/repl/",
     "srcLines": [
-      18369,
-      18412
+      18762,
+      18805
     ],
     "lines": 38,
     "bytes": 1080
@@ -1939,8 +1953,8 @@
     "upstream": "docs/src/content/docs/scripts.md",
     "url": "https://devenv.sh/scripts/",
     "srcLines": [
-      18413,
-      18594
+      18806,
+      18987
     ],
     "lines": 162,
     "bytes": 3657
@@ -1953,8 +1967,8 @@
     "upstream": "docs/src/content/docs/services/index.md",
     "url": "https://devenv.sh/services/",
     "srcLines": [
-      18595,
-      18644
+      18988,
+      19037
     ],
     "lines": 45,
     "bytes": 1192
@@ -1967,8 +1981,8 @@
     "upstream": "docs/src/content/docs/services/adminer.md",
     "url": "https://devenv.sh/services/adminer/",
     "srcLines": [
-      18645,
-      18710
+      19038,
+      19103
     ],
     "lines": 58,
     "bytes": 691
@@ -1981,8 +1995,8 @@
     "upstream": "docs/src/content/docs/services/blackfire.md",
     "url": "https://devenv.sh/services/blackfire/",
     "srcLines": [
-      18711,
-      18874
+      19104,
+      19267
     ],
     "lines": 146,
     "bytes": 2379
@@ -1995,8 +2009,8 @@
     "upstream": "docs/src/content/docs/services/caddy.md",
     "url": "https://devenv.sh/services/caddy/",
     "srcLines": [
-      18875,
-      19143
+      19268,
+      19536
     ],
     "lines": 244,
     "bytes": 3884
@@ -2009,8 +2023,8 @@
     "upstream": "docs/src/content/docs/services/cassandra.md",
     "url": "https://devenv.sh/services/cassandra/",
     "srcLines": [
-      19144,
-      19321
+      19537,
+      19714
     ],
     "lines": 160,
     "bytes": 2108
@@ -2023,8 +2037,8 @@
     "upstream": "docs/src/content/docs/services/clickhouse.md",
     "url": "https://devenv.sh/services/clickhouse/",
     "srcLines": [
-      19322,
-      19559
+      19715,
+      19952
     ],
     "lines": 211,
     "bytes": 3365
@@ -2037,8 +2051,8 @@
     "upstream": "docs/src/content/docs/services/cockroachdb.md",
     "url": "https://devenv.sh/services/cockroachdb/",
     "srcLines": [
-      19560,
-      19643
+      19953,
+      20036
     ],
     "lines": 74,
     "bytes": 1014
@@ -2051,8 +2065,8 @@
     "upstream": "docs/src/content/docs/services/couchdb.md",
     "url": "https://devenv.sh/services/couchdb/",
     "srcLines": [
-      19644,
-      19855
+      20037,
+      20248
     ],
     "lines": 190,
     "bytes": 3742
@@ -2065,8 +2079,8 @@
     "upstream": "docs/src/content/docs/services/dynamodb-local.md",
     "url": "https://devenv.sh/services/dynamodb-local/",
     "srcLines": [
-      19856,
-      19939
+      20249,
+      20332
     ],
     "lines": 74,
     "bytes": 1242
@@ -2079,8 +2093,8 @@
     "upstream": "docs/src/content/docs/services/elasticmq.md",
     "url": "https://devenv.sh/services/elasticmq/",
     "srcLines": [
-      19940,
-      20005
+      20333,
+      20398
     ],
     "lines": 58,
     "bytes": 750
@@ -2093,8 +2107,8 @@
     "upstream": "docs/src/content/docs/services/elasticsearch.md",
     "url": "https://devenv.sh/services/elasticsearch/",
     "srcLines": [
-      20006,
-      20260
+      20399,
+      20653
     ],
     "lines": 229,
     "bytes": 3519
@@ -2107,8 +2121,8 @@
     "upstream": "docs/src/content/docs/services/garage.md",
     "url": "https://devenv.sh/services/garage/",
     "srcLines": [
-      20261,
-      20545
+      20654,
+      20938
     ],
     "lines": 255,
     "bytes": 3906
@@ -2121,8 +2135,8 @@
     "upstream": "docs/src/content/docs/services/httpbin.md",
     "url": "https://devenv.sh/services/httpbin/",
     "srcLines": [
-      20546,
-      20613
+      20939,
+      21006
     ],
     "lines": 60,
     "bytes": 702
@@ -2135,8 +2149,8 @@
     "upstream": "docs/src/content/docs/services/influxdb.md",
     "url": "https://devenv.sh/services/influxdb/",
     "srcLines": [
-      20614,
-      20705
+      21007,
+      21098
     ],
     "lines": 82,
     "bytes": 1048
@@ -2149,8 +2163,8 @@
     "upstream": "docs/src/content/docs/services/kafka.md",
     "url": "https://devenv.sh/services/kafka/",
     "srcLines": [
-      20706,
-      21245
+      21099,
+      21638
     ],
     "lines": 481,
     "bytes": 9518
@@ -2163,8 +2177,8 @@
     "upstream": "docs/src/content/docs/services/keycloak.md",
     "url": "https://devenv.sh/services/keycloak/",
     "srcLines": [
-      21246,
-      21693
+      21639,
+      22086
     ],
     "lines": 408,
     "bytes": 7529
@@ -2177,8 +2191,8 @@
     "upstream": "docs/src/content/docs/services/mailhog.md",
     "url": "https://devenv.sh/services/mailhog/",
     "srcLines": [
-      21694,
-      21821
+      22087,
+      22214
     ],
     "lines": 114,
     "bytes": 1429
@@ -2191,8 +2205,8 @@
     "upstream": "docs/src/content/docs/services/mailpit.md",
     "url": "https://devenv.sh/services/mailpit/",
     "srcLines": [
-      21822,
-      21931
+      22215,
+      22324
     ],
     "lines": 98,
     "bytes": 1209
@@ -2205,8 +2219,8 @@
     "upstream": "docs/src/content/docs/services/meilisearch.md",
     "url": "https://devenv.sh/services/meilisearch/",
     "srcLines": [
-      21932,
-      22092
+      22325,
+      22485
     ],
     "lines": 143,
     "bytes": 2755
@@ -2219,8 +2233,8 @@
     "upstream": "docs/src/content/docs/services/memcached.md",
     "url": "https://devenv.sh/services/memcached/",
     "srcLines": [
-      22093,
-      22208
+      22486,
+      22601
     ],
     "lines": 104,
     "bytes": 1436
@@ -2233,8 +2247,8 @@
     "upstream": "docs/src/content/docs/services/minio.md",
     "url": "https://devenv.sh/services/minio/",
     "srcLines": [
-      22209,
-      22440
+      22602,
+      22833
     ],
     "lines": 206,
     "bytes": 3087
@@ -2247,8 +2261,8 @@
     "upstream": "docs/src/content/docs/services/mongodb.md",
     "url": "https://devenv.sh/services/mongodb/",
     "srcLines": [
-      22441,
-      22614
+      22834,
+      23007
     ],
     "lines": 158,
     "bytes": 2222
@@ -2261,8 +2275,8 @@
     "upstream": "docs/src/content/docs/services/mosquitto.md",
     "url": "https://devenv.sh/services/mosquitto/",
     "srcLines": [
-      22615,
-      22765
+      23008,
+      23158
     ],
     "lines": 137,
     "bytes": 2054
@@ -2275,8 +2289,8 @@
     "upstream": "docs/src/content/docs/services/mysql.md",
     "url": "https://devenv.sh/services/mysql/",
     "srcLines": [
-      22766,
-      23047
+      23159,
+      23440
     ],
     "lines": 254,
     "bytes": 5005
@@ -2289,8 +2303,8 @@
     "upstream": "docs/src/content/docs/services/nats.md",
     "url": "https://devenv.sh/services/nats/",
     "srcLines": [
-      23048,
-      23493
+      23441,
+      23886
     ],
     "lines": 406,
     "bytes": 6114
@@ -2303,8 +2317,8 @@
     "upstream": "docs/src/content/docs/services/nginx.md",
     "url": "https://devenv.sh/services/nginx/",
     "srcLines": [
-      23494,
-      23601
+      23887,
+      23994
     ],
     "lines": 96,
     "bytes": 1366
@@ -2317,8 +2331,8 @@
     "upstream": "docs/src/content/docs/services/nixseparatedebuginfod.md",
     "url": "https://devenv.sh/services/nixseparatedebuginfod/",
     "srcLines": [
-      23602,
-      23744
+      23995,
+      24137
     ],
     "lines": 127,
     "bytes": 2035
@@ -2331,8 +2345,8 @@
     "upstream": "docs/src/content/docs/services/opensearch.md",
     "url": "https://devenv.sh/services/opensearch/",
     "srcLines": [
-      23745,
-      23989
+      24138,
+      24382
     ],
     "lines": 219,
     "bytes": 3636
@@ -2345,8 +2359,8 @@
     "upstream": "docs/src/content/docs/services/opentelemetry-collector.md",
     "url": "https://devenv.sh/services/opentelemetry-collector/",
     "srcLines": [
-      23990,
-      24081
+      24383,
+      24474
     ],
     "lines": 82,
     "bytes": 1705
@@ -2359,8 +2373,8 @@
     "upstream": "docs/src/content/docs/services/postgres.md",
     "url": "https://devenv.sh/services/postgres/",
     "srcLines": [
-      24082,
-      24546
+      24475,
+      24939
     ],
     "lines": 431,
     "bytes": 7650
@@ -2373,8 +2387,8 @@
     "upstream": "docs/src/content/docs/services/prometheus.md",
     "url": "https://devenv.sh/services/prometheus/",
     "srcLines": [
-      24547,
-      24868
+      24940,
+      25261
     ],
     "lines": 286,
     "bytes": 4004
@@ -2387,8 +2401,8 @@
     "upstream": "docs/src/content/docs/services/rabbitmq.md",
     "url": "https://devenv.sh/services/rabbitmq/",
     "srcLines": [
-      24869,
-      25093
+      25262,
+      25486
     ],
     "lines": 201,
     "bytes": 4256
@@ -2401,8 +2415,8 @@
     "upstream": "docs/src/content/docs/services/redis.md",
     "url": "https://devenv.sh/services/redis/",
     "srcLines": [
-      25094,
-      25201
+      25487,
+      25594
     ],
     "lines": 96,
     "bytes": 1404
@@ -2415,8 +2429,8 @@
     "upstream": "docs/src/content/docs/services/rustfs.md",
     "url": "https://devenv.sh/services/rustfs/",
     "srcLines": [
-      25202,
-      25384
+      25595,
+      25777
     ],
     "lines": 163,
     "bytes": 2416
@@ -2429,8 +2443,8 @@
     "upstream": "docs/src/content/docs/services/sqld.md",
     "url": "https://devenv.sh/services/sqld/",
     "srcLines": [
-      25385,
-      25450
+      25778,
+      25843
     ],
     "lines": 58,
     "bytes": 683
@@ -2443,8 +2457,8 @@
     "upstream": "docs/src/content/docs/services/tailscale.md",
     "url": "https://devenv.sh/services/tailscale/",
     "srcLines": [
-      25451,
-      25492
+      25844,
+      25885
     ],
     "lines": 36,
     "bytes": 474
@@ -2457,8 +2471,8 @@
     "upstream": "docs/src/content/docs/services/temporal.md",
     "url": "https://devenv.sh/services/temporal/",
     "srcLines": [
-      25493,
-      25765
+      25886,
+      26158
     ],
     "lines": 245,
     "bytes": 3255
@@ -2471,8 +2485,8 @@
     "upstream": "docs/src/content/docs/services/tideways.md",
     "url": "https://devenv.sh/services/tideways/",
     "srcLines": [
-      25766,
-      25905
+      26159,
+      26298
     ],
     "lines": 124,
     "bytes": 1707
@@ -2485,8 +2499,8 @@
     "upstream": "docs/src/content/docs/services/trafficserver.md",
     "url": "https://devenv.sh/services/trafficserver/",
     "srcLines": [
-      25906,
-      26378
+      26299,
+      26771
     ],
     "lines": 433,
     "bytes": 8668
@@ -2499,8 +2513,8 @@
     "upstream": "docs/src/content/docs/services/typesense.md",
     "url": "https://devenv.sh/services/typesense/",
     "srcLines": [
-      26379,
-      26522
+      26772,
+      26915
     ],
     "lines": 128,
     "bytes": 1663
@@ -2513,8 +2527,8 @@
     "upstream": "docs/src/content/docs/services/varnish.md",
     "url": "https://devenv.sh/services/varnish/",
     "srcLines": [
-      26523,
-      26656
+      26916,
+      27049
     ],
     "lines": 119,
     "bytes": 1507
@@ -2527,8 +2541,8 @@
     "upstream": "docs/src/content/docs/services/vault.md",
     "url": "https://devenv.sh/services/vault/",
     "srcLines": [
-      26657,
-      26776
+      27050,
+      27169
     ],
     "lines": 106,
     "bytes": 1369
@@ -2541,8 +2555,8 @@
     "upstream": "docs/src/content/docs/services/wiremock.md",
     "url": "https://devenv.sh/services/wiremock/",
     "srcLines": [
-      26777,
-      26946
+      27170,
+      27339
     ],
     "lines": 154,
     "bytes": 2302
@@ -2555,8 +2569,8 @@
     "upstream": "docs/src/content/docs/supported-process-managers/index.md",
     "url": "https://devenv.sh/supported-process-managers/",
     "srcLines": [
-      26947,
-      26964
+      27340,
+      27357
     ],
     "lines": 18,
     "bytes": 877
@@ -2569,8 +2583,8 @@
     "upstream": "docs/src/content/docs/supported-process-managers/hivemind.md",
     "url": "https://devenv.sh/supported-process-managers/hivemind/",
     "srcLines": [
-      26965,
-      27084
+      27358,
+      27477
     ],
     "lines": 100,
     "bytes": 2326
@@ -2583,8 +2597,8 @@
     "upstream": "docs/src/content/docs/supported-process-managers/honcho.md",
     "url": "https://devenv.sh/supported-process-managers/honcho/",
     "srcLines": [
-      27085,
-      27204
+      27478,
+      27597
     ],
     "lines": 100,
     "bytes": 2284
@@ -2597,8 +2611,8 @@
     "upstream": "docs/src/content/docs/supported-process-managers/mprocs.md",
     "url": "https://devenv.sh/supported-process-managers/mprocs/",
     "srcLines": [
-      27205,
-      27344
+      27598,
+      27737
     ],
     "lines": 118,
     "bytes": 2571
@@ -2611,8 +2625,8 @@
     "upstream": "docs/src/content/docs/supported-process-managers/native.md",
     "url": "https://devenv.sh/supported-process-managers/native/",
     "srcLines": [
-      27345,
-      27448
+      27738,
+      27841
     ],
     "lines": 86,
     "bytes": 2350
@@ -2625,8 +2639,8 @@
     "upstream": "docs/src/content/docs/supported-process-managers/overmind.md",
     "url": "https://devenv.sh/supported-process-managers/overmind/",
     "srcLines": [
-      27449,
-      27568
+      27842,
+      27961
     ],
     "lines": 100,
     "bytes": 2326
@@ -2639,8 +2653,8 @@
     "upstream": "docs/src/content/docs/supported-process-managers/process-compose.md",
     "url": "https://devenv.sh/supported-process-managers/process-compose/",
     "srcLines": [
-      27569,
-      27808
+      27962,
+      28201
     ],
     "lines": 210,
     "bytes": 4283
@@ -2650,27 +2664,41 @@
     "area": "concepts",
     "slug": "tasks",
     "path": "references/concepts/tasks.md",
-    "upstream": "docs/src/content/docs/tasks.md",
+    "upstream": "docs/src/content/docs/tasks.mdx",
     "url": "https://devenv.sh/tasks/",
     "srcLines": [
-      27809,
-      28264
+      28202,
+      28653
     ],
-    "lines": 413,
-    "bytes": 13760
+    "lines": 409,
+    "bytes": 13790
   },
   {
     "title": "Tests",
     "area": "concepts",
     "slug": "tests",
     "path": "references/concepts/tests.md",
-    "upstream": "docs/src/content/docs/tests.md",
+    "upstream": "docs/src/content/docs/tests.mdx",
     "url": "https://devenv.sh/tests/",
     "srcLines": [
-      28265,
-      28380
+      28654,
+      28770
     ],
     "lines": 107,
-    "bytes": 2490
+    "bytes": 2498
+  },
+  {
+    "title": "TUI customization",
+    "area": "guides",
+    "slug": "tui-customization",
+    "path": "references/guides/tui-customization.md",
+    "upstream": "docs/src/content/docs/tui-customization.md",
+    "url": "https://devenv.sh/tui-customization/",
+    "srcLines": [
+      28771,
+      29120
+    ],
+    "lines": 329,
+    "bytes": 15561
   }
 ]

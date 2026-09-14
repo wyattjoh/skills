@@ -1,6 +1,6 @@
 <!-- source: https://devenv.sh/languages/typescript/
      upstream: docs/src/content/docs/languages/typescript.md
-     llms-full.txt lines 15528-15599 -->
+     llms-full.txt lines 15821-15892 -->
 
 # typescript
 

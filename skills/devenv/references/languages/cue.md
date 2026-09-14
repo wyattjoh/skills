@@ -1,6 +1,6 @@
 <!-- source: https://devenv.sh/languages/cue/
      upstream: docs/src/content/docs/languages/cue.md
-     llms-full.txt lines 8926-9015 -->
+     llms-full.txt lines 9201-9290 -->
 
 # cue
 

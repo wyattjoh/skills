@@ -1,6 +1,6 @@
 <!-- source: https://devenv.sh/services/mailpit/
      upstream: docs/src/content/docs/services/mailpit.md
-     llms-full.txt lines 21822-21931 -->
+     llms-full.txt lines 22215-22324 -->
 
 # mailpit
 

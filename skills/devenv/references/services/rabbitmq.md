@@ -1,6 +1,6 @@
 <!-- source: https://devenv.sh/services/rabbitmq/
      upstream: docs/src/content/docs/services/rabbitmq.md
-     llms-full.txt lines 24869-25093 -->
+     llms-full.txt lines 25262-25486 -->
 
 # rabbitmq
 

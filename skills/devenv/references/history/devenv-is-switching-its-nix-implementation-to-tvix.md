@@ -1,6 +1,6 @@
 <!-- source: https://devenv.sh/blog/2024/10/22/devenv-is-switching-its-nix-implementation-to-tvix/
      upstream: docs/src/content/docs/blog/2024/10/22/devenv-is-switching-its-nix-implementation-to-tvix.md
-     llms-full.txt lines 1379-1539 -->
+     llms-full.txt lines 1473-1633 -->
 
 # devenv is switching its Nix implementation to Tvix
 

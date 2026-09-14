@@ -1,10 +1,10 @@
 <!-- source: https://devenv.sh/overlays/
-     upstream: docs/src/content/docs/overlays.md
-     llms-full.txt lines 16216-16349 -->
+     upstream: docs/src/content/docs/overlays.mdx
+     llms-full.txt lines 16509-16642 -->
 
 # Overlays
 
-Added in `1.4.2`
+**New in version 1.4.2**
 
 Overlays in devenv allow you to modify or extend the default package set (`pkgs`) that devenv uses. This is useful when you need to:
 

@@ -1,6 +1,6 @@
 <!-- source: https://devenv.sh/languages/elixir/
      upstream: docs/src/content/docs/languages/elixir.md
-     llms-full.txt lines 9198-9287 -->
+     llms-full.txt lines 9473-9562 -->
 
 # elixir
 

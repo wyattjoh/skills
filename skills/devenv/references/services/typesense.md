@@ -1,6 +1,6 @@
 <!-- source: https://devenv.sh/services/typesense/
      upstream: docs/src/content/docs/services/typesense.md
-     llms-full.txt lines 26379-26522 -->
+     llms-full.txt lines 26772-26915 -->
 
 # typesense
 

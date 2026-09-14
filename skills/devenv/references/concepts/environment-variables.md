@@ -1,6 +1,6 @@
 <!-- source: https://devenv.sh/reference/environment-variables/
-     upstream: docs/src/content/docs/reference/environment-variables.md
-     llms-full.txt lines 17834-18058 -->
+     upstream: docs/src/content/docs/reference/environment-variables.mdx
+     llms-full.txt lines 18223-18443 -->
 
 # Environment variables
 
@@ -13,25 +13,25 @@ devenv defines and respects the following environment variables:
 
 ### [`DEVENV_ROOT`](#devenv_root)
 
-Added in `0.2`
+**New in version 0.2**
 
 **Read-only.** Points to the root of the project where `devenv.nix` is located.
 
 ### [`DEVENV_DOTFILE`](#devenv_dotfile)
 
-Added in `0.1`
+**New in version 0.1**
 
 **Read-only.** Points to `$DEVENV_ROOT/.devenv`.
 
 ### [`DEVENV_STATE`](#devenv_state)
 
-Added in `0.1`
+**New in version 0.1**
 
 **Read-only.** Points to `$DEVENV_DOTFILE/state`.
 
 ### [`DEVENV_RUNTIME`](#devenv_runtime)
 
-Added in `1.0`
+**New in version 1.0**
 
 **Read-only.** A short-lived, per-project directory for sockets and other runtime files (e.g. `$DEVENV_RUNTIME/postgres`), exported into the shell. The path is resolved in this order:
 
@@ -41,61 +41,61 @@ Added in `1.0`
 
 ### [`DEVENV_PROFILE`](#devenv_profile)
 
-Added in `0.5`
+**New in version 0.5**
 
 **Read-only.** Points to the Nix store path that has the final profile of packages/scripts provided by devenv. Useful for teaching other programs about `/bin`, `/etc`, `/var` folders. See [Package outputs](/packages/#package-outputs) for which outputs of a package are linked into it.
 
 ### [`DEVENV_HOME`](#devenv_home)
 
-Added in `2.1.3`
+**New in version 2.1.3**
 
 devenv’s per-user data directory. Stores GC roots, the trust database, cached keys, and other persistent per-user data. Defaults to `~/.local/share/devenv` (respecting `$XDG_DATA_HOME`). Set it to override where this data is stored.
 
 ### [`DEVENV_MAX_JOBS`](#devenv_max_jobs)
 
-Added in `1.11`
+**New in version 1.11**
 
 Maximum number of Nix builds to run concurrently. Mirrors the `-j` / `--max-jobs` flag. Defaults to 1/4 of available CPU cores (minimum 1).
 
 ### [`DEVENV_CORES`](#devenv_cores)
 
-Added in `1.11`
+**New in version 1.11**
 
 Number of CPU cores available to each build. Mirrors the `-u` / `--cores` flag. Defaults to available cores divided by `DEVENV_MAX_JOBS` (minimum 1).
 
 ### [`DEVENV_SHELL_TYPE`](#devenv_shell_type)
 
-Added in `2.1`
+**New in version 2.1**
 
 Shell to use for interactive sessions: `bash`, `zsh`, `fish`, or `nu`. Mirrors the `--shell` flag.
 
 ### [`DEVENV_TUI`](#devenv_tui)
 
-Added in `2.0`
+**New in version 2.0**
 
 Enable (`true`) or disable (`false`) the interactive terminal interface. Mirrors the `--tui` / `--no-tui` flags. Enabled by default when the session is interactive.
 
 ### [`DEVENV_TRACE_TO`](#devenv_trace_to)
 
-Added in `2.1`
+**New in version 2.1**
 
 Enable tracing to one or more destinations, comma-separated (e.g. `pretty:stderr,json:file:/tmp/trace.json`). Mirrors the `--trace-to` flag; run `devenv --help` for the full syntax.
 
 ### [`DEVENV_TRACE_DEFAULT_TO`](#devenv_trace_default_to)
 
-Added in `2.1`
+**New in version 2.1**
 
 A fallback tracing destination, applied only when no tracing is configured explicitly (neither `DEVENV_TRACE_TO` nor `--trace-to`). Uses the same comma-separated `[format:]destination` syntax as [`DEVENV_TRACE_TO`](#devenv_trace_to). Set it to an empty string to suppress an inherited default.
 
 ### [`DEVENV_INCLUDE_ENVRC`](#devenv_include_envrc)
 
-Added in `2.1.3`
+**New in version 2.1.3**
 
 Generate an `.envrc` file when running `devenv init`. Mirrors `devenv init --include-envrc`.
 
 ### [`DEVENV_NO_AI_AGENT`](#devenv_no_ai_agent)
 
-Added in `2.1`
+**New in version 2.1**
 
 Set to any value to skip AI-agent auto-detection, forcing normal output and the TUI even when running under a detected coding agent.
 
@@ -155,13 +155,9 @@ Authentication token for pulling from and pushing to Cachix binary caches.
 
 Override the provider for the [secretspec integration](/integrations/secretspec/). Mirrored by the `--secretspec-provider` flag.
 
-!!! tip “New in version 2.2.2”
+**Changed in version 2.2.2**
 
-```plaintext
-devenv exports this variable into the development shell only when a provider
-override was explicitly configured. Otherwise, commands use the provider
-routes from `secretspec.toml`.
-```
+devenv exports this variable into the development shell only when a provider override was explicitly configured. Otherwise, commands use the provider routes from `secretspec.toml`.
 
 ### [`SECRETSPEC_PROFILE`](#secretspec_profile)
 

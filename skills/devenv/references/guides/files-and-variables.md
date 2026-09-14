@@ -1,6 +1,6 @@
 <!-- source: https://devenv.sh/files-and-variables/
-     upstream: docs/src/content/docs/files-and-variables.md
-     llms-full.txt lines 4833-4901 -->
+     upstream: docs/src/content/docs/files-and-variables.mdx
+     llms-full.txt lines 5113-5181 -->
 
 # Files And Variables
 
@@ -18,7 +18,7 @@ Same as `devenv.nix`, but not meant to be committed into the Git repository so t
 
 ### devenv.local.yaml
 
-Added in `1.10`
+**New in version 1.10**
 
 Same as `devenv.yaml`, but not meant to be committed into the Git repository so that developers can override some things for their local use case.
 

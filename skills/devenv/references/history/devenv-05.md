@@ -1,6 +1,6 @@
 <!-- source: https://devenv.sh/blog/2022/12/22/devenv-05/
      upstream: docs/src/content/docs/blog/2022/12/22/devenv-05.md
-     llms-full.txt lines 584-653 -->
+     llms-full.txt lines 678-747 -->
 
 # devenv 0.5
 

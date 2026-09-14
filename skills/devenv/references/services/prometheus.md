@@ -1,6 +1,6 @@
 <!-- source: https://devenv.sh/services/prometheus/
      upstream: docs/src/content/docs/services/prometheus.md
-     llms-full.txt lines 24547-24868 -->
+     llms-full.txt lines 24940-25261 -->
 
 # prometheus
 

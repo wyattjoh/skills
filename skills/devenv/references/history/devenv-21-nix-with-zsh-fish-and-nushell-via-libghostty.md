@@ -1,6 +1,6 @@
 <!-- source: https://devenv.sh/blog/2026/05/07/devenv-21-nix-with-zsh-fish-and-nushell-via-libghostty/
      upstream: docs/src/content/docs/blog/2026/05/07/devenv-21-nix-with-zsh-fish-and-nushell-via-libghostty.mdx
-     llms-full.txt lines 3429-3603 -->
+     llms-full.txt lines 3523-3697 -->
 
 # devenv 2.1: Nix with zsh, fish, and nushell via libghostty
 

@@ -1,6 +1,6 @@
 <!-- source: https://devenv.sh/services/nginx/
      upstream: docs/src/content/docs/services/nginx.md
-     llms-full.txt lines 23494-23601 -->
+     llms-full.txt lines 23887-23994 -->
 
 # nginx
 

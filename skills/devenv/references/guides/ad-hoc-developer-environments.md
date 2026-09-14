@@ -1,10 +1,10 @@
 <!-- source: https://devenv.sh/ad-hoc-developer-environments/
-     upstream: docs/src/content/docs/ad-hoc-developer-environments.md
+     upstream: docs/src/content/docs/ad-hoc-developer-environments.mdx
      llms-full.txt lines 3-110 -->
 
 # Ad-hoc Developer Environments
 
-Added in `1.6`
+**New in version 1.6**
 
 Instead of creating and maintaining a `devenv.nix` file, you can create ad-hoc developer environments directly from the command line using the `--option` flag.
 

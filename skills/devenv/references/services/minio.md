@@ -1,6 +1,6 @@
 <!-- source: https://devenv.sh/services/minio/
      upstream: docs/src/content/docs/services/minio.md
-     llms-full.txt lines 22209-22440 -->
+     llms-full.txt lines 22602-22833 -->
 
 # minio
 

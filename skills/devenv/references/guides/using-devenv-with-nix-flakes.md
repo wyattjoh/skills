@@ -1,6 +1,6 @@
 <!-- source: https://devenv.sh/guides/using-with-flakes/
      upstream: docs/src/content/docs/guides/using-with-flakes.md
-     llms-full.txt lines 6206-6491 -->
+     llms-full.txt lines 6485-6770 -->
 
 # Using devenv with Nix Flakes
 

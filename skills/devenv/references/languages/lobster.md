@@ -1,6 +1,6 @@
 <!-- source: https://devenv.sh/languages/lobster/
      upstream: docs/src/content/docs/languages/lobster.md
-     llms-full.txt lines 11076-11123 -->
+     llms-full.txt lines 11351-11398 -->
 
 # lobster
 

@@ -1,6 +1,6 @@
 <!-- source: https://devenv.sh/services/opentelemetry-collector/
      upstream: docs/src/content/docs/services/opentelemetry-collector.md
-     llms-full.txt lines 23990-24081 -->
+     llms-full.txt lines 24383-24474 -->
 
 # opentelemetry-collector
 

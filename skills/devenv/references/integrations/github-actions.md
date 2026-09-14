@@ -1,6 +1,6 @@
 <!-- source: https://devenv.sh/integrations/github-actions/
      upstream: docs/src/content/docs/integrations/github-actions.md
-     llms-full.txt lines 7727-7920 -->
+     llms-full.txt lines 8006-8199 -->
 
 # Using devenv in GitHub Actions
 

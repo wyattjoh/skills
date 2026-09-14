@@ -1,6 +1,6 @@
 <!-- source: https://devenv.sh/packages/
-     upstream: docs/src/content/docs/packages.md
-     llms-full.txt lines 16350-16518 -->
+     upstream: docs/src/content/docs/packages.mdx
+     llms-full.txt lines 16643-16811 -->
 
 # Packages
 
@@ -86,7 +86,7 @@ The `nixpkgs-multiverse` input is pinned in `devenv.lock`. Historical Nixpkgs re
 
 ### Pinning several packages
 
-New in version 2.2.3
+**New in version 2.2.3**
 
 `multiverse.pins` needs a recent `nixpkgs-multiverse`. Run `devenv update nixpkgs-multiverse` if you added the input earlier.
 

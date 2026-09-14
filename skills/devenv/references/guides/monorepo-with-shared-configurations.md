@@ -1,10 +1,10 @@
 <!-- source: https://devenv.sh/guides/monorepo/
-     upstream: docs/src/content/docs/guides/monorepo.md
-     llms-full.txt lines 5631-5807 -->
+     upstream: docs/src/content/docs/guides/monorepo.mdx
+     llms-full.txt lines 5910-6086 -->
 
 # Monorepo with Shared Configurations
 
-Added in `1.10`
+**New in version 1.10**
 
 This guide shows how to structure a monorepo where multiple services share common configurations.
 

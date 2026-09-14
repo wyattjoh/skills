@@ -1,6 +1,6 @@
 <!-- source: https://devenv.sh/languages/fortran/
      upstream: docs/src/content/docs/languages/fortran.md
-     llms-full.txt lines 9450-9539 -->
+     llms-full.txt lines 9725-9814 -->
 
 # fortran
 

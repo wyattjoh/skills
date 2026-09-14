@@ -1,6 +1,6 @@
 <!-- source: https://devenv.sh/integrations/delta/
      upstream: docs/src/content/docs/integrations/delta.md
-     llms-full.txt lines 7447-7461 -->
+     llms-full.txt lines 7726-7740 -->
 
 # Delta
 

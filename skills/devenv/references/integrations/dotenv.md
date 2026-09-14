@@ -1,6 +1,6 @@
 <!-- source: https://devenv.sh/integrations/dotenv/
      upstream: docs/src/content/docs/integrations/dotenv.md
-     llms-full.txt lines 7681-7726 -->
+     llms-full.txt lines 7960-8005 -->
 
 # Dotenv
 

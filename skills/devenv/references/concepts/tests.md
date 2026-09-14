@@ -1,6 +1,6 @@
 <!-- source: https://devenv.sh/tests/
-     upstream: docs/src/content/docs/tests.md
-     llms-full.txt lines 28265-28380 -->
+     upstream: docs/src/content/docs/tests.mdx
+     llms-full.txt lines 28654-28770 -->
 
 # Tests
 
@@ -89,7 +89,7 @@ ncdu 2.2
 
 ## Changing environment if testing
 
-Added in `1.0.6`
+**New in version 1.0.6**
 
 devenv.nix
 

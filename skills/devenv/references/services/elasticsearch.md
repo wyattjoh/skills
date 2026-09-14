@@ -1,6 +1,6 @@
 <!-- source: https://devenv.sh/services/elasticsearch/
      upstream: docs/src/content/docs/services/elasticsearch.md
-     llms-full.txt lines 20006-20260 -->
+     llms-full.txt lines 20399-20653 -->
 
 # elasticsearch
 

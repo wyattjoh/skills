@@ -1,6 +1,6 @@
 <!-- source: https://devenv.sh/blog/2025/07/03/devenv-17-cuda-support-enhanced-tasks-and-mcp-support/
      upstream: docs/src/content/docs/blog/2025/07/03/devenv-17-cuda-support-enhanced-tasks-and-mcp-support.md
-     llms-full.txt lines 1782-1939 -->
+     llms-full.txt lines 1876-2033 -->
 
 # devenv 1.7: CUDA Support, Enhanced Tasks, and MCP support
 

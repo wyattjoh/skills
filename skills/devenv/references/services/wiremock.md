@@ -1,6 +1,6 @@
 <!-- source: https://devenv.sh/services/wiremock/
      upstream: docs/src/content/docs/services/wiremock.md
-     llms-full.txt lines 26777-26946 -->
+     llms-full.txt lines 27170-27339 -->
 
 # wiremock
 

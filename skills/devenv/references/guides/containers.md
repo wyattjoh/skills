@@ -1,10 +1,10 @@
 <!-- source: https://devenv.sh/containers/
-     upstream: docs/src/content/docs/containers.md
-     llms-full.txt lines 4205-4419 -->
+     upstream: docs/src/content/docs/containers.mdx
+     llms-full.txt lines 4485-4699 -->
 
 # Containers
 
-Added in `0.6`
+**New in version 0.6**
 
 Note
 

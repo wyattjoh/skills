@@ -1,6 +1,6 @@
 <!-- source: https://devenv.sh/languages/dotnet/
      upstream: docs/src/content/docs/languages/dotnet.md
-     llms-full.txt lines 9112-9197 -->
+     llms-full.txt lines 9387-9472 -->
 
 # dotnet
 

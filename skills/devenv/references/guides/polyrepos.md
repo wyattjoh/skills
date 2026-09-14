@@ -1,6 +1,6 @@
 <!-- source: https://devenv.sh/guides/polyrepo/
-     upstream: docs/src/content/docs/guides/polyrepo.md
-     llms-full.txt lines 5808-5904 -->
+     upstream: docs/src/content/docs/guides/polyrepo.mdx
+     llms-full.txt lines 6087-6183 -->
 
 # Polyrepos
 
@@ -62,7 +62,7 @@ For local cross-project imports (monorepos), see the [monorepo guide](/guides/mo
 
 ## Referencing config across inputs
 
-New in version 2.0
+**New in version 2.0**
 
 When you don’t want to merge an entire environment but need access to specific options from another project, you can reference them through `inputs.<name>.devenv.config`. This is particularly useful for consuming [outputs](/outputs/) defined in other projects.
 

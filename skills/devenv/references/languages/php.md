@@ -1,6 +1,6 @@
 <!-- source: https://devenv.sh/languages/php/
      upstream: docs/src/content/docs/languages/php.md
-     llms-full.txt lines 11816-12284 -->
+     llms-full.txt lines 12091-12559 -->
 
 # php
 

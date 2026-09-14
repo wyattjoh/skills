@@ -1,6 +1,6 @@
 <!-- source: https://devenv.sh/blog/2026/02/09/secretspec-07-declarative-secret-generation/
      upstream: docs/src/content/docs/blog/2026/02/09/secretspec-07-declarative-secret-generation.md
-     llms-full.txt lines 3005-3133 -->
+     llms-full.txt lines 3099-3227 -->
 
 # SecretSpec 0.7: Declarative Secret Generation
 

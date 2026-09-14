@@ -1,6 +1,6 @@
 <!-- source: https://devenv.sh/basics/
      upstream: docs/src/content/docs/basics.md
-     llms-full.txt lines 256-331 -->
+     llms-full.txt lines 278-373 -->
 
 # Basics
 
@@ -44,6 +44,24 @@ hello
 ```
 
 See [Nix language tutorial](https://nix.dev/tutorials/first-steps/nix-language) for a 1-2 hour deep dive that will allow you to read any Nix file.
+
+## Shell prompt
+
+To hide the `(devenv)` prefix, add this to your project’s `devenv.yaml` or `devenv.local.yaml`:
+
+```yaml
+prompt_prefix: false
+```
+
+To disable it globally, set `shell.prompt_prefix: false` in your [user configuration](/tui-customization/) at `~/.config/devenv/config.yaml` (or `$XDG_CONFIG_HOME/devenv/config.yaml`):
+
+```yaml
+version: 1
+shell:
+  prompt_prefix: false
+```
+
+The project setting takes precedence over the global setting. Set `prompt_prefix: true` in a project to re-enable the prefix. The default is `true`. This setting is useful when managing your prompt with tools such as Starship and takes effect when you start a new shell.
 
 ## Environment Summary
 

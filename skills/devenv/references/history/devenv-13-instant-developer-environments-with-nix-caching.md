@@ -1,6 +1,6 @@
 <!-- source: https://devenv.sh/blog/2024/10/03/devenv-13-instant-developer-environments-with-nix-caching/
      upstream: docs/src/content/docs/blog/2024/10/03/devenv-13-instant-developer-environments-with-nix-caching.md
-     llms-full.txt lines 1280-1378 -->
+     llms-full.txt lines 1374-1472 -->
 
 # devenv 1.3: Instant developer environments with Nix caching
 

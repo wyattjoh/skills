@@ -1,6 +1,6 @@
 <!-- source: https://devenv.sh/languages/javascript/
      upstream: docs/src/content/docs/languages/javascript.md
-     llms-full.txt lines 10410-10835 -->
+     llms-full.txt lines 10685-11110 -->
 
 # javascript
 

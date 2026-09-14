@@ -1,6 +1,6 @@
 <!-- source: https://devenv.sh/composing-using-imports/
-     upstream: docs/src/content/docs/composing-using-imports.md
-     llms-full.txt lines 4150-4204 -->
+     upstream: docs/src/content/docs/composing-using-imports.mdx
+     llms-full.txt lines 4430-4484 -->
 
 # Composing using imports
 
@@ -28,7 +28,7 @@ If you enter the `frontend` directory, the environment will activate based on wh
 
 If you enter the top-level project, the environment is combined with what’s defined in `backend/devenv.nix` and `frontend/devenv.nix`. For example, `devenv up` will start both the frontend and backend processes.
 
-Added in 1.10
+**New in version 1.10**
 
 Composing `devenv.yaml` files is now supported for local files (relative and absolute paths). Remote inputs are not yet supported for `devenv.yaml` imports.
 
@@ -49,7 +49,7 @@ imports:
 
 The sibling `shared-config` repository only needs a `devenv.nix` file. Combine this with [profiles](/profiles/) to define one shared configuration that adapts to each project.
 
-New in version 2.2
+**Changed in version 2.2**
 
 Changes to files in local `path:` inputs are picked up automatically. Previously the evaluation cache held on to the old configuration until `.devenv` was deleted.
 

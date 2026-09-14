@@ -1,6 +1,6 @@
 <!-- source: https://devenv.sh/languages/gawk/
      upstream: docs/src/content/docs/languages/gawk.md
-     llms-full.txt lines 9540-9569 -->
+     llms-full.txt lines 9815-9844 -->
 
 # gawk
 

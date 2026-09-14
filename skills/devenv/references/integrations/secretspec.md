@@ -1,6 +1,6 @@
 <!-- source: https://devenv.sh/integrations/secretspec/
-     upstream: docs/src/content/docs/integrations/secretspec.md
-     llms-full.txt lines 7921-8051 -->
+     upstream: docs/src/content/docs/integrations/secretspec.mdx
+     llms-full.txt lines 8200-8326 -->
 
 # SecretSpec
 
@@ -25,13 +25,9 @@ $ secretspec run -- npm start
 
 The `secretspec` command is included with devenv, so no separate installation is needed. When the integration is enabled, devenv also exports the resolved profile as `SECRETSPEC_PROFILE`. If you explicitly select a provider through devenv, it also exports that override as `SECRETSPEC_PROVIDER`. Consequently, `secretspec run` uses the same explicit overrides that devenv used while evaluating `devenv.nix`. When no provider override is selected, SecretSpec commands remain free to use the per-secret provider routes from `secretspec.toml`.
 
-!!! tip “New in version 2.2.2”
+**Changed in version 2.2.2**
 
-```plaintext
-devenv no longer infers `SECRETSPEC_PROVIDER` from the provider that happened
-to resolve secrets during evaluation. It only exports an explicitly selected
-provider override, preserving per-secret provider and fallback chains.
-```
+devenv no longer infers `SECRETSPEC_PROVIDER` from the provider that happened to resolve secrets during evaluation. It only exports an explicitly selected provider override, preserving per-secret provider and fallback chains.
 
 This approach:
 
@@ -85,7 +81,7 @@ devenv.nix
 
 ### Cachix auth token
 
-New in version 2.2
+**New in version 2.2**
 
 To make the Cachix auth token a built-in required secret, without declaring it in `secretspec.toml`, set `secretspec.cachix_auth_token` to `true`:
 

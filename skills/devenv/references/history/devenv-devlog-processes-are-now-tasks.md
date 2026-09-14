@@ -1,6 +1,6 @@
 <!-- source: https://devenv.sh/blog/2025/07/25/devenv-devlog-processes-are-now-tasks/
      upstream: docs/src/content/docs/blog/2025/07/25/devenv-devlog-processes-are-now-tasks.md
-     llms-full.txt lines 2324-2394 -->
+     llms-full.txt lines 2418-2488 -->
 
 # devenv devlog: Processes are now tasks
 

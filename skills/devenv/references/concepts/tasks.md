@@ -1,10 +1,10 @@
 <!-- source: https://devenv.sh/tasks/
-     upstream: docs/src/content/docs/tasks.md
-     llms-full.txt lines 27809-28264 -->
+     upstream: docs/src/content/docs/tasks.mdx
+     llms-full.txt lines 28202-28653 -->
 
 # Tasks
 
-Added in `1.2`
+**New in version 1.2**
 
 Tasks allow you to form dependencies between code, executed in parallel.
 
@@ -29,7 +29,7 @@ Succeeded         myapp:hello         9ms
 1 Succeeded                           10.14ms
 ```
 
-Added in `1.7`
+**New in version 1.7**
 
 You can also run all tasks in a namespace by providing just the namespace prefix:
 
@@ -67,7 +67,7 @@ devenv.nix
 
 ### Dependency states
 
-New in version 2.0
+**New in version 2.0**
 
 A dependency waits for its target to reach a particular state before it is considered satisfied. Append an `@` suffix to choose the state explicitly:
 
@@ -95,7 +95,7 @@ devenv.nix
 
 ## Execution modes
 
-New in version 2.1
+**New in version 2.1**
 
 When you run a task, devenv schedules a subgraph around it rather than only that one task. `--mode` controls how much of the graph is included:
 
@@ -261,7 +261,7 @@ devenv.nix
 
 ### Shell messages
 
-New in version 2.1
+**New in version 2.1**
 
 Tasks can display messages to the user when entering the shell by writing a `devenv.messages` array to `$DEVENV_TASK_OUTPUT_FILE`. This is useful for showing informational output like trace URLs or setup status after initialization.
 
@@ -286,7 +286,7 @@ Messages are printed after the shell environment is loaded, so they remain visib
 
 ### Passing inputs from the CLI
 
-New in version 2.0
+**New in version 2.0**
 
 You can override or add inputs when running tasks from the command line using `--input` and `--input-json`:
 
@@ -306,7 +306,7 @@ Both flags can be combined. `--input-json` is applied first, then individual `--
 
 ## Processes as tasks
 
-Added in `1.4`
+**New in version 1.4**
 
 All processes defined in `processes` are automatically available as tasks with the `devenv:processes:` prefix. This allows you to:
 
@@ -346,11 +346,7 @@ This is particularly useful for:
 
 !!! note “Processes only live for the duration of the run”
 
-```plaintext
-`devenv tasks run` stops every process it started once the task graph finishes,
-whether the process is a root or was pulled in as a dependency of another task.
-Use [`devenv up`](processes.md) when you want a process to keep running.
-```
+`devenv tasks run` stops every process it started once the task graph finishes, whether the process is a root or was pulled in as a dependency of another task. Use [`devenv up`](/processes/) when you want a process to keep running.
 
 You can also run tasks after a process finishes by depending on its `@completed` state (see [Dependency states](#dependency-states)). The default suffix for a process dependency is `@ready`, which fires as soon as the process is healthy, so use `@completed` to wait for it to exit instead:
 
@@ -387,7 +383,7 @@ Until this is resolved ([#2852](https://github.com/cachix/devenv/issues/2852)), 
 
 ## Git Integration
 
-Added in `1.10`
+**New in version 1.10**
 
 Tasks can reference the git repository root path using `${config.git.root}`, which is particularly useful in monorepo environments:
 

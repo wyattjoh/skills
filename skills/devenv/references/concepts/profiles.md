@@ -1,10 +1,10 @@
 <!-- source: https://devenv.sh/profiles/
-     upstream: docs/src/content/docs/profiles.md
-     llms-full.txt lines 17228-17506 -->
+     upstream: docs/src/content/docs/profiles.mdx
+     llms-full.txt lines 17617-17895 -->
 
 # Profiles
 
-Added in `1.9`
+**New in version 1.9**
 
 Profiles allow you to organize different variations of your development environment. You can activate profiles manually using CLI flags or have them activate automatically based on your system environment.
 

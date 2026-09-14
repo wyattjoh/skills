@@ -1,6 +1,6 @@
 <!-- source: https://devenv.sh/blog/2025/09/17/devenv-19-scaling-nix-projects-using-modules-and-profiles/
      upstream: docs/src/content/docs/blog/2025/09/17/devenv-19-scaling-nix-projects-using-modules-and-profiles.md
-     llms-full.txt lines 2499-2699 -->
+     llms-full.txt lines 2593-2793 -->
 
 # devenv 1.9: Scaling Nix projects using modules and profiles
 

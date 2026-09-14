@@ -1,6 +1,6 @@
 <!-- source: https://devenv.sh/integrations/android/
      upstream: docs/src/content/docs/integrations/android.md
-     llms-full.txt lines 6700-6869 -->
+     llms-full.txt lines 6979-7148 -->
 
 # Android
 

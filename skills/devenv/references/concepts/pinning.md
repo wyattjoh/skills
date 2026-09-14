@@ -1,6 +1,6 @@
 <!-- source: https://devenv.sh/pinning/
      upstream: docs/src/content/docs/pinning.md
-     llms-full.txt lines 16519-16661 -->
+     llms-full.txt lines 16812-16954 -->
 
 # Pinning
 

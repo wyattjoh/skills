@@ -1,6 +1,6 @@
 <!-- source: https://devenv.sh/blog/2024/09/24/devenv-12-tasks-for-convergent-configuration-with-nix/
      upstream: docs/src/content/docs/blog/2024/09/24/devenv-12-tasks-for-convergent-configuration-with-nix.md
-     llms-full.txt lines 1197-1279 -->
+     llms-full.txt lines 1291-1373 -->
 
 # devenv 1.2: Tasks for convergent configuration with Nix
 

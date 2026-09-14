@@ -1,6 +1,6 @@
 <!-- source: https://devenv.sh/supported-process-managers/mprocs/
      upstream: docs/src/content/docs/supported-process-managers/mprocs.md
-     llms-full.txt lines 27205-27344 -->
+     llms-full.txt lines 27598-27737 -->
 
 # mprocs
 

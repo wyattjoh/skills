@@ -1,6 +1,6 @@
 <!-- source: https://devenv.sh/git-hooks/
      upstream: docs/src/content/docs/git-hooks.md
-     llms-full.txt lines 5152-5285 -->
+     llms-full.txt lines 5432-5565 -->
 
 # Git Hooks
 

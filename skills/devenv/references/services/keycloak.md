@@ -1,6 +1,6 @@
 <!-- source: https://devenv.sh/services/keycloak/
      upstream: docs/src/content/docs/services/keycloak.md
-     llms-full.txt lines 21246-21693 -->
+     llms-full.txt lines 21639-22086 -->
 
 # keycloak
 

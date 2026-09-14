@@ -1,6 +1,6 @@
 <!-- source: https://devenv.sh/scripts/
      upstream: docs/src/content/docs/scripts.md
-     llms-full.txt lines 18413-18594 -->
+     llms-full.txt lines 18806-18987 -->
 
 # Scripts
 

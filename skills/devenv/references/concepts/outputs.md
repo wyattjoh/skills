@@ -1,10 +1,10 @@
 <!-- source: https://devenv.sh/outputs/
-     upstream: docs/src/content/docs/outputs.md
-     llms-full.txt lines 16120-16215 -->
+     upstream: docs/src/content/docs/outputs.mdx
+     llms-full.txt lines 16413-16508 -->
 
 # Outputs
 
-Added in `1.1`
+**New in version 1.1**
 
 Outputs allow you to define Nix derivations using the module system, exposing Nix packages or sets of packages to be consumed by other tools for installation/distribution.
 

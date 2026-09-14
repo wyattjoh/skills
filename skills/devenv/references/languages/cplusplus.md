@@ -1,6 +1,6 @@
 <!-- source: https://devenv.sh/languages/cplusplus/
      upstream: docs/src/content/docs/languages/cplusplus.md
-     llms-full.txt lines 8728-8799 -->
+     llms-full.txt lines 9003-9074 -->
 
 # cplusplus
 

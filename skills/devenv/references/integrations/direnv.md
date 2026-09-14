@@ -1,6 +1,6 @@
 <!-- source: https://devenv.sh/integrations/direnv/
      upstream: docs/src/content/docs/integrations/direnv.mdx
-     llms-full.txt lines 7519-7680 -->
+     llms-full.txt lines 7798-7959 -->
 
 # Direnv
 
@@ -56,7 +56,7 @@ Note
 
 `devenv init` does not create a `.envrc` file by default.
 
-New in version 2.2
+**New in version 2.2**
 
 Use `devenv init --include-envrc` to include an `.envrc` file. On earlier versions, create it manually using the snippet above.
 

@@ -1,6 +1,6 @@
 <!-- source: https://devenv.sh/languages/helm/
      upstream: docs/src/content/docs/languages/helm.md
-     llms-full.txt lines 10014-10133 -->
+     llms-full.txt lines 10289-10408 -->
 
 # helm
 

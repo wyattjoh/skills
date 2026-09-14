@@ -1,6 +1,6 @@
 <!-- source: https://devenv.sh/services/memcached/
      upstream: docs/src/content/docs/services/memcached.md
-     llms-full.txt lines 22093-22208 -->
+     llms-full.txt lines 22486-22601 -->
 
 # memcached
 

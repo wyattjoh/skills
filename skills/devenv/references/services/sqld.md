@@ -1,6 +1,6 @@
 <!-- source: https://devenv.sh/services/sqld/
      upstream: docs/src/content/docs/services/sqld.md
-     llms-full.txt lines 25385-25450 -->
+     llms-full.txt lines 25778-25843 -->
 
 # sqld
 

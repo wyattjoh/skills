@@ -1,6 +1,6 @@
 <!-- source: https://devenv.sh/services/cockroachdb/
      upstream: docs/src/content/docs/services/cockroachdb.md
-     llms-full.txt lines 19560-19643 -->
+     llms-full.txt lines 19953-20036 -->
 
 # cockroachdb
 

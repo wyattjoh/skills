@@ -1,6 +1,6 @@
 <!-- source: https://devenv.sh/services/mailhog/
      upstream: docs/src/content/docs/services/mailhog.md
-     llms-full.txt lines 21694-21821 -->
+     llms-full.txt lines 22087-22214 -->
 
 # mailhog
 

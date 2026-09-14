@@ -1,6 +1,6 @@
 <!-- source: https://devenv.sh/extending/
      upstream: docs/src/content/docs/extending.md
-     llms-full.txt lines 4754-4832 -->
+     llms-full.txt lines 5034-5112 -->
 
 # Extending devenv
 

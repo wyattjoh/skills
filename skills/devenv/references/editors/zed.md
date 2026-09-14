@@ -1,6 +1,6 @@
 <!-- source: https://devenv.sh/editor-support/zed/
      upstream: docs/src/content/docs/editor-support/zed.md
-     llms-full.txt lines 4671-4676 -->
+     llms-full.txt lines 4951-4956 -->
 
 # Zed
 

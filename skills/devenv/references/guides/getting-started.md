@@ -1,6 +1,6 @@
 <!-- source: https://devenv.sh/getting-started/
      upstream: docs/src/content/docs/getting-started.mdx
-     llms-full.txt lines 4929-5151 -->
+     llms-full.txt lines 5209-5431 -->
 
 # Getting Started
 

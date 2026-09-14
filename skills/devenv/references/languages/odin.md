@@ -1,6 +1,6 @@
 <!-- source: https://devenv.sh/languages/odin/
      upstream: docs/src/content/docs/languages/odin.md
-     llms-full.txt lines 11466-11573 -->
+     llms-full.txt lines 11741-11848 -->
 
 # odin
 

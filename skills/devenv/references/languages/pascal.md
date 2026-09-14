@@ -1,6 +1,6 @@
 <!-- source: https://devenv.sh/languages/pascal/
      upstream: docs/src/content/docs/languages/pascal.md
-     llms-full.txt lines 11664-11717 -->
+     llms-full.txt lines 11939-11992 -->
 
 # pascal
 

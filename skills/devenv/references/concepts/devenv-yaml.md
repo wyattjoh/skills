@@ -1,6 +1,6 @@
 <!-- source: https://devenv.sh/reference/yaml-options/
-     upstream: docs/src/content/docs/reference/yaml-options.md
-     llms-full.txt lines 18059-18368 -->
+     upstream: docs/src/content/docs/reference/yaml-options.mdx
+     llms-full.txt lines 18444-18761 -->
 
 # devenv.yaml
 
@@ -12,7 +12,7 @@ Select the Nix backend used to evaluate `devenv.nix`.
 
 ## clean.enabled
 
-Added in `1.0`
+**New in version 1.0**
 
 Clean the environment when entering the shell.
 
@@ -20,7 +20,7 @@ Clean the environment when entering the shell.
 
 ## clean.keep
 
-Added in `1.0`
+**New in version 1.0**
 
 A list of environment variables to keep when cleaning the environment.
 
@@ -34,7 +34,7 @@ A list of relative paths, absolute paths, or references to inputs to import `dev
 
 ## impure
 
-Added in `1.0`
+**New in version 1.0**
 
 Relax the hermeticity of the environment.
 
@@ -78,7 +78,7 @@ URI specification of the input. See [Supported URI formats](/inputs/#supported-u
 
 ## nixpkgs.allow\_broken
 
-Added in `1.7`
+**New in version 1.7**
 
 Allow packages marked as broken.
 
@@ -92,7 +92,7 @@ Allow packages not built from source.
 
 ## nixpkgs.allow\_unfree
 
-Added in `1.7`
+**New in version 1.7**
 
 Allow unfree packages.
 
@@ -100,7 +100,7 @@ Allow unfree packages.
 
 ## nixpkgs.allow\_unsupported\_system
 
-Added in `2.0.5`
+**New in version 2.0.5**
 
 Allow packages that are not supported on the current system.
 
@@ -126,7 +126,7 @@ A list of license names to block. Uses nixpkgs license attribute names (e.g. `un
 
 ## nixpkgs.cuda\_capabilities
 
-Added in `1.7`
+**New in version 1.7**
 
 Select CUDA capabilities for nixpkgs.
 
@@ -134,7 +134,7 @@ Select CUDA capabilities for nixpkgs.
 
 ## nixpkgs.cuda\_support
 
-Added in `1.7`
+**New in version 1.7**
 
 Enable CUDA support for nixpkgs.
 
@@ -142,7 +142,7 @@ Enable CUDA support for nixpkgs.
 
 ## nixpkgs.per\_platform
 
-Added in `1.7`
+**New in version 1.7**
 
 Per-platform nixpkgs configuration. Accepts the same options as `nixpkgs`.
 
@@ -150,7 +150,7 @@ Per-platform nixpkgs configuration. Accepts the same options as `nixpkgs`.
 
 ## nixpkgs.permitted\_insecure\_packages
 
-Added in `1.7`
+**New in version 1.7**
 
 A list of insecure permitted packages.
 
@@ -158,7 +158,7 @@ A list of insecure permitted packages.
 
 ## nixpkgs.permitted\_unfree\_packages
 
-Added in `1.9`
+**New in version 1.9**
 
 A list of unfree packages to allow by name.
 
@@ -166,7 +166,7 @@ A list of unfree packages to allow by name.
 
 ## nixpkgs.rocm\_support
 
-Added in `2.0.7`
+**New in version 2.0.7**
 
 Enable ROCm support for nixpkgs.
 
@@ -174,15 +174,21 @@ Enable ROCm support for nixpkgs.
 
 ## profile
 
-Added in `1.11`
+**New in version 1.11**
 
 Default profile to activate. Can be overridden by `--profile` CLI flag. See [Profiles](/profiles/).
 
 *Type:* `string`
 
+## prompt\_prefix
+
+Show the `(devenv)` prefix in the interactive shell prompt. Set to `false` when using a custom prompt such as Starship. Overrides the global user configuration.
+
+*Type:* `boolean` · *Default:* `true`
+
 ## reload
 
-Added in `2.0`
+**New in version 2.0**
 
 Enable auto-reload of the shell when files change. Can be overridden by `--reload` or `--no-reload` CLI flags.
 
@@ -190,7 +196,7 @@ Enable auto-reload of the shell when files change. Can be overridden by `--reloa
 
 ## require\_version
 
-Added in `2.1`
+**New in version 2.1**
 
 Version requirement for the devenv CLI. Set to `true` to enforce that the CLI version matches the modules version (from the `devenv` input), or use a constraint string with operators (`>=`, `<=`, `>`, `<`, `=`, or a bare version for an exact match).
 
@@ -198,7 +204,7 @@ Version requirement for the devenv CLI. Set to `true` to enforce that the CLI ve
 
 ## secretspec.cachix\_auth\_token
 
-Added in `2.2`
+**New in version 2.2**
 
 Require the Cachix auth token through SecretSpec when `CACHIX_AUTH_TOKEN` is not set in the environment.
 
@@ -208,7 +214,7 @@ Set to `true` to use the built-in `CACHIX_AUTH_TOKEN` secret name, `false` to di
 
 ## secretspec.enable
 
-Added in `1.8`
+**New in version 1.8**
 
 Enable [secretspec integration](/integrations/secretspec/).
 
@@ -216,7 +222,7 @@ Enable [secretspec integration](/integrations/secretspec/).
 
 ## secretspec.profile
 
-Added in `1.8`
+**New in version 1.8**
 
 Secretspec profile name to use.
 
@@ -224,7 +230,7 @@ Secretspec profile name to use.
 
 ## secretspec.provider
 
-Added in `1.8`
+**New in version 1.8**
 
 Secretspec provider to use.
 
@@ -232,7 +238,7 @@ Secretspec provider to use.
 
 ## shell
 
-Added in `2.1`
+**New in version 2.1**
 
 Default interactive shell to use when entering the devenv environment. Can be overridden by the `--shell` CLI flag. Falls back to the `$SHELL` environment variable, then `bash`.
 

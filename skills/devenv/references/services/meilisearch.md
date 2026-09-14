@@ -1,6 +1,6 @@
 <!-- source: https://devenv.sh/services/meilisearch/
      upstream: docs/src/content/docs/services/meilisearch.md
-     llms-full.txt lines 21932-22092 -->
+     llms-full.txt lines 22325-22485 -->
 
 # meilisearch
 
