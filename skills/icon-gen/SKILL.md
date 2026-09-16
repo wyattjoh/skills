@@ -1,13 +1,13 @@
 ---
 name: icon-gen
 description: |
-  Generates app icons using the snapai CLI with AI-powered image generation.
-  Orchestrates project discovery, style refinement, icon generation, review,
-  and multi-platform resizing. Triggers on "generate app icon", "create an
-  icon", "make an app icon", "icon for my project", "app icon design",
-  "generate icons", "app store icon", "icon set", or mentions "snapai".
+  Generates app icons with OpenRouter, Google Gemini, and varlock-managed
+  configuration. Orchestrates project discovery, style refinement, icon
+  generation, review, and multi-platform resizing. Triggers on "generate app
+  icon", "create an icon", "make an app icon", "icon for my project", "app
+  icon design", "generate icons", "app store icon", or "icon set".
 allowed-tools:
-  - Bash(snapai:*)
+  - Bash(varlock:*)
   - Bash(magick:*)
   - Bash(mkdir:*)
   - Bash(ls:*)
@@ -16,21 +16,42 @@ allowed-tools:
   - Grep
   - AskUserQuestion
 argument-hint: "[project-path]"
+disable-model-invocation: true
 effort: high
+compatibility: Requires varlock 1.10+, Bun 1.1+, Node.js 22+, the 1Password CLI and desktop app integration, ImageMagick, and OpenRouter access.
 ---
 
 # App Icon Generator
 
-Generate polished app icons using `snapai` with an interactive refinement loop,
-then resize for target platforms with ImageMagick.
+Generate polished app icons with OpenRouter's dedicated Images API and a
+varlock-managed model, then resize them for target platforms with ImageMagick.
 
 ## Prerequisites
 
-- **snapai CLI** — installed and authenticated (`snapai` on PATH)
-- **ImageMagick** — installed (`magick` on PATH) for resizing
-- **API key** — snapai requires an active API key (configured via
-  `snapai config --openai-api-key <key>` or `snapai config --google-api-key <key>`;
-  check with `snapai config --show`)
+- **varlock 1.10+**: installed (`varlock` on PATH)
+- **Bun 1.1+**: installed (`bun` on PATH) to run the bundled generator
+- **Node.js 22+**: required by the pinned 1Password plugin
+- **1Password**: CLI installed, desktop app running, and CLI integration enabled
+- **ImageMagick**: installed (`magick` on PATH) for resizing
+- **OpenRouter access**: an API key stored in 1Password
+
+Install the schema's pinned plugin once per machine:
+
+```bash
+varlock install-plugin @varlock/1password-plugin@1.2.0
+```
+
+The committed `$SKILL_DIR/.env.schema` declares `OPENROUTER_API_KEY` and
+`OPENROUTER_MODEL` without values. Configure the ignored
+`$SKILL_DIR/.env.local` before generating:
+
+```dotenv
+OPENROUTER_API_KEY=op(op://VAULT/ITEM/FIELD)
+OPENROUTER_MODEL=google/gemini-3.1-flash-image
+```
+
+Replace the placeholder reference with the API key field's exact 1Password
+secret reference. Never put the API key value in either file.
 
 ## Workflow
 
@@ -63,18 +84,18 @@ preferences.
 
 Present **two questions in a single `AskUserQuestion` call**:
 
-**Question 1 — Visual Style:**
+**Question 1: Visual Style:**
 
-| Option        | Description                                       |
-| ------------- | ------------------------------------------------- |
-| Let AI decide | snapai chooses the best style based on the prompt |
-| Minimalist    | Clean, simple shapes with `--style minimalism`    |
-| Glassy        | Glossy, reflective surfaces with `--style glassy` |
-| Neon          | Vibrant, glowing outlines with `--style neon`     |
+| Option        | Description                                            |
+| ------------- | ------------------------------------------------------ |
+| Let AI decide | Gemini chooses the best style from the project context |
+| Minimalist    | Clean, simple shapes with minimal detail               |
+| Glassy        | Glossy, reflective surfaces                            |
+| Neon          | Vibrant, glowing outlines                              |
 
-Allow "Other" for custom style descriptions.
+The user can type a custom style description.
 
-**Question 2 — Color Palette:**
+**Question 2: Color Palette:**
 
 | Option         | Description                               |
 | -------------- | ----------------------------------------- |
@@ -83,7 +104,7 @@ Allow "Other" for custom style descriptions.
 | Muted / Pastel | Soft, understated tones                   |
 | Monochrome     | Single color or grayscale                 |
 
-Allow "Other" for specific color values (e.g., "brand blue #2563EB").
+The user can type specific color values (e.g., "brand blue #2563EB").
 
 ### Phase 3: Concept Proposal
 
@@ -112,35 +133,41 @@ Determine the output directory:
 2. If the project has a `Resources/` directory (Xcode) → `<project>/Resources/icons/`
 3. Otherwise → `<project>/icons/`
 
-Run the generation command:
+Run the bundled generator through varlock. It validates and resolves the local
+configuration, injects only the declared variables, creates the output directory,
+and requests a 1K, 1:1 image from OpenRouter:
 
 ```bash
-mkdir -p <output-dir>
-snapai icon --model banana --prompt "<approved-prompt>" --output <output-dir> [--style <style>]
+varlock run --path "$SKILL_DIR/" --inject vars -- \
+  bun "$SKILL_DIR/scripts/generate.ts" \
+  --prompt "<approved-prompt>" \
+  --output-dir <output-dir>
 ```
 
-After generation completes, **show the generated icon to the user** by reading
-the output PNG file with the Read tool.
+A single generation writes `<output-dir>/icon.png`. After generation completes,
+**show the generated icon to the user** by reading the output file with the Read
+tool.
 
 ### Phase 5: Review & Iterate
 
 Present the generated icon and ask the user via `AskUserQuestion`:
 
-| Option                 | Description                                       |
-| ---------------------- | ------------------------------------------------- |
-| Keep it                | Accept this icon and proceed to resizing          |
-| Tweak it               | Modify the prompt slightly and regenerate         |
-| Different concept      | Return to Phase 3 for a new concept               |
-| Generate more variants | Run with `--pro -n 3` to produce multiple options |
+| Option                 | Description                                      |
+| ---------------------- | ------------------------------------------------ |
+| Keep it                | Accept this icon and proceed to resizing         |
+| Tweak it               | Modify the prompt slightly and regenerate        |
+| Different concept      | Return to Phase 3 for a new concept              |
+| Generate more variants | Run with `--count 3` to produce multiple options |
 
 **Behavior per choice:**
 
 - **Keep it** → proceed to Phase 6
 - **Tweak it** → ask what to change, update the prompt, re-run Phase 4
 - **Different concept** → return to Phase 3
-- **Generate more variants** → re-run with `--pro -n 3` (plain `--model banana`
-  without `--pro` only supports `-n 1`), show all results, ask user to pick
-  one, then offer the same review options again
+- **Generate more variants** → re-run the bundled generator with `--count 3`,
+  show `icon-1.png`, `icon-2.png`, and `icon-3.png`, ask the user to pick one,
+  then offer the same review options again. Gemini supports one image per API
+  request, so the script makes and bills three separate requests.
 
 **Loop** until the user selects "Keep it".
 
@@ -174,11 +201,11 @@ table showing platform, file count, and directory path.
 
 When composing the `--prompt` value:
 
-- **Lead with the subject** — "A [object/symbol] representing [concept]"
-- **Describe at icon scale** — single focal element, no text, no fine detail
-- **Specify background treatment** — solid color, gradient, or transparent
-- **Include material/texture** — matte, glossy, metallic, flat
-- **State color explicitly** — even if Phase 2 chose "Let AI decide", mention
+- **Lead with the subject**: "A [object/symbol] representing [concept]"
+- **Describe at icon scale**: single focal element, no text, no fine detail
+- **Specify background treatment**: solid color or gradient
+- **Include material/texture**: matte, glossy, metallic, flat
+- **State color explicitly**: even if Phase 2 chose "Let AI decide", mention
   dominant colors
 
 **Example prompt:**
@@ -189,20 +216,21 @@ When composing the `--prompt` value:
 
 ## Tips
 
-- **This skill defaults to Banana** (`--model banana`) — it produces the best
-  results for icons and is the only model that should be used unless the user
-  explicitly requests otherwise. Note that snapai's own CLI default is
-  `gpt-2`, not Banana, so always pass `--model banana` explicitly.
-- **snapai auto-enhances prompts** — you don't need to over-specify; the CLI
-  adds its own refinements
-- **Use `--pro` for quality, and for multiple variants** — during iteration,
-  if the user wants higher fidelity, add the `--pro` flag. Plain `--model
-banana` (no `--pro`) only supports `-n 1`; use `--pro` to generate more
-  than one variant.
-- **Transparent backgrounds** — only available with snapai's `gpt-1` and
-  `gpt-1.5` model aliases (snapai's shorthand for OpenAI's `gpt-image-1` and
-  `gpt-image-1.5`); not supported by the default `gpt-2` (OpenAI's
-  `gpt-image-2`) or by Banana/Gemini models. Mention this if the user asks
-  for transparency.
-- **Icon composition** — always remind the user that icons should have a single,
-  recognizable element; avoid text or complex scenes
+- **Configuration stays out of the project**: `$SKILL_DIR/.env.schema` is
+  committed with empty declarations, while `$SKILL_DIR/.env.local` is ignored
+  and holds the 1Password reference and model slug.
+- **The model is configurable**: varlock validates and injects
+  `OPENROUTER_MODEL`; the local configuration uses
+  `google/gemini-3.1-flash-image`.
+- **Validate without exposing secrets**: run
+  `varlock load --path "$SKILL_DIR/" --agent` to inspect redacted resolution.
+- **Prompts are sent as written**: include the chosen style, palette,
+  composition, and mood in the approved prompt.
+- **Variants are separate requests**: `--count 3` makes three sequential,
+  separately billed requests because this model only supports one image per
+  request.
+- **Transparent backgrounds are unsupported**: this model does not expose a
+  background transparency parameter through OpenRouter. Mention this if the
+  user asks for transparency.
+- **Icon composition**: always remind the user that icons should have a single,
+  recognizable element; avoid text or complex scenes.

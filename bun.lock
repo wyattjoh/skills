@@ -55,6 +55,10 @@
         "yaml": "^2.9.0",
       },
     },
+    "skills/icon-gen": {
+      "name": "@wyattjoh/icon-gen-skill",
+      "version": "1.0.0",
+    },
     "skills/mermaid": {
       "name": "@wyattjoh/mermaid-skill",
       "version": "1.0.0",
@@ -308,6 +312,8 @@
     "@wyattjoh/driving-ios-simulator-skill": ["@wyattjoh/driving-ios-simulator-skill@workspace:skills/driving-ios-simulator"],
 
     "@wyattjoh/herd-skill": ["@wyattjoh/herd-skill@workspace:skills/herd"],
+
+    "@wyattjoh/icon-gen-skill": ["@wyattjoh/icon-gen-skill@workspace:skills/icon-gen"],
 
     "@wyattjoh/mermaid-skill": ["@wyattjoh/mermaid-skill@workspace:skills/mermaid"],
 

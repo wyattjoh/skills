@@ -93,7 +93,7 @@ Restart Claude Code after adding or changing an agent definition.
 | executing-workflows-manually  | Run Claude Code workflow scripts in harnesses without the Workflow tool             |
 | herd                          | Run tickets in parallel as real agent sessions in sibling herdr tabs                |
 | herdr                         | Control herdr from inside a pane over its unix socket                               |
-| icon-gen                      | Generate app icons with AI (snapai), with refinement and platform resizing          |
+| icon-gen                      | Generate app icons with OpenRouter Gemini and varlock-managed configuration         |
 | json-inspect                  | Generate JSON Schema from JSON files with genson                                    |
 | just                          | Kickstart the just command runner and author justfiles                              |
 | land-local                    | Rebase, verify, and fast-forward a worktree branch into local main atomically       |

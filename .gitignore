@@ -6,6 +6,7 @@
 *.tar.gz
 
 # Local overrides
+.env.local
 *.local.md
 *.local.json
 __pycache__/
