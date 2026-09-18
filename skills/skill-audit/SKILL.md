@@ -9,7 +9,7 @@ effort: high
 
 # Skill Audit
 
-Post-execution forensics for Claude Code skills. Analyzes the current session's conversation history to find permission denials, tool errors, user corrections, and unexpected behavior during a skill invocation — then offers to fix the skill.
+Post-execution forensics for Claude Code skills. Analyzes the current session's conversation history to find permission denials, tool errors, user corrections, and unexpected behavior during a skill invocation, then offers to fix the skill.
 
 ## Phase 1: Validate Arguments
 
@@ -29,11 +29,11 @@ If no matching skill is found, report the error and list available skills so the
 
 Read the matched `SKILL.md` file and extract:
 
-- **`allowed-tools`** — What tools the skill is permitted to use (if unrestricted, note that)
-- **`description`** — Trigger phrases and purpose
-- **`context`** — Whether it runs forked or inline
-- **`disable-model-invocation`** — Whether it's manual-only
-- **Body content** — The workflow steps, phases, and instructions the skill defines
+- **`allowed-tools`**: What tools the skill is permitted to use (if unrestricted, note that)
+- **`description`**: Trigger phrases and purpose
+- **`context`**: Whether it runs forked or inline
+- **`disable-model-invocation`**: Whether it's manual-only
+- **Body content**: The workflow steps, phases, and instructions the skill defines
 
 Summarize what the skill is _supposed_ to do in 2-3 sentences. This becomes the baseline for detecting deviations.
 
@@ -49,10 +49,10 @@ Spawn a `conversation-historian` agent via the `Agent` tool with the following p
 >
 > **What to do:**
 >
-> 1. Run `parse-conversation.ts --format=stats` on the session file to get a tool call overview
-> 2. Run `parse-conversation.ts --include-tools --format=readable --search="$ARGUMENTS"` to find the skill invocation point and surrounding context
+> 1. Run the `stats` command for the session to get a tool call overview
+> 2. Run the `search` command with `--in=all` and the skill name to find the skill invocation point and surrounding context
 > 3. Search for these signals in messages AFTER the skill invocation:
->    - **Permission denials**: `tool_result` entries with `is_error: true` — search for "permission", "denied", "not allowed"
+>    - **Permission denials**: `tool_result` entries with `is_error: true`, search for "permission", "denied", "not allowed"
 >    - **Tool errors**: Any `tool_result` with `is_error: true` (failed Bash commands, Read errors, etc.)
 >    - **User corrections**: User messages containing "no", "wrong", "instead", "don't", "that's not", "actually", "stop", "I said", "not what I"
 >    - **Retries**: The same tool being called multiple times with similar arguments (indicates struggling)

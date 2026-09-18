@@ -78,7 +78,7 @@ Restart Claude Code after adding or changing an agent definition.
 | ----------------------------- | ----------------------------------------------------------------------------------- |
 | alchemy                       | Answer Alchemy (alchemy.run) questions from an indexed local copy of the docs       |
 | catppuccin-interfaces         | Apply Catppuccin colors with semantic, accessible interface tokens                  |
-| claude-sessions               | Parse and analyze Claude Code conversation history                                  |
+| claude-sessions               | Query indexed Claude Code conversation history with a Bun CLI                       |
 | claude-skills                 | Guidance for authoring Claude Code skills                                           |
 | clean-storage                 | Reclaim disk space from verified build artifacts and tool caches                    |
 | code-walkthrough              | Build an annotated walkthrough page with pinned source and scrolling notes          |
@@ -129,7 +129,7 @@ Restart Claude Code after adding or changing an agent definition.
 | Agent                  | Description                                                                      |
 | ---------------------- | -------------------------------------------------------------------------------- |
 | code-reviewer          | Dual-pipeline code review with parallel reviewers and interactive fix delegation |
-| conversation-historian | Analyze Claude Code conversation history and session patterns                    |
+| conversation-historian | Answer questions from indexed Claude Code history and session patterns           |
 | debug-investigator     | Systematically investigates bugs and unexpected behavior                         |
 | git-history-explorer   | Searches git history for code evolution and commit patterns                      |
 | implementor            | Implements one scoped task, drives its own review loop, and verifies the result  |
