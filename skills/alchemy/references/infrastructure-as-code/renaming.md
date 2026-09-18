@@ -1,14 +1,16 @@
 <!-- source: https://alchemy.run/infrastructure-as-code/renaming
      upstream: website/src/content/docs/infrastructure-as-code/renaming.mdx
-     alchemy 2.0.0-beta.77 @ c83b454 -->
+     alchemy 2.0.0-beta.79 @ 258f63b -->
 
 # Renaming Resources
 
 > Migrate a resource's state across a logical ID change instead of replacing it.
 
 Changing a [logical ID](/infrastructure-as-code/resource#logical-id)
-normally plans a **replacement**: a new resource is created under the
-new ID and the old one — including its physical resource, data, and
+normally plans a
+[**replacement**](/infrastructure-as-code/resource-lifecycle#replace):
+a new resource is created under the new ID and the old one —
+including its physical resource, data, and
 attachments — is deleted. When you actually just renamed the
 resource, declare the rename with `Alchemy.renamedFrom` and alchemy
 migrates the state row instead:
@@ -21,8 +23,9 @@ migrates the state row instead:
 ```
 
 The next deploy finds the state persisted under `Bucket`, moves it to
-`Assets`, and plans a single re-branding **update** — same instance
-ID, same physical name, nothing created or deleted in the cloud. The
+`Assets`, and plans a single re-branding **update** — same
+[instance ID](/infrastructure-as-code/resource#physical-name), same
+physical name, nothing created or deleted in the cloud. The
 plan shows what's happening:
 
 ```text
@@ -173,3 +176,12 @@ yield* Cloudflare.R2.Bucket("A").pipe(Alchemy.renamedFrom("B"));
 yield* Cloudflare.R2.Bucket("B").pipe(Alchemy.renamedFrom("A"));
 // ✗ rename cycle detected among ['A', 'B']
 ```
+
+## Where next
+
+- [Providers](/infrastructure-as-code/provider) — the object that
+  implements a resource type's lifecycle. Next page.
+- [Resource Lifecycle](/infrastructure-as-code/resource-lifecycle) — the
+  replacement this decoration avoids.
+- [Resources](/infrastructure-as-code/resource) — logical IDs, instance
+  IDs, and physical names.

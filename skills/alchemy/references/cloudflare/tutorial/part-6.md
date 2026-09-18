@@ -1,6 +1,6 @@
 <!-- source: https://alchemy.run/cloudflare/tutorial/part-6
      upstream: website/src/content/docs/cloudflare/tutorial/part-6.mdx
-     alchemy 2.0.0-beta.77 @ c83b454 -->
+     alchemy 2.0.0-beta.79 @ 258f63b -->
 
 # Part 6: Observability
 
@@ -264,7 +264,7 @@ You've completed the tutorial. You now know how to:
 
 ## What's next
 
-- [Infrastructure as Effects](/infrastructure-as-effects) — the model
+- [What is Alchemy?](/what-is-alchemy) — the model
   behind everything you just built: Runtimes, Bindings, Layers, and
   the two phases
 - [Telemetry](/infrastructure-as-effects/telemetry) — how the

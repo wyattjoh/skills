@@ -1,6 +1,6 @@
 <!-- source: https://alchemy.run/getting-started
      upstream: website/src/content/docs/getting-started.mdx
-     alchemy 2.0.0-beta.77 @ c83b454 -->
+     alchemy 2.0.0-beta.79 @ 258f63b -->
 
 # Getting started
 
@@ -117,7 +117,7 @@ Cloudflare, starting from this exact Stack.
   <span>Build a full app on Cloudflare starting from this Stack: a Worker, bindings, tests, local dev, CI, and telemetry.</span>
 </a>
 
-<a href="/infrastructure-as-effects" class="next-card">
+<a href="/infrastructure-as-effects/runtime" class="next-card">
   <strong>Infrastructure as Effects</strong>
   <span>The model the rest of the docs build on: Runtimes, Bindings, Layers, and the Construction and Runtime phases.</span>
 </a>

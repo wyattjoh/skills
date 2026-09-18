@@ -1,6 +1,6 @@
 <!-- source: https://alchemy.run/fly/tutorial/part-3
      upstream: website/src/content/docs/fly/tutorial/part-3.mdx
-     alchemy 2.0.0-beta.77 @ c83b454 -->
+     alchemy 2.0.0-beta.79 @ 258f63b -->
 
 # Part 3: Persist Data with a Volume
 

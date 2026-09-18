@@ -1,10 +1,13 @@
 <!-- source: https://alchemy.run/git/blocks/registry
      upstream: website/src/content/docs/git/blocks/registry.mdx
-     alchemy 2.0.0-beta.77 @ c83b454 -->
+     alchemy 2.0.0-beta.79 @ 258f63b -->
 
 # Registry
 
 > The registry resolves owner/name to a repository and serves listings. Keep it in a Durable Object or move it to a D1 database.
+
+The examples use `Authentication` from
+[Getting Started](/git/getting-started): the application's request middleware.
 
 The registry is the index. It maps `owner/name` to a repository id,
 enforces that names are unique, and answers listings. Two
@@ -31,13 +34,13 @@ fails safe: each repository's Durable Object stores its own
 ```typescript
 const RepoIndex = Cloudflare.D1.Database("RepoIndex");
 
-const GitLive = Git.Server.layer(Api).pipe(
-  Layer.provide(Git.Handlers),
-  Layer.provide(AuthenticatedLive),
+const GitLive = Git.ApiLive.pipe(
+  Layer.provide(Git.ApiHandlersLive),
+  Layer.provide(Authentication.layer),
   Layer.provide(Git.ReposDurableObject),
   Layer.provide(Git.RegistryD1(RepoIndex)),
-  Layer.provide(Git.BlobStoreR2(GitObjects)),
   Layer.provide(Git.HasherInline),
+  Layer.provide(Git.BlobStoreR2(GitObjects)),
 );
 ```
 

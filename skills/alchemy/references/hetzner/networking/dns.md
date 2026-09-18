@@ -1,6 +1,6 @@
 <!-- source: https://alchemy.run/hetzner/networking/dns
      upstream: website/src/content/docs/hetzner/networking/dns.mdx
-     alchemy 2.0.0-beta.77 @ c83b454 -->
+     alchemy 2.0.0-beta.79 @ 258f63b -->
 
 # DNS
 

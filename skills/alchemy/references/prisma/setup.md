@@ -1,6 +1,6 @@
 <!-- source: https://alchemy.run/prisma/setup
      upstream: website/src/content/docs/prisma/setup.mdx
-     alchemy 2.0.0-beta.77 @ c83b454 -->
+     alchemy 2.0.0-beta.79 @ 258f63b -->
 
 # Setup
 
@@ -54,4 +54,5 @@ compatible local outputs. See
 
 ## Next steps
 
+- [Tutorial: Your First Project](/prisma/tutorial/part-1) — build a full-stack Prisma application in four parts.
 - [Prisma overview](/prisma) — resources and compositions.

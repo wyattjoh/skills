@@ -1,6 +1,6 @@
 <!-- source: https://alchemy.run/git/github-api
      upstream: website/src/content/docs/git/github-api.mdx
-     alchemy 2.0.0-beta.77 @ c83b454 -->
+     alchemy 2.0.0-beta.79 @ 258f63b -->
 
 # GitHub API compatibility
 
@@ -50,10 +50,11 @@ requests: list, create, get, update, merge, and changed files.
 `gh` and Octokit send `Authorization: token <t>`, so the middleware in
 front of the facade should accept that scheme alongside Basic. The
 credential is whatever your middleware verifies. `/user` is the probe
-`gh` makes; the engine has no user to answer with, so provide your own
-Layer for `Git.GitHubUser`, nearer than `Git.Handlers`.
-[Part 3](/git/tutorial/part-3#replacing-one-of-the-engines-routes)
-does it from a Better Auth session.
+`gh` makes; the engine has no user to answer with, so override `user` when
+registering the `github` group with `HttpApiBuilder.group`. Spread
+`git.github` into `handleAll` and supply your own `user` handler.
+[HTTP routes](/git/blocks/server#replace-a-git-handler) shows how to replace
+a handler using your application session.
 
 Pagination uses `Link` headers with `rel="next"`. The next URL carries
 an opaque cursor, which `gh api --paginate` and Octokit's paginator

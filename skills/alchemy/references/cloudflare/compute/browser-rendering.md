@@ -1,6 +1,6 @@
 <!-- source: https://alchemy.run/cloudflare/compute/browser-rendering
      upstream: website/src/content/docs/cloudflare/compute/browser-rendering.mdx
-     alchemy 2.0.0-beta.77 @ c83b454 -->
+     alchemy 2.0.0-beta.79 @ 258f63b -->
 
 # Browser rendering
 

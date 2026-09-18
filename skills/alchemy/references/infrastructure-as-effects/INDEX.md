@@ -1,10 +1,9 @@
 # infrastructure-as-effects index
 
-10 pages. One Effect program models both your runtime code and the infrastructure it runs on — Runtimes carry code, Bindings wire resources into them, Phases split deploy from runtime, Layers package it all behind typed services.
+9 pages. One Effect program models runtime code and infrastructure: Runtimes carry code, Bindings wire resources into them, Phases split deploy from runtime, and Layers package it behind typed services.
 
 | Page | File | Covers |
 | --- | --- | --- |
-| Infrastructure as Effects | `_overview.md` | One Effect program models both your runtime code and the infrastructure it runs on — Runtimes carry code, Bindings wire resources into them, Phases split deploy from runtime, Layers package it all behind typed services. |
 | Bindings | `binding.md` | A Binding connects a Resource to a Worker or Lambda. One line declares the capability and generates the permissions, the configuration, and a typed client. |
 | Circular Bindings | `circular-bindings.md` | How to model two services that reference each other (Worker A ↔ Worker B, Lambda ↔ Lambda) using tagged classes and Layers. |
 | Custom Runtime | `custom-runtime.md` | Implement your own Runtime resource on the Platform type — a Provider that provisions the compute and bundles the runtime Effect. |

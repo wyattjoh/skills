@@ -1,6 +1,6 @@
 <!-- source: https://alchemy.run/prisma/data/connections
      upstream: website/src/content/docs/prisma/data/connections.mdx
-     alchemy 2.0.0-beta.77 @ c83b454 -->
+     alchemy 2.0.0-beta.79 @ 258f63b -->
 
 # Connections
 
@@ -112,7 +112,7 @@ are its only channel — which is exactly why `Prisma.Connect` reaches
 it and `Cloudflare.Hyperdrive.Connect` does not. Start the container
 with `Cloudflare.Containers.layer(Api, { enableInternet: true })` so
 it can reach the database. See
-[Bind a capability into an effectful container](/cloudflare/compute/containers#bind-a-capability-into-an-effectful-container).
+[Which capabilities reach a container](/cloudflare/compute/containers#which-capabilities-reach-a-container).
 
 ## Rotation
 

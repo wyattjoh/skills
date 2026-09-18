@@ -1,6 +1,6 @@
 <!-- source: https://alchemy.run/testing/testing-a-stack
      upstream: website/src/content/docs/testing/testing-a-stack.mdx
-     alchemy 2.0.0-beta.77 @ c83b454 -->
+     alchemy 2.0.0-beta.79 @ 258f63b -->
 
 # Testing a Stack
 

@@ -1,6 +1,6 @@
 <!-- source: https://alchemy.run/infrastructure-as-code/custom-provider
      upstream: website/src/content/docs/infrastructure-as-code/custom-provider.mdx
-     alchemy 2.0.0-beta.77 @ c83b454 -->
+     alchemy 2.0.0-beta.79 @ 258f63b -->
 
 # Custom Provider
 
@@ -437,10 +437,9 @@ read: Effect.fn(function* ({ id, olds }) {
 ```
 
 If your provider can find an existing resource from props alone (tags,
-deterministic naming), brand foreign ones with `Unowned`. Plain attrs are
-silently imported as ours; `Unowned(attrs)` fails with `OwnedBySomeoneElse`
-unless the user opted into a takeover with `--adopt` — see
-[Resource Lifecycle › Adoption](/infrastructure-as-code/resource-lifecycle#adoption).
+deterministic naming), brand foreign ones with `Unowned` so the engine
+gates the takeover behind `--adopt`. The full three-way return
+semantics are in [Providers › read](/infrastructure-as-code/provider#read).
 
 ## Implement `list`
 
@@ -646,4 +645,5 @@ If you'd rather start from a real provider:
   patterns behind `test.provider`.
 - [Providers](/infrastructure-as-code/provider) — the operation contract this
   guide implements.
-- [Bindings](/infrastructure-as-effects/binding) — next up: connecting Resources to Functions.
+- [Bindings](/infrastructure-as-effects/binding) — connecting Resources
+  to Functions.

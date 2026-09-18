@@ -1,6 +1,6 @@
 <!-- source: https://alchemy.run/aws/data/dynamodb
      upstream: website/src/content/docs/aws/data/dynamodb.mdx
-     alchemy 2.0.0-beta.77 @ c83b454 -->
+     alchemy 2.0.0-beta.79 @ 258f63b -->
 
 # DynamoDB
 

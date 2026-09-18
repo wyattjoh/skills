@@ -1,6 +1,6 @@
 <!-- source: https://alchemy.run/testing/observability
      upstream: website/src/content/docs/testing/observability.mdx
-     alchemy 2.0.0-beta.77 @ c83b454 -->
+     alchemy 2.0.0-beta.79 @ 258f63b -->
 
 # Observability
 

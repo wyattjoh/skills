@@ -1,10 +1,13 @@
 <!-- source: https://alchemy.run/git/recipes/cloudflare
      upstream: website/src/content/docs/git/recipes/cloudflare.mdx
-     alchemy 2.0.0-beta.77 @ c83b454 -->
+     alchemy 2.0.0-beta.79 @ 258f63b -->
 
 # All on Cloudflare
 
 > A git host on one Cloudflare account. One Worker, one bucket, two Durable Object namespaces, and dynamically loaded Workers hashing large pushes.
+
+The examples use `Authentication` from
+[Getting Started](/git/getting-started): the application's request middleware.
 
 Everything on one account, with large pushes hashed by dynamically
 loaded Workers so nothing leaves Cloudflare:
@@ -16,25 +19,27 @@ import * as Git from "alchemy/Git";
 import * as GitHasher from "alchemy/Git/Hasher";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
+import * as HttpRouter from "effect/unstable/http/HttpRouter";
+import * as Http from "alchemy/Http";
 
 export const GitObjects = Cloudflare.R2.Bucket("GitObjects");
 
-const GitLive = Git.Server.layer(Api).pipe(
-  Layer.provide(Git.Handlers),
-  Layer.provide(AuthenticatedLive),
+const GitLive = Git.ApiLive.pipe(
+  Layer.provide(Git.ApiHandlersLive),
+  Layer.provide(Authentication.layer),
   Layer.provide(Git.ReposDurableObject),
   Layer.provide(Git.RegistryDurableObject),
-  Layer.provide(Git.BlobStoreR2(GitObjects)),
   Layer.provide(GitHasher.HasherWorkerLoader()),
+  Layer.provide(Git.BlobStoreR2(GitObjects)),
 );
 
 export default class GitHost extends Cloudflare.Worker<GitHost>()(
   "Git",
   { main: import.meta.url, ...Git.GIT_WORKER_OPTIONS },
   Effect.gen(function* () {
-    const git = yield* Git.Server;
-    return { fetch: git.fetch };
-  }).pipe(Effect.provide(GitLive)),
+    const fetch = yield* HttpRouter.toHttpEffect(GitLive.pipe(Layer.provide(Http.Platform)));
+    return { fetch };
+  }),
 ) {}
 ```
 
@@ -75,14 +80,14 @@ no traffic costs its storage.
 `HasherInline` is enough until pushes of tens of megabytes matter:
 
 ```diff lang="typescript"
-const GitLive = Git.Server.layer(Api).pipe(
-  Layer.provide(Git.Handlers),
-  Layer.provide(AuthenticatedLive),
+const GitLive = Git.ApiLive.pipe(
+  Layer.provide(Git.ApiHandlersLive),
+  Layer.provide(Authentication.layer),
   Layer.provide(Git.ReposDurableObject),
   Layer.provide(Git.RegistryDurableObject),
-  Layer.provide(Git.BlobStoreR2(GitObjects)),
 -  Layer.provide(GitHasher.HasherWorkerLoader()),
 +  Layer.provide(Git.HasherInline),
+  Layer.provide(Git.BlobStoreR2(GitObjects)),
 );
 ```
 
@@ -92,19 +97,19 @@ one region:
 ```diff lang="typescript"
 +export const RepoIndex = Cloudflare.D1.Database("RepoIndex");
 +
-const GitLive = Git.Server.layer(Api).pipe(
-  Layer.provide(Git.Handlers),
-  Layer.provide(AuthenticatedLive),
+const GitLive = Git.ApiLive.pipe(
+  Layer.provide(Git.ApiHandlersLive),
+  Layer.provide(Authentication.layer),
   Layer.provide(Git.ReposDurableObject),
 -  Layer.provide(Git.RegistryDurableObject),
 +  Layer.provide(Git.RegistryD1(RepoIndex)),
-  Layer.provide(Git.BlobStoreR2(GitObjects)),
   Layer.provide(GitHasher.HasherWorkerLoader()),
+  Layer.provide(Git.BlobStoreR2(GitObjects)),
 );
 ```
 
 A custom domain is a Worker option, so clone URLs read
 `https://git.example.com/acme/web.git`. [Custom domains &
 routes](/cloudflare/networking/custom-domains) covers it, and
-[Part 4 of the tutorial](/git/tutorial/part-4) puts an application on
-the same domain.
+the [application example](https://github.com/alchemy-run/alchemy/tree/main/examples/cloudflare-git-service)
+serves a browser UI and Git on the same origin.

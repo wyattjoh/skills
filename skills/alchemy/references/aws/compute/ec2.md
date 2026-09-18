@@ -1,6 +1,6 @@
 <!-- source: https://alchemy.run/aws/compute/ec2
      upstream: website/src/content/docs/aws/compute/ec2.mdx
-     alchemy 2.0.0-beta.77 @ c83b454 -->
+     alchemy 2.0.0-beta.79 @ 258f63b -->
 
 # EC2
 

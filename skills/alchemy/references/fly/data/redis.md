@@ -1,6 +1,6 @@
 <!-- source: https://alchemy.run/fly/data/redis
      upstream: website/src/content/docs/fly/data/redis.mdx
-     alchemy 2.0.0-beta.77 @ c83b454 -->
+     alchemy 2.0.0-beta.79 @ 258f63b -->
 
 # Redis
 
@@ -8,8 +8,9 @@
 
 [`Fly.Redis`](/providers/fly/redis) is managed Upstash Redis in a
 Fly org. Bind [`ReadWriteRedis`](/providers/fly/readwriteredis) on a
-[Service](/fly/compute/services). Alchemy writes `REDIS_URL` as an
-App secret and the runtime client uses it internally. Redis is not
+[Service](/fly/compute/services). The runtime client reads the bound
+resource's redacted `url` Output. Alchemy also attaches the add-on and
+writes `REDIS_URL` as an App secret for compatibility. Redis is not
 reachable from CI — drive it over HTTP.
 
 ## Create Redis

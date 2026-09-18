@@ -1,6 +1,6 @@
 <!-- source: https://alchemy.run/cli/aws
      upstream: website/src/content/docs/cli/aws.mdx
-     alchemy 2.0.0-beta.77 @ c83b454 -->
+     alchemy 2.0.0-beta.79 @ 258f63b -->
 
 # aws
 

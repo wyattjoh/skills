@@ -1,6 +1,6 @@
 <!-- source: https://alchemy.run/neon/data/migrations
      upstream: website/src/content/docs/neon/data/migrations.mdx
-     alchemy 2.0.0-beta.77 @ c83b454 -->
+     alchemy 2.0.0-beta.79 @ 258f63b -->
 
 # Migrations
 

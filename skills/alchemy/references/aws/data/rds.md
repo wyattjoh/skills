@@ -1,6 +1,6 @@
 <!-- source: https://alchemy.run/aws/data/rds
      upstream: website/src/content/docs/aws/data/rds.mdx
-     alchemy 2.0.0-beta.77 @ c83b454 -->
+     alchemy 2.0.0-beta.79 @ 258f63b -->
 
 # RDS & Aurora
 

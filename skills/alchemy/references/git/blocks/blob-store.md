@@ -1,6 +1,6 @@
 <!-- source: https://alchemy.run/git/blocks/blob-store
      upstream: website/src/content/docs/git/blocks/blob-store.mdx
-     alchemy 2.0.0-beta.77 @ c83b454 -->
+     alchemy 2.0.0-beta.79 @ 258f63b -->
 
 # Blob Store
 
@@ -38,13 +38,13 @@ cross-internet hop on the serving path.
 ## S3
 
 ```typescript
-Layer.provide(Git.BlobStoreS3()),
-// or: Git.BlobStoreS3({ bucket: AWS.S3.Bucket("GitObjects", { bucketName: "git-objects" }) })
+export const GitObjects = AWS.S3.Bucket("GitObjects");
+
+Layer.provide(Git.BlobStoreS3(GitObjects))
 ```
 
-Compute stays on Cloudflare and bytes live in AWS. `BlobStoreS3()`
-declares an `AWS.S3.Bucket` with an engine-generated name in the
-deploying profile's region, mints a least-privilege IAM identity for
+Compute stays on Cloudflare and bytes live in your S3 bucket.
+`BlobStoreS3(GitObjects)` mints a least-privilege IAM identity for
 the Worker (`GetObject`, `PutObject`, `DeleteObject`, `ListBucket`,
 and the multipart actions on that bucket), and signs every request
 with credentials assumed at runtime. The Layer is built over the S3

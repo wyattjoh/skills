@@ -1,6 +1,6 @@
 <!-- source: https://alchemy.run/project-structure/file-layout
      upstream: website/src/content/docs/project-structure/file-layout.mdx
-     alchemy 2.0.0-beta.77 @ c83b454 -->
+     alchemy 2.0.0-beta.79 @ 258f63b -->
 
 # File layout
 

@@ -1,6 +1,6 @@
 <!-- source: https://alchemy.run/fly/frontend/websites
      upstream: website/src/content/docs/fly/frontend/websites.mdx
-     alchemy 2.0.0-beta.77 @ c83b454 -->
+     alchemy 2.0.0-beta.79 @ 258f63b -->
 
 # Websites
 
@@ -51,7 +51,7 @@ container integration on top.
 Each resource creates a `Fly.App` when you omit `app`, a
 `Fly.Service` on port 3000, and a `shared_v4`
 [`IpAssignment`](/fly/networking) so `{app}.fly.dev` answers.
-`domain` requests ACME via [`Certificate`](/fly/networking#certificates)
+`domain` requests ACME via [`Certificate`](/fly/networking#use-your-own-hostname)
 (existing DNS only for v1); `url` becomes `https://{domain}`.
 The return is `{ url, app, service, ip, certificate }` —
 everything except `url` is `undefined` under `alchemy dev`.

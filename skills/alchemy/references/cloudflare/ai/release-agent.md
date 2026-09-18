@@ -1,6 +1,6 @@
 <!-- source: https://alchemy.run/cloudflare/ai/release-agent
      upstream: website/src/content/docs/cloudflare/ai/release-agent.mdx
-     alchemy 2.0.0-beta.77 @ c83b454 -->
+     alchemy 2.0.0-beta.79 @ 258f63b -->
 
 # Build a release-automation agent
 

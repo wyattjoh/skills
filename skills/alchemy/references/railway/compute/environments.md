@@ -1,6 +1,6 @@
 <!-- source: https://alchemy.run/railway/compute/environments
      upstream: website/src/content/docs/railway/compute/environments.mdx
-     alchemy 2.0.0-beta.77 @ c83b454 -->
+     alchemy 2.0.0-beta.79 @ 258f63b -->
 
 # Environments
 

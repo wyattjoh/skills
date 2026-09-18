@@ -1,6 +1,6 @@
 <!-- source: https://alchemy.run/better-auth/migrations
      upstream: website/src/content/docs/better-auth/migrations.mdx
-     alchemy 2.0.0-beta.77 @ c83b454 -->
+     alchemy 2.0.0-beta.79 @ 258f63b -->
 
 # Migrations
 

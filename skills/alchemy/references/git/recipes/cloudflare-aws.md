@@ -1,10 +1,13 @@
 <!-- source: https://alchemy.run/git/recipes/cloudflare-aws
      upstream: website/src/content/docs/git/recipes/cloudflare-aws.mdx
-     alchemy 2.0.0-beta.77 @ c83b454 -->
+     alchemy 2.0.0-beta.79 @ 258f63b -->
 
 # Bytes in S3, hashing on Lambda
 
 > Compute on Cloudflare, bytes in S3, and large pushes hashed one Lambda per chunk. One stack carries both provider sets, and Alchemy mints the cross-cloud identity.
+
+The examples use `Authentication` from
+[Getting Started](/git/getting-started): the application's request middleware.
 
 The Worker and the Durable Objects stay on Cloudflare. Packs, bundles,
 and spilled pushes live in S3, and every 4 MiB chunk of a push is
@@ -18,14 +21,17 @@ import * as Git from "alchemy/Git";
 import * as GitHasher from "alchemy/Git/Hasher";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
+import * as HttpRouter from "effect/unstable/http/HttpRouter";
+import * as Http from "alchemy/Http";
 
-const GitLive = Git.Server.layer(Api).pipe(
-  Layer.provide(Git.Handlers),
-  Layer.provide(AuthenticatedLive),
+const GitObjects = AWS.S3.Bucket("GitObjects");
+
+const GitLive = Git.ApiLive.pipe(
+  Layer.provide(Git.ApiHandlersLive),
+  Layer.provide(Authentication.layer),
   Layer.provide(Git.ReposDurableObject),
   Layer.provide(Git.RegistryDurableObject),
-  Layer.provide(Git.BlobStoreS3()),
-  // or: Git.BlobStoreS3({ bucket: AWS.S3.Bucket("GitObjects", { bucketName: "git-objects" }) })
+  Layer.provide(Git.BlobStoreS3(GitObjects)),
   Layer.provide(GitHasher.HasherLambda(GitHasher.HasherFunction)),
   Layer.provide(AWS.Lambda.InvokeFunctionHttp),
 );
@@ -34,9 +40,9 @@ export default class GitHost extends Cloudflare.Worker<GitHost>()(
   "Git",
   { main: import.meta.url, ...Git.GIT_WORKER_OPTIONS },
   Effect.gen(function* () {
-    const git = yield* Git.Server;
-    return { fetch: git.fetch };
-  }).pipe(Effect.provide(GitLive)),
+    const fetch = yield* HttpRouter.toHttpEffect(GitLive.pipe(Layer.provide(Http.Platform)));
+    return { fetch };
+  }),
 ) {}
 ```
 
@@ -100,14 +106,14 @@ Lambda hashes every chunk at once. The loaded Workers hash four at a
 time:
 
 ```diff lang="typescript"
-const GitLive = Git.Server.layer(Api).pipe(
-  Layer.provide(Git.Handlers),
-  Layer.provide(AuthenticatedLive),
+const GitLive = Git.ApiLive.pipe(
+  Layer.provide(Git.ApiHandlersLive),
+  Layer.provide(Authentication.layer),
   Layer.provide(Git.ReposDurableObject),
   Layer.provide(Git.RegistryDurableObject),
-  Layer.provide(Git.BlobStoreR2(GitObjects)),
 -  Layer.provide(GitHasher.HasherWorkerLoader()),
 +  Layer.provide(GitHasher.HasherLambda(GitHasher.HasherFunction)),
+  Layer.provide(Git.BlobStoreR2(GitObjects)),
 +  Layer.provide(AWS.Lambda.InvokeFunctionHttp),
 );
 ```

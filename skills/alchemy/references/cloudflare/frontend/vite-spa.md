@@ -1,6 +1,6 @@
 <!-- source: https://alchemy.run/cloudflare/frontend/vite-spa
      upstream: website/src/content/docs/cloudflare/frontend/vite-spa.mdx
-     alchemy 2.0.0-beta.77 @ c83b454 -->
+     alchemy 2.0.0-beta.79 @ 258f63b -->
 
 # Add a React SPA
 

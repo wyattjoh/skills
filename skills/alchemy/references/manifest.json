@@ -2,11 +2,11 @@
   "source": {
     "repo": "https://github.com/alchemy-run/alchemy.git",
     "ref": "main",
-    "sha": "c83b454",
-    "date": "2026-09-14",
-    "alchemyVersion": "2.0.0-beta.77"
+    "sha": "258f63b",
+    "date": "2026-09-18",
+    "alchemyVersion": "2.0.0-beta.79"
   },
-  "generated": 353,
+  "generated": 378,
   "pages": [
     {
       "title": "Effect HTTP",
@@ -17,8 +17,8 @@
       "path": "references/apis/effect-http.md",
       "upstream": "website/src/content/docs/apis/effect-http.mdx",
       "url": "https://alchemy.run/apis/effect-http",
-      "lines": 245,
-      "bytes": 8702
+      "lines": 246,
+      "bytes": 8748
     },
     {
       "title": "Effect RPC",
@@ -29,8 +29,8 @@
       "path": "references/apis/effect-rpc.md",
       "upstream": "website/src/content/docs/apis/effect-rpc.mdx",
       "url": "https://alchemy.run/apis/effect-rpc",
-      "lines": 199,
-      "bytes": 6854
+      "lines": 201,
+      "bytes": 6899
     },
     {
       "title": "APIs",
@@ -42,7 +42,7 @@
       "upstream": "website/src/content/docs/apis/index.mdx",
       "url": "https://alchemy.run/apis",
       "lines": 88,
-      "bytes": 5670
+      "bytes": 5662
     },
     {
       "title": "Schemaless RPC",
@@ -1097,8 +1097,8 @@
       "path": "references/cloudflare/compute/containers.md",
       "upstream": "website/src/content/docs/cloudflare/compute/containers.mdx",
       "url": "https://alchemy.run/cloudflare/compute/containers",
-      "lines": 547,
-      "bytes": 19123
+      "lines": 621,
+      "bytes": 22418
     },
     {
       "title": "Bind to another Worker's Durable Object",
@@ -1110,7 +1110,7 @@
       "upstream": "website/src/content/docs/cloudflare/compute/cross-worker-durable-object.mdx",
       "url": "https://alchemy.run/cloudflare/compute/cross-worker-durable-object",
       "lines": 502,
-      "bytes": 16892
+      "bytes": 16890
     },
     {
       "title": "Durable Objects",
@@ -1121,8 +1121,8 @@
       "path": "references/cloudflare/compute/durable-objects.md",
       "upstream": "website/src/content/docs/cloudflare/compute/durable-objects.mdx",
       "url": "https://alchemy.run/cloudflare/compute/durable-objects",
-      "lines": 491,
-      "bytes": 17010
+      "lines": 678,
+      "bytes": 24223
     },
     {
       "title": "Gradual deployments",
@@ -1145,8 +1145,8 @@
       "path": "references/cloudflare/compute/hibernatable-websockets.md",
       "upstream": "website/src/content/docs/cloudflare/compute/hibernatable-websockets.mdx",
       "url": "https://alchemy.run/cloudflare/compute/hibernatable-websockets",
-      "lines": 585,
-      "bytes": 18501
+      "lines": 597,
+      "bytes": 19132
     },
     {
       "title": "Worker Previews",
@@ -1193,8 +1193,8 @@
       "path": "references/cloudflare/compute/run-a-container.md",
       "upstream": "website/src/content/docs/cloudflare/compute/run-a-container.mdx",
       "url": "https://alchemy.run/cloudflare/compute/run-a-container",
-      "lines": 485,
-      "bytes": 15299
+      "lines": 488,
+      "bytes": 15511
     },
     {
       "title": "Worker Loader",
@@ -1229,8 +1229,8 @@
       "path": "references/cloudflare/compute/workers.md",
       "upstream": "website/src/content/docs/cloudflare/compute/workers.mdx",
       "url": "https://alchemy.run/cloudflare/compute/workers",
-      "lines": 604,
-      "bytes": 20168
+      "lines": 654,
+      "bytes": 21408
     },
     {
       "title": "Workflows",
@@ -1842,7 +1842,7 @@
       "upstream": "website/src/content/docs/cloudflare/tutorial/part-6.mdx",
       "url": "https://alchemy.run/cloudflare/tutorial/part-6",
       "lines": 280,
-      "bytes": 9439
+      "bytes": 9420
     },
     {
       "title": "Dev servers",
@@ -1889,8 +1889,8 @@
       "path": "references/docker/build-and-push.md",
       "upstream": "website/src/content/docs/docker/build-and-push.mdx",
       "url": "https://alchemy.run/docker/build-and-push",
-      "lines": 132,
-      "bytes": 4544
+      "lines": 140,
+      "bytes": 5072
     },
     {
       "title": "Docker",
@@ -2045,8 +2045,8 @@
       "path": "references/fly/compute/machines.md",
       "upstream": "website/src/content/docs/fly/compute/machines.mdx",
       "url": "https://alchemy.run/fly/compute/machines",
-      "lines": 178,
-      "bytes": 4585
+      "lines": 188,
+      "bytes": 5259
     },
     {
       "title": "Regions",
@@ -2069,8 +2069,8 @@
       "path": "references/fly/compute/services.md",
       "upstream": "website/src/content/docs/fly/compute/services.mdx",
       "url": "https://alchemy.run/fly/compute/services",
-      "lines": 285,
-      "bytes": 8239
+      "lines": 297,
+      "bytes": 8920
     },
     {
       "title": "Sprites",
@@ -2105,8 +2105,8 @@
       "path": "references/fly/data/redis.md",
       "upstream": "website/src/content/docs/fly/data/redis.mdx",
       "url": "https://alchemy.run/fly/data/redis",
-      "lines": 122,
-      "bytes": 3089
+      "lines": 123,
+      "bytes": 3163
     },
     {
       "title": "Secrets",
@@ -2310,7 +2310,7 @@
       "upstream": "website/src/content/docs/fly/frontend/websites.mdx",
       "url": "https://alchemy.run/fly/frontend/websites",
       "lines": 167,
-      "bytes": 7128
+      "bytes": 7137
     },
     {
       "title": "Fly",
@@ -2322,7 +2322,7 @@
       "upstream": "website/src/content/docs/fly/index.mdx",
       "url": "https://alchemy.run/fly",
       "lines": 116,
-      "bytes": 6096
+      "bytes": 6105
     },
     {
       "title": "IPs & certificates",
@@ -2394,7 +2394,7 @@
       "upstream": "website/src/content/docs/fly/tutorial/part-4.mdx",
       "url": "https://alchemy.run/fly/tutorial/part-4",
       "lines": 179,
-      "bytes": 4819
+      "bytes": 4848
     },
     {
       "title": "Getting started",
@@ -2406,19 +2406,19 @@
       "upstream": "website/src/content/docs/getting-started.mdx",
       "url": "https://alchemy.run/getting-started",
       "lines": 141,
-      "bytes": 3925
+      "bytes": 3933
     },
     {
-      "title": "Auth",
-      "description": "The engine holds no users, no credentials, and no policy. The middleware of the API that mounts the routes decides who may call them, and Git.Hooks decides which refs may move.",
+      "title": "Authentication and authorization",
+      "description": "Use native Effect HTTP middleware and ordinary application effects to authorize Git operations.",
       "area": "git",
       "group": "blocks",
       "slug": "git/blocks/auth",
       "path": "references/git/blocks/auth.md",
       "upstream": "website/src/content/docs/git/blocks/auth.mdx",
       "url": "https://alchemy.run/git/blocks/auth",
-      "lines": 190,
-      "bytes": 7013
+      "lines": 82,
+      "bytes": 3526
     },
     {
       "title": "Blob Store",
@@ -2430,7 +2430,19 @@
       "upstream": "website/src/content/docs/git/blocks/blob-store.mdx",
       "url": "https://alchemy.run/git/blocks/blob-store",
       "lines": 85,
-      "bytes": 2932
+      "bytes": 2830
+    },
+    {
+      "title": "Engine operations",
+      "description": "Build your own HTTP API over Git operations, with scoped preparation, application authorization, and explicit commit.",
+      "area": "git",
+      "group": "blocks",
+      "slug": "git/blocks/engine",
+      "path": "references/git/blocks/engine.md",
+      "upstream": "website/src/content/docs/git/blocks/engine.mdx",
+      "url": "https://alchemy.run/git/blocks/engine",
+      "lines": 192,
+      "bytes": 8296
     },
     {
       "title": "Hasher",
@@ -2453,8 +2465,8 @@
       "path": "references/git/blocks/_overview.md",
       "upstream": "website/src/content/docs/git/blocks/index.mdx",
       "url": "https://alchemy.run/git/blocks",
-      "lines": 111,
-      "bytes": 4129
+      "lines": 116,
+      "bytes": 4424
     },
     {
       "title": "Registry",
@@ -2465,32 +2477,32 @@
       "path": "references/git/blocks/registry.md",
       "upstream": "website/src/content/docs/git/blocks/registry.mdx",
       "url": "https://alchemy.run/git/blocks/registry",
-      "lines": 67,
-      "bytes": 2446
+      "lines": 70,
+      "bytes": 2565
     },
     {
       "title": "Repository",
-      "description": "One Durable Object per repository, behind the Git.RepoStore service. Provide it, call it from your own routes, wrap it to hook pushes and ref updates, or implement its shape over another store.",
+      "description": "One Durable Object per repository, behind the Git.RepoStore service. Provide it, call it from your own routes, compose operations through Git.Engine, or implement its shape over another store.",
       "area": "git",
       "group": "blocks",
       "slug": "git/blocks/repositories",
       "path": "references/git/blocks/repositories.md",
       "upstream": "website/src/content/docs/git/blocks/repositories.mdx",
       "url": "https://alchemy.run/git/blocks/repositories",
-      "lines": 214,
-      "bytes": 8118
+      "lines": 202,
+      "bytes": 8276
     },
     {
-      "title": "Server",
-      "description": "Every plane as one HttpApi of route classes. Groups you can pick, Handlers you can replace one at a time, Server.layer to serve it behind your middleware, and ServerLive as the open default.",
+      "title": "HTTP routes",
+      "description": "Compose Git route layers beside your application's Effect HTTP API, with your middleware and server.",
       "area": "git",
       "group": "blocks",
       "slug": "git/blocks/server",
       "path": "references/git/blocks/server.md",
       "upstream": "website/src/content/docs/git/blocks/server.mdx",
       "url": "https://alchemy.run/git/blocks/server",
-      "lines": 193,
-      "bytes": 6617
+      "lines": 189,
+      "bytes": 6818
     },
     {
       "title": "Cloning & pushing",
@@ -2506,15 +2518,15 @@
     },
     {
       "title": "Getting Started",
-      "description": "Deploy a git host to Cloudflare and push your first repository, in one file. The tutorial then builds the same file from empty.",
+      "description": "A complete quickstart for a Git host protected by a shared credential. Deploy it to Cloudflare, push a repository, and clone it back.",
       "area": "git",
       "group": "",
       "slug": "git/getting-started",
       "path": "references/git/getting-started.md",
       "upstream": "website/src/content/docs/git/getting-started.mdx",
       "url": "https://alchemy.run/git/getting-started",
-      "lines": 181,
-      "bytes": 5646
+      "lines": 187,
+      "bytes": 6248
     },
     {
       "title": "GitHub API compatibility",
@@ -2525,20 +2537,20 @@
       "path": "references/git/github-api.md",
       "upstream": "website/src/content/docs/git/github-api.mdx",
       "url": "https://alchemy.run/git/github-api",
-      "lines": 80,
-      "bytes": 2627
+      "lines": 81,
+      "bytes": 2724
     },
     {
       "title": "Git",
-      "description": "A pluggable, embeddable, self-hostable git server on Cloudflare Workers, Durable Objects, and R2. Smart HTTP for any client, a typed REST plane with pull requests, and a GitHub-compatible API, assembled in one file.",
+      "description": "A pluggable, embeddable, self-hostable git server on Cloudflare Workers, Durable Objects, and R2. Smart HTTP for any client, a typed REST plane with pull requests, and a GitHub-compatible API.",
       "area": "git",
       "group": "",
       "slug": "git",
       "path": "references/git/_overview.md",
       "upstream": "website/src/content/docs/git/index.mdx",
       "url": "https://alchemy.run/git",
-      "lines": 115,
-      "bytes": 4632
+      "lines": 125,
+      "bytes": 5347
     },
     {
       "title": "Pull requests",
@@ -2561,8 +2573,8 @@
       "path": "references/git/recipes/cloudflare-aws.md",
       "upstream": "website/src/content/docs/git/recipes/cloudflare-aws.mdx",
       "url": "https://alchemy.run/git/recipes/cloudflare-aws",
-      "lines": 118,
-      "bytes": 4014
+      "lines": 124,
+      "bytes": 4214
     },
     {
       "title": "All on Cloudflare",
@@ -2573,8 +2585,8 @@
       "path": "references/git/recipes/cloudflare.md",
       "upstream": "website/src/content/docs/git/recipes/cloudflare.mdx",
       "url": "https://alchemy.run/git/recipes/cloudflare",
-      "lines": 111,
-      "bytes": 3453
+      "lines": 116,
+      "bytes": 3760
     },
     {
       "title": "Overview",
@@ -2585,8 +2597,8 @@
       "path": "references/git/recipes/_overview.md",
       "upstream": "website/src/content/docs/git/recipes/index.mdx",
       "url": "https://alchemy.run/git/recipes",
-      "lines": 74,
-      "bytes": 2809
+      "lines": 77,
+      "bytes": 3018
     },
     {
       "title": "Scaling",
@@ -2597,8 +2609,8 @@
       "path": "references/git/recipes/scaling.md",
       "upstream": "website/src/content/docs/git/recipes/scaling.mdx",
       "url": "https://alchemy.run/git/recipes/scaling",
-      "lines": 120,
-      "bytes": 5024
+      "lines": 124,
+      "bytes": 5176
     },
     {
       "title": "Bring your own store",
@@ -2609,8 +2621,8 @@
       "path": "references/git/recipes/your-own-store.md",
       "upstream": "website/src/content/docs/git/recipes/your-own-store.mdx",
       "url": "https://alchemy.run/git/recipes/your-own-store",
-      "lines": 93,
-      "bytes": 3435
+      "lines": 96,
+      "bytes": 3554
     },
     {
       "title": "Repositories",
@@ -2625,52 +2637,76 @@
       "bytes": 3345
     },
     {
-      "title": "Part 1: A git server in one file",
-      "description": "Build the git host from an empty file. Each line you add is one decision, and by the end you have deployed it.",
+      "title": "Part 1: Push your first repository",
+      "description": "Deploy a Git host, push a commit, and clone it back. Add storage and hashing one layer at a time.",
       "area": "git",
       "group": "tutorial",
       "slug": "git/tutorial/part-1",
       "path": "references/git/tutorial/part-1.md",
       "upstream": "website/src/content/docs/git/tutorial/part-1.mdx",
       "url": "https://alchemy.run/git/tutorial/part-1",
-      "lines": 241,
-      "bytes": 7760
+      "lines": 242,
+      "bytes": 6710
     },
     {
-      "title": "Part 2: Repositories",
-      "description": "Create a repository on your host, push to it, then let anyone read a public one. The REST plane and the shared secret, used before anything else depends on them.",
+      "title": "Part 2: Control access",
+      "description": "Protect the existing Git host with one shared credential, then verify both accepted and rejected requests.",
       "area": "git",
       "group": "tutorial",
       "slug": "git/tutorial/part-2",
       "path": "references/git/tutorial/part-2.md",
       "upstream": "website/src/content/docs/git/tutorial/part-2.mdx",
       "url": "https://alchemy.run/git/tutorial/part-2",
-      "lines": 143,
-      "bytes": 4870
+      "lines": 175,
+      "bytes": 5284
     },
     {
-      "title": "Part 3: Your own API",
-      "description": "Git.Server is designed to be embedded. Build your own API around it with Better Auth, add a route of your own, replace one of the engine's, and serve your application from the same origin.",
+      "title": "Part 3: Publish a repository",
+      "description": "Allow anonymous clones of public repositories while preserving authenticated writes.",
       "area": "git",
       "group": "tutorial",
       "slug": "git/tutorial/part-3",
       "path": "references/git/tutorial/part-3.md",
       "upstream": "website/src/content/docs/git/tutorial/part-3.mdx",
       "url": "https://alchemy.run/git/tutorial/part-3",
-      "lines": 514,
-      "bytes": 16062
+      "lines": 144,
+      "bytes": 4352
     },
     {
-      "title": "Part 4: Your own rules",
-      "description": "git's pre-receive hook as a service. Protect main, let a team share a repository, and answer from your own data. It never sees a credential.",
+      "title": "Part 4: Give users their own credentials",
+      "description": "Replace the shared credential with Better Auth accounts and individual Git API keys.",
       "area": "git",
       "group": "tutorial",
       "slug": "git/tutorial/part-4",
       "path": "references/git/tutorial/part-4.md",
       "upstream": "website/src/content/docs/git/tutorial/part-4.mdx",
       "url": "https://alchemy.run/git/tutorial/part-4",
-      "lines": 152,
-      "bytes": 5090
+      "lines": 374,
+      "bytes": 11304
+    },
+    {
+      "title": "Part 5: Add your application's API",
+      "description": "Add a typed /me endpoint beside Git and use the caller already supplied by your authentication middleware.",
+      "area": "git",
+      "group": "tutorial",
+      "slug": "git/tutorial/part-5",
+      "path": "references/git/tutorial/part-5.md",
+      "upstream": "website/src/content/docs/git/tutorial/part-5.mdx",
+      "url": "https://alchemy.run/git/tutorial/part-5",
+      "lines": 156,
+      "bytes": 3876
+    },
+    {
+      "title": "Part 6: Protect a branch",
+      "description": "Authorize parsed Git mutations in ordinary HTTP handlers, using the request's user before committing changes.",
+      "area": "git",
+      "group": "tutorial",
+      "slug": "git/tutorial/part-6",
+      "path": "references/git/tutorial/part-6.md",
+      "upstream": "website/src/content/docs/git/tutorial/part-6.mdx",
+      "url": "https://alchemy.run/git/tutorial/part-6",
+      "lines": 231,
+      "bytes": 9310
     },
     {
       "title": "Actions secrets & variables",
@@ -3041,8 +3077,8 @@
       "path": "references/infrastructure-as-code/action.md",
       "upstream": "website/src/content/docs/infrastructure-as-code/action.mdx",
       "url": "https://alchemy.run/infrastructure-as-code/action",
-      "lines": 216,
-      "bytes": 7861
+      "lines": 229,
+      "bytes": 8478
     },
     {
       "title": "Custom Provider",
@@ -3054,7 +3090,7 @@
       "upstream": "website/src/content/docs/infrastructure-as-code/custom-provider.mdx",
       "url": "https://alchemy.run/infrastructure-as-code/custom-provider",
       "lines": 650,
-      "bytes": 21220
+      "bytes": 21126
     },
     {
       "title": "Local Provider",
@@ -3077,8 +3113,8 @@
       "path": "references/infrastructure-as-code/outputs.md",
       "upstream": "website/src/content/docs/infrastructure-as-code/outputs.mdx",
       "url": "https://alchemy.run/infrastructure-as-code/outputs",
-      "lines": 363,
-      "bytes": 12251
+      "lines": 352,
+      "bytes": 11739
     },
     {
       "title": "Providers",
@@ -3089,8 +3125,8 @@
       "path": "references/infrastructure-as-code/provider.md",
       "upstream": "website/src/content/docs/infrastructure-as-code/provider.mdx",
       "url": "https://alchemy.run/infrastructure-as-code/provider",
-      "lines": 313,
-      "bytes": 11362
+      "lines": 296,
+      "bytes": 11016
     },
     {
       "title": "References",
@@ -3101,8 +3137,8 @@
       "path": "references/infrastructure-as-code/references.md",
       "upstream": "website/src/content/docs/infrastructure-as-code/references.mdx",
       "url": "https://alchemy.run/infrastructure-as-code/references",
-      "lines": 126,
-      "bytes": 3966
+      "lines": 129,
+      "bytes": 4156
     },
     {
       "title": "Renaming Resources",
@@ -3113,8 +3149,8 @@
       "path": "references/infrastructure-as-code/renaming.md",
       "upstream": "website/src/content/docs/infrastructure-as-code/renaming.mdx",
       "url": "https://alchemy.run/infrastructure-as-code/renaming",
-      "lines": 176,
-      "bytes": 6314
+      "lines": 188,
+      "bytes": 6769
     },
     {
       "title": "Resource Lifecycle",
@@ -3125,8 +3161,8 @@
       "path": "references/infrastructure-as-code/resource-lifecycle.md",
       "upstream": "website/src/content/docs/infrastructure-as-code/resource-lifecycle.mdx",
       "url": "https://alchemy.run/infrastructure-as-code/resource-lifecycle",
-      "lines": 269,
-      "bytes": 10488
+      "lines": 258,
+      "bytes": 10171
     },
     {
       "title": "Resources",
@@ -3161,8 +3197,8 @@
       "path": "references/infrastructure-as-effects/binding.md",
       "upstream": "website/src/content/docs/infrastructure-as-effects/binding.mdx",
       "url": "https://alchemy.run/infrastructure-as-effects/binding",
-      "lines": 303,
-      "bytes": 9544
+      "lines": 304,
+      "bytes": 9632
     },
     {
       "title": "Circular Bindings",
@@ -3201,18 +3237,6 @@
       "bytes": 8397
     },
     {
-      "title": "Infrastructure as Effects",
-      "description": "One Effect program models both your runtime code and the infrastructure it runs on — Runtimes carry code, Bindings wire resources into them, Phases split deploy from runtime, Layers package it all behind typed services.",
-      "area": "infrastructure-as-effects",
-      "group": "",
-      "slug": "infrastructure-as-effects",
-      "path": "references/infrastructure-as-effects/_overview.md",
-      "upstream": "website/src/content/docs/infrastructure-as-effects/index.mdx",
-      "url": "https://alchemy.run/infrastructure-as-effects",
-      "lines": 207,
-      "bytes": 7406
-    },
-    {
       "title": "Layers",
       "description": "A Layer defines a service contract with swappable implementations. In Alchemy, a Layer can encapsulate Resources and Bindings, so shared services carry their own infrastructure and permissions.",
       "area": "infrastructure-as-effects",
@@ -3221,8 +3245,8 @@
       "path": "references/infrastructure-as-effects/layers.md",
       "upstream": "website/src/content/docs/infrastructure-as-effects/layers.mdx",
       "url": "https://alchemy.run/infrastructure-as-effects/layers",
-      "lines": 243,
-      "bytes": 6660
+      "lines": 246,
+      "bytes": 6772
     },
     {
       "title": "Phases",
@@ -3234,7 +3258,7 @@
       "upstream": "website/src/content/docs/infrastructure-as-effects/phases.mdx",
       "url": "https://alchemy.run/infrastructure-as-effects/phases",
       "lines": 168,
-      "bytes": 6960
+      "bytes": 7133
     },
     {
       "title": "Runtime",
@@ -3245,8 +3269,8 @@
       "path": "references/infrastructure-as-effects/runtime.md",
       "upstream": "website/src/content/docs/infrastructure-as-effects/runtime.mdx",
       "url": "https://alchemy.run/infrastructure-as-effects/runtime",
-      "lines": 442,
-      "bytes": 13458
+      "lines": 399,
+      "bytes": 12329
     },
     {
       "title": "Sinks",
@@ -3258,7 +3282,7 @@
       "upstream": "website/src/content/docs/infrastructure-as-effects/sinks.mdx",
       "url": "https://alchemy.run/infrastructure-as-effects/sinks",
       "lines": 190,
-      "bytes": 7213
+      "bytes": 7207
     },
     {
       "title": "Telemetry",
@@ -3485,8 +3509,8 @@
       "path": "references/prisma/compute/apps.md",
       "upstream": "website/src/content/docs/prisma/compute/apps.mdx",
       "url": "https://alchemy.run/prisma/compute/apps",
-      "lines": 112,
-      "bytes": 3501
+      "lines": 163,
+      "bytes": 5169
     },
     {
       "title": "Deployments",
@@ -3534,7 +3558,7 @@
       "upstream": "website/src/content/docs/prisma/data/connections.mdx",
       "url": "https://alchemy.run/prisma/data/connections",
       "lines": 144,
-      "bytes": 4833
+      "bytes": 4815
     },
     {
       "title": "Postgres",
@@ -3547,6 +3571,174 @@
       "url": "https://alchemy.run/prisma/data/postgres",
       "lines": 102,
       "bytes": 3055
+    },
+    {
+      "title": "Astro",
+      "description": "Deploy Astro SSR or a fully static site to Prisma Compute with Prisma.Website.Astro, running on Bun with native Astro dev locally.",
+      "area": "prisma",
+      "group": "frontend",
+      "slug": "prisma/frontend/astro",
+      "path": "references/prisma/frontend/astro.md",
+      "upstream": "website/src/content/docs/prisma/frontend/astro.mdx",
+      "url": "https://alchemy.run/prisma/frontend/astro",
+      "lines": 164,
+      "bytes": 5080
+    },
+    {
+      "title": "Foldkit",
+      "description": "Deploy Foldkit to Prisma Compute with Prisma.Website.Foldkit — a Vite SPA served on Bun, deep-link fallback, and native HMR locally.",
+      "area": "prisma",
+      "group": "frontend",
+      "slug": "prisma/frontend/foldkit",
+      "path": "references/prisma/frontend/foldkit.md",
+      "upstream": "website/src/content/docs/prisma/frontend/foldkit.mdx",
+      "url": "https://alchemy.run/prisma/frontend/foldkit",
+      "lines": 161,
+      "bytes": 4814
+    },
+    {
+      "title": "Next.js",
+      "description": "Deploy Next.js to Prisma Compute with Prisma.Website.Nextjs — a normal Next server on Bun, not OpenNext, and next dev locally.",
+      "area": "prisma",
+      "group": "frontend",
+      "slug": "prisma/frontend/nextjs",
+      "path": "references/prisma/frontend/nextjs.md",
+      "upstream": "website/src/content/docs/prisma/frontend/nextjs.mdx",
+      "url": "https://alchemy.run/prisma/frontend/nextjs",
+      "lines": 124,
+      "bytes": 4061
+    },
+    {
+      "title": "Nuxt",
+      "description": "Deploy Nuxt to Prisma Compute with Prisma.Website.Nuxt — Nitro's Node target running on Bun and Nuxt's own dev server locally.",
+      "area": "prisma",
+      "group": "frontend",
+      "slug": "prisma/frontend/nuxt",
+      "path": "references/prisma/frontend/nuxt.md",
+      "upstream": "website/src/content/docs/prisma/frontend/nuxt.mdx",
+      "url": "https://alchemy.run/prisma/frontend/nuxt",
+      "lines": 139,
+      "bytes": 4269
+    },
+    {
+      "title": "Octane",
+      "description": "Deploy OctaneJS to Prisma Compute with Prisma.Website.Octane — the Node target on Bun, SSR plus client assets, and native Vite dev locally.",
+      "area": "prisma",
+      "group": "frontend",
+      "slug": "prisma/frontend/octane",
+      "path": "references/prisma/frontend/octane.md",
+      "upstream": "website/src/content/docs/prisma/frontend/octane.mdx",
+      "url": "https://alchemy.run/prisma/frontend/octane",
+      "lines": 151,
+      "bytes": 4500
+    },
+    {
+      "title": "React Router",
+      "description": "Deploy React Router v7 framework apps to Prisma Compute with Prisma.Website.ReactRouter — SSR on Bun and native Vite dev locally.",
+      "area": "prisma",
+      "group": "frontend",
+      "slug": "prisma/frontend/react-router",
+      "path": "references/prisma/frontend/react-router.md",
+      "upstream": "website/src/content/docs/prisma/frontend/react-router.mdx",
+      "url": "https://alchemy.run/prisma/frontend/react-router",
+      "lines": 175,
+      "bytes": 5558
+    },
+    {
+      "title": "SolidStart",
+      "description": "Deploy SolidStart to Prisma Compute with Prisma.Website.SolidStart — Nitro's Node target on Bun and SolidStart's native Vite dev server locally.",
+      "area": "prisma",
+      "group": "frontend",
+      "slug": "prisma/frontend/solidstart",
+      "path": "references/prisma/frontend/solidstart.md",
+      "upstream": "website/src/content/docs/prisma/frontend/solidstart.mdx",
+      "url": "https://alchemy.run/prisma/frontend/solidstart",
+      "lines": 163,
+      "bytes": 5385
+    },
+    {
+      "title": "Static sites",
+      "description": "Deploy any static build to Prisma Compute with Prisma.Website.StaticSite — a shell command, output directory, and Bun static-file server.",
+      "area": "prisma",
+      "group": "frontend",
+      "slug": "prisma/frontend/static-site",
+      "path": "references/prisma/frontend/static-site.md",
+      "upstream": "website/src/content/docs/prisma/frontend/static-site.mdx",
+      "url": "https://alchemy.run/prisma/frontend/static-site",
+      "lines": 179,
+      "bytes": 5803
+    },
+    {
+      "title": "SvelteKit",
+      "description": "Deploy SvelteKit to Prisma Compute with Prisma.Website.SvelteKit — SSR and prerendered assets on Bun, with native Vite dev locally.",
+      "area": "prisma",
+      "group": "frontend",
+      "slug": "prisma/frontend/sveltekit",
+      "path": "references/prisma/frontend/sveltekit.md",
+      "upstream": "website/src/content/docs/prisma/frontend/sveltekit.mdx",
+      "url": "https://alchemy.run/prisma/frontend/sveltekit",
+      "lines": 141,
+      "bytes": 4341
+    },
+    {
+      "title": "TanStack Start",
+      "description": "Deploy TanStack Start to Prisma Compute with Prisma.Website.TanStackStart — React or Solid SSR on Bun, with native Vite dev locally.",
+      "area": "prisma",
+      "group": "frontend",
+      "slug": "prisma/frontend/tanstack-start",
+      "path": "references/prisma/frontend/tanstack-start.md",
+      "upstream": "website/src/content/docs/prisma/frontend/tanstack-start.mdx",
+      "url": "https://alchemy.run/prisma/frontend/tanstack-start",
+      "lines": 176,
+      "bytes": 5405
+    },
+    {
+      "title": "Vite",
+      "description": "Deploy a Vite SPA to Prisma Compute with Prisma.Website.Vite — static files served on Bun and Vite's native dev server locally.",
+      "area": "prisma",
+      "group": "frontend",
+      "slug": "prisma/frontend/vite",
+      "path": "references/prisma/frontend/vite.md",
+      "upstream": "website/src/content/docs/prisma/frontend/vite.mdx",
+      "url": "https://alchemy.run/prisma/frontend/vite",
+      "lines": 155,
+      "bytes": 4851
+    },
+    {
+      "title": "Vocs",
+      "description": "Deploy Vocs documentation to Prisma Compute with Prisma.Website.Vocs — static assets and Waku RSC on Bun, with Vocs dev locally.",
+      "area": "prisma",
+      "group": "frontend",
+      "slug": "prisma/frontend/vocs",
+      "path": "references/prisma/frontend/vocs.md",
+      "upstream": "website/src/content/docs/prisma/frontend/vocs.mdx",
+      "url": "https://alchemy.run/prisma/frontend/vocs",
+      "lines": 137,
+      "bytes": 4125
+    },
+    {
+      "title": "Waku",
+      "description": "Deploy Waku to Prisma Compute with Prisma.Website.Waku — React Server Components and static pages on Bun, with Waku's native dev server locally.",
+      "area": "prisma",
+      "group": "frontend",
+      "slug": "prisma/frontend/waku",
+      "path": "references/prisma/frontend/waku.md",
+      "upstream": "website/src/content/docs/prisma/frontend/waku.mdx",
+      "url": "https://alchemy.run/prisma/frontend/waku",
+      "lines": 145,
+      "bytes": 4401
+    },
+    {
+      "title": "Websites",
+      "description": "Deploy Vite, Astro, Next.js, Nuxt, React Router, SolidStart, SvelteKit, TanStack Start, Waku, Octane, Foldkit, Vocs, or any static build to Prisma Compute.",
+      "area": "prisma",
+      "group": "frontend",
+      "slug": "prisma/frontend/websites",
+      "path": "references/prisma/frontend/websites.md",
+      "upstream": "website/src/content/docs/prisma/frontend/websites.mdx",
+      "url": "https://alchemy.run/prisma/frontend/websites",
+      "lines": 208,
+      "bytes": 8164
     },
     {
       "title": "Connect from Cloudflare Workers",
@@ -3569,8 +3761,8 @@
       "path": "references/prisma/_overview.md",
       "upstream": "website/src/content/docs/prisma/index.mdx",
       "url": "https://alchemy.run/prisma",
-      "lines": 124,
-      "bytes": 3974
+      "lines": 140,
+      "bytes": 4769
     },
     {
       "title": "Setup",
@@ -3581,8 +3773,56 @@
       "path": "references/prisma/setup.md",
       "upstream": "website/src/content/docs/prisma/setup.mdx",
       "url": "https://alchemy.run/prisma/setup",
-      "lines": 58,
-      "bytes": 1720
+      "lines": 59,
+      "bytes": 1835
+    },
+    {
+      "title": "Part 1: Your First Project",
+      "description": "Install Alchemy, configure Prisma credentials, and deploy your first Project.",
+      "area": "prisma",
+      "group": "tutorial",
+      "slug": "prisma/tutorial/part-1",
+      "path": "references/prisma/tutorial/part-1.md",
+      "upstream": "website/src/content/docs/prisma/tutorial/part-1.mdx",
+      "url": "https://alchemy.run/prisma/tutorial/part-1",
+      "lines": 144,
+      "bytes": 4887
+    },
+    {
+      "title": "Part 2: An HTTP API",
+      "description": "Deploy an Effect-native Prisma Compute service and add an HTTP health endpoint.",
+      "area": "prisma",
+      "group": "tutorial",
+      "slug": "prisma/tutorial/part-2",
+      "path": "references/prisma/tutorial/part-2.md",
+      "upstream": "website/src/content/docs/prisma/tutorial/part-2.mdx",
+      "url": "https://alchemy.run/prisma/tutorial/part-2",
+      "lines": 146,
+      "bytes": 4327
+    },
+    {
+      "title": "Part 3: Query Postgres",
+      "description": "Create Prisma Postgres, bind its connection to Compute, and query it with Effect SQL.",
+      "area": "prisma",
+      "group": "tutorial",
+      "slug": "prisma/tutorial/part-3",
+      "path": "references/prisma/tutorial/part-3.md",
+      "upstream": "website/src/content/docs/prisma/tutorial/part-3.mdx",
+      "url": "https://alchemy.run/prisma/tutorial/part-3",
+      "lines": 154,
+      "bytes": 5067
+    },
+    {
+      "title": "Part 4: A Vite Frontend",
+      "description": "Connect a Vite frontend to your Prisma API, develop locally, and destroy the tutorial resources.",
+      "area": "prisma",
+      "group": "tutorial",
+      "slug": "prisma/tutorial/part-4",
+      "path": "references/prisma/tutorial/part-4.md",
+      "upstream": "website/src/content/docs/prisma/tutorial/part-4.mdx",
+      "url": "https://alchemy.run/prisma/tutorial/part-4",
+      "lines": 194,
+      "bytes": 7796
     },
     {
       "title": "File layout",
@@ -4169,8 +4409,68 @@
       "path": "references/state-store/_overview.md",
       "upstream": "website/src/content/docs/state-store/index.mdx",
       "url": "https://alchemy.run/state-store",
-      "lines": 195,
-      "bytes": 6790
+      "lines": 197,
+      "bytes": 6928
+    },
+    {
+      "title": "Onboard merchants with Connect",
+      "description": "Build a Connect platform on a Cloudflare Worker — create Express accounts, send merchants through hosted onboarding, and learn from account.updated when they can take payments.",
+      "area": "stripe",
+      "group": "guides",
+      "slug": "stripe/guides/connect",
+      "path": "references/stripe/guides/connect.md",
+      "upstream": "website/src/content/docs/stripe/guides/connect.mdx",
+      "url": "https://alchemy.run/stripe/guides/connect",
+      "lines": 494,
+      "bytes": 15652
+    },
+    {
+      "title": "Sell a subscription",
+      "description": "The full SaaS billing loop on one Cloudflare Worker — hosted Checkout, the Billing Portal, and webhooks that keep an entitlement record your app gates on.",
+      "area": "stripe",
+      "group": "guides",
+      "slug": "stripe/guides/subscriptions",
+      "path": "references/stripe/guides/subscriptions.md",
+      "upstream": "website/src/content/docs/stripe/guides/subscriptions.mdx",
+      "url": "https://alchemy.run/stripe/guides/subscriptions",
+      "lines": 556,
+      "bytes": 18518
+    },
+    {
+      "title": "React to Stripe events",
+      "description": "consumeEvents provisions the webhook endpoint and runs one Effect per delivery. When to use it, which events to listen for, and how to manage the endpoint yourself.",
+      "area": "stripe",
+      "group": "guides",
+      "slug": "stripe/guides/webhooks",
+      "path": "references/stripe/guides/webhooks.md",
+      "upstream": "website/src/content/docs/stripe/guides/webhooks.mdx",
+      "url": "https://alchemy.run/stripe/guides/webhooks",
+      "lines": 136,
+      "bytes": 5149
+    },
+    {
+      "title": "Stripe",
+      "description": "Sell subscriptions and onboard merchants from a Cloudflare Worker — catalog, Checkout, the Billing Portal, Connect, and webhooks declared next to the code that uses them.",
+      "area": "stripe",
+      "group": "",
+      "slug": "stripe",
+      "path": "references/stripe/_overview.md",
+      "upstream": "website/src/content/docs/stripe/index.mdx",
+      "url": "https://alchemy.run/stripe",
+      "lines": 117,
+      "bytes": 4414
+    },
+    {
+      "title": "Setup",
+      "description": "Connect alchemy to Stripe — secret key, profiles, CI, and how Worker bindings get their credentials.",
+      "area": "stripe",
+      "group": "",
+      "slug": "stripe/setup",
+      "path": "references/stripe/setup.md",
+      "upstream": "website/src/content/docs/stripe/setup.mdx",
+      "url": "https://alchemy.run/stripe/setup",
+      "lines": 104,
+      "bytes": 3468
     },
     {
       "title": "Testing",
@@ -4241,8 +4541,8 @@
       "path": "references/what-is-alchemy.md",
       "upstream": "website/src/content/docs/what-is-alchemy.mdx",
       "url": "https://alchemy.run/what-is-alchemy",
-      "lines": 295,
-      "bytes": 9615
+      "lines": 318,
+      "bytes": 10214
     }
   ]
 }

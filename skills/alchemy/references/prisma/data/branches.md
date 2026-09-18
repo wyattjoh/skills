@@ -1,6 +1,6 @@
 <!-- source: https://alchemy.run/prisma/data/branches
      upstream: website/src/content/docs/prisma/data/branches.mdx
-     alchemy 2.0.0-beta.77 @ c83b454 -->
+     alchemy 2.0.0-beta.79 @ 258f63b -->
 
 # Branches
 

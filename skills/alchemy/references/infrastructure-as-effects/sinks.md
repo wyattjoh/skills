@@ -1,6 +1,6 @@
 <!-- source: https://alchemy.run/infrastructure-as-effects/sinks
      upstream: website/src/content/docs/infrastructure-as-effects/sinks.mdx
-     alchemy 2.0.0-beta.77 @ c83b454 -->
+     alchemy 2.0.0-beta.79 @ 258f63b -->
 
 # Sinks
 
@@ -18,7 +18,7 @@ minimal IAM to go with it.
 ## A Sink in a constructor
 
 Like every Binding, a Sink is declared in the
-[Effectful Constructor](/infrastructure-as-effects/runtime#the-effectful-constructor-pattern)
+[Effectful Constructor](/infrastructure-as-effects/runtime#the-effectful-constructor)
 and used in the interface it returns:
 
 ```typescript
@@ -32,7 +32,7 @@ import { OutboundQueue } from "./queue.ts";
 
 export default class Publisher extends AWS.Lambda.Function<Publisher>()(
   "Publisher",
-  { main: import.meta.url, workersDev: true },
+  { main: import.meta.url, functionUrl: true },
   Effect.gen(function* () {
     const sink = yield* AWS.SQS.QueueSink(OutboundQueue);
     // → Sink<void, string, readonly string[], never>
@@ -92,7 +92,7 @@ control of `PartitionKey`:
 ```typescript
 export default class Ingest extends AWS.Lambda.Function<Ingest>()(
   "Ingest",
-  { main: import.meta.url, workersDev: true },
+  { main: import.meta.url, functionUrl: true },
   Effect.gen(function* () {
     const sink = yield* AWS.Kinesis.StreamSink(ClickStream);
 

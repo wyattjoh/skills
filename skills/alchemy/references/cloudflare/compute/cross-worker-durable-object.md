@@ -1,6 +1,6 @@
 <!-- source: https://alchemy.run/cloudflare/compute/cross-worker-durable-object
      upstream: website/src/content/docs/cloudflare/compute/cross-worker-durable-object.mdx
-     alchemy 2.0.0-beta.77 @ c83b454 -->
+     alchemy 2.0.0-beta.79 @ 258f63b -->
 
 # Bind to another Worker's Durable Object
 
@@ -81,7 +81,7 @@ export class Counter extends Cloudflare.DurableObject<
 :::note
 The `state` *reference* is resolved in the outer (Construction) Effect, but
 `state.storage` is
-[colored with `RuntimeContext`](/infrastructure-as-effects/layers#runtime-as-a-colored-function)
+[colored with `RuntimeContext`](/infrastructure-as-effects/layers#the-types-hold-the-boundary)
 — so the storage reads/writes stay in the inner (runtime) Effect.
 :::
 

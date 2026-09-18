@@ -1,6 +1,6 @@
 <!-- source: https://alchemy.run/sql/effect-sql/postgres
      upstream: website/src/content/docs/sql/effect-sql/postgres.mdx
-     alchemy 2.0.0-beta.77 @ c83b454 -->
+     alchemy 2.0.0-beta.79 @ 258f63b -->
 
 # Postgres
 

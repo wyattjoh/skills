@@ -1,6 +1,6 @@
 <!-- source: https://alchemy.run/docker/build-and-push
      upstream: website/src/content/docs/docker/build-and-push.mdx
-     alchemy 2.0.0-beta.77 @ c83b454 -->
+     alchemy 2.0.0-beta.79 @ 258f63b -->
 
 # Build & push images
 
@@ -122,6 +122,14 @@ boundary — Cloudflare and AWS pull from the registry; no further
 Docker wiring is involved. A reference already in Cloudflare's
 managed registry (`registry.cloudflare.com/...`) is deployed as-is —
 the Container skips its own pull-and-push round-trip.
+
+Cloudflare Containers can also build and publish directly from their
+`context` or `dockerfile` props, with caching enabled by default in the
+application's generated repository. Set the Container's `publish.repository`
+to choose a shared destination and reuse builds across stages;
+see [Share published images across stages](/cloudflare/compute/containers#share-published-images-across-stages).
+This is a Cloudflare Container option; standalone `Docker.Image` resources
+continue to use the `registry` configuration shown above.
 
 ## Where next
 

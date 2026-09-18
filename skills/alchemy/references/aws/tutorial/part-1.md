@@ -1,6 +1,6 @@
 <!-- source: https://alchemy.run/aws/tutorial/part-1
      upstream: website/src/content/docs/aws/tutorial/part-1.mdx
-     alchemy 2.0.0-beta.77 @ c83b454 -->
+     alchemy 2.0.0-beta.79 @ 258f63b -->
 
 # Part 1: Your First Stack
 

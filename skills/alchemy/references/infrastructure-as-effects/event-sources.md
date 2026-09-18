@@ -1,6 +1,6 @@
 <!-- source: https://alchemy.run/infrastructure-as-effects/event-sources
      upstream: website/src/content/docs/infrastructure-as-effects/event-sources.mdx
-     alchemy 2.0.0-beta.77 @ c83b454 -->
+     alchemy 2.0.0-beta.79 @ 258f63b -->
 
 # Event Sources
 

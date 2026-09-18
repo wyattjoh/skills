@@ -1,6 +1,6 @@
 <!-- source: https://alchemy.run/cloudflare/data/branch-from-shared-database
      upstream: website/src/content/docs/cloudflare/data/branch-from-shared-database.mdx
-     alchemy 2.0.0-beta.77 @ c83b454 -->
+     alchemy 2.0.0-beta.79 @ 258f63b -->
 
 # Branch from a shared database
 

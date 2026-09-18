@@ -1,6 +1,6 @@
 ---
 name: alchemy
-description: Answers Alchemy (alchemy.run) questions from an indexed local copy of the full documentation. Covers Stacks, Resources, Actions, Outputs, bindings, the Effect-based deploy/runtime phase model, the alchemy CLI, state stores, stages, and provider guides for Cloudflare, AWS, Fly, Railway, Hetzner, Neon, PlanetScale, Prisma, and Drizzle. Use when the user mentions "alchemy", "alchemy.run", "alchemy.run.ts", "Alchemy.Stack", "Infrastructure-as-Effects", "alchemy deploy", or asks how to define a Resource, bind a resource into a Worker or Lambda, or deploy an Effect program to Cloudflare or AWS with Alchemy.
+description: Answers Alchemy (alchemy.run) questions from an indexed local copy of the full documentation. Covers Stacks, Resources, Actions, Outputs, bindings, the Effect-based deploy/runtime phase model, the alchemy CLI, state stores, stages, and provider guides for Cloudflare, AWS, Fly, Railway, Hetzner, Neon, PlanetScale, Prisma, Stripe, and Drizzle. Use when the user mentions "alchemy", "alchemy.run", "alchemy.run.ts", "Alchemy.Stack", "Infrastructure-as-Effects", "alchemy deploy", or asks how to define a Resource, bind a resource into a Worker or Lambda, or deploy an Effect program to Cloudflare or AWS with Alchemy.
 argument-hint: "[topic]"
 ---
 
@@ -12,7 +12,7 @@ this skill's directory.
 
 <!-- BEGIN GENERATED: corpus-stats -->
 
-Indexed from `alchemy-run/alchemy` @ `c83b454` (2026-09-14), alchemy `2.0.0-beta.77`: **353 topic files** across 24 areas.
+Indexed from `alchemy-run/alchemy` @ `258f63b` (2026-09-18), alchemy `2.0.0-beta.79`: **378 topic files** across 25 areas.
 
 Reference paths mirror site URLs exactly, so a path is derivable without
 searching: `https://alchemy.run/cloudflare/compute/workers` ->
@@ -201,18 +201,19 @@ yourself.
 - `references/docker/` (5) -- Images, containers, networks, and volumes as Stack resources, driven through your active Docker CLI context.
 - `references/environments/` (7) -- Stages, per-environment config, secrets, local dev, and CI.
 - `references/fly/` (31) -- Deploy Effect programs to Fly.io as Apps, Machines, Services, and Sprites.
-- `references/git/` (22) -- A pluggable, embeddable, self-hostable git server on Cloudflare Workers, Durable Objects, and R2. Smart HTTP for any client, a typed REST plane with pull requests, and a GitHub-compatible API, assembled in one file.
+- `references/git/` (25) -- A pluggable, embeddable, self-hostable git server on Cloudflare Workers, Durable Objects, and R2. Smart HTTP for any client, a typed REST plane with pull requests, and a GitHub-compatible API.
 - `references/github/` (5) -- Repositories, Actions secrets and variables, webhooks, and repository event sources as Stack resources — the glue for CI/CD.
 - `references/hetzner/` (25) -- Build applications on Hetzner Cloud with Alchemy — Servers running your Effect programs as Services, plus volumes, networks, firewalls, load balancers, and DNS, all in one typed program.
 - `references/infrastructure-as-code/` (10) -- The noun graph: Stacks, Resources, Actions, Outputs, references, lifecycle, providers.
-- `references/infrastructure-as-effects/` (10) -- One Effect program models both your runtime code and the infrastructure it runs on — Runtimes carry code, Bindings wire resources into them, Phases split deploy from runtime, Layers package it all behind typed services.
+- `references/infrastructure-as-effects/` (9) -- One Effect program models runtime code and infrastructure: Runtimes carry code, Bindings wire resources into them, Phases split deploy from runtime, and Layers package it behind typed services.
 - `references/neon/` (7) -- Serverless Postgres with copy-on-write branching — projects and branches as Stack resources, with built-in SQL migrations.
 - `references/planetscale/` (9) -- Serverless MySQL (Vitess) and Postgres with database branching — databases, branches, and credentials as Stack resources.
-- `references/prisma/` (9) -- Prisma Postgres and Prisma Compute — projects, databases, connections, and deployed apps as Stack resources, with a zero-config local database in dev.
+- `references/prisma/` (27) -- Prisma Postgres and Prisma Compute — projects, databases, connections, and deployed apps as Stack resources, with a zero-config local database in dev.
 - `references/project-structure/` (4) -- How to lay out single-stack and multi-stack repos.
 - `references/railway/` (33) -- Deploy Effect programs to Railway as Projects, Services, databases, Volumes, and Buckets.
 - `references/sql/` (10) -- One home for SQL in alchemy — low-level effect-sql clients, Drizzle ORM, schema migrations in the deploy graph, and the per-execution connection lifecycle.
 - `references/state-store/` (2) -- How Alchemy persists resource state between deploys to compute diffs and track infrastructure.
+- `references/stripe/` (5) -- Sell subscriptions and onboard merchants from a Cloudflare Worker — catalog, Checkout, the Billing Portal, Connect, and webhooks declared next to the code that uses them.
 - `references/testing/` (5) -- How Alchemy tests work — real clouds by default, local emulators on demand, one Stack deploy per suite, isolated stages, deploy → assert → destroy.
 
 Each area has an `INDEX.md` listing every page with what it covers. Read
@@ -291,12 +292,13 @@ fly/                       _overview compute/apps compute/machines compute/regio
                            tutorial/part-1 tutorial/part-2 tutorial/part-3
                            tutorial/part-4
 git/                       _overview blocks/_overview blocks/auth blocks/blob-store
-                           blocks/hasher blocks/registry blocks/repositories
-                           blocks/server clone-and-push getting-started github-api
-                           pull-requests recipes/_overview recipes/cloudflare-aws
-                           recipes/cloudflare recipes/scaling recipes/your-own-store
-                           repositories tutorial/part-1 tutorial/part-2 tutorial/part-3
-                           tutorial/part-4
+                           blocks/engine blocks/hasher blocks/registry
+                           blocks/repositories blocks/server clone-and-push
+                           getting-started github-api pull-requests recipes/_overview
+                           recipes/cloudflare-aws recipes/cloudflare recipes/scaling
+                           recipes/your-own-store repositories tutorial/part-1
+                           tutorial/part-2 tutorial/part-3 tutorial/part-4
+                           tutorial/part-5 tutorial/part-6
 github/                    _overview actions-config events repository setup
 hetzner/                   _overview compute/servers compute/services data/volumes
                            frontend/astro frontend/foldkit frontend/nextjs frontend/nuxt
@@ -308,16 +310,22 @@ hetzner/                   _overview compute/servers compute/services data/volum
                            tutorial/part-3 tutorial/part-4
 infrastructure-as-code/    action custom-provider local-provider outputs provider
                            references renaming resource-lifecycle resource stack
-infrastructure-as-effects/ _overview binding circular-bindings custom-runtime
-                           event-sources layers phases runtime sinks telemetry
+infrastructure-as-effects/ binding circular-bindings custom-runtime event-sources layers
+                           phases runtime sinks telemetry
 neon/                      _overview data/branching data/connections data/migrations
                            guides/drizzle guides/preview-branches setup
 planetscale/               _overview data/backups data/credentials data/migrations
                            data/mysql data/postgres guides/drizzle
                            guides/preview-branches setup
 prisma/                    _overview compute/apps compute/deployments data/branches
-                           data/buckets data/connections data/postgres
-                           guides/cloudflare-workers setup
+                           data/buckets data/connections data/postgres frontend/astro
+                           frontend/foldkit frontend/nextjs frontend/nuxt
+                           frontend/octane frontend/react-router frontend/solidstart
+                           frontend/static-site frontend/sveltekit
+                           frontend/tanstack-start frontend/vite frontend/vocs
+                           frontend/waku frontend/websites guides/cloudflare-workers
+                           setup tutorial/part-1 tutorial/part-2 tutorial/part-3
+                           tutorial/part-4
 project-structure/         file-layout monorepo-multi-stack monorepo-single-stack
                            monorepo
 railway/                   _overview compute/environments compute/functions
@@ -335,6 +343,8 @@ sql/                       _overview drizzle/d1 drizzle/migrations drizzle/mysql
                            drizzle/postgres effect-sql/d1 effect-sql/lifecycle
                            effect-sql/migrations effect-sql/mysql effect-sql/postgres
 state-store/               _overview custom-state-store
+stripe/                    _overview guides/connect guides/subscriptions guides/webhooks
+                           setup
 testing/                   _overview observability test-harness testing-a-stack
                            testing-providers
 ```
@@ -370,8 +380,9 @@ discourage the schema'd modalities for internal calls.
 
 **Pages whose filename does not give them away:**
 
-- bindings concept -> `references/infrastructure-as-effects/binding.md`; the
-  Worker-facing walkthrough is `functions-and-servers.md` in the same area
+- runtime constructors and Worker/Lambda walkthroughs ->
+  `references/infrastructure-as-effects/runtime.md`; binding contracts and
+  implementations -> `references/infrastructure-as-effects/binding.md`
 - env vars and secrets -> `references/environments/secrets.md` (the
   `effect/Config` integration), then `<cloud>/security/secrets-env.md`
 - credentials rather than secrets -> `references/environments/profiles.md`.

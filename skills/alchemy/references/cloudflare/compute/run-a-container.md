@@ -1,6 +1,6 @@
 <!-- source: https://alchemy.run/cloudflare/compute/run-a-container
      upstream: website/src/content/docs/cloudflare/compute/run-a-container.mdx
-     alchemy 2.0.0-beta.77 @ c83b454 -->
+     alchemy 2.0.0-beta.79 @ 258f63b -->
 
 # Run a Container
 
@@ -111,6 +111,9 @@ export const SandboxLive = Sandbox.make(
 surrounding Effect context — handy for stack-level config like
 stage, app name, or anything else you'd want to vary per
 environment.
+
+To reuse matching image builds across stages, configure `publish.repository`
+in these same props; see [Share published images across stages](/cloudflare/compute/containers#share-published-images-across-stages).
 
 ## Implement `exec` as an RPC method
 

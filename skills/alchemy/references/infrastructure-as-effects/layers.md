@@ -1,15 +1,18 @@
 <!-- source: https://alchemy.run/infrastructure-as-effects/layers
      upstream: website/src/content/docs/infrastructure-as-effects/layers.mdx
-     alchemy 2.0.0-beta.77 @ c83b454 -->
+     alchemy 2.0.0-beta.79 @ 258f63b -->
 
 # Layers
 
 > A Layer defines a service contract with swappable implementations. In Alchemy, a Layer can encapsulate Resources and Bindings, so shared services carry their own infrastructure and permissions.
 
 As your application grows, you'll need to start sharing components of
-your code using Layers. A **Layer** lets you define a service contract
-and swap different implementations of that service in and out across
-your code — a different storage backend or a different cloud.
+your code using Layers. A
+[**Layer**](https://effect.website/docs/requirements-management/layers/)
+is Effect's unit of service construction: it defines how to build a
+service, so you can swap different implementations of that service in
+and out across your code — a different storage backend or a different
+cloud.
 
 In Alchemy, [Resources](/infrastructure-as-code/resource) and
 [Bindings](/infrastructure-as-effects/binding) can be encapsulated inside

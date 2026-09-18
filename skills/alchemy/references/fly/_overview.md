@@ -1,6 +1,6 @@
 <!-- source: https://alchemy.run/fly
      upstream: website/src/content/docs/fly/index.mdx
-     alchemy 2.0.0-beta.77 @ c83b454 -->
+     alchemy 2.0.0-beta.79 @ 258f63b -->
 
 # Fly
 
@@ -101,7 +101,7 @@ the same TypeScript program.
 | Config / API tokens          | [`Config.Redacted`](/fly/data/secrets). [`Fly.Secret`](/fly/data/secrets) when Fly should own it |
 | Sign / encrypt in-app        | [SecretKey](/fly/data/secrets#kms-keys) + `Encrypt` / `Sign`              |
 | `{app}.fly.dev` over IPv4    | [IpAssignment](/fly/networking) `type: "shared_v4"`                       |
-| Your own domain              | [Certificate](/fly/networking#certificates) (ACME)                        |
+| Your own domain              | [Certificate](/fly/networking#use-your-own-hostname) (ACME)                        |
 
 ## Where next
 

@@ -1,6 +1,6 @@
 <!-- source: https://alchemy.run/aws/frontend/full-stack-tanstack-rpc-drizzle
      upstream: website/src/content/docs/aws/frontend/full-stack-tanstack-rpc-drizzle.mdx
-     alchemy 2.0.0-beta.77 @ c83b454 -->
+     alchemy 2.0.0-beta.79 @ 258f63b -->
 
 # Full-stack TanStack Start + RPC + Drizzle
 

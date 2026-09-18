@@ -1,6 +1,6 @@
 <!-- source: https://alchemy.run/hetzner/frontend/websites
      upstream: website/src/content/docs/hetzner/frontend/websites.mdx
-     alchemy 2.0.0-beta.77 @ c83b454 -->
+     alchemy 2.0.0-beta.79 @ 258f63b -->
 
 # Websites
 

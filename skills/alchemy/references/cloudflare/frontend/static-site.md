@@ -1,6 +1,6 @@
 <!-- source: https://alchemy.run/cloudflare/frontend/static-site
      upstream: website/src/content/docs/cloudflare/frontend/static-site.mdx
-     alchemy 2.0.0-beta.77 @ c83b454 -->
+     alchemy 2.0.0-beta.79 @ 258f63b -->
 
 # Static sites
 

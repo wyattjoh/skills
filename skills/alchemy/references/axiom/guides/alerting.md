@@ -1,6 +1,6 @@
 <!-- source: https://alchemy.run/axiom/guides/alerting
      upstream: website/src/content/docs/axiom/guides/alerting.mdx
-     alchemy 2.0.0-beta.77 @ c83b454 -->
+     alchemy 2.0.0-beta.79 @ 258f63b -->
 
 # Alerting: monitors & notifiers
 

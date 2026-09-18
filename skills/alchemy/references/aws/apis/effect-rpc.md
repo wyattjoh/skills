@@ -1,6 +1,6 @@
 <!-- source: https://alchemy.run/aws/apis/effect-rpc
      upstream: website/src/content/docs/aws/apis/effect-rpc.mdx
-     alchemy 2.0.0-beta.77 @ c83b454 -->
+     alchemy 2.0.0-beta.79 @ 258f63b -->
 
 # Effect RPC on Lambda
 

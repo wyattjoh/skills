@@ -1,6 +1,6 @@
 <!-- source: https://alchemy.run/state-store
      upstream: website/src/content/docs/state-store/index.mdx
-     alchemy 2.0.0-beta.77 @ c83b454 -->
+     alchemy 2.0.0-beta.79 @ 258f63b -->
 
 # State Store
 
@@ -13,9 +13,11 @@ state of your infrastructure.
 ## How state is stored
 
 Each resource's state is keyed by its **fully qualified name** (FQN),
-which includes the namespace path and logical ID. State is scoped by
-**stack name** and **stage**, so different stacks and environments
-are fully isolated.
+which includes the namespace path and
+[logical ID](/infrastructure-as-code/resource#logical-id). State is
+scoped by [stack name](/infrastructure-as-code/stack) and
+[**stage**](/environments/stages), so different stacks and
+environments are fully isolated.
 
 A resource's persisted state includes:
 
@@ -24,7 +26,7 @@ A resource's persisted state includes:
 - **Output attributes** — the values returned after creation
 - **Instance ID** — a unique identifier for this instance
 - **Lifecycle status** — `created`, `updating`, `deleting`, etc.
-- **Bindings** — data attached by policies and event sources
+- **[Bindings](/infrastructure-as-effects/binding)** — data attached by policies and event sources
 
 ## Local state
 

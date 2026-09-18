@@ -1,6 +1,6 @@
 <!-- source: https://alchemy.run/hetzner/frontend/react-router
      upstream: website/src/content/docs/hetzner/frontend/react-router.mdx
-     alchemy 2.0.0-beta.77 @ c83b454 -->
+     alchemy 2.0.0-beta.79 @ 258f63b -->
 
 # React Router
 

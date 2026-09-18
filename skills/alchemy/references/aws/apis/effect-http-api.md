@@ -1,6 +1,6 @@
 <!-- source: https://alchemy.run/aws/apis/effect-http-api
      upstream: website/src/content/docs/aws/apis/effect-http-api.mdx
-     alchemy 2.0.0-beta.77 @ c83b454 -->
+     alchemy 2.0.0-beta.79 @ 258f63b -->
 
 # Effect HTTP API on Lambda
 

@@ -1,10 +1,13 @@
 <!-- source: https://alchemy.run/git/recipes/your-own-store
      upstream: website/src/content/docs/git/recipes/your-own-store.mdx
-     alchemy 2.0.0-beta.77 @ c83b454 -->
+     alchemy 2.0.0-beta.79 @ 258f63b -->
 
 # Bring your own store
 
 > Bytes have to live somewhere that is neither R2 nor S3. Implement the five operations of Git.BlobStore and provide it in place of the shipped Layers.
+
+The examples use `Authentication` from
+[Getting Started](/git/getting-started): the application's request middleware.
 
 Your packs have to live in a store the package does not ship for: a
 different object store, an on-premises S3 clone with its own signing,
@@ -12,14 +15,14 @@ a store behind a private gateway. `Git.BlobStore` is a contract of five
 operations, and a Layer that implements them drops into the graph:
 
 ```diff lang="typescript"
-const GitLive = Git.Server.layer(Api).pipe(
-  Layer.provide(Git.Handlers),
-  Layer.provide(AuthenticatedLive),
+const GitLive = Git.ApiLive.pipe(
+  Layer.provide(Git.ApiHandlersLive),
+  Layer.provide(Authentication.layer),
   Layer.provide(Git.ReposDurableObject),
   Layer.provide(Git.RegistryDurableObject),
+  Layer.provide(Git.HasherInline),
 -  Layer.provide(Git.BlobStoreR2(GitObjects)),
 +  Layer.provide(BlobStoreMine),
-  Layer.provide(Git.HasherInline),
 );
 ```
 

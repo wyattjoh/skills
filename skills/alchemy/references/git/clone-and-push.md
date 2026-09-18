@@ -1,6 +1,6 @@
 <!-- source: https://alchemy.run/git/clone-and-push
      upstream: website/src/content/docs/git/clone-and-push.mdx
-     alchemy 2.0.0-beta.77 @ c83b454 -->
+     alchemy 2.0.0-beta.79 @ 258f63b -->
 
 # Cloning & pushing
 
@@ -38,7 +38,7 @@ export TOKEN=9f2c…
 
 ### A Better Auth API key
 
-The host from [Part 3](/git/tutorial/part-3) verifies API keys. A
+The host from [Part 4](/git/tutorial/part-4) verifies API keys. A
 signed-in user mints one; it is shown once:
 
 ```sh
@@ -52,7 +52,7 @@ The example app has a settings page that does the same.
 ### Your own
 
 The token is whatever your middleware accepts. The one
-[Part 3](/git/tutorial/part-3) put in front of the host decodes the
+[Part 4](/git/tutorial/part-4) put in front of the host decodes the
 Basic password and asks Better Auth whose key it is:
 
 ```typescript

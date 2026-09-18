@@ -1,6 +1,6 @@
 <!-- source: https://alchemy.run/apis/effect-http
      upstream: website/src/content/docs/apis/effect-http.mdx
-     alchemy 2.0.0-beta.77 @ c83b454 -->
+     alchemy 2.0.0-beta.79 @ 258f63b -->
 
 # Effect HTTP
 
@@ -138,7 +138,8 @@ const tasksGroup = HttpApiBuilder.group(TaskApi, "Tasks", (handlers) =>
 ```
 
 `HttpApiBuilder.group` *constructs* a handler Layer — it runs
-nothing, which is what makes it safe at Construction/plan time — and each
+nothing, which is what makes it safe at Construction/plan time
+([Phases](/infrastructure-as-effects/phases)) — and each
 handler receives the typed request its endpoint declared:
 `params.id` and `payload.title` are `string`s, the handler must
 return a `Task`, and the only allowed failure is `TaskNotFound` — a

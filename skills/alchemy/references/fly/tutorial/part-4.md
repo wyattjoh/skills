@@ -1,6 +1,6 @@
 <!-- source: https://alchemy.run/fly/tutorial/part-4
      upstream: website/src/content/docs/fly/tutorial/part-4.mdx
-     alchemy 2.0.0-beta.77 @ c83b454 -->
+     alchemy 2.0.0-beta.79 @ 258f63b -->
 
 # Part 4: Secrets and Cleanup
 
@@ -58,10 +58,10 @@ directly, no yielding required:
   }).pipe(Effect.provide(Fly.MountVolumeLive)),
 ```
 
-`GetSecret` is a **binding**: at deploy time it can mint an App
-deploy token for the Machine, and at runtime it hands you a
-`get()` for this Secret. Listing every secret on the App is
-`ListSecrets(Site)` — Fly's list API is app-scoped.
+`GetSecret` is a **binding**: Alchemy transports the App name, secret
+name, and deployment's org token to the Machine through resource
+Outputs. At runtime, `get()` reads this Secret. Listing every secret
+on the App is `ListSecrets(Site)` — Fly's list API is app-scoped.
 
 ## Provide the binding layer
 
@@ -91,7 +91,7 @@ if (url.pathname === "/secret") {
 const file = `${mount.path}${url.pathname}`;
 ```
 
-`secrets.get()` defaults to the bound Secret. Fly only returns
+`get()` reads the bound Secret. Fly only returns
 plaintext from a Machine in the same App; from an Action you get
 metadata.
 
@@ -135,7 +135,7 @@ curl https://myapp-site-dev-a1b2c3d4.fly.dev/secret
 ```
 
 :::tip[Your own domain?]
-Declare a [`Fly.Certificate`](/fly/networking#certificates) for a
+Declare a [`Fly.Certificate`](/fly/networking#use-your-own-hostname) for a
 hostname you control (`kind: "acme"`) and point DNS at the App —
 the ACME challenge records live on `cert.dnsRequirements`. Dedicated
 IPv4 (`IpAssignment` `type: "v4"`) is billed and quota-gated —

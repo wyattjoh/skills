@@ -1,6 +1,6 @@
 <!-- source: https://alchemy.run/infrastructure-as-code/local-provider
      upstream: website/src/content/docs/infrastructure-as-code/local-provider.mdx
-     alchemy 2.0.0-beta.77 @ c83b454 -->
+     alchemy 2.0.0-beta.79 @ 258f63b -->
 
 # Local Provider
 

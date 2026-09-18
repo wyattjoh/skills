@@ -1,6 +1,6 @@
 <!-- source: https://alchemy.run/git/pull-requests
      upstream: website/src/content/docs/git/pull-requests.mdx
-     alchemy 2.0.0-beta.77 @ c83b454 -->
+     alchemy 2.0.0-beta.79 @ 258f63b -->
 
 # Pull requests
 
@@ -99,4 +99,4 @@ yield* client.pulls.merge({
 Reviews, comments, approvals, and required checks. A pull request here
 is a branch comparison with a title and a merge, and the review
 workflow is yours to build with these endpoints.
-[Part 3 of the tutorial](/git/tutorial/part-3) starts there.
+[Part 4 of the tutorial](/git/tutorial/part-4) starts there.

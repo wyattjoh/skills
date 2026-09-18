@@ -1,6 +1,6 @@
 <!-- source: https://alchemy.run/infrastructure-as-code/references
      upstream: website/src/content/docs/infrastructure-as-code/references.mdx
-     alchemy 2.0.0-beta.77 @ c83b454 -->
+     alchemy 2.0.0-beta.79 @ 258f63b -->
 
 # References
 
@@ -14,8 +14,9 @@ downstream always sees whatever was actually last deployed.
 
 ## Reference another stage
 
-`Resource.ref` takes a Logical ID; pass `stage` to read that
-Resource from a different stage of this stack:
+`Resource.ref` takes a
+[Logical ID](/infrastructure-as-code/resource#logical-id); pass
+`stage` to read that Resource from a different stage of this stack:
 
 ```typescript
 const { stage } = yield* Alchemy.Stack;
@@ -115,6 +116,8 @@ attributes participate in this plan.
 
 ## Where next
 
+- [Resource Lifecycle](/infrastructure-as-code/resource-lifecycle) — how
+  the referenced state got persisted in the first place. Next page.
 - [Multiple Stacks](/project-structure/monorepo-multi-stack) — typed Stack
   handles wiring a monorepo.
 - [Shared database across stages](/cloudflare/data/shared-database) —

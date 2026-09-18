@@ -56,6 +56,8 @@ const AREA_BLURB: Record<string, string> = {
   environments: "Stages, per-environment config, secrets, local dev, and CI.",
   "infrastructure-as-code":
     "The noun graph: Stacks, Resources, Actions, Outputs, references, lifecycle, providers.",
+  "infrastructure-as-effects":
+    "One Effect program models runtime code and infrastructure: Runtimes carry code, Bindings wire resources into them, Phases split deploy from runtime, and Layers package it behind typed services.",
   "project-structure": "How to lay out single-stack and multi-stack repos.",
 };
 

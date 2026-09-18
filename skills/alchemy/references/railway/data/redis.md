@@ -1,6 +1,6 @@
 <!-- source: https://alchemy.run/railway/data/redis
      upstream: website/src/content/docs/railway/data/redis.mdx
-     alchemy 2.0.0-beta.77 @ c83b454 -->
+     alchemy 2.0.0-beta.79 @ 258f63b -->
 
 # Redis
 

@@ -1,6 +1,6 @@
 <!-- source: https://alchemy.run/sql
      upstream: website/src/content/docs/sql/index.mdx
-     alchemy 2.0.0-beta.77 @ c83b454 -->
+     alchemy 2.0.0-beta.79 @ 258f63b -->
 
 # SQL
 

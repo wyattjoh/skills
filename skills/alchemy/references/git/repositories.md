@@ -1,6 +1,6 @@
 <!-- source: https://alchemy.run/git/repositories
      upstream: website/src/content/docs/git/repositories.mdx
-     alchemy 2.0.0-beta.77 @ c83b454 -->
+     alchemy 2.0.0-beta.79 @ 258f63b -->
 
 # Repositories
 

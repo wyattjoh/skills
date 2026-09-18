@@ -1,6 +1,6 @@
 <!-- source: https://alchemy.run/fly/data/secrets
      upstream: website/src/content/docs/fly/data/secrets.mdx
-     alchemy 2.0.0-beta.77 @ c83b454 -->
+     alchemy 2.0.0-beta.79 @ 258f63b -->
 
 # Secrets
 

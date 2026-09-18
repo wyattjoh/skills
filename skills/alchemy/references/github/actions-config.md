@@ -1,6 +1,6 @@
 <!-- source: https://alchemy.run/github/actions-config
      upstream: website/src/content/docs/github/actions-config.mdx
-     alchemy 2.0.0-beta.77 @ c83b454 -->
+     alchemy 2.0.0-beta.79 @ 258f63b -->
 
 # Actions secrets & variables
 
