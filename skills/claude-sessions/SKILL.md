@@ -10,7 +10,7 @@ description: >-
 argument-hint: "[project-name]"
 allowed-tools: Bash(bun:*), Read, Grep, Glob
 effort: medium
-model: haiku
+model: sonnet
 ---
 
 # Conversation Analyzer
