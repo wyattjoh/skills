@@ -75,8 +75,20 @@ const PATTERNS: SecretPattern[] = [
   {
     kind: "env-secret",
     // KEY=, TOKEN=, SECRET=, and prefixed forms like API_KEY=, SECRET_TOKEN=.
+    // Require a letter plus a digit or punctuation so ordinary values such as
+    // API_KEY=development are not treated as secrets solely because they are
+    // long enough.
     pattern: /\b((?:[A-Z0-9]+_)*(?:KEY|TOKEN|SECRET))=([A-Za-z0-9+/_.=-]{8,})/g,
-    replace: (groups) => `${groups[1]}=[redacted:env-secret]`,
+    replace: (groups) => {
+      const full = groups[0]!;
+      const value = groups[2]!;
+      const hasLetter = /[A-Za-z]/.test(value);
+      const hasDigit = /\d/.test(value);
+      const hasPunctuation = /[^A-Za-z0-9]/.test(value);
+      return hasLetter && (hasDigit || hasPunctuation)
+        ? `${groups[1]}=[redacted:env-secret]`
+        : full;
+    },
   },
   {
     kind: "private-key",

@@ -41,6 +41,11 @@ describe("redactString", () => {
     expect(redactString(input)).toBe(input);
   });
 
+  it("leaves a sha256 integrity hash untouched", () => {
+    const input = "integrity=sha256-47DEQpj8HBSa+/TImW+5JCeuQeRkm5NMpJWZG3hSuFU=";
+    expect(redactString(input)).toBe(input);
+  });
+
   it("leaves an AKIA id with trailing characters untouched", () => {
     const input = "id: AKIAIOSFODNN7EXAMPLEXYZ";
     expect(redactString(input)).toBe(input);
@@ -88,6 +93,11 @@ describe("redactString", () => {
 
   it("redacts a prefixed API_KEY= assignment", () => {
     expect(redactString("API_KEY=abcd1234efgh")).toBe("API_KEY=[redacted:env-secret]");
+  });
+
+  it("leaves a plain development API_KEY assignment untouched", () => {
+    const input = "API_KEY=development";
+    expect(redactString(input)).toBe(input);
   });
 
   it("redacts a TOKEN= assignment", () => {

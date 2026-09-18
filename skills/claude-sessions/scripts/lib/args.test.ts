@@ -1,4 +1,7 @@
 import { describe, expect, it } from "bun:test";
+import { command as plans } from "../commands/plans.ts";
+import { command as search } from "../commands/search.ts";
+import { command as sql } from "../commands/sql.ts";
 import { flagBoolean, flagString, flagStrings, parseArgv } from "./args.ts";
 
 describe("parseArgv", () => {
@@ -85,6 +88,18 @@ describe("parseArgv", () => {
       positionals: ["my query"],
       flags: { "errors-only": true },
     });
+  });
+
+  it("keeps positional queries after --table for search, plans, and sql", () => {
+    for (const command of [search, plans, sql]) {
+      const booleanFlags = command.options
+        .filter((option) => option.type === "boolean")
+        .map((option) => option.name);
+      expect(parseArgv(["--table", "forgejo census"], booleanFlags)).toEqual({
+        positionals: ["forgejo census"],
+        flags: { table: true },
+      });
+    }
   });
 
   it("still parses --key=value for a flag named in booleanFlags", () => {

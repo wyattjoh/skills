@@ -108,6 +108,23 @@ function hasHelpFlag(argv: string[]): boolean {
   return flagTokens.includes("--help") || flagTokens.includes("-h");
 }
 
+/**
+ * Extract router flags without interpreting tokens after a bare `--`.
+ *
+ * @param argv Arguments after the command name.
+ * @returns The router's sync decision and arguments for the command.
+ */
+export function routeGlobalFlags(argv: string[]): {
+  noSync: boolean;
+  forwardedArgv: string[];
+} {
+  const separator = argv.indexOf("--");
+  const flagEnd = separator === -1 ? argv.length : separator;
+  const noSync = argv.slice(0, flagEnd).includes("--no-sync");
+  const forwardedArgv = argv.filter((token, index) => index >= flagEnd || token !== "--no-sync");
+  return { noSync, forwardedArgv };
+}
+
 async function main(): Promise<void> {
   const argv = process.argv.slice(2);
   const [name, ...rest] = argv;
@@ -130,13 +147,11 @@ async function main(): Promise<void> {
     return;
   }
 
-  const noSync = rest.includes("--no-sync");
-  const forwardedArgv = noSync ? rest.filter((token) => token !== "--no-sync") : rest;
+  const { noSync, forwardedArgv } = routeGlobalFlags(rest);
 
-  // `sync` performs the sync itself, and `plans` reads ~/.claude/plans/
-  // rather than the index, so neither needs (or should pay for) the
+  // `sync` performs the sync itself, so it must not pay for a second
   // multi-minute incremental sync over the full conversation corpus.
-  const skipsAutoSync = command.name === "sync" || command.name === "plans";
+  const skipsAutoSync = command.name === "sync";
 
   if (!skipsAutoSync && !noSync) {
     await autoSync();
