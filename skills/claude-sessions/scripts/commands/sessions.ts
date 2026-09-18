@@ -17,13 +17,12 @@ import {
 import { openDb } from "../lib/db.ts";
 import { parseJsonStringArray } from "../lib/json.ts";
 import {
-  buildDocument,
+  JUDGE_OPTIONS,
   OUTPUT_OPTIONS,
-  renderOptionsFromFlags,
-  renderOutput,
+  renderDocumentWithJudge,
   toIsoTimestamp,
 } from "../lib/output.ts";
-import type { Command, CommandOption } from "./index.ts";
+import type { CommandOption, JudgeCommand } from "./index.ts";
 
 const options: CommandOption[] = [
   ...SHARED_FILTER_OPTIONS,
@@ -38,6 +37,7 @@ const options: CommandOption[] = [
     description: "Filter by substring of the session's first prompt",
   },
   ...OUTPUT_OPTIONS,
+  ...JUDGE_OPTIONS,
 ];
 
 interface SessionRow {
@@ -183,18 +183,25 @@ async function run(argv: string[]): Promise<void> {
          LIMIT ?`,
       )
       .all(...(where.params as Array<string | number | null>), filters.limit) as SessionRow[];
-    const document = buildDocument("sessions", rows.map(toOutputRow));
-
-    console.log(renderOutput(document, renderOptionsFromFlags(flags)));
+    console.log(
+      await renderDocumentWithJudge(
+        "sessions",
+        rows.map(toOutputRow),
+        flags,
+        db,
+        command.judgePresets ?? [],
+      ),
+    );
   } finally {
     db.close();
   }
 }
 
-export const command: Command = {
+export const command: JudgeCommand = {
   name: "sessions",
   description: "List session metadata and counts.",
   options,
+  judgePresets: ["task-kind"],
   run,
 };
 

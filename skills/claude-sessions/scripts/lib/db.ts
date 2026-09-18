@@ -9,10 +9,20 @@ import { mkdirSync } from "node:fs";
 import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 
+/**
+ * Return the default on-disk index path under the user's cache directory.
+ *
+ * @returns The default database path.
+ */
 export function defaultDbPath(): string {
   return join(homedir(), ".cache", "claude-sessions", "index.db");
 }
 
+/**
+ * Resolve the index path, honoring the test and deployment override.
+ *
+ * @returns The configured database path.
+ */
 export function resolveDbPath(): string {
   return process.env.CLAUDE_SESSIONS_DB || defaultDbPath();
 }
@@ -254,6 +264,24 @@ const MIGRATIONS: Migration[] = [
       createSchema(db);
     },
   },
+  {
+    // v3 databases created before judgment caching do not have the table,
+    // even though fresh schemas include it in createSchema().
+    version: 4,
+    up: (db) => {
+      db.exec(`
+        CREATE TABLE IF NOT EXISTS judgments (
+          model TEXT NOT NULL,
+          preset TEXT NOT NULL,
+          question_hash TEXT NOT NULL,
+          state_hash TEXT NOT NULL,
+          answer TEXT NOT NULL,
+          created_at TEXT NOT NULL,
+          PRIMARY KEY (model, preset, question_hash, state_hash)
+        )
+      `);
+    },
+  },
 ];
 
 function migrate(db: Database): void {
@@ -270,7 +298,12 @@ function migrate(db: Database): void {
   }
 }
 
-/** Open (creating and migrating if needed) the index database. */
+/**
+ * Open, create, and migrate the index database.
+ *
+ * @param path Database path, defaulting to the configured index path.
+ * @returns An open SQLite database connection.
+ */
 export function openDb(path: string = resolveDbPath()): Database {
   if (path !== ":memory:") {
     mkdirSync(dirname(path), { recursive: true });

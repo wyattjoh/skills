@@ -1,8 +1,10 @@
 import { describe, expect, it } from "bun:test";
 import { Database } from "bun:sqlite";
+import type { TypeSafeClient } from "@typesafe-ai/sdk";
 import { mkdir, mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
+import { judgeRows } from "./judge/client.ts";
 import { CURRENT_SCHEMA_VERSION, openDb } from "./db.ts";
 
 async function withDbPath(fn: (path: string) => Promise<void>): Promise<void> {
@@ -13,6 +15,122 @@ async function withDbPath(fn: (path: string) => Promise<void>): Promise<void> {
   } finally {
     await rm(dir, { recursive: true, force: true });
   }
+}
+
+function createV3Database(path: string): Database {
+  const db = new Database(path);
+  db.exec(`
+    CREATE TABLE files (
+      path TEXT PRIMARY KEY,
+      size INTEGER NOT NULL,
+      mtime INTEGER NOT NULL,
+      last_line INTEGER NOT NULL DEFAULT 0,
+      session_id TEXT NOT NULL,
+      parent_session_id TEXT,
+      ingested_at TEXT NOT NULL
+    );
+    CREATE TABLE projects (
+      dir TEXT PRIMARY KEY,
+      decoded_path TEXT,
+      cwd TEXT,
+      last_activity TEXT,
+      session_count INTEGER NOT NULL DEFAULT 0
+    );
+    CREATE TABLE sessions (
+      id TEXT PRIMARY KEY,
+      session_id TEXT NOT NULL,
+      project_dir TEXT,
+      cwd TEXT,
+      git_branch TEXT,
+      parent_session_id TEXT,
+      agent_name TEXT,
+      first_prompt TEXT,
+      started_at TEXT,
+      ended_at TEXT,
+      models TEXT NOT NULL DEFAULT '[]',
+      versions TEXT NOT NULL DEFAULT '[]',
+      message_count INTEGER NOT NULL DEFAULT 0,
+      tool_call_count INTEGER NOT NULL DEFAULT 0,
+      error_count INTEGER NOT NULL DEFAULT 0,
+      interruption_count INTEGER NOT NULL DEFAULT 0,
+      input_tokens INTEGER NOT NULL DEFAULT 0,
+      output_tokens INTEGER NOT NULL DEFAULT 0,
+      cache_read_tokens INTEGER NOT NULL DEFAULT 0,
+      cache_create_tokens INTEGER NOT NULL DEFAULT 0
+    );
+    CREATE INDEX idx_sessions_project_dir ON sessions(project_dir);
+    CREATE INDEX idx_sessions_parent_session_id ON sessions(parent_session_id);
+    CREATE INDEX idx_sessions_session_id ON sessions(session_id);
+    CREATE TABLE messages (
+      uuid TEXT NOT NULL,
+      session_id TEXT NOT NULL,
+      parent_uuid TEXT,
+      ts TEXT,
+      type TEXT NOT NULL,
+      role TEXT,
+      text TEXT NOT NULL DEFAULT '',
+      is_injected INTEGER NOT NULL DEFAULT 0,
+      is_interrupt_marker INTEGER NOT NULL DEFAULT 0,
+      is_sidechain INTEGER NOT NULL DEFAULT 0,
+      model TEXT,
+      effort TEXT,
+      input_tokens INTEGER NOT NULL DEFAULT 0,
+      output_tokens INTEGER NOT NULL DEFAULT 0,
+      cache_read_tokens INTEGER NOT NULL DEFAULT 0,
+      cache_create_tokens INTEGER NOT NULL DEFAULT 0,
+      PRIMARY KEY (session_id, uuid)
+    );
+    CREATE INDEX idx_messages_type ON messages(type);
+    CREATE TABLE tool_calls (
+      id TEXT NOT NULL,
+      session_id TEXT NOT NULL,
+      message_uuid TEXT NOT NULL,
+      ts TEXT,
+      name TEXT NOT NULL,
+      input TEXT NOT NULL DEFAULT '{}',
+      result_text TEXT,
+      is_error INTEGER NOT NULL DEFAULT 0,
+      result_ts TEXT,
+      latency_ms INTEGER,
+      subagent_type TEXT,
+      skill_name TEXT,
+      PRIMARY KEY (session_id, id)
+    );
+    CREATE INDEX idx_tool_calls_name ON tool_calls(name);
+    CREATE VIRTUAL TABLE messages_fts USING fts5(
+      text,
+      content='messages',
+      content_rowid='rowid'
+    );
+    CREATE TRIGGER messages_fts_ai AFTER INSERT ON messages BEGIN
+      INSERT INTO messages_fts(rowid, text) VALUES (new.rowid, new.text);
+    END;
+    CREATE TRIGGER messages_fts_ad AFTER DELETE ON messages BEGIN
+      INSERT INTO messages_fts(messages_fts, rowid, text) VALUES('delete', old.rowid, old.text);
+    END;
+    CREATE TRIGGER messages_fts_au AFTER UPDATE ON messages BEGIN
+      INSERT INTO messages_fts(messages_fts, rowid, text) VALUES('delete', old.rowid, old.text);
+      INSERT INTO messages_fts(rowid, text) VALUES (new.rowid, new.text);
+    END;
+    CREATE VIRTUAL TABLE tool_calls_fts USING fts5(
+      input,
+      result_text,
+      content='tool_calls',
+      content_rowid='rowid'
+    );
+    CREATE TRIGGER tool_calls_fts_ai AFTER INSERT ON tool_calls BEGIN
+      INSERT INTO tool_calls_fts(rowid, input, result_text) VALUES (new.rowid, new.input, new.result_text);
+    END;
+    CREATE TRIGGER tool_calls_fts_ad AFTER DELETE ON tool_calls BEGIN
+      INSERT INTO tool_calls_fts(tool_calls_fts, rowid, input, result_text) VALUES('delete', old.rowid, old.input, old.result_text);
+    END;
+    CREATE TRIGGER tool_calls_fts_au AFTER UPDATE ON tool_calls BEGIN
+      INSERT INTO tool_calls_fts(tool_calls_fts, rowid, input, result_text) VALUES('delete', old.rowid, old.input, old.result_text);
+      INSERT INTO tool_calls_fts(rowid, input, result_text) VALUES (new.rowid, new.input, new.result_text);
+    END;
+    PRAGMA user_version = 3;
+  `);
+  return db;
 }
 
 describe("openDb", () => {
@@ -73,6 +191,73 @@ describe("openDb", () => {
       const row = second.query("PRAGMA user_version").get() as { user_version: number };
       expect(row.user_version).toBe(CURRENT_SCHEMA_VERSION);
       second.close();
+    });
+  });
+
+  it("upgrades a v3 database and supports judgment cache reads and writes", async () => {
+    await withDbPath(async (path) => {
+      await mkdir(dirname(path), { recursive: true });
+      const v3 = createV3Database(path);
+      try {
+        const version = v3.query("PRAGMA user_version").get() as { user_version: number };
+        expect(version.user_version).toBe(3);
+        expect(v3.query("SELECT name FROM sqlite_master WHERE name = 'judgments'").get()).toBe(
+          null,
+        );
+      } finally {
+        v3.close();
+      }
+
+      const db = openDb(path);
+      try {
+        const version = db.query("PRAGMA user_version").get() as { user_version: number };
+        expect(version.user_version).toBe(CURRENT_SCHEMA_VERSION);
+
+        let calls = 0;
+        const client = {
+          systemOne: async () => {
+            calls += 1;
+            return {
+              model: "jev-latest",
+              answers: {
+                kind: {
+                  type: "choice",
+                  choice: "correction",
+                  confidence: 0.8,
+                  probabilities: {
+                    correction: 0.8,
+                    clarification: 0.1,
+                    new_task: 0.03,
+                    approval: 0.02,
+                    abort: 0.05,
+                  },
+                },
+                wrong_way: { type: "noul", noul: 0.2 },
+              },
+              usage: { input_tokens: 1, output_tokens: 1 },
+            };
+          },
+        } as unknown as TypeSafeClient;
+        const first = await judgeRows([{ value: "cached" }], "steering", {
+          db,
+          apiKey: "test-key",
+          client,
+          diagnostic: () => undefined,
+        });
+        const second = await judgeRows([{ value: "cached" }], "steering", {
+          db,
+          apiKey: "test-key",
+          client,
+          diagnostic: () => undefined,
+        });
+
+        expect(first.rows_judged).toBe(1);
+        expect(second.rows_cached).toBe(1);
+        expect(second.rows_judged).toBe(0);
+        expect(calls).toBe(1);
+      } finally {
+        db.close();
+      }
     });
   });
 

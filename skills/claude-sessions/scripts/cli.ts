@@ -40,6 +40,7 @@ function printRootHelp(): void {
     "Run 'bun scripts/cli.ts <command> --help' for command-specific options.",
   ];
   appendGlobalHelp(lines);
+  appendJudgeHelp(lines);
   console.log(lines.join("\n"));
 }
 
@@ -67,6 +68,20 @@ const NO_SYNC_DESCRIPTION = "Skip the automatic index sync before running a read
 
 function appendGlobalHelp(lines: string[]): void {
   lines.push("", "Global options:", `  --no-sync   ${NO_SYNC_DESCRIPTION}`);
+}
+
+const JUDGE_HELP = [
+  "Judge options:",
+  "  --judge=<preset>          Annotate supported rows with a TypeSafe preset",
+  "  --judge-file=<json>      Load ad hoc questions and state fields from JSON",
+  "  --query=<text>           Query text required by the relevance preset",
+  "  --min-confidence=<value> Mark low-confidence answers as uncertain",
+  "  --no-cache               Bypass the judgment cache",
+  "  --max-judge-rows=<value> Cap TypeSafe requests (default: 500)",
+];
+
+function appendJudgeHelp(lines: string[]): void {
+  lines.push("", ...JUDGE_HELP);
 }
 
 const SLOW_SYNC_NOTICE_MS = 5_000;

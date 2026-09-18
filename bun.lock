@@ -26,6 +26,9 @@
     "skills/claude-sessions": {
       "name": "@wyattjoh/claude-sessions-skill",
       "version": "1.0.0",
+      "dependencies": {
+        "@typesafe-ai/sdk": "^0.5.7",
+      },
     },
     "skills/clean-storage": {
       "name": "@wyattjoh/clean-storage-skill",
@@ -256,6 +259,8 @@
     "@types/whatwg-mimetype": ["@types/whatwg-mimetype@3.0.2", "", {}, "sha512-c2AKvDT8ToxLIOUlN51gTiHXflsfIFisS4pO7pDPoKouJCESkhZnEy623gwP9laCy5lnLDAw1vAzu2vM2YLOrA=="],
 
     "@types/ws": ["@types/ws@8.18.1", "", { "dependencies": { "@types/node": "*" } }, "sha512-ThVF6DCVhA8kUGy+aazFQ4kXQ7E1Ty7A3ypFOe0IcJV8O/M511G99AW24irKrW56Wt44yG9+ij8FaqoBGkuBXg=="],
+
+    "@typesafe-ai/sdk": ["@typesafe-ai/sdk@0.5.7", "", {}, "sha512-OrbhDXyxDoX9l45/Mcts+TsNuvubCuZQzINQv0BMbi32ztcapzgrCnMmaW9gK5+JkgQAZcnJH1f47lAur+i1hw=="],
 
     "@typescript/typescript-aix-ppc64": ["@typescript/typescript-aix-ppc64@7.0.2", "", { "os": "aix", "cpu": "ppc64" }, "sha512-MTKKkWB7p/0E9xi1d1tHtZ5PiLkGEMIq88pK2CubZjOsLtYTLqhgIgi6zepFa+9GHZ6h05NMCkQxGKiPXMxXtQ=="],
 

@@ -88,6 +88,12 @@ describe("sessions command", () => {
       "first-prompt",
       "table",
       "redact",
+      "judge",
+      "judge-file",
+      "query",
+      "min-confidence",
+      "cache",
+      "max-judge-rows",
     ]);
     expect(typeof command.run).toBe("function");
   });
@@ -371,6 +377,12 @@ describe("sessions command", () => {
         "  --first-prompt=<value>          Filter by substring of the session's first prompt",
         "  --table                         Print a human-readable table instead of JSON",
         "  --no-redact                     Redact secrets in output (default: on; use --no-redact to disable)",
+        "  --judge=<value>                 Annotate supported rows with a TypeSafe preset",
+        "  --judge-file=<value>            Load ad hoc TypeSafe questions and state fields from JSON",
+        "  --query=<value>                 Query text required by the relevance preset",
+        "  --min-confidence=<value>        Mark answers below this confidence as uncertain",
+        "  --no-cache                      Use the judgment cache (default: on; use --no-cache to disable)",
+        "  --max-judge-rows=<value>        Cap TypeSafe requests (default: 500)",
         "",
         "Global options:",
         "  --no-sync   Skip the automatic index sync before running a read command",

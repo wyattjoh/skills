@@ -29,13 +29,26 @@ let tempDir: string;
 let dbPath: string;
 let homeDir: string;
 
-async function runCli(args: string[], databasePath = dbPath): Promise<CliResult> {
+async function runCli(
+  args: string[],
+  databasePath = dbPath,
+  extraEnv: Record<string, string | undefined> = {},
+): Promise<CliResult> {
+  const env = {
+    ...process.env,
+    CLAUDE_SESSIONS_DB: databasePath,
+    HOME: homeDir,
+  } as Record<string, string>;
+  for (const [key, value] of Object.entries(extraEnv)) {
+    if (value === undefined) {
+      delete env[key];
+    } else {
+      env[key] = value;
+    }
+  }
+
   const proc = Bun.spawn([process.execPath, CLI, ...args], {
-    env: {
-      ...process.env,
-      CLAUDE_SESSIONS_DB: databasePath,
-      HOME: homeDir,
-    },
+    env,
     stdout: "pipe",
     stderr: "pipe",
   });
@@ -442,6 +455,51 @@ async function seed(): Promise<void> {
       "user",
       "later result",
     );
+
+    const acceptanceProject = "wyattjoh-skills";
+    const acceptanceSession = "acceptance-session";
+    const acceptanceKey = `${acceptanceProject}:${acceptanceSession}`;
+    db.query(
+      `INSERT INTO sessions (id, session_id, project_dir, cwd, models, versions)
+       VALUES (?, ?, ?, ?, ?, ?)`,
+    ).run(
+      acceptanceKey,
+      acceptanceSession,
+      acceptanceProject,
+      "/Users/wyatt.johnson/Code/github.com/wyattjoh/skills",
+      '["claude-opus-4-7"]',
+      '["2.1.0"]',
+    );
+    for (let index = 0; index < 5; index += 1) {
+      const suffix = String(index).padStart(2, "0");
+      const timestamp = `2026-01-06T00:00:${suffix}.000Z`;
+      const assistantUuid = `acceptance-assistant-${suffix}`;
+      insertMessage(
+        db,
+        acceptanceKey,
+        assistantUuid,
+        timestamp,
+        "assistant",
+        `I was about to make change ${suffix}.`,
+      );
+      insertTool(db, {
+        id: `acceptance-tool-${suffix}`,
+        sessionId: acceptanceKey,
+        messageUuid: assistantUuid,
+        timestamp,
+        name: "Bash",
+        input: { command: "dangerous" },
+      });
+      insertMessage(
+        db,
+        acceptanceKey,
+        `acceptance-user-${suffix}`,
+        `2026-01-06T00:00:${suffix}.500Z`,
+        "user",
+        "[Request interrupted by user]",
+        { isInterrupt: 1 },
+      );
+    }
   } finally {
     db.close();
   }
@@ -626,6 +684,12 @@ describe("tools command", () => {
       "  --pattern=<value>               Filter by regex over the error result text",
       "  --table                         Print a human-readable table instead of JSON",
       "  --no-redact                     Redact secrets in output (default: on; use --no-redact to disable)",
+      "  --judge=<value>                 Annotate supported rows with a TypeSafe preset",
+      "  --judge-file=<value>            Load ad hoc TypeSafe questions and state fields from JSON",
+      "  --query=<value>                 Query text required by the relevance preset",
+      "  --min-confidence=<value>        Mark answers below this confidence as uncertain",
+      "  --no-cache                      Use the judgment cache (default: on; use --no-cache to disable)",
+      "  --max-judge-rows=<value>        Cap TypeSafe requests (default: 500)",
       "",
       "Global options:",
       "  --no-sync   Skip the automatic index sync before running a read command",
@@ -646,6 +710,12 @@ describe("tools command", () => {
       "  --limit=<value>                 Maximum number of rows to return (default 100)",
       "  --table                         Print a human-readable table instead of JSON",
       "  --no-redact                     Redact secrets in output (default: on; use --no-redact to disable)",
+      "  --judge=<value>                 Annotate supported rows with a TypeSafe preset",
+      "  --judge-file=<value>            Load ad hoc TypeSafe questions and state fields from JSON",
+      "  --query=<value>                 Query text required by the relevance preset",
+      "  --min-confidence=<value>        Mark answers below this confidence as uncertain",
+      "  --no-cache                      Use the judgment cache (default: on; use --no-cache to disable)",
+      "  --max-judge-rows=<value>        Cap TypeSafe requests (default: 500)",
       "",
       "Global options:",
       "  --no-sync   Skip the automatic index sync before running a read command",
@@ -927,9 +997,99 @@ describe("errors command", () => {
     expect(result.stderr).toBe("");
     expect(JSON.parse(result.stdout)).toEqual({ command: "errors", count: 0, rows: [] });
   });
+
+  it("preserves rows and reports invalid judge files without failing the command", async () => {
+    const baseline = await runCli([
+      "errors",
+      "--no-sync",
+      `--session=${FILTER_SESSION}`,
+      "--pattern=error output",
+    ]);
+    const result = await runCli([
+      "errors",
+      "--no-sync",
+      `--session=${FILTER_SESSION}`,
+      "--pattern=error output",
+      "--judge-file={}",
+    ]);
+    const baselineDocument = JSON.parse(baseline.stdout) as {
+      rows: Array<Record<string, unknown>>;
+    };
+    const document = JSON.parse(result.stdout) as {
+      command: string;
+      count: number;
+      judge: Record<string, unknown>;
+      rows: Array<Record<string, unknown>>;
+    };
+
+    expect(baseline.code).toBe(0);
+    expect(result.code).toBe(0);
+    expect(result.stderr).toBe("judge: skipped (bad_answer)\n");
+    expect(document.command).toBe("errors");
+    expect(document.count).toBe(baselineDocument.rows.length);
+    expect(document.judge).toEqual({
+      status: "skipped",
+      reason: "bad_answer",
+      error_class: null,
+      rows_judged: 0,
+      rows_cached: 0,
+      estimated_input_tokens: 0,
+    });
+    expect(document.rows.map(({ judge: _judge, ...row }) => row)).toEqual(baselineDocument.rows);
+    expect(document.rows.map((row) => row.judge)).toEqual([
+      { status: "skipped", reason: "bad_answer", error_class: null },
+    ]);
+  });
 });
 
 describe("interruptions command", () => {
+  it("preserves every row and reports no_api_key at the command boundary", async () => {
+    const baseline = await runCli([
+      "interruptions",
+      "--project=wyattjoh-skills",
+      "--no-sync",
+      "--limit=5",
+    ]);
+    const result = await runCli(
+      ["interruptions", "--project=wyattjoh-skills", "--no-sync", "--judge=steering", "--limit=5"],
+      dbPath,
+      { TYPESAFE_API_KEY: undefined },
+    );
+    const baselineDocument = JSON.parse(baseline.stdout) as {
+      count: number;
+      rows: Array<Record<string, unknown>>;
+    };
+    const document = JSON.parse(result.stdout) as {
+      command: string;
+      count: number;
+      judge: Record<string, unknown>;
+      rows: Array<Record<string, unknown>>;
+    };
+
+    expect(baseline.code).toBe(0);
+    expect(result.code).toBe(0);
+    expect(result.stderr).toBe("judge: estimated input tokens: 325\njudge: skipped (no_api_key)\n");
+    expect(document.command).toBe("interruptions");
+    expect(baselineDocument.count).toBe(5);
+    expect(document.count).toBe(5);
+    expect(baselineDocument.rows).toHaveLength(5);
+    expect(document.rows).toHaveLength(5);
+    expect(document.judge.status).toBe("skipped");
+    expect(document.judge.reason).toBe("no_api_key");
+    expect(document.judge.error_class).toBe(null);
+    expect(document.judge.rows_judged).toBe(0);
+    expect(document.judge.rows_cached).toBe(0);
+    expect(typeof document.judge.estimated_input_tokens).toBe("number");
+    expect(document.rows.map(({ judge: _judge, ...row }) => row)).toEqual(baselineDocument.rows);
+    expect(document.rows.map((row) => row.judge)).toEqual(
+      baselineDocument.rows.map(() => ({
+        status: "skipped",
+        reason: "no_api_key",
+        error_class: null,
+      })),
+    );
+  });
+
   it("returns interrupt, rejected-tool, and mid-run user rows in order", async () => {
     const result = await runCli([
       "interruptions",

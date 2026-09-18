@@ -24,13 +24,12 @@ import {
   testSafeRegex,
 } from "../lib/regex.ts";
 import {
+  JUDGE_OPTIONS,
   OUTPUT_OPTIONS,
-  buildDocument,
-  renderOptionsFromFlags,
-  renderOutput,
+  renderDocumentWithJudge,
   toIsoTimestamp,
 } from "../lib/output.ts";
-import type { Command, CommandOption } from "./index.ts";
+import type { CommandOption, JudgeCommand } from "./index.ts";
 
 const options = [
   ...SHARED_FILTER_OPTIONS,
@@ -52,6 +51,7 @@ const options = [
     description: "Include injected text (skill bodies, slash-command expansions, system reminders)",
   },
   ...OUTPUT_OPTIONS,
+  ...JUDGE_OPTIONS,
 ] as CommandOption[];
 
 type SearchSource = "messages" | "tools";
@@ -350,8 +350,9 @@ async function run(argv: string[]): Promise<void> {
         return aTime.localeCompare(bTime) || a.uuid.localeCompare(b.uuid);
       })
       .slice(0, filters.limit);
-    const document = buildDocument("search", rows);
-    console.log(renderOutput(document, renderOptionsFromFlags(flags)));
+    console.log(
+      await renderDocumentWithJudge("search", rows, flags, db, command.judgePresets ?? []),
+    );
   } finally {
     db.close();
   }
@@ -360,11 +361,12 @@ async function run(argv: string[]): Promise<void> {
 /**
  * Search the indexed message and tool-call corpus.
  */
-export const command: Command = {
+export const command: JudgeCommand = {
   name: "search",
   description: "Full-text search over messages and tool calls, with context.",
   options,
   usage: "search <query> [options]  |  search --regex=<pattern> [options]",
+  judgePresets: ["relevance"],
   run,
 };
 

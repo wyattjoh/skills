@@ -26,10 +26,15 @@ let databaseDir: string;
 let databasePath: string;
 let homeDir: string;
 
-async function runCli(args: string[], dbPath = databasePath): Promise<CliResult> {
+async function runCli(
+  args: string[],
+  dbPath = databasePath,
+  extraEnv: Record<string, string> = {},
+): Promise<CliResult> {
   const proc = Bun.spawn([process.execPath, CLI, ...args], {
     env: {
       ...process.env,
+      ...extraEnv,
       HOME: homeDir,
       CLAUDE_SESSIONS_DB: dbPath,
     },
@@ -108,13 +113,19 @@ afterAll(async () => {
 describe("search command", () => {
   it("declares the search flags used by the CLI contract", () => {
     expect(command.options.map((option) => option.name).toSorted()).toEqual([
+      "cache",
       "context",
       "in",
       "include-injected",
       "include-subagents",
+      "judge",
+      "judge-file",
       "limit",
+      "max-judge-rows",
+      "min-confidence",
       "model",
       "project",
+      "query",
       "redact",
       "regex",
       "session",
@@ -124,6 +135,39 @@ describe("search command", () => {
       "until",
     ]);
     expect(command.options.find((option) => option.name === "regex")?.type).toBe("string");
+  });
+
+  it("keeps search rows when relevance is missing --query", async () => {
+    const baseline = await runSearch(["Juliet"]);
+    const result = await runCli(
+      ["search", "Juliet", "--no-sync", "--judge=relevance"],
+      databasePath,
+      { TYPESAFE_API_KEY: "" },
+    );
+    const document = JSON.parse(result.stdout) as SearchDocument & {
+      judge: Record<string, unknown>;
+    };
+
+    expect(result.code).toBe(0);
+    expect(result.stderr).toBe("judge: skipped (bad_answer)\n");
+    expect(document.command).toBe("search");
+    expect(document.count).toBe(baseline.count);
+    expect(document.judge).toEqual({
+      status: "skipped",
+      reason: "bad_answer",
+      error_class: null,
+      rows_judged: 0,
+      rows_cached: 0,
+      estimated_input_tokens: 0,
+    });
+    expect(document.rows.map(({ judge: _judge, ...row }) => row)).toEqual(baseline.rows);
+    expect(document.rows.map((row) => row.judge)).toEqual(
+      baseline.rows.map(() => ({
+        status: "skipped",
+        reason: "bad_answer",
+        error_class: null,
+      })),
+    );
   });
 
   it("finds a string-content user message through FTS", async () => {

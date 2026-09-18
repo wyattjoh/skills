@@ -24,20 +24,20 @@ import {
   testSafeRegex,
 } from "../lib/regex.ts";
 import {
-  buildDocument,
+  JUDGE_OPTIONS,
   OUTPUT_OPTIONS,
   parseJsonValue,
-  renderOptionsFromFlags,
-  renderOutput,
+  renderDocumentWithJudge,
   toIsoTimestamp,
 } from "../lib/output.ts";
-import type { Command, CommandOption } from "./index.ts";
+import type { CommandOption, JudgeCommand } from "./index.ts";
 
 const options: CommandOption[] = [
   ...SHARED_FILTER_OPTIONS,
   { name: "name", type: "string", description: "Filter by tool name" },
   { name: "pattern", type: "string", description: "Filter by regex over the error result text" },
   ...OUTPUT_OPTIONS,
+  ...JUDGE_OPTIONS,
 ];
 
 interface ErrorQueryRow {
@@ -191,16 +191,19 @@ async function run(argv: string[]): Promise<void> {
   try {
     const parsed = parseArgv(argv, booleanFlagNames(options));
     const rows = queryRows(db, argv);
-    console.log(renderOutput(buildDocument("errors", rows), renderOptionsFromFlags(parsed.flags)));
+    console.log(
+      await renderDocumentWithJudge("errors", rows, parsed.flags, db, command.judgePresets ?? []),
+    );
   } finally {
     db.close();
   }
 }
 
-export const command: Command = {
+export const command: JudgeCommand = {
   name: "errors",
   description: "List is_error tool results with the preceding call and the next assistant text.",
   options,
+  judgePresets: ["error-resolved"],
   run,
 };
 

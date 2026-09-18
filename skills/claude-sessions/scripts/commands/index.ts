@@ -15,7 +15,11 @@ import { command as sql } from "./sql.ts";
 import { command as stats } from "./stats.ts";
 import { command as sync } from "./sync.ts";
 import { command as tools } from "./tools.ts";
+import type { JudgePresetName } from "../lib/judge/types.ts";
 
+/**
+ * Metadata describing one command-line option.
+ */
 export interface CommandOption {
   name: string;
   type: "string" | "boolean";
@@ -29,15 +33,31 @@ export interface CommandOption {
   negated?: boolean;
 }
 
+/**
+ * A registered CLI command and its execution metadata.
+ */
 export interface Command {
   name: string;
   description: string;
   options: CommandOption[];
-  /** Overrides the generated "<name> [options]" usage line, e.g. to show a positional: "search <query> [options]". */
+  /**
+   * Overrides the generated "<name> [options]" usage line, for example to
+   * show a positional: "search <query> [options]".
+   */
   usage?: string;
   run: (argv: string[]) => Promise<void>;
 }
 
+/**
+ * A command that accepts built-in TypeSafe judge presets.
+ */
+export interface JudgeCommand extends Command {
+  judgePresets: readonly JudgePresetName[];
+}
+
+/**
+ * All commands exposed by the CLI, in root-help order.
+ */
 export const commands: Command[] = [
   sync,
   projects,
@@ -52,6 +72,12 @@ export const commands: Command[] = [
   plans,
 ];
 
+/**
+ * Find a registered command by its subcommand name.
+ *
+ * @param name Command name from argv.
+ * @returns The matching command, or undefined when unknown.
+ */
 export function findCommand(name: string): Command | undefined {
   return commands.find((command) => command.name === name);
 }

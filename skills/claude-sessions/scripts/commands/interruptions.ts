@@ -19,15 +19,14 @@ import {
   whereClause,
 } from "../lib/filters.ts";
 import {
-  buildDocument,
+  JUDGE_OPTIONS,
   OUTPUT_OPTIONS,
-  renderOptionsFromFlags,
-  renderOutput,
+  renderDocumentWithJudge,
   toIsoTimestamp,
 } from "../lib/output.ts";
-import type { Command, CommandOption } from "./index.ts";
+import type { CommandOption, JudgeCommand } from "./index.ts";
 
-const options: CommandOption[] = [...SHARED_FILTER_OPTIONS, ...OUTPUT_OPTIONS];
+const options: CommandOption[] = [...SHARED_FILTER_OPTIONS, ...OUTPUT_OPTIONS, ...JUDGE_OPTIONS];
 
 interface MessageQueryRow {
   row_id: number;
@@ -262,18 +261,25 @@ async function run(argv: string[]): Promise<void> {
     const parsed = parseArgv(argv, booleanFlagNames(options));
     const rows = queryRows(db, argv);
     console.log(
-      renderOutput(buildDocument("interruptions", rows), renderOptionsFromFlags(parsed.flags)),
+      await renderDocumentWithJudge(
+        "interruptions",
+        rows,
+        parsed.flags,
+        db,
+        command.judgePresets ?? [],
+      ),
     );
   } finally {
     db.close();
   }
 }
 
-export const command: Command = {
+export const command: JudgeCommand = {
   name: "interruptions",
   description:
     "List interrupt markers, rejected tool calls, and user turns that follow a tool_use mid-run.",
   options,
+  judgePresets: ["steering"],
   run,
 };
 
