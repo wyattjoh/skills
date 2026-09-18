@@ -22,11 +22,13 @@ Invoke the claude-sessions skill first. It reports its base directory and the CL
 | Show ordered turns around one or more sessions                    | `messages`, optionally `--include-tools`, `--include-thinking`, or `--around`          |
 | Pair tool calls with their results                                | `tools`, optionally `--name`, `--input`, `--errors-only`, `--agent-type`, or `--skill` |
 | Explain tool errors and following assistant text                  | `errors`, optionally `--name`, `--pattern`, or `--judge=error-resolved`                |
-| Find interrupts, rejected calls, and follow-up user turns         | `interruptions`, optionally `--judge=steering`                                         |
+| Find interrupts, rejected calls, and follow-up user turns         | `interruptions`, optionally `--judge=steering` or `--include-injected`                 |
 | Compare token, call, error, interruption, and duration aggregates | `stats`, grouped with `--by`                                                           |
 | Answer a question outside a named command                         | `sql` with one read-only `SELECT`, or `sql --schema`                                   |
 | Search planning documents                                         | `plans --pattern=<value>`                                                              |
 | Incrementally refresh the index                                   | `sync`, optionally scoped with `--projects`                                            |
+
+Project filters require a full canonical primary repository root; linked worktrees share that identity. Plain roots match exactly, while `*`, `?`, and `[...]` opt into case-sensitive globs. Injected skill turns are excluded from `interruptions` unless `--include-injected` is explicit.
 
 ## Judging
 

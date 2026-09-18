@@ -1,8 +1,10 @@
+import { resolveProjectIdentity } from "../lib/project-identity.ts";
 import { afterAll, beforeAll, describe, expect, it } from "bun:test";
 import { mkdtemp, rm } from "node:fs/promises";
 import { dirname, join } from "node:path";
 
 const HERE = dirname(new URL(import.meta.url).pathname);
+const PROJECT_IDENTITY = resolveProjectIdentity(".")!;
 const CLI = join(HERE, "..", "cli.ts");
 const FIXTURES_ROOT = join(HERE, "..", "testdata", "corpus");
 
@@ -94,7 +96,7 @@ describe("stats command", () => {
       count: 1,
       rows: [
         {
-          group: "-Users-testuser-Code-sample-project",
+          group: PROJECT_IDENTITY,
           sessions: 11,
           messages: 13,
           tool_calls: 3,
@@ -243,7 +245,7 @@ describe("stats command", () => {
     expect(document.count).toBe(1);
     expect(document.rows).toEqual([
       {
-        group: "-Users-testuser-Code-sample-project",
+        group: PROJECT_IDENTITY,
         sessions: 12,
         messages: 16,
         tool_calls: 4,
@@ -378,7 +380,7 @@ describe("stats command", () => {
       "stats",
       "--no-sync",
       "--by=project",
-      "--project=sample-project",
+      `--project=${PROJECT_IDENTITY}`,
       "--model=claude-opus-5",
     ]);
     const document = JSON.parse(result.stdout) as {
@@ -391,7 +393,7 @@ describe("stats command", () => {
     expect(document.count).toBe(1);
     expect(document.rows).toEqual([
       {
-        group: "-Users-testuser-Code-sample-project",
+        group: PROJECT_IDENTITY,
         sessions: 1,
         messages: 2,
         tool_calls: 1,

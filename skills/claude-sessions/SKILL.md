@@ -30,13 +30,13 @@ Examples:
 
 ```bash
 # Which recent sessions worked on this project?
-bun $SKILL_DIR/scripts/cli.ts sessions --project=wyattjoh-skills --since=7d --sort=messages --limit=5
+bun $SKILL_DIR/scripts/cli.ts sessions --project=/absolute/path/to/repository --since=7d --sort=messages --limit=5
 
 # What was happening when the user interrupted the assistant?
-bun $SKILL_DIR/scripts/cli.ts interruptions --project=wyattjoh-skills --limit=5
+bun $SKILL_DIR/scripts/cli.ts interruptions --project=/absolute/path/to/repository --limit=5
 
 # Which tools returned errors, and what followed them?
-bun $SKILL_DIR/scripts/cli.ts errors --project=wyattjoh-skills --since=30d --limit=5
+bun $SKILL_DIR/scripts/cli.ts errors --project=/absolute/path/to/repository --since=30d --limit=5
 ```
 
 The default database is `~/.cache/claude-sessions/index.db`. Every read command syncs first unless `--no-sync` is present. The CLI emits JSON by default, or a human-readable table with `--table`.
@@ -54,7 +54,7 @@ Run commands with `bun $SKILL_DIR/scripts/cli.ts`. The usages and flag names bel
 | `messages`      | `bun $SKILL_DIR/scripts/cli.ts messages [options]`                                             | shared read flags, `--include-tools`, `--include-thinking`, `--around=<value>`, `--table`, `--no-redact`                                                                            |
 | `tools`         | `bun $SKILL_DIR/scripts/cli.ts tools [options]`                                                | shared read flags, `--name=<value> (repeatable)`, `--input=<value>`, `--errors-only`, `--agent-type=<value>`, `--skill=<value>`, `--result-chars=<value>`, `--table`, `--no-redact` |
 | `errors`        | `bun $SKILL_DIR/scripts/cli.ts errors [options]`                                               | shared read flags, `--name=<value>`, `--pattern=<value>`, `--table`, `--no-redact`, judge flags                                                                                     |
-| `interruptions` | `bun $SKILL_DIR/scripts/cli.ts interruptions [options]`                                        | shared read flags, `--table`, `--no-redact`, judge flags                                                                                                                            |
+| `interruptions` | `bun $SKILL_DIR/scripts/cli.ts interruptions [options]`                                        | shared read flags, `--include-injected`, `--table`, `--no-redact`, judge flags                                                                                                      |
 | `stats`         | `bun $SKILL_DIR/scripts/cli.ts stats [options]`                                                | shared read flags, `--by=<value>`, `--table`, `--no-redact`                                                                                                                         |
 | `sql`           | `bun $SKILL_DIR/scripts/cli.ts sql <statement> [options] \| sql --schema`                      | `--schema`, `--limit=<value>`, `--table`, `--no-redact`                                                                                                                             |
 | `plans`         | `bun $SKILL_DIR/scripts/cli.ts plans --pattern=<text> [options]`                               | `--pattern=<value>`, `--root=<value>`, `--limit=<value>`, `--context=<value>`, `--table`, `--no-redact`                                                                             |
@@ -65,7 +65,7 @@ These exact options appear on `projects`, `sessions`, `search`, `messages`, `too
 
 | Flag                             | Help text                                                                           |
 | -------------------------------- | ----------------------------------------------------------------------------------- |
-| `--project=<value> (repeatable)` | Filter by substring of the encoded project dir or cwd (repeatable)                  |
+| `--project=<value> (repeatable)` | Filter by exact canonical repository root or case-sensitive glob (repeatable)       |
 | `--session=<value> (repeatable)` | Filter by session id (repeatable)                                                   |
 | `--since=<value>`                | Only include records at or after this time (ISO 8601, or relative like 3h, 6d, 2w)  |
 | `--until=<value>`                | Only include records at or before this time (ISO 8601, or relative like 3h, 6d, 2w) |
@@ -80,10 +80,10 @@ Command-specific help text:
 | Flag                              | Help text                                                                          |
 | --------------------------------- | ---------------------------------------------------------------------------------- |
 | `--root=<value>`                  | Corpus root (default: ~/.claude/projects)                                          |
-| `--projects=<value> (repeatable)` | Only sync project dirs containing this substring (repeatable)                      |
+| `--projects=<value> (repeatable)` | Only sync exact canonical repository roots or case-sensitive globs (repeatable)    |
 | `--vacuum`                        | Run VACUUM on the index database after syncing                                     |
 | `--quiet`                         | Suppress progress lines on stderr                                                  |
-| `--search=<value>`                | Filter by substring of the encoded project dir or cwd                              |
+| `--search=<value>`                | Filter by substring of the canonical repository root                               |
 | `--sort=<value>`                  | Sort by date, messages, tokens, or errors (default: date)                          |
 | `--first-prompt=<value>`          | Filter by substring of the session's first prompt                                  |
 | `--in=<value>`                    | Search messages, tools, or all (default: messages)                                 |
@@ -123,7 +123,7 @@ Root help summarizes `--no-cache` as "Bypass the judgment cache"; command help e
 
 ## Filters
 
-Use `--project` with an encoded directory substring or cwd substring, and repeat it to match multiple projects. Use `--session` for one or more raw session IDs. `--since` and `--until` accept ISO 8601 timestamps or relative values such as `3h`, `6d`, and `2w`; relative values are resolved when the command starts. `--model` filters assistant model names. Subagents are excluded unless `--include-subagents` is supplied. Keep result sets reviewable with `--limit`.
+Use `--project` with a full canonical repository root. Plain values match exactly, while values containing `*`, `?`, or `[...]` use case-sensitive glob matching. Repeat it to match multiple repositories with OR semantics. Linked worktrees share the primary repository root identity. Use `--session` for one or more raw session IDs. `--since` and `--until` accept ISO 8601 timestamps or relative values such as `3h`, `6d`, and `2w`; relative values are resolved when the command starts. `--model` filters assistant model names. Subagents are excluded unless `--include-subagents` is supplied. Keep result sets reviewable with `--limit`.
 
 Use `--no-sync` for repeatable reads after a known sync. It prevents a full corpus walk and is especially important when inspecting a historical window or running several recipes.
 
@@ -167,36 +167,38 @@ Only a single read-only `SELECT` statement is accepted. `sql --limit=<value>` ad
 
 ## Recipes
 
-Each recipe below is a read against the live index. The examples use `--no-sync --limit=5` so they are quick to repeat. Replace the project substring when needed.
+Each recipe below is a read against the live index. The examples use `--no-sync --limit=5` so they are quick to repeat. Replace the canonical project root when needed.
 
 ### Tech adoption candidates
 
 ```bash
-bun $SKILL_DIR/scripts/cli.ts sessions --project=wyattjoh-skills --first-prompt="adopt" --sort=messages --judge=task-kind --no-sync --limit=5
+bun $SKILL_DIR/scripts/cli.ts sessions --project=/absolute/path/to/repository --first-prompt="adopt" --sort=messages --judge=task-kind --no-sync --limit=5
 ```
 
 ### Steering interruptions
 
 ```bash
-bun $SKILL_DIR/scripts/cli.ts interruptions --project=wyattjoh-skills --judge=steering --no-sync --limit=5
+bun $SKILL_DIR/scripts/cli.ts interruptions --project=/absolute/path/to/repository --judge=steering --no-sync --limit=5
 ```
+
+Injected skill-expansion turns are excluded by default. Add `--include-injected` to inspect them, including with `--judge=steering`; returned rows identify them with `is_injected: true`.
 
 ### Recurring error prior fix
 
 ```bash
-bun $SKILL_DIR/scripts/cli.ts errors --project=wyattjoh-skills --judge=error-resolved --no-sync --limit=5
+bun $SKILL_DIR/scripts/cli.ts errors --project=/absolute/path/to/repository --judge=error-resolved --no-sync --limit=5
 ```
 
 ### Time-boxed change audit
 
 ```bash
-bun $SKILL_DIR/scripts/cli.ts search "changed implemented fixed" --regex="changed|implemented|fixed" --project=wyattjoh-skills --since=7d --until=1d --in=all --no-sync --limit=5
+bun $SKILL_DIR/scripts/cli.ts search "changed implemented fixed" --regex="changed|implemented|fixed" --project=/absolute/path/to/repository --since=7d --until=1d --in=all --no-sync --limit=5
 ```
 
 ### Secret exposure sweep
 
 ```bash
-bun $SKILL_DIR/scripts/cli.ts search "token" --regex="sk-ant-|sk_live_|sk_test_|ghp_|gho_|github_pat_|AKIA|Bearer " --project=wyattjoh-skills --since=90d --in=all --include-injected --no-sync --limit=5
+bun $SKILL_DIR/scripts/cli.ts search "token" --regex="sk-ant-|sk_live_|sk_test_|ghp_|gho_|github_pat_|AKIA|Bearer " --project=/absolute/path/to/repository --since=90d --in=all --include-injected --no-sync --limit=5
 ```
 
 Keep redaction enabled for this recipe.
@@ -204,19 +206,19 @@ Keep redaction enabled for this recipe.
 ### Implementation archaeology
 
 ```bash
-bun $SKILL_DIR/scripts/cli.ts search "implementation" --project=wyattjoh-skills --in=all --include-subagents --no-sync --limit=5
+bun $SKILL_DIR/scripts/cli.ts search "implementation" --project=/absolute/path/to/repository --in=all --include-subagents --no-sync --limit=5
 ```
 
 ### Delegation mining
 
 ```bash
-bun $SKILL_DIR/scripts/cli.ts tools --project=wyattjoh-skills --name=Agent --include-subagents --input="task|prompt" --no-sync --limit=5
+bun $SKILL_DIR/scripts/cli.ts tools --project=/absolute/path/to/repository --name=Agent --include-subagents --input="task|prompt" --no-sync --limit=5
 ```
 
 ### Retro on a session set
 
 ```bash
-bun $SKILL_DIR/scripts/cli.ts sessions --project=wyattjoh-skills --since=30d --sort=messages --no-sync --limit=5
+bun $SKILL_DIR/scripts/cli.ts sessions --project=/absolute/path/to/repository --since=30d --sort=messages --no-sync --limit=5
 ```
 
 Use the returned session IDs with repeated `--session=<value>` on `messages`, `tools`, `errors`, or `interruptions` for the focused retro.
@@ -224,13 +226,13 @@ Use the returned session IDs with repeated `--session=<value>` on `messages`, `t
 ### Tool and CLI usage census
 
 ```bash
-bun $SKILL_DIR/scripts/cli.ts tools --project=wyattjoh-skills --name=Bash --input="bun|npm|pnpm|yarn" --since=7d --no-sync --limit=5
+bun $SKILL_DIR/scripts/cli.ts tools --project=/absolute/path/to/repository --name=Bash --input="bun|npm|pnpm|yarn" --since=7d --no-sync --limit=5
 ```
 
 ### Cost and habit analytics
 
 ```bash
-bun $SKILL_DIR/scripts/cli.ts stats --project=wyattjoh-skills --since=30d --by=model --no-sync --limit=5
+bun $SKILL_DIR/scripts/cli.ts stats --project=/absolute/path/to/repository --since=30d --by=model --no-sync --limit=5
 ```
 
 Repeat with `--by=day` or `--by=session` to compare habits over time.
@@ -238,43 +240,43 @@ Repeat with `--by=day` or `--by=session` to compare habits over time.
 ### Evals from transcripts
 
 ```bash
-bun $SKILL_DIR/scripts/cli.ts search "evaluation" --regex="assert|expected|test case|evaluation|eval" --project=wyattjoh-skills --since=90d --in=all --include-subagents --no-sync --limit=5
+bun $SKILL_DIR/scripts/cli.ts search "evaluation" --regex="assert|expected|test case|evaluation|eval" --project=/absolute/path/to/repository --since=90d --in=all --include-subagents --no-sync --limit=5
 ```
 
 ### Instruction drift
 
 ```bash
-bun $SKILL_DIR/scripts/cli.ts search "instruction" --regex="system-reminder|CLAUDE\\.md|instruction" --project=wyattjoh-skills --since=90d --in=messages --include-injected --no-sync --limit=5
+bun $SKILL_DIR/scripts/cli.ts search "instruction" --regex="system-reminder|CLAUDE\\.md|instruction" --project=/absolute/path/to/repository --since=90d --in=messages --include-injected --no-sync --limit=5
 ```
 
 ### Hook and allowlist mining
 
 ```bash
-bun $SKILL_DIR/scripts/cli.ts search "hook" --regex="hook|allowed-tools|allowlist|permission" --project=wyattjoh-skills --since=90d --in=all --include-injected --no-sync --limit=5
+bun $SKILL_DIR/scripts/cli.ts search "hook" --regex="hook|allowed-tools|allowlist|permission" --project=/absolute/path/to/repository --since=90d --in=all --include-injected --no-sync --limit=5
 ```
 
 ### Unfinished work
 
 ```bash
-bun $SKILL_DIR/scripts/cli.ts search "TODO" --regex="TODO|unfinished|remaining|follow[- ]?up|not done" --project=wyattjoh-skills --since=90d --in=messages --no-sync --limit=5
+bun $SKILL_DIR/scripts/cli.ts search "TODO" --regex="TODO|unfinished|remaining|follow[- ]?up|not done" --project=/absolute/path/to/repository --since=90d --in=messages --no-sync --limit=5
 ```
 
 ### Decision log
 
 ```bash
-bun $SKILL_DIR/scripts/cli.ts search "decision" --regex="decided|decision|agreed|trade[- ]?off" --project=wyattjoh-skills --since=90d --type=user --no-sync --limit=5
+bun $SKILL_DIR/scripts/cli.ts search "decision" --regex="decided|decision|agreed|trade[- ]?off" --project=/absolute/path/to/repository --since=90d --type=user --no-sync --limit=5
 ```
 
 ### Hallucinated API catalog
 
 ```bash
-bun $SKILL_DIR/scripts/cli.ts search "API" --regex="does not exist|not found|unknown method|API" --project=wyattjoh-skills --since=90d --in=all --no-sync --limit=5
+bun $SKILL_DIR/scripts/cli.ts search "API" --regex="does not exist|not found|unknown method|API" --project=/absolute/path/to/repository --since=90d --in=all --no-sync --limit=5
 ```
 
 ### Model and version regression
 
 ```bash
-bun $SKILL_DIR/scripts/cli.ts stats --project=wyattjoh-skills --since=90d --by=version --no-sync --limit=5
+bun $SKILL_DIR/scripts/cli.ts stats --project=/absolute/path/to/repository --since=90d --by=version --no-sync --limit=5
 ```
 
 Run the same recipe with `--by=model` to compare model cohorts.
@@ -282,7 +284,7 @@ Run the same recipe with `--by=model` to compare model cohorts.
 ### Prompt phrasing feedback
 
 ```bash
-bun $SKILL_DIR/scripts/cli.ts search "please" --regex="please|could you|implement|fix|why|how" --project=wyattjoh-skills --since=30d --type=user --no-sync --limit=5
+bun $SKILL_DIR/scripts/cli.ts search "please" --regex="please|could you|implement|fix|why|how" --project=/absolute/path/to/repository --since=30d --type=user --no-sync --limit=5
 ```
 
 ### Parser fixture generation
@@ -296,7 +298,7 @@ Use the rare record shapes from this result to choose cases for the bundled fixt
 ### Project memory seeding
 
 ```bash
-bun $SKILL_DIR/scripts/cli.ts projects --project=wyattjoh-skills --no-sync --limit=5
+bun $SKILL_DIR/scripts/cli.ts projects --project=/absolute/path/to/repository --no-sync --limit=5
 ```
 
 Use the project rows as the seed, then search its sessions and plans for durable decisions before writing project memory.

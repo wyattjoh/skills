@@ -17,6 +17,7 @@ import {
   type CorpusFileEntry,
 } from "./corpus.ts";
 import { decodeProjectDirLossy } from "./paths.ts";
+import { matchesProjectIdentity, resolveProjectIdentity } from "./project-identity.ts";
 import { readJsonl } from "./jsonl.ts";
 import {
   extractBlocks,
@@ -35,7 +36,7 @@ import { openDb } from "./db.ts";
 export interface SyncOptions {
   root?: string;
   db?: Database;
-  /** Repeatable substring filters matched against the encoded project dir. */
+  /** Repeatable exact canonical project roots or case-sensitive globs. */
   projects?: string[];
   onProgress?: (info: { filesProcessed: number; totalFiles: number }) => void;
   progressEvery?: number;
@@ -64,6 +65,7 @@ interface SessionRow {
   id: string;
   session_id: string;
   project_dir: string | null;
+  project_identity: string | null;
   cwd: string | null;
   git_branch: string | null;
   parent_session_id: string | null;
@@ -83,9 +85,10 @@ interface SessionRow {
   cache_create_tokens: number;
 }
 
-function matchesProjectFilter(projectDir: string, filters: string[] | undefined): boolean {
+function matchesProjectFilter(identity: string | null, filters: string[] | undefined): boolean {
   if (!filters || filters.length === 0) return true;
-  return filters.some((f) => projectDir.includes(f));
+  if (identity === null) return false;
+  return filters.some((filter) => matchesProjectIdentity(identity, filter));
 }
 
 /**
@@ -105,6 +108,25 @@ function projectDirForPath(path: string, root: string): string {
   const rel = relative(root, path);
   const [dir] = rel.split(/[\\/]/);
   return dir ?? "";
+}
+
+async function identityFromFiles(files: readonly CorpusFileEntry[]): Promise<string | null> {
+  const probeBytes = 1024 * 1024;
+  for (const file of files) {
+    const probe = await Bun.file(file.path).slice(0, probeBytes).text();
+    for (const line of probe.split("\n")) {
+      if (line.trim().length === 0) continue;
+      try {
+        const record = parseRecord(JSON.parse(line) as unknown);
+        if (record === null || !("cwd" in record) || typeof record.cwd !== "string") continue;
+        const identity = resolveProjectIdentity(record.cwd);
+        if (identity !== null) return identity;
+      } catch {
+        // The final probe line may be partial, and malformed corpus lines are expected.
+      }
+    }
+  }
+  return null;
 }
 
 interface BatchAggregate {
@@ -442,6 +464,8 @@ function upsertSession(
       : agg.endedAt;
 
   const firstPrompt = existing?.first_prompt ?? agg.firstPrompt;
+  const cwd = agg.cwd ?? existing?.cwd ?? null;
+  const projectIdentity = resolveProjectIdentity(cwd);
   const counts = computeSessionCounts(db, sessionId);
   const parentSessionId = file.parentSessionId
     ? sessionKey(file.projectDir, file.parentSessionId)
@@ -449,11 +473,12 @@ function upsertSession(
 
   db.query(
     `INSERT INTO sessions
-      (id, session_id, project_dir, cwd, git_branch, parent_session_id, agent_name, first_prompt, started_at, ended_at, models, versions, message_count, tool_call_count, error_count, interruption_count, input_tokens, output_tokens, cache_read_tokens, cache_create_tokens)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      (id, session_id, project_dir, project_identity, cwd, git_branch, parent_session_id, agent_name, first_prompt, started_at, ended_at, models, versions, message_count, tool_call_count, error_count, interruption_count, input_tokens, output_tokens, cache_read_tokens, cache_create_tokens)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
      ON CONFLICT(id) DO UPDATE SET
        session_id = excluded.session_id,
        project_dir = excluded.project_dir,
+       project_identity = excluded.project_identity,
        cwd = excluded.cwd,
        git_branch = excluded.git_branch,
        parent_session_id = excluded.parent_session_id,
@@ -475,7 +500,8 @@ function upsertSession(
     sessionId,
     file.sessionId,
     file.projectDir,
-    agg.cwd ?? existing?.cwd ?? null,
+    projectIdentity,
+    cwd,
     agg.gitBranch ?? existing?.git_branch ?? null,
     parentSessionId,
     agg.agentName ?? existing?.agent_name ?? null,
@@ -515,18 +541,27 @@ function refreshProject(db: Database, projectDir: string): void {
     )
     .get(projectDir) as { cwd: string } | null;
 
+  const cwd = cwdRow?.cwd ?? null;
+  const projectIdentity = resolveProjectIdentity(cwd);
+  if (projectIdentity !== null) {
+    db.query(
+      "UPDATE sessions SET project_identity = ? WHERE project_dir = ? AND project_identity IS NULL",
+    ).run(projectIdentity, projectDir);
+  }
   db.query(
-    `INSERT INTO projects (dir, decoded_path, cwd, last_activity, session_count)
-     VALUES (?, ?, ?, ?, ?)
+    `INSERT INTO projects (dir, project_identity, decoded_path, cwd, last_activity, session_count)
+     VALUES (?, ?, ?, ?, ?, ?)
      ON CONFLICT(dir) DO UPDATE SET
+       project_identity = excluded.project_identity,
        decoded_path = excluded.decoded_path,
        cwd = excluded.cwd,
        last_activity = excluded.last_activity,
        session_count = excluded.session_count`,
   ).run(
     projectDir,
+    projectIdentity,
     decodeProjectDirLossy(projectDir),
-    cwdRow?.cwd ?? null,
+    cwd,
     stats.last_activity,
     stats.session_count,
   );
@@ -593,12 +628,13 @@ function removeStaleFiles(
 ): number {
   const existingRows = db
     .query(
-      "SELECT files.path as path, files.session_id as session_id, sessions.project_dir as project_dir FROM files LEFT JOIN sessions ON sessions.id = files.session_id",
+      "SELECT files.path as path, files.session_id as session_id, sessions.project_dir as project_dir, sessions.project_identity as project_identity FROM files LEFT JOIN sessions ON sessions.id = files.session_id",
     )
     .all() as Array<{
     path: string;
     session_id: string;
     project_dir: string | null;
+    project_identity: string | null;
   }>;
 
   let removed = 0;
@@ -606,7 +642,7 @@ function removeStaleFiles(
 
   for (const row of existingRows) {
     const projectDir = row.project_dir ?? projectDirForPath(row.path, root);
-    if (!matchesProjectFilter(projectDir, projectFilter)) continue;
+    if (!matchesProjectFilter(row.project_identity, projectFilter)) continue;
     if (discoveredPaths.has(row.path)) continue;
 
     db.query("DELETE FROM files WHERE path = ?").run(row.path);
@@ -634,11 +670,15 @@ export async function sync(options: SyncOptions = {}): Promise<SyncSummary> {
     );
   }
 
-  const allFiles: CorpusFileEntry[] = [];
+  const files: CorpusFileEntry[] = [];
   for (const project of projectDirs) {
-    allFiles.push(...(await discoverProjectFiles(project.dir, project.path)));
+    const projectFiles = await discoverProjectFiles(project.dir, project.path);
+    const stored = db
+      .query("SELECT project_identity FROM projects WHERE dir = ?")
+      .get(project.dir) as { project_identity: string | null } | null;
+    const identity = stored?.project_identity ?? (await identityFromFiles(projectFiles));
+    if (matchesProjectFilter(identity, options.projects)) files.push(...projectFiles);
   }
-  const files = allFiles.filter((f) => matchesProjectFilter(f.projectDir, options.projects));
 
   const summary: SyncSummary = {
     scanned: files.length,

@@ -61,6 +61,7 @@ interface ToolQueryRow {
   latency_ms: number | null;
   session_id: string;
   project_dir: string | null;
+  project_identity: string | null;
   timestamp: string | null;
   uuid: string;
 }
@@ -74,6 +75,7 @@ interface ToolOutputRow {
   latency_ms: number | null;
   session_id: string;
   project_dir: string | null;
+  project_identity: string | null;
   timestamp: string | null;
   uuid: string;
 }
@@ -102,7 +104,7 @@ function queryRows(db: ReturnType<typeof openDb>, argv: string[]): ToolOutputRow
   const literalNeedle = regexLiteralNeedle(inputPattern);
   const resultChars = parseResultChars(flagString(parsed.flags, "result-chars"));
   const clauses = buildWhereFragments(filters, {
-    project: ["s.project_dir", "s.cwd"],
+    project: "s.project_identity",
     session: "s.session_id",
     timestamp: "tc.ts",
     model: "m.model",
@@ -148,6 +150,7 @@ function queryRows(db: ReturnType<typeof openDb>, argv: string[]): ToolOutputRow
        tc.latency_ms,
        COALESCE(s.session_id, tc.session_id) AS session_id,
        s.project_dir AS project_dir,
+      s.project_identity AS project_identity,
        tc.ts AS timestamp,
        tc.message_uuid AS uuid
      FROM tool_calls tc
@@ -183,6 +186,7 @@ function queryRows(db: ReturnType<typeof openDb>, argv: string[]): ToolOutputRow
     latency_ms: row.latency_ms,
     session_id: row.session_id,
     project_dir: row.project_dir,
+    project_identity: row.project_identity,
     timestamp: toIsoTimestamp(row.timestamp),
     uuid: row.uuid,
   }));

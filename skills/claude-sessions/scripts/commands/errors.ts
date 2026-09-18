@@ -50,6 +50,7 @@ interface ErrorQueryRow {
   internal_session_id: string;
   session_id: string;
   project_dir: string | null;
+  project_identity: string | null;
   timestamp: string | null;
   uuid: string;
 }
@@ -70,6 +71,7 @@ interface ErrorOutputRow {
   latency_ms: number | null;
   session_id: string;
   project_dir: string | null;
+  project_identity: string | null;
   timestamp: string | null;
   uuid: string;
   assistant_text_after: string | null;
@@ -99,7 +101,7 @@ function queryRows(db: ReturnType<typeof openDb>, argv: string[]): ErrorOutputRo
   const names = flagStrings(parsed.flags, "name");
   const resultRegex = parseSafeRegex(flagString(parsed.flags, "pattern"), "--pattern");
   const filterWhere = buildWhereFragments(filters, {
-    project: ["s.project_dir", "s.cwd"],
+    project: "s.project_identity",
     session: "s.session_id",
     timestamp: "tc.result_ts",
     model: "m.model",
@@ -125,6 +127,7 @@ function queryRows(db: ReturnType<typeof openDb>, argv: string[]): ErrorOutputRo
        tc.session_id AS internal_session_id,
        COALESCE(s.session_id, tc.session_id) AS session_id,
        s.project_dir AS project_dir,
+      s.project_identity AS project_identity,
        tc.result_ts AS timestamp,
        tc.message_uuid AS uuid
      FROM tool_calls tc
@@ -176,6 +179,7 @@ function queryRows(db: ReturnType<typeof openDb>, argv: string[]): ErrorOutputRo
     latency_ms: row.latency_ms,
     session_id: row.session_id,
     project_dir: row.project_dir,
+    project_identity: row.project_identity,
     timestamp: toIsoTimestamp(row.timestamp),
     uuid: row.uuid,
     assistant_text_after: nextAssistantText(

@@ -43,6 +43,7 @@ const options: CommandOption[] = [
 interface SessionRow {
   session_id: string;
   project_dir: string | null;
+  project_identity: string | null;
   cwd: string | null;
   git_branch: string | null;
   parent_session_id: string | null;
@@ -65,6 +66,7 @@ interface SessionRow {
 interface SessionOutputRow {
   session_id: string;
   project_dir: string | null;
+  project_identity: string | null;
   timestamp: string | null;
   cwd: string | null;
   git_branch: string | null;
@@ -105,6 +107,7 @@ function toOutputRow(row: SessionRow): SessionOutputRow {
   return {
     session_id: row.session_id,
     project_dir: row.project_dir,
+    project_identity: row.project_identity,
     timestamp: toIsoTimestamp(row.ended_at ?? row.started_at),
     cwd: row.cwd,
     git_branch: row.git_branch,
@@ -132,7 +135,7 @@ async function run(argv: string[]): Promise<void> {
   const sort = parseSort(flagString(flags, "sort"));
   const firstPrompt = flagString(flags, "first-prompt");
   const where = buildWhereFragments(filters, {
-    project: ["sessions.project_dir", "sessions.cwd"],
+    project: "sessions.project_identity",
     session: "sessions.session_id",
     timestamp: "COALESCE(sessions.ended_at, sessions.started_at)",
     subagentParent: "sessions.parent_session_id",
@@ -156,6 +159,7 @@ async function run(argv: string[]): Promise<void> {
         `SELECT
            sessions.session_id,
            sessions.project_dir,
+           sessions.project_identity,
            sessions.cwd,
            sessions.git_branch,
            sessions.parent_session_id,

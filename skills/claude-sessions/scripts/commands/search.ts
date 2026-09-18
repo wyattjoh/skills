@@ -59,6 +59,7 @@ type SearchSource = "messages" | "tools";
 type SearchRow = {
   session_id: string;
   project_dir: string | null;
+  project_identity: string | null;
   timestamp: string | null;
   uuid: string;
   role: string | null;
@@ -69,6 +70,7 @@ type SearchRow = {
 type CandidateRow = {
   session_id: string;
   project_dir: string | null;
+  project_identity: string | null;
   timestamp: string | null;
   uuid: string;
   role: string | null;
@@ -176,6 +178,7 @@ function orderedRows(
       const result: SearchRow = {
         session_id: row.session_id,
         project_dir: row.project_dir,
+        project_identity: row.project_identity,
         timestamp: toIsoTimestamp(row.timestamp),
         uuid: row.uuid,
         role: row.role,
@@ -193,7 +196,7 @@ function messageWhere(
   includeInjected: boolean,
 ): { sql: string; params: QueryParam[] } {
   const fragment = buildWhereFragments(filters, {
-    project: ["s.project_dir", "s.cwd"],
+    project: "s.project_identity",
     session: "s.session_id",
     timestamp: "m.ts",
     model: "m.model",
@@ -214,7 +217,7 @@ function toolWhere(
   includeInjected: boolean,
 ): { sql: string; params: QueryParam[] } {
   const fragment = buildWhereFragments(filters, {
-    project: ["s.project_dir", "s.cwd"],
+    project: "s.project_identity",
     session: "s.session_id",
     timestamp: "t.ts",
     model: "m.model",
@@ -244,6 +247,7 @@ function messageCandidates(
     SELECT
       s.session_id AS session_id,
       s.project_dir AS project_dir,
+      s.project_identity AS project_identity,
       m.ts AS timestamp,
       m.uuid AS uuid,
       m.role AS role,
@@ -294,6 +298,7 @@ function toolCandidates(
     SELECT
       s.session_id AS session_id,
       s.project_dir AS project_dir,
+      s.project_identity AS project_identity,
       t.ts AS timestamp,
       t.message_uuid AS uuid,
       'tool' AS role,

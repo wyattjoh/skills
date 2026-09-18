@@ -1,3 +1,4 @@
+import { resolveProjectIdentity } from "../lib/project-identity.ts";
 import { afterAll, beforeAll, describe, expect, it } from "bun:test";
 import { mkdtemp, rm } from "node:fs/promises";
 import { dirname, join } from "node:path";
@@ -7,6 +8,7 @@ import { openDb } from "../lib/db.ts";
 import { sync } from "../lib/ingest.ts";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
+const PROJECT_IDENTITY = resolveProjectIdentity(".")!;
 const CLI = join(HERE, "..", "cli.ts");
 const FIXTURES_ROOT = join(HERE, "..", "testdata", "corpus");
 
@@ -126,8 +128,9 @@ describe("sessions command", () => {
     expect(document.rows[0]).toEqual({
       session_id: "session-attachment",
       project_dir: "-Users-testuser-Code-sample-project",
+      project_identity: PROJECT_IDENTITY,
       timestamp: "2026-09-08T02:37:39.965Z",
-      cwd: "/Users/testuser/Code/sample-project",
+      cwd: ".",
       git_branch: "main",
       parent_session_id: null,
       agent_name: null,
@@ -165,8 +168,9 @@ describe("sessions command", () => {
     expect(row).toEqual({
       session_id: "sample0agent00id01",
       project_dir: "-Users-testuser-Code-sample-project",
+      project_identity: PROJECT_IDENTITY,
       timestamp: "2026-02-18T11:10:48.555Z",
-      cwd: "/Users/testuser/Code/sample-project",
+      cwd: ".",
       git_branch: "main",
       parent_session_id: "-Users-testuser-Code-sample-project:sample-parent-session",
       agent_name: "general-purpose",
@@ -191,7 +195,7 @@ describe("sessions command", () => {
     const project = await runCli([
       "sessions",
       "--no-sync",
-      "--project=-Users-testuser-Code-sample-project",
+      `--project=${PROJECT_IDENTITY}`,
       "--limit=2",
     ]);
     const session = await runCli(["sessions", "--no-sync", "--session=session-block-content"]);
@@ -294,6 +298,7 @@ describe("sessions command", () => {
     expect(tableLines[0]!.split(/\s{2,}/)).toEqual([
       "session_id",
       "project_dir",
+      "project_identity",
       "timestamp",
       "cwd",
       "git_branch",
@@ -316,8 +321,9 @@ describe("sessions command", () => {
     expect(tableLines[1]!.split(/\s{2,}/)).toEqual([
       "------------------",
       "-----------------------------------",
+      "----------------------------------------------------",
       "------------------------",
-      "-----------------------------------",
+      "---",
       "----------",
       "-----------------",
       "----------",
@@ -338,8 +344,9 @@ describe("sessions command", () => {
     expect(parseTableRow(tableLines[2]!, tableLines[1]!)).toEqual([
       "session-attachment",
       "-Users-testuser-Code-sample-project",
+      PROJECT_IDENTITY,
       "2026-09-08T02:37:39.965Z",
-      "/Users/testuser/Code/sample-project",
+      ".",
       "main",
       "",
       "",
@@ -366,7 +373,7 @@ describe("sessions command", () => {
         "Usage: bun scripts/cli.ts sessions [options]",
         "",
         "Options:",
-        "  --project=<value> (repeatable)  Filter by substring of the encoded project dir or cwd (repeatable)",
+        "  --project=<value> (repeatable)  Filter by exact canonical project root or case-sensitive glob (repeatable)",
         "  --session=<value> (repeatable)  Filter by session id (repeatable)",
         "  --since=<value>                 Only include records at or after this time (ISO 8601, or relative like 3h, 6d, 2w)",
         "  --until=<value>                 Only include records at or before this time (ISO 8601, or relative like 3h, 6d, 2w)",

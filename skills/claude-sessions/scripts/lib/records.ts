@@ -388,6 +388,8 @@ const INJECTED_TAG_MARKERS = [
  * slash-command expansions, local-command output, or system reminders.
  */
 export function hasInjectedTag(text: string): boolean {
+  const trimmed = text.trim();
+  if (/^<skill\s+name=(?:"[^"]+"|'[^']+')>[\s\S]*<\/skill>$/.test(trimmed)) return true;
   return INJECTED_TAG_MARKERS.some((marker) => text.includes(marker));
 }
 

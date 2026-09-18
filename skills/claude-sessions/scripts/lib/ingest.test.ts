@@ -5,6 +5,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { openDb } from "./db.ts";
 import { sessionKey, sync } from "./ingest.ts";
+import { resolveProjectIdentity } from "./project-identity.ts";
 
 const PROJECT_DIR = "-Users-test-myapp";
 const s1 = sessionKey(PROJECT_DIR, "s1");
@@ -588,17 +589,18 @@ describe("sync", () => {
     });
   });
 
-  it("scopes sync to project dirs matching a --projects substring", async () => {
+  it("scopes sync by canonical identity and combines worktree-like project dirs", async () => {
     await withCtx(async ({ root, db }) => {
-      await writeSession(root, "-Users-test-myapp", "s1", [userRecord({ uuid: "u1" })]);
-      await writeSession(root, "-Users-test-other", "s2", [userRecord({ uuid: "u2" })]);
+      await writeSession(root, "-checkout-main", "s1", [userRecord({ uuid: "u1", cwd: "." })]);
+      await writeSession(root, "-checkout-worktree", "s2", [userRecord({ uuid: "u2", cwd: "." })]);
+      const identity = resolveProjectIdentity(".")!;
 
-      const summary = await sync({ root, db, projects: ["myapp"] });
-      expect(summary.scanned).toBe(1);
-      expect(summary.added).toBe(1);
+      const summary = await sync({ root, db, projects: [identity] });
+      expect(summary.scanned).toBe(2);
+      expect(summary.added).toBe(2);
 
       const count = db.query("SELECT COUNT(*) as n FROM sessions").get() as { n: number };
-      expect(count.n).toBe(1);
+      expect(count.n).toBe(2);
     });
   });
 

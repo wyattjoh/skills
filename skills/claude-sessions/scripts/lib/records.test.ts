@@ -238,6 +238,18 @@ describe("hasInjectedTag", () => {
     expect(hasInjectedTag("<system-reminder># Environment</system-reminder>")).toBe(true);
   });
 
+  it("flags a complete injected skill wrapper", () => {
+    expect(hasInjectedTag('  <skill name="grilling">\nInjected instructions\n</skill>  ')).toBe(
+      true,
+    );
+  });
+
+  it("does not flag a skill wrapper embedded in human-authored text", () => {
+    expect(hasInjectedTag('Please inspect <skill name="grilling">this example</skill> now.')).toBe(
+      false,
+    );
+  });
+
   it("does not flag ordinary prompt text", () => {
     expect(hasInjectedTag("Review this change for security vulnerabilities.")).toBe(false);
   });

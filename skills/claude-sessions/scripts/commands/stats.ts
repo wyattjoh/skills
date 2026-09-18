@@ -50,6 +50,7 @@ interface SessionStatsRow {
   id: string;
   session_id: string;
   project_dir: string | null;
+  project_identity: string | null;
   started_at: string | null;
   ended_at: string | null;
   models: string;
@@ -82,7 +83,7 @@ function parseStatsBy(raw: string | undefined, present: boolean): StatsBy {
 function groupValues(row: SessionStatsRow, by: StatsBy): Array<string | null> {
   switch (by) {
     case "project":
-      return [row.project_dir];
+      return [row.project_identity];
     case "session":
       return [row.session_id];
     case "day": {
@@ -149,7 +150,7 @@ function roundDuration(value: number): number {
 
 function loadSessions(db: Database, filters: ParsedFilters): SessionStatsRow[] {
   const base = buildWhereFragments(filters, {
-    project: ["s.project_dir", "s.cwd"],
+    project: "s.project_identity",
     session: "s.session_id",
     timestamp: "s.started_at",
     subagentParent: "s.parent_session_id",
@@ -169,6 +170,7 @@ function loadSessions(db: Database, filters: ParsedFilters): SessionStatsRow[] {
       s.id,
       s.session_id,
       s.project_dir,
+      s.project_identity,
       s.started_at,
       s.ended_at,
       s.models,

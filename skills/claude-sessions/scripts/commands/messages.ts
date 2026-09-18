@@ -50,6 +50,7 @@ type StoredMessage = {
   session_key: string;
   session_id: string;
   project_dir: string | null;
+  project_identity: string | null;
   timestamp: string | null;
   uuid: string;
   parent_uuid: string | null;
@@ -66,6 +67,7 @@ type StoredMessage = {
 type MessageTurn = {
   session_id: string;
   project_dir: string | null;
+  project_identity: string | null;
   timestamp: string | null;
   uuid: string;
   parent_uuid: string | null;
@@ -90,7 +92,7 @@ function messageWhere(filters: ReturnType<typeof parseFilters>): {
   params: QueryParam[];
 } {
   const fragment = buildWhereFragments(filters, {
-    project: ["s.project_dir", "s.cwd"],
+    project: "s.project_identity",
     session: "s.session_id",
     timestamp: "m.ts",
     model: "m.model",
@@ -192,6 +194,7 @@ async function renderTurns(
     turns.push({
       session_id: row.session_id,
       project_dir: row.project_dir,
+      project_identity: row.project_identity,
       timestamp: toIsoTimestamp(row.timestamp),
       uuid: row.uuid,
       parent_uuid: row.parent_uuid,
@@ -248,6 +251,7 @@ async function run(argv: string[]): Promise<void> {
         m.session_id AS session_key,
         s.session_id AS session_id,
         s.project_dir AS project_dir,
+      s.project_identity AS project_identity,
         m.ts AS timestamp,
         m.uuid AS uuid,
         m.parent_uuid AS parent_uuid,

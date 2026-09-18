@@ -9,7 +9,7 @@
  *
  * Options:
  *   --root=PATH            Corpus root (default: ~/.claude/projects)
- *   --projects=SUBSTRING   Only sync project dirs containing SUBSTRING (repeatable)
+ *   --projects=PATH   Only sync exact canonical roots or matching globs (repeatable)
  *   --vacuum                Run VACUUM after syncing
  *   --quiet                 Suppress progress lines on stderr
  *   --table                 Print a human-readable table instead of JSON
@@ -32,7 +32,7 @@ const options: CommandOption[] = [
     name: "projects",
     type: "string",
     multiple: true,
-    description: "Only sync project dirs containing this substring (repeatable)",
+    description: "Only sync exact canonical project roots or case-sensitive globs (repeatable)",
   },
   {
     name: "vacuum",

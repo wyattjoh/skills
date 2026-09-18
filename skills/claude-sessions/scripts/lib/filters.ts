@@ -17,7 +17,7 @@ export const SHARED_FILTER_OPTIONS = [
     name: "project",
     type: "string" as const,
     multiple: true,
-    description: "Filter by substring of the encoded project dir or cwd (repeatable)",
+    description: "Filter by exact canonical project root or case-sensitive glob (repeatable)",
   },
   {
     name: "session",
@@ -152,8 +152,8 @@ export function parseFilters(
  * every column (only `sessions` has `parent_session_id`, for instance).
  */
 export interface FilterColumns {
-  /** One or more columns to match --project substrings against (OR'd). */
-  project?: string[];
+  /** Canonical project identity column matched by exact path or case-sensitive glob. */
+  project?: string;
   /**
    * The column --session values are matched against with an exact IN.
    * `sessions.session_id` holds the raw session id, but `messages.session_id`
@@ -181,14 +181,15 @@ export function buildWhereFragments(filters: ParsedFilters, columns: FilterColum
   const clauses: string[] = [];
   const params: unknown[] = [];
 
-  if (filters.projects.length > 0 && columns.project !== undefined && columns.project.length > 0) {
-    const projectColumns = columns.project;
+  if (filters.projects.length > 0 && columns.project !== undefined) {
     const projectClauses: string[] = [];
     for (const project of filters.projects) {
-      for (const column of projectColumns) {
-        projectClauses.push(`${column} LIKE ?`);
-        params.push(`%${project}%`);
+      if (/[?*[\]]/.test(project)) {
+        projectClauses.push(`${columns.project} GLOB ?`);
+      } else {
+        projectClauses.push(`${columns.project} = ?`);
       }
+      params.push(project);
     }
     clauses.push(`(${projectClauses.join(" OR ")})`);
   }

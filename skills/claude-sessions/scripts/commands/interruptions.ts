@@ -26,7 +26,16 @@ import {
 } from "../lib/output.ts";
 import type { CommandOption, JudgeCommand } from "./index.ts";
 
-const options: CommandOption[] = [...SHARED_FILTER_OPTIONS, ...OUTPUT_OPTIONS, ...JUDGE_OPTIONS];
+const options: CommandOption[] = [
+  ...SHARED_FILTER_OPTIONS,
+  {
+    name: "include-injected",
+    type: "boolean",
+    description: "Include injected skill and command-expansion user turns",
+  },
+  ...OUTPUT_OPTIONS,
+  ...JUDGE_OPTIONS,
+];
 
 interface MessageQueryRow {
   row_id: number;
@@ -34,6 +43,7 @@ interface MessageQueryRow {
   internal_session_id: string;
   session_id: string;
   project_dir: string | null;
+  project_identity: string | null;
   timestamp: string | null;
   type: string;
   text: string;
@@ -55,8 +65,10 @@ interface InterruptionRow {
   user_text_after: string;
   session_id: string;
   project_dir: string | null;
+  project_identity: string | null;
   timestamp: string | null;
   uuid: string;
+  is_injected: boolean;
 }
 
 interface AssistantState {
@@ -122,8 +134,9 @@ function queryRows(db: ReturnType<typeof openDb>, argv: string[]): InterruptionR
   const booleanFlags = booleanFlagNames(options);
   const parsed = parseArgv(argv, booleanFlags);
   const filters = parseFilters(parsed.flags);
+  const includeInjected = parsed.flags["include-injected"] === true;
   const filterWhere = buildWhereFragments(filters, {
-    project: ["s.project_dir", "s.cwd"],
+    project: "s.project_identity",
     session: "s.session_id",
     subagentParent: "s.parent_session_id",
   });
@@ -135,6 +148,7 @@ function queryRows(db: ReturnType<typeof openDb>, argv: string[]): InterruptionR
          m.session_id AS internal_session_id,
          COALESCE(s.session_id, m.session_id) AS session_id,
          s.project_dir AS project_dir,
+         s.project_identity AS project_identity,
          m.ts AS timestamp,
          m.type,
          m.text,
@@ -199,7 +213,7 @@ function queryRows(db: ReturnType<typeof openDb>, argv: string[]): InterruptionR
     const injected = message.is_injected === 1;
     const stateBeforeUser = previousAssistant;
 
-    if (injected) continue;
+    if (injected && !includeInjected) continue;
 
     if (message.is_interrupt_marker === 1) {
       if (
@@ -212,8 +226,10 @@ function queryRows(db: ReturnType<typeof openDb>, argv: string[]): InterruptionR
           user_text_after: message.text,
           session_id: message.session_id,
           project_dir: message.project_dir,
+          project_identity: message.project_identity,
           timestamp: toIsoTimestamp(message.timestamp),
           uuid: message.uuid,
+          is_injected: injected,
         });
       }
       previousAssistant = undefined;
@@ -237,8 +253,10 @@ function queryRows(db: ReturnType<typeof openDb>, argv: string[]): InterruptionR
         user_text_after: message.text,
         session_id: message.session_id,
         project_dir: message.project_dir,
+        project_identity: message.project_identity,
         timestamp: toIsoTimestamp(message.timestamp),
         uuid: message.uuid,
+        is_injected: injected,
       });
     }
     previousAssistant = undefined;

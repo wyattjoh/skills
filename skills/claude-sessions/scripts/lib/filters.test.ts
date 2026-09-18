@@ -120,23 +120,23 @@ describe("buildWhereFragments", () => {
     expect(fragment).toEqual({ clauses: [], params: [] });
   });
 
-  it("matches --project against every configured column with OR", () => {
-    const fragment = buildWhereFragments(parseFilters({ project: ["myapp"] }, NOW), {
-      project: ["sessions.project_dir", "sessions.cwd"],
+  it("matches a plain --project against the canonical identity exactly", () => {
+    const fragment = buildWhereFragments(parseFilters({ project: "/code/myapp" }, NOW), {
+      project: "sessions.project_identity",
     });
     expect(fragment).toEqual({
-      clauses: ["(sessions.project_dir LIKE ? OR sessions.cwd LIKE ?)"],
-      params: ["%myapp%", "%myapp%"],
+      clauses: ["(sessions.project_identity = ?)"],
+      params: ["/code/myapp"],
     });
   });
 
-  it("combines multiple --project values and columns in declaration order", () => {
-    const fragment = buildWhereFragments(parseFilters({ project: ["a", "b"] }, NOW), {
-      project: ["sessions.project_dir"],
+  it("combines repeated exact and glob project filters with OR", () => {
+    const fragment = buildWhereFragments(parseFilters({ project: ["/code/a", "/code/*"] }, NOW), {
+      project: "sessions.project_identity",
     });
     expect(fragment).toEqual({
-      clauses: ["(sessions.project_dir LIKE ? OR sessions.project_dir LIKE ?)"],
-      params: ["%a%", "%b%"],
+      clauses: ["(sessions.project_identity = ? OR sessions.project_identity GLOB ?)"],
+      params: ["/code/a", "/code/*"],
     });
   });
 
@@ -177,21 +177,21 @@ describe("buildWhereFragments", () => {
 
   it("combines every active clause with AND", () => {
     const fragment = buildWhereFragments(
-      parseFilters({ project: ["myapp"], session: ["s1"], model: "opus" }, NOW),
+      parseFilters({ project: "myapp", session: ["s1"], model: "opus" }, NOW),
       {
-        project: ["sessions.project_dir"],
+        project: "sessions.project_dir",
         session: "sessions.session_id",
         model: "sessions.model",
         subagentParent: "sessions.parent_session_id",
       },
     );
     expect(fragment.clauses).toEqual([
-      "(sessions.project_dir LIKE ?)",
+      "(sessions.project_dir = ?)",
       "sessions.session_id IN (?)",
       "sessions.model = ?",
       "sessions.parent_session_id IS NULL",
     ]);
-    expect(fragment.params).toEqual(["%myapp%", "s1", "opus"]);
+    expect(fragment.params).toEqual(["myapp", "s1", "opus"]);
   });
 });
 

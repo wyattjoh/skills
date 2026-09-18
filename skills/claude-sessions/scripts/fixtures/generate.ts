@@ -90,7 +90,7 @@ const ID_KEY_CATEGORY: Record<string, string> = {
 };
 
 /** Synthetic replacement for any `cwd` field: never the real home directory. */
-const SYNTHETIC_CWD = "/Users/testuser/Code/sample-project";
+const SYNTHETIC_CWD = ".";
 /** Synthetic replacement for any `gitBranch` field. */
 const SYNTHETIC_GIT_BRANCH = "main";
 

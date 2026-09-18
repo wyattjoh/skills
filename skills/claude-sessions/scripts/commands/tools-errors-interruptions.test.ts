@@ -1,3 +1,4 @@
+import { resolveProjectIdentity } from "../lib/project-identity.ts";
 import { afterAll, beforeAll, describe, expect, it } from "bun:test";
 import { Database } from "bun:sqlite";
 import { mkdtemp, rm } from "node:fs/promises";
@@ -7,6 +8,7 @@ import { openDb } from "../lib/db.ts";
 import { sync } from "../lib/ingest.ts";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
+const PROJECT_IDENTITY = resolveProjectIdentity(".")!;
 const CLI = join(HERE, "..", "cli.ts");
 const FIXTURES_ROOT = join(HERE, "..", "testdata", "corpus");
 const PROJECT_DIR = "-Users-testuser-Code-sample-project";
@@ -79,16 +81,10 @@ function parseTable(output: string): { columns: string[]; rows: string[][] } {
 
 function insertSession(db: Database, id: string, sessionId: string): void {
   db.query(
-    `INSERT INTO sessions (id, session_id, project_dir, cwd, models, versions)
-     VALUES (?, ?, ?, ?, ?, ?)`,
-  ).run(
-    id,
-    sessionId,
-    PROJECT_DIR,
-    "/Users/testuser/Code/sample-project",
-    '["claude-opus-4-7"]',
-    '["2.1.0"]',
-  );
+    `INSERT INTO sessions
+      (id, session_id, project_dir, project_identity, cwd, models, versions)
+     VALUES (?, ?, ?, ?, ?, ?, ?)`,
+  ).run(id, sessionId, PROJECT_DIR, PROJECT_IDENTITY, ".", '["claude-opus-4-7"]', '["2.1.0"]');
 }
 
 function insertMessage(
@@ -350,10 +346,26 @@ async function seed(): Promise<void> {
     insertMessage(
       db,
       INTERRUPTION_KEY,
+      "injected-assistant",
+      "2026-01-03T00:00:05.500Z",
+      "assistant",
+      "I am about to run an injected skill.",
+    );
+    insertTool(db, {
+      id: "injected-tool",
+      sessionId: INTERRUPTION_KEY,
+      messageUuid: "injected-assistant",
+      timestamp: "2026-01-03T00:00:05.500Z",
+      name: "Skill",
+      input: { skill: "example" },
+    });
+    insertMessage(
+      db,
+      INTERRUPTION_KEY,
       "injected-user",
       "2026-01-03T00:00:06.000Z",
       "user",
-      "<system-reminder>Injected text</system-reminder>",
+      '<skill name="example">Injected text</skill>',
       { isInjected: 1 },
     );
     insertMessage(
@@ -539,6 +551,7 @@ describe("tools command", () => {
           latency_ms: null,
           session_id: "session-block-content",
           project_dir: PROJECT_DIR,
+          project_identity: PROJECT_IDENTITY,
           timestamp: "2026-05-29T12:10:37.245Z",
           uuid: "uuid-0002",
         },
@@ -570,6 +583,7 @@ describe("tools command", () => {
           latency_ms: 250,
           session_id: FILTER_SESSION,
           project_dir: PROJECT_DIR,
+          project_identity: PROJECT_IDENTITY,
           timestamp: "2026-01-02T00:00:02.000Z",
           uuid: "filter-assistant",
         },
@@ -590,6 +604,7 @@ describe("tools command", () => {
           latency_ms: null,
           session_id: FILTER_SESSION,
           project_dir: PROJECT_DIR,
+          project_identity: PROJECT_IDENTITY,
           timestamp: "2026-01-02T00:00:00.000Z",
           uuid: "filter-assistant",
         },
@@ -610,6 +625,7 @@ describe("tools command", () => {
           latency_ms: null,
           session_id: FILTER_SESSION,
           project_dir: PROJECT_DIR,
+          project_identity: PROJECT_IDENTITY,
           timestamp: "2026-01-02T00:00:01.000Z",
           uuid: "filter-assistant",
         },
@@ -648,7 +664,7 @@ describe("tools command", () => {
       "Usage: bun scripts/cli.ts tools [options]",
       "",
       "Options:",
-      "  --project=<value> (repeatable)  Filter by substring of the encoded project dir or cwd (repeatable)",
+      "  --project=<value> (repeatable)  Filter by exact canonical project root or case-sensitive glob (repeatable)",
       "  --session=<value> (repeatable)  Filter by session id (repeatable)",
       "  --since=<value>                 Only include records at or after this time (ISO 8601, or relative like 3h, 6d, 2w)",
       "  --until=<value>                 Only include records at or before this time (ISO 8601, or relative like 3h, 6d, 2w)",
@@ -674,7 +690,7 @@ describe("tools command", () => {
       "Usage: bun scripts/cli.ts errors [options]",
       "",
       "Options:",
-      "  --project=<value> (repeatable)  Filter by substring of the encoded project dir or cwd (repeatable)",
+      "  --project=<value> (repeatable)  Filter by exact canonical project root or case-sensitive glob (repeatable)",
       "  --session=<value> (repeatable)  Filter by session id (repeatable)",
       "  --since=<value>                 Only include records at or after this time (ISO 8601, or relative like 3h, 6d, 2w)",
       "  --until=<value>                 Only include records at or before this time (ISO 8601, or relative like 3h, 6d, 2w)",
@@ -702,13 +718,14 @@ describe("tools command", () => {
       "Usage: bun scripts/cli.ts interruptions [options]",
       "",
       "Options:",
-      "  --project=<value> (repeatable)  Filter by substring of the encoded project dir or cwd (repeatable)",
+      "  --project=<value> (repeatable)  Filter by exact canonical project root or case-sensitive glob (repeatable)",
       "  --session=<value> (repeatable)  Filter by session id (repeatable)",
       "  --since=<value>                 Only include records at or after this time (ISO 8601, or relative like 3h, 6d, 2w)",
       "  --until=<value>                 Only include records at or before this time (ISO 8601, or relative like 3h, 6d, 2w)",
       "  --model=<value>                 Filter by model name",
       "  --include-subagents             Include subagent transcript sessions (excluded by default)",
       "  --limit=<value>                 Maximum number of rows to return (default 100)",
+      "  --include-injected              Include injected skill and command-expansion user turns",
       "  --table                         Print a human-readable table instead of JSON",
       "  --no-redact                     Redact secrets in output (default: on; use --no-redact to disable)",
       "  --judge=<value>                 Annotate supported rows with a TypeSafe preset",
@@ -749,6 +766,7 @@ describe("tools command", () => {
         "latency_ms",
         "session_id",
         "project_dir",
+        "project_identity",
         "timestamp",
         "uuid",
       ],
@@ -762,6 +780,7 @@ describe("tools command", () => {
           "",
           FILTER_SESSION,
           PROJECT_DIR,
+          PROJECT_IDENTITY,
           "2026-01-02T00:00:00.000Z",
           "filter-assistant",
         ],
@@ -790,6 +809,7 @@ describe("tools command", () => {
       latency_ms: null,
       session_id: FILTER_SESSION,
       project_dir: PROJECT_DIR,
+      project_identity: PROJECT_IDENTITY,
       timestamp: "2026-01-02T00:00:02.900Z",
       uuid: "filter-assistant",
     });
@@ -802,6 +822,7 @@ describe("tools command", () => {
       latency_ms: null,
       session_id: FILTER_SESSION,
       project_dir: PROJECT_DIR,
+      project_identity: PROJECT_IDENTITY,
       timestamp: "2026-01-02T00:00:02.900Z",
       uuid: "filter-assistant",
     });
@@ -1190,6 +1211,7 @@ describe("errors command", () => {
           latency_ms: 250,
           session_id: FILTER_SESSION,
           project_dir: PROJECT_DIR,
+          project_identity: PROJECT_IDENTITY,
           timestamp: "2026-01-02T00:00:02.250Z",
           uuid: "filter-assistant",
           assistant_text_after: "I fixed the task after the error.",
@@ -1254,12 +1276,18 @@ describe("interruptions command", () => {
   it("preserves every row and reports no_api_key at the command boundary", async () => {
     const baseline = await runCli([
       "interruptions",
-      "--project=wyattjoh-skills",
+      `--project=${PROJECT_IDENTITY}`,
       "--no-sync",
       "--limit=5",
     ]);
     const result = await runCli(
-      ["interruptions", "--project=wyattjoh-skills", "--no-sync", "--judge=steering", "--limit=5"],
+      [
+        "interruptions",
+        `--project=${PROJECT_IDENTITY}`,
+        "--no-sync",
+        "--judge=steering",
+        "--limit=5",
+      ],
       dbPath,
       { TYPESAFE_API_KEY: undefined },
     );
@@ -1276,7 +1304,7 @@ describe("interruptions command", () => {
 
     expect(baseline.code).toBe(0);
     expect(result.code).toBe(0);
-    expect(result.stderr).toBe("judge: estimated input tokens: 325\njudge: skipped (no_api_key)\n");
+    expect(result.stderr).toBe("judge: estimated input tokens: 484\njudge: skipped (no_api_key)\n");
     expect(document.command).toBe("interruptions");
     expect(baselineDocument.count).toBe(5);
     expect(document.count).toBe(5);
@@ -1313,29 +1341,35 @@ describe("interruptions command", () => {
       rows: [
         {
           kind: "interrupt",
+          is_injected: false,
           assistant_text_before: "I was about to make a change.",
           user_text_after: "[Request interrupted by user]",
           session_id: INTERRUPTION_SESSION,
           project_dir: PROJECT_DIR,
+          project_identity: PROJECT_IDENTITY,
           timestamp: "2026-01-03T00:00:01.000Z",
           uuid: "interrupt-user",
         },
         {
           kind: "rejected_tool",
+          is_injected: false,
           assistant_text_before: "I proposed another tool call.",
           user_text_after:
             "The user doesn't want to proceed with this tool use. The tool use was rejected.",
           session_id: INTERRUPTION_SESSION,
           project_dir: PROJECT_DIR,
+          project_identity: PROJECT_IDENTITY,
           timestamp: "2026-01-03T00:00:03.000Z",
           uuid: "rejected-user",
         },
         {
           kind: "mid_run_user_turn",
+          is_injected: false,
           assistant_text_before: "I need to inspect the repository first.",
           user_text_after: "Actually inspect the other file instead.",
           session_id: INTERRUPTION_SESSION,
           project_dir: PROJECT_DIR,
+          project_identity: PROJECT_IDENTITY,
           timestamp: "2026-01-03T00:00:05.000Z",
           uuid: "mid-run-user",
         },
@@ -1359,6 +1393,33 @@ describe("interruptions command", () => {
     expect(injected.code).toBe(0);
     expect(injected.stderr).toBe("");
     expect(JSON.parse(injected.stdout)).toEqual({ command: "interruptions", count: 0, rows: [] });
+
+    const included = await runCli([
+      "interruptions",
+      "--no-sync",
+      `--session=${INTERRUPTION_SESSION}`,
+      "--since=2026-01-03T00:00:06.000Z",
+      "--include-injected",
+    ]);
+    expect(included.code).toBe(0);
+    expect(included.stderr).toBe("");
+    expect(JSON.parse(included.stdout)).toEqual({
+      command: "interruptions",
+      count: 1,
+      rows: [
+        {
+          kind: "mid_run_user_turn",
+          is_injected: true,
+          assistant_text_before: "I am about to run an injected skill.",
+          user_text_after: '<skill name="example">Injected text</skill>',
+          session_id: INTERRUPTION_SESSION,
+          project_dir: PROJECT_DIR,
+          project_identity: PROJECT_IDENTITY,
+          timestamp: "2026-01-03T00:00:06.000Z",
+          uuid: "injected-user",
+        },
+      ],
+    });
     expect(joinedResults.code).toBe(0);
     expect(joinedResults.stderr).toBe("");
     expect(JSON.parse(joinedResults.stdout)).toEqual({
@@ -1379,10 +1440,12 @@ describe("interruptions command", () => {
       rows: [
         {
           kind: "mid_run_user_turn",
+          is_injected: false,
           assistant_text_before: "I need to wait for this tool result.",
           user_text_after: "I changed direction before the tool result.",
           session_id: LATE_RESULT_SESSION,
           project_dir: PROJECT_DIR,
+          project_identity: PROJECT_IDENTITY,
           timestamp: "2026-01-05T00:00:01.000Z",
           uuid: "late-result-user",
         },

@@ -1,3 +1,4 @@
+import { resolveProjectIdentity } from "../lib/project-identity.ts";
 import { afterAll, beforeAll, describe, expect, it } from "bun:test";
 import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
@@ -7,6 +8,7 @@ import { openDb } from "../lib/db.ts";
 import { sync } from "../lib/ingest.ts";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
+const PROJECT_IDENTITY = resolveProjectIdentity(".")!;
 const CLI = join(HERE, "..", "cli.ts");
 const FIXTURES_ROOT = join(HERE, "..", "testdata", "corpus");
 
@@ -185,6 +187,7 @@ describe("search command", () => {
         {
           session_id: "session-string-content",
           project_dir: "-Users-testuser-Code-sample-project",
+          project_identity: PROJECT_IDENTITY,
           timestamp: "2026-07-02T22:12:36.611Z",
           uuid: "uuid-0002",
           role: "user",
@@ -275,6 +278,7 @@ describe("search command", () => {
       {
         session_id: "session-block-content",
         project_dir: "-Users-testuser-Code-sample-project",
+        project_identity: PROJECT_IDENTITY,
         timestamp: "2026-05-29T12:10:37.245Z",
         uuid: "uuid-0002",
         role: "tool",

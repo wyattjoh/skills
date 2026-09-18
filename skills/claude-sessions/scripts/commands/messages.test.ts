@@ -1,3 +1,4 @@
+import { resolveProjectIdentity } from "../lib/project-identity.ts";
 import { afterAll, beforeAll, describe, expect, it } from "bun:test";
 import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
@@ -7,6 +8,7 @@ import { openDb } from "../lib/db.ts";
 import { sync } from "../lib/ingest.ts";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
+const PROJECT_IDENTITY = resolveProjectIdentity(".")!;
 const CLI = join(HERE, "..", "cli.ts");
 const FIXTURES_ROOT = join(HERE, "..", "testdata", "corpus");
 
@@ -114,6 +116,7 @@ describe("messages command", () => {
         {
           session_id: "session-string-content",
           project_dir: "-Users-testuser-Code-sample-project",
+          project_identity: PROJECT_IDENTITY,
           timestamp: "2026-07-02T22:12:36.611Z",
           uuid: "uuid-0002",
           parent_uuid: "uuid-0001",
@@ -156,7 +159,7 @@ describe("messages command", () => {
       uuid: "thinking-0001",
       timestamp: "2026-09-01T00:00:00.000Z",
       sessionId: "session-thinking",
-      cwd: "/Users/testuser/Code/sample-project",
+      cwd: ".",
       message: {
         role: "assistant",
         content: [
@@ -298,10 +301,7 @@ describe("messages command", () => {
   });
 
   it("selects sessions from a project and applies the row limit", async () => {
-    const document = await runMessages([
-      "--project=-Users-testuser-Code-sample-project",
-      "--limit=1",
-    ]);
+    const document = await runMessages([`--project=${PROJECT_IDENTITY}`, "--limit=1"]);
 
     expect(document.count).toBe(1);
     expect(document.rows[0]?.session_id).toBe("sample-parent-session");

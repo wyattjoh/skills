@@ -77,11 +77,14 @@ function createSchema(db: Database): void {
 
         CREATE TABLE projects (
           dir TEXT PRIMARY KEY,
+          project_identity TEXT,
           decoded_path TEXT,
           cwd TEXT,
           last_activity TEXT,
           session_count INTEGER NOT NULL DEFAULT 0
         );
+
+        CREATE INDEX idx_projects_identity ON projects(project_identity);
 
         -- id is "<project_dir>:<session_id>" (see ingest.ts sessionKey()),
         -- not the raw JSONL session id: that id is only unique within one
@@ -92,6 +95,7 @@ function createSchema(db: Database): void {
           id TEXT PRIMARY KEY,
           session_id TEXT NOT NULL,
           project_dir TEXT,
+          project_identity TEXT,
           cwd TEXT,
           git_branch TEXT,
           parent_session_id TEXT,
@@ -112,6 +116,7 @@ function createSchema(db: Database): void {
         );
 
         CREATE INDEX idx_sessions_project_dir ON sessions(project_dir);
+        CREATE INDEX idx_sessions_project_identity ON sessions(project_identity);
         CREATE INDEX idx_sessions_parent_session_id ON sessions(parent_session_id);
         CREATE INDEX idx_sessions_session_id ON sessions(session_id);
 
@@ -279,6 +284,30 @@ const MIGRATIONS: Migration[] = [
           created_at TEXT NOT NULL,
           PRIMARY KEY (model, preset, question_hash, state_hash)
         )
+      `);
+    },
+  },
+  {
+    // Project filters now use a canonical real primary-repository root.
+    // Existing rows remain readable without a project filter; a fresh sync
+    // populates identities for resolvable repositories.
+    version: 5,
+    up: (db) => {
+      const projectColumns = db.query("PRAGMA table_info(projects)").all() as Array<{
+        name: string;
+      }>;
+      const sessionColumns = db.query("PRAGMA table_info(sessions)").all() as Array<{
+        name: string;
+      }>;
+      if (!projectColumns.some((column) => column.name === "project_identity")) {
+        db.exec("ALTER TABLE projects ADD COLUMN project_identity TEXT");
+      }
+      if (!sessionColumns.some((column) => column.name === "project_identity")) {
+        db.exec("ALTER TABLE sessions ADD COLUMN project_identity TEXT");
+      }
+      db.exec(`
+        CREATE INDEX IF NOT EXISTS idx_projects_identity ON projects(project_identity);
+        CREATE INDEX IF NOT EXISTS idx_sessions_project_identity ON sessions(project_identity);
       `);
     },
   },
