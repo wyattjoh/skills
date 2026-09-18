@@ -158,6 +158,7 @@ async function makeRegexDatabase(
   count: number,
   input: Record<string, unknown> = { value: "boundary" },
   resultText = "boundary",
+  name = "Regex",
 ): Promise<{ dir: string; path: string }> {
   const dir = await mkdtemp(join(process.env.TMPDIR ?? "/tmp", "claude-sessions-regex-command-"));
   const path = join(dir, "index.db");
@@ -180,7 +181,7 @@ async function makeRegexDatabase(
         sessionId: sessionKey,
         messageUuid: "regex-assistant",
         timestamp: "2026-01-06T00:00:00.000Z",
-        name: "Regex",
+        name,
         input,
         resultText,
         isError: 1,
@@ -863,11 +864,23 @@ describe("tools command", () => {
 
     try {
       const allowedTools = await runCli(
-        ["tools", "--no-sync", "--session=regex-boundary-session", "--input=boundary", "--limit=1"],
+        [
+          "tools",
+          "--no-sync",
+          "--session=regex-boundary-session",
+          "--input=b(?:oundary)",
+          "--limit=1",
+        ],
         allowed.path,
       );
       const rejectedTools = await runCli(
-        ["tools", "--no-sync", "--session=regex-boundary-session", "--input=boundary", "--limit=1"],
+        [
+          "tools",
+          "--no-sync",
+          "--session=regex-boundary-session",
+          "--input=b(?:oundary)",
+          "--limit=1",
+        ],
         rejected.path,
       );
       const allowedErrors = await runCli(
@@ -911,6 +924,201 @@ describe("tools command", () => {
       await Promise.all([
         rm(allowed.dir, { recursive: true, force: true }),
         rm(rejected.dir, { recursive: true, force: true }),
+      ]);
+    }
+  });
+
+  it("prefilters literal tool input patterns and allows large safe matches", async () => {
+    const database = await makeRegexDatabase(1_001, { value: "ordinary" }, "ordinary", "Bash");
+    const manyMatches = await makeRegexDatabase(1_001, { value: "forgejo" }, "forgejo", "Bash");
+    const mixedCase = await makeRegexDatabase(1, { value: "FORGEJO" }, "FORGEJO", "Bash");
+    const percent = await makeRegexDatabase(
+      1_001,
+      { value: "100% complete" },
+      "100% complete",
+      "Bash",
+    );
+    const underscore = await makeRegexDatabase(
+      1_001,
+      { value: "snake_case" },
+      "snake_case",
+      "Bash",
+    );
+    const sessionKey = `${PROJECT_DIR}:regex-boundary-session`;
+    const addCaseVariant = (databasePath: string, id: string, value: string): void => {
+      const db = openDb(databasePath);
+      try {
+        insertTool(db, {
+          id,
+          sessionId: sessionKey,
+          messageUuid: "regex-assistant",
+          timestamp: "2026-01-06T00:00:01.000Z",
+          name: "Bash",
+          input: { value },
+          resultText: value,
+        });
+      } finally {
+        db.close();
+      }
+    };
+    addCaseVariant(percent.path, "percent-case", "100% COMPLETE");
+    addCaseVariant(underscore.path, "underscore-case", "snake_CASE");
+    const db = openDb(database.path);
+    try {
+      insertTool(db, {
+        id: "forgejo-tool",
+        sessionId: sessionKey,
+        messageUuid: "regex-assistant",
+        timestamp: "2026-01-06T00:00:01.000Z",
+        name: "Bash",
+        input: { command: "forgejo repo list" },
+        resultText: "forgejo output",
+      });
+    } finally {
+      db.close();
+    }
+    const mixedDb = openDb(mixedCase.path);
+    try {
+      insertTool(mixedDb, {
+        id: "forgejo-tool",
+        sessionId: sessionKey,
+        messageUuid: "regex-assistant",
+        timestamp: "2026-01-06T00:00:01.000Z",
+        name: "Bash",
+        input: { command: "forgejo repo list" },
+        resultText: "forgejo output",
+      });
+    } finally {
+      mixedDb.close();
+    }
+
+    try {
+      const result = await runCli(
+        [
+          "tools",
+          "--no-sync",
+          "--session=regex-boundary-session",
+          "--name=Bash",
+          "--input=forgejo",
+          "--limit=1",
+        ],
+        database.path,
+      );
+      const document = JSON.parse(result.stdout) as {
+        count: number;
+        rows: Array<{ id: string; input: { command: string }; name: string }>;
+      };
+      const allMatches = await runCli(
+        [
+          "tools",
+          "--no-sync",
+          "--session=regex-boundary-session",
+          "--name=Bash",
+          "--input=forgejo",
+          "--limit=1001",
+        ],
+        manyMatches.path,
+      );
+      const allMatchesDocument = JSON.parse(allMatches.stdout) as { count: number };
+      const mixedCaseResult = await runCli(
+        [
+          "tools",
+          "--no-sync",
+          "--session=regex-boundary-session",
+          "--name=Bash",
+          "--input=forgejo",
+          "--limit=1",
+        ],
+        mixedCase.path,
+      );
+      const mixedCaseDocument = JSON.parse(mixedCaseResult.stdout) as {
+        count: number;
+        rows: Array<{ id: string }>;
+      };
+      const percentLower = await runCli(
+        [
+          "tools",
+          "--no-sync",
+          "--session=regex-boundary-session",
+          "--name=Bash",
+          "--input=100% complete",
+          "--limit=1001",
+        ],
+        percent.path,
+      );
+      const percentUpper = await runCli(
+        [
+          "tools",
+          "--no-sync",
+          "--session=regex-boundary-session",
+          "--name=Bash",
+          "--input=100% COMPLETE",
+          "--limit=2",
+        ],
+        percent.path,
+      );
+      const underscoreLower = await runCli(
+        [
+          "tools",
+          "--no-sync",
+          "--session=regex-boundary-session",
+          "--name=Bash",
+          "--input=snake_case",
+          "--limit=1001",
+        ],
+        underscore.path,
+      );
+      const underscoreUpper = await runCli(
+        [
+          "tools",
+          "--no-sync",
+          "--session=regex-boundary-session",
+          "--name=Bash",
+          "--input=snake_CASE",
+          "--limit=2",
+        ],
+        underscore.path,
+      );
+
+      expect(result.code).toBe(0);
+      expect(result.stderr).toBe("");
+      expect(document.count).toBe(1);
+      expect(document.rows.map(({ id, input, name }) => ({ id, input, name }))).toEqual([
+        {
+          id: "forgejo-tool",
+          input: { command: "forgejo repo list" },
+          name: "Bash",
+        },
+      ]);
+      expect(allMatches.code).toBe(0);
+      expect(allMatches.stderr).toBe("");
+      expect(allMatchesDocument.count).toBe(1_001);
+      expect(mixedCaseResult.code).toBe(0);
+      expect(mixedCaseResult.stderr).toBe("");
+      expect(mixedCaseDocument.count).toBe(1);
+      expect(mixedCaseDocument.rows.map(({ id }) => ({ id }))).toEqual([{ id: "forgejo-tool" }]);
+      for (const percentOrUnderscoreResult of [
+        percentLower,
+        percentUpper,
+        underscoreLower,
+        underscoreUpper,
+      ]) {
+        expect(percentOrUnderscoreResult.code).toBe(0);
+        expect(percentOrUnderscoreResult.stderr).toBe("");
+      }
+      expect(
+        [percentLower, percentUpper, underscoreLower, underscoreUpper].map(
+          (percentOrUnderscoreResult) =>
+            (JSON.parse(percentOrUnderscoreResult.stdout) as { count: number }).count,
+        ),
+      ).toEqual([1_001, 1, 1_001, 1]);
+    } finally {
+      await Promise.all([
+        rm(database.dir, { recursive: true, force: true }),
+        rm(manyMatches.dir, { recursive: true, force: true }),
+        rm(mixedCase.dir, { recursive: true, force: true }),
+        rm(percent.dir, { recursive: true, force: true }),
+        rm(underscore.dir, { recursive: true, force: true }),
       ]);
     }
   });

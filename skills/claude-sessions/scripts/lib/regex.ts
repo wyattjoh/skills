@@ -138,7 +138,27 @@ function hasUnsafeRegexStructure(source: string): string | undefined {
   return undefined;
 }
 
-/** Parse a user-supplied regex under the shared bounded safety policy. */
+/**
+ * Return an ASCII pattern that is safe to use as a literal SQL prefilter.
+ *
+ * @param raw The raw regular-expression pattern.
+ * @returns The literal needle, or undefined when regex syntax could change its matches.
+ */
+export function regexLiteralNeedle(raw: string | undefined): string | undefined {
+  if (raw === undefined || raw.length === 0 || !/^[\x20-\x7e]+$/.test(raw)) return undefined;
+  const disallowed = new Set("\\^$.*+?()[]{}|");
+  if ([...raw].some((character) => disallowed.has(character))) return undefined;
+  return raw;
+}
+
+/**
+ * Parse a user-supplied regex under the shared bounded safety policy.
+ *
+ * @param raw The raw regular-expression pattern.
+ * @param optionName The command-line option name used in diagnostics.
+ * @param flags Regular-expression flags to apply.
+ * @returns The parsed regular expression, or undefined when no pattern was supplied.
+ */
 export function parseSafeRegex(
   raw: string | undefined,
   optionName = "--regex",

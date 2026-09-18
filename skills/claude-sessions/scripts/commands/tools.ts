@@ -19,6 +19,7 @@ import {
   assertRegexCandidateCount,
   parseSafeRegex,
   regexCandidateLimit,
+  regexLiteralNeedle,
   testSafeRegex,
 } from "../lib/regex.ts";
 import type { SQLQueryBindings } from "bun:sqlite";
@@ -96,7 +97,9 @@ function queryRows(db: ReturnType<typeof openDb>, argv: string[]): ToolOutputRow
   const parsed = parseArgv(argv, booleanFlags);
   const filters = parseFilters(parsed.flags);
   const names = flagStrings(parsed.flags, "name");
-  const inputRegex = parseSafeRegex(flagString(parsed.flags, "input"), "--input");
+  const inputPattern = flagString(parsed.flags, "input");
+  const inputRegex = parseSafeRegex(inputPattern, "--input");
+  const literalNeedle = regexLiteralNeedle(inputPattern);
   const resultChars = parseResultChars(flagString(parsed.flags, "result-chars"));
   const clauses = buildWhereFragments(filters, {
     project: ["s.project_dir", "s.cwd"],
@@ -124,8 +127,17 @@ function queryRows(db: ReturnType<typeof openDb>, argv: string[]): ToolOutputRow
     clauses.clauses.push("tc.skill_name = ?");
     params.push(skill);
   }
+  if (literalNeedle !== undefined) {
+    // A plain ASCII regex is a case-sensitive substring. Let SQLite narrow
+    // the candidate set before the bounded JavaScript regex pass.
+    clauses.clauses.push("instr(tc.input, ?) > 0");
+    params.push(literalNeedle);
+  }
 
-  const candidateLimit = regexCandidateLimit(inputRegex) ?? filters.limit;
+  const candidateLimit =
+    inputRegex === undefined || literalNeedle !== undefined
+      ? filters.limit
+      : (regexCandidateLimit(inputRegex) ?? filters.limit);
   const query = db.query(
     `SELECT
        tc.id,
@@ -151,7 +163,9 @@ function queryRows(db: ReturnType<typeof openDb>, argv: string[]): ToolOutputRow
       candidateLimit,
     ) as IterableIterator<ToolQueryRow>),
   ];
-  if (inputRegex !== undefined) assertRegexCandidateCount(candidates.length, "--input");
+  if (inputRegex !== undefined && literalNeedle === undefined) {
+    assertRegexCandidateCount(candidates.length, "--input");
+  }
 
   const matchingRows: ToolQueryRow[] = [];
   for (const row of candidates) {
