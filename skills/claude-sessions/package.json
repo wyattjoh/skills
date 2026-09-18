@@ -4,6 +4,7 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "test": "bun test"
+    "test": "bun test",
+    "fixtures": "bun scripts/fixtures/generate.ts"
   }
 }

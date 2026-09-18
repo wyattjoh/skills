@@ -1,0 +1,17 @@
+{
+  "generatedAt": "2026-09-18T07:54:18.812Z",
+  "projectDir": "-Users-testuser-Code-sample-project",
+  "fixtures": {
+    "stringContent": "session-string-content.jsonl: a user record whose message.content is a plain string rather than a block array.",
+    "blockContent": "session-block-content.jsonl: an assistant record with a block-array content mixing text with other block kinds.",
+    "toolError": "session-tool-error.jsonl: a tool_use paired with a tool_result whose is_error is true.",
+    "queueOperation": "session-queue-operation.jsonl: a queue-operation record.",
+    "summary": "session-summary.jsonl: a summary record.",
+    "aiTitle": "session-ai-title.jsonl: an ai-title record.",
+    "attachment": "session-attachment.jsonl: an attachment record with rendered system-reminder content.",
+    "injected": "session-injected.jsonl: a record carrying an injected tag (<system-reminder>, <command-name>, ...).",
+    "interrupt": "session-interrupt.jsonl: a record carrying an interrupt or rejected-tool marker.",
+    "malformed": "session-malformed.jsonl: a well-formed line, a line truncated mid-record to simulate a crash, and a well-formed line.",
+    "subagent": "sample-parent-session.jsonl plus sample-parent-session/subagents/agent-sample0agent00id01.jsonl: a parent session with a nested subagent transcript."
+  }
+}
