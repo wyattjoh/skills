@@ -131,12 +131,19 @@ describe("cli", () => {
     );
   });
 
-  it("reports a command failure with a clean error and exit code 1", async () => {
+  it("runs the projects command with a clean JSON response", async () => {
     const result = await runCli(["projects", "--no-sync"]);
+    const document = JSON.parse(result.stdout) as {
+      command: string;
+      count: number;
+      rows: unknown[];
+    };
 
-    expect(result.code).toBe(1);
-    expect(result.stdout).toBe("");
-    expect(result.stderr).toBe("Error: not implemented\n");
+    expect(result.code).toBe(0);
+    expect(result.stderr).toBe("");
+    expect(document.command).toBe("projects");
+    expect(document.count).toBe(1);
+    expect(document.rows).toHaveLength(1);
   });
 
   it("renders read-command rows in the JSON envelope", () => {
