@@ -10,8 +10,14 @@
 import { readdir, stat } from "node:fs/promises";
 import { homedir } from "node:os";
 import { join } from "node:path";
-import { flagBoolean, flagString, parseArgv } from "../lib/args.ts";
-import { buildDocument, OUTPUT_OPTIONS, renderOutput } from "../lib/output.ts";
+import { booleanFlagNames, flagString, parseArgv } from "../lib/args.ts";
+import {
+  buildDocument,
+  OUTPUT_OPTIONS,
+  renderOptionsFromFlags,
+  renderOutput,
+  type RenderOptions,
+} from "../lib/output.ts";
 import type { Command, CommandOption } from "./index.ts";
 export type { Command, CommandOption } from "./index.ts";
 
@@ -19,9 +25,9 @@ export type { Command, CommandOption } from "./index.ts";
 export interface PlanMatch {
   filename: string;
   filepath: string;
-  created: string;
+  timestamp: string;
   snippet: string;
-  matchCount: number;
+  match_count: number;
 }
 
 /** Options for searching a plans directory. */
@@ -30,6 +36,10 @@ export interface PlanSearchOptions {
   root: string;
   limit: number;
   context: number;
+}
+
+export interface PlanSearchDependencies {
+  getFileCreatedTime?: (filepath: string) => Promise<string | null>;
 }
 
 const options: CommandOption[] = [
@@ -99,14 +109,14 @@ export function extractSnippet(
  * Return the file creation timestamp, falling back to the modification time.
  *
  * @param filepath Plan file path.
- * @returns An ISO timestamp, or an empty string when the file cannot be read.
+ * @returns An ISO timestamp, or null when the file cannot be read.
  */
-export async function getFileCreatedTime(filepath: string): Promise<string> {
+export async function getFileCreatedTime(filepath: string): Promise<string | null> {
   try {
     const file = await stat(filepath);
     return (file.birthtimeMs > 0 ? file.birthtime : file.mtime).toISOString();
   } catch {
-    return "";
+    return null;
   }
 }
 
@@ -116,7 +126,10 @@ export async function getFileCreatedTime(filepath: string): Promise<string> {
  * @param searchOptions Search pattern, root, result limit, and snippet context.
  * @returns Matching plan rows in relevance order.
  */
-export async function searchPlans(searchOptions: PlanSearchOptions): Promise<PlanMatch[]> {
+export async function searchPlans(
+  searchOptions: PlanSearchOptions,
+  dependencies: PlanSearchDependencies = {},
+): Promise<PlanMatch[]> {
   if (searchOptions.pattern.length === 0) throw new Error("plans requires --pattern=<text>");
 
   let entries: import("node:fs").Dirent[];
@@ -137,12 +150,14 @@ export async function searchPlans(searchOptions: PlanSearchOptions): Promise<Pla
       const content = await Bun.file(filepath).text();
       const extracted = extractSnippet(content, searchOptions.pattern, searchOptions.context);
       if (extracted.matchCount === 0) continue;
+      const timestamp = await (dependencies.getFileCreatedTime ?? getFileCreatedTime)(filepath);
+      if (timestamp === null) continue;
       matches.push({
         filename: entry.name,
         filepath,
-        created: await getFileCreatedTime(filepath),
+        timestamp,
         snippet: extracted.snippet,
-        matchCount: extracted.matchCount,
+        match_count: extracted.matchCount,
       });
     } catch {
       // A plan can disappear or become unreadable while the directory is being searched.
@@ -151,7 +166,7 @@ export async function searchPlans(searchOptions: PlanSearchOptions): Promise<Pla
 
   return matches
     .toSorted((left, right) => {
-      const countOrder = right.matchCount - left.matchCount;
+      const countOrder = right.match_count - left.match_count;
       return countOrder === 0 ? left.filename.localeCompare(right.filename) : countOrder;
     })
     .slice(0, searchOptions.limit);
@@ -173,13 +188,9 @@ function parseNonNegativeInteger(
 
 function parsePlansArgs(argv: string[]): {
   search: PlanSearchOptions;
-  table: boolean;
-  redact: boolean;
+  output: RenderOptions;
 } {
-  const booleanFlags = options
-    .filter((option) => option.type === "boolean")
-    .map((option) => option.name);
-  const { flags, positionals } = parseArgv(argv, booleanFlags);
+  const { flags, positionals } = parseArgv(argv, booleanFlagNames(options));
   if (positionals.length > 0) throw new Error("plans requires --pattern=<text>");
   const pattern = flagString(flags, "pattern");
   if (pattern === undefined || pattern.length === 0) {
@@ -196,17 +207,14 @@ function parsePlansArgs(argv: string[]): {
       limit: parseNonNegativeInteger(flags, "limit", 10),
       context: parseNonNegativeInteger(flags, "context", 150),
     },
-    table: flagBoolean(flags, "table"),
-    redact: flagBoolean(flags, "redact", true),
+    output: renderOptionsFromFlags(flags),
   };
 }
 
 async function run(argv: string[]): Promise<void> {
   const parsed = parsePlansArgs(argv);
   const rows = await searchPlans(parsed.search);
-  console.log(
-    renderOutput(buildDocument("plans", rows), { table: parsed.table, redact: parsed.redact }),
-  );
+  console.log(renderOutput(buildDocument("plans", rows), parsed.output));
 }
 
 export const command: Command = {

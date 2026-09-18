@@ -29,11 +29,11 @@ let tempDir: string;
 let dbPath: string;
 let homeDir: string;
 
-async function runCli(args: string[]): Promise<CliResult> {
+async function runCli(args: string[], databasePath = dbPath): Promise<CliResult> {
   const proc = Bun.spawn([process.execPath, CLI, ...args], {
     env: {
       ...process.env,
-      CLAUDE_SESSIONS_DB: dbPath,
+      CLAUDE_SESSIONS_DB: databasePath,
       HOME: homeDir,
     },
     stdout: "pipe",
@@ -139,6 +139,45 @@ function insertTool(
     values.subagentType ?? null,
     values.skillName ?? null,
   );
+}
+
+async function makeRegexDatabase(
+  count: number,
+  input: Record<string, unknown> = { value: "boundary" },
+  resultText = "boundary",
+): Promise<{ dir: string; path: string }> {
+  const dir = await mkdtemp(join(process.env.TMPDIR ?? "/tmp", "claude-sessions-regex-command-"));
+  const path = join(dir, "index.db");
+  const sessionId = "regex-boundary-session";
+  const sessionKey = `${PROJECT_DIR}:${sessionId}`;
+  const db = openDb(path);
+  try {
+    insertSession(db, sessionKey, sessionId);
+    insertMessage(
+      db,
+      sessionKey,
+      "regex-assistant",
+      "2026-01-06T00:00:00.000Z",
+      "assistant",
+      "Regex boundary test",
+    );
+    for (let index = 0; index < count; index += 1) {
+      insertTool(db, {
+        id: `regex-tool-${String(index).padStart(4, "0")}`,
+        sessionId: sessionKey,
+        messageUuid: "regex-assistant",
+        timestamp: "2026-01-06T00:00:00.000Z",
+        name: "Regex",
+        input,
+        resultText,
+        isError: 1,
+        resultTimestamp: "2026-01-06T00:00:00.000Z",
+      });
+    }
+  } finally {
+    db.close();
+  }
+  return { dir, path };
 }
 
 async function seed(): Promise<void> {
@@ -566,6 +605,9 @@ describe("tools command", () => {
       "  --table                         Print a human-readable table instead of JSON",
       "  --no-redact                     Redact secrets in output (default: on; use --no-redact to disable)",
       "",
+      "Global options:",
+      "  --no-sync   Skip the automatic index sync before running a read command",
+      "",
     ].join("\n");
     const errorsHelpText = [
       "errors: List is_error tool results with the preceding call and the next assistant text.",
@@ -585,6 +627,9 @@ describe("tools command", () => {
       "  --table                         Print a human-readable table instead of JSON",
       "  --no-redact                     Redact secrets in output (default: on; use --no-redact to disable)",
       "",
+      "Global options:",
+      "  --no-sync   Skip the automatic index sync before running a read command",
+      "",
     ].join("\n");
     const interruptionsHelpText = [
       "interruptions: List interrupt markers, rejected tool calls, and user turns that follow a tool_use mid-run.",
@@ -601,6 +646,9 @@ describe("tools command", () => {
       "  --limit=<value>                 Maximum number of rows to return (default 100)",
       "  --table                         Print a human-readable table instead of JSON",
       "  --no-redact                     Redact secrets in output (default: on; use --no-redact to disable)",
+      "",
+      "Global options:",
+      "  --no-sync   Skip the automatic index sync before running a read command",
       "",
     ].join("\n");
     expect(toolsHelp).toEqual({ code: 0, stdout: toolsHelpText, stderr: "" });
@@ -709,6 +757,133 @@ describe("tools command", () => {
     ).toEqual([{ id: "tool-0002", latency_ms: 559, session_id: "session-tool-error" }]);
   });
 
+  it("rejects catastrophic and composed regexes for tools and errors", async () => {
+    const cases = [
+      {
+        args: ["tools", "--no-sync", "--input=(a+)+$"],
+        stderr: "Error: Rejected --input: nested or repeated quantified groups are not allowed.\n",
+      },
+      {
+        args: ["errors", "--no-sync", "--pattern=(a+)+$"],
+        stderr:
+          "Error: Rejected --pattern: nested or repeated quantified groups are not allowed.\n",
+      },
+      {
+        args: ["tools", "--no-sync", "--input=a{0,999}a{0,999}b"],
+        stderr: "Error: Rejected --input: multiple variable-length quantifiers are not allowed.\n",
+      },
+      {
+        args: ["errors", "--no-sync", "--pattern=a{0,999}a{0,999}b"],
+        stderr:
+          "Error: Rejected --pattern: multiple variable-length quantifiers are not allowed.\n",
+      },
+    ];
+
+    for (const testCase of cases) {
+      const result = await runCli(testCase.args);
+      expect(result.code).toBe(1);
+      expect(result.stdout).toBe("");
+      expect(result.stderr).toBe(testCase.stderr);
+    }
+  });
+
+  it("bounds regex candidates for tools and errors", async () => {
+    const allowed = await makeRegexDatabase(1_000);
+    const rejected = await makeRegexDatabase(1_001);
+
+    try {
+      const allowedTools = await runCli(
+        ["tools", "--no-sync", "--session=regex-boundary-session", "--input=boundary", "--limit=1"],
+        allowed.path,
+      );
+      const rejectedTools = await runCli(
+        ["tools", "--no-sync", "--session=regex-boundary-session", "--input=boundary", "--limit=1"],
+        rejected.path,
+      );
+      const allowedErrors = await runCli(
+        [
+          "errors",
+          "--no-sync",
+          "--session=regex-boundary-session",
+          "--pattern=^boundary$",
+          "--limit=1",
+        ],
+        allowed.path,
+      );
+      const rejectedErrors = await runCli(
+        [
+          "errors",
+          "--no-sync",
+          "--session=regex-boundary-session",
+          "--pattern=^boundary$",
+          "--limit=1",
+        ],
+        rejected.path,
+      );
+
+      expect(allowedTools.code).toBe(0);
+      expect(allowedTools.stderr).toBe("");
+      expect((JSON.parse(allowedTools.stdout) as { count: number }).count).toBe(1);
+      expect(rejectedTools.code).toBe(1);
+      expect(rejectedTools.stdout).toBe("");
+      expect(rejectedTools.stderr).toBe(
+        "Error: Rejected --input: candidate set exceeds 1000 rows.\n",
+      );
+      expect(allowedErrors.code).toBe(0);
+      expect(allowedErrors.stderr).toBe("");
+      expect((JSON.parse(allowedErrors.stdout) as { count: number }).count).toBe(1);
+      expect(rejectedErrors.code).toBe(1);
+      expect(rejectedErrors.stdout).toBe("");
+      expect(rejectedErrors.stderr).toBe(
+        "Error: Rejected --pattern: candidate set exceeds 1000 rows.\n",
+      );
+    } finally {
+      await Promise.all([
+        rm(allowed.dir, { recursive: true, force: true }),
+        rm(rejected.dir, { recursive: true, force: true }),
+      ]);
+    }
+  });
+
+  it("evaluates tool and error regexes against only the first 32 KiB", async () => {
+    const text = `prefix ${"x".repeat(32 * 1024)}needle`;
+    const database = await makeRegexDatabase(1, { value: text }, text);
+
+    try {
+      const toolPrefix = await runCli(
+        ["tools", "--no-sync", "--session=regex-boundary-session", "--input=prefix"],
+        database.path,
+      );
+      const toolSuffix = await runCli(
+        ["tools", "--no-sync", "--session=regex-boundary-session", "--input=needle"],
+        database.path,
+      );
+      const errorPrefix = await runCli(
+        ["errors", "--no-sync", "--session=regex-boundary-session", "--pattern=^prefix"],
+        database.path,
+      );
+      const errorSuffix = await runCli(
+        ["errors", "--no-sync", "--session=regex-boundary-session", "--pattern=needle"],
+        database.path,
+      );
+
+      expect(toolPrefix.code).toBe(0);
+      expect(toolPrefix.stderr).toBe("");
+      expect((JSON.parse(toolPrefix.stdout) as { count: number }).count).toBe(1);
+      expect(toolSuffix.code).toBe(0);
+      expect(toolSuffix.stderr).toBe("");
+      expect((JSON.parse(toolSuffix.stdout) as { count: number }).count).toBe(0);
+      expect(errorPrefix.code).toBe(0);
+      expect(errorPrefix.stderr).toBe("");
+      expect((JSON.parse(errorPrefix.stdout) as { count: number }).count).toBe(1);
+      expect(errorSuffix.code).toBe(0);
+      expect(errorSuffix.stderr).toBe("");
+      expect((JSON.parse(errorSuffix.stdout) as { count: number }).count).toBe(0);
+    } finally {
+      await rm(database.dir, { recursive: true, force: true });
+    }
+  });
+
   it("returns an empty document when no tool matches", async () => {
     const result = await runCli(["tools", "--no-sync", "--name=missing-tool"]);
 
@@ -801,14 +976,16 @@ describe("interruptions command", () => {
   });
 
   it("does not count injected text or joined tool results as steering turns", async () => {
-    const [injected, joinedResults] = await Promise.all([
-      runCli([
-        "interruptions",
-        "--no-sync",
-        `--session=${INTERRUPTION_SESSION}`,
-        "--since=2026-01-03T00:00:06.000Z",
-      ]),
-      runCli(["interruptions", "--no-sync", `--session=${MULTI_RESULT_SESSION}`]),
+    const injected = await runCli([
+      "interruptions",
+      "--no-sync",
+      `--session=${INTERRUPTION_SESSION}`,
+      "--since=2026-01-03T00:00:06.000Z",
+    ]);
+    const joinedResults = await runCli([
+      "interruptions",
+      "--no-sync",
+      `--session=${MULTI_RESULT_SESSION}`,
     ]);
 
     expect(injected.code).toBe(0);

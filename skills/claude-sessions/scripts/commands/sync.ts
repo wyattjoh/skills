@@ -15,23 +15,16 @@
  *   --table                 Print a human-readable table instead of JSON
  */
 
-import { parseArgs } from "node:util";
+import { booleanFlagNames, flagBoolean, flagString, flagStrings, parseArgv } from "../lib/args.ts";
 import { openDb } from "../lib/db.ts";
 import { sync, type SyncSummary } from "../lib/ingest.ts";
-
-export interface CommandOption {
-  name: string;
-  type: "string" | "boolean";
-  multiple?: boolean;
-  description: string;
-}
-
-export interface Command {
-  name: string;
-  description: string;
-  options: CommandOption[];
-  run: (argv: string[]) => Promise<void>;
-}
+import {
+  buildDocument,
+  OUTPUT_OPTIONS,
+  renderOptionsFromFlags,
+  renderOutput,
+} from "../lib/output.ts";
+import type { Command, CommandOption } from "./index.ts";
 
 const options: CommandOption[] = [
   { name: "root", type: "string", description: "Corpus root (default: ~/.claude/projects)" },
@@ -47,80 +40,63 @@ const options: CommandOption[] = [
     description: "Run VACUUM on the index database after syncing",
   },
   { name: "quiet", type: "boolean", description: "Suppress progress lines on stderr" },
-  { name: "table", type: "boolean", description: "Print a human-readable table instead of JSON" },
+  ...OUTPUT_OPTIONS,
 ];
 
 function parseSyncArgs(argv: string[]): {
-  root?: string;
-  projects?: string[];
+  root: string | undefined;
+  projects: string[];
   vacuum: boolean;
   quiet: boolean;
-  table: boolean;
+  output: ReturnType<typeof renderOptionsFromFlags>;
 } {
-  const { values } = parseArgs({
-    args: argv,
-    options: {
-      root: { type: "string" },
-      projects: { type: "string", multiple: true },
-      vacuum: { type: "boolean", default: false },
-      quiet: { type: "boolean", default: false },
-      table: { type: "boolean", default: false },
-    },
-    allowPositionals: false,
-  });
+  const { flags, positionals } = parseArgv(argv, booleanFlagNames(options));
+  if (positionals.length > 0) throw new Error("sync does not accept positional arguments");
 
   return {
-    root: values.root,
-    projects: values.projects,
-    vacuum: values.vacuum ?? false,
-    quiet: values.quiet ?? false,
-    table: values.table ?? false,
+    root: flagString(flags, "root"),
+    projects: flagStrings(flags, "projects"),
+    vacuum: flagBoolean(flags, "vacuum"),
+    quiet: flagBoolean(flags, "quiet"),
+    output: renderOptionsFromFlags(flags),
   };
 }
 
-function printTable(summary: SyncSummary): void {
-  const rows: Array<[string, string]> = [
-    ["Scanned", String(summary.scanned)],
-    ["Added", String(summary.added)],
-    ["Updated", String(summary.updated)],
-    ["Unchanged", String(summary.unchanged)],
-    ["Removed", String(summary.removed)],
-    ["Malformed lines", String(summary.malformedLines)],
-    ["Elapsed", `${(summary.elapsedMs / 1000).toFixed(2)}s`],
-  ];
-  const width = Math.max(...rows.map(([label]) => label.length));
-  console.log("Sync summary");
-  for (const [label, value] of rows) {
-    console.log(`  ${label.padEnd(width)}  ${value}`);
-  }
+function toOutputRow(summary: SyncSummary): Record<string, number> {
+  return {
+    scanned: summary.scanned,
+    added: summary.added,
+    updated: summary.updated,
+    removed: summary.removed,
+    unchanged: summary.unchanged,
+    malformed_lines: summary.malformedLines,
+    elapsed_ms: summary.elapsedMs,
+  };
 }
 
 async function run(argv: string[]): Promise<void> {
   const opts = parseSyncArgs(argv);
   const db = openDb();
 
-  const summary = await sync({
-    root: opts.root,
-    db,
-    projects: opts.projects,
-    progressEvery: 100,
-    onProgress: opts.quiet
-      ? undefined
-      : (info) => {
-          console.error(`sync: ${info.filesProcessed}/${info.totalFiles} files`);
-        },
-  });
+  try {
+    const summary = await sync({
+      root: opts.root,
+      db,
+      projects: opts.projects,
+      progressEvery: 100,
+      onProgress: opts.quiet
+        ? undefined
+        : (info) => {
+            console.error(`sync: ${info.filesProcessed}/${info.totalFiles} files`);
+          },
+    });
 
-  if (opts.vacuum) {
-    db.exec("VACUUM");
-  }
+    if (opts.vacuum) db.exec("VACUUM");
 
-  db.close();
-
-  if (opts.table) {
-    printTable(summary);
-  } else {
-    console.log(JSON.stringify(summary));
+    const document = buildDocument("sync", [toOutputRow(summary)]);
+    console.log(renderOutput(document, opts.output));
+  } finally {
+    db.close();
   }
 }
 

@@ -5,6 +5,7 @@
  * the caller opts out.
  */
 
+import { flagBoolean, type FlagValue } from "./args.ts";
 import { redactValue } from "./redact.ts";
 
 export interface OutputDocument<T = unknown> {
@@ -19,6 +20,46 @@ export interface RenderOptions {
   table?: boolean;
   /** Redact secrets in the rendered output. Default true. */
   redact?: boolean;
+}
+
+/**
+ * Parse a JSON-encoded scalar, object, or array for a row field.
+ *
+ * @param value JSON text, or arbitrary text when the value is not JSON.
+ * @returns The decoded JSON value, or the original text when decoding fails.
+ */
+export function parseJsonValue(value: string): unknown {
+  try {
+    return JSON.parse(value) as unknown;
+  } catch {
+    return value;
+  }
+}
+
+/**
+ * Normalize a stored timestamp to an ISO 8601 UTC string when it is valid.
+ *
+ * @param value Stored timestamp, or null for a missing timestamp.
+ * @returns A normalized ISO string, or null for missing or invalid values.
+ */
+export function toIsoTimestamp(value: string | null): string | null {
+  if (value === null) return null;
+  const timestamp = Date.parse(value);
+  if (Number.isNaN(timestamp)) return null;
+  return new Date(timestamp).toISOString();
+}
+
+/**
+ * Read the shared table and redaction flags from parsed command arguments.
+ *
+ * @param flags Parsed command flags.
+ * @returns Rendering settings for renderOutput.
+ */
+export function renderOptionsFromFlags(flags: Record<string, FlagValue>): RenderOptions {
+  return {
+    table: flagBoolean(flags, "table"),
+    redact: flagBoolean(flags, "redact", true),
+  };
 }
 
 /** The shared output-format flags every command that renders rows accepts. */

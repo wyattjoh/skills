@@ -9,7 +9,7 @@
  *   bun $SKILL_DIR/scripts/cli.ts interruptions [options]
  */
 
-import { flagBoolean, parseArgv } from "../lib/args.ts";
+import { booleanFlagNames, parseArgv } from "../lib/args.ts";
 import type { SQLQueryBindings } from "bun:sqlite";
 import { openDb } from "../lib/db.ts";
 import {
@@ -18,7 +18,13 @@ import {
   SHARED_FILTER_OPTIONS,
   whereClause,
 } from "../lib/filters.ts";
-import { buildDocument, OUTPUT_OPTIONS, renderOutput } from "../lib/output.ts";
+import {
+  buildDocument,
+  OUTPUT_OPTIONS,
+  renderOptionsFromFlags,
+  renderOutput,
+  toIsoTimestamp,
+} from "../lib/output.ts";
 import type { Command, CommandOption } from "./index.ts";
 
 const options: CommandOption[] = [...SHARED_FILTER_OPTIONS, ...OUTPUT_OPTIONS];
@@ -114,9 +120,7 @@ function classifyMarker(text: string): "interrupt" | "rejected_tool" {
 }
 
 function queryRows(db: ReturnType<typeof openDb>, argv: string[]): InterruptionRow[] {
-  const booleanFlags = options
-    .filter((option) => option.type === "boolean")
-    .map((option) => option.name);
+  const booleanFlags = booleanFlagNames(options);
   const parsed = parseArgv(argv, booleanFlags);
   const filters = parseFilters(parsed.flags);
   const filterWhere = buildWhereFragments(filters, {
@@ -209,7 +213,7 @@ function queryRows(db: ReturnType<typeof openDb>, argv: string[]): InterruptionR
           user_text_after: message.text,
           session_id: message.session_id,
           project_dir: message.project_dir,
-          timestamp: message.timestamp,
+          timestamp: toIsoTimestamp(message.timestamp),
           uuid: message.uuid,
         });
       }
@@ -234,7 +238,7 @@ function queryRows(db: ReturnType<typeof openDb>, argv: string[]): InterruptionR
         user_text_after: message.text,
         session_id: message.session_id,
         project_dir: message.project_dir,
-        timestamp: message.timestamp,
+        timestamp: toIsoTimestamp(message.timestamp),
         uuid: message.uuid,
       });
     }
@@ -255,16 +259,10 @@ function queryRows(db: ReturnType<typeof openDb>, argv: string[]): InterruptionR
 async function run(argv: string[]): Promise<void> {
   const db = openDb();
   try {
-    const parsed = parseArgv(
-      argv,
-      options.filter((option) => option.type === "boolean").map((option) => option.name),
-    );
+    const parsed = parseArgv(argv, booleanFlagNames(options));
     const rows = queryRows(db, argv);
     console.log(
-      renderOutput(buildDocument("interruptions", rows), {
-        table: flagBoolean(parsed.flags, "table"),
-        redact: flagBoolean(parsed.flags, "redact", true),
-      }),
+      renderOutput(buildDocument("interruptions", rows), renderOptionsFromFlags(parsed.flags)),
     );
   } finally {
     db.close();

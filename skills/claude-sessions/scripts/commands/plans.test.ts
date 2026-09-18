@@ -1,6 +1,7 @@
 import { afterAll, beforeAll, describe, expect, it } from "bun:test";
 import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
+import { getFileCreatedTime, searchPlans } from "./plans.ts";
 
 const HERE = dirname(new URL(import.meta.url).pathname);
 const CLI = join(HERE, "..", "cli.ts");
@@ -70,9 +71,9 @@ describe("plans command", () => {
       rows: Array<{
         filename: string;
         filepath: string;
-        created: string;
+        timestamp: string;
         snippet: string;
-        matchCount: number;
+        match_count: number;
       }>;
     };
 
@@ -83,21 +84,21 @@ describe("plans command", () => {
     expect(document.command).toBe("plans");
     expect(document.count).toBe(1);
     expect(
-      document.rows.map(({ filename, filepath, snippet, matchCount }) => ({
+      document.rows.map(({ filename, filepath, snippet, match_count }) => ({
         filename,
         filepath,
         snippet,
-        matchCount,
+        match_count,
       })),
     ).toEqual([
       {
         filename: "implement-auth.md",
         filepath: join(plansRoot, "implement-auth.md"),
         snippet: "# Authentication Choose an ...",
-        matchCount: 3,
+        match_count: 3,
       },
     ]);
-    expect(row?.created).toMatch(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/);
+    expect(row?.timestamp).toMatch(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/);
   });
 
   it("sorts by match count and respects the result limit", async () => {
@@ -110,16 +111,42 @@ describe("plans command", () => {
     ]);
     const document = JSON.parse(result.stdout) as {
       count: number;
-      rows: Array<{ filename: string; matchCount: number }>;
+      rows: Array<{ filename: string; match_count: number }>;
     };
 
     expect(result.code).toBe(0);
     expect(result.stderr).toBe("");
     expect(document.count).toBe(1);
     expect(document.rows.length).toBe(1);
-    expect(document.rows.map(({ filename, matchCount }) => ({ filename, matchCount }))).toEqual([
-      { filename: "refactor-database.md", matchCount: 3 },
+    expect(document.rows.map(({ filename, match_count }) => ({ filename, match_count }))).toEqual([
+      { filename: "refactor-database.md", match_count: 3 },
     ]);
+  });
+
+  it("skips a plan that disappears before its timestamp can be read", async () => {
+    const racedFile = join(plansRoot, "raced-plan.md");
+    await writeFile(racedFile, "raced plan content\n");
+
+    try {
+      const rows = await searchPlans(
+        {
+          pattern: "raced",
+          root: plansRoot,
+          limit: 10,
+          context: 150,
+        },
+        {
+          getFileCreatedTime: async (filepath) => {
+            await rm(filepath, { force: true });
+            return getFileCreatedTime(filepath);
+          },
+        },
+      );
+
+      expect(rows).toEqual([]);
+    } finally {
+      await rm(racedFile, { force: true });
+    }
   });
 
   it("uses the shared table envelope", async () => {
@@ -138,7 +165,7 @@ describe("plans command", () => {
     expect(result.code).toBe(0);
     expect(result.stderr).toBe("");
     expect(lines.length).toBe(3);
-    expect(header).toEqual(["filename", "filepath", "created", "snippet", "matchCount"]);
+    expect(header).toEqual(["filename", "filepath", "timestamp", "snippet", "match_count"]);
     expect(cells?.slice(0, 2)).toEqual(["implement-auth.md", join(plansRoot, "implement-auth.md")]);
     expect(cells?.[3]).toBe(
       "# Authentication Choose an authentication provider. Authentication tests cover the login flow.",
@@ -151,14 +178,14 @@ describe("plans command", () => {
     const result = await runCli(["plans", "--no-sync", "--pattern=home-only"]);
     const document = JSON.parse(result.stdout) as {
       count: number;
-      rows: Array<{ filename: string; matchCount: number }>;
+      rows: Array<{ filename: string; match_count: number }>;
     };
 
     expect(result.code).toBe(0);
     expect(result.stderr).toBe("");
     expect(document.count).toBe(1);
-    expect(document.rows.map(({ filename, matchCount }) => ({ filename, matchCount }))).toEqual([
-      { filename: "home-plan.md", matchCount: 1 },
+    expect(document.rows.map(({ filename, match_count }) => ({ filename, match_count }))).toEqual([
+      { filename: "home-plan.md", match_count: 1 },
     ]);
   });
 

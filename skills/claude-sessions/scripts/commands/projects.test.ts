@@ -66,11 +66,22 @@ describe("projects command", () => {
   it("exposes the command shape and every real flag", () => {
     expect(command.name).toBe("projects");
     expect(typeof command.description).toBe("string");
-    expect(command.options.map((option) => option.name)).toEqual(["search", "table", "redact"]);
+    expect(command.options.map((option) => option.name)).toEqual([
+      "project",
+      "session",
+      "since",
+      "until",
+      "model",
+      "include-subagents",
+      "limit",
+      "search",
+      "table",
+      "redact",
+    ]);
     expect(typeof command.run).toBe("function");
   });
 
-  it("lists projects by last activity with the documented row fields", async () => {
+  it("lists projects by activity with canonical row fields", async () => {
     const result = await runCli(["projects", "--no-sync"]);
 
     expect(result.code).toBe(0);
@@ -82,7 +93,7 @@ describe("projects command", () => {
         {
           project_dir: "-Users-testuser-Code-sample-project",
           cwd: "/Users/testuser/Code/sample-project",
-          last_activity: "2026-09-08T02:37:39.965Z",
+          timestamp: "2026-09-08T02:37:39.965Z",
           session_count: 11,
         },
       ],
@@ -99,7 +110,7 @@ describe("projects command", () => {
       {
         project_dir: "-Users-testuser-Code-sample-project",
         cwd: "/Users/testuser/Code/sample-project",
-        last_activity: "2026-09-08T02:37:39.965Z",
+        timestamp: "2026-09-08T02:37:39.965Z",
         session_count: 11,
       },
     ]);
@@ -143,13 +154,38 @@ describe("projects command", () => {
       expect(JSON.parse(result.stdout).rows[0]).toEqual({
         project_dir: "-Users-testuser-Code-wyattjoh-skills",
         cwd: "/Users/testuser/Code/github.com/wyattjoh/skills/.claude/worktrees/demo",
-        last_activity: "2026-09-09T00:00:00.000Z",
+        timestamp: "2026-09-09T00:00:00.000Z",
         session_count: 2,
         worktree_parent: "/Users/testuser/Code/github.com/wyattjoh/skills",
       });
     } finally {
       await rm(database.dir, { recursive: true, force: true });
     }
+  });
+
+  it("filters and limits projects through shared flags", async () => {
+    const result = await runCli(["projects", "--no-sync", "--project=sample-project", "--limit=1"]);
+
+    expect(result.code).toBe(0);
+    expect(result.stderr).toBe("");
+    expect(
+      JSON.parse(result.stdout).rows.map((row: { project_dir: string }) => row.project_dir),
+    ).toEqual(["-Users-testuser-Code-sample-project"]);
+  });
+
+  it("includes subagent sessions in the aggregate when requested", async () => {
+    const result = await runCli(["projects", "--no-sync", "--include-subagents"]);
+    const document = JSON.parse(result.stdout) as {
+      count: number;
+      rows: Array<{ project_dir: string; session_count: number }>;
+    };
+
+    expect(result.code).toBe(0);
+    expect(result.stderr).toBe("");
+    expect(document.count).toBe(1);
+    expect(
+      document.rows.map(({ project_dir, session_count }) => ({ project_dir, session_count })),
+    ).toEqual([{ project_dir: "-Users-testuser-Code-sample-project", session_count: 12 }]);
   });
 
   it("renders table output and command help for the declared flags", async () => {
@@ -163,7 +199,7 @@ describe("projects command", () => {
     expect(tableLines[0]!.split(/\s{2,}/)).toEqual([
       "project_dir",
       "cwd",
-      "last_activity",
+      "timestamp",
       "session_count",
     ]);
     expect(tableLines[1]!.split(/\s{2,}/)).toEqual([
@@ -182,14 +218,24 @@ describe("projects command", () => {
     expect(help.stderr).toBe("");
     expect(help.stdout).toBe(
       [
-        "projects: List indexed project directories with cwd, last activity, and session count.",
+        "projects: List indexed project directories with cwd, activity, and session count.",
         "",
         "Usage: bun scripts/cli.ts projects [options]",
         "",
         "Options:",
-        "  --search=<value>  Filter by substring of the encoded project dir or cwd",
-        "  --table           Print a human-readable table instead of JSON",
-        "  --no-redact       Redact secrets in output (default: on; use --no-redact to disable)",
+        "  --project=<value> (repeatable)  Filter by substring of the encoded project dir or cwd (repeatable)",
+        "  --session=<value> (repeatable)  Filter by session id (repeatable)",
+        "  --since=<value>                 Only include records at or after this time (ISO 8601, or relative like 3h, 6d, 2w)",
+        "  --until=<value>                 Only include records at or before this time (ISO 8601, or relative like 3h, 6d, 2w)",
+        "  --model=<value>                 Filter by model name",
+        "  --include-subagents             Include subagent transcript sessions (excluded by default)",
+        "  --limit=<value>                 Maximum number of rows to return (default 100)",
+        "  --search=<value>                Filter by substring of the encoded project dir or cwd",
+        "  --table                         Print a human-readable table instead of JSON",
+        "  --no-redact                     Redact secrets in output (default: on; use --no-redact to disable)",
+        "",
+        "Global options:",
+        "  --no-sync   Skip the automatic index sync before running a read command",
       ].join("\n") + "\n",
     );
   });

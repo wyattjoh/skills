@@ -9,28 +9,26 @@
  *   bun $SKILL_DIR/scripts/cli.ts projects [options]
  */
 
-import { flagBoolean, flagString, parseArgv } from "../lib/args.ts";
+import { booleanFlagNames, flagString, parseArgv } from "../lib/args.ts";
+import type { SQLQueryBindings } from "bun:sqlite";
 import { openDb } from "../lib/db.ts";
-import { whereClause } from "../lib/filters.ts";
-import { buildDocument, renderOutput, OUTPUT_OPTIONS } from "../lib/output.ts";
-
-export interface CommandOption {
-  name: string;
-  type: "string" | "boolean";
-  multiple?: boolean;
-  description: string;
-  negated?: boolean;
-}
-
-export interface Command {
-  name: string;
-  description: string;
-  options: CommandOption[];
-  usage?: string;
-  run: (argv: string[]) => Promise<void>;
-}
+import {
+  buildWhereFragments,
+  parseFilters,
+  SHARED_FILTER_OPTIONS,
+  whereClause,
+} from "../lib/filters.ts";
+import {
+  buildDocument,
+  OUTPUT_OPTIONS,
+  renderOptionsFromFlags,
+  renderOutput,
+  toIsoTimestamp,
+} from "../lib/output.ts";
+import type { Command, CommandOption } from "./index.ts";
 
 const options: CommandOption[] = [
+  ...SHARED_FILTER_OPTIONS,
   {
     name: "search",
     type: "string",
@@ -40,16 +38,16 @@ const options: CommandOption[] = [
 ];
 
 interface ProjectRow {
-  dir: string;
+  project_dir: string;
   cwd: string | null;
-  last_activity: string | null;
+  timestamp: string | null;
   session_count: number;
 }
 
 interface ProjectOutputRow {
   project_dir: string;
   cwd: string | null;
-  last_activity: string | null;
+  timestamp: string | null;
   session_count: number;
   worktree_parent?: string;
 }
@@ -65,9 +63,9 @@ function worktreeParent(cwd: string | null): string | undefined {
 function toOutputRow(row: ProjectRow): ProjectOutputRow {
   const parent = worktreeParent(row.cwd);
   const output: ProjectOutputRow = {
-    project_dir: row.dir,
+    project_dir: row.project_dir,
     cwd: row.cwd,
-    last_activity: row.last_activity,
+    timestamp: toIsoTimestamp(row.timestamp),
     session_count: row.session_count,
   };
   if (parent !== undefined) output.worktree_parent = parent;
@@ -75,43 +73,78 @@ function toOutputRow(row: ProjectRow): ProjectOutputRow {
 }
 
 async function run(argv: string[]): Promise<void> {
-  const booleanFlags = options
-    .filter((option) => option.type === "boolean")
-    .map((option) => option.name);
-  const { flags } = parseArgv(argv, booleanFlags);
+  const { flags } = parseArgv(argv, booleanFlagNames(options));
+  const filters = parseFilters(flags);
   const search = flagString(flags, "search");
+  const projectActivity = filters.includeSubagents
+    ? "(SELECT MAX(COALESCE(activity_sessions.ended_at, activity_sessions.started_at)) FROM sessions AS activity_sessions WHERE activity_sessions.project_dir = projects.dir)"
+    : "projects.last_activity";
+  const projectSessionCount = filters.includeSubagents
+    ? "(SELECT COUNT(*) FROM sessions AS count_sessions WHERE count_sessions.project_dir = projects.dir)"
+    : "projects.session_count";
+  const filter = buildWhereFragments(filters, {
+    project: ["projects.dir", "projects.cwd"],
+    timestamp: projectActivity,
+  });
+  const clauses = [...filter.clauses];
+  const params = [...filter.params];
+  if (!filters.includeSubagents) clauses.push("projects.session_count > 0");
+
+  if (search !== undefined) {
+    clauses.push(
+      "(instr(lower(projects.dir), lower(?)) > 0 OR instr(lower(COALESCE(projects.cwd, '')), lower(?)) > 0)",
+    );
+    params.push(search, search);
+  }
+
+  if (filters.sessions.length > 0) {
+    clauses.push(
+      `EXISTS (
+         SELECT 1 FROM sessions AS filtered_sessions
+         WHERE filtered_sessions.project_dir = projects.dir
+           AND filtered_sessions.session_id IN (${filters.sessions.map(() => "?").join(", ")})
+           ${filters.includeSubagents ? "" : "AND filtered_sessions.parent_session_id IS NULL"}
+       )`,
+    );
+    params.push(...filters.sessions);
+  }
+
+  if (filters.model !== undefined) {
+    clauses.push(
+      `EXISTS (
+         SELECT 1 FROM sessions AS filtered_sessions
+         WHERE filtered_sessions.project_dir = projects.dir
+           AND EXISTS (
+             SELECT 1 FROM json_each(filtered_sessions.models) AS filtered_models
+             WHERE filtered_models.value = ?
+           )
+           ${filters.includeSubagents ? "" : "AND filtered_sessions.parent_session_id IS NULL"}
+       )`,
+    );
+    params.push(filters.model);
+  }
+
   const db = openDb();
-
   try {
-    const clauses: string[] = [];
-    const params: string[] = [];
-    if (search !== undefined) {
-      clauses.push(
-        "(instr(lower(dir), lower(?)) > 0 OR instr(lower(COALESCE(cwd, '')), lower(?)) > 0)",
-      );
-      params.push(search, search);
-    }
-
-    const where = whereClause({ clauses, params });
+    const queryParams = [...params, filters.limit] as SQLQueryBindings[];
     const rows = db
       .query(
-        `SELECT dir, cwd, last_activity, session_count
+        `SELECT
+           projects.dir AS project_dir,
+           projects.cwd AS cwd,
+           ${projectActivity} AS timestamp,
+           ${projectSessionCount} AS session_count
          FROM projects
-         ${where}
-         ORDER BY CASE WHEN last_activity IS NULL THEN 1 ELSE 0 END,
-                  last_activity DESC,
-                  dir ASC`,
+         ${whereClause({ clauses, params })}
+         ORDER BY CASE WHEN ${projectActivity} IS NULL THEN 1 ELSE 0 END,
+                  ${projectActivity} DESC,
+                  projects.dir ASC
+         LIMIT ?`,
       )
-      .all(...params) as ProjectRow[];
-    const outputRows = rows.map(toOutputRow);
-    const document = buildDocument("projects", outputRows);
+      .all(...queryParams) as ProjectRow[];
+    const document = buildDocument("projects", rows.map(toOutputRow));
 
-    console.log(
-      renderOutput(document, {
-        table: flagBoolean(flags, "table"),
-        redact: flagBoolean(flags, "redact", true),
-      }),
-    );
+    console.log(renderOutput(document, renderOptionsFromFlags(flags)));
   } finally {
     db.close();
   }
@@ -119,7 +152,7 @@ async function run(argv: string[]): Promise<void> {
 
 export const command: Command = {
   name: "projects",
-  description: "List indexed project directories with cwd, last activity, and session count.",
+  description: "List indexed project directories with cwd, activity, and session count.",
   options,
   run,
 };

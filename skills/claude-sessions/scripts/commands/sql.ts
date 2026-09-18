@@ -10,9 +10,15 @@
  */
 
 import { Database } from "bun:sqlite";
-import { flagBoolean, flagString, parseArgv } from "../lib/args.ts";
+import { booleanFlagNames, flagBoolean, flagString, parseArgv } from "../lib/args.ts";
 import { resolveDbPath } from "../lib/db.ts";
-import { buildDocument, OUTPUT_OPTIONS, renderOutput } from "../lib/output.ts";
+import {
+  buildDocument,
+  OUTPUT_OPTIONS,
+  renderOptionsFromFlags,
+  renderOutput,
+  type RenderOptions,
+} from "../lib/output.ts";
 import type { Command, CommandOption } from "./index.ts";
 export type { Command, CommandOption } from "./index.ts";
 
@@ -252,13 +258,9 @@ function parseSqlArgs(argv: string[]): {
   statement: string;
   schema: boolean;
   limit: number;
-  table: boolean;
-  redact: boolean;
+  output: RenderOptions;
 } {
-  const booleanFlags = options
-    .filter((option) => option.type === "boolean")
-    .map((option) => option.name);
-  const { flags, positionals } = parseArgv(argv, booleanFlags);
+  const { flags, positionals } = parseArgv(argv, booleanFlagNames(options));
   const schema = flagBoolean(flags, "schema");
   const statement = positionals.join(" ").trim();
   if (schema && statement.length > 0) {
@@ -272,8 +274,7 @@ function parseSqlArgs(argv: string[]): {
     statement,
     schema,
     limit: parseLimit(flags),
-    table: flagBoolean(flags, "table"),
-    redact: flagBoolean(flags, "redact", true),
+    output: renderOptionsFromFlags(flags),
   };
 }
 
@@ -288,9 +289,7 @@ async function run(argv: string[]): Promise<void> {
     const rows = parsed.schema
       ? schemaRows(db)
       : db.query(withDefaultLimit(parsed.statement, parsed.limit)).all();
-    console.log(
-      renderOutput(buildDocument("sql", rows), { table: parsed.table, redact: parsed.redact }),
-    );
+    console.log(renderOutput(buildDocument("sql", rows), parsed.output));
   } finally {
     db.close();
   }

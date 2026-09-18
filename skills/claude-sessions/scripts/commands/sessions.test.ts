@@ -120,6 +120,7 @@ describe("sessions command", () => {
     expect(document.rows[0]).toEqual({
       session_id: "session-attachment",
       project_dir: "-Users-testuser-Code-sample-project",
+      timestamp: "2026-09-08T02:37:39.965Z",
       cwd: "/Users/testuser/Code/sample-project",
       git_branch: "main",
       parent_session_id: null,
@@ -158,6 +159,7 @@ describe("sessions command", () => {
     expect(row).toEqual({
       session_id: "sample0agent00id01",
       project_dir: "-Users-testuser-Code-sample-project",
+      timestamp: "2026-02-18T11:10:48.555Z",
       cwd: "/Users/testuser/Code/sample-project",
       git_branch: "main",
       parent_session_id: "-Users-testuser-Code-sample-project:sample-parent-session",
@@ -286,6 +288,7 @@ describe("sessions command", () => {
     expect(tableLines[0]!.split(/\s{2,}/)).toEqual([
       "session_id",
       "project_dir",
+      "timestamp",
       "cwd",
       "git_branch",
       "parent_session_id",
@@ -307,6 +310,7 @@ describe("sessions command", () => {
     expect(tableLines[1]!.split(/\s{2,}/)).toEqual([
       "------------------",
       "-----------------------------------",
+      "------------------------",
       "-----------------------------------",
       "----------",
       "-----------------",
@@ -328,6 +332,7 @@ describe("sessions command", () => {
     expect(parseTableRow(tableLines[2]!, tableLines[1]!)).toEqual([
       "session-attachment",
       "-Users-testuser-Code-sample-project",
+      "2026-09-08T02:37:39.965Z",
       "/Users/testuser/Code/sample-project",
       "main",
       "",
@@ -366,6 +371,9 @@ describe("sessions command", () => {
         "  --first-prompt=<value>          Filter by substring of the session's first prompt",
         "  --table                         Print a human-readable table instead of JSON",
         "  --no-redact                     Redact secrets in output (default: on; use --no-redact to disable)",
+        "",
+        "Global options:",
+        "  --no-sync   Skip the automatic index sync before running a read command",
       ].join("\n") + "\n",
     );
   });

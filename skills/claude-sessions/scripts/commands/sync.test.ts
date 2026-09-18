@@ -14,7 +14,7 @@ describe("sync command", () => {
 
   it("declares the documented options", () => {
     const names = command.options.map((o) => o.name).toSorted();
-    expect(names).toEqual(["projects", "quiet", "root", "table", "vacuum"]);
+    expect(names).toEqual(["projects", "quiet", "redact", "root", "table", "vacuum"]);
   });
 
   it("prints a JSON summary to stdout for a small fixture corpus", async () => {
@@ -55,16 +55,17 @@ describe("sync command", () => {
     }
 
     expect(logged).toHaveLength(1);
-    const summary = JSON.parse(logged[0]!);
-    expect(summary).toEqual({
+    const document = JSON.parse(logged[0]!);
+    expect(document.command).toBe("sync");
+    expect(document.count).toBe(1);
+    expect(document.rows[0]).toMatchObject({
       scanned: 1,
       added: 1,
       updated: 0,
       removed: 0,
       unchanged: 0,
-      malformedLines: 0,
-      elapsedMs: summary.elapsedMs,
+      malformed_lines: 0,
     });
-    expect(typeof summary.elapsedMs).toBe("number");
+    expect(typeof document.rows[0].elapsed_ms).toBe("number");
   });
 });

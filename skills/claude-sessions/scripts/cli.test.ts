@@ -109,9 +109,32 @@ describe("cli", () => {
 
     expect(result.code).toBe(0);
     expect(result.stderr).toBe("");
-    expect(result.stdout).toContain("Usage: bun scripts/cli.ts sync [options]");
-    expect(result.stdout).toContain("--root=<value>");
-    expect(result.stdout).toContain("--projects=<value> (repeatable)");
+    expect(result.stdout).toBe(
+      [
+        "sync: Incrementally index the conversation corpus into the sqlite index database.",
+        "",
+        "Usage: bun scripts/cli.ts sync [options]",
+        "",
+        "Options:",
+        "  --root=<value>                   Corpus root (default: ~/.claude/projects)",
+        "  --projects=<value> (repeatable)  Only sync project dirs containing this substring (repeatable)",
+        "  --vacuum                         Run VACUUM on the index database after syncing",
+        "  --quiet                          Suppress progress lines on stderr",
+        "  --table                          Print a human-readable table instead of JSON",
+        "  --no-redact                      Redact secrets in output (default: on; use --no-redact to disable)",
+      ].join("\n") + "\n",
+    );
+  });
+
+  it("documents the search query or regex requirement in help", async () => {
+    const result = await runCli(["search", "--help"]);
+
+    expect(result.code).toBe(0);
+    expect(result.stderr).toBe("");
+    expect(result.stdout).toContain(
+      "Usage: bun scripts/cli.ts search <query> [options]  |  search --regex=<pattern> [options]",
+    );
+    expect(result.stdout).toContain("--regex=<value>");
   });
 
   it("preserves --no-sync after -- as a literal search query", () => {
@@ -162,15 +185,47 @@ describe("cli", () => {
       const result = await runCli(["sync", "--no-sync", "--root", FIXTURES_ROOT, "--quiet"], {
         CLAUDE_SESSIONS_DB: database.path,
       });
-      const summary = JSON.parse(result.stdout) as Record<string, number>;
+      const document = JSON.parse(result.stdout) as {
+        command: string;
+        rows: Array<Record<string, number>>;
+      };
 
       expect(result.code).toBe(0);
       expect(result.stderr).toBe("");
-      expect(summary.scanned).toBe(12);
-      expect(summary.added).toBe(12);
-      expect(summary.removed).toBe(0);
+      expect(document.command).toBe("sync");
+      expect(document.rows[0]?.scanned).toBe(12);
+      expect(document.rows[0]?.added).toBe(12);
+      expect(document.rows[0]?.removed).toBe(0);
     } finally {
       await rm(database.dir, { recursive: true, force: true });
+    }
+  });
+
+  it("runs automatic sync before read commands and honors --no-sync", async () => {
+    const database = await makeDatabase();
+    const home = await mkdtemp(
+      join(process.env.TMPDIR ?? "/tmp", "claude-sessions-cli-auto-read-"),
+    );
+    try {
+      await writeSession(join(home, ".claude", "projects"), "-Users-test-auto", "auto-session");
+      const synced = await runCli(["projects"], {
+        CLAUDE_SESSIONS_DB: database.path,
+        HOME: home,
+      });
+      const skipped = await runCli(["projects", "--no-sync"], {
+        CLAUDE_SESSIONS_DB: database.path,
+        HOME: home,
+      });
+
+      expect(synced.code).toBe(0);
+      expect(synced.stderr).toBe("sync: 1 added, 0 updated, 0 removed\n");
+      expect(JSON.parse(synced.stdout)).toMatchObject({ command: "projects", count: 1 });
+      expect(skipped.code).toBe(0);
+      expect(skipped.stderr).toBe("");
+      expect(JSON.parse(skipped.stdout)).toMatchObject({ command: "projects", count: 1 });
+    } finally {
+      await rm(database.dir, { recursive: true, force: true });
+      await rm(home, { recursive: true, force: true });
     }
   });
 
@@ -183,13 +238,17 @@ describe("cli", () => {
         CLAUDE_SESSIONS_DB: database.path,
         HOME: home,
       });
-      const summary = JSON.parse(result.stdout) as Record<string, number>;
+      const document = JSON.parse(result.stdout) as {
+        command: string;
+        rows: Array<Record<string, number>>;
+      };
 
       expect(result.code).toBe(0);
       expect(result.stderr).toBe("");
-      expect(summary.scanned).toBe(12);
-      expect(summary.added).toBe(12);
-      expect(summary.removed).toBe(0);
+      expect(document.command).toBe("sync");
+      expect(document.rows[0]?.scanned).toBe(12);
+      expect(document.rows[0]?.added).toBe(12);
+      expect(document.rows[0]?.removed).toBe(0);
     } finally {
       await rm(database.dir, { recursive: true, force: true });
       await rm(home, { recursive: true, force: true });

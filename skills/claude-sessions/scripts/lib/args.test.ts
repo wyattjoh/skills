@@ -2,7 +2,7 @@ import { describe, expect, it } from "bun:test";
 import { command as plans } from "../commands/plans.ts";
 import { command as search } from "../commands/search.ts";
 import { command as sql } from "../commands/sql.ts";
-import { flagBoolean, flagString, flagStrings, parseArgv } from "./args.ts";
+import { booleanFlagNames, flagBoolean, flagString, flagStrings, parseArgv } from "./args.ts";
 
 describe("parseArgv", () => {
   it("parses --key=value", () => {
@@ -114,6 +114,18 @@ describe("parseArgv", () => {
       positionals: [],
       flags: { table: false },
     });
+  });
+});
+
+describe("booleanFlagNames", () => {
+  it("returns only boolean option names in declaration order", () => {
+    expect(
+      booleanFlagNames([
+        { name: "project", type: "string" },
+        { name: "table", type: "boolean" },
+        { name: "redact", type: "boolean" },
+      ]),
+    ).toEqual(["table", "redact"]);
   });
 });
 

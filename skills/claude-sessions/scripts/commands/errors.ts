@@ -8,7 +8,7 @@
  *   bun $SKILL_DIR/scripts/cli.ts errors [options]
  */
 
-import { flagBoolean, flagString, flagStrings, parseArgv } from "../lib/args.ts";
+import { booleanFlagNames, flagString, flagStrings, parseArgv } from "../lib/args.ts";
 import type { SQLQueryBindings } from "bun:sqlite";
 import { openDb } from "../lib/db.ts";
 import {
@@ -17,7 +17,20 @@ import {
   SHARED_FILTER_OPTIONS,
   whereClause,
 } from "../lib/filters.ts";
-import { buildDocument, OUTPUT_OPTIONS, renderOutput } from "../lib/output.ts";
+import {
+  assertRegexCandidateCount,
+  parseSafeRegex,
+  regexCandidateLimit,
+  testSafeRegex,
+} from "../lib/regex.ts";
+import {
+  buildDocument,
+  OUTPUT_OPTIONS,
+  parseJsonValue,
+  renderOptionsFromFlags,
+  renderOutput,
+  toIsoTimestamp,
+} from "../lib/output.ts";
 import type { Command, CommandOption } from "./index.ts";
 
 const options: CommandOption[] = [
@@ -62,14 +75,6 @@ interface ErrorOutputRow {
   assistant_text_after: string | null;
 }
 
-function parseJsonInput(input: string): unknown {
-  try {
-    return JSON.parse(input) as unknown;
-  } catch {
-    return input;
-  }
-}
-
 function nextAssistantText(
   messagesBySession: ReadonlyMap<string, MessageRow[]>,
   sessionId: string,
@@ -88,14 +93,11 @@ function nextAssistantText(
 }
 
 function queryRows(db: ReturnType<typeof openDb>, argv: string[]): ErrorOutputRow[] {
-  const booleanFlags = options
-    .filter((option) => option.type === "boolean")
-    .map((option) => option.name);
+  const booleanFlags = booleanFlagNames(options);
   const parsed = parseArgv(argv, booleanFlags);
   const filters = parseFilters(parsed.flags);
   const names = flagStrings(parsed.flags, "name");
-  const pattern = flagString(parsed.flags, "pattern");
-  const resultRegex = pattern === undefined ? undefined : new RegExp(pattern);
+  const resultRegex = parseSafeRegex(flagString(parsed.flags, "pattern"), "--pattern");
   const filterWhere = buildWhereFragments(filters, {
     project: ["s.project_dir", "s.cwd"],
     session: "s.session_id",
@@ -111,6 +113,7 @@ function queryRows(db: ReturnType<typeof openDb>, argv: string[]): ErrorOutputRo
     params.push(...names);
   }
 
+  const candidateLimit = regexCandidateLimit(resultRegex) ?? filters.limit;
   const query = db.query(
     `SELECT
        tc.id,
@@ -128,13 +131,20 @@ function queryRows(db: ReturnType<typeof openDb>, argv: string[]): ErrorOutputRo
      LEFT JOIN sessions s ON s.id = tc.session_id
      LEFT JOIN messages m ON m.session_id = tc.session_id AND m.uuid = tc.message_uuid
      ${whereClause({ clauses: filterWhere.clauses, params })}
-     ORDER BY tc.result_ts IS NULL, tc.result_ts ASC, tc.id ASC`,
+     ORDER BY tc.result_ts IS NULL, tc.result_ts ASC, tc.id ASC
+     LIMIT ?`,
   );
+  const candidates = [
+    ...(query.iterate(
+      ...(params as SQLQueryBindings[]),
+      candidateLimit,
+    ) as IterableIterator<ErrorQueryRow>),
+  ];
+  if (resultRegex !== undefined) assertRegexCandidateCount(candidates.length, "--pattern");
+
   const matchingRows: ErrorQueryRow[] = [];
-  for (const row of query.iterate(
-    ...(params as SQLQueryBindings[]),
-  ) as IterableIterator<ErrorQueryRow>) {
-    if (resultRegex !== undefined && !resultRegex.test(row.result_text)) continue;
+  for (const row of candidates) {
+    if (resultRegex !== undefined && !testSafeRegex(resultRegex, row.result_text)) continue;
     matchingRows.push(row);
     if (matchingRows.length >= filters.limit) break;
   }
@@ -160,13 +170,13 @@ function queryRows(db: ReturnType<typeof openDb>, argv: string[]): ErrorOutputRo
   return matchingRows.map((row) => ({
     id: row.id,
     name: row.name,
-    input: parseJsonInput(row.input),
+    input: parseJsonValue(row.input),
     result_text: row.result_text,
     is_error: row.is_error === 1,
     latency_ms: row.latency_ms,
     session_id: row.session_id,
     project_dir: row.project_dir,
-    timestamp: row.timestamp,
+    timestamp: toIsoTimestamp(row.timestamp),
     uuid: row.uuid,
     assistant_text_after: nextAssistantText(
       messagesBySession,
@@ -179,17 +189,9 @@ function queryRows(db: ReturnType<typeof openDb>, argv: string[]): ErrorOutputRo
 async function run(argv: string[]): Promise<void> {
   const db = openDb();
   try {
-    const parsed = parseArgv(
-      argv,
-      options.filter((option) => option.type === "boolean").map((option) => option.name),
-    );
+    const parsed = parseArgv(argv, booleanFlagNames(options));
     const rows = queryRows(db, argv);
-    console.log(
-      renderOutput(buildDocument("errors", rows), {
-        table: flagBoolean(parsed.flags, "table"),
-        redact: flagBoolean(parsed.flags, "redact", true),
-      }),
-    );
+    console.log(renderOutput(buildDocument("errors", rows), renderOptionsFromFlags(parsed.flags)));
   } finally {
     db.close();
   }

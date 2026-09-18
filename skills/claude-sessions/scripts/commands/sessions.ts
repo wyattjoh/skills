@@ -7,7 +7,7 @@
  *   bun $SKILL_DIR/scripts/cli.ts sessions [options]
  */
 
-import { flagBoolean, flagString, parseArgv } from "../lib/args.ts";
+import { booleanFlagNames, flagString, parseArgv } from "../lib/args.ts";
 import {
   buildWhereFragments,
   parseFilters,
@@ -15,23 +15,15 @@ import {
   whereClause,
 } from "../lib/filters.ts";
 import { openDb } from "../lib/db.ts";
-import { buildDocument, renderOutput, OUTPUT_OPTIONS } from "../lib/output.ts";
-
-export interface CommandOption {
-  name: string;
-  type: "string" | "boolean";
-  multiple?: boolean;
-  description: string;
-  negated?: boolean;
-}
-
-export interface Command {
-  name: string;
-  description: string;
-  options: CommandOption[];
-  usage?: string;
-  run: (argv: string[]) => Promise<void>;
-}
+import { parseJsonStringArray } from "../lib/json.ts";
+import {
+  buildDocument,
+  OUTPUT_OPTIONS,
+  renderOptionsFromFlags,
+  renderOutput,
+  toIsoTimestamp,
+} from "../lib/output.ts";
+import type { Command, CommandOption } from "./index.ts";
 
 const options: CommandOption[] = [
   ...SHARED_FILTER_OPTIONS,
@@ -73,6 +65,7 @@ interface SessionRow {
 interface SessionOutputRow {
   session_id: string;
   project_dir: string | null;
+  timestamp: string | null;
   cwd: string | null;
   git_branch: string | null;
   parent_session_id: string | null;
@@ -108,30 +101,20 @@ function parseSort(raw: string | undefined): SortField {
   throw new Error(`Invalid --sort: ${sort}`);
 }
 
-function parseStringArray(value: string): string[] {
-  try {
-    const parsed: unknown = JSON.parse(value);
-    return Array.isArray(parsed)
-      ? parsed.filter((item): item is string => typeof item === "string")
-      : [];
-  } catch {
-    return [];
-  }
-}
-
 function toOutputRow(row: SessionRow): SessionOutputRow {
   return {
     session_id: row.session_id,
     project_dir: row.project_dir,
+    timestamp: toIsoTimestamp(row.ended_at ?? row.started_at),
     cwd: row.cwd,
     git_branch: row.git_branch,
     parent_session_id: row.parent_session_id,
     agent_name: row.agent_name,
     first_prompt: row.first_prompt === null ? null : row.first_prompt.slice(0, 200),
-    started_at: row.started_at,
-    ended_at: row.ended_at,
-    models: parseStringArray(row.models),
-    versions: parseStringArray(row.versions),
+    started_at: toIsoTimestamp(row.started_at),
+    ended_at: toIsoTimestamp(row.ended_at),
+    models: parseJsonStringArray(row.models),
+    versions: parseJsonStringArray(row.versions),
     message_count: row.message_count,
     tool_call_count: row.tool_call_count,
     error_count: row.error_count,
@@ -144,10 +127,7 @@ function toOutputRow(row: SessionRow): SessionOutputRow {
 }
 
 async function run(argv: string[]): Promise<void> {
-  const booleanFlags = options
-    .filter((option) => option.type === "boolean")
-    .map((option) => option.name);
-  const { flags } = parseArgv(argv, booleanFlags);
+  const { flags } = parseArgv(argv, booleanFlagNames(options));
   const filters = parseFilters(flags);
   const sort = parseSort(flagString(flags, "sort"));
   const firstPrompt = flagString(flags, "first-prompt");
@@ -205,12 +185,7 @@ async function run(argv: string[]): Promise<void> {
       .all(...(where.params as Array<string | number | null>), filters.limit) as SessionRow[];
     const document = buildDocument("sessions", rows.map(toOutputRow));
 
-    console.log(
-      renderOutput(document, {
-        table: flagBoolean(flags, "table"),
-        redact: flagBoolean(flags, "redact", true),
-      }),
-    );
+    console.log(renderOutput(document, renderOptionsFromFlags(flags)));
   } finally {
     db.close();
   }

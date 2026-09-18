@@ -8,7 +8,7 @@
  */
 
 import type { Database } from "bun:sqlite";
-import { parseArgv, flagBoolean, flagString } from "../lib/args.ts";
+import { booleanFlagNames, flagBoolean, flagString, parseArgv } from "../lib/args.ts";
 import {
   buildWhereFragments,
   parseFilters,
@@ -16,29 +16,21 @@ import {
   SHARED_FILTER_OPTIONS,
 } from "../lib/filters.ts";
 import { openDb } from "../lib/db.ts";
-import { OUTPUT_OPTIONS, buildDocument, renderOutput } from "../lib/output.ts";
-
-/**
- * Metadata for one option accepted by a CLI command.
- */
-export interface CommandOption {
-  name: string;
-  type: "string" | "boolean";
-  multiple: boolean | undefined;
-  description: string;
-  negated: boolean | undefined;
-}
-
-/**
- * Runtime contract implemented by every command module.
- */
-export interface Command {
-  name: string;
-  description: string;
-  options: CommandOption[];
-  usage: string | undefined;
-  run: (argv: string[]) => Promise<void>;
-}
+import {
+  assertRegexCandidateCount,
+  boundedRegexText,
+  parseSafeRegex,
+  regexCandidateLimit,
+  testSafeRegex,
+} from "../lib/regex.ts";
+import {
+  OUTPUT_OPTIONS,
+  buildDocument,
+  renderOptionsFromFlags,
+  renderOutput,
+  toIsoTimestamp,
+} from "../lib/output.ts";
+import type { Command, CommandOption } from "./index.ts";
 
 const options = [
   ...SHARED_FILTER_OPTIONS,
@@ -86,127 +78,8 @@ type CandidateRow = {
 
 type QueryParam = string | number | boolean | bigint | null;
 
-const BOOLEAN_FLAGS = options
-  .filter((option) => option.type === "boolean")
-  .map((option) => option.name);
+const BOOLEAN_FLAGS = booleanFlagNames(options);
 const FTS_OPERATORS = new Set(["and", "or", "not", "near"]);
-// Regexes run synchronously, so keep the pattern, candidate set, and input
-// text bounded before handing user-controlled data to JavaScript's engine.
-const MAX_REGEX_PATTERN_LENGTH = 256;
-const MAX_REGEX_CANDIDATES = 1_000;
-const MAX_REGEX_TEXT_LENGTH = 32 * 1024;
-
-type RegexGroup = {
-  hasQuantifier: boolean;
-  hasAlternation: boolean;
-};
-
-function hasUnsafeRegexStructure(source: string): string | undefined {
-  if (/\\(?:[1-9]\d*|k<[^>]+>)/.test(source)) {
-    return "backreferences are not allowed";
-  }
-
-  const groups: RegexGroup[] = [];
-  let escaped = false;
-  let inCharacterClass = false;
-  let previousGroupHadQuantifier = false;
-  let variableQuantifiers = 0;
-
-  for (let index = 0; index < source.length; index += 1) {
-    const character = source[index]!;
-    if (escaped) {
-      escaped = false;
-      continue;
-    }
-    if (character === "\\") {
-      escaped = true;
-      continue;
-    }
-    if (character === "[") {
-      inCharacterClass = true;
-      continue;
-    }
-    if (character === "]") {
-      inCharacterClass = false;
-      continue;
-    }
-    if (inCharacterClass) continue;
-
-    if (character === "(") {
-      groups.push({ hasQuantifier: false, hasAlternation: false });
-      previousGroupHadQuantifier = false;
-      continue;
-    }
-    if (character === "|") {
-      const group = groups.at(-1);
-      if (group !== undefined) group.hasAlternation = true;
-      previousGroupHadQuantifier = false;
-      continue;
-    }
-    if (character === ")") {
-      const group = groups.pop();
-      if (group === undefined) {
-        previousGroupHadQuantifier = false;
-        continue;
-      }
-      previousGroupHadQuantifier = group.hasQuantifier || group.hasAlternation;
-      const parent = groups.at(-1);
-      if (parent !== undefined) {
-        parent.hasQuantifier ||= group.hasQuantifier;
-        parent.hasAlternation ||= group.hasAlternation;
-      }
-      continue;
-    }
-
-    const isGroupPrefix = character === "?" && source[index - 1] === "(";
-    const isQuantifier =
-      character === "*" ||
-      character === "+" ||
-      (character === "?" && !isGroupPrefix) ||
-      character === "{";
-    if (!isQuantifier) {
-      previousGroupHadQuantifier = false;
-      continue;
-    }
-
-    if (previousGroupHadQuantifier) {
-      return "nested or repeated quantified groups are not allowed";
-    }
-
-    const rangeEnd = character === "{" ? source.indexOf("}", index + 1) : -1;
-    const range =
-      rangeEnd === -1
-        ? undefined
-        : (/^\{(\d+)(?:,(\d*))?\}$/.exec(source.slice(index, rangeEnd + 1)) ?? undefined);
-    let isVariableRange = false;
-    if (range !== undefined) {
-      const lower = Number(range[1]);
-      const hasComma = range[2] !== undefined;
-      const upper = !hasComma ? lower : range[2] === "" ? undefined : Number(range[2]);
-      if (lower > MAX_REGEX_TEXT_LENGTH || (upper !== undefined && upper > MAX_REGEX_TEXT_LENGTH)) {
-        return `repetition bounds must not exceed ${MAX_REGEX_TEXT_LENGTH} characters`;
-      }
-      isVariableRange = hasComma && (range[2] === "" || range[2] !== range[1]);
-    }
-
-    const group = groups.at(-1);
-    if (group !== undefined) group.hasQuantifier = true;
-    if (
-      character === "*" ||
-      character === "+" ||
-      (character === "?" && !isGroupPrefix) ||
-      isVariableRange
-    ) {
-      variableQuantifiers += 1;
-      if (variableQuantifiers > 1) {
-        return "multiple variable-length quantifiers are not allowed";
-      }
-    }
-    previousGroupHadQuantifier = false;
-  }
-
-  return undefined;
-}
 
 function parseContext(raw: string | undefined): number {
   if (raw === undefined) return 160;
@@ -228,21 +101,7 @@ function parseType(raw: string | undefined): "user" | "assistant" | undefined {
 }
 
 function parseRegex(raw: string | undefined): RegExp | undefined {
-  if (raw === undefined) return undefined;
-  if (raw.length > MAX_REGEX_PATTERN_LENGTH) {
-    throw new Error(
-      `Rejected --regex: pattern length must be at most ${MAX_REGEX_PATTERN_LENGTH} characters.`,
-    );
-  }
-  const unsafeReason = hasUnsafeRegexStructure(raw);
-  if (unsafeReason !== undefined) throw new Error(`Rejected --regex: ${unsafeReason}.`);
-  try {
-    return new RegExp(raw, "i");
-  } catch (err) {
-    throw new Error(`Invalid --regex: ${err instanceof Error ? err.message : String(err)}`, {
-      cause: err,
-    });
-  }
+  return parseSafeRegex(raw, "--regex", "i");
 }
 
 function normalizeSnippet(text: string, start: number, end: number): string {
@@ -308,18 +167,16 @@ function orderedRows(
   regex: RegExp | undefined,
   context: number,
 ): SearchRow[] {
-  if (regex !== undefined && rows.length > MAX_REGEX_CANDIDATES) {
-    throw new Error(`Rejected --regex: candidate set exceeds ${MAX_REGEX_CANDIDATES} rows.`);
-  }
+  if (regex !== undefined) assertRegexCandidateCount(rows.length, "--regex");
 
   return rows
     .map((row) => {
-      const regexText = row.text.slice(0, MAX_REGEX_TEXT_LENGTH);
-      if (regex !== undefined && !regex.test(regexText)) return undefined;
+      const regexText = boundedRegexText(row.text);
+      if (regex !== undefined && !testSafeRegex(regex, row.text)) return undefined;
       const result: SearchRow = {
         session_id: row.session_id,
         project_dir: row.project_dir,
-        timestamp: row.timestamp,
+        timestamp: toIsoTimestamp(row.timestamp),
         uuid: row.uuid,
         role: row.role,
         snippet: snippetFor(row.text, query, regex, context, regexText),
@@ -470,7 +327,7 @@ async function run(argv: string[]): Promise<void> {
   const type = parseType(flagString(flags, "type"));
   const includeInjected = flagBoolean(flags, "include-injected");
   const useFts = query.length > 0;
-  const candidateLimit = regex === undefined ? undefined : MAX_REGEX_CANDIDATES + 1;
+  const candidateLimit = regexCandidateLimit(regex);
   const db = openDb();
 
   try {
@@ -494,12 +351,7 @@ async function run(argv: string[]): Promise<void> {
       })
       .slice(0, filters.limit);
     const document = buildDocument("search", rows);
-    console.log(
-      renderOutput(document, {
-        table: flagBoolean(flags, "table"),
-        redact: flagBoolean(flags, "redact", true),
-      }),
-    );
+    console.log(renderOutput(document, renderOptionsFromFlags(flags)));
   } finally {
     db.close();
   }
@@ -512,7 +364,7 @@ export const command: Command = {
   name: "search",
   description: "Full-text search over messages and tool calls, with context.",
   options,
-  usage: "search <query> [options]",
+  usage: "search <query> [options]  |  search --regex=<pattern> [options]",
   run,
 };
 

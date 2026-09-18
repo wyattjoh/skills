@@ -105,6 +105,18 @@ export function parseArgv(argv: string[], booleanFlags: Iterable<string> = []): 
   return { positionals, flags };
 }
 
+/**
+ * Return the names of boolean options declared by a command.
+ *
+ * @param options Command option metadata.
+ * @returns Boolean flag names for parseArgv's schema.
+ */
+export function booleanFlagNames(
+  options: ReadonlyArray<{ name: string; type: "string" | "boolean" }>,
+): string[] {
+  return options.filter((option) => option.type === "boolean").map((option) => option.name);
+}
+
 /** All values given for a repeatable string flag, in declaration order. */
 export function flagStrings(flags: Record<string, FlagValue>, key: string): string[] {
   const value = flags[key];

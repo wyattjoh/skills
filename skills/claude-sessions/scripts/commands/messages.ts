@@ -8,7 +8,7 @@
  */
 
 import type { Database } from "bun:sqlite";
-import { parseArgv, flagBoolean, flagString } from "../lib/args.ts";
+import { booleanFlagNames, flagBoolean, flagString, parseArgv } from "../lib/args.ts";
 import {
   buildWhereFragments,
   parseFilters,
@@ -25,29 +25,14 @@ import {
   type MessageContent,
   type UserRecord,
 } from "../lib/records.ts";
-import { OUTPUT_OPTIONS, buildDocument, renderOutput } from "../lib/output.ts";
-
-/**
- * Metadata for one option accepted by a CLI command.
- */
-export interface CommandOption {
-  name: string;
-  type: "string" | "boolean";
-  multiple: boolean | undefined;
-  description: string;
-  negated: boolean | undefined;
-}
-
-/**
- * Runtime contract implemented by every command module.
- */
-export interface Command {
-  name: string;
-  description: string;
-  options: CommandOption[];
-  usage: string | undefined;
-  run: (argv: string[]) => Promise<void>;
-}
+import {
+  OUTPUT_OPTIONS,
+  buildDocument,
+  renderOptionsFromFlags,
+  renderOutput,
+  toIsoTimestamp,
+} from "../lib/output.ts";
+import type { Command, CommandOption } from "./index.ts";
 
 const options = [
   ...SHARED_FILTER_OPTIONS,
@@ -98,9 +83,7 @@ type QueryParam = string | number | boolean | bigint | null;
 
 type RawRecords = Map<string, AnyRecord>;
 
-const BOOLEAN_FLAGS = options
-  .filter((option) => option.type === "boolean")
-  .map((option) => option.name);
+const BOOLEAN_FLAGS = booleanFlagNames(options);
 
 function messageWhere(filters: ReturnType<typeof parseFilters>): {
   sql: string;
@@ -209,7 +192,7 @@ async function renderTurns(
     turns.push({
       session_id: row.session_id,
       project_dir: row.project_dir,
-      timestamp: row.timestamp,
+      timestamp: toIsoTimestamp(row.timestamp),
       uuid: row.uuid,
       parent_uuid: row.parent_uuid,
       type: row.type,
@@ -311,12 +294,7 @@ async function run(argv: string[]): Promise<void> {
     }
 
     const document = buildDocument("messages", selected);
-    console.log(
-      renderOutput(document, {
-        table: flagBoolean(flags, "table"),
-        redact: flagBoolean(flags, "redact", true),
-      }),
-    );
+    console.log(renderOutput(document, renderOptionsFromFlags(flags)));
   } finally {
     db.close();
   }

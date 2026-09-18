@@ -38,10 +38,8 @@ function printRootHelp(): void {
     ...commands.map((command) => `  ${command.name.padEnd(width)}  ${command.description}`),
     "",
     "Run 'bun scripts/cli.ts <command> --help' for command-specific options.",
-    "",
-    "Global options:",
-    "  --no-sync   Skip the automatic index sync before running the command",
   ];
+  appendGlobalHelp(lines);
   console.log(lines.join("\n"));
 }
 
@@ -61,7 +59,14 @@ function printCommandHelp(command: Command): void {
       ),
     );
   }
+  if (command.name !== "sync") appendGlobalHelp(lines);
   console.log(lines.join("\n"));
+}
+
+const NO_SYNC_DESCRIPTION = "Skip the automatic index sync before running a read command";
+
+function appendGlobalHelp(lines: string[]): void {
+  lines.push("", "Global options:", `  --no-sync   ${NO_SYNC_DESCRIPTION}`);
 }
 
 const SLOW_SYNC_NOTICE_MS = 5_000;

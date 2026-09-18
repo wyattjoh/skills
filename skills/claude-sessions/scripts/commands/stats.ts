@@ -8,8 +8,9 @@
  */
 
 import type { Database } from "bun:sqlite";
-import { flagBoolean, flagString, parseArgv } from "../lib/args.ts";
+import { booleanFlagNames, flagString, parseArgv } from "../lib/args.ts";
 import { openDb } from "../lib/db.ts";
+import { parseJsonStringArray } from "../lib/json.ts";
 import {
   buildWhereFragments,
   parseFilters,
@@ -17,7 +18,13 @@ import {
   whereClause,
   type ParsedFilters,
 } from "../lib/filters.ts";
-import { buildDocument, OUTPUT_OPTIONS, renderOutput } from "../lib/output.ts";
+import {
+  buildDocument,
+  OUTPUT_OPTIONS,
+  renderOptionsFromFlags,
+  renderOutput,
+  type RenderOptions,
+} from "../lib/output.ts";
 import type { Command, CommandOption } from "./index.ts";
 export type { Command, CommandOption } from "./index.ts";
 
@@ -72,16 +79,6 @@ function parseStatsBy(raw: string | undefined, present: boolean): StatsBy {
   throw new Error(`Invalid --by: ${value}`);
 }
 
-function parseJsonStrings(value: string): string[] {
-  try {
-    const parsed: unknown = JSON.parse(value);
-    if (!Array.isArray(parsed)) return [];
-    return parsed.filter((item): item is string => typeof item === "string");
-  } catch {
-    return [];
-  }
-}
-
 function groupValues(row: SessionStatsRow, by: StatsBy): Array<string | null> {
   switch (by) {
     case "project":
@@ -93,11 +90,11 @@ function groupValues(row: SessionStatsRow, by: StatsBy): Array<string | null> {
       return [timestamp === null ? null : timestamp.slice(0, 10)];
     }
     case "model": {
-      const models = [...new Set(parseJsonStrings(row.models))];
+      const models = [...new Set(parseJsonStringArray(row.models))];
       return models.length > 0 ? models : [null];
     }
     case "version": {
-      const versions = [...new Set(parseJsonStrings(row.versions))];
+      const versions = [...new Set(parseJsonStringArray(row.versions))];
       return versions.length > 0 ? versions : [null];
     }
   }
@@ -218,20 +215,15 @@ export function collectStats(db: Database, filters: ParsedFilters, by: StatsBy):
 function parseStatsArgs(argv: string[]): {
   filters: ParsedFilters;
   by: StatsBy;
-  table: boolean;
-  redact: boolean;
+  output: RenderOptions;
 } {
-  const booleanFlags = options
-    .filter((option) => option.type === "boolean")
-    .map((option) => option.name);
-  const { flags, positionals } = parseArgv(argv, booleanFlags);
+  const { flags, positionals } = parseArgv(argv, booleanFlagNames(options));
   if (positionals.length > 0) throw new Error("stats does not accept positional arguments");
 
   return {
     filters: parseFilters(flags),
     by: parseStatsBy(flagString(flags, "by"), flags.by !== undefined),
-    table: flagBoolean(flags, "table"),
-    redact: flagBoolean(flags, "redact", true),
+    output: renderOptionsFromFlags(flags),
   };
 }
 
@@ -240,9 +232,7 @@ async function run(argv: string[]): Promise<void> {
   const db = openDb();
   try {
     const rows = collectStats(db, parsed.filters, parsed.by);
-    console.log(
-      renderOutput(buildDocument("stats", rows), { table: parsed.table, redact: parsed.redact }),
-    );
+    console.log(renderOutput(buildDocument("stats", rows), parsed.output));
   } finally {
     db.close();
   }

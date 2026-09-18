@@ -1,5 +1,31 @@
 import { describe, expect, it } from "bun:test";
-import { buildDocument, renderOutput } from "./output.ts";
+import {
+  buildDocument,
+  parseJsonValue,
+  renderOptionsFromFlags,
+  renderOutput,
+  toIsoTimestamp,
+} from "./output.ts";
+
+describe("shared output helpers", () => {
+  it("parses JSON values and leaves plain text unchanged", () => {
+    expect(parseJsonValue('{"name":"value"}')).toEqual({ name: "value" });
+    expect(parseJsonValue("plain text")).toBe("plain text");
+  });
+
+  it("normalizes valid timestamps and clears missing or invalid values", () => {
+    expect(toIsoTimestamp("2026-01-01T01:00:00+01:00")).toBe("2026-01-01T00:00:00.000Z");
+    expect(toIsoTimestamp(null)).toBe(null);
+    expect(toIsoTimestamp("not-a-timestamp")).toBe(null);
+  });
+
+  it("turns parsed table and redaction flags into render options", () => {
+    expect(renderOptionsFromFlags({ table: true, redact: false })).toEqual({
+      table: true,
+      redact: false,
+    });
+  });
+});
 
 describe("buildDocument", () => {
   it("wraps rows with a command name and count", () => {
