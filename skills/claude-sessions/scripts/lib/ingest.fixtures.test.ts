@@ -81,7 +81,7 @@ describe("sync against generated fixtures", () => {
     db.close();
   });
 
-  it("indexes the queue-operation, summary, ai-title, and attachment fixtures as messages", async () => {
+  it("indexes message-bearing metadata and skips attachment noise", async () => {
     const { db } = await syncFixtures();
     const types = db
       .query("SELECT DISTINCT type FROM messages WHERE session_id IN (?, ?, ?, ?)")
@@ -93,7 +93,12 @@ describe("sync against generated fixtures", () => {
       )
       .map((r) => (r as { type: string }).type)
       .toSorted();
-    expect(types).toEqual(["ai-title", "attachment", "queue-operation", "summary"]);
+    expect(types).toEqual(["ai-title", "queue-operation", "summary"]);
+
+    const attachmentCount = db
+      .query("SELECT COUNT(*) as n FROM messages WHERE session_id = ?")
+      .get(key("session-attachment")) as { n: number };
+    expect(attachmentCount.n).toBe(0);
     db.close();
   });
 

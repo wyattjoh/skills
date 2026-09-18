@@ -25,6 +25,7 @@ import {
   hasInterruptMarker,
   isSkillToolResult,
   parseRecord,
+  shouldStoreMessage,
   type AssistantRecord,
   type ExtractedBlock,
   type UserRecord,
@@ -299,9 +300,7 @@ function ingestLines(
           block.toolName === "Task"
             ? ((block.input?.subagent_type as string | undefined) ?? null)
             : null;
-        const skillName = isSkillCall
-          ? ((block.input?.command as string | undefined) ?? null)
-          : null;
+        const skillName = isSkillCall ? ((block.input?.skill as string | undefined) ?? null) : null;
 
         insertToolCall.run(
           block.toolUseId,
@@ -338,6 +337,8 @@ function ingestLines(
         );
       }
     }
+
+    if (!shouldStoreMessage(record, text)) continue;
 
     if (
       !agg.firstPrompt &&

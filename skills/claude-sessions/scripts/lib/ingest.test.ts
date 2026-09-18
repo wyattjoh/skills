@@ -39,6 +39,23 @@ async function writeSession(
   return path;
 }
 
+interface StoredCounts {
+  message_count: number;
+  tool_call_count: number;
+  error_count: number;
+}
+
+function readStoredCounts(db: Database, sessionId: string): StoredCounts {
+  return db
+    .query(
+      `SELECT
+         (SELECT COUNT(*) FROM messages WHERE session_id = ?) as message_count,
+         (SELECT COUNT(*) FROM tool_calls WHERE session_id = ?) as tool_call_count,
+         (SELECT COUNT(*) FROM tool_calls WHERE session_id = ? AND is_error = 1) as error_count`,
+    )
+    .get(sessionId, sessionId, sessionId) as StoredCounts;
+}
+
 function userRecord(overrides: Record<string, unknown>): Record<string, unknown> {
   return {
     type: "user",
@@ -169,19 +186,65 @@ describe("sync", () => {
 
       await appendFile(
         path,
-        JSON.stringify(userRecord({ uuid: "u2", timestamp: "2026-01-01T00:00:05.000Z" })) + "\n",
+        [
+          assistantRecord({
+            uuid: "a2",
+            timestamp: "2026-01-01T00:00:05.000Z",
+            message: {
+              role: "assistant",
+              model: "claude-opus-4-7",
+              content: [
+                { type: "tool_use", id: "toolu_2", name: "Read", input: { file_path: "/x" } },
+              ],
+              usage: {
+                input_tokens: 1,
+                output_tokens: 1,
+                cache_read_input_tokens: 0,
+                cache_creation_input_tokens: 0,
+              },
+            },
+          }),
+          userRecord({
+            uuid: "u2",
+            timestamp: "2026-01-01T00:00:06.000Z",
+            message: {
+              role: "user",
+              content: [
+                {
+                  type: "tool_result",
+                  tool_use_id: "toolu_2",
+                  content: "not found",
+                  is_error: true,
+                },
+              ],
+            },
+          }),
+        ]
+          .map((line) => JSON.stringify(line))
+          .join("\n") + "\n",
       );
       const second = await sync({ root, db });
       expect(second.updated).toBe(1);
       expect(second.added).toBe(0);
 
-      const count = db.query("SELECT COUNT(*) as n FROM messages").get() as { n: number };
-      expect(count.n).toBe(2);
+      const stored = readStoredCounts(db, s1);
+      expect(stored).toEqual({ message_count: 3, tool_call_count: 1, error_count: 1 });
 
-      const session = db.query("SELECT message_count FROM sessions WHERE id = ?").get(s1) as {
-        message_count: number;
-      };
-      expect(session.message_count).toBe(2);
+      const session = db
+        .query("SELECT message_count, tool_call_count, error_count FROM sessions WHERE id = ?")
+        .get(s1) as StoredCounts;
+      expect(session).toEqual(stored);
+
+      const freshDb = openDb(":memory:");
+      try {
+        await sync({ root, db: freshDb });
+        const fresh = freshDb
+          .query("SELECT message_count, tool_call_count, error_count FROM sessions WHERE id = ?")
+          .get(s1) as StoredCounts;
+        expect(session).toEqual(fresh);
+      } finally {
+        freshDb.close();
+      }
     });
   });
 
@@ -207,6 +270,23 @@ describe("sync", () => {
 
       const row = db.query("SELECT uuid FROM messages").get() as { uuid: string };
       expect(row.uuid).toBe("u2");
+
+      const rebuilt = db
+        .query("SELECT message_count, tool_call_count, error_count FROM sessions WHERE id = ?")
+        .get(s1) as StoredCounts;
+      const stored = readStoredCounts(db, s1);
+      expect(rebuilt).toEqual(stored);
+
+      const freshDb = openDb(":memory:");
+      try {
+        await sync({ root, db: freshDb });
+        const fresh = freshDb
+          .query("SELECT message_count, tool_call_count, error_count FROM sessions WHERE id = ?")
+          .get(s1) as StoredCounts;
+        expect(rebuilt).toEqual(fresh);
+      } finally {
+        freshDb.close();
+      }
     });
   });
 
@@ -234,6 +314,38 @@ describe("sync", () => {
 
       const count = db.query("SELECT COUNT(*) as n FROM messages").get() as { n: number };
       expect(count.n).toBe(0);
+    });
+  });
+
+  it("does not store control and noise records as conversational messages", async () => {
+    await withCtx(async ({ root, db }) => {
+      await writeSession(root, "-Users-test-myapp", "s1", [
+        { type: "mode", uuid: "mode" },
+        { type: "permission-mode", uuid: "permission-mode" },
+        { type: "file-history-delta", uuid: "file-history-delta" },
+        { type: "bridge-session", uuid: "bridge-session" },
+        { type: "agent-name", uuid: "agent-name" },
+        { type: "relocated", uuid: "relocated" },
+        { type: "progress", uuid: "progress" },
+        {
+          type: "attachment",
+          uuid: "attachment",
+          rendered: [{ content: "<system-reminder>attachment noise</system-reminder>" }],
+        },
+        { type: "last-prompt", uuid: "last-prompt", lastPrompt: "last prompt noise" },
+        userRecord({ uuid: "u1", message: { role: "user", content: "real prompt" } }),
+      ]);
+      await sync({ root, db });
+
+      const rows = db
+        .query("SELECT type, uuid FROM messages WHERE session_id = ? ORDER BY rowid")
+        .all(s1) as Array<{ type: string; uuid: string }>;
+      expect(rows).toEqual([{ type: "user", uuid: "u1" }]);
+
+      const session = db.query("SELECT message_count FROM sessions WHERE id = ?").get(s1) as {
+        message_count: number;
+      };
+      expect(session.message_count).toBe(1);
     });
   });
 
@@ -336,6 +448,55 @@ describe("sync", () => {
         error_count: number;
       };
       expect(session).toEqual({ tool_call_count: 1, error_count: 0 });
+    });
+  });
+
+  it("stores Task subagent_type and Skill skill_name from tool inputs", async () => {
+    await withCtx(async ({ root, db }) => {
+      await writeSession(root, "-Users-test-myapp", "s1", [
+        assistantRecord({
+          uuid: "a1",
+          message: {
+            role: "assistant",
+            model: "claude-opus-4-7",
+            content: [
+              {
+                type: "tool_use",
+                id: "task-1",
+                name: "Task",
+                input: { subagent_type: "Explore", prompt: "inspect this" },
+              },
+              {
+                type: "tool_use",
+                id: "skill-1",
+                name: "Skill",
+                input: { skill: "grilling", args: "stress test this" },
+              },
+            ],
+            usage: {
+              input_tokens: 1,
+              output_tokens: 1,
+              cache_read_input_tokens: 0,
+              cache_creation_input_tokens: 0,
+            },
+          },
+        }),
+      ]);
+      await sync({ root, db });
+
+      const rows = db
+        .query(
+          "SELECT name, subagent_type, skill_name FROM tool_calls WHERE session_id = ? ORDER BY name",
+        )
+        .all(s1) as Array<{
+        name: string;
+        subagent_type: string | null;
+        skill_name: string | null;
+      }>;
+      expect(rows).toEqual([
+        { name: "Skill", subagent_type: null, skill_name: "grilling" },
+        { name: "Task", subagent_type: "Explore", skill_name: null },
+      ]);
     });
   });
 
@@ -720,34 +881,69 @@ describe("sync", () => {
     });
   });
 
-  it("counts sessions.message_count from stored rows, not parsed lines, when a file repeats a uuid", async () => {
+  it("counts stored rows when a file repeats message and tool ids", async () => {
     await withCtx(async ({ root, db }) => {
-      const path = await writeSession(root, "-Users-test-myapp", "s1", [
+      const repeatedToolUse = (timestamp: string) =>
+        assistantRecord({
+          uuid: "dup-assistant",
+          timestamp,
+          message: {
+            role: "assistant",
+            model: "claude-opus-4-7",
+            content: [
+              {
+                type: "tool_use",
+                id: "dup-tool",
+                name: "Read",
+                input: { file_path: "/missing" },
+              },
+            ],
+            usage: {
+              input_tokens: 1,
+              output_tokens: 1,
+              cache_read_input_tokens: 0,
+              cache_creation_input_tokens: 0,
+            },
+          },
+        });
+      const repeatedToolResult = (timestamp: string) =>
+        userRecord({
+          uuid: "dup-result",
+          timestamp,
+          message: {
+            role: "user",
+            content: [
+              {
+                type: "tool_result",
+                tool_use_id: "dup-tool",
+                content: "not found",
+                is_error: true,
+              },
+            ],
+          },
+        });
+
+      await writeSession(root, "-Users-test-myapp", "s1", [
         userRecord({ uuid: "dup-uuid", message: { role: "user", content: "v1" } }),
+        userRecord({
+          uuid: "dup-uuid",
+          timestamp: "2026-01-01T00:00:01.000Z",
+          message: { role: "user", content: "v2" },
+        }),
+        repeatedToolUse("2026-01-01T00:00:02.000Z"),
+        repeatedToolUse("2026-01-01T00:00:03.000Z"),
+        repeatedToolResult("2026-01-01T00:00:04.000Z"),
+        repeatedToolResult("2026-01-01T00:00:05.000Z"),
       ]);
-      await appendFile(
-        path,
-        JSON.stringify(
-          userRecord({
-            uuid: "dup-uuid",
-            timestamp: "2026-01-01T00:00:05.000Z",
-            message: { role: "user", content: "v2" },
-          }),
-        ) + "\n",
-      );
       await sync({ root, db });
 
-      const stored = db
-        .query("SELECT COUNT(*) as n FROM messages WHERE session_id = ?")
-        .get(s1) as {
-        n: number;
-      };
-      expect(stored.n).toBe(1);
+      const stored = readStoredCounts(db, s1);
+      expect(stored).toEqual({ message_count: 3, tool_call_count: 1, error_count: 1 });
 
-      const session = db.query("SELECT message_count FROM sessions WHERE id = ?").get(s1) as {
-        message_count: number;
-      };
-      expect(session.message_count).toBe(1);
+      const session = db
+        .query("SELECT message_count, tool_call_count, error_count FROM sessions WHERE id = ?")
+        .get(s1) as StoredCounts;
+      expect(session).toEqual(stored);
     });
   });
 });

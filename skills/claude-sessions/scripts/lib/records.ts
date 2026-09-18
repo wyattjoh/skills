@@ -2,16 +2,21 @@
  * Typed record model for Claude Code conversation JSONL entries.
  *
  * A conversation file interleaves many record shapes. This module types the
- * nine kinds the index cares about (user, assistant, system, summary,
+ * ten kinds the index cares about (user, assistant, system, summary,
  * queue-operation, attachment, last-prompt, ai-title, atis-latch,
  * file-history-snapshot) and provides text extraction, injected-block
  * detection, and interrupt-marker detection shared by every one of them.
+ *
+ * Control records with no extracted text are parsed as `UnknownRecord` and
+ * skipped by ingest.ts rather than stored as conversational messages.
+ * `attachment` and `last-prompt` records are also metadata/noise and are
+ * skipped even when they contain rendered text.
  *
  * Every other record type observed in real corpora (progress, mode,
  * permission-mode, agent-name, agent-setting, agent-color, bridge-session,
  * custom-title, worktree-state, cost-state, relocated, continued-in,
  * file-history-delta, saved_hook_context, ...) parses fine as `UnknownRecord`
- * but carries no extracted text; ingest.ts skips them.
+ * but carries no extracted text, so ingest.ts skips it.
  */
 
 // =============================================================================
@@ -352,6 +357,19 @@ export function extractRecordText(record: AnyRecord): string {
     default:
       return "";
   }
+}
+
+const NON_CONVERSATIONAL_RECORD_TYPES = new Set(["attachment", "last-prompt"]);
+
+/**
+ * Decide whether a parsed record should contribute a row to messages.
+ * Records with no extracted text are control records or empty turns, and
+ * attachment/last-prompt records are metadata noise even when rendered text
+ * is present.
+ */
+export function shouldStoreMessage(record: AnyRecord, text: string): boolean {
+  if (NON_CONVERSATIONAL_RECORD_TYPES.has(record.type)) return false;
+  return text.trim().length > 0;
 }
 
 // =============================================================================
