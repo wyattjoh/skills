@@ -1,6 +1,6 @@
 <!-- source: https://alchemy.run/planetscale/guides/drizzle
      upstream: website/src/content/docs/planetscale/guides/drizzle.mdx
-     alchemy 2.0.0-beta.79 @ 258f63b -->
+     alchemy 2.0.0-beta.79 @ 4453c9b -->
 
 # Drizzle ORM with PlanetScale
 

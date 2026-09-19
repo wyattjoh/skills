@@ -1,6 +1,6 @@
 <!-- source: https://alchemy.run/apis/schemaless
      upstream: website/src/content/docs/apis/schemaless.mdx
-     alchemy 2.0.0-beta.79 @ 258f63b -->
+     alchemy 2.0.0-beta.79 @ 4453c9b -->
 
 # Schemaless RPC
 

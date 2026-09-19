@@ -1,6 +1,6 @@
 <!-- source: https://alchemy.run/sql/effect-sql/mysql
      upstream: website/src/content/docs/sql/effect-sql/mysql.mdx
-     alchemy 2.0.0-beta.79 @ 258f63b -->
+     alchemy 2.0.0-beta.79 @ 4453c9b -->
 
 # MySQL
 

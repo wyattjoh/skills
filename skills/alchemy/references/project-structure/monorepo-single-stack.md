@@ -1,6 +1,6 @@
 <!-- source: https://alchemy.run/project-structure/monorepo-single-stack
      upstream: website/src/content/docs/project-structure/monorepo-single-stack.mdx
-     alchemy 2.0.0-beta.79 @ 258f63b -->
+     alchemy 2.0.0-beta.79 @ 4453c9b -->
 
 # Single Stack
 

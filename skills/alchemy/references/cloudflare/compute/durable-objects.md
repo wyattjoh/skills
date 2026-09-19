@@ -1,6 +1,6 @@
 <!-- source: https://alchemy.run/cloudflare/compute/durable-objects
      upstream: website/src/content/docs/cloudflare/compute/durable-objects.mdx
-     alchemy 2.0.0-beta.79 @ 258f63b -->
+     alchemy 2.0.0-beta.79 @ 4453c9b -->
 
 # Durable Objects
 

@@ -1,6 +1,6 @@
 <!-- source: https://alchemy.run/cloudflare/compute/cross-worker-durable-object
      upstream: website/src/content/docs/cloudflare/compute/cross-worker-durable-object.mdx
-     alchemy 2.0.0-beta.79 @ 258f63b -->
+     alchemy 2.0.0-beta.79 @ 4453c9b -->
 
 # Bind to another Worker's Durable Object
 

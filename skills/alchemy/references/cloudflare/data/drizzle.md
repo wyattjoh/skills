@@ -1,6 +1,6 @@
 <!-- source: https://alchemy.run/cloudflare/data/drizzle
      upstream: website/src/content/docs/cloudflare/data/drizzle.mdx
-     alchemy 2.0.0-beta.79 @ 258f63b -->
+     alchemy 2.0.0-beta.79 @ 4453c9b -->
 
 # Add Drizzle ORM
 

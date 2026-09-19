@@ -1,6 +1,6 @@
 <!-- source: https://alchemy.run/hetzner/frontend/vite
      upstream: website/src/content/docs/hetzner/frontend/vite.mdx
-     alchemy 2.0.0-beta.79 @ 258f63b -->
+     alchemy 2.0.0-beta.79 @ 4453c9b -->
 
 # Vite
 

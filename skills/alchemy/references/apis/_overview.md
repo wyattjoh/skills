@@ -1,6 +1,6 @@
 <!-- source: https://alchemy.run/apis
      upstream: website/src/content/docs/apis/index.mdx
-     alchemy 2.0.0-beta.79 @ 258f63b -->
+     alchemy 2.0.0-beta.79 @ 4453c9b -->
 
 # APIs
 

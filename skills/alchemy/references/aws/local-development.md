@@ -1,6 +1,6 @@
 <!-- source: https://alchemy.run/aws/local-development
      upstream: website/src/content/docs/aws/local-development.mdx
-     alchemy 2.0.0-beta.79 @ 258f63b -->
+     alchemy 2.0.0-beta.79 @ 4453c9b -->
 
 # Local development
 

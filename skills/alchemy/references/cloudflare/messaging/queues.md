@@ -1,6 +1,6 @@
 <!-- source: https://alchemy.run/cloudflare/messaging/queues
      upstream: website/src/content/docs/cloudflare/messaging/queues.mdx
-     alchemy 2.0.0-beta.79 @ 258f63b -->
+     alchemy 2.0.0-beta.79 @ 4453c9b -->
 
 # Queues
 
@@ -248,6 +248,55 @@ the dispatch to the registered listener — but you get
 `Effect.gen` composition, typed errors, automatic batch
 ack/retry, and the same surface as `AWS.SQS.consumeQueueMessages(queue, handler)`.
 
+## Receive Workflow lifecycle events
+
+A subscription delivers platform events into a Queue. For a Workflow
+bound to an async Worker, pass the binding directly as the source:
+
+```typescript
+const worker = yield* Cloudflare.Worker("IngestionWorker", {
+  main: "./src/worker.ts",
+  env: {
+    INGESTION: Cloudflare.Workflow("Ingestion", {
+      className: "IngestionWorkflow",
+    }),
+  },
+});
+const queue = yield* Cloudflare.Queues.Queue("WorkflowEventsQueue");
+
+yield* Cloudflare.Queues.Subscription("WorkflowEvents", {
+  source: worker.env.INGESTION,
+  events: ["instance.completed", "instance.errored"],
+  queueId: queue.queueId,
+});
+```
+
+The subscription uses the binding's deferred physical name, including on
+the first deployment. Renaming the Workflow replaces the subscription.
+The Queue still needs a consumer to handle these messages, as above.
+
+A `WorkflowResource` or a reference to a deployed Workflow is also a source:
+
+```typescript
+yield* Cloudflare.Queues.Subscription("WorkflowEvents", {
+  source: yield* Cloudflare.Workflow.ref("Ingestion", {
+    stack: "workflow-host",
+    stage: "production",
+  }),
+  events: ["instance.completed", "instance.errored"],
+  queueId: queue.queueId,
+});
+```
+
+Use the Workflow's logical ID, including any namespace. Omit the options for
+the current stack and stage. References read persisted state, so deploy the
+host first; deleting the consumer stack does not delete the referenced Workflow.
+
+Explicit sources remain supported, including
+`{ type: "workflows.workflow", workflowName: "existing-ingestion" }` for a
+Workflow referenced by name and `{ type: "r2" }` for R2 events. Cloudflare
+allows at most one subscription per source per account.
+
 ## Where next
 
 Related:
@@ -263,3 +312,4 @@ Reference:
 
 - [Queue API reference](/providers/cloudflare/queues/queue)
 - [Consumer API reference](/providers/cloudflare/queues/consumer)
+- [Subscription API reference](/providers/cloudflare/queues/subscription)

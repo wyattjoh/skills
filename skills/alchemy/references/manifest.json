@@ -2,12 +2,108 @@
   "source": {
     "repo": "https://github.com/alchemy-run/alchemy.git",
     "ref": "main",
-    "sha": "258f63b",
-    "date": "2026-09-18",
+    "sha": "4453c9b",
+    "date": "2026-09-19",
     "alchemyVersion": "2.0.0-beta.79"
   },
-  "generated": 378,
+  "generated": 386,
   "pages": [
+    {
+      "title": "Certificate authorities",
+      "description": "Select a CA, configure external account binding, and understand account identity and key storage.",
+      "area": "acme",
+      "group": "",
+      "slug": "acme/certificate-authorities",
+      "path": "references/acme/certificate-authorities.md",
+      "upstream": "website/src/content/docs/acme/certificate-authorities.mdx",
+      "url": "https://alchemy.run/acme/certificate-authorities",
+      "lines": 160,
+      "bytes": 5937
+    },
+    {
+      "title": "DNS validation",
+      "description": "Configure Cloudflare DNS-01 challenges, wildcard certificates, propagation, and custom solvers.",
+      "area": "acme",
+      "group": "",
+      "slug": "acme/dns-validation",
+      "path": "references/acme/dns-validation.md",
+      "upstream": "website/src/content/docs/acme/dns-validation.mdx",
+      "url": "https://alchemy.run/acme/dns-validation",
+      "lines": 210,
+      "bytes": 7580
+    },
+    {
+      "title": "Getting started",
+      "description": "Issue a staging TLS certificate with Let's Encrypt and an existing Cloudflare DNS zone.",
+      "area": "acme",
+      "group": "",
+      "slug": "acme/getting-started",
+      "path": "references/acme/getting-started.md",
+      "upstream": "website/src/content/docs/acme/getting-started.mdx",
+      "url": "https://alchemy.run/acme/getting-started",
+      "lines": 195,
+      "bytes": 6074
+    },
+    {
+      "title": "ACME",
+      "description": "Manage TLS certificates independently of your hosting provider, at deploy time or from an application.",
+      "area": "acme",
+      "group": "",
+      "slug": "acme",
+      "path": "references/acme/_overview.md",
+      "upstream": "website/src/content/docs/acme/index.mdx",
+      "url": "https://alchemy.run/acme",
+      "lines": 67,
+      "bytes": 3188
+    },
+    {
+      "title": "Renewal & revocation",
+      "description": "Schedule renewal, understand replacement and deletion, and protect certificate and account keys.",
+      "area": "acme",
+      "group": "",
+      "slug": "acme/renewal",
+      "path": "references/acme/renewal.md",
+      "upstream": "website/src/content/docs/acme/renewal.mdx",
+      "url": "https://alchemy.run/acme/renewal",
+      "lines": 139,
+      "bytes": 5726
+    },
+    {
+      "title": "Runtime issuance",
+      "description": "Deploy an authenticated Worker that issues and revokes certificates using a bound ACME account.",
+      "area": "acme",
+      "group": "",
+      "slug": "acme/runtime",
+      "path": "references/acme/runtime.md",
+      "upstream": "website/src/content/docs/acme/runtime.mdx",
+      "url": "https://alchemy.run/acme/runtime",
+      "lines": 317,
+      "bytes": 11658
+    },
+    {
+      "title": "Troubleshooting",
+      "description": "Diagnose failed DNS challenges, rejected orders, rate limits, and runtime certificate operations.",
+      "area": "acme",
+      "group": "",
+      "slug": "acme/troubleshooting",
+      "path": "references/acme/troubleshooting.md",
+      "upstream": "website/src/content/docs/acme/troubleshooting.mdx",
+      "url": "https://alchemy.run/acme/troubleshooting",
+      "lines": 133,
+      "bytes": 6033
+    },
+    {
+      "title": "Using certificates",
+      "description": "Upload an ACME certificate to Fly or pass its chain and private key to another TLS consumer.",
+      "area": "acme",
+      "group": "",
+      "slug": "acme/using-certificates",
+      "path": "references/acme/using-certificates.md",
+      "upstream": "website/src/content/docs/acme/using-certificates.mdx",
+      "url": "https://alchemy.run/acme/using-certificates",
+      "lines": 190,
+      "bytes": 6631
+    },
     {
       "title": "Effect HTTP",
       "description": "Schema-validated REST endpoints with an rpc-like typed interface — for trust boundaries where consumers want a plain HTTP client.",
@@ -1037,8 +1133,8 @@
       "path": "references/cloudflare/apis/effect-rpc.md",
       "upstream": "website/src/content/docs/cloudflare/apis/effect-rpc.mdx",
       "url": "https://alchemy.run/cloudflare/apis/effect-rpc",
-      "lines": 716,
-      "bytes": 23582
+      "lines": 928,
+      "bytes": 31721
     },
     {
       "title": "Schemaless RPC",
@@ -1241,8 +1337,8 @@
       "path": "references/cloudflare/compute/workflows.md",
       "upstream": "website/src/content/docs/cloudflare/compute/workflows.mdx",
       "url": "https://alchemy.run/cloudflare/compute/workflows",
-      "lines": 330,
-      "bytes": 10905
+      "lines": 378,
+      "bytes": 12705
     },
     {
       "title": "Store Git Repos with Artifacts",
@@ -1637,8 +1733,8 @@
       "path": "references/cloudflare/messaging/queues.md",
       "upstream": "website/src/content/docs/cloudflare/messaging/queues.mdx",
       "url": "https://alchemy.run/cloudflare/messaging/queues",
-      "lines": 266,
-      "bytes": 9099
+      "lines": 316,
+      "bytes": 10868
     },
     {
       "title": "Custom domains & routes",
@@ -2333,8 +2429,8 @@
       "path": "references/fly/networking.md",
       "upstream": "website/src/content/docs/fly/networking.mdx",
       "url": "https://alchemy.run/fly/networking",
-      "lines": 110,
-      "bytes": 2843
+      "lines": 183,
+      "bytes": 5627
     },
     {
       "title": "Setup",
@@ -4338,7 +4434,7 @@
       "upstream": "website/src/content/docs/sql/effect-sql/lifecycle.mdx",
       "url": "https://alchemy.run/sql/effect-sql/lifecycle",
       "lines": 107,
-      "bytes": 3999
+      "bytes": 4008
     },
     {
       "title": "Migrations",

@@ -12,7 +12,7 @@ this skill's directory.
 
 <!-- BEGIN GENERATED: corpus-stats -->
 
-Indexed from `alchemy-run/alchemy` @ `258f63b` (2026-09-18), alchemy `2.0.0-beta.79`: **378 topic files** across 25 areas.
+Indexed from `alchemy-run/alchemy` @ `4453c9b` (2026-09-19), alchemy `2.0.0-beta.79`: **386 topic files** across 26 areas.
 
 Reference paths mirror site URLs exactly, so a path is derivable without
 searching: `https://alchemy.run/cloudflare/compute/workers` ->
@@ -191,6 +191,7 @@ yourself.
 
 ### Areas
 
+- `references/acme/` (8) -- Manage TLS certificates independently of your hosting provider, at deploy time or from an application.
 - `references/apis/` (4) -- Every Function and Server returns { fetch, ...rpcs } — schemaless typed calls are the default for internal communication; Effect RPC and Effect HTTP add schemas where data crosses a trust boundary.
 - `references/aws/` (51) -- Build AWS applications with Alchemy — a runtime (usually Lambda) plus typed resources, wired together by bindings that mint least-privilege IAM policies.
 - `references/axiom/` (6) -- Observability as resources — OTEL datasets, ingest tokens, monitors, notifiers, and dashboards declared next to the code that emits the data.
@@ -224,6 +225,9 @@ it only to disambiguate; read the topic file to answer.
 Every page in the corpus. Append `.md` and prefix `references/<area>/`.
 
 ```
+acme/                      _overview certificate-authorities dns-validation
+                           getting-started renewal runtime troubleshooting
+                           using-certificates
 apis/                      _overview effect-http effect-rpc schemaless
 aws/                       _overview ai/bedrock apis/api-gateway apis/effect-http-api
                            apis/effect-rpc apis/schemaless-rpc

@@ -1,6 +1,6 @@
 <!-- source: https://alchemy.run/hetzner/frontend/tanstack-start
      upstream: website/src/content/docs/hetzner/frontend/tanstack-start.mdx
-     alchemy 2.0.0-beta.79 @ 258f63b -->
+     alchemy 2.0.0-beta.79 @ 4453c9b -->
 
 # TanStack Start
 

@@ -1,6 +1,6 @@
 <!-- source: https://alchemy.run/railway/compute/regions
      upstream: website/src/content/docs/railway/compute/regions.mdx
-     alchemy 2.0.0-beta.79 @ 258f63b -->
+     alchemy 2.0.0-beta.79 @ 4453c9b -->
 
 # Regions
 

@@ -1,6 +1,6 @@
 <!-- source: https://alchemy.run/cloudflare/security/secrets-store
      upstream: website/src/content/docs/cloudflare/security/secrets-store.mdx
-     alchemy 2.0.0-beta.79 @ 258f63b -->
+     alchemy 2.0.0-beta.79 @ 4453c9b -->
 
 # Secrets Store & auth tokens
 

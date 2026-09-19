@@ -1,6 +1,6 @@
 <!-- source: https://alchemy.run/docker/swarm
      upstream: website/src/content/docs/docker/swarm.mdx
-     alchemy 2.0.0-beta.79 @ 258f63b -->
+     alchemy 2.0.0-beta.79 @ 4453c9b -->
 
 # Docker Swarm
 

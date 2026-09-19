@@ -1,6 +1,6 @@
 <!-- source: https://alchemy.run/planetscale/data/credentials
      upstream: website/src/content/docs/planetscale/data/credentials.mdx
-     alchemy 2.0.0-beta.79 @ 258f63b -->
+     alchemy 2.0.0-beta.79 @ 4453c9b -->
 
 # Credentials
 

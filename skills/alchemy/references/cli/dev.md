@@ -1,6 +1,6 @@
 <!-- source: https://alchemy.run/cli/dev
      upstream: website/src/content/docs/cli/dev.mdx
-     alchemy 2.0.0-beta.79 @ 258f63b -->
+     alchemy 2.0.0-beta.79 @ 4453c9b -->
 
 # dev
 

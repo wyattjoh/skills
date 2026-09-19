@@ -1,6 +1,6 @@
 <!-- source: https://alchemy.run/cloudflare/compute/rate-limiting
      upstream: website/src/content/docs/cloudflare/compute/rate-limiting.mdx
-     alchemy 2.0.0-beta.79 @ 258f63b -->
+     alchemy 2.0.0-beta.79 @ 4453c9b -->
 
 # Rate limiting
 

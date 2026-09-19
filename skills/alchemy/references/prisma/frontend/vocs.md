@@ -1,6 +1,6 @@
 <!-- source: https://alchemy.run/prisma/frontend/vocs
      upstream: website/src/content/docs/prisma/frontend/vocs.mdx
-     alchemy 2.0.0-beta.79 @ 258f63b -->
+     alchemy 2.0.0-beta.79 @ 4453c9b -->
 
 # Vocs
 

@@ -1,6 +1,6 @@
 <!-- source: https://alchemy.run/project-structure/monorepo-multi-stack
      upstream: website/src/content/docs/project-structure/monorepo-multi-stack.mdx
-     alchemy 2.0.0-beta.79 @ 258f63b -->
+     alchemy 2.0.0-beta.79 @ 4453c9b -->
 
 # Multiple Stacks
 

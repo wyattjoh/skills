@@ -1,6 +1,6 @@
 <!-- source: https://alchemy.run/cloudflare/frontend/foldkit
      upstream: website/src/content/docs/cloudflare/frontend/foldkit.mdx
-     alchemy 2.0.0-beta.79 @ 258f63b -->
+     alchemy 2.0.0-beta.79 @ 4453c9b -->
 
 # Foldkit
 

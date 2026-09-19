@@ -1,6 +1,6 @@
 <!-- source: https://alchemy.run/cloudflare/ai/ai-gateway
      upstream: website/src/content/docs/cloudflare/ai/ai-gateway.mdx
-     alchemy 2.0.0-beta.79 @ 258f63b -->
+     alchemy 2.0.0-beta.79 @ 4453c9b -->
 
 # Add an AI Gateway
 

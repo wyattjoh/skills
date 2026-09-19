@@ -1,6 +1,6 @@
 <!-- source: https://alchemy.run/prisma/compute/apps
      upstream: website/src/content/docs/prisma/compute/apps.mdx
-     alchemy 2.0.0-beta.79 @ 258f63b -->
+     alchemy 2.0.0-beta.79 @ 4453c9b -->
 
 # Apps
 

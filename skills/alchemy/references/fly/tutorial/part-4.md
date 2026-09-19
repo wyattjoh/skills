@@ -1,6 +1,6 @@
 <!-- source: https://alchemy.run/fly/tutorial/part-4
      upstream: website/src/content/docs/fly/tutorial/part-4.mdx
-     alchemy 2.0.0-beta.79 @ 258f63b -->
+     alchemy 2.0.0-beta.79 @ 4453c9b -->
 
 # Part 4: Secrets and Cleanup
 

@@ -1,6 +1,6 @@
 <!-- source: https://alchemy.run/sql/effect-sql/lifecycle
      upstream: website/src/content/docs/sql/effect-sql/lifecycle.mdx
-     alchemy 2.0.0-beta.79 @ 258f63b -->
+     alchemy 2.0.0-beta.79 @ 4453c9b -->
 
 # Connection lifecycle
 
@@ -41,7 +41,7 @@ client.
 ## One client per execution
 
 The first query of an execution — a `fetch`/`queue`/`scheduled`
-event, a Durable Object call, a Workflow run, a Lambda invocation —
+event, a Durable Object call, a Workflow task attempt, a Lambda invocation —
 builds the real client and memoizes it on that execution's scope.
 Every later query in the same execution reuses it. When the event
 settles, the scope closes and the client's finalizer runs: the pool
