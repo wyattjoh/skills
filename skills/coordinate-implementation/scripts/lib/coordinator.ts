@@ -38,14 +38,19 @@ export type CoordinatorOwnership = {
 };
 
 /**
+ * Persisted coordinator handoff policy for released and legacy run states.
+ */
+export type CoordinatorHandoffPolicy =
+  | { handoff: "disabled"; thresholdPercent: null }
+  | { handoff: "yes"; thresholdPercent: 80 };
+
+/**
  * Persisted selected role and current ownership read from one valid run state.
  */
 export type CoordinatorBinding = {
   role: RoleRecord;
   ownership: CoordinatorOwnership;
-  handoff: "yes";
-  thresholdPercent: 80;
-};
+} & CoordinatorHandoffPolicy;
 
 /**
  * Refreshed active runtime pane applied atomically with successor readiness.
@@ -118,16 +123,19 @@ const parseCoordinatorRole = (markdown: string): RoleRecord => {
   return { harness, model, effort };
 };
 
-const parseHandoffPolicy = (markdown: string): { handoff: "yes"; thresholdPercent: 80 } => {
+const parseHandoffPolicy = (markdown: string): CoordinatorHandoffPolicy => {
   const fields = parseFields(markdown, "Coordinator");
-  if (fields.handoff !== "yes" || fields.threshold !== "80 percent") {
-    throw coordinatorError(
-      "state.coordinator_handoff_policy_malformed",
-      "RESUME.md must record `handoff: yes` and `threshold: 80 percent` for every coordinator.",
-      "Repair the schema-1 Coordinator handoff policy before automatic takeover.",
-    );
+  if (fields.handoff === "disabled" && fields.threshold === "unavailable") {
+    return { handoff: "disabled", thresholdPercent: null };
   }
-  return { handoff: "yes", thresholdPercent: 80 };
+  if (fields.handoff === "yes" && fields.threshold === "80 percent") {
+    return { handoff: "yes", thresholdPercent: 80 };
+  }
+  throw coordinatorError(
+    "state.coordinator_handoff_policy_malformed",
+    "RESUME.md must record `handoff: disabled` with `threshold: unavailable` for Herdr 0.9.1, or a valid legacy automatic policy.",
+    "Repair the schema-1 Coordinator handoff policy before coordinator takeover.",
+  );
 };
 
 const parseOwnership = (markdown: string): CoordinatorOwnership => {

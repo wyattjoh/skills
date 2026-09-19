@@ -84,15 +84,15 @@ blocks only that ticket, the other ready ticket continues, and no model is
 substituted. Separately make a reviewer edit the worktree and confirm the
 contaminated report is rejected without automatic cleanup.
 
-## Coordinator handoff
+## Herdr 0.9.1 coordinator continuity
 
-Use Herdr's test or diagnostic control to expose normalized context at exactly
-80 percent while the coordinator is waiting. Confirm the successor uses the
-persisted Coordinator triple, atomically claims the next generation, refreshes
-all worker pane ids, arms `herdr.wait_any`, and marks readiness. Confirm the
-predecessor closes only after verifying the matching marker. Repeat once with a
-failed successor launch and confirm the predecessor remains owner while the
-same configuration retries.
+Run preflight against Herdr 0.9.1 and confirm it succeeds with
+`machine_api: true` and `normalized_context: false`. Start one worker, call
+`herdr.wait_any` with `coordinator: null`, and confirm status and refreshed pane
+ids still arrive through the event-driven path. Confirm RESUME.md records
+`handoff: disabled` and `threshold: unavailable`, and that
+`coordinator.handoff.prepare` fails with `coordinator.handoff_disabled` before
+writing an artifact.
 
 ## Completion and waiting checks
 

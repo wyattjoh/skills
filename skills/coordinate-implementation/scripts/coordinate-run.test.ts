@@ -463,7 +463,7 @@ describe("portable downstream documentation", () => {
       "Parallel frontier",
       "Conflict adaptation",
       "Reviewer failure",
-      "Coordinator handoff",
+      "Herdr 0.9.1 coordinator continuity",
     ]) {
       expect(smoke.includes(scenario)).toBe(true);
     }

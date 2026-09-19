@@ -313,8 +313,8 @@ afterEach(async () => {
   await Promise.all(servers.splice(0).map(closeServer));
 });
 
-describe("automatic handoff documentation contract", () => {
-  it("documents one exact cross-harness 80 percent policy and the safe helper sequence", () => {
+describe("released Herdr coordinator continuity documentation", () => {
+  it("disables automatic handoff and documents durable replacement recovery", () => {
     const skill = readFileSync(join(import.meta.dir, "..", "SKILL.md"), "utf8");
     const handoff = readFileSync(join(import.meta.dir, "..", "references", "handoff.md"), "utf8");
     const helper = readFileSync(join(import.meta.dir, "..", "references", "helper-cli.md"), "utf8");
@@ -323,26 +323,24 @@ describe("automatic handoff documentation contract", () => {
       "utf8",
     );
 
-    const skillHandoff = skill.slice(skill.indexOf("## Handoff"), skill.indexOf("## Resume"));
-    expect(skillHandoff.split("\n").slice(0, 12)).toEqual([
-      "## Handoff",
+    const continuity = skill.slice(
+      skill.indexOf("## Coordinator continuity"),
+      skill.indexOf("## Resume"),
+    );
+    expect(continuity.split("\n").slice(0, 8)).toEqual([
+      "## Coordinator continuity",
       "",
-      "Automatic handoff is mandatory at exactly 80 percent normalized context",
-      "utilization. Both Pi and Claude Code use this same policy. The durable",
-      "`Coordinator.handoff: yes` and `Coordinator.threshold: 80 percent` fields make",
-      "that invariant visible to a successor, but are not user-tunable model defaults.",
-      "Only Herdr's machine-readable `context_used` and `context_limit` values may",
-      "trigger it.",
+      "Automatic coordinator handoff is disabled because Herdr 0.9.1 does not expose",
+      "normalized model context utilization. Record `Coordinator.handoff: disabled`",
+      "and `Coordinator.threshold: unavailable` in RESUME.md. Continue through the",
+      "active harness's normal context compaction without replacing the coordinator.",
+      "Never parse rendered pane output to estimate context use.",
       "",
-      "At or above the threshold, finish any coordinator-owned synchronization,",
-      "review, fixing, or landing action. Do not start another ticket. Hand off at the",
-      "next `waiting` or `scheduling` safe point without waiting for active workers to",
     ]);
     expect(handoff.match(/^## .+$/gmu)).toEqual([
-      "## Detect the threshold from Herdr",
-      "## Prepare a shell-free successor launch",
-      "## Successor recovery and atomic claim",
-      "## Predecessor verification and exact close",
+      "## Continue through normal compaction",
+      "## Recover an ended coordinator",
+      "## Unsupported automatic operations",
       "## Binding rules",
     ]);
     expect(helper.match(/^### `coordinator\.handoff\.[a-z]+`$/gmu)).toEqual([
@@ -352,12 +350,10 @@ describe("automatic handoff documentation contract", () => {
       "### `coordinator.handoff.verify`",
     ]);
     expect(resume.match(/^  (?:handoff|threshold):.+$/gmu)?.slice(0, 2)).toEqual([
-      "  handoff:    yes",
-      "  threshold:  80 percent",
+      "  handoff:    disabled",
+      "  threshold:  unavailable",
     ]);
-    expect(handoff.match(/rendered status or pane text/gu)).toEqual([
-      "rendered status or pane text",
-    ]);
+    expect(handoff.match(/rendered pane output/gu)).toEqual(["rendered pane output"]);
   });
 });
 
@@ -452,21 +448,36 @@ describe("automatic coordinator context handoff", () => {
     });
   });
 
-  it("fails closed when normalized context data is missing", async () => {
+  it("continues worker coordination when normalized context data is unavailable", async () => {
     const path = await serveSnapshot(undefined, undefined);
 
     const result = await runCliAsync(request("herdr.wait_any", waitInput(path, "waiting")));
 
-    expect(result.exitCode).toBe(1);
-    expect(result.stdout.errors).toEqual([
-      {
-        code: "herdr.context_missing",
-        message:
-          "Herdr did not report normalized context_used and context_limit values for coordinator `coordinator-run-5`.",
-        remediation:
-          "Stop coordination and install a Herdr version that exposes both normalized context fields. Never parse rendered terminal status.",
+    expect(result.exitCode).toBe(0);
+    expect(result.stdout.errors).toEqual([]);
+    expect(result.stdout.result).toEqual({
+      reason: "timeout",
+      worker: null,
+      workers: [
+        {
+          runtime_id: "runtime-01",
+          ticket: "01",
+          session: "run-01",
+          pane_id: "w1:p1",
+          previous_pane_id: "w1:p1",
+          status: "working",
+        },
+      ],
+      coordinator: {
+        session: "coordinator-run-5",
+        pane_id: "w1:p0",
+        previous_pane_id: "w1:p0",
+        context_used: null,
+        context_limit: null,
+        utilization_percent: null,
+        handoff: "unavailable",
       },
-    ]);
+    });
   });
 });
 
@@ -1135,6 +1146,48 @@ describe("safe coordinator handoff launch", () => {
     expect((JSON.parse(readFileSync(artifactPath, "utf8")) as { kind: string }).kind).toBe(
       "coordinator-handoff",
     );
+  });
+
+  it("rejects automatic handoff when the run records the released Herdr policy", () => {
+    const root = mkdtempSync(join(tmpdir(), "coordinate-handoff-disabled-state-"));
+    const runPath = join(root, "run");
+    mkdirSync(join(runPath, "briefs"), { recursive: true });
+    const statePath = join(runPath, "RESUME.md");
+    writeFileSync(
+      statePath,
+      roleState("claude", "claude")
+        .replace("handoff: yes", "handoff: disabled")
+        .replace("threshold: 80 percent", "threshold: unavailable"),
+    );
+    const artifactPath = join(runPath, "briefs", "handoff.json");
+
+    const result = runCli(
+      request("coordinator.handoff.prepare", {
+        state_path: statePath,
+        run_path: runPath,
+        artifact_path: artifactPath,
+        session: "coordinator-run-5",
+        successor_pane: "w1:p2",
+        predecessor_session: "coordinator-run-5",
+        socket_path: "/missing/herdr.sock",
+        timeout_ms: 500,
+        phase: "waiting",
+        attempt: 1,
+        max_retries: 3,
+        previous_artifact_path: null,
+      }),
+    );
+
+    expect(result.exitCode).toBe(1);
+    expect(result.stdout.errors).toEqual([
+      {
+        code: "coordinator.handoff_disabled",
+        message: "Automatic coordinator handoff is disabled for this run.",
+        remediation:
+          "Continue in the current coordinator session, or resume from RESUME.md after that session ends.",
+      },
+    ]);
+    expect(Bun.file(artifactPath).size).toBe(0);
   });
 
   it("rejects invalid durable handoff policy before launch", () => {

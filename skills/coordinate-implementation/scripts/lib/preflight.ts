@@ -14,9 +14,10 @@ export type CommandCapability = {
 };
 
 /**
- * Herdr availability plus the normalized context-metric capability.
+ * Herdr availability plus the machine API capabilities used by coordination.
  */
 export type HerdrCapability = CommandCapability & {
+  machine_api: boolean;
   normalized_context: boolean;
 };
 
@@ -90,6 +91,16 @@ const readHerdrSchema = (): unknown | undefined => {
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>
   typeof value === "object" && value !== null && !Array.isArray(value);
+
+const containsString = (value: unknown, expected: string): boolean => {
+  if (value === expected) return true;
+  if (Array.isArray(value)) return value.some((item) => containsString(item, expected));
+  if (!isRecord(value)) return false;
+  return Object.values(value).some((item) => containsString(item, expected));
+};
+
+const exposesMachineApi = (schema: unknown): boolean =>
+  containsString(schema, "session.snapshot") && containsString(schema, "events.subscribe");
 
 const hasNormalizedContextProperties = (definition: unknown): boolean => {
   if (!isRecord(definition) || !isRecord(definition.properties)) return false;
@@ -180,9 +191,12 @@ export const runPreflight = (input: PreflightInput): Effect.Effect<PreflightOutc
     const git = probeCommand("git", ["--version"]);
     const bun = probeCommand("bun", ["--version"]);
     const herdrVersion = probeCommand("herdr", ["--version"]);
-    const normalizedContext = herdrVersion.available && exposesNormalizedContext(readHerdrSchema());
+    const herdrSchema = herdrVersion.available ? readHerdrSchema() : undefined;
+    const machineApi = herdrVersion.available && exposesMachineApi(herdrSchema);
+    const normalizedContext = herdrVersion.available && exposesNormalizedContext(herdrSchema);
     const herdr: HerdrCapability = {
       ...herdrVersion,
+      machine_api: machineApi,
       normalized_context: normalizedContext,
     };
 
@@ -190,13 +204,12 @@ export const runPreflight = (input: PreflightInput): Effect.Effect<PreflightOutc
     if (!bun.available) errors.push(dependencyIssue("bun", "Bun"));
     if (!herdr.available) {
       errors.push(dependencyIssue("herdr", "Herdr"));
-    } else if (!normalizedContext) {
+    } else if (!machineApi) {
       errors.push({
-        code: "herdr.context_metrics_missing",
+        code: "herdr.machine_api_missing",
         message:
-          "Herdr's machine-readable API does not expose normalized `context_used` and `context_limit` fields.",
-        remediation:
-          "Install a Herdr release that exposes both normalized context fields in `herdr api schema --json`.",
+          "Herdr's machine-readable API does not expose `session.snapshot` and `events.subscribe`.",
+        remediation: "Install Herdr 0.9.1 or later and verify `herdr api schema --json` succeeds.",
       });
     }
 

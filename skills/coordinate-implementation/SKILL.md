@@ -1,8 +1,8 @@
 ---
 name: coordinate-implementation
-description: Orchestrates a multi-ticket implementation run. Points at a `.scratch/<slug>/` folder holding a spec and numbered issues, then runs dependency-ready tickets in parallel by default, reviews each result on two axes, loops fixes back, and fast-forwards the integration branch. Repository-specific commands and safety constraints are discovered from project instructions and CI rather than assumed. Scheduling mode and validated Coordinator, Implementor, and Reviewer role records survive handoffs and mid-run changes in RESUME.md. Triggers on "/coordinate-implementation", "implement the tickets in", "orchestrate the run", "resume the implementation run".
+description: Orchestrates a multi-ticket implementation run. Points at a `.scratch/<slug>/` folder holding a spec and numbered issues, then runs dependency-ready tickets in parallel by default, reviews each result on two axes, loops fixes back, and fast-forwards the integration branch. Repository-specific commands and safety constraints are discovered from project instructions and CI rather than assumed. Scheduling mode and validated Coordinator, Implementor, and Reviewer role records survive resumes and mid-run changes in RESUME.md. Triggers on "/coordinate-implementation", "implement the tickets in", "orchestrate the run", "resume the implementation run".
 argument-hint: "[.scratch/<slug> | resume .scratch/<slug>] [--base <branch>] [--coordinator '<harness> <model> <effort>'] [--implementor '<harness> <model> <effort>'] [--reviewer '<harness> <model> <effort>'] [--serial | --parallel <N>]"
-compatibility: Requires macOS or Linux, Git, Bun, Herdr with machine-readable normalized context_used and context_limit fields, Matt Pocock's implement skill, and at least one supported harness (Pi or Claude Code).
+compatibility: Requires macOS or Linux, Git, Bun, Herdr 0.9.1 or later with the machine-readable event and snapshot API, Matt Pocock's implement skill, and at least one supported harness (Pi or Claude Code).
 disable-model-invocation: true
 effort: low
 ---
@@ -14,11 +14,10 @@ one implementor session per ticket, start every dependency-ready ticket in
 parallel by default, review each policy-compliant ticket branch, send fixes
 back into the same session, and land it on the configured integration branch.
 
-The baseline environment is macOS or Linux with Git, Bun, Herdr, Matt Pocock's
-`implement` skill, and at least one supported harness (Pi or Claude Code).
-Herdr must expose normalized `context_used` and `context_limit` values through
-its machine-readable API. A binary name or rendered terminal status is not
-proof of that capability. Coordination must run inside a Herdr-managed pane
+The baseline environment is macOS or Linux with Git, Bun, Herdr 0.9.1 or
+later, Matt Pocock's `implement` skill, and at least one supported harness (Pi
+or Claude Code). Herdr must expose the machine-readable `events.subscribe` and
+`session.snapshot` methods. Coordination must run inside a Herdr-managed pane
 with `HERDR_ENV=1`. Load the `herdr` skill in the same invocation using the
 active harness's supported skill syntax so the coordinator can identify and
 control its own pane.
@@ -41,8 +40,8 @@ accepts and records the changed revision.
 Arguments: `$ARGUMENTS`
 
 - A run folder (`.scratch/<slug>`) starts or continues a run.
-- `resume .scratch/<slug>` is the form a successor session receives after a
-  handoff; do the **Resume** steps first.
+- `resume .scratch/<slug>` is the form a restarted or replacement session
+  receives; do the **Resume** steps first.
 - `--base <branch>` names the integration branch workers branch from and the
   coordinator fast-forwards. Default `main`. Recorded as `Base:` in RESUME.md
   on first run; later invocations read it from there.
@@ -80,11 +79,13 @@ all three resolved records through `role.validate`, then persist all three in
 RESUME.md before any launch. If the user explicitly supplies every value, do
 not ask again.
 
-Compare the persisted Coordinator record with the invoking session. An exact
-match keeps the current pane and initializes its ownership as ready without a
-claim. Any harness, model, or effort mismatch requires the safe Herdr takeover
-in [handoff.md](references/handoff.md); never rewrite the selected Coordinator
-record to make the invoking pane appear to match it.
+Compare the selected or persisted Coordinator record with the invoking session.
+An exact match keeps the current pane and initializes or resumes its ownership.
+Herdr 0.9.1 cannot support a live coordinator replacement, so any harness,
+model, or effort mismatch stops before state mutation. Ask the user to start a
+matching coordinator session, then invoke or resume the run there. Never rewrite
+the Coordinator record to make the invoking pane appear to match it. Recovery
+rules are in [handoff.md](references/handoff.md).
 
 Everywhere below, `<base>` means that branch. The main checkout is never
 `<base>` unless `<base>` is `main`.
@@ -131,14 +132,15 @@ rules for keeping the record true:
   or effort.
 - **On resume, an explicit flag wins and is written back.** `--implementor`,
   `--reviewer`, `--serial`, or `--parallel <N>` passed at resume is a preference
-  change: validate it, write it, and log it. `--coordinator` first persists the
-  validated selection, then uses safe takeover. `--base` is the exception and
-  the file wins; resume-format.md says why.
+  change: validate it, write it, and log it. `--coordinator` must match the
+  invoking replacement session; live coordinator changes are unsupported.
+  `--base` is the exception and the file wins; resume-format.md says why.
 - **A session binds its record at launch.** The run-wide `Implementor:` and
   `Reviewer:` records govern future launches only. A ticket already running
   keeps its implementor record in the table row for its whole life, and every
   reviewer launch records the Reviewer default it bound. A Coordinator change
-  always uses a takeover and never becomes a state-only rewrite.
+  requires the prior process to end and the replacement invocation to already
+  use the selected record; it never becomes a state-only rewrite.
 - **Log every change.** Append a dated line to `## Decisions` with the reason.
 - **Re-read RESUME.md at each progress tick**, so a hand edit is honored and
   you never overwrite one blindly.
@@ -170,8 +172,8 @@ schema-1 RESUME.md, but never edits either.
   with a different live ready owner, otherwise add or update your own row.
   Warn the user when two runs on the same base touch the same ticket files or
   implementation areas, then continue.
-- Update your row whenever a ticket starts, blocks, closes, or lands, at
-  handoff, and after `run.finalize` changes run status.
+- Update your row whenever a ticket starts, blocks, closes, or lands, after a
+  coordinator replacement, and after `run.finalize` changes run status.
 - Record `completed` before closing. Remove the row only when no downstream
   coordinator requires the completion tombstone or after it acknowledges the
   terminal state.
@@ -218,15 +220,13 @@ remaining blocked ticket:
    `implementor.launch.prepare`. Execute only its argument arrays and persist
    the observed outcome with `implementor.launch.record`. Exact procedure:
    [session-launch.md](references/session-launch.md).
-2. **Wait.** Call `herdr.wait_any` once with every active worker, the current
-   coordinator session, pane, workflow phase, and a bounded timeout. It
-   subscribes before snapshotting. Persist refreshed pane ids from its complete
-   worker snapshot. On `status` or `pane_exited`, act on the named runtime. On
-   `handoff`, stop launching work and run the automatic handoff protocol at this
-   safe point. On `timeout`, perform stall, snapshot-integrity, base, and
-   coordinator-context checks, run one scheduling pass, then issue another
-   bounded wait. Do not create cron jobs, shell wait loops, background monitors,
-   or harness-native tasks.
+2. **Wait.** Call `herdr.wait_any` once with every active worker,
+   `coordinator: null`, and a bounded timeout. It subscribes before snapshotting.
+   Persist refreshed pane ids from its complete worker snapshot. On `status` or
+   `pane_exited`, act on the named runtime. On `timeout`, perform stall,
+   snapshot-integrity, and base checks, run one scheduling pass, then issue
+   another bounded wait. Do not create cron jobs, shell wait loops, background
+   monitors, or harness-native tasks.
 3. **Review** when wait-any returns an idle or done implementor. Invoke
    `snapshot.check` first and do not begin review or landing against a changed
    revision. If several tickets become ready together, process them one at a
@@ -288,20 +288,17 @@ wake authority, not marker text; implementors forget to print it.
 
 Keep exactly one bounded `herdr.wait_any` call in flight while implementors are
 active. Supply each runtime's durable id, ticket, session name, and latest pane
-id, plus the current coordinator session, pane, and phase. The helper subscribes
-to every pane's status plus pane exit events, waits for the subscription
-acknowledgement, and only then takes its immediate snapshot. This ordering
-preserves events that race with bootstrap. When no implementor is active, call
-it with an empty worker list and the coordinator identity so context handoff is
-still evaluated without polling.
+id, and set `coordinator` to `null`. The helper subscribes to every worker
+pane's status plus pane exit events, waits for the subscription acknowledgement,
+and only then takes its immediate snapshot. This ordering preserves events that
+race with bootstrap. When no implementor is active, do not open an empty wait;
+persist state, report the blocked or complete frontier, and end the turn.
 
 An already-present or subsequent `idle`, `done`, `blocked`, or pane-exited
-condition wakes the coordinator with the affected runtime identity. The same
-snapshot reads only Herdr's normalized `context_used` and `context_limit`
-fields for the current coordinator. At exactly 80 percent or higher it returns
-`reason: handoff` at a safe `waiting` or `scheduling` phase, and records
-`handoff: deferred` during synchronization, review, fixing, or landing. Missing
-normalized values fail closed. Never parse rendered pane or status text.
+condition wakes the coordinator with the affected runtime identity. Herdr 0.9.1
+does not expose model context utilization through its machine-readable API, so
+this workflow never parses rendered pane or status text and never attempts a
+context-triggered coordinator handoff.
 
 If several workers settle together, process their events one at a time, then
 serialize review and landing in dependency order. The helper's timeout is not
@@ -361,33 +358,25 @@ evidence the bound model is not converging on this ticket.
 - `unattended` governs this decision only. A `TICKET BLOCKED` question, a scope
   decision, and an invalid-record prompt always wait for the user.
 
-## Handoff
+## Coordinator continuity
 
-Automatic handoff is mandatory at exactly 80 percent normalized context
-utilization. Both Pi and Claude Code use this same policy. The durable
-`Coordinator.handoff: yes` and `Coordinator.threshold: 80 percent` fields make
-that invariant visible to a successor, but are not user-tunable model defaults.
-Only Herdr's machine-readable `context_used` and `context_limit` values may
-trigger it.
+Automatic coordinator handoff is disabled because Herdr 0.9.1 does not expose
+normalized model context utilization. Record `Coordinator.handoff: disabled`
+and `Coordinator.threshold: unavailable` in RESUME.md. Continue through the
+active harness's normal context compaction without replacing the coordinator.
+Never parse rendered pane output to estimate context use.
 
-At or above the threshold, finish any coordinator-owned synchronization,
-review, fixing, or landing action. Do not start another ticket. Hand off at the
-next `waiting` or `scheduling` safe point without waiting for active workers to
-finish. Use `coordinator.handoff.prepare` to re-observe normalized predecessor
-context and publish shell-free launch arrays, then apply the shared three-retry
-policy for a failed successor. The successor calls
-`coordinator.handoff.ready`, which validates state and snapshot hashes, arms
-`herdr.wait_any`, validates unique active runtimes against active ticket-table
-rows, revalidates that complete identity set under the ownership lock, refreshes
-every active worker pane, and atomically claims the next ready ownership
-generation. Every failed launch publishes immutable retry evidence containing
-the exact diagnostic and retry decision. The predecessor closes only from the exact command
-returned by `coordinator.handoff.verify` after observing the matching marker in
-the successor pane. Full procedure: [handoff.md](references/handoff.md).
+If the coordinator process exits or cannot recover after compaction, leave its
+pane and durable state intact until the user starts a replacement with
+`resume .scratch/<slug>`. The replacement follows the normal Resume procedure,
+refreshes worker panes from Herdr, and claims ownership through the existing
+coordinator compare-and-swap operations. It must not invoke any
+`coordinator.handoff.*` operation. Full recovery rules:
+[handoff.md](references/handoff.md).
 
 ## Resume
 
-When invoked as `resume .scratch/<slug>` or from a handoff:
+When invoked as `resume .scratch/<slug>` for a restart or replacement:
 
 1. Run the helper `preflight` operation with the run's `RESUME.md` as
    `state_path`, then invoke `snapshot.check` and require `unchanged` with
@@ -400,31 +389,31 @@ When invoked as `resume .scratch/<slug>` or from a handoff:
    ticket's worktree and pane, and what remains. Missing, malformed, or
    unsupported schema versions stop the resume without migration. Any other
    mismatch also stops with an explanation; nothing is guessed.
-   If this invocation also passed `--coordinator`, `--implementor`,
-   `--reviewer`, `--serial`, or `--parallel <N>` and it differs from the
-   record, that is a preference change: validate it, write it, and log it in
-   `## Decisions`. Coordinator changes require safe takeover; Implementor and
-   Reviewer changes apply only to future launches.
+   If `--coordinator` differs from the persisted record or the invoking
+   session, stop and ask the user to start a matching replacement session.
+   Differing `--implementor`, `--reviewer`, `--serial`, or `--parallel <N>`
+   values are preference changes: validate them, write them, and log them in
+   `## Decisions`. Implementor and Reviewer changes apply only to future
+   launches.
 2. `herdr pane list`; pane ids compact, so trust the list over RESUME.md.
    Rename your own tab to `coordinator` and label your own pane
    `coordinator <prefix>`, using `$HERDR_TAB_ID` and `$HERDR_PANE_ID`.
 3. Compare `Base sha:` with the base checkout. If it moved, inspect every
    active branch against the new base, then record the observed sha.
 4. Update your line in `.scratch/coordinators.md`.
-5. Call `herdr.wait_any` with a short bounded timeout for every active runtime.
-   Persist every refreshed pane id from the returned complete snapshot. A valid
-   active runtime remains active even when its recorded compact pane id changed;
-   do not relaunch it.
-6. Run `scheduler.plan`. During a handoff, call `coordinator.handoff.ready`;
-   that operation validates the accepted snapshot, arms a bounded wait-any
-   cycle, refreshes active worker panes, and atomically claims the next ready
-   ownership generation.
+5. When active runtimes exist, call `herdr.wait_any` with a short bounded
+   timeout and `coordinator: null`. Persist every refreshed pane id from the
+   returned complete snapshot. A valid active runtime remains active even when
+   its recorded compact pane id changed; do not relaunch it.
+6. Run `scheduler.plan`. If this is a replacement coordinator, use the normal
+   coordinator claim and readiness operations after verifying that the previous
+   process is no longer active. Do not invoke `coordinator.handoff.*`.
 7. Report the state in a short list and end the turn.
 
 ## Rules that are not negotiable
 
-- Preflight must succeed before creating or mutating RESUME.md. Never bypass a
-  missing capability or infer Herdr context use from rendered terminal text.
+- Preflight must succeed before creating or mutating RESUME.md. Never infer
+  context use from rendered terminal text or invoke automatic handoff.
 - Scheduling, review, and landing require an accepted, unchanged snapshot.
   Changed input hashes pause new work until explicit `snapshot.accept` records
   the revision and decision.

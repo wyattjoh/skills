@@ -76,9 +76,13 @@ failure in one result:
 - `git`, `bun`, and `herdr` launch successfully;
 - at least one of `pi` or `claude` launches successfully;
 - Matt Pocock's required `implement` skill is installed;
-- `herdr api schema --json` exposes normalized `context_used` and
-  `context_limit` fields;
+- `herdr api schema --json` exposes the `session.snapshot` and
+  `events.subscribe` methods used by Herdr 0.9.1;
 - the optional state document uses supported schema version 1.
+
+The Herdr capability result includes `normalized_context` for diagnostics, but
+that value may be `false` and does not fail preflight. Herdr 0.9.1 lacks those
+metrics, so new runs disable automatic coordinator handoff.
 
 Preflight is read-only. A failed check does not create, rewrite, or migrate
 `RESUME.md`.
@@ -463,7 +467,8 @@ control socket:
         "session": "example-02",
         "pane_id": "w1:p4"
       }
-    ]
+    ],
+    "coordinator": null
   }
 }
 ```
@@ -484,11 +489,14 @@ A timeout is successful transport but not worker completion. It returns
 `reason: timeout`, `worker: null`, and the latest complete worker snapshot
 captured within the requested end-to-end deadline. It does not start another
 socket connection after that deadline expires. Use the snapshot for stall
-detection, recovery, snapshot-integrity checks, base checks, and
-coordinator-context checks. Each worker includes both `pane_id` and
-`previous_pane_id`; persist refreshed ids before another wait or launch
-decision. A valid session discovered under a refreshed pane remains active and
-must not be relaunched.
+detection, recovery, snapshot-integrity checks, and base checks. Each worker
+includes both `pane_id` and `previous_pane_id`; persist refreshed ids before
+another wait or launch decision. A valid session discovered under a refreshed
+pane remains active and must not be relaunched.
+
+Set `coordinator` to `null` for released Herdr runs. The input remains accepted
+for legacy artifacts, but missing normalized context metrics return
+`handoff: unavailable` rather than failing worker coordination.
 
 Malformed events, malformed snapshots, disconnects, and socket failures return
 a normal operation failure. Feed that failure into the shared infrastructure
@@ -823,12 +831,17 @@ active runtime and serialized slot, appends landed and retained-branch
 provenance, and returns `schedule`. Call `scheduler.plan` only after that
 durable result.
 
-## Automatic coordinator handoff operations
+## Legacy automatic coordinator handoff operations
+
+New Herdr 0.9.1 runs record `handoff: disabled` and must not invoke these
+operations. They remain available only to validate or recover a legacy run that
+records `handoff: yes` and has normalized Herdr context metrics. Preparation on
+a disabled run fails with `coordinator.handoff_disabled` before writing an
+artifact or launching a successor.
 
 ### `coordinator.handoff.prepare`
 
-At a safe point after wait-any returns `reason: handoff`, prepare the successor
-without changing ownership:
+For a compatible legacy run, prepare the successor without changing ownership:
 
 ```json
 {
@@ -910,8 +923,8 @@ lock, the full current runtime identity set must still exactly equal the
 pre-wait set, including ticket, session, attempt, and prior pane. Only then does
 that atomic mutation persist refreshed worker panes, compare-and-swap the
 predecessor generation, and record `readiness: ready`. Changed snapshots, stale
-generations, invalid state, missing normalized successor context, and changed
-successor panes fail without changing ownership.
+generations, invalid state, and changed successor panes fail without changing
+ownership.
 
 ### `coordinator.handoff.verify`
 

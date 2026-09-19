@@ -577,6 +577,13 @@ export const prepareCoordinatorHandoff = (
         await ensureArtifactInsideRun(input.runPath, input.statePath, input.previousArtifactPath);
       }
       const binding = await runIssueEffect(readCoordinatorBinding(input.statePath));
+      if (binding.handoff === "disabled") {
+        throw handoffError(
+          "coordinator.handoff_disabled",
+          "Automatic coordinator handoff is disabled for this run.",
+          "Continue in the current coordinator session, or resume from RESUME.md after that session ends.",
+        );
+      }
       if (binding.ownership.readiness !== "ready") {
         throw handoffError(
           "coordinator.predecessor_not_ready",
@@ -604,11 +611,20 @@ export const prepareCoordinatorHandoff = (
           },
         }),
       );
+      if (observed.coordinator?.handoff === "unavailable") {
+        throw handoffError(
+          "coordinator.context_unavailable",
+          "Herdr does not expose normalized coordinator context metrics.",
+          "Disable automatic handoff for this run and continue in the current coordinator session.",
+        );
+      }
       if (
         observed.reason !== "handoff" ||
         observed.coordinator === null ||
         observed.coordinator === undefined ||
-        observed.coordinator.handoff !== "required"
+        observed.coordinator.handoff !== "required" ||
+        observed.coordinator.context_used === null ||
+        observed.coordinator.context_limit === null
       ) {
         throw handoffError(
           "coordinator.handoff_below_threshold",

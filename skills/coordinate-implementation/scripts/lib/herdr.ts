@@ -24,16 +24,16 @@ export type HerdrWorkerSnapshot = {
 };
 
 /**
- * Normalized coordinator context observed in the same Herdr snapshot as workers.
+ * Coordinator identity plus optional normalized context observed with workers.
  */
 export type HerdrCoordinatorSnapshot = {
   session: string;
   pane_id: string;
   previous_pane_id: string;
-  context_used: number;
-  context_limit: number;
-  utilization_percent: number;
-  handoff: "continue" | "deferred" | "required";
+  context_used: number | null;
+  context_limit: number | null;
+  utilization_percent: number | null;
+  handoff: "continue" | "deferred" | "required" | "unavailable";
 };
 
 /**
@@ -428,26 +428,32 @@ const resolveCoordinator = (
       "Keep the current pane open and repair the coordinator runtime binding before handoff.",
     );
   }
+  const contextUsed = current.contextUsed;
+  const contextLimit = current.contextLimit;
   if (
-    current.contextUsed === undefined ||
-    current.contextLimit === undefined ||
-    current.contextUsed < 0 ||
-    current.contextLimit <= 0
+    contextUsed === undefined ||
+    contextLimit === undefined ||
+    contextUsed < 0 ||
+    contextLimit <= 0
   ) {
-    throw herdrError(
-      "herdr.context_missing",
-      `Herdr did not report normalized context_used and context_limit values for coordinator \`${coordinator.session}\`.`,
-      "Stop coordination and install a Herdr version that exposes both normalized context fields. Never parse rendered terminal status.",
-    );
+    return {
+      session: coordinator.session,
+      pane_id: current.paneId,
+      previous_pane_id: coordinator.paneId,
+      context_used: null,
+      context_limit: null,
+      utilization_percent: null,
+      handoff: "unavailable",
+    };
   }
-  const atThreshold = BigInt(current.contextUsed) * 5n >= BigInt(current.contextLimit) * 4n;
+  const atThreshold = BigInt(contextUsed) * 5n >= BigInt(contextLimit) * 4n;
   return {
     session: coordinator.session,
     pane_id: current.paneId,
     previous_pane_id: coordinator.paneId,
-    context_used: current.contextUsed,
-    context_limit: current.contextLimit,
-    utilization_percent: (current.contextUsed / current.contextLimit) * 100,
+    context_used: contextUsed,
+    context_limit: contextLimit,
+    utilization_percent: (contextUsed / contextLimit) * 100,
     handoff: atThreshold
       ? SAFE_HANDOFF_PHASES.has(coordinator.phase)
         ? "required"

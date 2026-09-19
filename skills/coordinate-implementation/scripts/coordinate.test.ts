@@ -87,6 +87,12 @@ if (args[0] === "--version") {
 } else if (args.join(" ") === "api schema --json") {
   console.log(JSON.stringify({
     schemas: {
+      request: {
+        oneOf: [
+          { properties: { method: { const: "session.snapshot" } } },
+          { properties: { method: { const: "events.subscribe" } } },
+        ],
+      },
       success_response: {
         $defs: {
           AgentInfo: {
@@ -278,6 +284,7 @@ describe("versioned coordinate CLI", () => {
           herdr: {
             available: true,
             version: "herdr 9.9.9",
+            machine_api: true,
             normalized_context: true,
           },
         },
@@ -309,7 +316,12 @@ describe("versioned coordinate CLI", () => {
         capabilities: {
           git: { available: false, version: null },
           bun: { available: false, version: null },
-          herdr: { available: false, version: null, normalized_context: false },
+          herdr: {
+            available: false,
+            version: null,
+            machine_api: false,
+            normalized_context: false,
+          },
         },
         harnesses: [
           { name: "claude", available: false, version: null },
@@ -350,7 +362,7 @@ describe("versioned coordinate CLI", () => {
     });
   });
 
-  it("rejects Herdr without normalized context-used and context-limit fields", () => {
+  it("accepts Herdr 0.9.1 without normalized context metrics", () => {
     const fixture = makeEnvironment(completeCommands(false));
     const implement = join(fixture.skillRoot, "implement");
     mkdirSync(implement, { recursive: true });
@@ -358,12 +370,12 @@ describe("versioned coordinate CLI", () => {
 
     const result = runCli(preflightRequest(fixture.skillRoot), fixture.env);
 
-    expect(result.exitCode).toBe(1);
+    expect(result.exitCode).toBe(0);
     expect(result.stderr).toBe("");
     expect(result.stdout).toEqual({
       schema_version: 1,
       operation: "preflight",
-      ok: false,
+      ok: true,
       result: {
         platform: process.platform,
         capabilities: {
@@ -372,6 +384,7 @@ describe("versioned coordinate CLI", () => {
           herdr: {
             available: true,
             version: "herdr 9.9.9",
+            machine_api: true,
             normalized_context: false,
           },
         },
@@ -382,16 +395,52 @@ describe("versioned coordinate CLI", () => {
         skills: [{ name: "implement", available: true, path: join(implement, "SKILL.md") }],
         state: null,
       },
-      errors: [
-        {
-          code: "herdr.context_metrics_missing",
-          message:
-            "Herdr's machine-readable API does not expose normalized `context_used` and `context_limit` fields.",
-          remediation:
-            "Install a Herdr release that exposes both normalized context fields in `herdr api schema --json`.",
-        },
-      ],
+      errors: [],
     });
+  });
+
+  it("rejects Herdr without the snapshot and event machine API", () => {
+    const commands = completeCommands(false);
+    commands.herdr = `
+const args = process.argv.slice(2);
+if (args[0] === "--version") {
+  console.log("herdr 0.8.0");
+} else if (args.join(" ") === "api schema --json") {
+  console.log(JSON.stringify({ schemas: { success_response: { $defs: {} } } }));
+} else {
+  process.exit(1);
+}
+`;
+    const fixture = makeEnvironment(commands);
+    const implement = join(fixture.skillRoot, "implement");
+    mkdirSync(implement, { recursive: true });
+    writeFileSync(join(implement, "SKILL.md"), "---\nname: implement\ndescription: test\n---\n");
+
+    const result = runCli(preflightRequest(fixture.skillRoot), fixture.env);
+
+    expect(result.exitCode).toBe(1);
+    expect(result.stderr).toBe("");
+    expect(
+      (
+        result.stdout as {
+          result: { capabilities: { herdr: unknown } };
+          errors: unknown[];
+        }
+      ).result.capabilities.herdr,
+    ).toEqual({
+      available: true,
+      version: "herdr 0.8.0",
+      machine_api: false,
+      normalized_context: false,
+    });
+    expect((result.stdout as { errors: unknown[] }).errors).toEqual([
+      {
+        code: "herdr.machine_api_missing",
+        message:
+          "Herdr's machine-readable API does not expose `session.snapshot` and `events.subscribe`.",
+        remediation: "Install Herdr 0.9.1 or later and verify `herdr api schema --json` succeeds.",
+      },
+    ]);
   });
 
   it("ignores normalized context field names on unrelated schema records", () => {
@@ -403,6 +452,12 @@ if (args[0] === "--version") {
 } else if (args.join(" ") === "api schema --json") {
   console.log(JSON.stringify({
     schemas: {
+      request: {
+        oneOf: [
+          { properties: { method: { const: "session.snapshot" } } },
+          { properties: { method: { const: "events.subscribe" } } },
+        ],
+      },
       success_response: {
         $defs: {
           AgentInfo: { properties: { agent_status: { type: "string" } } },
@@ -427,12 +482,12 @@ if (args[0] === "--version") {
 
     const result = runCli(preflightRequest(fixture.skillRoot), fixture.env);
 
-    expect(result.exitCode).toBe(1);
+    expect(result.exitCode).toBe(0);
     expect(result.stderr).toBe("");
     expect(result.stdout).toEqual({
       schema_version: 1,
       operation: "preflight",
-      ok: false,
+      ok: true,
       result: {
         platform: process.platform,
         capabilities: {
@@ -441,6 +496,7 @@ if (args[0] === "--version") {
           herdr: {
             available: true,
             version: "herdr 9.9.9",
+            machine_api: true,
             normalized_context: false,
           },
         },
@@ -451,15 +507,7 @@ if (args[0] === "--version") {
         skills: [{ name: "implement", available: true, path: join(implement, "SKILL.md") }],
         state: null,
       },
-      errors: [
-        {
-          code: "herdr.context_metrics_missing",
-          message:
-            "Herdr's machine-readable API does not expose normalized `context_used` and `context_limit` fields.",
-          remediation:
-            "Install a Herdr release that exposes both normalized context fields in `herdr api schema --json`.",
-        },
-      ],
+      errors: [],
     });
   });
 

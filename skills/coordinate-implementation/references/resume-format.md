@@ -34,8 +34,8 @@ Coordinator:
   harness:    claude
   model:      fable
   effort:     low
-  handoff:    yes
-  threshold:  80 percent
+  handoff:    disabled
+  threshold:  unavailable
   unattended: block
 
 Implementor:
@@ -291,18 +291,18 @@ actually bound to the ticket.
 
 ### `Coordinator:`
 
-Written before any role launches. A change to harness, model, or effort takes
-effect only through the safe takeover protocol. It is never a state-only
-rewrite.
+Written before any role launches. With Herdr 0.9.1, a change to harness, model,
+or effort requires the prior coordinator to end and a replacement invocation
+to start with the selected record. It is never a state-only rewrite.
 
-| Field        | Values                | Notes                                                      |
-| ------------ | --------------------- | ---------------------------------------------------------- |
-| `harness`    | `claude` \| `pi`      | Selected from installed harness discovery                  |
-| `model`      | model id              | Validated against the selected harness                     |
-| `effort`     | discovered vocabulary | Validated against installed harness help                   |
-| `handoff`    | `yes`                 | Automatic handoff is required for both supported harnesses |
-| `threshold`  | `80 percent`          | Exact policy applied to normalized Herdr context fields    |
-| `unattended` | `block` \| `escalate` | Governs the fix-round-3 escalation and nothing else        |
+| Field        | Values                | Notes                                                   |
+| ------------ | --------------------- | ------------------------------------------------------- |
+| `harness`    | `claude` \| `pi`      | Selected from installed harness discovery               |
+| `model`      | model id              | Validated against the selected harness                  |
+| `effort`     | discovered vocabulary | Validated against installed harness help                |
+| `handoff`    | `disabled`            | Herdr 0.9.1 has no normalized context metrics           |
+| `threshold`  | `unavailable`         | Prevents rendered terminal text from becoming a trigger |
+| `unattended` | `block` \| `escalate` | Governs the fix-round-3 escalation and nothing else     |
 
 `unattended: block` marks a ticket needing escalation as blocked-on-decision,
 logs it, and starts the next unblocked ticket. `unattended: escalate`
@@ -346,18 +346,13 @@ must run; ownership says which Herdr pane currently coordinates the run.
 | `effort`                | Effort bound to the current owner                                           |
 | `readiness`             | `claiming` until the successor has resumed and armed its wait, then `ready` |
 | `marker`                | Generation-specific marker the predecessor must observe in that pane        |
-| `predecessor pane`      | Automatic handoff predecessor authorized for close verification             |
-| `handoff artifact hash` | SHA-256 binding to the exact prepared automatic handoff artifact            |
+| `predecessor pane`      | Legacy automatic handoff predecessor authorized for close verification      |
+| `handoff artifact hash` | SHA-256 binding to an exact legacy automatic handoff artifact               |
 
-Initial role mismatch takeover uses `coordinator.claim` followed by
-`coordinator.ready`. Automatic context successors use
-`coordinator.handoff.ready`, which validates the accepted snapshot, arms
-wait-any, refreshes active worker panes, and compare-and-swaps directly from the
-ready predecessor to the ready successor in one state mutation. That owner also
-records `predecessor pane` and `handoff artifact hash`. A predecessor closes
-only after `coordinator.handoff.verify` succeeds with the marker it
-independently observed in the successor pane and returns the exact close
-command. A failed successor leaves predecessor ownership unchanged.
+Initial role mismatch or process-replacement takeover uses `coordinator.claim`
+followed by `coordinator.ready`. New Herdr 0.9.1 runs do not create automatic
+handoff artifacts or write the two legacy predecessor fields. Existing legacy
+state that already contains them remains structurally valid for recovery.
 
 ### Ticket table
 
@@ -560,8 +555,8 @@ cannot launch:
 - `model` lacks a `<provider>/` prefix while `harness` is `pi`, or carries one
   while `harness` is `claude`.
 - a `:<level>` suffix disagrees with the record's own `effort:` field.
-- `Coordinator.handoff` is not `yes` or `Coordinator.threshold` is not exactly
-  `80 percent`.
+- `Coordinator.handoff` and `Coordinator.threshold` are not the exact
+  `disabled` and `unavailable` pair for a new Herdr 0.9.1 run.
 - `Coordinator ownership` is missing, malformed, lacks its bound role record,
   or names the invoking pane as a successor claim.
 - repository policy is absent before worktree creation.
