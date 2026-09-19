@@ -20,7 +20,8 @@ RESUME.md is the only state file and the successor's only inheritance. Its
 format, fields, and validation rules are in
 [resume-format.md](resume-format.md). Before handing off, confirm it holds:
 
-- `Prefix:`, `Base:`, and complete `Coordinator:` and `Implementor:` records.
+- `Prefix:`, `Base:`, `Branch template:`, and complete `Coordinator:` and
+  `Implementor:` records.
 - `<base>` sha and the list of landed tickets.
 - A row per ticket carrying its bound record, fix-round count, escalation flag,
   and status. For each active ticket also note its worktree, branch, worker

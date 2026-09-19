@@ -15,8 +15,9 @@ indentation alone. The indentation is part of the format.
 ```text
 # <slug> implementation run
 
-Prefix: dcs
-Base:   main
+Prefix:          dcs
+Base:            main
+Branch template: <prefix>-NN-<slug>
 
 Coordinator:
   harness:    claude
@@ -47,17 +48,18 @@ Implementor:
 
 ## Retained landed branches (Pi)
 
-- wyattjoh/dcs-01-schema (a1b2c3d) (Pi/Pando retained this branch)
+- dcs-01-schema (a1b2c3d) (Pi/Pando retained this branch)
 ```
 
 ## Field reference
 
 ### Run header
 
-| Field    | Meaning                                                                                                                                                             |
-| -------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `Prefix` | Short run tag; names branches, sessions, tabs, and the pane label                                                                                                   |
-| `Base`   | Integration branch. Recorded on first run; **the file always wins** over a later `--base` flag, because changing the base mid-run invalidates every unlanded branch |
+| Field             | Meaning                                                                                                                                                             |
+| ----------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `Prefix`          | Short run tag; names sessions, tabs, and the pane label                                                                                                             |
+| `Base`            | Integration branch. Recorded on first run; **the file always wins** over a later `--base` flag, because changing the base mid-run invalidates every unlanded branch |
+| `Branch template` | Pi branch pattern. Supports `<prefix>`, `NN`, and `<slug>`. Resolve from repository instructions, or use `<prefix>-NN-<slug>` when none exists                      |
 
 `Base` is the one field where the file beats the flag. `Implementor` is the
 opposite (see below). The asymmetry is deliberate: a model is cheap to change
@@ -87,12 +89,12 @@ the user.
 The run-wide record. It governs the **next ticket to start** and nothing that
 is already running.
 
-| Field     | Values               | Notes                                                  |
-| --------- | -------------------- | ------------------------------------------------------ |
-| `harness` | `claude` \| `pi`     | Resolved from the model at record time, then persisted |
-| `model`   | model id             |                                                        |
-| `effort`  | see vocabulary table | Harness-scoped                                         |
-| `skills`  | ordered list         | Rendered into the worker prompt prefix, harness-scoped |
+| Field     | Values               | Notes                                                                               |
+| --------- | -------------------- | ----------------------------------------------------------------------------------- |
+| `harness` | `claude` \| `pi`     | Resolved from the model at record time, then persisted                              |
+| `model`   | model id             |                                                                                     |
+| `effort`  | see vocabulary table | Harness-scoped                                                                      |
+| `skills`  | ordered list         | Must begin with `implement`; rendered into the worker prompt prefix, harness-scoped |
 
 ### Ticket table
 
@@ -162,26 +164,34 @@ author a record yourself.
   thing. **Omit the permission flag from every pi launch line**; do not
   substitute `--approve` for it. (Checked against pi 0.85.1.)
 - **Read the vocabulary off the installed pi, not off this table.** pi's
-  `--thinking` levels are version-specific: 0.80.3 offered
-  `off minimal low medium high xhigh`, and 0.85.1 added `max`. The same is true
-  of the model catalog — `openai-codex/gpt-5.6-*` does not exist before 0.85.1.
-  When a record looks invalid, run `pi --help` and `pi --list-models` before
+  `--thinking` levels and model catalog are version-specific. When a record
+  looks invalid, run `pi --version`, `pi --help`, and `pi --list-models` before
   concluding it is wrong; the installed pi may simply be behind.
 
 ### Reject only after checking the installed harness
 
 An effort value or model that this table does not list may mean the record is
-wrong, or may mean the harness on this machine is old. Distinguish them before
-stopping a ticket: `pi --version`, `pi --help`, `pi --list-models`. In this
-repository pi is pinned declaratively (`devenv.nix`, task `atk:pi-install`), so
-"the model does not exist" has been a stale pin at least once.
+wrong, or may mean the installed harness differs from the version documented
+here. Distinguish them before stopping a ticket: inspect the harness version,
+help, and model catalog.
 
-A skills list renders into the worker prompt as the prefix, in order:
+Every worker skills list must begin with `implement`. Render the whole list into
+the worker prompt as a prefix, in order, before any prose:
 
 ```
 claude   skills: [implement, codebase-design]  ->  /implement /codebase-design <prompt>
 pi       skills: [implement, codebase-design]  ->  /skill:implement /skill:codebase-design <prompt>
 ```
+
+`implement` is intentionally user-invoked and has
+`disable-model-invocation: true`. It may therefore be absent from a harness's
+model-discoverable or automatically invocable skill listing. That absence is
+expected and is never a validation failure. Do not check discovery to decide
+whether `implement` can be used. Its explicit first-position prefix is the
+invocation.
+
+Additional skills after `implement` are different: validate that each is
+available to the selected harness and preserve their recorded order.
 
 ## Validation
 
@@ -189,17 +199,22 @@ pi       skills: [implement, codebase-design]  ->  /skill:implement /skill:codeb
 
 Reject and ask the user rather than writing a record that cannot launch:
 
-- `effort` is not in the harness's vocabulary (remember `pi` has no `max`).
+- `effort` is not accepted by the installed harness.
 - `model` is non-Anthropic while `harness` is `claude`.
 - `model` lacks a `<provider>/` prefix while `harness` is `pi`, or carries one
   while `harness` is `claude`.
 - a `:<level>` suffix disagrees with the record's own `effort:` field.
-- a named skill is not available in that harness.
+- the `skills` list does not begin with `implement`.
+- a skill after `implement` is not available in that harness.
+
+Never reject a record because `implement` is absent from skill discovery. It is
+required, user-invoked, and explicitly prefixed at launch.
 
 **A harness change re-validates the entire record**, not just the changed
-field. Effort vocabulary, skill availability, and the prompt prefix are all
-harness-scoped, so switching `claude` -> `pi` can invalidate an `effort` and a
-`skills` entry that were valid a moment earlier.
+field. Effort vocabulary, additional-skill availability, and the prompt prefix
+are harness-scoped, so switching `claude` -> `pi` can invalidate an `effort` or
+an additional `skills` entry that was valid a moment earlier. `implement`
+remains required and exempt from discovery checks in both harnesses.
 
 ### At launch time
 

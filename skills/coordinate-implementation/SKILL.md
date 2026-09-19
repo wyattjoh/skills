@@ -1,6 +1,6 @@
 ---
 name: coordinate-implementation
-description: Orchestrates a multi-ticket implementation run. Points at a `.scratch/<slug>/` folder holding a spec and numbered issues, then runs one implementor session per ticket inside herdr, reviews each result on two axes, loops fixes back, and fast-forwards main. Model, harness, effort, and worker skills are recorded in RESUME.md so they survive a handoff and mid-run changes. Also resumes a run from its RESUME.md after a session handoff. Triggers on "/coordinate-implementation", "implement the tickets in", "orchestrate the run", "resume the implementation run".
+description: Orchestrates a multi-ticket implementation run. Points at a `.scratch/<slug>/` folder holding a spec and numbered issues, then runs one implementor session per ticket inside herdr, reviews each result on two axes, loops fixes back, and fast-forwards the integration branch. Repository-specific commands and safety constraints are discovered from project instructions and CI rather than assumed. Model, harness, effort, and worker skills are recorded in RESUME.md so they survive handoffs and mid-run changes. Triggers on "/coordinate-implementation", "implement the tickets in", "orchestrate the run", "resume the implementation run".
 argument-hint: "[.scratch/<slug> | resume .scratch/<slug>] [--base <branch>] [--implementor '<model> <effort>']"
 disable-model-invocation: true
 effort: low
@@ -10,7 +10,8 @@ effort: low
 
 You are the **orchestrator**. You never implement a ticket yourself. You run
 one implementor session per ticket, review its single commit, send fixes back
-into the same session, and land it on `main`. Requires herdr (`HERDR_ENV=1`);
+into the same session, and land it on the configured integration branch. Requires
+herdr (`HERDR_ENV=1`);
 load the `herdr` skill in the same message: `/coordinate-implementation /herdr <args>`.
 
 Arguments: `$ARGUMENTS`
@@ -21,6 +22,9 @@ Arguments: `$ARGUMENTS`
 - `--base <branch>` names the integration branch workers branch from and the
   coordinator fast-forwards. Default `main`. Recorded as `Base:` in RESUME.md
   on first run; later invocations read it from there.
+- `Branch template:` in RESUME.md records the repository's branch naming rule.
+  Resolve it from repository instructions on first run, or use
+  `<prefix>-NN-<slug>` when the repository has no rule.
 - `--implementor '<model> <effort>'` sets the implementor model and effort.
   The harness is resolved from the model and persisted; everything else about
   the record (worker skills, coordinator settings) is changed in prose.
@@ -47,10 +51,9 @@ Everywhere below, `<base>` means that branch. The main checkout is never
 .scratch/<slug>/
   spec.md            # the agreed design; review axis 2 reads it
   issues/NN-*.md     # one ticket per file, `Blocked by:` + `Status:` lines, checkboxes
-  briefs/common.md   # shared implementor brief; create from references/common-brief.md if absent
+  briefs/common.md   # resolved repository contract; create from references/common-brief.md if absent
   briefs/fixes-NN.md # long fix requests, one per round
-  RESUME.md          # the ONLY state file; format: references/resume-format.md
-  xdg-sandbox/       # XDG_DATA_HOME / XDG_CONFIG_HOME for implementor sessions
+  RESUME.md          # the ONLY mutable state file; format: references/resume-format.md
 .scratch/coordinators.md   # repo-wide registry of active runs (below)
 ```
 
@@ -90,10 +93,10 @@ record true:
 
 Each run has a unique `Prefix:` (for example `dcs`) that names its worker
 sessions `<prefix>-NN`, its herdr tabs `claude <prefix> NN <slug>`, and its
-coordinator pane label `coordinator <prefix>`. Pi also uses it for branches
-`wyattjoh/<prefix>-NN-<slug>`. Claude Code lets `EnterWorktree` generate its
-native worktree name and `worktree-*` branch. Always use the actual worktree
-path and branch returned by the coordinator harness.
+coordinator pane label `coordinator <prefix>`. Pi renders the run's
+`Branch template:` from RESUME.md. Claude Code lets `EnterWorktree` generate
+its native worktree name and `worktree-*` branch. Always use the actual
+worktree path and branch returned by the coordinator harness.
 The coordinator's own herdr tab is always labelled `coordinator`: on start and
 on resume, run `herdr tab rename "$HERDR_TAB_ID" "coordinator"` before anything
 else. Identify yourself from the `HERDR_PANE_ID` / `HERDR_TAB_ID` /
@@ -110,7 +113,7 @@ the user or another client and can move at any time.
 - On start or resume: read it; refuse to start if the prefix is already
   listed with a live pane (`herdr pane list`), otherwise add or update your
   line. Warn the user when two runs on the same base touch the same ticket
-  files or the same crates, then continue.
+  files or implementation areas, then continue.
 - Update your line whenever a ticket starts or lands and at handoff.
 - Remove your line when the run finishes.
 
@@ -123,15 +126,19 @@ need nothing beyond their own herdr workspace.
 
 ## Core loop (standing instructions)
 
-Before the first iteration, rename your own tab to `coordinator` and label
-your pane `coordinator <prefix>` (see above). Then repeat until every ticket
-is landed:
+Before the first iteration, resolve `<run>/briefs/common.md` from
+[common-brief.md](references/common-brief.md), repository instructions, and CI.
+No placeholder may remain when a worker launches. Rename your own tab to
+`coordinator` and label your pane `coordinator <prefix>` (see above). Then
+repeat until every ticket is landed:
 
 1. **Start** the next unblocked ticket. Bind the current `Implementor:` record
    into the ticket's table row first; that row, not the run-wide record, is
-   what governs this ticket from now on. Render the row's `skills` list into
-   the worker prompt prefix for its harness. Then create the ticket worktree
-   from `<base>` using the **coordinator's** harness: Claude Code uses
+   what governs this ticket from now on. Its `skills` list must begin with
+   `implement`. Do not require `implement` to appear in skill discovery; it is
+   user-invoked and explicitly prefixed. Render the ordered list into the
+   worker prompt prefix for its harness. Then create the ticket worktree from
+   `<base>` using the **coordinator's** harness: Claude Code uses
    `EnterWorktree`; Pi uses Pando. Create a herdr tab and worker session, then
    arm a background monitor. Exact procedure:
    [session-launch.md](references/session-launch.md).
@@ -150,7 +157,7 @@ is landed:
    harness: Claude Code uses `ExitWorktree`; Pi uses `pando remove`. If the
    fast-forward is refused because `<base>` moved, rebase again and retry.
    Claude Code may delete its native `worktree-*` branch during cleanup. Pando
-   retains its `wyattjoh/*` branch; never delete that branch separately.
+   retains the branch it created; never delete that retained branch separately.
 6. **Record** the outcome in RESUME.md's table and the registry line before
    starting the next ticket.
 
@@ -250,7 +257,8 @@ When invoked as `resume .scratch/<slug>` or from a handoff:
 
 1. Read `RESUME.md` in the run folder and validate it against
    [resume-format.md](references/resume-format.md). It names the prefix, base,
-   both records, the active ticket, worktree, pane id, and what remains. A file
+   branch template, both records, the active ticket, worktree, pane id, and
+   what remains. A file
    that does not match the template stops the resume with an explanation; there
    is no migration path and nothing is guessed.
    If this invocation also passed `--implementor` and it differs from the
@@ -272,10 +280,11 @@ When invoked as `resume .scratch/<slug>` or from a handoff:
 - Never substitute a default model, effort, or skills list to keep a run
   moving. A record that will not launch stops the ticket and is reported.
 - One commit per ticket branch; fixes amend it.
-- Every commit passes CI's exact invocations before review
-  ([review-and-land.md](references/review-and-land.md) lists them).
-- Never push, never touch remotes, never write to GitHub issues.
-- Never run the built binaries or `atk`; implementor sessions get the XDG
-  sandbox so an accident cannot touch `~/.local/share/agent-toolkit`.
+- Every commit passes the repository's required gates before review. The
+  resolved commands live in `<run>/briefs/common.md`; the execution procedure
+  is in [review-and-land.md](references/review-and-land.md).
+- Never push, perform remote writes, or write to forge issues.
+- Enforce every project-specific safety constraint recorded in the shared
+  brief. Do not invent restrictions that the repository does not require.
 - Rebase conflicts are yours, never the implementor's.
 - Report outcomes faithfully: a red gate is reported as red with its output.

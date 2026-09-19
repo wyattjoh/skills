@@ -1,49 +1,64 @@
 # Template: `<run>/briefs/common.md`
 
-Copy to the run folder when absent, replacing `<spec name>`, `<repository>`,
-and `<main checkout path>`.
+Copy this template to the run folder when absent. Before launching a worker,
+replace every angle-bracket placeholder and delete inapplicable bullets. Derive
+the values from repository instructions, CI configuration, task runners,
+package manifests, and the spec. Do not guess a command or safety rule. Ask the
+user when authoritative sources conflict or leave a required choice unresolved.
 
 ```markdown
 # Implementation brief (shared)
 
 You are implementing one ticket from the "<spec name>" spec in the
 <repository> repository. You are working inside a dedicated git worktree on a
-feature branch. The main checkout is <main checkout path> — do not edit it.
+feature branch. The integration checkout is <base checkout path>; do not edit
+it directly.
 
-Rules:
+Repository context:
 
-- Read CLAUDE.md, DESIGN.md, CONTEXT.md, and `.claude/rules/*.md` in this
-  worktree before changing code. Read the spec and the ticket (attached).
-- Respect the ADRs in docs/adr/ named by the spec.
-- Work test-first where a seam exists: write or move the tests at the new
-  interface, watch them fail, then implement. Replace tests, don't layer them.
-- Before any `cargo build|check|test`, run `just crsqlite` once in this worktree.
-  Run `cargo check --workspace` and single test files regularly; run
-  `just test` (full workspace) once at the end. Also run
-  `bun scripts/check-agent-architecture.ts` if you touched core/app/plugins.
-- Before committing, run exactly what CI runs and fix everything it raises;
-  there are no pre-commit hooks, so this is the only gate before review:
-  `cargo fmt --all -- --check` and
-  `cargo clippy --workspace --all-targets --all-features -- -D warnings`.
-  A commit with any clippy warning or unformatted file is rejected at review.
-- Update CLAUDE.md / DESIGN.md / rules / CLI contract docs in the same commit
-  when the ticket calls for it.
-- Commit exactly ONE conventional commit on the current branch (not main).
-  Never push. Never touch remotes. Stage only intended files.
+- Read <repository instruction files> before changing code.
+- Read <architecture, domain, ADR, or API contract documents relevant to this
+  run>.
+- Follow the existing code, naming, import, and test patterns near the files
+  you change.
+
+Implementation rules:
+
+- Read the run spec and your ticket before editing.
+- Use test-first development when required by repository instructions or when a
+  useful test seam exists.
+- Keep the change within the ticket's acceptance criteria. Report scope that
+  belongs to another ticket instead of silently expanding the change.
+- Update <documentation or generated artifacts that repository instructions
+  require to stay synchronized>.
+
+Verification:
+
+- During implementation, run: <targeted or incremental verification commands>.
+- Before committing, run these required final gates exactly:
+  1. `<final gate command 1>`
+  2. `<final gate command 2>`
+- If the repository defines no executable gate, replace this list with:
+  > No repository gate was found; verify the ticket manually against its
+  > acceptance criteria.
+
+Project-specific safety constraints:
+
+- <commands, services, credentials, data directories, generated files, or
+  environments that workers must not touch>
+- If there are no additional constraints, replace this list with:
+  `No constraints beyond the repository instructions and this brief.`
+
+Git and completion:
+
+- Commit exactly one conventional commit on the current branch, not the
+  integration branch. Never push or perform remote writes. Stage only intended
+  files.
 - When completely finished and the commit exists, print a final line exactly:
-  `TICKET DONE <ticket-number>` followed by a short summary of what changed and
-  any acceptance checkbox you could not satisfy and why.
+  `TICKET DONE <ticket-number>`, followed by a short summary and any acceptance
+  checkbox you could not satisfy with the reason.
 - If genuinely blocked on a decision only the human can make, print
   `TICKET BLOCKED <ticket-number>: <question>` and stop.
-- A reviewer will later send you follow-up fix requests in this same session.
-  For fixes, amend the single commit (`git commit --amend`) so the branch still
-  holds exactly one commit, then print `FIXES DONE <ticket-number>`.
-
-Installed app data is off limits:
-
-- Never run the built binaries (`cargo run`, `just start`, `just install*`,
-  `target/*/atk`, `target/*/agent-toolkit`, the `watch_cost` example) or any
-  `atk ...` command. The real app is running and its data lives in
-  `~/.local/share/agent-toolkit`; only tests with tempdir/in-memory fixtures
-  are allowed. Never call `Paths::detect()` from a test.
+- A reviewer may send follow-up fixes in this session. Amend the single commit,
+  rerun the required gates, then print `FIXES DONE <ticket-number>`.
 ```
