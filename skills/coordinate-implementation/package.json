@@ -1,0 +1,12 @@
+{
+  "name": "@wyattjoh/coordinate-implementation-skill",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "bun test"
+  },
+  "dependencies": {
+    "effect": "3.22.1"
+  }
+}

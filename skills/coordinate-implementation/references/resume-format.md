@@ -4,8 +4,13 @@
 coordinator or its workers depend on lives here, so a successor session can
 reconstruct any launch line without the conversation that produced it.
 
-There is no format version and no migration path. A RESUME.md that does not
-match this template fails validation on read; fix it by hand.
+The current format is schema version 1. The bundled helper validates only the
+explicit version marker before the coordinator interprets any other field.
+Missing, malformed, duplicate, and unsupported versions fail without automatic
+migration. After that mechanical check, the coordinator validates the remaining
+fields against this template. Those semantic checks are not part of the helper's
+`state.validate` operation in this ticket. Fix any mismatch by hand. See
+[helper-cli.md](helper-cli.md#statevalidate) for the JSON operation contract.
 
 ## Template
 
@@ -14,6 +19,8 @@ indentation alone. The indentation is part of the format.
 
 ```text
 # <slug> implementation run
+
+Schema version: 1
 
 Prefix:          dcs
 Base:            main
@@ -288,5 +295,8 @@ list to keep the run moving.
 
 ### On read
 
-A successor validates the whole file before acting on it. A record that does
-not match this template stops the resume with an explanation.
+A successor first invokes the helper's `state.validate` operation. A missing,
+malformed, duplicate, or unsupported `Schema version:` marker stops the resume
+without migration or mutation. After that mechanical check, the successor
+validates the whole file against this template before acting. Any mismatch
+stops the resume with an explanation.

@@ -2,6 +2,7 @@
 name: coordinate-implementation
 description: Orchestrates a multi-ticket implementation run. Points at a `.scratch/<slug>/` folder holding a spec and numbered issues, then runs dependency-ready tickets in parallel by default, reviews each result on two axes, loops fixes back, and fast-forwards the integration branch. Repository-specific commands and safety constraints are discovered from project instructions and CI rather than assumed. Scheduling mode, model, harness, effort, and worker skills are recorded in RESUME.md so they survive handoffs and mid-run changes. Triggers on "/coordinate-implementation", "implement the tickets in", "orchestrate the run", "resume the implementation run".
 argument-hint: "[.scratch/<slug> | resume .scratch/<slug>] [--base <branch>] [--implementor '<model> <effort>'] [--serial | --parallel]"
+compatibility: Requires macOS or Linux, Git, Bun, Herdr with machine-readable normalized context_used and context_limit fields, Matt Pocock's implement skill, and at least one supported harness (Pi or Claude Code).
 disable-model-invocation: true
 effort: low
 ---
@@ -11,9 +12,22 @@ effort: low
 You are the **orchestrator**. You never implement a ticket yourself. You run
 one implementor session per ticket, start every dependency-ready ticket in
 parallel by default, review each single commit, send fixes back into the same
-session, and land it on the configured integration branch. Requires herdr
-(`HERDR_ENV=1`);
-load the `herdr` skill in the same message: `/coordinate-implementation /herdr <args>`.
+session, and land it on the configured integration branch.
+
+The baseline environment is macOS or Linux with Git, Bun, Herdr, Matt Pocock's
+`implement` skill, and at least one supported harness (Pi or Claude Code).
+Herdr must expose normalized `context_used` and `context_limit` values through
+its machine-readable API. A binary name or rendered terminal status is not
+proof of that capability. Coordination must run inside a Herdr-managed pane
+with `HERDR_ENV=1`. Load the `herdr` skill in the same invocation using the
+active harness's supported skill syntax so the coordinator can identify and
+control its own pane.
+
+Before creating or changing run state, invoke the versioned Bun helper's
+`preflight` operation. On resume, pass the existing RESUME.md as `state_path`.
+Stop on any nonzero exit or `ok: false`; preflight reports all detected
+problems and never mutates state. The complete request and result contract is
+[helper-cli.md](references/helper-cli.md).
 
 Arguments: `$ARGUMENTS`
 
@@ -138,9 +152,11 @@ need nothing beyond their own herdr workspace.
 
 ## Core loop (standing instructions)
 
-Before the first iteration, resolve `<run>/briefs/common.md` from
-[common-brief.md](references/common-brief.md), repository instructions, and CI.
-No placeholder may remain when a worker launches. Rename your own tab to
+Before the first iteration, complete the read-only helper preflight described
+in [helper-cli.md](references/helper-cli.md). Only after it succeeds, resolve
+`<run>/briefs/common.md` from [common-brief.md](references/common-brief.md),
+repository instructions, and CI. No placeholder may remain when a worker
+launches. Rename your own tab to
 `coordinator` and label your pane `coordinator <prefix>` (see above). Then
 repeat until every ticket is landed:
 
@@ -284,12 +300,13 @@ usage. Procedure and successor launch: [handoff.md](references/handoff.md).
 
 When invoked as `resume .scratch/<slug>` or from a handoff:
 
-1. Read `RESUME.md` in the run folder and validate it against
+1. Run the helper `preflight` operation with the run's `RESUME.md` as
+   `state_path`, then validate the remaining fields against
    [resume-format.md](references/resume-format.md). It names the prefix, base,
    base sha, scheduling mode, branch template, both records, every active
-   ticket's worktree and pane, and what remains. A file that does not match the
-   template stops the resume with an explanation; there is no migration path
-   and nothing is guessed.
+   ticket's worktree and pane, and what remains. Missing, malformed, or
+   unsupported schema versions stop the resume without migration. Any other
+   mismatch also stops with an explanation; nothing is guessed.
    If this invocation also passed `--implementor`, `--serial`, or `--parallel`
    and it differs from the record, that is a preference change: validate it,
    write it, log it in `## Decisions`, and apply it when scheduling more work.
@@ -307,6 +324,8 @@ When invoked as `resume .scratch/<slug>` or from a handoff:
 
 ## Rules that are not negotiable
 
+- Preflight must succeed before creating or mutating RESUME.md. Never bypass a
+  missing capability or infer Herdr context use from rendered terminal text.
 - A preference the user states and you have not written to RESUME.md does not
   exist. Write before you reply.
 - Never substitute a default model, effort, or skills list to keep a run
