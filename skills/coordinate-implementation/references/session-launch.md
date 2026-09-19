@@ -203,7 +203,17 @@ Recovery is state-first:
 8. If the prior attempt failed, call `infrastructure.retry.record`. Only when it
    returns `action: retry` prepare the next attempt from its exact binding.
 
-A conflicting persisted role, branch, worktree, required skill path, or
-attempt fails recovery without creating an artifact or changing state. An
+If attempt 4 is already `retry exhausted`, do not prepare another launch or
+restart an agent that is still alive. Only after the user explicitly confirms a
+coordinator compatibility defect, call `implementor.launch.recover` with the
+Herdr socket, exact diagnostic, and recovery timestamp. The helper validates
+the preserved role, legacy artifact, worktree, branch, session, pane, and live
+idle or done worker, then normalizes the known invalid prompt argv without
+rewriting its provenance. Execute only the returned `prompt` array, then record the observed
+attempt-4 result with `implementor.launch.record`. Never execute `start` during
+this recovery.
+
+A conflicting persisted role, branch, worktree, required skill path, session,
+pane, artifact, or attempt fails recovery without changing state. An
 already-existing identical artifact is preserved. Do not rewrite the runtime
 to match conversational memory.

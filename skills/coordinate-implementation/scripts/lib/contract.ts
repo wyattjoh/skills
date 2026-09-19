@@ -25,6 +25,7 @@ export type CoordinateOperation =
   | "worktree.preflight"
   | "worktree.prepare"
   | "implementor.launch.prepare"
+  | "implementor.launch.recover"
   | "implementor.launch.record"
   | "scheduler.plan"
   | "herdr.wait_any"
@@ -257,6 +258,19 @@ export type LaunchDiagnostic = {
   stage: string;
   exitCode: number;
   stderr: string;
+};
+
+/**
+ * Input for an operator-authorized recovery of an exhausted compatible launch.
+ */
+export type ImplementorLaunchRecoverInput = {
+  statePath: string;
+  ticket: string;
+  socketPath: string;
+  timeoutMs: number;
+  userAuthorized: true;
+  diagnostic: string;
+  recoveredAt: string;
 };
 
 /**
@@ -608,6 +622,11 @@ export type CoordinateRequest =
       schemaVersion: typeof CONTRACT_SCHEMA_VERSION;
       operation: "implementor.launch.prepare";
       input: ImplementorLaunchPrepareInput;
+    }
+  | {
+      schemaVersion: typeof CONTRACT_SCHEMA_VERSION;
+      operation: "implementor.launch.recover";
+      input: ImplementorLaunchRecoverInput;
     }
   | {
       schemaVersion: typeof CONTRACT_SCHEMA_VERSION;
@@ -995,6 +1014,7 @@ export const parseRequest = (raw: string): Effect.Effect<CoordinateRequest, Requ
       "worktree.preflight",
       "worktree.prepare",
       "implementor.launch.prepare",
+      "implementor.launch.recover",
       "implementor.launch.record",
       "scheduler.plan",
       "herdr.wait_any",
@@ -1773,6 +1793,45 @@ export const parseRequest = (raw: string): Effect.Effect<CoordinateRequest, Requ
           prompt,
           attempt,
           maxAttempts,
+        },
+      };
+    }
+
+    if (operation === "implementor.launch.recover") {
+      const statePath = nonEmptyString(parsed.input.state_path);
+      const ticket = singleLineString(parsed.input.ticket);
+      const socketPath = nonEmptyString(parsed.input.socket_path);
+      const timeoutMs = positiveInteger(parsed.input.timeout_ms);
+      const userAuthorized = parsed.input.user_authorized;
+      const diagnostic = singleLineString(parsed.input.diagnostic);
+      const recoveredAt = parsed.input.recovered_at;
+      if (
+        statePath === undefined ||
+        ticket === undefined ||
+        !/^\d{2}$/u.test(ticket) ||
+        socketPath === undefined ||
+        timeoutMs === undefined ||
+        timeoutMs > 30_000 ||
+        userAuthorized !== true ||
+        diagnostic === undefined ||
+        !isUtcIsoTimestamp(recoveredAt)
+      ) {
+        return yield* invalidRequest(
+          "`implementor.launch.recover` requires state_path, a two-digit ticket, Herdr socket_path, a 1..30000 timeout_ms, explicit user_authorized true, a single-line compatibility diagnostic, and recovered_at.",
+          operation,
+        );
+      }
+      return {
+        schemaVersion: CONTRACT_SCHEMA_VERSION,
+        operation,
+        input: {
+          statePath,
+          ticket,
+          socketPath,
+          timeoutMs,
+          userAuthorized,
+          diagnostic,
+          recoveredAt,
         },
       };
     }

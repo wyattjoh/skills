@@ -391,6 +391,16 @@ fields:
 | `Phase`           | `launch prepared`, `working`, `launch failed`, or the later workflow phase     |
 | `Last diagnostic` | `none` or the exact failing stage, exit code, and normalized stderr            |
 
+An operator-authorized compatibility recovery adds these fields without
+rewriting the attempt, retry count, or last failure diagnostic:
+
+| Field                    | Meaning                                                     |
+| ------------------------ | ----------------------------------------------------------- |
+| `Recovery authorization` | `user`, proving the transition was explicitly authorized    |
+| `Recovery cause`         | Fixed `coordinator compatibility defect` classification     |
+| `Recovery diagnostic`    | Exact single-line compatibility failure confirmed by user   |
+| `Recovered at`           | Whole-second UTC timestamp for the atomic recovery mutation |
+
 The ticket table remains the scheduler's source of truth. The active block is
 runtime coordination state. Create it before launch, update it at every phase
 change and progress tick, and remove it only after the ticket lands. Every row

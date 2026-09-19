@@ -370,6 +370,48 @@ incompatible attempt conflicts with the durable runtime instead of rewriting
 it. Failed validation leaves state unchanged and removes a newly created
 artifact; an identical artifact that existed before the attempt is preserved.
 
+## `implementor.launch.recover`
+
+Recover one exhausted attempt-4 launch only when the user has explicitly
+confirmed that a coordinator compatibility defect prevented prompt delivery to
+an already-running worker. This is not a general retry reset.
+
+```json
+{
+  "schema_version": 1,
+  "operation": "implementor.launch.recover",
+  "input": {
+    "state_path": ".scratch/example/RESUME.md",
+    "ticket": "04",
+    "socket_path": "/home/user/.config/herdr/sessions/default/herdr.sock",
+    "timeout_ms": 3000,
+    "user_authorized": true,
+    "diagnostic": "Herdr 0.9.1 prompt argv compatibility defect",
+    "recovered_at": "2026-09-19T20:00:00Z"
+  }
+}
+```
+
+The operation requires a blocked runtime at attempt 4 with `Retry: 3 of 3` and
+`Phase: retry exhausted`. While holding the state lock, it validates the
+run-wide and ticket-bound roles, immutable launch artifact, worktree, branch,
+session, and pane. It also queries Herdr's machine-readable snapshot and
+requires that exact named worker to be `idle` or `done` in the recorded pane.
+Missing, moved, blocked, working, ambiguous, or unknown workers fail without
+changing state.
+
+Success preserves attempt 4, retry history, the immutable legacy artifact, and
+the last failure diagnostic. For the known pre-fix Herdr 0.9.1 argv shape, the
+helper validates the complete old prompt array and returns its corrected
+positional equivalent without rewriting the artifact. It sets the ticket and
+runtime phase to `working`, records the authorization, compatibility
+diagnostic, and recovery timestamp, then returns only the validated `prompt`
+command for the existing process. Execute that argument array directly. Never
+execute the artifact's `start` command during recovery.
+After prompt delivery, call `implementor.launch.record` for attempt 4 with the
+observed result. Repeating the exact recovery before prompt delivery is
+idempotent and returns `recovered: true`.
+
 ## `implementor.launch.record`
 
 Persist the observed result after executing the prepared start and prompt
@@ -395,8 +437,9 @@ changing its role.
 }
 ```
 
-Use `diagnostic: null` with `status: started`. A failed launch remains an
-active `working` ticket with `Phase: launch failed` until
+Use `diagnostic: null` with `status: started`. Recording is accepted only from
+`launch prepared` or `working`; retry and terminal phases fail closed. A failed
+launch remains an active `working` ticket with `Phase: launch failed` until
 `infrastructure.retry.record` decides whether to retry or block. A later retry
 increments `attempt` but keeps the bound harness, model, effort, worktree,
 branch, and exact required implement skill path.

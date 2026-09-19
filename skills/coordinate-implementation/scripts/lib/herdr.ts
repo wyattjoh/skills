@@ -24,6 +24,25 @@ export type HerdrWorkerSnapshot = {
 };
 
 /**
+ * Exact live Herdr identity required by compatibility recovery.
+ */
+export type HerdrWorkerInspectionInput = {
+  socketPath: string;
+  timeoutMs: number;
+  session: string;
+  paneId: string;
+};
+
+/**
+ * Live Herdr worker identity returned after exact session and pane validation.
+ */
+export type HerdrWorkerInspection = {
+  session: string;
+  pane_id: string;
+  status: "idle" | "working" | "blocked" | "done" | "unknown";
+};
+
+/**
  * Coordinator identity plus optional normalized context observed with workers.
  */
 export type HerdrCoordinatorSnapshot = {
@@ -255,18 +274,21 @@ const openSubscription = async (
   }
 };
 
+type LiveAgentStatus = Exclude<HerdrWorkerSnapshot["status"], "exited">;
+
 type RawAgent = {
+  name: string | null;
   displayAgent: string | null;
   title: string | null;
   paneId: string;
-  status: HerdrWorkerSnapshot["status"];
+  status: LiveAgentStatus;
   contextUsed: number | undefined;
   contextLimit: number | undefined;
 };
 
 type RawPane = {
   paneId: string;
-  status: HerdrWorkerSnapshot["status"];
+  status: LiveAgentStatus;
 };
 
 type RawSnapshot = {
@@ -274,10 +296,8 @@ type RawSnapshot = {
   panes: RawPane[];
 };
 
-const parseStatus = (value: unknown): HerdrWorkerSnapshot["status"] | undefined =>
-  typeof value === "string" && AGENT_STATUSES.has(value)
-    ? (value as HerdrWorkerSnapshot["status"])
-    : undefined;
+const parseStatus = (value: unknown): LiveAgentStatus | undefined =>
+  typeof value === "string" && AGENT_STATUSES.has(value) ? (value as LiveAgentStatus) : undefined;
 
 const parseSnapshotResponse = (line: string): RawSnapshot => {
   const response = parseJson(line, "herdr.snapshot_malformed", "snapshot response");
@@ -312,6 +332,7 @@ const parseSnapshotResponse = (line: string): RawSnapshot => {
     const status = parseStatus(agent.agent_status);
     if (typeof agent.pane_id !== "string" || status === undefined) continue;
     agents.push({
+      name: typeof agent.name === "string" ? agent.name : null,
       displayAgent: typeof agent.display_agent === "string" ? agent.display_agent : null,
       title: typeof agent.title === "string" ? agent.title : null,
       paneId: agent.pane_id,
@@ -382,7 +403,10 @@ const resolveWorkers = (
 ): HerdrWorkerSnapshot[] =>
   workers.map((worker) => {
     const named = snapshot.agents.filter(
-      (agent) => agent.displayAgent === worker.session || agent.title === worker.session,
+      (agent) =>
+        agent.name === worker.session ||
+        agent.displayAgent === worker.session ||
+        agent.title === worker.session,
     );
     if (named.length > 1) {
       throw herdrError(
@@ -411,7 +435,10 @@ const resolveCoordinator = (
 ): HerdrCoordinatorSnapshot | undefined => {
   if (coordinator === undefined) return undefined;
   const named = snapshot.agents.filter(
-    (agent) => agent.displayAgent === coordinator.session || agent.title === coordinator.session,
+    (agent) =>
+      agent.name === coordinator.session ||
+      agent.displayAgent === coordinator.session ||
+      agent.title === coordinator.session,
   );
   if (named.length > 1) {
     throw herdrError(
@@ -630,6 +657,58 @@ const wait = async (input: HerdrWaitAnyInput, clock: Clock): Promise<HerdrWaitAn
     subscription.close();
   }
 };
+
+/**
+ * Reads one Herdr snapshot and requires an exact live session and pane identity.
+ *
+ * @param input - Socket, timeout, and exact worker identity to inspect.
+ * @returns An Effect containing the current recognized agent status.
+ */
+export const inspectHerdrWorker = (
+  input: HerdrWorkerInspectionInput,
+): Effect.Effect<HerdrWorkerInspection, HerdrWaitError> =>
+  Effect.tryPromise({
+    try: async () => {
+      const snapshot = await readSnapshot(input.socketPath, Date.now() + input.timeoutMs, Date.now);
+      const named = snapshot.agents.filter(
+        (agent) =>
+          agent.name === input.session ||
+          agent.displayAgent === input.session ||
+          agent.title === input.session,
+      );
+      if (named.length === 0) {
+        throw herdrError(
+          "herdr.worker_missing",
+          `Herdr could not find worker session \`${input.session}\` in its machine-readable snapshot.`,
+          "Keep the recorded worker alive and restore its exact session identity before recovery.",
+        );
+      }
+      if (named.length > 1) {
+        throw herdrError(
+          "herdr.worker_ambiguous",
+          `Herdr reported multiple agents named \`${input.session}\`.`,
+          "Restore a unique worker session name before recovery.",
+        );
+      }
+      const worker = named[0]!;
+      if (worker.paneId !== input.paneId) {
+        throw herdrError(
+          "herdr.worker_pane_mismatch",
+          `Worker \`${input.session}\` is in pane \`${worker.paneId}\`, not recorded pane \`${input.paneId}\`.`,
+          "Refresh run state only through an explicit pane-migration operation before recovery.",
+        );
+      }
+      return { session: input.session, pane_id: worker.paneId, status: worker.status };
+    },
+    catch: (error) =>
+      error instanceof HerdrWaitError
+        ? error
+        : herdrError(
+            "herdr.inspect_failed",
+            `Could not inspect the existing Herdr worker: ${(error as Error).message}`,
+            "Verify the Herdr socket and recorded worker identity before recovery.",
+          ),
+  });
 
 /**
  * Subscribes before snapshotting and waits for the first terminal worker condition.

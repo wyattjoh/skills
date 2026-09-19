@@ -325,6 +325,14 @@ binding and the next attempt number. Never substitute a harness, model, effort,
 skill, branch, or worktree. For `action: block`, leave only that ticket blocked
 and immediately call `scheduler.plan` so independent ready tickets continue.
 
+A blocked `retry exhausted` launch may return to `working` only through
+`implementor.launch.recover`, and only after the user confirms that a
+coordinator compatibility defect prevented prompt delivery while the exact
+worker remained alive. Pass the Herdr socket and diagnostic to the helper. It
+validates the immutable attempt-4 artifact, bound role, worktree, branch,
+session, pane, and live `idle` or `done` worker. Execute only its returned
+prompt array, never the start array, then record the observed attempt-4 outcome.
+
 ## Crash-restart
 
 Only when a worker session actually fails (crash, unrecoverable context loss)

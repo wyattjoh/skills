@@ -1,4 +1,4 @@
-import { describe, expect, it } from "bun:test";
+import { afterEach, describe, expect, it } from "bun:test";
 import {
   chmodSync,
   existsSync,
@@ -9,12 +9,14 @@ import {
   symlinkSync,
   writeFileSync,
 } from "node:fs";
+import { createServer, type Server, type Socket } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { spawnGit } from "./lib/git.ts";
 
 const CLI = join(import.meta.dir, "coordinate.ts");
 const decoder = new TextDecoder();
+const servers: Server[] = [];
 
 type CliResult = {
   exitCode: number;
@@ -75,6 +77,25 @@ const runCli = (request: unknown, env: Record<string, string>): CliResult => {
   const stderr = decoder.decode(child.stderr);
   return {
     exitCode: child.exitCode,
+    stdout: JSON.parse(stdout) as Record<string, unknown>,
+    stderr,
+  };
+};
+
+const runCliAsync = async (request: unknown, env: Record<string, string>): Promise<CliResult> => {
+  const child = Bun.spawn([process.execPath, CLI], {
+    env,
+    stdin: Buffer.from(JSON.stringify(request)),
+    stdout: "pipe",
+    stderr: "pipe",
+  });
+  const [exitCode, stdout, stderr] = await Promise.all([
+    child.exited,
+    new Response(child.stdout).text(),
+    new Response(child.stderr).text(),
+  ]);
+  return {
+    exitCode,
     stdout: JSON.parse(stdout) as Record<string, unknown>,
     stderr,
   };
@@ -160,6 +181,38 @@ const prepareWorktree = (
     fixture.env,
   );
 
+const listen = async (server: Server, path: string): Promise<void> => {
+  servers.push(server);
+  await new Promise<void>((resolve, reject) => {
+    server.once("error", reject);
+    server.listen(path, () => resolve());
+  });
+};
+
+const closeServer = async (server: Server): Promise<void> => {
+  if (!server.listening) return;
+  await new Promise<void>((resolve) => server.close(() => resolve()));
+};
+
+const writeLine = (socket: Socket, value: unknown): void => {
+  socket.write(`${JSON.stringify(value)}\n`);
+};
+
+const recoverySnapshot = (
+  session: string,
+  pane: string,
+  status: string,
+): Record<string, unknown> => ({
+  id: "snapshot",
+  result: {
+    type: "session_snapshot",
+    snapshot: {
+      panes: [{ pane_id: pane, agent_status: status }],
+      agents: [{ name: session, pane_id: pane, agent_status: status }],
+    },
+  },
+});
+
 const makeFixture = () => {
   const root = mkdtempSync(join(tmpdir(), "coordinate-launch-"));
   const repository = initializeRepository(root);
@@ -174,6 +227,10 @@ const makeFixture = () => {
     env: makeHarnessEnvironment(root),
   };
 };
+
+afterEach(async () => {
+  await Promise.all(servers.splice(0).map(closeServer));
+});
 
 describe("worktree and launch documentation contract", () => {
   it("documents policy-driven worktrees without an optional product dependency", () => {
@@ -193,6 +250,7 @@ describe("worktree and launch documentation contract", () => {
     expect(helper.includes("## `worktree.preflight`")).toBe(true);
     expect(helper.includes("## `worktree.prepare`")).toBe(true);
     expect(helper.includes("## `implementor.launch.prepare`")).toBe(true);
+    expect(helper.includes("## `implementor.launch.recover`")).toBe(true);
     expect(helper.includes("## `implementor.launch.record`")).toBe(true);
     expect(resume.includes('"commits": "multiple"')).toBe(true);
     expect(resume.includes('"fixes": "append"')).toBe(true);
@@ -934,5 +992,208 @@ describe("safe implementor launch", () => {
         'Implementor: {"harness":"pi","model":"openai-codex/gpt-5.6-sol","effort":"high"}',
       ),
     ).toBe(true);
+  });
+
+  it("recovers only an authorized exhausted launch with its exact idle Herdr worker", async () => {
+    const fixture = makeFixture();
+    const prepared = prepareWorktree(fixture);
+    expect(prepared.exitCode).toBe(0);
+    const worktree = (prepared.stdout.result as { worktree: { path: string } }).worktree.path;
+    const implementSkill = join(fixture.root, "implement-recovery", "SKILL.md");
+    mkdirSync(join(fixture.root, "implement-recovery"));
+    writeFileSync(implementSkill, "---\nname: implement\n---\n");
+    const baseInput = {
+      state_path: fixture.statePath,
+      ticket: "04",
+      worktree_path: worktree,
+      branch: "wyattjoh/ticket-04",
+      session: "pci-04",
+      tab: "implement ticket 04",
+      pane: "workspace:p4",
+      role: { harness: "pi", model: "openai-codex/gpt-5.6-sol", effort: "high" },
+      implement_skill_path: implementSkill,
+      prompt: "implement ticket 04",
+      max_attempts: 3,
+    };
+
+    const exhaustedArtifactPath = join(fixture.root, "briefs", "launch-04-attempt-4.json");
+    expect(
+      runCli(
+        request("implementor.launch.prepare", {
+          ...baseInput,
+          artifact_path: exhaustedArtifactPath,
+          attempt: 4,
+        }),
+        fixture.env,
+      ).exitCode,
+    ).toBe(0);
+    expect(
+      runCli(
+        request("implementor.launch.record", {
+          state_path: fixture.statePath,
+          ticket: "04",
+          attempt: 4,
+          status: "failed",
+          diagnostic: { stage: "start", exit_code: 2, stderr: "agent_name_taken" },
+        }),
+        fixture.env,
+      ).exitCode,
+    ).toBe(0);
+    expect(
+      runCli(
+        request("infrastructure.retry.record", {
+          state_path: fixture.statePath,
+          ticket: "04",
+          attempt: 4,
+          failure: "launch",
+          diagnostic: "agent_name_taken",
+        }),
+        fixture.env,
+      ).exitCode,
+    ).toBe(0);
+
+    const exhaustedArtifact = JSON.parse(readFileSync(exhaustedArtifactPath, "utf8")) as {
+      launch: { prompt: { args: string[] } };
+    };
+    const promptText = exhaustedArtifact.launch.prompt.args[3]!;
+    exhaustedArtifact.launch.prompt.args = [
+      "agent",
+      "prompt",
+      "--wait",
+      "--until",
+      "working",
+      "--timeout",
+      "300000",
+      "--",
+      "pci-04",
+      promptText,
+    ];
+    writeFileSync(exhaustedArtifactPath, `${JSON.stringify(exhaustedArtifact, null, 2)}\n`);
+
+    const socket = join(fixture.root, "herdr.sock");
+    let observedPane = "workspace:p9";
+    const server = createServer((connection) => {
+      let buffered = "";
+      connection.on("data", (chunk) => {
+        buffered += chunk.toString();
+        for (const line of buffered.split("\n").slice(0, -1)) {
+          const message = JSON.parse(line) as { method: string };
+          if (message.method === "session.snapshot") {
+            writeLine(connection, recoverySnapshot("pci-04", observedPane, "idle"));
+          }
+        }
+        buffered = buffered.slice(buffered.lastIndexOf("\n") + 1);
+      });
+    });
+    await listen(server, socket);
+    const recoveryInput = {
+      state_path: fixture.statePath,
+      ticket: "04",
+      socket_path: socket,
+      timeout_ms: 500,
+      user_authorized: true,
+      diagnostic: "Herdr 0.9.1 prompt argv compatibility defect",
+      recovered_at: "2026-09-19T20:00:00Z",
+    };
+    const exhausted = readFileSync(fixture.statePath, "utf8");
+
+    const terminalRecord = runCli(
+      request("implementor.launch.record", {
+        state_path: fixture.statePath,
+        ticket: "04",
+        attempt: 4,
+        status: "started",
+        diagnostic: null,
+      }),
+      fixture.env,
+    );
+    expect(terminalRecord.exitCode).toBe(1);
+    expect(terminalRecord.stdout.errors).toEqual([
+      {
+        code: "implementor.outcome_not_recordable",
+        message: "Launch attempt 4 is in terminal or retry phase `retry exhausted`.",
+        remediation:
+          "Use the explicit compatibility recovery operation before recording an exhausted launch.",
+      },
+    ]);
+    expect(readFileSync(fixture.statePath, "utf8")).toBe(exhausted);
+
+    const unauthorized = runCli(
+      request("implementor.launch.recover", { ...recoveryInput, user_authorized: false }),
+      fixture.env,
+    );
+    expect(unauthorized.exitCode).toBe(2);
+    expect(readFileSync(fixture.statePath, "utf8")).toBe(exhausted);
+
+    const mismatched = await runCliAsync(
+      request("implementor.launch.recover", recoveryInput),
+      fixture.env,
+    );
+    expect(mismatched.exitCode).toBe(1);
+    expect(mismatched.stdout.errors).toEqual([
+      {
+        code: "herdr.worker_pane_mismatch",
+        message: "Worker `pci-04` is in pane `workspace:p9`, not recorded pane `workspace:p4`.",
+        remediation:
+          "Refresh run state only through an explicit pane-migration operation before recovery.",
+      },
+    ]);
+    expect(readFileSync(fixture.statePath, "utf8")).toBe(exhausted);
+
+    observedPane = "workspace:p4";
+    const recovered = await runCliAsync(
+      request("implementor.launch.recover", recoveryInput),
+      fixture.env,
+    );
+    expect(recovered.exitCode).toBe(0);
+    expect(recovered.stderr).toBe("");
+    expect(recovered.stdout.result).toEqual({
+      ticket: "04",
+      attempt: 4,
+      recovered: false,
+      status: "working",
+      phase: "working",
+      prompt: {
+        command: "herdr",
+        args: [
+          "agent",
+          "prompt",
+          "pci-04",
+          "/skill:implement implement ticket 04",
+          "--wait",
+          "--timeout",
+          "300000",
+        ],
+      },
+      worker: { session: "pci-04", pane_id: "workspace:p4", status: "idle" },
+      recovery: {
+        user_authorized: true,
+        cause: "coordinator compatibility defect",
+        diagnostic: "Herdr 0.9.1 prompt argv compatibility defect",
+        recovered_at: "2026-09-19T20:00:00Z",
+      },
+    });
+    const persisted = readFileSync(fixture.statePath, "utf8");
+    expect(
+      persisted.includes("| 04 | pi | openai-codex/gpt-5.6-sol | high | 0 | - | working | - |"),
+    ).toBe(true);
+    expect(persisted.includes("Attempt: 4")).toBe(true);
+    expect(persisted.includes("Retry: 3 of 3")).toBe(true);
+    expect(persisted.includes("Phase: working")).toBe(true);
+    expect(persisted.includes("Last diagnostic: launch attempt 4: agent_name_taken")).toBe(true);
+    expect(persisted.includes("Recovery authorization: user")).toBe(true);
+    expect(persisted.includes("Recovery cause: coordinator compatibility defect")).toBe(true);
+    expect(
+      persisted.includes("Recovery diagnostic: Herdr 0.9.1 prompt argv compatibility defect"),
+    ).toBe(true);
+    expect(persisted.includes("Recovered at: 2026-09-19T20:00:00Z")).toBe(true);
+
+    const idempotent = await runCliAsync(
+      request("implementor.launch.recover", recoveryInput),
+      fixture.env,
+    );
+    expect(idempotent.exitCode).toBe(0);
+    expect((idempotent.stdout.result as { recovered: boolean }).recovered).toBe(true);
+    expect(readFileSync(fixture.statePath, "utf8")).toBe(persisted);
   });
 });

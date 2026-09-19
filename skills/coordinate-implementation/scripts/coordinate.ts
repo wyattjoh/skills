@@ -16,7 +16,11 @@ import {
   verifyCoordinatorHandoff,
 } from "./lib/handoff.ts";
 import { waitAnyWorker } from "./lib/herdr.ts";
-import { prepareImplementorLaunch, recordImplementorLaunch } from "./lib/implementor.ts";
+import {
+  prepareImplementorLaunch,
+  recoverImplementorLaunch,
+  recordImplementorLaunch,
+} from "./lib/implementor.ts";
 import { completeLanding, recordLandingConflict, synchronizeLanding } from "./lib/landing.ts";
 import { runPreflight } from "./lib/preflight.ts";
 import {
@@ -220,6 +224,16 @@ const execute = (request: CoordinateRequest): Effect.Effect<number, never> =>
 
     if (request.operation === "implementor.launch.prepare") {
       const outcome = yield* Effect.either(prepareImplementorLaunch(request.input));
+      if (Either.isLeft(outcome)) {
+        print(failureResponse(request.operation, [outcome.left.issue], null));
+        return 1;
+      }
+      print(successResponse(request.operation, outcome.right));
+      return 0;
+    }
+
+    if (request.operation === "implementor.launch.recover") {
+      const outcome = yield* Effect.either(recoverImplementorLaunch(request.input));
       if (Either.isLeft(outcome)) {
         print(failureResponse(request.operation, [outcome.left.issue], null));
         return 1;

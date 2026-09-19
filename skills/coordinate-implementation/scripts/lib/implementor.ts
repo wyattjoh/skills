@@ -4,10 +4,16 @@ import { mkdir, readFile, realpath, rename, rm, stat, writeFile } from "node:fs/
 import { realpathSync } from "node:fs";
 import { randomUUID } from "node:crypto";
 import { activeRuntimeBlockPattern, parseActiveRuntimeFields } from "./active-runtime.ts";
-import { buildHarnessLaunch, type HarnessLaunchPlan } from "./harness-launch.ts";
+import {
+  buildHarnessLaunch,
+  type ArgumentCommand,
+  type HarnessLaunchPlan,
+} from "./harness-launch.ts";
+import { inspectHerdrWorker, type HerdrWorkerInspection } from "./herdr.ts";
 import type {
   CliIssue,
   ImplementorLaunchPrepareInput,
+  ImplementorLaunchRecoverInput,
   ImplementorLaunchRecordInput,
   RoleRecord,
 } from "./contract.ts";
@@ -28,6 +34,25 @@ export type ImplementorLaunchPrepareResult = {
   recovered: boolean;
   artifact_path: string;
   launch: ImplementorLaunchPlan;
+};
+
+/**
+ * Validated prompt-only continuation for one compatible exhausted launch.
+ */
+export type ImplementorLaunchRecoverResult = {
+  ticket: string;
+  attempt: number;
+  recovered: boolean;
+  status: "working";
+  phase: "working";
+  prompt: ArgumentCommand;
+  worker: HerdrWorkerInspection;
+  recovery: {
+    user_authorized: true;
+    cause: "coordinator compatibility defect";
+    diagnostic: string;
+    recovered_at: string;
+  };
 };
 
 /**
@@ -184,6 +209,37 @@ const updateTicketRow = (
   if (skillsIndex >= 0) cells[skillsIndex] = "implement";
   lines[rowIndex] = `| ${cells.join(" | ")} |`;
   return `${markdown.slice(0, section.start)}${lines.join("\n")}${markdown.slice(section.end)}`;
+};
+
+const ticketField = (markdown: string, ticket: string, column: string): string => {
+  const section = tableSection(markdown);
+  const lines = section.text.split(/\r?\n/u);
+  const header = lines.find((line) => line.trimStart().startsWith("| NN"));
+  const row = lines.find((line) => line.split("|")[1]?.trim() === ticket);
+  if (header === undefined || row === undefined) {
+    throw implementorError(
+      "state.ticket_table_malformed",
+      `Ticket \`${ticket}\` is missing from the ticket table.`,
+      "Repair the schema-1 ticket table before recovering an implementor.",
+    );
+  }
+  const columns = header
+    .split("|")
+    .slice(1, -1)
+    .map((cell) => cell.trim());
+  const cells = row
+    .split("|")
+    .slice(1, -1)
+    .map((cell) => cell.trim());
+  const index = columns.indexOf(column);
+  if (index < 0 || cells.length !== columns.length) {
+    throw implementorError(
+      "state.ticket_table_malformed",
+      `Ticket \`${ticket}\` does not have a valid \`${column}\` field.`,
+      "Repair the schema-1 ticket table before recovering an implementor.",
+    );
+  }
+  return cells[index]!;
 };
 
 const serializeActiveRole = (role: RoleRecord): string =>
@@ -366,27 +422,31 @@ const writeArtifact = (
           ),
   });
 
+const roleFromUnknown = (value: unknown): RoleRecord | null => {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) return null;
+  const role = value as Record<string, unknown>;
+  if (Object.keys(role).toSorted().join(",") !== "effort,harness,model") return null;
+  const { harness, model, effort } = role;
+  if (
+    (harness !== "claude" && harness !== "pi") ||
+    typeof model !== "string" ||
+    model.length === 0 ||
+    model.includes("\n") ||
+    typeof effort !== "string" ||
+    effort.length === 0 ||
+    effort.includes("\n")
+  ) {
+    return null;
+  }
+  return { harness, model, effort };
+};
+
 const roleFromActive = (fields: Record<string, string>): RoleRecord | null => {
   const serialized = fields.Implementor;
   if (serialized === undefined) return null;
   try {
     const parsed = JSON.parse(serialized) as unknown;
-    if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) return null;
-    const role = parsed as Record<string, unknown>;
-    if (Object.keys(role).toSorted().join(",") !== "effort,harness,model") return null;
-    const { harness, model, effort } = role;
-    if (
-      (harness !== "claude" && harness !== "pi") ||
-      typeof model !== "string" ||
-      model.length === 0 ||
-      model.includes("\n") ||
-      typeof effort !== "string" ||
-      effort.length === 0 ||
-      effort.includes("\n")
-    ) {
-      return null;
-    }
-    return { harness, model, effort };
+    return roleFromUnknown(parsed);
   } catch {
     return null;
   }
@@ -524,6 +584,288 @@ export const prepareImplementorLaunch = (
     return { recovered: outcome.right, artifact_path: input.artifactPath, launch: plan };
   });
 
+type RecoveryArtifact = {
+  ticket: string;
+  worktreePath: string;
+  branch: string;
+  role: RoleRecord;
+  implementSkillPath: string | null;
+  session: string;
+  tab: string;
+  pane: string;
+  attempt: number;
+  maxAttempts: number;
+  prompt: ArgumentCommand;
+};
+
+const parsePromptCommand = (value: unknown, session: string): ArgumentCommand | null => {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) return null;
+  const command = value as Record<string, unknown>;
+  const args = command.args;
+  if (
+    command.command !== "herdr" ||
+    !Array.isArray(args) ||
+    args.some((argument) => typeof argument !== "string")
+  ) {
+    return null;
+  }
+  const strings = args as string[];
+  if (
+    strings.length === 7 &&
+    strings[0] === "agent" &&
+    strings[1] === "prompt" &&
+    strings[2] === session &&
+    strings[3]!.length > 0 &&
+    strings[4] === "--wait" &&
+    strings[5] === "--timeout" &&
+    strings[6] === "300000"
+  ) {
+    return { command: "herdr", args: strings };
+  }
+  if (
+    strings.length === 10 &&
+    strings[0] === "agent" &&
+    strings[1] === "prompt" &&
+    strings[2] === "--wait" &&
+    strings[3] === "--until" &&
+    strings[4] === "working" &&
+    strings[5] === "--timeout" &&
+    strings[6] === "300000" &&
+    strings[7] === "--" &&
+    strings[8] === session &&
+    strings[9]!.length > 0
+  ) {
+    return {
+      command: "herdr",
+      args: ["agent", "prompt", session, strings[9]!, "--wait", "--timeout", "300000"],
+    };
+  }
+  return null;
+};
+
+const readRecoveryArtifact = (path: string): Effect.Effect<RecoveryArtifact, ImplementorError> =>
+  Effect.tryPromise({
+    try: async () => {
+      const parsed = JSON.parse(await readFile(path, "utf8")) as unknown;
+      if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) throw new Error();
+      const artifact = parsed as Record<string, unknown>;
+      const role = roleFromUnknown(artifact.role);
+      const launch = artifact.launch;
+      const prompt =
+        typeof launch === "object" && launch !== null && !Array.isArray(launch)
+          ? parsePromptCommand((launch as Record<string, unknown>).prompt, String(artifact.session))
+          : null;
+      if (
+        artifact.schema_version !== 1 ||
+        typeof artifact.ticket !== "string" ||
+        typeof artifact.cwd !== "string" ||
+        typeof artifact.branch !== "string" ||
+        role === null ||
+        (typeof artifact.implement_skill_path !== "string" &&
+          artifact.implement_skill_path !== null) ||
+        typeof artifact.session !== "string" ||
+        typeof artifact.tab !== "string" ||
+        typeof artifact.pane !== "string" ||
+        typeof artifact.attempt !== "number" ||
+        typeof artifact.max_attempts !== "number" ||
+        prompt === null
+      ) {
+        throw new Error();
+      }
+      return {
+        ticket: artifact.ticket,
+        worktreePath: artifact.cwd,
+        branch: artifact.branch,
+        role,
+        implementSkillPath: artifact.implement_skill_path,
+        session: artifact.session,
+        tab: artifact.tab,
+        pane: artifact.pane,
+        attempt: artifact.attempt,
+        maxAttempts: artifact.max_attempts,
+        prompt,
+      };
+    },
+    catch: () =>
+      implementorError(
+        "implementor.recovery_artifact_invalid",
+        `Launch artifact \`${path}\` is missing or malformed for compatibility recovery.`,
+        "Preserve and repair the immutable attempt-4 artifact before recovering the existing worker.",
+      ),
+  });
+
+const recoveryFields = (input: ImplementorLaunchRecoverInput): Record<string, string> => ({
+  "Recovery authorization": "user",
+  "Recovery cause": "coordinator compatibility defect",
+  "Recovery diagnostic": input.diagnostic,
+  "Recovered at": input.recoveredAt,
+});
+
+/**
+ * Recovers an exhausted launch only when its exact idle Herdr worker and immutable binding survive.
+ *
+ * @param input - Authorized compatibility diagnostic and Herdr inspection boundary.
+ * @returns An Effect containing the existing worker's prompt-only continuation command.
+ */
+export const recoverImplementorLaunch = (
+  input: ImplementorLaunchRecoverInput,
+): Effect.Effect<ImplementorLaunchRecoverResult, ImplementorError> =>
+  mutateStateFile(input.statePath, (markdown) =>
+    Effect.gen(function* () {
+      yield* validatePersistedState(input.statePath, markdown);
+      const pattern = activeRuntimeBlockPattern(input.ticket);
+      const active = markdown.match(pattern)?.[0];
+      if (active === undefined) {
+        return yield* implementorError(
+          "implementor.runtime_missing",
+          `Ticket \`${input.ticket}\` has no exhausted active runtime to recover.`,
+          "Recover only a preserved attempt-4 runtime with its existing worker still alive.",
+        );
+      }
+      const fields = parseActiveRuntimeFields(active);
+      const requestedRecovery = recoveryFields(input);
+      const status = yield* Effect.try({
+        try: () => ticketField(markdown, input.ticket, "status"),
+        catch: fromMutationError,
+      });
+      const alreadyRecovered =
+        status === "working" &&
+        fields.Phase === "working" &&
+        Object.entries(requestedRecovery).every(([name, value]) => fields[name] === value);
+      if (
+        !alreadyRecovered &&
+        (status !== "blocked" ||
+          fields.Phase !== "retry exhausted" ||
+          fields.Attempt !== "4" ||
+          fields.Retry !== "3 of 3")
+      ) {
+        return yield* implementorError(
+          "implementor.recovery_not_exhausted",
+          `Ticket \`${input.ticket}\` is not an exhausted attempt-4 launch eligible for compatibility recovery.`,
+          "Use the normal prepare, record, and retry operations unless the durable launch is blocked at retry 3 of 3.",
+        );
+      }
+      const activeRole = roleFromActive(fields);
+      const ticketRole = yield* Effect.try({
+        try: () =>
+          roleFromUnknown({
+            harness: ticketField(markdown, input.ticket, "harness"),
+            model: ticketField(markdown, input.ticket, "model"),
+            effort: ticketField(markdown, input.ticket, "effort"),
+          }),
+        catch: fromMutationError,
+      });
+      const worktreePath = fields.Worktree;
+      const branch = fields.Branch;
+      const session = fields.Session;
+      const tab = fields.Tab;
+      const pane = fields.Pane;
+      const artifactPath = fields.Artifact;
+      const implementSkillPath = fields["Implement skill"];
+      if (
+        activeRole === null ||
+        ticketRole === null ||
+        !sameRole(activeRole, ticketRole) ||
+        worktreePath === undefined ||
+        branch === undefined ||
+        session === undefined ||
+        tab === undefined ||
+        pane === undefined ||
+        artifactPath === undefined ||
+        implementSkillPath === undefined
+      ) {
+        return yield* implementorError(
+          "implementor.recovery_binding_invalid",
+          `Ticket \`${input.ticket}\` has an incomplete or changed exhausted runtime binding.`,
+          "Restore the exact role, worktree, branch, session, tab, pane, skill, and artifact provenance before recovery.",
+        );
+      }
+      yield* ensurePathInsideState(input.statePath, artifactPath);
+      yield* verifyWorktree(worktreePath, branch);
+      const artifact = yield* readRecoveryArtifact(artifactPath);
+      const expectedSkill = activeRole.harness === "pi" ? implementSkillPath : null;
+      if (
+        artifact.ticket !== input.ticket ||
+        artifact.worktreePath !== worktreePath ||
+        artifact.branch !== branch ||
+        !sameRole(artifact.role, activeRole) ||
+        artifact.implementSkillPath !== expectedSkill ||
+        artifact.session !== session ||
+        artifact.tab !== tab ||
+        artifact.pane !== pane ||
+        artifact.attempt !== 4 ||
+        artifact.maxAttempts !== 3 ||
+        !artifact.prompt.args[3]!.startsWith(
+          `${activeRole.harness === "pi" ? "/skill:implement" : "/implement"} `,
+        )
+      ) {
+        return yield* implementorError(
+          "implementor.recovery_binding_mismatch",
+          `Ticket \`${input.ticket}\` does not match its immutable attempt-4 launch artifact.`,
+          "Restore the exact exhausted runtime and artifact binding; do not substitute launch provenance.",
+        );
+      }
+      const worker = yield* inspectHerdrWorker({
+        socketPath: input.socketPath,
+        timeoutMs: input.timeoutMs,
+        session,
+        paneId: pane,
+      }).pipe(Effect.mapError((error) => new ImplementorError({ issue: error.issue })));
+      if (worker.status !== "idle" && worker.status !== "done") {
+        return yield* implementorError(
+          "implementor.recovery_worker_not_ready",
+          `Worker \`${session}\` is \`${worker.status}\`, not idle or done.`,
+          "Recover only the existing ready worker that never received its implementation prompt.",
+        );
+      }
+      if (alreadyRecovered) {
+        return {
+          markdown,
+          result: {
+            ticket: input.ticket,
+            attempt: 4,
+            recovered: true,
+            status: "working" as const,
+            phase: "working" as const,
+            prompt: artifact.prompt,
+            worker,
+            recovery: {
+              user_authorized: input.userAuthorized,
+              cause: "coordinator compatibility defect" as const,
+              diagnostic: input.diagnostic,
+              recovered_at: input.recoveredAt,
+            },
+          },
+        };
+      }
+      const recoveryLines = Object.entries(requestedRecovery)
+        .map(([name, value]) => `${name}: ${value}`)
+        .join("\n");
+      const updatedBlock = active
+        .replace(/^Phase: .*$/mu, "Phase: working")
+        .replace(/^Last diagnostic: .*$/mu, (line) => `${line}\n${recoveryLines}`);
+      const withRow = updateTicketRow(markdown, input.ticket, { status: "working" });
+      return {
+        markdown: withRow.replace(pattern, updatedBlock),
+        result: {
+          ticket: input.ticket,
+          attempt: 4,
+          recovered: false,
+          status: "working" as const,
+          phase: "working" as const,
+          prompt: artifact.prompt,
+          worker,
+          recovery: {
+            user_authorized: input.userAuthorized,
+            cause: "coordinator compatibility defect" as const,
+            diagnostic: input.diagnostic,
+            recovered_at: input.recoveredAt,
+          },
+        },
+      };
+    }),
+  ).pipe(Effect.mapError(fromMutationError));
+
 const updateActiveOutcome = (
   block: string,
   input: ImplementorLaunchRecordInput,
@@ -534,6 +876,13 @@ const updateActiveOutcome = (
       "implementor.attempt_stale",
       `Launch attempt ${input.attempt} does not match the active runtime attempt.`,
       "Re-read RESUME.md and record only the currently prepared attempt.",
+    );
+  }
+  if (fields.Phase !== "launch prepared" && fields.Phase !== "working") {
+    throw implementorError(
+      "implementor.outcome_not_recordable",
+      `Launch attempt ${input.attempt} is in terminal or retry phase \`${fields.Phase ?? "missing"}\`.`,
+      "Use the explicit compatibility recovery operation before recording an exhausted launch.",
     );
   }
   const retry = fields.Retry?.match(/^(\d+) of (\d+)$/u);
