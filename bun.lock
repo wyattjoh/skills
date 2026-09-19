@@ -34,7 +34,7 @@
       "name": "@wyattjoh/clean-storage-skill",
       "version": "1.0.0",
       "dependencies": {
-        "effect": "^3.21",
+        "effect": "^3.22",
       },
     },
     "skills/code-walkthrough": {
@@ -45,7 +45,7 @@
       "name": "@wyattjoh/coordinate-implementation-skill",
       "version": "1.0.0",
       "dependencies": {
-        "effect": "3.22.1",
+        "effect": "3.22.2",
       },
     },
     "skills/devenv": {
@@ -61,7 +61,7 @@
       "version": "1.0.0",
       "dependencies": {
         "commander": "^15",
-        "effect": "^3.21",
+        "effect": "^3.22",
         "yaml": "^2.9.0",
       },
     },
@@ -74,7 +74,7 @@
       "version": "1.0.0",
       "dependencies": {
         "@happy-dom/global-registrator": "^20.11.6",
-        "effect": "^3.22.1",
+        "effect": "^3.22.2",
         "mermaid": "^11.17.2",
       },
     },
@@ -95,7 +95,7 @@
       "version": "1.0.0",
       "dependencies": {
         "commander": "^15",
-        "effect": "3.22.1",
+        "effect": "3.22.2",
         "yaml": "^2.9.0",
       },
     },
@@ -425,7 +425,7 @@
 
     "dompurify": ["dompurify@3.4.12", "", { "optionalDependencies": { "@types/trusted-types": "^2.0.7" } }, "sha512-zQvGet8Z2sWbQhCmfFz/T5QWH2oBmjnqK3qvOjaqaNLrLEF912WamU+ohnTp0TCep/MFVHpdJuCZEdFOdTnEFg=="],
 
-    "effect": ["effect@3.22.1", "", { "dependencies": { "@standard-schema/spec": "^1.0.0", "fast-check": "^3.23.1" } }, "sha512-TNoXushmPOBAjJlthF5d2QwnX2xBPEtcNJr5XKNKbRLbDvBcOYkXlYDfvGfSA0zriwLFuCll5MDtNMAdZL17PQ=="],
+    "effect": ["effect@3.22.2", "", { "dependencies": { "@standard-schema/spec": "^1.0.0", "fast-check": "^3.23.1" } }, "sha512-fm1CQXCs7GTMwpadZxwU5rnAb2bN6mbQpknq/pXBGCzSKkosNYb9k0wsoL0TfB10rSa5xOEZJjo77u/KLXSANg=="],
 
     "entities": ["entities@7.0.1", "", {}, "sha512-TWrgLOFUQTH994YUyl1yT4uyavY5nNB5muff+RtWaqNVCAK408b5ZnnbNAUEWLTCpum9w6arT70i1XdQ4UeOPA=="],
 
