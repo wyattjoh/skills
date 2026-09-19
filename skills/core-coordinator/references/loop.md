@@ -1,37 +1,42 @@
-# Standing loop
+# Event-driven observation cycle
 
-Schedule with `CronCreate`, recurring, on an off-minute ten-minute cadence
-(for example `4-59/10 * * * *`), prompt below with `<folder>`, the run
-prefixes, session names, and RESUME paths filled in from your RESUME.md.
-Session-only: recreate on every start, resume, and handoff; delete it when
-switching to the wind-down loop in [pause.md](pause.md).
+Arm one bounded Herdr event wait over every run coordinator pane from the
+canonical registry. Subscribe before taking the immediate machine-readable
+snapshot so a completion or pane-exit event cannot be lost during bootstrap.
+Use normalized agent status and context fields only. Never parse rendered
+terminal lines for status or context use.
 
-> Core coordinator progress and health check. 1) `herdr pane list`; for each
-> run coordinator pane (labels `coordinator <prefix>`; trust labels over ids)
-> run `herdr pane read <pane> --lines 40 --source recent` and judge health:
-> stalled if agent_status is `working` but the tail and 🧠 figure are
-> unchanged since the previous tick, or the tail shows API/network errors, a
-> permission prompt, or a question waiting on input; unhealthy if the pane is
-> gone or its RESUME.md has not moved while its worker landed. A network error
-> visible on every coordinator at once is an outage, not a stall: wait one
-> tick. For a stalled coordinator send one
-> `herdr agent prompt <pane> "Continue your coordinate-implementation loop from RESUME.md."`;
-> if it is gone, tell the user rather than relaunching. 2) Read every run's
-> RESUME.md and your own, and act on any cross-session messages. 3) Duties:
-> hold the merge order recorded in RESUME.md; when a run reaches `main` tell
-> the others to merge `main` into their base and collect the shas; keep the
-> recorded owner as the only editor of each shared file; fix drift in
-> `.scratch/coordinators.md`; compare each active ticket's
-> `git diff --stat <base>..HEAD` against the other runs and warn affected
-> coordinators before they land; relay any blocked user-run steps to the user.
-> Never push, touch remotes, write GitHub issues, delete branches, remove
-> worktrees, run built binaries, implement, or review tickets. 4) Read your
-> own 🧠 figure from `herdr pane read $HERDR_PANE_ID --lines 6`; above
-> 200,000 tokens follow the handoff section of the core-coordinator skill.
-> Report in three lines or fewer when nothing changed.
+Wake on:
 
-Per tick, one shell call is enough: pane list, coordinator tails, own context
-figure, `git worktree list` filtered to ticket prefixes, base heads, and a
-`git status --short` plus `git log --oneline <base>..HEAD` in each ticket
-worktree. Append a dated one-line status to RESUME.md only when something
-changed.
+- a run coordinator becoming idle, blocked, done, or exited;
+- a cross-session message from a run owner;
+- a run owner message reporting persisted registry or state change;
+- a bounded timeout with a complete pane snapshot;
+- the core coordinator reaching the handoff threshold.
+
+After each wake:
+
+1. reread the canonical registry and your RESUME.md;
+2. read each referenced schema-1 run state without modifying it;
+3. verify row prefix, base, ownership generation, ready pane, run status, and
+   active ticket set against that state;
+4. ask the owning run coordinator to repair drift;
+5. apply merge order, shared-file, conflict-watch, relay, pause, and completion
+   duties;
+6. persist only cross-run decisions and observations you own;
+7. arm the next bounded event wait when active or waiting runs remain.
+
+On timeout, check missing panes, unchanged ownership generations, stale run
+updates, local diff footprints, pending acknowledgements, and your normalized
+context utilization. A timeout never means a run completed. Send at most one
+bounded continuation message to a healthy but idle owner. Escalate a missing or
+repeatedly unhealthy owner to the user rather than relaunching it with guessed
+configuration.
+
+When no active or waiting run remains, verify every completed run has a local
+SUMMARY.md, record its outcome and pending tracker action, acknowledge its
+registry tombstone, and stop the cycle.
+
+This cycle is event-driven. Do not replace it with cron, scheduled prompts,
+background shell processes, sleep loops, harness-native task queues, or repeated
+pane-tail polling.

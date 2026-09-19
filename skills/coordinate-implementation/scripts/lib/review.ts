@@ -12,19 +12,24 @@ import type {
   RoleRecord,
 } from "./contract.ts";
 import { spawnGit } from "./git.ts";
-import { applyFinalizationFix, applyFinalReviewOutcome, LandingError } from "./landing.ts";
+import {
+  applyEscalationBlock,
+  applyFinalizationFix,
+  applyFinalReviewOutcome,
+  LandingError,
+} from "./landing.ts";
 import { mutateStateFile, StateMutationError } from "./state-mutation.ts";
 import { validateStateText } from "./state.ts";
 
 /**
  * Fixed review and gate infrastructure retry limit.
  */
-export const REVIEW_MAX_INFRASTRUCTURE_ATTEMPTS = 3 as const;
+export const REVIEW_MAX_INFRASTRUCTURE_ATTEMPTS = 4 as const;
 
 /**
- * Bounded delays used before the second and third infrastructure attempts.
+ * Bounded delays used before the three infrastructure retries.
  */
-export const REVIEW_RETRY_DELAYS_SECONDS = [1, 2] as const;
+export const REVIEW_RETRY_DELAYS_SECONDS = [1, 2, 4] as const;
 
 /**
  * Harness-appropriate implementor self-review mode.
@@ -44,7 +49,7 @@ export type ReviewPolicy = {
   gate_execution: { claude: "background-allowed"; pi: "synchronous" };
   self_review: SelfReviewMode;
   max_infrastructure_attempts: typeof REVIEW_MAX_INFRASTRUCTURE_ATTEMPTS;
-  retry_delays_seconds: [number, number];
+  retry_delays_seconds: [number, number, number];
 };
 
 /**
@@ -153,7 +158,11 @@ export const prepareReviewPolicy = (
         self_review:
           implementor.harness === "claude" ? "matt-implement" : "standards-spec-single-session",
         max_infrastructure_attempts: REVIEW_MAX_INFRASTRUCTURE_ATTEMPTS,
-        retry_delays_seconds: [REVIEW_RETRY_DELAYS_SECONDS[0], REVIEW_RETRY_DELAYS_SECONDS[1]],
+        retry_delays_seconds: [
+          REVIEW_RETRY_DELAYS_SECONDS[0],
+          REVIEW_RETRY_DELAYS_SECONDS[1],
+          REVIEW_RETRY_DELAYS_SECONDS[2],
+        ],
       };
       return {
         markdown: upsertPolicy(markdown, policy),
@@ -1388,9 +1397,17 @@ export const finalizeReviewRound = (
             selfReviewPath: input.selfReviewPath,
             completedAt: input.completedAt,
           });
+          const withEscalation =
+            action === "escalate"
+              ? applyEscalationBlock(withFinalization, {
+                  ticket: input.ticket,
+                  round: input.round,
+                  completedAt: input.completedAt,
+                })
+              : withFinalization;
           return {
             markdown: appendEvidenceLine(
-              withFinalization,
+              withEscalation,
               `- Ticket ${input.ticket} round ${input.round} finalized: ${verdict}; self-review ${input.selfReviewPath}; Standards ${standards.report_path}; Spec ${spec.report_path}${findings.length > 0 ? `; fixes ${input.fixRequestPath}` : ""}`,
             ),
             result: undefined,

@@ -100,7 +100,8 @@ Everywhere below, `<base>` means that branch. The main checkout is never
   briefs/fixes-NN-round-R.md # consolidated actionable findings for one fix round
   reviews/                  # immutable gate, self-review, Standards, and Spec evidence
   RESUME.md                 # the ONLY mutable coordination state; format: references/resume-format.md
-.scratch/coordinators.md   # repo-wide registry of active runs (below)
+  SUMMARY.md                # deterministic local terminal summary written by run.finalize
+.scratch/coordinators.md   # repo-wide run discovery registry (below)
 ```
 
 Ticket readiness comes from the accepted dependency graph. A ticket is
@@ -159,18 +160,21 @@ else. Identify yourself from the `HERDR_PANE_ID` / `HERDR_TAB_ID` /
 never by inspecting `herdr pane list` for the focused pane: focus can belong to
 the user or another client and can move at any time.
 
-`.scratch/coordinators.md` is the registry, one line per active run:
+`.scratch/coordinators.md` is the cross-run discovery registry. Its canonical
+schema and ownership rules are in [registry.md](references/registry.md). Every
+run owns exactly one row; only that run's current ready coordinator may change
+or remove it. A downstream multi-run coordinator reads rows and each row's
+schema-1 RESUME.md, but never edits either.
 
-```
-| prefix | base | run folder | workspace | coordinator pane | active tickets | updated |
-```
-
-- On start or resume: read it; refuse to start if the prefix is already
-  listed with a live pane (`herdr pane list`), otherwise add or update your
-  line. Warn the user when two runs on the same base touch the same ticket
-  files or implementation areas, then continue.
-- Update your line whenever a ticket starts or lands and at handoff.
-- Remove your line when the run finishes.
+- On start or resume: read it; refuse to start if the prefix is already listed
+  with a different live ready owner, otherwise add or update your own row.
+  Warn the user when two runs on the same base touch the same ticket files or
+  implementation areas, then continue.
+- Update your row whenever a ticket starts, blocks, closes, or lands, at
+  handoff, and after `run.finalize` changes run status.
+- Record `completed` before closing. Remove the row only when no downstream
+  coordinator requires the completion tombstone or after it acknowledges the
+  terminal state.
 
 Runs that share a `<base>` land through one dedicated base checkout and
 serialize by rebase-and-retry, no lock. The main checkout holds `main`;
@@ -193,7 +197,8 @@ For a non-local source, ask once for `none`, `final`, or `live` writeback and
 pass the repository's authoritative remote-write policy. A local source records
 `none` without a remote-write prompt. Rename your own tab to
 `coordinator` and label your pane `coordinator <prefix>` (see above). Then
-repeat until every ticket is landed:
+repeat until every ticket is landed or the user explicitly closes each
+remaining blocked ticket:
 
 1. **Schedule.** Invoke `snapshot.check` and stop this scheduling pass unless
    it returns `unchanged` with `scheduling_allowed: true`. Report every changed
@@ -257,8 +262,23 @@ repeat until every ticket is landed:
    fallback without force or runs the exact repository cleanup argv, retains
    the branch, writes immutable landed evidence, updates `Base sha:`, removes
    the active runtime and serialized slot, and returns `schedule`. Update the
-   registry line, then immediately pass the new landed state to `scheduler.plan`
+   registry row, then immediately pass the new landed state to `scheduler.plan`
    so every newly unblocked ticket can start.
+7. **Evaluate terminal state.** When `scheduler.plan` returns no launch and no
+   implementor is active, call `run.finalize`. It reads the accepted dependency
+   graph and returns `active`, `waiting`, or `completed`. A blocked empty
+   frontier is `waiting`, never success. Continue independent work when any
+   ticket remains runnable. Close blocked work only from an explicit user
+   decision naming each blocked or dependency-blocked ticket and reason; pass
+   those closures together with `user_authorized: true`. The operation moves preserved runtime provenance to
+   `## Closed ticket runtimes`, writes `## Run outcome`, and writes `SUMMARY.md`
+   only when every ticket is `landed` or `closed`. The summary includes landed,
+   blocked, and closed tickets, role provenance, review evidence, retained
+   branches, and pending tracker action. For `final` or `live`, delegate the
+   returned action to the persisted Matt tracker workflow only when current
+   project authority allows it. `none` performs no writeback. Local completion
+   and its summary are always recorded even when tracker action is pending or
+   forbidden. Update your registry row with the returned status.
 
 Session markers the implementor prints: `TICKET DONE NN`,
 `TICKET BLOCKED NN: <question>`, `FIXES DONE NN`. Herdr agent status is the
@@ -409,8 +429,10 @@ When invoked as `resume .scratch/<slug>` or from a handoff:
   Changed input hashes pause new work until explicit `snapshot.accept` records
   the revision and decision.
 - Persist and obey the tracker writeback mode. Delegate `final` and `live`
-  updates to the configured Matt tracker workflow. Never add tracker-specific
-  commands to the coordinator.
+  updates to the configured Matt tracker workflow only when current project
+  authority permits them. `none` never writes. Always preserve the local final
+  summary and report pending or forbidden tracker action. Never add
+  tracker-specific commands to the coordinator.
 - A preference the user states and you have not written to RESUME.md does not
   exist. Write before you reply.
 - Never substitute a default model, effort, harness, worktree tool, or required

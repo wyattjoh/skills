@@ -27,6 +27,7 @@ import {
   recordReviewerLaunch,
 } from "./lib/review.ts";
 import { recordInfrastructureRetry } from "./lib/retry.ts";
+import { finalizeRun } from "./lib/run.ts";
 import { planSchedule } from "./lib/scheduler.ts";
 import { discoverRoles, validateRole } from "./lib/roles.ts";
 import { acceptSnapshot, checkSnapshot } from "./lib/snapshot.ts";
@@ -53,6 +54,16 @@ const print = (response: CoordinateResponse<unknown>): void => {
 
 const execute = (request: CoordinateRequest): Effect.Effect<number, never> =>
   Effect.gen(function* () {
+    if (request.operation === "run.finalize") {
+      const outcome = yield* Effect.either(finalizeRun(request.input));
+      if (Either.isLeft(outcome)) {
+        print(failureResponse(request.operation, [outcome.left.issue], null));
+        return 1;
+      }
+      print(successResponse(request.operation, outcome.right));
+      return 0;
+    }
+
     if (request.operation === "preflight") {
       const outcome = yield* runPreflight(request.input);
       if (outcome.errors.length > 0) {

@@ -254,8 +254,8 @@ describe("review policy", () => {
       result: {
         gate_execution: { claude: "background-allowed", pi: "synchronous" },
         self_review: "standards-spec-single-session",
-        max_infrastructure_attempts: 3,
-        retry_delays_seconds: [1, 2],
+        max_infrastructure_attempts: 4,
+        retry_delays_seconds: [1, 2, 4],
       },
       errors: [],
     });
@@ -852,15 +852,20 @@ ${JSON.stringify(
     const third = reviewLaunchRequest(fixture, "spec", 3);
     expect(runCli(third).exitCode).toBe(0);
     expect(recordFailure(third).stdout).toMatchObject({
+      result: { action: "retry", retry_delay_seconds: 4, next_attempt: 4 },
+    });
+    const fourth = reviewLaunchRequest(fixture, "spec", 4);
+    expect(runCli(fourth).exitCode).toBe(0);
+    expect(recordFailure(fourth).stdout).toMatchObject({
       result: { action: "blocked", retry_delay_seconds: null, next_attempt: null },
     });
     const firstArtifact = JSON.parse(readFileSync(first.input.artifact_path, "utf8")) as {
       reviewer: unknown;
     };
-    const thirdArtifact = JSON.parse(readFileSync(third.input.artifact_path, "utf8")) as {
+    const fourthArtifact = JSON.parse(readFileSync(fourth.input.artifact_path, "utf8")) as {
       reviewer: unknown;
     };
-    expect(thirdArtifact.reviewer).toEqual(firstArtifact.reviewer);
+    expect(fourthArtifact.reviewer).toEqual(firstArtifact.reviewer);
   });
 });
 
@@ -925,6 +930,9 @@ describe("gates and review rounds", () => {
       result: { action: "retry", retry_delay_seconds: 1, next_attempt: 2 },
     });
     expect(runCli(gateRecordRequest(fixture, "infrastructure_failed", 3)).stdout).toMatchObject({
+      result: { action: "retry", retry_delay_seconds: 4, next_attempt: 4 },
+    });
+    expect(runCli(gateRecordRequest(fixture, "infrastructure_failed", 4)).stdout).toMatchObject({
       result: { action: "blocked", retry_delay_seconds: null, next_attempt: null },
     });
   });
@@ -1131,5 +1139,9 @@ describe("gates and review rounds", () => {
         next_round: null,
       },
     });
+    const state = readFileSync(fixture.statePath, "utf8");
+    expect(state).toContain("| 06 | pi | openai/test | high | 3 | yes | blocked | - |");
+    expect(state).toContain("Phase: blocked, awaiting escalation role");
+    expect(state.includes("## Serialized finalization")).toBe(false);
   });
 });

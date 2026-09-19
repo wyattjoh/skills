@@ -891,6 +891,72 @@ export const applyFinalReviewOutcome = (
   );
 };
 
+/**
+ * Blocks one ticket after its third failed fix round and releases serialized finalization.
+ *
+ * @param markdown - Latest locked run-state Markdown after recording the failed review.
+ * @param input - Ticket, completed round, and decision timestamp.
+ * @returns Updated state that preserves the runtime while independent tickets continue.
+ */
+export const applyEscalationBlock = (
+  markdown: string,
+  input: { ticket: string; round: number; completedAt: string },
+): string => {
+  const finalization = parseFinalization(markdown);
+  if (finalization !== undefined && finalization.ticket !== input.ticket) {
+    throw landingError(
+      "landing.escalation_state_invalid",
+      `Ticket \`${input.ticket}\` does not own serialized finalization for escalation.`,
+      "Restore the third failed review finalization before recording escalation.",
+    );
+  }
+  const section = ticketTableSection(markdown);
+  const lines = section.text.split(/\r?\n/u);
+  const headerIndex = lines.findIndex((line) => line.trimStart().startsWith("| NN"));
+  const columns =
+    headerIndex < 0
+      ? []
+      : lines[headerIndex]!.split("|")
+          .slice(1, -1)
+          .map((cell) => cell.trim());
+  const rowIndex = lines.findIndex((line) => line.split("|")[1]?.trim() === input.ticket);
+  const roundsIndex = columns.indexOf("rounds");
+  const escalationIndex = columns.indexOf("esc");
+  const statusIndex = columns.indexOf("status");
+  if (
+    headerIndex < 0 ||
+    rowIndex < 0 ||
+    roundsIndex < 0 ||
+    escalationIndex < 0 ||
+    statusIndex < 0
+  ) {
+    throw landingError(
+      "landing.ticket_table_malformed",
+      "Ticket table is missing rounds, esc, or status columns for escalation.",
+      "Repair the schema-1 ticket table before recording escalation.",
+    );
+  }
+  const cells = lines[rowIndex]!.split("|")
+    .slice(1, -1)
+    .map((cell) => cell.trim());
+  cells[roundsIndex] = String(input.round);
+  cells[escalationIndex] = "yes";
+  cells[statusIndex] = "blocked";
+  lines[rowIndex] = `| ${cells.join(" | ")} |`;
+  const withTicket = `${markdown.slice(0, section.start)}${lines.join("\n")}${markdown.slice(section.end)}`;
+  const withoutFinalization = withTicket.replace(finalizationPattern, "");
+  const withPhase = updateActivePhase(
+    withoutFinalization,
+    input.ticket,
+    "blocked, awaiting escalation role",
+  );
+  return appendSectionLine(
+    withPhase,
+    "Decisions",
+    `- ${input.completedAt.slice(0, 10)} ticket ${input.ticket} blocked after fix round ${input.round}; awaiting explicit escalation role`,
+  );
+};
+
 const recordRefusedFastForward = (
   input: LandingCompleteInput,
   finalization: FinalizationRecord,

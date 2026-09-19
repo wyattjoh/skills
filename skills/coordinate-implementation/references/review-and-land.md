@@ -17,7 +17,7 @@ listed repository instructions, pass an empty `safety_constraints` array and
 silence from looking like completed discovery.
 
 The operation persists `## Review policy` before any active ticket exists. It
-also records the fixed three-attempt infrastructure policy, gate execution
+also records the fixed four-attempt infrastructure policy, gate execution
 modes, and harness-appropriate self-review:
 
 - Claude coordinators may use Claude Code's supported background command
@@ -76,8 +76,8 @@ Classify outcomes precisely:
   infrastructure.
 - `infrastructure_failed`: the command could not be run or its execution
   facility failed. Use the returned delay and retry the exact persisted argv.
-  The second and third attempts keep the same ticket, worktree, and
-  configuration. A third infrastructure failure blocks only this ticket.
+  Attempts two through four keep the same ticket, worktree, and configuration.
+  A fourth infrastructure failure blocks only this ticket.
 
 Do not launch external reviewers until every configured gate has a recorded
 pass for the current commit and round.
@@ -103,8 +103,8 @@ For each axis and attempt:
 1. Create a new Herdr tab and pane in the ticket worktree.
 2. Call `review.launch.prepare` with the current persisted Reviewer role, the
    new pane, the integration diff range, and axis source paths. Pass
-   `previous_artifact_path: null` for attempt 1. For attempts 2 and 3, pass the
-   immediately preceding attempt's artifact path.
+   `previous_artifact_path: null` for attempt 1. For attempts 2 through 4, pass
+   the immediately preceding attempt's artifact path.
 3. Require the operation to report an empty `status_before`. It refuses a dirty
    baseline because later mutations could not be attributed safely.
 4. Execute only the returned `launch.start` and `launch.prompt` arrays.
@@ -130,7 +130,7 @@ produce `PASS`.
 
 A malformed result is reviewer infrastructure failure. Retry in a new Herdr
 session with the same Reviewer role and worktree. Use the returned bounded delay
-and stop this ticket after attempt three. The helper reads the preceding
+and stop this ticket after attempt four. The helper reads the preceding
 artifact and evidence before authorizing the retry. Never change the ticket,
 round, model, effort, harness, axis, worktree, branch, base ref, context paths,
 landed-ticket context, gate evidence, reviewed HEAD, or source set during an
@@ -176,9 +176,12 @@ Each fix round receives new gate evidence bound to its new HEAD, new fresh
 Standards and Spec sessions, and new report files. Evidence is immutable and
 byte-identical recovery is the only permitted path reuse. Never overwrite an
 earlier round. Rounds one through three use the same bound implementor and
-reviewer configurations. A `FAIL` after the third fix round returns `escalate`;
-record the decision and wait for the configured explicit escalation authority.
-Never substitute a model.
+reviewer configurations. A `FAIL` after the third fix round returns `escalate`.
+Mark only that ticket `blocked`, set its `esc` field, release it from the active
+implementation capacity count, and ask the user for an explicit replacement
+Implementor role for that ticket. Immediately run `scheduler.plan` so unrelated
+ready tickets continue. Record any authorized escalation before launching it.
+Never substitute a model or rewrite the run-wide Implementor default.
 
 ## Landing
 

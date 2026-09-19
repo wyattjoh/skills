@@ -98,8 +98,8 @@ Coordinator ownership:
     "pi": "synchronous"
   },
   "self_review": "matt-implement",
-  "max_infrastructure_attempts": 3,
-  "retry_delays_seconds": [1, 2]
+  "max_infrastructure_attempts": 4,
+  "retry_delays_seconds": [1, 2, 4]
 }
 ```
 
@@ -203,12 +203,33 @@ Last diagnostic: none
 ## Decisions
 
 - 2026-09-11 snapshot revision sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef accepted (initial; writeback: none)
-- 2026-09-11 implementor -> claude-fable-5-1 / low (opus overkill for the
-  remaining UI tickets)
+- 2026-09-11 implementor -> claude fable / low (selected for the remaining UI
+  tickets)
 
 ## Retained landed branches
 
 - dcs-01-schema (a1b2c3d) (retained by repository cleanup policy)
+
+## Closed ticket runtimes
+
+## Run outcome
+
+```json
+{
+  "status": "active",
+  "completed_at": null,
+  "summary_path": null,
+  "landed_tickets": ["01"],
+  "blocked_tickets": [],
+  "closed_tickets": [],
+  "runnable_tickets": ["04"],
+  "tracker_action": {
+    "mode": "none",
+    "status": "not-applicable",
+    "workflow": null
+  }
+}
+```
 ````
 
 ## Field reference
@@ -261,7 +282,8 @@ authorized them, and resolved project safety constraints. Empty gates and empty
 safety constraints require explicit `no_*` declarations, so missing discovery
 cannot masquerade as a completed policy.
 
-The policy fixes three infrastructure attempts and bounded delays. Claude may
+The policy fixes four total infrastructure attempts (the initial attempt plus
+three retries) and bounded delays of one, two, and four seconds. Claude may
 use its supported background command facility for long gates; Pi is always
 synchronous through its normal shell tool. `self_review` is the run-wide default
 for future implementors, while round finalization validates against the role
@@ -344,14 +366,14 @@ Each row is **self-contained**: it repeats the full resolved record rather than
 pointing at `Implementor:`, so a successor can relaunch any ticket without
 reasoning about when the run-wide record last changed.
 
-| Column                     | Meaning                                                                |
-| -------------------------- | ---------------------------------------------------------------------- |
-| `NN`                       | Ticket number                                                          |
-| `harness` `model` `effort` | The role **bound at ticket start**; never rewritten                    |
-| `rounds`                   | Fix rounds completed                                                   |
-| `esc`                      | `yes` once this ticket escalated past its bound model                  |
-| `status`                   | `queued` \| `working` \| `review` \| `fixing` \| `blocked` \| `landed` |
-| `sha`                      | Landed sha                                                             |
+| Column                     | Meaning                                                                            |
+| -------------------------- | ---------------------------------------------------------------------------------- |
+| `NN`                       | Ticket number                                                                      |
+| `harness` `model` `effort` | The role **bound at ticket start**; never rewritten                                |
+| `rounds`                   | Fix rounds completed                                                               |
+| `esc`                      | `yes` once this ticket escalated past its bound model                              |
+| `status`                   | `queued` \| `working` \| `review` \| `fixing` \| `blocked` \| `landed` \| `closed` |
+| `sha`                      | Landed sha, or `-` for non-landed terminal work                                    |
 
 ### `## Active tickets`
 
@@ -378,7 +400,11 @@ The ticket table remains the scheduler's source of truth. The active block is
 runtime coordination state. Create it before launch, update it at every phase
 change and progress tick, and remove it only after the ticket lands. Every row
 with status `working`, `review`, or `fixing` must have a matching block. A
-`blocked` row keeps its block when a worktree already exists.
+`blocked` row keeps its block when a worktree already exists. When the user
+explicitly closes that work at run finalization, `run.finalize` moves the block
+to `## Closed ticket runtimes` and adds `Closed at:` and `Close reason:` fields.
+This preserves the bound role, branch, worktree, retries, and last diagnostic
+without misrepresenting it as an active session.
 
 ### `## Snapshot`
 
@@ -432,7 +458,22 @@ updates ticket state before returning `schedule`.
 Append-only, dated. The record above is overwritten in place so it always
 states what is current; this section states what changed and why. Every
 snapshot acceptance, tracker-policy change, preference change, scope decision,
-and escalation appends a line.
+escalation, and explicit blocked-ticket closure appends a line.
+
+### `## Run outcome`
+
+Managed by `run.finalize`. `status` is `active`, `waiting`, or `completed`.
+`waiting` means no implementor is active and the dependency graph has no
+runnable queued ticket, but blocked or dependency-blocked work remains. It is
+not success. `completed` is valid only when every table row is `landed` or
+`closed`; it records the immutable run-local SUMMARY.md path and completion
+time. The ticket arrays and runnable frontier are sorted and make downstream
+reads deterministic.
+
+`tracker_action` repeats the persisted snapshot writeback mode and reports
+`not-applicable`, `pending`, or `forbidden`. A pending `final` or `live` action
+names the opaque Matt tracker workflow. The run summary is local and remains
+required regardless of remote-write policy or tracker availability.
 
 ## Harness vocabulary
 

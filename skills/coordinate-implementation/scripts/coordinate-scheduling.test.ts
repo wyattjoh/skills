@@ -243,6 +243,26 @@ describe("bounded dependency scheduling", () => {
     });
   });
 
+  it("keeps closed work terminal without treating it as a landed dependency", () => {
+    const result = runCli(
+      request("scheduler.plan", {
+        mode: "parallel",
+        max_implementors: 2,
+        tickets: [ticket("01", [], "closed"), ticket("02", ["01"]), ticket("03", [])],
+        runtimes: [],
+      }),
+    );
+
+    expect(result.exitCode).toBe(0);
+    expect(result.stdout.result).toEqual({
+      mode: "parallel",
+      capacity: 2,
+      active_implementors: 0,
+      available_slots: 2,
+      launch_tickets: ["03"],
+    });
+  });
+
   it("treats serial mode as one implementor and requires a positive parallel cap", () => {
     const serial = runCli(
       request("scheduler.plan", {

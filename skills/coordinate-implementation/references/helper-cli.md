@@ -554,8 +554,9 @@ list requires `no_executable_gates: true`; an empty safety list requires
 instruction file is required. This operation refuses to run after an active
 ticket runtime exists.
 
-The persisted policy fixes three infrastructure attempts with delays of one and
-two seconds. Its execution record says Claude may use its supported background
+The persisted policy fixes four total infrastructure attempts (the initial
+attempt plus three retries) with delays of one, two, and four seconds. Its
+execution record says Claude may use its supported background
 facility, while Pi runs synchronously through its normal shell tool. It derives
 `matt-implement` self-review for Claude implementors and
 `standards-spec-single-session` for Pi implementors.
@@ -587,7 +588,7 @@ After executing one persisted gate argv, record its exact output:
 
 A normal red gate returns `action: fix`; it is not an infrastructure retry. An
 `infrastructure_failed` attempt returns the next attempt and bounded delay until
-attempt three, which returns `blocked`. The helper resolves the supplied
+attempt four, which returns `blocked`. The helper resolves the supplied
 worktree canonically and requires it to equal the active ticket runtime before
 running any gate-recording logic. The evidence preserves that canonical
 `worktree_path`, the policy argv, worktree HEAD, exit code, stdout, stderr, and
@@ -635,8 +636,8 @@ rejects a dirty worktree. It constructs a unique session name from the run
 prefix, ticket, round, axis, and attempt. Returned Herdr start and prompt
 commands are argument arrays and require no shell interpolation.
 
-Attempt 1 requires `previous_artifact_path: null`. Attempts 2 and 3 require the
-preceding attempt's artifact path and accepted retry evidence. A retry must keep
+Attempt 1 requires `previous_artifact_path: null`. Attempts 2 through 4 require
+the preceding attempt's artifact path and accepted retry evidence. A retry must keep
 the same ticket, round, axis, Reviewer role, canonical worktree, branch, base
 ref, context paths, landed tickets, gate evidence paths, and reviewed HEAD.
 Only the new artifact and report paths, pane, and derived session may differ.
@@ -675,8 +676,8 @@ Reports, sidecars, self-reviews, and fix requests are immutable: byte-identical
 recovery is allowed, but different content at an existing path fails rather
 than destroying prior evidence. A malformed verdict retries as reviewer
 infrastructure. `infrastructure_failed` instead requires `report: null` and an
-exact diagnostic. Attempts one and two return the fixed delay and next attempt;
-attempt three blocks only that ticket.
+exact diagnostic. Attempts one through three return the fixed delay and next
+attempt; attempt four blocks only that ticket.
 
 Git status is captured again. Any difference marks the review `contaminated`,
 rejects its findings, returns `manual_cleanup`, and preserves both the report
@@ -1018,3 +1019,52 @@ that independently observed value:
 Verification succeeds only when generation, pane, ready state, and marker all
 match. Until then, the predecessor remains open. This makes a launched but
 failed successor observable without producing two ready owners.
+
+## `run.finalize`
+
+Evaluate the accepted dependency graph after a scheduling pass has no active
+implementor or new launch. The operation verifies the snapshot again, applies
+only explicitly authorized blocked-ticket closures, records `## Run outcome`,
+and writes the final local summary only for a completed run:
+
+```json
+{
+  "schema_version": 1,
+  "operation": "run.finalize",
+  "input": {
+    "run_path": ".scratch/example",
+    "state_path": ".scratch/example/RESUME.md",
+    "summary_path": ".scratch/example/SUMMARY.md",
+    "closures": [{ "ticket": "07", "reason": "User accepted the deferred scope" }],
+    "user_authorized": true,
+    "project_remote_writes": "allowed",
+    "completed_at": "2026-09-19T12:00:00Z"
+  }
+}
+```
+
+Pass an empty `closures` array and `user_authorized: false` for ordinary status
+evaluation. Every requested closure must name a currently `blocked` ticket or
+a queued ticket whose unsatisfied dependencies are also landed, blocked,
+closed, or named in the same closure set. Each closure needs a single-line
+reason. Nonempty closures require explicit user authority. The helper marks
+those rows `closed`, moves any preserved runtime blocks from
+`## Active tickets` to `## Closed ticket runtimes`, and appends the user
+decision. It never deletes a retained branch or blocked worktree.
+
+The result status is:
+
+- `active` when an implementor phase remains active or a queued ticket has all
+  dependencies landed;
+- `waiting` when no runnable frontier exists but blocked or dependency-blocked
+  work remains;
+- `completed` only when every ticket is `landed` or explicitly `closed`.
+
+Only `completed` writes the immutable run-local `SUMMARY.md`. It reports landed,
+blocked, and closed work, run-wide and ticket-bound role provenance, review
+evidence, retained landed and closed-work branches, and tracker action. Local
+sources and `writeback: none` return `not-applicable`. Persisted `final` or
+`live` policy returns the configured Matt tracker workflow as `pending` when
+current project authority allows remote writes, or `forbidden` when current
+authority no longer permits them. The helper never calls a tracker. The
+coordinator delegates a pending action and always preserves the local summary.

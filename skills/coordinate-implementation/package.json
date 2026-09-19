@@ -2,11 +2,19 @@
   "name": "@wyattjoh/coordinate-implementation-skill",
   "version": "1.0.0",
   "private": true,
+  "description": "Portable Pi and Claude Code implementation-run coordinator helper",
+  "os": [
+    "darwin",
+    "linux"
+  ],
   "type": "module",
   "scripts": {
     "test": "bun test"
   },
   "dependencies": {
     "effect": "3.22.1"
+  },
+  "engines": {
+    "bun": ">=1.1.0"
   }
 }

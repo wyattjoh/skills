@@ -36,7 +36,8 @@ export type CoordinateOperation =
   | "review.round.finalize"
   | "landing.synchronize"
   | "landing.conflict.record"
-  | "landing.complete";
+  | "landing.complete"
+  | "run.finalize";
 
 /**
  * Harnesses supported for coordinator, implementor, and reviewer sessions.
@@ -278,7 +279,8 @@ export type SchedulerTicketStatus =
   | "review"
   | "fixing"
   | "blocked"
-  | "landed";
+  | "landed"
+  | "closed";
 
 /**
  * One normalized ticket supplied to a deterministic scheduling pass.
@@ -503,6 +505,27 @@ export type LandingCompleteInput = {
 };
 
 /**
+ * One user-authorized blocked or dependency-blocked closure applied at run finalization.
+ */
+export type RunClosure = {
+  ticket: string;
+  reason: string;
+};
+
+/**
+ * Input for evaluating terminal run state and writing its local summary.
+ */
+export type RunFinalizeInput = {
+  runPath: string;
+  statePath: string;
+  summaryPath: string;
+  closures: RunClosure[];
+  userAuthorized: boolean;
+  projectRemoteWrites: ProjectRemoteWrites;
+  completedAt: string;
+};
+
+/**
  * A validated schema-version-1 request accepted by the helper.
  */
 export type CoordinateRequest =
@@ -645,6 +668,11 @@ export type CoordinateRequest =
       schemaVersion: typeof CONTRACT_SCHEMA_VERSION;
       operation: "landing.complete";
       input: LandingCompleteInput;
+    }
+  | {
+      schemaVersion: typeof CONTRACT_SCHEMA_VERSION;
+      operation: "run.finalize";
+      input: RunFinalizeInput;
     };
 
 /**
@@ -828,7 +856,8 @@ const parseSchedulerTickets = (value: unknown): SchedulerTicket[] | undefined =>
         status !== "review" &&
         status !== "fixing" &&
         status !== "blocked" &&
-        status !== "landed")
+        status !== "landed" &&
+        status !== "closed")
     ) {
       return undefined;
     }
@@ -978,6 +1007,7 @@ export const parseRequest = (raw: string): Effect.Effect<CoordinateRequest, Requ
       "landing.synchronize",
       "landing.conflict.record",
       "landing.complete",
+      "run.finalize",
     ];
     if (operation === null || !operations.includes(operation as CoordinateOperation)) {
       return yield* invalidRequest(
@@ -987,6 +1017,53 @@ export const parseRequest = (raw: string): Effect.Effect<CoordinateRequest, Requ
     }
     if (!isRecord(parsed.input)) {
       return yield* invalidRequest("Request `input` must be an object.", operation);
+    }
+
+    if (operation === "run.finalize") {
+      const runPath = nonEmptyString(parsed.input.run_path);
+      const statePath = nonEmptyString(parsed.input.state_path);
+      const summaryPath = nonEmptyString(parsed.input.summary_path);
+      const closuresValue = parsed.input.closures;
+      const closureCount = Array.isArray(closuresValue) ? closuresValue.length : -1;
+      const closures = Array.isArray(closuresValue)
+        ? closuresValue.flatMap((closure) => {
+            if (!isRecord(closure)) return [];
+            const ticket = ticketNumber(closure.ticket);
+            const reason = singleLineString(closure.reason);
+            return ticket === undefined || reason === undefined ? [] : [{ ticket, reason }];
+          })
+        : undefined;
+      const userAuthorized = parsed.input.user_authorized;
+      const projectRemoteWrites = parsed.input.project_remote_writes;
+      const completedAt = parsed.input.completed_at;
+      if (
+        runPath === undefined ||
+        statePath === undefined ||
+        summaryPath === undefined ||
+        closures === undefined ||
+        closures.length !== closureCount ||
+        typeof userAuthorized !== "boolean" ||
+        (projectRemoteWrites !== "allowed" && projectRemoteWrites !== "forbidden") ||
+        !isUtcIsoTimestamp(completedAt)
+      ) {
+        return yield* invalidRequest(
+          "`run.finalize` requires run_path, state_path, summary_path, valid closures, boolean user_authorized, project_remote_writes, and completed_at.",
+          operation,
+        );
+      }
+      return {
+        schemaVersion: CONTRACT_SCHEMA_VERSION,
+        operation,
+        input: {
+          runPath,
+          statePath,
+          summaryPath,
+          closures,
+          userAuthorized,
+          projectRemoteWrites,
+          completedAt,
+        },
+      };
     }
 
     if (operation === "state.validate") {
@@ -1389,7 +1466,7 @@ export const parseRequest = (raw: string): Effect.Effect<CoordinateRequest, Requ
         round === undefined ||
         name === undefined ||
         attempt === undefined ||
-        attempt > 3 ||
+        attempt > 4 ||
         (status !== "passed" && status !== "failed" && status !== "infrastructure_failed") ||
         exitCode === undefined ||
         stdout === undefined ||
@@ -1399,7 +1476,7 @@ export const parseRequest = (raw: string): Effect.Effect<CoordinateRequest, Requ
         (status === "failed" && exitCode === 0)
       ) {
         return yield* invalidRequest(
-          "`gate.record` requires a configured gate, worktree_path, ticket, round, attempt from 1 through 3, exact output, valid status and exit code, and completed_at.",
+          "`gate.record` requires a configured gate, worktree_path, ticket, round, attempt from 1 through 4, exact output, valid status and exit code, and completed_at.",
           operation,
         );
       }
@@ -1510,12 +1587,12 @@ export const parseRequest = (raw: string): Effect.Effect<CoordinateRequest, Requ
         landedTickets === undefined ||
         gateEvidencePaths === undefined ||
         attempt === undefined ||
-        attempt > 3 ||
+        attempt > 4 ||
         (attempt === 1 && previousArtifactPath !== undefined) ||
         (attempt > 1 && previousArtifactPath === undefined)
       ) {
         return yield* invalidRequest(
-          "`review.launch.prepare` requires a two-digit ticket, round, axis, runtime paths, base and branch, pane, Reviewer role, context paths, landed tickets, attempt from 1 through 3, and the preceding artifact path for retries only.",
+          "`review.launch.prepare` requires a two-digit ticket, round, axis, runtime paths, base and branch, pane, Reviewer role, context paths, landed tickets, attempt from 1 through 4, and the preceding artifact path for retries only.",
           operation,
         );
       }
