@@ -1,7 +1,7 @@
 ---
 name: coordinate-implementation
-description: Orchestrates a multi-ticket implementation run. Points at a `.scratch/<slug>/` folder holding a spec and numbered issues, then runs dependency-ready tickets in parallel by default, reviews each result on two axes, loops fixes back, and fast-forwards the integration branch. Repository-specific commands and safety constraints are discovered from project instructions and CI rather than assumed. Scheduling mode, model, harness, effort, and worker skills are recorded in RESUME.md so they survive handoffs and mid-run changes. Triggers on "/coordinate-implementation", "implement the tickets in", "orchestrate the run", "resume the implementation run".
-argument-hint: "[.scratch/<slug> | resume .scratch/<slug>] [--base <branch>] [--implementor '<model> <effort>'] [--serial | --parallel]"
+description: Orchestrates a multi-ticket implementation run. Points at a `.scratch/<slug>/` folder holding a spec and numbered issues, then runs dependency-ready tickets in parallel by default, reviews each result on two axes, loops fixes back, and fast-forwards the integration branch. Repository-specific commands and safety constraints are discovered from project instructions and CI rather than assumed. Scheduling mode and validated Coordinator, Implementor, and Reviewer role records survive handoffs and mid-run changes in RESUME.md. Triggers on "/coordinate-implementation", "implement the tickets in", "orchestrate the run", "resume the implementation run".
+argument-hint: "[.scratch/<slug> | resume .scratch/<slug>] [--base <branch>] [--coordinator '<harness> <model> <effort>'] [--implementor '<harness> <model> <effort>'] [--reviewer '<harness> <model> <effort>'] [--serial | --parallel]"
 compatibility: Requires macOS or Linux, Git, Bun, Herdr with machine-readable normalized context_used and context_limit fields, Matt Pocock's implement skill, and at least one supported harness (Pi or Claude Code).
 disable-model-invocation: true
 effort: low
@@ -49,9 +49,11 @@ Arguments: `$ARGUMENTS`
 - `Branch template:` in RESUME.md records the repository's branch naming rule.
   Resolve it from repository instructions on first run, or use
   `<prefix>-NN-<slug>` when the repository has no rule.
-- `--implementor '<model> <effort>'` sets the implementor model and effort.
-  The harness is resolved from the model and persisted; everything else about
-  the record (worker skills, coordinator settings) is changed in prose.
+- `--coordinator`, `--implementor`, and `--reviewer` each accept one quoted
+  `'<harness> <model> <effort>'` triple. Harness is exactly `claude` or `pi`.
+  Validate every supplied triple with the helper's `role.validate` operation.
+  Never infer a harness from a model and never substitute a nearby model or
+  effort after validation fails.
 - `--serial` runs at most one active ticket. `--parallel` explicitly restores
   the default parallel scheduler. Reject an invocation that passes both.
   Record the selected value as `Mode:` in RESUME.md. On a first run with neither
@@ -59,18 +61,25 @@ Arguments: `$ARGUMENTS`
   mode. An explicit flag on resume is a preference change: write and log it
   before scheduling more work.
 
-If the invocation does not explicitly provide the run folder, base branch,
-implementor model/effort, or your own coordinator effort, ask a structured
-clarification question before creating state or launching workers. Offer the
-documented defaults (`.scratch/<slug>` from the prompt, `main`, the configured
-default implementor, coordinator effort `low`) as the first, recommended
-choices, but do not silently infer a missing option when multiple projects,
-branches, or model families could apply. If the user explicitly names a run
-folder and says to use defaults, proceed without asking again.
+Before presenting role choices, call `roles.discover`. Offer only harnesses
+reported as available, Pi models from its installed catalog, Claude Code's
+`fable`, `opus`, and `sonnet` aliases plus custom model input, and the exact
+efforts reported for the selected harness.
 
-Your own harness and model are introspected; your effort is the one value you
-cannot see, which is why it joins that question. Successors inherit the whole
-`Coordinator:` record and are never asked again.
+Collect every missing startup value in one structured interaction before
+creating state or launching any session. The interaction covers the run folder,
+base branch, scheduling mode or parallel cap when needed, and complete
+Coordinator, Implementor, and Reviewer triples. Offer a current-session
+Coordinator triple only when its harness, model, and effort are known. Validate
+all three resolved records through `role.validate`, then persist all three in
+RESUME.md before any launch. If the user explicitly supplies every value, do
+not ask again.
+
+Compare the persisted Coordinator record with the invoking session. An exact
+match keeps the current pane and initializes its ownership as ready without a
+claim. Any harness, model, or effort mismatch requires the safe Herdr takeover
+in [handoff.md](references/handoff.md); never rewrite the selected Coordinator
+record to make the invoking pane appear to match it.
 
 Everywhere below, `<base>` means that branch. The main checkout is never
 `<base>` unless `<base>` is `main`.
@@ -98,27 +107,30 @@ might touch nearby code. Their branches synchronize against the latest
 
 ## Preferences
 
-Which model, which harness, which effort, and which skills each side runs are
-**recorded state**, not conversational memory. The canonical format, the
-harness vocabulary table, and the validation rules are in
-[resume-format.md](references/resume-format.md). The rules for keeping the
-record true:
+Which harness, model, and effort each role runs are **recorded state**, not
+conversational memory. The canonical format, installed-harness discovery, and
+validation rules are in [resume-format.md](references/resume-format.md). The
+rules for keeping the record true:
 
 - **The write is the acknowledgement.** A preference the user states and you
   have not yet written to RESUME.md does not exist. Write the file _before_
   you reply, then reply. This is not negotiable: the alternative is a
   preference that survives only as long as your context does.
 - **Resolve once, persist the resolution.** You have the conversation; a
-  successor does not. Derive the harness from the model at record time and
-  write `harness`, `model`, `effort`, and `skills` explicitly. Never make a
-  later reader re-derive a field you could have recorded.
+  successor does not. Write the explicitly selected and validated `harness`,
+  `model`, `effort`, and `skills` exactly as resolved. Never infer a harness
+  from a model, make a later reader re-derive a field, or substitute another
+  harness, model, or effort.
 - **On resume, an explicit flag wins and is written back.** `--implementor`,
-  `--serial`, or `--parallel` passed at a resume is a preference change: apply
-  it, write it, and log it. `--base` is the exception and the file wins;
-  resume-format.md says why.
-- **A ticket binds its record at start.** The run-wide `Implementor:` governs
-  the next ticket to _start_. A ticket already running keeps the record in its
-  table row for its whole life, through fix rounds and crash-restarts.
+  `--reviewer`, `--serial`, or `--parallel` passed at resume is a preference
+  change: validate it, write it, and log it. `--coordinator` first persists the
+  validated selection, then uses safe takeover. `--base` is the exception and
+  the file wins; resume-format.md says why.
+- **A session binds its record at launch.** The run-wide `Implementor:` and
+  `Reviewer:` records govern future launches only. A ticket already running
+  keeps its implementor record in the table row for its whole life, and every
+  reviewer launch records the Reviewer default it bound. A Coordinator change
+  always uses a takeover and never becomes a state-only rewrite.
 - **Log every change.** Append a dated line to `## Decisions` with the reason.
 - **Re-read RESUME.md at each progress tick**, so a hand edit is honored and
   you never overwrite one blindly.
@@ -323,13 +335,16 @@ When invoked as `resume .scratch/<slug>` or from a handoff:
    reports its changed inputs until the user explicitly runs the acceptance
    flow. Then validate the remaining fields against
    [resume-format.md](references/resume-format.md). It names the prefix, base,
-   base sha, scheduling mode, branch template, both records, every active
+   base sha, scheduling mode, branch template, all three role records,
+   coordinator ownership, every active
    ticket's worktree and pane, and what remains. Missing, malformed, or
    unsupported schema versions stop the resume without migration. Any other
    mismatch also stops with an explanation; nothing is guessed.
-   If this invocation also passed `--implementor`, `--serial`, or `--parallel`
-   and it differs from the record, that is a preference change: validate it,
-   write it, log it in `## Decisions`, and apply it when scheduling more work.
+   If this invocation also passed `--coordinator`, `--implementor`,
+   `--reviewer`, `--serial`, or `--parallel` and it differs from the record,
+   that is a preference change: validate it, write it, and log it in
+   `## Decisions`. Coordinator changes require safe takeover; Implementor and
+   Reviewer changes apply only to future launches.
 2. `herdr pane list`; pane ids compact, so trust the list over RESUME.md.
    Rename your own tab to `coordinator` and label your own pane
    `coordinator <prefix>`, using `$HERDR_TAB_ID` and `$HERDR_PANE_ID`.

@@ -1,4 +1,5 @@
 import { describe, expect, it } from "bun:test";
+import { Effect } from "effect";
 import {
   chmodSync,
   mkdirSync,
@@ -9,9 +10,19 @@ import {
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
+import { claimCoordinator } from "./lib/coordinator.ts";
+import { acceptSnapshot } from "./lib/snapshot.ts";
 
 const CLI = join(import.meta.dir, "coordinate.ts");
 const decoder = new TextDecoder();
+
+const deferred = <Value>() => {
+  let resolve!: (value: Value | PromiseLike<Value>) => void;
+  const promise = new Promise<Value>((resolver) => {
+    resolve = resolver;
+  });
+  return { promise, resolve };
+};
 
 type CliResult = {
   exitCode: number;
@@ -118,7 +129,7 @@ const LOCAL_SOURCE = {
   tracker: "local-files",
   reference: "file:portable-run",
   tracker_workflow: null,
-};
+} as const;
 const LOCAL_INPUTS = [
   {
     path: "issues/01-foundation.md",
@@ -485,6 +496,136 @@ if (args[0] === "--version") {
     expect(lastStateLine(fixture.statePath)).toBe(
       `- 2026-09-19 snapshot revision ${LOCAL_REVISION} accepted (initial; writeback: none)`,
     );
+  });
+
+  it("serializes snapshot acceptance with coordinator ownership mutation", async () => {
+    const fixture = makeSnapshotFixture("local");
+    const original = readFileSync(fixture.statePath, "utf8");
+    writeFileSync(
+      fixture.statePath,
+      original.replace(
+        "## Decisions",
+        `Coordinator:
+  harness: pi
+  model: openai-codex/gpt-5.6-sol
+  effort: high
+
+Implementor:
+  harness: claude
+  model: opus
+  effort: high
+  skills: [implement]
+
+Reviewer:
+  harness: claude
+  model: sonnet
+  effort: medium
+
+Coordinator ownership:
+  generation: 4
+  pane: workspace:p1
+  harness: claude
+  model: fable
+  effort: low
+  readiness: ready
+  marker: coordinator-ready-4-workspace:p1
+
+## Decisions`,
+      ),
+    );
+
+    const snapshotRead = deferred<void>();
+    const releaseSnapshot = deferred<void>();
+    const claimContended = deferred<void>();
+    const snapshotPromise = Effect.runPromise(
+      acceptSnapshot(
+        {
+          runPath: fixture.runPath,
+          statePath: fixture.statePath,
+          writeback: undefined,
+          projectRemoteWrites: "allowed",
+          acceptedAt: "2026-09-19T00:00:00Z",
+        },
+        {
+          afterRead: async () => {
+            snapshotRead.resolve(undefined);
+            await releaseSnapshot.promise;
+          },
+          onLockContended: undefined,
+        },
+      ),
+    );
+    await snapshotRead.promise;
+
+    const claimPromise = Effect.runPromise(
+      claimCoordinator(
+        {
+          statePath: fixture.statePath,
+          expectedGeneration: 4,
+          expectedPredecessorPane: "workspace:p1",
+          expectedPredecessorRole: {
+            harness: "claude",
+            model: "fable",
+            effort: "low",
+          },
+          successorPane: "workspace:p2",
+          successorRole: {
+            harness: "pi",
+            model: "openai-codex/gpt-5.6-sol",
+            effort: "high",
+          },
+        },
+        {
+          afterRead: undefined,
+          onLockContended: async () => {
+            claimContended.resolve(undefined);
+          },
+        },
+      ),
+    );
+    await claimContended.promise;
+    releaseSnapshot.resolve(undefined);
+
+    const [snapshot, ownership] = await Promise.all([snapshotPromise, claimPromise]);
+
+    expect(snapshot).toEqual({
+      status: "accepted",
+      scheduling_allowed: true,
+      revision: LOCAL_REVISION,
+      accepted_revision: LOCAL_REVISION,
+      changed_inputs: [],
+      source: LOCAL_SOURCE,
+      writeback: "none",
+      inputs: LOCAL_INPUTS,
+    });
+    expect(ownership).toEqual({
+      generation: 5,
+      pane: "workspace:p2",
+      harness: "pi",
+      model: "openai-codex/gpt-5.6-sol",
+      effort: "high",
+      readiness: "claiming",
+      marker: "coordinator-ready-5-workspace:p2",
+    });
+    expect(readSnapshotRecord(fixture.statePath)).toEqual({
+      revision: LOCAL_REVISION,
+      accepted_at: "2026-09-19T00:00:00Z",
+      source: LOCAL_SOURCE,
+      writeback: "none",
+      inputs: LOCAL_INPUTS,
+    });
+    const state = readFileSync(fixture.statePath, "utf8");
+    expect(
+      state.includes(
+        "Coordinator ownership:\n  generation: 5\n  pane: workspace:p2\n  harness: pi\n  model: openai-codex/gpt-5.6-sol\n  effort: high\n  readiness: claiming",
+      ),
+    ).toBe(true);
+    expect(
+      state.includes(
+        `- 2026-09-19 snapshot revision ${LOCAL_REVISION} accepted (initial; writeback: none)`,
+      ),
+    ).toBe(true);
+    expect(state.includes("- 2026-09-18 setup recorded")).toBe(true);
   });
 
   it("allows scheduling when the accepted snapshot is unchanged", () => {

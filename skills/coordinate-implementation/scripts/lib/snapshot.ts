@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
 import { basename, isAbsolute, join, relative, sep } from "node:path";
-import { readFile, realpath, writeFile } from "node:fs/promises";
+import { readFile, realpath } from "node:fs/promises";
 import { Data, Effect, Either } from "effect";
 import {
   isUtcIsoTimestamp,
@@ -9,6 +9,7 @@ import {
   type SnapshotInput,
   type WritebackMode,
 } from "./contract.ts";
+import { mutateStateFile, StateMutationError, type StateMutationHooks } from "./state-mutation.ts";
 import { validateStateText } from "./state.ts";
 
 /**
@@ -473,13 +474,11 @@ const parseAcceptedSnapshot = (value: unknown): AcceptedSnapshot | undefined => 
 
 const snapshotSectionPattern = /^## Snapshot\n\n```json\n([\s\S]*?)\n```(?:\n|$)/mu;
 
-const readStateDocument = (path: string): Effect.Effect<StateDocument, SnapshotError> =>
+const parseStateDocument = (
+  path: string,
+  markdown: string,
+): Effect.Effect<StateDocument, SnapshotError> =>
   Effect.gen(function* () {
-    const markdown = yield* Effect.tryPromise({
-      try: () => readFile(path, "utf8"),
-      catch: (error) =>
-        stateFailure(`Could not read run state at ${path}: ${(error as Error).message}`),
-    });
     const validation = yield* Effect.either(validateStateText(path, markdown));
     if (Either.isLeft(validation)) {
       return yield* new SnapshotError({ issue: validation.left.issue });
@@ -503,6 +502,13 @@ const readStateDocument = (path: string): Effect.Effect<StateDocument, SnapshotE
     }
     return { markdown, accepted };
   });
+
+const readStateDocument = (path: string): Effect.Effect<StateDocument, SnapshotError> =>
+  Effect.tryPromise({
+    try: () => readFile(path, "utf8"),
+    catch: (error) =>
+      stateFailure(`Could not read run state at ${path}: ${(error as Error).message}`),
+  }).pipe(Effect.flatMap((markdown) => parseStateDocument(path, markdown)));
 
 const changedInputs = (
   accepted: AcceptedSnapshot | undefined,
@@ -664,58 +670,74 @@ export const checkSnapshot = (input: SnapshotInput): Effect.Effect<SnapshotResul
  * Explicitly accepts the current normalized snapshot and records it in run state.
  *
  * @param input - Snapshot paths, acceptance time, writeback choice, and project authority.
+ * @param hooks - Optional deterministic state-mutation hooks for tests.
  * @returns An Effect containing the newly accepted revision after state persistence.
  */
 export const acceptSnapshot = (
   input: SnapshotInput,
+  hooks: StateMutationHooks | undefined = undefined,
 ): Effect.Effect<SnapshotResult, SnapshotError> =>
   Effect.gen(function* () {
     const candidate = yield* loadCandidate(input.runPath);
-    const state = yield* readStateDocument(input.statePath);
-    const priorRemoteWriteback =
-      state.accepted?.source.kind === "remote" ? state.accepted.writeback : undefined;
-    const writeback =
-      candidate.source.kind === "local"
-        ? (input.writeback ?? "none")
-        : (input.writeback ?? priorRemoteWriteback);
-    const policyError = writebackPolicyError(
-      candidate.source,
-      writeback,
-      input.projectRemoteWrites,
-    );
-    if (policyError !== undefined) return yield* policyError;
-    if (writeback === undefined || input.acceptedAt === undefined) {
-      return yield* stateFailure(
-        "Snapshot acceptance is missing its accepted_at or writeback value.",
-      );
-    }
+    return yield* mutateStateFile(
+      input.statePath,
+      (markdown) =>
+        Effect.gen(function* () {
+          const state = yield* parseStateDocument(input.statePath, markdown);
+          const priorRemoteWriteback =
+            state.accepted?.source.kind === "remote" ? state.accepted.writeback : undefined;
+          const writeback =
+            candidate.source.kind === "local"
+              ? (input.writeback ?? "none")
+              : (input.writeback ?? priorRemoteWriteback);
+          const policyError = writebackPolicyError(
+            candidate.source,
+            writeback,
+            input.projectRemoteWrites,
+          );
+          if (policyError !== undefined) return yield* policyError;
+          if (writeback === undefined || input.acceptedAt === undefined) {
+            return yield* stateFailure(
+              "Snapshot acceptance is missing its accepted_at or writeback value.",
+            );
+          }
 
-    const changes = changedInputs(state.accepted, candidate);
-    const sameAcceptance =
-      state.accepted?.revision === candidate.revision && state.accepted.writeback === writeback;
-    if (!sameAcceptance) {
-      const record: AcceptedSnapshot = {
-        revision: candidate.revision,
-        accepted_at: input.acceptedAt,
-        source: candidate.source,
-        writeback,
-        inputs: candidate.inputs,
-      };
-      const decision = acceptanceDecision(
-        input.acceptedAt,
-        state.accepted,
-        candidate,
-        changes,
-        writeback,
-      );
-      const updated = appendDecision(replaceSnapshotSection(state.markdown, record), decision);
-      yield* Effect.tryPromise({
-        try: () => writeFile(input.statePath, updated),
-        catch: (error) =>
-          stateFailure(
-            `Could not record accepted snapshot in ${input.statePath}: ${(error as Error).message}`,
-          ),
-      });
-    }
-    return resultFor("accepted", candidate, candidate.revision, changes, writeback);
+          const changes = changedInputs(state.accepted, candidate);
+          const sameAcceptance =
+            state.accepted?.revision === candidate.revision &&
+            state.accepted.writeback === writeback;
+          const result = resultFor("accepted", candidate, candidate.revision, changes, writeback);
+          if (sameAcceptance) return { markdown: undefined, result };
+
+          const record: AcceptedSnapshot = {
+            revision: candidate.revision,
+            accepted_at: input.acceptedAt,
+            source: candidate.source,
+            writeback,
+            inputs: candidate.inputs,
+          };
+          const decision = acceptanceDecision(
+            input.acceptedAt,
+            state.accepted,
+            candidate,
+            changes,
+            writeback,
+          );
+          return {
+            markdown: appendDecision(replaceSnapshotSection(state.markdown, record), decision),
+            result,
+          };
+        }),
+      hooks,
+    ).pipe(
+      Effect.mapError((error) =>
+        error instanceof SnapshotError
+          ? error
+          : stateFailure(
+              `Could not record accepted snapshot in ${input.statePath}: ${
+                error instanceof StateMutationError ? error.message : (error as Error).message
+              }`,
+            ),
+      ),
+    );
   });

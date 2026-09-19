@@ -80,7 +80,7 @@ cd <worktree> && claude --model <model> --effort <effort> --permission-mode auto
 
 ```sh
 # harness: pi
-cd <worktree> && pi --model <provider>/<model> --thinking <effort> --skill <path-to-implement> '/skill:implement You are implementing ticket NN of the <slug> run. Read <repo>/<run>/briefs/common.md, <repo>/<run>/spec.md, and <repo>/<run>/issues/NN-<slug>.md first, then implement the ticket per the brief. Other unblocked tickets may be running in parallel. Work only in this worktree, do not depend on unlanded changes from another ticket, and stay within this ticket scope. IMPORTANT CONTEXT: <what earlier tickets already landed and what remains for this one>'
+cd <worktree> && pi --approve --model <provider>/<model> --thinking <effort> --skill <path-to-implement> '/skill:implement You are implementing ticket NN of the <slug> run. Read <repo>/<run>/briefs/common.md, <repo>/<run>/spec.md, and <repo>/<run>/issues/NN-<slug>.md first, then implement the ticket per the brief. Other unblocked tickets may be running in parallel. Work only in this worktree, do not depend on unlanded changes from another ticket, and stay within this ticket scope. IMPORTANT CONTEXT: <what earlier tickets already landed and what remains for this one>'
 ```
 
 For each additional recorded skill, append its `--skill <path>` flag to the Pi
@@ -92,11 +92,11 @@ Never pass a non-Anthropic model to `claude`.
 **The two lines differ in three ways, not one.** Build each from the row's
 `harness`; do not adapt one into the other by swapping the binary:
 
-|             | `claude`                 | `pi`                           |
-| ----------- | ------------------------ | ------------------------------ |
-| model       | `--model <model>`        | `--model <provider>/<model>`   |
-| effort      | `--effort <effort>`      | `--thinking <effort>`          |
-| permissions | `--permission-mode auto` | **omit — pi has no such flag** |
+|             | `claude`                 | `pi`                                                        |
+| ----------- | ------------------------ | ----------------------------------------------------------- |
+| model       | `--model <model>`        | `--model <provider>/<model>`                                |
+| effort      | `--effort <effort>`      | `--thinking <effort>`                                       |
+| permissions | `--permission-mode auto` | no permission-mode flag; pass `--approve` for project trust |
 
 A `model:` carrying a `:<level>` suffix is **split** into `--model` plus the
 effort flag; a colon never reaches either CLI. See
@@ -136,15 +136,16 @@ invisible in every artifact the run later produces.
 
 ### Implementor record
 
-The initial clarification chooses the implementor model and effort. Resolve the
-harness from that model and persist the harness, model, effort, and skills. Do
-not hardcode a repository-specific or machine-specific model default in this
-procedure.
+The initial structured setup chooses the complete Implementor triple from
+`roles.discover`, then validates it with `role.validate`. Persist harness,
+model, and effort exactly as validated. Do not infer a harness from a model or
+hardcode a repository-specific or machine-specific default.
 
-`--implementor '<model> <effort>'` on the skill invocation changes the model
-and effort; resolve the harness again and persist all four fields. Worker skills
-are changed in prose. Either way the change is written to RESUME.md before you
-reply, and it governs **the next ticket to start** only.
+`--implementor '<harness> <model> <effort>'` on the skill invocation replaces
+the run-wide default after helper validation. Additional worker skills, while
+they remain supported by this state schema, are changed in prose. Write the
+change to RESUME.md before replying. It governs **the next ticket to start**
+only; active tickets keep their table-bound record.
 
 A launch that fails is reported and stops that ticket. Set its row to `blocked`,
 keep its active runtime block with `Phase: launch failed` and `Monitor:

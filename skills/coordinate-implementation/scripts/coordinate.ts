@@ -8,7 +8,9 @@ import {
   type CoordinateRequest,
   type CoordinateResponse,
 } from "./lib/contract.ts";
+import { claimCoordinator, markCoordinatorReady, verifyCoordinator } from "./lib/coordinator.ts";
 import { runPreflight } from "./lib/preflight.ts";
+import { discoverRoles, validateRole } from "./lib/roles.ts";
 import { acceptSnapshot, checkSnapshot } from "./lib/snapshot.ts";
 import { validateStateFile } from "./lib/state.ts";
 
@@ -52,16 +54,66 @@ const execute = (request: CoordinateRequest): Effect.Effect<number, never> =>
       return 0;
     }
 
-    const snapshot = yield* Effect.either(
-      request.operation === "snapshot.check"
-        ? checkSnapshot(request.input)
-        : acceptSnapshot(request.input),
-    );
-    if (Either.isLeft(snapshot)) {
-      print(failureResponse(request.operation, [snapshot.left.issue], null));
+    if (request.operation === "snapshot.check" || request.operation === "snapshot.accept") {
+      const snapshot = yield* Effect.either(
+        request.operation === "snapshot.check"
+          ? checkSnapshot(request.input)
+          : acceptSnapshot(request.input),
+      );
+      if (Either.isLeft(snapshot)) {
+        print(failureResponse(request.operation, [snapshot.left.issue], null));
+        return 1;
+      }
+      print(successResponse(request.operation, snapshot.right));
+      return 0;
+    }
+
+    if (request.operation === "roles.discover") {
+      const outcome = yield* discoverRoles();
+      if (outcome.errors.length > 0) {
+        print(failureResponse(request.operation, outcome.errors, outcome.discovery));
+        return 1;
+      }
+      print(successResponse(request.operation, outcome.discovery));
+      return 0;
+    }
+
+    if (request.operation === "role.validate") {
+      const outcome = yield* validateRole(request.input);
+      if (outcome.result === null) {
+        print(failureResponse(request.operation, outcome.errors, null));
+        return 1;
+      }
+      print(successResponse(request.operation, outcome.result));
+      return 0;
+    }
+
+    if (request.operation === "coordinator.claim") {
+      const outcome = yield* Effect.either(claimCoordinator(request.input));
+      if (Either.isLeft(outcome)) {
+        print(failureResponse(request.operation, [outcome.left.issue], null));
+        return 1;
+      }
+      print(successResponse(request.operation, { ownership: outcome.right }));
+      return 0;
+    }
+
+    if (request.operation === "coordinator.ready") {
+      const outcome = yield* Effect.either(markCoordinatorReady(request.input));
+      if (Either.isLeft(outcome)) {
+        print(failureResponse(request.operation, [outcome.left.issue], null));
+        return 1;
+      }
+      print(successResponse(request.operation, { ownership: outcome.right }));
+      return 0;
+    }
+
+    const outcome = yield* Effect.either(verifyCoordinator(request.input));
+    if (Either.isLeft(outcome)) {
+      print(failureResponse(request.operation, [outcome.left.issue], null));
       return 1;
     }
-    print(successResponse(request.operation, snapshot.right));
+    print(successResponse(request.operation, outcome.right));
     return 0;
   });
 

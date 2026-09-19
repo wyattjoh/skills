@@ -171,3 +171,149 @@ The normalized manifest and coordinator rules are in
 [normalized-snapshot.md](normalized-snapshot.md). The helper never invokes a
 tracker command. It only validates and persists the opaque configured tracker
 workflow name.
+
+## `roles.discover`
+
+Discover role choices before presenting setup questions:
+
+```json
+{
+  "schema_version": 1,
+  "operation": "roles.discover",
+  "input": {}
+}
+```
+
+The result contains `claude` and `pi` records in that order. Each record reports
+availability and version, exact efforts parsed from installed harness help, and
+model choices. Pi values come from `pi --list-models` as provider-qualified
+ids. Claude Code reports the documented `fable`, `opus`, and `sonnet` aliases
+and `custom: true`. An unavailable harness remains visible with
+`available: false` but must not be offered in setup.
+
+## `role.validate`
+
+Validate each Coordinator, Implementor, and Reviewer record before persisting
+it. Explicit skill flags pass one quoted triple:
+
+```json
+{
+  "schema_version": 1,
+  "operation": "role.validate",
+  "input": {
+    "role": "coordinator",
+    "triple": "pi openai-codex/gpt-5.6-sol high"
+  }
+}
+```
+
+Structured setup passes `record` instead of `triple`:
+
+```json
+{
+  "schema_version": 1,
+  "operation": "role.validate",
+  "input": {
+    "role": "reviewer",
+    "record": {
+      "harness": "claude",
+      "model": "sonnet",
+      "effort": "medium"
+    }
+  }
+}
+```
+
+Exactly one form is required. Validation checks that the harness is installed,
+the effort appears in installed help, Pi models appear in the installed
+catalog, and Claude custom values are not provider-qualified. An agreeing
+`:<effort>` model suffix is split into the normalized record; a conflicting
+suffix is rejected. Failure returns the rejected value and never a substituted
+record.
+
+## Coordinator ownership operations
+
+`Coordinator ownership:` in RESUME.md contains `generation`, `pane`,
+`harness`, `model`, `effort`, `readiness`, and `marker`. Coordinator and snapshot mutation
+operations share one short-lived state lock, serialized recovery guard, and
+same-directory temporary file replacement. A lock older than 30 seconds may be
+recovered only when its recorded same-machine process is no longer alive. Lock
+release verifies the claimant token, so an old claimant cannot remove a newer
+lock. Interrupted temporary files are never read as state.
+
+### `coordinator.claim`
+
+The selected successor calls this operation after its Herdr agent has started.
+The persisted `Coordinator:` role must equal `successor_role`.
+
+```json
+{
+  "schema_version": 1,
+  "operation": "coordinator.claim",
+  "input": {
+    "state_path": ".scratch/example/RESUME.md",
+    "expected_generation": 4,
+    "expected_predecessor_pane": "wJE:p1",
+    "expected_predecessor_role": {
+      "harness": "claude",
+      "model": "opus",
+      "effort": "high"
+    },
+    "successor_pane": "wJE:p2",
+    "successor_role": {
+      "harness": "pi",
+      "model": "openai-codex/gpt-5.6-sol",
+      "effort": "high"
+    }
+  }
+}
+```
+
+Exactly one concurrent claimant can replace generation 4. Success advances the
+generation to 5, records the successor role with `readiness: claiming`, and returns a
+deterministic generation-specific marker. A stale generation, wrong predecessor
+pane or role, role mismatch, or successor equal to the current pane fails
+without changing state.
+
+### `coordinator.ready`
+
+After reconstructing the run and arming its wait, the successor marks only its
+own claim ready:
+
+```json
+{
+  "schema_version": 1,
+  "operation": "coordinator.ready",
+  "input": {
+    "state_path": ".scratch/example/RESUME.md",
+    "generation": 5,
+    "pane": "wJE:p2",
+    "marker": "coordinator-ready-5-wJE:p2"
+  }
+}
+```
+
+The successor then prints the exact returned marker in its pane. A mismatched
+or already-replaced claim fails without mutation.
+
+### `coordinator.verify`
+
+The predecessor reads the marker from the successor's Herdr pane and supplies
+that independently observed value:
+
+```json
+{
+  "schema_version": 1,
+  "operation": "coordinator.verify",
+  "input": {
+    "state_path": ".scratch/example/RESUME.md",
+    "generation": 5,
+    "pane": "wJE:p2",
+    "observed_marker": "coordinator-ready-5-wJE:p2"
+  }
+}
+```
+
+Verification succeeds only when generation, pane, ready state, and marker all
+match. Until then, the predecessor remains open. This makes a launched but
+failed successor observable without producing two ready owners.

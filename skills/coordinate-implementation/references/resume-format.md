@@ -31,7 +31,7 @@ Branch template: <prefix>-NN-<slug>
 
 Coordinator:
   harness:    claude
-  model:      claude-fable-5-1
+  model:      fable
   effort:     low
   handoff:    yes
   threshold:  200000
@@ -39,9 +39,23 @@ Coordinator:
 
 Implementor:
   harness: claude
-  model:   claude-opus-5
+  model:   opus
   effort:  high
   skills:  [implement]
+
+Reviewer:
+  harness: claude
+  model:   sonnet
+  effort:  medium
+
+Coordinator ownership:
+  generation: 0
+  pane: wJE:p1
+  harness: claude
+  model: fable
+  effort: low
+  readiness: ready
+  marker: coordinator-ready-0-wJE:p1
 
 ## Tickets
 
@@ -136,16 +150,18 @@ scheduler pass.
 
 ### `Coordinator:`
 
-Written on first run and inherited verbatim by every successor.
+Written before any role launches. A change to harness, model, or effort takes
+effect only through the safe takeover protocol. It is never a state-only
+rewrite.
 
-| Field        | Values                | Notes                                                                |
-| ------------ | --------------------- | -------------------------------------------------------------------- |
-| `harness`    | `claude` \| `pi`      | Introspected on first run                                            |
-| `model`      | model id              | Introspected on first run                                            |
-| `effort`     | see vocabulary table  | Cannot be introspected; asked on first run, default `low`            |
-| `handoff`    | `yes` \| `no`         | Default follows harness: `claude` -> `yes`, `pi` -> `no`             |
-| `threshold`  | token count           | Default `200000`. Scheduled prompts read it from here, never inline  |
-| `unattended` | `block` \| `escalate` | Default `block`. Governs the fix-round-3 escalation and nothing else |
+| Field        | Values                | Notes                                                      |
+| ------------ | --------------------- | ---------------------------------------------------------- |
+| `harness`    | `claude` \| `pi`      | Selected from installed harness discovery                  |
+| `model`      | model id              | Validated against the selected harness                     |
+| `effort`     | discovered vocabulary | Validated against installed harness help                   |
+| `handoff`    | `yes` \| `no`         | Whether automatic context handoff is enabled               |
+| `threshold`  | token count           | Scheduled prompts read this value from state, never inline |
+| `unattended` | `block` \| `escalate` | Governs the fix-round-3 escalation and nothing else        |
 
 `unattended: block` marks a ticket needing escalation as blocked-on-decision,
 logs it, and starts the next unblocked ticket. `unattended: escalate`
@@ -153,17 +169,40 @@ pre-authorizes the escalation. Neither value affects `TICKET BLOCKED`
 questions, scope decisions, or an invalid-record prompt: those always wait for
 the user.
 
-### `Implementor:`
+### `Implementor:` and `Reviewer:`
 
-The run-wide record. It governs the **next ticket to start** and nothing that
-is already running.
+These are run-wide defaults for future launches. An active implementor keeps
+the record copied into its ticket row. A review records the Reviewer default it
+bound when that review session launched. Changing either default never restarts
+an active session.
 
-| Field     | Values               | Notes                                                                               |
-| --------- | -------------------- | ----------------------------------------------------------------------------------- |
-| `harness` | `claude` \| `pi`     | Resolved from the model at record time, then persisted                              |
-| `model`   | model id             |                                                                                     |
-| `effort`  | see vocabulary table | Harness-scoped                                                                      |
-| `skills`  | ordered list         | Must begin with `implement`; rendered into the worker prompt prefix, harness-scoped |
+| Field     | Values                | Notes                                                     |
+| --------- | --------------------- | --------------------------------------------------------- |
+| `harness` | `claude` \| `pi`      | Selected explicitly, never inferred from the model        |
+| `model`   | model id              | Validated against the selected installed harness          |
+| `effort`  | discovered vocabulary | Harness-scoped and read from installed help               |
+| `skills`  | ordered list          | Implementor only in schema 1; must begin with `implement` |
+
+### `Coordinator ownership:`
+
+Ownership is separate from the selected Coordinator role. The role says what
+must run; ownership says which Herdr pane currently coordinates the run.
+
+| Field        | Meaning                                                                     |
+| ------------ | --------------------------------------------------------------------------- |
+| `generation` | Monotonically increasing compare-and-swap generation                        |
+| `pane`       | Current coordinator Herdr pane id                                           |
+| `harness`    | Harness bound to the owner, updated from the claimed successor role         |
+| `model`      | Model bound to the current owner                                            |
+| `effort`     | Effort bound to the current owner                                           |
+| `readiness`  | `claiming` until the successor has resumed and armed its wait, then `ready` |
+| `marker`     | Generation-specific marker the predecessor must observe in that pane        |
+
+Only `coordinator.claim` may advance the generation. Only the matching claimant
+may call `coordinator.ready`. A predecessor closes only after
+`coordinator.verify` succeeds with the marker it independently observed in the
+successor pane. A failed successor leaves readiness at `claiming`, so the
+predecessor stays open and recovers or replaces that pane.
 
 ### Ticket table
 
@@ -228,14 +267,16 @@ and escalation appends a line.
 
 ## Harness vocabulary
 
-Validate every write against this table. The harnesses do **not** validate for
-you: `claude --effort bogus` prints a warning and silently runs at the default
-effort, which is the exact silent substitution this skill forbids.
+Run `roles.discover` before presenting choices and validate every role write
+with `role.validate`. The table explains launch syntax, but installed helper
+output is authoritative for models and effort values. The harnesses do **not**
+validate for you: `claude --effort bogus` can warn and silently use a default,
+which is the exact substitution this skill forbids.
 
-| Harness  | Model form           | Effort flag  | Effort values                                       | Skill prefix     | Skill source                        | Permission flag          |
-| -------- | -------------------- | ------------ | --------------------------------------------------- | ---------------- | ----------------------------------- | ------------------------ |
-| `claude` | `<model>`            | `--effort`   | `low` `medium` `high` `xhigh` `max`                 | `/<skill>`       | `~/.claude/skills/`, project skills | `--permission-mode auto` |
-| `pi`     | `<provider>/<model>` | `--thinking` | `off` `minimal` `low` `medium` `high` `xhigh` `max` | `/skill:<skill>` | `--skill <path>`, or discovered     | **none — omit it**       |
+| Harness  | Model form            | Effort flag  | Effort values                       | Skill prefix     | Skill source                        | Permission flag                   |
+| -------- | --------------------- | ------------ | ----------------------------------- | ---------------- | ----------------------------------- | --------------------------------- |
+| `claude` | alias or custom value | `--effort`   | Read from installed `claude --help` | `/<skill>`       | `~/.claude/skills/`, project skills | `--permission-mode auto`          |
+| `pi`     | `<provider>/<model>`  | `--thinking` | Read from installed `pi --help`     | `/skill:<skill>` | `--skill <path>`, or discovered     | `--approve` for new role sessions |
 
 Never pass a non-Anthropic model to `claude`.
 
@@ -267,10 +308,10 @@ author a record yourself.
 
 ### Two pi facts that bite
 
-- **pi has no `--permission-mode`.** Its whole flag surface offers only
-  `--approve` ("Trust project-local files for this run"), which is a different
-  thing. **Omit the permission flag from every pi launch line**; do not
-  substitute `--approve` for it. (Checked against pi 0.85.1.)
+- **pi has no `--permission-mode`.** `--approve` trusts project-local files for
+  the run, which is a different concern. Omit any permission-mode flag and pass
+  `--approve` when launching a new Pi role session so unattended project
+  resources do not stall. (Checked against pi 0.85.1.)
 - **Read the vocabulary off the installed pi, not off this table.** pi's
   `--thinking` levels and model catalog are version-specific. When a record
   looks invalid, run `pi --version`, `pi --help`, and `pi --list-models` before
@@ -305,7 +346,10 @@ available to the selected harness and preserve their recorded order.
 
 ### At write time
 
-Reject and ask the user rather than writing a record that cannot launch:
+Resolve all three role records in one setup interaction, validate each through
+`role.validate`, and persist Coordinator, Implementor, and Reviewer before any
+session launch. Reject and ask the user rather than writing a record that
+cannot launch:
 
 - `Mode` is not exactly `parallel` or `serial`.
 - `Base sha` is not a full commit id.
@@ -316,6 +360,8 @@ Reject and ask the user rather than writing a record that cannot launch:
 - `model` lacks a `<provider>/` prefix while `harness` is `pi`, or carries one
   while `harness` is `claude`.
 - a `:<level>` suffix disagrees with the record's own `effort:` field.
+- `Coordinator ownership` is missing, malformed, lacks its bound role record,
+  or names the invoking pane as a successor claim.
 - the `skills` list does not begin with `implement`.
 - a skill after `implement` is not available in that harness.
 

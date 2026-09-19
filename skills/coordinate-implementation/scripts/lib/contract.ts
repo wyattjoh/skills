@@ -11,8 +11,32 @@ export const CONTRACT_SCHEMA_VERSION = 1 as const;
 export type CoordinateOperation =
   | "preflight"
   | "state.validate"
+  | "roles.discover"
+  | "role.validate"
+  | "coordinator.claim"
+  | "coordinator.ready"
+  | "coordinator.verify"
   | "snapshot.check"
   | "snapshot.accept";
+
+/**
+ * Harnesses supported for coordinator, implementor, and reviewer sessions.
+ */
+export type HarnessName = "claude" | "pi";
+
+/**
+ * Durable role names configured for an implementation run.
+ */
+export type RoleName = "coordinator" | "implementor" | "reviewer";
+
+/**
+ * Fully resolved harness configuration persisted for one run role.
+ */
+export type RoleRecord = {
+  harness: HarnessName;
+  model: string;
+  effort: string;
+};
 
 /**
  * Normalized input for a capability preflight request.
@@ -51,6 +75,52 @@ export type SnapshotInput = {
 };
 
 /**
+ * Input for discovering installed role configuration choices.
+ */
+export type RolesDiscoverInput = Record<string, unknown>;
+
+/**
+ * Input for validating one explicit or interactively assembled role record.
+ */
+export type RoleValidateInput = {
+  role: RoleName;
+  triple: string | undefined;
+  record: RoleRecord | undefined;
+};
+
+/**
+ * Input for atomically claiming coordinator ownership from a predecessor.
+ */
+export type CoordinatorClaimInput = {
+  statePath: string;
+  expectedGeneration: number;
+  expectedPredecessorPane: string;
+  expectedPredecessorRole: RoleRecord;
+  successorPane: string;
+  successorRole: RoleRecord;
+};
+
+/**
+ * Input for marking a claimed coordinator generation ready.
+ */
+export type CoordinatorReadyInput = {
+  statePath: string;
+  generation: number;
+  pane: string;
+  marker: string;
+};
+
+/**
+ * Input for verifying state readiness against a marker observed in Herdr.
+ */
+export type CoordinatorVerifyInput = {
+  statePath: string;
+  generation: number;
+  pane: string;
+  observedMarker: string;
+};
+
+/**
  * A validated schema-version-1 request accepted by the helper.
  */
 export type CoordinateRequest =
@@ -73,6 +143,31 @@ export type CoordinateRequest =
       schemaVersion: typeof CONTRACT_SCHEMA_VERSION;
       operation: "snapshot.accept";
       input: SnapshotInput;
+    }
+  | {
+      schemaVersion: typeof CONTRACT_SCHEMA_VERSION;
+      operation: "roles.discover";
+      input: RolesDiscoverInput;
+    }
+  | {
+      schemaVersion: typeof CONTRACT_SCHEMA_VERSION;
+      operation: "role.validate";
+      input: RoleValidateInput;
+    }
+  | {
+      schemaVersion: typeof CONTRACT_SCHEMA_VERSION;
+      operation: "coordinator.claim";
+      input: CoordinatorClaimInput;
+    }
+  | {
+      schemaVersion: typeof CONTRACT_SCHEMA_VERSION;
+      operation: "coordinator.ready";
+      input: CoordinatorReadyInput;
+    }
+  | {
+      schemaVersion: typeof CONTRACT_SCHEMA_VERSION;
+      operation: "coordinator.verify";
+      input: CoordinatorVerifyInput;
     };
 
 /**
@@ -121,6 +216,33 @@ export const isUtcIsoTimestamp = (value: unknown): value is string => {
   return new Date(milliseconds).toISOString() === `${value.slice(0, -1)}.000Z`;
 };
 
+const nonEmptyString = (value: unknown): string | undefined =>
+  typeof value === "string" && value.length > 0 ? value : undefined;
+
+const singleLineString = (value: unknown): string | undefined => {
+  const string = nonEmptyString(value);
+  return string !== undefined && !/[\r\n]/u.test(string) ? string : undefined;
+};
+
+const paneId = (value: unknown): string | undefined => {
+  const string = singleLineString(value);
+  return string !== undefined && /^[A-Za-z0-9_-]+:p[A-Za-z0-9_-]+$/u.test(string)
+    ? string
+    : undefined;
+};
+
+const nonNegativeInteger = (value: unknown): number | undefined =>
+  typeof value === "number" && Number.isInteger(value) && value >= 0 ? value : undefined;
+
+const parseRoleRecord = (value: unknown): RoleRecord | undefined => {
+  if (!isRecord(value)) return undefined;
+  if (value.harness !== "claude" && value.harness !== "pi") return undefined;
+  const model = singleLineString(value.model);
+  const effort = singleLineString(value.effort);
+  if (model === undefined || effort === undefined) return undefined;
+  return { harness: value.harness, model, effort };
+};
+
 const invalidRequest = (message: string, operation: string | null): RequestError =>
   new RequestError({
     operation,
@@ -162,14 +284,20 @@ export const parseRequest = (raw: string): Effect.Effect<CoordinateRequest, Requ
         },
       });
     }
-    if (
-      operation !== "preflight" &&
-      operation !== "state.validate" &&
-      operation !== "snapshot.check" &&
-      operation !== "snapshot.accept"
-    ) {
+    const operations: CoordinateOperation[] = [
+      "preflight",
+      "state.validate",
+      "roles.discover",
+      "role.validate",
+      "coordinator.claim",
+      "coordinator.ready",
+      "coordinator.verify",
+      "snapshot.check",
+      "snapshot.accept",
+    ];
+    if (operation === null || !operations.includes(operation as CoordinateOperation)) {
       return yield* invalidRequest(
-        "Request `operation` must be `preflight`, `state.validate`, `snapshot.check`, or `snapshot.accept`.",
+        `Request \`operation\` must be one of: ${operations.join(", ")}.`,
         operation,
       );
     }
@@ -261,6 +389,116 @@ export const parseRequest = (raw: string): Effect.Effect<CoordinateRequest, Requ
       };
     }
 
+    if (operation === "roles.discover") {
+      if (Object.keys(parsed.input).length > 0) {
+        return yield* invalidRequest("`roles.discover` input must be empty.", operation);
+      }
+      return { schemaVersion: CONTRACT_SCHEMA_VERSION, operation, input: {} };
+    }
+
+    if (operation === "role.validate") {
+      const roles: RoleName[] = ["coordinator", "implementor", "reviewer"];
+      if (!roles.includes(parsed.input.role as RoleName)) {
+        return yield* invalidRequest(
+          "`role.validate` input.role must be `coordinator`, `implementor`, or `reviewer`.",
+          operation,
+        );
+      }
+      const triple = typeof parsed.input.triple === "string" ? parsed.input.triple : undefined;
+      const record = parseRoleRecord(parsed.input.record);
+      if ((triple === undefined) === (record === undefined)) {
+        return yield* invalidRequest(
+          "`role.validate` requires exactly one of input.triple or input.record.",
+          operation,
+        );
+      }
+      return {
+        schemaVersion: CONTRACT_SCHEMA_VERSION,
+        operation,
+        input: { role: parsed.input.role as RoleName, triple, record },
+      };
+    }
+
+    if (operation === "coordinator.claim") {
+      const statePath = nonEmptyString(parsed.input.state_path);
+      const predecessorPane = paneId(parsed.input.expected_predecessor_pane);
+      const predecessorRole = parseRoleRecord(parsed.input.expected_predecessor_role);
+      const successorPane = paneId(parsed.input.successor_pane);
+      const successorRole = parseRoleRecord(parsed.input.successor_role);
+      const generation = nonNegativeInteger(parsed.input.expected_generation);
+      if (
+        statePath === undefined ||
+        predecessorPane === undefined ||
+        predecessorRole === undefined ||
+        successorPane === undefined ||
+        successorRole === undefined ||
+        generation === undefined
+      ) {
+        return yield* invalidRequest(
+          "`coordinator.claim` requires state_path, a non-negative expected_generation, expected_predecessor_pane, expected_predecessor_role, successor_pane, and successor_role.",
+          operation,
+        );
+      }
+      return {
+        schemaVersion: CONTRACT_SCHEMA_VERSION,
+        operation,
+        input: {
+          statePath,
+          expectedGeneration: generation,
+          expectedPredecessorPane: predecessorPane,
+          expectedPredecessorRole: predecessorRole,
+          successorPane,
+          successorRole,
+        },
+      };
+    }
+
+    if (operation === "coordinator.ready") {
+      const statePath = nonEmptyString(parsed.input.state_path);
+      const pane = paneId(parsed.input.pane);
+      const marker = singleLineString(parsed.input.marker);
+      const generation = nonNegativeInteger(parsed.input.generation);
+      if (
+        statePath === undefined ||
+        pane === undefined ||
+        marker === undefined ||
+        generation === undefined
+      ) {
+        return yield* invalidRequest(
+          "`coordinator.ready` requires state_path, a non-negative generation, pane, and marker.",
+          operation,
+        );
+      }
+      return {
+        schemaVersion: CONTRACT_SCHEMA_VERSION,
+        operation,
+        input: { statePath, generation, pane, marker },
+      };
+    }
+
+    if (operation === "coordinator.verify") {
+      const statePath = nonEmptyString(parsed.input.state_path);
+      const pane = paneId(parsed.input.pane);
+      const observedMarker = singleLineString(parsed.input.observed_marker);
+      const generation = nonNegativeInteger(parsed.input.generation);
+      if (
+        statePath === undefined ||
+        pane === undefined ||
+        observedMarker === undefined ||
+        generation === undefined
+      ) {
+        return yield* invalidRequest(
+          "`coordinator.verify` requires state_path, a non-negative generation, pane, and observed_marker.",
+          operation,
+        );
+      }
+      return {
+        schemaVersion: CONTRACT_SCHEMA_VERSION,
+        operation,
+        input: { statePath, generation, pane, observedMarker },
+      };
+    }
+
     const statePathValue = parsed.input.state_path;
     if (
       statePathValue !== undefined &&
@@ -286,7 +524,7 @@ export const parseRequest = (raw: string): Effect.Effect<CoordinateRequest, Requ
 
     return {
       schemaVersion: CONTRACT_SCHEMA_VERSION,
-      operation,
+      operation: "preflight",
       input: {
         statePath: typeof statePathValue === "string" ? statePathValue : undefined,
         skillRoots: Array.isArray(rootsValue) ? (rootsValue as string[]) : undefined,
