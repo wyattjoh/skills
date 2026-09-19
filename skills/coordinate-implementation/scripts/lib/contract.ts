@@ -535,7 +535,6 @@ export type LandingCompleteInput = {
   evidencePath: string;
   ticket: string;
   cleanupArgv: string[] | undefined;
-  runtimeClosed: boolean;
   completedAt: string;
 };
 
@@ -1457,7 +1456,6 @@ export const parseRequest = (raw: string): Effect.Effect<CoordinateRequest, Requ
       const evidencePath = nonEmptyString(parsed.input.evidence_path);
       const ticket = singleLineString(parsed.input.ticket);
       const cleanupArgv = stringArray(parsed.input.cleanup_argv);
-      const runtimeClosed = parsed.input.runtime_closed;
       const completedAt = parsed.input.completed_at;
       if (
         statePath === undefined ||
@@ -1467,11 +1465,11 @@ export const parseRequest = (raw: string): Effect.Effect<CoordinateRequest, Requ
         ticket === undefined ||
         !/^\d{2}$/u.test(ticket) ||
         (parsed.input.cleanup_argv !== null && cleanupArgv === undefined) ||
-        typeof runtimeClosed !== "boolean" ||
+        parsed.input.runtime_closed !== undefined ||
         !isUtcIsoTimestamp(completedAt)
       ) {
         return yield* invalidRequest(
-          "`landing.complete` requires state_path, repository_path, worktree_path, evidence_path, a two-digit ticket, cleanup_argv as an argument array or null, boolean runtime_closed, and completed_at.",
+          "`landing.complete` requires state_path, repository_path, worktree_path, evidence_path, a two-digit ticket, cleanup_argv as an argument array or null, and completed_at; runtime closure is observed from Herdr and cannot be asserted by the caller.",
           operation,
         );
       }
@@ -1485,7 +1483,6 @@ export const parseRequest = (raw: string): Effect.Effect<CoordinateRequest, Requ
           evidencePath,
           ticket,
           cleanupArgv,
-          runtimeClosed,
           completedAt,
         },
       };

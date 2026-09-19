@@ -237,7 +237,10 @@ remaining blocked ticket:
    sessions for Standards and Spec. Claim the serialized finalization slot and
    perform policy-driven synchronization with `landing.synchronize`; use its
    returned full-SHA `review_range` for gates and both review axes. Capture and
-   persist each complete report before closing its pane. Procedure:
+   persist each complete report with `review.launch.record`. When it returns
+   `close-runtime`, execute only its exact Herdr close argv and repeat the
+   byte-identical record call. Do not act on `after_close_action` until the
+   helper observes the pane absent and returns that action. Procedure:
    [review-and-land.md](references/review-and-land.md).
 4. **Fix loop.** Finalize both axes with `review.round.finalize`. Send its one
    consolidated request, containing every actionable finding, to the same worker
@@ -252,15 +255,16 @@ remaining blocked ticket:
    append-only finalization binding are unchanged.
 5. **Land.** After `review.round.finalize` advances the ticket to
    `ready-to-land`, call `landing.complete` from the recorded local base
-   checkout with `runtime_closed: false`. If it returns `resynchronize`, call
-   `landing.synchronize`, rerun every gate, and repeat both fresh review axes
-   with attention to newly landed interactions before retrying. Resolve textual
-   conflicts yourself with the `resolving-merge-conflicts` skill, then classify
-   the result through `landing.conflict.record`. Substantive adaptations return
-   to the same implementor as a fix round. Scope choices wait for user
-   authority and are recorded before gates continue. When it returns
-   `close-runtime`, close the completed implementor tab and call
-   `landing.complete` again with `runtime_closed: true`.
+   checkout. If it returns `resynchronize`, call `landing.synchronize`, rerun
+   every gate, and repeat both fresh review axes with attention to newly landed
+   interactions before retrying. Resolve textual conflicts yourself with the
+   `resolving-merge-conflicts` skill, then classify the result through
+   `landing.conflict.record`. Substantive adaptations return to the same
+   implementor as a fix round. Scope choices wait for user authority and are
+   recorded before gates continue. When it returns `close-runtime`, execute
+   only its exact Herdr pane-close argv and repeat the same `landing.complete`
+   call. Cleanup remains blocked until the helper observes that exact pane is
+   absent; callers cannot assert closure.
 6. **Record and refill.** Only a successful `landing.complete` may mark the
    ticket landed. It verifies a clean landed worktree, removes the native
    fallback without force or runs the exact repository cleanup argv, retains
@@ -451,9 +455,12 @@ When invoked as `resume .scratch/<slug>` for a restart or replacement:
   one in-session Standards and Spec fallback without subagents. External
   Standards and Spec reviews always run as separate fresh Herdr sessions under
   the persisted Reviewer role.
-- Persist a complete report before closing each reviewer pane. Any worktree
-  status change contaminates that report, rejects its findings, and stops for
-  manual cleanup without discarding the mutation. A finding always means FAIL.
+- Persist a complete report before closing each reviewer pane. Execute only the
+  exact close argv returned by `review.launch.record`, then repeat the same call
+  until Herdr-observed closure reveals the recorded `after_close_action`. Any
+  worktree status change contaminates that report, rejects its findings, and
+  stops for manual cleanup without discarding the mutation. A finding always
+  means FAIL.
 - Never push or write to forge issues. The only permitted remote write is a
   persisted `final` or `live` update through the configured Matt tracker
   workflow when authoritative project policy allows it. All other remote

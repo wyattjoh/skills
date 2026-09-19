@@ -21,6 +21,7 @@ import {
   applyNoChangeGateRerun,
   LandingError,
 } from "./landing.ts";
+import { inspectRuntimeClose } from "./runtime-close.ts";
 import { mutateStateFile, StateMutationError } from "./state-mutation.ts";
 import { validateStateText } from "./state.ts";
 
@@ -212,6 +213,8 @@ export type ReviewFinding = {
   suggested_fix: string;
 };
 
+type ReviewLaunchDisposition = "continue" | "fix" | "retry" | "blocked" | "manual_cleanup";
+
 /**
  * Persisted reviewer result and required coordinator action.
  */
@@ -222,7 +225,11 @@ export type ReviewLaunchRecordResult = {
   attempt: number;
   status: "accepted" | "malformed" | "contaminated" | "infrastructure_failed";
   verdict: "PASS" | "FAIL" | null;
-  action: "continue" | "fix" | "retry" | "blocked" | "manual_cleanup";
+  action: "close-runtime" | ReviewLaunchDisposition;
+  after_close_action: ReviewLaunchDisposition;
+  runtime_closed: boolean;
+  pane_id: string;
+  close: ReviewArgumentCommand | null;
   findings: ReviewFinding[];
   report_path: string;
   evidence_path: string;
@@ -993,7 +1000,7 @@ export const recordReviewerLaunch = (
     let status: ReviewLaunchRecordResult["status"];
     let verdict: ReviewLaunchRecordResult["verdict"] = null;
     let findings: ReviewFinding[] = [];
-    let action: ReviewLaunchRecordResult["action"];
+    let action: ReviewLaunchDisposition;
     let retryDelay: number | null = null;
     let nextAttempt: number | null = null;
     if (contaminated) {
@@ -1071,6 +1078,9 @@ export const recordReviewerLaunch = (
         result: undefined,
       }),
     ).pipe(Effect.mapError(fromMutationError));
+    const runtimeClosure = yield* inspectRuntimeClose(artifact.pane).pipe(
+      Effect.mapError((error) => new ReviewError({ issue: error.issue })),
+    );
     return {
       ticket: artifact.ticket,
       round: artifact.round,
@@ -1078,7 +1088,11 @@ export const recordReviewerLaunch = (
       attempt: artifact.attempt,
       status,
       verdict,
-      action,
+      action: runtimeClosure.runtime_closed ? action : "close-runtime",
+      after_close_action: action,
+      runtime_closed: runtimeClosure.runtime_closed,
+      pane_id: runtimeClosure.pane_id,
+      close: runtimeClosure.close,
       findings,
       report_path: artifact.report_path,
       evidence_path: evidencePath,

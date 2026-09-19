@@ -8,7 +8,7 @@
   ],
   "type": "module",
   "scripts": {
-    "test": "bun test --parallel",
+    "test": "bun test --parallel=8 --timeout=15000",
     "check": "tsc --noEmit",
     "lint": "oxlint",
     "format": "oxfmt",

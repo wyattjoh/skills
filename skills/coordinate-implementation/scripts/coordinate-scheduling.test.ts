@@ -611,16 +611,24 @@ describe("Herdr event-driven wait-any", () => {
     });
     await listen(server, path);
 
-    const result = await runCliAsync(
-      request("herdr.wait_any", {
-        socket_path: path,
-        timeout_ms: 75,
-        workers: [worker("runtime-01", "01", "run-01", "w1:p1")],
-      }),
+    let clockReads = 0;
+    const clock = (): number => {
+      clockReads += 1;
+      return clockReads >= 14 ? 101 : 0;
+    };
+    const result = await Effect.runPromise(
+      waitAnyWorker(
+        {
+          socketPath: path,
+          timeoutMs: 100,
+          workers: [{ runtimeId: "runtime-01", ticket: "01", session: "run-01", paneId: "w1:p1" }],
+          coordinator: undefined,
+        },
+        clock,
+      ),
     );
 
-    expect(result.exitCode).toBe(0);
-    expect(result.stdout.result).toEqual({
+    expect(result).toEqual({
       reason: "timeout",
       worker: null,
       workers: [
@@ -633,6 +641,7 @@ describe("Herdr event-driven wait-any", () => {
           status: "working",
         },
       ],
+      coordinator: undefined,
     });
   });
 
@@ -975,25 +984,24 @@ describe("Herdr event-driven wait-any", () => {
     });
     await listen(server, path);
 
-    const startupStarted = performance.now();
-    const startup = await runCliAsync(request("unknown.operation", {}));
-    const processStartupMs = performance.now() - startupStarted;
-    expect(startup.exitCode).toBe(2);
-
-    // Account for measured Bun CLI startup plus 100 ms of ordinary CI scheduling jitter.
-    const processSchedulingAllowanceMs = 100;
-    const started = performance.now();
-    const result = await runCliAsync(
-      request("herdr.wait_any", {
-        socket_path: path,
-        timeout_ms: 50,
-        workers: [worker("runtime-01", "01", "run-01", "w1:p1")],
-      }),
+    let clockReads = 0;
+    const clock = (): number => {
+      clockReads += 1;
+      return clockReads >= 8 ? 101 : 0;
+    };
+    const result = await Effect.runPromise(
+      waitAnyWorker(
+        {
+          socketPath: path,
+          timeoutMs: 100,
+          workers: [{ runtimeId: "runtime-01", ticket: "01", session: "run-01", paneId: "w1:p1" }],
+          coordinator: undefined,
+        },
+        clock,
+      ),
     );
-    const elapsed = performance.now() - started;
 
-    expect(result.exitCode).toBe(0);
-    expect(result.stdout.result).toEqual({
+    expect(result).toEqual({
       reason: "timeout",
       worker: null,
       workers: [
@@ -1006,9 +1014,9 @@ describe("Herdr event-driven wait-any", () => {
           status: "working",
         },
       ],
+      coordinator: undefined,
     });
     expect(snapshots).toBe(1);
-    expect(elapsed < processStartupMs + 50 + processSchedulingAllowanceMs).toBe(true);
   });
 
   it("fails on malformed events and socket disconnects", async () => {

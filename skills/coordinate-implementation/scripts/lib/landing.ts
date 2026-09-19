@@ -11,6 +11,7 @@ import type {
 } from "./contract.ts";
 import { activeRuntimeBlockPattern, parseActiveRuntimeFields } from "./active-runtime.ts";
 import { cleanGitEnv, spawnGit } from "./git.ts";
+import { inspectRuntimeClose } from "./runtime-close.ts";
 import { mutateStateFile, StateMutationError } from "./state-mutation.ts";
 import { validateStateText } from "./state.ts";
 
@@ -167,7 +168,7 @@ const parseBaseBranch = (markdown: string): string => {
 const parseActiveTicket = (
   markdown: string,
   ticket: string,
-): { worktree: string; branch: string } => {
+): { worktree: string; branch: string; pane: string } => {
   const block = markdown.match(activeRuntimeBlockPattern(ticket))?.[0];
   if (block === undefined) {
     throw landingError(
@@ -177,14 +178,14 @@ const parseActiveTicket = (
     );
   }
   const fields = parseActiveRuntimeFields(block);
-  if (fields.Worktree === undefined || fields.Branch === undefined) {
+  if (fields.Worktree === undefined || fields.Branch === undefined || fields.Pane === undefined) {
     throw landingError(
       "landing.runtime_malformed",
-      `Ticket \`${ticket}\` is missing Worktree or Branch provenance.`,
+      `Ticket \`${ticket}\` is missing Worktree, Branch, or Pane provenance.`,
       "Repair the active runtime from its launch artifact before continuing.",
     );
   }
-  return { worktree: fields.Worktree, branch: fields.Branch };
+  return { worktree: fields.Worktree, branch: fields.Branch, pane: fields.Pane };
 };
 
 const updateActivePhase = (markdown: string, ticket: string, phase: string): string => {
@@ -1115,6 +1116,9 @@ export const completeLanding = (
       base_sha: string;
       ticket_sha: string;
       cycle: number;
+      runtime_closed: false;
+      pane_id: string;
+      close: { command: string; args: string[] };
     }
   | {
       ticket: string;
@@ -1340,7 +1344,10 @@ export const completeLanding = (
         "Stop cleanup and inspect the integration checkout before retrying.",
       );
     }
-    if (!input.runtimeClosed) {
+    const runtimeClosure = yield* inspectRuntimeClose(runtime.pane).pipe(
+      Effect.mapError((error) => new LandingError({ issue: error.issue })),
+    );
+    if (!runtimeClosure.runtime_closed) {
       return {
         ticket: input.ticket,
         action: "close-runtime" as const,
@@ -1348,6 +1355,9 @@ export const completeLanding = (
         base_sha: landedBase.stdout.trim(),
         ticket_sha: ticketSha,
         cycle: finalization.cycle,
+        runtime_closed: false as const,
+        pane_id: runtimeClosure.pane_id,
+        close: runtimeClosure.close,
       };
     }
 

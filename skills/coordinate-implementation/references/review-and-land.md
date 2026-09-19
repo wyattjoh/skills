@@ -110,8 +110,11 @@ For each axis and attempt:
 4. Execute only the returned `launch.start` and `launch.prompt` arrays.
 5. Wait for the fresh session to finish. Capture its complete output yourself.
 6. Call `review.launch.record` with that output before closing the pane.
-7. Close the reviewer pane only after the report and JSON evidence file exist
-   and RESUME.md references the attempt.
+7. When it returns `close-runtime`, execute only the returned Herdr pane-close
+   argv, then repeat the byte-identical `review.launch.record` call. The report,
+   JSON evidence, and RESUME.md reference are idempotent. Continue with
+   `after_close_action` only when the repeated call observes the pane absent
+   and returns that action.
 
 The helper builds the strict prompt. Standards receives repository instruction,
 architecture, domain, and contract paths. Spec receives the agreed spec and
@@ -194,10 +197,10 @@ Never substitute a model or rewrite the run-wide Implementor default.
 ## Landing
 
 After a finalized clean round advances serialized state to `ready-to-land`,
-call `landing.complete` with `runtime_closed: false` and a run-local immutable
-evidence path. The helper validates that both accepted PASS axes and the
-implementor self-review cover the synchronized ticket tip, then attempts the
-fast-forward from the recorded local base checkout.
+call `landing.complete` with a run-local immutable evidence path. The helper
+validates that both accepted PASS axes and the implementor self-review cover
+the synchronized ticket tip, then attempts the fast-forward from the recorded
+local base checkout.
 
 A refused fast-forward returns `resynchronize` instead of guessing success. The
 helper clears the stale final-review binding but retains the serialized ticket.
@@ -205,17 +208,18 @@ Call `landing.synchronize` again, resolve conflicts as above, rerun every gate,
 and run both fresh review axes focused on newly landed interactions and
 conflict-resolution hunks. Only a new `ready-to-land` result may be retried.
 
-Once the tip is landed, the helper returns `close-runtime` without cleaning the
-worktree or releasing serialized state. Close the completed implementor tab and
-call `landing.complete` again with `runtime_closed: true`. It verifies the
-ticket tip remains landed and the worktree is clean. Native cleanup runs
-`git worktree remove <path>` without `--force` and verifies the branch still
-exists. Repository cleanup requires the
-exact authorized `cleanup_argv`, then receives the same removal and branch
-retention checks. The helper writes immutable JSON evidence, marks the ticket
-landed at its full tip, removes its active block and serialized slot, updates
-`Base sha:`, and appends retained-branch and landed-evidence records before it
-returns `schedule`.
+Once the tip is landed, the helper inspects the exact persisted Herdr pane. A
+live pane returns `close-runtime` plus the only permitted shell-free
+`herdr pane close` argv without cleaning the worktree or releasing serialized
+state. Execute that argv and repeat the same `landing.complete` call. Only a
+machine-observed `pane_not_found` result permits cleanup. The helper then
+verifies the ticket tip remains landed and the worktree is clean. Native
+cleanup runs `git worktree remove <path>` without `--force` and verifies the
+branch still exists. Repository cleanup requires the exact authorized
+`cleanup_argv`, then receives the same removal and branch retention checks. The
+helper writes immutable JSON evidence, marks the ticket landed at its full tip,
+removes its active block and serialized slot, updates `Base sha:`, and appends
+retained-branch and landed-evidence records before it returns `schedule`.
 
 After that success, update `.scratch/coordinators.md`, then call
 `scheduler.plan`. It immediately fills newly available implementor capacity in

@@ -454,9 +454,10 @@ in this history and are never replaced by later accepted attempts.
 
 Append-only references to immutable JSON written by `landing.complete`. Each
 file binds the full landed tip, local base SHA, retained branch, final Standards,
-Spec, and self-review paths, completed runtime closure, exact cleanup argv,
-cleanup result, and completion time. The helper writes this evidence and
-updates ticket state before returning `schedule`.
+Spec, and self-review paths, Herdr-observed runtime closure, exact cleanup argv,
+cleanup result, and completion time. Caller-supplied closure assertions are not
+accepted. The helper writes this evidence and updates ticket state before
+returning `schedule`.
 
 ### `## Decisions`
 

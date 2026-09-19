@@ -10,9 +10,11 @@ import {
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { GIT_ENV_KEYS, spawnGit } from "./lib/git.ts";
+import { createFakeHerdrEnv } from "./test-herdr.ts";
 
 const CLI = join(import.meta.dir, "coordinate.ts");
 const decoder = new TextDecoder();
+const HERDR_ENV = createFakeHerdrEnv();
 
 type CliResult = {
   exitCode: number;
@@ -31,7 +33,7 @@ type LandingFixture = {
 const runCli = (
   operation: string,
   input: Record<string, unknown>,
-  env: Record<string, string | undefined> = process.env,
+  env: Record<string, string | undefined> = HERDR_ENV,
 ): CliResult => {
   const child = Bun.spawnSync([process.execPath, CLI], {
     env,
@@ -292,6 +294,25 @@ describe("portable synchronization and landing", () => {
     expect(procedure).toContain("`--force`");
     expect(resume).toContain("## Serialized finalization");
     expect(resume).toContain("## Landed evidence");
+  });
+
+  it("rejects caller-asserted runtime closure", () => {
+    const result = runCli("landing.complete", {
+      state_path: "/run/RESUME.md",
+      repository_path: "/repo",
+      worktree_path: "/worktree",
+      evidence_path: "/run/reviews/01-landed.json",
+      ticket: "01",
+      cleanup_argv: null,
+      runtime_closed: true,
+      completed_at: "2026-09-19T02:00:00Z",
+    });
+
+    expect(result.exitCode).toBe(2);
+    expect(result.stdout).toMatchObject({
+      ok: false,
+      errors: [{ code: "request.invalid" }],
+    });
   });
 
   it("synchronizes multiple commits against the local integration branch without a remote", () => {
@@ -803,7 +824,6 @@ ${JSON.stringify(
       evidence_path: join(fixture.root, "run", "reviews", "07-landed.json"),
       ticket: "07",
       cleanup_argv: null,
-      runtime_closed: true,
       completed_at: "2026-09-19T02:09:00Z",
     });
     expect(refused.exitCode).toBe(0);
@@ -824,16 +844,19 @@ ${JSON.stringify(
     const reviews = markReadyToLand(fixture, 1);
     const landedTip = spawnGit(["rev-parse", "HEAD"], { cwd: fixture.worktreePath }).stdout.trim();
 
-    const closeRuntime = runCli("landing.complete", {
-      state_path: fixture.statePath,
-      repository_path: fixture.repositoryPath,
-      worktree_path: fixture.worktreePath,
-      evidence_path: join(fixture.root, "run", "reviews", "07-landed.json"),
-      ticket: "07",
-      cleanup_argv: null,
-      runtime_closed: false,
-      completed_at: "2026-09-19T02:11:00Z",
-    });
+    const closeRuntime = runCli(
+      "landing.complete",
+      {
+        state_path: fixture.statePath,
+        repository_path: fixture.repositoryPath,
+        worktree_path: fixture.worktreePath,
+        evidence_path: join(fixture.root, "run", "reviews", "07-landed.json"),
+        ticket: "07",
+        cleanup_argv: null,
+        completed_at: "2026-09-19T02:11:00Z",
+      },
+      { ...HERDR_ENV, HERDR_TEST_LIVE_PANES: JSON.stringify(["work:p7"]) },
+    );
     expect(closeRuntime.exitCode).toBe(0);
     expect(closeRuntime.stdout.result).toEqual({
       ticket: "07",
@@ -842,6 +865,9 @@ ${JSON.stringify(
       base_sha: landedTip,
       ticket_sha: landedTip,
       cycle: 1,
+      runtime_closed: false,
+      pane_id: "work:p7",
+      close: { command: "herdr", args: ["pane", "close", "work:p7"] },
     });
     expect(existsSync(fixture.worktreePath)).toBe(true);
     expect(existsSync(join(fixture.root, "run", "reviews", "07-landed.json"))).toBe(false);
@@ -853,7 +879,6 @@ ${JSON.stringify(
       evidence_path: join(fixture.root, "run", "reviews", "07-landed.json"),
       ticket: "07",
       cleanup_argv: null,
-      runtime_closed: true,
       completed_at: "2026-09-19T02:12:00Z",
     });
 
@@ -911,7 +936,7 @@ ${JSON.stringify(
       },
       completed_at: "2026-09-19T02:12:00Z",
     });
-  });
+  }, 15_000);
 
   it("recovers when the base advances between the ancestry check and fast-forward", () => {
     const fixture = makeFixture();
@@ -963,7 +988,6 @@ process.exit(result.status ?? 1);
         evidence_path: join(fixture.root, "run", "reviews", "07-landed.json"),
         ticket: "07",
         cleanup_argv: null,
-        runtime_closed: true,
         completed_at: "2026-09-19T02:12:00Z",
       },
       {
@@ -1002,7 +1026,6 @@ process.exit(result.status ?? 1);
       evidence_path: join(fixture.root, "outside-landed.json"),
       ticket: "07",
       cleanup_argv: null,
-      runtime_closed: false,
       completed_at: "2026-09-19T02:13:00Z",
     });
 
@@ -1032,16 +1055,19 @@ process.exit(result.status ?? 1);
     ).toBe(0);
     markReadyToLand(fixture);
     expect(
-      runCli("landing.complete", {
-        state_path: fixture.statePath,
-        repository_path: fixture.repositoryPath,
-        worktree_path: fixture.worktreePath,
-        evidence_path: join(fixture.root, "run", "reviews", "07-landed.json"),
-        ticket: "07",
-        cleanup_argv: null,
-        runtime_closed: false,
-        completed_at: "2026-09-19T02:13:00Z",
-      }).exitCode,
+      runCli(
+        "landing.complete",
+        {
+          state_path: fixture.statePath,
+          repository_path: fixture.repositoryPath,
+          worktree_path: fixture.worktreePath,
+          evidence_path: join(fixture.root, "run", "reviews", "07-landed.json"),
+          ticket: "07",
+          cleanup_argv: null,
+          completed_at: "2026-09-19T02:13:00Z",
+        },
+        { ...HERDR_ENV, HERDR_TEST_LIVE_PANES: JSON.stringify(["work:p7"]) },
+      ).exitCode,
     ).toBe(0);
     writeFileSync(join(fixture.worktreePath, "dirty.txt"), "dirty\n");
 
@@ -1052,7 +1078,6 @@ process.exit(result.status ?? 1);
       evidence_path: join(fixture.root, "run", "reviews", "07-landed.json"),
       ticket: "07",
       cleanup_argv: null,
-      runtime_closed: true,
       completed_at: "2026-09-19T02:14:00Z",
     });
 
@@ -1096,7 +1121,6 @@ process.exit(result.status ?? 1);
       evidence_path: join(fixture.root, "run", "reviews", "07-landed.json"),
       ticket: "07",
       cleanup_argv: ["git", "worktree", "remove", fixture.worktreePath],
-      runtime_closed: true,
       completed_at: "2026-09-19T02:13:00Z",
     });
 

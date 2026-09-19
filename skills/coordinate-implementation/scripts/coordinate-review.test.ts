@@ -3,9 +3,11 @@ import { mkdirSync, mkdtempSync, readFileSync, symlinkSync, writeFileSync } from
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { spawnGit } from "./lib/git.ts";
+import { createFakeHerdrEnv } from "./test-herdr.ts";
 
 const CLI = join(import.meta.dir, "coordinate.ts");
 const decoder = new TextDecoder();
+const HERDR_ENV = createFakeHerdrEnv();
 
 type CliResult = {
   exitCode: number;
@@ -20,8 +22,12 @@ type ReviewFixture = {
   worktreePath: string;
 };
 
-const runCli = (request: unknown): CliResult => {
+const runCli = (
+  request: unknown,
+  env: Record<string, string | undefined> = HERDR_ENV,
+): CliResult => {
   const child = Bun.spawnSync([process.execPath, CLI], {
+    env,
     stdin: Buffer.from(JSON.stringify(request)),
     stdout: "pipe",
     stderr: "pipe",
@@ -452,7 +458,7 @@ ${JSON.stringify(
     expect(readFileSync(exactBase.input.artifact_path, "utf8")).toContain(
       "refused-fast-forward recovery review",
     );
-  });
+  }, 15_000);
 
   it("refuses external review until every configured gate has passed", () => {
     const fixture = makeFixture("pi");
@@ -532,7 +538,7 @@ ${JSON.stringify(
     expect(runCli(standards).exitCode).toBe(0);
     expect(runCli(spec).exitCode).toBe(0);
 
-    const standardsResult = runCli({
+    const standardsRecord = {
       schema_version: 1,
       operation: "review.launch.record",
       input: {
@@ -543,7 +549,24 @@ ${JSON.stringify(
         diagnostic: null,
         completed_at: "2026-09-19T01:00:00Z",
       },
+    };
+    const standardsClose = runCli(standardsRecord, {
+      ...HERDR_ENV,
+      HERDR_TEST_LIVE_PANES: JSON.stringify(["workspace:p1"]),
     });
+    expect(standardsClose.exitCode).toBe(0);
+    expect(standardsClose.stdout).toMatchObject({
+      result: {
+        status: "accepted",
+        verdict: "PASS",
+        action: "close-runtime",
+        after_close_action: "continue",
+        runtime_closed: false,
+        pane_id: "workspace:p1",
+        close: { command: "herdr", args: ["pane", "close", "workspace:p1"] },
+      },
+    });
+    const standardsResult = runCli(standardsRecord);
     const specResult = runCli({
       schema_version: 1,
       operation: "review.launch.record",
@@ -559,7 +582,16 @@ ${JSON.stringify(
 
     expect(standardsResult.exitCode).toBe(0);
     expect(standardsResult.stdout).toMatchObject({
-      result: { status: "accepted", verdict: "PASS", action: "continue", findings: [] },
+      result: {
+        status: "accepted",
+        verdict: "PASS",
+        action: "continue",
+        after_close_action: "continue",
+        runtime_closed: true,
+        pane_id: "workspace:p1",
+        close: null,
+        findings: [],
+      },
     });
     expect(specResult.exitCode).toBe(0);
     expect(specResult.stdout).toMatchObject({

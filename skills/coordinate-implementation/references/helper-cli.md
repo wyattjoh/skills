@@ -771,9 +771,13 @@ exact diagnostic. Attempts one through three return the fixed delay and next
 attempt; attempt four blocks only that ticket.
 
 Git status is captured again. Any difference marks the review `contaminated`,
-rejects its findings, returns `manual_cleanup`, and preserves both the report
-and every worktree change. The coordinator must not close the pane before this
-operation has persisted evidence.
+rejects its findings, and preserves both the report and every worktree change.
+After evidence is durable, a live reviewer pane returns `action: close-runtime`,
+its eventual `after_close_action`, and the exact shell-free
+`herdr pane close <persisted-pane-id>` argv. Execute only that argv and repeat
+the byte-identical call. Immutable writes and the RESUME.md reference are
+idempotent. The repeated call returns the recorded disposition only after
+Herdr reports `pane_not_found`; the caller cannot assert closure.
 
 ## `review.round.finalize`
 
@@ -890,29 +894,30 @@ record to `ready-to-land`, complete the fast-forward and cleanup:
     "evidence_path": ".scratch/example/reviews/04-landed.json",
     "ticket": "04",
     "cleanup_argv": null,
-    "runtime_closed": false,
     "completed_at": "2026-09-19T01:20:00Z"
   }
 }
 ```
 
-The first call keeps the implementor available with `runtime_closed: false`.
 The helper verifies immutable Standards, Spec, and implementor self-review
 evidence against the current ticket tip. If the local base moved and refuses a
 fast-forward, the operation returns `resynchronize`, clears stale review
 bindings, and retains the serialized ticket. Rerun synchronization, every gate,
 and both fresh review axes before retrying.
 
-A successful fast-forward returns `close-runtime` without cleaning the worktree
-or releasing serialized state. Close the completed implementor tab, repeat the
-same call with `runtime_closed: true`, and only then does native cleanup check
-that the worktree is clean and landed, run `git worktree remove <path>` without
-force, and verify the branch remains. Repository cleanup instead requires its
-exact `cleanup_argv` and receives the same postconditions. Success writes
-immutable landed JSON evidence, updates the ticket and `Base sha:`, removes the
-active runtime and serialized slot, appends landed and retained-branch
-provenance, and returns `schedule`. Call `scheduler.plan` only after that
-durable result.
+A successful fast-forward inspects the exact pane persisted in the active
+runtime. A live pane returns `close-runtime` with
+`runtime_closed: false`, the pane ID, and the exact shell-free
+`herdr pane close <persisted-pane-id>` argv without cleaning the worktree or
+releasing serialized state. Execute only that argv and repeat the same call.
+Only Herdr's `pane_not_found` result permits native cleanup to check that the
+worktree is clean and landed, run `git worktree remove <path>` without force,
+and verify the branch remains. Repository cleanup instead requires its exact
+`cleanup_argv` and receives the same postconditions. Success writes immutable
+landed JSON evidence with machine-observed `runtime_closed: true`, updates the
+ticket and `Base sha:`, removes the active runtime and serialized slot, appends
+landed and retained-branch provenance, and returns `schedule`. Call
+`scheduler.plan` only after that durable result.
 
 ## Legacy automatic coordinator handoff operations
 

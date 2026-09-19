@@ -39,9 +39,11 @@ references remain available for a later publishing workflow.
 
 Configure Coordinator, Implementor, and Reviewer as validated Claude triples.
 Run one ticket from accepted snapshot through gates, independent Standards and
-Spec reviews, landing, non-force cleanup, and `run.finalize`. Confirm the
-summary reports all three Claude roles, accepted review evidence, the retained
-branch, `completed`, and no tracker action.
+Spec reviews, verified reviewer pane closure, landing, verified implementor
+pane closure, non-force cleanup, and `run.finalize`. Confirm each live pane
+returns an exact close argv, cleanup remains blocked until `pane_not_found`, and
+the summary reports all three Claude roles, accepted review evidence, the
+retained branch, `completed`, and no tracker action.
 
 ## Pi-only
 
