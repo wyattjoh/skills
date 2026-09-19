@@ -55,8 +55,13 @@ Parse `root_pane.pane_id` from the JSON result.
 ## 3. Launch
 
 Write the launch line to `<run>/briefs/launch-NN.sh` with the Write tool (a
-full inline line overflows the pane), then `herdr pane run <pane> "bash
-<repo>/<run>/briefs/launch-NN.sh"`.
+full inline line overflows the pane). Before running it, set the ticket row to
+`working` and create its `## Active tickets` block with the actual worktree,
+branch, session name, tab label, pane id, `Phase: launching`, the launch-script
+path, and `Monitor: not-armed`. Update RESUME.md and the coordinator registry
+before `herdr pane run <pane> "bash <repo>/<run>/briefs/launch-NN.sh"`. This
+write-before-launch order ensures a successor can recover every worker even if
+the coordinator exits during a parallel batch.
 
 Build the launch line from the ticket's **table row** in RESUME.md, never from
 the run-wide `Implementor:` and never from a value you remember. The row's
@@ -70,12 +75,12 @@ Otherwise launch with the worktree as the only environment assumption.
 
 ```sh
 # harness: claude
-cd <worktree> && claude --model <model> --effort <effort> --permission-mode auto '/implement You are implementing ticket NN of the <slug> run. Read <repo>/<run>/briefs/common.md, <repo>/<run>/spec.md, and <repo>/<run>/issues/NN-<slug>.md first, then implement the ticket per the brief. IMPORTANT CONTEXT: <what earlier tickets already landed and what remains for this one>'
+cd <worktree> && claude --model <model> --effort <effort> --permission-mode auto '/implement You are implementing ticket NN of the <slug> run. Read <repo>/<run>/briefs/common.md, <repo>/<run>/spec.md, and <repo>/<run>/issues/NN-<slug>.md first, then implement the ticket per the brief. Other unblocked tickets may be running in parallel. Work only in this worktree, do not depend on unlanded changes from another ticket, and stay within this ticket scope. IMPORTANT CONTEXT: <what earlier tickets already landed and what remains for this one>'
 ```
 
 ```sh
 # harness: pi
-cd <worktree> && pi --model <provider>/<model> --thinking <effort> --skill <path-to-implement> '/skill:implement You are implementing ticket NN of the <slug> run. Read <repo>/<run>/briefs/common.md, <repo>/<run>/spec.md, and <repo>/<run>/issues/NN-<slug>.md first, then implement the ticket per the brief. IMPORTANT CONTEXT: <what earlier tickets already landed and what remains for this one>'
+cd <worktree> && pi --model <provider>/<model> --thinking <effort> --skill <path-to-implement> '/skill:implement You are implementing ticket NN of the <slug> run. Read <repo>/<run>/briefs/common.md, <repo>/<run>/spec.md, and <repo>/<run>/issues/NN-<slug>.md first, then implement the ticket per the brief. Other unblocked tickets may be running in parallel. Work only in this worktree, do not depend on unlanded changes from another ticket, and stay within this ticket scope. IMPORTANT CONTEXT: <what earlier tickets already landed and what remains for this one>'
 ```
 
 For each additional recorded skill, append its `--skill <path>` flag to the Pi
@@ -141,10 +146,12 @@ and effort; resolve the harness again and persist all four fields. Worker skills
 are changed in prose. Either way the change is written to RESUME.md before you
 reply, and it governs **the next ticket to start** only.
 
-A launch that fails is reported and stops that ticket. Do not retry it with a
-different model, a different effort, or a shorter skills list: `claude` accepts
-an unknown `--effort` with only a warning and runs at its default, so a silent
-substitution here is indistinguishable from success.
+A launch that fails is reported and stops that ticket. Set its row to `blocked`,
+keep its active runtime block with `Phase: launch failed` and `Monitor:
+not-armed`, and continue scheduling other unblocked tickets in parallel mode.
+Do not retry it with a different model, a different effort, or a shorter skills
+list: `claude` accepts an unknown `--effort` with only a warning and runs at its
+default, so a silent substitution here is indistinguishable from success.
 
 ## 4. Monitor
 
@@ -155,11 +162,14 @@ until [ "$(herdr pane list | python3 -c "import json,sys; print([p['agent_status
 herdr agent wait <pane> --until idle --until done --until blocked --timeout 3600000
 ```
 
-When it fires:
+After arming it, set the active block to `Monitor: armed` and update `Phase:`
+from the visible worker activity. When it fires, set `Monitor: settled` before
+acting:
 
 - If the worktree has uncommitted changes, the worker likely went idle while
-  its own test run continued: re-arm the same wait.
-- If `git log <base>..HEAD` shows one commit, proceed to review.
+  its own test run continued: re-arm the same wait and record `Monitor: armed`.
+- If `git log <base>..HEAD` shows one commit, set the row to `review`, record
+  `Phase: committed, awaiting review`, and proceed to review.
 - If a compaction just happened and there are no edits after two ticks, send
   one prompt: "Continue implementing ticket NN from where you left off."
 

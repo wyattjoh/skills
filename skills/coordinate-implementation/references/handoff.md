@@ -11,8 +11,10 @@ Trigger: your own context exceeds `Coordinator.threshold`, read from the `🧠`
 figure in `herdr pane read "$HERDR_PANE_ID" --lines 6` at each progress tick and
 compared against the record, never against a number memorised from this file.
 
-Timing: the next safe point. Finish the in-flight review, fix round, or land
-step; do not start another ticket.
+Timing: the next safe point. Finish the coordinator-owned review, fix, or land
+action; do not start more tickets. Active implementors do not need to finish
+before handoff, because their runtime blocks and launch scripts transfer their
+state to the successor.
 
 ## 1. Bring RESUME.md up to date
 
@@ -20,14 +22,17 @@ RESUME.md is the only state file and the successor's only inheritance. Its
 format, fields, and validation rules are in
 [resume-format.md](resume-format.md). Before handing off, confirm it holds:
 
-- `Prefix:`, `Base:`, `Branch template:`, and complete `Coordinator:` and
-  `Implementor:` records.
-- `<base>` sha and the list of landed tickets.
+- `Prefix:`, `Base:`, `Base sha:`, `Mode:`, `Branch template:`, and complete
+  `Coordinator:` and `Implementor:` records.
+- The current `<base>` sha and the list of landed tickets.
 - A row per ticket carrying its bound record, fix-round count, escalation flag,
-  and status. For each active ticket also note its worktree, branch, worker
-  session name, herdr tab label, pane id at handoff, what it was told, and
-  where it is (reading / editing / committed / in fix round N).
-- Remaining tickets in order and any parallelism the user allowed.
+  and status.
+- A complete `## Active tickets` block for every active worker: actual worktree
+  and branch, worker session, herdr tab and pane, current phase, launch script,
+  and monitor state. Update each block from the current pane list and pane tail,
+  not from memory.
+- Remaining tickets in dependency order. The successor applies the recorded
+  mode without asking again.
 - A `## Decisions` entry for every preference change and scope decision.
 - Landed Pi/Pando branches retained for the user. Claude Code's native
   `worktree-*` branches may already be removed by `ExitWorktree`.

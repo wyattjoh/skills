@@ -23,4 +23,5 @@ everything else is read from RESUME.md at fire time.
 > never with a substituted model or effort. Confirm the background monitor is
 > still armed on the current pane id and re-arm with
 > `herdr agent wait <pane> --until idle --until done --until blocked` if not.
-> Report in one line if nothing is stalled.
+> Update that ticket's active runtime block with the current pane, phase, and
+> monitor state before reporting. Report in one line if nothing is stalled.

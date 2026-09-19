@@ -1,5 +1,31 @@
 # Review, fix loop, and landing
 
+## Synchronize before review
+
+Parallel workers branch from the landed base that existed when they started.
+Once a worker is idle with its single commit, synchronize that branch to the
+latest integration branch before running final gates or reviews:
+
+```sh
+cd <worktree> && git fetch origin && git rebase <base>
+```
+
+Only one ticket may be in this synchronize, review, and land sequence at a
+time. Process ready tickets in dependency order. This keeps each review diff
+limited to that ticket instead of making later base commits appear as reversals.
+
+Resolve textual conflicts yourself with the `resolving-merge-conflicts` skill,
+never by asking the implementor to operate the rebase. Preserve the intent of
+both the landed change and the ticket. If that cannot be done without a scope
+decision, stop and ask the user. After the rebase completes, update the active
+ticket's `Branch`, `Phase`, and `Monitor` fields, and verify exactly one commit
+on `<base>..HEAD`.
+
+A clean textual resolution is coordination work. A substantive behavioral
+adaptation is implementation work: send it to the same worker as a fix round,
+have the worker amend the single commit, then synchronize again if needed and
+run the full gates and review.
+
 ## Gates
 
 Read the resolved `Verification` section in `<run>/briefs/common.md`. Run every
@@ -54,24 +80,21 @@ ticket row's `rounds` column each round.
 
 ## Landing
 
-From the ticket worktree:
-
-```sh
-cd <worktree> && git fetch origin && git rebase <base>
-```
-
-Conflicts are resolved **by you** with the `resolving-merge-conflicts` skill,
-never by the implementor. After a rebase with conflicts, rerun the gates.
-
-From the recorded `<base checkout>`:
+After review, land immediately from the recorded `<base checkout>`:
 
 ```sh
 cd <base checkout> && git merge --ff-only <branch>
 ```
 
-If the fast-forward is refused, another coordinator landed on `<base>` in the
-meantime. Return to the ticket worktree, rebase on `<base>` again, rerun the
-gates, and retry. The retry loop provides serialization without a lock file.
+The fast-forward is the serialization point. If it is refused, `<base>` moved
+after this ticket's review. Return to the ticket worktree, fetch and rebase on
+the latest `<base>`, resolve textual conflicts as described above, and rerun
+all recorded gates. Then repeat both review axes, focused on the interaction
+with commits that landed since the full review and on any conflict-resolution
+hunks. If either axis finds that the ticket needs substantive adaptation, send
+a fix round to the same implementor, rerun the full gates and both review axes,
+and only then retry the fast-forward. The rebase-and-retry loop serializes
+landings without a lock file.
 
 Then close the worker tab and finish the worktree lifecycle according to the
 **coordinator's** harness:
@@ -96,8 +119,10 @@ herdr tab close <tab>
 
 Never use raw `git worktree remove`. Set the ticket row's `status` to `landed`
 and fill its `sha`, leaving its bound record columns untouched as provenance.
-Log any scope decision in `## Decisions`, update `.scratch/coordinators.md`,
-then start the next ticket and bind the current `Implementor:` into its row.
+Remove its `## Active tickets` block, update `Base sha:`, log any scope decision
+in `## Decisions`, and update `.scratch/coordinators.md`. Then run the scheduler:
+parallel mode starts every newly unblocked queued ticket, while serial mode
+starts only the first and only when no ticket remains active.
 
 ## Scope decisions
 

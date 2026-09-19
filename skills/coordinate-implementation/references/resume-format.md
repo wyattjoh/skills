@@ -17,6 +17,8 @@ indentation alone. The indentation is part of the format.
 
 Prefix:          dcs
 Base:            main
+Base sha:        0123456789abcdef0123456789abcdef01234567
+Mode:            parallel
 Branch template: <prefix>-NN-<slug>
 
 Coordinator:
@@ -39,7 +41,32 @@ Implementor:
 | --- | ------- | ------------- | ------ | --------- | ------ | --- | ------- | ------- |
 | 01  | claude  | claude-opus-5 | high   | implement | 1      | -   | landed  | a1b2c3d |
 | 02  | claude  | claude-opus-5 | high   | implement | 0      | -   | working | -       |
-| 03  | -       | -             | -      | -         | -      | -   | queued  | -       |
+| 03  | claude  | claude-opus-5 | high   | implement | 0      | -   | review  | -       |
+| 04  | -       | -             | -      | -         | -      | -   | queued  | -       |
+
+## Active tickets
+
+### 02
+
+Worktree: <generated-worktree-path-02>
+Branch: <generated-branch-02>
+Session: dcs-02
+Tab: claude dcs 02 api
+Pane: <herdr-pane-id-02>
+Phase: editing
+Launch: briefs/launch-02.sh
+Monitor: armed
+
+### 03
+
+Worktree: <generated-worktree-path-03>
+Branch: <generated-branch-03>
+Session: dcs-03
+Tab: claude dcs 03 ui
+Pane: <herdr-pane-id-03>
+Phase: committed, awaiting review
+Launch: briefs/launch-03.sh
+Monitor: settled
 
 ## Decisions
 
@@ -59,11 +86,21 @@ Implementor:
 | ----------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `Prefix`          | Short run tag; names sessions, tabs, and the pane label                                                                                                             |
 | `Base`            | Integration branch. Recorded on first run; **the file always wins** over a later `--base` flag, because changing the base mid-run invalidates every unlanded branch |
+| `Base sha`        | Last observed full commit id of `Base`. Update after every landing and when a resume or progress tick observes external movement                                    |
+| `Mode`            | `parallel` (default) or `serial`. Controls only which queued tickets start; it does not terminate active workers                                                    |
 | `Branch template` | Pi branch pattern. Supports `<prefix>`, `NN`, and `<slug>`. Resolve from repository instructions, or use `<prefix>-NN-<slug>` when none exists                      |
 
-`Base` is the one field where the file beats the flag. `Implementor` is the
-opposite (see below). The asymmetry is deliberate: a model is cheap to change
-between tickets, a base is not.
+`Base` is the one field where the file beats the flag. `Implementor` and `Mode`
+are the opposite (see below). The asymmetry is deliberate: a model or scheduler
+preference is cheap to change between ticket launches, a base is not.
+
+On a first run, write `Mode: parallel` unless `--serial` was passed. On resume,
+the file wins when neither scheduling flag is present. An explicit `--serial`
+or `--parallel` updates the field and appends a decision before more tickets
+start. Reject both flags together. Switching to `serial` never kills existing
+parallel workers: stop launching, drain the active set, then continue one at a
+time. Switching to `parallel` starts every unblocked queued ticket at the next
+scheduler pass.
 
 ### `Coordinator:`
 
@@ -111,6 +148,29 @@ reasoning about when the run-wide record last changed.
 | `esc`                               | `yes` once this ticket escalated past its bound model                  |
 | `status`                            | `queued` \| `working` \| `review` \| `fixing` \| `blocked` \| `landed` |
 | `sha`                               | Landed sha                                                             |
+
+### `## Active tickets`
+
+One block per ticket from successful worktree creation until landing. The
+heading must be the ticket's zero-padded `NN`, and every block carries these
+fields:
+
+| Field      | Meaning                                                                                 |
+| ---------- | --------------------------------------------------------------------------------------- |
+| `Worktree` | Actual path returned by the coordinator harness                                         |
+| `Branch`   | Actual branch returned by the coordinator harness                                       |
+| `Session`  | Worker session name, normally `<prefix>-NN`                                             |
+| `Tab`      | Herdr tab label                                                                         |
+| `Pane`     | Current herdr pane id; refresh it from `herdr pane list` after resume                   |
+| `Phase`    | Precise human-readable activity, such as `editing`, `fix round 2`, or `awaiting review` |
+| `Launch`   | Run-relative path to the exact launch script                                            |
+| `Monitor`  | `armed`, `settled`, or `not-armed`, updated whenever the monitor changes                |
+
+The ticket table remains the scheduler's source of truth. The active block is
+runtime coordination state. Create it before launch, update it at every phase
+change and progress tick, and remove it only after the ticket lands. Every row
+with status `working`, `review`, or `fixing` must have a matching block. A
+`blocked` row keeps its block when a worktree already exists.
 
 ### `## Decisions`
 
@@ -199,6 +259,10 @@ available to the selected harness and preserve their recorded order.
 
 Reject and ask the user rather than writing a record that cannot launch:
 
+- `Mode` is not exactly `parallel` or `serial`.
+- `Base sha` is not a full commit id.
+- an active ticket lacks its required runtime block or the block names a
+  missing worktree, branch, launch script, or pane.
 - `effort` is not accepted by the installed harness.
 - `model` is non-Anthropic while `harness` is `claude`.
 - `model` lacks a `<provider>/` prefix while `harness` is `pi`, or carries one
