@@ -9,6 +9,12 @@ import {
   type CoordinateResponse,
 } from "./lib/contract.ts";
 import { claimCoordinator, markCoordinatorReady, verifyCoordinator } from "./lib/coordinator.ts";
+import {
+  prepareCoordinatorHandoff,
+  readyCoordinatorHandoff,
+  retryCoordinatorHandoff,
+  verifyCoordinatorHandoff,
+} from "./lib/handoff.ts";
 import { waitAnyWorker } from "./lib/herdr.ts";
 import { prepareImplementorLaunch, recordImplementorLaunch } from "./lib/implementor.ts";
 import { completeLanding, recordLandingConflict, synchronizeLanding } from "./lib/landing.ts";
@@ -243,6 +249,46 @@ const execute = (request: CoordinateRequest): Effect.Effect<number, never> =>
 
     if (request.operation === "infrastructure.retry.record") {
       const outcome = yield* Effect.either(recordInfrastructureRetry(request.input));
+      if (Either.isLeft(outcome)) {
+        print(failureResponse(request.operation, [outcome.left.issue], null));
+        return 1;
+      }
+      print(successResponse(request.operation, outcome.right));
+      return 0;
+    }
+
+    if (request.operation === "coordinator.handoff.prepare") {
+      const outcome = yield* Effect.either(prepareCoordinatorHandoff(request.input));
+      if (Either.isLeft(outcome)) {
+        print(failureResponse(request.operation, [outcome.left.issue], null));
+        return 1;
+      }
+      print(successResponse(request.operation, outcome.right));
+      return 0;
+    }
+
+    if (request.operation === "coordinator.handoff.retry") {
+      const outcome = yield* Effect.either(retryCoordinatorHandoff(request.input));
+      if (Either.isLeft(outcome)) {
+        print(failureResponse(request.operation, [outcome.left.issue], null));
+        return 1;
+      }
+      print(successResponse(request.operation, outcome.right));
+      return 0;
+    }
+
+    if (request.operation === "coordinator.handoff.ready") {
+      const outcome = yield* Effect.either(readyCoordinatorHandoff(request.input));
+      if (Either.isLeft(outcome)) {
+        print(failureResponse(request.operation, [outcome.left.issue], null));
+        return 1;
+      }
+      print(successResponse(request.operation, outcome.right));
+      return 0;
+    }
+
+    if (request.operation === "coordinator.handoff.verify") {
+      const outcome = yield* Effect.either(verifyCoordinatorHandoff(request.input));
       if (Either.isLeft(outcome)) {
         print(failureResponse(request.operation, [outcome.left.issue], null));
         return 1;

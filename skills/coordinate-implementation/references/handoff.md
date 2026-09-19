@@ -1,122 +1,145 @@
-# Safe coordinator takeover
+# Automatic safe coordinator handoff
 
 Use this protocol whenever the selected Coordinator role differs from the
-invoking session, and for any later coordinator change or context handoff. The
-same protocol applies to Pi and Claude Code.
+invoking session and whenever the current coordinator reaches the context
+threshold. Pi and Claude Code follow the same protocol in all four predecessor
+to successor combinations.
 
-The selected `Coordinator:` record must already be validated with
-`role.validate` and persisted with the Implementor and Reviewer records. Never
-change the selected role to make the current pane appear to match it.
+The selected `Coordinator:` record must already be validated and persisted.
+Never rewrite it to make the current pane appear to match. The predecessor stays
+open until the helper authorizes its exact close command.
 
-## Matching current session
+## Detect the threshold from Herdr
 
-When harness, model, and effort all match the invoking session, keep the current
-pane. Initial setup writes:
+Every `herdr.wait_any` request includes the current coordinator as well as all
+active workers:
 
-```text
-Coordinator ownership:
-  generation: 0
-  pane: <current HERDR_PANE_ID>
-  harness: <current harness>
-  model: <current model>
-  effort: <current effort>
-  readiness: ready
-  marker: coordinator-ready-0-<current HERDR_PANE_ID>
+```json
+{
+  "schema_version": 1,
+  "operation": "herdr.wait_any",
+  "input": {
+    "socket_path": "/path/to/herdr.sock",
+    "timeout_ms": 600000,
+    "workers": [],
+    "coordinator": {
+      "session": "coordinator-example-4",
+      "pane_id": "w1:p1",
+      "phase": "waiting"
+    }
+  }
+}
 ```
 
-Do not call `coordinator.claim` with the current pane as successor. The helper
-rejects that as `coordinator.same_pane`, leaving the generation unchanged.
+The helper reads only the coordinator agent's normalized `context_used` and
+`context_limit` fields from the machine-readable Herdr snapshot. It never reads
+rendered status or pane text. Missing or invalid values fail with
+`herdr.context_missing` even if the terminal visibly shows a percentage.
 
-## Launch a selected successor
+The threshold is exactly 80 percent, calculated by `BigInt` cross-multiplication
+for every accepted safe integer:
 
-At a safe point, read the current ownership generation, pane, and full role record from RESUME.md.
-Create a successor pane in the current coordinator tab with no focus change:
+- below 80 percent returns `handoff: continue`;
+- at or above 80 percent in `waiting` or `scheduling` returns
+  `reason: handoff` and `handoff: required`;
+- at or above 80 percent in `synchronizing`, `reviewing`, `fixing`, or `landing`
+  returns `handoff: deferred` and does not interrupt that action.
 
-```sh
-herdr pane split "$HERDR_PANE_ID" --direction right --cwd <repo> --no-focus
-```
+Finish an unsafe action, do not start another ticket, and repeat the check at
+the next safe point. Active workers do not need to finish first.
 
-Read `result.pane.pane_id` from the JSON response. Start exactly the selected
-harness and pass its validated model and effort as arguments after `--`:
+## Prepare a shell-free successor launch
 
-```sh
-herdr agent start coordinator-<prefix>-<next-generation> --kind claude --pane <successor-pane> -- --model <model> --effort <effort> --permission-mode auto
-```
+Split a successor pane in the current coordinator tab with no focus change and
+read its machine-readable pane id. Then call `coordinator.handoff.prepare` with
+the predecessor Herdr session and socket. The helper:
 
-```sh
-herdr agent start coordinator-<prefix>-<next-generation> --kind pi --pane <successor-pane> -- --approve --model <provider/model> --thinking <effort>
-```
+1. validates canonical schema-1 RESUME.md and the ready predecessor ownership;
+2. reads the persisted Coordinator harness, model, and effort;
+3. independently re-observes the predecessor's normalized Herdr context and
+   enforces the 80 percent threshold and safe phase;
+4. constructs exact Herdr and harness argument arrays through the shared launch
+   adapter;
+5. atomically publishes an inspectable run-local artifact without overwriting a
+   concurrent attempt and without changing ownership.
 
-Pi uses `--approve` for project trust and has no permission-mode flag. Claude
-Code uses `--permission-mode auto`. Do not adapt one command by swapping only
-the executable.
+Execute `launch.start` and `launch.prompt` as argument arrays. Never join,
+quote, interpolate, or pass them through a shell. Pi receives `--approve`, its
+persisted model, and `--thinking`. Claude Code receives its persisted model,
+`--effort`, and `--permission-mode auto`.
 
-Prompt the new Herdr agent with the resume invocation and the expected owner it
-must claim:
+If pane creation, agent start, or prompt submission fails before the claim,
+close only the failed successor pane and call `coordinator.handoff.retry` with
+the artifact and exact diagnostic. The helper atomically publishes immutable
+`<artifact>.retry.json` evidence bound to the artifact SHA-256, preserving that
+diagnostic and the complete retry decision. Byte-identical recovery succeeds;
+a changed diagnostic or decision at the same evidence path fails closed.
+Attempts 1, 2, and 3 return the shared 1000, 2000, and 4000 millisecond delays.
+Attempt 4 returns `action: block`. Each retry must pass the preceding artifact
+to `coordinator.handoff.prepare`; the helper
+rejects a changed run, predecessor generation, or successor role. Ownership
+continues to name the ready predecessor throughout these retries.
 
-```sh
-herdr agent prompt coordinator-<prefix>-<next-generation> "/coordinate-implementation /herdr resume .scratch/<slug>. Claim coordinator ownership from generation <generation>, predecessor pane <predecessor-pane>, and predecessor role <harness>/<model>/<effort> for successor pane <successor-pane>." --wait --until working
-```
-
-If pane creation, agent start, or prompt submission fails before a claim, close
-the failed successor pane and continue in the predecessor. State still names
-the predecessor as the ready owner.
-
-## Successor claim and readiness
+## Successor recovery and atomic claim
 
 The successor performs these steps in order:
 
-1. Invoke `coordinator.claim` with the expected generation, predecessor pane,
-   predecessor role record, its own pane, and the persisted Coordinator role. A stale claim stops the
-   successor. It must not retry with guessed ownership.
-2. Resume the run from RESUME.md, refresh runtime pane bindings, and arm the
-   run's current Herdr wait mechanism. Claiming alone is not readiness.
-3. Invoke `coordinator.ready` with the generation, pane, and marker returned by
-   the claim.
-4. Print one line containing only `COORDINATOR READY <marker>` so the
-   predecessor can observe proof in this exact pane.
+1. Run `state.validate` against RESUME.md.
+2. Run `snapshot.check` and require `status: unchanged` with
+   `scheduling_allowed: true`.
+3. Invoke `coordinator.handoff.ready` with the launch artifact, Herdr socket,
+   bounded timeout, and authoritative project remote-write policy.
 
-The claim advances the generation under a short-lived lock and atomic file
-replacement. Competing successors using the same expected owner cannot both
-succeed.
+`coordinator.handoff.ready` validates the run-local artifact against the ready
+predecessor and persisted Coordinator role, validates the accepted snapshot
+again, requires unique one-based active runtime identities that match active
+ticket-table rows in RESUME.md, and subscribes before snapshotting through
+wait-any. Under the same state lock as ownership transition, it requires the
+complete current active-runtime identity set to exactly match that pre-wait
+set. Only after every worker is present does that mutation refresh compacted
+worker panes, compare-and-swap the predecessor generation, and record the
+successor as ready. A stale generation,
+changed snapshot, invalid state, missing worker, changed successor pane, or
+successor already at 80 percent fails before ownership changes. Never retry with
+guessed values.
 
-## Predecessor verification and self-close
+After success, print one line containing only:
 
-The predecessor remains open after launching the successor. Read a bounded tail
-from the exact successor pane and copy the marker from its `COORDINATOR READY`
-line:
-
-```sh
-herdr pane read <successor-pane> --lines 40 --source recent
+```text
+COORDINATOR READY <marker>
 ```
 
-Call `coordinator.verify` with the expected new generation, successor pane, and
-that independently observed marker. Verification checks all of these facts:
+The automatic handoff operation never exposes a separate claiming interval.
 
-- state names the expected successor pane;
-- state contains the expected generation;
-- state records the selected successor role exactly;
-- state records `readiness: ready`;
-- the observed marker equals the marker in state.
+## Predecessor verification and exact close
 
-Only after verification returns `ok: true` may the predecessor stop its own
-waiters, update the run registry to the successor pane, and close itself:
+The predecessor reads a bounded tail from the exact successor pane and copies
+the marker from its `COORDINATOR READY` line. It then calls
+`coordinator.handoff.verify` with the successful launch artifact and that
+independently observed marker.
 
-```sh
-herdr pane close "$HERDR_PANE_ID"
-```
+Verification requires all of the following:
 
-A timeout, missing marker, `claiming` state, stale generation, or mismatched pane
-means verification failed. Keep the predecessor open. Recover the same
-successor, or launch a replacement that claims from the current generation and
-currently recorded pane. Never mark readiness or close the predecessor on the
-failed successor's behalf.
+- state still names the artifact's successor generation and pane;
+- the bound harness, model, and effort match the artifact;
+- readiness is `ready`;
+- the observed marker exactly matches durable state.
+
+Only a successful result contains `close_predecessor: true` and an exact
+`{"command":"herdr","args":["pane","close","<predecessor-pane>"]}` command.
+Execute that array only after updating the run registry to the successor pane.
+Do not construct a close command independently.
+
+A timeout, missing marker, stale artifact, `claiming` state, changed snapshot,
+missing worker, or mismatched role keeps the predecessor open. Recover the
+current claimant when possible. Otherwise launch a replacement from the owner
+currently recorded in state.
 
 ## Binding rules
 
-- Coordinator changes always use this takeover protocol.
-- Existing implementor and reviewer sessions keep the role record bound when
-  they launched.
-- Changes to the run-wide Implementor and Reviewer records govern future
-  launches only.
-- A failed launch never triggers model, effort, or harness substitution.
+- Automatic handoff is enabled for both supported harnesses at exactly 80
+  percent normalized utilization.
+- Coordinator changes always use this protocol.
+- Existing implementor and reviewer sessions keep their bound role records.
+- Future launches use the current run-wide role defaults.
+- A failed successor never triggers harness, model, or effort substitution.

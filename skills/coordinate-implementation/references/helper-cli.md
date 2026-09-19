@@ -822,6 +822,116 @@ active runtime and serialized slot, appends landed and retained-branch
 provenance, and returns `schedule`. Call `scheduler.plan` only after that
 durable result.
 
+## Automatic coordinator handoff operations
+
+### `coordinator.handoff.prepare`
+
+At a safe point after wait-any returns `reason: handoff`, prepare the successor
+without changing ownership:
+
+```json
+{
+  "schema_version": 1,
+  "operation": "coordinator.handoff.prepare",
+  "input": {
+    "state_path": ".scratch/example/RESUME.md",
+    "run_path": ".scratch/example",
+    "artifact_path": ".scratch/example/briefs/handoff-5-attempt-1.json",
+    "session": "coordinator-example-5",
+    "successor_pane": "w1:p2",
+    "predecessor_session": "coordinator-example-4",
+    "socket_path": "/tmp/herdr.sock",
+    "timeout_ms": 5000,
+    "phase": "waiting",
+    "attempt": 1,
+    "max_retries": 3,
+    "previous_artifact_path": null
+  }
+}
+```
+
+The operation reads the persisted Coordinator role and current ready ownership,
+then independently re-observes the predecessor through Herdr. Only normalized
+Herdr `context_used` and `context_limit` values can satisfy the exact 80 percent
+threshold. It rejects unsafe phases and changed predecessor panes, publishes a
+run-local launch artifact with no-replace semantics, and returns exact
+`launch.start` and `launch.prompt` argument arrays. It never changes ownership.
+Attempts 2 through 4 require the preceding artifact and reject a changed
+predecessor or successor role.
+
+### `coordinator.handoff.retry`
+
+Record a failed successor launch against its artifact:
+
+```json
+{
+  "schema_version": 1,
+  "operation": "coordinator.handoff.retry",
+  "input": {
+    "artifact_path": ".scratch/example/briefs/handoff-5-attempt-1.json",
+    "diagnostic": "successor exited before claim"
+  }
+}
+```
+
+The shared infrastructure policy returns delays of 1000, 2000, and 4000
+milliseconds for failed attempts 1 through 3. Failed attempt 4 returns
+`action: block`. The operation atomically publishes immutable
+`<artifact_path>.retry.json` evidence containing the artifact SHA-256, exact
+diagnostic, and complete decision. Identical recovery sets
+`evidence_recovered: true`; changed evidence at that path fails closed. The
+returned binding preserves the exact run, predecessor, and successor role.
+Retry fails if ownership has changed, so it cannot surrender or replace the
+predecessor implicitly.
+
+### `coordinator.handoff.ready`
+
+After schema validation and unchanged `snapshot.check`, establish readiness:
+
+```json
+{
+  "schema_version": 1,
+  "operation": "coordinator.handoff.ready",
+  "input": {
+    "artifact_path": ".scratch/example/briefs/handoff-5-attempt-1.json",
+    "socket_path": "/path/to/herdr.sock",
+    "timeout_ms": 1000,
+    "project_remote_writes": "forbidden"
+  }
+}
+```
+
+The operation validates the artifact against the ready predecessor and selected
+Coordinator role, validates snapshot hashes again, semantically matches every
+one-based active runtime to a unique active ticket-table row, subscribes before
+snapshotting through wait-any, and rejects a missing worker. Under the ownership
+lock, the full current runtime identity set must still exactly equal the
+pre-wait set, including ticket, session, attempt, and prior pane. Only then does
+that atomic mutation persist refreshed worker panes, compare-and-swap the
+predecessor generation, and record `readiness: ready`. Changed snapshots, stale
+generations, invalid state, missing normalized successor context, and changed
+successor panes fail without changing ownership.
+
+### `coordinator.handoff.verify`
+
+After reading `COORDINATOR READY <marker>` from the exact successor pane, verify
+and authorize the predecessor close:
+
+```json
+{
+  "schema_version": 1,
+  "operation": "coordinator.handoff.verify",
+  "input": {
+    "artifact_path": ".scratch/example/briefs/handoff-5-attempt-1.json",
+    "observed_marker": "coordinator-ready-5-w1:p2"
+  }
+}
+```
+
+Only matching generation, pane, bound role, readiness, and marker return
+`close_predecessor: true` plus an exact shell-free `herdr pane close` argument
+array. Every failure keeps the predecessor open.
+
 ## Coordinator ownership operations
 
 `Coordinator ownership:` in RESUME.md contains `generation`, `pane`,

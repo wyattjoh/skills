@@ -4,6 +4,7 @@ import { mkdir, readFile, realpath, rename, rm, stat, writeFile } from "node:fs/
 import { realpathSync } from "node:fs";
 import { randomUUID } from "node:crypto";
 import { activeRuntimeBlockPattern, parseActiveRuntimeFields } from "./active-runtime.ts";
+import { buildHarnessLaunch, type HarnessLaunchPlan } from "./harness-launch.ts";
 import type {
   CliIssue,
   ImplementorLaunchPrepareInput,
@@ -16,20 +17,9 @@ import { mutateStateFile, StateMutationError } from "./state-mutation.ts";
 import { validateStateText } from "./state.ts";
 
 /**
- * Shell-free command representation executed by the coordinator.
- */
-export type ArgumentCommand = {
-  command: string;
-  args: string[];
-};
-
-/**
  * Portable Herdr start and prompt commands for one implementor.
  */
-export type ImplementorLaunchPlan = {
-  start: ArgumentCommand;
-  prompt: ArgumentCommand;
-};
+export type ImplementorLaunchPlan = HarnessLaunchPlan;
 
 /**
  * Successful launch preparation result.
@@ -251,54 +241,14 @@ const upsertActiveBlock = (
   };
 };
 
-const buildLaunchPlan = (input: ImplementorLaunchPrepareInput): ImplementorLaunchPlan => {
-  const harnessArgs =
-    input.role.harness === "pi"
-      ? [
-          "--approve",
-          "--model",
-          input.role.model,
-          "--thinking",
-          input.role.effort,
-          "--skill",
-          input.implementSkillPath!,
-        ]
-      : ["--model", input.role.model, "--effort", input.role.effort, "--permission-mode", "auto"];
-  const prefix = input.role.harness === "pi" ? "/skill:implement" : "/implement";
-  return {
-    start: {
-      command: "herdr",
-      args: [
-        "agent",
-        "start",
-        input.session,
-        "--kind",
-        input.role.harness,
-        "--pane",
-        input.pane,
-        "--timeout",
-        "300000",
-        "--",
-        ...harnessArgs,
-      ],
-    },
-    prompt: {
-      command: "herdr",
-      args: [
-        "agent",
-        "prompt",
-        "--wait",
-        "--until",
-        "working",
-        "--timeout",
-        "300000",
-        "--",
-        input.session,
-        `${prefix} ${input.prompt}`,
-      ],
-    },
-  };
-};
+const buildLaunchPlan = (input: ImplementorLaunchPrepareInput): ImplementorLaunchPlan =>
+  buildHarnessLaunch({
+    role: input.role,
+    session: input.session,
+    pane: input.pane,
+    prompt: `${input.role.harness === "pi" ? "/skill:implement" : "/implement"} ${input.prompt}`,
+    skillPath: input.implementSkillPath,
+  });
 
 const canonicalPathAllowingMissing = async (path: string): Promise<string> => {
   let cursor = resolve(path);

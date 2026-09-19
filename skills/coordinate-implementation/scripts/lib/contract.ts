@@ -16,6 +16,10 @@ export type CoordinateOperation =
   | "coordinator.claim"
   | "coordinator.ready"
   | "coordinator.verify"
+  | "coordinator.handoff.prepare"
+  | "coordinator.handoff.retry"
+  | "coordinator.handoff.ready"
+  | "coordinator.handoff.verify"
   | "snapshot.check"
   | "snapshot.accept"
   | "worktree.preflight"
@@ -132,6 +136,50 @@ export type CoordinatorVerifyInput = {
   statePath: string;
   generation: number;
   pane: string;
+  observedMarker: string;
+};
+
+/**
+ * Input for safely preparing one automatic coordinator handoff attempt.
+ */
+export type CoordinatorHandoffPrepareInput = {
+  statePath: string;
+  runPath: string;
+  artifactPath: string;
+  session: string;
+  successorPane: string;
+  predecessorSession: string;
+  socketPath: string;
+  timeoutMs: number;
+  phase: CoordinatorPhase;
+  attempt: number;
+  maxRetries: number;
+  previousArtifactPath: string | undefined;
+};
+
+/**
+ * Input for applying the shared retry policy to a failed coordinator successor.
+ */
+export type CoordinatorHandoffRetryInput = {
+  artifactPath: string;
+  diagnostic: string;
+};
+
+/**
+ * Input for validating and arming a claimed successor before readiness.
+ */
+export type CoordinatorHandoffReadyInput = {
+  artifactPath: string;
+  socketPath: string;
+  timeoutMs: number;
+  projectRemoteWrites: ProjectRemoteWrites;
+};
+
+/**
+ * Input for authorizing the predecessor close after observed readiness.
+ */
+export type CoordinatorHandoffVerifyInput = {
+  artifactPath: string;
   observedMarker: string;
 };
 
@@ -272,12 +320,33 @@ export type HerdrWorkerInput = {
 };
 
 /**
+ * Coordinator phases used to defer context handoff during one atomic workflow action.
+ */
+export type CoordinatorPhase =
+  | "waiting"
+  | "scheduling"
+  | "synchronizing"
+  | "reviewing"
+  | "fixing"
+  | "landing";
+
+/**
+ * Current coordinator identity and phase observed by an event-driven wait.
+ */
+export type HerdrCoordinatorInput = {
+  session: string;
+  paneId: string;
+  phase: CoordinatorPhase;
+};
+
+/**
  * Input for an event-driven wait over every active worker.
  */
 export type HerdrWaitAnyInput = {
   socketPath: string;
   timeoutMs: number;
   workers: HerdrWorkerInput[];
+  coordinator: HerdrCoordinatorInput | undefined;
 };
 
 /**
@@ -481,6 +550,26 @@ export type CoordinateRequest =
       schemaVersion: typeof CONTRACT_SCHEMA_VERSION;
       operation: "coordinator.verify";
       input: CoordinatorVerifyInput;
+    }
+  | {
+      schemaVersion: typeof CONTRACT_SCHEMA_VERSION;
+      operation: "coordinator.handoff.prepare";
+      input: CoordinatorHandoffPrepareInput;
+    }
+  | {
+      schemaVersion: typeof CONTRACT_SCHEMA_VERSION;
+      operation: "coordinator.handoff.retry";
+      input: CoordinatorHandoffRetryInput;
+    }
+  | {
+      schemaVersion: typeof CONTRACT_SCHEMA_VERSION;
+      operation: "coordinator.handoff.ready";
+      input: CoordinatorHandoffReadyInput;
+    }
+  | {
+      schemaVersion: typeof CONTRACT_SCHEMA_VERSION;
+      operation: "coordinator.handoff.verify";
+      input: CoordinatorHandoffVerifyInput;
     }
   | {
       schemaVersion: typeof CONTRACT_SCHEMA_VERSION;
@@ -769,7 +858,7 @@ const parseSchedulerRuntimes = (value: unknown): SchedulerRuntime[] | undefined 
 };
 
 const parseHerdrWorkers = (value: unknown): HerdrWorkerInput[] | undefined => {
-  if (!Array.isArray(value) || value.length === 0) return undefined;
+  if (!Array.isArray(value)) return undefined;
   const workers: HerdrWorkerInput[] = [];
   for (const candidate of value) {
     if (!isRecord(candidate)) return undefined;
@@ -788,6 +877,26 @@ const parseHerdrWorkers = (value: unknown): HerdrWorkerInput[] | undefined => {
     workers.push({ runtimeId, ticket, session, paneId: workerPane });
   }
   return workers;
+};
+
+const parseHerdrCoordinator = (value: unknown): HerdrCoordinatorInput | undefined => {
+  if (!isRecord(value)) return undefined;
+  const session = singleLineString(value.session);
+  const coordinatorPane = paneId(value.pane_id);
+  const phase = value.phase;
+  if (
+    session === undefined ||
+    coordinatorPane === undefined ||
+    (phase !== "waiting" &&
+      phase !== "scheduling" &&
+      phase !== "synchronizing" &&
+      phase !== "reviewing" &&
+      phase !== "fixing" &&
+      phase !== "landing")
+  ) {
+    return undefined;
+  }
+  return { session, paneId: coordinatorPane, phase };
 };
 
 const firstDuplicate = (values: string[]): string | undefined => {
@@ -848,6 +957,10 @@ export const parseRequest = (raw: string): Effect.Effect<CoordinateRequest, Requ
       "coordinator.claim",
       "coordinator.ready",
       "coordinator.verify",
+      "coordinator.handoff.prepare",
+      "coordinator.handoff.retry",
+      "coordinator.handoff.ready",
+      "coordinator.handoff.verify",
       "snapshot.check",
       "snapshot.accept",
       "worktree.preflight",
@@ -1018,14 +1131,21 @@ export const parseRequest = (raw: string): Effect.Effect<CoordinateRequest, Requ
       const socketPath = nonEmptyString(parsed.input.socket_path);
       const timeoutMs = positiveInteger(parsed.input.timeout_ms);
       const workers = parseHerdrWorkers(parsed.input.workers);
+      const coordinatorValue = parsed.input.coordinator;
+      const coordinator =
+        coordinatorValue === undefined || coordinatorValue === null
+          ? undefined
+          : parseHerdrCoordinator(coordinatorValue);
       if (
         socketPath === undefined ||
         timeoutMs === undefined ||
         timeoutMs > 600_000 ||
-        workers === undefined
+        workers === undefined ||
+        (workers.length === 0 && coordinator === undefined) ||
+        (coordinatorValue !== undefined && coordinatorValue !== null && coordinator === undefined)
       ) {
         return yield* invalidRequest(
-          "`herdr.wait_any` requires socket_path, a 1..600000 timeout_ms, and at least one complete worker identity.",
+          "`herdr.wait_any` requires socket_path, a 1..600000 timeout_ms, workers, and an optional complete coordinator identity and phase; at least one worker or coordinator is required.",
           operation,
         );
       }
@@ -1053,7 +1173,7 @@ export const parseRequest = (raw: string): Effect.Effect<CoordinateRequest, Requ
       return {
         schemaVersion: CONTRACT_SCHEMA_VERSION,
         operation,
-        input: { socketPath, timeoutMs, workers },
+        input: { socketPath, timeoutMs, workers, coordinator },
       };
     }
 
@@ -1614,6 +1734,123 @@ export const parseRequest = (raw: string): Effect.Effect<CoordinateRequest, Requ
         schemaVersion: CONTRACT_SCHEMA_VERSION,
         operation,
         input: { statePath, ticket, attempt, status, diagnostic },
+      };
+    }
+
+    if (operation === "coordinator.handoff.ready") {
+      const artifactPath = nonEmptyString(parsed.input.artifact_path);
+      const socketPath = nonEmptyString(parsed.input.socket_path);
+      const timeoutMs = positiveInteger(parsed.input.timeout_ms);
+      const projectRemoteWrites = parsed.input.project_remote_writes;
+      if (
+        artifactPath === undefined ||
+        socketPath === undefined ||
+        timeoutMs === undefined ||
+        timeoutMs > 600_000 ||
+        (projectRemoteWrites !== "allowed" && projectRemoteWrites !== "forbidden")
+      ) {
+        return yield* invalidRequest(
+          "`coordinator.handoff.ready` requires artifact_path, socket_path, a 1..600000 timeout_ms, and project_remote_writes.",
+          operation,
+        );
+      }
+      return {
+        schemaVersion: CONTRACT_SCHEMA_VERSION,
+        operation,
+        input: { artifactPath, socketPath, timeoutMs, projectRemoteWrites },
+      };
+    }
+
+    if (operation === "coordinator.handoff.verify") {
+      const artifactPath = nonEmptyString(parsed.input.artifact_path);
+      const observedMarker = singleLineString(parsed.input.observed_marker);
+      if (artifactPath === undefined || observedMarker === undefined) {
+        return yield* invalidRequest(
+          "`coordinator.handoff.verify` requires artifact_path and observed_marker.",
+          operation,
+        );
+      }
+      return {
+        schemaVersion: CONTRACT_SCHEMA_VERSION,
+        operation,
+        input: { artifactPath, observedMarker },
+      };
+    }
+
+    if (operation === "coordinator.handoff.retry") {
+      const artifactPath = nonEmptyString(parsed.input.artifact_path);
+      const diagnostic = nonEmptyString(parsed.input.diagnostic);
+      if (artifactPath === undefined || diagnostic === undefined) {
+        return yield* invalidRequest(
+          "`coordinator.handoff.retry` requires artifact_path and a non-empty diagnostic.",
+          operation,
+        );
+      }
+      return {
+        schemaVersion: CONTRACT_SCHEMA_VERSION,
+        operation,
+        input: { artifactPath, diagnostic },
+      };
+    }
+
+    if (operation === "coordinator.handoff.prepare") {
+      const statePath = nonEmptyString(parsed.input.state_path);
+      const runPath = nonEmptyString(parsed.input.run_path);
+      const artifactPath = nonEmptyString(parsed.input.artifact_path);
+      const session = singleLineString(parsed.input.session);
+      const successorPane = paneId(parsed.input.successor_pane);
+      const predecessorSession = singleLineString(parsed.input.predecessor_session);
+      const socketPath = nonEmptyString(parsed.input.socket_path);
+      const timeoutMs = positiveInteger(parsed.input.timeout_ms);
+      const phase = parsed.input.phase;
+      const attempt = positiveInteger(parsed.input.attempt);
+      const maxRetries = positiveInteger(parsed.input.max_retries);
+      const previousValue = parsed.input.previous_artifact_path;
+      const previousArtifactPath =
+        typeof previousValue === "string" && previousValue.length > 0 ? previousValue : undefined;
+      if (
+        statePath === undefined ||
+        runPath === undefined ||
+        artifactPath === undefined ||
+        session === undefined ||
+        successorPane === undefined ||
+        predecessorSession === undefined ||
+        socketPath === undefined ||
+        timeoutMs === undefined ||
+        (phase !== "waiting" &&
+          phase !== "scheduling" &&
+          phase !== "synchronizing" &&
+          phase !== "reviewing" &&
+          phase !== "fixing" &&
+          phase !== "landing") ||
+        attempt === undefined ||
+        maxRetries !== 3 ||
+        attempt > maxRetries + 1 ||
+        (attempt === 1 && previousValue !== null && previousValue !== undefined) ||
+        (attempt > 1 && previousArtifactPath === undefined)
+      ) {
+        return yield* invalidRequest(
+          "`coordinator.handoff.prepare` requires state_path, run_path, artifact_path, successor session and pane, predecessor_session, Herdr socket_path and timeout_ms, phase, attempt 1..4, max_retries 3, and the previous artifact after attempt 1.",
+          operation,
+        );
+      }
+      return {
+        schemaVersion: CONTRACT_SCHEMA_VERSION,
+        operation,
+        input: {
+          statePath,
+          runPath,
+          artifactPath,
+          session,
+          successorPane,
+          predecessorSession,
+          socketPath,
+          timeoutMs,
+          phase,
+          attempt,
+          maxRetries,
+          previousArtifactPath,
+        },
       };
     }
 

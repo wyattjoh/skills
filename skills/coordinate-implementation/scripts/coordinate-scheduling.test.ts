@@ -851,6 +851,7 @@ describe("Herdr event-driven wait-any", () => {
             workers: [
               { runtimeId: "runtime-01", ticket: "01", session: "run-01", paneId: "w1:p1" },
             ],
+            coordinator: undefined,
           },
           clock,
         ),
@@ -909,6 +910,7 @@ describe("Herdr event-driven wait-any", () => {
             workers: [
               { runtimeId: "runtime-01", ticket: "01", session: "run-01", paneId: "w1:p1" },
             ],
+            coordinator: undefined,
           },
           clock,
         ),

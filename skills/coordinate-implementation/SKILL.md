@@ -213,10 +213,12 @@ repeat until every ticket is landed:
    `implementor.launch.prepare`. Execute only its argument arrays and persist
    the observed outcome with `implementor.launch.record`. Exact procedure:
    [session-launch.md](references/session-launch.md).
-2. **Wait.** Call `herdr.wait_any` once with every active worker and a bounded
-   timeout. It subscribes before snapshotting. Persist refreshed pane ids from
-   its complete worker snapshot. On `status` or `pane_exited`, act on the named
-   runtime. On `timeout`, perform stall, snapshot-integrity, base, and
+2. **Wait.** Call `herdr.wait_any` once with every active worker, the current
+   coordinator session, pane, workflow phase, and a bounded timeout. It
+   subscribes before snapshotting. Persist refreshed pane ids from its complete
+   worker snapshot. On `status` or `pane_exited`, act on the named runtime. On
+   `handoff`, stop launching work and run the automatic handoff protocol at this
+   safe point. On `timeout`, perform stall, snapshot-integrity, base, and
    coordinator-context checks, run one scheduling pass, then issue another
    bounded wait. Do not create cron jobs, shell wait loops, background monitors,
    or harness-native tasks.
@@ -266,15 +268,24 @@ wake authority, not marker text; implementors forget to print it.
 
 Keep exactly one bounded `herdr.wait_any` call in flight while implementors are
 active. Supply each runtime's durable id, ticket, session name, and latest pane
-id. The helper subscribes to every pane's status plus pane exit events, waits
-for the subscription acknowledgement, and only then takes its immediate
-snapshot. This ordering preserves events that race with bootstrap.
+id, plus the current coordinator session, pane, and phase. The helper subscribes
+to every pane's status plus pane exit events, waits for the subscription
+acknowledgement, and only then takes its immediate snapshot. This ordering
+preserves events that race with bootstrap. When no implementor is active, call
+it with an empty worker list and the coordinator identity so context handoff is
+still evaluated without polling.
 
 An already-present or subsequent `idle`, `done`, `blocked`, or pane-exited
-condition wakes the coordinator with the affected runtime identity. If several
-workers settle together, process their events one at a time, then serialize
-review and landing in dependency order. The helper's timeout is not success. It
-returns a complete refreshed snapshot used to:
+condition wakes the coordinator with the affected runtime identity. The same
+snapshot reads only Herdr's normalized `context_used` and `context_limit`
+fields for the current coordinator. At exactly 80 percent or higher it returns
+`reason: handoff` at a safe `waiting` or `scheduling` phase, and records
+`handoff: deferred` during synchronization, review, fixing, or landing. Missing
+normalized values fail closed. Never parse rendered pane or status text.
+
+If several workers settle together, process their events one at a time, then
+serialize review and landing in dependency order. The helper's timeout is not
+success. It returns a complete refreshed snapshot used to:
 
 - persist compacted pane identifiers before another action;
 - inspect `git status --short`, `git log --oneline <base>..HEAD`, and at most 40
@@ -332,17 +343,27 @@ evidence the bound model is not converging on this ticket.
 
 ## Handoff
 
-Driven by `Coordinator.handoff` and `Coordinator.threshold` in RESUME.md, never
-by a number written here. `handoff` defaults from the coordinator's own harness
-(`claude` -> `yes`, `pi` -> `no`), because Pi manages its own context
-compaction and has nothing to hand off to.
+Automatic handoff is mandatory at exactly 80 percent normalized context
+utilization. Both Pi and Claude Code use this same policy. The durable
+`Coordinator.handoff: yes` and `Coordinator.threshold: 80 percent` fields make
+that invariant visible to a successor, but are not user-tunable model defaults.
+Only Herdr's machine-readable `context_used` and `context_limit` values may
+trigger it.
 
-When `handoff` is `yes` and your own context passes `threshold`, hand off at the
-**next safe point** (finish the coordinator-owned review / fix / land action;
-do not start more tickets, but do not wait for every active worker to finish).
-When it is `no`, stay in the current session, keep RESUME.md current, and
-never launch a successor or stop the event-driven wait cycle for context usage.
-Procedure and successor launch: [handoff.md](references/handoff.md).
+At or above the threshold, finish any coordinator-owned synchronization,
+review, fixing, or landing action. Do not start another ticket. Hand off at the
+next `waiting` or `scheduling` safe point without waiting for active workers to
+finish. Use `coordinator.handoff.prepare` to re-observe normalized predecessor
+context and publish shell-free launch arrays, then apply the shared three-retry
+policy for a failed successor. The successor calls
+`coordinator.handoff.ready`, which validates state and snapshot hashes, arms
+`herdr.wait_any`, validates unique active runtimes against active ticket-table
+rows, revalidates that complete identity set under the ownership lock, refreshes
+every active worker pane, and atomically claims the next ready ownership
+generation. Every failed launch publishes immutable retry evidence containing
+the exact diagnostic and retry decision. The predecessor closes only from the exact command
+returned by `coordinator.handoff.verify` after observing the matching marker in
+the successor pane. Full procedure: [handoff.md](references/handoff.md).
 
 ## Resume
 
@@ -374,8 +395,10 @@ When invoked as `resume .scratch/<slug>` or from a handoff:
    Persist every refreshed pane id from the returned complete snapshot. A valid
    active runtime remains active even when its recorded compact pane id changed;
    do not relaunch it.
-6. Run `scheduler.plan`, then arm the normal bounded wait-any cycle before a
-   successor calls `coordinator.ready`.
+6. Run `scheduler.plan`. During a handoff, call `coordinator.handoff.ready`;
+   that operation validates the accepted snapshot, arms a bounded wait-any
+   cycle, refreshes active worker panes, and atomically claims the next ready
+   ownership generation.
 7. Report the state in a short list and end the turn.
 
 ## Rules that are not negotiable

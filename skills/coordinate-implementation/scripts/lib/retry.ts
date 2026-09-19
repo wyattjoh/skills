@@ -37,6 +37,27 @@ export class InfrastructureRetryError extends Data.TaggedError("InfrastructureRe
   issue: CliIssue;
 }> {}
 
+/**
+ * Shared maximum number of infrastructure retries after an initial attempt.
+ */
+export const MAX_INFRASTRUCTURE_RETRIES = 3;
+
+/**
+ * Returns the shared bounded retry action and exponential delay.
+ *
+ * @param retriesCompleted - Retries completed before the current failed attempt.
+ * @returns The next retry action and delay without changing a bound configuration.
+ */
+export const planInfrastructureRetry = (
+  retriesCompleted: number,
+): { action: "retry" | "block"; delay_ms: number } => {
+  const action = retriesCompleted < MAX_INFRASTRUCTURE_RETRIES ? "retry" : "block";
+  return {
+    action,
+    delay_ms: action === "retry" ? Math.min(8_000, 1_000 * 2 ** retriesCompleted) : 0,
+  };
+};
+
 const retryError = (code: string, message: string, remediation: string): InfrastructureRetryError =>
   new InfrastructureRetryError({ issue: { code, message, remediation } });
 
@@ -174,8 +195,9 @@ export const recordInfrastructureRetry = (
         );
       }
 
-      const action: InfrastructureRetryResult["action"] = completed < maximum ? "retry" : "block";
-      const delay = action === "retry" ? Math.min(8_000, 1_000 * 2 ** completed) : 0;
+      const decision = planInfrastructureRetry(completed);
+      const action: InfrastructureRetryResult["action"] = decision.action;
+      const delay = decision.delay_ms;
       const diagnostic = input.diagnostic.replace(/\s+/gu, " ").trim();
       const updatedBlock = block
         .replace(

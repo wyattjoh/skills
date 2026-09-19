@@ -1,6 +1,12 @@
 import { Data, Effect } from "effect";
 import { createConnection, type Socket } from "node:net";
-import type { CliIssue, HerdrWaitAnyInput, HerdrWorkerInput } from "./contract.ts";
+import type {
+  CliIssue,
+  CoordinatorPhase,
+  HerdrCoordinatorInput,
+  HerdrWaitAnyInput,
+  HerdrWorkerInput,
+} from "./contract.ts";
 
 const TERMINAL_STATUSES = new Set(["idle", "done", "blocked"]);
 const AGENT_STATUSES = new Set(["idle", "working", "blocked", "done", "unknown"]);
@@ -18,12 +24,26 @@ export type HerdrWorkerSnapshot = {
 };
 
 /**
- * Result of waiting for the first meaningful worker condition.
+ * Normalized coordinator context observed in the same Herdr snapshot as workers.
+ */
+export type HerdrCoordinatorSnapshot = {
+  session: string;
+  pane_id: string;
+  previous_pane_id: string;
+  context_used: number;
+  context_limit: number;
+  utilization_percent: number;
+  handoff: "continue" | "deferred" | "required";
+};
+
+/**
+ * Result of waiting for the first meaningful worker or coordinator condition.
  */
 export type HerdrWaitAnyResult = {
-  reason: "status" | "pane_exited" | "timeout";
+  reason: "status" | "pane_exited" | "handoff" | "timeout";
   worker: HerdrWorkerSnapshot | null;
   workers: HerdrWorkerSnapshot[];
+  coordinator: HerdrCoordinatorSnapshot | undefined;
 };
 
 /**
@@ -240,6 +260,8 @@ type RawAgent = {
   title: string | null;
   paneId: string;
   status: HerdrWorkerSnapshot["status"];
+  contextUsed: number | undefined;
+  contextLimit: number | undefined;
 };
 
 type RawPane = {
@@ -294,6 +316,14 @@ const parseSnapshotResponse = (line: string): RawSnapshot => {
       title: typeof agent.title === "string" ? agent.title : null,
       paneId: agent.pane_id,
       status,
+      contextUsed:
+        typeof agent.context_used === "number" && Number.isSafeInteger(agent.context_used)
+          ? agent.context_used
+          : undefined,
+      contextLimit:
+        typeof agent.context_limit === "number" && Number.isSafeInteger(agent.context_limit)
+          ? agent.context_limit
+          : undefined,
     });
   }
   const panes: RawPane[] = [];
@@ -373,6 +403,59 @@ const resolveWorkers = (
     };
   });
 
+const SAFE_HANDOFF_PHASES = new Set<CoordinatorPhase>(["waiting", "scheduling"]);
+
+const resolveCoordinator = (
+  coordinator: HerdrCoordinatorInput | undefined,
+  snapshot: RawSnapshot,
+): HerdrCoordinatorSnapshot | undefined => {
+  if (coordinator === undefined) return undefined;
+  const named = snapshot.agents.filter(
+    (agent) => agent.displayAgent === coordinator.session || agent.title === coordinator.session,
+  );
+  if (named.length > 1) {
+    throw herdrError(
+      "herdr.coordinator_ambiguous",
+      `Herdr reported multiple agents named \`${coordinator.session}\`.`,
+      "Restore a unique coordinator session name before continuing the run.",
+    );
+  }
+  const current = named[0] ?? snapshot.agents.find((agent) => agent.paneId === coordinator.paneId);
+  if (current === undefined) {
+    throw herdrError(
+      "herdr.coordinator_missing",
+      `Herdr could not find coordinator \`${coordinator.session}\` in its machine-readable snapshot.`,
+      "Keep the current pane open and repair the coordinator runtime binding before handoff.",
+    );
+  }
+  if (
+    current.contextUsed === undefined ||
+    current.contextLimit === undefined ||
+    current.contextUsed < 0 ||
+    current.contextLimit <= 0
+  ) {
+    throw herdrError(
+      "herdr.context_missing",
+      `Herdr did not report normalized context_used and context_limit values for coordinator \`${coordinator.session}\`.`,
+      "Stop coordination and install a Herdr version that exposes both normalized context fields. Never parse rendered terminal status.",
+    );
+  }
+  const atThreshold = BigInt(current.contextUsed) * 5n >= BigInt(current.contextLimit) * 4n;
+  return {
+    session: coordinator.session,
+    pane_id: current.paneId,
+    previous_pane_id: coordinator.paneId,
+    context_used: current.contextUsed,
+    context_limit: current.contextLimit,
+    utilization_percent: (current.contextUsed / current.contextLimit) * 100,
+    handoff: atThreshold
+      ? SAFE_HANDOFF_PHASES.has(coordinator.phase)
+        ? "required"
+        : "deferred"
+      : "continue",
+  };
+};
+
 const terminalSnapshot = (workers: HerdrWorkerSnapshot[]): HerdrWorkerSnapshot | undefined =>
   workers.find((worker) => worker.status === "exited" || TERMINAL_STATUSES.has(worker.status));
 
@@ -429,64 +512,96 @@ const firstBufferedEvent = (
   return undefined;
 };
 
+const subscribedPanes = (
+  workers: HerdrWorkerSnapshot[] | HerdrWorkerInput[],
+  coordinator: HerdrCoordinatorSnapshot | HerdrCoordinatorInput | undefined,
+): string[] => [
+  ...new Set([
+    ...workers.map((worker) => ("pane_id" in worker ? worker.pane_id : worker.paneId)),
+    ...(coordinator === undefined
+      ? []
+      : ["pane_id" in coordinator ? coordinator.pane_id : coordinator.paneId]),
+  ]),
+];
+
 const wait = async (input: HerdrWaitAnyInput, clock: Clock): Promise<HerdrWaitAnyResult> => {
   const deadline = clock() + input.timeoutMs;
   let subscription = await openSubscription(
     input.socketPath,
-    input.workers.map((worker) => worker.paneId),
+    subscribedPanes(input.workers, input.coordinator),
     deadline,
     clock,
   );
   try {
-    let workers = resolveWorkers(
-      input.workers,
-      await readSnapshot(input.socketPath, deadline, clock),
-    );
+    const initialSnapshot = await readSnapshot(input.socketPath, deadline, clock);
+    let workers = resolveWorkers(input.workers, initialSnapshot);
+    let coordinator = resolveCoordinator(input.coordinator, initialSnapshot);
+    if (coordinator?.handoff === "required") {
+      return { reason: "handoff", worker: null, workers, coordinator };
+    }
     const terminal = terminalSnapshot(workers);
     if (terminal !== undefined) {
       return {
         reason: terminal.status === "exited" ? "pane_exited" : "status",
         worker: terminal,
         workers,
+        coordinator,
       };
     }
 
-    const panesChanged = workers.some((worker) => worker.pane_id !== worker.previous_pane_id);
+    const panesChanged =
+      workers.some((worker) => worker.pane_id !== worker.previous_pane_id) ||
+      (coordinator !== undefined && coordinator.pane_id !== coordinator.previous_pane_id);
     if (panesChanged) {
       const replacement = await openSubscription(
         input.socketPath,
-        workers.map((worker) => worker.pane_id),
+        subscribedPanes(workers, coordinator),
         deadline,
         clock,
       );
       let replacementTransferred = false;
       try {
+        const refreshedSnapshot = await readSnapshot(input.socketPath, deadline, clock);
         const secondSnapshot = resolveWorkers(
           input.workers.map((worker) => ({
             ...worker,
             paneId: workers.find((current) => current.runtime_id === worker.runtimeId)!.pane_id,
           })),
-          await readSnapshot(input.socketPath, deadline, clock),
+          refreshedSnapshot,
         ).map((worker) => ({
           ...worker,
           previous_pane_id: input.workers.find(
             (original) => original.runtimeId === worker.runtime_id,
           )!.paneId,
         }));
+        const secondCoordinator = resolveCoordinator(
+          input.coordinator === undefined
+            ? undefined
+            : { ...input.coordinator, paneId: coordinator!.pane_id },
+          refreshedSnapshot,
+        );
         const oldEvent = firstBufferedEvent(subscription, workers);
         const newEvent = firstBufferedEvent(replacement, secondSnapshot);
         subscription.close();
         subscription = replacement;
         replacementTransferred = true;
         workers = secondSnapshot;
+        coordinator =
+          secondCoordinator === undefined
+            ? undefined
+            : { ...secondCoordinator, previous_pane_id: input.coordinator!.paneId };
+        if (coordinator?.handoff === "required") {
+          return { reason: "handoff", worker: null, workers, coordinator };
+        }
         const event = oldEvent ?? newEvent;
-        if (event !== undefined) return { ...event, workers };
+        if (event !== undefined) return { ...event, workers, coordinator };
         const secondTerminal = terminalSnapshot(workers);
         if (secondTerminal !== undefined) {
           return {
             reason: secondTerminal.status === "exited" ? "pane_exited" : "status",
             worker: secondTerminal,
             workers,
+            coordinator,
           };
         }
       } finally {
@@ -495,16 +610,16 @@ const wait = async (input: HerdrWaitAnyInput, clock: Clock): Promise<HerdrWaitAn
     }
 
     const buffered = firstBufferedEvent(subscription, workers);
-    if (buffered !== undefined) return { ...buffered, workers };
+    if (buffered !== undefined) return { ...buffered, workers, coordinator };
 
     while (clock() < deadline) {
       const line = await subscription.nextLine(remaining(deadline, clock));
       if (line === null) break;
       const event = parseEvent(line, workers);
-      if (event !== undefined) return { ...event, workers };
+      if (event !== undefined) return { ...event, workers, coordinator };
     }
 
-    return { reason: "timeout", worker: null, workers };
+    return { reason: "timeout", worker: null, workers, coordinator };
   } finally {
     subscription.close();
   }

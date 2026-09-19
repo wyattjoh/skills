@@ -35,7 +35,7 @@ Coordinator:
   model:      fable
   effort:     low
   handoff:    yes
-  threshold:  200000
+  threshold:  80 percent
   unattended: block
 
 Implementor:
@@ -278,8 +278,8 @@ rewrite.
 | `harness`    | `claude` \| `pi`      | Selected from installed harness discovery                  |
 | `model`      | model id              | Validated against the selected harness                     |
 | `effort`     | discovered vocabulary | Validated against installed harness help                   |
-| `handoff`    | `yes` \| `no`         | Whether automatic context handoff is enabled               |
-| `threshold`  | token count           | Scheduled prompts read this value from state, never inline |
+| `handoff`    | `yes`                 | Automatic handoff is required for both supported harnesses |
+| `threshold`  | `80 percent`          | Exact policy applied to normalized Herdr context fields    |
 | `unattended` | `block` \| `escalate` | Governs the fix-round-3 escalation and nothing else        |
 
 `unattended: block` marks a ticket needing escalation as blocked-on-decision,
@@ -315,21 +315,27 @@ field. Its actual Pi path is recorded in each launch artifact.
 Ownership is separate from the selected Coordinator role. The role says what
 must run; ownership says which Herdr pane currently coordinates the run.
 
-| Field        | Meaning                                                                     |
-| ------------ | --------------------------------------------------------------------------- |
-| `generation` | Monotonically increasing compare-and-swap generation                        |
-| `pane`       | Current coordinator Herdr pane id                                           |
-| `harness`    | Harness bound to the owner, updated from the claimed successor role         |
-| `model`      | Model bound to the current owner                                            |
-| `effort`     | Effort bound to the current owner                                           |
-| `readiness`  | `claiming` until the successor has resumed and armed its wait, then `ready` |
-| `marker`     | Generation-specific marker the predecessor must observe in that pane        |
+| Field                   | Meaning                                                                     |
+| ----------------------- | --------------------------------------------------------------------------- |
+| `generation`            | Monotonically increasing compare-and-swap generation                        |
+| `pane`                  | Current coordinator Herdr pane id                                           |
+| `harness`               | Harness bound to the owner, updated from the claimed successor role         |
+| `model`                 | Model bound to the current owner                                            |
+| `effort`                | Effort bound to the current owner                                           |
+| `readiness`             | `claiming` until the successor has resumed and armed its wait, then `ready` |
+| `marker`                | Generation-specific marker the predecessor must observe in that pane        |
+| `predecessor pane`      | Automatic handoff predecessor authorized for close verification             |
+| `handoff artifact hash` | SHA-256 binding to the exact prepared automatic handoff artifact            |
 
-Only `coordinator.claim` may advance the generation. Only the matching claimant
-may call `coordinator.ready`. A predecessor closes only after
-`coordinator.verify` succeeds with the marker it independently observed in the
-successor pane. A failed successor leaves readiness at `claiming`, so the
-predecessor stays open and recovers or replaces that pane.
+Initial role mismatch takeover uses `coordinator.claim` followed by
+`coordinator.ready`. Automatic context successors use
+`coordinator.handoff.ready`, which validates the accepted snapshot, arms
+wait-any, refreshes active worker panes, and compare-and-swaps directly from the
+ready predecessor to the ready successor in one state mutation. That owner also
+records `predecessor pane` and `handoff artifact hash`. A predecessor closes
+only after `coordinator.handoff.verify` succeeds with the marker it
+independently observed in the successor pane and returns the exact close
+command. A failed successor leaves predecessor ownership unchanged.
 
 ### Ticket table
 
@@ -513,6 +519,8 @@ cannot launch:
 - `model` lacks a `<provider>/` prefix while `harness` is `pi`, or carries one
   while `harness` is `claude`.
 - a `:<level>` suffix disagrees with the record's own `effort:` field.
+- `Coordinator.handoff` is not `yes` or `Coordinator.threshold` is not exactly
+  `80 percent`.
 - `Coordinator ownership` is missing, malformed, lacks its bound role record,
   or names the invoking pane as a successor claim.
 - repository policy is absent before worktree creation.

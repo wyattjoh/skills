@@ -606,6 +606,8 @@ Coordinator ownership:
       effort: "high",
       readiness: "claiming",
       marker: "coordinator-ready-5-workspace:p2",
+      predecessor_pane: undefined,
+      handoff_artifact_sha256: undefined,
     });
     expect(readSnapshotRecord(fixture.statePath)).toEqual({
       revision: LOCAL_REVISION,
