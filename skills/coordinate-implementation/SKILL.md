@@ -96,9 +96,10 @@ Everywhere below, `<base>` means that branch. The main checkout is never
   snapshot.json      # normalized source metadata, stable references, and ticket graph
   spec.md            # the agreed design; review axis 2 reads it
   issues/NN-*.md     # one ticket per file, `Blocked by:` + `Status:` lines, checkboxes
-  briefs/common.md   # resolved repository contract; create from references/common-brief.md if absent
-  briefs/fixes-NN.md # long fix requests, one per round
-  RESUME.md          # the ONLY mutable state file; format: references/resume-format.md
+  briefs/common.md          # resolved repository contract; create from references/common-brief.md if absent
+  briefs/fixes-NN-round-R.md # consolidated actionable findings for one fix round
+  reviews/                  # immutable gate, self-review, Standards, and Spec evidence
+  RESUME.md                 # the ONLY mutable coordination state; format: references/resume-format.md
 .scratch/coordinators.md   # repo-wide registry of active runs (below)
 ```
 
@@ -184,7 +185,10 @@ Before the first iteration, complete the read-only helper preflight described
 in [helper-cli.md](references/helper-cli.md). Only after it succeeds, resolve
 `<run>/briefs/common.md` from [common-brief.md](references/common-brief.md),
 repository instructions, and CI. No placeholder may remain when a worker
-launches. Create the schema-1 run state, then accept the normalized snapshot.
+launches. Create the schema-1 run state, persist exact gate argv arrays and
+resolved safety constraints with `review.policy.prepare`, then accept the
+normalized snapshot. Review policy preparation must precede every worker
+launch; never infer a command from the detected toolchain.
 For a non-local source, ask once for `none`, `final`, or `live` writeback and
 pass the repository's authoritative remote-write policy. A local source records
 `none` without a remote-write prompt. Rename your own tab to
@@ -219,14 +223,18 @@ repeat until every ticket is landed:
    revision. If several tickets become ready together, process them one at a
    time in dependency order. Sync
    the chosen branch to the latest `<base>` before its final gates and review,
-   then require the recorded repository commit policy, green gates, two review
-   agents (Standards, Spec), and your own read. Procedure:
+   then require the recorded repository commit policy, green recorded gates,
+   the harness-appropriate implementor self-review, and fresh independent Herdr
+   sessions for Standards and Spec. Capture and persist each complete report
+   before closing its pane. Procedure:
    [review-and-land.md](references/review-and-land.md).
-4. **Fix loop.** One consolidated request per round into the same worker session.
-   Apply the recorded fix-commit policy, which defaults to appending a commit
-   when repository instructions are silent, then print `FIXES DONE NN`. Include
-   that runtime in the next wait-any call. Verify mechanically and with a
-   verification agent.
+4. **Fix loop.** Finalize both axes with `review.round.finalize`. Send its one
+   consolidated request, containing every actionable finding, to the same worker
+   session. Apply the recorded fix-commit policy, which defaults to appending a
+   commit when repository instructions are silent, then print `FIXES DONE NN`.
+   Include that runtime in the next wait-any call. When it returns terminal,
+   restart the pipeline from all recorded gates; every fix round receives new
+   self-review and fresh Standards and Spec sessions.
 5. **Land.** Serialize all landings through the recorded base checkout with
    `git merge --ff-only`. If `<base>` moved after review, sync again, resolve
    textual conflicts yourself (`resolving-merge-conflicts` skill), rerun gates
@@ -377,9 +385,19 @@ When invoked as `resume .scratch/<slug>` or from a handoff:
   and is reported.
 - Repository commit policy wins. When it is silent, multiple commits are
   allowed and fix rounds append commits.
-- Every commit passes the repository's required gates before review. The
-  resolved commands live in `<run>/briefs/common.md`; the execution procedure
-  is in [review-and-land.md](references/review-and-land.md).
+- Every commit passes the repository's required gates before review. Resolve
+  exact argv arrays and safety constraints from repository instructions and CI,
+  then persist them with `review.policy.prepare` before worker launch. Claude may
+  use its supported background facility; Pi runs synchronously through its
+  normal shell tool. The full procedure is in
+  [review-and-land.md](references/review-and-land.md).
+- Claude implementors retain Matt's `implement` self-review. Pi implementors do
+  one in-session Standards and Spec fallback without subagents. External
+  Standards and Spec reviews always run as separate fresh Herdr sessions under
+  the persisted Reviewer role.
+- Persist a complete report before closing each reviewer pane. Any worktree
+  status change contaminates that report, rejects its findings, and stops for
+  manual cleanup without discarding the mutation. A finding always means FAIL.
 - Never push or write to forge issues. The only permitted remote write is a
   persisted `final` or `live` update through the configured Matt tracker
   workflow when authoritative project policy allows it. All other remote

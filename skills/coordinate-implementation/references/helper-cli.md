@@ -522,6 +522,198 @@ exhausted: the operation returns `action: block`, records
 queued tickets remain unchanged and can be selected by the next
 `scheduler.plan` call.
 
+## `review.policy.prepare`
+
+Before any worker launch, persist the exact repository-derived gate and safety
+contract:
+
+```json
+{
+  "schema_version": 1,
+  "operation": "review.policy.prepare",
+  "input": {
+    "state_path": ".scratch/example/RESUME.md",
+    "instruction_files": ["CLAUDE.md"],
+    "ci_files": [".github/workflows/ci.yml"],
+    "gates": [
+      { "name": "format", "argv": ["bun", "run", "format:check"] },
+      { "name": "test", "argv": ["bun", "test"] }
+    ],
+    "no_executable_gates": false,
+    "safety_constraints": ["Do not push."],
+    "no_additional_safety_constraints": false
+  }
+}
+```
+
+Every gate is an exact non-empty argument array. Names are unique. An empty gate
+list requires `no_executable_gates: true`; an empty safety list requires
+`no_additional_safety_constraints: true`. At least one authoritative
+instruction file is required. This operation refuses to run after an active
+ticket runtime exists.
+
+The persisted policy fixes three infrastructure attempts with delays of one and
+two seconds. Its execution record says Claude may use its supported background
+facility, while Pi runs synchronously through its normal shell tool. It derives
+`matt-implement` self-review for Claude implementors and
+`standards-spec-single-session` for Pi implementors.
+
+## `gate.record`
+
+After executing one persisted gate argv, record its exact output:
+
+```json
+{
+  "schema_version": 1,
+  "operation": "gate.record",
+  "input": {
+    "state_path": ".scratch/example/RESUME.md",
+    "evidence_path": ".scratch/example/reviews/04-round-0-test-attempt-1.json",
+    "worktree_path": "/worktrees/example/ticket-04",
+    "ticket": "04",
+    "round": 0,
+    "name": "test",
+    "attempt": 1,
+    "status": "failed",
+    "exit_code": 1,
+    "stdout": "",
+    "stderr": "one test failed",
+    "completed_at": "2026-09-19T01:00:00Z"
+  }
+}
+```
+
+A normal red gate returns `action: fix`; it is not an infrastructure retry. An
+`infrastructure_failed` attempt returns the next attempt and bounded delay until
+attempt three, which returns `blocked`. The helper resolves the supplied
+worktree canonically and requires it to equal the active ticket runtime before
+running any gate-recording logic. The evidence preserves that canonical
+`worktree_path`, the policy argv, worktree HEAD, exit code, stdout, stderr, and
+completion time. Evidence files are immutable: byte-identical recovery
+succeeds, while different content at the same path fails.
+
+## `review.launch.prepare`
+
+Prepare each Standards or Spec axis independently in a newly created Herdr pane:
+
+```json
+{
+  "schema_version": 1,
+  "operation": "review.launch.prepare",
+  "input": {
+    "state_path": ".scratch/example/RESUME.md",
+    "previous_artifact_path": null,
+    "artifact_path": ".scratch/example/reviews/04-round-0-standards-attempt-1.json",
+    "report_path": ".scratch/example/reviews/04-round-0-standards-attempt-1.md",
+    "ticket": "04",
+    "round": 0,
+    "axis": "standards",
+    "worktree_path": "/worktrees/example/ticket-04",
+    "branch": "feature/ticket-04",
+    "base_ref": "main",
+    "pane": "w1:p5",
+    "role": { "harness": "claude", "model": "sonnet", "effort": "medium" },
+    "context_paths": ["CLAUDE.md", ".claude/rules/testing.md"],
+    "landed_tickets": ["01", "02", "03"],
+    "gate_evidence_paths": [
+      ".scratch/example/reviews/04-round-0-format-attempt-1.json",
+      ".scratch/example/reviews/04-round-0-test-attempt-1.json"
+    ],
+    "attempt": 1
+  }
+}
+```
+
+The role must equal the persisted Reviewer record and the branch and canonical
+worktree must equal the active ticket runtime. One passing evidence file must
+match each persisted gate by ticket, round, canonical worktree, current
+worktree HEAD, name, and exact argv; failed, missing, duplicated, or stale gates
+reject launch. The helper then captures a sanitized Git status baseline and
+rejects a dirty worktree. It constructs a unique session name from the run
+prefix, ticket, round, axis, and attempt. Returned Herdr start and prompt
+commands are argument arrays and require no shell interpolation.
+
+Attempt 1 requires `previous_artifact_path: null`. Attempts 2 and 3 require the
+preceding attempt's artifact path and accepted retry evidence. A retry must keep
+the same ticket, round, axis, Reviewer role, canonical worktree, branch, base
+ref, context paths, landed tickets, gate evidence paths, and reviewed HEAD.
+Only the new artifact and report paths, pane, and derived session may differ.
+
+The generated prompt prohibits mutation and non-actionable preferences. Every
+finding must have severity, a real `path:positive-line` location, rationale,
+and suggested fix. Placeholders such as `unknown`, `none`, and `n/a` are
+malformed. The final non-empty line is exactly `PASS` or `FAIL`, and any finding
+requires `FAIL`.
+
+## `review.launch.record`
+
+Before closing the reviewer pane, persist its complete output:
+
+```json
+{
+  "schema_version": 1,
+  "operation": "review.launch.record",
+  "input": {
+    "state_path": ".scratch/example/RESUME.md",
+    "artifact_path": ".scratch/example/reviews/04-round-0-standards-attempt-1.json",
+    "status": "completed",
+    "report": "# Standards review\n\nPASS\n",
+    "diagnostic": null,
+    "completed_at": "2026-09-19T01:05:00Z"
+  }
+}
+```
+
+Before reading or writing evidence, the helper canonically verifies the
+supplied artifact path, the artifact's declared path, its report path, and the
+derived JSON sidecar are inside the run directory. The declared artifact path
+must exactly equal the supplied path. It then writes the full Markdown report,
+a structured JSON evidence sidecar, and a RESUME.md evidence reference.
+Reports, sidecars, self-reviews, and fix requests are immutable: byte-identical
+recovery is allowed, but different content at an existing path fails rather
+than destroying prior evidence. A malformed verdict retries as reviewer
+infrastructure. `infrastructure_failed` instead requires `report: null` and an
+exact diagnostic. Attempts one and two return the fixed delay and next attempt;
+attempt three blocks only that ticket.
+
+Git status is captured again. Any difference marks the review `contaminated`,
+rejects its findings, returns `manual_cleanup`, and preserves both the report
+and every worktree change. The coordinator must not close the pane before this
+operation has persisted evidence.
+
+## `review.round.finalize`
+
+After both accepted axes, persist harness self-review and compute one strict
+round outcome:
+
+```json
+{
+  "schema_version": 1,
+  "operation": "review.round.finalize",
+  "input": {
+    "state_path": ".scratch/example/RESUME.md",
+    "ticket": "04",
+    "round": 0,
+    "standards_evidence_path": ".scratch/example/reviews/04-round-0-standards-attempt-1.md.json",
+    "spec_evidence_path": ".scratch/example/reviews/04-round-0-spec-attempt-1.md.json",
+    "self_review_path": ".scratch/example/reviews/04-round-0-self-review.md",
+    "self_review_method": "matt-implement",
+    "self_review_report": "# Implementor self-review\n\nNo findings.\n",
+    "fix_request_path": ".scratch/example/briefs/fixes-04-round-0.md",
+    "completed_at": "2026-09-19T01:10:00Z"
+  }
+}
+```
+
+The self-review method is checked against the ticket-bound implementor, not the
+run-wide default. Pi requires `standards-spec-single-session` and both
+`## Standards` and `## Spec` report sections. Claude requires `matt-implement`.
+
+Two accepted PASS reports return `action: land`. Any finding makes the round
+FAIL and is copied into one consolidated fix request. Rounds below three return
+the next round; a FAIL after fix round three returns `escalate` without model
+substitution. Earlier report and sidecar paths are never overwritten.
+
 ## Coordinator ownership operations
 
 `Coordinator ownership:` in RESUME.md contains `generation`, `pane`,

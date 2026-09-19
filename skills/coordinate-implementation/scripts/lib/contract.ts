@@ -24,7 +24,12 @@ export type CoordinateOperation =
   | "implementor.launch.record"
   | "scheduler.plan"
   | "herdr.wait_any"
-  | "infrastructure.retry.record";
+  | "infrastructure.retry.record"
+  | "review.policy.prepare"
+  | "review.launch.prepare"
+  | "review.launch.record"
+  | "gate.record"
+  | "review.round.finalize";
 
 /**
  * Harnesses supported for coordinator, implementor, and reviewer sessions.
@@ -288,6 +293,100 @@ export type InfrastructureRetryRecordInput = {
 };
 
 /**
+ * One exact repository gate command resolved from authoritative sources.
+ */
+export type GateCommand = {
+  name: string;
+  argv: string[];
+};
+
+/**
+ * Input for persisting repository-derived gates and safety constraints.
+ */
+export type ReviewPolicyPrepareInput = {
+  statePath: string;
+  instructionFiles: string[];
+  ciFiles: string[];
+  gates: GateCommand[];
+  noExecutableGates: boolean;
+  safetyConstraints: string[];
+  noAdditionalSafetyConstraints: boolean;
+};
+
+/**
+ * Independent external review axes.
+ */
+export type ReviewAxis = "standards" | "spec";
+
+/**
+ * Input for constructing one fresh reviewer launch and mutation baseline.
+ */
+export type ReviewLaunchPrepareInput = {
+  statePath: string;
+  previousArtifactPath: string | undefined;
+  artifactPath: string;
+  reportPath: string;
+  ticket: string;
+  round: number;
+  axis: ReviewAxis;
+  worktreePath: string;
+  branch: string;
+  baseRef: string;
+  pane: string;
+  role: RoleRecord;
+  contextPaths: string[];
+  landedTickets: string[];
+  gateEvidencePaths: string[];
+  attempt: number;
+};
+
+/**
+ * Input for persisting one completed or failed reviewer attempt.
+ */
+export type ReviewLaunchRecordInput = {
+  statePath: string;
+  artifactPath: string;
+  status: "completed" | "infrastructure_failed";
+  report: string | undefined;
+  diagnostic: LaunchDiagnostic | undefined;
+  completedAt: string;
+};
+
+/**
+ * Input for persisting one repository gate attempt.
+ */
+export type GateRecordInput = {
+  statePath: string;
+  evidencePath: string;
+  worktreePath: string;
+  ticket: string;
+  round: number;
+  name: string;
+  attempt: number;
+  status: "passed" | "failed" | "infrastructure_failed";
+  exitCode: number;
+  stdout: string;
+  stderr: string;
+  completedAt: string;
+};
+
+/**
+ * Input for combining two accepted review axes into one round outcome.
+ */
+export type ReviewRoundFinalizeInput = {
+  statePath: string;
+  ticket: string;
+  round: number;
+  standardsEvidencePath: string;
+  specEvidencePath: string;
+  selfReviewPath: string;
+  selfReviewMethod: "matt-implement" | "standards-spec-single-session";
+  selfReviewReport: string;
+  fixRequestPath: string;
+  completedAt: string;
+};
+
+/**
  * A validated schema-version-1 request accepted by the helper.
  */
 export type CoordinateRequest =
@@ -370,6 +469,31 @@ export type CoordinateRequest =
       schemaVersion: typeof CONTRACT_SCHEMA_VERSION;
       operation: "infrastructure.retry.record";
       input: InfrastructureRetryRecordInput;
+    }
+  | {
+      schemaVersion: typeof CONTRACT_SCHEMA_VERSION;
+      operation: "review.policy.prepare";
+      input: ReviewPolicyPrepareInput;
+    }
+  | {
+      schemaVersion: typeof CONTRACT_SCHEMA_VERSION;
+      operation: "review.launch.prepare";
+      input: ReviewLaunchPrepareInput;
+    }
+  | {
+      schemaVersion: typeof CONTRACT_SCHEMA_VERSION;
+      operation: "review.launch.record";
+      input: ReviewLaunchRecordInput;
+    }
+  | {
+      schemaVersion: typeof CONTRACT_SCHEMA_VERSION;
+      operation: "gate.record";
+      input: GateRecordInput;
+    }
+  | {
+      schemaVersion: typeof CONTRACT_SCHEMA_VERSION;
+      operation: "review.round.finalize";
+      input: ReviewRoundFinalizeInput;
     };
 
 /**
@@ -666,6 +790,11 @@ export const parseRequest = (raw: string): Effect.Effect<CoordinateRequest, Requ
       "scheduler.plan",
       "herdr.wait_any",
       "infrastructure.retry.record",
+      "review.policy.prepare",
+      "review.launch.prepare",
+      "review.launch.record",
+      "gate.record",
+      "review.round.finalize",
     ];
     if (operation === null || !operations.includes(operation as CoordinateOperation)) {
       return yield* invalidRequest(
@@ -935,6 +1064,272 @@ export const parseRequest = (raw: string): Effect.Effect<CoordinateRequest, Requ
           worktreeName,
           expectedWorktreePath,
           policy,
+        },
+      };
+    }
+
+    if (operation === "gate.record") {
+      const statePath = nonEmptyString(parsed.input.state_path);
+      const evidencePath = nonEmptyString(parsed.input.evidence_path);
+      const worktreePath = nonEmptyString(parsed.input.worktree_path);
+      const ticket = singleLineString(parsed.input.ticket);
+      const round = nonNegativeInteger(parsed.input.round);
+      const name = singleLineString(parsed.input.name);
+      const attempt = positiveInteger(parsed.input.attempt);
+      const status = parsed.input.status;
+      const exitCode = nonNegativeInteger(parsed.input.exit_code);
+      const stdout = typeof parsed.input.stdout === "string" ? parsed.input.stdout : undefined;
+      const stderr = typeof parsed.input.stderr === "string" ? parsed.input.stderr : undefined;
+      const completedAt = parsed.input.completed_at;
+      if (
+        statePath === undefined ||
+        evidencePath === undefined ||
+        worktreePath === undefined ||
+        ticket === undefined ||
+        !/^\d{2}$/u.test(ticket) ||
+        round === undefined ||
+        name === undefined ||
+        attempt === undefined ||
+        attempt > 3 ||
+        (status !== "passed" && status !== "failed" && status !== "infrastructure_failed") ||
+        exitCode === undefined ||
+        stdout === undefined ||
+        stderr === undefined ||
+        !isUtcIsoTimestamp(completedAt) ||
+        (status === "passed" && exitCode !== 0) ||
+        (status === "failed" && exitCode === 0)
+      ) {
+        return yield* invalidRequest(
+          "`gate.record` requires a configured gate, worktree_path, ticket, round, attempt from 1 through 3, exact output, valid status and exit code, and completed_at.",
+          operation,
+        );
+      }
+      return {
+        schemaVersion: CONTRACT_SCHEMA_VERSION,
+        operation,
+        input: {
+          statePath,
+          evidencePath,
+          worktreePath,
+          ticket,
+          round,
+          name,
+          attempt,
+          status,
+          exitCode,
+          stdout,
+          stderr,
+          completedAt,
+        },
+      };
+    }
+
+    if (operation === "review.round.finalize") {
+      const statePath = nonEmptyString(parsed.input.state_path);
+      const ticket = singleLineString(parsed.input.ticket);
+      const round = nonNegativeInteger(parsed.input.round);
+      const standardsEvidencePath = nonEmptyString(parsed.input.standards_evidence_path);
+      const specEvidencePath = nonEmptyString(parsed.input.spec_evidence_path);
+      const selfReviewPath = nonEmptyString(parsed.input.self_review_path);
+      const selfReviewMethod = parsed.input.self_review_method;
+      const selfReviewReport =
+        typeof parsed.input.self_review_report === "string"
+          ? parsed.input.self_review_report
+          : undefined;
+      const fixRequestPath = nonEmptyString(parsed.input.fix_request_path);
+      const completedAt = parsed.input.completed_at;
+      if (
+        statePath === undefined ||
+        ticket === undefined ||
+        !/^\d{2}$/u.test(ticket) ||
+        round === undefined ||
+        standardsEvidencePath === undefined ||
+        specEvidencePath === undefined ||
+        selfReviewPath === undefined ||
+        (selfReviewMethod !== "matt-implement" &&
+          selfReviewMethod !== "standards-spec-single-session") ||
+        selfReviewReport === undefined ||
+        selfReviewReport.trim().length === 0 ||
+        fixRequestPath === undefined ||
+        !isUtcIsoTimestamp(completedAt)
+      ) {
+        return yield* invalidRequest(
+          "`review.round.finalize` requires both accepted axis evidence paths, a harness-appropriate self-review report, fix request path, and completed_at.",
+          operation,
+        );
+      }
+      return {
+        schemaVersion: CONTRACT_SCHEMA_VERSION,
+        operation,
+        input: {
+          statePath,
+          ticket,
+          round,
+          standardsEvidencePath,
+          specEvidencePath,
+          selfReviewPath,
+          selfReviewMethod,
+          selfReviewReport,
+          fixRequestPath,
+          completedAt,
+        },
+      };
+    }
+
+    if (operation === "review.launch.prepare") {
+      const statePath = nonEmptyString(parsed.input.state_path);
+      const previousArtifactPath = nonEmptyString(parsed.input.previous_artifact_path);
+      const artifactPath = nonEmptyString(parsed.input.artifact_path);
+      const reportPath = nonEmptyString(parsed.input.report_path);
+      const ticket = singleLineString(parsed.input.ticket);
+      const round = nonNegativeInteger(parsed.input.round);
+      const axis = parsed.input.axis;
+      const worktreePath = nonEmptyString(parsed.input.worktree_path);
+      const branch = singleLineString(parsed.input.branch);
+      const baseRef = singleLineString(parsed.input.base_ref);
+      const pane = paneId(parsed.input.pane);
+      const role = parseRoleRecord(parsed.input.role);
+      const contextPaths = stringArray(parsed.input.context_paths);
+      const landedTickets = stringArray(parsed.input.landed_tickets);
+      const gateEvidencePaths = stringArray(parsed.input.gate_evidence_paths);
+      const attempt = positiveInteger(parsed.input.attempt);
+      if (
+        statePath === undefined ||
+        artifactPath === undefined ||
+        reportPath === undefined ||
+        ticket === undefined ||
+        !/^\d{2}$/u.test(ticket) ||
+        round === undefined ||
+        (axis !== "standards" && axis !== "spec") ||
+        worktreePath === undefined ||
+        branch === undefined ||
+        baseRef === undefined ||
+        pane === undefined ||
+        role === undefined ||
+        contextPaths === undefined ||
+        contextPaths.length === 0 ||
+        landedTickets === undefined ||
+        gateEvidencePaths === undefined ||
+        attempt === undefined ||
+        attempt > 3 ||
+        (attempt === 1 && previousArtifactPath !== undefined) ||
+        (attempt > 1 && previousArtifactPath === undefined)
+      ) {
+        return yield* invalidRequest(
+          "`review.launch.prepare` requires a two-digit ticket, round, axis, runtime paths, base and branch, pane, Reviewer role, context paths, landed tickets, attempt from 1 through 3, and the preceding artifact path for retries only.",
+          operation,
+        );
+      }
+      return {
+        schemaVersion: CONTRACT_SCHEMA_VERSION,
+        operation,
+        input: {
+          statePath,
+          previousArtifactPath,
+          artifactPath,
+          reportPath,
+          ticket,
+          round,
+          axis,
+          worktreePath,
+          branch,
+          baseRef,
+          pane,
+          role,
+          contextPaths,
+          landedTickets,
+          gateEvidencePaths,
+          attempt,
+        },
+      };
+    }
+
+    if (operation === "review.launch.record") {
+      const statePath = nonEmptyString(parsed.input.state_path);
+      const artifactPath = nonEmptyString(parsed.input.artifact_path);
+      const status = parsed.input.status;
+      const report = typeof parsed.input.report === "string" ? parsed.input.report : undefined;
+      const completedAt = parsed.input.completed_at;
+      const diagnosticValue = parsed.input.diagnostic;
+      let diagnostic: LaunchDiagnostic | undefined;
+      if (isRecord(diagnosticValue)) {
+        const stage = singleLineString(diagnosticValue.stage);
+        const exitCode = nonNegativeInteger(diagnosticValue.exit_code);
+        const stderr =
+          typeof diagnosticValue.stderr === "string" ? diagnosticValue.stderr : undefined;
+        if (stage !== undefined && exitCode !== undefined && stderr !== undefined) {
+          diagnostic = { stage, exitCode, stderr };
+        }
+      }
+      if (
+        statePath === undefined ||
+        artifactPath === undefined ||
+        (status !== "completed" && status !== "infrastructure_failed") ||
+        !isUtcIsoTimestamp(completedAt) ||
+        (status === "completed" && (report === undefined || report.trim().length === 0)) ||
+        (status === "completed" && diagnosticValue !== null && diagnosticValue !== undefined) ||
+        (status === "infrastructure_failed" && diagnostic === undefined) ||
+        (status === "infrastructure_failed" && report !== undefined)
+      ) {
+        return yield* invalidRequest(
+          "`review.launch.record` requires state_path, artifact_path, completed_at, and either a complete report or an infrastructure diagnostic.",
+          operation,
+        );
+      }
+      return {
+        schemaVersion: CONTRACT_SCHEMA_VERSION,
+        operation,
+        input: { statePath, artifactPath, status, report, diagnostic, completedAt },
+      };
+    }
+
+    if (operation === "review.policy.prepare") {
+      const statePath = nonEmptyString(parsed.input.state_path);
+      const instructionFiles = stringArray(parsed.input.instruction_files);
+      const ciFiles = stringArray(parsed.input.ci_files);
+      const safetyConstraints = stringArray(parsed.input.safety_constraints);
+      const gatesValue = parsed.input.gates;
+      const gates = Array.isArray(gatesValue)
+        ? gatesValue.flatMap((value) => {
+            if (!isRecord(value)) return [];
+            const name = singleLineString(value.name);
+            const argv = stringArray(value.argv);
+            return name === undefined || argv === undefined || argv.length === 0
+              ? []
+              : [{ name, argv }];
+          })
+        : undefined;
+      const noExecutableGates = parsed.input.no_executable_gates === true;
+      const noAdditionalSafetyConstraints = parsed.input.no_additional_safety_constraints === true;
+      const gateNames = gates?.map((gate) => gate.name) ?? [];
+      if (
+        statePath === undefined ||
+        instructionFiles === undefined ||
+        instructionFiles.length === 0 ||
+        ciFiles === undefined ||
+        safetyConstraints === undefined ||
+        gates === undefined ||
+        gates.length !== (Array.isArray(gatesValue) ? gatesValue.length : -1) ||
+        new Set(gateNames).size !== gateNames.length ||
+        (gates.length === 0) === !noExecutableGates ||
+        (safetyConstraints.length === 0) === !noAdditionalSafetyConstraints
+      ) {
+        return yield* invalidRequest(
+          "`review.policy.prepare` requires authoritative instruction files, explicit CI files, unique exact gate argv arrays or no_executable_gates, and explicit safety constraints or no_additional_safety_constraints.",
+          operation,
+        );
+      }
+      return {
+        schemaVersion: CONTRACT_SCHEMA_VERSION,
+        operation,
+        input: {
+          statePath,
+          instructionFiles,
+          ciFiles,
+          gates,
+          noExecutableGates,
+          safetyConstraints,
+          noAdditionalSafetyConstraints,
         },
       };
     }

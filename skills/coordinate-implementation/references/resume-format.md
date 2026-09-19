@@ -79,6 +79,29 @@ Coordinator ownership:
 }
 ```
 
+## Review policy
+
+```json
+{
+  "instruction_files": ["CLAUDE.md"],
+  "ci_files": [".github/workflows/ci.yml"],
+  "gates": [
+    { "name": "format", "argv": ["bun", "run", "format:check"] },
+    { "name": "test", "argv": ["bun", "test"] }
+  ],
+  "no_executable_gates": false,
+  "safety_constraints": ["Do not push."],
+  "no_additional_safety_constraints": false,
+  "gate_execution": {
+    "claude": "background-allowed",
+    "pi": "synchronous"
+  },
+  "self_review": "matt-implement",
+  "max_infrastructure_attempts": 3,
+  "retry_delays_seconds": [1, 2]
+}
+```
+
 ## Tickets
 
 | NN  | harness | model         | effort | rounds | esc | status  | sha     |
@@ -143,6 +166,12 @@ Last diagnostic: none
 }
 ```
 
+## Review evidence
+
+- Ticket 01 round 0 standards attempt 1: accepted; reviewer {"harness":"claude","model":"sonnet","effort":"medium"}; report /run/reviews/01-round-0-standards-attempt-1.md
+- Ticket 01 round 0 spec attempt 1: accepted; reviewer {"harness":"claude","model":"sonnet","effort":"medium"}; report /run/reviews/01-round-0-spec-attempt-1.md
+- Ticket 01 round 0 finalized: PASS; self-review /run/reviews/01-round-0-self-review.md; Standards /run/reviews/01-round-0-standards-attempt-1.md; Spec /run/reviews/01-round-0-spec-attempt-1.md
+
 ## Decisions
 
 - 2026-09-11 snapshot revision sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef accepted (initial; writeback: none)
@@ -195,6 +224,20 @@ tool is an error, not permission to change `kind`.
 When commit instructions are absent, `commit.commits` is `multiple` and
 `commit.fixes` is `append`. `remote: local-only` means no fetch or other network
 synchronization is assumed.
+
+### `## Review policy`
+
+Managed by `review.policy.prepare` before any active ticket exists. It records
+the exact gate argv arrays, the repository instruction and CI sources that
+authorized them, and resolved project safety constraints. Empty gates and empty
+safety constraints require explicit `no_*` declarations, so missing discovery
+cannot masquerade as a completed policy.
+
+The policy fixes three infrastructure attempts and bounded delays. Claude may
+use its supported background command facility for long gates; Pi is always
+synchronous through its normal shell tool. `self_review` is the run-wide default
+for future implementors, while round finalization validates against the role
+actually bound to the ticket.
 
 ### `Coordinator:`
 
@@ -318,6 +361,15 @@ forbids remote writes overrides `final` and `live`. See
 [normalized-snapshot.md](normalized-snapshot.md) for the manifest, acceptance,
 and revision rules.
 
+### `## Review evidence`
+
+Append-only review provenance. Each reviewer attempt records ticket, round,
+axis, attempt, status, the exact bound Reviewer role, and the run-local report
+path. Round finalization adds the implementor self-review and both accepted axis
+report references. Complete Markdown reports and JSON sidecars remain under the
+run directory across every fix round. Contaminated and malformed attempts stay
+in this history and are never replaced by later accepted attempts.
+
 ### `## Decisions`
 
 Append-only, dated. The record above is overwritten in place so it always
@@ -413,6 +465,7 @@ cannot launch:
 - `Coordinator ownership` is missing, malformed, lacks its bound role record,
   or names the invoking pane as a successor claim.
 - repository policy is absent before worktree creation.
+- review policy is absent, unresolved, or was prepared after worker launch.
 - a prescribed worktree tool is unavailable.
 - Pi's explicit `implement` skill path is absent or not a file.
 

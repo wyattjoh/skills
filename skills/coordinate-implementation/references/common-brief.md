@@ -2,9 +2,12 @@
 
 Copy this template to the run folder when absent. Before launching a worker,
 replace every angle-bracket placeholder and delete inapplicable bullets. Derive
-the values from repository instructions, CI configuration, task runners,
-package manifests, and the spec. Do not guess a command or safety rule. Ask the
-user when authoritative sources conflict or leave a required choice unresolved.
+the values from repository instructions and CI configuration, using task runners
+or package manifests only when those authoritative sources name them. Do not
+guess a command or safety rule from the detected toolchain. Ask the user when
+authoritative sources conflict or leave a required choice unresolved. Persist
+the same sources, exact gate argv arrays, and resolved safety constraints with
+`review.policy.prepare` before launching a worker.
 
 ```markdown
 # Implementation brief (shared)
@@ -34,13 +37,17 @@ Implementation rules:
 
 Verification:
 
+- Gate sources: <repository instruction and CI paths that authorize the commands>.
 - During implementation, run: <targeted or incremental verification commands>.
 - Before committing, run these required final gates exactly:
-  1. `<final gate command 1>`
-  2. `<final gate command 2>`
+  1. `<final gate argv 1 rendered for humans>`
+  2. `<final gate argv 2 rendered for humans>`
 - If the repository defines no executable gate, replace this list with:
-  > No repository gate was found; verify the ticket manually against its
-  > acceptance criteria.
+  > No executable repository gate is defined by the listed instructions or CI;
+  > verify the ticket manually against its acceptance criteria.
+- A Claude implementor completes Matt's `implement` self-review before handing
+  off. A Pi implementor completes `## Standards` and `## Spec` in this same
+  session; do not require a subagent extension.
 
 Project-specific safety constraints:
 
@@ -64,7 +71,8 @@ Git and completion:
   acceptance checkbox you could not satisfy with the reason.
 - If genuinely blocked on a decision only the human can make, print
   `TICKET BLOCKED <ticket-number>: <question>` and stop.
-- A reviewer may send follow-up fixes in this session. Apply the recorded fix
-  commit policy, rerun the required gates, then print `FIXES DONE
-<ticket-number>`.
+- A reviewer may send one consolidated follow-up request containing every
+  actionable Standards and Spec finding. Apply the recorded fix-commit policy,
+  rerun all required gates and this harness's self-review, then print
+  `FIXES DONE <ticket-number>`.
 ```
