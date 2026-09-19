@@ -231,6 +231,168 @@ catalog, and Claude custom values are not provider-qualified. An agreeing
 suffix is rejected. Failure returns the rejected value and never a substituted
 record.
 
+## `worktree.preflight`
+
+After resolving repository policy from authoritative instructions, run this
+read-only preflight before creating or mutating RESUME.md and before creating a
+worktree:
+
+```json
+{
+  "schema_version": 1,
+  "operation": "worktree.preflight",
+  "input": {
+    "policy": {
+      "instruction_files": ["CLAUDE.md"],
+      "worktree": {
+        "kind": "repository",
+        "tool": "repo-worktrees",
+        "root": null,
+        "create_argv": ["repo-worktrees", "create", "feature/ticket-04"]
+      },
+      "branch_naming": "feature/ticket-NN",
+      "setup_argvs": [],
+      "cleanup": "repository",
+      "remote": "local-only",
+      "commit": null
+    }
+  }
+}
+```
+
+The operation verifies the exact required worktree executable and that a
+repository create array invokes that tool. An unavailable prescribed tool fails
+with `worktree.tool_unavailable`; native Git is never selected as a substitute.
+This policy-aware check is separate from the generic baseline `preflight`,
+which remains unchanged and runs before initial setup.
+
+## `worktree.prepare`
+
+Resolve and persist repository policy before creating one ticket worktree. The
+coordinator must read repository instructions first and pass every governing
+instruction path. A repository-prescribed tool is required exactly as recorded;
+if it is unavailable, the operation fails without native Git fallback.
+
+When no lifecycle tool is prescribed, pass `kind: native`, `tool: null`, a
+user-selected `root`, and `create_argv: null`. Native Git runs with inherited
+repository-location variables removed. A null commit policy resolves to
+`commits: multiple` and `fixes: append`.
+
+```json
+{
+  "schema_version": 1,
+  "operation": "worktree.prepare",
+  "input": {
+    "state_path": ".scratch/example/RESUME.md",
+    "repository_path": "/repo",
+    "base_branch": "main",
+    "branch": "feature/ticket-04",
+    "worktree_name": "ticket-04",
+    "policy": {
+      "instruction_files": ["CLAUDE.md"],
+      "worktree": {
+        "kind": "native",
+        "tool": null,
+        "root": "/worktrees/example",
+        "create_argv": null
+      },
+      "branch_naming": "feature/ticket-NN",
+      "setup_argvs": [],
+      "cleanup": "native-safe",
+      "remote": "local-only",
+      "commit": null
+    }
+  }
+}
+```
+
+A repository tool uses `kind: repository`, names `tool`, supplies its exact
+`create_argv`, and adds `expected_worktree_path` to the operation input. Setup
+commands are also arrays and run only after the worktree path and branch have
+been verified. Success returns the normalized durable policy and the actual
+path, branch, base, and creation or recovery status.
+
+## `implementor.launch.prepare`
+
+Validate one ticket's role against both the installed harness and the persisted
+run-wide `Implementor:` record, validate its worktree, construct exact Herdr and
+harness argument arrays, write the run-local JSON launch artifact, and
+atomically persist runtime provenance before process launch. Artifact
+containment uses canonical paths, so a run-local symlink cannot redirect a
+launch outside the run.
+
+```json
+{
+  "schema_version": 1,
+  "operation": "implementor.launch.prepare",
+  "input": {
+    "state_path": ".scratch/example/RESUME.md",
+    "artifact_path": ".scratch/example/briefs/launch-04.json",
+    "ticket": "04",
+    "worktree_path": "/worktrees/example/ticket-04",
+    "branch": "feature/ticket-04",
+    "session": "example-04",
+    "tab": "implement example 04",
+    "pane": "w1:p4",
+    "role": {
+      "harness": "pi",
+      "model": "openai-codex/gpt-5.6-sol",
+      "effort": "high"
+    },
+    "implement_skill_path": "/home/user/.pi/agent/skills/implement/SKILL.md",
+    "prompt": "You are implementing ticket 04...",
+    "attempt": 1,
+    "max_attempts": 3
+  }
+}
+```
+
+Pi requires `implement_skill_path`; Claude requires null. Pi start arguments
+include project approval and the explicit required skill. Claude uses its
+automatic permission mode and the `/implement` prompt prefix. The result's
+`launch.start` and `launch.prompt` are `{command, args}` objects. Execute them
+as arrays without shell interpolation.
+
+The active runtime writes its ticket-bound `Implementor:` role as compact JSON
+with exactly `harness`, `model`, and `effort`. Recovery parses that JSON instead
+of splitting display text, so custom Claude model values containing spaces are
+preserved byte-for-byte.
+
+Preparing the same bound attempt is idempotent and returns `recovered: true`.
+A different persisted role, worktree, branch, required skill path, or
+incompatible attempt conflicts with the durable runtime instead of rewriting
+it. Failed validation leaves state unchanged and removes a newly created
+artifact; an identical artifact that existed before the attempt is preserved.
+
+## `implementor.launch.record`
+
+Persist the observed result after executing the prepared start and prompt
+arrays. Success records `working`. Failure requires an exact diagnostic and
+records `blocked` plus `Phase: launch failed` without removing the runtime or
+changing its role.
+
+```json
+{
+  "schema_version": 1,
+  "operation": "implementor.launch.record",
+  "input": {
+    "state_path": ".scratch/example/RESUME.md",
+    "ticket": "04",
+    "attempt": 1,
+    "status": "failed",
+    "diagnostic": {
+      "stage": "prompt",
+      "exit_code": 17,
+      "stderr": "agent rejected the request"
+    }
+  }
+}
+```
+
+Use `diagnostic: null` with `status: started`. A later retry increments
+`attempt` but keeps the bound harness, model, effort, worktree, branch, and
+exact required implement skill path.
+
 ## Coordinator ownership operations
 
 `Coordinator ownership:` in RESUME.md contains `generation`, `pane`,

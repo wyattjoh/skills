@@ -9,10 +9,12 @@ import {
   type CoordinateResponse,
 } from "./lib/contract.ts";
 import { claimCoordinator, markCoordinatorReady, verifyCoordinator } from "./lib/coordinator.ts";
+import { prepareImplementorLaunch, recordImplementorLaunch } from "./lib/implementor.ts";
 import { runPreflight } from "./lib/preflight.ts";
 import { discoverRoles, validateRole } from "./lib/roles.ts";
 import { acceptSnapshot, checkSnapshot } from "./lib/snapshot.ts";
 import { validateStateFile } from "./lib/state.ts";
+import { preflightWorktreePolicy, prepareWorktree } from "./lib/worktrees.ts";
 
 const readStdin = (): Effect.Effect<string, RequestError> =>
   Effect.tryPromise({
@@ -85,6 +87,46 @@ const execute = (request: CoordinateRequest): Effect.Effect<number, never> =>
         return 1;
       }
       print(successResponse(request.operation, outcome.result));
+      return 0;
+    }
+
+    if (request.operation === "worktree.preflight") {
+      const outcome = yield* Effect.either(preflightWorktreePolicy(request.input));
+      if (Either.isLeft(outcome)) {
+        print(failureResponse(request.operation, [outcome.left.issue], null));
+        return 1;
+      }
+      print(successResponse(request.operation, outcome.right));
+      return 0;
+    }
+
+    if (request.operation === "worktree.prepare") {
+      const outcome = yield* Effect.either(prepareWorktree(request.input));
+      if (Either.isLeft(outcome)) {
+        print(failureResponse(request.operation, [outcome.left.issue], null));
+        return 1;
+      }
+      print(successResponse(request.operation, outcome.right));
+      return 0;
+    }
+
+    if (request.operation === "implementor.launch.prepare") {
+      const outcome = yield* Effect.either(prepareImplementorLaunch(request.input));
+      if (Either.isLeft(outcome)) {
+        print(failureResponse(request.operation, [outcome.left.issue], null));
+        return 1;
+      }
+      print(successResponse(request.operation, outcome.right));
+      return 0;
+    }
+
+    if (request.operation === "implementor.launch.record") {
+      const outcome = yield* Effect.either(recordImplementorLaunch(request.input));
+      if (Either.isLeft(outcome)) {
+        print(failureResponse(request.operation, [outcome.left.issue], null));
+        return 1;
+      }
+      print(successResponse(request.operation, outcome.right));
       return 0;
     }
 

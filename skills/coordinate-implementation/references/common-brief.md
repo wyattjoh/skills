@@ -51,14 +51,20 @@ Project-specific safety constraints:
 
 Git and completion:
 
-- Commit exactly one conventional commit on the current branch, not the
-  integration branch. Never push or perform remote writes. Stage only intended
+- Follow the resolved repository commit policy: <commit shape and fix-round
+  behavior from the persisted Repository policy record>. When repository
+  instructions are silent, multiple commits are allowed and fix rounds append
+  commits.
+- Commit on the current branch, not the integration branch. Never push or
+  perform remote writes unless the repository policy and persisted tracker
+  writeback mode explicitly authorize that exact action. Stage only intended
   files.
-- When completely finished and the commit exists, print a final line exactly:
-  `TICKET DONE <ticket-number>`, followed by a short summary and any acceptance
-  checkbox you could not satisfy with the reason.
+- When completely finished and the required commits exist, print a final line
+  exactly: `TICKET DONE <ticket-number>`, followed by a short summary and any
+  acceptance checkbox you could not satisfy with the reason.
 - If genuinely blocked on a decision only the human can make, print
   `TICKET BLOCKED <ticket-number>: <question>` and stop.
-- A reviewer may send follow-up fixes in this session. Amend the single commit,
-  rerun the required gates, then print `FIXES DONE <ticket-number>`.
+- A reviewer may send follow-up fixes in this session. Apply the recorded fix
+  commit policy, rerun the required gates, then print `FIXES DONE
+<ticket-number>`.
 ```

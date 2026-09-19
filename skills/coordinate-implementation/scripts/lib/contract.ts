@@ -17,7 +17,11 @@ export type CoordinateOperation =
   | "coordinator.ready"
   | "coordinator.verify"
   | "snapshot.check"
-  | "snapshot.accept";
+  | "snapshot.accept"
+  | "worktree.preflight"
+  | "worktree.prepare"
+  | "implementor.launch.prepare"
+  | "implementor.launch.record";
 
 /**
  * Harnesses supported for coordinator, implementor, and reviewer sessions.
@@ -121,6 +125,91 @@ export type CoordinatorVerifyInput = {
 };
 
 /**
+ * Commit-shape defaults resolved from repository instructions.
+ */
+export type CommitPolicy = {
+  commits: "multiple" | "single" | "squash";
+  fixes: "append" | "amend" | "squash";
+};
+
+/**
+ * Repository-directed worktree and Git policy persisted before creation.
+ */
+export type RepositoryPolicy = {
+  instructionFiles: string[];
+  worktree: {
+    kind: "native" | "repository";
+    tool: string;
+    root: string | undefined;
+    createArgv: string[] | undefined;
+  };
+  branchNaming: string;
+  setupArgvs: string[][];
+  cleanup: "native-safe" | "repository";
+  remote: "local-only" | "repository";
+  commit: CommitPolicy;
+};
+
+/**
+ * Input for checking repository worktree policy before creating state.
+ */
+export type WorktreePreflightInput = {
+  policy: RepositoryPolicy;
+};
+
+/**
+ * Input for preparing one policy-compliant ticket worktree.
+ */
+export type WorktreePrepareInput = {
+  statePath: string;
+  repositoryPath: string;
+  baseBranch: string;
+  branch: string;
+  worktreeName: string;
+  expectedWorktreePath: string | undefined;
+  policy: RepositoryPolicy;
+};
+
+/**
+ * Input for constructing and persisting one implementor launch plan.
+ */
+export type ImplementorLaunchPrepareInput = {
+  statePath: string;
+  artifactPath: string;
+  ticket: string;
+  worktreePath: string;
+  branch: string;
+  session: string;
+  tab: string;
+  pane: string;
+  role: RoleRecord;
+  implementSkillPath: string | undefined;
+  prompt: string;
+  attempt: number;
+  maxAttempts: number;
+};
+
+/**
+ * Exact diagnostic captured from one failed launch stage.
+ */
+export type LaunchDiagnostic = {
+  stage: string;
+  exitCode: number;
+  stderr: string;
+};
+
+/**
+ * Input for persisting the observed outcome of a prepared implementor launch.
+ */
+export type ImplementorLaunchRecordInput = {
+  statePath: string;
+  ticket: string;
+  attempt: number;
+  status: "started" | "failed";
+  diagnostic: LaunchDiagnostic | undefined;
+};
+
+/**
  * A validated schema-version-1 request accepted by the helper.
  */
 export type CoordinateRequest =
@@ -168,6 +257,26 @@ export type CoordinateRequest =
       schemaVersion: typeof CONTRACT_SCHEMA_VERSION;
       operation: "coordinator.verify";
       input: CoordinatorVerifyInput;
+    }
+  | {
+      schemaVersion: typeof CONTRACT_SCHEMA_VERSION;
+      operation: "worktree.preflight";
+      input: WorktreePreflightInput;
+    }
+  | {
+      schemaVersion: typeof CONTRACT_SCHEMA_VERSION;
+      operation: "worktree.prepare";
+      input: WorktreePrepareInput;
+    }
+  | {
+      schemaVersion: typeof CONTRACT_SCHEMA_VERSION;
+      operation: "implementor.launch.prepare";
+      input: ImplementorLaunchPrepareInput;
+    }
+  | {
+      schemaVersion: typeof CONTRACT_SCHEMA_VERSION;
+      operation: "implementor.launch.record";
+      input: ImplementorLaunchRecordInput;
     };
 
 /**
@@ -234,6 +343,87 @@ const paneId = (value: unknown): string | undefined => {
 const nonNegativeInteger = (value: unknown): number | undefined =>
   typeof value === "number" && Number.isInteger(value) && value >= 0 ? value : undefined;
 
+const positiveInteger = (value: unknown): number | undefined =>
+  typeof value === "number" && Number.isInteger(value) && value > 0 ? value : undefined;
+
+const stringArray = (value: unknown): string[] | undefined =>
+  Array.isArray(value) &&
+  value.every((item) => typeof item === "string" && item.length > 0 && !/[\r\n]/u.test(item))
+    ? value
+    : undefined;
+
+const commandArrays = (value: unknown): string[][] | undefined => {
+  if (!Array.isArray(value)) return undefined;
+  const commands = value.map(stringArray);
+  return commands.every((command) => command !== undefined) ? (commands as string[][]) : undefined;
+};
+
+const parseRepositoryPolicy = (value: unknown): RepositoryPolicy | undefined => {
+  if (!isRecord(value) || !isRecord(value.worktree)) return undefined;
+  const instructionFiles = stringArray(value.instruction_files);
+  const branchNaming = singleLineString(value.branch_naming);
+  const setupArgvs = commandArrays(value.setup_argvs);
+  const kind = value.worktree.kind;
+  const rootValue = value.worktree.root;
+  const createValue = value.worktree.create_argv;
+  if (
+    instructionFiles === undefined ||
+    instructionFiles.length === 0 ||
+    branchNaming === undefined ||
+    setupArgvs === undefined ||
+    (kind !== "native" && kind !== "repository") ||
+    (value.cleanup !== "native-safe" && value.cleanup !== "repository") ||
+    (value.remote !== "local-only" && value.remote !== "repository")
+  ) {
+    return undefined;
+  }
+
+  const root = typeof rootValue === "string" && rootValue.length > 0 ? rootValue : undefined;
+  const createArgv = stringArray(createValue);
+  const toolValue = value.worktree.tool;
+  if (kind === "native") {
+    if (toolValue !== null || root === undefined || createValue !== null) return undefined;
+  } else if (
+    typeof toolValue !== "string" ||
+    toolValue.length === 0 ||
+    createArgv === undefined ||
+    createArgv.length === 0
+  ) {
+    return undefined;
+  }
+
+  let commit: CommitPolicy;
+  if (value.commit === null || value.commit === undefined) {
+    commit = { commits: "multiple", fixes: "append" };
+  } else {
+    if (!isRecord(value.commit)) return undefined;
+    const commits = value.commit.commits;
+    const fixes = value.commit.fixes;
+    if (
+      (commits !== "multiple" && commits !== "single" && commits !== "squash") ||
+      (fixes !== "append" && fixes !== "amend" && fixes !== "squash")
+    ) {
+      return undefined;
+    }
+    commit = { commits, fixes };
+  }
+
+  return {
+    instructionFiles,
+    worktree: {
+      kind,
+      tool: kind === "native" ? "git" : (toolValue as string),
+      root,
+      createArgv: kind === "native" ? undefined : createArgv,
+    },
+    branchNaming,
+    setupArgvs,
+    cleanup: value.cleanup,
+    remote: value.remote,
+    commit,
+  };
+};
+
 const parseRoleRecord = (value: unknown): RoleRecord | undefined => {
   if (!isRecord(value)) return undefined;
   if (value.harness !== "claude" && value.harness !== "pi") return undefined;
@@ -294,6 +484,10 @@ export const parseRequest = (raw: string): Effect.Effect<CoordinateRequest, Requ
       "coordinator.verify",
       "snapshot.check",
       "snapshot.accept",
+      "worktree.preflight",
+      "worktree.prepare",
+      "implementor.launch.prepare",
+      "implementor.launch.record",
     ];
     if (operation === null || !operations.includes(operation as CoordinateOperation)) {
       return yield* invalidRequest(
@@ -416,6 +610,160 @@ export const parseRequest = (raw: string): Effect.Effect<CoordinateRequest, Requ
         schemaVersion: CONTRACT_SCHEMA_VERSION,
         operation,
         input: { role: parsed.input.role as RoleName, triple, record },
+      };
+    }
+
+    if (operation === "worktree.preflight") {
+      const policy = parseRepositoryPolicy(parsed.input.policy);
+      if (policy === undefined) {
+        return yield* invalidRequest(
+          "`worktree.preflight` requires a complete repository policy.",
+          operation,
+        );
+      }
+      return {
+        schemaVersion: CONTRACT_SCHEMA_VERSION,
+        operation,
+        input: { policy },
+      };
+    }
+
+    if (operation === "worktree.prepare") {
+      const statePath = nonEmptyString(parsed.input.state_path);
+      const repositoryPath = nonEmptyString(parsed.input.repository_path);
+      const baseBranch = singleLineString(parsed.input.base_branch);
+      const branch = singleLineString(parsed.input.branch);
+      const worktreeName = singleLineString(parsed.input.worktree_name);
+      const expectedPathValue = parsed.input.expected_worktree_path;
+      const expectedWorktreePath =
+        typeof expectedPathValue === "string" && expectedPathValue.length > 0
+          ? expectedPathValue
+          : undefined;
+      const policy = parseRepositoryPolicy(parsed.input.policy);
+      if (
+        statePath === undefined ||
+        repositoryPath === undefined ||
+        baseBranch === undefined ||
+        branch === undefined ||
+        worktreeName === undefined ||
+        policy === undefined ||
+        (policy.worktree.kind === "repository" && expectedWorktreePath === undefined)
+      ) {
+        return yield* invalidRequest(
+          "`worktree.prepare` requires state_path, repository_path, base_branch, branch, worktree_name, and a complete repository policy; repository tools also require expected_worktree_path.",
+          operation,
+        );
+      }
+      return {
+        schemaVersion: CONTRACT_SCHEMA_VERSION,
+        operation,
+        input: {
+          statePath,
+          repositoryPath,
+          baseBranch,
+          branch,
+          worktreeName,
+          expectedWorktreePath,
+          policy,
+        },
+      };
+    }
+
+    if (operation === "implementor.launch.prepare") {
+      const statePath = nonEmptyString(parsed.input.state_path);
+      const artifactPath = nonEmptyString(parsed.input.artifact_path);
+      const ticket = singleLineString(parsed.input.ticket);
+      const worktreePath = nonEmptyString(parsed.input.worktree_path);
+      const branch = singleLineString(parsed.input.branch);
+      const session = singleLineString(parsed.input.session);
+      const tab = singleLineString(parsed.input.tab);
+      const pane = paneId(parsed.input.pane);
+      const role = parseRoleRecord(parsed.input.role);
+      const skillValue = parsed.input.implement_skill_path;
+      const implementSkillPath =
+        typeof skillValue === "string" && skillValue.length > 0 ? skillValue : undefined;
+      const prompt = typeof parsed.input.prompt === "string" ? parsed.input.prompt : undefined;
+      const attempt = positiveInteger(parsed.input.attempt);
+      const maxAttempts = positiveInteger(parsed.input.max_attempts);
+      if (
+        statePath === undefined ||
+        artifactPath === undefined ||
+        ticket === undefined ||
+        !/^\d{2}$/u.test(ticket) ||
+        worktreePath === undefined ||
+        branch === undefined ||
+        session === undefined ||
+        tab === undefined ||
+        pane === undefined ||
+        role === undefined ||
+        prompt === undefined ||
+        prompt.length === 0 ||
+        attempt === undefined ||
+        maxAttempts === undefined ||
+        attempt > maxAttempts ||
+        (role.harness === "pi" && implementSkillPath === undefined) ||
+        (role.harness === "claude" && skillValue !== null && skillValue !== undefined)
+      ) {
+        return yield* invalidRequest(
+          "`implementor.launch.prepare` requires a two-digit ticket, runtime identifiers, role, prompt, valid attempt bounds, and an explicit implement_skill_path only for Pi.",
+          operation,
+        );
+      }
+      return {
+        schemaVersion: CONTRACT_SCHEMA_VERSION,
+        operation,
+        input: {
+          statePath,
+          artifactPath,
+          ticket,
+          worktreePath,
+          branch,
+          session,
+          tab,
+          pane,
+          role,
+          implementSkillPath,
+          prompt,
+          attempt,
+          maxAttempts,
+        },
+      };
+    }
+
+    if (operation === "implementor.launch.record") {
+      const statePath = nonEmptyString(parsed.input.state_path);
+      const ticket = singleLineString(parsed.input.ticket);
+      const attempt = positiveInteger(parsed.input.attempt);
+      const status = parsed.input.status;
+      const diagnosticValue = parsed.input.diagnostic;
+      let diagnostic: LaunchDiagnostic | undefined;
+      if (isRecord(diagnosticValue)) {
+        const stage = singleLineString(diagnosticValue.stage);
+        const exitCode = nonNegativeInteger(diagnosticValue.exit_code);
+        const stderr =
+          typeof diagnosticValue.stderr === "string" ? diagnosticValue.stderr : undefined;
+        if (stage !== undefined && exitCode !== undefined && stderr !== undefined) {
+          diagnostic = { stage, exitCode, stderr };
+        }
+      }
+      if (
+        statePath === undefined ||
+        ticket === undefined ||
+        !/^\d{2}$/u.test(ticket) ||
+        attempt === undefined ||
+        (status !== "started" && status !== "failed") ||
+        (status === "failed" && diagnostic === undefined) ||
+        (status === "started" && diagnosticValue !== null && diagnosticValue !== undefined)
+      ) {
+        return yield* invalidRequest(
+          "`implementor.launch.record` requires state_path, a two-digit ticket, a positive attempt, status `started` or `failed`, and a diagnostic only for failure.",
+          operation,
+        );
+      }
+      return {
+        schemaVersion: CONTRACT_SCHEMA_VERSION,
+        operation,
+        input: { statePath, ticket, attempt, status, diagnostic },
       };
     }
 

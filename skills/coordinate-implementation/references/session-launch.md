@@ -1,190 +1,200 @@
-# Starting and monitoring an implementor session
+# Starting an implementor session
 
-All paths below: `<repo>` is the main checkout, `<base checkout>` holds the
-integration branch, `<run>` is `.scratch/<slug>`, `<prefix>` is a short run tag
-(for example `dcs`), and `<ws>` is the herdr workspace id from
-`herdr pane list`.
+All paths below: `<repo>` is the repository root, `<run>` is the run folder,
+`<base>` is the local integration branch, and `NN` is the zero-padded ticket.
 
-## 1. Worktree
+The coordinator performs every mechanical step through the versioned helper
+contract in [helper-cli.md](helper-cli.md). It never assembles a shell command
+for a harness process.
 
-The lifecycle follows the **coordinator's** harness, not the implementor
-record bound to the ticket.
+## 1. Resolve repository policy
 
-### Claude Code coordinator
+Before creating any worktree, read the repository instruction files that govern:
 
-With the Claude Code session rooted at `<base checkout>`, call
-`EnterWorktree`. Record the generated path as `<worktree>` and its generated
-`worktree-*` branch as `<branch>`. Do not assume either name, and do not run
-raw `git worktree` commands or Pando from Claude Code.
+- worktree tooling and root;
+- branch naming;
+- setup and cleanup;
+- remote synchronization;
+- commit shape and rewrite policy.
 
-Claude Code's configured `worktree.baseRef` must create the ticket from
-`<base>`. Verify that `<base>` is an ancestor of `<branch>` before launching
-the implementor. If it is not, exit and remove the invalid worktree, then stop
-and ask the user to correct the base configuration rather than silently using
-the wrong branch.
+Repository instructions are authoritative. Pass their paths in
+`policy.instruction_files` so the accepted resolution is inspectable in
+RESUME.md.
 
-### Pi coordinator
+When the instructions prescribe a worktree tool, pass `kind: repository`, the
+required tool, and its exact create argument array. The helper verifies that the
+tool is available and invokes only that array. An unavailable required tool
+stops the ticket. Never replace it with native Git.
 
-Load the `pando` skill. Render `Branch template:` from RESUME.md by replacing
-`<prefix>`, `NN`, and `<slug>`, then create that exact branch from
-`<base checkout>` and capture the returned worktree path:
+When the instructions do not prescribe a lifecycle tool, ask the user for a
+worktree root during initial setup and pass `kind: native`. The helper uses
+`git worktree add` with a sanitized environment. It does not assume an
+optional worktree product, a remote, or a directory layout.
 
-```sh
-printf '%s\n' '{"schema_version":1,"input":{"branch":"<rendered-branch>","description":"Implement ticket NN for the <slug> run"}}' \
-  | pando create --input-output json
+When repository instructions do not define commit shape, pass `commit: null`.
+The helper records the portable defaults:
+
+- multiple commits are allowed;
+- fix rounds append commits.
+
+Repository policy may instead resolve `single` or `squash` commit shape and
+`amend` or `squash` fix behavior. Record the resolved values, do not infer them
+again during review.
+
+After resolving this policy, invoke `worktree.preflight` with the complete
+`policy` object. It is read-only and must succeed before RESUME.md or any
+worktree is created. A missing repository-required tool stops here without
+native fallback.
+
+Then invoke `worktree.prepare`:
+
+```json
+{
+  "schema_version": 1,
+  "operation": "worktree.prepare",
+  "input": {
+    "state_path": ".scratch/example/RESUME.md",
+    "repository_path": "/repo",
+    "base_branch": "main",
+    "branch": "feature/ticket-04",
+    "worktree_name": "ticket-04",
+    "policy": {
+      "instruction_files": ["CLAUDE.md"],
+      "worktree": {
+        "kind": "native",
+        "tool": null,
+        "root": "/worktrees/example",
+        "create_argv": null
+      },
+      "branch_naming": "feature/ticket-NN",
+      "setup_argvs": [],
+      "cleanup": "native-safe",
+      "remote": "local-only",
+      "commit": null
+    }
+  }
+}
 ```
 
-Use the response branch as `<branch>` and response path as `<worktree>`. Pi
-uses Pando for the entire worktree lifecycle, never raw `git worktree`
-commands.
+For repository tooling, also pass `expected_worktree_path`. The helper validates
+that the prescribed command produced the requested branch at that exact path.
+On retry, an already matching worktree is recovered rather than recreated.
 
-When `<base>` is not `main` and no checkout holds it yet, Pi uses
-`pando switch <base>` and captures the printed path. Claude Code's native tool
-cannot attach a new worktree to an arbitrary existing branch by name, so stop
-and ask the user to provide the base checkout rather than falling back to raw
-Git or Pando.
+## 2. Create the Herdr tab
 
-## 2. Tab
+Create the worker tab at the prepared worktree so the harness starts in the
+correct project:
 
-```sh
-herdr tab create --workspace <ws> --label "claude <prefix> NN <slug>" --no-focus
+```text
+herdr tab create --workspace <workspace> --cwd <worktree> --label "implement <prefix> NN <slug>" --no-focus
 ```
 
-Parse `root_pane.pane_id` from the JSON result.
+Use the machine-readable result to capture the actual tab and root pane ids.
+Do not guess compact Herdr ids.
 
-## 3. Launch
+## 3. Prepare a shell-free launch
 
-Write the launch line to `<run>/briefs/launch-NN.sh` with the Write tool (a
-full inline line overflows the pane). Before running it, set the ticket row to
-`working` and create its `## Active tickets` block with the actual worktree,
-branch, session name, tab label, pane id, `Phase: launching`, the launch-script
-path, and `Monitor: not-armed`. Update RESUME.md and the coordinator registry
-before `herdr pane run <pane> "bash <repo>/<run>/briefs/launch-NN.sh"`. This
-write-before-launch order ensures a successor can recover every worker even if
-the coordinator exits during a parallel batch.
+Call `implementor.launch.prepare` with the actual worktree, branch, session,
+tab, and pane. The operation:
 
-Build the launch line from the ticket's **table row** in RESUME.md, never from
-the run-wide `Implementor:` and never from a value you remember. The row's
-`harness` chooses the binary and flag, and its `skills` render into the prompt
-prefix. The list must begin with `implement`, so every worker prompt begins
-with `/implement` for Claude or `/skill:implement` for Pi, followed by any
-additional skill prefixes and only then the prose prompt. See
-[resume-format.md](resume-format.md) for the vocabulary table. Prepend
-environment setup only when the resolved shared brief explicitly requires it.
-Otherwise launch with the worktree as the only environment assumption.
+1. validates the requested role against the installed harness and the run-wide
+   `Implementor:` record while holding the state lock;
+2. verifies the worktree and branch;
+3. constructs Herdr and harness argument arrays;
+4. writes an inspectable JSON launch artifact;
+5. binds the role into the ticket row;
+6. records the runtime block before any process starts, with `Implementor:` as
+   compact JSON containing exactly `harness`, `model`, and `effort`.
 
-```sh
-# harness: claude
-cd <worktree> && claude --model <model> --effort <effort> --permission-mode auto '/implement You are implementing ticket NN of the <slug> run. Read <repo>/<run>/briefs/common.md, <repo>/<run>/spec.md, and <repo>/<run>/issues/NN-<slug>.md first, then implement the ticket per the brief. Other unblocked tickets may be running in parallel. Work only in this worktree, do not depend on unlanded changes from another ticket, and stay within this ticket scope. IMPORTANT CONTEXT: <what earlier tickets already landed and what remains for this one>'
+The JSON role binding preserves custom model values byte-for-byte, including
+spaces, and recovery parses it structurally rather than splitting display text.
+
+Pi additionally requires the installed `implement/SKILL.md` path. The start
+array includes `--approve` and `--skill <path>`, and the prompt begins with
+`/skill:implement`. Claude Code uses `--permission-mode auto`, and its prompt
+begins with `/implement`. The required skill is fixed by the workflow and is
+not an arbitrary run preference.
+
+```json
+{
+  "schema_version": 1,
+  "operation": "implementor.launch.prepare",
+  "input": {
+    "state_path": ".scratch/example/RESUME.md",
+    "artifact_path": ".scratch/example/briefs/launch-04.json",
+    "ticket": "04",
+    "worktree_path": "/worktrees/example/ticket-04",
+    "branch": "feature/ticket-04",
+    "session": "example-04",
+    "tab": "implement example 04",
+    "pane": "w1:p4",
+    "role": {
+      "harness": "pi",
+      "model": "openai-codex/gpt-5.6-sol",
+      "effort": "high"
+    },
+    "implement_skill_path": "/home/user/.pi/agent/skills/implement/SKILL.md",
+    "prompt": "You are implementing ticket 04...",
+    "attempt": 1,
+    "max_attempts": 3
+  }
+}
 ```
 
-```sh
-# harness: pi
-cd <worktree> && pi --approve --model <provider>/<model> --thinking <effort> --skill <path-to-implement> '/skill:implement You are implementing ticket NN of the <slug> run. Read <repo>/<run>/briefs/common.md, <repo>/<run>/spec.md, and <repo>/<run>/issues/NN-<slug>.md first, then implement the ticket per the brief. Other unblocked tickets may be running in parallel. Work only in this worktree, do not depend on unlanded changes from another ticket, and stay within this ticket scope. IMPORTANT CONTEXT: <what earlier tickets already landed and what remains for this one>'
+The result contains two command objects, each with `command` and `args`. Execute
+them as process argument arrays in order: `launch.start`, then `launch.prompt`.
+Do not join, quote, interpolate, or pass them through `sh -c`. Paths, Unicode,
+apostrophes, leading dashes, and prompt text remain single arguments.
+
+## 4. Record the observed outcome
+
+After executing the two arrays, call `implementor.launch.record`.
+
+For success:
+
+```json
+{
+  "schema_version": 1,
+  "operation": "implementor.launch.record",
+  "input": {
+    "state_path": ".scratch/example/RESUME.md",
+    "ticket": "04",
+    "attempt": 1,
+    "status": "started",
+    "diagnostic": null
+  }
+}
 ```
 
-For each additional recorded skill, append its `--skill <path>` flag to the Pi
-command and its harness-specific prefix after the `implement` prefix. Keep the
-recorded order.
+For failure, pass `status: failed` and the exact stage, exit code, and stderr.
+The helper keeps the runtime block, marks the ticket blocked, and records
+`Phase: launch failed`. It never changes harness, model, effort, required skill,
+worktree, or branch.
 
-Never pass a non-Anthropic model to `claude`.
+A transient retry uses the same bound configuration and worktree with the next
+attempt number. The caller may retry at most three times according to the run's
+infrastructure retry policy. A retry is not permission to substitute a model or
+tool.
 
-**The two lines differ in three ways, not one.** Build each from the row's
-`harness`; do not adapt one into the other by swapping the binary:
+## 5. Recover a partial launch
 
-|             | `claude`                 | `pi`                                                        |
-| ----------- | ------------------------ | ----------------------------------------------------------- |
-| model       | `--model <model>`        | `--model <provider>/<model>`                                |
-| effort      | `--effort <effort>`      | `--thinking <effort>`                                       |
-| permissions | `--permission-mode auto` | no permission-mode flag; pass `--approve` for project trust |
+Recovery is state-first:
 
-A `model:` carrying a `:<level>` suffix is **split** into `--model` plus the
-effort flag; a colon never reaches either CLI. See
-[resume-format.md](resume-format.md).
+1. Read the ticket row and active runtime block.
+2. Verify the recorded worktree and branch.
+3. Parse the active runtime's compact JSON `Implementor:` value and require the
+   exact harness, model, and effort, including any spaces in the model.
+4. Read the recorded JSON artifact.
+5. Refresh the current Herdr pane id from Herdr.
+6. If preparation completed but no process started, call
+   `implementor.launch.prepare` again with the same attempt. It returns
+   `recovered: true` and the same argument arrays.
+7. If the agent exists but the outcome write was interrupted, inspect Herdr and
+   call `implementor.launch.record` with the observed result.
+8. If the prior attempt failed and policy permits another infrastructure retry,
+   prepare the next attempt with the same role and worktree.
 
-The `IMPORTANT CONTEXT` clause matters when an earlier ticket pulled in part
-of this one. Tell the session to verify what already landed and implement only
-what remains.
-
-### `implement` is explicit, not discoverable
-
-Do not check whether `implement` appears in a harness's discoverable skill
-listing. It is intentionally user-invoked and carries
-`disable-model-invocation: true`, so absence from model discovery is expected.
-Every worker still requires it as the first skill and first prompt prefix:
-
-- **Claude:** Begin the prompt with `/implement`, then render any additional
-  skills as `/<skill>`, then append the prose prompt.
-- **Pi:** Pass `--skill <path-to-implement>` explicitly and begin the prompt
-  with `/skill:implement`. Then pass and prefix each additional skill in row
-  order before appending the prose prompt.
-
-For Pi, resolve and record the explicit skill paths used by the launch line so
-a successor can reconstruct it. Do not run an availability preflight for
-`implement`; the launch itself is authoritative and a load failure stops the
-ticket. Continue to validate every additional skill after `implement` against
-the selected harness.
-
-### Validate the model before the first launch of a run
-
-`pi --list-models` prints every model pi can resolve, as `provider  model`.
-Check the row's model appears there. If it does not, **say so and ask** — a
-model absent from the catalog may mean a stale catalog (pi does startup network
-work; `pi update` refreshes it) or a typo, and those want opposite fixes. Do not
-substitute a neighbouring model to get moving; that silent downgrade is
-invisible in every artifact the run later produces.
-
-### Implementor record
-
-The initial structured setup chooses the complete Implementor triple from
-`roles.discover`, then validates it with `role.validate`. Persist harness,
-model, and effort exactly as validated. Do not infer a harness from a model or
-hardcode a repository-specific or machine-specific default.
-
-`--implementor '<harness> <model> <effort>'` on the skill invocation replaces
-the run-wide default after helper validation. Additional worker skills, while
-they remain supported by this state schema, are changed in prose. Write the
-change to RESUME.md before replying. It governs **the next ticket to start**
-only; active tickets keep their table-bound record.
-
-A launch that fails is reported and stops that ticket. Set its row to `blocked`,
-keep its active runtime block with `Phase: launch failed` and `Monitor:
-not-armed`, and continue scheduling other unblocked tickets in parallel mode.
-Do not retry it with a different model, a different effort, or a shorter skills
-list: `claude` accepts an unknown `--effort` with only a warning and runs at its
-default, so a silent substitution here is indistinguishable from success.
-
-## 4. Monitor
-
-Run as a background Bash (`run_in_background: true`, timeout 600000):
-
-```sh
-until [ "$(herdr pane list | python3 -c "import json,sys; print([p['agent_status'] for p in json.load(sys.stdin)['result']['panes'] if p['pane_id']=='<pane>'][0])")" = working ]; do sleep 5; done
-herdr agent wait <pane> --until idle --until done --until blocked --timeout 3600000
-```
-
-After arming it, set the active block to `Monitor: armed` and update `Phase:`
-from the visible worker activity. When it fires, set `Monitor: settled` before
-acting:
-
-- If the worktree has uncommitted changes, the worker likely went idle while
-  its own test run continued: re-arm the same wait and record `Monitor: armed`.
-- If `git log <base>..HEAD` shows one commit, set the row to `review`, record
-  `Phase: committed, awaiting review`, and proceed to review.
-- If a compaction just happened and there are no edits after two ticks, send
-  one prompt: "Continue implementing ticket NN from where you left off."
-
-## 5. Resuming a lost session
-
-`cd <worktree> && claude --resume` in the worker's pane picks the ticket's
-session back up. If no transcript is available (a new machine, a wiped
-config dir), relaunch step 3 as a fresh session whose `IMPORTANT CONTEXT`
-clause describes the edits and commits already in the worktree.
-
-A relaunch uses the ticket's bound row, unchanged, even if the run-wide
-`Implementor:` has moved on since the ticket started.
-
-## Herdr monitoring gotcha
-
-`herdr pane wait-output --regex` can match the echoed launch prompt instead of
-worker output. Use `herdr agent wait` for worker state transitions.
+A conflicting persisted role, branch, worktree, required skill path, or
+attempt fails recovery without creating an artifact or changing state. An
+already-existing identical artifact is preserved. Do not rewrite the runtime
+to match conversational memory.

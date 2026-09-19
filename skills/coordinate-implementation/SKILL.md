@@ -11,8 +11,8 @@ effort: low
 
 You are the **orchestrator**. You never implement a ticket yourself. You run
 one implementor session per ticket, start every dependency-ready ticket in
-parallel by default, review each single commit, send fixes back into the same
-session, and land it on the configured integration branch.
+parallel by default, review each policy-compliant ticket branch, send fixes
+back into the same session, and land it on the configured integration branch.
 
 The baseline environment is macOS or Linux with Git, Bun, Herdr, Matt Pocock's
 `implement` skill, and at least one supported harness (Pi or Claude Code).
@@ -48,7 +48,10 @@ Arguments: `$ARGUMENTS`
   on first run; later invocations read it from there.
 - `Branch template:` in RESUME.md records the repository's branch naming rule.
   Resolve it from repository instructions on first run, or use
-  `<prefix>-NN-<slug>` when the repository has no rule.
+  `<prefix>-NN-<slug>` when the repository has no rule. Before creating any
+  worktree, resolve the complete repository policy, require
+  `worktree.preflight` to pass, then persist and apply it through
+  `worktree.prepare` as described in [session-launch.md](references/session-launch.md).
 - `--coordinator`, `--implementor`, and `--reviewer` each accept one quoted
   `'<harness> <model> <effort>'` triple. Harness is exactly `claude` or `pi`.
   Validate every supplied triple with the helper's `role.validate` operation.
@@ -118,9 +121,9 @@ rules for keeping the record true:
   preference that survives only as long as your context does.
 - **Resolve once, persist the resolution.** You have the conversation; a
   successor does not. Write the explicitly selected and validated `harness`,
-  `model`, `effort`, and `skills` exactly as resolved. Never infer a harness
-  from a model, make a later reader re-derive a field, or substitute another
-  harness, model, or effort.
+  `model`, and `effort` exactly as resolved. Never infer a harness from a model,
+  make a later reader re-derive a field, or substitute another harness, model,
+  or effort.
 - **On resume, an explicit flag wins and is written back.** `--implementor`,
   `--reviewer`, `--serial`, or `--parallel` passed at resume is a preference
   change: validate it, write it, and log it. `--coordinator` first persists the
@@ -141,10 +144,10 @@ rules for keeping the record true:
 
 Each run has a unique `Prefix:` (for example `dcs`) that names its worker
 sessions `<prefix>-NN`, its herdr tabs `claude <prefix> NN <slug>`, and its
-coordinator pane label `coordinator <prefix>`. Pi renders the run's
-`Branch template:` from RESUME.md. Claude Code lets `EnterWorktree` generate
-its native worktree name and `worktree-*` branch. Always use the actual
-worktree path and branch returned by the coordinator harness.
+coordinator pane label `coordinator <prefix>`. Render the run's
+`Branch template:` from RESUME.md, then let `worktree.prepare` apply the
+persisted repository policy. Always use the actual worktree path and branch
+returned by the helper.
 The coordinator's own herdr tab is always labelled `coordinator`: on start and
 on resume, run `herdr tab rename "$HERDR_TAB_ID" "coordinator"` before anything
 else. Identify yourself from the `HERDR_PANE_ID` / `HERDR_TAB_ID` /
@@ -193,13 +196,14 @@ repeat until every ticket is landed:
    `serial` mode, start only the first unblocked queued ticket and only when no
    ticket is active. Bind the current `Implementor:` record into each selected
    ticket's table row before starting it; that row, not the run-wide record,
-   governs the ticket from then on. Its `skills` list must begin with
-   `implement`. Do not require `implement` to appear in skill discovery; it is
-   user-invoked and explicitly prefixed. Render the ordered list into the
-   worker prompt prefix for its harness. Create each ticket worktree from the
-   current `<base>` using the **coordinator's** harness: Claude Code uses
-   `EnterWorktree`; Pi uses Pando. Record its runtime block, create a herdr tab
-   and worker session, then arm a background monitor. Exact procedure:
+   governs the ticket from then on. The required `implement` skill is fixed and
+   explicitly loaded for both harnesses. Do not require it to appear in model
+   discovery. Resolve repository worktree, branch, setup, cleanup, remote, and
+   commit policy before creating the worktree. Require `worktree.preflight` to
+   pass before state mutation, then call `worktree.prepare`, create the Herdr
+   tab at the returned path, and call
+   `implementor.launch.prepare`. Execute only its argument arrays and persist
+   the observed outcome with `implementor.launch.record`. Exact procedure:
    [session-launch.md](references/session-launch.md).
 2. **Wait.** A 10-minute progress loop (below) plus the monitors are the only
    wake signals. Do not poll faster. While waiting, keep your own context low:
@@ -209,21 +213,22 @@ repeat until every ticket is landed:
    revision. If several tickets become ready together, process them one at a
    time in dependency order. Sync
    the chosen branch to the latest `<base>` before its final gates and review,
-   then require exactly one commit, green gates, two review agents (Standards,
-   Spec), and your own read. Procedure:
+   then require the recorded repository commit policy, green gates, two review
+   agents (Standards, Spec), and your own read. Procedure:
    [review-and-land.md](references/review-and-land.md).
-4. **Fix loop.** One consolidated request per round into the same worker session;
-   it amends its single commit and prints `FIXES DONE NN`. Re-arm that ticket's
-   monitor. Verify mechanically (grep) and with a verification agent.
+4. **Fix loop.** One consolidated request per round into the same worker session.
+   Apply the recorded fix-commit policy, which defaults to appending a commit
+   when repository instructions are silent, then print `FIXES DONE NN`. Re-arm
+   that ticket's monitor. Verify mechanically and with a verification agent.
 5. **Land.** Serialize all landings through the recorded base checkout with
    `git merge --ff-only`. If `<base>` moved after review, sync again, resolve
    textual conflicts yourself (`resolving-merge-conflicts` skill), rerun gates
    and targeted review, then retry. Substantive adaptations found after a
    conflict go back to the same implementor as a fix round. After landing,
-   close the tab and finish through the coordinator's harness: Claude Code uses
-   `ExitWorktree`; Pi uses `pando remove`. Claude Code may delete its native
-   `worktree-*` branch during cleanup. Pando retains the branch it created;
-   never delete that retained branch separately.
+   close the tab and apply the persisted repository cleanup policy. The native
+   fallback verifies that the worktree is clean and landed, removes it without
+   force, and retains the branch. A repository-required cleanup tool remains
+   authoritative and must not be replaced silently.
 6. **Record and refill.** Update the ticket table, remove its active runtime
    block, update `Base sha:` and the registry line, then immediately schedule
    every ticket newly unblocked by the landing according to `Mode:`.
@@ -283,7 +288,7 @@ are session-only, so every start, resume, and handoff re-creates both.
 
 Only when a worker session actually fails (crash, unrecoverable context loss)
 restart that ticket in the same worktree, **with the record bound in its table
-row**: same harness, same model, same effort, same skills, with the partial
+row**: same harness, same model, and same effort, with the partial
 work described in its `IMPORTANT CONTEXT` clause. Never escalate here and never
 read the run-wide `Implementor:`. A crash is evidence about a process, not
 about a model, and silently substituting a different one is how an override
@@ -369,9 +374,11 @@ When invoked as `resume .scratch/<slug>` or from a handoff:
   commands to the coordinator.
 - A preference the user states and you have not written to RESUME.md does not
   exist. Write before you reply.
-- Never substitute a default model, effort, or skills list to keep a run
-  moving. A record that will not launch stops the ticket and is reported.
-- One commit per ticket branch; fixes amend it.
+- Never substitute a default model, effort, harness, worktree tool, or required
+  skill to keep a run moving. A record that will not launch stops the ticket
+  and is reported.
+- Repository commit policy wins. When it is silent, multiple commits are
+  allowed and fix rounds append commits.
 - Every commit passes the repository's required gates before review. The
   resolved commands live in `<run>/briefs/common.md`; the execution procedure
   is in [review-and-land.md](references/review-and-land.md).

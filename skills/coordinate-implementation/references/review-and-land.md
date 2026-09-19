@@ -3,12 +3,10 @@
 ## Synchronize before review
 
 Parallel workers branch from the landed base that existed when they started.
-Once a worker is idle with its single commit, synchronize that branch to the
-latest integration branch before running final gates or reviews:
-
-```sh
-cd <worktree> && git fetch origin && git rebase <base>
-```
+Once a worker is idle with its policy-compliant commits, synchronize that branch
+to the latest local integration branch before running final gates or reviews.
+Do not fetch or assume a remote unless the persisted Repository policy requires
+that exact synchronization.
 
 Only one ticket may be in this synchronize, review, and land sequence at a
 time. Process ready tickets in dependency order. This keeps each review diff
@@ -18,13 +16,13 @@ Resolve textual conflicts yourself with the `resolving-merge-conflicts` skill,
 never by asking the implementor to operate the rebase. Preserve the intent of
 both the landed change and the ticket. If that cannot be done without a scope
 decision, stop and ask the user. After the rebase completes, update the active
-ticket's `Branch`, `Phase`, and `Monitor` fields, and verify exactly one commit
-on `<base>..HEAD`.
+ticket's `Branch`, `Phase`, and `Monitor` fields, and verify the commit shape on
+`<base>..HEAD` against the persisted Repository policy.
 
 A clean textual resolution is coordination work. A substantive behavioral
 adaptation is implementation work: send it to the same worker as a fix round,
-have the worker amend the single commit, then synchronize again if needed and
-run the full gates and review.
+have the worker follow the persisted fix-commit policy, then synchronize again
+if needed and run the full gates and review.
 
 ## Gates
 
@@ -44,8 +42,8 @@ the failing command and relevant output.
 
 ## Review
 
-Preconditions: exactly one commit on `<base>..HEAD`, a clean worktree, and all
-recorded gates green.
+Preconditions: the commits on `<base>..HEAD` satisfy the persisted Repository
+policy, the worktree is clean, and all recorded gates are green.
 
 Spawn two review agents in one message, both given the diff range
 `<base>..<branch>` and the worktree path:
@@ -68,8 +66,8 @@ Compose **one** request per round. Short requests go straight to the pane. Write
 long requests to `<run>/briefs/fixes-NN.md` and point the pane at the file.
 Every request ends with:
 
-> Amend the single commit (`git commit --amend`), rerun the gates recorded in
-> the shared brief, and print `FIXES DONE NN`.
+> Apply the persisted fix-commit policy, rerun the gates recorded in the shared
+> brief, and print `FIXES DONE NN`.
 
 Then re-arm the monitor. When it settles, verify mechanical items directly,
 spawn one verification agent for judgment items, and rerun the recorded gates.
@@ -97,27 +95,18 @@ and only then retry the fast-forward. The rebase-and-retry loop serializes
 landings without a lock file.
 
 Then close the worker tab and finish the worktree lifecycle according to the
-**coordinator's** harness:
+persisted Repository policy:
 
 ```sh
 herdr tab close <tab>
 ```
 
-- **Claude Code:** Stay in the ticket worktree through the merge, then call
-  `ExitWorktree` and choose removal. If a resumed coordinator is not currently
-  inside it, call `EnterWorktree(path: <worktree>)` first. Native cleanup may
-  remove both the worktree and its `worktree-*` branch.
-- **Pi:** Return to `<repo>`, then remove the worktree through Pando:
+A repository-required cleanup tool is authoritative. The native fallback first
+verifies that the worktree is clean and the branch is landed, removes the
+worktree without force, and retains the branch. Never silently change cleanup
+tools or delete a retained branch.
 
-  ```sh
-  printf '%s\n' '{"schema_version":1,"input":{"branches":["<branch>"]}}' \
-    | pando remove --input-output json
-  ```
-
-  Never pass `--force`. Pando retains the branch ref and runs pre-remove hooks.
-  Do not delete the retained branch separately.
-
-Never use raw `git worktree remove`. Set the ticket row's `status` to `landed`
+Set the ticket row's `status` to `landed`
 and fill its `sha`, leaving its bound record columns untouched as provenance.
 Remove its `## Active tickets` block, update `Base sha:`, log any scope decision
 in `## Decisions`, and update `.scratch/coordinators.md`. Then run the scheduler:

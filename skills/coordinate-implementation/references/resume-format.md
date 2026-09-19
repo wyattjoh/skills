@@ -41,7 +41,6 @@ Implementor:
   harness: claude
   model:   opus
   effort:  high
-  skills:  [implement]
 
 Reviewer:
   harness: claude
@@ -57,37 +56,69 @@ Coordinator ownership:
   readiness: ready
   marker: coordinator-ready-0-wJE:p1
 
+## Repository policy
+
+```json
+{
+  "instruction_files": ["CLAUDE.md"],
+  "worktree": {
+    "kind": "native",
+    "tool": "git",
+    "root": "/worktrees/example",
+    "create_argv": null
+  },
+  "branch_naming": "<prefix>-NN-<slug>",
+  "setup_argvs": [],
+  "cleanup": "native-safe",
+  "remote": "local-only",
+  "commit": {
+    "commits": "multiple",
+    "fixes": "append"
+  }
+}
+```
+
 ## Tickets
 
-| NN  | harness | model         | effort | skills    | rounds | esc | status  | sha     |
-| --- | ------- | ------------- | ------ | --------- | ------ | --- | ------- | ------- |
-| 01  | claude  | claude-opus-5 | high   | implement | 1      | -   | landed  | a1b2c3d |
-| 02  | claude  | claude-opus-5 | high   | implement | 0      | -   | working | -       |
-| 03  | claude  | claude-opus-5 | high   | implement | 0      | -   | review  | -       |
-| 04  | -       | -             | -      | -         | -      | -   | queued  | -       |
+| NN  | harness | model         | effort | rounds | esc | status  | sha     |
+| --- | ------- | ------------- | ------ | ------ | --- | ------- | ------- |
+| 01  | claude  | claude-opus-5 | high   | 1      | -   | landed  | a1b2c3d |
+| 02  | claude  | claude-opus-5 | high   | 0      | -   | working | -       |
+| 03  | claude  | claude-opus-5 | high   | 0      | -   | review  | -       |
+| 04  | -       | -             | -      | -      | -   | queued  | -       |
 
 ## Active tickets
 
 ### 02
 
-Worktree: <generated-worktree-path-02>
-Branch: <generated-branch-02>
+Worktree: <policy-created-worktree-path-02>
+Branch: <policy-created-branch-02>
+Implementor: {"harness":"claude","model":"opus","effort":"high"}
+Implement skill: /implement
 Session: dcs-02
-Tab: claude dcs 02 api
+Tab: implement dcs 02 api
 Pane: <herdr-pane-id-02>
-Phase: editing
-Launch: briefs/launch-02.sh
+Artifact: <absolute-run-path>/briefs/launch-02.json
+Attempt: 1
+Retry: 0 of 3
+Phase: working
+Last diagnostic: none
 Monitor: armed
 
 ### 03
 
-Worktree: <generated-worktree-path-03>
-Branch: <generated-branch-03>
+Worktree: <policy-created-worktree-path-03>
+Branch: <policy-created-branch-03>
+Implementor: {"harness":"claude","model":"opus","effort":"high"}
+Implement skill: /implement
 Session: dcs-03
-Tab: claude dcs 03 ui
+Tab: implement dcs 03 ui
 Pane: <herdr-pane-id-03>
+Artifact: <absolute-run-path>/briefs/launch-03.json
+Attempt: 1
+Retry: 0 of 3
 Phase: committed, awaiting review
-Launch: briefs/launch-03.sh
+Last diagnostic: none
 Monitor: settled
 
 ## Snapshot
@@ -119,9 +150,9 @@ Monitor: settled
 - 2026-09-11 implementor -> claude-fable-5-1 / low (opus overkill for the
   remaining UI tickets)
 
-## Retained landed branches (Pi)
+## Retained landed branches
 
-- dcs-01-schema (a1b2c3d) (Pi/Pando retained this branch)
+- dcs-01-schema (a1b2c3d) (retained by repository cleanup policy)
 ````
 
 ## Field reference
@@ -134,7 +165,7 @@ Monitor: settled
 | `Base`            | Integration branch. Recorded on first run; **the file always wins** over a later `--base` flag, because changing the base mid-run invalidates every unlanded branch |
 | `Base sha`        | Last observed full commit id of `Base`. Update after every landing and when a resume or progress tick observes external movement                                    |
 | `Mode`            | `parallel` (default) or `serial`. Controls only which queued tickets start; it does not terminate active workers                                                    |
-| `Branch template` | Pi branch pattern. Supports `<prefix>`, `NN`, and `<slug>`. Resolve from repository instructions, or use `<prefix>-NN-<slug>` when none exists                      |
+| `Branch template` | Branch pattern resolved from repository instructions, or `<prefix>-NN-<slug>` when the repository is silent                                                         |
 
 `Base` is the one field where the file beats the flag. `Implementor` and `Mode`
 are the opposite (see below). The asymmetry is deliberate: a model or scheduler
@@ -147,6 +178,23 @@ start. Reject both flags together. Switching to `serial` never kills existing
 parallel workers: stop launching, drain the active set, then continue one at a
 time. Switching to `parallel` starts every unblocked queued ticket at the next
 scheduler pass.
+
+### `## Repository policy`
+
+Managed by `worktree.prepare` before the first worktree is created. The JSON
+record names every repository instruction consulted and the resolved worktree,
+branch, setup, cleanup, remote, and commit policies. Repository instructions
+win over portable defaults.
+
+When no lifecycle tool is prescribed, `worktree.kind` is `native`, `tool` is
+`git`, and `root` is the worktree root selected during setup. When a tool is
+prescribed, `kind` is `repository`, `tool` names the required executable, and
+`create_argv` preserves its exact argument array. An unavailable prescribed
+tool is an error, not permission to change `kind`.
+
+When commit instructions are absent, `commit.commits` is `multiple` and
+`commit.fixes` is `append`. `remote: local-only` means no fetch or other network
+synchronization is assumed.
 
 ### `Coordinator:`
 
@@ -176,12 +224,20 @@ the record copied into its ticket row. A review records the Reviewer default it
 bound when that review session launched. Changing either default never restarts
 an active session.
 
-| Field     | Values                | Notes                                                     |
-| --------- | --------------------- | --------------------------------------------------------- |
-| `harness` | `claude` \| `pi`      | Selected explicitly, never inferred from the model        |
-| `model`   | model id              | Validated against the selected installed harness          |
-| `effort`  | discovered vocabulary | Harness-scoped and read from installed help               |
-| `skills`  | ordered list          | Implementor only in schema 1; must begin with `implement` |
+| Field     | Values                | Notes                                              |
+| --------- | --------------------- | -------------------------------------------------- |
+| `harness` | `claude` \| `pi`      | Selected explicitly, never inferred from the model |
+| `model`   | model id              | Validated against the selected installed harness   |
+| `effort`  | discovered vocabulary | Harness-scoped and read from installed help        |
+
+Inside each `## Active tickets` runtime block, `Implementor:` is compact JSON
+with exactly `harness`, `model`, and `effort` fields. This representation is the
+ticket-bound role used for recovery. The helper parses it structurally and
+preserves the model string byte-for-byte, including spaces. It never reconstructs
+a role by splitting display text.
+
+The `implement` skill is a fixed workflow requirement, not a configurable role
+field. Its actual Pi path is recorded in each launch artifact.
 
 ### `Coordinator ownership:`
 
@@ -211,14 +267,14 @@ Each row is **self-contained**: it repeats the full resolved record rather than
 pointing at `Implementor:`, so a successor can relaunch any ticket without
 reasoning about when the run-wide record last changed.
 
-| Column                              | Meaning                                                                |
-| ----------------------------------- | ---------------------------------------------------------------------- |
-| `NN`                                | Ticket number                                                          |
-| `harness` `model` `effort` `skills` | The record **bound at ticket start**; never rewritten                  |
-| `rounds`                            | Fix rounds completed                                                   |
-| `esc`                               | `yes` once this ticket escalated past its bound model                  |
-| `status`                            | `queued` \| `working` \| `review` \| `fixing` \| `blocked` \| `landed` |
-| `sha`                               | Landed sha                                                             |
+| Column                     | Meaning                                                                |
+| -------------------------- | ---------------------------------------------------------------------- |
+| `NN`                       | Ticket number                                                          |
+| `harness` `model` `effort` | The role **bound at ticket start**; never rewritten                    |
+| `rounds`                   | Fix rounds completed                                                   |
+| `esc`                      | `yes` once this ticket escalated past its bound model                  |
+| `status`                   | `queued` \| `working` \| `review` \| `fixing` \| `blocked` \| `landed` |
+| `sha`                      | Landed sha                                                             |
 
 ### `## Active tickets`
 
@@ -226,16 +282,21 @@ One block per ticket from successful worktree creation until landing. The
 heading must be the ticket's zero-padded `NN`, and every block carries these
 fields:
 
-| Field      | Meaning                                                                                 |
-| ---------- | --------------------------------------------------------------------------------------- |
-| `Worktree` | Actual path returned by the coordinator harness                                         |
-| `Branch`   | Actual branch returned by the coordinator harness                                       |
-| `Session`  | Worker session name, normally `<prefix>-NN`                                             |
-| `Tab`      | Herdr tab label                                                                         |
-| `Pane`     | Current herdr pane id; refresh it from `herdr pane list` after resume                   |
-| `Phase`    | Precise human-readable activity, such as `editing`, `fix round 2`, or `awaiting review` |
-| `Launch`   | Run-relative path to the exact launch script                                            |
-| `Monitor`  | `armed`, `settled`, or `not-armed`, updated whenever the monitor changes                |
+| Field             | Meaning                                                                         |
+| ----------------- | ------------------------------------------------------------------------------- |
+| `Worktree`        | Actual path returned by `worktree.prepare`                                      |
+| `Branch`          | Actual policy-created branch                                                    |
+| `Implementor`     | Exact bound harness, model, and effort                                          |
+| `Implement skill` | Exact Pi `SKILL.md` path, or Claude's fixed `/implement` invocation             |
+| `Session`         | Worker session name, normally `<prefix>-NN`                                     |
+| `Tab`             | Herdr tab label                                                                 |
+| `Pane`            | Current Herdr pane id; refresh it from Herdr after resume                       |
+| `Artifact`        | Absolute path to the inspectable JSON argument-array launch artifact            |
+| `Attempt`         | Current one-based launch attempt                                                |
+| `Retry`           | Completed retries and fixed maximum, for example `0 of 3`                       |
+| `Phase`           | `launch prepared`, `working`, `launch failed`, or the later workflow phase      |
+| `Last diagnostic` | `none` or the exact failing stage, exit code, and normalized stderr             |
+| `Monitor`         | `armed`, `settled`, or `not-armed`, updated when later event monitoring changes |
 
 The ticket table remains the scheduler's source of truth. The active block is
 runtime coordination state. Create it before launch, update it at every phase
@@ -273,10 +334,10 @@ output is authoritative for models and effort values. The harnesses do **not**
 validate for you: `claude --effort bogus` can warn and silently use a default,
 which is the exact substitution this skill forbids.
 
-| Harness  | Model form            | Effort flag  | Effort values                       | Skill prefix     | Skill source                        | Permission flag                   |
-| -------- | --------------------- | ------------ | ----------------------------------- | ---------------- | ----------------------------------- | --------------------------------- |
-| `claude` | alias or custom value | `--effort`   | Read from installed `claude --help` | `/<skill>`       | `~/.claude/skills/`, project skills | `--permission-mode auto`          |
-| `pi`     | `<provider>/<model>`  | `--thinking` | Read from installed `pi --help`     | `/skill:<skill>` | `--skill <path>`, or discovered     | `--approve` for new role sessions |
+| Harness  | Model form            | Effort flag  | Required implement launch                | Permission flag                   |
+| -------- | --------------------- | ------------ | ---------------------------------------- | --------------------------------- |
+| `claude` | alias or custom value | `--effort`   | Prompt begins `/implement`               | `--permission-mode auto`          |
+| `pi`     | `<provider>/<model>`  | `--thinking` | `--skill <path>` plus `/skill:implement` | `--approve` for new role sessions |
 
 Never pass a non-Anthropic model to `claude`.
 
@@ -324,23 +385,12 @@ wrong, or may mean the installed harness differs from the version documented
 here. Distinguish them before stopping a ticket: inspect the harness version,
 help, and model catalog.
 
-Every worker skills list must begin with `implement`. Render the whole list into
-the worker prompt as a prefix, in order, before any prose:
-
-```
-claude   skills: [implement, codebase-design]  ->  /implement /codebase-design <prompt>
-pi       skills: [implement, codebase-design]  ->  /skill:implement /skill:codebase-design <prompt>
-```
-
-`implement` is intentionally user-invoked and has
-`disable-model-invocation: true`. It may therefore be absent from a harness's
-model-discoverable or automatically invocable skill listing. That absence is
-expected and is never a validation failure. Do not check discovery to decide
-whether `implement` can be used. Its explicit first-position prefix is the
-invocation.
-
-Additional skills after `implement` are different: validate that each is
-available to the selected harness and preserve their recorded order.
+Every implementor loads the fixed `implement` skill before its prose prompt.
+Claude prompts begin with `/implement`. Pi receives both
+`--skill <path-to-implement/SKILL.md>` and a `/skill:implement` prompt prefix,
+plus `--approve` for project-local resources. The skill is intentionally
+user-invoked and may be absent from model discovery; its explicit path and
+prefix are authoritative.
 
 ## Validation
 
@@ -354,7 +404,7 @@ cannot launch:
 - `Mode` is not exactly `parallel` or `serial`.
 - `Base sha` is not a full commit id.
 - an active ticket lacks its required runtime block or the block names a
-  missing worktree, branch, launch script, or pane.
+  missing worktree, branch, launch artifact, attempt, retry state, or pane.
 - `effort` is not accepted by the installed harness.
 - `model` is non-Anthropic while `harness` is `claude`.
 - `model` lacks a `<provider>/` prefix while `harness` is `pi`, or carries one
@@ -362,23 +412,21 @@ cannot launch:
 - a `:<level>` suffix disagrees with the record's own `effort:` field.
 - `Coordinator ownership` is missing, malformed, lacks its bound role record,
   or names the invoking pane as a successor claim.
-- the `skills` list does not begin with `implement`.
-- a skill after `implement` is not available in that harness.
+- repository policy is absent before worktree creation.
+- a prescribed worktree tool is unavailable.
+- Pi's explicit `implement` skill path is absent or not a file.
 
-Never reject a record because `implement` is absent from skill discovery. It is
-required, user-invoked, and explicitly prefixed at launch.
+Never reject a record because `implement` is absent from model discovery. It is
+required, user-invoked, and explicitly loaded at launch.
 
 **A harness change re-validates the entire record**, not just the changed
-field. Effort vocabulary, additional-skill availability, and the prompt prefix
-are harness-scoped, so switching `claude` -> `pi` can invalidate an `effort` or
-an additional `skills` entry that was valid a moment earlier. `implement`
-remains required and exempt from discovery checks in both harnesses.
+field. Effort vocabulary, model form, and the launch adapter are harness-scoped.
 
 ### At launch time
 
 A session that fails to start stops that ticket and is reported with its
-output. Never substitute a default model, a default effort, or a shorter skills
-list to keep the run moving.
+output. Never substitute a default model, effort, harness, worktree tool, or
+required skill to keep the run moving.
 
 ### On read
 
