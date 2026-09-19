@@ -206,7 +206,9 @@ repeat until every ticket is landed:
    `implement` skill is fixed and explicitly loaded for both harnesses. Do not
    require it to appear in model discovery. Resolve repository worktree,
    branch, setup, cleanup, remote, and commit policy before creating the
-   worktree. Require `worktree.preflight` to pass before state mutation, then
+   worktree. Persist the one authorized remote synchronization argv (or null
+   for local-only) and never accept a caller-selected substitute. Require
+   `worktree.preflight` to pass before state mutation, then
    call `worktree.prepare`, create the Herdr tab at the returned path, and call
    `implementor.launch.prepare`. Execute only its argument arrays and persist
    the observed outcome with `implementor.launch.record`. Exact procedure:
@@ -225,8 +227,10 @@ repeat until every ticket is landed:
    the chosen branch to the latest `<base>` before its final gates and review,
    then require the recorded repository commit policy, green recorded gates,
    the harness-appropriate implementor self-review, and fresh independent Herdr
-   sessions for Standards and Spec. Capture and persist each complete report
-   before closing its pane. Procedure:
+   sessions for Standards and Spec. Claim the serialized finalization slot and
+   perform policy-driven synchronization with `landing.synchronize`; use its
+   returned full-SHA `review_range` for gates and both review axes. Capture and
+   persist each complete report before closing its pane. Procedure:
    [review-and-land.md](references/review-and-land.md).
 4. **Fix loop.** Finalize both axes with `review.round.finalize`. Send its one
    consolidated request, containing every actionable finding, to the same worker
@@ -235,18 +239,24 @@ repeat until every ticket is landed:
    Include that runtime in the next wait-any call. When it returns terminal,
    restart the pipeline from all recorded gates; every fix round receives new
    self-review and fresh Standards and Spec sessions.
-5. **Land.** Serialize all landings through the recorded base checkout with
-   `git merge --ff-only`. If `<base>` moved after review, sync again, resolve
-   textual conflicts yourself (`resolving-merge-conflicts` skill), rerun gates
-   and targeted review, then retry. Substantive adaptations found after a
-   conflict go back to the same implementor as a fix round. After landing,
-   close the tab and apply the persisted repository cleanup policy. The native
-   fallback verifies that the worktree is clean and landed, removes it without
-   force, and retains the branch. A repository-required cleanup tool remains
-   authoritative and must not be replaced silently.
-6. **Record and refill.** Update the ticket table, remove its active runtime
-   block, update `Base sha:` and the registry line, then immediately schedule
-   every ticket newly unblocked by the landing through `scheduler.plan`.
+5. **Land.** After `review.round.finalize` advances the ticket to
+   `ready-to-land`, call `landing.complete` from the recorded local base
+   checkout with `runtime_closed: false`. If it returns `resynchronize`, call
+   `landing.synchronize`, rerun every gate, and repeat both fresh review axes
+   with attention to newly landed interactions before retrying. Resolve textual
+   conflicts yourself with the `resolving-merge-conflicts` skill, then classify
+   the result through `landing.conflict.record`. Substantive adaptations return
+   to the same implementor as a fix round. Scope choices wait for user
+   authority and are recorded before gates continue. When it returns
+   `close-runtime`, close the completed implementor tab and call
+   `landing.complete` again with `runtime_closed: true`.
+6. **Record and refill.** Only a successful `landing.complete` may mark the
+   ticket landed. It verifies a clean landed worktree, removes the native
+   fallback without force or runs the exact repository cleanup argv, retains
+   the branch, writes immutable landed evidence, updates `Base sha:`, removes
+   the active runtime and serialized slot, and returns `schedule`. Update the
+   registry line, then immediately pass the new landed state to `scheduler.plan`
+   so every newly unblocked ticket can start.
 
 Session markers the implementor prints: `TICKET DONE NN`,
 `TICKET BLOCKED NN: <question>`, `FIXES DONE NN`. Herdr agent status is the

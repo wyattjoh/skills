@@ -254,6 +254,7 @@ worktree:
       "setup_argvs": [],
       "cleanup": "repository",
       "remote": "local-only",
+      "remote_sync_argv": null,
       "commit": null
     }
   }
@@ -300,6 +301,7 @@ repository-location variables removed. A null commit policy resolves to
       "setup_argvs": [],
       "cleanup": "native-safe",
       "remote": "local-only",
+      "remote_sync_argv": null,
       "commit": null
     }
   }
@@ -713,6 +715,112 @@ Two accepted PASS reports return `action: land`. Any finding makes the round
 FAIL and is copied into one consolidated fix request. Rounds below three return
 the next round; a FAIL after fix round three returns `escalate` without model
 substitution. Earlier report and sidecar paths are never overwritten.
+
+## `landing.synchronize`
+
+Claim the single serialized finalization slot and synchronize a clean ticket
+branch against the current local integration branch:
+
+```json
+{
+  "schema_version": 1,
+  "operation": "landing.synchronize",
+  "input": {
+    "state_path": ".scratch/example/RESUME.md",
+    "repository_path": "/repo",
+    "worktree_path": "/worktrees/example/ticket-04",
+    "ticket": "04",
+    "remote_sync_argv": null,
+    "completed_at": "2026-09-19T01:12:00Z"
+  }
+}
+```
+
+`local-only` policy persists and requires null, then never fetches. `repository`
+policy persists one exact non-empty argv array authorized by repository
+instructions or explicit run policy. The caller must match it byte for byte;
+an arbitrary command cannot replace the required synchronization. The command
+executes without shell interpolation before
+the helper rebases onto the persisted local `Base` branch.
+
+Only one ticket may own `## Serialized finalization`. Other implementors remain
+active, but another ticket cannot enter synchronization, final gates, review,
+or landing until the slot clears. Success returns the full-SHA `review_range`,
+commit count, resolved commit and fix policy, and `run-gates`. Multiple commits
+are accepted by default. `single` and `squash` policy require one commit. A fix
+under default `append` policy must preserve the previous reviewed tip as an
+ancestor and add a new commit.
+
+A textual conflict returns `resolve-conflicts`, the sorted conflict paths, and
+leaves the rebase plus serialized slot in place. A non-conflict Git failure is
+an operation error.
+
+## `landing.conflict.record`
+
+After completing the conflicted rebase, record its coordinator classification:
+
+```json
+{
+  "schema_version": 1,
+  "operation": "landing.conflict.record",
+  "input": {
+    "state_path": ".scratch/example/RESUME.md",
+    "ticket": "04",
+    "classification": "textual",
+    "decision": null,
+    "user_authorized": false,
+    "completed_at": "2026-09-19T01:15:00Z"
+  }
+}
+```
+
+The helper requires a clean worktree, no unmerged paths, and policy-compliant
+commit shape. `textual` returns `run-gates`. `substantive` returns `fix` to the
+same bound implementor and records the current tip for fix-policy enforcement.
+A `scope` classification with `user_authorized: false` returns `await-user` and
+does not record a decision. Repeat it only after the user authorizes the exact
+non-empty decision; that call appends durable authority and returns
+`run-gates`.
+
+## `landing.complete`
+
+After `review.round.finalize` accepts both axes and advances the serialized
+record to `ready-to-land`, complete the fast-forward and cleanup:
+
+```json
+{
+  "schema_version": 1,
+  "operation": "landing.complete",
+  "input": {
+    "state_path": ".scratch/example/RESUME.md",
+    "repository_path": "/repo",
+    "worktree_path": "/worktrees/example/ticket-04",
+    "evidence_path": ".scratch/example/reviews/04-landed.json",
+    "ticket": "04",
+    "cleanup_argv": null,
+    "runtime_closed": false,
+    "completed_at": "2026-09-19T01:20:00Z"
+  }
+}
+```
+
+The first call keeps the implementor available with `runtime_closed: false`.
+The helper verifies immutable Standards, Spec, and implementor self-review
+evidence against the current ticket tip. If the local base moved and refuses a
+fast-forward, the operation returns `resynchronize`, clears stale review
+bindings, and retains the serialized ticket. Rerun synchronization, every gate,
+and both fresh review axes before retrying.
+
+A successful fast-forward returns `close-runtime` without cleaning the worktree
+or releasing serialized state. Close the completed implementor tab, repeat the
+same call with `runtime_closed: true`, and only then does native cleanup check
+that the worktree is clean and landed, run `git worktree remove <path>` without
+force, and verify the branch remains. Repository cleanup instead requires its
+exact `cleanup_argv` and receives the same postconditions. Success writes
+immutable landed JSON evidence, updates the ticket and `Base sha:`, removes the
+active runtime and serialized slot, appends landed and retained-branch
+provenance, and returns `schedule`. Call `scheduler.plan` only after that
+durable result.
 
 ## Coordinator ownership operations
 

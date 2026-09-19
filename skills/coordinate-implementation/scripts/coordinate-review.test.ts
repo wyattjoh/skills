@@ -382,6 +382,63 @@ describe("review launches and reports", () => {
     expect(artifact).toContain('"reviewer"');
   });
 
+  it("requires the synchronized full-SHA base while finalization is serialized", () => {
+    const fixture = makeFixture("pi");
+    preparePolicy(fixture);
+    activateFixture(fixture, "pi");
+    const head = spawnGit(["rev-parse", "HEAD"], { cwd: fixture.worktreePath }).stdout.trim();
+    writeFileSync(
+      fixture.statePath,
+      readFileSync(fixture.statePath, "utf8").replace(
+        "## Decisions",
+        `## Serialized finalization
+
+\`\`\`json
+${JSON.stringify(
+  {
+    ticket: "06",
+    cycle: 1,
+    phase: "gates",
+    base_branch: "main",
+    base_sha: head,
+    ticket_sha: head,
+    review_range: `${head}..${head}`,
+    commit_count: 1,
+    commit_policy: { commits: "multiple", fixes: "append" },
+    remote_sync_argv: null,
+    conflicts: [],
+    previous_ticket_sha: null,
+    standards_evidence_path: null,
+    spec_evidence_path: null,
+    self_review_path: null,
+    completed_at: "2026-09-19T00:59:00Z",
+  },
+  null,
+  2,
+)}
+\`\`\`
+
+## Decisions`,
+      ),
+    );
+    const wrongBase = reviewLaunchRequest(fixture, "standards");
+    const rejected = runCli(wrongBase);
+    expect(rejected.exitCode).toBe(1);
+    expect(rejected.stdout).toMatchObject({
+      ok: false,
+      errors: [{ code: "review.range_mismatch" }],
+    });
+
+    const exactBase = reviewLaunchRequest(fixture, "standards");
+    exactBase.input.base_ref = head;
+    const accepted = runCli(exactBase);
+    expect(accepted.exitCode).toBe(0);
+    expect((accepted.stdout.result as { reviewed_head: string }).reviewed_head).toBe(head);
+    expect(readFileSync(exactBase.input.artifact_path, "utf8")).toContain(
+      "refused-fast-forward recovery review",
+    );
+  });
+
   it("refuses external review until every configured gate has passed", () => {
     const fixture = makeFixture("pi");
     preparePolicy(fixture);
@@ -967,6 +1024,73 @@ describe("gates and review rounds", () => {
     });
     expect(readFileSync(standards.input.report_path, "utf8")).toContain("PASS");
     expect(readFileSync(spec.input.report_path, "utf8")).toContain("PASS");
+  });
+
+  it("rejects accepted review evidence after a failed gate changes finalization phase", () => {
+    const fixture = makeFixture("pi");
+    preparePolicy(fixture);
+    activateFixture(fixture, "pi");
+    const head = spawnGit(["rev-parse", "HEAD"], { cwd: fixture.worktreePath }).stdout.trim();
+    const finalization = {
+      ticket: "06",
+      cycle: 0,
+      phase: "gates",
+      base_branch: "main",
+      base_sha: "main",
+      ticket_sha: head,
+      review_range: `main..${head}`,
+      commit_count: 1,
+      commit_policy: { commits: "multiple", fixes: "append" },
+      remote_sync_argv: null,
+      conflicts: [],
+      previous_ticket_sha: null,
+      standards_evidence_path: null,
+      spec_evidence_path: null,
+      self_review_path: null,
+      completed_at: "2026-09-19T00:59:00Z",
+    };
+    writeFileSync(
+      fixture.statePath,
+      readFileSync(fixture.statePath, "utf8").replace(
+        "## Decisions",
+        `## Serialized finalization\n\n\`\`\`json\n${JSON.stringify(finalization, null, 2)}\n\`\`\`\n\n## Decisions`,
+      ),
+    );
+    const standards = reviewLaunchRequest(fixture, "standards");
+    const spec = reviewLaunchRequest(fixture, "spec");
+    expect(runCli(standards).exitCode).toBe(0);
+    expect(runCli(spec).exitCode).toBe(0);
+    expect(recordReview(fixture, standards, passingReport("Standards")).exitCode).toBe(0);
+    expect(recordReview(fixture, spec, passingReport("Spec")).exitCode).toBe(0);
+    expect(runCli(gateRecordRequest(fixture, "failed", 2)).exitCode).toBe(0);
+
+    const result = runCli({
+      schema_version: 1,
+      operation: "review.round.finalize",
+      input: {
+        state_path: fixture.statePath,
+        ticket: "06",
+        round: 0,
+        standards_evidence_path: `${standards.input.report_path}.json`,
+        spec_evidence_path: `${spec.input.report_path}.json`,
+        self_review_path: join(fixture.runPath, "reviews", "06-round-0-self-review.md"),
+        self_review_method: "standards-spec-single-session",
+        self_review_report: "## Standards\n\nPASS\n\n## Spec\n\nPASS\n",
+        fix_request_path: join(fixture.runPath, "briefs", "fixes-06-round-0.md"),
+        completed_at: "2026-09-19T01:05:00Z",
+      },
+    });
+
+    expect(result.exitCode).toBe(1);
+    expect(result.stdout.errors).toEqual([
+      {
+        code: "landing.review_phase_invalid",
+        message: "Final review requires serialized finalization to remain in the gates phase.",
+        remediation:
+          "Rerun every configured gate and both review axes against the current synchronized ticket tip.",
+      },
+    ]);
+    expect(readFileSync(fixture.statePath, "utf8")).toContain('"phase": "fixing"');
   });
 
   it("requires explicit escalation after the third failed fix round", () => {

@@ -72,6 +72,7 @@ Coordinator ownership:
   "setup_argvs": [],
   "cleanup": "native-safe",
   "remote": "local-only",
+  "remote_sync_argv": null,
   "commit": {
     "commits": "multiple",
     "fixes": "append"
@@ -166,11 +167,38 @@ Last diagnostic: none
 }
 ```
 
+## Serialized finalization
+
+```json
+{
+  "ticket": "03",
+  "cycle": 0,
+  "phase": "gates",
+  "base_branch": "main",
+  "base_sha": "0123456789abcdef0123456789abcdef01234567",
+  "ticket_sha": "89abcdef0123456789abcdef0123456789abcdef",
+  "review_range": "0123456789abcdef0123456789abcdef01234567..89abcdef0123456789abcdef0123456789abcdef",
+  "commit_count": 2,
+  "commit_policy": { "commits": "multiple", "fixes": "append" },
+  "remote_sync_argv": null,
+  "conflicts": [],
+  "previous_ticket_sha": null,
+  "standards_evidence_path": null,
+  "spec_evidence_path": null,
+  "self_review_path": null,
+  "completed_at": "2026-09-11T15:00:00Z"
+}
+```
+
 ## Review evidence
 
 - Ticket 01 round 0 standards attempt 1: accepted; reviewer {"harness":"claude","model":"sonnet","effort":"medium"}; report /run/reviews/01-round-0-standards-attempt-1.md
 - Ticket 01 round 0 spec attempt 1: accepted; reviewer {"harness":"claude","model":"sonnet","effort":"medium"}; report /run/reviews/01-round-0-spec-attempt-1.md
 - Ticket 01 round 0 finalized: PASS; self-review /run/reviews/01-round-0-self-review.md; Standards /run/reviews/01-round-0-standards-attempt-1.md; Spec /run/reviews/01-round-0-spec-attempt-1.md
+
+## Landed evidence
+
+- Ticket 01: /run/reviews/01-landed.json; tip a1b2c3d; branch dcs-01-schema; cleanup native-safe
 
 ## Decisions
 
@@ -361,6 +389,21 @@ forbids remote writes overrides `final` and `live`. See
 [normalized-snapshot.md](normalized-snapshot.md) for the manifest, acceptance,
 and revision rules.
 
+### `## Serialized finalization`
+
+A transient helper-owned JSON record exists from `landing.synchronize` until
+`landing.complete` durably records success. It is the single slot that
+serializes synchronization, final gates, review, and landing while other
+implementors continue. The record binds the ticket, local base and ticket tips,
+full review range, commit policy, optional authorized remote command, conflict
+paths, recovery cycle, and final review evidence.
+
+`review.round.finalize` advances a passing record to `ready-to-land`. A failed
+review records `fixing` and the prior tip used to enforce append-only fixes. A
+refused fast-forward records `resynchronize` and clears stale final-review
+paths. Scope conflicts may remain `awaiting-user`. Never clear or transfer this
+record by hand merely to admit another ticket.
+
 ### `## Review evidence`
 
 Append-only review provenance. Each reviewer attempt records ticket, round,
@@ -369,6 +412,14 @@ path. Round finalization adds the implementor self-review and both accepted axis
 report references. Complete Markdown reports and JSON sidecars remain under the
 run directory across every fix round. Contaminated and malformed attempts stay
 in this history and are never replaced by later accepted attempts.
+
+### `## Landed evidence`
+
+Append-only references to immutable JSON written by `landing.complete`. Each
+file binds the full landed tip, local base SHA, retained branch, final Standards,
+Spec, and self-review paths, completed runtime closure, exact cleanup argv,
+cleanup result, and completion time. The helper writes this evidence and
+updates ticket state before returning `schedule`.
 
 ### `## Decisions`
 

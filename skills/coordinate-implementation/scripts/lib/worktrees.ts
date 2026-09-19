@@ -27,6 +27,7 @@ export type SerializedRepositoryPolicy = {
   setup_argvs: string[][];
   cleanup: "native-safe" | "repository";
   remote: "local-only" | "repository";
+  remote_sync_argv: string[] | null;
   commit: RepositoryPolicy["commit"];
 };
 
@@ -82,6 +83,7 @@ const serializePolicy = (policy: RepositoryPolicy): SerializedRepositoryPolicy =
   setup_argvs: policy.setupArgvs,
   cleanup: policy.cleanup,
   remote: policy.remote,
+  remote_sync_argv: policy.remoteSyncArgv ?? null,
   commit: policy.commit,
 });
 

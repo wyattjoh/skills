@@ -134,6 +134,7 @@ const fallbackPolicy = (worktreeRoot: string) => ({
   setup_argvs: [],
   cleanup: "native-safe",
   remote: "local-only",
+  remote_sync_argv: null,
   commit: null,
 });
 
@@ -232,6 +233,7 @@ describe("policy-driven worktree preparation", () => {
         setup_argvs: [],
         cleanup: "native-safe",
         remote: "local-only",
+        remote_sync_argv: null,
         commit: { commits: "multiple", fixes: "append" },
       },
       worktree: {
@@ -310,6 +312,7 @@ describe("policy-driven worktree preparation", () => {
           setup_argvs: [],
           cleanup: "repository",
           remote: "local-only",
+          remote_sync_argv: null,
           commit: null,
         },
       }),
@@ -385,6 +388,7 @@ process.exit(result.exitCode);
       setup_argvs: [],
       cleanup: "repository",
       remote: "repository",
+      remote_sync_argv: ["git", "fetch", "upstream"],
       commit: { commits: "single", fixes: "amend" },
     };
 
@@ -403,6 +407,7 @@ process.exit(result.exitCode);
         setup_argvs: [],
         cleanup: "repository",
         remote: "repository",
+        remote_sync_argv: ["git", "fetch", "upstream"],
         commit: { commits: "single", fixes: "amend" },
       },
       required_tool: { name: "repo-worktrees", available: true },

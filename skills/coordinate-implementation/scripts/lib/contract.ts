@@ -29,7 +29,10 @@ export type CoordinateOperation =
   | "review.launch.prepare"
   | "review.launch.record"
   | "gate.record"
-  | "review.round.finalize";
+  | "review.round.finalize"
+  | "landing.synchronize"
+  | "landing.conflict.record"
+  | "landing.complete";
 
 /**
  * Harnesses supported for coordinator, implementor, and reviewer sessions.
@@ -155,6 +158,7 @@ export type RepositoryPolicy = {
   setupArgvs: string[][];
   cleanup: "native-safe" | "repository";
   remote: "local-only" | "repository";
+  remoteSyncArgv: string[] | undefined;
   commit: CommitPolicy;
 };
 
@@ -387,6 +391,49 @@ export type ReviewRoundFinalizeInput = {
 };
 
 /**
+ * Input for claiming the serialized finalization slot and synchronizing one ticket.
+ */
+export type LandingSynchronizeInput = {
+  statePath: string;
+  repositoryPath: string;
+  worktreePath: string;
+  ticket: string;
+  remoteSyncArgv: string[] | undefined;
+  completedAt: string;
+};
+
+/**
+ * Coordinator classification recorded after a conflicted synchronization is resolved.
+ */
+export type ConflictClassification = "textual" | "substantive" | "scope";
+
+/**
+ * Input for recording how a resolved synchronization conflict should continue.
+ */
+export type LandingConflictRecordInput = {
+  statePath: string;
+  ticket: string;
+  classification: ConflictClassification;
+  decision: string | undefined;
+  userAuthorized: boolean;
+  completedAt: string;
+};
+
+/**
+ * Input for fast-forward landing, cleanup, and durable completion evidence.
+ */
+export type LandingCompleteInput = {
+  statePath: string;
+  repositoryPath: string;
+  worktreePath: string;
+  evidencePath: string;
+  ticket: string;
+  cleanupArgv: string[] | undefined;
+  runtimeClosed: boolean;
+  completedAt: string;
+};
+
+/**
  * A validated schema-version-1 request accepted by the helper.
  */
 export type CoordinateRequest =
@@ -494,6 +541,21 @@ export type CoordinateRequest =
       schemaVersion: typeof CONTRACT_SCHEMA_VERSION;
       operation: "review.round.finalize";
       input: ReviewRoundFinalizeInput;
+    }
+  | {
+      schemaVersion: typeof CONTRACT_SCHEMA_VERSION;
+      operation: "landing.synchronize";
+      input: LandingSynchronizeInput;
+    }
+  | {
+      schemaVersion: typeof CONTRACT_SCHEMA_VERSION;
+      operation: "landing.conflict.record";
+      input: LandingConflictRecordInput;
+    }
+  | {
+      schemaVersion: typeof CONTRACT_SCHEMA_VERSION;
+      operation: "landing.complete";
+      input: LandingCompleteInput;
     };
 
 /**
@@ -583,6 +645,8 @@ const parseRepositoryPolicy = (value: unknown): RepositoryPolicy | undefined => 
   const kind = value.worktree.kind;
   const rootValue = value.worktree.root;
   const createValue = value.worktree.create_argv;
+  const remoteSyncValue = value.remote_sync_argv;
+  const remoteSyncArgv = stringArray(remoteSyncValue);
   if (
     instructionFiles === undefined ||
     instructionFiles.length === 0 ||
@@ -590,7 +654,9 @@ const parseRepositoryPolicy = (value: unknown): RepositoryPolicy | undefined => 
     setupArgvs === undefined ||
     (kind !== "native" && kind !== "repository") ||
     (value.cleanup !== "native-safe" && value.cleanup !== "repository") ||
-    (value.remote !== "local-only" && value.remote !== "repository")
+    (value.remote !== "local-only" && value.remote !== "repository") ||
+    (value.remote === "local-only" && remoteSyncValue !== null) ||
+    (value.remote === "repository" && (remoteSyncArgv === undefined || remoteSyncArgv.length === 0))
   ) {
     return undefined;
   }
@@ -637,6 +703,7 @@ const parseRepositoryPolicy = (value: unknown): RepositoryPolicy | undefined => 
     setupArgvs,
     cleanup: value.cleanup,
     remote: value.remote,
+    remoteSyncArgv: value.remote === "repository" ? remoteSyncArgv : undefined,
     commit,
   };
 };
@@ -795,6 +862,9 @@ export const parseRequest = (raw: string): Effect.Effect<CoordinateRequest, Requ
       "review.launch.record",
       "gate.record",
       "review.round.finalize",
+      "landing.synchronize",
+      "landing.conflict.record",
+      "landing.complete",
     ];
     if (operation === null || !operations.includes(operation as CoordinateOperation)) {
       return yield* invalidRequest(
@@ -1064,6 +1134,115 @@ export const parseRequest = (raw: string): Effect.Effect<CoordinateRequest, Requ
           worktreeName,
           expectedWorktreePath,
           policy,
+        },
+      };
+    }
+
+    if (operation === "landing.synchronize") {
+      const statePath = nonEmptyString(parsed.input.state_path);
+      const repositoryPath = nonEmptyString(parsed.input.repository_path);
+      const worktreePath = nonEmptyString(parsed.input.worktree_path);
+      const ticket = singleLineString(parsed.input.ticket);
+      const remoteSyncArgv = stringArray(parsed.input.remote_sync_argv);
+      const completedAt = parsed.input.completed_at;
+      if (
+        statePath === undefined ||
+        repositoryPath === undefined ||
+        worktreePath === undefined ||
+        ticket === undefined ||
+        !/^\d{2}$/u.test(ticket) ||
+        (parsed.input.remote_sync_argv !== null && remoteSyncArgv === undefined) ||
+        !isUtcIsoTimestamp(completedAt)
+      ) {
+        return yield* invalidRequest(
+          "`landing.synchronize` requires state_path, repository_path, worktree_path, a two-digit ticket, remote_sync_argv as an argument array or null, and completed_at.",
+          operation,
+        );
+      }
+      return {
+        schemaVersion: CONTRACT_SCHEMA_VERSION,
+        operation,
+        input: {
+          statePath,
+          repositoryPath,
+          worktreePath,
+          ticket,
+          remoteSyncArgv,
+          completedAt,
+        },
+      };
+    }
+
+    if (operation === "landing.conflict.record") {
+      const statePath = nonEmptyString(parsed.input.state_path);
+      const ticket = singleLineString(parsed.input.ticket);
+      const classification = parsed.input.classification;
+      const decision = singleLineString(parsed.input.decision);
+      const userAuthorized = parsed.input.user_authorized;
+      const completedAt = parsed.input.completed_at;
+      if (
+        statePath === undefined ||
+        ticket === undefined ||
+        !/^\d{2}$/u.test(ticket) ||
+        (classification !== "textual" &&
+          classification !== "substantive" &&
+          classification !== "scope") ||
+        typeof userAuthorized !== "boolean" ||
+        (classification === "scope" && userAuthorized && decision === undefined) ||
+        (classification === "scope" && !userAuthorized && parsed.input.decision !== null) ||
+        (classification !== "scope" && userAuthorized) ||
+        (classification !== "scope" && parsed.input.decision !== null) ||
+        !isUtcIsoTimestamp(completedAt)
+      ) {
+        return yield* invalidRequest(
+          "`landing.conflict.record` requires state_path, a two-digit ticket, classification, explicit user_authorized, decision only for an authorized scope choice, and completed_at.",
+          operation,
+        );
+      }
+      return {
+        schemaVersion: CONTRACT_SCHEMA_VERSION,
+        operation,
+        input: { statePath, ticket, classification, decision, userAuthorized, completedAt },
+      };
+    }
+
+    if (operation === "landing.complete") {
+      const statePath = nonEmptyString(parsed.input.state_path);
+      const repositoryPath = nonEmptyString(parsed.input.repository_path);
+      const worktreePath = nonEmptyString(parsed.input.worktree_path);
+      const evidencePath = nonEmptyString(parsed.input.evidence_path);
+      const ticket = singleLineString(parsed.input.ticket);
+      const cleanupArgv = stringArray(parsed.input.cleanup_argv);
+      const runtimeClosed = parsed.input.runtime_closed;
+      const completedAt = parsed.input.completed_at;
+      if (
+        statePath === undefined ||
+        repositoryPath === undefined ||
+        worktreePath === undefined ||
+        evidencePath === undefined ||
+        ticket === undefined ||
+        !/^\d{2}$/u.test(ticket) ||
+        (parsed.input.cleanup_argv !== null && cleanupArgv === undefined) ||
+        typeof runtimeClosed !== "boolean" ||
+        !isUtcIsoTimestamp(completedAt)
+      ) {
+        return yield* invalidRequest(
+          "`landing.complete` requires state_path, repository_path, worktree_path, evidence_path, a two-digit ticket, cleanup_argv as an argument array or null, boolean runtime_closed, and completed_at.",
+          operation,
+        );
+      }
+      return {
+        schemaVersion: CONTRACT_SCHEMA_VERSION,
+        operation,
+        input: {
+          statePath,
+          repositoryPath,
+          worktreePath,
+          evidencePath,
+          ticket,
+          cleanupArgv,
+          runtimeClosed,
+          completedAt,
         },
       };
     }

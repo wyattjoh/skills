@@ -70,11 +70,16 @@ Then invoke `worktree.prepare`:
       "setup_argvs": [],
       "cleanup": "native-safe",
       "remote": "local-only",
+      "remote_sync_argv": null,
       "commit": null
     }
   }
 }
 ```
+
+Use `remote_sync_argv: null` for local-only policy. Repository remote policy
+must persist the exact non-empty argv array later accepted by
+`landing.synchronize`; callers cannot substitute another command.
 
 For repository tooling, also pass `expected_worktree_path`. The helper validates
 that the prescribed command produced the requested branch at that exact path.

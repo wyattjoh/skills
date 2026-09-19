@@ -31,26 +31,34 @@ modes, and harness-appropriate self-review:
 ## Synchronize before gates
 
 Parallel workers branch from the landed base that existed when they started.
-Once a worker is idle with policy-compliant commits, synchronize that branch to
-the latest local integration branch before final gates or review. Do not fetch
-or assume a remote unless the persisted Repository policy requires that exact
-synchronization.
+Once a worker is idle with policy-compliant commits, call
+`landing.synchronize`. It atomically claims `## Serialized finalization`, then
+rebases that clean ticket branch onto the latest local integration branch. Pass
+`remote_sync_argv: null` for `local-only` policy. A `repository` remote policy
+persists the exact argument array authorized by repository instructions or an
+explicit run policy, then rejects any caller-selected substitute. The helper
+never assumes a remote name or fetch command.
 
-Only one ticket may be in synchronize, gate, review, and land at a time. Process
-ready tickets in dependency order. This keeps each review diff limited to that
-ticket instead of making later base commits appear as reversals.
+Only one ticket may own synchronization, final gates, review, and landing at a
+time. Other implementors continue working and do not consume this serialized
+slot. Process ready tickets in dependency order. Use the returned full-SHA
+`review_range`, not a worker-start base, for every gate and review. This keeps
+each review diff limited to that ticket instead of making later base commits
+appear as reversals.
 
-Resolve textual conflicts yourself with the `resolving-merge-conflicts` skill,
-never by asking the implementor to operate the rebase. Preserve the intent of
-both the landed change and the ticket. If that cannot be done without a scope
-decision, stop and ask the user. After the rebase completes, update the active
-ticket's `Branch` and `Phase` fields, and verify the commit shape on
-`<base>..HEAD` against the persisted Repository policy.
+A `resolve-conflicts` result leaves the serialized slot and Git conflict in
+place. Resolve textual conflicts yourself with the `resolving-merge-conflicts`
+skill, never by asking the implementor to operate the rebase. Preserve the
+intent of both the landed change and the ticket. After the rebase completes,
+call `landing.conflict.record`.
 
-A clean textual resolution is coordination work. A substantive behavioral
-adaptation is implementation work: send it to the same worker as a fix round,
-apply the persisted fix-commit policy, synchronize again, and restart this
-pipeline from the gates.
+Classify a clean textual resolution as `textual`; the helper verifies the clean
+range and advances to gates. Classify a substantive behavioral adaptation as
+`substantive`; it returns the same ticket to the bound implementor as a fix
+round and preserves the reviewed tip needed to enforce append-only fixes. If a
+scope decision is required, first record `scope` with `user_authorized: false`,
+stop, and ask the user. Only a later call with `user_authorized: true` and the
+exact decision records authority and advances to gates.
 
 ## Run and record gates
 
@@ -174,37 +182,33 @@ Never substitute a model.
 
 ## Landing
 
-After a finalized clean round, land immediately from the recorded base checkout:
+After a finalized clean round advances serialized state to `ready-to-land`,
+call `landing.complete` with `runtime_closed: false` and a run-local immutable
+evidence path. The helper validates that both accepted PASS axes and the
+implementor self-review cover the synchronized ticket tip, then attempts the
+fast-forward from the recorded local base checkout.
 
-```sh
-cd <base checkout> && git merge --ff-only <branch>
-```
+A refused fast-forward returns `resynchronize` instead of guessing success. The
+helper clears the stale final-review binding but retains the serialized ticket.
+Call `landing.synchronize` again, resolve conflicts as above, rerun every gate,
+and run both fresh review axes focused on newly landed interactions and
+conflict-resolution hunks. Only a new `ready-to-land` result may be retried.
 
-The fast-forward is the serialization point. If it is refused, the base moved
-after review. Return to the ticket worktree, synchronize against the latest
-base according to persisted repository policy, resolve textual conflicts as
-above, rerun every gate, and run both fresh review axes focused on newly landed
-interactions and conflict-resolution hunks. If either axis finds a substantive
-adaptation, send one consolidated fix round to the same implementor, then rerun
-the full pipeline. Only then retry the fast-forward.
+Once the tip is landed, the helper returns `close-runtime` without cleaning the
+worktree or releasing serialized state. Close the completed implementor tab and
+call `landing.complete` again with `runtime_closed: true`. It verifies the
+ticket tip remains landed and the worktree is clean. Native cleanup runs
+`git worktree remove <path>` without `--force` and verifies the branch still
+exists. Repository cleanup requires the
+exact authorized `cleanup_argv`, then receives the same removal and branch
+retention checks. The helper writes immutable JSON evidence, marks the ticket
+landed at its full tip, removes its active block and serialized slot, updates
+`Base sha:`, and appends retained-branch and landed-evidence records before it
+returns `schedule`.
 
-After landing, close the implementor tab and finish the worktree lifecycle
-according to the persisted Repository policy:
-
-```sh
-herdr tab close <tab>
-```
-
-A repository-required cleanup tool is authoritative. The native fallback first
-verifies that the worktree is clean and the branch is landed, removes it without
-force, and retains the branch. Never silently change cleanup tools or delete a
-retained branch.
-
-Set the ticket row's `status` to `landed` and fill its `sha`, leaving bound role
-columns untouched as provenance. Remove its `## Active tickets` block, update
-`Base sha:`, review evidence, retained branches, `.scratch/coordinators.md`, and
-any scope decision. Then call `scheduler.plan`; it immediately fills newly
-available implementor capacity in deterministic ticket order.
+After that success, update `.scratch/coordinators.md`, then call
+`scheduler.plan`. It immediately fills newly available implementor capacity in
+deterministic ticket order.
 
 ## Scope decisions
 

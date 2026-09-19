@@ -11,6 +11,7 @@ import {
 import { claimCoordinator, markCoordinatorReady, verifyCoordinator } from "./lib/coordinator.ts";
 import { waitAnyWorker } from "./lib/herdr.ts";
 import { prepareImplementorLaunch, recordImplementorLaunch } from "./lib/implementor.ts";
+import { completeLanding, recordLandingConflict, synchronizeLanding } from "./lib/landing.ts";
 import { runPreflight } from "./lib/preflight.ts";
 import {
   finalizeReviewRound,
@@ -112,6 +113,36 @@ const execute = (request: CoordinateRequest): Effect.Effect<number, never> =>
 
     if (request.operation === "worktree.prepare") {
       const outcome = yield* Effect.either(prepareWorktree(request.input));
+      if (Either.isLeft(outcome)) {
+        print(failureResponse(request.operation, [outcome.left.issue], null));
+        return 1;
+      }
+      print(successResponse(request.operation, outcome.right));
+      return 0;
+    }
+
+    if (request.operation === "landing.synchronize") {
+      const outcome = yield* Effect.either(synchronizeLanding(request.input));
+      if (Either.isLeft(outcome)) {
+        print(failureResponse(request.operation, [outcome.left.issue], null));
+        return 1;
+      }
+      print(successResponse(request.operation, outcome.right));
+      return 0;
+    }
+
+    if (request.operation === "landing.conflict.record") {
+      const outcome = yield* Effect.either(recordLandingConflict(request.input));
+      if (Either.isLeft(outcome)) {
+        print(failureResponse(request.operation, [outcome.left.issue], null));
+        return 1;
+      }
+      print(successResponse(request.operation, outcome.right));
+      return 0;
+    }
+
+    if (request.operation === "landing.complete") {
+      const outcome = yield* Effect.either(completeLanding(request.input));
       if (Either.isLeft(outcome)) {
         print(failureResponse(request.operation, [outcome.left.issue], null));
         return 1;

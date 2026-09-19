@@ -12,6 +12,7 @@ import type {
   RoleRecord,
 } from "./contract.ts";
 import { spawnGit } from "./git.ts";
+import { applyFinalizationFix, applyFinalReviewOutcome, LandingError } from "./landing.ts";
 import { mutateStateFile, StateMutationError } from "./state-mutation.ts";
 import { validateStateText } from "./state.ts";
 
@@ -377,6 +378,50 @@ const worktreeStatus = (worktreePath: string): string => {
   return result.stdout.trimEnd();
 };
 
+const validateSerializedFinalization = (
+  markdown: string,
+  ticket: string,
+  head: string,
+  baseRef: string | undefined,
+): { cycle: number } | undefined => {
+  const match = markdown.match(
+    /^## Serialized finalization\s*\r?\n\r?\n```json\r?\n([\s\S]*?)\r?\n```\s*$/mu,
+  );
+  if (match === null) return undefined;
+  let value: Record<string, unknown>;
+  try {
+    value = JSON.parse(match[1]!) as Record<string, unknown>;
+  } catch {
+    throw reviewError(
+      "review.finalization_malformed",
+      "Serialized finalization state is malformed.",
+      "Repair it from synchronization evidence before gates or review.",
+    );
+  }
+  if (value.ticket !== ticket) {
+    throw reviewError(
+      "review.finalization_serialized",
+      `Ticket \`${String(value.ticket)}\` owns serialized finalization.`,
+      "Keep other implementors running, but gate and review only the serialized ticket.",
+    );
+  }
+  if (value.phase !== "gates" || value.ticket_sha !== head) {
+    throw reviewError(
+      "review.finalization_stale",
+      "Gate or review input does not match the synchronized ticket tip and phase.",
+      "Run landing.synchronize, then rerun every gate against its returned tip.",
+    );
+  }
+  if (baseRef !== undefined && value.base_sha !== baseRef) {
+    throw reviewError(
+      "review.range_mismatch",
+      "Reviewer base_ref does not equal the synchronized full-SHA review base.",
+      "Use the exact review_range returned by landing.synchronize.",
+    );
+  }
+  return { cycle: typeof value.cycle === "number" ? value.cycle : 0 };
+};
+
 const worktreeHead = (worktreePath: string): string => {
   const result = spawnGit(["rev-parse", "HEAD"], { cwd: worktreePath });
   const head = result.stdout.trim();
@@ -390,7 +435,7 @@ const worktreeHead = (worktreePath: string): string => {
   return head;
 };
 
-const reviewPrompt = (input: ReviewLaunchPrepareInput): string => {
+const reviewPrompt = (input: ReviewLaunchPrepareInput, finalizationCycle: number): string => {
   const focus =
     input.axis === "standards"
       ? "Review only against the listed repository instruction, architecture, domain, and contract sources."
@@ -401,6 +446,11 @@ const reviewPrompt = (input: ReviewLaunchPrepareInput): string => {
     `Diff range: ${input.baseRef}..${input.branch}`,
     `Sources: ${input.contextPaths.join(", ")}`,
     `Already landed tickets: ${input.landedTickets.length === 0 ? "none" : input.landedTickets.join(", ")}`,
+    ...(finalizationCycle > 0
+      ? [
+          "This is a refused-fast-forward recovery review. Focus on newly landed interactions and synchronization conflict-resolution hunks.",
+        ]
+      : []),
     focus,
     "Do not modify the worktree, index, commits, or any repository file.",
     "Report only actionable defects, not observations or personal style preferences.",
@@ -557,6 +607,14 @@ export const prepareReviewerLaunch = (
       );
     }
     const reviewedHead = worktreeHead(requestedWorktree);
+    let finalizationCycle = 0;
+    try {
+      finalizationCycle =
+        validateSerializedFinalization(markdown, input.ticket, reviewedHead, input.baseRef)
+          ?.cycle ?? 0;
+    } catch (error) {
+      return yield* error as ReviewError;
+    }
     if (input.gateEvidencePaths.length !== policy.gates.length) {
       return yield* reviewError(
         "review.gates_incomplete",
@@ -680,7 +738,7 @@ export const prepareReviewerLaunch = (
     const prefix = parsePrefix(markdown);
     const session = `${prefix}-review-${input.ticket}-r${input.round}-${input.axis}-a${input.attempt}`;
     const tab = `review ${prefix} ${input.ticket} r${input.round} ${input.axis} a${input.attempt}`;
-    const prompt = reviewPrompt(input);
+    const prompt = reviewPrompt(input, finalizationCycle);
     const statusBefore = worktreeStatus(requestedWorktree);
     if (statusBefore.length > 0) {
       return yield* reviewError(
@@ -1019,6 +1077,12 @@ export const recordGate = (input: GateRecordInput): Effect.Effect<GateRecordResu
     );
     const policy = parsePolicy(markdown);
     const runtime = parseActiveTicket(markdown, input.ticket);
+    const currentHead = worktreeHead(runtime.worktree);
+    try {
+      validateSerializedFinalization(markdown, input.ticket, currentHead, undefined);
+    } catch (error) {
+      return yield* error as ReviewError;
+    }
     const activeWorktree = yield* reviewIo(
       () => realpath(runtime.worktree),
       "gate.worktree_path_failed",
@@ -1082,6 +1146,29 @@ export const recordGate = (input: GateRecordInput): Effect.Effect<GateRecordResu
       "gate.evidence_write_failed",
       "Could not persist gate evidence",
     );
+    if (action === "fix") {
+      yield* mutateStateFile(input.statePath, (state) =>
+        Effect.try({
+          try: () => ({
+            markdown: applyFinalizationFix(state, {
+              ticket: input.ticket,
+              reviewedHead: head,
+              completedAt: input.completedAt,
+              phase: "gate fix required",
+            }),
+            result: undefined,
+          }),
+          catch: (error) =>
+            error instanceof LandingError
+              ? new ReviewError({ issue: error.issue })
+              : reviewError(
+                  "gate.finalization_failed",
+                  `Could not advance serialized finalization: ${(error as Error).message}`,
+                  "Repair finalization state and retry the immutable gate evidence.",
+                ),
+        }),
+      ).pipe(Effect.mapError(fromMutationError));
+    }
     return {
       ticket: input.ticket,
       round: input.round,
@@ -1123,6 +1210,7 @@ type StoredReviewEvidence = {
   verdict: "PASS" | "FAIL" | null;
   findings: ReviewFinding[];
   report_path: string;
+  head_before: string;
 };
 
 const readStoredEvidence = (path: string): Effect.Effect<StoredReviewEvidence, ReviewError> =>
@@ -1210,6 +1298,7 @@ export const finalizeReviewRound = (
         evidence.status !== "accepted" ||
         (evidence.verdict !== "PASS" && evidence.verdict !== "FAIL") ||
         typeof evidence.report_path !== "string" ||
+        typeof evidence.head_before !== "string" ||
         (evidence.verdict === "PASS" && evidence.findings.length !== 0) ||
         (evidence.verdict === "FAIL" && evidence.findings.length === 0)
       ) {
@@ -1280,13 +1369,41 @@ export const finalizeReviewRound = (
       next_round: findings.length > 0 && input.round < 3 ? input.round + 1 : null,
       fix_commit_policy: fixCommitPolicy,
     };
+    if (standards.head_before !== spec.head_before) {
+      return yield* reviewError(
+        "review.round_evidence_invalid",
+        "Standards and Spec evidence do not cover the same ticket tip.",
+        "Repeat both axes against the current complete integration-base-to-ticket-tip range.",
+      );
+    }
     yield* mutateStateFile(input.statePath, (state) =>
-      Effect.succeed({
-        markdown: appendEvidenceLine(
-          state,
-          `- Ticket ${input.ticket} round ${input.round} finalized: ${verdict}; self-review ${input.selfReviewPath}; Standards ${standards.report_path}; Spec ${spec.report_path}${findings.length > 0 ? `; fixes ${input.fixRequestPath}` : ""}`,
-        ),
-        result: undefined,
+      Effect.try({
+        try: () => {
+          const withFinalization = applyFinalReviewOutcome(state, {
+            ticket: input.ticket,
+            verdict,
+            reviewedHead: standards.head_before,
+            standardsEvidencePath: input.standardsEvidencePath,
+            specEvidencePath: input.specEvidencePath,
+            selfReviewPath: input.selfReviewPath,
+            completedAt: input.completedAt,
+          });
+          return {
+            markdown: appendEvidenceLine(
+              withFinalization,
+              `- Ticket ${input.ticket} round ${input.round} finalized: ${verdict}; self-review ${input.selfReviewPath}; Standards ${standards.report_path}; Spec ${spec.report_path}${findings.length > 0 ? `; fixes ${input.fixRequestPath}` : ""}`,
+            ),
+            result: undefined,
+          };
+        },
+        catch: (error) =>
+          error instanceof LandingError
+            ? new ReviewError({ issue: error.issue })
+            : reviewError(
+                "review.finalization_failed",
+                `Could not advance serialized finalization: ${(error as Error).message}`,
+                "Repair finalization state and retry the same immutable review evidence.",
+              ),
       }),
     ).pipe(Effect.mapError(fromMutationError));
     return result;
