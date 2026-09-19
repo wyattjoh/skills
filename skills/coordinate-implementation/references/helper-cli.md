@@ -646,6 +646,46 @@ running any gate-recording logic. The evidence preserves that canonical
 completion time. Evidence files are immutable: byte-identical recovery
 succeeds, while different content at the same path fails.
 
+## `gate.rerun.record`
+
+Use this explicit recovery only when a normal failed gate passes on an unchanged
+rerun and the user authorizes treating the first result as transient. It does
+not permit an empty fix commit or bypass a still-red gate.
+
+```json
+{
+  "schema_version": 1,
+  "operation": "gate.rerun.record",
+  "input": {
+    "state_path": ".scratch/example/RESUME.md",
+    "previous_evidence_path": ".scratch/example/reviews/04-round-0-test-attempt-1.json",
+    "evidence_path": ".scratch/example/reviews/04-round-0-test-attempt-2.json",
+    "worktree_path": "/worktrees/example/ticket-04",
+    "ticket": "04",
+    "round": 0,
+    "name": "test",
+    "attempt": 2,
+    "exit_code": 0,
+    "stdout": "all tests passed",
+    "stderr": "",
+    "user_authorized": true,
+    "diagnostic": "unrelated full-suite timeout passed on unchanged rerun",
+    "completed_at": "2026-09-19T01:05:00Z"
+  }
+}
+```
+
+The operation requires the immediately preceding immutable evidence to be a
+normal `failed` gate with `action: fix`. Ticket, round, configured argv,
+canonical worktree, and HEAD must match, the worktree must remain clean, and
+the current append-only finalization must still bind that same tip. Success
+writes separate immutable passing evidence, preserves the failed evidence,
+clears only the pending append-fix sentinel, reconstructs the exact review
+range and commit count, returns finalization to `gates`, and records the user
+authorization in `## Decisions`. A changed HEAD, dirty worktree, different gate,
+stale evidence, missing authority, or nonzero rerun fails without changing
+state. Repeating the byte-identical operation is idempotent.
+
 ## `review.launch.prepare`
 
 Prepare each Standards or Spec axis independently in a newly created Herdr pane:

@@ -1,9 +1,11 @@
 import { Data, Effect } from "effect";
 import { mkdir, readFile, realpath, writeFile } from "node:fs/promises";
 import { basename, dirname, isAbsolute, relative, resolve, sep } from "node:path";
+import { isUtcIsoTimestamp } from "./contract.ts";
 import type {
   CliIssue,
   GateRecordInput,
+  GateRerunRecordInput,
   ReviewAxis,
   ReviewLaunchPrepareInput,
   ReviewLaunchRecordInput,
@@ -16,6 +18,7 @@ import {
   applyEscalationBlock,
   applyFinalizationFix,
   applyFinalReviewOutcome,
+  applyNoChangeGateRerun,
   LandingError,
 } from "./landing.ts";
 import { mutateStateFile, StateMutationError } from "./state-mutation.ts";
@@ -429,6 +432,52 @@ const validateSerializedFinalization = (
     );
   }
   return { cycle: typeof value.cycle === "number" ? value.cycle : 0 };
+};
+
+const noChangeFinalizationBase = (markdown: string, ticket: string, head: string): string => {
+  const match = markdown.match(
+    /^## Serialized finalization\s*\r?\n\r?\n```json\r?\n([\s\S]*?)\r?\n```\s*$/mu,
+  );
+  if (match === null) {
+    throw reviewError(
+      "gate.rerun_state_invalid",
+      "No serialized finalization exists for the no-change gate rerun.",
+      "Synchronize the ticket and record its failed gate before recovery.",
+    );
+  }
+  let value: Record<string, unknown>;
+  try {
+    value = JSON.parse(match[1]!) as Record<string, unknown>;
+  } catch {
+    throw reviewError(
+      "gate.rerun_state_invalid",
+      "Serialized finalization is malformed for the no-change gate rerun.",
+      "Repair finalization state from durable synchronization evidence.",
+    );
+  }
+  const policy = value.commit_policy;
+  const phase = value.phase;
+  const previousTicketSha = value.previous_ticket_sha;
+  const initial = (phase === "fixing" || phase === "synchronizing") && previousTicketSha === head;
+  const recovered = phase === "gates" && previousTicketSha === null;
+  if (
+    value.ticket !== ticket ||
+    value.ticket_sha !== head ||
+    (!initial && !recovered) ||
+    typeof value.base_sha !== "string" ||
+    !/^[0-9a-f]{40,64}$/u.test(value.base_sha) ||
+    typeof policy !== "object" ||
+    policy === null ||
+    Array.isArray(policy) ||
+    (policy as Record<string, unknown>).fixes !== "append"
+  ) {
+    throw reviewError(
+      "gate.rerun_state_invalid",
+      "No-change gate rerun does not match the append-only serialized finalization binding.",
+      "Preserve the failed gate, ticket tip, base, and append policy before recording the rerun.",
+    );
+  }
+  return value.base_sha;
 };
 
 const worktreeHead = (worktreePath: string): string => {
@@ -1179,6 +1228,237 @@ export const recordGate = (input: GateRecordInput): Effect.Effect<GateRecordResu
       evidence_path: input.evidencePath,
       retry_delay_seconds: retryDelay,
       next_attempt: nextAttempt,
+    };
+  });
+
+/**
+ * Successful user-authorized rerun of a failed gate without a ticket commit.
+ */
+export type GateRerunRecordResult = {
+  ticket: string;
+  round: number;
+  name: string;
+  worktree_path: string;
+  attempt: number;
+  status: "passed";
+  action: "continue";
+  head: string;
+  previous_evidence_path: string;
+  evidence_path: string;
+  user_authorized: true;
+  diagnostic: string;
+  recovered: boolean;
+};
+
+/**
+ * Records a passing same-HEAD rerun and restores serialized gate review without a fake commit.
+ *
+ * @param input - Prior failed evidence, fresh output, explicit authority, and unchanged worktree.
+ * @returns The durable passing evidence and restored gate action.
+ */
+export const recordGateRerun = (
+  input: GateRerunRecordInput,
+): Effect.Effect<GateRerunRecordResult, ReviewError> =>
+  Effect.gen(function* () {
+    yield* reviewIo(
+      () => ensureRunLocalPath(input.statePath, input.previousEvidencePath),
+      "gate.rerun_evidence_path_failed",
+      "Could not validate prior gate evidence path",
+    );
+    yield* reviewIo(
+      () => ensureRunLocalPath(input.statePath, input.evidencePath),
+      "gate.rerun_evidence_path_failed",
+      "Could not validate passing rerun evidence path",
+    );
+    const markdown = yield* reviewIo(
+      () => readFile(input.statePath, "utf8"),
+      "gate.rerun_state_read_failed",
+      "Could not read run state",
+    );
+    yield* validateStateText(input.statePath, markdown).pipe(
+      Effect.mapError((error) => new ReviewError({ issue: error.issue })),
+    );
+    const policy = parsePolicy(markdown);
+    const runtime = parseActiveTicket(markdown, input.ticket);
+    const activeWorktree = yield* reviewIo(
+      () => realpath(runtime.worktree),
+      "gate.rerun_worktree_path_failed",
+      "Could not resolve the active ticket worktree",
+    );
+    const suppliedWorktree = yield* reviewIo(
+      () => realpath(input.worktreePath),
+      "gate.rerun_worktree_path_failed",
+      "Could not resolve the supplied gate worktree",
+    );
+    if (activeWorktree !== suppliedWorktree) {
+      return yield* reviewError(
+        "gate.rerun_worktree_mismatch",
+        "Gate rerun worktree does not match the active ticket runtime.",
+        "Rerun the exact failed gate in the active ticket worktree only.",
+      );
+    }
+    const head = worktreeHead(activeWorktree);
+    if (worktreeStatus(activeWorktree) !== "") {
+      return yield* reviewError(
+        "gate.rerun_worktree_dirty",
+        "No-change gate recovery requires a clean ticket worktree.",
+        "Commit a real fix under the persisted policy or restore the clean reviewed tip before rerunning.",
+      );
+    }
+    const baseSha = yield* Effect.try({
+      try: () => noChangeFinalizationBase(markdown, input.ticket, head),
+      catch: (error) =>
+        error instanceof ReviewError
+          ? error
+          : reviewError(
+              "gate.rerun_state_invalid",
+              `Could not validate no-change finalization: ${(error as Error).message}`,
+              "Repair finalization state from durable gate evidence.",
+            ),
+    });
+    const gate = policy.gates.find((candidate) => candidate.name === input.name);
+    if (gate === undefined) {
+      return yield* reviewError(
+        "gate.not_configured",
+        `Gate \`${input.name}\` is not present in the persisted repository-derived policy.`,
+        "Rerun only an exact gate argv persisted before workers launched.",
+      );
+    }
+    const previous = yield* reviewIo(
+      async () => JSON.parse(await readFile(input.previousEvidencePath, "utf8")) as unknown,
+      "gate.rerun_previous_evidence_read_failed",
+      "Could not read prior failed gate evidence",
+    );
+    if (typeof previous !== "object" || previous === null || Array.isArray(previous)) {
+      return yield* reviewError(
+        "gate.rerun_previous_evidence_invalid",
+        "Prior gate evidence is malformed.",
+        "Use the immutable failed evidence produced by gate.record.",
+      );
+    }
+    const prior = previous as Record<string, unknown>;
+    const priorGate = prior.gate;
+    if (
+      prior.schema_version !== 1 ||
+      prior.ticket !== input.ticket ||
+      prior.round !== input.round ||
+      prior.head !== head ||
+      prior.worktree_path !== activeWorktree ||
+      typeof priorGate !== "object" ||
+      priorGate === null ||
+      Array.isArray(priorGate) ||
+      (priorGate as Record<string, unknown>).name !== input.name ||
+      JSON.stringify((priorGate as Record<string, unknown>).argv) !== JSON.stringify(gate.argv) ||
+      prior.attempt !== input.attempt - 1 ||
+      prior.status !== "failed" ||
+      prior.action !== "fix" ||
+      typeof prior.exit_code !== "number" ||
+      prior.exit_code === 0 ||
+      typeof prior.stdout !== "string" ||
+      typeof prior.stderr !== "string" ||
+      !isUtcIsoTimestamp(prior.completed_at) ||
+      input.completedAt <= prior.completed_at
+    ) {
+      return yield* reviewError(
+        "gate.rerun_previous_evidence_invalid",
+        "Prior gate evidence does not match the failed same-HEAD gate attempt.",
+        "Use the immediately preceding failed evidence for this ticket, round, gate, worktree, and HEAD.",
+      );
+    }
+    const count = spawnGit(["rev-list", "--count", `${baseSha}..HEAD`], {
+      cwd: activeWorktree,
+    });
+    const commitCount = Number(count.stdout.trim());
+    if (count.exitCode !== 0 || !Number.isSafeInteger(commitCount) || commitCount <= 0) {
+      return yield* reviewError(
+        "gate.rerun_range_invalid",
+        "Could not reconstruct a non-empty synchronized ticket range for the gate rerun.",
+        "Restore the serialized base and ticket commits before recovery.",
+      );
+    }
+    const evidence = `${JSON.stringify(
+      {
+        schema_version: 1,
+        ticket: input.ticket,
+        round: input.round,
+        head,
+        worktree_path: activeWorktree,
+        gate: { name: input.name, argv: gate.argv },
+        attempt: input.attempt,
+        status: "passed",
+        action: "continue",
+        exit_code: input.exitCode,
+        stdout: input.stdout,
+        stderr: input.stderr,
+        completed_at: input.completedAt,
+        rerun_of: input.previousEvidencePath,
+        user_authorized: input.userAuthorized,
+        recovery_diagnostic: input.diagnostic,
+      },
+      null,
+      2,
+    )}\n`;
+    yield* reviewIo(
+      () => writeImmutable(input.evidencePath, evidence),
+      "gate.rerun_evidence_write_failed",
+      "Could not persist passing rerun evidence",
+    );
+    const recovered = yield* mutateStateFile(input.statePath, (state) =>
+      Effect.try({
+        try: () => {
+          if (worktreeHead(activeWorktree) !== head) {
+            throw reviewError(
+              "gate.rerun_head_changed",
+              "Ticket HEAD changed while recording the no-change gate rerun.",
+              "Rerun the gate and record new evidence against the current clean HEAD.",
+            );
+          }
+          if (worktreeStatus(activeWorktree) !== "") {
+            throw reviewError(
+              "gate.rerun_worktree_dirty",
+              "Ticket worktree changed while recording the no-change gate rerun.",
+              "Commit a real fix or restore the clean reviewed tip before retrying.",
+            );
+          }
+          const update = applyNoChangeGateRerun(state, {
+            ticket: input.ticket,
+            name: input.name,
+            reviewedHead: head,
+            baseSha,
+            commitCount,
+            previousEvidencePath: input.previousEvidencePath,
+            evidencePath: input.evidencePath,
+            diagnostic: input.diagnostic,
+            completedAt: input.completedAt,
+          });
+          return { markdown: update.markdown, result: update.recovered };
+        },
+        catch: (error) =>
+          error instanceof ReviewError
+            ? error
+            : error instanceof LandingError
+              ? new ReviewError({ issue: error.issue })
+              : reviewError(
+                  "gate.rerun_finalization_failed",
+                  `Could not restore serialized gate review: ${(error as Error).message}`,
+                  "Repair finalization state from immutable gate evidence.",
+                ),
+      }),
+    ).pipe(Effect.mapError(fromMutationError));
+    return {
+      ticket: input.ticket,
+      round: input.round,
+      name: input.name,
+      worktree_path: activeWorktree,
+      attempt: input.attempt,
+      status: "passed",
+      action: "continue",
+      head,
+      previous_evidence_path: input.previousEvidencePath,
+      evidence_path: input.evidencePath,
+      user_authorized: input.userAuthorized,
+      diagnostic: input.diagnostic,
+      recovered,
     };
   });
 

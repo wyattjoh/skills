@@ -172,6 +172,14 @@ Include the implementor in the next wait-any call. When it returns a terminal
 status, restart the pipeline from the recorded gates. Increment the ticket row's
 `rounds` column for each completed fix round.
 
+Do not manufacture an empty commit when a failed gate passes on an unchanged
+rerun. Stop and obtain explicit user authority. Then call `gate.rerun.record`
+with the immediately preceding failed evidence and fresh passing output. The
+helper requires the same clean worktree, HEAD, configured gate, and append-only
+finalization binding, preserves both evidence files, records the authorization,
+and returns the ticket to `gates`. Any real source change still requires the
+persisted fix-commit policy and a new commit.
+
 Each fix round receives new gate evidence bound to its new HEAD, new fresh
 Standards and Spec sessions, and new report files. Evidence is immutable and
 byte-identical recovery is the only permitted path reuse. Never overwrite an

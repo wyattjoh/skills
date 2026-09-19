@@ -884,6 +884,86 @@ ${JSON.stringify(
   });
 });
 
+const failedGateFixture = (): {
+  fixture: ReviewFixture;
+  base: string;
+  head: string;
+  previousEvidencePath: string;
+} => {
+  const fixture = makeFixture("pi");
+  preparePolicy(fixture);
+  activateFixture(fixture, "pi");
+  const base = spawnGit(["rev-parse", "HEAD"], { cwd: fixture.worktreePath }).stdout.trim();
+  writeFileSync(join(fixture.worktreePath, "ticket.txt"), "ticket\n");
+  expect(spawnGit(["add", "ticket.txt"], { cwd: fixture.worktreePath }).exitCode).toBe(0);
+  expect(
+    spawnGit(
+      ["-c", "user.name=Test", "-c", "user.email=test@example.com", "commit", "-qm", "ticket"],
+      { cwd: fixture.worktreePath },
+    ).exitCode,
+  ).toBe(0);
+  const head = spawnGit(["rev-parse", "HEAD"], { cwd: fixture.worktreePath }).stdout.trim();
+  const finalization = {
+    ticket: "06",
+    cycle: 0,
+    phase: "gates",
+    base_branch: "main",
+    base_sha: base,
+    ticket_sha: head,
+    review_range: `${base}..${head}`,
+    commit_count: 1,
+    commit_policy: { commits: "multiple", fixes: "append" },
+    remote_sync_argv: null,
+    conflicts: [],
+    previous_ticket_sha: null,
+    standards_evidence_path: null,
+    spec_evidence_path: null,
+    self_review_path: null,
+    completed_at: "2026-09-19T00:58:00Z",
+  };
+  writeFileSync(
+    fixture.statePath,
+    readFileSync(fixture.statePath, "utf8").replace(
+      "## Decisions",
+      `## Serialized finalization\n\n\`\`\`json\n${JSON.stringify(finalization, null, 2)}\n\`\`\`\n\n## Decisions`,
+    ),
+  );
+  const failed = runCli(gateRecordRequest(fixture, "failed"));
+  expect(failed.exitCode).toBe(0);
+  return {
+    fixture,
+    base,
+    head,
+    previousEvidencePath: join(fixture.runPath, "reviews", "06-round-0-test-gate-attempt-1.json"),
+  };
+};
+
+const gateRerunRequest = (
+  fixture: ReviewFixture,
+  previousEvidencePath: string,
+  overrides: Record<string, unknown> = {},
+) => ({
+  schema_version: 1,
+  operation: "gate.rerun.record",
+  input: {
+    state_path: fixture.statePath,
+    previous_evidence_path: previousEvidencePath,
+    evidence_path: join(fixture.runPath, "reviews", "06-round-0-test-gate-attempt-2.json"),
+    worktree_path: fixture.worktreePath,
+    ticket: "06",
+    round: 0,
+    name: "test",
+    attempt: 2,
+    exit_code: 0,
+    stdout: "rerun passed\n",
+    stderr: "",
+    user_authorized: true,
+    diagnostic: "unrelated full-suite timeout passed on unchanged rerun",
+    completed_at: "2026-09-19T01:00:00Z",
+    ...overrides,
+  },
+});
+
 describe("gates and review rounds", () => {
   it("rejects gate evidence from a second checkout at the same HEAD", () => {
     const fixture = makeFixture("pi");
@@ -933,6 +1013,112 @@ describe("gates and review rounds", () => {
       gate: { name: "test", argv: ["bun", "test"] },
       stdout: "gate stdout\n",
       stderr: "gate stderr\n",
+    });
+  });
+
+  it("records an authorized passing same-HEAD rerun without fabricating a fix commit", () => {
+    const { fixture, base, head, previousEvidencePath } = failedGateFixture();
+    writeFileSync(
+      fixture.statePath,
+      readFileSync(fixture.statePath, "utf8").replace(
+        '"phase": "fixing"',
+        '"phase": "synchronizing"',
+      ),
+    );
+    const before = readFileSync(fixture.statePath, "utf8");
+    const unauthorized = runCli(
+      gateRerunRequest(fixture, previousEvidencePath, { user_authorized: false }),
+    );
+    expect(unauthorized.exitCode).toBe(2);
+    expect(readFileSync(fixture.statePath, "utf8")).toBe(before);
+
+    const result = runCli(gateRerunRequest(fixture, previousEvidencePath));
+
+    expect(result.exitCode).toBe(0);
+    expect(result.stdout.result).toMatchObject({
+      ticket: "06",
+      round: 0,
+      name: "test",
+      attempt: 2,
+      status: "passed",
+      action: "continue",
+      head,
+      previous_evidence_path: previousEvidencePath,
+      user_authorized: true,
+      recovered: false,
+    });
+    expect(
+      JSON.parse(
+        readFileSync(
+          join(fixture.runPath, "reviews", "06-round-0-test-gate-attempt-2.json"),
+          "utf8",
+        ),
+      ),
+    ).toMatchObject({
+      ticket: "06",
+      head,
+      attempt: 2,
+      status: "passed",
+      action: "continue",
+      rerun_of: previousEvidencePath,
+      user_authorized: true,
+      recovery_diagnostic: "unrelated full-suite timeout passed on unchanged rerun",
+    });
+    const state = readFileSync(fixture.statePath, "utf8");
+    expect(state.includes('"phase": "gates"')).toBe(true);
+    expect(state.includes(`"review_range": "${base}..${head}"`)).toBe(true);
+    expect(state.includes('"commit_count": 1')).toBe(true);
+    expect(state.includes('"previous_ticket_sha": null')).toBe(true);
+    expect(state.includes("Phase: gates after authorized no-change rerun")).toBe(true);
+    expect(state.includes("user-authorized no-change rerun of gate test")).toBe(true);
+
+    const recovered = runCli(gateRerunRequest(fixture, previousEvidencePath));
+    expect(recovered.exitCode).toBe(0);
+    expect((recovered.stdout.result as { recovered: boolean }).recovered).toBe(true);
+    expect(readFileSync(fixture.statePath, "utf8")).toBe(state);
+  });
+
+  it("rejects a no-change gate rerun from a dirty worktree", () => {
+    const dirty = failedGateFixture();
+    writeFileSync(join(dirty.fixture.worktreePath, "untracked.txt"), "dirty\n");
+
+    const result = runCli(gateRerunRequest(dirty.fixture, dirty.previousEvidencePath));
+
+    expect(result.exitCode).toBe(1);
+    expect(result.stdout).toMatchObject({
+      errors: [{ code: "gate.rerun_worktree_dirty" }],
+    });
+  });
+
+  it("rejects a no-change gate rerun after HEAD changes", () => {
+    const changed = failedGateFixture();
+    writeFileSync(join(changed.fixture.worktreePath, "later.txt"), "later\n");
+    expect(spawnGit(["add", "later.txt"], { cwd: changed.fixture.worktreePath }).exitCode).toBe(0);
+    expect(
+      spawnGit(
+        ["-c", "user.name=Test", "-c", "user.email=test@example.com", "commit", "-qm", "later"],
+        { cwd: changed.fixture.worktreePath },
+      ).exitCode,
+    ).toBe(0);
+
+    const result = runCli(gateRerunRequest(changed.fixture, changed.previousEvidencePath));
+
+    expect(result.exitCode).toBe(1);
+    expect(result.stdout).toMatchObject({
+      errors: [{ code: "gate.rerun_state_invalid" }],
+    });
+  });
+
+  it("rejects a no-change gate rerun with mismatched prior evidence", () => {
+    const mismatched = failedGateFixture();
+
+    const result = runCli(
+      gateRerunRequest(mismatched.fixture, mismatched.previousEvidencePath, { name: "format" }),
+    );
+
+    expect(result.exitCode).toBe(1);
+    expect(result.stdout).toMatchObject({
+      errors: [{ code: "gate.rerun_previous_evidence_invalid" }],
     });
   });
 

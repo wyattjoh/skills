@@ -457,6 +457,17 @@ export const synchronizeLanding = (
         ancestor.exitCode !== 0 ||
         claim.record.previous_ticket_sha === ticketBefore.stdout.trim()
       ) {
+        yield* updateFinalization(
+          input.statePath,
+          input.ticket,
+          {
+            ...claim.record,
+            phase: "fixing",
+            ticket_sha: ticketBefore.stdout.trim(),
+            completed_at: input.completedAt,
+          },
+          "commit policy fix required",
+        );
         return yield* landingError(
           "landing.fix_policy_violated",
           "The fix round did not append a commit to the previously reviewed ticket tip.",
@@ -819,6 +830,88 @@ export const applyFinalizationFix = (
     input.ticket,
     input.phase,
   );
+};
+
+/**
+ * Restores gate review after an authorized same-HEAD rerun proves a failed gate was transient.
+ *
+ * @param markdown - Latest locked run-state Markdown.
+ * @param input - Exact gate evidence, unchanged ticket identity, and reconstructed range details.
+ * @returns Updated Markdown plus whether the same transition was already durable.
+ */
+export const applyNoChangeGateRerun = (
+  markdown: string,
+  input: {
+    ticket: string;
+    name: string;
+    reviewedHead: string;
+    baseSha: string;
+    commitCount: number;
+    previousEvidencePath: string;
+    evidencePath: string;
+    diagnostic: string;
+    completedAt: string;
+  },
+): { markdown: string; recovered: boolean } => {
+  const finalization = parseFinalization(markdown);
+  if (finalization === undefined) {
+    throw landingError(
+      "landing.finalization_missing",
+      "No serialized finalization exists for the no-change gate rerun.",
+      "Synchronize the ticket and record its failed gate before recovery.",
+    );
+  }
+  const decision = `- ${input.completedAt.slice(0, 10)} ticket ${input.ticket} user-authorized no-change rerun of gate ${input.name}: ${input.diagnostic}; prior ${input.previousEvidencePath}; passing ${input.evidencePath}`;
+  const commitShapeValid =
+    finalization.commit_policy.commits === "multiple"
+      ? input.commitCount > 0
+      : input.commitCount === 1;
+  const alreadyRecovered =
+    finalization.ticket === input.ticket &&
+    finalization.phase === "gates" &&
+    finalization.ticket_sha === input.reviewedHead &&
+    finalization.base_sha === input.baseSha &&
+    finalization.previous_ticket_sha === null &&
+    finalization.review_range === `${input.baseSha}..${input.reviewedHead}` &&
+    finalization.commit_count === input.commitCount &&
+    finalization.completed_at === input.completedAt &&
+    markdown.includes(decision);
+  if (alreadyRecovered) return { markdown, recovered: true };
+  if (
+    finalization.ticket !== input.ticket ||
+    (finalization.phase !== "fixing" && finalization.phase !== "synchronizing") ||
+    finalization.ticket_sha !== input.reviewedHead ||
+    finalization.previous_ticket_sha !== input.reviewedHead ||
+    finalization.base_sha !== input.baseSha ||
+    finalization.commit_policy.fixes !== "append" ||
+    !commitShapeValid
+  ) {
+    throw landingError(
+      "landing.gate_rerun_state_invalid",
+      "No-change gate recovery does not match the append-only serialized finalization binding.",
+      "Preserve the failed gate, ticket tip, base, and append policy before recording the passing rerun.",
+    );
+  }
+  const record: FinalizationRecord = {
+    ...finalization,
+    phase: "gates",
+    review_range: `${input.baseSha}..${input.reviewedHead}`,
+    commit_count: input.commitCount,
+    previous_ticket_sha: null,
+    standards_evidence_path: null,
+    spec_evidence_path: null,
+    self_review_path: null,
+    completed_at: input.completedAt,
+  };
+  const withFinalization = updateActivePhase(
+    upsertFinalization(markdown, record),
+    input.ticket,
+    "gates after authorized no-change rerun",
+  );
+  return {
+    markdown: appendSectionLine(withFinalization, "Decisions", decision),
+    recovered: false,
+  };
 };
 
 /**

@@ -34,6 +34,7 @@ export type CoordinateOperation =
   | "review.launch.prepare"
   | "review.launch.record"
   | "gate.record"
+  | "gate.rerun.record"
   | "review.round.finalize"
   | "landing.synchronize"
   | "landing.conflict.record"
@@ -460,6 +461,26 @@ export type GateRecordInput = {
 };
 
 /**
+ * Input for recording an authorized same-HEAD rerun of a failed gate.
+ */
+export type GateRerunRecordInput = {
+  statePath: string;
+  previousEvidencePath: string;
+  evidencePath: string;
+  worktreePath: string;
+  ticket: string;
+  round: number;
+  name: string;
+  attempt: number;
+  exitCode: 0;
+  stdout: string;
+  stderr: string;
+  userAuthorized: true;
+  diagnostic: string;
+  completedAt: string;
+};
+
+/**
  * Input for combining two accepted review axes into one round outcome.
  */
 export type ReviewRoundFinalizeInput = {
@@ -667,6 +688,11 @@ export type CoordinateRequest =
       schemaVersion: typeof CONTRACT_SCHEMA_VERSION;
       operation: "gate.record";
       input: GateRecordInput;
+    }
+  | {
+      schemaVersion: typeof CONTRACT_SCHEMA_VERSION;
+      operation: "gate.rerun.record";
+      input: GateRerunRecordInput;
     }
   | {
       schemaVersion: typeof CONTRACT_SCHEMA_VERSION;
@@ -1023,6 +1049,7 @@ export const parseRequest = (raw: string): Effect.Effect<CoordinateRequest, Requ
       "review.launch.prepare",
       "review.launch.record",
       "gate.record",
+      "gate.rerun.record",
       "review.round.finalize",
       "landing.synchronize",
       "landing.conflict.record",
@@ -1870,6 +1897,68 @@ export const parseRequest = (raw: string): Effect.Effect<CoordinateRequest, Requ
         schemaVersion: CONTRACT_SCHEMA_VERSION,
         operation,
         input: { statePath, ticket, attempt, status, diagnostic },
+      };
+    }
+
+    if (operation === "gate.rerun.record") {
+      const statePath = nonEmptyString(parsed.input.state_path);
+      const previousEvidencePath = nonEmptyString(parsed.input.previous_evidence_path);
+      const evidencePath = nonEmptyString(parsed.input.evidence_path);
+      const worktreePath = nonEmptyString(parsed.input.worktree_path);
+      const ticket = singleLineString(parsed.input.ticket);
+      const round = nonNegativeInteger(parsed.input.round);
+      const name = singleLineString(parsed.input.name);
+      const attempt = positiveInteger(parsed.input.attempt);
+      const exitCode = nonNegativeInteger(parsed.input.exit_code);
+      const stdout = typeof parsed.input.stdout === "string" ? parsed.input.stdout : undefined;
+      const stderr = typeof parsed.input.stderr === "string" ? parsed.input.stderr : undefined;
+      const userAuthorized = parsed.input.user_authorized;
+      const diagnostic = singleLineString(parsed.input.diagnostic);
+      const completedAt = parsed.input.completed_at;
+      if (
+        statePath === undefined ||
+        previousEvidencePath === undefined ||
+        evidencePath === undefined ||
+        previousEvidencePath === evidencePath ||
+        worktreePath === undefined ||
+        ticket === undefined ||
+        !/^\d{2}$/u.test(ticket) ||
+        round === undefined ||
+        name === undefined ||
+        attempt === undefined ||
+        attempt < 2 ||
+        attempt > 4 ||
+        exitCode !== 0 ||
+        stdout === undefined ||
+        stderr === undefined ||
+        userAuthorized !== true ||
+        diagnostic === undefined ||
+        !isUtcIsoTimestamp(completedAt)
+      ) {
+        return yield* invalidRequest(
+          "`gate.rerun.record` requires distinct prior and new run-local evidence paths, a configured gate, worktree_path, ticket, round, attempt 2 through 4, a passing exit code with exact output, explicit user_authorized true, a single-line diagnostic, and completed_at.",
+          operation,
+        );
+      }
+      return {
+        schemaVersion: CONTRACT_SCHEMA_VERSION,
+        operation,
+        input: {
+          statePath,
+          previousEvidencePath,
+          evidencePath,
+          worktreePath,
+          ticket,
+          round,
+          name,
+          attempt,
+          exitCode,
+          stdout,
+          stderr,
+          userAuthorized,
+          diagnostic,
+          completedAt,
+        },
       };
     }
 

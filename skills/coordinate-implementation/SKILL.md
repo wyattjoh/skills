@@ -245,7 +245,11 @@ remaining blocked ticket:
    commit when repository instructions are silent, then print `FIXES DONE NN`.
    Include that runtime in the next wait-any call. When it returns terminal,
    restart the pipeline from all recorded gates; every fix round receives new
-   self-review and fresh Standards and Spec sessions.
+   self-review and fresh Standards and Spec sessions. If a failed gate passes on
+   an unchanged rerun, never create an empty fix commit. Obtain explicit user
+   authority and call `gate.rerun.record` with the failed evidence and fresh
+   passing output. It fails closed unless the gate, clean worktree, HEAD, and
+   append-only finalization binding are unchanged.
 5. **Land.** After `review.round.finalize` advances the ticket to
    `ready-to-land`, call `landing.complete` from the recorded local base
    checkout with `runtime_closed: false`. If it returns `resynchronize`, call

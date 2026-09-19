@@ -28,6 +28,7 @@ import {
   prepareReviewerLaunch,
   prepareReviewPolicy,
   recordGate,
+  recordGateRerun,
   recordReviewerLaunch,
 } from "./lib/review.ts";
 import { recordInfrastructureRetry } from "./lib/retry.ts";
@@ -174,6 +175,16 @@ const execute = (request: CoordinateRequest): Effect.Effect<number, never> =>
 
     if (request.operation === "gate.record") {
       const outcome = yield* Effect.either(recordGate(request.input));
+      if (Either.isLeft(outcome)) {
+        print(failureResponse(request.operation, [outcome.left.issue], null));
+        return 1;
+      }
+      print(successResponse(request.operation, outcome.right));
+      return 0;
+    }
+
+    if (request.operation === "gate.rerun.record") {
+      const outcome = yield* Effect.either(recordGateRerun(request.input));
       if (Either.isLeft(outcome)) {
         print(failureResponse(request.operation, [outcome.left.issue], null));
         return 1;

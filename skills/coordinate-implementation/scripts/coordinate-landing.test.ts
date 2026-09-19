@@ -1201,6 +1201,9 @@ process.exit(result.status ?? 1);
           "Return the ticket to its bound implementor and apply the persisted append fix policy.",
       },
     ]);
+    const rejectedState = readFileSync(amended.statePath, "utf8");
+    expect(rejectedState.includes('"phase": "fixing"')).toBe(true);
+    expect(rejectedState.includes("Phase: commit policy fix required")).toBe(true);
   });
 
   it("accepts explicit amend and squash fix policy overrides", () => {
