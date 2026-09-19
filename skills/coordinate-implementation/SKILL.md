@@ -29,6 +29,15 @@ Stop on any nonzero exit or `ok: false`; preflight reports all detected
 problems and never mutates state. The complete request and result contract is
 [helper-cli.md](references/helper-cli.md).
 
+After preflight, coordination starts only from the accepted normalized local
+snapshot defined in
+[normalized-snapshot.md](references/normalized-snapshot.md). Materialize
+`snapshot.json`, the agreed specification, and every numbered ticket before
+scheduling. Use `snapshot.accept` for the initial revision, then
+`snapshot.check` before every scheduling pass and review. A result with
+`scheduling_allowed: false` pauses new scheduling until the user explicitly
+accepts and records the changed revision.
+
 Arguments: `$ARGUMENTS`
 
 - A run folder (`.scratch/<slug>`) starts or continues a run.
@@ -70,6 +79,7 @@ Everywhere below, `<base>` means that branch. The main checkout is never
 
 ```
 .scratch/<slug>/
+  snapshot.json      # normalized source metadata, stable references, and ticket graph
   spec.md            # the agreed design; review axis 2 reads it
   issues/NN-*.md     # one ticket per file, `Blocked by:` + `Status:` lines, checkboxes
   briefs/common.md   # resolved repository contract; create from references/common-brief.md if absent
@@ -156,12 +166,17 @@ Before the first iteration, complete the read-only helper preflight described
 in [helper-cli.md](references/helper-cli.md). Only after it succeeds, resolve
 `<run>/briefs/common.md` from [common-brief.md](references/common-brief.md),
 repository instructions, and CI. No placeholder may remain when a worker
-launches. Rename your own tab to
+launches. Create the schema-1 run state, then accept the normalized snapshot.
+For a non-local source, ask once for `none`, `final`, or `live` writeback and
+pass the repository's authoritative remote-write policy. A local source records
+`none` without a remote-write prompt. Rename your own tab to
 `coordinator` and label your pane `coordinator <prefix>` (see above). Then
 repeat until every ticket is landed:
 
-1. **Schedule.** Read `Mode:` and the dependency graph from RESUME.md and the
-   ticket files. Verify `Base sha:` against the base checkout and update it if
+1. **Schedule.** Invoke `snapshot.check` and stop this scheduling pass unless
+   it returns `unchanged` with `scheduling_allowed: true`. Report every changed
+   input. Read `Mode:` and the accepted dependency graph from RESUME.md and only
+   the ticket files declared by `snapshot.json`. Verify `Base sha:` against the base checkout and update it if
    the branch moved. In `parallel` mode, start every unblocked queued ticket. In
    `serial` mode, start only the first unblocked queued ticket and only when no
    ticket is active. Bind the current `Implementor:` record into each selected
@@ -177,8 +192,10 @@ repeat until every ticket is landed:
 2. **Wait.** A 10-minute progress loop (below) plus the monitors are the only
    wake signals. Do not poll faster. While waiting, keep your own context low:
    read pane tails with `--lines 40`, never whole transcripts.
-3. **Review** when a monitor settles or a commit appears. If several tickets
-   become ready together, process them one at a time in dependency order. Sync
+3. **Review** when a monitor settles or a commit appears. Invoke
+   `snapshot.check` first and do not begin review or landing against a changed
+   revision. If several tickets become ready together, process them one at a
+   time in dependency order. Sync
    the chosen branch to the latest `<base>` before its final gates and review,
    then require exactly one commit, green gates, two review agents (Standards,
    Spec), and your own read. Procedure:
@@ -301,7 +318,10 @@ usage. Procedure and successor launch: [handoff.md](references/handoff.md).
 When invoked as `resume .scratch/<slug>` or from a handoff:
 
 1. Run the helper `preflight` operation with the run's `RESUME.md` as
-   `state_path`, then validate the remaining fields against
+   `state_path`, then invoke `snapshot.check` and require `unchanged` with
+   `scheduling_allowed: true`. A changed snapshot blocks resume scheduling and
+   reports its changed inputs until the user explicitly runs the acceptance
+   flow. Then validate the remaining fields against
    [resume-format.md](references/resume-format.md). It names the prefix, base,
    base sha, scheduling mode, branch template, both records, every active
    ticket's worktree and pane, and what remains. Missing, malformed, or
@@ -326,6 +346,12 @@ When invoked as `resume .scratch/<slug>` or from a handoff:
 
 - Preflight must succeed before creating or mutating RESUME.md. Never bypass a
   missing capability or infer Herdr context use from rendered terminal text.
+- Scheduling, review, and landing require an accepted, unchanged snapshot.
+  Changed input hashes pause new work until explicit `snapshot.accept` records
+  the revision and decision.
+- Persist and obey the tracker writeback mode. Delegate `final` and `live`
+  updates to the configured Matt tracker workflow. Never add tracker-specific
+  commands to the coordinator.
 - A preference the user states and you have not written to RESUME.md does not
   exist. Write before you reply.
 - Never substitute a default model, effort, or skills list to keep a run
@@ -334,7 +360,10 @@ When invoked as `resume .scratch/<slug>` or from a handoff:
 - Every commit passes the repository's required gates before review. The
   resolved commands live in `<run>/briefs/common.md`; the execution procedure
   is in [review-and-land.md](references/review-and-land.md).
-- Never push, perform remote writes, or write to forge issues.
+- Never push or write to forge issues. The only permitted remote write is a
+  persisted `final` or `live` update through the configured Matt tracker
+  workflow when authoritative project policy allows it. All other remote
+  writes remain forbidden.
 - Enforce every project-specific safety constraint recorded in the shared
   brief. Do not invent restrictions that the repository does not require.
 - Textual rebase conflicts are yours, never the implementor's. If the rebased

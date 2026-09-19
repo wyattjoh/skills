@@ -4,20 +4,21 @@
 coordinator or its workers depend on lives here, so a successor session can
 reconstruct any launch line without the conversation that produced it.
 
-The current format is schema version 1. The bundled helper validates only the
-explicit version marker before the coordinator interprets any other field.
-Missing, malformed, duplicate, and unsupported versions fail without automatic
-migration. After that mechanical check, the coordinator validates the remaining
-fields against this template. Those semantic checks are not part of the helper's
-`state.validate` operation in this ticket. Fix any mismatch by hand. See
-[helper-cli.md](helper-cli.md#statevalidate) for the JSON operation contract.
+The current format is schema version 1. The helper's `state.validate` operation
+validates only the explicit version marker. Snapshot operations additionally
+validate their managed `## Snapshot` JSON record before the coordinator
+interprets the remaining fields. Missing, malformed, duplicate, and unsupported
+versions fail without automatic migration. After that mechanical check, the
+coordinator validates the remaining fields against this template. Fix any
+mismatch by hand. See [helper-cli.md](helper-cli.md#statevalidate) for the JSON
+operation contract.
 
 ## Template
 
 The fence below is `text`, not `markdown`, so the formatter leaves the nested
 indentation alone. The indentation is part of the format.
 
-```text
+````text
 # <slug> implementation run
 
 Schema version: 1
@@ -75,15 +76,39 @@ Phase: committed, awaiting review
 Launch: briefs/launch-03.sh
 Monitor: settled
 
+## Snapshot
+
+```json
+{
+  "revision": "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+  "accepted_at": "2026-09-11T14:30:00Z",
+  "source": {
+    "kind": "local",
+    "tracker": "local-files",
+    "reference": "file:.scratch/example",
+    "tracker_workflow": null
+  },
+  "writeback": "none",
+  "inputs": [
+    {
+      "path": "snapshot.json",
+      "source_reference": "file:.scratch/example",
+      "sha256": "abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789"
+    }
+  ]
+}
+```
+
 ## Decisions
 
+- 2026-09-11 snapshot revision sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef accepted (initial; writeback: none)
 - 2026-09-11 implementor -> claude-fable-5-1 / low (opus overkill for the
   remaining UI tickets)
 
 ## Retained landed branches (Pi)
 
 - dcs-01-schema (a1b2c3d) (Pi/Pando retained this branch)
-```
+````
 
 ## Field reference
 
@@ -179,11 +204,27 @@ change and progress tick, and remove it only after the ticket lands. Every row
 with status `working`, `review`, or `fixing` must have a matching block. A
 `blocked` row keeps its block when a worktree already exists.
 
+### `## Snapshot`
+
+Managed by the helper's `snapshot.accept` operation. It records the accepted
+snapshot revision, acceptance time, durable source metadata, tracker writeback
+mode, and the sorted path, source-reference, and SHA-256 list. The coordinator
+must not schedule or review when `snapshot.check` reports `unaccepted` or
+`changed`.
+
+For local-file sources, `source.kind` is `local`, `tracker_workflow` is null,
+and writeback is `none`. Non-local sources persist an opaque configured Matt
+tracker workflow and one of `none`, `final`, or `live`. Project policy that
+forbids remote writes overrides `final` and `live`. See
+[normalized-snapshot.md](normalized-snapshot.md) for the manifest, acceptance,
+and revision rules.
+
 ### `## Decisions`
 
 Append-only, dated. The record above is overwritten in place so it always
 states what is current; this section states what changed and why. Every
-preference change, scope decision, and escalation appends a line.
+snapshot acceptance, tracker-policy change, preference change, scope decision,
+and escalation appends a line.
 
 ## Harness vocabulary
 

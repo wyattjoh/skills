@@ -9,6 +9,7 @@ import {
   type CoordinateResponse,
 } from "./lib/contract.ts";
 import { runPreflight } from "./lib/preflight.ts";
+import { acceptSnapshot, checkSnapshot } from "./lib/snapshot.ts";
 import { validateStateFile } from "./lib/state.ts";
 
 const readStdin = (): Effect.Effect<string, RequestError> =>
@@ -41,12 +42,26 @@ const execute = (request: CoordinateRequest): Effect.Effect<number, never> =>
       return 0;
     }
 
-    const validation = yield* Effect.either(validateStateFile(request.input.statePath));
-    if (Either.isLeft(validation)) {
-      print(failureResponse(request.operation, [validation.left.issue], null));
+    if (request.operation === "state.validate") {
+      const validation = yield* Effect.either(validateStateFile(request.input.statePath));
+      if (Either.isLeft(validation)) {
+        print(failureResponse(request.operation, [validation.left.issue], null));
+        return 1;
+      }
+      print(successResponse(request.operation, { state: validation.right }));
+      return 0;
+    }
+
+    const snapshot = yield* Effect.either(
+      request.operation === "snapshot.check"
+        ? checkSnapshot(request.input)
+        : acceptSnapshot(request.input),
+    );
+    if (Either.isLeft(snapshot)) {
+      print(failureResponse(request.operation, [snapshot.left.issue], null));
       return 1;
     }
-    print(successResponse(request.operation, { state: validation.right }));
+    print(successResponse(request.operation, snapshot.right));
     return 0;
   });
 
