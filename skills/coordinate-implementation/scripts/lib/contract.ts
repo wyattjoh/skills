@@ -21,7 +21,10 @@ export type CoordinateOperation =
   | "worktree.preflight"
   | "worktree.prepare"
   | "implementor.launch.prepare"
-  | "implementor.launch.record";
+  | "implementor.launch.record"
+  | "scheduler.plan"
+  | "herdr.wait_any"
+  | "infrastructure.retry.record";
 
 /**
  * Harnesses supported for coordinator, implementor, and reviewer sessions.
@@ -210,6 +213,81 @@ export type ImplementorLaunchRecordInput = {
 };
 
 /**
+ * Durable ticket lifecycle states used by the bounded scheduler.
+ */
+export type SchedulerTicketStatus =
+  | "queued"
+  | "working"
+  | "review"
+  | "fixing"
+  | "blocked"
+  | "landed";
+
+/**
+ * One normalized ticket supplied to a deterministic scheduling pass.
+ */
+export type SchedulerTicket = {
+  number: string;
+  dependencies: string[];
+  status: SchedulerTicketStatus;
+};
+
+/**
+ * One runtime considered by a deterministic scheduling pass.
+ */
+export type SchedulerRuntime = {
+  runtimeId: string;
+  ticket: string;
+  role: "implementor" | "reviewer";
+  state: "active" | "terminal";
+};
+
+/**
+ * Input for selecting dependency-ready tickets within the implementation cap.
+ */
+export type SchedulerPlanInput = {
+  mode: "parallel" | "serial";
+  maxImplementors: number;
+  tickets: SchedulerTicket[];
+  runtimes: SchedulerRuntime[];
+};
+
+/**
+ * One durable worker identity observed through Herdr.
+ */
+export type HerdrWorkerInput = {
+  runtimeId: string;
+  ticket: string;
+  session: string;
+  paneId: string;
+};
+
+/**
+ * Input for an event-driven wait over every active worker.
+ */
+export type HerdrWaitAnyInput = {
+  socketPath: string;
+  timeoutMs: number;
+  workers: HerdrWorkerInput[];
+};
+
+/**
+ * Infrastructure failure classes sharing the bounded retry policy.
+ */
+export type InfrastructureFailure = "worker" | "herdr" | "launch";
+
+/**
+ * Input for recording one infrastructure failure and planning its retry.
+ */
+export type InfrastructureRetryRecordInput = {
+  statePath: string;
+  ticket: string;
+  attempt: number;
+  failure: InfrastructureFailure;
+  diagnostic: string;
+};
+
+/**
  * A validated schema-version-1 request accepted by the helper.
  */
 export type CoordinateRequest =
@@ -277,6 +355,21 @@ export type CoordinateRequest =
       schemaVersion: typeof CONTRACT_SCHEMA_VERSION;
       operation: "implementor.launch.record";
       input: ImplementorLaunchRecordInput;
+    }
+  | {
+      schemaVersion: typeof CONTRACT_SCHEMA_VERSION;
+      operation: "scheduler.plan";
+      input: SchedulerPlanInput;
+    }
+  | {
+      schemaVersion: typeof CONTRACT_SCHEMA_VERSION;
+      operation: "herdr.wait_any";
+      input: HerdrWaitAnyInput;
+    }
+  | {
+      schemaVersion: typeof CONTRACT_SCHEMA_VERSION;
+      operation: "infrastructure.retry.record";
+      input: InfrastructureRetryRecordInput;
     };
 
 /**
@@ -433,6 +526,88 @@ const parseRoleRecord = (value: unknown): RoleRecord | undefined => {
   return { harness: value.harness, model, effort };
 };
 
+const ticketNumber = (value: unknown): string | undefined => {
+  const number = singleLineString(value);
+  return number !== undefined && /^\d+$/u.test(number) ? number : undefined;
+};
+
+const parseSchedulerTickets = (value: unknown): SchedulerTicket[] | undefined => {
+  if (!Array.isArray(value)) return undefined;
+  const tickets: SchedulerTicket[] = [];
+  for (const candidate of value) {
+    if (!isRecord(candidate)) return undefined;
+    const number = ticketNumber(candidate.number);
+    const dependencies = stringArray(candidate.dependencies);
+    const status = candidate.status;
+    if (
+      number === undefined ||
+      dependencies === undefined ||
+      !dependencies.every((dependency) => /^\d+$/u.test(dependency)) ||
+      (status !== "queued" &&
+        status !== "working" &&
+        status !== "review" &&
+        status !== "fixing" &&
+        status !== "blocked" &&
+        status !== "landed")
+    ) {
+      return undefined;
+    }
+    tickets.push({ number, dependencies, status });
+  }
+  return tickets;
+};
+
+const parseSchedulerRuntimes = (value: unknown): SchedulerRuntime[] | undefined => {
+  if (!Array.isArray(value)) return undefined;
+  const runtimes: SchedulerRuntime[] = [];
+  for (const candidate of value) {
+    if (!isRecord(candidate)) return undefined;
+    const runtimeId = singleLineString(candidate.runtime_id);
+    const ticket = ticketNumber(candidate.ticket);
+    if (
+      runtimeId === undefined ||
+      ticket === undefined ||
+      (candidate.role !== "implementor" && candidate.role !== "reviewer") ||
+      (candidate.state !== "active" && candidate.state !== "terminal")
+    ) {
+      return undefined;
+    }
+    runtimes.push({ runtimeId, ticket, role: candidate.role, state: candidate.state });
+  }
+  return runtimes;
+};
+
+const parseHerdrWorkers = (value: unknown): HerdrWorkerInput[] | undefined => {
+  if (!Array.isArray(value) || value.length === 0) return undefined;
+  const workers: HerdrWorkerInput[] = [];
+  for (const candidate of value) {
+    if (!isRecord(candidate)) return undefined;
+    const runtimeId = singleLineString(candidate.runtime_id);
+    const ticket = ticketNumber(candidate.ticket);
+    const session = singleLineString(candidate.session);
+    const workerPane = paneId(candidate.pane_id);
+    if (
+      runtimeId === undefined ||
+      ticket === undefined ||
+      session === undefined ||
+      workerPane === undefined
+    ) {
+      return undefined;
+    }
+    workers.push({ runtimeId, ticket, session, paneId: workerPane });
+  }
+  return workers;
+};
+
+const firstDuplicate = (values: string[]): string | undefined => {
+  const observed = new Set<string>();
+  for (const value of values) {
+    if (observed.has(value)) return value;
+    observed.add(value);
+  }
+  return undefined;
+};
+
 const invalidRequest = (message: string, operation: string | null): RequestError =>
   new RequestError({
     operation,
@@ -488,6 +663,9 @@ export const parseRequest = (raw: string): Effect.Effect<CoordinateRequest, Requ
       "worktree.prepare",
       "implementor.launch.prepare",
       "implementor.launch.record",
+      "scheduler.plan",
+      "herdr.wait_any",
+      "infrastructure.retry.record",
     ];
     if (operation === null || !operations.includes(operation as CoordinateOperation)) {
       return yield* invalidRequest(
@@ -613,6 +791,98 @@ export const parseRequest = (raw: string): Effect.Effect<CoordinateRequest, Requ
       };
     }
 
+    if (operation === "scheduler.plan") {
+      const mode = parsed.input.mode;
+      const maxImplementors = positiveInteger(parsed.input.max_implementors);
+      const tickets = parseSchedulerTickets(parsed.input.tickets);
+      const runtimes = parseSchedulerRuntimes(parsed.input.runtimes);
+      if (
+        (mode !== "parallel" && mode !== "serial") ||
+        maxImplementors === undefined ||
+        (mode === "serial" && maxImplementors !== 1) ||
+        tickets === undefined ||
+        runtimes === undefined
+      ) {
+        return yield* invalidRequest(
+          "`scheduler.plan` parallel mode requires a positive input.max_implementors; serial mode requires exactly 1.",
+          operation,
+        );
+      }
+      return {
+        schemaVersion: CONTRACT_SCHEMA_VERSION,
+        operation,
+        input: { mode, maxImplementors, tickets, runtimes },
+      };
+    }
+
+    if (operation === "herdr.wait_any") {
+      const socketPath = nonEmptyString(parsed.input.socket_path);
+      const timeoutMs = positiveInteger(parsed.input.timeout_ms);
+      const workers = parseHerdrWorkers(parsed.input.workers);
+      if (
+        socketPath === undefined ||
+        timeoutMs === undefined ||
+        timeoutMs > 600_000 ||
+        workers === undefined
+      ) {
+        return yield* invalidRequest(
+          "`herdr.wait_any` requires socket_path, a 1..600000 timeout_ms, and at least one complete worker identity.",
+          operation,
+        );
+      }
+      const duplicateRuntime = firstDuplicate(workers.map((worker) => worker.runtimeId));
+      if (duplicateRuntime !== undefined) {
+        return yield* invalidRequest(
+          `\`herdr.wait_any\` workers contain duplicate runtime_id \`${duplicateRuntime}\`.`,
+          operation,
+        );
+      }
+      const duplicateSession = firstDuplicate(workers.map((worker) => worker.session));
+      if (duplicateSession !== undefined) {
+        return yield* invalidRequest(
+          `\`herdr.wait_any\` workers contain duplicate session \`${duplicateSession}\`.`,
+          operation,
+        );
+      }
+      const duplicatePane = firstDuplicate(workers.map((worker) => worker.paneId));
+      if (duplicatePane !== undefined) {
+        return yield* invalidRequest(
+          `\`herdr.wait_any\` workers contain duplicate pane_id \`${duplicatePane}\`.`,
+          operation,
+        );
+      }
+      return {
+        schemaVersion: CONTRACT_SCHEMA_VERSION,
+        operation,
+        input: { socketPath, timeoutMs, workers },
+      };
+    }
+
+    if (operation === "infrastructure.retry.record") {
+      const statePath = nonEmptyString(parsed.input.state_path);
+      const ticket = ticketNumber(parsed.input.ticket);
+      const attempt = positiveInteger(parsed.input.attempt);
+      const failure = parsed.input.failure;
+      const diagnostic = nonEmptyString(parsed.input.diagnostic);
+      if (
+        statePath === undefined ||
+        ticket === undefined ||
+        attempt === undefined ||
+        (failure !== "worker" && failure !== "herdr" && failure !== "launch") ||
+        diagnostic === undefined
+      ) {
+        return yield* invalidRequest(
+          "`infrastructure.retry.record` requires state_path, ticket, positive attempt, failure `worker`, `herdr`, or `launch`, and a diagnostic.",
+          operation,
+        );
+      }
+      return {
+        schemaVersion: CONTRACT_SCHEMA_VERSION,
+        operation,
+        input: { statePath, ticket, attempt, failure, diagnostic },
+      };
+    }
+
     if (operation === "worktree.preflight") {
       const policy = parseRepositoryPolicy(parsed.input.policy);
       if (policy === undefined) {
@@ -700,12 +970,18 @@ export const parseRequest = (raw: string): Effect.Effect<CoordinateRequest, Requ
         prompt.length === 0 ||
         attempt === undefined ||
         maxAttempts === undefined ||
-        attempt > maxAttempts ||
+        attempt > maxAttempts + 1 ||
         (role.harness === "pi" && implementSkillPath === undefined) ||
         (role.harness === "claude" && skillValue !== null && skillValue !== undefined)
       ) {
         return yield* invalidRequest(
           "`implementor.launch.prepare` requires a two-digit ticket, runtime identifiers, role, prompt, valid attempt bounds, and an explicit implement_skill_path only for Pi.",
+          operation,
+        );
+      }
+      if (maxAttempts !== 3) {
+        return yield* invalidRequest(
+          "`implementor.launch.prepare` requires input.max_attempts to equal 3.",
           operation,
         );
       }

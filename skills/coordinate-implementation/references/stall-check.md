@@ -1,27 +1,19 @@
 # Stall check
 
-Schedule with `CronCreate`, cron `5-59/10 * * * *`, recurring, prompt below
-with `<slug>` filled in. Re-create it on every start, resume, and handoff;
-delete it at handoff and when the run finishes.
+Run this check only when `herdr.wait_any` returns `reason: timeout`. The timeout
+result contains the complete current worker snapshot, including refreshed pane
+ids. Persist those ids before inspecting workers.
 
-`<slug>` is the only substitution. No preference value is ever written into
-this prompt: the cron fires for hours and the record can change under it, so
-everything else is read from RESUME.md at fire time.
+For each worker still reported as `working`, read at most 25 recent pane lines
+and compare the visible activity with the preceding timeout snapshot. A worker
+is stalled if the last activity has not changed across two consecutive bounded
+timeouts, or if its tail shows an API or network error, permission prompt, or
+question waiting on input.
 
-> Stall check for the <slug> implementation run. For every active worker pane
-> in the ticket table at .scratch/<slug>/RESUME.md: read
-> `herdr pane read <pane> --lines 25 --source recent` and compare the visible
-> activity line and the 🧠 token figure with what you saw at the previous stall
-> check. A worker is stalled if its agent_status is `working` but the token
-> figure and last activity line have not changed across two consecutive stall
-> checks, or if the tail shows an API/network error, a permission prompt, or a
-> question waiting on input. For a stalled worker: if it is waiting on a prompt
-> or hit a transient error, re-prompt the same session with
-> `herdr agent prompt <pane> "..."` to continue; if it is genuinely crashed or
-> looping, apply the crash-restart rule from the coordinate-implementation
-> skill, relaunching with the record bound in that ticket's own table row and
-> never with a substituted model or effort. Confirm the background monitor is
-> still armed on the current pane id and re-arm with
-> `herdr agent wait <pane> --until idle --until done --until blocked` if not.
-> Update that ticket's active runtime block with the current pane, phase, and
-> monitor state before reporting. Report in one line if nothing is stalled.
+If a worker is waiting on a prompt or hit a transient error, re-prompt the same
+session. If it genuinely crashed or loops, apply the skill's worker failure
+path: call `infrastructure.retry.record`, wait its returned delay when retrying,
+and relaunch from the exact persisted binding. Never substitute a harness,
+model, effort, skill, worktree, or branch. An exhausted retry blocks only that
+ticket, then the coordinator runs `scheduler.plan` so independent work can
+continue.

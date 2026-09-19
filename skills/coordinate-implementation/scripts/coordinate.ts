@@ -9,8 +9,11 @@ import {
   type CoordinateResponse,
 } from "./lib/contract.ts";
 import { claimCoordinator, markCoordinatorReady, verifyCoordinator } from "./lib/coordinator.ts";
+import { waitAnyWorker } from "./lib/herdr.ts";
 import { prepareImplementorLaunch, recordImplementorLaunch } from "./lib/implementor.ts";
 import { runPreflight } from "./lib/preflight.ts";
+import { recordInfrastructureRetry } from "./lib/retry.ts";
+import { planSchedule } from "./lib/scheduler.ts";
 import { discoverRoles, validateRole } from "./lib/roles.ts";
 import { acceptSnapshot, checkSnapshot } from "./lib/snapshot.ts";
 import { validateStateFile } from "./lib/state.ts";
@@ -122,6 +125,36 @@ const execute = (request: CoordinateRequest): Effect.Effect<number, never> =>
 
     if (request.operation === "implementor.launch.record") {
       const outcome = yield* Effect.either(recordImplementorLaunch(request.input));
+      if (Either.isLeft(outcome)) {
+        print(failureResponse(request.operation, [outcome.left.issue], null));
+        return 1;
+      }
+      print(successResponse(request.operation, outcome.right));
+      return 0;
+    }
+
+    if (request.operation === "scheduler.plan") {
+      const outcome = yield* Effect.either(planSchedule(request.input));
+      if (Either.isLeft(outcome)) {
+        print(failureResponse(request.operation, [outcome.left.issue], null));
+        return 1;
+      }
+      print(successResponse(request.operation, outcome.right));
+      return 0;
+    }
+
+    if (request.operation === "herdr.wait_any") {
+      const outcome = yield* Effect.either(waitAnyWorker(request.input));
+      if (Either.isLeft(outcome)) {
+        print(failureResponse(request.operation, [outcome.left.issue], null));
+        return 1;
+      }
+      print(successResponse(request.operation, outcome.right));
+      return 0;
+    }
+
+    if (request.operation === "infrastructure.retry.record") {
+      const outcome = yield* Effect.either(recordInfrastructureRetry(request.input));
       if (Either.isLeft(outcome)) {
         print(failureResponse(request.operation, [outcome.left.issue], null));
         return 1;

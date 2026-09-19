@@ -1,7 +1,7 @@
 ---
 name: coordinate-implementation
 description: Orchestrates a multi-ticket implementation run. Points at a `.scratch/<slug>/` folder holding a spec and numbered issues, then runs dependency-ready tickets in parallel by default, reviews each result on two axes, loops fixes back, and fast-forwards the integration branch. Repository-specific commands and safety constraints are discovered from project instructions and CI rather than assumed. Scheduling mode and validated Coordinator, Implementor, and Reviewer role records survive handoffs and mid-run changes in RESUME.md. Triggers on "/coordinate-implementation", "implement the tickets in", "orchestrate the run", "resume the implementation run".
-argument-hint: "[.scratch/<slug> | resume .scratch/<slug>] [--base <branch>] [--coordinator '<harness> <model> <effort>'] [--implementor '<harness> <model> <effort>'] [--reviewer '<harness> <model> <effort>'] [--serial | --parallel]"
+argument-hint: "[.scratch/<slug> | resume .scratch/<slug>] [--base <branch>] [--coordinator '<harness> <model> <effort>'] [--implementor '<harness> <model> <effort>'] [--reviewer '<harness> <model> <effort>'] [--serial | --parallel <N>]"
 compatibility: Requires macOS or Linux, Git, Bun, Herdr with machine-readable normalized context_used and context_limit fields, Matt Pocock's implement skill, and at least one supported harness (Pi or Claude Code).
 disable-model-invocation: true
 effort: low
@@ -57,12 +57,14 @@ Arguments: `$ARGUMENTS`
   Validate every supplied triple with the helper's `role.validate` operation.
   Never infer a harness from a model and never substitute a nearby model or
   effort after validation fails.
-- `--serial` runs at most one active ticket. `--parallel` explicitly restores
-  the default parallel scheduler. Reject an invocation that passes both.
-  Record the selected value as `Mode:` in RESUME.md. On a first run with neither
-  flag, use `parallel`; on a resume with neither flag, preserve the recorded
-  mode. An explicit flag on resume is a preference change: write and log it
-  before scheduling more work.
+- `--serial` records `Mode: serial` and `Parallel cap: 1`. `--parallel <N>`
+  requires a positive integer, records `Mode: parallel` and that maximum active
+  implementor count, and is required for a first parallel run. Reject both flags
+  together and reject a first run with neither. On resume with neither flag,
+  preserve both recorded values. An explicit flag on resume is a preference
+  change: write and log it before scheduling more work. A lower cap drains
+  existing implementors without terminating them; a higher cap applies on the
+  next scheduling pass.
 
 Before presenting role choices, call `roles.discover`. Offer only harnesses
 reported as available, Pi models from its installed catalog, Claude Code's
@@ -100,13 +102,14 @@ Everywhere below, `<base>` means that branch. The main checkout is never
 .scratch/coordinators.md   # repo-wide registry of active runs (below)
 ```
 
-Ticket order is dependency order from the `Blocked by:` lines. A ticket is
-unblocked only when every listed blocker has status `landed`. `Mode: parallel`
-is the default and starts every currently unblocked queued ticket; `Mode:
-serial` starts only the first unblocked queued ticket and never has more than
-one active ticket. Do not serialize parallel mode merely because two tickets
-might touch nearby code. Their branches synchronize against the latest
-`<base>` before review and landing.
+Ticket readiness comes from the accepted dependency graph. A ticket is
+unblocked only when every listed blocker has status `landed`. Before every
+launch pass, call `scheduler.plan` with the persisted mode, parallel cap,
+ticket states, and active runtimes. Launch its deterministic `launch_tickets`
+order. Only runtimes whose role is `implementor` and state is `active` consume
+capacity; temporary reviewers do not. Do not serialize parallel mode merely
+because two tickets might touch nearby code. Their branches synchronize
+against the latest `<base>` before review and landing.
 
 ## Preferences
 
@@ -125,7 +128,7 @@ rules for keeping the record true:
   make a later reader re-derive a field, or substitute another harness, model,
   or effort.
 - **On resume, an explicit flag wins and is written back.** `--implementor`,
-  `--reviewer`, `--serial`, or `--parallel` passed at resume is a preference
+  `--reviewer`, `--serial`, or `--parallel <N>` passed at resume is a preference
   change: validate it, write it, and log it. `--coordinator` first persists the
   validated selection, then uses safe takeover. `--base` is the exception and
   the file wins; resume-format.md says why.
@@ -190,25 +193,28 @@ repeat until every ticket is landed:
 
 1. **Schedule.** Invoke `snapshot.check` and stop this scheduling pass unless
    it returns `unchanged` with `scheduling_allowed: true`. Report every changed
-   input. Read `Mode:` and the accepted dependency graph from RESUME.md and only
-   the ticket files declared by `snapshot.json`. Verify `Base sha:` against the base checkout and update it if
-   the branch moved. In `parallel` mode, start every unblocked queued ticket. In
-   `serial` mode, start only the first unblocked queued ticket and only when no
-   ticket is active. Bind the current `Implementor:` record into each selected
-   ticket's table row before starting it; that row, not the run-wide record,
-   governs the ticket from then on. The required `implement` skill is fixed and
-   explicitly loaded for both harnesses. Do not require it to appear in model
-   discovery. Resolve repository worktree, branch, setup, cleanup, remote, and
-   commit policy before creating the worktree. Require `worktree.preflight` to
-   pass before state mutation, then call `worktree.prepare`, create the Herdr
-   tab at the returned path, and call
+   input. Read `Mode:`, `Parallel cap:`, the accepted dependency graph, ticket
+   states, and active runtime records from RESUME.md. Verify `Base sha:` against
+   the base checkout and update it if the branch moved. Call `scheduler.plan`
+   and launch every returned ticket in order. Bind the current `Implementor:`
+   record into each selected ticket's table row before starting it; that row,
+   not the run-wide record, governs the ticket from then on. The required
+   `implement` skill is fixed and explicitly loaded for both harnesses. Do not
+   require it to appear in model discovery. Resolve repository worktree,
+   branch, setup, cleanup, remote, and commit policy before creating the
+   worktree. Require `worktree.preflight` to pass before state mutation, then
+   call `worktree.prepare`, create the Herdr tab at the returned path, and call
    `implementor.launch.prepare`. Execute only its argument arrays and persist
    the observed outcome with `implementor.launch.record`. Exact procedure:
    [session-launch.md](references/session-launch.md).
-2. **Wait.** A 10-minute progress loop (below) plus the monitors are the only
-   wake signals. Do not poll faster. While waiting, keep your own context low:
-   read pane tails with `--lines 40`, never whole transcripts.
-3. **Review** when a monitor settles or a commit appears. Invoke
+2. **Wait.** Call `herdr.wait_any` once with every active worker and a bounded
+   timeout. It subscribes before snapshotting. Persist refreshed pane ids from
+   its complete worker snapshot. On `status` or `pane_exited`, act on the named
+   runtime. On `timeout`, perform stall, snapshot-integrity, base, and
+   coordinator-context checks, run one scheduling pass, then issue another
+   bounded wait. Do not create cron jobs, shell wait loops, background monitors,
+   or harness-native tasks.
+3. **Review** when wait-any returns an idle or done implementor. Invoke
    `snapshot.check` first and do not begin review or landing against a changed
    revision. If several tickets become ready together, process them one at a
    time in dependency order. Sync
@@ -218,8 +224,9 @@ repeat until every ticket is landed:
    [review-and-land.md](references/review-and-land.md).
 4. **Fix loop.** One consolidated request per round into the same worker session.
    Apply the recorded fix-commit policy, which defaults to appending a commit
-   when repository instructions are silent, then print `FIXES DONE NN`. Re-arm
-   that ticket's monitor. Verify mechanically and with a verification agent.
+   when repository instructions are silent, then print `FIXES DONE NN`. Include
+   that runtime in the next wait-any call. Verify mechanically and with a
+   verification agent.
 5. **Land.** Serialize all landings through the recorded base checkout with
    `git merge --ff-only`. If `<base>` moved after review, sync again, resolve
    textual conflicts yourself (`resolving-merge-conflicts` skill), rerun gates
@@ -231,58 +238,46 @@ repeat until every ticket is landed:
    authoritative and must not be replaced silently.
 6. **Record and refill.** Update the ticket table, remove its active runtime
    block, update `Base sha:` and the registry line, then immediately schedule
-   every ticket newly unblocked by the landing according to `Mode:`.
+   every ticket newly unblocked by the landing through `scheduler.plan`.
 
 Session markers the implementor prints: `TICKET DONE NN`,
-`TICKET BLOCKED NN: <question>`, `FIXES DONE NN`. Monitor on **agent status**,
-not marker text; implementors forget to print it.
+`TICKET BLOCKED NN: <question>`, `FIXES DONE NN`. Herdr agent status is the
+wake authority, not marker text; implementors forget to print it.
 
-## Progress loop
+## Event-driven wait cycle
 
-Immediately after starting or resuming, schedule this with `/loop 10m`
-(plain text, never a skill invocation: a scheduled fire cannot run a
-`disable-model-invocation` skill).
+Keep exactly one bounded `herdr.wait_any` call in flight while implementors are
+active. Supply each runtime's durable id, ticket, session name, and latest pane
+id. The helper subscribes to every pane's status plus pane exit events, waits
+for the subscription acknowledgement, and only then takes its immediate
+snapshot. This ordering preserves events that race with bootstrap.
 
-**A scheduled prompt carries the run folder path and nothing else.** Never
-write a preference value into it: a cron is scheduled once and fires for
-hours, so an inlined threshold or model keeps firing after the record has
-changed. Every value the prompt needs is read from RESUME.md at fire time,
-which makes the crons stateless and a preference change self-propagating.
+An already-present or subsequent `idle`, `done`, `blocked`, or pane-exited
+condition wakes the coordinator with the affected runtime identity. If several
+workers settle together, process their events one at a time, then serialize
+review and landing in dependency order. The helper's timeout is not success. It
+returns a complete refreshed snapshot used to:
 
-> Progress check for the <slug> implementation run. For every active worker session
-> (see `herdr pane list` agent_status and the RESUME.md table at
-> .scratch/<slug>/RESUME.md): if agent_status is idle or done, or the branch has
-> a new commit, the ticket is at a safe point: proceed with the agreed
-> review / fix-loop / landing workflow. Process multiple ready tickets one at a
-> time in dependency order, then schedule newly unblocked tickets according to
-> `Mode:`. Also verify each background monitor (Bash wait / herdr agent wait) is
-> still running and matches the current pane id; if one has fired spuriously or
-> hung, replace it with
-> `herdr agent wait <pane> --until idle --until done --until blocked`.
-> If a session is stuck or crashed, apply the crash-restart rule.
-> Also read your own context usage from
-> `herdr pane read "$HERDR_PANE_ID" --lines 6` (the `🧠` statusline figure).
-> Read `Coordinator.handoff` and `Coordinator.threshold` from RESUME.md and
-> compare your context against them: only if `handoff` is `yes` and your
-> context exceeds `threshold`, follow the handoff procedure at the next safe
-> point. Report briefly.
+- persist compacted pane identifiers before another action;
+- inspect `git status --short`, `git log --oneline <base>..HEAD`, and at most 40
+  recent pane lines for workers that remain `working`;
+- run `snapshot.check`, compare `Base sha:`, and evaluate coordinator context;
+- run `scheduler.plan` so a persisted capacity change takes effect.
 
-Each tick: re-read RESUME.md, compare and update `Base sha:`, read the pane
-list and own context figure, then inspect per-ticket `git status --short`,
-`git log --oneline <base>..HEAD`, and the last 40 pane lines. Update every
-active runtime block's pane, phase, and monitor state before acting. Run the
-scheduler even when no worker changed, so a hand-edited mode or newly unblocked
-queued ticket takes effect. Report in three lines or fewer when nothing
-changed.
+Apply [stall-check.md](references/stall-check.md) only on the timeout path.
+After those checks, call wait-any again. Never replace this cycle with polling,
+cron tools, scheduled prompts, background Bash monitors, Python parsing, or a
+native harness task manager.
 
-## Stall check
+## Infrastructure retries
 
-Alongside the progress loop, schedule a second `CronCreate` on
-`5-59/10 * * * *` (offset five minutes from the progress loop) with the
-stall-check prompt in [stall-check.md](references/stall-check.md). It catches
-a worker whose `agent_status` stays `working` while nothing moves: an API
-network error, a permission prompt, or a question waiting on input. Both crons
-are session-only, so every start, resume, and handoff re-creates both.
+Worker crashes, Herdr transport failures, and launch failures use the same
+three-retry policy. After recording the observed failure, call
+`infrastructure.retry.record`. For `action: retry`, wait its returned bounded
+increasing `delay_ms`, then relaunch in the same worktree with the exact returned
+binding and the next attempt number. Never substitute a harness, model, effort,
+skill, branch, or worktree. For `action: block`, leave only that ticket blocked
+and immediately call `scheduler.plan` so independent ready tickets continue.
 
 ## Crash-restart
 
@@ -294,9 +289,10 @@ read the run-wide `Implementor:`. A crash is evidence about a process, not
 about a model, and silently substituting a different one is how an override
 gets lost to a network blip.
 
-A network outage or a compaction is not a failure: resume the same session with
-a prompt first (or `claude --resume` in its worktree). Re-prompt only if a
-compaction is followed by no edits for two ticks.
+A network outage or a compaction is not immediately a worker failure: resume
+the same session with a prompt first (or `claude --resume` in its worktree).
+Re-prompt only if a compaction is followed by no edits across two bounded
+timeout snapshots.
 
 ## Escalation
 
@@ -326,9 +322,9 @@ compaction and has nothing to hand off to.
 When `handoff` is `yes` and your own context passes `threshold`, hand off at the
 **next safe point** (finish the coordinator-owned review / fix / land action;
 do not start more tickets, but do not wait for every active worker to finish).
-When it is `no`, stay in the current session, keep RESUME.md
-current, and never launch a successor or stop loops and monitors for context
-usage. Procedure and successor launch: [handoff.md](references/handoff.md).
+When it is `no`, stay in the current session, keep RESUME.md current, and
+never launch a successor or stop the event-driven wait cycle for context usage.
+Procedure and successor launch: [handoff.md](references/handoff.md).
 
 ## Resume
 
@@ -346,8 +342,8 @@ When invoked as `resume .scratch/<slug>` or from a handoff:
    unsupported schema versions stop the resume without migration. Any other
    mismatch also stops with an explanation; nothing is guessed.
    If this invocation also passed `--coordinator`, `--implementor`,
-   `--reviewer`, `--serial`, or `--parallel` and it differs from the record,
-   that is a preference change: validate it, write it, and log it in
+   `--reviewer`, `--serial`, or `--parallel <N>` and it differs from the
+   record, that is a preference change: validate it, write it, and log it in
    `## Decisions`. Coordinator changes require safe takeover; Implementor and
    Reviewer changes apply only to future launches.
 2. `herdr pane list`; pane ids compact, so trust the list over RESUME.md.
@@ -356,10 +352,12 @@ When invoked as `resume .scratch/<slug>` or from a handoff:
 3. Compare `Base sha:` with the base checkout. If it moved, inspect every
    active branch against the new base, then record the observed sha.
 4. Update your line in `.scratch/coordinators.md`.
-5. For each active ticket: validate its runtime block, run `git status --short`
-   and `git log <base>..HEAD` in its worktree, refresh its pane and phase, and
-   re-arm the monitor on its pane with `Monitor: armed`.
-6. Schedule the progress loop, then run one tick immediately.
+5. Call `herdr.wait_any` with a short bounded timeout for every active runtime.
+   Persist every refreshed pane id from the returned complete snapshot. A valid
+   active runtime remains active even when its recorded compact pane id changed;
+   do not relaunch it.
+6. Run `scheduler.plan`, then arm the normal bounded wait-any cycle before a
+   successor calls `coordinator.ready`.
 7. Report the state in a short list and end the turn.
 
 ## Rules that are not negotiable

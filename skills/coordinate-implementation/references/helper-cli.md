@@ -389,9 +389,138 @@ changing its role.
 }
 ```
 
-Use `diagnostic: null` with `status: started`. A later retry increments
-`attempt` but keeps the bound harness, model, effort, worktree, branch, and
-exact required implement skill path.
+Use `diagnostic: null` with `status: started`. A failed launch remains an
+active `working` ticket with `Phase: launch failed` until
+`infrastructure.retry.record` decides whether to retry or block. A later retry
+increments `attempt` but keeps the bound harness, model, effort, worktree,
+branch, and exact required implement skill path.
+
+The schema-1 field name `max_attempts` is retained for compatibility with the
+landed launch contract, but its value is the maximum retry count. Pass `3`.
+Attempt 1 is the initial launch and attempts 2 through 4 are the three retries.
+The runtime renders this truthfully as `Retry: 0 of 3` through `3 of 3`.
+
+## `scheduler.plan`
+
+Select dependency-ready queued tickets within the current implementation cap:
+
+```json
+{
+  "schema_version": 1,
+  "operation": "scheduler.plan",
+  "input": {
+    "mode": "parallel",
+    "max_implementors": 3,
+    "tickets": [
+      { "number": "01", "dependencies": [], "status": "landed" },
+      { "number": "02", "dependencies": ["01"], "status": "queued" }
+    ],
+    "runtimes": [
+      {
+        "runtime_id": "review-07-standards",
+        "ticket": "07",
+        "role": "reviewer",
+        "state": "active"
+      }
+    ]
+  }
+}
+```
+
+Parallel mode requires a positive cap. Serial mode requires cap 1. Only
+`implementor` runtimes with `state: active` consume capacity. Pass
+`state: terminal` for blocked or exhausted runtime records retained for
+recovery. Active reviewers are represented so the helper can prove they do not
+consume slots. A queued ticket with a valid
+active implementor runtime is never returned for another launch. Unknown
+blocking tickets, duplicate ticket numbers, duplicate runtime ids, and multiple
+active implementors for one ticket fail before any launch.
+
+The result reports `capacity`, `active_implementors`, `available_slots`, and
+`launch_tickets`. Ready tickets are sorted by numeric ticket number and sliced
+to the available slots. Call this operation after every landing and after a
+persisted mode or cap change. A reduced cap returns no launch while the active
+count is above the cap; it never terminates a worker.
+
+## `herdr.wait_any`
+
+Wait for the first meaningful status from all active workers through the Herdr
+control socket:
+
+```json
+{
+  "schema_version": 1,
+  "operation": "herdr.wait_any",
+  "input": {
+    "socket_path": "/home/user/.config/herdr/sessions/default/herdr.sock",
+    "timeout_ms": 600000,
+    "workers": [
+      {
+        "runtime_id": "example-02-attempt-1",
+        "ticket": "02",
+        "session": "example-02",
+        "pane_id": "w1:p4"
+      }
+    ]
+  }
+}
+```
+
+The helper opens a long-lived `events.subscribe` connection for every supplied
+pane status plus pane exit events and waits for `subscription_started`. Only
+then does it open a separate `session.snapshot` connection. Events arriving
+between acknowledgement and snapshot are buffered and cannot be lost. If the
+snapshot refreshes a compact pane id for a still-working session, the helper
+subscribes to the refreshed ids before taking another snapshot.
+
+An already-present or subsequent `idle`, `done`, or `blocked` status returns
+`reason: status`. A missing, closed, or exited pane returns
+`reason: pane_exited`. Both include the affected durable `runtime_id` and
+complete worker snapshot. Simultaneous events are handled in socket order.
+
+A timeout is successful transport but not worker completion. It returns
+`reason: timeout`, `worker: null`, and the latest complete worker snapshot
+captured within the requested end-to-end deadline. It does not start another
+socket connection after that deadline expires. Use the snapshot for stall
+detection, recovery, snapshot-integrity checks, base checks, and
+coordinator-context checks. Each worker includes both `pane_id` and
+`previous_pane_id`; persist refreshed ids before another wait or launch
+decision. A valid session discovered under a refreshed pane remains active and
+must not be relaunched.
+
+Malformed events, malformed snapshots, disconnects, and socket failures return
+a normal operation failure. Feed that failure into the shared infrastructure
+retry policy. Do not fall back to polling, a cron, a shell loop, Python, or a
+harness-native task manager.
+
+## `infrastructure.retry.record`
+
+Record one worker, Herdr, or launch infrastructure failure against an active
+runtime:
+
+```json
+{
+  "schema_version": 1,
+  "operation": "infrastructure.retry.record",
+  "input": {
+    "state_path": ".scratch/example/RESUME.md",
+    "ticket": "02",
+    "attempt": 1,
+    "failure": "herdr",
+    "diagnostic": "event socket disconnected"
+  }
+}
+```
+
+The helper reads the exact role, worktree, branch, implement skill, session, and
+tab binding from the active runtime block. The input cannot replace any of
+those values. Attempts 1, 2, and 3 may return `action: retry` with delays 1000,
+2000, and 4000 milliseconds. The returned `binding` is the only configuration
+used for the next attempt. After attempt 4 fails, all three retries are
+exhausted: the operation returns `action: block`, records
+`Phase: retry exhausted`, and marks only that ticket blocked. Independent
+queued tickets remain unchanged and can be selected by the next
+`scheduler.plan` call.
 
 ## Coordinator ownership operations
 

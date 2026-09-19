@@ -878,7 +878,7 @@ describe("safe implementor launch", () => {
     });
     const persisted = readFileSync(fixture.statePath, "utf8");
     expect(
-      persisted.includes("| 04 | pi | openai-codex/gpt-5.6-sol | high | 0 | - | blocked | - |"),
+      persisted.includes("| 04 | pi | openai-codex/gpt-5.6-sol | high | 0 | - | working | - |"),
     ).toBe(true);
     expect(persisted.includes("Phase: launch failed")).toBe(true);
     expect(persisted.includes("Retry: 0 of 3")).toBe(true);

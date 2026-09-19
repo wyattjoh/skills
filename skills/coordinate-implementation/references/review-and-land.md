@@ -16,7 +16,7 @@ Resolve textual conflicts yourself with the `resolving-merge-conflicts` skill,
 never by asking the implementor to operate the rebase. Preserve the intent of
 both the landed change and the ticket. If that cannot be done without a scope
 decision, stop and ask the user. After the rebase completes, update the active
-ticket's `Branch`, `Phase`, and `Monitor` fields, and verify the commit shape on
+ticket's `Branch` and `Phase` fields, and verify the commit shape on
 `<base>..HEAD` against the persisted Repository policy.
 
 A clean textual resolution is coordination work. A substantive behavioral
@@ -69,8 +69,9 @@ Every request ends with:
 > Apply the persisted fix-commit policy, rerun the gates recorded in the shared
 > brief, and print `FIXES DONE NN`.
 
-Then re-arm the monitor. When it settles, verify mechanical items directly,
-spawn one verification agent for judgment items, and rerun the recorded gates.
+Include the implementor in the next wait-any call. When it returns a terminal
+status, verify mechanical items directly, spawn one verification agent for
+judgment items, and rerun the recorded gates.
 Two rounds is normal. A ticket still failing review after a **third** round
 triggers the escalation rule in the skill, per ticket, logged, and gated on
 `Coordinator.unattended`. This is separate from crash-restart. Increment the
@@ -109,9 +110,9 @@ tools or delete a retained branch.
 Set the ticket row's `status` to `landed`
 and fill its `sha`, leaving its bound record columns untouched as provenance.
 Remove its `## Active tickets` block, update `Base sha:`, log any scope decision
-in `## Decisions`, and update `.scratch/coordinators.md`. Then run the scheduler:
-parallel mode starts every newly unblocked queued ticket, while serial mode
-starts only the first and only when no ticket remains active.
+in `## Decisions`, and update `.scratch/coordinators.md`. Then call
+`scheduler.plan`; it immediately fills newly available implementor capacity in
+deterministic ticket order.
 
 ## Scope decisions
 

@@ -3,6 +3,7 @@ import { basename, dirname, isAbsolute, relative, resolve, sep } from "node:path
 import { mkdir, readFile, realpath, rename, rm, stat, writeFile } from "node:fs/promises";
 import { realpathSync } from "node:fs";
 import { randomUUID } from "node:crypto";
+import { activeRuntimeBlockPattern, parseActiveRuntimeFields } from "./active-runtime.ts";
 import type {
   CliIssue,
   ImplementorLaunchPrepareInput,
@@ -195,18 +196,6 @@ const updateTicketRow = (
   return `${markdown.slice(0, section.start)}${lines.join("\n")}${markdown.slice(section.end)}`;
 };
 
-const activeBlockPattern = (ticket: string): RegExp =>
-  new RegExp(`^### ${ticket}\\r?\\n[\\s\\S]*?(?=^### |^## |(?![\\s\\S]))`, "mu");
-
-const parseActiveFields = (block: string): Record<string, string> => {
-  const fields: Record<string, string> = {};
-  for (const line of block.split(/\r?\n/u).slice(1)) {
-    const field = line.match(/^([A-Za-z][A-Za-z ]*):\s*(.*)$/u);
-    if (field !== null) fields[field[1]!] = field[2]!;
-  }
-  return fields;
-};
-
 const serializeActiveRole = (role: RoleRecord): string =>
   JSON.stringify({ harness: role.harness, model: role.model, effort: role.effort });
 
@@ -238,7 +227,7 @@ const upsertActiveBlock = (
   ticket: string,
   rendered: string,
 ): { markdown: string; recovered: boolean } => {
-  const pattern = activeBlockPattern(ticket);
+  const pattern = activeRuntimeBlockPattern(ticket);
   const existing = markdown.match(pattern)?.[0];
   if (existing !== undefined) {
     const recovered = existing.trimEnd() === rendered.trimEnd();
@@ -515,15 +504,16 @@ export const prepareImplementorLaunch = (
             "Launch with the exact persisted Implementor harness, model, and effort; preference changes apply only to future unbound tickets.",
           );
         }
-        const existingBlock = markdown.match(activeBlockPattern(input.ticket))?.[0];
+        const existingBlock = markdown.match(activeRuntimeBlockPattern(input.ticket))?.[0];
         if (existingBlock !== undefined) {
-          const fields = parseActiveFields(existingBlock);
+          const fields = parseActiveRuntimeFields(existingBlock);
           const existingRole = roleFromActive(fields);
           const existingAttempt = Number(fields.Attempt);
           const requiredSkill = input.implementSkillPath ?? "/implement";
           const sameAttempt = existingAttempt === input.attempt;
           const nextFailedAttempt =
-            fields.Phase === "launch failed" && existingAttempt + 1 === input.attempt;
+            (fields.Phase === "launch failed" || fields.Phase === "retry waiting") &&
+            existingAttempt + 1 === input.attempt;
           const sameRuntime =
             fields.Session === input.session &&
             fields.Tab === input.tab &&
@@ -535,6 +525,8 @@ export const prepareImplementorLaunch = (
             fields.Worktree !== input.worktreePath ||
             fields.Branch !== input.branch ||
             fields["Implement skill"] !== requiredSkill ||
+            fields.Session !== input.session ||
+            fields.Tab !== input.tab ||
             (!sameAttempt && !nextFailedAttempt) ||
             (sameAttempt && !sameRuntime) ||
             (sameAttempt && fields.Phase === "launch failed")
@@ -586,7 +578,7 @@ const updateActiveOutcome = (
   block: string,
   input: ImplementorLaunchRecordInput,
 ): { block: string } => {
-  const fields = parseActiveFields(block);
+  const fields = parseActiveRuntimeFields(block);
   if (fields.Attempt !== String(input.attempt)) {
     throw implementorError(
       "implementor.attempt_stale",
@@ -625,7 +617,7 @@ export const recordImplementorLaunch = (
   mutateStateFile(input.statePath, (markdown) =>
     Effect.gen(function* () {
       yield* validatePersistedState(input.statePath, markdown);
-      const pattern = activeBlockPattern(input.ticket);
+      const pattern = activeRuntimeBlockPattern(input.ticket);
       const active = markdown.match(pattern)?.[0];
       if (active === undefined) {
         return yield* implementorError(
@@ -637,7 +629,7 @@ export const recordImplementorLaunch = (
       return yield* Effect.try({
         try: () => {
           const updated = updateActiveOutcome(active, input);
-          const status = input.status === "started" ? "working" : "blocked";
+          const status = "working";
           const withRow = updateTicketRow(markdown, input.ticket, { status });
           const next = withRow.replace(pattern, updated.block);
           const phase: ImplementorLaunchRecordResult["phase"] =

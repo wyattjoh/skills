@@ -27,6 +27,7 @@ Prefix:          dcs
 Base:            main
 Base sha:        0123456789abcdef0123456789abcdef01234567
 Mode:            parallel
+Parallel cap:    3
 Branch template: <prefix>-NN-<slug>
 
 Coordinator:
@@ -103,7 +104,6 @@ Attempt: 1
 Retry: 0 of 3
 Phase: working
 Last diagnostic: none
-Monitor: armed
 
 ### 03
 
@@ -119,7 +119,6 @@ Attempt: 1
 Retry: 0 of 3
 Phase: committed, awaiting review
 Last diagnostic: none
-Monitor: settled
 
 ## Snapshot
 
@@ -164,20 +163,21 @@ Monitor: settled
 | `Prefix`          | Short run tag; names sessions, tabs, and the pane label                                                                                                             |
 | `Base`            | Integration branch. Recorded on first run; **the file always wins** over a later `--base` flag, because changing the base mid-run invalidates every unlanded branch |
 | `Base sha`        | Last observed full commit id of `Base`. Update after every landing and when a resume or progress tick observes external movement                                    |
-| `Mode`            | `parallel` (default) or `serial`. Controls only which queued tickets start; it does not terminate active workers                                                    |
+| `Mode`            | `parallel` or `serial`. Controls only which queued tickets start; it does not terminate active workers                                                              |
+| `Parallel cap`    | Positive maximum active implementors; exactly `1` in serial mode                                                                                                    |
 | `Branch template` | Branch pattern resolved from repository instructions, or `<prefix>-NN-<slug>` when the repository is silent                                                         |
 
 `Base` is the one field where the file beats the flag. `Implementor` and `Mode`
 are the opposite (see below). The asymmetry is deliberate: a model or scheduler
 preference is cheap to change between ticket launches, a base is not.
 
-On a first run, write `Mode: parallel` unless `--serial` was passed. On resume,
-the file wins when neither scheduling flag is present. An explicit `--serial`
-or `--parallel` updates the field and appends a decision before more tickets
-start. Reject both flags together. Switching to `serial` never kills existing
-parallel workers: stop launching, drain the active set, then continue one at a
-time. Switching to `parallel` starts every unblocked queued ticket at the next
-scheduler pass.
+A first run requires either `--serial` or `--parallel <N>` with a positive
+integer. Persist both fields before launching. On resume, the file wins when no
+scheduling flag is present. An explicit flag updates both fields and appends a
+decision before more tickets start. Reject both flags together. Switching to
+serial records cap 1 but never kills existing parallel workers: stop launching,
+drain the active set, then continue one at a time. Raising a parallel cap fills
+new capacity at the next `scheduler.plan` pass.
 
 ### `## Repository policy`
 
@@ -282,21 +282,20 @@ One block per ticket from successful worktree creation until landing. The
 heading must be the ticket's zero-padded `NN`, and every block carries these
 fields:
 
-| Field             | Meaning                                                                         |
-| ----------------- | ------------------------------------------------------------------------------- |
-| `Worktree`        | Actual path returned by `worktree.prepare`                                      |
-| `Branch`          | Actual policy-created branch                                                    |
-| `Implementor`     | Exact bound harness, model, and effort                                          |
-| `Implement skill` | Exact Pi `SKILL.md` path, or Claude's fixed `/implement` invocation             |
-| `Session`         | Worker session name, normally `<prefix>-NN`                                     |
-| `Tab`             | Herdr tab label                                                                 |
-| `Pane`            | Current Herdr pane id; refresh it from Herdr after resume                       |
-| `Artifact`        | Absolute path to the inspectable JSON argument-array launch artifact            |
-| `Attempt`         | Current one-based launch attempt                                                |
-| `Retry`           | Completed retries and fixed maximum, for example `0 of 3`                       |
-| `Phase`           | `launch prepared`, `working`, `launch failed`, or the later workflow phase      |
-| `Last diagnostic` | `none` or the exact failing stage, exit code, and normalized stderr             |
-| `Monitor`         | `armed`, `settled`, or `not-armed`, updated when later event monitoring changes |
+| Field             | Meaning                                                                        |
+| ----------------- | ------------------------------------------------------------------------------ |
+| `Worktree`        | Actual path returned by `worktree.prepare`                                     |
+| `Branch`          | Actual policy-created branch                                                   |
+| `Implementor`     | Exact bound harness, model, and effort                                         |
+| `Implement skill` | Exact Pi `SKILL.md` path, or Claude's fixed `/implement` invocation            |
+| `Session`         | Worker session name, normally `<prefix>-NN`                                    |
+| `Tab`             | Herdr tab label                                                                |
+| `Pane`            | Current Herdr pane id; refresh it from Herdr after resume                      |
+| `Artifact`        | Absolute path to the inspectable JSON argument-array launch artifact           |
+| `Attempt`         | Current one-based launch attempt, from initial attempt 1 through final retry 4 |
+| `Retry`           | Completed retries and fixed maximum, always `0 of 3` through `3 of 3`          |
+| `Phase`           | `launch prepared`, `working`, `launch failed`, or the later workflow phase     |
+| `Last diagnostic` | `none` or the exact failing stage, exit code, and normalized stderr            |
 
 The ticket table remains the scheduler's source of truth. The active block is
 runtime coordination state. Create it before launch, update it at every phase
@@ -343,8 +342,8 @@ Never pass a non-Anthropic model to `claude`.
 
 ### Model form, and the `:<level>` suffix
 
-**`pi` requires a provider prefix** — `openai-codex/gpt-5.6-sol`, never a bare
-`gpt-5.6-sol`. **`claude` takes the model alone** — `claude-opus-5`, never a
+**`pi` requires a provider prefix**: `openai-codex/gpt-5.6-sol`, never a bare
+`gpt-5.6-sol`. **`claude` takes the model alone**: `claude-opus-5`, never a
 provider prefix.
 
 Either harness's `model:` field may carry an optional **`:<level>` suffix**:
@@ -358,7 +357,7 @@ model: claude-opus-5:high             ->  claude --model claude-opus-5 --effort 
 ```
 
 Note the split point is the **last** colon, and only when what follows it is an
-effort value for that harness — a provider prefix uses `/`, so
+effort value for that harness. A provider prefix uses `/`, so
 `openai-codex/gpt-5.6-sol` has no colon to confuse it, but do not assume a model
 id can never contain one.
 
@@ -401,7 +400,8 @@ Resolve all three role records in one setup interaction, validate each through
 session launch. Reject and ask the user rather than writing a record that
 cannot launch:
 
-- `Mode` is not exactly `parallel` or `serial`.
+- `Mode` is not exactly `parallel` or `serial`, `Parallel cap` is not positive,
+  or serial mode does not use cap 1.
 - `Base sha` is not a full commit id.
 - an active ticket lacks its required runtime block or the block names a
   missing worktree, branch, launch artifact, attempt, retry state, or pane.

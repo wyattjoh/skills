@@ -167,14 +167,18 @@ For success:
 ```
 
 For failure, pass `status: failed` and the exact stage, exit code, and stderr.
-The helper keeps the runtime block, marks the ticket blocked, and records
-`Phase: launch failed`. It never changes harness, model, effort, required skill,
-worktree, or branch.
+The helper keeps the runtime block active and records `Phase: launch failed`.
+Then call `infrastructure.retry.record` for the same ticket and attempt. It
+returns either the next bounded delay and exact persisted binding, or
+`action: block` after three retries are exhausted. It never changes harness,
+model, effort, required skill, worktree, or branch.
 
-A transient retry uses the same bound configuration and worktree with the next
-attempt number. The caller may retry at most three times according to the run's
-infrastructure retry policy. A retry is not permission to substitute a model or
-tool.
+For `action: retry`, wait the returned delay and call
+`implementor.launch.prepare` with the next attempt number, a new attempt-specific
+artifact path, and the exact returned binding. The schema-1 `max_attempts` field
+is retained for compatibility and must be `3`, meaning three retries after the
+initial launch. Attempts therefore run from 1 through 4. A retry is not
+permission to substitute a model or tool.
 
 ## 5. Recover a partial launch
 
@@ -191,8 +195,8 @@ Recovery is state-first:
    `recovered: true` and the same argument arrays.
 7. If the agent exists but the outcome write was interrupted, inspect Herdr and
    call `implementor.launch.record` with the observed result.
-8. If the prior attempt failed and policy permits another infrastructure retry,
-   prepare the next attempt with the same role and worktree.
+8. If the prior attempt failed, call `infrastructure.retry.record`. Only when it
+   returns `action: retry` prepare the next attempt from its exact binding.
 
 A conflicting persisted role, branch, worktree, required skill path, or
 attempt fails recovery without creating an artifact or changing state. An
