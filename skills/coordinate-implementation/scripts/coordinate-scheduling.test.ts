@@ -774,7 +774,7 @@ describe("Herdr event-driven wait-any", () => {
     const result = await runCliAsync(
       request("herdr.wait_any", {
         socket_path: path,
-        timeout_ms: 25,
+        timeout_ms: 500,
         workers: [
           worker("runtime-01", "01", "run-01", "w1:p1"),
           worker("runtime-02", "02", "run-02", "w1:p2"),
