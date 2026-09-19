@@ -64,18 +64,7 @@ export const buildHarnessLaunch = (input: HarnessLaunchInput): HarnessLaunchPlan
     },
     prompt: {
       command: "herdr",
-      args: [
-        "agent",
-        "prompt",
-        "--wait",
-        "--until",
-        "working",
-        "--timeout",
-        "300000",
-        "--",
-        input.session,
-        input.prompt,
-      ],
+      args: ["agent", "prompt", input.session, input.prompt, "--wait", "--timeout", "300000"],
     },
   };
 };

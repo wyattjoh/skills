@@ -373,6 +373,21 @@ describe("review launches and reports", () => {
         },
       },
     });
+    const reviewerPrompt = (
+      result.stdout.result as {
+        launch: { prompt: { command: string; args: string[] } };
+      }
+    ).launch.prompt;
+    expect(reviewerPrompt.command).toBe("herdr");
+    expect(reviewerPrompt.args).toEqual([
+      "agent",
+      "prompt",
+      "review-review-06-r0-standards-a1",
+      expect.stringContaining("Perform an independent Standards review."),
+      "--wait",
+      "--timeout",
+      "300000",
+    ]);
     const artifact = readFileSync(
       join(fixture.runPath, "reviews", "06-round-0-standards-attempt-1.json"),
       "utf8",

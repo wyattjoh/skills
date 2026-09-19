@@ -502,18 +502,7 @@ const buildReviewerLaunch = (
     },
     prompt: {
       command: "herdr",
-      args: [
-        "agent",
-        "prompt",
-        "--wait",
-        "--until",
-        "working",
-        "--timeout",
-        "300000",
-        "--",
-        session,
-        prompt,
-      ],
+      args: ["agent", "prompt", session, prompt, "--wait", "--timeout", "300000"],
     },
   };
 };
