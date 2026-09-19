@@ -166,8 +166,10 @@ self-review and returns one strict round verdict.
 
 A clean `PASS` from both axes returns `land`. If either axis has findings, the
 operation writes one consolidated fix request containing every Standards and
-Spec finding. Send that one request to the existing implementor session. It
-also states the persisted fix-commit policy and requires the worker to rerun
+Spec finding. This ordinary remediation is pre-authorized by the run's standing
+fix loop. Send that one request to the existing implementor session immediately,
+without asking the user for permission. It also states the persisted fix-commit
+policy and requires the worker to rerun
 all gates, repeat its harness-appropriate self-review, and print `FIXES DONE
 NN`.
 

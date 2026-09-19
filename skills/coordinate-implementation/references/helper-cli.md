@@ -808,9 +808,12 @@ run-wide default. Pi requires `standards-spec-single-session` and both
 `## Standards` and `## Spec` report sections. Claude requires `matt-implement`.
 
 Two accepted PASS reports return `action: land`. Any finding makes the round
-FAIL and is copied into one consolidated fix request. Rounds below three return
-the next round; a FAIL after fix round three returns `escalate` without model
-substitution. Earlier report and sidecar paths are never overwritten.
+FAIL and is copied into one consolidated fix request. For `action: fix`, the
+result sets `fix_request_authorized: true`: ordinary review remediation is
+pre-authorized by the standing fix loop and must be sent without a user prompt.
+Rounds below three return the next round; a FAIL after fix round three returns
+`escalate` without model substitution. Earlier report and sidecar paths are
+never overwritten.
 
 ## `landing.synchronize`
 

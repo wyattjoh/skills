@@ -244,7 +244,9 @@ remaining blocked ticket:
    [review-and-land.md](references/review-and-land.md).
 4. **Fix loop.** Finalize both axes with `review.round.finalize`. Send its one
    consolidated request, containing every actionable finding, to the same worker
-   session. Apply the recorded fix-commit policy, which defaults to appending a
+   session. Ordinary review remediation is pre-authorized by this standing loop:
+   never stop to ask the user before sending an `action: fix` request. Apply the
+   recorded fix-commit policy, which defaults to appending a
    commit when repository instructions are silent, then print `FIXES DONE NN`.
    Include that runtime in the next wait-any call. When it returns terminal,
    restart the pipeline from all recorded gates; every fix round receives new

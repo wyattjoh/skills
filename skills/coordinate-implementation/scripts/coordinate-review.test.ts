@@ -1208,6 +1208,7 @@ describe("gates and review rounds", () => {
       result: {
         verdict: "FAIL",
         action: "fix",
+        fix_request_authorized: true,
         next_round: 1,
         fix_commit_policy: "append",
         findings: [
@@ -1218,6 +1219,9 @@ describe("gates and review rounds", () => {
     });
     const request = readFileSync(fixRequestPath, "utf8");
     expect(request.match(/Location: src\/example\.ts:12/gu)?.length).toBe(2);
+    expect(request).toContain(
+      "This ordinary review-remediation request is pre-authorized by the run's standing fix loop.",
+    );
     expect(request).toContain("rerun every recorded gate");
     expect(readFileSync(selfReviewPath, "utf8")).toContain("## Standards");
   });

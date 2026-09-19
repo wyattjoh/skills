@@ -1489,6 +1489,7 @@ export type ReviewRoundFinalizeResult = {
   standards_report_path: string;
   spec_report_path: string;
   fix_request_path: string | null;
+  fix_request_authorized: boolean;
   next_round: number | null;
   fix_commit_policy: "append" | "amend" | "squash";
 };
@@ -1639,6 +1640,8 @@ export const finalizeReviewRound = (
               `# Ticket ${input.ticket} review fixes, round ${input.round}`,
               "",
               ...rendered,
+              "This ordinary review-remediation request is pre-authorized by the run's standing fix loop. Apply it immediately without asking the user for permission.",
+              "",
               `Apply the persisted ${fixCommitPolicy} fix-commit policy, rerun every recorded gate, rerun the harness-appropriate self-review, and print \`FIXES DONE ${input.ticket}\`.`,
               "",
             ].join("\n"),
@@ -1658,6 +1661,7 @@ export const finalizeReviewRound = (
       standards_report_path: standards.report_path,
       spec_report_path: spec.report_path,
       fix_request_path: findings.length > 0 ? input.fixRequestPath : null,
+      fix_request_authorized: action === "fix",
       next_round: findings.length > 0 && input.round < 3 ? input.round + 1 : null,
       fix_commit_policy: fixCommitPolicy,
     };
