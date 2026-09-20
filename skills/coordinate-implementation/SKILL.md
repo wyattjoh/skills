@@ -250,8 +250,12 @@ remaining blocked ticket:
    reports a genuine external blocker. Apply the recorded fix-commit policy,
    which defaults to appending a commit when repository instructions are silent,
    then print `FIXES DONE NN`. Include that runtime in the next wait-any call.
-   When it returns terminal, restart the pipeline from all recorded gates; every
-   fix round receives new self-review and fresh Standards and Spec sessions. If a failed gate passes on
+   A terminal result from the blocking remediation prompt is itself the wake signal;
+   do not summarize, end the turn, or wait for another event. Immediately call
+   `landing.synchronize` to validate the clean appended tip, then restart the
+   pipeline from every recorded gate. The same rule applies when terminal status
+   arrives through `herdr.wait_any`. Every fix round receives new self-review and
+   fresh Standards and Spec sessions. If a failed gate passes on
    an unchanged rerun, never create an empty fix commit. Obtain explicit user
    authority and call `gate.rerun.record` with the failed evidence and fresh
    passing output. It fails closed unless the gate, clean worktree, HEAD, and

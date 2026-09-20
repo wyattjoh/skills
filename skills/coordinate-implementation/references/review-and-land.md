@@ -173,9 +173,13 @@ policy and requires the worker to rerun
 all gates, repeat its harness-appropriate self-review, and print `FIXES DONE
 NN`.
 
-Include the implementor in the next wait-any call. When it returns a terminal
-status, restart the pipeline from the recorded gates. Increment the ticket row's
-`rounds` column for each completed fix round.
+Include the implementor in the next wait-any call. Immediately call
+`landing.synchronize` after any terminal remediation result, including a terminal
+result returned directly by the blocking Herdr prompt. That terminal result is
+already the wake signal: do not summarize, end the turn, or wait for another
+event first. Use the helper to validate the clean appended tip, then restart the
+pipeline from every recorded gate. Increment the ticket row's `rounds` column
+for each completed fix round.
 
 Do not manufacture an empty commit when a failed gate passes on an unchanged
 rerun. Stop and obtain explicit user authority. Then call `gate.rerun.record`
