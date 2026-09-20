@@ -498,7 +498,7 @@ export type ReviewRoundFinalizeInput = {
 };
 
 /**
- * Input for authorizing one additional review fix round after bounded escalation.
+ * Input for recovering a legacy blocked review or explicitly replacing its ticket role.
  */
 export type ReviewEscalationAuthorizeInput = {
   statePath: string;

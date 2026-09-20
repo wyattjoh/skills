@@ -986,11 +986,11 @@ export const applyFinalReviewOutcome = (
 };
 
 /**
- * Blocks one ticket after its third failed fix round and releases serialized finalization.
+ * Reconstructs the blocked escalation state used by legacy runs.
  *
  * @param markdown - Latest locked run-state Markdown after recording the failed review.
  * @param input - Ticket, completed round, and decision timestamp.
- * @returns Updated state that preserves the runtime while independent tickets continue.
+ * @returns Updated legacy state that preserves the runtime while independent tickets continue.
  */
 export const applyEscalationBlock = (
   markdown: string,

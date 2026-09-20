@@ -808,17 +808,18 @@ run-wide default. Pi requires `standards-spec-single-session` and both
 `## Standards` and `## Spec` report sections. Claude requires `matt-implement`.
 
 Two accepted PASS reports return `action: land`. Any finding makes the round
-FAIL and is copied into one consolidated fix request. For `action: fix`, the
-result sets `fix_request_authorized: true`: ordinary review remediation is
-pre-authorized by the standing fix loop and must be sent without a user prompt.
-Rounds below three return the next round; a FAIL after fix round three returns
-`escalate` without model substitution. Earlier report and sidecar paths are
-never overwritten.
+FAIL and is copied into one consolidated fix request. Every failure returns
+`action: fix`, `fix_request_authorized: true`, and the next round regardless of
+round number. Review remediation is pre-authorized by the standing fix loop and
+must be sent without a user prompt. Earlier report and sidecar paths are never
+overwritten.
 
 ## `review.escalation.authorize`
 
-After `review.round.finalize` returns `action: escalate`, record explicit authority
-for exactly one additional fix round:
+This compatibility operation is not part of the ordinary review loop. Use it
+only to recover an already-blocked legacy review or when the operator explicitly
+directs a per-ticket role replacement. Record that explicit authority for the
+blocked fix request:
 
 ```json
 {

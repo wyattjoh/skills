@@ -3,6 +3,7 @@ import { mkdirSync, mkdtempSync, readFileSync, symlinkSync, writeFileSync } from
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { spawnGit } from "./lib/git.ts";
+import { applyEscalationBlock } from "./lib/landing.ts";
 import { createFakeHerdrEnv } from "./test-herdr.ts";
 
 const CLI = join(import.meta.dir, "coordinate.ts");
@@ -977,7 +978,7 @@ const failedGateFixture = (): {
   };
 };
 
-const exhaustReview = (
+const legacyEscalationFixture = (
   implementor: "claude" | "pi",
 ): {
   fixture: ReviewFixture;
@@ -1012,7 +1013,15 @@ const exhaustReview = (
     },
   });
   expect(finalized.exitCode).toBe(0);
-  expect(finalized.stdout).toMatchObject({ result: { action: "escalate" } });
+  expect(finalized.stdout).toMatchObject({ result: { action: "fix" } });
+  writeFileSync(
+    fixture.statePath,
+    applyEscalationBlock(readFileSync(fixture.statePath, "utf8"), {
+      ticket: "06",
+      round: 3,
+      completedAt: "2026-09-19T02:00:00Z",
+    }),
+  );
   return { fixture, fixRequestPath };
 };
 
@@ -1405,7 +1414,7 @@ describe("gates and review rounds", () => {
     expect(readFileSync(fixture.statePath, "utf8")).toContain('"phase": "fixing"');
   });
 
-  it("requires explicit escalation after the third failed fix round", () => {
+  it("keeps remediation authorized after the third failed fix round", () => {
     const fixture = makeFixture("pi");
     preparePolicy(fixture);
     activateFixture(fixture, "pi");
@@ -1439,18 +1448,18 @@ describe("gates and review rounds", () => {
     expect(result.stdout).toMatchObject({
       result: {
         verdict: "FAIL",
-        action: "escalate",
-        next_round: null,
+        action: "fix",
+        fix_request_authorized: true,
+        next_round: 4,
       },
     });
     const state = readFileSync(fixture.statePath, "utf8");
-    expect(state).toContain("| 06 | pi | openai/test | high | 3 | yes | blocked | - |");
-    expect(state).toContain("Phase: blocked, awaiting escalation role");
-    expect(state.includes("## Serialized finalization")).toBe(false);
+    expect(state).toContain("Ticket 06 round 3 finalized: FAIL");
+    expect(state.includes("blocked, awaiting escalation role")).toBe(false);
   });
 
   it("authorizes and idempotently recovers continuation with the existing ticket role", () => {
-    const { fixture, fixRequestPath } = exhaustReview("pi");
+    const { fixture, fixRequestPath } = legacyEscalationFixture("pi");
     const request = escalationRequest(fixture, fixRequestPath, "continue-existing", {
       harness: "pi",
       model: "openai/test",
@@ -1486,7 +1495,7 @@ describe("gates and review rounds", () => {
   });
 
   it("closes a superseded runtime before recording an idempotent replacement role", () => {
-    const { fixture, fixRequestPath } = exhaustReview("pi");
+    const { fixture, fixRequestPath } = legacyEscalationFixture("pi");
     const request = escalationRequest(fixture, fixRequestPath, "replace-implementor", {
       harness: "claude",
       model: "opus",
@@ -1564,7 +1573,7 @@ describe("gates and review rounds", () => {
   });
 
   it("enforces continuation and replacement role selection", () => {
-    const continuation = exhaustReview("pi");
+    const continuation = legacyEscalationFixture("pi");
     const wrongContinuation = runCli(
       escalationRequest(continuation.fixture, continuation.fixRequestPath, "continue-existing", {
         harness: "claude",
@@ -1578,7 +1587,7 @@ describe("gates and review rounds", () => {
       errors: [{ code: "review.escalation_continue_role_mismatch" }],
     });
 
-    const replacement = exhaustReview("pi");
+    const replacement = legacyEscalationFixture("pi");
     const unchangedReplacement = runCli(
       escalationRequest(replacement.fixture, replacement.fixRequestPath, "replace-implementor", {
         harness: "pi",

@@ -295,20 +295,20 @@ Written before any role launches. With Herdr 0.9.1, a change to harness, model,
 or effort requires the prior coordinator to end and a replacement invocation
 to start with the selected record. It is never a state-only rewrite.
 
-| Field        | Values                | Notes                                                   |
-| ------------ | --------------------- | ------------------------------------------------------- |
-| `harness`    | `claude` \| `pi`      | Selected from installed harness discovery               |
-| `model`      | model id              | Validated against the selected harness                  |
-| `effort`     | discovered vocabulary | Validated against installed harness help                |
-| `handoff`    | `disabled`            | Herdr 0.9.1 has no normalized context metrics           |
-| `threshold`  | `unavailable`         | Prevents rendered terminal text from becoming a trigger |
-| `unattended` | `block` \| `escalate` | Governs the fix-round-3 escalation and nothing else     |
+| Field        | Values                | Notes                                                      |
+| ------------ | --------------------- | ---------------------------------------------------------- |
+| `harness`    | `claude` \| `pi`      | Selected from installed harness discovery                  |
+| `model`      | model id              | Validated against the selected harness                     |
+| `effort`     | discovered vocabulary | Validated against installed harness help                   |
+| `handoff`    | `disabled`            | Herdr 0.9.1 has no normalized context metrics              |
+| `threshold`  | `unavailable`         | Prevents rendered terminal text from becoming a trigger    |
+| `unattended` | `block` \| `escalate` | Legacy compatibility field; never gates review remediation |
 
-`unattended: block` marks a ticket needing escalation as blocked-on-decision,
-logs it, and starts the next unblocked ticket. `unattended: escalate`
-pre-authorizes the escalation. Neither value affects `TICKET BLOCKED`
-questions, scope decisions, or an invalid-record prompt: those always wait for
-the user.
+Every failed review round is pre-authorized to continue with the ticket-bound
+implementor, regardless of this field or round count. Existing values remain
+valid so old run state can resume without migration. `TICKET BLOCKED` questions,
+scope decisions, and invalid-record prompts still wait for the user because
+they require information outside the review/fix contract.
 
 ### `Implementor:` and `Reviewer:`
 

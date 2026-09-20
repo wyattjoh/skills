@@ -244,13 +244,14 @@ remaining blocked ticket:
    [review-and-land.md](references/review-and-land.md).
 4. **Fix loop.** Finalize both axes with `review.round.finalize`. Send its one
    consolidated request, containing every actionable finding, to the same worker
-   session. Ordinary review remediation is pre-authorized by this standing loop:
-   never stop to ask the user before sending an `action: fix` request. Apply the
-   recorded fix-commit policy, which defaults to appending a
-   commit when repository instructions are silent, then print `FIXES DONE NN`.
-   Include that runtime in the next wait-any call. When it returns terminal,
-   restart the pipeline from all recorded gates; every fix round receives new
-   self-review and fresh Standards and Spec sessions. If a failed gate passes on
+   session. Every review remediation is pre-authorized by this standing loop,
+   regardless of the round number: never stop to ask the user before sending an
+   `action: fix` request. Continue until a fresh review passes or the worker
+   reports a genuine external blocker. Apply the recorded fix-commit policy,
+   which defaults to appending a commit when repository instructions are silent,
+   then print `FIXES DONE NN`. Include that runtime in the next wait-any call.
+   When it returns terminal, restart the pipeline from all recorded gates; every
+   fix round receives new self-review and fresh Standards and Spec sessions. If a failed gate passes on
    an unchanged rerun, never create an empty fix commit. Obtain explicit user
    authority and call `gate.rerun.record` with the failed evidence and fresh
    passing output. It fails closed unless the gate, clean worktree, HEAD, and
@@ -358,28 +359,25 @@ the same session with a prompt first (or `claude --resume` in its worktree).
 Re-prompt only if a compaction is followed by no edits across two bounded
 timeout snapshots.
 
-## Escalation
+## Manual role replacement
 
-Distinct from crash-restart, and never call either one "the fallback rule".
-Trigger: a ticket is still failing review after a **third** fix round. That is
-evidence the bound model is not converging on this ticket.
+Review fixes never require escalation authority. A failed round always returns
+`action: fix` with the next round and stays on the same ticket-bound implementor;
+repeat gates and fresh review until it passes. Do not interpret a round count as
+a stopping condition.
 
-- Escalation is **per ticket**. Record it through
-  `review.escalation.authorize`, which requires an exact exhausted fix request,
-  explicit authority, and either `continue-existing` with the bound role or
-  `replace-implementor` with a different validated role. Execute only the
-  returned prompt or runtime-close action, then launch replacements through
-  `implementor.launch.prepare`. The transition is idempotent and preserves the
-  superseded runtime provenance. Never rewrite the run-wide `Implementor:`:
-  one ticket's difficulty is not a judgement about the remaining tickets.
-- `Coordinator.unattended` decides whether you may act alone. Default `block`:
-  set the ticket's status to `blocked`, log what you would escalate to and why,
-  run the scheduler for other unblocked tickets according to `Mode:`, and
-  surface the block at the next progress tick. The run keeps moving and no
-  model changes without the user. `escalate`
-  pre-authorizes it for overnight runs.
-- `unattended` governs this decision only. A `TICKET BLOCKED` question, a scope
-  decision, and an invalid-record prompt always wait for the user.
+`review.escalation.authorize` remains only for recovering an already-blocked
+legacy run or for an explicit operator-directed per-ticket role replacement.
+It requires the exact blocked fix request and explicit authority. Execute only
+its returned prompt or runtime-close action, then launch replacements through
+`implementor.launch.prepare`. The transition is idempotent and preserves the
+superseded runtime provenance. Never rewrite the run-wide `Implementor:`: one
+ticket's difficulty is not a judgement about the remaining tickets.
+
+`Coordinator.unattended` is retained for schema compatibility and never gates
+ordinary remediation. A `TICKET BLOCKED` question, a scope decision, and an
+invalid-record prompt still wait for the user because they require information
+outside the review/fix contract.
 
 ## Coordinator continuity
 

@@ -17,7 +17,6 @@ import type {
 import { activeRuntimeBlockPattern, parseActiveRuntimeFields } from "./active-runtime.ts";
 import { spawnGit } from "./git.ts";
 import {
-  applyEscalationBlock,
   applyFinalizationFix,
   applyFinalReviewOutcome,
   applyNoChangeGateRerun,
@@ -1651,7 +1650,7 @@ const replaceEscalationPhase = (
   markdown.replace(runtime.block, runtime.block.replace(/^Phase: .*$/mu, `Phase: ${phase}`));
 
 /**
- * Result of one explicit exhausted-review escalation authorization.
+ * Result of one explicit legacy blocked-review escalation authorization.
  */
 export type ReviewEscalationAuthorizeResult = {
   ticket: string;
@@ -1865,7 +1864,7 @@ export const authorizeReviewEscalation = (
             return yield* reviewError(
               "review.escalation_state_invalid",
               `Ticket \`${input.ticket}\` is not at the exhausted blocked review transition.`,
-              "Authorize escalation only after review.round.finalize returns action `escalate`.",
+              "Use escalation authorization only for an already-blocked legacy review state.",
             );
           }
 
@@ -1994,7 +1993,7 @@ export type ReviewRoundFinalizeResult = {
   ticket: string;
   round: number;
   verdict: "PASS" | "FAIL";
-  action: "land" | "fix" | "escalate";
+  action: "land" | "fix";
   findings: Array<ReviewFinding & { axis: ReviewAxis }>;
   self_review_path: string;
   standards_report_path: string;
@@ -2044,7 +2043,7 @@ const parseFixCommitPolicy = (markdown: string): "append" | "amend" | "squash" =
  * Validates harness self-review and consolidates both accepted axes into one fix request.
  *
  * @param input - Both axis evidence files, self-review evidence, and round paths.
- * @returns A strict pass, fix, or explicit third-round escalation outcome.
+ * @returns A strict pass or pre-authorized fix outcome.
  */
 export const finalizeReviewRound = (
   input: ReviewRoundFinalizeInput,
@@ -2128,7 +2127,7 @@ export const finalizeReviewRound = (
       ...spec.findings.map((finding) => ({ ...finding, axis: "spec" as const })),
     ];
     const verdict = findings.length === 0 ? "PASS" : "FAIL";
-    const action = verdict === "PASS" ? "land" : input.round >= 3 ? "escalate" : "fix";
+    const action = verdict === "PASS" ? "land" : "fix";
     const fixCommitPolicy = parseFixCommitPolicy(markdown);
     yield* reviewIo(
       async () => {
@@ -2173,7 +2172,7 @@ export const finalizeReviewRound = (
       spec_report_path: spec.report_path,
       fix_request_path: findings.length > 0 ? input.fixRequestPath : null,
       fix_request_authorized: action === "fix",
-      next_round: findings.length > 0 && input.round < 3 ? input.round + 1 : null,
+      next_round: findings.length > 0 ? input.round + 1 : null,
       fix_commit_policy: fixCommitPolicy,
     };
     if (standards.head_before !== spec.head_before) {
@@ -2195,17 +2194,9 @@ export const finalizeReviewRound = (
             selfReviewPath: input.selfReviewPath,
             completedAt: input.completedAt,
           });
-          const withEscalation =
-            action === "escalate"
-              ? applyEscalationBlock(withFinalization, {
-                  ticket: input.ticket,
-                  round: input.round,
-                  completedAt: input.completedAt,
-                })
-              : withFinalization;
           return {
             markdown: appendEvidenceLine(
-              withEscalation,
+              withFinalization,
               `- Ticket ${input.ticket} round ${input.round} finalized: ${verdict}; self-review ${input.selfReviewPath}; Standards ${standards.report_path}; Spec ${spec.report_path}${findings.length > 0 ? `; fixes ${input.fixRequestPath}` : ""}`,
             ),
             result: undefined,
