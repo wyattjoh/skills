@@ -815,6 +815,48 @@ Rounds below three return the next round; a FAIL after fix round three returns
 `escalate` without model substitution. Earlier report and sidecar paths are
 never overwritten.
 
+## `review.escalation.authorize`
+
+After `review.round.finalize` returns `action: escalate`, record explicit authority
+for exactly one additional fix round:
+
+```json
+{
+  "schema_version": 1,
+  "operation": "review.escalation.authorize",
+  "input": {
+    "state_path": ".scratch/example/RESUME.md",
+    "ticket": "04",
+    "round": 3,
+    "strategy": "replace-implementor",
+    "role": {
+      "harness": "claude",
+      "model": "opus",
+      "effort": "high"
+    },
+    "fix_request_path": ".scratch/example/briefs/fixes-04-round-3.md",
+    "user_authorized": true,
+    "decision": "Use a fresh role for one additional remediation round.",
+    "completed_at": "2026-09-19T01:11:00Z"
+  }
+}
+```
+
+The helper accepts only the exact exhausted fix request and a role that passes
+installed role validation. `continue-existing` requires the live ticket-bound
+role and returns `prompt-existing`. `replace-implementor` requires a different
+role. It first returns `close-runtime` while the old pane exists; after the
+caller executes that exact argument array, retrying records the replacement
+binding and returns `prepare-replacement`. Launch it through
+`implementor.launch.prepare` with the returned prompt and the exact replacement
+role. The run-wide `Implementor:` default remains unchanged.
+
+Authorization and replacement provenance are append-only and idempotent. The
+old artifact, worktree, branch, role, session, tab, and pane are preserved in
+`## Decisions`; existing evidence is never rewritten. Calls from any other
+review state fail instead of inferring authority or silently restarting a
+worker.
+
 ## `landing.synchronize`
 
 Claim the single serialized finalization slot and synchronize a clean ticket

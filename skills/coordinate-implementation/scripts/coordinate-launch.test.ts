@@ -252,6 +252,7 @@ describe("worktree and launch documentation contract", () => {
     expect(helper.includes("## `implementor.launch.prepare`")).toBe(true);
     expect(helper.includes("## `implementor.launch.recover`")).toBe(true);
     expect(helper.includes("## `implementor.launch.record`")).toBe(true);
+    expect(helper.includes("## `review.escalation.authorize`")).toBe(true);
     expect(resume.includes('"commits": "multiple"')).toBe(true);
     expect(resume.includes('"fixes": "append"')).toBe(true);
     expect(published.includes("Pando")).toBe(false);
@@ -718,13 +719,57 @@ describe("safe implementor launch", () => {
     expect(result.stdout.errors).toEqual([
       {
         code: "implementor.role_mismatch",
-        message: "Requested implementor role does not match the persisted Implementor role.",
+        message:
+          "Requested implementor role does not match the ticket-bound or run-default Implementor role.",
         remediation:
-          "Launch with the exact persisted Implementor harness, model, and effort; preference changes apply only to future unbound tickets.",
+          "Launch an already bound ticket with its exact row role. Only a helper-recorded review escalation may replace that per-ticket binding.",
       },
     ]);
     expect(readFileSync(fixture.statePath, "utf8")).toBe(before);
     expect(existsSync(artifactPath)).toBe(false);
+  });
+
+  it("launches an explicitly rebound ticket role without changing the run default", () => {
+    const fixture = makeFixture();
+    const prepared = prepareWorktree(fixture, "wyattjoh/rebound", "rebound");
+    expect(prepared.exitCode).toBe(0);
+    const worktree = (prepared.stdout.result as { worktree: { path: string } }).worktree.path;
+    writeFileSync(
+      fixture.statePath,
+      readFileSync(fixture.statePath, "utf8").replace(
+        "| 04 | - | - | - | 0 | - | queued | - |",
+        "| 04 | claude | opus | high | 3 | yes | blocked | - |",
+      ),
+    );
+    const artifactPath = join(fixture.root, "briefs", "launch-rebound.json");
+
+    const result = runCli(
+      request("implementor.launch.prepare", {
+        state_path: fixture.statePath,
+        artifact_path: artifactPath,
+        ticket: "04",
+        worktree_path: worktree,
+        branch: "wyattjoh/rebound",
+        session: "pci-rebound",
+        tab: "implement ticket 04 replacement",
+        pane: "workspace:p8",
+        role: { harness: "claude", model: "opus", effort: "high" },
+        implement_skill_path: null,
+        prompt: "apply authorized escalation fixes",
+        attempt: 1,
+        max_attempts: 3,
+      }),
+      fixture.env,
+    );
+
+    expect(result.exitCode).toBe(0);
+    expect(result.stdout).toMatchObject({
+      result: { launch: { start: { command: "herdr" } } },
+    });
+    const persisted = readFileSync(fixture.statePath, "utf8");
+    expect(persisted).toContain("| 04 | claude | opus | high | 3 | yes | working | - |");
+    expect(persisted).toContain("Implementor:\n  harness: pi");
+    expect(persisted).toContain('Implementor: {"harness":"claude","model":"opus","effort":"high"}');
   });
 
   it("preserves an identical artifact when malformed state rejects recovery", () => {
@@ -867,9 +912,10 @@ describe("safe implementor launch", () => {
     expect(mismatch.stdout.errors).toEqual([
       {
         code: "implementor.role_mismatch",
-        message: "Requested implementor role does not match the persisted Implementor role.",
+        message:
+          "Requested implementor role does not match the ticket-bound or run-default Implementor role.",
         remediation:
-          "Launch with the exact persisted Implementor harness, model, and effort; preference changes apply only to future unbound tickets.",
+          "Launch an already bound ticket with its exact row role. Only a helper-recorded review escalation may replace that per-ticket binding.",
       },
     ]);
     expect(readFileSync(fixture.statePath, "utf8")).toBe(persisted);

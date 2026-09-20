@@ -191,10 +191,19 @@ byte-identical recovery is the only permitted path reuse. Never overwrite an
 earlier round. Rounds one through three use the same bound implementor and
 reviewer configurations. A `FAIL` after the third fix round returns `escalate`.
 Mark only that ticket `blocked`, set its `esc` field, release it from the active
-implementation capacity count, and ask the user for an explicit replacement
-Implementor role for that ticket. Immediately run `scheduler.plan` so unrelated
-ready tickets continue. Record any authorized escalation before launching it.
-Never substitute a model or rewrite the run-wide Implementor default.
+implementation capacity count, and ask the user to choose either the existing
+Implementor role for one additional round or an explicit replacement role for
+that ticket. Immediately run `scheduler.plan` so unrelated ready tickets
+continue.
+
+Record the decision through `review.escalation.authorize`. For
+`continue-existing`, execute only the returned `prompt-existing` action. For
+`replace-implementor`, execute the returned `close-runtime` argument array,
+retry the same authorization until it returns `prepare-replacement`, then call
+`implementor.launch.prepare` with the exact returned role and prompt. Never
+restart the old worker, overwrite review evidence, substitute a model, or
+rewrite the run-wide Implementor default. The helper preserves the superseded
+runtime provenance and makes repeated authorization calls idempotent.
 
 ## Landing
 

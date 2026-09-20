@@ -24,6 +24,7 @@ import {
 import { completeLanding, recordLandingConflict, synchronizeLanding } from "./lib/landing.ts";
 import { runPreflight } from "./lib/preflight.ts";
 import {
+  authorizeReviewEscalation,
   finalizeReviewRound,
   prepareReviewerLaunch,
   prepareReviewPolicy,
@@ -195,6 +196,16 @@ const execute = (request: CoordinateRequest): Effect.Effect<number, never> =>
 
     if (request.operation === "review.round.finalize") {
       const outcome = yield* Effect.either(finalizeReviewRound(request.input));
+      if (Either.isLeft(outcome)) {
+        print(failureResponse(request.operation, [outcome.left.issue], null));
+        return 1;
+      }
+      print(successResponse(request.operation, outcome.right));
+      return 0;
+    }
+
+    if (request.operation === "review.escalation.authorize") {
+      const outcome = yield* Effect.either(authorizeReviewEscalation(request.input));
       if (Either.isLeft(outcome)) {
         print(failureResponse(request.operation, [outcome.left.issue], null));
         return 1;

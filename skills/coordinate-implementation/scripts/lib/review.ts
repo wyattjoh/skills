@@ -8,11 +8,13 @@ import type {
   GateRerunRecordInput,
   ReviewAxis,
   ReviewLaunchPrepareInput,
+  ReviewEscalationAuthorizeInput,
   ReviewLaunchRecordInput,
   ReviewPolicyPrepareInput,
   ReviewRoundFinalizeInput,
   RoleRecord,
 } from "./contract.ts";
+import { activeRuntimeBlockPattern, parseActiveRuntimeFields } from "./active-runtime.ts";
 import { spawnGit } from "./git.ts";
 import {
   applyEscalationBlock,
@@ -21,6 +23,7 @@ import {
   applyNoChangeGateRerun,
   LandingError,
 } from "./landing.ts";
+import { validateRole } from "./roles.ts";
 import { inspectRuntimeClose } from "./runtime-close.ts";
 import { mutateStateFile, StateMutationError } from "./state-mutation.ts";
 import { validateStateText } from "./state.ts";
@@ -1474,6 +1477,514 @@ export const recordGateRerun = (
       diagnostic: input.diagnostic,
       recovered,
     };
+  });
+
+type EscalationRuntime = {
+  block: string;
+  worktree: string;
+  branch: string;
+  session: string;
+  tab: string;
+  pane: string;
+  artifact: string;
+  phase: string;
+  role: RoleRecord;
+};
+
+type EscalationTicketRow = {
+  sectionStart: number;
+  sectionEnd: number;
+  lines: string[];
+  columns: string[];
+  rowIndex: number;
+  cells: string[];
+};
+
+const parseEscalationRuntime = (markdown: string, ticket: string): EscalationRuntime | null => {
+  const block = markdown.match(activeRuntimeBlockPattern(ticket))?.[0];
+  if (block === undefined) return null;
+  const fields = parseActiveRuntimeFields(block);
+  let role: RoleRecord;
+  try {
+    role = JSON.parse(fields.Implementor ?? "") as RoleRecord;
+  } catch {
+    throw reviewError(
+      "review.escalation_runtime_malformed",
+      `Ticket \`${ticket}\` has a malformed Implementor record.`,
+      "Restore the active runtime from its immutable launch artifact before authorizing escalation.",
+    );
+  }
+  if (
+    fields.Worktree === undefined ||
+    fields.Branch === undefined ||
+    fields.Session === undefined ||
+    fields.Tab === undefined ||
+    fields.Pane === undefined ||
+    fields.Artifact === undefined ||
+    fields.Phase === undefined ||
+    (role.harness !== "claude" && role.harness !== "pi") ||
+    typeof role.model !== "string" ||
+    role.model.length === 0 ||
+    typeof role.effort !== "string" ||
+    role.effort.length === 0
+  ) {
+    throw reviewError(
+      "review.escalation_runtime_malformed",
+      `Ticket \`${ticket}\` has incomplete escalation runtime provenance.`,
+      "Restore Worktree, Branch, Implementor, Session, Tab, Pane, Artifact, and Phase from immutable launch evidence.",
+    );
+  }
+  return {
+    block,
+    worktree: fields.Worktree,
+    branch: fields.Branch,
+    session: fields.Session,
+    tab: fields.Tab,
+    pane: fields.Pane,
+    artifact: fields.Artifact,
+    phase: fields.Phase,
+    role,
+  };
+};
+
+const parseEscalationTicketRow = (markdown: string, ticket: string): EscalationTicketRow => {
+  const heading = /^## Tickets\s*$/mu.exec(markdown);
+  if (heading === null) {
+    throw reviewError(
+      "review.escalation_ticket_table_malformed",
+      "RESUME.md has no ticket table for escalation authorization.",
+      "Repair the schema-1 ticket table before retrying.",
+    );
+  }
+  const sectionStart = heading.index + heading[0].length;
+  const next = /^## /gmu;
+  next.lastIndex = sectionStart;
+  const sectionEnd = next.exec(markdown)?.index ?? markdown.length;
+  const lines = markdown.slice(sectionStart, sectionEnd).split(/\r?\n/u);
+  const headerIndex = lines.findIndex((line) => line.trimStart().startsWith("| NN"));
+  const rowIndex = lines.findIndex((line) => line.split("|")[1]?.trim() === ticket);
+  if (headerIndex < 0 || rowIndex < 0) {
+    throw reviewError(
+      "review.escalation_ticket_table_malformed",
+      `Ticket \`${ticket}\` is missing from the escalation ticket table.`,
+      "Repair the schema-1 ticket table before retrying.",
+    );
+  }
+  const columns = lines[headerIndex]!.split("|")
+    .slice(1, -1)
+    .map((cell) => cell.trim());
+  const cells = lines[rowIndex]!.split("|")
+    .slice(1, -1)
+    .map((cell) => cell.trim());
+  if (cells.length !== columns.length) {
+    throw reviewError(
+      "review.escalation_ticket_table_malformed",
+      `Ticket \`${ticket}\` does not match the ticket table columns.`,
+      "Repair the schema-1 ticket row before retrying.",
+    );
+  }
+  for (const column of ["harness", "model", "effort", "rounds", "esc", "status"]) {
+    if (!columns.includes(column)) {
+      throw reviewError(
+        "review.escalation_ticket_table_malformed",
+        `Ticket table is missing required \`${column}\` escalation state.`,
+        "Repair the schema-1 ticket table before retrying.",
+      );
+    }
+  }
+  return { sectionStart, sectionEnd, lines, columns, rowIndex, cells };
+};
+
+const escalationCell = (row: EscalationTicketRow, column: string): string =>
+  row.cells[row.columns.indexOf(column)]!;
+
+const escalationRowRole = (row: EscalationTicketRow): RoleRecord => {
+  const harness = escalationCell(row, "harness");
+  const model = escalationCell(row, "model");
+  const effort = escalationCell(row, "effort");
+  if ((harness !== "claude" && harness !== "pi") || model === "-" || effort === "-") {
+    throw reviewError(
+      "review.escalation_ticket_role_malformed",
+      "The escalated ticket has no complete bound Implementor role.",
+      "Restore the ticket-bound role from its immutable launch artifact before retrying.",
+    );
+  }
+  return { harness, model, effort };
+};
+
+const updateEscalationTicketRow = (
+  markdown: string,
+  row: EscalationTicketRow,
+  updates: Record<string, string>,
+): string => {
+  const cells = [...row.cells];
+  for (const [column, value] of Object.entries(updates)) {
+    cells[row.columns.indexOf(column)] = value;
+  }
+  const lines = [...row.lines];
+  lines[row.rowIndex] = `| ${cells.join(" | ")} |`;
+  return `${markdown.slice(0, row.sectionStart)}${lines.join("\n")}${markdown.slice(row.sectionEnd)}`;
+};
+
+const appendEscalationDecision = (markdown: string, line: string): string => {
+  if (markdown.split(/\r?\n/u).includes(line)) return markdown;
+  const heading = /^## Decisions\s*$/mu.exec(markdown);
+  if (heading === null) {
+    throw reviewError(
+      "review.escalation_decisions_missing",
+      "RESUME.md has no Decisions section for escalation provenance.",
+      "Repair the schema-1 Decisions section before retrying.",
+    );
+  }
+  const sectionStart = heading.index + heading[0].length;
+  const next = /^## /gmu;
+  next.lastIndex = sectionStart;
+  const sectionEnd = next.exec(markdown)?.index ?? markdown.length;
+  return `${markdown.slice(0, sectionEnd).trimEnd()}\n\n${line}\n${markdown.slice(sectionEnd)}`;
+};
+
+const replaceEscalationPhase = (
+  markdown: string,
+  runtime: EscalationRuntime,
+  phase: string,
+): string =>
+  markdown.replace(runtime.block, runtime.block.replace(/^Phase: .*$/mu, `Phase: ${phase}`));
+
+/**
+ * Result of one explicit exhausted-review escalation authorization.
+ */
+export type ReviewEscalationAuthorizeResult = {
+  ticket: string;
+  exhausted_round: number;
+  next_round: number;
+  strategy: ReviewEscalationAuthorizeInput["strategy"];
+  role: RoleRecord;
+  fix_request_path: string;
+  user_authorized: true;
+  recovered: boolean;
+  action: "prompt-existing" | "close-runtime" | "prepare-replacement";
+  prompt: string;
+  worker: {
+    worktree_path: string;
+    branch: string;
+    session: string;
+    tab: string;
+    pane: string;
+  } | null;
+  runtime_closed: boolean;
+  pane_id: string;
+  close: ReviewArgumentCommand | null;
+};
+
+/**
+ * Records user authority for one additional fix round without changing run-wide defaults.
+ *
+ * @param input - Exhausted round, selected per-ticket role, and explicit user decision.
+ * @returns The exact existing-worker prompt, closure command, or replacement-launch authorization.
+ */
+export const authorizeReviewEscalation = (
+  input: ReviewEscalationAuthorizeInput,
+): Effect.Effect<ReviewEscalationAuthorizeResult, ReviewError> =>
+  Effect.gen(function* () {
+    yield* reviewIo(
+      () => ensureRunLocalPath(input.statePath, input.fixRequestPath),
+      "review.escalation_fix_path_failed",
+      "Could not validate the escalated fix request path",
+    );
+    const expectedFixName = `fixes-${input.ticket}-round-${input.round}.md`;
+    if (basename(input.fixRequestPath) !== expectedFixName) {
+      return yield* reviewError(
+        "review.escalation_fix_request_mismatch",
+        `Escalation fix request must be the exhausted round artifact \`${expectedFixName}\`.`,
+        "Pass the immutable fix request returned by the exhausted review finalization.",
+      );
+    }
+    const fixRequest = yield* reviewIo(
+      () => readFile(input.fixRequestPath, "utf8"),
+      "review.escalation_fix_request_missing",
+      "Could not read the exhausted review fix request",
+    );
+    if (fixRequest.trim().length === 0) {
+      return yield* reviewError(
+        "review.escalation_fix_request_invalid",
+        "The exhausted review fix request is empty.",
+        "Restore the immutable consolidated findings before authorizing another round.",
+      );
+    }
+    if (input.round < 3) {
+      return yield* reviewError(
+        "review.escalation_round_not_exhausted",
+        `Review round ${input.round} has not exhausted the three ordinary fix rounds.`,
+        "Continue the standing pre-authorized fix loop before requesting escalation.",
+      );
+    }
+    const validation = yield* validateRole({
+      role: "implementor",
+      triple: undefined,
+      record: input.role,
+    });
+    if (validation.result === null) {
+      return yield* new ReviewError({ issue: validation.errors[0]! });
+    }
+    if (!sameRole(validation.result.record, input.role)) {
+      return yield* reviewError(
+        "review.escalation_role_changed",
+        "Role validation changed the user-selected escalation role.",
+        "Authorize and persist only an exact role returned by role discovery.",
+      );
+    }
+
+    const nextRound = input.round + 1;
+    const prompt = [
+      `User-authorized review escalation for ticket ${input.ticket}, fix round ${nextRound}.`,
+      `Apply every finding in ${input.fixRequestPath}.`,
+      `If the fixes are already committed and all recorded gates plus self-review pass, do not create duplicate changes; report the existing commit and print \`FIXES DONE ${input.ticket}\`.`,
+      `Otherwise apply the persisted fix-commit policy, rerun every recorded gate and the harness-appropriate self-review, then print \`FIXES DONE ${input.ticket}\`.`,
+    ].join("\n\n");
+    const authorizationLine = `- ${input.completedAt} ticket ${input.ticket} user-authorized review escalation after round ${input.round}; strategy ${input.strategy}; role ${JSON.stringify(input.role)}; fixes ${input.fixRequestPath}; decision: ${input.decision}`;
+
+    return yield* mutateStateFile<ReviewEscalationAuthorizeResult, ReviewError>(
+      input.statePath,
+      (markdown) =>
+        Effect.gen(function* () {
+          yield* validateStateText(input.statePath, markdown).pipe(
+            Effect.mapError((error) => new ReviewError({ issue: error.issue })),
+          );
+          if (/^## Serialized finalization\s*\r?\n\r?\n```json/mu.test(markdown)) {
+            return yield* reviewError(
+              "review.escalation_finalization_present",
+              "Escalation authorization requires the exhausted review to release serialized finalization.",
+              "Restore the escalation block transition before authorizing another fix round.",
+            );
+          }
+          const row = parseEscalationTicketRow(markdown, input.ticket);
+          const rowRole = escalationRowRole(row);
+          const runtime = parseEscalationRuntime(markdown, input.ticket);
+          const alreadyAuthorized = markdown.split(/\r?\n/u).includes(authorizationLine);
+
+          if (alreadyAuthorized && input.strategy === "replace-implementor" && runtime === null) {
+            if (escalationCell(row, "status") !== "blocked" || !sameRole(rowRole, input.role)) {
+              return yield* reviewError(
+                "review.escalation_state_invalid",
+                "Recovered replacement authorization does not match the ticket row.",
+                "Restore the helper-recorded per-ticket role and blocked launch-pending status.",
+              );
+            }
+            return {
+              markdown: undefined,
+              result: {
+                ticket: input.ticket,
+                exhausted_round: input.round,
+                next_round: nextRound,
+                strategy: input.strategy,
+                role: input.role,
+                fix_request_path: input.fixRequestPath,
+                user_authorized: true as const,
+                recovered: true,
+                action: "prepare-replacement" as const,
+                prompt,
+                worker: null,
+                runtime_closed: true,
+                pane_id: "closed",
+                close: null,
+              },
+            };
+          }
+
+          if (runtime === null) {
+            return yield* reviewError(
+              "review.escalation_runtime_missing",
+              `Ticket \`${input.ticket}\` has no active runtime to continue or replace.`,
+              "Restore the runtime from immutable launch evidence, or retry the recorded replacement launch.",
+            );
+          }
+          if (!sameRole(rowRole, runtime.role)) {
+            return yield* reviewError(
+              "review.escalation_role_provenance_mismatch",
+              "Ticket row and active runtime disagree about the pre-escalation Implementor role.",
+              "Restore both records from immutable launch evidence before authorizing escalation.",
+            );
+          }
+
+          const authorizedPhase = `escalation fixes authorized, round ${nextRound}`;
+          if (alreadyAuthorized && input.strategy === "continue-existing") {
+            if (
+              escalationCell(row, "status") !== "working" ||
+              runtime.phase !== authorizedPhase ||
+              !sameRole(runtime.role, input.role)
+            ) {
+              return yield* reviewError(
+                "review.escalation_state_invalid",
+                "Recovered continuation authorization does not match active runtime state.",
+                "Restore the helper-recorded escalation phase and ticket role before retrying.",
+              );
+            }
+            const closure = yield* inspectRuntimeClose(runtime.pane).pipe(
+              Effect.mapError((error) => new ReviewError({ issue: error.issue })),
+            );
+            if (closure.runtime_closed) {
+              return yield* reviewError(
+                "review.escalation_runtime_closed",
+                "The authorized existing Implementor runtime is no longer live.",
+                "Obtain authority for a replacement role instead of restarting it silently.",
+              );
+            }
+            return {
+              markdown: undefined,
+              result: {
+                ticket: input.ticket,
+                exhausted_round: input.round,
+                next_round: nextRound,
+                strategy: input.strategy,
+                role: input.role,
+                fix_request_path: input.fixRequestPath,
+                user_authorized: true as const,
+                recovered: true,
+                action: "prompt-existing" as const,
+                prompt,
+                worker: {
+                  worktree_path: runtime.worktree,
+                  branch: runtime.branch,
+                  session: runtime.session,
+                  tab: runtime.tab,
+                  pane: runtime.pane,
+                },
+                runtime_closed: false,
+                pane_id: runtime.pane,
+                close: null,
+              },
+            };
+          }
+
+          if (
+            escalationCell(row, "rounds") !== String(input.round) ||
+            escalationCell(row, "esc") !== "yes" ||
+            escalationCell(row, "status") !== "blocked" ||
+            runtime.phase !== "blocked, awaiting escalation role"
+          ) {
+            return yield* reviewError(
+              "review.escalation_state_invalid",
+              `Ticket \`${input.ticket}\` is not at the exhausted blocked review transition.`,
+              "Authorize escalation only after review.round.finalize returns action `escalate`.",
+            );
+          }
+
+          if (input.strategy === "continue-existing" && !sameRole(runtime.role, input.role)) {
+            return yield* reviewError(
+              "review.escalation_continue_role_mismatch",
+              "Continuing the existing runtime requires its exact bound Implementor role.",
+              "Use the active role unchanged, or select replace-implementor for a different role.",
+            );
+          }
+          if (input.strategy === "replace-implementor" && sameRole(runtime.role, input.role)) {
+            return yield* reviewError(
+              "review.escalation_replacement_role_unchanged",
+              "Replacement escalation requires a different user-selected Implementor role.",
+              "Continue the existing runtime or select a different discovered role.",
+            );
+          }
+
+          const closure = yield* inspectRuntimeClose(runtime.pane).pipe(
+            Effect.mapError((error) => new ReviewError({ issue: error.issue })),
+          );
+          if (input.strategy === "continue-existing") {
+            if (closure.runtime_closed) {
+              return yield* reviewError(
+                "review.escalation_runtime_closed",
+                "The existing Implementor runtime closed before continuation was authorized.",
+                "Authorize a replacement role while preserving the prior launch artifact.",
+              );
+            }
+            let updated = updateEscalationTicketRow(markdown, row, { status: "working" });
+            const updatedRuntime = parseEscalationRuntime(updated, input.ticket)!;
+            updated = replaceEscalationPhase(updated, updatedRuntime, authorizedPhase);
+            updated = appendEscalationDecision(updated, authorizationLine);
+            return {
+              markdown: updated,
+              result: {
+                ticket: input.ticket,
+                exhausted_round: input.round,
+                next_round: nextRound,
+                strategy: input.strategy,
+                role: input.role,
+                fix_request_path: input.fixRequestPath,
+                user_authorized: true as const,
+                recovered: false,
+                action: "prompt-existing" as const,
+                prompt,
+                worker: {
+                  worktree_path: runtime.worktree,
+                  branch: runtime.branch,
+                  session: runtime.session,
+                  tab: runtime.tab,
+                  pane: runtime.pane,
+                },
+                runtime_closed: false,
+                pane_id: runtime.pane,
+                close: null,
+              },
+            };
+          }
+
+          if (!closure.runtime_closed) {
+            return {
+              markdown: undefined,
+              result: {
+                ticket: input.ticket,
+                exhausted_round: input.round,
+                next_round: nextRound,
+                strategy: input.strategy,
+                role: input.role,
+                fix_request_path: input.fixRequestPath,
+                user_authorized: true as const,
+                recovered: false,
+                action: "close-runtime" as const,
+                prompt,
+                worker: {
+                  worktree_path: runtime.worktree,
+                  branch: runtime.branch,
+                  session: runtime.session,
+                  tab: runtime.tab,
+                  pane: runtime.pane,
+                },
+                runtime_closed: false,
+                pane_id: closure.pane_id,
+                close: closure.close,
+              },
+            };
+          }
+
+          const provenanceLine = `- ${input.completedAt} ticket ${input.ticket} escalation superseded runtime ${JSON.stringify({ worktree: runtime.worktree, branch: runtime.branch, role: runtime.role, session: runtime.session, tab: runtime.tab, pane: runtime.pane, artifact: runtime.artifact })}`;
+          let updated = updateEscalationTicketRow(markdown, row, {
+            harness: input.role.harness,
+            model: input.role.model,
+            effort: input.role.effort,
+            status: "blocked",
+          });
+          updated = updated.replace(activeRuntimeBlockPattern(input.ticket), "");
+          updated = appendEscalationDecision(updated, authorizationLine);
+          updated = appendEscalationDecision(updated, provenanceLine);
+          return {
+            markdown: updated,
+            result: {
+              ticket: input.ticket,
+              exhausted_round: input.round,
+              next_round: nextRound,
+              strategy: input.strategy,
+              role: input.role,
+              fix_request_path: input.fixRequestPath,
+              user_authorized: true as const,
+              recovered: false,
+              action: "prepare-replacement" as const,
+              prompt,
+              worker: null,
+              runtime_closed: true,
+              pane_id: runtime.pane,
+              close: null,
+            },
+          };
+        }),
+    ).pipe(Effect.mapError(fromMutationError));
   });
 
 /**

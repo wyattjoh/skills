@@ -102,8 +102,9 @@ Do not guess compact Herdr ids.
 Call `implementor.launch.prepare` with the actual worktree, branch, session,
 tab, and pane. The operation:
 
-1. validates the requested role against the installed harness and the run-wide
-   `Implementor:` record while holding the state lock;
+1. validates the requested role against the installed harness and, while
+   holding the state lock, the ticket-row binding when one exists or otherwise
+   the run-wide `Implementor:` default;
 2. verifies the worktree and branch;
 3. constructs Herdr and harness argument arrays;
 4. writes an inspectable JSON launch artifact;
@@ -113,6 +114,9 @@ tab, and pane. The operation:
 
 The JSON role binding preserves custom model values byte-for-byte, including
 spaces, and recovery parses it structurally rather than splitting display text.
+Only `review.escalation.authorize` may replace an existing ticket-row binding;
+the launch helper consumes that exact role without changing the run-wide
+default.
 
 Pi additionally requires the installed `implement/SKILL.md` path. The start
 array includes `--approve` and `--skill <path>`, and the prompt begins with

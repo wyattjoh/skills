@@ -327,7 +327,11 @@ Inside each `## Active tickets` runtime block, `Implementor:` is compact JSON
 with exactly `harness`, `model`, and `effort` fields. This representation is the
 ticket-bound role used for recovery. The helper parses it structurally and
 preserves the model string byte-for-byte, including spaces. It never reconstructs
-a role by splitting display text.
+a role by splitting display text. A replacement escalation first closes and
+removes the superseded active runtime, appends its complete provenance to
+`## Decisions`, and changes the ticket-row binding. The replacement launch then
+creates a new active block through `implementor.launch.prepare`; the run-wide
+default remains unchanged.
 
 The `implement` skill is a fixed workflow requirement, not a configurable role
 field. Its actual Pi path is recorded in each launch artifact.
@@ -364,9 +368,9 @@ reasoning about when the run-wide record last changed.
 | Column                     | Meaning                                                                            |
 | -------------------------- | ---------------------------------------------------------------------------------- |
 | `NN`                       | Ticket number                                                                      |
-| `harness` `model` `effort` | The role **bound at ticket start**; never rewritten                                |
+| `harness` `model` `effort` | Current ticket-bound role; changed only by `review.escalation.authorize`           |
 | `rounds`                   | Fix rounds completed                                                               |
-| `esc`                      | `yes` once this ticket escalated past its bound model                              |
+| `esc`                      | `yes` once this ticket escalated past its initially bound model                    |
 | `status`                   | `queued` \| `working` \| `review` \| `fixing` \| `blocked` \| `landed` \| `closed` |
 | `sha`                      | Landed sha, or `-` for non-landed terminal work                                    |
 

@@ -242,6 +242,28 @@ const ticketField = (markdown: string, ticket: string, column: string): string =
   return cells[index]!;
 };
 
+const parseTicketRole = (markdown: string, ticket: string): RoleRecord | null => {
+  updateTicketRow(markdown, ticket, {});
+  const harness = ticketField(markdown, ticket, "harness");
+  const model = ticketField(markdown, ticket, "model");
+  const effort = ticketField(markdown, ticket, "effort");
+  if (harness === "-" && model === "-" && effort === "-") return null;
+  if (
+    (harness !== "claude" && harness !== "pi") ||
+    model === "-" ||
+    model.length === 0 ||
+    effort === "-" ||
+    effort.length === 0
+  ) {
+    throw implementorError(
+      "state.ticket_role_malformed",
+      `Ticket \`${ticket}\` has an incomplete bound Implementor role.`,
+      "Repair the ticket row from its immutable launch or escalation evidence before launching.",
+    );
+  }
+  return { harness, model, effort };
+};
+
 const serializeActiveRole = (role: RoleRecord): string =>
   JSON.stringify({ harness: role.harness, model: role.model, effort: role.effort });
 
@@ -503,15 +525,15 @@ export const prepareImplementorLaunch = (
     const mutation = mutateStateFile(input.statePath, (markdown) =>
       Effect.gen(function* () {
         yield* validatePersistedState(input.statePath, markdown);
-        const persistedRole = yield* Effect.try({
-          try: () => parsePersistedImplementor(markdown),
+        const expectedRole = yield* Effect.try({
+          try: () => parseTicketRole(markdown, input.ticket) ?? parsePersistedImplementor(markdown),
           catch: fromMutationError,
         });
-        if (!sameRole(persistedRole, input.role)) {
+        if (!sameRole(expectedRole, input.role)) {
           return yield* implementorError(
             "implementor.role_mismatch",
-            "Requested implementor role does not match the persisted Implementor role.",
-            "Launch with the exact persisted Implementor harness, model, and effort; preference changes apply only to future unbound tickets.",
+            "Requested implementor role does not match the ticket-bound or run-default Implementor role.",
+            "Launch an already bound ticket with its exact row role. Only a helper-recorded review escalation may replace that per-ticket binding.",
           );
         }
         const existingBlock = markdown.match(activeRuntimeBlockPattern(input.ticket))?.[0];

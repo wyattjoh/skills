@@ -364,9 +364,14 @@ Distinct from crash-restart, and never call either one "the fallback rule".
 Trigger: a ticket is still failing review after a **third** fix round. That is
 evidence the bound model is not converging on this ticket.
 
-- Escalation is **per ticket**. Record it in the ticket's `esc` column and in
-  `## Decisions`. Never rewrite the run-wide `Implementor:`: one ticket's
-  difficulty is not a judgement about the remaining tickets.
+- Escalation is **per ticket**. Record it through
+  `review.escalation.authorize`, which requires an exact exhausted fix request,
+  explicit authority, and either `continue-existing` with the bound role or
+  `replace-implementor` with a different validated role. Execute only the
+  returned prompt or runtime-close action, then launch replacements through
+  `implementor.launch.prepare`. The transition is idempotent and preserves the
+  superseded runtime provenance. Never rewrite the run-wide `Implementor:`:
+  one ticket's difficulty is not a judgement about the remaining tickets.
 - `Coordinator.unattended` decides whether you may act alone. Default `block`:
   set the ticket's status to `blocked`, log what you would escalate to and why,
   run the scheduler for other unblocked tickets according to `Mode:`, and

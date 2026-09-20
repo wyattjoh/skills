@@ -36,6 +36,7 @@ export type CoordinateOperation =
   | "gate.record"
   | "gate.rerun.record"
   | "review.round.finalize"
+  | "review.escalation.authorize"
   | "landing.synchronize"
   | "landing.conflict.record"
   | "landing.complete"
@@ -497,6 +498,21 @@ export type ReviewRoundFinalizeInput = {
 };
 
 /**
+ * Input for authorizing one additional review fix round after bounded escalation.
+ */
+export type ReviewEscalationAuthorizeInput = {
+  statePath: string;
+  ticket: string;
+  round: number;
+  strategy: "continue-existing" | "replace-implementor";
+  role: RoleRecord;
+  fixRequestPath: string;
+  userAuthorized: true;
+  decision: string;
+  completedAt: string;
+};
+
+/**
  * Input for claiming the serialized finalization slot and synchronizing one ticket.
  */
 export type LandingSynchronizeInput = {
@@ -697,6 +713,11 @@ export type CoordinateRequest =
       schemaVersion: typeof CONTRACT_SCHEMA_VERSION;
       operation: "review.round.finalize";
       input: ReviewRoundFinalizeInput;
+    }
+  | {
+      schemaVersion: typeof CONTRACT_SCHEMA_VERSION;
+      operation: "review.escalation.authorize";
+      input: ReviewEscalationAuthorizeInput;
     }
   | {
       schemaVersion: typeof CONTRACT_SCHEMA_VERSION;
@@ -1050,6 +1071,7 @@ export const parseRequest = (raw: string): Effect.Effect<CoordinateRequest, Requ
       "gate.record",
       "gate.rerun.record",
       "review.round.finalize",
+      "review.escalation.authorize",
       "landing.synchronize",
       "landing.conflict.record",
       "landing.complete",
@@ -1539,6 +1561,50 @@ export const parseRequest = (raw: string): Effect.Effect<CoordinateRequest, Requ
           exitCode,
           stdout,
           stderr,
+          completedAt,
+        },
+      };
+    }
+
+    if (operation === "review.escalation.authorize") {
+      const statePath = nonEmptyString(parsed.input.state_path);
+      const ticket = singleLineString(parsed.input.ticket);
+      const round = nonNegativeInteger(parsed.input.round);
+      const strategy = parsed.input.strategy;
+      const role = parseRoleRecord(parsed.input.role);
+      const fixRequestPath = nonEmptyString(parsed.input.fix_request_path);
+      const userAuthorized = parsed.input.user_authorized;
+      const decision = singleLineString(parsed.input.decision);
+      const completedAt = parsed.input.completed_at;
+      if (
+        statePath === undefined ||
+        ticket === undefined ||
+        !/^\d{2}$/u.test(ticket) ||
+        round === undefined ||
+        (strategy !== "continue-existing" && strategy !== "replace-implementor") ||
+        role === undefined ||
+        fixRequestPath === undefined ||
+        userAuthorized !== true ||
+        decision === undefined ||
+        !isUtcIsoTimestamp(completedAt)
+      ) {
+        return yield* invalidRequest(
+          "`review.escalation.authorize` requires state_path, a two-digit ticket, exhausted round, strategy, exact Implementor role, run-local fix request, explicit user authorization and decision, and completed_at.",
+          operation,
+        );
+      }
+      return {
+        schemaVersion: CONTRACT_SCHEMA_VERSION,
+        operation,
+        input: {
+          statePath,
+          ticket,
+          round,
+          strategy,
+          role,
+          fixRequestPath,
+          userAuthorized,
+          decision,
           completedAt,
         },
       };
