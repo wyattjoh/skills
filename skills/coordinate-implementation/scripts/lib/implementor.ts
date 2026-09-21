@@ -1,4 +1,4 @@
-import { Data, Effect, Either } from "effect";
+import { Data, Effect, Result } from "effect";
 import { basename, dirname, isAbsolute, relative, resolve, sep } from "node:path";
 import { mkdir, readFile, realpath, rename, rm, stat, writeFile } from "node:fs/promises";
 import { realpathSync } from "node:fs";
@@ -588,8 +588,8 @@ export const prepareImplementorLaunch = (
         return update;
       }),
     ).pipe(Effect.mapError(fromMutationError));
-    const outcome = yield* Effect.either(mutation);
-    if (Either.isLeft(outcome)) {
+    const outcome = yield* Effect.result(mutation);
+    if (Result.isFailure(outcome)) {
       if (artifactCreated) {
         yield* Effect.tryPromise({
           try: () => rm(input.artifactPath, { force: true }),
@@ -601,9 +601,9 @@ export const prepareImplementorLaunch = (
             ),
         });
       }
-      return yield* outcome.left;
+      return yield* outcome.failure;
     }
-    return { recovered: outcome.right, artifact_path: input.artifactPath, launch: plan };
+    return { recovered: outcome.success, artifact_path: input.artifactPath, launch: plan };
   });
 
 type RecoveryArtifact = {

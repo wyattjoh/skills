@@ -10,7 +10,7 @@
   "scripts": {
     "test": "bun test --parallel=8 --timeout=15000",
     "check": "tsc --noEmit",
-    "lint": "oxlint",
+    "lint": "oxlint --ignore-pattern '.claude/references/**'",
     "format": "oxfmt",
     "format:check": "oxfmt --check"
   },

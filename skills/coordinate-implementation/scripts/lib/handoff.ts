@@ -1,4 +1,4 @@
-import { Data, Effect, Either } from "effect";
+import { Data, Effect, Result } from "effect";
 import { createHash, randomUUID } from "node:crypto";
 import { link, mkdir, readFile, realpath, unlink, writeFile } from "node:fs/promises";
 import { dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
@@ -170,9 +170,10 @@ const fromUnknown = (error: unknown, code: string, action: string): CoordinatorH
 const runIssueEffect = async <Result>(
   effect: Effect.Effect<Result, { issue: CliIssue }>,
 ): Promise<Result> => {
-  const outcome = await Effect.runPromise(Effect.either(effect));
-  if (Either.isLeft(outcome)) throw new CoordinatorHandoffError({ issue: outcome.left.issue });
-  return outcome.right;
+  const outcome = await Effect.runPromise(Effect.result(effect));
+  if (Result.isFailure(outcome))
+    throw new CoordinatorHandoffError({ issue: outcome.failure.issue });
+  return outcome.success;
 };
 
 const sameRole = (left: RoleRecord, right: RoleRecord): boolean =>
@@ -908,7 +909,7 @@ export const verifyCoordinatorHandoff = (
   input: CoordinatorHandoffVerifyInput,
 ): Effect.Effect<CoordinatorHandoffVerifyResult, CoordinatorHandoffError> =>
   Effect.tryPromise({
-    try: async () => {
+    try: async (): Promise<CoordinatorHandoffVerifyResult> => {
       const { artifact, digest } = await readHandoffArtifact(input.artifactPath);
       const verified = await runIssueEffect(
         verifyCoordinator({

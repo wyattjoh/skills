@@ -1,7 +1,7 @@
 import { createHash } from "node:crypto";
 import { basename, isAbsolute, join, relative, sep } from "node:path";
 import { readFile, realpath } from "node:fs/promises";
-import { Data, Effect, Either } from "effect";
+import { Data, Effect, Result } from "effect";
 import {
   isUtcIsoTimestamp,
   type CliIssue,
@@ -479,9 +479,9 @@ const parseStateDocument = (
   markdown: string,
 ): Effect.Effect<StateDocument, SnapshotError> =>
   Effect.gen(function* () {
-    const validation = yield* Effect.either(validateStateText(path, markdown));
-    if (Either.isLeft(validation)) {
-      return yield* new SnapshotError({ issue: validation.left.issue });
+    const validation = yield* Effect.result(validateStateText(path, markdown));
+    if (Result.isFailure(validation)) {
+      return yield* new SnapshotError({ issue: validation.failure.issue });
     }
     const snapshotHeadings = [...markdown.matchAll(/^## Snapshot$/gmu)];
     if (snapshotHeadings.length > 1) {

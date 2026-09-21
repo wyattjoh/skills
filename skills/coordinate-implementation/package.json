@@ -12,7 +12,8 @@
     "test": "bun test"
   },
   "dependencies": {
-    "effect": "3.22.1"
+    "@effect/ai-typesafe": "4.0.0-rc.116",
+    "effect": "4.0.0-rc.116"
   },
   "engines": {
     "bun": ">=1.1.0"

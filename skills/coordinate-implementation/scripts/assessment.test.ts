@@ -1,0 +1,283 @@
+import { describe, expect, it } from "bun:test";
+import { Effect } from "effect";
+import { DecisionModel } from "effect/unstable/ai";
+import {
+  decideAcceptanceDisposition,
+  decideStallDisposition,
+  evaluateAcceptance,
+  evaluateStall,
+  STALL_REPROMPTS,
+  STALL_REPROMPT_THRESHOLD,
+  type AcceptanceAssessment,
+  type AcceptanceState,
+  type StallProbabilities,
+  type StallState,
+} from "./lib/assessment.ts";
+
+const state = (status: StallState["worker"]["status"] = "working"): StallState => ({
+  schema_version: 1,
+  assessment_id: "stall-mechanical-input-001",
+  ticket: {
+    number: "1",
+    title: "Create the accepted greeting file",
+    acceptance_criteria: ["Create greeting.txt containing exactly hello."],
+  },
+  worker: {
+    session: "typesafe-stall-worker",
+    harness: "pi",
+    model: "openai-codex/gpt-5.6-luna",
+    effort: "max",
+    status,
+    phase: "implementation",
+  },
+  previous_observation: null,
+  current_observation: {
+    observed_at: "2026-09-21T04:30:00Z",
+    pane_tail: [
+      "The accepted ticket says to create greeting.txt containing exactly hello.",
+      "Should I proceed with that filename?",
+    ],
+    head: "0123456789abcdef0123456789abcdef01234567",
+    git_status: "",
+    recent_commits: [],
+  },
+});
+
+const answers = (overrides: Partial<StallProbabilities> = {}): StallProbabilities => ({
+  meaningful_progress: 0.1,
+  mechanical_input_wait: 0.1,
+  human_decision_required: 0.1,
+  transient_service_failure: 0.1,
+  crash_or_loop: 0.1,
+  ...overrides,
+});
+
+const modelWith = (probabilities: StallProbabilities) =>
+  Effect.runSync(
+    DecisionModel.make({
+      decide: () =>
+        Effect.succeed({
+          answers: {
+            meaningful_progress: {
+              _tag: "Probability" as const,
+              probability: probabilities.meaningful_progress,
+            },
+            mechanical_input_wait: {
+              _tag: "Probability" as const,
+              probability: probabilities.mechanical_input_wait,
+            },
+            human_decision_required: {
+              _tag: "Probability" as const,
+              probability: probabilities.human_decision_required,
+            },
+            transient_service_failure: {
+              _tag: "Probability" as const,
+              probability: probabilities.transient_service_failure,
+            },
+            crash_or_loop: {
+              _tag: "Probability" as const,
+              probability: probabilities.crash_or_loop,
+            },
+          },
+          usage: { inputTokens: 42, outputTokens: 0 },
+        }),
+    }),
+  );
+
+describe("stall assessment policy", () => {
+  it("re-prompts a mechanically determined input wait", () => {
+    expect(
+      decideStallDisposition(
+        "idle",
+        answers({ mechanical_input_wait: 0.91, human_decision_required: 0.08 }),
+      ),
+    ).toEqual({
+      disposition: "reprompt",
+      reason: "mechanical_input",
+      prompt: STALL_REPROMPTS.mechanical_input,
+    });
+  });
+
+  it("uses the calibrated re-prompt boundary without weakening contradictory safety gates", () => {
+    expect(
+      decideStallDisposition("idle", answers({ mechanical_input_wait: STALL_REPROMPT_THRESHOLD })),
+    ).toEqual({
+      disposition: "reprompt",
+      reason: "mechanical_input",
+      prompt: STALL_REPROMPTS.mechanical_input,
+    });
+    expect(
+      decideStallDisposition(
+        "idle",
+        answers({ mechanical_input_wait: STALL_REPROMPT_THRESHOLD - 0.01 }),
+      ),
+    ).toEqual({ disposition: "pause", reason: "uncertain", prompt: null });
+    expect(
+      decideStallDisposition(
+        "idle",
+        answers({ mechanical_input_wait: 0.9, human_decision_required: 0.51 }),
+      ),
+    ).toEqual({ disposition: "pause", reason: "human_decision", prompt: null });
+  });
+
+  it("waits only when a working worker is progressing without a contradictory signal", () => {
+    const probabilities = answers({ meaningful_progress: 0.9 });
+    expect(decideStallDisposition("working", probabilities)).toEqual({
+      disposition: "wait",
+      reason: "progressing",
+      prompt: null,
+    });
+    expect(decideStallDisposition("idle", probabilities)).toEqual({
+      disposition: "pause",
+      reason: "idle_cannot_wait",
+      prompt: null,
+    });
+  });
+
+  it("always pauses a blocked Herdr UI", () => {
+    expect(decideStallDisposition("blocked", answers({ mechanical_input_wait: 0.99 }))).toEqual({
+      disposition: "pause",
+      reason: "blocked_ui",
+      prompt: null,
+    });
+  });
+
+  it("pauses uncertain assessments", () => {
+    expect(decideStallDisposition("working", answers())).toEqual({
+      disposition: "pause",
+      reason: "uncertain",
+      prompt: null,
+    });
+  });
+});
+
+describe("provider-neutral stall evaluation", () => {
+  it("maps validated DecisionModel answers and usage", async () => {
+    const probabilities = answers({ mechanical_input_wait: 0.92 });
+    const result = await Effect.runPromise(
+      evaluateStall(state("idle")).pipe(
+        Effect.provideService(DecisionModel.DecisionModel, modelWith(probabilities)),
+      ),
+    );
+
+    expect(result).toEqual({
+      answers: probabilities,
+      usage: { input_tokens: 42, output_tokens: 0 },
+    });
+  });
+});
+
+const acceptanceState: AcceptanceState = {
+  schema_version: 1,
+  assessment_id: "acceptance-clear-pass-001",
+  ticket: {
+    number: "2",
+    title: "Add a greeting",
+    body: "Create and test a greeting helper.",
+    acceptance_criteria: [
+      { id: "AC1", text: "The helper returns hello." },
+      { id: "AC2", text: "A passing test covers the helper." },
+    ],
+  },
+  agreed_spec: "The greeting helper returns the exact string hello.",
+  synchronized_diff: "+ export const greeting = () => 'hello';",
+  changed_files: ["src/greeting.ts", "src/greeting.test.ts"],
+  gates: [{ command: "bun test", status: "passed", output: "1 pass", truncated: false }],
+  implementor_self_review: "Both criteria are implemented and covered.",
+};
+
+const acceptanceAssessment = (
+  satisfaction: number,
+  evidenceSufficiency: number,
+): AcceptanceAssessment => ({
+  criteria: acceptanceState.ticket.acceptance_criteria.map((criterion) => ({
+    ...criterion,
+    satisfaction,
+    evidence_sufficiency: evidenceSufficiency,
+  })),
+  usage: { input_tokens: 100, output_tokens: 0 },
+});
+
+describe("acceptance assessment policy", () => {
+  it("returns demonstrated failures to implementation with deterministic evidence", () => {
+    expect(decideAcceptanceDisposition("preflight-only", acceptanceAssessment(0.1, 0.9))).toEqual({
+      disposition: "fix",
+      failed_criteria: ["AC1", "AC2"],
+      prompt: [
+        "Return to implementation for the acceptance criteria listed below.",
+        "Fix each demonstrated failure or provide stronger direct evidence, then rerun gates and self-review.",
+        "- AC1: The helper returns hello. (satisfaction=0.100, evidence_sufficiency=0.900)",
+        "- AC2: A passing test covers the helper. (satisfaction=0.100, evidence_sufficiency=0.900)",
+      ].join("\n"),
+    });
+  });
+
+  it("routes ambiguous evidence to the Spec reviewer", () => {
+    expect(
+      decideAcceptanceDisposition("replace-spec-reviewer", acceptanceAssessment(0.6, 0.5)),
+    ).toEqual({
+      disposition: "spec-review",
+      failed_criteria: [],
+      prompt: null,
+    });
+  });
+
+  it("continues or skips Spec review only according to the selected policy", () => {
+    const assessment = acceptanceAssessment(0.9, 0.9);
+    expect(decideAcceptanceDisposition("preflight-only", assessment)).toEqual({
+      disposition: "continue-spec-review",
+      failed_criteria: [],
+      prompt: null,
+    });
+    expect(decideAcceptanceDisposition("replace-spec-reviewer", assessment)).toEqual({
+      disposition: "skip-spec-review",
+      failed_criteria: [],
+      prompt: null,
+    });
+  });
+});
+
+describe("provider-neutral acceptance evaluation", () => {
+  it("asks satisfaction and evidence-sufficiency questions for every criterion", async () => {
+    const model = Effect.runSync(
+      DecisionModel.make({
+        decide: ({ decisions }) =>
+          Effect.succeed({
+            answers: Object.fromEntries(
+              Object.keys(decisions).map((key) => [
+                key,
+                {
+                  _tag: "Probability" as const,
+                  probability: key.endsWith(".satisfied") ? 0.91 : 0.88,
+                },
+              ]),
+            ),
+            usage: { inputTokens: 123, outputTokens: 0 },
+          }),
+      }),
+    );
+    const result = await Effect.runPromise(
+      evaluateAcceptance(acceptanceState).pipe(
+        Effect.provideService(DecisionModel.DecisionModel, model),
+      ),
+    );
+
+    expect(result).toEqual({
+      criteria: [
+        {
+          id: "AC1",
+          text: "The helper returns hello.",
+          satisfaction: 0.91,
+          evidence_sufficiency: 0.88,
+        },
+        {
+          id: "AC2",
+          text: "A passing test covers the helper.",
+          satisfaction: 0.91,
+          evidence_sufficiency: 0.88,
+        },
+      ],
+      usage: { input_tokens: 123, output_tokens: 0 },
+    });
+  });
+});

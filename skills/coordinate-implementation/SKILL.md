@@ -2,7 +2,7 @@
 name: coordinate-implementation
 description: Orchestrates a multi-ticket implementation run. Points at a `.scratch/<slug>/` folder holding a spec and numbered issues, then runs dependency-ready tickets in parallel by default, reviews each result on two axes, loops fixes back, and fast-forwards the integration branch. Repository-specific commands and safety constraints are discovered from project instructions and CI rather than assumed. Scheduling mode and validated Coordinator, Implementor, and Reviewer role records survive resumes and mid-run changes in RESUME.md. Triggers on "/coordinate-implementation", "implement the tickets in", "orchestrate the run", "resume the implementation run".
 argument-hint: "[.scratch/<slug> | resume .scratch/<slug>] [--base <branch>] [--coordinator '<harness> <model> <effort>'] [--implementor '<harness> <model> <effort>'] [--reviewer '<harness> <model> <effort>'] [--serial | --parallel <N>]"
-compatibility: Requires macOS or Linux, Git, Bun, Herdr 0.9.1 or later with the machine-readable event and snapshot API, Matt Pocock's implement skill, and at least one supported harness (Pi or Claude Code).
+compatibility: Requires macOS or Linux, Git, Bun, Herdr 0.9.1 or later with the machine-readable event and snapshot API, Matt Pocock's implement skill, at least one supported harness (Pi or Claude Code), and a TypeSafe API key stored in Bun secrets.
 disable-model-invocation: true
 effort: low
 ---
@@ -15,9 +15,11 @@ parallel by default, review each policy-compliant ticket branch, send fixes
 back into the same session, and land it on the configured integration branch.
 
 The baseline environment is macOS or Linux with Git, Bun, Herdr 0.9.1 or
-later, Matt Pocock's `implement` skill, and at least one supported harness (Pi
-or Claude Code). Herdr must expose the machine-readable `events.subscribe` and
-`session.snapshot` methods. Coordination must run inside a Herdr-managed pane
+later, Matt Pocock's `implement` skill, at least one supported harness (Pi or
+Claude Code), and a TypeSafe API key in Bun secrets under service
+`com.wyattjoh.coordinate-implementation` and name `typesafe-api-key`. Herdr
+must expose the machine-readable `events.subscribe` and `session.snapshot`
+methods. Coordination must run inside a Herdr-managed pane
 with `HERDR_ENV=1`. Load the `herdr` skill in the same invocation using the
 active harness's supported skill syntax so the coordinator can identify and
 control its own pane.
@@ -100,6 +102,7 @@ Everywhere below, `<base>` means that branch. The main checkout is never
   briefs/common.md          # resolved repository contract; create from references/common-brief.md if absent
   briefs/fixes-NN-round-R.md # consolidated actionable findings for one fix round
   reviews/                  # immutable gate, self-review, Standards, and Spec evidence
+  assessments/stall/        # immutable bounded TypeSafe request/evidence chains
   RESUME.md                 # the ONLY mutable coordination state; format: references/resume-format.md
   SUMMARY.md                # deterministic local terminal summary written by run.finalize
 .scratch/coordinators.md   # repo-wide run discovery registry (below)
@@ -222,14 +225,20 @@ remaining blocked ticket:
    [session-launch.md](references/session-launch.md).
 2. **Wait.** Call `herdr.wait_any` once with every active worker,
    `coordinator: null`, and a bounded timeout. It subscribes before snapshotting.
-   Persist refreshed pane ids from its complete worker snapshot. On `status` or
-   `pane_exited`, act on the named runtime. On `timeout`, perform stall,
-   snapshot-integrity, and base checks, run one scheduling pass, then issue
-   another bounded wait. Do not create cron jobs, shell wait loops, background
+   Persist refreshed pane ids from its complete worker snapshot. On `pane_exited`,
+   act on the named runtime. On `status: idle`, first verify a clean worktree and
+   at least one ticket commit beyond the current base; run the enforced TypeSafe
+   lifecycle from [stall-check.md](references/stall-check.md) when either check
+   fails. On `status: done`, or review-ready `idle`, continue to review. On
+   `timeout`, run the same TypeSafe prepare/evaluate/apply lifecycle for each
+   working runtime before snapshot-integrity and base checks, run one scheduling
+   pass, then issue another bounded wait. Do not create cron jobs, shell wait loops, background
    monitors, or harness-native tasks.
-3. **Review** when wait-any returns an idle or done implementor. Invoke
-   `snapshot.check` first and do not begin review or landing against a changed
-   revision. If several tickets become ready together, process them one at a
+3. **Review** when wait-any returns a done implementor or an idle implementor
+   whose worktree is clean and branch has at least one ticket commit beyond the
+   current base. A non-review-ready idle worker goes through the stall lifecycle
+   instead. Invoke `snapshot.check` first and do not begin review or landing
+   against a changed revision. If several tickets become ready together, process them one at a
    time in dependency order. Sync
    the chosen branch to the latest `<base>` before its final gates and review,
    then require the recorded repository commit policy, green recorded gates,
@@ -325,8 +334,11 @@ success. It returns a complete refreshed snapshot used to:
 - run `snapshot.check`, compare `Base sha:`, and evaluate coordinator context;
 - run `scheduler.plan` so a persisted capacity change takes effect.
 
-Apply [stall-check.md](references/stall-check.md) only on the timeout path.
-After those checks, call wait-any again. Never replace this cycle with polling,
+Apply [stall-check.md](references/stall-check.md) only on timeout or for an
+idle implementor that fails deterministic review-readiness checks. Its validated
+TypeSafe disposition is authoritative inside the bounded stall seam. Execute only the action selected by `stall.assessment.apply`; a provider,
+credential, validation, stale-evidence, or binding failure pauses the seam
+without fallback. After those checks, call wait-any again. Never replace this cycle with polling,
 cron tools, scheduled prompts, background Bash monitors, Python parsing, or a
 native harness task manager.
 

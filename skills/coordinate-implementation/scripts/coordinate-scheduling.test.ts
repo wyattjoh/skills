@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it } from "bun:test";
-import { Effect, Either } from "effect";
+import { Effect, Result } from "effect";
 import { mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { createServer, type Server, type Socket } from "node:net";
 import { tmpdir } from "node:os";
@@ -380,12 +380,19 @@ describe("event-driven scheduling documentation", () => {
       join(import.meta.dir, "..", "references", "resume-format.md"),
       "utf8",
     );
+    const stall = readFileSync(join(import.meta.dir, "..", "references", "stall-check.md"), "utf8");
 
     expect(skill.includes("--parallel <N>")).toBe(true);
     expect(resume.includes("Parallel cap:")).toBe(true);
     expect(helper.includes("## `scheduler.plan`")).toBe(true);
     expect(helper.includes("## `herdr.wait_any`")).toBe(true);
     expect(helper.includes("## `infrastructure.retry.record`")).toBe(true);
+    expect(helper.includes("stall.assessment.prepare")).toBe(true);
+    expect(helper.includes("stall.assessment.evaluate")).toBe(true);
+    expect(helper.includes("stall.assessment.apply")).toBe(true);
+    expect(stall.includes("jev-1.13.0")).toBe(true);
+    expect(stall.includes("Do not normalize invalid probabilities")).toBe(true);
+    expect(resume.includes("## Stall evidence")).toBe(true);
     expect(skill.includes("CronCreate")).toBe(false);
     expect(skill.includes("/loop 10m")).toBe(false);
     expect(resume.includes("Monitor:")).toBe(false);
@@ -872,7 +879,7 @@ describe("Herdr event-driven wait-any", () => {
     };
 
     const outcome = await Effect.runPromise(
-      Effect.either(
+      Effect.result(
         waitAnyWorker(
           {
             socketPath: path,
@@ -888,8 +895,9 @@ describe("Herdr event-driven wait-any", () => {
     );
     const serverObservedClose = await Promise.race([closed, Bun.sleep(500).then(() => false)]);
 
-    expect(Either.isLeft(outcome)).toBe(true);
-    if (Either.isLeft(outcome)) expect(outcome.left.issue.code).toBe("herdr.subscribe_timeout");
+    expect(Result.isFailure(outcome)).toBe(true);
+    if (Result.isFailure(outcome))
+      expect(outcome.failure.issue.code).toBe("herdr.subscribe_timeout");
     expect(connections).toBe(1);
     expect(subscriptionWrites).toBe(0);
     expect(serverObservedClose).toBe(true);
@@ -931,7 +939,7 @@ describe("Herdr event-driven wait-any", () => {
     };
 
     const outcome = await Effect.runPromise(
-      Effect.either(
+      Effect.result(
         waitAnyWorker(
           {
             socketPath: path,
@@ -950,8 +958,9 @@ describe("Herdr event-driven wait-any", () => {
       Bun.sleep(500).then(() => false),
     ]);
 
-    expect(Either.isLeft(outcome)).toBe(true);
-    if (Either.isLeft(outcome)) expect(outcome.left.issue.code).toBe("herdr.snapshot_timeout");
+    expect(Result.isFailure(outcome)).toBe(true);
+    if (Result.isFailure(outcome))
+      expect(outcome.failure.issue.code).toBe("herdr.snapshot_timeout");
     expect(connections).toBe(2);
     expect(snapshotWrites).toBe(0);
     expect(serverObservedClose).toBe(true);

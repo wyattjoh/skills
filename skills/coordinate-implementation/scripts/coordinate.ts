@@ -1,5 +1,5 @@
 #!/usr/bin/env bun
-import { Effect, Either } from "effect";
+import { Effect, Result } from "effect";
 import {
   failureResponse,
   parseRequest,
@@ -37,6 +37,11 @@ import { finalizeRun } from "./lib/run.ts";
 import { planSchedule } from "./lib/scheduler.ts";
 import { discoverRoles, validateRole } from "./lib/roles.ts";
 import { acceptSnapshot, checkSnapshot } from "./lib/snapshot.ts";
+import {
+  applyStallAssessment,
+  evaluateStallAssessment,
+  prepareStallAssessment,
+} from "./lib/stall-assessment.ts";
 import { validateStateFile } from "./lib/state.ts";
 import { preflightWorktreePolicy, prepareWorktree } from "./lib/worktrees.ts";
 
@@ -61,12 +66,12 @@ const print = (response: CoordinateResponse<unknown>): void => {
 const execute = (request: CoordinateRequest): Effect.Effect<number, never> =>
   Effect.gen(function* () {
     if (request.operation === "run.finalize") {
-      const outcome = yield* Effect.either(finalizeRun(request.input));
-      if (Either.isLeft(outcome)) {
-        print(failureResponse(request.operation, [outcome.left.issue], null));
+      const outcome = yield* Effect.result(finalizeRun(request.input));
+      if (Result.isFailure(outcome)) {
+        print(failureResponse(request.operation, [outcome.failure.issue], null));
         return 1;
       }
-      print(successResponse(request.operation, outcome.right));
+      print(successResponse(request.operation, outcome.success));
       return 0;
     }
 
@@ -81,26 +86,26 @@ const execute = (request: CoordinateRequest): Effect.Effect<number, never> =>
     }
 
     if (request.operation === "state.validate") {
-      const validation = yield* Effect.either(validateStateFile(request.input.statePath));
-      if (Either.isLeft(validation)) {
-        print(failureResponse(request.operation, [validation.left.issue], null));
+      const validation = yield* Effect.result(validateStateFile(request.input.statePath));
+      if (Result.isFailure(validation)) {
+        print(failureResponse(request.operation, [validation.failure.issue], null));
         return 1;
       }
-      print(successResponse(request.operation, { state: validation.right }));
+      print(successResponse(request.operation, { state: validation.success }));
       return 0;
     }
 
     if (request.operation === "snapshot.check" || request.operation === "snapshot.accept") {
-      const snapshot = yield* Effect.either(
+      const snapshot = yield* Effect.result(
         request.operation === "snapshot.check"
           ? checkSnapshot(request.input)
           : acceptSnapshot(request.input),
       );
-      if (Either.isLeft(snapshot)) {
-        print(failureResponse(request.operation, [snapshot.left.issue], null));
+      if (Result.isFailure(snapshot)) {
+        print(failureResponse(request.operation, [snapshot.failure.issue], null));
         return 1;
       }
-      print(successResponse(request.operation, snapshot.right));
+      print(successResponse(request.operation, snapshot.success));
       return 0;
     }
 
@@ -125,251 +130,281 @@ const execute = (request: CoordinateRequest): Effect.Effect<number, never> =>
     }
 
     if (request.operation === "worktree.preflight") {
-      const outcome = yield* Effect.either(preflightWorktreePolicy(request.input));
-      if (Either.isLeft(outcome)) {
-        print(failureResponse(request.operation, [outcome.left.issue], null));
+      const outcome = yield* Effect.result(preflightWorktreePolicy(request.input));
+      if (Result.isFailure(outcome)) {
+        print(failureResponse(request.operation, [outcome.failure.issue], null));
         return 1;
       }
-      print(successResponse(request.operation, outcome.right));
+      print(successResponse(request.operation, outcome.success));
       return 0;
     }
 
     if (request.operation === "worktree.prepare") {
-      const outcome = yield* Effect.either(prepareWorktree(request.input));
-      if (Either.isLeft(outcome)) {
-        print(failureResponse(request.operation, [outcome.left.issue], null));
+      const outcome = yield* Effect.result(prepareWorktree(request.input));
+      if (Result.isFailure(outcome)) {
+        print(failureResponse(request.operation, [outcome.failure.issue], null));
         return 1;
       }
-      print(successResponse(request.operation, outcome.right));
+      print(successResponse(request.operation, outcome.success));
       return 0;
     }
 
     if (request.operation === "landing.synchronize") {
-      const outcome = yield* Effect.either(synchronizeLanding(request.input));
-      if (Either.isLeft(outcome)) {
-        print(failureResponse(request.operation, [outcome.left.issue], null));
+      const outcome = yield* Effect.result(synchronizeLanding(request.input));
+      if (Result.isFailure(outcome)) {
+        print(failureResponse(request.operation, [outcome.failure.issue], null));
         return 1;
       }
-      print(successResponse(request.operation, outcome.right));
+      print(successResponse(request.operation, outcome.success));
       return 0;
     }
 
     if (request.operation === "landing.conflict.record") {
-      const outcome = yield* Effect.either(recordLandingConflict(request.input));
-      if (Either.isLeft(outcome)) {
-        print(failureResponse(request.operation, [outcome.left.issue], null));
+      const outcome = yield* Effect.result(recordLandingConflict(request.input));
+      if (Result.isFailure(outcome)) {
+        print(failureResponse(request.operation, [outcome.failure.issue], null));
         return 1;
       }
-      print(successResponse(request.operation, outcome.right));
+      print(successResponse(request.operation, outcome.success));
       return 0;
     }
 
     if (request.operation === "landing.complete") {
-      const outcome = yield* Effect.either(completeLanding(request.input));
-      if (Either.isLeft(outcome)) {
-        print(failureResponse(request.operation, [outcome.left.issue], null));
+      const outcome = yield* Effect.result(completeLanding(request.input));
+      if (Result.isFailure(outcome)) {
+        print(failureResponse(request.operation, [outcome.failure.issue], null));
         return 1;
       }
-      print(successResponse(request.operation, outcome.right));
+      print(successResponse(request.operation, outcome.success));
       return 0;
     }
 
     if (request.operation === "gate.record") {
-      const outcome = yield* Effect.either(recordGate(request.input));
-      if (Either.isLeft(outcome)) {
-        print(failureResponse(request.operation, [outcome.left.issue], null));
+      const outcome = yield* Effect.result(recordGate(request.input));
+      if (Result.isFailure(outcome)) {
+        print(failureResponse(request.operation, [outcome.failure.issue], null));
         return 1;
       }
-      print(successResponse(request.operation, outcome.right));
+      print(successResponse(request.operation, outcome.success));
       return 0;
     }
 
     if (request.operation === "gate.rerun.record") {
-      const outcome = yield* Effect.either(recordGateRerun(request.input));
-      if (Either.isLeft(outcome)) {
-        print(failureResponse(request.operation, [outcome.left.issue], null));
+      const outcome = yield* Effect.result(recordGateRerun(request.input));
+      if (Result.isFailure(outcome)) {
+        print(failureResponse(request.operation, [outcome.failure.issue], null));
         return 1;
       }
-      print(successResponse(request.operation, outcome.right));
+      print(successResponse(request.operation, outcome.success));
       return 0;
     }
 
     if (request.operation === "review.round.finalize") {
-      const outcome = yield* Effect.either(finalizeReviewRound(request.input));
-      if (Either.isLeft(outcome)) {
-        print(failureResponse(request.operation, [outcome.left.issue], null));
+      const outcome = yield* Effect.result(finalizeReviewRound(request.input));
+      if (Result.isFailure(outcome)) {
+        print(failureResponse(request.operation, [outcome.failure.issue], null));
         return 1;
       }
-      print(successResponse(request.operation, outcome.right));
+      print(successResponse(request.operation, outcome.success));
       return 0;
     }
 
     if (request.operation === "review.escalation.authorize") {
-      const outcome = yield* Effect.either(authorizeReviewEscalation(request.input));
-      if (Either.isLeft(outcome)) {
-        print(failureResponse(request.operation, [outcome.left.issue], null));
+      const outcome = yield* Effect.result(authorizeReviewEscalation(request.input));
+      if (Result.isFailure(outcome)) {
+        print(failureResponse(request.operation, [outcome.failure.issue], null));
         return 1;
       }
-      print(successResponse(request.operation, outcome.right));
+      print(successResponse(request.operation, outcome.success));
       return 0;
     }
 
     if (request.operation === "review.launch.prepare") {
-      const outcome = yield* Effect.either(prepareReviewerLaunch(request.input));
-      if (Either.isLeft(outcome)) {
-        print(failureResponse(request.operation, [outcome.left.issue], null));
+      const outcome = yield* Effect.result(prepareReviewerLaunch(request.input));
+      if (Result.isFailure(outcome)) {
+        print(failureResponse(request.operation, [outcome.failure.issue], null));
         return 1;
       }
-      print(successResponse(request.operation, outcome.right));
+      print(successResponse(request.operation, outcome.success));
       return 0;
     }
 
     if (request.operation === "review.launch.record") {
-      const outcome = yield* Effect.either(recordReviewerLaunch(request.input));
-      if (Either.isLeft(outcome)) {
-        print(failureResponse(request.operation, [outcome.left.issue], null));
+      const outcome = yield* Effect.result(recordReviewerLaunch(request.input));
+      if (Result.isFailure(outcome)) {
+        print(failureResponse(request.operation, [outcome.failure.issue], null));
         return 1;
       }
-      print(successResponse(request.operation, outcome.right));
+      print(successResponse(request.operation, outcome.success));
       return 0;
     }
 
     if (request.operation === "review.policy.prepare") {
-      const outcome = yield* Effect.either(prepareReviewPolicy(request.input));
-      if (Either.isLeft(outcome)) {
-        print(failureResponse(request.operation, [outcome.left.issue], null));
+      const outcome = yield* Effect.result(prepareReviewPolicy(request.input));
+      if (Result.isFailure(outcome)) {
+        print(failureResponse(request.operation, [outcome.failure.issue], null));
         return 1;
       }
-      print(successResponse(request.operation, outcome.right));
+      print(successResponse(request.operation, outcome.success));
       return 0;
     }
 
     if (request.operation === "implementor.launch.prepare") {
-      const outcome = yield* Effect.either(prepareImplementorLaunch(request.input));
-      if (Either.isLeft(outcome)) {
-        print(failureResponse(request.operation, [outcome.left.issue], null));
+      const outcome = yield* Effect.result(prepareImplementorLaunch(request.input));
+      if (Result.isFailure(outcome)) {
+        print(failureResponse(request.operation, [outcome.failure.issue], null));
         return 1;
       }
-      print(successResponse(request.operation, outcome.right));
+      print(successResponse(request.operation, outcome.success));
       return 0;
     }
 
     if (request.operation === "implementor.launch.recover") {
-      const outcome = yield* Effect.either(recoverImplementorLaunch(request.input));
-      if (Either.isLeft(outcome)) {
-        print(failureResponse(request.operation, [outcome.left.issue], null));
+      const outcome = yield* Effect.result(recoverImplementorLaunch(request.input));
+      if (Result.isFailure(outcome)) {
+        print(failureResponse(request.operation, [outcome.failure.issue], null));
         return 1;
       }
-      print(successResponse(request.operation, outcome.right));
+      print(successResponse(request.operation, outcome.success));
       return 0;
     }
 
     if (request.operation === "implementor.launch.record") {
-      const outcome = yield* Effect.either(recordImplementorLaunch(request.input));
-      if (Either.isLeft(outcome)) {
-        print(failureResponse(request.operation, [outcome.left.issue], null));
+      const outcome = yield* Effect.result(recordImplementorLaunch(request.input));
+      if (Result.isFailure(outcome)) {
+        print(failureResponse(request.operation, [outcome.failure.issue], null));
         return 1;
       }
-      print(successResponse(request.operation, outcome.right));
+      print(successResponse(request.operation, outcome.success));
       return 0;
     }
 
     if (request.operation === "scheduler.plan") {
-      const outcome = yield* Effect.either(planSchedule(request.input));
-      if (Either.isLeft(outcome)) {
-        print(failureResponse(request.operation, [outcome.left.issue], null));
+      const outcome = yield* Effect.result(planSchedule(request.input));
+      if (Result.isFailure(outcome)) {
+        print(failureResponse(request.operation, [outcome.failure.issue], null));
         return 1;
       }
-      print(successResponse(request.operation, outcome.right));
+      print(successResponse(request.operation, outcome.success));
       return 0;
     }
 
     if (request.operation === "herdr.wait_any") {
-      const outcome = yield* Effect.either(waitAnyWorker(request.input));
-      if (Either.isLeft(outcome)) {
-        print(failureResponse(request.operation, [outcome.left.issue], null));
+      const outcome = yield* Effect.result(waitAnyWorker(request.input));
+      if (Result.isFailure(outcome)) {
+        print(failureResponse(request.operation, [outcome.failure.issue], null));
         return 1;
       }
-      print(successResponse(request.operation, outcome.right));
+      print(successResponse(request.operation, outcome.success));
+      return 0;
+    }
+
+    if (request.operation === "stall.assessment.prepare") {
+      const outcome = yield* Effect.result(prepareStallAssessment(request.input));
+      if (Result.isFailure(outcome)) {
+        print(failureResponse(request.operation, [outcome.failure.issue], null));
+        return 1;
+      }
+      print(successResponse(request.operation, outcome.success));
+      return 0;
+    }
+
+    if (request.operation === "stall.assessment.evaluate") {
+      const outcome = yield* Effect.result(evaluateStallAssessment(request.input));
+      if (Result.isFailure(outcome)) {
+        print(failureResponse(request.operation, [outcome.failure.issue], null));
+        return 1;
+      }
+      print(successResponse(request.operation, outcome.success));
+      return 0;
+    }
+
+    if (request.operation === "stall.assessment.apply") {
+      const outcome = yield* Effect.result(applyStallAssessment(request.input));
+      if (Result.isFailure(outcome)) {
+        print(failureResponse(request.operation, [outcome.failure.issue], null));
+        return 1;
+      }
+      print(successResponse(request.operation, outcome.success));
       return 0;
     }
 
     if (request.operation === "infrastructure.retry.record") {
-      const outcome = yield* Effect.either(recordInfrastructureRetry(request.input));
-      if (Either.isLeft(outcome)) {
-        print(failureResponse(request.operation, [outcome.left.issue], null));
+      const outcome = yield* Effect.result(recordInfrastructureRetry(request.input));
+      if (Result.isFailure(outcome)) {
+        print(failureResponse(request.operation, [outcome.failure.issue], null));
         return 1;
       }
-      print(successResponse(request.operation, outcome.right));
+      print(successResponse(request.operation, outcome.success));
       return 0;
     }
 
     if (request.operation === "coordinator.handoff.prepare") {
-      const outcome = yield* Effect.either(prepareCoordinatorHandoff(request.input));
-      if (Either.isLeft(outcome)) {
-        print(failureResponse(request.operation, [outcome.left.issue], null));
+      const outcome = yield* Effect.result(prepareCoordinatorHandoff(request.input));
+      if (Result.isFailure(outcome)) {
+        print(failureResponse(request.operation, [outcome.failure.issue], null));
         return 1;
       }
-      print(successResponse(request.operation, outcome.right));
+      print(successResponse(request.operation, outcome.success));
       return 0;
     }
 
     if (request.operation === "coordinator.handoff.retry") {
-      const outcome = yield* Effect.either(retryCoordinatorHandoff(request.input));
-      if (Either.isLeft(outcome)) {
-        print(failureResponse(request.operation, [outcome.left.issue], null));
+      const outcome = yield* Effect.result(retryCoordinatorHandoff(request.input));
+      if (Result.isFailure(outcome)) {
+        print(failureResponse(request.operation, [outcome.failure.issue], null));
         return 1;
       }
-      print(successResponse(request.operation, outcome.right));
+      print(successResponse(request.operation, outcome.success));
       return 0;
     }
 
     if (request.operation === "coordinator.handoff.ready") {
-      const outcome = yield* Effect.either(readyCoordinatorHandoff(request.input));
-      if (Either.isLeft(outcome)) {
-        print(failureResponse(request.operation, [outcome.left.issue], null));
+      const outcome = yield* Effect.result(readyCoordinatorHandoff(request.input));
+      if (Result.isFailure(outcome)) {
+        print(failureResponse(request.operation, [outcome.failure.issue], null));
         return 1;
       }
-      print(successResponse(request.operation, outcome.right));
+      print(successResponse(request.operation, outcome.success));
       return 0;
     }
 
     if (request.operation === "coordinator.handoff.verify") {
-      const outcome = yield* Effect.either(verifyCoordinatorHandoff(request.input));
-      if (Either.isLeft(outcome)) {
-        print(failureResponse(request.operation, [outcome.left.issue], null));
+      const outcome = yield* Effect.result(verifyCoordinatorHandoff(request.input));
+      if (Result.isFailure(outcome)) {
+        print(failureResponse(request.operation, [outcome.failure.issue], null));
         return 1;
       }
-      print(successResponse(request.operation, outcome.right));
+      print(successResponse(request.operation, outcome.success));
       return 0;
     }
 
     if (request.operation === "coordinator.claim") {
-      const outcome = yield* Effect.either(claimCoordinator(request.input));
-      if (Either.isLeft(outcome)) {
-        print(failureResponse(request.operation, [outcome.left.issue], null));
+      const outcome = yield* Effect.result(claimCoordinator(request.input));
+      if (Result.isFailure(outcome)) {
+        print(failureResponse(request.operation, [outcome.failure.issue], null));
         return 1;
       }
-      print(successResponse(request.operation, { ownership: outcome.right }));
+      print(successResponse(request.operation, { ownership: outcome.success }));
       return 0;
     }
 
     if (request.operation === "coordinator.ready") {
-      const outcome = yield* Effect.either(markCoordinatorReady(request.input));
-      if (Either.isLeft(outcome)) {
-        print(failureResponse(request.operation, [outcome.left.issue], null));
+      const outcome = yield* Effect.result(markCoordinatorReady(request.input));
+      if (Result.isFailure(outcome)) {
+        print(failureResponse(request.operation, [outcome.failure.issue], null));
         return 1;
       }
-      print(successResponse(request.operation, { ownership: outcome.right }));
+      print(successResponse(request.operation, { ownership: outcome.success }));
       return 0;
     }
 
-    const outcome = yield* Effect.either(verifyCoordinator(request.input));
-    if (Either.isLeft(outcome)) {
-      print(failureResponse(request.operation, [outcome.left.issue], null));
+    const outcome = yield* Effect.result(verifyCoordinator(request.input));
+    if (Result.isFailure(outcome)) {
+      print(failureResponse(request.operation, [outcome.failure.issue], null));
       return 1;
     }
-    print(successResponse(request.operation, outcome.right));
+    print(successResponse(request.operation, outcome.success));
     return 0;
   });
 
@@ -379,10 +414,10 @@ const program = Effect.gen(function* () {
   return yield* execute(request);
 });
 
-const outcome = await Effect.runPromise(Effect.either(program));
-if (Either.isLeft(outcome)) {
-  print(failureResponse(outcome.left.operation, [outcome.left.issue], null));
+const outcome = await Effect.runPromise(Effect.result(program));
+if (Result.isFailure(outcome)) {
+  print(failureResponse(outcome.failure.operation, [outcome.failure.issue], null));
   process.exitCode = 2;
 } else {
-  process.exitCode = outcome.right;
+  process.exitCode = outcome.success;
 }

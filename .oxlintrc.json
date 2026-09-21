@@ -14,6 +14,7 @@
     "node_modules",
     "bun.lock",
     ".pi/**",
+    ".scratch/**",
     "**/testdata/**",
     ".claude/agents/**",
     ".claude/skills/**",

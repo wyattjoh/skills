@@ -200,6 +200,10 @@ Last diagnostic: none
 
 - Ticket 01: /run/reviews/01-landed.json; tip a1b2c3d; branch dcs-01-schema; cleanup native-safe
 
+## Stall evidence
+
+- Ticket 02 timeout 1 attempt 1: reprompt/mechanical_input; request /run/assessments/stall/02-timeout-1-request-1.json; evidence /run/assessments/stall/02-timeout-1-evidence-1.json
+
 ## Decisions
 
 - 2026-09-11 snapshot revision sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef accepted (initial; writeback: none)
@@ -462,6 +466,15 @@ Spec, and self-review paths, Herdr-observed runtime closure, exact cleanup argv,
 cleanup result, and completion time. Caller-supplied closure assertions are not
 accepted. The helper writes this evidence and updates ticket state before
 returning `schedule`.
+
+### `## Stall evidence`
+
+Append-only references to every applied TypeSafe stall assessment. Each line
+records ticket, timeout sequence, immutable attempt, disposition/reason, and
+the run-local request and evidence paths. Failed provider attempts remain in
+this history and link to a new path if explicitly retried. The newest entry for
+a working ticket identifies the prior bounded observation after coordinator
+restart; never reconstruct it from conversational memory.
 
 ### `## Decisions`
 

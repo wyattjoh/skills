@@ -516,7 +516,10 @@ describe("portable downstream documentation", () => {
     expect(skill.includes("`run.finalize`")).toBe(true);
     expect(packageMetadata.os).toEqual(["darwin", "linux"]);
     expect(packageMetadata.engines).toEqual({ bun: ">=1.1.0" });
-    expect(packageMetadata.dependencies).toEqual({ effect: "3.22.1" });
+    expect(packageMetadata.dependencies).toEqual({
+      "@effect/ai-typesafe": "4.0.0-rc.116",
+      effect: "4.0.0-rc.116",
+    });
     expect(downstream.includes("Never edit a run's `RESUME.md` or its registry row.")).toBe(true);
     expect(loop.includes("event-driven")).toBe(true);
     for (const legacy of ["CronCreate", "CronDelete", "python3", "ListAgents", "SendMessage"]) {

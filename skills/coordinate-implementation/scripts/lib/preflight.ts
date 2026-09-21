@@ -1,4 +1,4 @@
-import { Effect, Either } from "effect";
+import { Effect, Result } from "effect";
 import { existsSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
@@ -245,11 +245,11 @@ export const runPreflight = (input: PreflightInput): Effect.Effect<PreflightOutc
 
     let state: StateSummary | null = null;
     if (input.statePath !== undefined) {
-      const validation = yield* Effect.either(validateStateFile(input.statePath));
-      if (Either.isLeft(validation)) {
-        errors.push(validation.left.issue);
+      const validation = yield* Effect.result(validateStateFile(input.statePath));
+      if (Result.isFailure(validation)) {
+        errors.push(validation.failure.issue);
       } else {
-        state = validation.right;
+        state = validation.success;
       }
     }
 

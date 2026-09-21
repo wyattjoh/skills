@@ -546,6 +546,78 @@ a normal operation failure. Feed that failure into the shared infrastructure
 retry policy. Do not fall back to polling, a cron, a shell loop, Python, or a
 harness-native task manager.
 
+## TypeSafe stall assessment operations
+
+A timeout uses three operations to keep semantic evidence immutable and action
+separate from evaluation. First, write the bounded state described in
+[stall-check.md](stall-check.md) under the run directory and prepare a request:
+
+```json
+{
+  "schema_version": 1,
+  "operation": "stall.assessment.prepare",
+  "input": {
+    "run_path": ".scratch/example",
+    "state_path": ".scratch/example/assessments/stall/01-timeout-2-state.json",
+    "request_path": ".scratch/example/assessments/stall/01-timeout-2-request-1.json",
+    "previous_evidence_path": null
+  }
+}
+```
+
+Evaluate that exact request with the pinned TypeSafe model:
+
+```json
+{
+  "schema_version": 1,
+  "operation": "stall.assessment.evaluate",
+  "input": {
+    "run_path": ".scratch/example",
+    "request_path": ".scratch/example/assessments/stall/01-timeout-2-request-1.json",
+    "evidence_path": ".scratch/example/assessments/stall/01-timeout-2-evidence-1.json"
+  }
+}
+```
+
+Then bind the evidence back to the immutable request and select the code-owned
+action:
+
+```json
+{
+  "schema_version": 1,
+  "operation": "stall.assessment.apply",
+  "input": {
+    "run_path": ".scratch/example",
+    "state_path": ".scratch/example/assessments/stall/01-timeout-2-apply-state-1.json",
+    "request_path": ".scratch/example/assessments/stall/01-timeout-2-request-1.json",
+    "evidence_path": ".scratch/example/assessments/stall/01-timeout-2-evidence-1.json"
+  }
+}
+```
+
+Collect `state_path` immediately before apply using the same bounded schema.
+Apply allows only the current observation timestamp to advance. It rejects the
+evidence as stale if any ticket, worker, pane-tail, Git, phase, or prior
+observation binding changed after prepare.
+
+`apply` returns `wait`, `reprompt`, `pause`, or `retry-worker`. For `reprompt`,
+execute only the returned `prompt_argv`; the prompt is a versioned policy
+constant, never model-generated text. `retry-worker` enters the existing
+`infrastructure.retry.record` path. `pause` leaves the worker unchanged and
+waits for user authority or stronger evidence.
+
+The request and evidence paths must resolve inside the run, new artifacts use
+exclusive creation, and apply verifies request hash, state hash, assessment id,
+and attempt. TypeSafe, credential, transport, rate-limit, malformed-response,
+and write failures persist failed evidence and fail the operation. Never fall
+back to an agent judgment after such a failure.
+
+Do not retry automatically. If the operator explicitly retries an unchanged
+provider failure, prepare a new request path with the prior failed
+`evidence_path` as `previous_evidence_path`. The helper verifies the complete
+link and increments the attempt. A new timeout observation starts a new
+assessment id at attempt 1 instead.
+
 ## `infrastructure.retry.record`
 
 Record one worker, Herdr, or launch infrastructure failure against an active

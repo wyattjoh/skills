@@ -29,6 +29,9 @@ export type CoordinateOperation =
   | "implementor.launch.record"
   | "scheduler.plan"
   | "herdr.wait_any"
+  | "stall.assessment.prepare"
+  | "stall.assessment.evaluate"
+  | "stall.assessment.apply"
   | "infrastructure.retry.record"
   | "review.policy.prepare"
   | "review.launch.prepare"
@@ -368,6 +371,32 @@ export type HerdrWaitAnyInput = {
 };
 
 /**
+ * Input for preparing one immutable TypeSafe stall-assessment request.
+ */
+export type StallAssessmentPrepareInput = {
+  runPath: string;
+  statePath: string;
+  requestPath: string;
+  previousEvidencePath: string | undefined;
+};
+
+/**
+ * Input for evaluating one immutable TypeSafe stall-assessment request.
+ */
+export type StallAssessmentEvaluateInput = {
+  runPath: string;
+  requestPath: string;
+  evidencePath: string;
+};
+
+/**
+ * Input for applying one bound TypeSafe stall-assessment disposition.
+ */
+export type StallAssessmentApplyInput = StallAssessmentEvaluateInput & {
+  statePath: string;
+};
+
+/**
  * Infrastructure failure classes sharing the bounded retry policy.
  */
 export type InfrastructureFailure = "worker" | "herdr" | "launch";
@@ -678,6 +707,21 @@ export type CoordinateRequest =
       schemaVersion: typeof CONTRACT_SCHEMA_VERSION;
       operation: "herdr.wait_any";
       input: HerdrWaitAnyInput;
+    }
+  | {
+      schemaVersion: typeof CONTRACT_SCHEMA_VERSION;
+      operation: "stall.assessment.prepare";
+      input: StallAssessmentPrepareInput;
+    }
+  | {
+      schemaVersion: typeof CONTRACT_SCHEMA_VERSION;
+      operation: "stall.assessment.evaluate";
+      input: StallAssessmentEvaluateInput;
+    }
+  | {
+      schemaVersion: typeof CONTRACT_SCHEMA_VERSION;
+      operation: "stall.assessment.apply";
+      input: StallAssessmentApplyInput;
     }
   | {
       schemaVersion: typeof CONTRACT_SCHEMA_VERSION;
@@ -1064,6 +1108,9 @@ export const parseRequest = (raw: string): Effect.Effect<CoordinateRequest, Requ
       "implementor.launch.record",
       "scheduler.plan",
       "herdr.wait_any",
+      "stall.assessment.prepare",
+      "stall.assessment.evaluate",
+      "stall.assessment.apply",
       "infrastructure.retry.record",
       "review.policy.prepare",
       "review.launch.prepare",
@@ -1319,6 +1366,75 @@ export const parseRequest = (raw: string): Effect.Effect<CoordinateRequest, Requ
         schemaVersion: CONTRACT_SCHEMA_VERSION,
         operation,
         input: { socketPath, timeoutMs, workers, coordinator },
+      };
+    }
+
+    if (operation === "stall.assessment.prepare") {
+      const runPath = nonEmptyString(parsed.input.run_path);
+      const statePath = nonEmptyString(parsed.input.state_path);
+      const requestPath = nonEmptyString(parsed.input.request_path);
+      const previousEvidenceValue = parsed.input.previous_evidence_path;
+      const previousEvidencePath =
+        previousEvidenceValue === undefined || previousEvidenceValue === null
+          ? undefined
+          : nonEmptyString(previousEvidenceValue);
+      if (
+        runPath === undefined ||
+        statePath === undefined ||
+        requestPath === undefined ||
+        (previousEvidenceValue !== undefined &&
+          previousEvidenceValue !== null &&
+          previousEvidencePath === undefined)
+      ) {
+        return yield* invalidRequest(
+          "`stall.assessment.prepare` requires run_path, state_path, request_path, and optional previous_evidence_path.",
+          operation,
+        );
+      }
+      return {
+        schemaVersion: CONTRACT_SCHEMA_VERSION,
+        operation,
+        input: { runPath, statePath, requestPath, previousEvidencePath },
+      };
+    }
+
+    if (operation === "stall.assessment.evaluate") {
+      const runPath = nonEmptyString(parsed.input.run_path);
+      const requestPath = nonEmptyString(parsed.input.request_path);
+      const evidencePath = nonEmptyString(parsed.input.evidence_path);
+      if (runPath === undefined || requestPath === undefined || evidencePath === undefined) {
+        return yield* invalidRequest(
+          "`stall.assessment.evaluate` requires run_path, request_path, and evidence_path.",
+          operation,
+        );
+      }
+      return {
+        schemaVersion: CONTRACT_SCHEMA_VERSION,
+        operation,
+        input: { runPath, requestPath, evidencePath },
+      };
+    }
+
+    if (operation === "stall.assessment.apply") {
+      const runPath = nonEmptyString(parsed.input.run_path);
+      const statePath = nonEmptyString(parsed.input.state_path);
+      const requestPath = nonEmptyString(parsed.input.request_path);
+      const evidencePath = nonEmptyString(parsed.input.evidence_path);
+      if (
+        runPath === undefined ||
+        statePath === undefined ||
+        requestPath === undefined ||
+        evidencePath === undefined
+      ) {
+        return yield* invalidRequest(
+          "`stall.assessment.apply` requires run_path, state_path, request_path, and evidence_path.",
+          operation,
+        );
+      }
+      return {
+        schemaVersion: CONTRACT_SCHEMA_VERSION,
+        operation,
+        input: { runPath, statePath, requestPath, evidencePath },
       };
     }
 

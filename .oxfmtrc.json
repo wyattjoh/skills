@@ -8,6 +8,7 @@
     "skills/alchemy/references/**",
     "skills/code-walkthrough/assets/**",
     ".pi/**",
+    ".scratch/**",
     ".claude/agents/**",
     ".claude/skills/**",
     ".claude/references/**",
