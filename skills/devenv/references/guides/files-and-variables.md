@@ -1,6 +1,6 @@
 <!-- source: https://devenv.sh/files-and-variables/
      upstream: docs/src/content/docs/files-and-variables.mdx
-     llms-full.txt lines 5113-5181 -->
+     llms-full.txt lines 4633-4685 -->
 
 # Files And Variables
 
@@ -28,7 +28,7 @@ Configuration for [inputs](/inputs/) and [imports](/composing-using-imports/), a
 
 You can require a specific devenv version to make sure all developers use a compatible version:
 
-devenv.yaml
+**devenv.yaml**
 
 ```yaml
 # Enforce CLI matches the modules version

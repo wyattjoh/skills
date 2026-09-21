@@ -1,6 +1,6 @@
 <!-- source: https://devenv.sh/examples/
      upstream: docs/src/content/docs/examples.md
-     llms-full.txt lines 4957-5033 -->
+     llms-full.txt lines 4479-4555 -->
 
 # Examples
 

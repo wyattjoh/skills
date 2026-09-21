@@ -1,6 +1,6 @@
 <!-- source: https://devenv.sh/languages/raku/
      upstream: docs/src/content/docs/languages/raku.md
-     llms-full.txt lines 14091-14120 -->
+     llms-full.txt lines 12747-12772 -->
 
 # raku
 

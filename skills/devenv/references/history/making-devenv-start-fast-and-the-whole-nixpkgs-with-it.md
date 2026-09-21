@@ -1,6 +1,6 @@
 <!-- source: https://devenv.sh/blog/2026/06/26/making-devenv-start-fast-and-the-whole-nixpkgs-with-it/
      upstream: docs/src/content/docs/blog/2026/06/26/making-devenv-start-fast-and-the-whole-nixpkgs-with-it.md
-     llms-full.txt lines 3698-3877 -->
+     llms-full.txt lines 3330-3489 -->
 
 # Making devenv start fast, and the whole nixpkgs with it
 

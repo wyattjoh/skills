@@ -1,6 +1,6 @@
 <!-- source: https://devenv.sh/services/opensearch/
      upstream: docs/src/content/docs/services/opensearch.md
-     llms-full.txt lines 24138-24382 -->
+     llms-full.txt lines 21738-21956 -->
 
 # opensearch
 

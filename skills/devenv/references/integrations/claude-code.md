@@ -1,6 +1,6 @@
 <!-- source: https://devenv.sh/integrations/claude-code/
      upstream: docs/src/content/docs/integrations/claude-code.md
-     llms-full.txt lines 7149-7706 -->
+     llms-full.txt lines 6491-7000 -->
 
 # Claude Code
 

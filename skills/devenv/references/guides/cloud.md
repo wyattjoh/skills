@@ -1,10 +1,10 @@
 <!-- source: https://devenv.sh/cloud/
      upstream: docs/src/content/docs/cloud.md
-     llms-full.txt lines 4252-4330 -->
+     llms-full.txt lines 3828-3900 -->
 
 # Cloud
 
-[cloud.devenv.sh](https://cloud.devenv.sh) is in private beta, sign up for early access
+> **[cloud.devenv.sh](https://cloud.devenv.sh) is in private beta, sign up for early access**
 
 ### Basic Configuration
 

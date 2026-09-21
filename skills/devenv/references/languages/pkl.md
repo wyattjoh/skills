@@ -1,6 +1,6 @@
 <!-- source: https://devenv.sh/languages/pkl/
      upstream: docs/src/content/docs/languages/pkl.md
-     llms-full.txt lines 12560-12649 -->
+     llms-full.txt lines 11370-11449 -->
 
 # pkl
 

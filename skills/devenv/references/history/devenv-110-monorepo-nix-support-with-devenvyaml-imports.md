@@ -1,6 +1,6 @@
 <!-- source: https://devenv.sh/blog/2025/10/07/devenv-110-monorepo-nix-support-with-devenvyaml-imports/
      upstream: docs/src/content/docs/blog/2025/10/07/devenv-110-monorepo-nix-support-with-devenvyaml-imports.md
-     llms-full.txt lines 2794-2912 -->
+     llms-full.txt lines 2520-2628 -->
 
 # devenv 1.10: monorepo Nix support with devenv.yaml imports
 
@@ -18,7 +18,7 @@ Paths starting with `/` are now resolved from your git repository root, and pare
 
 This lets services consistently reference shared configurations:
 
-services/worker/devenv.yaml
+**services/worker/devenv.yaml**
 
 ```yaml
 imports:
@@ -48,7 +48,7 @@ All three projects reference `/nix` regardless of their location.
 
 The new `config.git.root` variable provides the git repository root path for specifying working directories in tasks and processes ([#1850](https://github.com/cachix/devenv/issues/1850), [#316](https://github.com/cachix/devenv/issues/316)).
 
-services/api/devenv.nix
+**services/api/devenv.nix**
 
 ```nix
 { config, ... }: {
@@ -72,7 +72,7 @@ Most upvoted feature with 75 votes ([#14](https://github.com/cachix/devenv/issue
 
 Local imports now load and merge both `devenv.nix` and `devenv.yaml` configurations:
 
-shared/devenv.yaml
+**shared/devenv.yaml**
 
 ```yaml
 allowUnfree: true
@@ -81,7 +81,7 @@ inputs:
     url: github:NixOS/nixpkgs/nixpkgs-unstable
 ```
 
-services/api/devenv.yaml
+**services/api/devenv.yaml**
 
 ```yaml
 imports:
@@ -96,7 +96,7 @@ Just like `devenv.local.nix`, you can now use `devenv.local.yaml` for developer-
 
 Both files are git-ignored for local overrides:
 
-devenv.local.yaml
+**devenv.local.yaml**
 
 ```yaml
 allowUnfree: true

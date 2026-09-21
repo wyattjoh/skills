@@ -1,6 +1,6 @@
 <!-- source: https://devenv.sh/languages/deno/
      upstream: docs/src/content/docs/languages/deno.md
-     llms-full.txt lines 9339-9386 -->
+     llms-full.txt lines 8489-8530 -->
 
 # deno
 

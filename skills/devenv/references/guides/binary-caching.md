@@ -1,6 +1,6 @@
 <!-- source: https://devenv.sh/binary-caching/
      upstream: docs/src/content/docs/binary-caching.mdx
-     llms-full.txt lines 374-541 -->
+     llms-full.txt lines 350-499 -->
 
 # Binary Caching
 
@@ -22,7 +22,7 @@ Create either [a personal auth token](https://app.cachix.org/personal-auth-token
 
 Enable [SecretSpec](/integrations/secretspec/) with the system keyring as the provider, and enable devenv’s built-in Cachix token requirement:
 
-devenv.yaml
+**devenv.yaml**
 
 ```yaml
 secretspec:
@@ -37,7 +37,7 @@ devenv uses the resolved secret for both pulling from private caches and pushing
 
 Setting `secretspec.cachix_auth_token` to `true` uses the secret name `CACHIX_AUTH_TOKEN`. Set it to a string instead when your SecretSpec backend’s policy (e.g. OpenBao/Vault) only grants access to the token under a different name:
 
-devenv.yaml
+**devenv.yaml**
 
 ```yaml
 secretspec:
@@ -56,7 +56,7 @@ If `CACHIX_AUTH_TOKEN` is not set in the environment and SecretSpec does not pro
 
 Configure your new cache:
 
-devenv.nix
+**devenv.nix**
 
 ```nix
 {
@@ -64,13 +64,13 @@ devenv.nix
 }
 ```
 
-Note
-
-[devenv.cachix.org](https://devenv.cachix.org) is added to the list of pull caches by default.
-
-It mirrors the official NixOS cache and is designed to provide caching for the [`devenv-nixpkgs/rolling`](https://github.com/cachix/devenv-nixpkgs) nixpkgs input.
-
-Some languages and integrations may automatically add caches when enabled.
+> **Note**
+>
+> [devenv.cachix.org](https://devenv.cachix.org) is added to the list of pull caches by default.
+>
+> It mirrors the official NixOS cache and is designed to provide caching for the [`devenv-nixpkgs/rolling`](https://github.com/cachix/devenv-nixpkgs) nixpkgs input.
+>
+> Some languages and integrations may automatically add caches when enabled.
 
 ## Multi-user Nix and trusted users
 
@@ -120,7 +120,7 @@ Single-user installs (`--no-daemon`) have no daemon and are not affected.
 
 ## Pushing
 
-devenv.nix
+**devenv.nix**
 
 ```nix
 {
@@ -142,7 +142,7 @@ $ echo '{ cachix.push = "mycache"; }' > devenv.local.nix
 
 You can disable the integration by setting the following in `devenv.nix`:
 
-devenv.nix
+**devenv.nix**
 
 ```nix
 {

@@ -1,6 +1,6 @@
 <!-- source: https://devenv.sh/integrations/secretspec/
      upstream: docs/src/content/docs/integrations/secretspec.mdx
-     llms-full.txt lines 8200-8326 -->
+     llms-full.txt lines 7464-7576 -->
 
 # SecretSpec
 
@@ -56,7 +56,7 @@ $ SECRETSPEC_PROVIDER=dotenv SECRETSPEC_PROFILE=dev devenv shell
 
 ### Via devenv.yaml
 
-devenv.yaml
+**devenv.yaml**
 
 ```yaml
 secretspec:
@@ -69,7 +69,7 @@ CLI flags take precedence over `devenv.yaml` values.
 
 The resolved profile applies both while evaluating `devenv.nix` and to `secretspec` commands run inside the development shell. An explicitly selected provider does too. If you omit the provider, SecretSpec uses the provider configuration in `secretspec.toml` for both. You can access the resolved secrets in `devenv.nix`:
 
-devenv.nix
+**devenv.nix**
 
 ```nix
 { config, ... }:
@@ -85,7 +85,7 @@ devenv.nix
 
 To make the Cachix auth token a built-in required secret, without declaring it in `secretspec.toml`, set `secretspec.cachix_auth_token` to `true`:
 
-devenv.yaml
+**devenv.yaml**
 
 ```yaml
 secretspec:
@@ -96,7 +96,7 @@ secretspec:
 
 This uses the secret name `CACHIX_AUTH_TOKEN`. If your provider’s policy (e.g. an OpenBao/Vault policy) only grants access to a secret under a different name, set the option to that name:
 
-devenv.yaml
+**devenv.yaml**
 
 ```yaml
 secretspec:

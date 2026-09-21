@@ -1,6 +1,6 @@
 <!-- source: https://devenv.sh/languages/julia/
      upstream: docs/src/content/docs/languages/julia.md
-     llms-full.txt lines 11183-11230 -->
+     llms-full.txt lines 10139-10180 -->
 
 # julia
 

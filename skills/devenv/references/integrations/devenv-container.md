@@ -1,6 +1,6 @@
 <!-- source: https://devenv.sh/integrations/devenv-container/
      upstream: docs/src/content/docs/integrations/devenv-container.mdx
-     llms-full.txt lines 7741-7778 -->
+     llms-full.txt lines 7035-7072 -->
 
 # Devenv Container
 

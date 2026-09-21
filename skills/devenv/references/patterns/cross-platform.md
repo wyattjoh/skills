@@ -1,6 +1,6 @@
 <!-- source: https://devenv.sh/recipes/cross-platform/
      upstream: docs/src/content/docs/recipes/cross-platform.md
-     llms-full.txt lines 17918-18011 -->
+     llms-full.txt lines 16210-16297 -->
 
 # Cross Platform
 
@@ -20,7 +20,7 @@ A few of the most commonly used functions are:
 
 * `stdenv.isx86_64` to target X86\_64 processors
 
-devenv.nix
+**devenv.nix**
 
 ```nix
 { pkgs, lib, ... }: {
@@ -47,7 +47,7 @@ devenv.nix
 
 For more complex cross-platform configurations, it may be tempting to use `//` and `optionalAttrs` in the top-level configuration. This approach will cause Nix to fail with the dreaded `infinite recursion` error:
 
-devenv.nix
+**devenv.nix**
 
 ```nix
 # ❌ This will fail with "error: infinite recursion encountered"
@@ -69,7 +69,7 @@ The solution is to use the module-specific helpers `lib.mkIf` and `lib.mkMerge`.
 
 Use this pattern when you need to conditionally define entire configuration sections, rather than just adding packages or values within existing sections.
 
-devenv.nix
+**devenv.nix**
 
 ```nix
 { pkgs, lib, ... }:

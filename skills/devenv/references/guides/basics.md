@@ -1,12 +1,12 @@
 <!-- source: https://devenv.sh/basics/
      upstream: docs/src/content/docs/basics.md
-     llms-full.txt lines 278-373 -->
+     llms-full.txt lines 244-349 -->
 
 # Basics
 
 Given a hello world example, click on the end of each line to get an explanation:
 
-devenv.nix
+**devenv.nix**
 
 ```nix
 { pkgs, ... }: # ``devenv.nix`` is a function with inputs. `pkgs` is an [input](/inputs/) passed as a special argument to the function.
@@ -27,9 +27,9 @@ We use a special input `...` at the end as a catch-all to avoid enumerating all 
 
 `enterShell` allows you to execute bash code once the shell activates, while `env` allows you to set environment variables.
 
-Consider using tasks instead
-
-For more complex setup operations, consider using [tasks](/tasks/#entershell--entertest) instead of `enterShell`. Tasks provide better control over execution order, dependencies, and can run in parallel:
+> **Consider using tasks instead**
+>
+> For more complex setup operations, consider using [tasks](/tasks/#entershell--entertest) instead of `enterShell`. Tasks provide better control over execution order, dependencies, and can run in parallel:
 
 ```sh
 $ devenv shell
@@ -44,6 +44,20 @@ hello
 ```
 
 See [Nix language tutorial](https://nix.dev/tutorials/first-steps/nix-language) for a 1-2 hour deep dive that will allow you to read any Nix file.
+
+## Running commands
+
+Pass a command to `devenv shell` to run it inside the environment and exit:
+
+```sh
+$ devenv shell -- git log --oneline
+```
+
+For multiple commands, pipes, or `&&`, use `bash -c`:
+
+```sh
+$ devenv shell -- bash -c 'cd src && make'
+```
 
 ## Shell prompt
 

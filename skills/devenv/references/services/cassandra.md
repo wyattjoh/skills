@@ -1,6 +1,6 @@
 <!-- source: https://devenv.sh/services/cassandra/
      upstream: docs/src/content/docs/services/cassandra.md
-     llms-full.txt lines 19537-19714 -->
+     llms-full.txt lines 17609-17768 -->
 
 # cassandra
 

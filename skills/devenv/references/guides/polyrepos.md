@@ -1,6 +1,6 @@
 <!-- source: https://devenv.sh/guides/polyrepo/
      upstream: docs/src/content/docs/guides/polyrepo.mdx
-     llms-full.txt lines 6087-6183 -->
+     llms-full.txt lines 5507-5599 -->
 
 # Polyrepos
 
@@ -11,13 +11,13 @@ There are two approaches:
 * **[Composing with imports](#composing-with-imports)** — merge an entire project’s configuration (packages, services, env, etc.) into your environment.
 * **[Referencing config across inputs](#referencing-config-across-inputs)** — access specific config from another project without merging everything.
 
-Caution
-
-The remote repository must use `devenv.nix` only — `devenv.yaml` from imported projects is not evaluated. See [#2205](https://github.com/cachix/devenv/issues/2205) for details.
+> **Caution**
+>
+> The remote repository must use `devenv.nix` only — `devenv.yaml` from imported projects is not evaluated. See [#2205](https://github.com/cachix/devenv/issues/2205) for details.
 
 Both examples below reference the same remote repository (`myorg/my-service`) with the following configuration:
 
-my-service/devenv.nix
+**my-service/devenv.nix**
 
 ```nix
 { config, ... }: {
@@ -35,7 +35,7 @@ devenv projects compose naturally through imports. When you import another proje
 
 Add the remote repository as an input, then import from it:
 
-devenv.yaml
+**devenv.yaml**
 
 ```yaml
 inputs:
@@ -47,7 +47,7 @@ imports:
 
 Any configuration defined in the imported project’s `devenv.nix` merges into your environment. For example, `my-service`’s output and process are now available via `config`:
 
-devenv.nix
+**devenv.nix**
 
 ```nix
 { config, ... }: {
@@ -66,7 +66,7 @@ For local cross-project imports (monorepos), see the [monorepo guide](/guides/mo
 
 When you don’t want to merge an entire environment but need access to specific options from another project, you can reference them through `inputs.<name>.devenv.config`. This is particularly useful for consuming [outputs](/outputs/) defined in other projects.
 
-devenv.yaml
+**devenv.yaml**
 
 ```yaml
 inputs:
@@ -75,7 +75,7 @@ inputs:
     flake: false
 ```
 
-devenv.nix
+**devenv.nix**
 
 ```nix
 { inputs, ... }: {
@@ -87,6 +87,6 @@ devenv.nix
 }
 ```
 
-Caution
-
-Profiles don’t work with cross-project references. See [#2521](https://github.com/cachix/devenv/issues/2521) for details.
+> **Caution**
+>
+> Profiles don’t work with cross-project references. See [#2521](https://github.com/cachix/devenv/issues/2521) for details.

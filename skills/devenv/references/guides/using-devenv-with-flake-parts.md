@@ -1,6 +1,6 @@
 <!-- source: https://devenv.sh/guides/using-with-flake-parts/
      upstream: docs/src/content/docs/guides/using-with-flake-parts.md
-     llms-full.txt lines 6184-6484 -->
+     llms-full.txt lines 5600-5880 -->
 
 # Using devenv with flake-parts
 
@@ -74,11 +74,11 @@ nix develop --no-pure-eval
 
 This will create a lock file and open a new shell using the `devenv` configuration from your `flake.nix`.
 
-Why do I need to use the `--no-pure-eval` flag?
-
-Flakes use “pure evaluation” by default, which prevents devenv from figuring out the environment its running in: for example, querying the working directory. The `--no-pure-eval` flag relaxes this restriction.
-
-An alternative, and less flexible, workaround is to override the `devenv.root` option to the absolute path to your project directory. This makes the flake non-portable between machines, but does allow the shell to be evaluated in pure mode.
+> **Why do I need to use the `--no-pure-eval` flag?**
+>
+> Flakes use “pure evaluation” by default, which prevents devenv from figuring out the environment its running in: for example, querying the working directory. The `--no-pure-eval` flag relaxes this restriction.
+>
+> An alternative, and less flexible, workaround is to override the `devenv.root` option to the absolute path to your project directory. This makes the flake non-portable between machines, but does allow the shell to be evaluated in pure mode.
 
 ### Launching processes, services, and tests
 

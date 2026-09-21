@@ -1,12 +1,12 @@
 <!-- source: https://devenv.sh/integrations/difftastic/
      upstream: docs/src/content/docs/integrations/difftastic.md
-     llms-full.txt lines 7779-7797 -->
+     llms-full.txt lines 7073-7091 -->
 
 # Difftastic
 
 To get started using [Difftastic, a structural diff that understands syntax for over 30 languages](https://difftastic.wilfred.me.uk/), flip a toggle:
 
-devenv.nix
+**devenv.nix**
 
 ```nix
 { pkgs, ... }:

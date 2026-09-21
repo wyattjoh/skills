@@ -1,6 +1,6 @@
 <!-- source: https://devenv.sh/languages/v/
      upstream: docs/src/content/docs/languages/v.md
-     llms-full.txt lines 16055-16102 -->
+     llms-full.txt lines 14497-14538 -->
 
 # v
 

@@ -1,6 +1,6 @@
 <!-- source: https://devenv.sh/supported-process-managers/hivemind/
      upstream: docs/src/content/docs/supported-process-managers/hivemind.md
-     llms-full.txt lines 27358-27477 -->
+     llms-full.txt lines 24638-24737 -->
 
 # hivemind
 

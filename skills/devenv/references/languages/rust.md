@@ -1,6 +1,6 @@
 <!-- source: https://devenv.sh/languages/rust/
      upstream: docs/src/content/docs/languages/rust.md
-     llms-full.txt lines 14381-15055 -->
+     llms-full.txt lines 13007-13605 -->
 
 # Rust
 

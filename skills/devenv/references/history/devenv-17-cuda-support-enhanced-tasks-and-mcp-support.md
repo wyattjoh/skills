@@ -1,6 +1,6 @@
 <!-- source: https://devenv.sh/blog/2025/07/03/devenv-17-cuda-support-enhanced-tasks-and-mcp-support/
      upstream: docs/src/content/docs/blog/2025/07/03/devenv-17-cuda-support-enhanced-tasks-and-mcp-support.md
-     llms-full.txt lines 1876-2033 -->
+     llms-full.txt lines 1696-1831 -->
 
 # devenv 1.7: CUDA Support, Enhanced Tasks, and MCP support
 
@@ -25,7 +25,7 @@ Here’s how to enable CUDA support only on Linux systems while keeping your env
 * macOS developers can still work on the same project without CUDA
 * The correct CUDA capabilities are set for your target GPUs
 
-devenv.yaml
+**devenv.yaml**
 
 ```yaml
 nixpkgs:

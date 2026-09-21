@@ -1,6 +1,6 @@
 <!-- source: https://devenv.sh/languages/vala/
      upstream: docs/src/content/docs/languages/vala.md
-     llms-full.txt lines 16103-16198 -->
+     llms-full.txt lines 14539-14624 -->
 
 # vala
 

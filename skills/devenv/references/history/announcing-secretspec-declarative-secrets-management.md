@@ -1,6 +1,6 @@
 <!-- source: https://devenv.sh/blog/2025/07/21/announcing-secretspec-declarative-secrets-management/
      upstream: docs/src/content/docs/blog/2025/07/21/announcing-secretspec-declarative-secrets-management.md
-     llms-full.txt lines 2034-2295 -->
+     llms-full.txt lines 1832-2069 -->
 
 # Announcing SecretSpec: Declarative Secrets Management
 
@@ -135,7 +135,7 @@ $ devenv up
 
 ### 2. CI/CD (GitHub Actions)
 
-.github/workflows/test.yml
+**.github/workflows/test.yml**
 
 ```yaml
 - name: Run tests
@@ -148,7 +148,7 @@ $ devenv up
 
 ### 3. Production (Fly.io)
 
-fly.toml
+**fly.toml**
 
 ```toml
 [processes]

@@ -1,6 +1,6 @@
 <!-- source: https://devenv.sh/tui-customization/
      upstream: docs/src/content/docs/tui-customization.md
-     llms-full.txt lines 28771-29120 -->
+     llms-full.txt lines 25885-26215 -->
 
 # TUI customization
 

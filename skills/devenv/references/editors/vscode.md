@@ -1,6 +1,6 @@
 <!-- source: https://devenv.sh/editor-support/vscode/
      upstream: docs/src/content/docs/editor-support/vscode.md
-     llms-full.txt lines 4945-4950 -->
+     llms-full.txt lines 4467-4472 -->
 
 # Vscode
 

@@ -1,6 +1,6 @@
 <!-- source: https://devenv.sh/languages/go/
      upstream: docs/src/content/docs/languages/go.md
-     llms-full.txt lines 9893-10066 -->
+     llms-full.txt lines 8979-9134 -->
 
 # go
 

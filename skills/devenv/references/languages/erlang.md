@@ -1,6 +1,6 @@
 <!-- source: https://devenv.sh/languages/erlang/
      upstream: docs/src/content/docs/languages/erlang.md
-     llms-full.txt lines 9635-9724 -->
+     llms-full.txt lines 8751-8830 -->
 
 # erlang
 

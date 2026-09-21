@@ -1,6 +1,6 @@
 <!-- source: https://devenv.sh/languages/clojure/
      upstream: docs/src/content/docs/languages/clojure.md
-     llms-full.txt lines 8931-9002 -->
+     llms-full.txt lines 8127-8190 -->
 
 # clojure
 

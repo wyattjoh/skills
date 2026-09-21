@@ -1,6 +1,6 @@
 <!-- source: https://devenv.sh/guides/using-with-flakes/
      upstream: docs/src/content/docs/guides/using-with-flakes.md
-     llms-full.txt lines 6485-6770 -->
+     llms-full.txt lines 5881-6144 -->
 
 # Using devenv with Nix Flakes
 
@@ -10,9 +10,9 @@
 * Pin those dependencies in a lock file
 * Define structured outputs for your project
 
-For those new to devenv and Nix
-
-If you’re new to both devenv and Nix, starting with the standard devenv CLI approach will provide the smoothest experience. [Getting started with devenv.](/getting-started/)
+> **For those new to devenv and Nix**
+>
+> If you’re new to both devenv and Nix, starting with the standard devenv CLI approach will provide the smoothest experience. [Getting started with devenv.](/getting-started/)
 
 You can integrate the devenv module system (languages, processes, services, etc.) into a Nix Flake as a `devShell` output. This allows devenv to work within your existing Flake-based projects.
 
@@ -117,11 +117,11 @@ nix develop --no-pure-eval
 
 This will evaluate the inputs to your flake, create a `flake.lock` lock file, and open a new shell using the `devenv` configuration from your `flake.nix`.
 
-Why do I need to use the `--no-pure-eval` flag?
-
-Flakes use “pure evaluation” by default, which prevents devenv from figuring out the environment its running in: for example, querying the working directory. The `--no-pure-eval` flag relaxes this restriction.
-
-An alternative, and less flexible, workaround is to override the `devenv.root` option to the absolute path to your project directory. This makes the flake non-portable between machines, but does allow the shell to be evaluated in pure mode.
+> **Why do I need to use the `--no-pure-eval` flag?**
+>
+> Flakes use “pure evaluation” by default, which prevents devenv from figuring out the environment its running in: for example, querying the working directory. The `--no-pure-eval` flag relaxes this restriction.
+>
+> An alternative, and less flexible, workaround is to override the `devenv.root` option to the absolute path to your project directory. This makes the flake non-portable between machines, but does allow the shell to be evaluated in pure mode.
 
 ### Launching processes, services, and tests
 
@@ -149,7 +149,7 @@ No command        devenv:enterTest
 1 Skipped, 1 Succeeded                      474.62ms
 ```
 
-running tests with flakes doesn’t support starting processes, for that you need to use `devenv`
+> **running tests with flakes doesn’t support starting processes, for that you need to use `devenv`**
 
 ### Automated shell switching with direnv
 

@@ -1,6 +1,6 @@
 <!-- source: https://devenv.sh/recipes/macos/
      upstream: docs/src/content/docs/recipes/macos.md
-     llms-full.txt lines 18012-18111 -->
+     llms-full.txt lines 16298-16389 -->
 
 # Macos
 
@@ -12,7 +12,7 @@ When compiling for macOS, you may need to link against system frameworks, like C
 
 You can use the [`apple.sdk`](/reference/options/#applesdk) option to override the default SDK or remove it completely.
 
-devenv.nix
+**devenv.nix**
 
 ```nix
 { pkgs, lib, ... }:
@@ -30,23 +30,24 @@ devenv.nix
 }
 ```
 
-Legacy framework pattern
-
-You previously had to add each framework to `packages` individually. For example:
-
-devenv.nix
-
-```nix
-{ pkgs, lib, ... }:
-
-{
-  packages = lib.optionals pkgs.stdenv.isDarwin [
-    pkgs.darwin.apple_sdk.frameworks.CoreFoundation
-  ];
-}
-```
-
-This is no longer necessary. Frameworks are bundled together in a single versioned SDK.
+> **Legacy framework pattern**
+>
+> You previously had to add each framework to `packages` individually. For example:
+>
+> **devenv.nix**
+>
+> ```nix
+> { pkgs, lib, ... }:
+>
+>
+> {
+>   packages = lib.optionals pkgs.stdenv.isDarwin [
+>     pkgs.darwin.apple_sdk.frameworks.CoreFoundation
+>   ];
+> }
+> ```
+>
+> This is no longer necessary. Frameworks are bundled together in a single versioned SDK.
 
 ### Run x86 binaries on Apple Silicon with Rosetta
 
@@ -54,7 +55,7 @@ Rosetta 2 enables a Mac with Apple Silicon to transparently run x86 binaries.
 
 Nixpkgs provides a convenient set of x86\_64-darwin packages. This can come in handy for packages that don’t yet have an aarch64-compatible build or are temporarily broken on nixpkgs.
 
-devenv.nix
+**devenv.nix**
 
 ```nix
 { pkgs, lib, ... }:

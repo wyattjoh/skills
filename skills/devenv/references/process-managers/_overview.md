@@ -1,14 +1,14 @@
 <!-- source: https://devenv.sh/supported-process-managers/
      upstream: docs/src/content/docs/supported-process-managers/index.md
-     llms-full.txt lines 27340-27357 -->
+     llms-full.txt lines 24620-24637 -->
 
 # Alternative process managers
 
 > Advanced integrations for external process managers.
 
-Advanced configuration
-
-Devenv’s [native process manager](/processes/) is the default, recommended implementation and supports the complete process feature set. Most projects should use it.
+> **Advanced configuration**
+>
+> Devenv’s [native process manager](/processes/) is the default, recommended implementation and supports the complete process feature set. Most projects should use it.
 
 If an existing workflow depends on a specific external process manager, devenv can integrate with:
 

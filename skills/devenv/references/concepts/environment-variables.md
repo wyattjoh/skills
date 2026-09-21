@@ -1,6 +1,6 @@
 <!-- source: https://devenv.sh/reference/environment-variables/
      upstream: docs/src/content/docs/reference/environment-variables.mdx
-     llms-full.txt lines 18223-18443 -->
+     llms-full.txt lines 16489-16649 -->
 
 # Environment variables
 

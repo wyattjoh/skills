@@ -1,6 +1,6 @@
 <!-- source: https://devenv.sh/services/elasticmq/
      upstream: docs/src/content/docs/services/elasticmq.md
-     llms-full.txt lines 20333-20398 -->
+     llms-full.txt lines 18319-18376 -->
 
 # elasticmq
 

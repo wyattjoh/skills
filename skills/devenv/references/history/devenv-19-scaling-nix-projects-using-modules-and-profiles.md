@@ -1,6 +1,6 @@
 <!-- source: https://devenv.sh/blog/2025/09/17/devenv-19-scaling-nix-projects-using-modules-and-profiles/
      upstream: docs/src/content/docs/blog/2025/09/17/devenv-19-scaling-nix-projects-using-modules-and-profiles.md
-     llms-full.txt lines 2593-2793 -->
+     llms-full.txt lines 2331-2519 -->
 
 # devenv 1.9: Scaling Nix projects using modules and profiles
 
@@ -16,7 +16,7 @@ On top of that, when developing in a repository with different components, it’
 
 Teams can define their own set of recommended best practices in a central repository to create even more opinionated environments:
 
-devenv.nix
+**devenv.nix**
 
 ```nix
 { lib, config, pkgs, ... }: {
@@ -49,7 +49,7 @@ We have defined our defaults for `myteam.languages.rust` and `myteam.services.da
 
 Once you have your team module defined, you can start using it in new projects:
 
-devenv.yaml
+**devenv.yaml**
 
 ```yaml
 inputs:
@@ -64,7 +64,7 @@ This automatically includes your centrally managed module.
 
 Since options default to `false`, you’ll need to enable them per project. You can enable common defaults globally and use profiles to activate additional components on demand:
 
-devenv.nix
+**devenv.nix**
 
 ```nix
 { pkgs, config, ... }: {

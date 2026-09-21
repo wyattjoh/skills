@@ -1,6 +1,6 @@
 <!-- source: https://devenv.sh/languages/zig/
      upstream: docs/src/content/docs/languages/zig.md
-     llms-full.txt lines 16199-16340 -->
+     llms-full.txt lines 14625-14752 -->
 
 # zig
 

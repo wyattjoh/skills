@@ -1,6 +1,6 @@
 <!-- source: https://devenv.sh/integrations/treefmt/
      upstream: docs/src/content/docs/integrations/treefmt.md
-     llms-full.txt lines 8327-8423 -->
+     llms-full.txt lines 7577-7663 -->
 
 # treefmt
 

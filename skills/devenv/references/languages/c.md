@@ -1,6 +1,6 @@
 <!-- source: https://devenv.sh/languages/c/
      upstream: docs/src/content/docs/languages/c.md
-     llms-full.txt lines 8841-8930 -->
+     llms-full.txt lines 8047-8126 -->
 
 # c
 

@@ -1,6 +1,6 @@
 <!-- source: https://devenv.sh/languages/terraform/
      upstream: docs/src/content/docs/languages/terraform.md
-     llms-full.txt lines 15584-15697 -->
+     llms-full.txt lines 14076-14177 -->
 
 # terraform
 

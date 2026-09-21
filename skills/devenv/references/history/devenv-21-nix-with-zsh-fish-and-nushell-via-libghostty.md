@@ -1,6 +1,6 @@
 <!-- source: https://devenv.sh/blog/2026/05/07/devenv-21-nix-with-zsh-fish-and-nushell-via-libghostty/
      upstream: docs/src/content/docs/blog/2026/05/07/devenv-21-nix-with-zsh-fish-and-nushell-via-libghostty.mdx
-     llms-full.txt lines 3523-3697 -->
+     llms-full.txt lines 3181-3329 -->
 
 # devenv 2.1: Nix with zsh, fish, and nushell via libghostty
 
@@ -39,7 +39,7 @@ Building libghostty reliably on Nix took upstream patches in [libghostty-rs#27](
 
 * Bash
 
-  \~/.bashrc
+  **\~/.bashrc**
 
   ```bash
   eval "$(devenv hook bash)"
@@ -47,7 +47,7 @@ Building libghostty reliably on Nix took upstream patches in [libghostty-rs#27](
 
 * Zsh
 
-  \~/.zshrc
+  **\~/.zshrc**
 
   ```bash
   eval "$(devenv hook zsh)"
@@ -55,7 +55,7 @@ Building libghostty reliably on Nix took upstream patches in [libghostty-rs#27](
 
 * Fish
 
-  \~/.config/fish/config.fish
+  **\~/.config/fish/config.fish**
 
   ```fish
   devenv hook fish | source
@@ -63,7 +63,7 @@ Building libghostty reliably on Nix took upstream patches in [libghostty-rs#27](
 
 * Nushell
 
-  config.nu
+  **config.nu**
 
   ```nu
   devenv hook nu | save --force ~/.cache/devenv/hook.nu

@@ -1,6 +1,6 @@
 <!-- source: https://devenv.sh/services/dynamodb-local/
      upstream: docs/src/content/docs/services/dynamodb-local.md
-     llms-full.txt lines 20249-20332 -->
+     llms-full.txt lines 18245-18318 -->
 
 # dynamodb-local
 

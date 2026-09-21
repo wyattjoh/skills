@@ -1,6 +1,6 @@
 <!-- source: https://devenv.sh/blog/2025/08/22/closing-the-nix-gap-from-environments-to-packaged-applications-for-rust/
      upstream: docs/src/content/docs/blog/2025/08/22/closing-the-nix-gap-from-environments-to-packaged-applications-for-rust.md
-     llms-full.txt lines 2489-2592 -->
+     llms-full.txt lines 2235-2330 -->
 
 # Closing the Nix Gap: From Environments to Packaged Applications for Rust
 

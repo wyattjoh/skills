@@ -1,6 +1,6 @@
 <!-- source: https://devenv.sh/profiles/
      upstream: docs/src/content/docs/profiles.mdx
-     llms-full.txt lines 17617-17895 -->
+     llms-full.txt lines 15927-16191 -->
 
 # Profiles
 

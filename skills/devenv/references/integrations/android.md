@@ -1,12 +1,12 @@
 <!-- source: https://devenv.sh/integrations/android/
      upstream: docs/src/content/docs/integrations/android.md
-     llms-full.txt lines 6979-7148 -->
+     llms-full.txt lines 6331-6490 -->
 
 # Android
 
 Getting a full working Android development environment is as simple as:
 
-devenv.nix
+**devenv.nix**
 
 ```nix
 { pkgs, ... }:
@@ -18,7 +18,7 @@ devenv.nix
 
 For a more tailored development environment you can specify specific options. Note that `platformTools.version` and `emulator.version` default to the latest available versions from nixpkgs:
 
-devenv.nix
+**devenv.nix**
 
 ```nix
 { pkgs, ... }:
@@ -63,7 +63,7 @@ devenv.nix
 
 Since Android contains many unfree packages, you need to allow unfree packages in devenv.yaml:
 
-devenv.yaml
+**devenv.yaml**
 
 ```yaml
 nixpkgs:
@@ -84,7 +84,7 @@ Use a different release track by pointing the URL at `.../beta`, `.../preview` o
 
 The same options now resolve against android-nixpkgs, so you can select newer versions. `platforms.version`, `buildTools.version`, `ndk.version` and `emulator.enable` are mapped onto SDK packages automatically. Other components (system images, sources, CMake, extras) aren’t covered by those options; install them by adding the android-nixpkgs derivation you want to devenv’s `packages` directly:
 
-devenv.nix
+**devenv.nix**
 
 ```nix
 { inputs, pkgs, ... }:
@@ -104,9 +104,9 @@ devenv.nix
 }
 ```
 
-Note
-
-android-nixpkgs supports `x86_64-linux`, `x86_64-darwin` and `aarch64-darwin`.
+> **Note**
+>
+> android-nixpkgs supports `x86_64-linux`, `x86_64-darwin` and `aarch64-darwin`.
 
 ## Emulators
 
@@ -114,7 +114,7 @@ Creating emulators via the android-studio GUI may not work as expected due to co
 
 ### Creating an emulator
 
-bash
+**bash**
 
 ```nix
 avdmanager create avd --force --name my-android-emulator-name --package 'system-images;android-32;google_apis_playstore;x86_64'
@@ -126,7 +126,7 @@ After creating the emulator, you can use any text editor to develop for Android.
 
 The following config works with react native starter project.
 
-devenv.nix
+**devenv.nix**
 
 ```nix
 { pkgs, ... }:
@@ -143,7 +143,7 @@ devenv.nix
 
 The following config works with the flutter starter project.
 
-devenv.nix
+**devenv.nix**
 
 ```nix
 { pkgs, ... }:

@@ -1,6 +1,6 @@
 <!-- source: https://devenv.sh/blog/2023/03/02/devenv-06-generating-containers-and-instant-shell-activation/
      upstream: docs/src/content/docs/blog/2023/03/02/devenv-06-generating-containers-and-instant-shell-activation.md
-     llms-full.txt lines 748-928 -->
+     llms-full.txt lines 680-846 -->
 
 # devenv 0.6: Generating containers and instant shell activation
 
@@ -21,7 +21,7 @@ Containers are a great way to distribute ready-made applications, leveraging pla
 
 An example for Ruby:
 
-devenv.nix
+**devenv.nix**
 
 ```nix
 {
@@ -58,9 +58,9 @@ A developer **environment should only be built when something changes** and if n
 
 With the latest [direnv.net integration](/integrations/direnv/), we’ve **finally reached that goal** by making caching work properly (it will even watch each of your imports for changes!).
 
-Migrating from an older devenv
-
-Make sure to use the latest `.envrc` from `devenv init` and for everyone on the team to [upgrade to devenv 0.6](/getting-started/).
+> **Migrating from an older devenv**
+>
+> Make sure to use the latest `.envrc` from `devenv init` and for everyone on the team to [upgrade to devenv 0.6](/getting-started/).
 
 In the near future we’ll experiment to improve [devenv shell](https://github.com/cachix/devenv/issues/240) experience.
 
@@ -107,9 +107,9 @@ inputs:
 
 Will allow building unfree software and wire up `default` overlay into `pkgs` from [rust-overlay](https://github.com/oxalica/rust-overlay).
 
-Migrating from an older devenv
-
-Make sure *everyone* on the team upgrades [to devenv 0.6](/getting-started/).
+> **Migrating from an older devenv**
+>
+> Make sure *everyone* on the team upgrades [to devenv 0.6](/getting-started/).
 
 ## Languages changelog
 

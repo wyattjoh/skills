@@ -1,6 +1,6 @@
 <!-- source: https://devenv.sh/services/rustfs/
      upstream: docs/src/content/docs/services/rustfs.md
-     llms-full.txt lines 25595-25777 -->
+     llms-full.txt lines 23053-23215 -->
 
 # rustfs
 

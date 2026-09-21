@@ -1,6 +1,6 @@
 <!-- source: https://devenv.sh/languages/jsonnet/
      upstream: docs/src/content/docs/languages/jsonnet.md
-     llms-full.txt lines 11111-11182 -->
+     llms-full.txt lines 10075-10138 -->
 
 # jsonnet
 

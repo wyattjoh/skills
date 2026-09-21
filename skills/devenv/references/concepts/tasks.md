@@ -1,6 +1,6 @@
 <!-- source: https://devenv.sh/tasks/
      upstream: docs/src/content/docs/tasks.mdx
-     llms-full.txt lines 28202-28653 -->
+     llms-full.txt lines 25352-25775 -->
 
 # Tasks
 
@@ -10,7 +10,7 @@ Tasks allow you to form dependencies between code, executed in parallel.
 
 ## Defining tasks
 
-devenv.nix
+**devenv.nix**
 
 ```nix
 { pkgs, ... }:
@@ -53,7 +53,7 @@ Processes are tasks too (see [Processes as tasks](#processes-as-tasks)), so the 
 
 `before` and `after` describe the same edge from opposite ends, so you can declare a dependency from whichever side is more convenient. These are equivalent:
 
-devenv.nix
+**devenv.nix**
 
 ```nix
 {
@@ -82,7 +82,7 @@ When no suffix is given the default is `@ready` for processes and `@succeeded` f
 
 A common use is running a setup task once a service is ready:
 
-devenv.nix
+**devenv.nix**
 
 ```nix
 {
@@ -123,7 +123,7 @@ $ devenv tasks run myapp:build --mode all    # build, its dependencies, and its 
 
 To hook into these events, use `before` to declare that your task should run before the event completes:
 
-devenv.nix
+**devenv.nix**
 
 ```nix
 { pkgs, lib, config, ... }:
@@ -159,7 +159,7 @@ Many devenv modules automatically hook into these events. For example, enabling 
 
 Tasks can also use another package for execution, for example when entering the shell:
 
-devenv.nix
+**devenv.nix**
 
 ```nix
 { pkgs, lib, config, ... }:
@@ -180,7 +180,7 @@ devenv.nix
 
 If you define a `status` command, it will be executed first and if it returns `0`, `exec` will be skipped.
 
-devenv.nix
+**devenv.nix**
 
 ```nix
 { pkgs, lib, config, ... }:
@@ -201,7 +201,7 @@ Tasks using the `status` attribute will also cache their outputs. When a task is
 
 You can specify a list of files to monitor with `execIfModified`. The task will only run if any of these files have been modified since the last successful run. This attribute supports glob patterns, allowing you to monitor multiple files matching specific patterns.
 
-devenv.nix
+**devenv.nix**
 
 ```nix
 { pkgs, lib, config, ... }:
@@ -238,7 +238,7 @@ Tasks support passing inputs and produce outputs, both as JSON objects:
 * `$DEVENV_TASK_OUTPUT_FILE`: a writable file with tasks’ outputs in JSON.
 * `$DEVENV_TASK_EXPORTS_FILE`: a writable file where tasks can export environment variables. Write `name\0base64(value)\0` pairs to this file and they will be set in the environment of dependent tasks.
 
-devenv.nix
+**devenv.nix**
 
 ```nix
 { pkgs, lib, config, ... }:
@@ -265,7 +265,7 @@ devenv.nix
 
 Tasks can display messages to the user when entering the shell by writing a `devenv.messages` array to `$DEVENV_TASK_OUTPUT_FILE`. This is useful for showing informational output like trace URLs or setup status after initialization.
 
-devenv.nix
+**devenv.nix**
 
 ```nix
 { pkgs, lib, config, ... }:
@@ -314,7 +314,7 @@ All processes defined in `processes` are automatically available as tasks with t
 * Define dependencies between tasks and processes
 * Use task features like `before`/`after` with processes
 
-devenv.nix
+**devenv.nix**
 
 ```nix
 { pkgs, ... }:
@@ -350,7 +350,7 @@ This is particularly useful for:
 
 You can also run tasks after a process finishes by depending on its `@completed` state (see [Dependency states](#dependency-states)). The default suffix for a process dependency is `@ready`, which fires as soon as the process is healthy, so use `@completed` to wait for it to exit instead:
 
-devenv.nix
+**devenv.nix**
 
 ```nix
 { pkgs, ... }:
@@ -375,11 +375,11 @@ devenv.nix
 
 This ensures that cleanup tasks like removing PID files or clearing caches are executed when the application server stops.
 
-Setup tasks attached to processes and `devenv up`
-
-A task that runs *after* a process — a setup or configure step wired with `processes.<name>.before = [ "devenv:<name>:configure" ]`, or equivalently `tasks."devenv:<name>:configure".after = [ "devenv:processes:<name>" ]` — is *downstream* of that process. `devenv up` schedules processes in `before` mode, which runs each process’s upstream dependencies but **not** its downstream tasks, so the setup step is skipped and never runs.
-
-Until this is resolved ([#2852](https://github.com/cachix/devenv/issues/2852)), run `devenv up --mode all` to include downstream setup tasks. `devenv test` already runs in `all` mode, so these tasks run there. See [Execution modes](#execution-modes).
+> **Setup tasks attached to processes and `devenv up`**
+>
+> A task that runs *after* a process — a setup or configure step wired with `processes.<name>.before = [ "devenv:<name>:configure" ]`, or equivalently `tasks."devenv:<name>:configure".after = [ "devenv:processes:<name>" ]` — is *downstream* of that process. `devenv up` schedules processes in `before` mode, which runs each process’s upstream dependencies but **not** its downstream tasks, so the setup step is skipped and never runs.
+>
+> Until this is resolved ([#2852](https://github.com/cachix/devenv/issues/2852)), run `devenv up --mode all` to include downstream setup tasks. `devenv test` already runs in `all` mode, so these tasks run there. See [Execution modes](#execution-modes).
 
 ## Git Integration
 
@@ -387,7 +387,7 @@ Until this is resolved ([#2852](https://github.com/cachix/devenv/issues/2852)), 
 
 Tasks can reference the git repository root path using `${config.git.root}`, which is particularly useful in monorepo environments:
 
-devenv.nix
+**devenv.nix**
 
 ```nix
 { config, ... }:

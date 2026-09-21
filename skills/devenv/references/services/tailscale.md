@@ -1,6 +1,6 @@
 <!-- source: https://devenv.sh/services/tailscale/
      upstream: docs/src/content/docs/services/tailscale.md
-     llms-full.txt lines 25844-25885 -->
+     llms-full.txt lines 23274-23309 -->
 
 # tailscale
 

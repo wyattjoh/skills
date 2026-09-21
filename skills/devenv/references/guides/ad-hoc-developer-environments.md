@@ -1,6 +1,6 @@
 <!-- source: https://devenv.sh/ad-hoc-developer-environments/
      upstream: docs/src/content/docs/ad-hoc-developer-environments.mdx
-     llms-full.txt lines 3-110 -->
+     llms-full.txt lines 3-92 -->
 
 # Ad-hoc Developer Environments
 

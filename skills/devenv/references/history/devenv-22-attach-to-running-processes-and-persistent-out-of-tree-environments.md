@@ -1,6 +1,6 @@
 <!-- source: https://devenv.sh/blog/2026/07/28/devenv-22-attach-to-running-processes-and-persistent-out-of-tree-environments/
      upstream: docs/src/content/docs/blog/2026/07/28/devenv-22-attach-to-running-processes-and-persistent-out-of-tree-environments.md
-     llms-full.txt lines 3878-4065 -->
+     llms-full.txt lines 3490-3657 -->
 
 # devenv 2.2: attach to running processes and persistent out-of-tree environments
 
@@ -87,7 +87,7 @@ devenv 2.2 upgrades its SecretSpec integration from 0.8 to [SecretSpec 0.17](htt
 
 Pulling from and pushing to private Cachix caches no longer requires exporting `CACHIX_AUTH_TOKEN`. devenv can resolve the token through [SecretSpec](https://secretspec.dev) without exposing it to the development shell:
 
-devenv.yaml
+**devenv.yaml**
 
 ```yaml
 secretspec:
@@ -100,7 +100,7 @@ No declaration in `secretspec.toml` is required. If SecretSpec does not return a
 
 If your secrets backend grants access to the token under a different name, configure it in `devenv.yaml`:
 
-devenv.yaml
+**devenv.yaml**
 
 ```yaml
 secretspec:

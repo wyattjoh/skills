@@ -1,6 +1,6 @@
 <!-- source: https://devenv.sh/auto-activation/
      upstream: docs/src/content/docs/auto-activation.mdx
-     llms-full.txt lines 111-277 -->
+     llms-full.txt lines 93-243 -->
 
 # Auto Activation
 
@@ -16,7 +16,7 @@ devenv includes a built in shell hook that automatically activates your develope
 
   Add one line to your shell configuration file:
 
-  \~/.bashrc
+  **\~/.bashrc**
 
   ```bash
   eval "$(devenv hook bash)"
@@ -26,7 +26,7 @@ devenv includes a built in shell hook that automatically activates your develope
 
   Add one line to your shell configuration file:
 
-  \~/.zshrc
+  **\~/.zshrc**
 
   ```bash
   eval "$(devenv hook zsh)"
@@ -36,7 +36,7 @@ devenv includes a built in shell hook that automatically activates your develope
 
   Usually nothing to do — devenv installed via Nix ships a snippet that fish loads automatically. If it doesn’t load for you, add this instead:
 
-  \~/.config/fish/config.fish
+  **\~/.config/fish/config.fish**
 
   ```fish
   devenv hook fish | source
@@ -59,7 +59,7 @@ devenv includes a built in shell hook that automatically activates your develope
 
 Place arguments for the auto-activated `devenv shell` after `--`. For example, to disable the TUI in shells started by the Fish hook without changing other `devenv` commands:
 
-\~/.config/fish/config.fish
+**\~/.config/fish/config.fish**
 
 ```fish
 devenv hook fish -- --no-tui | source
@@ -67,7 +67,7 @@ devenv hook fish -- --no-tui | source
 
 The same separator works in every supported shell:
 
-\~/.bashrc
+**\~/.bashrc**
 
 ```bash
 eval "$(devenv hook bash -- --no-tui)"
@@ -124,9 +124,9 @@ If a project has not been trusted yet, you will see a message asking you to run 
 devenv: /home/user/myproject is not allowed. Run 'devenv allow' to trust this directory.
 ```
 
-Note
-
-The hook detects projects by looking for a `devenv.nix` file. Before version 2.2, it looked for `devenv.yaml` instead, so projects with only `devenv.nix` were not auto-detected.
+> **Note**
+>
+> The hook detects projects by looking for a `devenv.nix` file. Before version 2.2, it looked for `devenv.yaml` instead, so projects with only `devenv.nix` were not auto-detected.
 
 ## Automatic deactivation
 

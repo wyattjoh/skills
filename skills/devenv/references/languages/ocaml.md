@@ -1,6 +1,6 @@
 <!-- source: https://devenv.sh/languages/ocaml/
      upstream: docs/src/content/docs/languages/ocaml.md
-     llms-full.txt lines 11651-11740 -->
+     llms-full.txt lines 10553-10632 -->
 
 # ocaml
 

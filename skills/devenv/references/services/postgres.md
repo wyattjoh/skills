@@ -1,6 +1,6 @@
 <!-- source: https://devenv.sh/services/postgres/
      upstream: docs/src/content/docs/services/postgres.md
-     llms-full.txt lines 24475-24939 -->
+     llms-full.txt lines 22039-22469 -->
 
 # postgres
 

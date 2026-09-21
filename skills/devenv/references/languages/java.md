@@ -1,6 +1,6 @@
 <!-- source: https://devenv.sh/languages/java/
      upstream: docs/src/content/docs/languages/java.md
-     llms-full.txt lines 10505-10684 -->
+     llms-full.txt lines 9527-9688 -->
 
 # java
 

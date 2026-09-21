@@ -1,6 +1,6 @@
 <!-- source: https://devenv.sh/blog/2025/11/26/devenv-111-module-changelogs-and-secretspec-040/
      upstream: docs/src/content/docs/blog/2025/11/26/devenv-111-module-changelogs-and-secretspec-040.md
-     llms-full.txt lines 2913-3098 -->
+     llms-full.txt lines 2629-2800 -->
 
 # devenv 1.11: Module changelogs and SecretSpec 0.4.0
 
@@ -18,7 +18,7 @@ Recently we’ve wanted to [change `git-hooks.package`](https://github.com/cachi
 
 The new changelog option lets module authors declare important changes directly in their modules:
 
-devenv.nix
+**devenv.nix**
 
 ````nix
 { config, ... }: {
@@ -81,7 +81,7 @@ See the [contributing guide](/community/contributing/#adding-changelogs-for-brea
 
 You can now specify the default profile in `devenv.yaml` or `devenv.local.yaml`:
 
-devenv.yaml
+**devenv.yaml**
 
 ```yaml
 profile: fullstack
@@ -97,7 +97,7 @@ We’ve released [SecretSpec 0.4.0](https://secretspec.dev) with two major featu
 
 You can now configure different providers for individual secrets, with automatic fallback:
 
-secretspec.toml
+**secretspec.toml**
 
 ```toml
 [profiles.production]
@@ -148,7 +148,7 @@ $ secretspec get TLS_CERT
 
 In Nix, we don’t want to leak secrets into the world-readable store, so passing them as paths avoids this issue:
 
-devenv.nix
+**devenv.nix**
 
 ```nix
 { pkgs, config, ... }: {

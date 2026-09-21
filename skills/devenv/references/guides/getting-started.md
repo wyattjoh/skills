@@ -1,6 +1,6 @@
 <!-- source: https://devenv.sh/getting-started/
      upstream: docs/src/content/docs/getting-started.mdx
-     llms-full.txt lines 5209-5431 -->
+     llms-full.txt lines 4709-4901 -->
 
 # Getting Started
 
@@ -74,7 +74,7 @@
 
 * NixOS/nix-darwin
 
-  configuration.nix
+  **configuration.nix**
 
   ```nix
   environment.systemPackages = [
@@ -84,7 +84,7 @@
 
 * home-manager
 
-  home.nix
+  **home.nix**
 
   ```nix
   home.packages = [

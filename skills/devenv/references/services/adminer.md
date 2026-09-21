@@ -1,6 +1,6 @@
 <!-- source: https://devenv.sh/services/adminer/
      upstream: docs/src/content/docs/services/adminer.md
-     llms-full.txt lines 19038-19103 -->
+     llms-full.txt lines 17160-17217 -->
 
 # adminer
 

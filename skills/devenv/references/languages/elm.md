@@ -1,6 +1,6 @@
 <!-- source: https://devenv.sh/languages/elm/
      upstream: docs/src/content/docs/languages/elm.md
-     llms-full.txt lines 9563-9634 -->
+     llms-full.txt lines 8687-8750 -->
 
 # elm
 

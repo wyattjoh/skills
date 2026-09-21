@@ -1,6 +1,6 @@
 <!-- source: https://devenv.sh/processes/
      upstream: docs/src/content/docs/processes.mdx
-     llms-full.txt lines 16955-17616 -->
+     llms-full.txt lines 15309-15926 -->
 
 # Processes
 
@@ -10,7 +10,7 @@ Devenv’s built-in native process manager is the default and recommended way to
 
 ## Basic Example
 
-devenv.nix
+**devenv.nix**
 
 ```nix
 { pkgs, ... }:
@@ -55,7 +55,7 @@ The default timeout is 120 seconds.
 
 Enable the shared proxy to give processes with named ports HTTP URLs under `.localhost`:
 
-devenv.nix
+**devenv.nix**
 
 ```nix
 { config, ... }:
@@ -73,7 +73,7 @@ devenv.nix
 
 With this configuration, the process is available at `http://web.<project-name>.localhost`. The proxy is disabled by default. On Linux, starting its port-80 listener requires sudo authentication; in noninteractive environments, authenticate with `sudo -v` first. Override the hostname for an individual process with a full `.localhost` hostname:
 
-devenv.nix
+**devenv.nix**
 
 ```nix
 {
@@ -83,7 +83,7 @@ devenv.nix
 
 For processes with multiple ports, the default route stays available at the base hostname, and named port routes are also prefixed to that hostname, such as `http://http.app.localhost` and `http://admin.app.localhost`. A port can override its own hostname independently:
 
-devenv.nix
+**devenv.nix**
 
 ```nix
 {
@@ -103,7 +103,7 @@ Port-level hostnames take precedence over the process hostname. Ports without an
 
 Enable HTTPS for an individual process’s generated URLs:
 
-devenv.nix
+**devenv.nix**
 
 ```nix
 {
@@ -122,7 +122,7 @@ The shared proxy serves HTTPS on port 443 and continues to serve HTTP on port 80
 
 On Linux, the native process manager can grant a process a limited set of kernel capabilities without running the service as root. For example, this allows a web server to bind to port 443:
 
-devenv.nix
+**devenv.nix**
 
 ```nix
 {
@@ -161,13 +161,13 @@ A bare `devenv up` starts only processes with `start.enable = true`; explicitly 
 
 The attached client is a non-interactive live view: stdin is not connected to the processes, and Ctrl-C detaches while leaving them running (the TUI restart/stop keybindings still work).
 
-Configuration changes are not picked up by attach
-
-An attaching `devenv up <name>` schedules into the running process manager using the configuration that manager was started with. Edits to `devenv.nix` are not picked up by attach-scheduled processes, and names that are not part of the running manager’s process set are rejected. Restart the manager to pick up changes:
-
-```sh
-$ devenv processes down && devenv up -d
-```
+> **Configuration changes are not picked up by attach**
+>
+> An attaching `devenv up <name>` schedules into the running process manager using the configuration that manager was started with. Edits to `devenv.nix` are not picked up by attach-scheduled processes, and names that are not part of the running manager’s process set are rejected. Restart the manager to pick up changes:
+>
+> ```sh
+> $ devenv processes down && devenv up -d
+> ```
 
 To attach a live view without starting anything (native process manager only):
 
@@ -179,7 +179,7 @@ $ devenv processes attach
 
 Processes can depend on other processes and tasks using `after` and `before`:
 
-devenv.nix
+**devenv.nix**
 
 ```nix
 {
@@ -210,9 +210,9 @@ For **task** dependencies:
 
 See [Dependency states](/tasks/#dependency-states) for the full semantics, and [Execution modes](/tasks/#execution-modes) for how `devenv up` and `devenv tasks run` decide which dependencies to schedule.
 
-Setup tasks that run after a process
-
-`devenv up` schedules processes in `before` mode, which runs each process’s upstream dependencies but **not** tasks that run *after* it. A setup or configure task wired downstream of a process — e.g. `processes.<name>.before = [ "devenv:<name>:configure" ]` — is skipped under `devenv up` and never runs. Use `devenv up --mode all`, or see [Processes as tasks](/tasks/#processes-as-tasks) for details.
+> **Setup tasks that run after a process**
+>
+> `devenv up` schedules processes in `before` mode, which runs each process’s upstream dependencies but **not** tasks that run *after* it. A setup or configure task wired downstream of a process — e.g. `processes.<name>.before = [ "devenv:<name>:configure" ]` — is skipped under `devenv up` and never runs. Use `devenv up --mode all`, or see [Processes as tasks](/tasks/#processes-as-tasks) for details.
 
 ## Using Pre-built Services
 
@@ -236,7 +236,7 @@ Control how processes restart when they exit:
 * `always` - restart on any exit
 * `never` - never restart
 
-devenv.nix
+**devenv.nix**
 
 ```nix
 {
@@ -256,7 +256,7 @@ devenv.nix
 
 Control how a process is stopped. `signal` is the Unix signal number sent for a graceful stop. `grace` is the number of seconds to wait before the process is killed with SIGKILL. The defaults are SIGTERM (15) and 5 seconds.
 
-devenv.nix
+**devenv.nix**
 
 ```nix
 {
@@ -282,7 +282,7 @@ Ready probes let the process manager detect when a process is ready to serve. Th
 
 Run a shell command to check readiness. Exit code 0 means ready:
 
-devenv.nix
+**devenv.nix**
 
 ```nix
 {
@@ -299,7 +299,7 @@ devenv.nix
 
 Poll an HTTP endpoint for readiness:
 
-devenv.nix
+**devenv.nix**
 
 ```nix
 {
@@ -321,7 +321,7 @@ devenv.nix
 
 Use systemd-style readiness notification. Your process should send `READY=1` to the socket path in `$NOTIFY_SOCKET`:
 
-devenv.nix
+**devenv.nix**
 
 ```nix
 {
@@ -341,7 +341,7 @@ devenv.nix
 
 All probe types support these timing options:
 
-devenv.nix
+**devenv.nix**
 
 ```nix
 {
@@ -368,7 +368,7 @@ When `listen` sockets or allocated `ports` are configured and no explicit probe 
 
 Automatically restart processes when files change:
 
-devenv.nix
+**devenv.nix**
 
 ```nix
 {
@@ -385,7 +385,7 @@ devenv.nix
 
 This works for both long-running processes and one-shot commands. A long-running process (such as `cargo run`) is restarted on each change. A one-shot command that exits immediately is re-run on each change — the watcher stays active after the command exits.
 
-devenv.nix
+**devenv.nix**
 
 ```nix
 {
@@ -399,9 +399,9 @@ devenv.nix
 }
 ```
 
-Path resolution
-
-`watch.paths` entries are resolved relative to the location of your `devenv.nix` (the project root), **not** relative to the process’s `cwd`. Use path literals such as `./src` rather than strings; they are passed to the watcher as absolute paths. The `cwd` option only sets the working directory for `exec`.
+> **Path resolution**
+>
+> `watch.paths` entries are resolved relative to the location of your `devenv.nix` (the project root), **not** relative to the process’s `cwd`. Use path literals such as `./src` rather than strings; they are passed to the watcher as absolute paths. The `cwd` option only sets the working directory for `exec`.
 
 ## Socket Activation
 
@@ -409,7 +409,7 @@ Path resolution
 
 Socket activation allows the process manager to bind sockets before starting your process. This enables zero-downtime restarts and lazy process startup.
 
-devenv.nix
+**devenv.nix**
 
 ```nix
 {
@@ -445,7 +445,7 @@ File descriptors start at 3 (after stdin, stdout, stderr). This is compatible wi
 
 Enable systemd-compatible watchdog monitoring. Your process must periodically send `WATCHDOG=1` to the notify socket, or it will be killed and restarted:
 
-devenv.nix
+**devenv.nix**
 
 ```nix
 {
@@ -464,7 +464,7 @@ devenv.nix
 
 Processes can reference the git repository root path using `${config.git.root}`, useful in monorepo environments:
 
-devenv.nix
+**devenv.nix**
 
 ```nix
 { config, ... }:
@@ -492,7 +492,7 @@ Devenv can automatically allocate free ports for your processes, preventing conf
 
 Define ports using `ports.<name>.allocate` with a base port number. Devenv will find a free port starting from that base, incrementing until one is available:
 
-devenv.nix
+**devenv.nix**
 
 ```nix
 { config, ... }:
@@ -551,7 +551,7 @@ The native manager is the best starting point and supports devenv’s complete p
 
 To switch:
 
-devenv.nix
+**devenv.nix**
 
 ```nix
 {

@@ -1,6 +1,6 @@
 <!-- source: https://devenv.sh/languages/python/
      upstream: docs/src/content/docs/languages/python.md
-     llms-full.txt lines 12782-13910 -->
+     llms-full.txt lines 11568-12586 -->
 
 # Python
 
@@ -106,9 +106,9 @@ This changes where devenv looks for files like `pyproject.toml`, `requirements.t
 
 devenv integrates with Python package managers to automatically install dependencies when you enter the shell.
 
-Poetry and uv are mutually exclusive
-
-You cannot enable both `poetry.install` and `uv.sync` at the same time.
+> **Poetry and uv are mutually exclusive**
+>
+> You cannot enable both `poetry.install` and `uv.sync` at the same time.
 
 ### uv
 

@@ -1,6 +1,6 @@
 <!-- source: https://devenv.sh/recipes/nix/
      upstream: docs/src/content/docs/recipes/nix.md
-     llms-full.txt lines 18112-18222 -->
+     llms-full.txt lines 16390-16488 -->
 
 # Nix
 
@@ -14,7 +14,7 @@ By default, new devenv projects are configured to use a fork of `nixpkgs` called
 
 For some packages that are updated frequently, you may want to use a more recent version from `nixpkgs-unstable`.
 
-devenv.yaml
+**devenv.yaml**
 
 ```yaml
 inputs:
@@ -24,7 +24,7 @@ inputs:
     url: github:NixOS/nixpkgs/nixpkgs-unstable
 ```
 
-devenv.nix
+**devenv.nix**
 
 ```nix
 { pkgs, inputs, ... }:
@@ -58,7 +58,7 @@ inputs:
 
 This example adds Elixir install scripts to `~/.mix/escripts`:
 
-devenv.nix
+**devenv.nix**
 
 ```nix
 { ... }:
@@ -76,7 +76,7 @@ devenv.nix
 
 If your project doesn’t need a C compiler toolchain, set [`stdenv`](/reference/options/#stdenv) to `pkgs.stdenvNoCC` to drop it from the shell. This saves a few hundred MB of storage and shell startup time:
 
-devenv.nix
+**devenv.nix**
 
 ```nix
 { pkgs, ... }: {
@@ -88,7 +88,7 @@ This is equivalent to using nixpkgs’ `mkShellNoCC` instead of `mkShell`.
 
 ### Escape Nix curly braces inside shell scripts
 
-devenv.nix
+**devenv.nix**
 
 ```nix
 { pkgs, ... }: {

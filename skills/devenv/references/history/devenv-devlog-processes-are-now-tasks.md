@@ -1,6 +1,6 @@
 <!-- source: https://devenv.sh/blog/2025/07/25/devenv-devlog-processes-are-now-tasks/
      upstream: docs/src/content/docs/blog/2025/07/25/devenv-devlog-processes-are-now-tasks.md
-     llms-full.txt lines 2418-2488 -->
+     llms-full.txt lines 2174-2234 -->
 
 # devenv devlog: Processes are now tasks
 
@@ -12,7 +12,7 @@ Now you can run tasks before or after a process runs - addressing a [frequently 
 
 ### Execute setup tasks before the process starts
 
-devenv.nix
+**devenv.nix**
 
 ```nix
 {
@@ -31,7 +31,7 @@ When you run `devenv up` or the individual process task, migrations run first.
 
 ### Run cleanup after the process stops
 
-devenv.nix
+**devenv.nix**
 
 ```nix
 {

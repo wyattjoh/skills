@@ -1,6 +1,6 @@
 <!-- source: https://devenv.sh/guides/migrating-to-2.0/
      upstream: docs/src/content/docs/guides/migrating-to-2.0.mdx
-     llms-full.txt lines 5566-5909 -->
+     llms-full.txt lines 5026-5343 -->
 
 # Migrating to devenv 2.0
 
@@ -12,7 +12,7 @@ devenv 2.0 replaces process-compose with a built-in Rust process manager. If you
 
 If you depend on process-compose features or want to keep using it during the transition:
 
-devenv.nix
+**devenv.nix**
 
 ```nix
 {
@@ -32,7 +32,7 @@ If you used `processes.<name>.process-compose` attributes, here’s how to trans
 
 process-compose uses `depends_on` with conditions. The native manager uses `after` with lifecycle suffixes:
 
-Before
+**Before**
 
 ```nix
 {
@@ -44,7 +44,7 @@ Before
 }
 ```
 
-After
+**After**
 
 ```nix
 {
@@ -65,7 +65,7 @@ After
 
 #### Restart policy
 
-Before
+**Before**
 
 ```nix
 {
@@ -79,7 +79,7 @@ Before
 }
 ```
 
-After
+**After**
 
 ```nix
 {
@@ -95,7 +95,7 @@ Note: `backoff_seconds` has no native equivalent. The native manager restarts im
 
 #### Environment variables and working directory
 
-Before
+**Before**
 
 ```nix
 {
@@ -106,7 +106,7 @@ Before
 }
 ```
 
-After
+**After**
 
 ```nix
 {
@@ -124,7 +124,7 @@ After
 
 The `ready` option works with both managers, so if you already use it, no changes are needed. If you used `process-compose.readiness_probe` directly:
 
-Before
+**Before**
 
 ```nix
 {
@@ -138,7 +138,7 @@ Before
 }
 ```
 
-After
+**After**
 
 ```nix
 {
@@ -152,7 +152,7 @@ After
 
 The native manager also supports HTTP probes and sd\_notify:
 
-Native-only probe types
+**Native-only probe types**
 
 ```nix
 {
@@ -168,7 +168,7 @@ Native-only probe types
 
 process-compose supports `liveness_probe` separately from `readiness_probe`. The native manager has no liveness probe — use `watchdog` as an alternative for long-running health monitoring:
 
-Before
+**Before**
 
 ```nix
 {
@@ -181,7 +181,7 @@ Before
 }
 ```
 
-After
+**After**
 
 ```nix
 {
@@ -205,7 +205,7 @@ exec myapp
 
 #### Shutdown signal
 
-Before
+**Before**
 
 ```nix
 {
@@ -217,7 +217,7 @@ Before
 
 Set the signal on the process itself. The setting applies to both the native manager and process-compose:
 
-After
+**After**
 
 ```nix
 {
@@ -231,7 +231,7 @@ After
 
 #### Elevated processes
 
-Before
+**Before**
 
 ```nix
 {
@@ -243,7 +243,7 @@ Before
 
 For specific privilege needs, use Linux capabilities instead:
 
-After
+**After**
 
 ```nix
 {
@@ -257,7 +257,7 @@ On first launch, devenv shows the requested capabilities and authenticates with 
 
 The `git-hooks` input is no longer included by default. If you use `git-hooks.hooks` in your `devenv.nix`, add the input explicitly:
 
-devenv.yaml
+**devenv.yaml**
 
 ```yaml
 inputs:

@@ -1,20 +1,20 @@
 <!-- source: https://devenv.sh/containers/
      upstream: docs/src/content/docs/containers.mdx
-     llms-full.txt lines 4485-4699 -->
+     llms-full.txt lines 4041-4243 -->
 
 # Containers
 
 **New in version 0.6**
 
-Note
-
-To be able to generate containers on macOS, you will need to use a remote Linux builder.
-
-The easiest ways to do so are:
-
-* [Nixcademy Tutorial: Build and Deploy Linux Systems from macOS](https://nixcademy.com/posts/macos-linux-builder/)
-* [Official Nixpkgs documentation: Set the remote builder up using Nix](https://nixos.org/manual/nixpkgs/unstable/#sec-darwin-builder).
-* [Official nix-darwin documentation: Use the nix-darwin linux-builder module](https://github.com/LnL7/nix-darwin/blob/master/modules/nix/linux-builder.nix).
+> **Note**
+>
+> To be able to generate containers on macOS, you will need to use a remote Linux builder.
+>
+> The easiest ways to do so are:
+>
+> * [Nixcademy Tutorial: Build and Deploy Linux Systems from macOS](https://nixcademy.com/posts/macos-linux-builder/)
+> * [Official Nixpkgs documentation: Set the remote builder up using Nix](https://nixos.org/manual/nixpkgs/unstable/#sec-darwin-builder).
+> * [Official nix-darwin documentation: Use the nix-darwin linux-builder module](https://github.com/LnL7/nix-darwin/blob/master/modules/nix/linux-builder.nix).
 
 To use ‘containers’ command, add the following dependencies:
 
@@ -40,7 +40,7 @@ See the [list of all container options](https://devenv.sh/reference/options/#con
 
 Given a simple environment, using Python:
 
-devenv.nix
+**devenv.nix**
 
 ```nix
 {
@@ -72,7 +72,7 @@ Type "help", "copyright", "credits" or "license" for more information.
 
 A common deployment strategy is to run each [process](/processes/) as an entrypoint to the container.
 
-devenv.nix
+**devenv.nix**
 
 ```nix
 {
@@ -109,7 +109,7 @@ $ devenv container run processes
 
 You can specify the command to run when the container starts (instead of entering the default development environment):
 
-devenv.nix
+**devenv.nix**
 
 ```nix
 {
@@ -130,7 +130,7 @@ $ devenv container run serve
 
 If you’re building binaries as part of the development environment, you can choose to only include those in the final image:
 
-devenv.nix
+**devenv.nix**
 
 ```nix
 {
@@ -165,7 +165,7 @@ $ devenv container --registry docker://registry.fly.io/ --copy-args="--dest-cred
 
 You can also specify these options declaratively:
 
-devenv.nix
+**devenv.nix**
 
 ```nix
 {
@@ -185,7 +185,7 @@ See this [fly.io example](https://github.com/cachix/devenv/tree/main/examples/fl
 
 If you want to provide the `openssl` package to native and container environments, but `git` only for native environments:
 
-devenv.nix
+**devenv.nix**
 
 ```nix
 { pkgs, config, lib, ... }:

@@ -1,6 +1,6 @@
 <!-- source: https://devenv.sh/guides/monorepo/
      upstream: docs/src/content/docs/guides/monorepo.mdx
-     llms-full.txt lines 5910-6086 -->
+     llms-full.txt lines 5344-5506 -->
 
 # Monorepo with Shared Configurations
 
@@ -8,9 +8,9 @@
 
 This guide shows how to structure a monorepo where multiple services share common configurations.
 
-Tip
-
-[Profiles](/profiles/) provide another powerful way to organize development environments by allowing different variations to activate automatically based on your hostname, username, or manually via CLI flags. They work particularly well with monorepo structures for managing team-specific or environment-specific configurations.
+> **Tip**
+>
+> [Profiles](/profiles/) provide another powerful way to organize development environments by allowing different variations to activate automatically based on your hostname, username, or manually via CLI flags. They work particularly well with monorepo structures for managing team-specific or environment-specific configurations.
 
 ## Project Structure
 
@@ -31,7 +31,7 @@ my-monorepo/
 
 Create a shared configuration with common settings:
 
-shared/devenv.nix
+**shared/devenv.nix**
 
 ```nix
 { pkgs, ... }: {
@@ -60,14 +60,14 @@ shared/devenv.nix
 
 Each service imports the shared configuration using an **absolute import path**. Paths starting with `/` are resolved from the repository root (where `.git` is located), allowing services in different directories to reference shared configurations consistently.
 
-services/api/devenv.yaml
+**services/api/devenv.yaml**
 
 ```yaml
 imports:
   - /shared
 ```
 
-services/api/devenv.nix
+**services/api/devenv.nix**
 
 ```nix
 { pkgs, ... }: {
@@ -93,14 +93,14 @@ services/api/devenv.nix
 
 ### Frontend Service
 
-services/frontend/devenv.yaml
+**services/frontend/devenv.yaml**
 
 ```yaml
 imports:
   - /shared
 ```
 
-services/frontend/devenv.nix
+**services/frontend/devenv.nix**
 
 ```nix
 { pkgs, ... }: {
@@ -123,7 +123,7 @@ When working in a monorepo, you often need to reference paths relative to the re
 
 This is particularly useful for running processes from specific directories:
 
-services/api/devenv.nix
+**services/api/devenv.nix**
 
 ```nix
 { pkgs, config, ... }: {

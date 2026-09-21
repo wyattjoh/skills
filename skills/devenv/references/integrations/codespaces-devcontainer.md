@@ -1,12 +1,12 @@
 <!-- source: https://devenv.sh/integrations/codespaces-devcontainer/
      upstream: docs/src/content/docs/integrations/codespaces-devcontainer.md
-     llms-full.txt lines 7707-7725 -->
+     llms-full.txt lines 7001-7019 -->
 
 # Codespaces Devcontainer
 
 To get started using [Codespaces](https://github.com/features/codespaces), flip a toggle:
 
-devenv.nix
+**devenv.nix**
 
 ```nix
 { pkgs, ... }:

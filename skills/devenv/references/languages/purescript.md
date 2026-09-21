@@ -1,6 +1,6 @@
 <!-- source: https://devenv.sh/languages/purescript/
      upstream: docs/src/content/docs/languages/purescript.md
-     llms-full.txt lines 12650-12781 -->
+     llms-full.txt lines 11450-11567 -->
 
 # purescript
 

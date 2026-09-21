@@ -1,6 +1,6 @@
 <!-- source: https://devenv.sh/lsp/
      upstream: docs/src/content/docs/lsp.md
-     llms-full.txt lines 16341-16368 -->
+     llms-full.txt lines 14753-14776 -->
 
 # Language Server
 

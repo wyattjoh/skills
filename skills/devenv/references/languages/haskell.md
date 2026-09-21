@@ -1,6 +1,6 @@
 <!-- source: https://devenv.sh/languages/haskell/
      upstream: docs/src/content/docs/languages/haskell.md
-     llms-full.txt lines 10097-10288 -->
+     llms-full.txt lines 9161-9332 -->
 
 # haskell
 

@@ -1,6 +1,6 @@
 <!-- source: https://devenv.sh/tests/
      upstream: docs/src/content/docs/tests.mdx
-     llms-full.txt lines 28654-28770 -->
+     llms-full.txt lines 25776-25884 -->
 
 # Tests
 
@@ -10,15 +10,15 @@ Running `devenv test` will build your environment and run the tests defined in `
 
 If you have [processes](/processes/) defined in your environment, they will be started and stopped for you.
 
-Consider using tasks for tests
-
-For more complex test setups with dependencies and better control, consider using [tasks with the `before` attribute](/tasks/#entershell--entertest). Tasks can be configured to run before `devenv:enterTest` and provide better parallelization and dependency management.
+> **Consider using tasks for tests**
+>
+> For more complex test setups with dependencies and better control, consider using [tasks with the `before` attribute](/tasks/#entershell--entertest). Tasks can be configured to run before `devenv:enterTest` and provide better parallelization and dependency management.
 
 ## Writing your first test
 
 A simple test would look like:
 
-devenv.nix
+**devenv.nix**
 
 ```nix
 { pkgs, ... }: {
@@ -47,7 +47,7 @@ By default, the `enterTest` detects if `.test.sh` file exists and runs it.
 
 If you have [processes](/processes/) defined in your environment, they will be started and stopped for you.
 
-devenv.nix
+**devenv.nix**
 
 ```nix
 { pkgs, ... }: {
@@ -91,7 +91,7 @@ ncdu 2.2
 
 **New in version 1.0.6**
 
-devenv.nix
+**devenv.nix**
 
 ```nix
 { pkgs, lib, config, ... }: {

@@ -1,6 +1,6 @@
 <!-- source: https://devenv.sh/languages/standardml/
      upstream: docs/src/content/docs/languages/standardml.md
-     llms-full.txt lines 15404-15493 -->
+     llms-full.txt lines 13916-13995 -->
 
 # standardml
 

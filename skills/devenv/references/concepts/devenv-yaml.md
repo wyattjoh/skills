@@ -1,6 +1,6 @@
 <!-- source: https://devenv.sh/reference/yaml-options/
      upstream: docs/src/content/docs/reference/yaml-options.mdx
-     llms-full.txt lines 18444-18761 -->
+     llms-full.txt lines 16650-16899 -->
 
 # devenv.yaml
 

@@ -1,6 +1,6 @@
 <!-- source: https://devenv.sh/languages/scala/
      upstream: docs/src/content/docs/languages/scala.md
-     llms-full.txt lines 15056-15241 -->
+     llms-full.txt lines 13606-13771 -->
 
 # scala
 

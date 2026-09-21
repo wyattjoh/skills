@@ -1,6 +1,6 @@
 <!-- source: https://devenv.sh/services/clickhouse/
      upstream: docs/src/content/docs/services/clickhouse.md
-     llms-full.txt lines 19715-19952 -->
+     llms-full.txt lines 17769-17980 -->
 
 # clickhouse
 

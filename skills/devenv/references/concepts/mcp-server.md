@@ -1,6 +1,6 @@
 <!-- source: https://devenv.sh/mcp/
      upstream: docs/src/content/docs/mcp.md
-     llms-full.txt lines 16369-16412 -->
+     llms-full.txt lines 14777-14810 -->
 
 # MCP Server
 

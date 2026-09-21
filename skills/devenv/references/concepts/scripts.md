@@ -1,6 +1,6 @@
 <!-- source: https://devenv.sh/scripts/
      upstream: docs/src/content/docs/scripts.md
-     llms-full.txt lines 18806-18987 -->
+     llms-full.txt lines 16940-17113 -->
 
 # Scripts
 
@@ -10,7 +10,7 @@ Questions arise as to where to define scripts and how to provide the tooling to 
 
 A simple example defining `silly-example` script:
 
-devenv.nix
+**devenv.nix**
 
 ```nix
 { pkgs, ... }:
@@ -51,7 +51,7 @@ scripts.foo.exec = ''
 
 Sometimes you need packages available only when a specific script runs, without adding them to the global environment. You can specify runtime packages using the `packages` attribute:
 
-devenv.nix
+**devenv.nix**
 
 ```nix
 { pkgs, ... }:
@@ -74,7 +74,7 @@ The `packages` attribute ensures these tools are available in the script’s PAT
 
 Alternatively, you can directly reference package paths in your script:
 
-devenv.nix
+**devenv.nix**
 
 ```nix
 { pkgs, ... }:
@@ -103,11 +103,11 @@ Entering shell ...
 
 Scripts can also execute using a package and have a description, which can be useful in your `enterShell`.
 
-Consider using tasks for shell initialization
+> **Consider using tasks for shell initialization**
+>
+> For operations that need to run when entering the shell, consider using [tasks with the `before` attribute](/tasks/#entershell--entertest) instead of `enterShell`. Tasks provide better control over execution order and dependencies.
 
-For operations that need to run when entering the shell, consider using [tasks with the `before` attribute](/tasks/#entershell--entertest) instead of `enterShell`. Tasks provide better control over execution order and dependencies.
-
-devenv.nix
+**devenv.nix**
 
 ```nix
 { pkgs, config, lib, ... }:

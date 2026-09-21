@@ -1,6 +1,6 @@
 <!-- source: https://devenv.sh/languages/ruby/
      upstream: docs/src/content/docs/languages/ruby.md
-     llms-full.txt lines 14169-14380 -->
+     llms-full.txt lines 12815-13006 -->
 
 # ruby
 

@@ -1,6 +1,6 @@
 <!-- source: https://devenv.sh/languages/opentofu/
      upstream: docs/src/content/docs/languages/opentofu.md
-     llms-full.txt lines 11849-11938 -->
+     llms-full.txt lines 10729-10808 -->
 
 # opentofu
 

@@ -1,6 +1,6 @@
 <!-- source: https://devenv.sh/services/httpbin/
      upstream: docs/src/content/docs/services/httpbin.md
-     llms-full.txt lines 20939-21006 -->
+     llms-full.txt lines 18861-18920 -->
 
 # httpbin
 

@@ -1,6 +1,6 @@
 <!-- source: https://devenv.sh/integrations/wordpress/
      upstream: docs/src/content/docs/integrations/wordpress.md
-     llms-full.txt lines 8424-8713 -->
+     llms-full.txt lines 7664-7931 -->
 
 # WordPress
 
@@ -18,7 +18,7 @@ This guide sets up a local WordPress development environment with:
 
 ## Configuration
 
-devenv.nix
+**devenv.nix**
 
 ```nix
 { pkgs, config, ... }:

@@ -1,6 +1,6 @@
 <!-- source: https://devenv.sh/blog/2024/10/03/devenv-13-instant-developer-environments-with-nix-caching/
      upstream: docs/src/content/docs/blog/2024/10/03/devenv-13-instant-developer-environments-with-nix-caching.md
-     llms-full.txt lines 1374-1472 -->
+     llms-full.txt lines 1242-1328 -->
 
 # devenv 1.3: Instant developer environments with Nix caching
 
@@ -14,9 +14,9 @@ If any of the automatically-detected inputs change, the cache is invalidated and
 
 ![Caching comparison](/assets/images/caching.gif)
 
-Note
-
-If you run into any issues, run devenv with `--refresh-eval-cache` and report [an issue](https://github.com/cachix/devenv/issues/new?assignees=\&labels=bug\&projects=\&template=bug_report.md\&title=).
+> **Note**
+>
+> If you run into any issues, run devenv with `--refresh-eval-cache` and report [an issue](https://github.com/cachix/devenv/issues/new?assignees=\&labels=bug\&projects=\&template=bug_report.md\&title=).
 
 ## How does it work?
 

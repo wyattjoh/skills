@@ -1,6 +1,6 @@
 <!-- source: https://devenv.sh/languages/crystal/
      upstream: docs/src/content/docs/languages/crystal.md
-     llms-full.txt lines 9075-9200 -->
+     llms-full.txt lines 8255-8366 -->
 
 # crystal
 

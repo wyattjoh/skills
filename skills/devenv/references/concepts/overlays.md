@@ -1,6 +1,6 @@
 <!-- source: https://devenv.sh/overlays/
      upstream: docs/src/content/docs/overlays.mdx
-     llms-full.txt lines 16509-16642 -->
+     llms-full.txt lines 14899-15018 -->
 
 # Overlays
 

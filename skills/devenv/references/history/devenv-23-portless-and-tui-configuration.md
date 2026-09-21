@@ -1,6 +1,6 @@
 <!-- source: https://devenv.sh/blog/2026/09/07/devenv-23-portless-and-tui-configuration/
      upstream: docs/src/content/docs/blog/2026/09/07/devenv-23-portless-and-tui-configuration.md
-     llms-full.txt lines 4066-4251 -->
+     llms-full.txt lines 3658-3827 -->
 
 # devenv 2.3: Portless and TUI configuration
 
@@ -12,7 +12,7 @@
 
 Enable the localhost proxy and declare a port for your web server ([devenv#3141](https://github.com/cachix/devenv/pull/3141)):
 
-devenv.nix
+**devenv.nix**
 
 ```nix
 { pkgs, config, ... }:
@@ -38,7 +38,7 @@ On Linux, devenv asks for sudo authentication to let the proxy listen on port 80
 
 Override a process’s hostname with a full `.localhost` name:
 
-devenv.nix
+**devenv.nix**
 
 ```nix
 {
@@ -48,7 +48,7 @@ devenv.nix
 
 Processes with multiple named ports get routes such as `http://admin.app.localhost`. Each port can also have its own hostname:
 
-devenv.nix
+**devenv.nix**
 
 ```nix
 {
@@ -61,7 +61,7 @@ devenv.nix
 
 Enable HTTPS per process:
 
-devenv.nix
+**devenv.nix**
 
 ```nix
 {
@@ -80,7 +80,7 @@ See [friendly localhost URLs](/processes/#friendly-localhost-urls) for the full 
 
 For services that need to bind a privileged port themselves, the native process manager can grant Linux capabilities while the service keeps running as your user ([devenv#3151](https://github.com/cachix/devenv/pull/3151)):
 
-devenv.nix
+**devenv.nix**
 
 ```nix
 {
@@ -97,7 +97,7 @@ devenv shows the requested capabilities and authenticates with `sudo` once.
 
 Two common requests since 2.0: let me keep my own shell prompt, and let me hide the statusline. In 2.3, you can do both ([devenv#3117](https://github.com/cachix/devenv/pull/3117)):
 
-\~/.config/devenv/config.yaml
+**\~/.config/devenv/config.yaml**
 
 ```yaml
 version: 1
@@ -122,7 +122,7 @@ The log viewer also gained fullscreen search with highlighted matches, vim style
 
 devenv 2.2 introduced [nixpkgs-multiverse](https://github.com/fzakaria/nixpkgs-multiverse) pins such as `multiverse.cmake."3.16.5"`. Each pin resolved on its own, so five pins could mean five nixpkgs revisions to fetch and evaluate. `multiverse.pins` resolves the whole set through the fewest revisions that can serve every requested version:
 
-devenv.nix
+**devenv.nix**
 
 ```nix
 { multiverse, ... }:

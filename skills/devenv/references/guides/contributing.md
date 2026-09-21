@@ -1,6 +1,6 @@
 <!-- source: https://devenv.sh/community/contributing/
      upstream: docs/src/content/docs/community/contributing.md
-     llms-full.txt lines 4331-4425 -->
+     llms-full.txt lines 3901-3983 -->
 
 # Contributing
 

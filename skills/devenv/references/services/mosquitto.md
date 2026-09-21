@@ -1,6 +1,6 @@
 <!-- source: https://devenv.sh/services/mosquitto/
      upstream: docs/src/content/docs/services/mosquitto.md
-     llms-full.txt lines 23008-23158 -->
+     llms-full.txt lines 20716-20854 -->
 
 # mosquitto
 

@@ -1,6 +1,6 @@
 <!-- source: https://devenv.sh/packages/
      upstream: docs/src/content/docs/packages.mdx
-     llms-full.txt lines 16643-16811 -->
+     llms-full.txt lines 15019-15179 -->
 
 # Packages
 
@@ -8,7 +8,7 @@ Packages allow you to add executables and libraries/headers to your environment.
 
 To declare packages, refer to the `pkgs` input and specify `packages` as a list: Add packages to the `packages` list
 
-devenv.nix
+**devenv.nix**
 
 ```nix
 { pkgs, ... }:
@@ -45,7 +45,7 @@ Nixpkgs splits many packages into several outputs, such as `bin`, `dev`, `lib`, 
 
 To get exactly one output, select it explicitly:
 
-devenv.nix
+**devenv.nix**
 
 ```nix
 { pkgs, ... }:
@@ -68,7 +68,7 @@ devenv inputs add nixpkgs-multiverse github:fzakaria/nixpkgs-multiverse
 
 Packages are then available by their Nixpkgs attribute and version:
 
-devenv.nix
+**devenv.nix**
 
 ```nix
 { pkgs, multiverse, ... }:
@@ -94,7 +94,7 @@ A multiverse costs one fetch and one evaluation per Nixpkgs revision it touches,
 
 `multiverse.pins` takes the whole set at once, resolves it through the fewest revisions that can serve it, and returns the packages:
 
-devenv.nix
+**devenv.nix**
 
 ```nix
 { multiverse, ... }:
@@ -114,6 +114,8 @@ The `mvs solve` command spells out the plan behind the answer from a terminal, a
 Multiverse indexes top-level package attributes from published Nixpkgs releases and `nixos-unstable` channel revisions. If a package or version is not indexed, you can still [fetch it from another nixpkgs input](/recipes/nix/).
 
 ## Searching
+
+Use the site search (Ctrl+K, or Cmd+K on macOS) to search **Docs**, **Options**, and **Packages** together with one query. Results are grouped by source and load independently. Options and packages come from the public `mcp.devenv.sh` catalog, with a suggested match followed by other results. Package versions in that catalog may differ from your project’s pinned input. Use the command below to search your project’s exact Nixpkgs version.
 
 To search for available packages, use `devenv search <NAME>`:
 

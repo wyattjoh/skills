@@ -1,6 +1,6 @@
 <!-- source: https://devenv.sh/services/redis/
      upstream: docs/src/content/docs/services/redis.md
-     llms-full.txt lines 25487-25594 -->
+     llms-full.txt lines 22957-23052 -->
 
 # redis
 

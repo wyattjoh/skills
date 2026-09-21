@@ -1,6 +1,6 @@
 <!-- source: https://devenv.sh/inputs/
      upstream: docs/src/content/docs/inputs.md
-     llms-full.txt lines 6771-6978 -->
+     llms-full.txt lines 6145-6330 -->
 
 # Inputs
 
@@ -10,7 +10,7 @@ Think of inputs as dependency management for your developer environment.
 
 If you omit `devenv.yaml`, it defaults to:
 
-devenv.yaml
+**devenv.yaml**
 
 ```yaml
 inputs:
@@ -24,7 +24,7 @@ The dependencies you mention as `inputs` are passed as an argument to the functi
 
 For example, if you have a `devenv.yaml` file like:
 
-devenv.yaml
+**devenv.yaml**
 
 ```yaml
 inputs:
@@ -34,7 +34,7 @@ inputs:
 
 You can access the stable packages via the `inputs` field:
 
-devenv.nix
+**devenv.nix**
 
 ```nix
 { inputs, pkgs, ... }:
@@ -54,7 +54,7 @@ See [basics](/basics/) for more about `devenv.nix`.
 
 There are a few special inputs passed into `devenv.nix`:
 
-devenv.nix
+**devenv.nix**
 
 ```nix
 { pkgs, lib, config, ... }:
@@ -73,9 +73,9 @@ devenv.nix
 * `lib` is [a collection of functions for working with Nix data structures](https://nixos.org/manual/nixpkgs/stable/#sec-functions-library). You can use [noogle](https://noogle.dev/) to search for a function.
 * `config` is the final resolved configuration for your developer environment, which you can use to reference any other options set in [devenv.nix](/reference/options/). Since Nix supports lazy evaluation, you can reference any option you define in the same file as long as it doesn’t reference itself!
 
-Note
-
-`...` is a catch-all pattern for any additional inputs, so you can safely omit the inputs you’re not using.
+> **Note**
+>
+> `...` is a catch-all pattern for any additional inputs, so you can safely omit the inputs you’re not using.
 
 See [devenv.yaml reference](/reference/yaml-options/) for all supported input options.
 

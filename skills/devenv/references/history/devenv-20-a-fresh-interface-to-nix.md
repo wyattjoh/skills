@@ -1,6 +1,6 @@
 <!-- source: https://devenv.sh/blog/2026/03/05/devenv-20-a-fresh-interface-to-nix/
      upstream: docs/src/content/docs/blog/2026/03/05/devenv-20-a-fresh-interface-to-nix.md
-     llms-full.txt lines 3228-3522 -->
+     llms-full.txt lines 2916-3180 -->
 
 # devenv 2.0: A Fresh Interface to Nix
 
@@ -28,7 +28,7 @@ With native shell, you save a file, devenv rebuilds in the background, a status 
 
 An example empty environment with only `joe` package:
 
-devenv.nix
+**devenv.nix**
 
 ```nix
 { pkgs, ... }:
@@ -50,7 +50,7 @@ devenv 2.0 ships a built in Rust process manager that replaces process-compose.
 
 [Dependency ordering](/processes/#dependencies), [restart policies](/processes/#restart-policies), [readiness probes](/processes/#ready-probes) (exec, HTTP, and systemd notify), [systemd socket activation](/processes/#socket-activation), [watchdog heartbeats](/processes/#watchdog), [file watching](/processes/#file-watching), and [port allocation](/processes/#automatic-port-allocation). All declarative, all in one place. Dependencies use `@ready` by default (wait for the probe to pass) or `@completed` (wait for the process to exit). You can freely mix [processes](/processes/) and [tasks](/tasks/) in the same dependency chains.
 
-devenv.nix
+**devenv.nix**
 
 ```nix
 { pkgs, config, ... }:
@@ -112,7 +112,7 @@ Most teams don’t live in a single repo. You have a backend in one repository, 
 
 Referencing outputs from another devenv project was the [third most upvoted issue](https://github.com/cachix/devenv/issues/1438). Now you can reference any option or output from another project through [`inputs.<name>.devenv.config`](/inputs/):
 
-devenv.yaml
+**devenv.yaml**
 
 ```yaml
 inputs:
@@ -121,7 +121,7 @@ inputs:
     flake: false
 ```
 
-devenv.nix
+**devenv.nix**
 
 ```nix
 { inputs, ... }:
@@ -158,7 +158,7 @@ devenv 2.0 fixes both problems.
 
 Define named [ports](/processes/#automatic-port-allocation) and devenv finds free ones automatically:
 
-devenv.nix
+**devenv.nix**
 
 ```nix
 { config, ... }:
@@ -181,7 +181,7 @@ Here’s the thing: because password managers prompt for credentials before givi
 
 Let’s declare some secrets:
 
-secretspec.toml
+**secretspec.toml**
 
 ```toml
 [project]

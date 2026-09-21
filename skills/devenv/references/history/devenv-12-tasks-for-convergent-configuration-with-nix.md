@@ -1,6 +1,6 @@
 <!-- source: https://devenv.sh/blog/2024/09/24/devenv-12-tasks-for-convergent-configuration-with-nix/
      upstream: docs/src/content/docs/blog/2024/09/24/devenv-12-tasks-for-convergent-configuration-with-nix.md
-     llms-full.txt lines 1291-1373 -->
+     llms-full.txt lines 1165-1241 -->
 
 # devenv 1.2: Tasks for convergent configuration with Nix
 
@@ -16,7 +16,7 @@ To bridge this gap and make Nix more versatile, we’re introducing tasks. These
 
 For example if you’d like to execute python code after virtualenv has been created:
 
-devenv.nix
+**devenv.nix**
 
 ```nix
 { pkgs, lib, config, ... }: {
@@ -50,7 +50,7 @@ While devenv already addresses (1), bridging **the gap between Nix provided deve
 
 We’ve designed [Task Server Protocol](https://github.com/cachix/devenv/issues/1457) so that you can write tasks using your existing automation by providing an executable that exposes the tasks to devenv:
 
-devenv.nix
+**devenv.nix**
 
 ```nix
 { pkgs, ... }:

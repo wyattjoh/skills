@@ -1,6 +1,6 @@
 <!-- source: https://devenv.sh/languages/lean4/
      upstream: docs/src/content/docs/languages/lean4.md
-     llms-full.txt lines 11303-11350 -->
+     llms-full.txt lines 10245-10286 -->
 
 # lean4
 

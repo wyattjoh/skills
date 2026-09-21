@@ -1,6 +1,6 @@
 <!-- source: https://devenv.sh/languages/hare/
      upstream: docs/src/content/docs/languages/hare.md
-     llms-full.txt lines 10067-10096 -->
+     llms-full.txt lines 9135-9160 -->
 
 # hare
 

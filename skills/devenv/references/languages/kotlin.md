@@ -1,6 +1,6 @@
 <!-- source: https://devenv.sh/languages/kotlin/
      upstream: docs/src/content/docs/languages/kotlin.md
-     llms-full.txt lines 11231-11302 -->
+     llms-full.txt lines 10181-10244 -->
 
 # kotlin
 

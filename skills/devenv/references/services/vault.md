@@ -1,6 +1,6 @@
 <!-- source: https://devenv.sh/services/vault/
      upstream: docs/src/content/docs/services/vault.md
-     llms-full.txt lines 27050-27169 -->
+     llms-full.txt lines 24360-24465 -->
 
 # vault
 

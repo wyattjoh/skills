@@ -1,6 +1,6 @@
 <!-- source: https://devenv.sh/creating-files/
      upstream: docs/src/content/docs/creating-files.mdx
-     llms-full.txt lines 4700-4919 -->
+     llms-full.txt lines 4244-4443 -->
 
 # Declarative files
 
@@ -27,7 +27,7 @@ devenv supports multiple file formats out of the box:
 
 ### JSON Files
 
-devenv.nix
+**devenv.nix**
 
 ```nix
 {
@@ -55,7 +55,7 @@ This creates a `config.json` file:
 
 ### YAML Files
 
-devenv.nix
+**devenv.nix**
 
 ```nix
 {
@@ -73,7 +73,7 @@ devenv.nix
 
 ### TOML Files
 
-devenv.nix
+**devenv.nix**
 
 ```nix
 {
@@ -90,7 +90,7 @@ devenv.nix
 
 ### INI Files
 
-devenv.nix
+**devenv.nix**
 
 ```nix
 {
@@ -110,7 +110,7 @@ devenv.nix
 
 For plain text files, simply provide a string:
 
-devenv.nix
+**devenv.nix**
 
 ```nix
 {
@@ -125,7 +125,7 @@ devenv.nix
 
 You can make any file executable by setting the `executable` attribute:
 
-devenv.nix
+**devenv.nix**
 
 ```nix
 {
@@ -150,7 +150,7 @@ This is particularly useful for:
 
 By default, files are symlinked to a read-only path in the Nix store, so they cannot be edited. Set the `copyMode` attribute to materialize an editable file instead:
 
-devenv.nix
+**devenv.nix**
 
 ```nix
 {
@@ -180,7 +180,7 @@ The `copyMode` attribute accepts:
 
 Files can be created in nested directories by specifying the path:
 
-devenv.nix
+**devenv.nix**
 
 ```nix
 {

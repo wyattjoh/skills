@@ -1,16 +1,16 @@
 <!-- source: https://devenv.sh/integrations/direnv/
      upstream: docs/src/content/docs/integrations/direnv.mdx
-     llms-full.txt lines 7798-7959 -->
+     llms-full.txt lines 7092-7239 -->
 
 # Direnv
 
-devenv now supports native auto activation without direnv
-
-As of devenv 2.0, `devenv shell` supports **native shell reloading** and [`devenv hook`](/auto-activation/) provides **automatic activation when switching directories** with no external dependencies.
-
-For most workflows, `devenv shell` combined with `devenv hook` is the recommended approach. direnv is still useful if you prefer in place environment modification without a subshell.
-
-See the [auto activation guide](/auto-activation/) for setup instructions.
+> **devenv now supports native auto activation without direnv**
+>
+> As of devenv 2.0, `devenv shell` supports **native shell reloading** and [`devenv hook`](/auto-activation/) provides **automatic activation when switching directories** with no external dependencies.
+>
+> For most workflows, `devenv shell` combined with `devenv hook` is the recommended approach. direnv is still useful if you prefer in place environment modification without a subshell.
+>
+> See the [auto activation guide](/auto-activation/) for setup instructions.
 
 You can configure `devenv` to **seamlessly switch development environments** when navigating between project directories.
 
@@ -26,7 +26,7 @@ Create an `.envrc` file in your project directory with the following content:
 
 * v1.4+
 
-  .envrc
+  **.envrc**
 
   ```bash
   #!/usr/bin/env bash
@@ -40,7 +40,7 @@ Create an `.envrc` file in your project directory with the following content:
 
 * v1.3 and older
 
-  .envrc
+  **.envrc**
 
   ```bash
   #!/usr/bin/env bash
@@ -52,9 +52,9 @@ Create an `.envrc` file in your project directory with the following content:
 
 This file configures direnv to use devenv for shell activation.
 
-Note
-
-`devenv init` does not create a `.envrc` file by default.
+> **Note**
+>
+> `devenv init` does not create a `.envrc` file by default.
 
 **New in version 2.2**
 

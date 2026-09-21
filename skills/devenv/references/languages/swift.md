@@ -1,6 +1,6 @@
 <!-- source: https://devenv.sh/languages/swift/
      upstream: docs/src/content/docs/languages/swift.md
-     llms-full.txt lines 15494-15583 -->
+     llms-full.txt lines 13996-14075 -->
 
 # swift
 

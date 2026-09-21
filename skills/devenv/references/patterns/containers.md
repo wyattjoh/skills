@@ -1,6 +1,6 @@
 <!-- source: https://devenv.sh/recipes/containers/
      upstream: docs/src/content/docs/recipes/containers.md
-     llms-full.txt lines 17896-17917 -->
+     llms-full.txt lines 16192-16209 -->
 
 # Containers
 
@@ -8,7 +8,7 @@
 
 ### Exclude packages from a container
 
-devenv.nix
+**devenv.nix**
 
 ```nix
 { pkgs, lib, config, ... }: {

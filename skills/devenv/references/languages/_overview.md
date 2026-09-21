@@ -1,6 +1,6 @@
 <!-- source: https://devenv.sh/languages/
      upstream: docs/src/content/docs/languages/index.md
-     llms-full.txt lines 8714-8750 -->
+     llms-full.txt lines 7932-7966 -->
 
 # Overview
 
@@ -8,7 +8,7 @@
 
 What if you could have the tooling for any programming language by flipping a toggle?
 
-devenv.nix
+**devenv.nix**
 
 ```nix
 { pkgs, ... }:

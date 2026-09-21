@@ -1,6 +1,6 @@
 <!-- source: https://devenv.sh/integrations/github-actions/
      upstream: docs/src/content/docs/integrations/github-actions.md
-     llms-full.txt lines 8006-8199 -->
+     llms-full.txt lines 7286-7463 -->
 
 # Using devenv in GitHub Actions
 
@@ -16,7 +16,7 @@ Devenv allows you to reuse your existing development environment in your [GitHub
 
 This guide will go through the steps required to set up devenv in a [GitHub Actions](https://docs.github.com/actions) workflow and show you how to run commands in the devenv shell. We’ll use the following sample devenv configuration in our examples.
 
-devenv.nix
+**devenv.nix**
 
 ```nix
 { pkgs, ... }:
@@ -75,7 +75,7 @@ Single commands can be passed to `devenv shell` to be run in the devenv shell.
   run: devenv shell hello
 ```
 
-Output
+**Output**
 
 ```console
 Building shell ...
@@ -90,13 +90,13 @@ Instead, we can use the [`shell` option](https://docs.github.com/en/actions/usin
 
 ```yaml
 - name: Run a multi-line command in the devenv shell
-  shell: devenv shell bash -- -e {0}
+  shell: devenv shell -- bash -e {0}
   run: |
     hello
     say-bye
 ```
 
-Output
+**Output**
 
 ```console
 Building shell ...
@@ -109,7 +109,7 @@ Overriding the shell can become quite tedious when you have a lot of separate `r
 ```yaml
 defaults:
   run:
-    shell: devenv shell bash -- -e {0}
+    shell: devenv shell -- bash -e {0}
 ```
 
 When setting the default shell, the “Install devenv.sh” step must be amended as follows, so that it does not attempt to use a devenv shell:
@@ -124,7 +124,7 @@ When setting the default shell, the “Install devenv.sh” step must be amended
 
 Let’s put all of the above together in a complete example workflow.
 
-.github/workflows/test.yml
+**.github/workflows/test.yml**
 
 ```yaml
 name: "Test"
@@ -156,7 +156,7 @@ jobs:
       run: devenv shell hello
 
     - name: Run a multi-line command in the devenv shell
-      shell: devenv shell bash -- -e {0}
+      shell: devenv shell -- bash -e {0}
       run: |
         hello
         say-bye

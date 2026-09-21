@@ -1,6 +1,6 @@
 <!-- source: https://devenv.sh/languages/dart/
      upstream: docs/src/content/docs/languages/dart.md
-     llms-full.txt lines 9291-9338 -->
+     llms-full.txt lines 8447-8488 -->
 
 # dart
 

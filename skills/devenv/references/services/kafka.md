@@ -1,6 +1,6 @@
 <!-- source: https://devenv.sh/services/kafka/
      upstream: docs/src/content/docs/services/kafka.md
-     llms-full.txt lines 21099-21638 -->
+     llms-full.txt lines 19003-19484 -->
 
 # kafka
 

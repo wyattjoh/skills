@@ -1,6 +1,6 @@
 <!-- source: https://devenv.sh/languages/racket/
      upstream: docs/src/content/docs/languages/racket.md
-     llms-full.txt lines 14043-14090 -->
+     llms-full.txt lines 12705-12746 -->
 
 # racket
 

@@ -1,6 +1,6 @@
 <!-- source: https://devenv.sh/services/
      upstream: docs/src/content/docs/services/index.md
-     llms-full.txt lines 18988-19037 -->
+     llms-full.txt lines 17114-17159 -->
 
 # Overview
 
@@ -10,7 +10,7 @@ Services are a higher-level abstraction over [processes](/processes/). While pro
 
 Here’s an example starting PostgreSQL with a few extensions:
 
-devenv.nix
+**devenv.nix**
 
 ```nix
 { pkgs, ... }:

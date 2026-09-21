@@ -1,6 +1,6 @@
 <!-- source: https://devenv.sh/languages/typst/
      upstream: docs/src/content/docs/languages/typst.md
-     llms-full.txt lines 15893-16006 -->
+     llms-full.txt lines 14353-14454 -->
 
 # typst
 

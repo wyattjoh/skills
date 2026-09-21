@@ -1,6 +1,6 @@
 <!-- source: https://devenv.sh/pinning/
      upstream: docs/src/content/docs/pinning.md
-     llms-full.txt lines 16812-16954 -->
+     llms-full.txt lines 15180-15308 -->
 
 # Pinning
 
@@ -10,7 +10,7 @@ Pinning keeps your developer environment reproducible. Each [input](/inputs/) in
 
 You declare inputs in `devenv.yaml`:
 
-devenv.yaml
+**devenv.yaml**
 
 ```yaml
 inputs:
@@ -40,7 +40,7 @@ $ devenv inputs add nixpkgs-multiverse github:fzakaria/nixpkgs-multiverse
 
 Then select packages by attribute and version in `devenv.nix`:
 
-devenv.nix
+**devenv.nix**
 
 ```nix
 { multiverse, ... }:
@@ -57,7 +57,7 @@ devenv.nix
 
 Each pin resolves independently, and multiple pins may require multiple nixpkgs revisions to be fetched and evaluated, adding overhead. `multiverse.pins` resolves the entire set using the fewest revisions possible.
 
-devenv.nix
+**devenv.nix**
 
 ```nix
 { multiverse, ... }:
@@ -76,7 +76,7 @@ See [Pinning several packages](/packages/#pinning-several-packages) for what min
 
 Use `?rev=` in the input URL for an exact commit:
 
-devenv.yaml
+**devenv.yaml**
 
 ```yaml
 inputs:
@@ -86,7 +86,7 @@ inputs:
 
 Use `?ref=` for a branch or tag (for example the NixOS 25.05 release branch):
 
-devenv.yaml
+**devenv.yaml**
 
 ```yaml
 inputs:

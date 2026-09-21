@@ -1,6 +1,6 @@
 <!-- source: https://devenv.sh/composing-using-imports/
      upstream: docs/src/content/docs/composing-using-imports.mdx
-     llms-full.txt lines 4430-4484 -->
+     llms-full.txt lines 3988-4040 -->
 
 # Composing using imports
 
@@ -8,7 +8,7 @@ You can compose environments either locally or by referencing [inputs](/inputs/)
 
 Imagine you’re building a typical web application, with separate frontend and backend components that live in separate folders.
 
-devenv.yaml
+**devenv.yaml**
 
 ```yaml
 inputs:
@@ -36,7 +36,7 @@ Composing `devenv.yaml` files is now supported for local files (relative and abs
 
 To keep your devenv configuration in a separate repository, for example when working on a team that doesn’t use devenv, declare it as a `path:` input and import it:
 
-devenv.yaml
+**devenv.yaml**
 
 ```yaml
 inputs:

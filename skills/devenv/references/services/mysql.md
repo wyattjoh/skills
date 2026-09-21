@@ -1,6 +1,6 @@
 <!-- source: https://devenv.sh/services/mysql/
      upstream: docs/src/content/docs/services/mysql.md
-     llms-full.txt lines 23159-23440 -->
+     llms-full.txt lines 20855-21108 -->
 
 # mysql
 

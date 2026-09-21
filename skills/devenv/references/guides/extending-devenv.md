@@ -1,12 +1,12 @@
 <!-- source: https://devenv.sh/extending/
      upstream: docs/src/content/docs/extending.md
-     llms-full.txt lines 5034-5112 -->
+     llms-full.txt lines 4556-4632 -->
 
 # Extending devenv
 
 Projects can encode their best practices by creating custom modules with opinionated defaults in a central repository:
 
-devenv.nix
+**devenv.nix**
 
 ```nix
 { lib, config, pkgs, ... }: {
@@ -35,7 +35,7 @@ devenv.nix
 
 Once you have your best practices module defined, you can start using it in new projects:
 
-devenv.yaml
+**devenv.yaml**
 
 ```yaml
 inputs:
@@ -48,9 +48,9 @@ imports:
 
 This automatically includes your centrally managed module. Since options default to `false`, you’ll need to enable them per project.
 
-Profiles
-
-You can enable common defaults globally and use [profiles](/profiles/) to activate additional components on demand.
+> **Profiles**
+>
+> You can enable common defaults globally and use [profiles](/profiles/) to activate additional components on demand.
 
 ## Module Replacement
 

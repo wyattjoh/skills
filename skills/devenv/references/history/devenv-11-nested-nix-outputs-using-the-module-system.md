@@ -1,6 +1,6 @@
 <!-- source: https://devenv.sh/blog/2024/09/11/devenv-11-nested-nix-outputs-using-the-module-system/
      upstream: docs/src/content/docs/blog/2024/09/11/devenv-11-nested-nix-outputs-using-the-module-system.md
-     llms-full.txt lines 1193-1290 -->
+     llms-full.txt lines 1075-1164 -->
 
 # devenv 1.1: Nested Nix outputs using the module system
 
@@ -14,7 +14,7 @@ This allows exposing Nix packages for installation/consumption by other tools.
 
 If you have a devenv with outputs like this:
 
-devenv.nix
+**devenv.nix**
 
 ```nix
 { pkgs, ... }: {
@@ -48,7 +48,7 @@ By default, any derivation specified in `outputs` nested attributes set is recog
 
 You can define custom options as output types in `devenv`. These will be automatically detected and built:
 
-devenv.nix
+**devenv.nix**
 
 ```nix
 { pkgs, lib, config, ... }: {

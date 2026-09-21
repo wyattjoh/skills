@@ -1,6 +1,6 @@
 <!-- source: https://devenv.sh/languages/idris/
      upstream: docs/src/content/docs/languages/idris.md
-     llms-full.txt lines 10409-10504 -->
+     llms-full.txt lines 9441-9526 -->
 
 # idris
 

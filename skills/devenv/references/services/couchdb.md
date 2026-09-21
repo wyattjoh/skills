@@ -1,6 +1,6 @@
 <!-- source: https://devenv.sh/services/couchdb/
      upstream: docs/src/content/docs/services/couchdb.md
-     llms-full.txt lines 20037-20248 -->
+     llms-full.txt lines 18055-18244 -->
 
 # couchdb
 
