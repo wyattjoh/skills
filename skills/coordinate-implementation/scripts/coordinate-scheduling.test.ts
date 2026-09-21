@@ -391,6 +391,7 @@ describe("event-driven scheduling documentation", () => {
     expect(helper.includes("stall.assessment.evaluate")).toBe(true);
     expect(helper.includes("stall.assessment.apply")).toBe(true);
     expect(stall.includes("jev-1.13.0")).toBe(true);
+    expect(stall.includes("Normalize Herdr `done` to `worker.status: idle`")).toBe(true);
     expect(stall.includes("Do not normalize invalid probabilities")).toBe(true);
     expect(resume.includes("## Stall evidence")).toBe(true);
     expect(skill.includes("CronCreate")).toBe(false);

@@ -226,18 +226,17 @@ remaining blocked ticket:
 2. **Wait.** Call `herdr.wait_any` once with every active worker,
    `coordinator: null`, and a bounded timeout. It subscribes before snapshotting.
    Persist refreshed pane ids from its complete worker snapshot. On `pane_exited`,
-   act on the named runtime. On `status: idle`, first verify a clean worktree and
-   at least one ticket commit beyond the current base; run the enforced TypeSafe
-   lifecycle from [stall-check.md](references/stall-check.md) when either check
-   fails. On `status: done`, or review-ready `idle`, continue to review. On
+   act on the named runtime. On `status: idle` or `status: done`, first verify a
+   clean worktree and at least one ticket commit beyond the current base; run the
+   enforced TypeSafe lifecycle from [stall-check.md](references/stall-check.md)
+   when either check fails. Continue to review only when both checks pass. On
    `timeout`, run the same TypeSafe prepare/evaluate/apply lifecycle for each
    working runtime before snapshot-integrity and base checks, run one scheduling
    pass, then issue another bounded wait. Do not create cron jobs, shell wait loops, background
    monitors, or harness-native tasks.
-3. **Review** when wait-any returns a done implementor or an idle implementor
-   whose worktree is clean and branch has at least one ticket commit beyond the
-   current base. A non-review-ready idle worker goes through the stall lifecycle
-   instead. Invoke `snapshot.check` first and do not begin review or landing
+3. **Review** when wait-any returns an idle or done implementor whose worktree
+   is clean and branch has at least one ticket commit beyond the current base.
+   Any non-review-ready settled worker goes through the stall lifecycle instead. Invoke `snapshot.check` first and do not begin review or landing
    against a changed revision. If several tickets become ready together, process them one at a
    time in dependency order. Sync
    the chosen branch to the latest `<base>` before its final gates and review,
@@ -335,8 +334,8 @@ success. It returns a complete refreshed snapshot used to:
 - run `scheduler.plan` so a persisted capacity change takes effect.
 
 Apply [stall-check.md](references/stall-check.md) only on timeout or for an
-idle implementor that fails deterministic review-readiness checks. Its validated
-TypeSafe disposition is authoritative inside the bounded stall seam. Execute only the action selected by `stall.assessment.apply`; a provider,
+idle or done implementor that fails deterministic review-readiness checks. Its
+validated TypeSafe disposition is authoritative inside the bounded stall seam. Execute only the action selected by `stall.assessment.apply`; a provider,
 credential, validation, stale-evidence, or binding failure pauses the seam
 without fallback. After those checks, call wait-any again. Never replace this cycle with polling,
 cron tools, scheduled prompts, background Bash monitors, Python parsing, or a

@@ -1,10 +1,12 @@
 # Stall check
 
 Run this check when `herdr.wait_any` returns `reason: timeout` for a working
-worker, or when it returns an `idle` worker that is not deterministically ready
-for review. An idle worker is review-ready only when its worktree is clean and
-its branch contains at least one ticket commit beyond the current base. Persist
-all refreshed pane ids before inspecting workers.
+worker, or when it returns an `idle` or `done` worker that is not
+deterministically ready for review. A settled worker is review-ready only when
+its worktree is clean and its branch contains at least one ticket commit beyond
+the current base. Persist all refreshed pane ids before inspecting workers.
+Normalize Herdr `done` to `worker.status: idle` in `StallState`; Herdr uses those
+two labels for seen and unseen settled sessions, not different worker intent.
 
 TypeSafe has semantic authority only inside this bounded seam. It estimates five
 probabilities from supplied evidence. Versioned code chooses the disposition,
@@ -13,7 +15,7 @@ and scheduling.
 
 ## Collect bounded state
 
-For every selected `working` or non-review-ready `idle` worker, collect:
+For every selected `working` or non-review-ready settled worker, collect:
 
 - ticket number, title, and accepted criteria;
 - bound session, harness, model, effort, status, and current phase;
