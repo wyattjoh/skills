@@ -1,11 +1,17 @@
 import type { AcceptanceState, StallDisposition, StallState } from "./assessment.ts";
 
+/**
+ * Isolated stall benchmark case paired with its controller-only oracle.
+ */
 export type StallScenario = {
   id: string;
   state: StallState;
   oracle: Pick<StallDisposition, "disposition" | "reason">;
 };
 
+/**
+ * Isolated acceptance benchmark case paired with its controller-only oracle.
+ */
 export type AcceptanceScenario = {
   id: string;
   state: AcceptanceState;
@@ -56,6 +62,9 @@ const stallState = (
   current_observation: current,
 });
 
+/**
+ * Fixed stall benchmark scenarios used to compare TypeSafe and Pi decisions.
+ */
 export const STALL_SCENARIOS: StallScenario[] = [
   {
     id: "stall-mechanical-input-1",
@@ -154,6 +163,9 @@ const acceptanceState = (
   input: Omit<AcceptanceState, "schema_version" | "assessment_id">,
 ): AcceptanceState => ({ schema_version: 1, assessment_id: id, ...input });
 
+/**
+ * Fixed experimental acceptance scenarios used for non-production evaluation.
+ */
 export const ACCEPTANCE_SCENARIOS: AcceptanceScenario[] = [
   {
     id: "acceptance-clear-pass-1",

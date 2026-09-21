@@ -1,15 +1,46 @@
-import { Data, Effect, Layer, Schema } from "effect";
+import { Config, Data, Effect, Layer, Schema } from "effect";
 import { Decision, DecisionModel } from "effect/unstable/ai";
-import { FetchHttpClient } from "effect/unstable/http";
+import { FetchHttpClient, HttpClient, HttpClientRequest } from "effect/unstable/http";
 import { TypeSafeClient, TypeSafeDecisionModel } from "@effect/ai-typesafe";
 
+/**
+ * Schema version shared by assessment state, request, and evidence artifacts.
+ */
 export const ASSESSMENT_SCHEMA_VERSION = 1 as const;
+
+/**
+ * Version of the deterministic policy that maps stall probabilities to actions.
+ */
 export const STALL_POLICY_VERSION = "stall-v2" as const;
+
+/**
+ * Pinned TypeSafe System One model used for semantic assessments.
+ */
 export const TYPESAFE_MODEL = "jev-1.13.0" as const;
+
+/**
+ * Minimum safe probability for a code-owned worker re-prompt.
+ */
 export const STALL_REPROMPT_THRESHOLD = 0.75 as const;
+
+/**
+ * Minimum probability required to leave a working worker unchanged.
+ */
 export const STALL_WAIT_THRESHOLD = 0.8 as const;
+
+/**
+ * Minimum probability that forces a safety pause.
+ */
 export const STALL_PAUSE_THRESHOLD = 0.5 as const;
+
+/**
+ * Maximum contradictory probability allowed for an automatic safe action.
+ */
 export const STALL_CONTRADICTION_MAX = 0.2 as const;
+
+/**
+ * Bun secrets lookup identity for the TypeSafe API credential.
+ */
 export const TYPESAFE_SECRET = {
   service: "com.wyattjoh.coordinate-implementation",
   name: "typesafe-api-key",
@@ -23,6 +54,9 @@ const Observation = Schema.Struct({
   recent_commits: Schema.Array(Schema.String),
 });
 
+/**
+ * Runtime schema for the bounded worker and Git evidence supplied to TypeSafe.
+ */
 export const StallState = Schema.Struct({
   schema_version: Schema.Literal(ASSESSMENT_SCHEMA_VERSION),
   assessment_id: Schema.String,
@@ -43,8 +77,14 @@ export const StallState = Schema.Struct({
   current_observation: Observation,
 });
 
+/**
+ * Decoded bounded state used by the stall decision model.
+ */
 export type StallState = typeof StallState.Type;
 
+/**
+ * Provider-neutral probability questions used for stall diagnosis.
+ */
 export const StallDecision = Decision.make({
   input: StallState,
   decisions: {
@@ -94,6 +134,9 @@ export const StallDecision = Decision.make({
   },
 });
 
+/**
+ * Probabilities returned for each bounded stall question.
+ */
 export type StallProbabilities = {
   meaningful_progress: number;
   mechanical_input_wait: number;
@@ -102,6 +145,9 @@ export type StallProbabilities = {
   crash_or_loop: number;
 };
 
+/**
+ * Validated stall probabilities and provider token usage.
+ */
 export type StallAssessment = {
   answers: StallProbabilities;
   usage: {
@@ -110,6 +156,9 @@ export type StallAssessment = {
   };
 };
 
+/**
+ * Deterministic safe disposition selected from stall probabilities.
+ */
 export type StallDisposition =
   | {
       disposition: "wait";
@@ -127,6 +176,9 @@ export type StallDisposition =
       prompt: null;
     };
 
+/**
+ * Exact code-owned prompts allowed by the stall authority policy.
+ */
 export const STALL_REPROMPTS = {
   mechanical_input:
     "Continue the current ticket using the accepted instructions and acceptance criteria. Do not wait for confirmation when those sources already determine the answer. If continuing requires new user authority or a materially different product decision, report the exact blocker instead.",
@@ -134,6 +186,13 @@ export const STALL_REPROMPTS = {
     "Retry the interrupted operation once in this same session while preserving current work. If the same external failure persists, report the exact error and stop rather than looping.",
 } as const;
 
+/**
+ * Maps validated stall probabilities to one deterministic safe disposition.
+ *
+ * @param status - Current normalized worker status.
+ * @param answers - TypeSafe probability answers that have passed validation.
+ * @returns The code-owned disposition and optional fixed prompt.
+ */
 export const decideStallDisposition = (
   status: StallState["worker"]["status"],
   answers: StallProbabilities,
@@ -180,6 +239,12 @@ export const decideStallDisposition = (
   return { disposition: "pause", reason: "uncertain", prompt: null };
 };
 
+/**
+ * Evaluates bounded stall evidence through a provided DecisionModel service.
+ *
+ * @param state - Bounded worker and Git evidence to classify.
+ * @returns An Effect producing probabilities and provider usage.
+ */
 export const evaluateStall = (
   state: StallState,
 ): Effect.Effect<StallAssessment, unknown, DecisionModel.DecisionModel> =>
@@ -199,12 +264,18 @@ export const evaluateStall = (
     })),
   );
 
+/**
+ * Failure to retrieve the TypeSafe credential from the configured secret store.
+ */
 export class AssessmentCredentialError extends Data.TaggedError("AssessmentCredentialError")<{
   message: string;
 }> {}
 
-const liveDecisionLayer = (): Layer.Layer<DecisionModel.DecisionModel, unknown> => {
-  const client = TypeSafeClient.layerConfig().pipe(Layer.provide(FetchHttpClient.layer));
+const liveDecisionLayer = (apiKey: string): Layer.Layer<DecisionModel.DecisionModel, unknown> => {
+  const client = TypeSafeClient.layerConfig({
+    apiKey: Config.succeed(undefined),
+    transformClient: HttpClient.mapRequest(HttpClientRequest.bearerToken(apiKey)),
+  }).pipe(Layer.provide(FetchHttpClient.layer));
   return TypeSafeDecisionModel.layer({ model: TYPESAFE_MODEL }).pipe(Layer.provide(client));
 };
 
@@ -225,22 +296,16 @@ const withLiveDecisionModel = <A>(
               message: `Bun.secrets has no ${TYPESAFE_SECRET.service}/${TYPESAFE_SECRET.name} credential.`,
             }),
           )
-        : Effect.acquireUseRelease(
-            Effect.sync(() => {
-              const previous = process.env.TYPESAFE_API_KEY;
-              process.env.TYPESAFE_API_KEY = apiKey;
-              return previous;
-            }),
-            () => effect.pipe(Effect.provide(liveDecisionLayer())),
-            (previous) =>
-              Effect.sync(() => {
-                if (previous === undefined) delete process.env.TYPESAFE_API_KEY;
-                else process.env.TYPESAFE_API_KEY = previous;
-              }),
-          ),
+        : effect.pipe(Effect.provide(liveDecisionLayer(apiKey))),
     ),
   );
 
+/**
+ * Evaluates one stall state with the pinned live TypeSafe model.
+ *
+ * @param state - Bounded worker and Git evidence to classify.
+ * @returns An Effect that reads the credential from Bun secrets and produces an assessment.
+ */
 export const evaluateStallLive = (state: StallState): Effect.Effect<StallAssessment, unknown> =>
   withLiveDecisionModel(evaluateStall(state));
 
@@ -249,6 +314,9 @@ const AcceptanceCriterion = Schema.Struct({
   text: Schema.String,
 });
 
+/**
+ * Experimental schema for evaluating ticket acceptance evidence.
+ */
 export const AcceptanceState = Schema.Struct({
   schema_version: Schema.Literal(ASSESSMENT_SCHEMA_VERSION),
   assessment_id: Schema.String,
@@ -272,9 +340,19 @@ export const AcceptanceState = Schema.Struct({
   implementor_self_review: Schema.String,
 });
 
+/**
+ * Decoded experimental acceptance evidence.
+ */
 export type AcceptanceState = typeof AcceptanceState.Type;
+
+/**
+ * Experimental acceptance-policy mode under evaluation.
+ */
 export type AcceptanceMode = "preflight-only" | "replace-spec-reviewer";
 
+/**
+ * Probabilities associated with one acceptance criterion.
+ */
 export type CriterionAssessment = {
   id: string;
   text: string;
@@ -282,6 +360,9 @@ export type CriterionAssessment = {
   evidence_sufficiency: number;
 };
 
+/**
+ * Experimental acceptance results and provider token usage.
+ */
 export type AcceptanceAssessment = {
   criteria: CriterionAssessment[];
   usage: {
@@ -290,6 +371,9 @@ export type AcceptanceAssessment = {
   };
 };
 
+/**
+ * Experimental action selected from acceptance probabilities.
+ */
 export type AcceptanceDisposition =
   | {
       disposition: "fix";
@@ -307,6 +391,12 @@ export type AcceptanceDisposition =
       prompt: null;
     };
 
+/**
+ * Builds criterion-specific probability questions for experimental acceptance evaluation.
+ *
+ * @param state - Ticket acceptance evidence containing criteria to evaluate.
+ * @returns Decision definitions keyed by criterion and question kind.
+ */
 export const acceptanceDecisions = (
   state: AcceptanceState,
 ): Record<string, Decision.Probability> => {
@@ -331,6 +421,12 @@ export const acceptanceDecisions = (
   return decisions;
 };
 
+/**
+ * Evaluates experimental acceptance evidence through a provided DecisionModel service.
+ *
+ * @param state - Acceptance evidence to evaluate.
+ * @returns An Effect producing criterion probabilities and provider usage.
+ */
 export const evaluateAcceptance = (
   state: AcceptanceState,
 ): Effect.Effect<AcceptanceAssessment, unknown, DecisionModel.DecisionModel> => {
@@ -354,6 +450,12 @@ export const evaluateAcceptance = (
   );
 };
 
+/**
+ * Renders the fixed remediation prompt for demonstrated acceptance failures.
+ *
+ * @param failed - Criteria with sufficient evidence of failure.
+ * @returns A deterministic prompt containing only the failed criteria.
+ */
 export const acceptanceFixPrompt = (failed: CriterionAssessment[]): string =>
   [
     "Return to implementation for the acceptance criteria listed below.",
@@ -364,6 +466,13 @@ export const acceptanceFixPrompt = (failed: CriterionAssessment[]): string =>
     ),
   ].join("\n");
 
+/**
+ * Applies the experimental acceptance policy to validated probabilities.
+ *
+ * @param mode - Whether the experiment may consider replacing Spec review.
+ * @param assessment - Criterion probabilities and evidence sufficiency.
+ * @returns The conservative experimental disposition.
+ */
 export const decideAcceptanceDisposition = (
   mode: AcceptanceMode,
   assessment: AcceptanceAssessment,
@@ -389,6 +498,12 @@ export const decideAcceptanceDisposition = (
     : { disposition: "continue-spec-review", failed_criteria: [], prompt: null };
 };
 
+/**
+ * Evaluates acceptance evidence with the pinned live TypeSafe model.
+ *
+ * @param state - Experimental acceptance evidence to classify.
+ * @returns An Effect that reads the credential from Bun secrets and produces an assessment.
+ */
 export const evaluateAcceptanceLive = (
   state: AcceptanceState,
 ): Effect.Effect<AcceptanceAssessment, unknown> => withLiveDecisionModel(evaluateAcceptance(state));

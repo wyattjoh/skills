@@ -20,6 +20,9 @@ import {
   type StallDisposition,
 } from "./assessment.ts";
 
+/**
+ * Serializable provider or validation failure retained in immutable evidence.
+ */
 export type AssessmentFailure = {
   tag: string;
   message: string;
@@ -30,6 +33,9 @@ export type AssessmentFailure = {
   retry_after: string | null;
 };
 
+/**
+ * Immutable, hash-bound request prepared from one bounded stall observation.
+ */
 export type StallRequestArtifact = {
   schema_version: typeof ASSESSMENT_SCHEMA_VERSION;
   kind: "assessment-request";
@@ -56,6 +62,9 @@ export type StallRequestArtifact = {
   >;
 };
 
+/**
+ * Immutable provider result and deterministic disposition for one request attempt.
+ */
 export type StallEvidenceArtifact = {
   schema_version: typeof ASSESSMENT_SCHEMA_VERSION;
   kind: "assessment-evidence";
@@ -76,6 +85,9 @@ export type StallEvidenceArtifact = {
   disposition: StallDisposition;
 };
 
+/**
+ * Metadata returned after preparing an immutable stall request.
+ */
 export type StallAssessmentPrepareResult = {
   request_path: string;
   assessment_id: string;
@@ -83,6 +95,9 @@ export type StallAssessmentPrepareResult = {
   state_sha256: string;
 };
 
+/**
+ * Metadata returned after evaluating and persisting stall evidence.
+ */
 export type StallAssessmentEvaluateResult = {
   evidence_path: string;
   assessment_id: string;
@@ -92,6 +107,9 @@ export type StallAssessmentEvaluateResult = {
   latency_ms: number;
 };
 
+/**
+ * Verified code-owned action returned after applying bound stall evidence.
+ */
 export type StallAssessmentApplyResult = {
   assessment_id: string;
   attempt: number;
@@ -102,12 +120,18 @@ export type StallAssessmentApplyResult = {
   prompt_argv: string[] | null;
 };
 
+/**
+ * Injectable provider and clock dependencies for the stall lifecycle.
+ */
 export type StallAssessmentDependencies = {
   evaluate: (state: StallState) => Promise<StallAssessment>;
   now: () => Date;
   monotonicNow: () => number;
 };
 
+/**
+ * Typed helper failure that pauses the stall-assessment seam.
+ */
 export class StallAssessmentError extends Data.TaggedError("StallAssessmentError")<{
   issue: CliIssue;
 }> {}
@@ -238,6 +262,11 @@ const decodeState = async (serialized: string): Promise<StallState> => {
   }
 };
 
+/**
+ * Serializes the versioned stall questions into immutable request data.
+ *
+ * @returns The complete probability-question record used by TypeSafe.
+ */
 export const stallAssessmentQuestions = (): StallRequestArtifact["questions"] =>
   Object.fromEntries(
     Object.entries(StallDecision.decisions).map(([key, decision]) => [
@@ -387,6 +416,13 @@ const verifiedPreviousAttempt = async (
   };
 };
 
+/**
+ * Validates bounded state and exclusively writes one immutable request attempt.
+ *
+ * @param input - Run-local state, request, and optional prior-evidence paths.
+ * @param dependencies - Provider and clock dependencies, overridable for tests.
+ * @returns An Effect containing request identity and state-binding metadata.
+ */
 export const prepareStallAssessment = (
   input: StallAssessmentPrepareInput,
   dependencies: StallAssessmentDependencies = defaultDependencies,
@@ -432,6 +468,13 @@ export const prepareStallAssessment = (
     catch: fromUnknown,
   });
 
+/**
+ * Evaluates an immutable request and exclusively persists success or failure evidence.
+ *
+ * @param input - Run-local immutable request and new evidence paths.
+ * @param dependencies - Provider and clock dependencies, overridable for tests.
+ * @returns An Effect containing the validated disposition and usage metadata.
+ */
 export const evaluateStallAssessment = (
   input: StallAssessmentEvaluateInput,
   dependencies: StallAssessmentDependencies = defaultDependencies,
@@ -526,6 +569,12 @@ const actionFor = (
   return { action: "pause", reason: disposition.reason, prompt_argv: null };
 };
 
+/**
+ * Verifies request, evidence, and freshly captured state before returning a safe action.
+ *
+ * @param input - Run-local current state, request, and evidence paths.
+ * @returns An Effect containing the exact action authorized by versioned policy.
+ */
 export const applyStallAssessment = (
   input: StallAssessmentApplyInput,
 ): Effect.Effect<StallAssessmentApplyResult, StallAssessmentError> =>
