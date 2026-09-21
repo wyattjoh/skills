@@ -10,7 +10,7 @@ Answer the devenv question in `$ARGUMENTS` (or, if empty, the request that
 triggered this skill) using the indexed corpus below.
 
 All paths are relative to this skill's directory. The corpus is a split,
-de-noised copy of the complete devenv.sh documentation: **191 topic files**
+de-noised copy of the complete devenv.sh documentation: **193 topic files**
 across 9 areas.
 
 ## Task
@@ -163,7 +163,7 @@ others are compatibility options only: `process-compose` (TUI, feature-rich),
 
 ### History — `references/history/`
 
-27 release notes and engineering posts, devenv 0.1 -> 2.2. **Historical only.**
+28 release notes and engineering posts, devenv 0.1 -> 2.3. **Historical only.**
 Load _only_ for "which version introduced X", migration questions, or design
 rationale — never to answer how devenv works today. Start at
 `references/history/INDEX.md`.
