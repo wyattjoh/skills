@@ -25,10 +25,12 @@ export const GIT_ENV_KEYS = [
 ] as const;
 
 const gitEnvKeys: ReadonlySet<string> = new Set(GIT_ENV_KEYS);
+const GIT_CONFIG_ENV_PREFIX = "GIT_CONFIG_";
 
 /**
- * Copies `env` without the repository-location variables, so a spawned git
- * discovers its repository from the arguments and working directory alone.
+ * Copies `env` without repository-location or injected Git configuration
+ * variables, so a spawned git discovers its repository from the arguments and
+ * working directory alone.
  *
  * Identity variables (`GIT_AUTHOR_*`, `GIT_COMMITTER_*`) are deliberately kept:
  * they only supply a committer name, and dropping them can leave git with no
@@ -39,7 +41,10 @@ export const cleanGitEnv = (
 ): Record<string, string> =>
   Object.fromEntries(
     Object.entries(env).filter(
-      (entry): entry is [string, string] => entry[1] !== undefined && !gitEnvKeys.has(entry[0]),
+      (entry): entry is [string, string] =>
+        entry[1] !== undefined &&
+        !gitEnvKeys.has(entry[0]) &&
+        !entry[0].startsWith(GIT_CONFIG_ENV_PREFIX),
     ),
   );
 
@@ -52,12 +57,12 @@ export type SpawnGitOptions = {
 };
 
 /**
- * Runs git with a sanitized environment. Every git spawn in this skill goes
- * through here so the sanitizing happens once, at the spawn boundary, rather
- * than being remembered at each call site.
+ * Runs git with a sanitized environment and commit signing disabled. Every git
+ * spawn in this skill goes through here so the safeguards happen once, at the
+ * spawn boundary, rather than being remembered at each call site.
  */
 export const spawnGit = (args: string[], options: SpawnGitOptions = {}): GitResult => {
-  const result = Bun.spawnSync(["git", ...args], {
+  const result = Bun.spawnSync(["git", "-c", "commit.gpgsign=false", ...args], {
     ...(options.cwd === undefined ? {} : { cwd: options.cwd }),
     env: cleanGitEnv(options.env),
     stdout: "pipe",

@@ -12,9 +12,11 @@ export const GIT_ENV_KEYS = [
 ] as const;
 
 const gitEnvKeys: ReadonlySet<string> = new Set(GIT_ENV_KEYS);
+const GIT_CONFIG_ENV_PREFIX = "GIT_CONFIG_";
 
 /**
- * Copies an environment without Git repository-location overrides.
+ * Copies an environment without Git repository-location or injected
+ * configuration overrides.
  *
  * @param env - Environment to sanitize.
  * @returns A complete string environment safe for repository discovery.
@@ -24,7 +26,10 @@ export const cleanGitEnv = (
 ): Record<string, string> =>
   Object.fromEntries(
     Object.entries(env).filter(
-      (entry): entry is [string, string] => entry[1] !== undefined && !gitEnvKeys.has(entry[0]),
+      (entry): entry is [string, string] =>
+        entry[1] !== undefined &&
+        !gitEnvKeys.has(entry[0]) &&
+        !entry[0].startsWith(GIT_CONFIG_ENV_PREFIX),
     ),
   );
 
@@ -46,7 +51,8 @@ export type SpawnGitOptions = {
 };
 
 /**
- * Runs Git with repository-location variables removed from its environment.
+ * Runs Git with repository-location variables removed and commit signing
+ * disabled, so fixture commits cannot invoke local signing agents.
  *
  * @param args - Exact Git argument array.
  * @param options - Optional working directory and base environment.
@@ -54,7 +60,7 @@ export type SpawnGitOptions = {
  */
 export const spawnGit = (args: string[], options: Partial<SpawnGitOptions> = {}): GitResult => {
   try {
-    const child = Bun.spawnSync(["git", ...args], {
+    const child = Bun.spawnSync(["git", "-c", "commit.gpgsign=false", ...args], {
       ...(options.cwd === undefined ? {} : { cwd: options.cwd }),
       env: cleanGitEnv(options.env),
       stdout: "pipe",

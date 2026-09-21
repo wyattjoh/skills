@@ -410,7 +410,7 @@ const gitEnvKeys = new Set([
 const env = Object.fromEntries(
   Object.entries(process.env).filter(([key, value]) => value !== undefined && !gitEnvKeys.has(key)),
 );
-const result = Bun.spawnSync(["git", "worktree", "add", "-b", branch, path, base], {
+const result = Bun.spawnSync(["git", "-c", "commit.gpgsign=false", "worktree", "add", "-b", branch, path, base], {
   cwd: repository,
   env,
   stdout: "pipe",

@@ -33,6 +33,9 @@ describe("cleanGitEnv", () => {
       GIT_OBJECT_DIRECTORY: "/decoy/.git/objects",
       GIT_ALTERNATE_OBJECT_DIRECTORIES: "/decoy/.git/objects",
       GIT_CEILING_DIRECTORIES: "/",
+      GIT_CONFIG_COUNT: "1",
+      GIT_CONFIG_KEY_0: "commit.gpgsign",
+      GIT_CONFIG_VALUE_0: "true",
     };
 
     expect(cleanGitEnv(env)).toEqual({
@@ -44,6 +47,34 @@ describe("cleanGitEnv", () => {
 
   it("omits keys whose value is undefined", () => {
     expect(cleanGitEnv({ PATH: "/usr/bin", EMPTY: undefined })).toEqual({ PATH: "/usr/bin" });
+  });
+});
+
+describe("spawnGit commit signing", () => {
+  it("overrides inherited signing configuration before committing a fixture", () => {
+    const scratch = mkdtempSync(join(tmpdir(), "workspaces-git-signing-"));
+    created.push(scratch);
+    const fixture = join(scratch, "fixture");
+    mkdirSync(fixture);
+
+    const signingEnv = {
+      ...process.env,
+      GIT_CONFIG_COUNT: "2",
+      GIT_CONFIG_KEY_0: "commit.gpgsign",
+      GIT_CONFIG_VALUE_0: "true",
+      GIT_CONFIG_KEY_1: "gpg.program",
+      GIT_CONFIG_VALUE_1: join(scratch, "missing-gpg"),
+    };
+
+    expect(spawnGit(["init", "-q", "-b", "main", fixture], { env: signingEnv }).exitCode).toBe(0);
+    writeFileSync(join(fixture, "a.txt"), "hello\\n");
+    expect(spawnGit(["-C", fixture, "add", "-A"], { env: signingEnv }).exitCode).toBe(0);
+    expect(
+      spawnGit(["-C", fixture, ...identity, "commit", "-q", "-m", "unsigned fixture"], {
+        env: signingEnv,
+      }).exitCode,
+    ).toBe(0);
+    expect(spawnGit(["-C", fixture, "log", "-1", "--format=%G?"]).stdout.trim()).toBe("N");
   });
 });
 

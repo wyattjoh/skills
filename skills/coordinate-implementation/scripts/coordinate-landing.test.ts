@@ -965,13 +965,14 @@ ${JSON.stringify(
 const { spawnSync } = require("node:child_process");
 const { existsSync, writeFileSync } = require("node:fs");
 const args = process.argv.slice(2);
+const gitArgs = args[0] === "-c" && args[1] === "commit.gpgsign=false" ? args.slice(2) : args;
 const env = { ...process.env };
 for (const key of ${JSON.stringify(GIT_ENV_KEYS)}) delete env[key];
-if (args[0] === "merge" && args[1] === "--ff-only" && !existsSync(env.RACE_MARKER)) {
+if (gitArgs[0] === "merge" && gitArgs[1] === "--ff-only" && !existsSync(env.RACE_MARKER)) {
   writeFileSync(env.RACE_MARKER, "injected\\n");
   writeFileSync("race.txt", "race\\n");
-  spawnSync(env.REAL_GIT, ["add", "race.txt"], { env, stdio: "inherit" });
-  spawnSync(env.REAL_GIT, ["commit", "-q", "-m", "race landing"], { env, stdio: "inherit" });
+  spawnSync(env.REAL_GIT, ["-c", "commit.gpgsign=false", "add", "race.txt"], { env, stdio: "inherit" });
+  spawnSync(env.REAL_GIT, ["-c", "commit.gpgsign=false", "commit", "-q", "-m", "race landing"], { env, stdio: "inherit" });
 }
 const result = spawnSync(env.REAL_GIT, args, { env, stdio: "inherit" });
 process.exit(result.status ?? 1);
