@@ -184,6 +184,52 @@ describe("terminal run integration", () => {
     expect(summary.includes("portable-01-integration")).toBe(true);
   });
 
+  it("completes a run with an empty serialized finalization placeholder", () => {
+    const fixture = makeRun({ coordinator: "pi", implementor: "pi", reviewer: "pi" }, "landed");
+    const state = readFileSync(fixture.statePath, "utf8");
+    writeFileSync(
+      fixture.statePath,
+      state.replace("## Review evidence", "## Serialized finalization\n\n\n## Review evidence"),
+    );
+
+    const result = finalize(fixture);
+
+    expect(result.exitCode).toBe(0);
+    expect(result.stdout.result).toEqual({
+      status: "completed",
+      landed_tickets: ["01"],
+      blocked_tickets: [],
+      closed_tickets: [],
+      runnable_tickets: [],
+      summary_path: fixture.summaryPath,
+      tracker_action: { mode: "none", status: "not-applicable", workflow: null },
+    });
+  });
+
+  it("rejects a completed run with populated serialized finalization state", () => {
+    const fixture = makeRun({ coordinator: "pi", implementor: "pi", reviewer: "pi" }, "landed");
+    const state = readFileSync(fixture.statePath, "utf8");
+    writeFileSync(
+      fixture.statePath,
+      state.replace(
+        "## Review evidence",
+        '## Serialized finalization\n\n```json\n{"ticket":"01"}\n```\n\n## Review evidence',
+      ),
+    );
+
+    const result = finalize(fixture);
+
+    expect(result.exitCode).toBe(1);
+    expect(result.stdout.errors).toEqual([
+      {
+        code: "run.terminal_runtime_present",
+        message: "A completed run cannot retain an active runtime or serialized finalization slot.",
+        remediation:
+          "Close the runtime and finish or release serialized finalization before retrying.",
+      },
+    ]);
+  });
+
   it("reports a Pi-only blocked empty frontier as waiting rather than success", () => {
     const fixture = makeRun({ coordinator: "pi", implementor: "pi", reviewer: "pi" }, "blocked");
 

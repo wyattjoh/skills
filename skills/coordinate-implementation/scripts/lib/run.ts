@@ -98,6 +98,13 @@ const sectionBounds = (markdown: string, name: string): { start: number; end: nu
   return { start, end: next.exec(markdown)?.index ?? markdown.length };
 };
 
+const sectionHasContent = (markdown: string, name: string): boolean => {
+  const bounds = sectionBounds(markdown, name);
+  if (bounds === null) return false;
+  const section = markdown.slice(bounds.start, bounds.end);
+  return section.replace(/^## [^\r\n]*(?:\r?\n)?/u, "").trim().length > 0;
+};
+
 const parseRole = (markdown: string, name: string): RoleRecord => {
   const match = new RegExp(
     `^${name}:\\s*\\n\\s+harness:\\s*(claude|pi)\\s*\\n\\s+model:\\s*(.+?)\\s*\\n\\s+effort:\\s*(\\S+)\\s*$`,
@@ -593,7 +600,7 @@ export const finalizeRun = (
             if (
               completed &&
               (parseRuntimeBlocks(updated, "Active tickets").length > 0 ||
-                sectionBounds(updated, "Serialized finalization") !== null)
+                sectionHasContent(updated, "Serialized finalization"))
             ) {
               throw runError(
                 "run.terminal_runtime_present",
