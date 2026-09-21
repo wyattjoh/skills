@@ -222,8 +222,11 @@ front-load the key use case. The listing always contains every skill **name**;
 when it overflows, Claude Code drops **descriptions**, starting with the skills
 you invoke least, so the ones you use most keep their full text. To diagnose:
 
-1. Run `/doctor` for an estimate of the listing's context cost and its biggest
-   contributors. `--debug` also logs a warning when the listing overflows.
+1. Run `/skill-doctor` (Claude Code v2.1.252+) for a per-skill cost and
+   invocation-count breakdown, so you know which skills to turn off first;
+   `/doctor` also surfaces unused skills against their context cost as part of
+   its broader checkup. `--debug` also logs a warning when the listing
+   overflows.
 2. Check the Skills row in `/context`, which reports the listing size **after**
    the budget is applied, so it matches what the model receives.
 3. Keep the combined `description`/`when_to_use` text concise, and set

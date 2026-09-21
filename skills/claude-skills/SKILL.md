@@ -368,9 +368,11 @@ Skill descriptions share a character budget that scales at **1% of the model's
 context window**. Each entry (`description` + `when_to_use`) is separately capped
 at **1,536 characters**. The listing always keeps every skill _name_; on
 overflow Claude Code drops _descriptions_, starting with the skills you invoke
-least. Run `/doctor` for the breakdown and biggest contributors. Raise the budget
-with the `skillListingBudgetFraction` setting or the
-`SLASH_COMMAND_TOOL_CHAR_BUDGET` environment variable.
+least. Run `/skill-doctor` (Claude Code v2.1.252+) for the per-skill cost and
+invocation breakdown; `/doctor` also flags unused skills against their context
+cost as part of its broader checkup. Raise the budget with the
+`skillListingBudgetFraction` setting or the `SLASH_COMMAND_TOOL_CHAR_BUDGET`
+environment variable.
 
 ## References
 
