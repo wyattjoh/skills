@@ -49,10 +49,4 @@ packages (a known registry quirk where README extraction fails at publish
 time) — fall back to `homepage`/`repository` in that case rather than
 treating it as "this package has no documentation."
 
-## Usage
-
-1. Run the script with the package name
-2. Parse the JSON output for the fields you need
-3. Present the relevant information to the user
-
 The `readme` field contains the full package README as a markdown string — useful for understanding what a package does, its API, and usage examples.
