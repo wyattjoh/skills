@@ -26,7 +26,7 @@ context>
 - Each bullet describes a concrete change, not a commit. Collapse related
   commits into a single bullet (e.g., three `refactor(auth):` commits become
   one bullet: "extracted token validation into its own module").
-- Target 3-7 bullets. More than that usually means the PR is too large.
+- Keep it to the concrete changes a reviewer needs; a long list usually means the PR is too large.
 
 ### Why (always included)
 
@@ -110,5 +110,5 @@ services so we can trace failures across the hop.
 - **Do not leave `TODO` in the body** after confirmation. If a section has
   nothing to say, either remove it (for How) or write a short honest note
   ("No behavior change", "No new dependencies") and move on.
-- **Do not use em-dashes (`--`) in the rendered body** (per the user's global
+- **Do not use em dashes (U+2014) in the rendered body** (per the user's global
   `CLAUDE.md`). Use commas, parentheses, or separate sentences.

@@ -1,7 +1,7 @@
 ---
 name: pr-create
 description: Creates a pull request for the current branch. Reviews commits up to the merge base, detects repo PR templates, or generates a What/Why/How description. Prompts for draft state and optionally rebases stale branches first. Triggers on "create a PR", "open a pull request", "push and create PR", "submit this branch", "run /pr-create", or mentions "new pull request".
-allowed-tools: Bash(gh:*), Bash(git status:*), Bash(git branch:*), Bash(git log:*), Bash(git diff:*), Bash(git rev-list:*), Bash(git rev-parse:*), Bash(git push:*), Bash(git fetch:*), Bash(git config:*), AskUserQuestion, Read, Grep, Glob, TodoWrite
+allowed-tools: Bash(gh:*), Bash(git status:*), Bash(git branch:*), Bash(git log:*), Bash(git diff:*), Bash(git rev-list:*), Bash(git rev-parse:*), Bash(git push:*), Bash(git fetch:*), Bash(git config:*), AskUserQuestion, Read, Grep, Glob
 argument-hint: "[--draft|--ready] [--base <branch>]"
 disable-model-invocation: true
 effort: medium
@@ -20,8 +20,6 @@ Recognized arguments:
 - `--draft` force draft state (skip the draft/ready prompt)
 - `--ready` force ready state (skip the draft/ready prompt)
 - `--base <branch>` override base branch detection
-
-Use `TodoWrite` to track progress through the phases below.
 
 ## Phase 1: Preflight
 
@@ -173,7 +171,7 @@ flag it in the plan so the user can edit before confirming.
 
 **Writing style rules** (from the user's global `CLAUDE.md`):
 
-- **Never use em-dashes (`--`) in titles or bodies.** Use commas, parentheses,
+- **Never use em dashes (U+2014) in titles or bodies.** Use commas, parentheses,
   or separate sentences.
 - Focus on what changed and why, not ephemeral details. Do not include file
   counts, line counts, or commit counts in the body -- they go stale.

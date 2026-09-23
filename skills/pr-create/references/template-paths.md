@@ -22,7 +22,7 @@ in the lookup.
 
 ## Case sensitivity
 
-On macOS (and Linux) filesystems are case-sensitive. Check both the all-lower
+Linux filesystems are case-sensitive and macOS usually is not, so do not rely on case folding. Check both the all-lower
 and all-upper variants. Do not guess at mixed-case variants; they are
 non-canonical.
 
