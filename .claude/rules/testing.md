@@ -19,12 +19,11 @@ const result = spawnGit(["-C", dir, "init", "-q", "-b", "main"]);
 expect(result.exitCode).toBe(0);
 ```
 
-This is not hypothetical. lefthook runs `bun test` from `pre-push`, and a hook
-invoked inside a linked worktree gets `GIT_DIR` set to
-`.git/worktrees/<name>`. Fixture helpers then wrote to the developer's real
-repository: `git init` re-inited that gitdir, and because it has no work tree
-it took `core.bare=true` into the _shared_ config, breaking every worktree.
-Fixture commits landed on a real branch.
+lefthook runs `bun test` from `pre-push`, and a hook invoked inside a linked
+worktree has `GIT_DIR` set to `.git/worktrees/<name>`. A fixture that inherits
+it writes to the developer's real repository: `git init` re-inits that gitdir
+and, because it has no work tree, sets `core.bare=true` in the _shared_ config,
+breaking every worktree, and fixture commits land on a real branch.
 
 `git init` is the most dangerous call in a fixture, because it fails silently:
 the fixture directory gets no `.git` at all, and the commits go elsewhere.
