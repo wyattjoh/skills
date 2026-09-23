@@ -85,14 +85,9 @@ If in an existing extension, analyze `package.json` to determine extension type:
 }
 ```
 
-### 3. Understand User Intent
+### 3. Clarify Scope
 
-When the user requests changes, clarify:
-
-- **For new extensions**: Ask about extension type if not specified
-- **For existing extensions**: Analyze current structure and propose changes
-- **For feature additions**: Determine if adding new command or enhancing existing one
-- **For debugging**: Identify error messages and relevant code sections
+For a new extension with no stated type, ask which extension type the user wants before scaffolding.
 
 ## Core Workflows
 
@@ -184,24 +179,9 @@ This launches the extension in Raycast for immediate testing.
 
 ### Adding Features to Existing Extensions
 
-When enhancing an existing extension:
+When enhancing an existing extension, read `package.json` and the relevant `src/` files first, and match the existing code style, components, hooks, and error handling.
 
-#### Step 1: Analyze Current Structure
-
-Examine the existing codebase:
-
-```bash
-# Read package.json to understand commands and configuration
-cat package.json
-
-# List source files
-ls -la src/
-
-# Check for utilities, components, hooks
-ls -la src/utils/ src/components/ src/hooks/ 2>/dev/null
-```
-
-#### Step 2: Determine Change Type
+#### Step 1: Determine Change Type
 
 **Adding a New Command:**
 
@@ -255,17 +235,7 @@ ls -la src/utils/ src/components/ src/hooks/ 2>/dev/null
 
 See `references/ai-extensions.md` for comprehensive AI extension documentation.
 
-#### Step 3: Follow Existing Patterns
-
-Maintain consistency:
-
-- **Code style**: Match existing formatting, naming conventions
-- **Component patterns**: Use same UI components as existing commands
-- **Data fetching**: Use same hooks and patterns
-- **Error handling**: Follow existing error handling approach
-- **TypeScript types**: Add to existing types files or create new ones
-
-#### Step 4: Test Changes
+#### Step 2: Test Changes
 
 ```bash
 npm run dev
@@ -280,30 +250,9 @@ Verify:
 
 ### Debugging and Fixing Issues
 
-When resolving errors:
+When resolving errors, `npm run build` shows detailed TypeScript and build errors, and runtime errors appear in the Raycast console during `npm run dev`.
 
-#### Step 1: Identify Error Type
-
-**TypeScript Errors:**
-
-- Check type definitions
-- Verify imports from @raycast/api
-- Ensure proper typing of LaunchProps, preferences, arguments
-
-**Runtime Errors:**
-
-- Check console output in Raycast
-- Verify API responses
-- Check async/await usage
-- Validate data transformations
-
-**Build Errors:**
-
-- Run `npm run build` to see detailed errors
-- Check for missing dependencies
-- Verify tsconfig.json configuration
-
-#### Step 2: Common Issues and Solutions
+#### Common Issues and Solutions
 
 **Hook Errors:**
 
@@ -396,7 +345,7 @@ Most common type. Uses React components to render UI.
 - `Form` - For user input with validation
 - `Grid` - For image/icon grids
 
-**Common Hooks:**
+**Common Hooks** (prefer these over hand-rolled state management):
 
 - `useFetch` - HTTP requests
 - `usePromise` - Async operations
@@ -554,25 +503,3 @@ npm run publish
 # Run AI extension evals
 npm run evals
 ```
-
-## Tips for Effective Extension Development
-
-1. **Start with templates**: Use Raycast's in-app "Create Extension" command for best practices out of the box
-
-2. **Follow existing patterns**: When adding to existing extensions, match the current code style
-
-3. **Use TypeScript strictly**: Define interfaces for all data structures
-
-4. **Handle errors gracefully**: Always show Toast notifications for errors
-
-5. **Test incrementally**: Use `npm run dev` frequently to catch issues early
-
-6. **Leverage hooks**: Use @raycast/utils hooks instead of reinventing state management
-
-7. **Read the references**: Load reference docs when implementing specific features
-
-8. **Keep it simple**: Start with basic functionality, iterate based on user feedback
-
-9. **Follow the checklist**: Use the publishing checklist before submitting extensions
-
-10. **For AI extensions**: Start with simple tools, add evals early, iterate on instructions
