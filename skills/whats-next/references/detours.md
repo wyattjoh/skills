@@ -109,9 +109,8 @@ back to the top of the route.
 
 ## The window is filling up mid-stage
 
-Not a detour so much as a hazard. The **smart zone** is roughly 150k tokens; past
-it the model reasons worse but doesn't announce it, and Stages 2–3 are meant to
-share one window.
+Not a detour so much as a hazard. Reasoning quality degrades silently as a window
+fills, and Stages 2–3 are meant to share one window.
 
 At a **phase boundary**, in order of preference: continue → `/clear` if nothing
 here matters next → `/handoff` if the next step needs a new directory or harness
