@@ -29,7 +29,7 @@ like textually.
 ### Fork point and ranges
 
 ```bash
-FORK=$(git merge-base HEAD origin/<base>)   # where the branches diverged
+FORK=$(git merge-base ORIG_HEAD origin/<base>)   # where the branches diverged
 ```
 
 ### Branch's changes to this file

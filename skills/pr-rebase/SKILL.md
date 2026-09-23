@@ -1,7 +1,7 @@
 ---
 name: pr-rebase
 description: Rebases the current branch onto the latest origin base branch, autonomously resolves conflicts by reading both sides' intentions, verifies the result via project checks, then force-pushes with lease. Triggers on "rebase this branch", "rebase onto main", "update PR with latest base", "resolve rebase conflicts", "run /pr-rebase", or mentions "rebase and push", "refresh branch from origin".
-allowed-tools: Bash(gh:*), Bash(git status:*), Bash(git branch:*), Bash(git log:*), Bash(git diff:*), Bash(git rev-list:*), Bash(git rev-parse:*), Bash(git push:*), Bash(git fetch:*), Bash(git config:*), Bash(git rebase:*), Bash(git stash:*), Bash(git add:*), Bash(git reset:*), Bash(git checkout:*), Bash(bun:*), Bash(npm:*), Bash(pnpm:*), Bash(yarn:*), Bash(cargo:*), Bash(swift:*), Bash(make:*), AskUserQuestion, Read, Edit, Write, Grep, Glob, TodoWrite
+allowed-tools: Bash(gh:*), Bash(git status:*), Bash(git branch:*), Bash(git log:*), Bash(git diff:*), Bash(git rev-list:*), Bash(git rev-parse:*), Bash(git push:*), Bash(git fetch:*), Bash(git config:*), Bash(git rebase:*), Bash(git stash:*), Bash(git add:*), Bash(git checkout:*), Bash(bun:*), Bash(deno:*), Bash(npm:*), Bash(pnpm:*), Bash(yarn:*), Bash(cargo:*), Bash(swift:*), Bash(make:*), AskUserQuestion, Read, Edit, Write, Grep, Glob
 argument-hint: "[--base <branch>] [--abort] [--resume]"
 disable-model-invocation: true
 effort: high
@@ -21,8 +21,6 @@ Recognized arguments:
 - `--abort` abort any in-progress rebase and exit. No other work is done.
 - `--resume` continue a rebase this skill left paused (e.g., after a
   verification failure the user manually fixed).
-
-Use `TodoWrite` to track progress.
 
 ## Phase 1: Preflight
 
@@ -78,8 +76,8 @@ Detection order (first hit wins):
 
 | Signal                                               | Command                                                             |
 | ---------------------------------------------------- | ------------------------------------------------------------------- |
-| `deno.json` with `check` task                        | `bun run check`                                                     |
-| `deno.json` with `test` task                         | `bun run test`                                                      |
+| `deno.json` with `check` task                        | `deno task check`                                                   |
+| `deno.json` with `test` task                         | `deno task test`                                                    |
 | `package.json` with `typecheck` script               | `npm run typecheck` (or pnpm/yarn/bun equivalent based on lockfile) |
 | `package.json` with `test` script (and no typecheck) | `npm test`                                                          |
 | `tsconfig.json` without package.json scripts         | `npx tsc --noEmit`                                                  |
@@ -255,9 +253,10 @@ Prompt via `AskUserQuestion`:
 1. **Push** -- proceed with `git push --force-with-lease`.
 2. **Inspect first** -- exit without pushing; user can inspect, then rerun
    `pr-rebase` or push manually.
-3. **Cancel (reset to pre-rebase)** -- run
-   `git reset --hard ORIG_HEAD` to undo the rebase. _(Only offered when the
-   rebase is complete; ORIG_HEAD still points at the pre-rebase tip.)_
+3. **Cancel (reset to pre-rebase)** -- do not run the reset. Print the exact
+   command for the user to run, `git reset --hard ORIG_HEAD`, which undoes the
+   rebase, then exit without pushing. _(Only offered when the rebase is
+   complete; ORIG_HEAD still points at the pre-rebase tip.)_
 
 If the rebase was a clean fast-forward with no conflicts, still show the
 summary (just with no `Conflicts resolved` section).
@@ -307,7 +306,7 @@ Print:
 4. **Summary before push.** User sees what was done and why before anything
    leaves the machine.
 5. **Reset escape hatch.** Offer "reset to pre-rebase (ORIG_HEAD)" at the
-   summary step.
+   summary step, and print the reset command for the user to run.
 6. **Autostash is explicit.** Never silently stash dirty work.
 
 ## References
