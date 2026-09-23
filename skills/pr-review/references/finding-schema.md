@@ -51,8 +51,8 @@ finding for attention.
   `summary` with no `diff`) is the right shape when the direction is clear but
   the code is not.
 - **Keep it minimal.** Enough lines to make the change unambiguous, not the
-  whole rewritten function. Roughly 15 lines is plenty; elide untouched context
-  with `...` rather than reproducing it.
+  whole rewritten function. Elide untouched context with `...` rather than
+  reproducing it.
 
 ## ID Conventions
 
@@ -68,7 +68,7 @@ Use a category prefix plus a sequential number:
 
 ## Submission Fields vs Internal Fields
 
-The synthesis step (see `synthesis-criteria.md`) adds orchestrator-internal fields — `sources`, `contested`, `synthesisNote` — for adjudication and reporting. **Only the eight base fields above** (`id`, `file`, `line`, `severity`, `category`, `title`, `description`, `evidence`) are consumed by `scripts/submit-pr-review.ts`. The internal fields are stripped before the findings file is handed to the script.
+The synthesis step (see `synthesis-criteria.md`) adds orchestrator-internal fields (`sources`, `contested`, `synthesisNote`) for adjudication and reporting. **Only the base fields above** (`id`, `file`, `line`, `severity`, `category`, `title`, `description`, `evidence`, `fix`) are consumed by `scripts/submit-pr-review.ts`. The internal fields are stripped before the findings file is handed to the script.
 
 `severity` reaches GitHub as a rendered badge (see below). `id`, `file`, `line`, and `title` do not, but they are not dead weight: the script prints `id file:line title` for every finding it has to drop, so those fields are what makes a dropped finding identifiable.
 
@@ -91,21 +91,19 @@ The assembled comment looks like this:
 ```diff
 <fix.diff>
 ```
-````
 
 </details>
 
 ###### Sent from Claude
 
 - [ ] reviewed by @someone
-
-```
+````
 
 The author reads comments one at a time, out of order, with no access to the findings file, so the badge is the only thing telling them whether a comment blocks the merge or is a nit. That makes `severity` load-bearing on the posted review, not just internal triage — set it honestly per finding rather than defaulting everything to `medium`.
 
 Write `description` as if the author is the only reader, because they are:
 
-- **Keep it short. Aim for under ~900 characters — three or four short paragraphs at the very most, and one or two for anything below `high`.** A PR comment is read inline in a cramped column, next to nine others. Length reads as importance, so a padded `medium` drowns out the `high` above it. State the defect, the concrete path to it, and stop. Cut throat-clearing, restatements of what the code plainly does, and any sentence hedging a point already made.
+- **Keep it short, and shorter still below `high`.** A PR comment is read inline in a cramped column, next to nine others. Length reads as importance, so a padded `medium` drowns out the `high` above it. State the defect, the concrete path to it, and stop. Cut throat-clearing, restatements of what the code plainly does, and any sentence hedging a point already made.
 - It is the body of the comment. The script prepends the severity badge and appends the fix block for you — do not write your own badge, do not restate the severity in prose, and do not end `description` with a "Suggested fix:" paragraph that duplicates `fix.summary`. No separate evidence block either. If a code reference aids the point, inline it directly using backticks or a fenced block.
 - Quote sparingly. One short block, only when the reader cannot follow without it — they are looking at the diff already.
 - Write in the voice of a single reviewer giving feedback. Direct, specific, points at the actual problem and suggests a fix.
@@ -113,4 +111,3 @@ Write `description` as if the author is the only reader, because they are:
 - No reviewer bookkeeping: no `sources:`, no confidence tags, no "high-priority per synthesis".
 
 The `submit-pr-review.ts` script enforces this: it scans `summary`, `title`, `description`, and `evidence` for a small list of methodology tokens and aborts before submission if any match. If the guard fires, rewrite the offending text — do not work around the check.
-```

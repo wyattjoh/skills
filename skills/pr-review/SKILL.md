@@ -2,7 +2,7 @@
 name: pr-review
 description: Performs comprehensive code review of Git changes with security, performance, and quality analysis, including repository health diagnostics (churn, bug hotspots, bus factor, momentum, crisis patterns) cross-referenced against the current diff for risk assessment. Triggers on "review code", "review changes", "check my code", "code review", "run /pr-review", or mentions "security review", "performance review", "code quality", "hotspot analysis", "risk assessment", "bug hotspots".
 argument-hint: "[focus-area]"
-allowed-tools: Bash(git status:*), Bash(git diff:*), Bash(git log:*), Bash(git show:*), Bash(git shortlog:*), Bash(sort:*), Bash(uniq:*), Bash(head:*), Bash(grep:*), Bash(gh pr view:*), Bash(gh pr diff:*), Bash(gh api:*), Bash(gh api user:*), Bash(bun:*), Read, Write, Grep, Glob, TodoWrite, AskUserQuestion
+allowed-tools: Bash(git status:*), Bash(git diff:*), Bash(git log:*), Bash(git show:*), Bash(git shortlog:*), Bash(sort:*), Bash(uniq:*), Bash(head:*), Bash(grep:*), Bash(gh pr view:*), Bash(gh pr diff:*), Bash(gh api:*), Bash(gh api user:*), Bash(bun:*), Read, Write, Grep, Glob, AskUserQuestion
 effort: high
 disable-model-invocation: true
 ---
@@ -69,7 +69,7 @@ Before the local-diff pipeline runs, determine whether this invocation is scoped
 
    If the command succeeds and returns a PR, capture the same fields and set `pr_mode = true`.
 
-3. Else, set `pr_mode = false` and proceed with today's working-tree flow.
+3. Else, set `pr_mode = false` and proceed with the working-tree flow.
 
 **Failure mode:** if `$ARGUMENTS` clearly intends PR mode (a PR reference was supplied) but the `gh pr view` lookup fails, abort with a clear error. Do not silently fall through to working-tree mode.
 
@@ -138,86 +138,7 @@ git diff                      # Full unstaged diff
 
 ## Review Sections
 
-### 1. Git Changes Analysis
-
-- Examine all modified, added, and deleted files
-- Review the scope and nature of changes
-- Check for large file modifications that might need special attention
-- Identify files that may have unintended changes
-
-### 2. Code Quality Review
-
-| Area                    | What to Check                           |
-| ----------------------- | --------------------------------------- |
-| **Style & Conventions** | Adherence to project coding standards   |
-| **Complexity**          | Overly complex functions or classes     |
-| **Pattern Consistency** | Consistent architectural patterns       |
-| **Dead Code**           | Unused variables, functions, or imports |
-| **DRY Violations**      | Code duplication opportunities          |
-| **Naming**              | Variable, function, and class naming    |
-| **Organization**        | File structure and module organization  |
-
-### 3. Security Review
-
-| Area                 | What to Check                                  |
-| -------------------- | ---------------------------------------------- |
-| **Secrets**          | Hardcoded credentials, API keys, passwords     |
-| **Input Validation** | Proper sanitization of user inputs             |
-| **SQL Injection**    | Database queries for injection vulnerabilities |
-| **XSS Prevention**   | Proper output escaping in web contexts         |
-| **Auth/AuthZ**       | Access control implementations                 |
-| **Dependencies**     | Potentially vulnerable dependencies            |
-| **Data Exposure**    | Sensitive data logging or exposure             |
-
-### 4. Performance Analysis
-
-| Area           | What to Check                                     |
-| -------------- | ------------------------------------------------- |
-| **Algorithms** | Inefficient algorithms or data structures         |
-| **Database**   | N+1 queries, missing indexes, inefficient queries |
-| **Memory**     | Potential memory leaks or excessive allocations   |
-| **Frontend**   | Unnecessary re-renders, large bundle sizes        |
-| **Caching**    | Areas that could benefit from caching             |
-| **Async**      | Proper use of asynchronous patterns               |
-
-### 5. Error Handling & Reliability
-
-| Area            | What to Check                    |
-| --------------- | -------------------------------- |
-| **Exceptions**  | Proper try/catch implementations |
-| **Propagation** | Error handling strategies        |
-| **Degradation** | Graceful failure handling        |
-| **Logging**     | Logging levels and completeness  |
-| **Validation**  | Comprehensive input validation   |
-
-### 6. Testing Considerations
-
-| Area             | What to Check                      |
-| ---------------- | ---------------------------------- |
-| **Coverage**     | New functionality that needs tests |
-| **Edge Cases**   | Edge cases that should be tested   |
-| **Test Quality** | Existing test modifications        |
-| **Integration**  | Integration points needing tests   |
-| **Mocks**        | Proper use of test doubles         |
-
-### 7. Documentation Review
-
-| Area           | What to Check                           |
-| -------------- | --------------------------------------- |
-| **Comments**   | Missing or outdated comments            |
-| **Docstrings** | Function documentation and parameters   |
-| **API Docs**   | Updated API documentation needs         |
-| **README**     | Changes requiring documentation updates |
-
-### 8. Best Practices Compliance
-
-| Area            | What to Check                                |
-| --------------- | -------------------------------------------- |
-| **SOLID**       | Adherence to design principles               |
-| **Patterns**    | Appropriate use of design patterns           |
-| **Separation**  | Proper separation of concerns                |
-| **Config**      | Hardcoded values that should be configurable |
-| **Environment** | Environment-specific code handling           |
+Cover correctness, security, performance, error handling, tests, documentation, and consistency with the project's own conventions. Weight each changed file by the Step 0 risk profile, and give the focus area in `$ARGUMENTS` the most depth when one was supplied. Report only issues that apply to this diff; a category with nothing to say gets no entry.
 
 ## Output Format
 
@@ -310,11 +231,11 @@ When all three hold, drive this flow:
 
    Findings match the shape in `references/finding-schema.md`. **Only `severity`, `description`, and `fix`, plus the generated footer, are posted inline** to the PR; the other fields are orchestrator bookkeeping. Inline any code reference the reader needs directly into `description` (backticks or fenced blocks) — there is no separate evidence block.
 
-   - **Keep each `description` under ~900 characters** — three or four short paragraphs at most, one or two below `high`. Comments are read inline in a cramped column; length reads as importance, so a padded `medium` drowns out the `high` above it. State the defect, the concrete path to it, and stop.
+   - **Keep each `description` short, and shorter still below `high`.** Comments are read inline in a cramped column; length reads as importance, so a padded `medium` drowns out the `high` above it. State the defect, the concrete path to it, and stop.
    - `severity` renders as a `**[HIGH]**`-style badge above the description. Set it honestly per finding — it is what tells the author whether a comment blocks the merge. Do not hand-write a badge or restate the severity in prose.
    - `fix` renders as a collapsed **Recommended fix** block: a one-to-two-sentence `fix.summary` plus an optional `fix.diff` shown as a unified diff. Pass the **diff body only** — the script adds the ` ```diff ` fence and rejects a pre-fenced value. Omit `fix` entirely when the finding needs a decision rather than a patch; a fabricated diff the author trusts and applies is worse than no block. **Strip orchestrator-internal fields** (`sources`, `contested`, `synthesisNote`) before writing. **Do not mention the review methodology** (no "Opus", "Codex", "corroborated", "contested", "synthesis", "second-opinion", "(codex confirmed)", "reviewed with..."). The script rejects these tokens; if your text hits them, rewrite to plain review prose.
 
-   **Keep `summary` short or empty.** It becomes the review body (before the generated footer, with no `## Code review` heading). One or two sentences max, and only when you have something meaningful to add on top of the inline comments. When there's nothing to add, pass `""`; the required footer still appears in the review body.
+   **Keep `summary` short or empty.** It becomes the review body (before the generated footer, with no `## Code review` heading). Add it only when you have something meaningful to add on top of the inline comments. When there's nothing to add, pass `""`; the required footer still appears in the review body.
 
 3. Invoke the submission script with `--dry-run` to preview the payload:
 
