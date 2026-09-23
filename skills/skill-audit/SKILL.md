@@ -39,11 +39,11 @@ Summarize what the skill is _supposed_ to do in 2-3 sentences. This becomes the 
 
 ## Phase 3: Delegate Session Analysis
 
-Spawn a `conversation-historian` agent via the `Agent` tool with the following prompt. Include ALL of these details in the agent prompt:
+Spawn a `conversation-historian` agent via the `Agent` tool with the following prompt, every detail intact:
 
 > Analyze the current session for skill execution issues.
 >
-> **Session file**: `~/.claude/projects/!`pwd | sed 's|/|-|g'`/${CLAUDE_SESSION_ID}.jsonl`
+> **Session file**: `~/.claude/projects/!`pwd | sed 's|[^A-Za-z0-9]|-|g'`/${CLAUDE_SESSION_ID}.jsonl`
 >
 > **Target skill**: `$ARGUMENTS`
 >
@@ -109,7 +109,7 @@ Once the conversation-historian returns its analysis, present the findings in a 
 
 If no issues are found in a category, omit that section entirely rather than showing an empty table.
 
-If NO issues are found at all, report that the skill executed cleanly and no changes are needed.
+If no issues are found at all, report that the skill executed cleanly and no changes are needed.
 
 ## Phase 5: Offer Repair
 
