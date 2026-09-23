@@ -110,10 +110,12 @@ If the user just wants to know "did it run?", prefer `resticprofile status` plus
 ### Inspect status and history
 
 - `resticprofile status` — shows the schedule registration in launchd plus the next/last run window.
-- `cat ~/.config/resticprofile/status.json | jq` — last-run summary (success, duration, files added, bytes added).
-- `tail -n 200 ~/.config/resticprofile/logs/backup.log` — actual stdout/stderr from scheduled runs.
-- `tail -n 100 ~/.config/resticprofile/logs/check.log` — weekly repo verification log.
+- `cat <config-dir>/status.json | jq` — last-run summary (success, duration, files added, bytes added).
+- `tail -n 200 <config-dir>/logs/backup.log` — actual stdout/stderr from scheduled runs.
+- `tail -n 100 <config-dir>/logs/check.log` — repo verification log, when a `check` schedule exists.
 - `resticprofile snapshots --compact` — repo-side history.
+
+`<config-dir>` is the directory from the `using configuration file:` line; a profile's `status-file` or `schedule-log` setting overrides these defaults.
 
 ### Manage the launchd schedule
 
@@ -130,7 +132,7 @@ If launchd disagrees with `resticprofile status` (e.g., a stale job after renami
 
 ### Edit the profile
 
-Open `~/.config/resticprofile/profiles.yaml`. After any edit:
+Open the configuration file resticprofile reports on its first output line (`using configuration file: <path>`). After any edit:
 
 1. Validate by running `resticprofile show` — it parses, expands templates, and renders the effective config. Errors surface here before the next scheduled run.
 2. If schedules changed, run `resticprofile schedule --all`.
@@ -159,7 +161,7 @@ For a one-off browse without copying anything, use `resticprofile mount /tmp/res
 
 ### Forget and prune
 
-The profile keeps hourly/daily/weekly/monthly/yearly tiers via `retention:` and prunes weekly on Sunday 02:30. To force a clean-up now:
+Retention tiers come from the profile's `retention:` block, and any scheduled prune from its `prune.schedule` (check both with `.show`). To force a clean-up now:
 
 ```bash
 resticprofile --dry-run forget --prune   # preview
@@ -170,10 +172,10 @@ resticprofile forget --prune             # apply
 
 ## Troubleshooting Playbook
 
-Work through these in order.
+Find the entry that matches the symptom.
 
-1. **"Unable to lock repository" / stale lock.** Another run crashed or is in flight. Confirm nothing is actively backing up (`ps aux | grep restic`), then `resticprofile unlock`. The profile sets `restic-stale-lock-age: 2h` so locks older than that auto-clear.
-2. **Backup never ran.** Check `resticprofile status` — if the job is missing, run `resticprofile schedule --all`. If it is registered but did not fire, check `~/.config/resticprofile/logs/backup.log` and `log show --predicate 'process == "resticprofile"' --last 1h`. The schedule honors `schedule-ignore-on-battery-less-than: 20`, so a low battery skip is expected.
+1. **"Unable to lock repository" / stale lock.** Another run crashed or is in flight. Confirm nothing is actively backing up (`ps aux | grep restic`), then `resticprofile unlock`. If the config sets `restic-stale-lock-age`, locks older than that age auto-clear.
+2. **Backup never ran.** Check `resticprofile status` — if the job is missing, run `resticprofile schedule --all`. If it is registered but did not fire, check `<config-dir>/logs/backup.log` and `log show --predicate 'process == "resticprofile"' --last 1h`. If the profile sets `schedule-ignore-on-battery` or `schedule-ignore-on-battery-less-than`, a skip on battery is expected.
    - **Backups silently stopped for hours/days.** A backup that hangs holds the launchd slot, so launchd skips every later hourly run. Check for a long-lived process: `ps -o pid,etime,command -ax | grep '[r]estic'`. A common culprit on macOS is the FileProvider deadlock (`EDEADLK` / "resource deadlock avoided" in the backup log) on iCloud-synced files under `~/Documents`. If a watchdog is installed (see [Setup](#setup)), it kills runs older than 2h automatically; otherwise kill the `restic` + `resticprofile … run-schedule` PIDs yourself, then `resticprofile unlock`. See `references/watchdog.md` for the watchdog.
 3. **Credentials missing / "Fatal: unable to open config file".** Repository credentials come from the profile's `run-before` / `password-command` hooks. Inspect `resticprofile show` to see which source they read (e.g. a keychain entry, verified with `security find-generic-password -a <account> -s <service> -w` on macOS, without logging the output). If the source is empty, restore it before any run can succeed.
 4. **Healthchecks.io shows no pings.** Either the run is failing before the post hook or the URL changed. The current UUIDs live in `profiles.yaml` under `send-before` / `send-after` / `send-after-fail`. Curl one manually with `-I` to confirm reachability.
@@ -186,7 +188,6 @@ Work through these in order.
 - Never write a secret into `profiles.yaml`. Keep using `password-command` and `run-before` keychain pulls.
 - Prefer adding excludes over removing sources — fewer surprises when a path comes back later.
 - After any change that affects scheduling, leave the user with the two follow-up commands they will care about: `resticprofile show` (sanity check) and `resticprofile schedule --all` (apply).
-- Conventional commit messages for changes to this directory still apply, e.g. `chore(resticprofile): exclude .turbo from backup`.
 
 ## When to Reach for the Reference File
 
