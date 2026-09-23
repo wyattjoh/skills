@@ -1,6 +1,6 @@
 # Research agent prompt template
 
-Launch a `Task` subagent (general-purpose) with the prompt below. Fill the
+Launch an `Agent` subagent (general-purpose) with the prompt below. Fill the
 `{{...}}` placeholders from the resolved source set. The agent works from
 documentation only — it does **not** run the CLI (that is the explore agent's
 job).

@@ -1,6 +1,6 @@
 # Explore agent prompt template
 
-Launch a `Task` subagent (general-purpose) with the prompt below. Fill the
+Launch an `Agent` subagent (general-purpose) with the prompt below. Fill the
 `{{...}}` placeholders. This agent runs the **real local binary**, so its
 boundaries are strict — copy them verbatim.
 
