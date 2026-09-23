@@ -65,9 +65,9 @@ Read the actual files. For a diff, `git diff` first so you know which lines move
 
 ### 3. Trace the why
 
-**This is the step that makes the page worth having, and the step that is easiest
-to skip.** A walkthrough that only restates what each line does is worthless — the
-reader can see the code. The value is in what the code does _not_ say.
+**This is the step that makes the page worth having.** A walkthrough that only
+restates what each line does is worthless — the reader can see the code.
+The value is in what the code does _not_ say.
 
 Look for the reasoning in, roughly this order:
 
