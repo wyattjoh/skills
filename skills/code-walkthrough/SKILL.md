@@ -1,6 +1,6 @@
 ---
 name: code-walkthrough
-description: Builds an annotated code-walkthrough page — the source pinned on the left, explanations scrolling on the right, with the lines under discussion spotlit as you scroll. Use when the user asks to "walk through" a file or diff, wants code "explained line by line", or asks for a "code walkthrough", "annotated source", "explain this migration", or a page explaining what code does and why. Themed Catppuccin Mocha.
+description: Builds an annotated code-walkthrough page, the source pinned on the left, explanations scrolling on the right, with the lines under discussion spotlit as you scroll. Use when the user asks to "walk through" a file or diff, wants code "explained line by line", or asks for a "code walkthrough", "annotated source", "explain this migration", or a page explaining what code does and why. Themed Catppuccin Mocha.
 effort: high
 argument-hint: "[file, diff, or branch to walk through]"
 allowed-tools:
@@ -36,7 +36,7 @@ verifies every rendered line against its file. Never paste source into the JSON.
 ## Workflow
 
 ```
-- [ ] 1. Settle the scope — whole file, or only what changed?
+- [ ] 1. Settle the scope: whole file, or only what changed?
 - [ ] 2. Read the source
 - [ ] 3. Trace the WHY (the step that decides whether this page is worth making)
 - [ ] 4. Write the walkthrough definition
@@ -52,7 +52,7 @@ Ask which of these the user means, if it isn't obvious:
 | ------------------------------------------ | ------------------------- |
 | New file, or the whole file is the subject | omit it                   |
 | A change, PR, or "explain my edits"        | `{"diff": "main...HEAD"}` |
-| A known region — one function, one block   | `{"ranges": [[40, 96]]}`  |
+| A known region (one function, one block)   | `{"ranges": [[40, 96]]}`  |
 
 Scope decides **what owes an explanation**. Out-of-scope lines are still rendered
 as context and still readable; long unexplained runs collapse into an expandable
@@ -66,7 +66,7 @@ Read the actual files. For a diff, `git diff` first so you know which lines move
 ### 3. Trace the why
 
 **This is the step that makes the page worth having.** A walkthrough that only
-restates what each line does is worthless — the reader can see the code.
+restates what each line does is worthless: the reader can see the code.
 The value is in what the code does _not_ say.
 
 Look for the reasoning in, roughly this order:
@@ -76,12 +76,12 @@ Look for the reasoning in, roughly this order:
 - specs, ADRs, design docs, RFCs the repo carries
 - decision logs, journals, changelogs
 - PR discussion (`gh pr view`), linked issues
-- sibling code the line imitates — precedent is a reason
+- sibling code the line imitates (precedent is a reason)
 
 **Attribute every claim.** "Because ADR 0014 makes this caller-asserted" is
 useful; "for security reasons" is noise. When you are inferring rather than
 citing, say so in the text ("this appears to be…"). Never invent a rationale to
-fill a beat — a beat that honestly says "the reason isn't recorded anywhere I
+fill a beat: a beat that honestly says "the reason isn't recorded anywhere I
 could find" is more valuable than a plausible fabrication.
 
 Prioritise, in order: **traps** (what breaks if someone edits this naively),
@@ -124,7 +124,7 @@ Beat rules:
 - **Contiguous line ranges, in file order.** Beats read top to bottom.
 - **Group only what shares one explanation.** A block of six columns that each
   need a different reason is six beats, not one.
-- Include the comment lines above a statement in its range — they are part of
+- Include the comment lines above a statement in its range: they are part of
   what you are explaining.
 - `section` starts a new chapter (heading + entry in the hover rail). Use one
   per logical division, not one per beat.
@@ -144,12 +144,12 @@ bun ${CLAUDE_SKILL_DIR}/scripts/build.ts .scratch/thing.walkthrough.json --open
 
 The script refuses to write a page whose pane does not match the source, and
 reports beats that overlap or leave in-scope lines unexplained. Fix what it
-reports and run it again — that loop is the quality gate.
+reports and run it again: that loop is the quality gate.
 
 ### 6. Hand it over
 
 Say where the page is, how many beats it has, what the self-checks confirmed,
-and — honestly — which beats are inference rather than cited fact.
+and, honestly, which beats are inference rather than cited fact.
 
 ## Writing the prose
 
@@ -165,7 +165,7 @@ Beat `body` is raw HTML. Ready-made classes, with the full list in
 | `<div class="note good">`                   | A measurement or proof              |
 | `<div class="note info">`                   | A pointer to a decision record      |
 
-Tag vocabulary for the `tags` array — `[class, label]`, label free-text:
+Tag vocabulary for the `tags` array (`[class, label]`, label free-text):
 
 `info` (blue, a decision/reference) · `caution` (peach, a deviation) ·
 `danger` / `trap` (red, a defect or hazard) · `accent` (teal, a structural
@@ -182,7 +182,7 @@ property) · `good` (green, measured/verified) · `quiet` (grey, background).
 
 ## References
 
-- [references/walkthrough-file.md](references/walkthrough-file.md) — every field, scope forms, worked example
-- [references/theme.md](references/theme.md) — the token system, available classes, contrast rules
+- [references/walkthrough-file.md](references/walkthrough-file.md): every field, scope forms, worked example
+- [references/theme.md](references/theme.md): the token system, available classes, contrast rules
 
 Run `bun test` in the skill directory after changing the build script or template.
