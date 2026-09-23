@@ -61,7 +61,7 @@ summary.
 
 ## Bucketing Heuristics
 
-The user's choice was "everything not green is in scope," so everything in the
+Everything not green is in scope, so every check in the
 `fail`/`cancel` buckets enters triage. The bucket is decided by the log + code
 investigation in Phase 2b, not the `bucket`/`state` value alone, but each raw
 `state` has a default leaning (`bucket` alone is too coarse to distinguish these —

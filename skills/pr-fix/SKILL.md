@@ -2,7 +2,7 @@
 name: pr-fix
 description: Fetches PR review comments and failing CI checks, verifies each against the codebase, proposes a triaged plan (fix, push back, clarify, skip) for user approval, then silently implements fixes, posts reasoned replies only on disagreements or clarifications, auto-resolves fixed threads, and optionally commits the result. Triggers on "respond to PR review", "address review comments", "handle PR feedback", "fix PR comments", "fix CI failures", "fix failing checks", "address red CI", "process review", "triage PR comments", "run /pr-fix", or mentions "PR review response", "reply to reviewer", "CI failing on PR".
 argument-hint: "[PR-number or URL] [--auto]"
-allowed-tools: Bash(gh:*), Bash(git status:*), Bash(git diff:*), Bash(git log:*), Bash(git branch:*), Bash(git rev-parse:*), Bash(git add:*), Bash(git commit:*), Bash(jq:*), Bash(act:*), Bash(npm:*), Bash(bun:*), Bash(pnpm:*), Bash(yarn:*), Read, Edit, Write, Grep, Glob, TodoWrite, AskUserQuestion
+allowed-tools: Bash(gh:*), Bash(git status:*), Bash(git diff:*), Bash(git log:*), Bash(git branch:*), Bash(git rev-parse:*), Bash(git add:*), Bash(git commit:*), Bash(jq:*), Bash(act:*), Bash(npm:*), Bash(bun:*), Bash(pnpm:*), Bash(yarn:*), Read, Edit, Write, Grep, Glob, AskUserQuestion
 disable-model-invocation: true
 effort: high
 ---
@@ -64,8 +64,6 @@ remains fully auditable in the transcript.
 
 ## Phases
 
-Use `TodoWrite` to track each phase as a task.
-
 ### Phase 1: Identify PR and Fetch Comments + CI Checks
 
 1. Resolve PR number: use `$ARGUMENTS` if a number or URL was supplied, else
@@ -98,8 +96,8 @@ Use `TodoWrite` to track each phase as a task.
 4. Pull failing CI checks for the PR's head ref. See
    [references/ci-checks.md](references/ci-checks.md) for exact commands.
 
-   Keep checks where `bucket` is `fail` or `cancel`. Checks with `bucket ==
-"pending"` are not actionable yet, so omit them and note their count in the
+   Keep checks where `bucket` is `fail` or `cancel`. Checks with `bucket == "pending"`
+   are not actionable yet, so omit them and note their count in the
    terminal summary.
 
    For each qualifying check, parse the workflow run ID from `link` and
@@ -136,9 +134,9 @@ steps even if the feedback "obviously" looks right.
 5. **Draft reply text** for `FIX-MODIFIED`, `PUSHBACK`, and `CLARIFY` only. Skip
    drafting for `FIX` and `SKIP`.
 
-Reply-drafting rules (from `superpowers:receiving-code-review`):
+Reply-drafting rules:
 
-- No `"You're absolutely right!"`, `"Great point!"`, or any gratitude.
+- Keep the register plain and technical: open with the substance, not with agreement or thanks.
 - Lead with the technical reasoning, not the conclusion.
 - Reference concrete evidence: file paths with line numbers, test names, commit
   SHAs, or doc links.
@@ -310,8 +308,7 @@ For every `CI-FIX` item from the triage plan:
    - If a native command is needed, confirm the script/task exists before
      invoking. Missing scripts mean the project's local toolchain isn't wired
      the way pr-fix assumed; record the verification as
-     `unverified
-(no native command)` and proceed without blocking.
+     `unverified (no native command)` and proceed without blocking.
    - If `act` is needed, run `which act`. If missing, record the verification as
      `unverified (act not installed)`, suggest `brew install act` in the
      summary, and proceed without blocking.
