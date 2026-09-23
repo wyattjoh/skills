@@ -2,7 +2,7 @@
 
 Launch an `Agent` subagent (general-purpose) with the prompt below. Fill the
 `{{...}}` placeholders from the resolved source set. The agent works from
-documentation only — it does **not** run the CLI (that is the explore agent's
+documentation only; it does **not** run the CLI (that is the explore agent's
 job).
 
 ---
@@ -21,17 +21,17 @@ Source set:
 
 Map the **documented** surface of `{{cli}}` and everything a skill needs to
 kickstart its **common operations**. This is a kickstart, not an exhaustive
-man-page clone — prioritize the 80% path.
+man-page clone; prioritize the 80% path.
 
 Gather, in priority order:
 
-1. **Command surface** — top-level commands and their one-line purpose;
+1. **Command surface**: top-level commands and their one-line purpose;
    subcommands and the important flags for each. Note the exact spellings the
    docs use.
-2. **Config-file formats** — always hunt for "what config files does this CLI
+2. **Config-file formats**: always hunt for "what config files does this CLI
    read?" (e.g. `Justfile`, `Dockerfile`, `.eslintrc`). For each format, capture
    its syntax, structure, and notable features. One format = one section.
-3. **Common workflows** — the maintainer-curated common path. Source these from,
+3. **Common workflows**: the maintainer-curated common path. Source these from,
    in order: the docs' quickstart / getting-started / examples sections, the
    README usage examples and any `examples/` dir, then `EXAMPLES` blocks. You may
    organize and sequence real examples into a workflow narrative, but **do not
@@ -57,4 +57,4 @@ Markdown with these sections: `## Overview`, `## Global flags`,
 `## Commands` (grouped by top-level command), `## Config formats`,
 `## Common workflows` (each with a `Source:` line), `## Open questions`.
 
-Return only a one-line pointer to that file — not the findings themselves.
+Return only a one-line pointer to that file, not the findings themselves.
