@@ -6,42 +6,22 @@ effort: low
 
 # Conductor Worktree Environment
 
-Critical rules for working in Conductor-managed git worktrees.
+Conductor gives each parallel agent an isolated git worktree: a complete
+checkout on its own branch. The directory above it is the main repository on a
+different branch (usually `main` or `canary`), not your workspace.
 
 ## Detection
 
-You are in a Conductor worktree if:
+You are in a Conductor worktree when the working directory contains
+`.conductor/` (e.g. `/path/to/repo/.conductor/workspace-name`), or when `.git`
+is a file containing `gitdir: .../worktrees/...` rather than a directory.
 
-- Working directory contains `.conductor/` in the path (e.g., `/path/to/repo/.conductor/workspace-name`)
-- Running `cat .git` shows `gitdir: .../worktrees/...` instead of a directory listing
+## Working in the worktree
 
-## Critical Rules
+Treat the worktree as the repository root and run commands from it directly
+(`pnpm build`, `git status`, `cargo build`). Do not change into the parent
+directory or target it (`cd /path/to/repo && ...`, `git -C /path/to/repo ...`),
+because those commands act on the main repository's branch instead of yours.
 
-1. **The worktree IS the repository root** - never `cd` to parent directories
-2. **Run all commands directly** without path prefixes
-3. **The parent directory is NOT your workspace** - it's the main repo on a different branch
-
-## Correct Usage
-
-✅ **Always do this:**
-
-```bash
-pnpm build
-git status
-cargo build
-```
-
-❌ **Never do this:**
-
-```bash
-cd /Users/.../repo && pnpm build
-git -C /Users/.../repo status
-```
-
-## Warning Signs
-
-If the shell resets your directory after a command, you likely `cd`'d to the wrong place. Stay in the worktree.
-
-## Why This Matters
-
-Conductor creates isolated worktrees for parallel agent development. Each worktree is a complete checkout on its own branch. The parent directory is the main repository on a different branch (usually `main` or `canary`), not your workspace.
+If the shell resets your directory after a command, you likely changed into the
+wrong place; stay in the worktree.
