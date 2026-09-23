@@ -58,9 +58,9 @@ bun $SKILL_DIR/scripts/validate.ts diagram.mmd
 
 The validator writes JSON containing overall validity, detected input files, source types, diagrams, source line ranges, detected diagram types, and normalized errors with line and column locations. It exits `0` when every detected diagram is valid and `1` for syntax or input errors. Markdown files without Mermaid fences are valid and report no diagrams.
 
-## Critical Syntax Rules
+## Syntax Rule: Single-Line Node Labels
 
-**NEVER use literal newlines inside node labels.** Mermaid's parser is line-based — a node definition must be on a single line. Use `<br/>` for line breaks within labels.
+Keep each node label on one line. Mermaid's parser is line-based, so a literal newline inside a label is a syntax error; use `<br/>` for line breaks within labels.
 
 ```mermaid
 %% ❌ WRONG — causes "Syntax error in text"
