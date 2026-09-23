@@ -27,7 +27,7 @@ it does.
 | `--no-gates`   | Skip Phase 3. Only when the caller already verified the tree                                                                    |
 | `--attempts N` | Bound on rebase/land cycles, default 3                                                                                          |
 
-Track the phases with `TodoWrite`; a land that loops twice is easy to lose
+Track the phases in your task list; a land that loops twice is easy to lose
 your place in.
 
 ## The cycle
