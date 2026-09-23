@@ -10,7 +10,7 @@ Easiest case. Set the manifest to your starting version:
 { ".": "0.1.0" }
 ```
 
-On the first `feat:` or `fix:` commit after setup, release-please opens a PR bumping to the next version. Merge it; you get `v0.2.0` (with `bump-minor-pre-major`) or `v0.1.1`.
+On the first `feat:` or `fix:` commit after setup, release-please opens a PR bumping to the next version. Merge it; you get `v0.2.0` for a `feat:` or `v0.1.1` for a `fix:`.
 
 **Tip:** If you want your first release to be `0.1.0` itself rather than `0.2.0`, set manifest to `0.0.0` and add `"release-as": "0.1.0"` to the config temporarily. Remove `release-as` after the first release.
 
@@ -60,30 +60,26 @@ Choose a SHA roughly where your team started using conventional commits.
 
 ## Scenario D: Pre-1.0 Project with Active 0.x Development
 
-Set `bump-minor-pre-major: true`:
+Set `"bump-minor-pre-major": true` so breaking changes stay in 0.x. Without it, the first `feat!:` or `BREAKING CHANGE:` commit cuts 1.0.0.
 
 ```json
 {
   "packages": {
     ".": {
       "release-type": "node",
-      "bump-minor-pre-major": true,
-      "bump-patch-for-minor-pre-major": true
+      "bump-minor-pre-major": true
     }
   }
 }
 ```
 
-Without these:
+With this flag:
 
-- `feat:` commits stay on patch (0.1.0 -> 0.1.1) until you manually cut 1.0.0.
-- You lose the "minor = breaking is OK in 0.x" convention.
-
-With both flags:
-
+- `feat!:` / `BREAKING CHANGE:` -> minor bump (0.1.0 -> 0.2.0)
 - `feat:` -> minor bump (0.1.0 -> 0.2.0)
 - `fix:` -> patch bump (0.1.0 -> 0.1.1)
-- `feat!:` / `BREAKING CHANGE:` -> still only minor in 0.x
+
+Add `"bump-patch-for-minor-pre-major": true` as well if `feat:` should bump only patch while pre-1.0, reserving minor bumps for breaking changes.
 
 ## Verifying the First Release PR
 

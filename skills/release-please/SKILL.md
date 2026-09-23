@@ -23,7 +23,7 @@ Use `WebFetch` on these URLs to get current documentation before proceeding.
 
 **Action version pin:** `@v5` (Apr 2026) and `@v4` are both usable. v5 only changes the runner runtime from Node 20 to Node 24 — no input/output changes. v4 received library bumps through `v4.4.1` (Apr 2026) and is the safer pin for self-hosted runners that haven't upgraded to Node 24, but no v4 release has shipped since v5.0.0, so treat "still maintained" as provisional and check for a newer v4 tag before relying on it. **Avoid `@v3`** — its last release was `v3.7.13` (Nov 2023), it runs on Node 16, and it predates the config-file-only manifest model (v4 removed most per-input configuration in favor of `release-please-config.json`). Both `release_created` (root) and `releases_created` (aggregate) outputs exist in v3 and v4 alike — the split is root-vs-aggregate, not a version difference.
 
-**Library version:** release-please-action v5.0.0 bundles release-please library v17.6.0 (still the latest action release as of 2026-09-14, re-verified today). Upstream ships releases roughly weekly to biweekly — the library was at v17.11.1 as of 2026-07-31, and has since moved to v17.11.2 (released 2026-08-24, verified against the [release-please CHANGELOG](https://github.com/googleapis/release-please/blob/main/CHANGELOG.md) on 2026-09-14, still the latest published version), several minor versions ahead of what v5.0.0 bundles. Check the action's own `package-lock.json` at your pinned tag if you need the exact bundled version.
+**Library version:** release-please-action v5.0.0 is the latest action release and bundles release-please library v17.6.0. The latest published library is v17.11.2 (see the [release-please CHANGELOG](https://github.com/googleapis/release-please/blob/main/CHANGELOG.md)), several minor versions ahead of what v5.0.0 bundles; upstream ships releases roughly weekly to biweekly. Last verified 2026-09-14. Check the action's own `package-lock.json` at your pinned tag if you need the exact bundled version.
 
 ## Quick Start
 
@@ -63,7 +63,7 @@ For Deno/JSR projects, use `release-type: node` with `extra-files` to update `de
 }
 ```
 
-**Pre-1.0 projects:** add `"bump-minor-pre-major": true` so `feat:` bumps minor (0.2.0 -> 0.3.0) and `fix:` bumps patch. Without this, 0.x projects stay flat because feat-to-minor only applies at >= 1.0.
+**Pre-1.0 projects:** add `"bump-minor-pre-major": true` so a breaking change bumps minor (0.2.0 -> 0.3.0) instead of cutting 1.0.0. On 0.x, `feat:` already bumps minor and `fix:` bumps patch by default; add `"bump-patch-for-minor-pre-major": true` only if `feat:` should bump patch while pre-1.0.
 
 ### Step 2: Check Existing Workflows
 
@@ -335,7 +335,7 @@ feat: rename `foo` to `bar`
 BREAKING CHANGE: `foo` is now `bar`
 ```
 
-For pre-1.0 projects, breaking changes still only bump minor by default. Set `"bump-patch-for-minor-pre-major": true` to instead bump patch on breaking changes pre-1.0.
+For pre-1.0 projects, a breaking change bumps to 1.0.0 by default. Set `"bump-minor-pre-major": true` to bump minor instead. `"bump-patch-for-minor-pre-major": true` is separate: it makes `feat:` bump patch while pre-1.0.
 
 ### Force release-please to re-run
 
@@ -372,7 +372,7 @@ The single most useful debugging signal is the PR label: `autorelease: pending` 
 | No release PR despite qualifying commits            | Branch protection blocks GITHUB_TOKEN PRs                                         | Allow Actions to open PRs in repo settings (Settings > Actions > General).                       |
 | Release PR stale / state machine stuck              | Race or transient API failure left release-please mid-state                       | Apply the `release-please:force-run` label to the merged release PR, then re-run the workflow.   |
 | Tag wasn't created after release PR merge           | Release-please missed the tag step (workflow killed, API timeout, label mishap)   | Apply `release-please:force-run` to the merged release PR. Re-run the workflow.                  |
-| Version didn't bump as expected                     | `bump-minor-pre-major` missing on 0.x project                                     | Add the flag.                                                                                    |
+| 0.x project jumped to 1.0.0                         | Breaking change without `bump-minor-pre-major`                                    | Add the flag.                                                                                    |
 | Release PR shows stale forced version               | Old `release-as` still in config                                                  | Remove after use.                                                                                |
 | Tag format wrong (missing `v`, missing component)   | Missing `include-v-in-tag` or `component` config                                  | See customizing docs.                                                                            |
 | Release PR merged but no GitHub release             | Workflow failed after release-please step, or `skip-github-release: true`         | Check workflow run logs.                                                                         |
@@ -404,12 +404,12 @@ The single most useful debugging signal is the PR label: `autorelease: pending` 
 
 ## Known Upstream Issues (verify if affected)
 
-Spot-checked against open issues as of 2026-08-12; re-verified against the live issue tracker on 2026-09-14 (all four remain open/unresolved as of that date). Re-check before recommending workarounds.
+The three linked issues are open upstream; last verified 2026-09-14. Re-check before recommending workarounds.
 
 - **`separate-pull-requests: true` with Go monorepos** can fail with "A pull request already exists" on release-please library v17.6.0. Confirmed open as [release-please#2773](https://github.com/googleapis/release-please/issues/2773) (opened 2026-05-09, explicitly reproduces on v17.6.0). Pin the action to a v4.x release that bundles v17.5.x if affected.
-- **`include-commit-authors`** (v17.5.0) is currently a no-op — author metadata is dropped. Confirmed open as [release-please#2761](https://github.com/googleapis/release-please/issues/2761) (P2, opened 2026-04-22); a fix, [PR #2892](https://github.com/googleapis/release-please/pull/2892), exists but is unmerged as of 2026-09-14.
+- **`include-commit-authors`** (v17.5.0) is a no-op: author metadata is dropped. Tracked as [release-please#2761](https://github.com/googleapis/release-please/issues/2761) (P2); a fix, [PR #2892](https://github.com/googleapis/release-please/pull/2892), exists but is unmerged.
 - **`chore(deps)` commits** are recognized by the dependency manifest plugin but don't trigger releases. Use `fix(deps):` to trigger a patch release from a dependency bump. Confirmed open as [release-please#2764](https://github.com/googleapis/release-please/issues/2764) (P2, "DependencyManifest recognizes chore(deps) commits but never releases them").
-- **Label-application races**: occasional 422s when release-please tries to label a freshly created PR. Workflow retry usually clears it. Could not find a specific open or closed upstream issue matching this claim as of 2026-09-14 (left unchanged, unverified either way).
+- **Label-application races**: occasional 422s when release-please tries to label a freshly created PR. Workflow retry usually clears it. No upstream issue tracks this.
 
 ## References
 
