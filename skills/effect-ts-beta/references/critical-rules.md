@@ -11,18 +11,22 @@ In v3, `Ref`, `Deferred`, `Fiber`, `Option`, `Result`, `Config`, and service tag
 **Problematic:**
 
 ```typescript
-// Type error in v4: Ref is not an Effect.
-const value = yield * ref;
-const doubled = Effect.map(ref, (n) => n * 2);
-const results = yield * Effect.all([refA, refB]);
+Effect.gen(function* () {
+  // Type error in v4: Ref is not an Effect.
+  const value = yield* ref;
+  const doubled = Effect.map(ref, (n) => n * 2);
+  const results = yield* Effect.all([refA, refB]);
+});
 ```
 
 **Correct:**
 
 ```typescript
-const value = yield * Ref.get(ref);
-const doubled = Effect.map(Ref.get(ref), (n) => n * 2);
-const results = yield * Effect.all([Ref.get(refA), Ref.get(refB)]);
+Effect.gen(function* () {
+  const value = yield* Ref.get(ref);
+  const doubled = Effect.map(Ref.get(ref), (n) => n * 2);
+  const results = yield* Effect.all([Ref.get(refA), Ref.get(refB)]);
+});
 ```
 
 For types that are still `Yieldable` (`Option`, `Result`, `Config`), `yield*` is fine, but combinators need an

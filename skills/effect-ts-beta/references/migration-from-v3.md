@@ -161,12 +161,16 @@ Read with `yield* References.X`. Replace `FiberRef.get` with a plain `yield*`, a
 
 ```typescript
 // v3
-const runtime = yield * Effect.runtime<Logger>();
-Runtime.runFork(runtime)(program);
+Effect.gen(function* () {
+  const runtime = yield* Effect.runtime<Logger>();
+  Runtime.runFork(runtime)(program);
+});
 
 // v4
-const services = yield * Effect.context<Logger>();
-Effect.runForkWith(services)(program);
+Effect.gen(function* () {
+  const services = yield* Effect.context<Logger>();
+  Effect.runForkWith(services)(program);
+});
 ```
 
 The `Runtime` module now holds only `Teardown`, `defaultTeardown`, and `makeRunMain`.

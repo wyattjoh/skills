@@ -119,7 +119,9 @@ export const FeatureFlag = Context.Reference<boolean>("myapp/FeatureFlag", {
 });
 
 // Read
-const enabled = yield * FeatureFlag;
+Effect.gen(function* () {
+  const enabled = yield* FeatureFlag;
+});
 
 // Override for the duration of an effect
 Effect.provideService(program, FeatureFlag, true);
@@ -204,8 +206,10 @@ Effect.provideService(effect, Logger, { log: console.log });
 Effect.provideContext(effect, Context.make(Logger, { log: console.log }));
 
 // Read the whole context, for example to run a nested program.
-const services = yield * Effect.context<Logger>();
-Effect.runForkWith(services)(program);
+Effect.gen(function* () {
+  const services = yield* Effect.context<Logger>();
+  Effect.runForkWith(services)(program);
+});
 ```
 
 ## Resources in Layers

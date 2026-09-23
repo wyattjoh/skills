@@ -55,37 +55,41 @@ Stream.callback<number>((queue) =>
 ## Consume Streams
 
 ```typescript
-// Collect all values. DANGEROUS for infinite streams. Returns Array<A> in v4.
-const allValues = yield * Stream.runCollect(stream);
+Effect.gen(function* () {
+  // Collect all values. DANGEROUS for infinite streams. Returns Array<A> in v4.
+  const allValues = yield* Stream.runCollect(stream);
 
-yield * Stream.runForEach(stream, (value) => Effect.log(`Got: ${value}`));
-const sum = yield * Stream.runFold(stream, 0, (acc, n) => acc + n);
-const first = yield * Stream.runHead(stream); // Option<A>
-const last = yield * Stream.runLast(stream); // Option<A>
-const count = yield * Stream.runCount(stream);
-yield * Stream.runDrain(stream); // Run for side effects, discard values
+  yield* Stream.runForEach(stream, (value) => Effect.log(`Got: ${value}`));
+  const sum = yield* Stream.runFold(stream, 0, (acc, n) => acc + n);
+  const first = yield* Stream.runHead(stream); // Option<A>
+  const last = yield* Stream.runLast(stream); // Option<A>
+  const count = yield* Stream.runCount(stream);
+  yield* Stream.runDrain(stream); // Run for side effects, discard values
+});
 ```
 
 ## Bound Consumption (Critical for Safety)
 
 ```typescript
-// WRONG: hangs forever on an infinite stream.
-yield * Stream.runCollect(infiniteStream);
+Effect.gen(function* () {
+  // WRONG: hangs forever on an infinite stream.
+  yield* Stream.runCollect(infiniteStream);
 
-// RIGHT: take first N elements.
-yield * Stream.runCollect(Stream.take(infiniteStream, 100));
+  // RIGHT: take first N elements.
+  yield* Stream.runCollect(Stream.take(infiniteStream, 100));
 
-// RIGHT: take until a condition.
-yield * Stream.runCollect(Stream.takeUntil(stream, (x) => x > 100));
+  // RIGHT: take until a condition.
+  yield* Stream.runCollect(Stream.takeUntil(stream, (x) => x > 100));
 
-// RIGHT: take while a condition holds.
-yield * Stream.runCollect(Stream.takeWhile(stream, (x) => x < 100));
+  // RIGHT: take while a condition holds.
+  yield* Stream.runCollect(Stream.takeWhile(stream, (x) => x < 100));
 
-// RIGHT: apply a timeout.
-yield * Stream.runCollect(stream).pipe(Effect.timeout("5 seconds"));
+  // RIGHT: apply a timeout.
+  yield* Stream.runCollect(stream).pipe(Effect.timeout("5 seconds"));
 
-// RIGHT: stop on an external signal.
-yield * Stream.runDrain(Stream.haltWhen(stream, shutdownSignal));
+  // RIGHT: stop on an external signal.
+  yield* Stream.runDrain(Stream.haltWhen(stream, shutdownSignal));
+});
 ```
 
 ## Transform Streams
@@ -174,9 +178,11 @@ Stream.interleave(a, b);
 Stream.partition(stream, (x) => x > 0);
 
 // Scoped fan-out. Both return Effects requiring a Scope.
-yield * Stream.broadcast(stream, { capacity: 16 }); // one shared downstream Stream
-yield * Stream.broadcastN(stream, { n: 3, capacity: 16 }); // a tuple of 3 Streams
-yield * Stream.share(stream, { capacity: 16, idleTimeToLive: "10 seconds" });
+Effect.gen(function* () {
+  yield* Stream.broadcast(stream, { capacity: 16 }); // one shared downstream Stream
+  yield* Stream.broadcastN(stream, { n: 3, capacity: 16 }); // a tuple of 3 Streams
+  yield* Stream.share(stream, { capacity: 16, idleTimeToLive: "10 seconds" });
+});
 ```
 
 ## Common Gotchas
