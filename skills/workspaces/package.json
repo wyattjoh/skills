@@ -9,6 +9,6 @@
   "dependencies": {
     "commander": "^15",
     "effect": "3.22.1",
-    "yaml": "^2.9.0"
+    "yaml": "^2.9.1"
   }
 }
