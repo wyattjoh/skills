@@ -369,7 +369,8 @@ yesterday"`, Claude receives `Summarize $ARGUMENTS from yesterday`.
   is left as-is, and a doubled backslash (`\\$1`) does not escape. The backslash
   escape does not apply to `${CLAUDE_*}` variables.
 
-## Extended Thinking
+## Reasoning depth
 
-Include the word "ultrathink" anywhere in your skill content to activate
-extended thinking mode for complex reasoning tasks.
+Control reasoning depth with the `effort` frontmatter field (see
+[frontmatter-reference.md](frontmatter-reference.md)). On models where thinking
+is always on, effort is the only depth control.

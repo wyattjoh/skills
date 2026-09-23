@@ -91,7 +91,7 @@ skills/
     references/        # Optional: Supporting documentation
 ```
 
-**Important:** The file MUST be named exactly `SKILL.md` (case-sensitive).
+Name the file exactly `SKILL.md` (case-sensitive).
 
 ### Script Runtime Defaults
 
@@ -247,7 +247,7 @@ Use the Read tool to read `skills/<name>/SKILL.md` and understand its state.
 
 ### Step 2: Identify Enhancement Type
 
-- **Descriptions**: Add specific trigger phrases, common user phrasings, keywords
+- **Descriptions**: Sharpen the purpose and the categories of request it serves; add a phrase only for a demonstrated trigger miss
 - **Content**: Add workflows, examples, error handling guidance
 - **References**: Create `references/` subdirectory for detailed docs
 
@@ -340,7 +340,7 @@ hooks:
 
 1. Check description contains specific trigger phrases
 2. Verify phrases match what users actually say
-3. Add more keyword mentions
+3. Broaden the description to the category of intent the missed request belongs to
 4. Test by explicitly mentioning trigger phrases
 
 ### YAML Errors
@@ -391,7 +391,7 @@ with the `skillListingBudgetFraction` setting or the
 7. **Test activation** -- Verify the skill triggers on expected phrases
 8. **Match freedom to fragility** -- Exact steps for fragile ops, general
    guidance for flexible tasks
-9. **Update descriptions iteratively** -- Add trigger phrases as you discover
-   how users ask for help
-10. **Enable extended thinking** -- Include "ultrathink" in skill content for
-    complex reasoning tasks
+9. **Describe intent, not every phrasing** -- Name the categories of request the
+   skill serves; add a specific phrase only when a trigger test misses it
+10. **Set reasoning depth with `effort`** -- Use the `effort` frontmatter field
+    for skills that need deeper reasoning

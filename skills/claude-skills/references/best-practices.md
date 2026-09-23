@@ -218,7 +218,7 @@ Choose one term and use it throughout. Don't mix "API endpoint" / "URL" /
 
 Provide templates for output format. Match strictness to your needs:
 
-- **Strict** (API responses, data formats): "ALWAYS use this exact template"
+- **Strict** (API responses, data formats): "Use this exact template"
 - **Flexible** (when adaptation is useful): "Sensible default, adjust as needed"
 
 ### Examples Pattern
