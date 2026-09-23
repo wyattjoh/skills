@@ -14,11 +14,11 @@ You will receive:
 
 - A **project directory path** containing an `.xcodeproj` or `.xcworkspace`
 - Optionally: a specific **scheme**, **target**, or **configuration** to build
-- Optionally: a **post-build action** — one of:
-  - **build only** (default) — compile and report results
-  - **install** — build, then install the app on the target device/simulator
-  - **run** — build, install, and launch the app
-  - **run with logs** — build, install, launch, and stream console output
+- Optionally: a **post-build action**, one of:
+  - **build only** (default): compile and report results
+  - **install**: build, then install the app on the target device/simulator
+  - **run**: build, install, and launch the app
+  - **run with logs**: build, install, launch, and stream console output
 
 If no scheme/target is specified, auto-detect using the project's available schemes. Post-build actions only execute if the build succeeds.
 
@@ -100,7 +100,7 @@ For each error:
 
 ## Post-Build Workflow (Only if Requested and Build Succeeded)
 
-Skip this section entirely for build-only requests. If the build failed, stop and report errors — never attempt install or launch.
+Skip this section entirely for build-only requests. If the build failed, stop and report errors; never attempt install or launch.
 
 ### 4. Install the App
 
@@ -220,9 +220,9 @@ Return a **Build Report** in this structure:
 
 ### Warnings
 
-| # | Location | Warning |
+| #   | Location       | Warning                            | Suggested Fix             |
 | --- | -------------- | ---------------------------------- | ------------------------- |
-| 1 | Model.swift:99 | immutable value 'x' was never used | Remove or prefix with `_` |
+| 1   | Model.swift:99 | immutable value 'x' was never used | Remove or prefix with `_` |
 
 ### App Status (only if install/run was requested)
 
@@ -231,13 +231,13 @@ Return a **Build Report** in this structure:
 - **Bundle ID**: [com.example.App]
 
 ### Console Output (only if logs were requested)
-```
 
-[Relevant log excerpts — crashes, errors, or first meaningful output]
-
-```
+\`\`\`
+[Relevant log excerpts: crashes, errors, or first meaningful output]
+\`\`\`
 
 ### Summary
+
 [One sentence: what went wrong and the recommended next step, or confirmation that the build is clean and app is running]
 ```
 
@@ -262,7 +262,7 @@ If the build succeeds and the app is running, use:
 
 ### Result
 
-**BUILD SUCCEEDED — App Running**
+**BUILD SUCCEEDED (App Running)**
 
 ### Build Metadata
 
@@ -273,10 +273,10 @@ If the build succeeds and the app is running, use:
 
 ## Key Principles
 
-1. **Always capture to `/tmp/build.log`** — Parse the log, don't rely on truncated terminal output
-2. **Read before diagnosing** — Open source files at error locations before suggesting fixes
-3. **Group related errors** — Multiple "cannot find in scope" errors often share one root cause (missing import)
-4. **One build attempt only** — Report the result; do not retry or fix errors yourself
-5. **Never install or run after a failed build** — Post-build actions require a successful build
-6. **macOS first, then physical device over simulator** — If scheme targets macOS, skip device/simulator; otherwise prefer a physical device over a simulator
-7. **Stay concise** — The parent conversation only needs the structured report, not a narration of your process
+1. **Always capture to `/tmp/build.log`**: Parse the log, don't rely on truncated terminal output
+2. **Read before diagnosing**: Open source files at error locations before suggesting fixes
+3. **Group related errors**: Multiple "cannot find in scope" errors often share one root cause (missing import)
+4. **One build attempt only**: Report the result; do not retry or fix errors yourself
+5. **Never install or run after a failed build**: Post-build actions require a successful build
+6. **macOS first, then physical device over simulator**: If scheme targets macOS, skip device/simulator; otherwise prefer a physical device over a simulator
+7. **Stay concise**: The parent conversation only needs the structured report, not a narration of your process
