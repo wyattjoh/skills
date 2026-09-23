@@ -8,7 +8,7 @@ compatibility: Requires macOS and Screen Recording permission. Peekaboo is recom
 
 Treat screenshot capture as one atomic automation, not a sequence of model tool calls.
 
-## Non-negotiable rule
+## One script owns the capture
 
 Write one script that owns the complete operation:
 
