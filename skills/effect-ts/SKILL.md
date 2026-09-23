@@ -20,15 +20,14 @@ node -p "require('./package.json').dependencies?.effect ?? require('./package.js
 
 Before starting any Effect-related work, verify the Effect-TS source code exists at `$SKILL_DIR/.source/`.
 
-**If missing, stop immediately and inform the user.** Clone it before proceeding:
+If it is missing, clone it before proceeding and tell the user you did:
 
 ```bash
 git clone --depth=1 --branch effect@3.22.1 https://github.com/Effect-TS/effect.git "$SKILL_DIR/.source"
 ```
 
-The `main` branch now tracks Effect v4 (currently `4.0.0-beta.107` on the npm
-`beta` dist-tag, with release candidates ahead of it on `rc`), which has
-breaking API changes relative to the v3 patterns documented in this skill.
+The `main` branch tracks Effect v4, which has breaking API changes relative to
+the v3 patterns documented in this skill.
 Service definition alone moved from `Context.Tag` to `Context.Service`, with the
 identifier and type parameters in the opposite order. Pin the clone to a v3 tag,
 matching the `effect@3.22.1` reference submodule pinned in the root `CLAUDE.md`,
@@ -36,85 +35,23 @@ rather than cloning `main` unpinned.
 
 ## Research Strategy
 
-Effect-TS has many ways to accomplish the same task. Proactively research best practices using the Agent tool to spawn
-research agents when working with Effect patterns, especially for moderate to high complexity tasks.
-
-### Research Sources (Priority Order)
-
-1. **Codebase Patterns First** — Examine similar patterns in the current project before implementing. If Effect patterns
-   exist in the codebase, follow them for consistency. If no patterns exist, skip this step.
-
-2. **Effect Source Code** — For complex type errors, unclear behavior, or implementation details, examine the Effect
-   source at `$SKILL_DIR/.source/packages/effect/src/`. This contains the core Effect logic and modules.
-
-### When to Research
-
-**HIGH Priority (Always Research):**
-
-- Implementing Services, Layers, or complex dependency injection
-- Error handling with multiple error types or complex error hierarchies
-- Stream-based operations and reactive patterns
-- Resource management with scoped effects and cleanup
-- Concurrent/parallel operations and performance-critical code
-- Testing patterns, especially unfamiliar test scenarios
-
-**MEDIUM Priority (Research if Complex):**
-
-- Refactoring imperative code (try-catch, promises) to Effect patterns
-- Adding new service dependencies or restructuring service layers
-- Custom error types or extending existing error hierarchies
-- Integrations with external systems (databases, APIs, third-party services)
-
-### Research Approach
-
-- Spawn multiple concurrent Agent calls when investigating multiple related patterns
-- Focus on finding canonical, readable, and maintainable solutions rather than clever optimizations
-- Verify suggested approaches against existing codebase patterns for consistency (if patterns exist)
-- When multiple approaches are possible, research to find the most idiomatic Effect-TS solution
-
-## Codebase Pattern Discovery
-
-When working in a project that uses Effect, check for existing patterns before implementing new code:
-
-1. **Search for Effect imports** — Look for files importing from `'effect'` to understand existing usage
-2. **Identify service patterns** — Find how Services and Layers are structured in the project
-3. **Note error handling conventions** — Check how errors are defined and propagated
-4. **Examine test patterns** — Look at how Effect code is tested in the project
-
-**If no Effect patterns exist in the codebase**, proceed using canonical patterns from the Effect source and examples.
-Do not block on missing codebase patterns.
+Effect-TS has many ways to accomplish the same task. When the project already uses
+Effect, follow its existing patterns for services, errors, and tests. For complex type
+errors, unclear behavior, or implementation details, read the Effect source at
+`$SKILL_DIR/.source/packages/effect/src/`. Prefer the canonical, idiomatic solution over a
+clever one.
 
 ## Effect Principles
 
-Apply these core principles when writing Effect code:
-
-### Error Handling
-
-- Use Effect's typed error system instead of throwing exceptions
-- Define descriptive error types with proper error propagation
-- Use `Effect.fail`, `Effect.catchTag`, `Effect.catchAll` for error control flow
-- See `./references/critical-rules.md` for forbidden patterns
-
-### Dependency Injection
-
-- Implement dependency injection using Services and Layers
-- Define services with `Context.Tag`
-- Compose layers with `Layer.merge`, `Layer.provide`
-- Use `Effect.provide` to inject dependencies
-
-### Composability
-
-- Leverage Effect's composability for complex operations
-- Use appropriate constructors: `Effect.succeed`, `Effect.fail`, `Effect.tryPromise`, `Effect.try`
-- Apply proper resource management with scoped effects
-- Chain operations with `Effect.flatMap`, `Effect.map`, `Effect.tap`
-
-### Code Quality
-
-- Write type-safe code that leverages Effect's type system
-- Use `Effect.gen` for readable sequential code
-- Implement proper testing patterns using Effect's testing utilities
-- Prefer `Effect.fn()` for automatic telemetry and better stack traces
+- Model expected failures as typed errors with `Effect.fail`, and handle them with
+  `Effect.catchTag` and `Effect.catchAll` instead of throwing. See
+  `./references/critical-rules.md` for forbidden patterns.
+- Define services with `Context.Tag` or `Effect.Service`, compose layers with `Layer.merge`
+  and `Layer.provide`, and inject them with `Effect.provide`.
+- Build effects with the constructors (`Effect.succeed`, `Effect.fail`, `Effect.tryPromise`,
+  `Effect.try`), and manage resources with scoped effects.
+- Write sequential code with `Effect.gen`, and prefer `Effect.fn()` for named functions
+  (automatic tracing spans and better stack traces).
 
 ## Critical Rules
 
@@ -164,7 +101,7 @@ Effect.forEach(items, fn); // Map over items with effects
 Effect.all([e1, e2, e3], { mode: "validate" }); // Returns all failures
 
 // Partial success handling
-Effect.partition([e1, e2, e3]); // Returns [failures, successes]
+Effect.partition(items, (item) => process(item)); // Returns [failures, successes]
 ```
 
 ### Error Handling
@@ -184,7 +121,7 @@ Effect.gen(function* () {
 
 Effect.catchTag(effect, tag, fn); // Handle specific error tag
 Effect.catchAll(effect, fn); // Handle all errors
-Effect.result(effect); // Convert to Exit value
+Effect.exit(effect); // Convert to Exit value
 Effect.orElse(effect, alt); // Fallback effect
 ```
 
@@ -363,9 +300,11 @@ SubscriptionRef.set(ref, value); // Update value (notifies subscribers)
 SubscriptionRef.changes(ref); // Stream of value changes
 
 // React integration (effect-atom pattern)
-const ref = yield * SubscriptionRef.make<User | null>(null);
-// Hook reads: useSubscriptionRef(ref) — returns current value or null
-// Handle null explicitly in components
+Effect.gen(function* () {
+  const ref = yield* SubscriptionRef.make<User | null>(null);
+  // Hook reads: useSubscriptionRef(ref), which returns the current value or null
+  // Handle null explicitly in components
+});
 ```
 
 ### Concurrency
@@ -391,7 +330,9 @@ const host = Config.string("HOST").pipe(
 
 // Sensitive values (masked in logs)
 const apiKey = Config.redacted("API_KEY"); // Returns Redacted<string>
-const secret = Redacted.value(yield * apiKey); // Unwrap when needed
+Effect.gen(function* () {
+  const secret = Redacted.value(yield* apiKey); // Unwrap when needed
+});
 
 // Nested configuration with prefix
 const dbConfig = Config.all({
