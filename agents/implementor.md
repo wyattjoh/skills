@@ -61,15 +61,15 @@ success from an unreviewed diff.
 1. **Commit** your work in the working tree so the diff is stable and reviewable.
 2. **Review.** Spawn a reviewer subagent (`code-reviewer` unless you were told
    which to use) via the Agent tool. Give it: the spec verbatim, the diff, and
-   an explicit instruction to judge the diff **against that spec** — not against
+   an explicit instruction to judge the diff **against that spec**, not against
    its own taste in architecture. Ask for a verdict of `approved` or
    `changes_requested` plus specific comments.
 3. **Fix.** On `changes_requested`, address every comment. Push back in your
    report on any comment that is out of scope or wrong, but address the rest.
 4. **Re-review** with the _same_ reviewer via `SendMessage`, so it confirms its
    own prior comments were resolved rather than re-deriving them from scratch.
-5. **Cap at 3 rounds.** Reaching the cap without approval is not failure to hide
-   — report `blocked` with the outstanding comments and your diff.
+5. **Cap at 3 rounds.** Reaching the cap without approval is not failure to hide:
+   report `blocked` with the outstanding comments and your diff.
 
 A reviewer that approves on the first round is a normal outcome for a small
 task, not a signal to invent more work.
@@ -92,7 +92,7 @@ reasons that predate your change, say that and show the output.
 ## Reporting
 
 Your final message is the return value. When a coordinator spawned you as a peer
-session, also send it via `SendMessage` to the coordinator that named you —
+session, also send it via `SendMessage` to the coordinator that named you, because
 your plain output is not visible to other sessions.
 
 Report this, and nothing decorative:
