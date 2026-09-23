@@ -20,7 +20,7 @@ its own herdr tab and its own git worktree.
 
 You stay in this session as the **coordinator**. You own the schedule, the
 worktrees, the merges, and the conversation with the user. Workers own their
-implementation _and their own review loop_ — each spawns its own reviewer
+implementation _and their own review loop_: each spawns its own reviewer
 subagent and iterates until that reviewer approves, then reports back to you
 once. You never review their work round-by-round; you verify the result.
 
@@ -43,7 +43,7 @@ under a different agent CLI or a non-Claude model.
    address their reports to it), the repo root, and the live peer list.
 
 2. **Parse the tickets** into `[{ id, title, path, dependsOn }]`. Dependencies
-   are explicit only — from `depends-on:` frontmatter or `after #N` notation.
+   are explicit only, from `depends-on:` frontmatter or `after #N` notation.
    Never infer an edge silently; propose it at the gate instead.
 
 3. **Confirm** (see [Confirmation gate](#confirmation-gate)). Nothing
@@ -64,7 +64,7 @@ under a different agent CLI or a non-Claude model.
 
 6. **Report**: merged / escalated / blocked, plus retained worktree paths.
 
-If a roster already exists for the batch, you are **resuming** — reconcile
+If a roster already exists for the batch, you are **resuming**: reconcile
 before dispatching anything. Do not start fresh.
 
 ## Confirmation gate
@@ -72,9 +72,9 @@ before dispatching anything. Do not start fresh.
 Resolve and present all of this before creating a worktree, tab, or branch:
 
 - **Ticket list** with ids, titles, and the dependency DAG.
-- **Merge target** — the branch workers' commits land on.
-- **Concurrency cap** — simultaneous workers. Default 3.
-- **Per-ticket dispatch plan** — for each ticket: the CLI (`claude` or `pi`),
+- **Merge target**: the branch workers' commits land on.
+- **Concurrency cap**: simultaneous workers. Default 3.
+- **Per-ticket dispatch plan**: for each ticket, the CLI (`claude` or `pi`),
   the agent definition, the model, and the effort. See
   [Choosing how a worker runs](#choosing-how-a-worker-runs).
 - **The blast radius, stated plainly**: N unattended sessions will run with
@@ -99,7 +99,7 @@ Per ticket, in this order:
 
 2. **Take model and effort from that agent's frontmatter.** When the agent
    declares `model` or `effort`, do **not** pass a competing `--model`/`--effort`
-   flag — the agent's own configuration is the point. When it omits them, they
+   flag: the agent's own configuration is the point. When it omits them, they
    inherit from the launched session's defaults.
 
 3. **When no agent matches**, launch a plain session with whatever the user
@@ -107,8 +107,8 @@ Per ticket, in this order:
    the correct way to inherit; there is no "inherit" value to pass.
 
 `claude --agent <name>` replaces the default Claude Code system prompt
-**entirely**. The brief is therefore the worker's only instruction set — see
-[The brief](#the-brief).
+**entirely**. The brief is therefore the worker's only instruction set (see
+[The brief](#the-brief)).
 
 **Model routes the CLI.** Anything in the `gpt-` family runs under `pi`;
 everything else runs under `claude`. `spawn.ts` infers this from `--model`, or
@@ -118,7 +118,7 @@ takes `--kind` explicitly. pi advertises itself as a peer via `--claude-peer
 
 **"terra", "luna" and "sol" are the operator's names for the gpt-5.6 models.**
 A request to "use terra" means `gpt-5.6-terra`, and likewise for
-`gpt-5.6-luna` and `gpt-5.6-sol`. Pass any of these — bare alias or full name —
+`gpt-5.6-luna` and `gpt-5.6-sol`. Pass any of these (bare alias or full name)
 as `--model`; `spawn.ts` expands them to the provider-qualified form pi needs:
 
 | You pass         | pi receives                          |
@@ -138,7 +138,7 @@ it to `.herd/<batch>/<ticket-id>/brief.md`, and pass that path to `spawn.ts`.
 
 The brief is the whole contract: identity, boundaries, the inlined spec,
 verification commands, the self-review loop, and the exact JSON report format.
-Inline the spec verbatim — a worker told to go read its ticket can read the
+Inline the spec verbatim: a worker told to go read its ticket can read the
 wrong file or improvise.
 
 `spawn.ts` submits the brief through an argv array, never a shell string, so
@@ -176,7 +176,7 @@ Workers report **once**, over peer messaging, as a JSON body. That message is
 the authoritative completion signal.
 
 Use `herdr pane read` only to diagnose a worker that has gone quiet, never as
-the completion signal — it returns wrapped, truncated, TUI-decorated text.
+the completion signal: it returns wrapped, truncated, TUI-decorated text.
 `herdr agent list` / `herdr agent wait` give you `agent_status` for stall
 detection; a worker sitting in `blocked` is waiting on a prompt.
 
@@ -198,10 +198,10 @@ confirmation gate, and fold anything relevant into the dispatch plan. Write to
 that directory at the end of a run.
 
 It is cross-project on purpose: what generalizes is how _herding_ behaves, not
-what any one repo contains. Worth recording — an agent definition that turned
+what any one repo contains. Worth recording: an agent definition that turned
 out to suit (or badly misfit) a class of ticket; a model or effort level that
 reliably under- or over-shot; a spawn or peer-messaging failure and its cause;
-a ticket shape that should have been split. Not worth recording — anything
+a ticket shape that should have been split. Not worth recording: anything
 recoverable from the repo, the roster, or git history.
 
 One file per fact, plus a one-line pointer in `MEMORY.md`:
@@ -235,6 +235,6 @@ bun $SKILL_DIR/scripts/roster.ts summary --repo-root <dir> --batch <name> [--jso
 ```
 
 `roster.ts init` rejects duplicate ids, unknown dependencies, self-dependencies,
-and cycles — the graph problems that otherwise surface as a deadlocked batch.
+and cycles: the graph problems that otherwise surface as a deadlocked batch.
 `set` re-propagates blocks after every transition, so a failed ticket marks its
 dependents immediately.
