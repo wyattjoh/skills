@@ -55,8 +55,9 @@ secret reference. Never put the API key value in either file.
 
 ## Workflow
 
-Follow all six phases sequentially. Do not skip phases unless the user
-explicitly asks to.
+Run the phases in order. Phases 2, 3, 5, and 6 are user checkpoints, and Phase 4
+makes billed API requests, so reach each checkpoint unless the user asks to skip
+it.
 
 ### Phase 1: Project Discovery
 
@@ -232,5 +233,5 @@ When composing the `--prompt` value:
 - **Transparent backgrounds are unsupported**: this model does not expose a
   background transparency parameter through OpenRouter. Mention this if the
   user asks for transparency.
-- **Icon composition**: always remind the user that icons should have a single,
-  recognizable element; avoid text or complex scenes.
+- **Icon composition**: icons read best as a single, recognizable element without
+  text or complex scenes. Point this out when a requested concept includes either.
