@@ -24,7 +24,7 @@ Arguments: `$ARGUMENTS`
   `brief.md` and your own `RESUME.md`. Record one lowercase UUID as
   `Run id: <uuid>` in that RESUME.md when you create it; it identifies you as
   the owner of the repository's agreements file.
-- `resume .scratch/<folder>` is the successor form after a handoff.
+- `resume .scratch/<folder>` starts a successor after the previous session ends.
 
 ## Boundaries
 
@@ -101,15 +101,14 @@ worktrees yourself.
 
 ## Handoff
 
-Use Herdr's normalized `context_used` and `context_limit` values and hand off at
-80 percent at a safe point. Persist merge order, shared-file assignments,
-pending decisions, global run file observations, and acknowledgements first.
-The successor reuses your `Run id:`, so agreements ownership carries over. Discover
-and validate the successor role through the active harness. Launch with exact
-argument arrays, never a shell-interpolated command. The successor rereads all
-authoritative files, starts the event subscription, and publishes a unique
-readiness marker. Close the predecessor only after the exact successor pane and
-marker are verified. A failed successor leaves the predecessor responsible.
+Automatic handoff is disabled: Herdr 0.9.1 does not expose normalized model
+context utilization, so never estimate it from rendered pane output. Continue
+through the harness's normal compaction. Before ending any turn, persist merge
+order, shared-file assignments, pending decisions, global run file
+observations, and acknowledgements. If this session ends, the user starts a
+successor with `resume .scratch/<folder>`; it reuses your `Run id:`, so
+agreements ownership carries over, rereads all authoritative files, and
+re-arms the event cycle.
 
 ## Resume
 

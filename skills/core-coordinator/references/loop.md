@@ -3,7 +3,7 @@
 Arm one bounded Herdr event wait over every run coordinator pane from the
 repository's global run files. Subscribe before taking the immediate machine-readable
 snapshot so a completion or pane-exit event cannot be lost during bootstrap.
-Use normalized agent status and context fields only. Never parse rendered
+Use normalized agent status fields only. Never parse rendered
 terminal lines for status or context use.
 
 Wake on:
@@ -12,7 +12,6 @@ Wake on:
 - a cross-session message from a run owner;
 - a run owner message reporting a persisted state change;
 - a bounded timeout with a complete pane snapshot;
-- the core coordinator reaching the handoff threshold.
 
 After each wake:
 
@@ -28,8 +27,7 @@ After each wake:
 7. arm the next bounded event wait when active or waiting runs remain.
 
 On timeout, check missing panes, unchanged ownership generations, heartbeats
-older than twice each run's stall interval, local diff footprints, pending acknowledgements, and your normalized
-context utilization. A timeout never means a run completed. Send at most one
+older than twice each run's stall interval, local diff footprints, and pending acknowledgements. A timeout never means a run completed. Send at most one
 bounded continuation message to a healthy but idle owner. Escalate a missing or
 repeatedly unhealthy owner to the user rather than relaunching it with guessed
 configuration.
