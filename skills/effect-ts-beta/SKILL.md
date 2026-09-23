@@ -16,7 +16,7 @@ than recalling it.
 
 Before starting any v4 work, verify the Effect v4 source exists at `$SKILL_DIR/.source/`.
 
-**If missing, stop immediately and inform the user.** Clone it before proceeding:
+If it is missing, clone it before proceeding and tell the user you did:
 
 ```bash
 git clone --depth=1 --branch effect@4.0.0-beta.107 https://github.com/Effect-TS/effect.git "$SKILL_DIR/.source"
@@ -246,7 +246,7 @@ Effect.forEach(items, fn, { concurrency: 5 });
 // Collect every result instead of short-circuiting (v3 used mode: "validate").
 Effect.all([e1, e2, e3], { mode: "result" });
 
-// Partition requires a mapping function in v4; returns [failures, successes].
+// Returns [failures, successes].
 Effect.partition(items, (item) => process(item));
 ```
 
@@ -389,7 +389,9 @@ Effect.race(a, b);
 `yield*` and set with `Effect.provideService`.
 
 ```typescript
-const level = yield * References.CurrentLogLevel;
+Effect.gen(function* () {
+  const level = yield* References.CurrentLogLevel;
+});
 Effect.provideService(effect, References.CurrentLogLevel, "Debug"); // v3: Effect.locally
 ```
 
