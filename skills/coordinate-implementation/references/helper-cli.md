@@ -376,6 +376,89 @@ incompatible attempt conflicts with the durable runtime instead of rewriting
 it. Failed validation leaves state unchanged and removes a newly created
 artifact; an identical artifact that existed before the attempt is preserved.
 
+## `implementor.runtime.migrate`
+
+Use this narrow recovery only after the user explicitly authorizes replacing an
+interrupted Claude implementor with the exact persisted Pi Implementor default.
+It does not create a new run or worktree and does not modify ticket code.
+
+```json
+{
+  "schema_version": 1,
+  "operation": "implementor.runtime.migrate",
+  "input": {
+    "state_path": ".scratch/example/RESUME.md",
+    "ticket": "12",
+    "expected_binding": {
+      "worktree_path": "/worktrees/example/ticket-12",
+      "branch": "feature/ticket-12",
+      "role": { "harness": "claude", "model": "opus", "effort": "medium" },
+      "implement_skill_path": "/implement",
+      "session": "example-12",
+      "tab": "implement example 12",
+      "pane": "w1:p12",
+      "artifact_path": ".scratch/example/briefs/launch-12.json",
+      "attempt": 1,
+      "retry": "0 of 3",
+      "phase": "working"
+    },
+    "replacement_role": { "harness": "pi", "model": "openai-codex/gpt-5.6-sol", "effort": "high" },
+    "user_authorized": true,
+    "completed_at": "2026-09-23T12:00:00Z"
+  }
+}
+```
+
+The old binding must exactly match the active ticket and its immutable launch
+artifact. The replacement must exactly match the persisted Pi `Implementor:`
+role and pass role validation. Herdr must report `pane_not_found` for the exact
+old pane; a live pane, ambiguous machine response, stale role, or mismatched
+artifact fails without changing state. Success archives the runtime block under
+`## Closed ticket runtimes`, records the explicit decision, and writes immutable
+run-local evidence at `briefs/implementor-runtime-migration-NN.json` containing
+the old artifact hash, Herdr pane-closure observation, original finalization,
+and a snapshot of HEAD, Git status, and changed-file contents. After the atomic
+RESUME update, the helper writes
+`briefs/implementor-runtime-migration-NN.json.commit.json`, binding the exact
+evidence hash and both state references. Launch consumers fail closed unless the
+commit marker and both references match; retry the identical authorized request
+to reconcile a pending transaction. The migration preserves the old launch
+artifact, branch, worktree, dirty files, and serialized finalization. Dirty
+`working` worktrees are retained as-is; `gates`-phase migration requires a
+clean worktree and a valid untouched serialized finalization, which remains
+byte-for-byte unchanged. The result says `action: prepare-replacement`. A
+replacement launch must use the exact preserved worktree and branch and must
+match the captured snapshot before the first launch.
+
+## `implementor.runtime.migration.recover`
+
+A gates-phase migration cannot proceed directly to gates or review. After
+`implementor.runtime.migrate`, authorize an explicit transition to
+`resynchronize` using the exact migration evidence hash:
+
+```json
+{
+  "schema_version": 1,
+  "operation": "implementor.runtime.migration.recover",
+  "input": {
+    "state_path": ".scratch/example/RESUME.md",
+    "ticket": "13",
+    "migration_evidence_sha256": "<sha256-of-exact-migration-evidence-bytes>",
+    "user_authorized": true,
+    "completed_at": "2026-09-23T12:05:00Z"
+  }
+}
+```
+
+Recovery revalidates the exact committed migration, original finalization block,
+clean worktree, HEAD, and changed-file snapshot. It records the user-authorized
+`gates -> resynchronize` decision without changing ticket files. Prepare a
+replacement launch in the preserved worktree and branch, then call
+`landing.synchronize`; only its fresh synchronized gate phase permits new gate
+records or reviewer launches. Each gate record binds that finalization cycle,
+so old gate artifacts cannot pass review after resynchronization. Repeating
+recovery is idempotent. Working-phase migrations do not need this operation.
+
 ## `implementor.launch.recover`
 
 Recover one exhausted attempt-4 launch only when the user has explicitly
@@ -772,6 +855,86 @@ authorization in `## Decisions`. A changed HEAD, dirty worktree, different gate,
 stale evidence, missing authority, or nonzero rerun fails without changing
 state. Repeating the byte-identical operation is idempotent.
 
+## `review.attempt.supersede`
+
+Record only a user-authorized interrupted Claude review attempt whose exact
+Herdr pane is already absent. This writes immutable interruption evidence, not
+a review report, verdict, or accepted axis.
+
+```json
+{
+  "schema_version": 1,
+  "operation": "review.attempt.supersede",
+  "input": {
+    "state_path": ".scratch/example/RESUME.md",
+    "artifact_path": ".scratch/example/reviews/13-round-0-standards-attempt-1.json",
+    "expected_binding": {
+      "ticket": "13",
+      "round": 0,
+      "axis": "standards",
+      "attempt": 1,
+      "reviewer": { "harness": "claude", "model": "opus", "effort": "medium" },
+      "worktree_path": "/worktrees/example/ticket-13",
+      "branch": "feature/ticket-13",
+      "base_ref": "<full-base-sha>",
+      "pane": "w1:p13",
+      "session": "example-review-13-r0-standards-a1",
+      "tab": "review example 13 r0 standards a1",
+      "reviewed_head": "<full-ticket-sha>",
+      "status_before": "",
+      "context_paths": ["CLAUDE.md", ".claude/rules/testing.md"],
+      "landed_tickets": ["01", "02"],
+      "gate_evidence_paths": [
+        ".scratch/example/reviews/13-round-0-format-attempt-1.json",
+        ".scratch/example/reviews/13-round-0-test-attempt-1.json"
+      ],
+      "artifact_sha256": "<sha256-of-exact-launch-artifact-bytes>"
+    },
+    "user_authorized": true,
+    "reason": "Reviewer pane exited before producing a report.",
+    "completed_at": "2026-09-23T12:10:00Z"
+  }
+}
+```
+
+The binding and artifact hash must match exactly. The operation requires the
+persisted Reviewer default to be Pi, the exact ticket worktree and branch to be
+clean at the reviewed HEAD, a gates-phase or authorized migration-resynchronize
+finalization with no review artifacts, complete passing evidence for every
+configured gate, and no report at the old attempt's report path. Herdr must
+return `pane_not_found` for the persisted pane. Success writes
+`status: superseded`, `action: retry`, and `next_attempt` to the immutable JSON
+sidecar next to the old report path, then adds a superseded reference to
+RESUME.md. After that atomic state update, it writes
+`<report-path>.json.commit.json`, binding the evidence hash and exact state
+reference. Retry the same supersession request to reconcile a pending write;
+review consumers refuse to proceed until the sidecar, reference, and marker all
+match. The state reference carries a monotonic per-ticket-round supersession
+generation, also bound by the sidecar and commit marker. A prior axis's pending
+commit blocks superseding another axis in that round until the exact request
+commits. Legacy passing gates without this field are captured as generation 0
+only in the supersession sidecar, bound to their exact SHA-256; they cannot be
+used as new gate evidence. The operation preserves the prior launch artifact
+and does not claim a verdict. It returns `gate_rerun_required: true`;
+`gate.record` serializes evidence publication with the same state lock and
+snapshots that generation. Before a Pi retry, every configured gate must have a
+higher attempt, a distinct evidence path, and the current generation. Caller
+timestamps remain metadata, not freshness proof. A
+live pane, existing report, mismatched binding, missing user authority, changed
+HEAD, or dirty worktree fails closed. An exact retry is idempotent and returns
+`recovered: true`.
+
+Reviewer attempt identity is indexed for the active ticket and keyed by round,
+axis, and attempt. The index canonicalizes `state_path`, ignores artifacts for
+historical tickets, and serializes its scan through artifact creation under the
+run-state lock. The caller cannot reuse an attempt with another path or skip its
+exact immediately preceding artifact. A finalization synchronization cycle is
+independent of the review round: interrupted attempts remain bound to their
+reviewed HEAD, base SHA, and range. When serialized finalization exists, gate
+evidence binds its current cycle, including after migration recovery; timestamps
+do not substitute for that binding. Ordinary malformed-report or infrastructure
+retries continue to require the same reviewer role and the same gate evidence.
+
 ## `review.launch.prepare`
 
 Prepare each Standards or Spec axis independently in a newly created Herdr pane:
@@ -814,10 +977,13 @@ prefix, ticket, round, axis, and attempt. Returned Herdr start and prompt
 commands are argument arrays and require no shell interpolation.
 
 Attempt 1 requires `previous_artifact_path: null`. Attempts 2 through 4 require
-the preceding attempt's artifact path and accepted retry evidence. A retry must keep
-the same ticket, round, axis, Reviewer role, canonical worktree, branch, base
-ref, context paths, landed tickets, gate evidence paths, and reviewed HEAD.
-Only the new artifact and report paths, pane, and derived session may differ.
+the unique immediately preceding attempt's artifact path and accepted retry
+evidence. A retry must keep the same ticket, round, axis, Reviewer role,
+canonical worktree, branch, base ref, context paths, landed tickets, gate
+evidence paths, and reviewed HEAD. Only the new artifact and report paths, pane,
+and derived session may differ. Attempt identities are indexed across run-local
+launch artifacts and RESUME references, so a different caller-selected path
+cannot restart or reuse an attempt number.
 
 The generated prompt prohibits mutation and non-actionable preferences. Every
 finding must have severity, a real `path:positive-line` location, rationale,

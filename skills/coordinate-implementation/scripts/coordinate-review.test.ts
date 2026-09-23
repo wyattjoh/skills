@@ -1,7 +1,7 @@
 import { describe, expect, it } from "bun:test";
 import { mkdirSync, mkdtempSync, readFileSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { join, relative } from "node:path";
 import { spawnGit } from "./lib/git.ts";
 import { applyEscalationBlock } from "./lib/landing.ts";
 import { createFakeHerdrEnv } from "./test-herdr.ts";
@@ -38,6 +38,24 @@ const runCli = (
     stdout: JSON.parse(decoder.decode(child.stdout).trim()) as Record<string, unknown>,
     stderr: decoder.decode(child.stderr),
   };
+};
+
+const runCliAsync = async (
+  request: unknown,
+  env: Record<string, string | undefined> = HERDR_ENV,
+): Promise<CliResult> => {
+  const child = Bun.spawn([process.execPath, CLI], {
+    env,
+    stdin: Buffer.from(JSON.stringify(request)),
+    stdout: "pipe",
+    stderr: "pipe",
+  });
+  const [exitCode, stdout, stderr] = await Promise.all([
+    child.exited,
+    new Response(child.stdout).text(),
+    new Response(child.stderr).text(),
+  ]);
+  return { exitCode, stdout: JSON.parse(stdout) as Record<string, unknown>, stderr };
 };
 
 const stateText = (implementor: "claude" | "pi", active: boolean): string => `# review run
@@ -138,7 +156,13 @@ const preparePolicy = (fixture: ReviewFixture): void => {
   expect(runCli(policyRequest(fixture)).exitCode).toBe(0);
 };
 
-const recordPassingGates = (fixture: ReviewFixture, round: number): void => {
+const recordPassingGates = (
+  fixture: ReviewFixture,
+  round: number,
+  attempt = 1,
+  suffix = "",
+): string[] => {
+  const paths: string[] = [];
   for (const [name, argv] of [
     ["format", ["bun", "run", "format:check"]],
     ["test", ["bun", "test"]],
@@ -148,12 +172,16 @@ const recordPassingGates = (fixture: ReviewFixture, round: number): void => {
       operation: "gate.record",
       input: {
         state_path: fixture.statePath,
-        evidence_path: join(fixture.runPath, "reviews", `06-round-${round}-${name}-gate.json`),
+        evidence_path: join(
+          fixture.runPath,
+          "reviews",
+          `06-round-${round}-${name}-gate${suffix}.json`,
+        ),
         worktree_path: fixture.worktreePath,
         ticket: "06",
         round,
         name,
-        attempt: 1,
+        attempt,
         status: "passed",
         exit_code: 0,
         stdout: `${argv.join(" ")} passed\n`,
@@ -162,7 +190,9 @@ const recordPassingGates = (fixture: ReviewFixture, round: number): void => {
       },
     });
     expect(result.exitCode).toBe(0);
+    paths.push(join(fixture.runPath, "reviews", `06-round-${round}-${name}-gate${suffix}.json`));
   }
+  return paths;
 };
 
 const activateFixture = (fixture: ReviewFixture, implementor: "claude" | "pi"): void => {
@@ -417,6 +447,83 @@ describe("review launches and reports", () => {
     expect(artifact).toContain('"reviewer"');
   });
 
+  it("prevents caller-chosen paths from reusing a reviewer attempt identity", () => {
+    const fixture = makeFixture("pi");
+    preparePolicy(fixture);
+    activateFixture(fixture, "pi");
+    expect(runCli(reviewLaunchRequest(fixture, "standards")).exitCode).toBe(0);
+
+    const reusedIdentity = reviewLaunchRequest(fixture, "standards");
+    reusedIdentity.input.artifact_path = join(
+      fixture.runPath,
+      "reviews",
+      "caller-selected-attempt-1.json",
+    );
+    reusedIdentity.input.report_path = join(
+      fixture.runPath,
+      "reviews",
+      "caller-selected-attempt-1.md",
+    );
+    const rejected = runCli(reusedIdentity);
+
+    expect(rejected.exitCode).toBe(1);
+    expect(rejected.stdout).toMatchObject({
+      ok: false,
+      errors: [{ code: "review.attempt_identity_conflict" }],
+    });
+  });
+
+  it("canonicalizes relative and absolute state paths for reviewer attempt identity", () => {
+    const fixture = makeFixture("pi");
+    preparePolicy(fixture);
+    activateFixture(fixture, "pi");
+    const first = reviewLaunchRequest(fixture, "standards");
+    first.input.state_path = relative(process.cwd(), fixture.statePath);
+    expect(runCli(first).exitCode).toBe(0);
+
+    const alias = reviewLaunchRequest(fixture, "standards");
+    alias.input.artifact_path = join(fixture.runPath, "reviews", "absolute-alias.json");
+    alias.input.report_path = join(fixture.runPath, "reviews", "absolute-alias.md");
+    const rejected = runCli(alias);
+
+    expect(rejected.exitCode).toBe(1);
+    expect(rejected.stdout).toMatchObject({
+      ok: false,
+      errors: [{ code: "review.attempt_identity_conflict" }],
+    });
+  });
+
+  it("serializes scan and artifact creation across different paths", async () => {
+    const fixture = makeFixture("pi");
+    preparePolicy(fixture);
+    activateFixture(fixture, "pi");
+    for (let index = 0; index < 200; index += 1) {
+      writeFileSync(
+        join(fixture.runPath, "reviews", `unrelated-${index}.json`),
+        '{"kind":"unrelated"}\n',
+      );
+    }
+    const first = reviewLaunchRequest(fixture, "standards");
+    first.input.artifact_path = join(fixture.runPath, "reviews", "parallel-first.json");
+    first.input.report_path = join(fixture.runPath, "reviews", "parallel-first.md");
+    first.input.pane = "workspace:parallel-first";
+    const second = reviewLaunchRequest(fixture, "standards");
+    second.input.artifact_path = join(fixture.runPath, "reviews", "parallel-second.json");
+    second.input.report_path = join(fixture.runPath, "reviews", "parallel-second.md");
+    second.input.pane = "workspace:parallel-second";
+
+    const results = await Promise.all([runCliAsync(first), runCliAsync(second)]);
+    const successes = results.filter((result) => result.exitCode === 0);
+    const rejections = results.filter((result) => result.exitCode === 1);
+
+    expect(successes).toHaveLength(1);
+    expect(rejections).toHaveLength(1);
+    expect(rejections[0]!.stdout).toMatchObject({
+      ok: false,
+      errors: [{ code: "review.attempt_identity_conflict" }],
+    });
+  });
+
   it("requires the synchronized full-SHA base while finalization is serialized", () => {
     const fixture = makeFixture("pi");
     preparePolicy(fixture);
@@ -456,6 +563,7 @@ ${JSON.stringify(
 ## Decisions`,
       ),
     );
+    const cycleOneGates = recordPassingGates(fixture, 0, 2, "-cycle-one");
     const wrongBase = reviewLaunchRequest(fixture, "standards");
     const rejected = runCli(wrongBase);
     expect(rejected.exitCode).toBe(1);
@@ -463,9 +571,18 @@ ${JSON.stringify(
       ok: false,
       errors: [{ code: "review.range_mismatch" }],
     });
+    const staleCycle = reviewLaunchRequest(fixture, "standards");
+    staleCycle.input.base_ref = head;
+    const staleCycleResult = runCli(staleCycle);
+    expect(staleCycleResult.exitCode).toBe(1);
+    expect(staleCycleResult.stdout).toMatchObject({
+      ok: false,
+      errors: [{ code: "review.gates_cycle_stale" }],
+    });
 
     const exactBase = reviewLaunchRequest(fixture, "standards");
     exactBase.input.base_ref = head;
+    exactBase.input.gate_evidence_paths = cycleOneGates;
     const accepted = runCli(exactBase);
     expect(accepted.exitCode).toBe(0);
     expect((accepted.stdout.result as { reviewed_head: string }).reviewed_head).toBe(head);
@@ -1146,7 +1263,11 @@ describe("gates and review rounds", () => {
     expect(unauthorized.exitCode).toBe(2);
     expect(readFileSync(fixture.statePath, "utf8")).toBe(before);
 
-    const result = runCli(gateRerunRequest(fixture, previousEvidencePath));
+    const result = runCli(
+      gateRerunRequest(fixture, previousEvidencePath, {
+        completed_at: "2000-09-19T01:00:00Z",
+      }),
+    );
 
     expect(result.exitCode).toBe(0);
     expect(result.stdout.result).toMatchObject({
@@ -1186,7 +1307,11 @@ describe("gates and review rounds", () => {
     expect(state.includes("Phase: gates after authorized no-change rerun")).toBe(true);
     expect(state.includes("user-authorized no-change rerun of gate test")).toBe(true);
 
-    const recovered = runCli(gateRerunRequest(fixture, previousEvidencePath));
+    const recovered = runCli(
+      gateRerunRequest(fixture, previousEvidencePath, {
+        completed_at: "2000-09-19T01:00:00Z",
+      }),
+    );
     expect(recovered.exitCode).toBe(0);
     expect((recovered.stdout.result as { recovered: boolean }).recovered).toBe(true);
     expect(readFileSync(fixture.statePath, "utf8")).toBe(state);
@@ -1383,8 +1508,11 @@ describe("gates and review rounds", () => {
         `## Serialized finalization\n\n\`\`\`json\n${JSON.stringify(finalization, null, 2)}\n\`\`\`\n\n## Decisions`,
       ),
     );
+    const cycleZeroGates = recordPassingGates(fixture, 0, 2, "-cycle-zero");
     const standards = reviewLaunchRequest(fixture, "standards");
+    standards.input.gate_evidence_paths = cycleZeroGates;
     const spec = reviewLaunchRequest(fixture, "spec");
+    spec.input.gate_evidence_paths = cycleZeroGates;
     expect(runCli(standards).exitCode).toBe(0);
     expect(runCli(spec).exitCode).toBe(0);
     expect(recordReview(fixture, standards, passingReport("Standards")).exitCode).toBe(0);

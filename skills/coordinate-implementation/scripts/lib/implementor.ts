@@ -1,8 +1,18 @@
 import { Data, Effect, Result } from "effect";
 import { basename, dirname, isAbsolute, relative, resolve, sep } from "node:path";
-import { mkdir, readFile, realpath, rename, rm, stat, writeFile } from "node:fs/promises";
+import {
+  lstat,
+  mkdir,
+  readFile,
+  readlink,
+  realpath,
+  rename,
+  rm,
+  stat,
+  writeFile,
+} from "node:fs/promises";
 import { realpathSync } from "node:fs";
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { activeRuntimeBlockPattern, parseActiveRuntimeFields } from "./active-runtime.ts";
 import {
   buildHarnessLaunch,
@@ -14,11 +24,15 @@ import type {
   CliIssue,
   ImplementorLaunchPrepareInput,
   ImplementorLaunchRecoverInput,
+  ImplementorRuntimeBinding,
+  ImplementorRuntimeMigrateInput,
+  ImplementorRuntimeMigrationRecoverInput,
   ImplementorLaunchRecordInput,
   RoleRecord,
 } from "./contract.ts";
 import { spawnGit } from "./git.ts";
 import { validateRole } from "./roles.ts";
+import { inspectRuntimeClose } from "./runtime-close.ts";
 import { mutateStateFile, StateMutationError } from "./state-mutation.ts";
 import { validateStateText } from "./state.ts";
 
@@ -91,6 +105,15 @@ const fromMutationError = (error: unknown): ImplementorError => {
     "Verify RESUME.md and its directory are writable, then retry with the same bound role.",
   );
 };
+
+const isRoleRecord = (value: unknown): value is RoleRecord =>
+  typeof value === "object" &&
+  value !== null &&
+  !Array.isArray(value) &&
+  ((value as Record<string, unknown>).harness === "claude" ||
+    (value as Record<string, unknown>).harness === "pi") &&
+  typeof (value as Record<string, unknown>).model === "string" &&
+  typeof (value as Record<string, unknown>).effort === "string";
 
 const sameRole = (left: RoleRecord, right: RoleRecord): boolean =>
   left.harness === right.harness && left.model === right.model && left.effort === right.effort;
@@ -536,7 +559,72 @@ export const prepareImplementorLaunch = (
             "Launch an already bound ticket with its exact row role. Only a helper-recorded review escalation may replace that per-ticket binding.",
           );
         }
+        const migration = yield* readCommittedMigrationEvidence(
+          input.statePath,
+          input.ticket,
+          markdown,
+        );
         const existingBlock = markdown.match(activeRuntimeBlockPattern(input.ticket))?.[0];
+        if (migration !== null) {
+          if (
+            !sameRole(migration.replacement_role, input.role) ||
+            migration.old_binding.worktreePath !== input.worktreePath ||
+            migration.old_binding.branch !== input.branch
+          ) {
+            return yield* implementorError(
+              "implementor.migration_launch_binding_mismatch",
+              "Replacement launch does not use the persisted Pi role, worktree, and branch captured by migration evidence.",
+              "Prepare the new runtime only in the exact preserved worktree and branch from the committed migration record.",
+            );
+          }
+          if (existingBlock === undefined) {
+            const snapshot = yield* captureMigrationWorktreeSnapshot(input.worktreePath);
+            if (JSON.stringify(snapshot) !== JSON.stringify(migration.worktree_snapshot)) {
+              return yield* implementorError(
+                "implementor.migration_worktree_changed",
+                "Preserved worktree contents changed after migration and before replacement launch.",
+                "Restore the exact migrated worktree snapshot or reconcile the ticket manually; do not discard untracked files.",
+              );
+            }
+          }
+          if (migration.old_binding.phase === "gates") {
+            const evidencePath = resolve(
+              dirname(input.statePath),
+              "briefs",
+              `implementor-runtime-migration-${input.ticket}.json`,
+            );
+            const recoveryReference = `ticket ${input.ticket} implementor migration recovery; evidence ${relative(dirname(input.statePath), evidencePath)}`;
+            const recoveryRecorded = markdown
+              .split(/\r?\n/u)
+              .some((line) => line.includes(recoveryReference));
+            const finalizationMatch = markdown.match(
+              /^## Serialized finalization\s*\r?\n\r?\n```json\r?\n([\s\S]*?)\r?\n```/mu,
+            );
+            let finalization: Record<string, unknown> | undefined;
+            try {
+              finalization = JSON.parse(finalizationMatch?.[1] ?? "") as Record<string, unknown>;
+            } catch {
+              finalization = undefined;
+            }
+            if (
+              !recoveryRecorded ||
+              finalization?.ticket !== input.ticket ||
+              !Number.isInteger(finalization.cycle) ||
+              !Number.isInteger(migration.old_finalization_cycle) ||
+              (finalization.phase !== "resynchronize" && finalization.phase !== "gates") ||
+              (finalization.phase === "resynchronize" &&
+                finalization.cycle !== migration.old_finalization_cycle) ||
+              (finalization.phase === "gates" &&
+                (finalization.cycle as number) <= migration.old_finalization_cycle!)
+            ) {
+              return yield* implementorError(
+                "implementor.migration_recovery_required",
+                "Gates-phase migration requires its explicit recovery transition and fresh synchronization before replacement launch or further gates.",
+                "Call implementor.runtime.migration.recover, prepare the same bound runtime, then complete landing.synchronize before gates or reviews.",
+              );
+            }
+          }
+        }
         if (existingBlock !== undefined) {
           const fields = parseActiveRuntimeFields(existingBlock);
           const existingRole = roleFromActive(fields);
@@ -977,3 +1065,917 @@ export const recordImplementorLaunch = (
       });
     }),
   ).pipe(Effect.mapError(fromMutationError));
+
+/**
+ * Result of replacing one closed Claude implementor with the persisted Pi default.
+ */
+export type ImplementorRuntimeMigrateResult = {
+  ticket: string;
+  action: "prepare-replacement";
+  recovered: boolean;
+  runtime_closed: true;
+  pane_id: string;
+  worktree_path: string;
+  branch: string;
+  old_role: RoleRecord;
+  replacement_role: RoleRecord;
+  evidence_path: string;
+  dirty_worktree_preserved: boolean;
+  serialized_finalization_preserved: boolean;
+};
+
+export type ImplementorRuntimeMigrationRecoverResult = {
+  ticket: string;
+  action: "prepare-and-synchronize";
+  phase: "resynchronize" | "gates";
+  recovered: boolean;
+  head: string;
+  evidence_path: string;
+};
+
+type MigrationWorktreeSnapshot = {
+  head: string;
+  status: string;
+  content_sha256: string;
+};
+
+type ImplementorMigrationEvidence = {
+  schema_version: 2;
+  kind: "coordinate-implementor-runtime-migration";
+  transaction_state: "pending";
+  state_path: string;
+  ticket: string;
+  user_authorized: true;
+  completed_at: string;
+  old_binding: ImplementorRuntimeBinding;
+  replacement_role: RoleRecord;
+  old_runtime_block: string;
+  old_artifact_sha256: string;
+  old_finalization_block: string | null;
+  old_finalization_cycle: number | null;
+  worktree_snapshot: MigrationWorktreeSnapshot;
+  state_references: { closed_runtime: string; decision: string };
+  pane_closure: { pane_id: string; observed: "pane_not_found" };
+};
+
+type ImplementorMigrationCommit = {
+  schema_version: 1;
+  kind: "coordinate-implementor-runtime-migration-commit";
+  status: "committed";
+  evidence_path: string;
+  evidence_sha256: string;
+  state_references: string[];
+  committed_at: string;
+};
+
+const appendSectionEntry = (markdown: string, headingText: string, entry: string): string => {
+  if (markdown.split(/\r?\n/u).includes(entry)) return markdown;
+  const heading = [...markdown.matchAll(/^## [^\r\n]+\s*$/gmu)].find(
+    (match) => match[0].trim() === headingText,
+  );
+  if (heading === undefined) {
+    return `${markdown.trimEnd()}\n\n${headingText}\n\n${entry}\n`;
+  }
+  const sectionStart = heading.index! + heading[0].length;
+  const next = /^## /gmu;
+  next.lastIndex = sectionStart;
+  const sectionEnd = next.exec(markdown)?.index ?? markdown.length;
+  return `${markdown.slice(0, sectionEnd).trimEnd()}\n${entry}\n\n${markdown.slice(sectionEnd).trimStart()}`;
+};
+
+const serializedFinalizationBlock = (markdown: string): string | undefined =>
+  markdown.match(/^## Serialized finalization\s*\r?\n\r?\n```json\r?\n[\s\S]*?\r?\n```/mu)?.[0];
+
+const validateMigrationFinalization = (
+  markdown: string,
+  ticket: string,
+  head: string,
+): Effect.Effect<{ block: string; cycle: number }, ImplementorError> =>
+  Effect.gen(function* () {
+    const block = serializedFinalizationBlock(markdown);
+    const match = markdown.match(
+      /^## Serialized finalization\s*\r?\n\r?\n```json\r?\n([\s\S]*?)\r?\n```/mu,
+    );
+    if (match === null || block === undefined) {
+      return yield* implementorError(
+        "implementor.migration_finalization_missing",
+        `Ticket \`${ticket}\` is in gates without serialized finalization state.`,
+        "Restore the exact landing.synchronize record before migrating the runtime.",
+      );
+    }
+    let value: Record<string, unknown>;
+    try {
+      value = JSON.parse(match[1]!) as Record<string, unknown>;
+    } catch {
+      return yield* implementorError(
+        "implementor.migration_finalization_malformed",
+        "Serialized finalization state is not valid JSON.",
+        "Repair it from the immutable synchronization evidence before migrating.",
+      );
+    }
+    if (
+      value.ticket !== ticket ||
+      value.phase !== "gates" ||
+      !Number.isInteger(value.cycle) ||
+      (value.cycle as number) < 0 ||
+      value.ticket_sha !== head ||
+      typeof value.base_sha !== "string" ||
+      value.review_range !== `${value.base_sha}..${head}` ||
+      value.standards_evidence_path !== null ||
+      value.spec_evidence_path !== null ||
+      value.self_review_path !== null
+    ) {
+      return yield* implementorError(
+        "implementor.migration_finalization_stale",
+        "Ticket finalization is not an untouched gate-phase binding for the current tip.",
+        "Do not migrate through active review or landed state; repair or finish that finalization first.",
+      );
+    }
+    return { block, cycle: value.cycle as number };
+  });
+
+const persistMigrationEvidence = (
+  path: string,
+  serialized: string,
+): Effect.Effect<void, ImplementorError> =>
+  Effect.tryPromise({
+    try: async () => {
+      await mkdir(dirname(path), { recursive: true });
+      const existing = await readFile(path, "utf8").catch((error: unknown) => {
+        if (error instanceof Error && "code" in error && error.code === "ENOENT") return null;
+        throw error;
+      });
+      if (existing !== null) {
+        if (existing !== serialized) {
+          throw implementorError(
+            "implementor.migration_evidence_conflict",
+            "Runtime migration evidence already exists with different content.",
+            "Preserve the prior evidence and retry only the byte-identical migration request.",
+          );
+        }
+        return;
+      }
+      await writeFile(path, serialized, { flag: "wx", mode: 0o600 });
+    },
+    catch: (error) =>
+      error instanceof ImplementorError
+        ? error
+        : implementorError(
+            "implementor.migration_evidence_write_failed",
+            `Could not persist runtime migration evidence: ${(error as Error).message}`,
+            "Repair the run-local briefs directory and retry the exact request.",
+          ),
+  });
+
+const captureMigrationWorktreeSnapshot = (
+  worktreePath: string,
+): Effect.Effect<MigrationWorktreeSnapshot, ImplementorError> =>
+  Effect.tryPromise({
+    try: async () => {
+      const headResult = spawnGit(["rev-parse", "HEAD"], { cwd: worktreePath });
+      const statusResult = spawnGit(["status", "--porcelain=v1", "--untracked-files=all"], {
+        cwd: worktreePath,
+      });
+      const statusEntries = spawnGit(
+        ["status", "--porcelain=v1", "-z", "--untracked-files=all", "--no-renames"],
+        { cwd: worktreePath },
+      );
+      if (
+        headResult.exitCode !== 0 ||
+        statusResult.exitCode !== 0 ||
+        statusEntries.exitCode !== 0
+      ) {
+        throw new Error("Git could not capture the worktree baseline");
+      }
+      const root = resolve(worktreePath);
+      const manifest: Array<{ path: string; kind: string; sha256: string }> = [];
+      for (const record of statusEntries.stdout.split("\0").filter(Boolean)) {
+        if (record.length < 4 || record[2] !== " ") throw new Error("Malformed Git status entry");
+        const path = record.slice(3);
+        const absolute = resolve(root, path);
+        const relation = relative(root, absolute);
+        if (relation === ".." || relation.startsWith(`..${sep}`) || isAbsolute(relation)) {
+          throw new Error("Git returned a worktree path outside its root");
+        }
+        let entry: { path: string; kind: string; sha256: string };
+        try {
+          const metadata = await lstat(absolute);
+          if (metadata.isSymbolicLink()) {
+            entry = {
+              path,
+              kind: "symlink",
+              sha256: createHash("sha256")
+                .update(await readlink(absolute))
+                .digest("hex"),
+            };
+          } else if (metadata.isFile()) {
+            entry = {
+              path,
+              kind: "file",
+              sha256: createHash("sha256")
+                .update(await readFile(absolute))
+                .digest("hex"),
+            };
+          } else if (metadata.isDirectory()) {
+            const nestedHead = spawnGit(["rev-parse", "HEAD"], { cwd: absolute });
+            const nestedStatus = spawnGit(["status", "--porcelain=v1", "--untracked-files=all"], {
+              cwd: absolute,
+            });
+            if (
+              nestedHead.exitCode !== 0 ||
+              nestedStatus.exitCode !== 0 ||
+              nestedStatus.stdout.trim().length > 0
+            ) {
+              throw new Error(`Cannot safely fingerprint dirty nested repository ${path}`);
+            }
+            entry = {
+              path,
+              kind: "repository",
+              sha256: createHash("sha256").update(nestedHead.stdout.trim()).digest("hex"),
+            };
+          } else {
+            throw new Error(`Unsupported worktree entry ${path}`);
+          }
+        } catch (error) {
+          if (error instanceof Error && "code" in error && error.code === "ENOENT") {
+            entry = {
+              path,
+              kind: "missing",
+              sha256: createHash("sha256").update("missing").digest("hex"),
+            };
+          } else {
+            throw error;
+          }
+        }
+        manifest.push(entry);
+      }
+      manifest.sort((left, right) => left.path.localeCompare(right.path));
+      return {
+        head: headResult.stdout.trim(),
+        status: statusResult.stdout,
+        content_sha256: createHash("sha256").update(JSON.stringify(manifest)).digest("hex"),
+      };
+    },
+    catch: (error) =>
+      implementorError(
+        "implementor.migration_worktree_inspection_failed",
+        `Could not capture preserved worktree contents: ${(error as Error).message}`,
+        "Keep the worktree untouched and repair Git or filesystem access before retrying migration.",
+      ),
+  });
+
+const readCommittedMigrationEvidence = (
+  statePath: string,
+  ticket: string,
+  markdown: string,
+): Effect.Effect<ImplementorMigrationEvidence | null, ImplementorError> =>
+  Effect.tryPromise({
+    try: async () => {
+      const evidencePath = resolve(
+        dirname(statePath),
+        "briefs",
+        `implementor-runtime-migration-${ticket}.json`,
+      );
+      const raw = await readFile(evidencePath, "utf8").catch((error: unknown) => {
+        if (error instanceof Error && "code" in error && error.code === "ENOENT") return null;
+        throw error;
+      });
+      if (raw === null) return null;
+      const parsed = JSON.parse(raw) as unknown;
+      if (
+        typeof parsed !== "object" ||
+        parsed === null ||
+        Array.isArray(parsed) ||
+        (parsed as Record<string, unknown>).schema_version !== 2 ||
+        (parsed as Record<string, unknown>).kind !== "coordinate-implementor-runtime-migration"
+      ) {
+        throw implementorError(
+          "implementor.migration_evidence_malformed",
+          "Implementor migration evidence is malformed or from an unsupported schema.",
+          "Preserve the pending evidence and retry migration reconciliation with its original request.",
+        );
+      }
+      const evidence = parsed as ImplementorMigrationEvidence;
+      const commitPath = `${evidencePath}.commit.json`;
+      const commitRaw = await readFile(commitPath, "utf8").catch((error: unknown) => {
+        if (error instanceof Error && "code" in error && error.code === "ENOENT") return null;
+        throw error;
+      });
+      const references = [
+        evidence.state_references.closed_runtime,
+        evidence.state_references.decision,
+      ];
+      if (
+        evidence.transaction_state !== "pending" ||
+        evidence.state_path !== statePath ||
+        evidence.ticket !== ticket ||
+        !references.every((reference) => markdown.split(/\r?\n/u).includes(reference)) ||
+        commitRaw === null
+      ) {
+        throw implementorError(
+          "implementor.migration_pending",
+          "Implementor migration has pending evidence that is not committed in RESUME.md.",
+          "Retry the exact implementor.runtime.migrate request to reconcile its pending transaction before launching or reviewing.",
+        );
+      }
+      const commitValue = JSON.parse(commitRaw) as unknown;
+      if (typeof commitValue !== "object" || commitValue === null || Array.isArray(commitValue)) {
+        throw implementorError(
+          "implementor.migration_commit_malformed",
+          "Implementor migration commit marker is malformed.",
+          "Preserve it and retry the exact migration request to reconcile the transaction.",
+        );
+      }
+      const commit = commitValue as Record<string, unknown>;
+      if (
+        commit.schema_version !== 1 ||
+        commit.kind !== "coordinate-implementor-runtime-migration-commit" ||
+        commit.status !== "committed" ||
+        commit.evidence_path !== evidencePath ||
+        commit.evidence_sha256 !== createHash("sha256").update(raw).digest("hex") ||
+        JSON.stringify(commit.state_references) !== JSON.stringify(references)
+      ) {
+        throw implementorError(
+          "implementor.migration_commit_mismatch",
+          "Implementor migration commit marker does not bind its evidence and RESUME references.",
+          "Preserve all migration records and reconcile the transaction before consumers continue.",
+        );
+      }
+      return evidence;
+    },
+    catch: (error) =>
+      error instanceof ImplementorError
+        ? error
+        : implementorError(
+            "implementor.migration_evidence_read_failed",
+            `Could not verify implementor migration evidence: ${(error as Error).message}`,
+            "Repair the run-local pending or commit evidence before continuing.",
+          ),
+  });
+
+/**
+ * Archives one exact closed Claude implementor binding and adopts only the run's persisted Pi default.
+ *
+ * The operation leaves the worktree, branch, launch artifact, and serialized finalization intact.
+ * The coordinator uses the returned binding with `implementor.launch.prepare` afterward.
+ *
+ * @param input - Exact prior binding, expected persisted Pi role, and explicit user authority.
+ * @returns An Effect containing durable provenance and the unchanged worktree binding.
+ */
+export const migrateClosedImplementorRuntime = (
+  input: ImplementorRuntimeMigrateInput,
+): Effect.Effect<ImplementorRuntimeMigrateResult, ImplementorError> =>
+  Effect.gen(function* () {
+    if (!input.userAuthorized) {
+      return yield* implementorError(
+        "implementor.migration_authority_missing",
+        "Closed implementor migration requires explicit user authorization.",
+        "Retry only after the user authorizes this exact role replacement.",
+      );
+    }
+    const evidencePath = resolve(
+      dirname(input.statePath),
+      "briefs",
+      `implementor-runtime-migration-${input.ticket}.json`,
+    );
+    yield* ensurePathInsideState(input.statePath, input.expectedBinding.artifactPath);
+    yield* ensurePathInsideState(input.statePath, evidencePath);
+    let commitRecord: ImplementorMigrationCommit | null = null;
+    const mutation = mutateStateFile(input.statePath, (markdown) =>
+      Effect.gen(function* () {
+        yield* validatePersistedState(input.statePath, markdown);
+        const persistedDefault = yield* Effect.try({
+          try: () => parsePersistedImplementor(markdown),
+          catch: fromMutationError,
+        });
+        if (
+          persistedDefault.harness !== "pi" ||
+          !sameRole(persistedDefault, input.replacementRole)
+        ) {
+          return yield* implementorError(
+            "implementor.migration_role_mismatch",
+            "Replacement role does not exactly match the persisted Pi Implementor default.",
+            "Use the complete Pi role recorded in RESUME.md; migration never selects a substitute.",
+          );
+        }
+        const validation = yield* validateRole({
+          role: "implementor",
+          triple: undefined,
+          record: persistedDefault,
+        });
+        if (validation.result === null) {
+          return yield* new ImplementorError({ issue: validation.errors[0]! });
+        }
+        if (!sameRole(validation.result.record, persistedDefault)) {
+          return yield* implementorError(
+            "implementor.migration_role_changed",
+            "Role validation changed the persisted Pi Implementor default.",
+            "Repair role discovery and retry without substituting a model or effort.",
+          );
+        }
+
+        const pattern = activeRuntimeBlockPattern(input.ticket);
+        const activeBlock = markdown.match(pattern)?.[0];
+        const rowRole = yield* Effect.try({
+          try: () => parseTicketRole(markdown, input.ticket),
+          catch: fromMutationError,
+        });
+        const evidenceRaw = yield* Effect.tryPromise({
+          try: () =>
+            readFile(evidencePath, "utf8").catch((error: unknown) => {
+              if (error instanceof Error && "code" in error && error.code === "ENOENT") return null;
+              throw error;
+            }),
+          catch: (error) =>
+            implementorError(
+              "implementor.migration_evidence_read_failed",
+              `Could not inspect prior migration evidence: ${(error as Error).message}`,
+              "Repair the run-local evidence path before retrying.",
+            ),
+        });
+        let priorEvidence: ImplementorMigrationEvidence | undefined;
+        if (evidenceRaw !== null) {
+          try {
+            const parsed = JSON.parse(evidenceRaw) as unknown;
+            if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) {
+              throw new Error("migration evidence is not an object");
+            }
+            priorEvidence = parsed as ImplementorMigrationEvidence;
+          } catch {
+            return yield* implementorError(
+              "implementor.migration_evidence_malformed",
+              "Existing implementor migration evidence is malformed.",
+              "Preserve it and repair the state from its recorded migration artifact.",
+            );
+          }
+          if (
+            priorEvidence.kind !== "coordinate-implementor-runtime-migration" ||
+            priorEvidence.schema_version !== 2 ||
+            priorEvidence.transaction_state !== "pending" ||
+            priorEvidence.state_path !== input.statePath ||
+            priorEvidence.ticket !== input.ticket ||
+            priorEvidence.user_authorized !== true ||
+            priorEvidence.completed_at !== input.completedAt ||
+            JSON.stringify(priorEvidence.old_binding) !== JSON.stringify(input.expectedBinding) ||
+            !isRoleRecord(priorEvidence.replacement_role) ||
+            !sameRole(priorEvidence.replacement_role, persistedDefault) ||
+            typeof priorEvidence.pane_closure !== "object" ||
+            priorEvidence.pane_closure === null ||
+            priorEvidence.pane_closure.pane_id !== input.expectedBinding.pane ||
+            priorEvidence.pane_closure.observed !== "pane_not_found" ||
+            typeof priorEvidence.state_references?.closed_runtime !== "string" ||
+            typeof priorEvidence.state_references?.decision !== "string"
+          ) {
+            return yield* implementorError(
+              "implementor.migration_evidence_mismatch",
+              "Existing migration evidence does not match this exact authorized request.",
+              "Retry with the original binding, persisted role, and timestamp; never overwrite evidence.",
+            );
+          }
+        }
+
+        const originalBlock = activeBlock ?? priorEvidence?.old_runtime_block;
+        if (originalBlock === undefined) {
+          return yield* implementorError(
+            "implementor.migration_runtime_missing",
+            `Ticket \`${input.ticket}\` has no active Claude runtime or matching migration evidence.`,
+            "Restore the exact runtime from its immutable launch artifact before migrating.",
+          );
+        }
+        const fields = parseActiveRuntimeFields(originalBlock);
+        const runtimeRole = roleFromActive(fields);
+        const actualBinding: ImplementorRuntimeBinding | undefined =
+          runtimeRole === null ||
+          fields.Worktree === undefined ||
+          fields.Branch === undefined ||
+          fields["Implement skill"] === undefined ||
+          fields.Session === undefined ||
+          fields.Tab === undefined ||
+          fields.Pane === undefined ||
+          fields.Artifact === undefined ||
+          fields.Retry === undefined ||
+          (fields.Phase !== "working" && fields.Phase !== "gates") ||
+          !Number.isInteger(Number(fields.Attempt))
+            ? undefined
+            : {
+                worktreePath: fields.Worktree,
+                branch: fields.Branch,
+                role: runtimeRole,
+                implementSkillPath: fields["Implement skill"],
+                session: fields.Session,
+                tab: fields.Tab,
+                pane: fields.Pane,
+                artifactPath: fields.Artifact,
+                attempt: Number(fields.Attempt),
+                retry: fields.Retry,
+                phase: fields.Phase,
+              };
+        if (
+          actualBinding === undefined ||
+          JSON.stringify(actualBinding) !== JSON.stringify(input.expectedBinding) ||
+          actualBinding.role.harness !== "claude"
+        ) {
+          return yield* implementorError(
+            "implementor.migration_binding_mismatch",
+            "Active runtime does not match the exact closed Claude binding supplied for migration.",
+            "Refresh every worktree, branch, role, session, pane, artifact, attempt, retry, and phase field from RESUME.md.",
+          );
+        }
+        if (
+          activeBlock !== undefined &&
+          priorEvidence !== undefined &&
+          activeBlock !== priorEvidence.old_runtime_block
+        ) {
+          return yield* implementorError(
+            "implementor.migration_state_conflict",
+            "Active runtime differs from the immutable runtime block captured by the migration evidence.",
+            "Preserve both records and reconcile the run state manually.",
+          );
+        }
+        if (
+          rowRole === undefined ||
+          rowRole === null ||
+          (!sameRole(rowRole, actualBinding.role) && !sameRole(rowRole, persistedDefault))
+        ) {
+          return yield* implementorError(
+            "implementor.migration_ticket_role_mismatch",
+            "Ticket table role matches neither the archived runtime nor the persisted Pi default.",
+            "Repair the ticket row from its launch provenance before migration.",
+          );
+        }
+
+        if (activeBlock === undefined && !sameRole(rowRole, persistedDefault)) {
+          return yield* implementorError(
+            "implementor.migration_state_conflict",
+            "The active runtime is already absent but the ticket row does not record the Pi replacement.",
+            "Preserve the run state and reconcile its ticket role with immutable migration evidence.",
+          );
+        }
+
+        const artifactRaw = yield* Effect.tryPromise({
+          try: () => readFile(actualBinding.artifactPath, "utf8"),
+          catch: (error) =>
+            implementorError(
+              "implementor.migration_artifact_read_failed",
+              `Could not read the original launch artifact: ${(error as Error).message}`,
+              "Preserve and restore the exact launch artifact before migrating.",
+            ),
+        });
+        let artifact: Record<string, unknown>;
+        try {
+          const parsed = JSON.parse(artifactRaw) as unknown;
+          if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) {
+            throw new Error("launch artifact is not an object");
+          }
+          artifact = parsed as Record<string, unknown>;
+        } catch {
+          return yield* implementorError(
+            "implementor.migration_artifact_malformed",
+            "Original implementor launch artifact is not valid JSON.",
+            "Preserve the artifact and recover its exact launch provenance before migrating.",
+          );
+        }
+        const artifactRole = roleFromUnknown(artifact.role);
+        if (
+          artifact.schema_version !== 1 ||
+          artifact.ticket !== input.ticket ||
+          artifact.cwd !== actualBinding.worktreePath ||
+          artifact.branch !== actualBinding.branch ||
+          artifactRole === null ||
+          !sameRole(artifactRole, actualBinding.role) ||
+          artifact.implement_skill_path !== null ||
+          artifact.session !== actualBinding.session ||
+          artifact.tab !== actualBinding.tab ||
+          artifact.pane !== actualBinding.pane ||
+          artifact.attempt !== actualBinding.attempt ||
+          artifact.max_attempts !== 3
+        ) {
+          return yield* implementorError(
+            "implementor.migration_artifact_mismatch",
+            "Original launch artifact does not match the exact active runtime binding.",
+            "Do not rewrite or replace launch provenance; reconcile the artifact and RESUME.md manually.",
+          );
+        }
+
+        const paneInspection = yield* inspectRuntimeClose(actualBinding.pane).pipe(
+          Effect.mapError((error) => new ImplementorError({ issue: error.issue })),
+        );
+        if (!paneInspection.runtime_closed) {
+          return yield* implementorError(
+            "implementor.migration_runtime_live",
+            "Herdr still reports the exact old implementor pane as live.",
+            "Do not replace a live runtime; resume it or obtain a later machine-observed closure before retrying.",
+          );
+        }
+        yield* verifyWorktree(actualBinding.worktreePath, actualBinding.branch);
+        const worktreeSnapshot = yield* captureMigrationWorktreeSnapshot(
+          actualBinding.worktreePath,
+        );
+        const dirtyWorktree = worktreeSnapshot.status.trim().length > 0;
+        let oldFinalizationBlock: string | null = null;
+        let oldFinalizationCycle: number | null = null;
+        if (actualBinding.phase === "gates") {
+          if (dirtyWorktree) {
+            return yield* implementorError(
+              "implementor.migration_worktree_dirty",
+              "A gates-phase implementor migration requires the synchronized worktree to remain clean.",
+              "Preserve the work and restore the reviewed tip before migrating this finalization state.",
+            );
+          }
+          const finalization = yield* validateMigrationFinalization(
+            markdown,
+            input.ticket,
+            worktreeSnapshot.head,
+          );
+          oldFinalizationBlock = finalization.block;
+          oldFinalizationCycle = finalization.cycle;
+        }
+
+        const relativeEvidencePath = relative(dirname(input.statePath), evidencePath);
+        const decisionLine = `- ${input.completedAt} user-authorized ticket ${input.ticket} implementor migration; old binding ${JSON.stringify(actualBinding)}; persisted Pi default ${JSON.stringify(persistedDefault)}; Herdr observed pane_not_found for ${actualBinding.pane}`;
+        const closedEntry = `- ${input.completedAt} ticket ${input.ticket} closed Claude implementor runtime superseded; binding ${JSON.stringify(actualBinding)}; evidence ${relativeEvidencePath}`;
+        const evidence: ImplementorMigrationEvidence = {
+          schema_version: 2,
+          kind: "coordinate-implementor-runtime-migration",
+          transaction_state: "pending",
+          state_path: input.statePath,
+          ticket: input.ticket,
+          user_authorized: true,
+          completed_at: input.completedAt,
+          old_binding: actualBinding,
+          replacement_role: persistedDefault,
+          old_runtime_block: originalBlock,
+          old_artifact_sha256: createHash("sha256").update(artifactRaw).digest("hex"),
+          old_finalization_block: oldFinalizationBlock,
+          old_finalization_cycle: oldFinalizationCycle,
+          worktree_snapshot: worktreeSnapshot,
+          state_references: { closed_runtime: closedEntry, decision: decisionLine },
+          pane_closure: { pane_id: actualBinding.pane, observed: "pane_not_found" },
+        };
+        const serializedEvidence = `${JSON.stringify(evidence, null, 2)}\n`;
+        commitRecord = {
+          schema_version: 1,
+          kind: "coordinate-implementor-runtime-migration-commit",
+          status: "committed",
+          evidence_path: evidencePath,
+          evidence_sha256: createHash("sha256").update(serializedEvidence).digest("hex"),
+          state_references: [closedEntry, decisionLine],
+          committed_at: input.completedAt,
+        };
+        if (evidenceRaw !== null && evidenceRaw !== serializedEvidence) {
+          return yield* implementorError(
+            "implementor.migration_evidence_conflict",
+            "Runtime migration evidence already exists with different content.",
+            "Preserve the prior evidence and retry only the byte-identical migration request.",
+          );
+        }
+        yield* persistMigrationEvidence(evidencePath, serializedEvidence);
+
+        let updated = markdown;
+        const alreadyReplaced =
+          activeBlock === undefined || sameRole(rowRole ?? actualBinding.role, persistedDefault);
+        if (!alreadyReplaced) {
+          updated = updateTicketRow(updated, input.ticket, {
+            harness: persistedDefault.harness,
+            model: persistedDefault.model,
+            effort: persistedDefault.effort,
+          });
+          updated = updated.replace(pattern, "");
+        } else if (activeBlock !== undefined) {
+          const activeFields = parseActiveRuntimeFields(activeBlock);
+          const activeRole = roleFromActive(activeFields);
+          if (
+            activeRole === null ||
+            !sameRole(activeRole, persistedDefault) ||
+            activeFields.Worktree !== actualBinding.worktreePath ||
+            activeFields.Branch !== actualBinding.branch
+          ) {
+            return yield* implementorError(
+              "implementor.migration_state_conflict",
+              "The active ticket now has a different runtime than the recorded Pi replacement.",
+              "Preserve current runtime state and reconcile its launch artifact manually.",
+            );
+          }
+        }
+        updated = appendSectionEntry(updated, "## Closed ticket runtimes", closedEntry);
+        updated = appendSectionEntry(updated, "## Decisions", decisionLine);
+        if (serializedFinalizationBlock(updated) !== serializedFinalizationBlock(markdown)) {
+          return yield* implementorError(
+            "implementor.migration_finalization_changed",
+            "Runtime migration unexpectedly changed serialized finalization state.",
+            "Do not proceed; restore the original finalization block from synchronization evidence.",
+          );
+        }
+        return {
+          markdown: updated,
+          result: {
+            ticket: input.ticket,
+            action: "prepare-replacement" as const,
+            recovered: evidenceRaw !== null,
+            runtime_closed: true as const,
+            pane_id: actualBinding.pane,
+            worktree_path: actualBinding.worktreePath,
+            branch: actualBinding.branch,
+            old_role: actualBinding.role,
+            replacement_role: persistedDefault,
+            evidence_path: evidencePath,
+            dirty_worktree_preserved: dirtyWorktree,
+            serialized_finalization_preserved: true,
+          },
+        };
+      }),
+    ).pipe(Effect.mapError(fromMutationError));
+    const result = yield* mutation;
+    if (commitRecord === null) {
+      return yield* implementorError(
+        "implementor.migration_commit_missing",
+        "Migration state changed without a prepared commit record.",
+        "Preserve the run state and reconcile the evidence transaction before continuing.",
+      );
+    }
+    yield* persistMigrationEvidence(
+      `${evidencePath}.commit.json`,
+      `${JSON.stringify(commitRecord, null, 2)}\n`,
+    );
+    return result;
+  });
+
+/**
+ * Opens a gates-phase migration for explicit resynchronization without changing the worktree.
+ */
+export const recoverImplementorRuntimeMigration = (
+  input: ImplementorRuntimeMigrationRecoverInput,
+): Effect.Effect<ImplementorRuntimeMigrationRecoverResult, ImplementorError> =>
+  Effect.gen(function* () {
+    if (!input.userAuthorized) {
+      return yield* implementorError(
+        "implementor.migration_recovery_authority_missing",
+        "Gates-phase migration recovery requires explicit user authorization.",
+        "Retry only after the user authorizes recovery for this exact migration evidence.",
+      );
+    }
+    const evidencePath = resolve(
+      dirname(input.statePath),
+      "briefs",
+      `implementor-runtime-migration-${input.ticket}.json`,
+    );
+    yield* ensurePathInsideState(input.statePath, evidencePath);
+    const mutation = mutateStateFile(input.statePath, (markdown) =>
+      Effect.gen(function* () {
+        yield* validatePersistedState(input.statePath, markdown);
+        const evidence = yield* readCommittedMigrationEvidence(
+          input.statePath,
+          input.ticket,
+          markdown,
+        );
+        if (evidence === null) {
+          return yield* implementorError(
+            "implementor.migration_evidence_missing",
+            `Ticket ${input.ticket} has no committed implementor migration to recover.`,
+            "Run implementor.runtime.migrate first and retain its evidence artifact.",
+          );
+        }
+        if (evidence.old_binding.phase !== "gates" || evidence.old_finalization_cycle === null) {
+          return yield* implementorError(
+            "implementor.migration_recovery_not_required",
+            "Explicit revalidation is available only for a gates-phase implementor migration.",
+            "Use the normal launch and gate lifecycle for working-phase migrations.",
+          );
+        }
+        const evidenceRaw = yield* Effect.tryPromise({
+          try: () => readFile(evidencePath, "utf8"),
+          catch: (error) =>
+            implementorError(
+              "implementor.migration_evidence_read_failed",
+              `Could not read migration evidence: ${(error as Error).message}`,
+              "Repair the run-local evidence path and retry recovery.",
+            ),
+        });
+        if (
+          createHash("sha256").update(evidenceRaw).digest("hex") !== input.migrationEvidenceSha256
+        ) {
+          return yield* implementorError(
+            "implementor.migration_recovery_binding_mismatch",
+            "Recovery request does not identify the exact committed migration evidence bytes.",
+            "Use the SHA-256 of the immutable migration evidence artifact without editing or replacing it.",
+          );
+        }
+        const finalizationMatch = markdown.match(
+          /^## Serialized finalization\s*\r?\n\r?\n```json\r?\n([\s\S]*?)\r?\n```/mu,
+        );
+        const currentBlock = serializedFinalizationBlock(markdown);
+        if (finalizationMatch === null || currentBlock === undefined) {
+          return yield* implementorError(
+            "implementor.migration_recovery_finalization_missing",
+            "Serialized finalization is missing during migration recovery.",
+            "Restore the original finalization block from the migration evidence and synchronized run state.",
+          );
+        }
+        let finalization: Record<string, unknown>;
+        try {
+          finalization = JSON.parse(finalizationMatch[1]!) as Record<string, unknown>;
+        } catch {
+          return yield* implementorError(
+            "implementor.migration_recovery_finalization_malformed",
+            "Serialized finalization is malformed during migration recovery.",
+            "Repair the exact prior synchronized record before retrying recovery.",
+          );
+        }
+        const relativeEvidencePath = relative(dirname(input.statePath), evidencePath);
+        const recoveryReference = `ticket ${input.ticket} implementor migration recovery; evidence ${relativeEvidencePath}`;
+        const priorRecovery = markdown
+          .split(/\r?\n/u)
+          .find((line) => line.includes(recoveryReference));
+        if (priorRecovery !== undefined) {
+          if (
+            finalization.ticket === input.ticket &&
+            finalization.cycle === evidence.old_finalization_cycle &&
+            (finalization.phase === "resynchronize" ||
+              (finalization.phase === "gates" &&
+                finalizationMatch[1] !== undefined &&
+                Number(finalization.cycle) > evidence.old_finalization_cycle))
+          ) {
+            return {
+              markdown,
+              result: {
+                ticket: input.ticket,
+                action: "prepare-and-synchronize" as const,
+                phase: finalization.phase as "resynchronize" | "gates",
+                recovered: true,
+                head: evidence.worktree_snapshot.head,
+                evidence_path: evidencePath,
+              },
+            };
+          }
+          if (
+            finalization.ticket === input.ticket &&
+            finalization.phase === "gates" &&
+            Number(finalization.cycle) > evidence.old_finalization_cycle
+          ) {
+            return {
+              markdown,
+              result: {
+                ticket: input.ticket,
+                action: "prepare-and-synchronize" as const,
+                phase: "gates" as const,
+                recovered: true,
+                head: evidence.worktree_snapshot.head,
+                evidence_path: evidencePath,
+              },
+            };
+          }
+          return yield* implementorError(
+            "implementor.migration_recovery_state_conflict",
+            "Migration recovery decision and serialized finalization disagree.",
+            "Preserve the current state and reconcile its recovery decision against landing.synchronize evidence.",
+          );
+        }
+        if (
+          currentBlock !== evidence.old_finalization_block ||
+          finalization.ticket !== input.ticket ||
+          finalization.phase !== "gates" ||
+          finalization.cycle !== evidence.old_finalization_cycle ||
+          finalization.ticket_sha !== evidence.worktree_snapshot.head
+        ) {
+          return yield* implementorError(
+            "implementor.migration_recovery_finalization_stale",
+            "Gates-phase finalization no longer matches the exact pre-migration synchronized record.",
+            "Do not overwrite newer gate or review state; reconcile from the latest synchronization evidence.",
+          );
+        }
+        yield* verifyWorktree(evidence.old_binding.worktreePath, evidence.old_binding.branch);
+        const snapshot = yield* captureMigrationWorktreeSnapshot(evidence.old_binding.worktreePath);
+        if (
+          snapshot.status.trim().length > 0 ||
+          JSON.stringify(snapshot) !== JSON.stringify(evidence.worktree_snapshot)
+        ) {
+          return yield* implementorError(
+            "implementor.migration_recovery_worktree_changed",
+            "Gates-phase recovery requires the original clean synchronized worktree snapshot.",
+            "Preserve and reconcile the worktree manually; recovery will not discard or rewrite ticket files.",
+          );
+        }
+        finalization.phase = "resynchronize";
+        finalization.completed_at = input.completedAt;
+        const replacementBlock = `## Serialized finalization\n\n\`\`\`json\n${JSON.stringify(finalization, null, 2)}\n\`\`\``;
+        const decision = `- ${input.completedAt} user-authorized ${recoveryReference}; evidence_sha256 ${input.migrationEvidenceSha256}; transition gates -> resynchronize at ${snapshot.head}`;
+        const updated = appendSectionEntry(
+          markdown.replace(currentBlock, replacementBlock),
+          "## Decisions",
+          decision,
+        );
+        return {
+          markdown: updated,
+          result: {
+            ticket: input.ticket,
+            action: "prepare-and-synchronize" as const,
+            phase: "resynchronize" as const,
+            recovered: false,
+            head: snapshot.head,
+            evidence_path: evidencePath,
+          },
+        };
+      }),
+    ).pipe(Effect.mapError(fromMutationError));
+    return yield* mutation;
+  });

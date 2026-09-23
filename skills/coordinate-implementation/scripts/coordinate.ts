@@ -19,6 +19,8 @@ import {
 import { drainGlobalWarnings, setCurrentOperation } from "./lib/global-state.ts";
 import { waitAnyWorker } from "./lib/herdr.ts";
 import {
+  migrateClosedImplementorRuntime,
+  recoverImplementorRuntimeMigration,
   prepareImplementorLaunch,
   recoverImplementorLaunch,
   recordImplementorLaunch,
@@ -28,6 +30,7 @@ import { runPreflight } from "./lib/preflight.ts";
 import {
   authorizeReviewEscalation,
   finalizeReviewRound,
+  supersedeInterruptedReviewerAttempt,
   prepareReviewerLaunch,
   prepareReviewPolicy,
   recordGate,
@@ -224,6 +227,16 @@ const execute = (request: CoordinateRequest): Effect.Effect<number, never> =>
       return 0;
     }
 
+    if (request.operation === "review.attempt.supersede") {
+      const outcome = yield* Effect.result(supersedeInterruptedReviewerAttempt(request.input));
+      if (Result.isFailure(outcome)) {
+        print(failureResponse(request.operation, [outcome.failure.issue], null));
+        return 1;
+      }
+      print(successResponse(request.operation, outcome.success));
+      return 0;
+    }
+
     if (request.operation === "review.launch.prepare") {
       const outcome = yield* Effect.result(prepareReviewerLaunch(request.input));
       if (Result.isFailure(outcome)) {
@@ -246,6 +259,26 @@ const execute = (request: CoordinateRequest): Effect.Effect<number, never> =>
 
     if (request.operation === "review.policy.prepare") {
       const outcome = yield* Effect.result(prepareReviewPolicy(request.input));
+      if (Result.isFailure(outcome)) {
+        print(failureResponse(request.operation, [outcome.failure.issue], null));
+        return 1;
+      }
+      print(successResponse(request.operation, outcome.success));
+      return 0;
+    }
+
+    if (request.operation === "implementor.runtime.migrate") {
+      const outcome = yield* Effect.result(migrateClosedImplementorRuntime(request.input));
+      if (Result.isFailure(outcome)) {
+        print(failureResponse(request.operation, [outcome.failure.issue], null));
+        return 1;
+      }
+      print(successResponse(request.operation, outcome.success));
+      return 0;
+    }
+
+    if (request.operation === "implementor.runtime.migration.recover") {
+      const outcome = yield* Effect.result(recoverImplementorRuntimeMigration(request.input));
       if (Result.isFailure(outcome)) {
         print(failureResponse(request.operation, [outcome.failure.issue], null));
         return 1;

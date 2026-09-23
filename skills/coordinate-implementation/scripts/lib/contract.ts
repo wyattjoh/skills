@@ -24,6 +24,8 @@ export type CoordinateOperation =
   | "snapshot.accept"
   | "worktree.preflight"
   | "worktree.prepare"
+  | "implementor.runtime.migrate"
+  | "implementor.runtime.migration.recover"
   | "implementor.launch.prepare"
   | "implementor.launch.recover"
   | "implementor.launch.record"
@@ -34,6 +36,7 @@ export type CoordinateOperation =
   | "stall.assessment.apply"
   | "infrastructure.retry.record"
   | "review.policy.prepare"
+  | "review.attempt.supersede"
   | "review.launch.prepare"
   | "review.launch.record"
   | "gate.record"
@@ -241,6 +244,43 @@ export type WorktreePrepareInput = {
 /**
  * Input for constructing and persisting one implementor launch plan.
  */
+export type ImplementorRuntimeBinding = {
+  worktreePath: string;
+  branch: string;
+  role: RoleRecord;
+  implementSkillPath: string;
+  session: string;
+  tab: string;
+  pane: string;
+  artifactPath: string;
+  attempt: number;
+  retry: string;
+  phase: "working" | "gates";
+};
+
+/**
+ * Input for explicitly migrating one closed Claude implementor to the persisted Pi default.
+ */
+export type ImplementorRuntimeMigrateInput = {
+  statePath: string;
+  ticket: string;
+  expectedBinding: ImplementorRuntimeBinding;
+  replacementRole: RoleRecord;
+  userAuthorized: true;
+  completedAt: string;
+};
+
+/**
+ * Input for explicitly revalidating a gates-phase implementor migration.
+ */
+export type ImplementorRuntimeMigrationRecoverInput = {
+  statePath: string;
+  ticket: string;
+  migrationEvidenceSha256: string;
+  userAuthorized: true;
+  completedAt: string;
+};
+
 export type ImplementorLaunchPrepareInput = {
   statePath: string;
   artifactPath: string;
@@ -444,6 +484,38 @@ export type ReviewAxis = "standards" | "spec";
 /**
  * Input for constructing one fresh reviewer launch and mutation baseline.
  */
+export type ReviewAttemptBinding = {
+  ticket: string;
+  round: number;
+  axis: ReviewAxis;
+  attempt: number;
+  reviewer: RoleRecord;
+  worktreePath: string;
+  branch: string;
+  baseRef: string;
+  pane: string;
+  session: string;
+  tab: string;
+  reviewedHead: string;
+  statusBefore: string;
+  contextPaths: string[];
+  landedTickets: string[];
+  gateEvidencePaths: string[];
+  artifactSha256: string;
+};
+
+/**
+ * Input for user-authorized supersession of one interrupted, closed Claude review attempt.
+ */
+export type ReviewAttemptSupersedeInput = {
+  statePath: string;
+  artifactPath: string;
+  expectedBinding: ReviewAttemptBinding;
+  userAuthorized: true;
+  reason: string;
+  completedAt: string;
+};
+
 export type ReviewLaunchPrepareInput = {
   statePath: string;
   previousArtifactPath: string | undefined;
@@ -699,6 +771,16 @@ export type CoordinateRequest =
     }
   | {
       schemaVersion: typeof CONTRACT_SCHEMA_VERSION;
+      operation: "implementor.runtime.migrate";
+      input: ImplementorRuntimeMigrateInput;
+    }
+  | {
+      schemaVersion: typeof CONTRACT_SCHEMA_VERSION;
+      operation: "implementor.runtime.migration.recover";
+      input: ImplementorRuntimeMigrationRecoverInput;
+    }
+  | {
+      schemaVersion: typeof CONTRACT_SCHEMA_VERSION;
       operation: "implementor.launch.prepare";
       input: ImplementorLaunchPrepareInput;
     }
@@ -746,6 +828,11 @@ export type CoordinateRequest =
       schemaVersion: typeof CONTRACT_SCHEMA_VERSION;
       operation: "review.policy.prepare";
       input: ReviewPolicyPrepareInput;
+    }
+  | {
+      schemaVersion: typeof CONTRACT_SCHEMA_VERSION;
+      operation: "review.attempt.supersede";
+      input: ReviewAttemptSupersedeInput;
     }
   | {
       schemaVersion: typeof CONTRACT_SCHEMA_VERSION;
@@ -964,6 +1051,115 @@ const parseRoleRecord = (value: unknown): RoleRecord | undefined => {
   return { harness: value.harness, model, effort };
 };
 
+const parseImplementorRuntimeBinding = (value: unknown): ImplementorRuntimeBinding | undefined => {
+  if (!isRecord(value)) return undefined;
+  const worktreePath = nonEmptyString(value.worktree_path);
+  const branch = singleLineString(value.branch);
+  const role = parseRoleRecord(value.role);
+  const implementSkillPath = nonEmptyString(value.implement_skill_path);
+  const session = singleLineString(value.session);
+  const tab = singleLineString(value.tab);
+  const pane = paneId(value.pane);
+  const artifactPath = nonEmptyString(value.artifact_path);
+  const attempt = positiveInteger(value.attempt);
+  const retry = singleLineString(value.retry);
+  const phase = value.phase;
+  if (
+    worktreePath === undefined ||
+    branch === undefined ||
+    role === undefined ||
+    implementSkillPath === undefined ||
+    session === undefined ||
+    tab === undefined ||
+    pane === undefined ||
+    artifactPath === undefined ||
+    attempt === undefined ||
+    retry === undefined ||
+    (phase !== "working" && phase !== "gates")
+  ) {
+    return undefined;
+  }
+  return {
+    worktreePath,
+    branch,
+    role,
+    implementSkillPath,
+    session,
+    tab,
+    pane,
+    artifactPath,
+    attempt,
+    retry,
+    phase,
+  };
+};
+
+const parseReviewAttemptBinding = (value: unknown): ReviewAttemptBinding | undefined => {
+  if (!isRecord(value)) return undefined;
+  const ticket = singleLineString(value.ticket);
+  const round = nonNegativeInteger(value.round);
+  const axis = value.axis;
+  const attempt = positiveInteger(value.attempt);
+  const reviewer = parseRoleRecord(value.reviewer);
+  const worktreePath = nonEmptyString(value.worktree_path);
+  const branch = singleLineString(value.branch);
+  const baseRef = singleLineString(value.base_ref);
+  const pane = paneId(value.pane);
+  const session = singleLineString(value.session);
+  const tab = singleLineString(value.tab);
+  const reviewedHead = singleLineString(value.reviewed_head);
+  const statusBefore = typeof value.status_before === "string" ? value.status_before : undefined;
+  const contextPaths = stringArray(value.context_paths);
+  const landedTickets = stringArray(value.landed_tickets);
+  const gateEvidencePaths = stringArray(value.gate_evidence_paths);
+  const artifactSha256 = singleLineString(value.artifact_sha256);
+  if (
+    ticket === undefined ||
+    !/^\d{2}$/u.test(ticket) ||
+    round === undefined ||
+    (axis !== "standards" && axis !== "spec") ||
+    attempt === undefined ||
+    attempt > 4 ||
+    reviewer === undefined ||
+    worktreePath === undefined ||
+    branch === undefined ||
+    baseRef === undefined ||
+    pane === undefined ||
+    session === undefined ||
+    tab === undefined ||
+    reviewedHead === undefined ||
+    statusBefore === undefined ||
+    contextPaths === undefined ||
+    contextPaths.length === 0 ||
+    landedTickets === undefined ||
+    gateEvidencePaths === undefined ||
+    gateEvidencePaths.length === 0 ||
+    artifactSha256 === undefined ||
+    !/^[0-9a-f]{64}$/u.test(artifactSha256)
+  ) {
+    return undefined;
+  }
+  return {
+    ticket,
+    round,
+    axis,
+    attempt,
+    reviewer,
+    worktreePath,
+    branch,
+    baseRef,
+    pane,
+    session,
+    tab,
+    reviewedHead,
+    statusBefore,
+    contextPaths,
+    landedTickets,
+    gateEvidencePaths,
+    artifactSha256,
+  };
+};
+
 const ticketNumber = (value: unknown): string | undefined => {
   const number = singleLineString(value);
   return number !== undefined && /^\d+$/u.test(number) ? number : undefined;
@@ -1124,6 +1320,8 @@ export const parseRequest = (raw: string): Effect.Effect<CoordinateRequest, Requ
       "snapshot.accept",
       "worktree.preflight",
       "worktree.prepare",
+      "implementor.runtime.migrate",
+      "implementor.runtime.migration.recover",
       "implementor.launch.prepare",
       "implementor.launch.recover",
       "implementor.launch.record",
@@ -1134,6 +1332,7 @@ export const parseRequest = (raw: string): Effect.Effect<CoordinateRequest, Requ
       "stall.assessment.apply",
       "infrastructure.retry.record",
       "review.policy.prepare",
+      "review.attempt.supersede",
       "review.launch.prepare",
       "review.launch.record",
       "gate.record",
@@ -1841,6 +2040,34 @@ export const parseRequest = (raw: string): Effect.Effect<CoordinateRequest, Requ
       };
     }
 
+    if (operation === "review.attempt.supersede") {
+      const statePath = nonEmptyString(parsed.input.state_path);
+      const artifactPath = nonEmptyString(parsed.input.artifact_path);
+      const expectedBinding = parseReviewAttemptBinding(parsed.input.expected_binding);
+      const userAuthorized = parsed.input.user_authorized;
+      const reason = singleLineString(parsed.input.reason);
+      const completedAt = parsed.input.completed_at;
+      if (
+        statePath === undefined ||
+        artifactPath === undefined ||
+        expectedBinding === undefined ||
+        expectedBinding.reviewer.harness !== "claude" ||
+        userAuthorized !== true ||
+        reason === undefined ||
+        !isUtcIsoTimestamp(completedAt)
+      ) {
+        return yield* invalidRequest(
+          "`review.attempt.supersede` requires a run-local attempt path, exact Claude review binding, explicit user_authorized true, a single-line interruption reason, and completed_at.",
+          operation,
+        );
+      }
+      return {
+        schemaVersion: CONTRACT_SCHEMA_VERSION,
+        operation,
+        input: { statePath, artifactPath, expectedBinding, userAuthorized, reason, completedAt },
+      };
+    }
+
     if (operation === "review.launch.prepare") {
       const statePath = nonEmptyString(parsed.input.state_path);
       const previousArtifactPath = nonEmptyString(parsed.input.previous_artifact_path);
@@ -1996,6 +2223,63 @@ export const parseRequest = (raw: string): Effect.Effect<CoordinateRequest, Requ
           safetyConstraints,
           noAdditionalSafetyConstraints,
         },
+      };
+    }
+
+    if (operation === "implementor.runtime.migrate") {
+      const statePath = nonEmptyString(parsed.input.state_path);
+      const ticket = singleLineString(parsed.input.ticket);
+      const expectedBinding = parseImplementorRuntimeBinding(parsed.input.expected_binding);
+      const replacementRole = parseRoleRecord(parsed.input.replacement_role);
+      const userAuthorized = parsed.input.user_authorized;
+      const completedAt = parsed.input.completed_at;
+      if (
+        statePath === undefined ||
+        ticket === undefined ||
+        !/^\d{2}$/u.test(ticket) ||
+        expectedBinding === undefined ||
+        expectedBinding.role.harness !== "claude" ||
+        replacementRole === undefined ||
+        replacementRole.harness !== "pi" ||
+        userAuthorized !== true ||
+        !isUtcIsoTimestamp(completedAt)
+      ) {
+        return yield* invalidRequest(
+          "`implementor.runtime.migrate` requires a ticket, exact Claude runtime binding, exact Pi replacement role, explicit user_authorized true, and completed_at.",
+          operation,
+        );
+      }
+      return {
+        schemaVersion: CONTRACT_SCHEMA_VERSION,
+        operation,
+        input: { statePath, ticket, expectedBinding, replacementRole, userAuthorized, completedAt },
+      };
+    }
+
+    if (operation === "implementor.runtime.migration.recover") {
+      const statePath = nonEmptyString(parsed.input.state_path);
+      const ticket = singleLineString(parsed.input.ticket);
+      const migrationEvidenceSha256 = singleLineString(parsed.input.migration_evidence_sha256);
+      const userAuthorized = parsed.input.user_authorized;
+      const completedAt = parsed.input.completed_at;
+      if (
+        statePath === undefined ||
+        ticket === undefined ||
+        !/^\d{2}$/u.test(ticket) ||
+        migrationEvidenceSha256 === undefined ||
+        !/^[0-9a-f]{64}$/u.test(migrationEvidenceSha256) ||
+        userAuthorized !== true ||
+        !isUtcIsoTimestamp(completedAt)
+      ) {
+        return yield* invalidRequest(
+          "`implementor.runtime.migration.recover` requires a ticket, exact migration evidence SHA-256, explicit user_authorized true, and completed_at.",
+          operation,
+        );
+      }
+      return {
+        schemaVersion: CONTRACT_SCHEMA_VERSION,
+        operation,
+        input: { statePath, ticket, migrationEvidenceSha256, userAuthorized, completedAt },
       };
     }
 

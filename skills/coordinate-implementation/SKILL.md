@@ -257,7 +257,11 @@ remaining blocked ticket:
    the chosen branch to the latest `<base>` before its final gates and review,
    then require the recorded repository commit policy, green recorded gates,
    the harness-appropriate implementor self-review, and fresh independent Herdr
-   sessions for Standards and Spec. Claim the serialized finalization slot and
+   sessions for Standards and Spec. If an explicitly authorized recovery finds
+   an interrupted Claude reviewer attempt, supersede only after Herdr confirms
+   its exact pane is absent, then rerun every configured gate before preparing
+   fresh Pi review attempts. See `review.attempt.supersede` in
+   [helper-cli.md](references/helper-cli.md). Claim the serialized finalization slot and
    perform policy-driven synchronization with `landing.synchronize`; use its
    returned full-SHA `review_range` for gates and both review axes. Capture and
    persist each complete report with `review.launch.record`. When it returns
@@ -390,6 +394,21 @@ the same session with a prompt first (or `claude --resume` in its worktree).
 Re-prompt only if a compaction is followed by no edits across two bounded
 timeout snapshots.
 
+An explicitly authorized migration from a closed Claude implementor to the
+persisted Pi Implementor default is a separate, narrow recovery path, not a
+normal crash restart or role-selection shortcut. Call
+`implementor.runtime.migrate` with the exact old binding and
+`user_authorized: true`; it fails if Herdr still sees the old pane, preserves the
+launch artifact and worktree, and does not alter ticket implementation. A dirty
+`working` worktree is retained in place. A `gates`-phase migration requires a
+clean synchronized tip and preserves its serialized finalization byte-for-byte. Its
+immutable evidence binds the original HEAD, status, changed-file contents, worktree,
+and branch; replacement launch must match that baseline exactly. For a `gates`-
+phase migration, call `implementor.runtime.migration.recover` with explicit user
+authority and the evidence SHA-256. It moves finalization to `resynchronize`;
+prepare the replacement in the same worktree and branch, then complete
+`landing.synchronize` before recording any gates or launching reviewers.
+
 ## Manual role replacement
 
 Review fixes never require escalation authority. A failed round always returns
@@ -404,6 +423,28 @@ its returned prompt or runtime-close action, then launch replacements through
 `implementor.launch.prepare`. The transition is idempotent and preserves the
 superseded runtime provenance. Never rewrite the run-wide `Implementor:`: one
 ticket's difficulty is not a judgement about the remaining tickets.
+
+A closed interrupted Claude review may be superseded only with explicit user
+authority and immutable attempt binding. `review.attempt.supersede` records no
+report or verdict, requires Herdr to report the exact pane absent, and preserves
+the prior artifact. When replacing Claude review with Pi, supersede every prior
+Claude axis for the ticket and round before launching either Pi axis. Reviewer
+attempt identity is unique by active ticket, round, axis, and attempt, and every
+retry must name the exact immediately preceding artifact. The index canonicalizes
+state paths, ignores artifacts for historical tickets, and serializes its scan
+through artifact creation under the run-state lock. Before a Pi retry can launch,
+rerun every persisted gate with a distinct path and a higher attempt number. Gate
+records bind the current monotonic supersession generation under that same lock.
+Legacy gates without a generation are accepted only as SHA-256-bound generation-0
+baselines during supersession, never as new gate evidence. A pending axis commit
+blocks the next axis until its exact retry commits. Caller timestamps are
+metadata, not freshness proof. Finalization cycle is
+independent of review round, so interrupted attempts stay bound to their
+reviewed HEAD, base SHA, and range. Gate evidence binds the current serialized
+finalization cycle whenever one exists, including after migration recovery.
+Migration and supersession consumers fail closed until immutable evidence, state
+references, and commit markers agree. Do
+not supersede a live pane or an attempt that already has a report.
 
 `Coordinator.unattended` is retained for schema compatibility and never gates
 ordinary remediation. A `TICKET BLOCKED` question, a scope decision, and an
