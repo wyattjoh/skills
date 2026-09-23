@@ -29,39 +29,43 @@ Stream.fromChunk(Chunk.make(1, 2, 3));
 ## Consume Streams
 
 ```typescript
-// Collect all values (DANGEROUS for infinite streams)
-const allValues = yield * Stream.runCollect(stream); // Returns Chunk<A>
+Effect.gen(function* () {
+  // Collect all values (DANGEROUS for infinite streams)
+  const allValues = yield* Stream.runCollect(stream); // Returns Chunk<A>
 
-// Process each element
-yield * Stream.runForEach(stream, (value) => Effect.log(`Got: ${value}`));
+  // Process each element
+  yield* Stream.runForEach(stream, (value) => Effect.log(`Got: ${value}`));
 
-// Fold/reduce
-const sum = yield * Stream.runFold(stream, 0, (acc, n) => acc + n);
+  // Fold/reduce
+  const sum = yield* Stream.runFold(stream, 0, (acc, n) => acc + n);
 
-// First element only
-const first = yield * Stream.runHead(stream); // Returns Option<A>
+  // First element only
+  const first = yield* Stream.runHead(stream); // Returns Option<A>
 
-// Drain (run for side effects, discard values)
-yield * Stream.runDrain(stream);
+  // Drain (run for side effects, discard values)
+  yield* Stream.runDrain(stream);
+});
 ```
 
 ## Bound Consumption (Critical for Safety)
 
 ```typescript
-// WRONG: Hangs forever on infinite stream
-yield * Stream.runCollect(infiniteStream);
+Effect.gen(function* () {
+  // WRONG: Hangs forever on infinite stream
+  yield* Stream.runCollect(infiniteStream);
 
-// RIGHT: Take first N elements
-yield * Stream.runCollect(Stream.take(infiniteStream, 100));
+  // RIGHT: Take first N elements
+  yield* Stream.runCollect(Stream.take(infiniteStream, 100));
 
-// RIGHT: Take until condition
-yield * Stream.runCollect(Stream.takeUntil(stream, (x) => x > 100));
+  // RIGHT: Take until condition
+  yield* Stream.runCollect(Stream.takeUntil(stream, (x) => x > 100));
 
-// RIGHT: Take while condition holds
-yield * Stream.runCollect(Stream.takeWhile(stream, (x) => x < 100));
+  // RIGHT: Take while condition holds
+  yield* Stream.runCollect(Stream.takeWhile(stream, (x) => x < 100));
 
-// RIGHT: Apply timeout
-yield * Stream.runCollect(stream).pipe(Effect.timeout("5 seconds"));
+  // RIGHT: Apply timeout
+  yield* Stream.runCollect(stream).pipe(Effect.timeout("5 seconds"));
+});
 ```
 
 ## Transform Streams

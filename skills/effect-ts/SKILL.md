@@ -65,10 +65,10 @@ Read and internalize `./references/critical-rules.md` before writing any Effect 
 
 Quick links to patterns that frequently cause issues:
 
-- **SubscriptionRef version mismatch** — `unsafeMake is not a function` → [Quick Reference](#subscriptionref-reactive-references)
-- **Cancellation vs Failure** — Interrupts aren't errors → [Error Taxonomy](#error-taxonomy)
-- **Option vs null** — Use Option internally, null at boundaries → [option-null.md](./references/option-null.md)
-- **Stream backpressure** — Infinite streams hang → [streams.md](./references/streams.md)
+- **SubscriptionRef version mismatch**: `unsafeMake is not a function` → [Quick Reference](#subscriptionref-reactive-references)
+- **Cancellation vs Failure**: Interrupts aren't errors → [Error Taxonomy](#error-taxonomy)
+- **Option vs null**: Use Option internally, null at boundaries → [option-null.md](./references/option-null.md)
+- **Stream backpressure**: Infinite streams hang → [streams.md](./references/streams.md)
 
 ## Explaining Solutions
 
@@ -406,29 +406,29 @@ eventEmitter.on("event", noop); // Register empty handler
 
 ### Deprecations
 
-- **`BigDecimal.fromNumber`** — Use `BigDecimal.unsafeFromNumber` instead (3.11.0+)
-- **`Schema.annotations()`** — Now removes previously set identifier annotations; identifiers are tied to the schema's
+- **`BigDecimal.fromNumber`**: Use `BigDecimal.unsafeFromNumber` instead (3.11.0+)
+- **`Schema.annotations()`**: Now removes previously set identifier annotations; identifiers are tied to the schema's
   `ast` reference only (3.17.10)
 
 ## Additional Resources
 
 ### Local Effect Resources
 
-- **`$SKILL_DIR/.source/packages/effect/src/`** — Core Effect modules and implementation
+- **`$SKILL_DIR/.source/packages/effect/src/`**: Core Effect modules and implementation
 
 ### External Resources
 
-- **Effect-Atom** — https://github.com/tim-smart/effect-atom (open in browser for reactive state management patterns)
+- **Effect-Atom**: https://github.com/tim-smart/effect-atom (open in browser for reactive state management patterns)
 
 ### Related Skills
 
-- **`effect-ts-beta`** — Effect v4 beta (`4.0.0-beta.107`). Use it when the project is on `effect@4.x`, or when
+- **`effect-ts-beta`**: Effect v4 beta (`4.0.0-beta.107`). Use it when the project is on `effect@4.x`, or when
   migrating a v3 codebase to v4. Its `references/migration-from-v3.md` holds the v3 to v4 rename tables.
 
 ### Reference Files
 
-- **`./references/critical-rules.md`** — Forbidden patterns and mandatory conventions
-- **`./references/effect-atom.md`** — Effect-Atom reactive state management for React
-- **`./references/option-null.md`** — Option vs null boundary patterns
-- **`./references/streams.md`** — Stream patterns and backpressure gotchas
-- **`./references/testing.md`** — Vitest deterministic testing patterns
+- **`./references/critical-rules.md`**: Forbidden patterns and mandatory conventions
+- **`./references/effect-atom.md`**: Effect-Atom reactive state management for React
+- **`./references/option-null.md`**: Option vs null boundary patterns
+- **`./references/streams.md`**: Stream patterns and backpressure gotchas
+- **`./references/testing.md`**: Vitest deterministic testing patterns

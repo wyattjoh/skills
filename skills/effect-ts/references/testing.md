@@ -38,7 +38,9 @@ That makes your code controllable via `TestClock`.
 Instead of:
 
 ```ts
-yield * Effect.sleep("50 millis");
+Effect.gen(function* () {
+  yield* Effect.sleep("50 millis");
+});
 ```
 
 do:
@@ -46,7 +48,9 @@ do:
 ```ts
 import { TestClock } from "effect";
 
-yield * TestClock.adjust("50 millis");
+Effect.gen(function* () {
+  yield* TestClock.adjust("50 millis");
+});
 ```
 
 If you _must_ use real timers (e.g. testing integration with Node timers), switch the whole test to `it.live`.
