@@ -82,8 +82,8 @@ Resolve and present all of this before creating a worktree, tab, or branch:
   own worktree without prompting.
 - **The verification gate** you detected, or that you found none.
 
-Wait for explicit approval. Then run autonomously, surfacing only escalations
-and the final report.
+Wait for explicit approval. Then run autonomously without asking for further
+confirmation, and bring escalations to the user as they arise.
 
 ## Choosing how a worker runs
 
