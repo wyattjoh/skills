@@ -105,15 +105,14 @@ pre-commit:
 - Leave `{staged_files}` unquoted. Lefthook quotes only the paths that need it.
   Wrapping it in `"..."` forces quoting on every path, which breaks tools that do not
   strip quotes themselves.
-- Prefer check-only commands over autofixers. Since Lefthook 2.1.7, `pre-commit` runs
-  automatically hide unstaged/partially-staged hunks before the hook and restore them
-  afterward, and `stage_fixed: true` stages only the fixer's edits to already-staged
-  content. That restore only reliably fails the hook (rather than silently succeeding)
-  when staging the fixed files errors as of 2.1.12, which fixed that exact gap. On an
-  older Lefthook, or one run with `--no-stage-fixed`, the protection is absent or
-  incomplete and an autofixer can pull unstaged work into the commit — pin
-  `min_version: 2.1.12` in `lefthook.yml` if a command in this config writes files or
-  uses `stage_fixed`.
+- Prefer check-only commands over autofixers. On Lefthook 2.1.12 and later,
+  `pre-commit` runs hide unstaged and partially staged hunks before the hook and
+  restore them afterward, `stage_fixed: true` stages only the fixer's edits to
+  already-staged content, and the hook fails when staging the fixed files errors.
+  Earlier versions, and runs with `--no-stage-fixed`, lack all or part of that
+  protection, so an autofixer can pull unstaged work into the commit. Pin
+  `min_version: 2.1.12` in `lefthook.yml` if a command in this config writes files
+  or uses `stage_fixed`.
 - Keep pre-commit fast. Move whole-project analysis that cannot be scoped to staged
   files, such as type checking and test suites, to `pre-push` or CI.
 - Use `root:` only when a tool must run from a subdirectory. It changes the working

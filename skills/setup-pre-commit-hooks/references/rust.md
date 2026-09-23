@@ -97,12 +97,10 @@ Keep `-- -D warnings` only for repositories that have not adopted the table.
 which is exactly the state a pre-commit hook runs in — either it fails constantly or
 it is forced past the one safety check it has. Keep both check-only.
 
-Since Lefthook 2.1.7, `pre-commit` runs hide unstaged/partially-staged hunks before
-the hook and restore them afterward, and since 2.1.12 the hook fails outright, rather
-than succeeding silently, if that restore errors, so a rewriting command on an
-up-to-date Lefthook no longer silently pulls unstaged work into the commit. That
-safety net does not help with `--fix`'s own `--allow-dirty` requirement, so check-only
-remains the simpler, faster choice regardless of Lefthook version.
+Lefthook's handling of unstaged hunks around a rewriting command is covered under
+"Shared semantics" in `SKILL.md`. That handling does not help with `--fix`'s own
+`--allow-dirty` requirement, so check-only is the simpler, faster choice on any
+Lefthook version.
 
 ## Speed
 
