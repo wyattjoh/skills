@@ -8,13 +8,9 @@ description: >-
   `@Shared` state, or `TestStore` tests, even when the prompt does not say "TCA" by name. Each topic
   points at the authoritative TCA 1.26.2 example and a copied real-world example from a production
   reference app, so you can jump from "I need navigation / a dependency / an effect / a testable
-  reducer" to a concrete, current pattern. Also triggers on "create a TCA feature", "add a TCA
-  reducer", "implement TCA navigation", "present a TCA sheet", "add a TCA modal", "use
-  @ObservableState", "add StackState navigation", "implement @Presents", "handle TCA effects", "use
-  Effect.run", "add BindableAction for forms", "create TCA bindings", "use the Delegate pattern",
-  "child-to-parent communication in TCA", "pointfree TCA", "TCA state", "TCA action". Requires the
-  swift-composable-architecture source vendored as a reference submodule (see the prerequisite check
-  below).
+  reducer" to a concrete, current pattern.
+  Requires the swift-composable-architecture source vendored as a reference submodule (see the
+  prerequisite check below).
 ---
 
 # Adopting The Composable Architecture (TCA 1.26.2)
