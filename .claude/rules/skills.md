@@ -34,15 +34,15 @@ skills/<name>/
 
 ## Standards
 
-| Aspect            | Standard                                                                                                                                                 |
-| ----------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **Location**      | All executable scripts go in `scripts/` subdirectory                                                                                                     |
-| **Runtime**       | **MUST use Bun + TypeScript**. Prefer Effect-TS for nontrivial script logic. No bash scripts. Each skill has its own `package.json` in `skills/<name>/`. |
-| **Path notation** | Use `$SKILL_DIR` in documentation to reference the skill root                                                                                            |
-| **Tests**         | Place test files alongside scripts with `.test.ts` suffix                                                                                                |
-| **Test fixtures** | Use `scripts/testdata/` directory. Excluded from lint/fmt via `package.json`                                                                             |
-| **Separation**    | `scripts/` = executable code, `references/` = docs/templates/static data                                                                                 |
-| **File naming**   | Use lowercase with hyphens for all reference files (e.g., `error-patterns.md`)                                                                           |
+| Aspect            | Standard                                                                                                                                    |
+| ----------------- | ------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Location**      | All executable scripts go in `scripts/` subdirectory                                                                                        |
+| **Runtime**       | Bun + TypeScript; no bash scripts. Prefer Effect-TS for nontrivial script logic. Each skill has its own `package.json` in `skills/<name>/`. |
+| **Path notation** | Use `$SKILL_DIR` in documentation to reference the skill root                                                                               |
+| **Tests**         | Place test files alongside scripts with `.test.ts` suffix                                                                                   |
+| **Test fixtures** | Use `scripts/testdata/` directory. Excluded from lint/fmt via `package.json`                                                                |
+| **Separation**    | `scripts/` = executable code, `references/` = docs/templates/static data                                                                    |
+| **File naming**   | Use lowercase with hyphens for all reference files (e.g., `error-patterns.md`)                                                              |
 
 All skill scripts are written in Bun (TypeScript); bash scripts are not allowed. This ensures:
 
@@ -69,7 +69,7 @@ Run the analysis script:
 bun $SKILL_DIR/scripts/analyze.ts <input> [options]
 ```
 
-Where `$SKILL_DIR` resolves to `~/.claude/skills/<skill-name>/`.
+Where `$SKILL_DIR` is the base directory Claude Code reports when the skill loads.
 ````
 
 ## Tests

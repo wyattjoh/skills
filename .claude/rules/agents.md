@@ -10,7 +10,7 @@ Agent definitions live at `agents/<name>.md` as markdown files with YAML frontma
 ## Frontmatter fields
 
 - `name`: kebab-case identifier
-- `description`: Delegation trigger (use "PROACTIVELY" or "MUST USE" for auto-activation)
+- `description`: Delegation trigger: what the agent does and the situations that should route to it. Add urgency such as "Use PROACTIVELY" only for an agent that demonstrably under-delegates, scoped to that situation.
 - `tools`: Allowed tools. Two accepted forms:
   - Comma-separated scalar string: `tools: "Bash, Read, Grep"`
   - YAML list (required when entries contain colons or spaces): `tools:\n  - Read\n  - "Bash(jq:*)"`
