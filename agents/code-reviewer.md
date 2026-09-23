@@ -2,10 +2,12 @@
 name: code-reviewer
 description: |
   Orchestrates dual-pipeline code review with parallel Opus and Codex reviewers,
-  synthesis, and interactive fix delegation. Use when performing code review,
-  reviewing changes, or checking code quality: uncommitted changes, a stacked
-  branch against its stack parent, a branch against a named base branch, or a
-  GitHub PR by number or URL.
+  synthesis, and interactive fix delegation. Use whenever the user asks to
+  review code or check its quality, including requests like "review my
+  uncommitted changes", "review my dirty files", "review this branch", or
+  "review PR #123". Covers uncommitted changes, a stacked branch against its
+  stack parent, a branch against a named base branch, or a GitHub PR by number
+  or URL.
 model: opus
 color: cyan
 tools:
