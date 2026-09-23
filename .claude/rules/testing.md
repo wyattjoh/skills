@@ -38,6 +38,15 @@ Skills ship independently, so a skill outside `workspaces` duplicates the small
 key list rather than importing across skill directories (see
 `skills/herd/scripts/preflight.ts`).
 
+# Spawned helpers must receive an explicit environment
+
+`coordinate-implementation`'s test preload points `XDG_STATE_HOME` at a
+temporary directory so global run files never reach the developer's real
+`~/.local/state`. Bun's `spawn` and `spawnSync` ignore runtime changes to
+`process.env` when `env` is omitted; children inherit the environment the test
+process started with. Always pass `env` (at minimum `env: process.env`) when a
+test spawns the helper CLI.
+
 # Positive test expectations
 
 Do not use Bun's negation modifier in expectation chains.

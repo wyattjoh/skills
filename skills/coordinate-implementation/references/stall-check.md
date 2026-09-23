@@ -1,5 +1,10 @@
 # Stall check
 
+The core loop's `herdr.wait_any` timeout is the persisted `Stall interval:`
+(10 minutes by default), so every working worker is checked at that cadence
+from the first launch wave until the run reaches a terminal state. Never add a
+separate timer, cron, or scheduled prompt for it.
+
 Run this check when `herdr.wait_any` returns `reason: timeout` for a working
 worker, or when it returns an `idle` or `done` worker that is not
 deterministically ready for review. A settled worker is review-ready only when

@@ -18,6 +18,7 @@ const request = (operation: string, input: Record<string, unknown>) => ({
 
 const runCli = (body: unknown) => {
   const child = Bun.spawnSync([process.execPath, CLI], {
+    env: process.env,
     stdin: Buffer.from(JSON.stringify(body)),
     stdout: "pipe",
     stderr: "pipe",
@@ -31,6 +32,7 @@ const runCli = (body: unknown) => {
 
 const runCliAsync = async (body: unknown) => {
   const child = Bun.spawn([process.execPath, CLI], {
+    env: process.env,
     stdin: Buffer.from(JSON.stringify(body)),
     stdout: "pipe",
     stderr: "pipe",
@@ -1147,5 +1149,75 @@ describe("shared infrastructure retries", () => {
     ).toBe(true);
     expect(persisted.includes("| 05 | - | - | - | 0 | - | queued | - |")).toBe(true);
     expect(persisted.includes("Phase: retry exhausted")).toBe(true);
+  });
+});
+
+describe("wait heartbeat and stall interval", () => {
+  it("accepts a 60 minute stall interval and rejects anything longer", () => {
+    const wait = (timeoutMs: number) =>
+      runCli(
+        request("herdr.wait_any", {
+          socket_path: join("/tmp", `coordinate-missing-${crypto.randomUUID()}.sock`),
+          timeout_ms: timeoutMs,
+          workers: [worker("runtime-01", "01", "run-01", "w1:p1")],
+        }),
+      );
+
+    const accepted = wait(3_600_000);
+    const rejected = wait(3_600_001);
+
+    expect(accepted.exitCode).toBe(1);
+    expect(rejected.exitCode).toBe(2);
+    expect((rejected.stdout.errors as Array<{ message: string }>)[0]!.message).toBe(
+      "`herdr.wait_any` requires socket_path, a 1..3600000 timeout_ms, workers, an optional state_path, and an optional complete coordinator identity and phase; at least one worker or coordinator is required.",
+    );
+  });
+
+  it("refreshes the global heartbeat when a wait with state_path returns", async () => {
+    const root = mkdtempSync(join(tmpdir(), "coordinate-heartbeat-"));
+    const statePath = join(root, "RESUME.md");
+    writeFileSync(statePath, retryState(1, 0));
+    const path = socketPath();
+    const server = createServer((socket) => {
+      let buffered = "";
+      socket.on("data", (chunk) => {
+        buffered += chunk.toString();
+        for (const line of buffered.split("\n").slice(0, -1)) {
+          const message = JSON.parse(line) as { id: string; method: string };
+          if (message.method === "events.subscribe") {
+            writeLine(socket, { id: message.id, result: { type: "subscription_started" } });
+          }
+          if (message.method === "session.snapshot") {
+            writeLine(socket, snapshot([{ session: "run-04", pane: "w1:p4", status: "working" }]));
+          }
+        }
+        buffered = buffered.slice(buffered.lastIndexOf("\n") + 1);
+      });
+    });
+    await listen(server, path);
+
+    const result = await runCliAsync(
+      request("herdr.wait_any", {
+        socket_path: path,
+        timeout_ms: 300,
+        workers: [worker("runtime-04", "04", "run-04", "w1:p4")],
+        state_path: statePath,
+      }),
+    );
+
+    const runId = /^Run id: (\S+)$/mu.exec(readFileSync(statePath, "utf8"))![1]!;
+    const file = JSON.parse(
+      readFileSync(
+        join(process.env.XDG_STATE_HOME!, "coordinate-implementation", "runs", `${runId}.json`),
+        "utf8",
+      ),
+    ) as { heartbeat_at: string | null; last_operation: string | null; active_runtimes: unknown };
+    expect(result.exitCode).toBe(0);
+    expect((result.stdout.result as { reason: string }).reason).toBe("timeout");
+    expect(typeof file.heartbeat_at).toBe("string");
+    expect(file.last_operation).toBe(null);
+    expect(file.active_runtimes).toEqual([
+      { ticket: "04", session: "run-04", pane: "w1:p4", phase: "working", attempt: 1 },
+    ]);
   });
 });

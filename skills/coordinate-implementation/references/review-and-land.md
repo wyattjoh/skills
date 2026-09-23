@@ -236,8 +236,8 @@ helper writes immutable JSON evidence, marks the ticket landed at its full tip,
 removes its active block and serialized slot, updates `Base sha:`, and appends
 retained-branch and landed-evidence records before it returns `schedule`.
 
-After that success, update `.scratch/coordinators.md`, then call
-`scheduler.plan`. It immediately fills newly available implementor capacity in
+After that success, the helper has already published the landed state to the
+global run file. Call `scheduler.plan`. It immediately fills newly available implementor capacity in
 deterministic ticket order.
 
 ## Scope decisions

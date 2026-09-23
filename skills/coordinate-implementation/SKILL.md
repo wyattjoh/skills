@@ -1,7 +1,7 @@
 ---
 name: coordinate-implementation
 description: Orchestrates a multi-ticket implementation run. Points at a `.scratch/<slug>/` folder holding a spec and numbered issues, then runs dependency-ready tickets in parallel by default, reviews each result on two axes, loops fixes back, and fast-forwards the integration branch. Repository-specific commands and safety constraints are discovered from project instructions and CI rather than assumed. Scheduling mode and validated Coordinator, Implementor, and Reviewer role records survive resumes and mid-run changes in RESUME.md. Triggers on "/coordinate-implementation", "implement the tickets in", "orchestrate the run", "resume the implementation run".
-argument-hint: "[.scratch/<slug> | resume .scratch/<slug>] [--base <branch>] [--coordinator '<harness> <model> <effort>'] [--implementor '<harness> <model> <effort>'] [--reviewer '<harness> <model> <effort>'] [--serial | --parallel <N>]"
+argument-hint: "[.scratch/<slug> | resume .scratch/<slug>] [--base <branch>] [--coordinator '<harness> <model> <effort>'] [--implementor '<harness> <model> <effort>'] [--reviewer '<harness> <model> <effort>'] [--serial | --parallel <N>] [--stall-interval <minutes>]"
 compatibility: Requires macOS or Linux, Git, Bun, Herdr 0.9.1 or later with the machine-readable event and snapshot API, Matt Pocock's implement skill, at least one supported harness (Pi or Claude Code), and a TypeSafe API key stored in Bun secrets.
 disable-model-invocation: true
 effort: low
@@ -66,6 +66,12 @@ Arguments: `$ARGUMENTS`
   change: write and log it before scheduling more work. A lower cap drains
   existing implementors without terminating them; a higher cap applies on the
   next scheduling pass.
+- `--stall-interval <minutes>` records `Stall interval: <N>m`, an integer from
+  2 to 60. A first run without the flag records `10m`. It is the `timeout_ms`
+  of every core-loop `herdr.wait_any` call, so it sets how often working
+  implementors get a stall check. On resume the file wins unless the flag is
+  present; an explicit flag or a stated preference is written and logged in
+  `## Decisions` before the next wait.
 
 Before presenting role choices, call `roles.discover`. Offer only harnesses
 reported as available, Pi models from its installed catalog, Claude Code's
@@ -105,7 +111,9 @@ Everywhere below, `<base>` means that branch. The main checkout is never
   assessments/stall/        # immutable bounded TypeSafe request/evidence chains
   RESUME.md                 # the ONLY mutable coordination state; format: references/resume-format.md
   SUMMARY.md                # deterministic local terminal summary written by run.finalize
-.scratch/coordinators.md   # repo-wide run discovery registry (below)
+$XDG_STATE_HOME/coordinate-implementation/
+  runs/<run-id>.json        # helper-written global run summary and heartbeat (below)
+  agreements/<repo-id>.json # helper-written cross-run agreements for one repository
 ```
 
 Ticket readiness comes from the accepted dependency graph. A ticket is
@@ -134,8 +142,8 @@ rules for keeping the record true:
   make a later reader re-derive a field, or substitute another harness, model,
   or effort.
 - **On resume, an explicit flag wins and is written back.** `--implementor`,
-  `--reviewer`, `--serial`, or `--parallel <N>` passed at resume is a preference
-  change: validate it, write it, and log it. `--coordinator` must match the
+  `--reviewer`, `--serial`, `--parallel <N>`, or `--stall-interval <minutes>`
+  passed at resume is a preference change: validate it, write it, and log it. `--coordinator` must match the
   invoking replacement session; live coordinator changes are unsupported.
   `--base` is the exception and the file wins; resume-format.md says why.
 - **A session binds its record at launch.** The run-wide `Implementor:` and
@@ -165,21 +173,23 @@ else. Identify yourself from the `HERDR_PANE_ID` / `HERDR_TAB_ID` /
 never by inspecting `herdr pane list` for the focused pane: focus can belong to
 the user or another client and can move at any time.
 
-`.scratch/coordinators.md` is the cross-run discovery registry. Its canonical
-schema and ownership rules are in [registry.md](references/registry.md). Every
-run owns exactly one row; only that run's current ready coordinator may change
-or remove it. A downstream multi-run coordinator reads rows and each row's
-schema-1 RESUME.md, but never edits either.
+Cross-run discovery uses machine-local global run files under
+`$XDG_STATE_HOME/coordinate-implementation/runs/` (default
+`~/.local/state/...`). The helper rewrites a run's file atomically after every
+RESUME.md mutation and refreshes its heartbeat whenever a `herdr.wait_any`
+carrying `state_path` returns. Never write these files yourself. The layout,
+versioned schemas, and reader protocol are in
+[registry.md](references/registry.md). The old `.scratch/coordinators.md`
+registry is retired: never read or update it, and leave any existing copy for
+the user to delete.
 
-- On start or resume: read it; refuse to start if the prefix is already listed
-  with a different live ready owner, otherwise add or update your own row.
-  Warn the user when two runs on the same base touch the same ticket files or
-  implementation areas, then continue.
-- Update your row whenever a ticket starts, blocks, closes, or lands, after a
-  coordinator replacement, and after `run.finalize` changes run status.
-- Record `completed` before closing. Remove the row only when no downstream
-  coordinator requires the completion tombstone or after it acknowledges the
-  terminal state.
+- On start or resume: read the run files whose `repo.common_dir` matches this
+  repository. Refuse to start if another run id records the same `prefix` with
+  a heartbeat newer than twice its stall interval. Warn the user when two runs
+  on the same base touch the same ticket files or implementation areas, then
+  continue.
+- Cross-run merge order and shared-file assignments live in the repository's
+  agreements file, written only through `agreements.update` by its owner run.
 
 Runs that share a `<base>` land through one dedicated base checkout and
 serialize by rebase-and-retry, no lock. The main checkout holds `main`;
@@ -224,7 +234,12 @@ remaining blocked ticket:
    the observed outcome with `implementor.launch.record`. Exact procedure:
    [session-launch.md](references/session-launch.md).
 2. **Wait.** Call `herdr.wait_any` once with every active worker,
-   `coordinator: null`, and a bounded timeout. It subscribes before snapshotting.
+   `coordinator: null`, the run's RESUME.md as `state_path`, and `timeout_ms`
+   set to the persisted `Stall interval:` in milliseconds. Start this cycle as
+   soon as the first wave launches; each timeout is the stall check. The cycle
+   ends only through the terminal rules in step 7: a paused or blocked ticket
+   stops only that ticket while every other active worker keeps waiting. It
+   subscribes before snapshotting.
    Persist refreshed pane ids from its complete worker snapshot. On `pane_exited`,
    act on the named runtime. On `status: idle` or `status: done`, first verify a
    clean worktree and at least one ticket commit beyond the current base; run the
@@ -284,8 +299,8 @@ remaining blocked ticket:
    ticket landed. It verifies a clean landed worktree, removes the native
    fallback without force or runs the exact repository cleanup argv, retains
    the branch, writes immutable landed evidence, updates `Base sha:`, removes
-   the active runtime and serialized slot, and returns `schedule`. Update the
-   registry row, then immediately pass the new landed state to `scheduler.plan`
+   the active runtime and serialized slot, and returns `schedule`. Immediately
+   pass the new landed state to `scheduler.plan`
    so every newly unblocked ticket can start.
 7. **Evaluate terminal state.** When `scheduler.plan` returns no launch and no
    implementor is active, call `run.finalize`. It reads the accepted dependency
@@ -301,7 +316,7 @@ remaining blocked ticket:
    returned action to the persisted Matt tracker workflow only when current
    project authority allows it. `none` performs no writeback. Local completion
    and its summary are always recorded even when tracker action is pending or
-   forbidden. Update your registry row with the returned status.
+   forbidden. The helper publishes the returned status to the global run file.
 
 Session markers the implementor prints: `TICKET DONE NN`,
 `TICKET BLOCKED NN: <question>`, `FIXES DONE NN`. Herdr agent status is the
@@ -311,7 +326,8 @@ wake authority, not marker text; implementors forget to print it.
 
 Keep exactly one bounded `herdr.wait_any` call in flight while implementors are
 active. Supply each runtime's durable id, ticket, session name, and latest pane
-id, and set `coordinator` to `null`. The helper subscribes to every worker
+id, the RESUME.md `state_path`, the `Stall interval:` as `timeout_ms`, and set
+`coordinator` to `null`. The helper subscribes to every worker
 pane's status plus pane exit events, waits for the subscription acknowledgement,
 and only then takes its immediate snapshot. This ordering preserves events that
 race with bootstrap. When no implementor is active, do not open an empty wait;
@@ -427,8 +443,8 @@ When invoked as `resume .scratch/<slug>` for a restart or replacement:
    mismatch also stops with an explanation; nothing is guessed.
    If `--coordinator` differs from the persisted record or the invoking
    session, stop and ask the user to start a matching replacement session.
-   Differing `--implementor`, `--reviewer`, `--serial`, or `--parallel <N>`
-   values are preference changes: validate them, write them, and log them in
+   Differing `--implementor`, `--reviewer`, `--serial`, `--parallel <N>`, or
+   `--stall-interval <minutes>` values are preference changes: validate them, write them, and log them in
    `## Decisions`. Implementor and Reviewer changes apply only to future
    launches.
 2. `herdr pane list`; pane ids compact, so trust the list over RESUME.md.
@@ -436,9 +452,10 @@ When invoked as `resume .scratch/<slug>` for a restart or replacement:
    `coordinator <prefix>`, using `$HERDR_TAB_ID` and `$HERDR_PANE_ID`.
 3. Compare `Base sha:` with the base checkout. If it moved, inspect every
    active branch against the new base, then record the observed sha.
-4. Update your line in `.scratch/coordinators.md`.
+4. Check the global run files for a conflicting live prefix as described in
+   [Several coordinators on one repo](#several-coordinators-on-one-repo).
 5. When active runtimes exist, call `herdr.wait_any` with a short bounded
-   timeout and `coordinator: null`. Persist every refreshed pane id from the
+   timeout, `state_path`, and `coordinator: null`. Persist every refreshed pane id from the
    returned complete snapshot. A valid active runtime remains active even when
    its recorded compact pane id changed; do not relaunch it.
 6. Run `scheduler.plan`. If this is a replacement coordinator, use the normal

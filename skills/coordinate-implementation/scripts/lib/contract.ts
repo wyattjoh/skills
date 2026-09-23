@@ -43,7 +43,8 @@ export type CoordinateOperation =
   | "landing.synchronize"
   | "landing.conflict.record"
   | "landing.complete"
-  | "run.finalize";
+  | "run.finalize"
+  | "agreements.update";
 
 /**
  * Harnesses supported for coordinator, implementor, and reviewer sessions.
@@ -368,6 +369,8 @@ export type HerdrWaitAnyInput = {
   timeoutMs: number;
   workers: HerdrWorkerInput[];
   coordinator: HerdrCoordinatorInput | undefined;
+  /** RESUME.md whose global run file receives a heartbeat when the wait returns. */
+  statePath?: string | undefined;
 };
 
 /**
@@ -592,6 +595,17 @@ export type RunClosure = {
 };
 
 /**
+ * Input for replacing the repository's cross-run agreements.
+ */
+export type AgreementsUpdateInput = {
+  statePath: string;
+  mergeOrder: string[];
+  sharedFiles: Array<{ path: string; ownerPrefix: string }>;
+  transferOwnership: boolean;
+  userAuthorized: boolean;
+};
+
+/**
  * Input for evaluating terminal run state and writing its local summary.
  */
 export type RunFinalizeInput = {
@@ -782,6 +796,11 @@ export type CoordinateRequest =
       schemaVersion: typeof CONTRACT_SCHEMA_VERSION;
       operation: "run.finalize";
       input: RunFinalizeInput;
+    }
+  | {
+      schemaVersion: typeof CONTRACT_SCHEMA_VERSION;
+      operation: "agreements.update";
+      input: AgreementsUpdateInput;
     };
 
 /**
@@ -802,6 +821,8 @@ export type CoordinateResponse<Result> = {
   ok: boolean;
   result: Result | null;
   errors: CliIssue[];
+  /** Non-fatal global-state problems; present only when at least one occurred. */
+  warnings?: CliIssue[];
 };
 
 /**
@@ -1123,6 +1144,7 @@ export const parseRequest = (raw: string): Effect.Effect<CoordinateRequest, Requ
       "landing.conflict.record",
       "landing.complete",
       "run.finalize",
+      "agreements.update",
     ];
     if (operation === null || !operations.includes(operation as CoordinateOperation)) {
       return yield* invalidRequest(
@@ -1132,6 +1154,41 @@ export const parseRequest = (raw: string): Effect.Effect<CoordinateRequest, Requ
     }
     if (!isRecord(parsed.input)) {
       return yield* invalidRequest("Request `input` must be an object.", operation);
+    }
+
+    if (operation === "agreements.update") {
+      const statePath = nonEmptyString(parsed.input.state_path);
+      const mergeOrder = stringArray(parsed.input.merge_order);
+      const sharedValue = parsed.input.shared_files;
+      const sharedFiles = Array.isArray(sharedValue)
+        ? sharedValue.flatMap((entry) => {
+            if (!isRecord(entry)) return [];
+            const path = singleLineString(entry.path);
+            const ownerPrefix = singleLineString(entry.owner_prefix);
+            return path === undefined || ownerPrefix === undefined ? [] : [{ path, ownerPrefix }];
+          })
+        : undefined;
+      const transferOwnership = parsed.input.transfer_ownership;
+      const userAuthorized = parsed.input.user_authorized;
+      if (
+        statePath === undefined ||
+        mergeOrder === undefined ||
+        sharedFiles === undefined ||
+        sharedFiles.length !== (sharedValue as unknown[]).length ||
+        typeof transferOwnership !== "boolean" ||
+        typeof userAuthorized !== "boolean" ||
+        (transferOwnership && !userAuthorized)
+      ) {
+        return yield* invalidRequest(
+          "`agreements.update` requires state_path, merge_order, shared_files with path and owner_prefix, boolean transfer_ownership, and boolean user_authorized; an ownership transfer requires user_authorized true.",
+          operation,
+        );
+      }
+      return {
+        schemaVersion: CONTRACT_SCHEMA_VERSION,
+        operation,
+        input: { statePath, mergeOrder, sharedFiles, transferOwnership, userAuthorized },
+      };
     }
 
     if (operation === "run.finalize") {
@@ -1328,16 +1385,22 @@ export const parseRequest = (raw: string): Effect.Effect<CoordinateRequest, Requ
         coordinatorValue === undefined || coordinatorValue === null
           ? undefined
           : parseHerdrCoordinator(coordinatorValue);
+      const statePathValue = parsed.input.state_path;
+      const statePath =
+        statePathValue === undefined || statePathValue === null
+          ? undefined
+          : nonEmptyString(statePathValue);
       if (
         socketPath === undefined ||
         timeoutMs === undefined ||
-        timeoutMs > 600_000 ||
+        timeoutMs > 3_600_000 ||
+        (statePathValue !== undefined && statePathValue !== null && statePath === undefined) ||
         workers === undefined ||
         (workers.length === 0 && coordinator === undefined) ||
         (coordinatorValue !== undefined && coordinatorValue !== null && coordinator === undefined)
       ) {
         return yield* invalidRequest(
-          "`herdr.wait_any` requires socket_path, a 1..600000 timeout_ms, workers, and an optional complete coordinator identity and phase; at least one worker or coordinator is required.",
+          "`herdr.wait_any` requires socket_path, a 1..3600000 timeout_ms, workers, an optional state_path, and an optional complete coordinator identity and phase; at least one worker or coordinator is required.",
           operation,
         );
       }
@@ -1365,7 +1428,7 @@ export const parseRequest = (raw: string): Effect.Effect<CoordinateRequest, Requ
       return {
         schemaVersion: CONTRACT_SCHEMA_VERSION,
         operation,
-        input: { socketPath, timeoutMs, workers, coordinator },
+        input: { socketPath, timeoutMs, workers, coordinator, statePath },
       };
     }
 

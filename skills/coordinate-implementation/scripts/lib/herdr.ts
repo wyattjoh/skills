@@ -1,5 +1,6 @@
 import { Data, Effect } from "effect";
 import { createConnection, type Socket } from "node:net";
+import { heartbeatStateFile } from "./state-mutation.ts";
 import type {
   CliIssue,
   CoordinatorPhase,
@@ -731,4 +732,8 @@ export const waitAnyWorker = (
             `Herdr wait-any failed: ${(error as Error).message}`,
             "Apply the bounded Herdr infrastructure retry for each affected ticket.",
           ),
-  });
+  }).pipe(
+    Effect.ensuring(
+      input.statePath === undefined ? Effect.void : heartbeatStateFile(input.statePath),
+    ),
+  );

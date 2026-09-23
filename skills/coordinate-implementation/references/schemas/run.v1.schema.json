@@ -1,0 +1,104 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "coordinate-implementation/run.v1.schema.json",
+  "title": "coordinate-implementation global run file, schema version 1",
+  "type": "object",
+  "required": [
+    "kind",
+    "schema_version",
+    "run_id",
+    "repo",
+    "run_folder",
+    "state_path",
+    "prefix",
+    "base",
+    "base_sha",
+    "mode",
+    "parallel_cap",
+    "stall_interval_minutes",
+    "run_status",
+    "summary_path",
+    "tickets",
+    "active_runtimes",
+    "coordinator",
+    "pauses",
+    "last_operation",
+    "updated_at",
+    "heartbeat_at"
+  ],
+  "properties": {
+    "kind": { "type": "string", "const": "run" },
+    "schema_version": { "type": "number", "const": 1 },
+    "run_id": { "type": "string", "format": "uuid" },
+    "repo": {
+      "type": "object",
+      "required": ["common_dir", "base_checkout"],
+      "properties": {
+        "common_dir": { "type": ["string", "null"] },
+        "base_checkout": { "type": ["string", "null"] }
+      }
+    },
+    "run_folder": { "type": "string" },
+    "state_path": { "type": "string" },
+    "prefix": { "type": ["string", "null"] },
+    "base": { "type": ["string", "null"] },
+    "base_sha": { "type": ["string", "null"] },
+    "mode": { "type": ["string", "null"] },
+    "parallel_cap": { "type": ["number", "null"] },
+    "stall_interval_minutes": { "type": ["number", "null"] },
+    "run_status": { "type": "string", "enum": ["active", "waiting", "completed"] },
+    "summary_path": { "type": ["string", "null"] },
+    "tickets": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["number", "status", "harness", "model", "effort"],
+        "properties": {
+          "number": { "type": "string" },
+          "status": { "type": "string" },
+          "harness": { "type": ["string", "null"] },
+          "model": { "type": ["string", "null"] },
+          "effort": { "type": ["string", "null"] }
+        }
+      }
+    },
+    "active_runtimes": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["ticket", "session", "pane", "phase", "attempt"],
+        "properties": {
+          "ticket": { "type": "string" },
+          "session": { "type": ["string", "null"] },
+          "pane": { "type": ["string", "null"] },
+          "phase": { "type": ["string", "null"] },
+          "attempt": { "type": ["number", "null"] }
+        }
+      }
+    },
+    "coordinator": {
+      "type": "object",
+      "required": ["generation", "pane", "readiness"],
+      "properties": {
+        "generation": { "type": ["number", "null"] },
+        "pane": { "type": ["string", "null"] },
+        "readiness": { "type": ["string", "null"] }
+      }
+    },
+    "pauses": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["ticket", "reason", "evidence_path"],
+        "properties": {
+          "ticket": { "type": "string" },
+          "reason": { "type": "string" },
+          "evidence_path": { "type": ["string", "null"] }
+        }
+      }
+    },
+    "last_operation": { "type": ["string", "null"] },
+    "updated_at": { "type": "string", "format": "date-time" },
+    "heartbeat_at": { "type": ["string", "null"], "format": "date-time" }
+  }
+}

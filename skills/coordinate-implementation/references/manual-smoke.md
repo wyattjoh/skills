@@ -99,8 +99,8 @@ writing an artifact.
 ## Completion and waiting checks
 
 Leave one ticket blocked with no runnable dependency frontier and call
-`run.finalize` without closures. Confirm the result and registry row say
-`waiting`, no SUMMARY.md exists, and the run is not presented as successful.
+`run.finalize` without closures. Confirm the result and the global run file's
+`run_status` say `waiting`, no SUMMARY.md exists, and the run is not presented as successful.
 Then obtain explicit user authority naming the blocked ticket and reason, close
 it through `run.finalize`, and confirm the terminal result is `completed`, the
 runtime provenance moved to `## Closed ticket runtimes`, and SUMMARY.md reports

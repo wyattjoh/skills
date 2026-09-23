@@ -84,7 +84,7 @@ Restart Claude Code after adding or changing an agent definition.
 | code-walkthrough              | Build an annotated walkthrough page with pinned source and scrolling notes          |
 | conductor                     | Navigate Conductor worktree environments for parallel agents                        |
 | coordinate-implementation     | Orchestrate portable Pi or Claude multi-ticket runs through local completion safely |
-| core-coordinator              | Coordinate concurrent runs while preserving run-owned state and registry rows       |
+| core-coordinator              | Coordinate concurrent runs while preserving run-owned state and global run files    |
 | devenv                        | Answer devenv.sh questions from an indexed local copy of the full documentation     |
 | dialkit                       | Live parameter tweaking and design exploration in React via dialkit                 |
 | driving-ios-simulator         | Drive a booted iOS Simulator: tap, swipe, type, read elements, screenshot           |

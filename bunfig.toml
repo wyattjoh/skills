@@ -4,3 +4,7 @@ minimumReleaseAge = 432000
 # Use flat hoisting (not the isolated .bun store) so the workspace member
 # resolves transitive deps the app imports directly, matching the pre-monorepo layout.
 linker = "hoisted"
+
+[test]
+# Sandbox coordinate-implementation's machine-local global state for every suite.
+preload = ["./skills/coordinate-implementation/scripts/test-preload.ts"]

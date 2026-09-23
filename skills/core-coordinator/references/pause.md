@@ -12,7 +12,7 @@ sending anything.
 - Each worker is either safely stopped or represented by complete committed or
   uncommitted recovery state in the run-owned RESUME.md.
 - No repository gate or build remains active in that run's worktrees.
-- The run outcome and registry row say `waiting` when unfinished. They never say
+- The run outcome and global run file say `waiting` when unfinished. They never say
   `completed` merely because execution paused.
 - Ticket worktree cleanup follows the run's persisted repository policy. The
   core coordinator never removes one.

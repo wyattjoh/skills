@@ -8,6 +8,7 @@ import {
   type CoordinateRequest,
   type CoordinateResponse,
 } from "./lib/contract.ts";
+import { updateAgreements } from "./lib/agreements.ts";
 import { claimCoordinator, markCoordinatorReady, verifyCoordinator } from "./lib/coordinator.ts";
 import {
   prepareCoordinatorHandoff,
@@ -15,6 +16,7 @@ import {
   retryCoordinatorHandoff,
   verifyCoordinatorHandoff,
 } from "./lib/handoff.ts";
+import { drainGlobalWarnings, setCurrentOperation } from "./lib/global-state.ts";
 import { waitAnyWorker } from "./lib/herdr.ts";
 import {
   prepareImplementorLaunch,
@@ -60,7 +62,10 @@ const readStdin = (): Effect.Effect<string, RequestError> =>
   });
 
 const print = (response: CoordinateResponse<unknown>): void => {
-  console.log(JSON.stringify(response, null, 2));
+  const warnings = drainGlobalWarnings();
+  console.log(
+    JSON.stringify(warnings.length === 0 ? response : { ...response, warnings }, null, 2),
+  );
 };
 
 const execute = (request: CoordinateRequest): Effect.Effect<number, never> =>
@@ -399,6 +404,16 @@ const execute = (request: CoordinateRequest): Effect.Effect<number, never> =>
       return 0;
     }
 
+    if (request.operation === "agreements.update") {
+      const outcome = yield* Effect.result(updateAgreements(request.input));
+      if (Result.isFailure(outcome)) {
+        print(failureResponse(request.operation, [outcome.failure.issue], null));
+        return 1;
+      }
+      print(successResponse(request.operation, outcome.success));
+      return 0;
+    }
+
     const outcome = yield* Effect.result(verifyCoordinator(request.input));
     if (Result.isFailure(outcome)) {
       print(failureResponse(request.operation, [outcome.failure.issue], null));
@@ -411,6 +426,7 @@ const execute = (request: CoordinateRequest): Effect.Effect<number, never> =>
 const program = Effect.gen(function* () {
   const raw = yield* readStdin();
   const request = yield* parseRequest(raw);
+  setCurrentOperation(request.operation);
   return yield* execute(request);
 });
 

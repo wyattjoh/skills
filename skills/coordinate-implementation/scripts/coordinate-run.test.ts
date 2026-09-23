@@ -20,6 +20,7 @@ type RunFixture = {
 
 const runCli = (operation: string, input: Record<string, unknown>) => {
   const child = Bun.spawnSync([process.execPath, CLI], {
+    env: process.env,
     stdin: Buffer.from(JSON.stringify({ schema_version: 1, operation, input })),
     stdout: "pipe",
     stderr: "pipe",
@@ -520,7 +521,10 @@ describe("portable downstream documentation", () => {
       "@effect/ai-typesafe": "4.0.0-rc.116",
       effect: "4.0.0-rc.116",
     });
-    expect(downstream.includes("Never edit a run's `RESUME.md` or its registry row.")).toBe(true);
+    expect(downstream.includes("Never edit a run's `RESUME.md` or its global run file.")).toBe(
+      true,
+    );
+    expect(downstream.includes("`agreements.update`")).toBe(true);
     expect(loop.includes("event-driven")).toBe(true);
     for (const legacy of ["CronCreate", "CronDelete", "python3", "ListAgents", "SendMessage"]) {
       expect(`${downstream}\n${loop}`.includes(legacy)).toBe(false);

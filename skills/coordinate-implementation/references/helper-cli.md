@@ -40,6 +40,12 @@ Every result uses this outer shape:
 Each error has a stable `code`, a human-readable `message`, and an actionable
 `remediation`. The helper never migrates an unsupported request or state schema.
 
+A result may also carry a `warnings` array of issues with the same shape. It
+appears only when a best-effort global run file write failed
+(`global_state.write_failed` or `global_state.heartbeat_failed`); `ok`, the
+exit code, and RESUME.md are unaffected. Report the warning and continue. See
+[registry.md](registry.md).
+
 Exit codes:
 
 | Code | Meaning                                                        |
@@ -503,6 +509,7 @@ control socket:
   "input": {
     "socket_path": "/home/user/.config/herdr/sessions/default/herdr.sock",
     "timeout_ms": 600000,
+    "state_path": ".scratch/example/RESUME.md",
     "workers": [
       {
         "runtime_id": "example-02-attempt-1",
@@ -515,6 +522,13 @@ control socket:
   }
 }
 ```
+
+`timeout_ms` is an integer from 1 to 3600000. In the core loop it is the run's
+`Stall interval:` in milliseconds (the example is the 10 minute default).
+The optional `state_path` names the run's RESUME.md. When present, the helper
+refreshes that run's global heartbeat under the state lock after the wait
+returns for any reason, including failure. A heartbeat failure adds a
+`global_state.heartbeat_failed` warning and never changes the wait result.
 
 The helper opens a long-lived `events.subscribe` connection for every supplied
 pane status plus pane exit events and waits for `subscription_started`. Only
@@ -1287,3 +1301,40 @@ sources and `writeback: none` return `not-applicable`. Persisted `final` or
 current project authority allows remote writes, or `forbidden` when current
 authority no longer permits them. The helper never calls a tracker. The
 coordinator delegates a pending action and always preserves the local summary.
+
+## `agreements.update`
+
+Replace the repository's cross-run agreements: the merge order of run
+prefixes and shared-file assignments. A downstream multi-run coordinator calls
+it with its own RESUME.md:
+
+```json
+{
+  "schema_version": 1,
+  "operation": "agreements.update",
+  "input": {
+    "state_path": ".scratch/example/RESUME.md",
+    "merge_order": ["dcs", "abc"],
+    "shared_files": [{ "path": "src/api.ts", "owner_prefix": "dcs" }],
+    "transfer_ownership": false,
+    "user_authorized": false
+  }
+}
+```
+
+The helper reads the caller's `Run id:` UUID from `state_path` without
+modifying that file, resolves the repository's Git common directory from its
+folder, and atomically replaces `agreements/<repo-id>.json` under that file's
+lock. A missing or malformed id fails with `agreements.run_id_missing`; record
+one yourself in the caller-owned RESUME.md. The
+input replaces the whole agreement; send every entry that should remain.
+
+The first writer becomes the owner. A later write from another run fails with
+`agreements.not_owner`. After explicit user authority, set both
+`transfer_ownership` and `user_authorized` to `true` to move ownership to the
+caller. A transfer without `user_authorized: true` is an invalid request.
+A run folder outside Git fails with `agreements.repository_unresolved`.
+
+The result contains the written `path`, the complete `agreements` file, and
+`previous_owner_run_id` (null for the first write). The file schema is
+[schemas/agreements.v1.schema.json](schemas/agreements.v1.schema.json).

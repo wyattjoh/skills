@@ -22,12 +22,14 @@ indentation alone. The indentation is part of the format.
 # <slug> implementation run
 
 Schema version: 1
+Run id: 3f0c9a52-5d1e-4b8a-9c7e-2a4b6c8d0e1f
 
 Prefix:          dcs
 Base:            main
 Base sha:        0123456789abcdef0123456789abcdef01234567
 Mode:            parallel
 Parallel cap:    3
+Stall interval:  10m
 Branch template: <prefix>-NN-<slug>
 
 Coordinator:
@@ -240,14 +242,16 @@ Last diagnostic: none
 
 ### Run header
 
-| Field             | Meaning                                                                                                                                                             |
-| ----------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `Prefix`          | Short run tag; names sessions, tabs, and the pane label                                                                                                             |
-| `Base`            | Integration branch. Recorded on first run; **the file always wins** over a later `--base` flag, because changing the base mid-run invalidates every unlanded branch |
-| `Base sha`        | Last observed full commit id of `Base`. Update after every landing and when a resume or progress tick observes external movement                                    |
-| `Mode`            | `parallel` or `serial`. Controls only which queued tickets start; it does not terminate active workers                                                              |
-| `Parallel cap`    | Positive maximum active implementors; exactly `1` in serial mode                                                                                                    |
-| `Branch template` | Branch pattern resolved from repository instructions, or `<prefix>-NN-<slug>` when the repository is silent                                                         |
+| Field             | Meaning                                                                                                                                                              |
+| ----------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `Prefix`          | Short run tag; names sessions, tabs, and the pane label                                                                                                              |
+| `Base`            | Integration branch. Recorded on first run; **the file always wins** over a later `--base` flag, because changing the base mid-run invalidates every unlanded branch  |
+| `Base sha`        | Last observed full commit id of `Base`. Update after every landing and when a resume or progress tick observes external movement                                     |
+| `Mode`            | `parallel` or `serial`. Controls only which queued tickets start; it does not terminate active workers                                                               |
+| `Parallel cap`    | Positive maximum active implementors; exactly `1` in serial mode                                                                                                     |
+| `Run id`          | Lowercase UUID naming the run's global state file. Generate it when creating the file; the helper backfills a missing one on its first locked write. Never change it |
+| `Stall interval`  | `<N>m` with integer `N` from 2 to 60; `10m` by default. The `herdr.wait_any` timeout, and therefore the stall-check cadence, for the core loop                       |
+| `Branch template` | Branch pattern resolved from repository instructions, or `<prefix>-NN-<slug>` when the repository is silent                                                          |
 
 `Base` is the one field where the file beats the flag. `Implementor` and `Mode`
 are the opposite (see below). The asymmetry is deliberate: a model or scheduler
@@ -260,6 +264,13 @@ decision before more tickets start. Reject both flags together. Switching to
 serial records cap 1 but never kills existing parallel workers: stop launching,
 drain the active set, then continue one at a time. Raising a parallel cap fills
 new capacity at the next `scheduler.plan` pass.
+
+`Run id` and `Stall interval` are optional schema-1 fields, so older runs
+resume without migration: a missing run id is backfilled by the helper and a
+missing interval means `10m`. `--stall-interval <minutes>` on a first run or
+resume, or a stated preference mid-run, writes the field and appends a
+decision before the next wait. Reject a value outside 2 to 60. An out-of-range
+value already in the file stops the resume like any other malformed field.
 
 ### `## Repository policy`
 

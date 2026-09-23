@@ -18,7 +18,7 @@ files. The actual repository contract, not this skill, decides the paths.
 
 1. Name one owner per shared file or directory, usually the run whose
    footprint there is largest or that merges first. Record it in RESUME.md
-   and the registry's cross-run section, and tell every run.
+   and the agreements file through `agreements.update`, and tell every run.
 2. A non-owner's needed edit is messaged to you; pass it to the owner to fold
    in. When the user chooses a different integration path, relay that decision
    to the affected run owners. The core coordinator never commits the edit or

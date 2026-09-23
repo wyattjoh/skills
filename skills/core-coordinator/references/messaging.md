@@ -1,6 +1,6 @@
 # Messaging run coordinators
 
-Resolve each current ready coordinator from the canonical registry and its
+Resolve each current ready coordinator from its global run file and its
 schema-1 ownership record. Pane identifiers may compact, so refresh them through
 Herdr's machine-readable control surface and ask the run owner to persist any
 correction.
@@ -29,7 +29,7 @@ grant authority that your own session lacks.
 
 > Core coordinator here, observing run `<prefix>` at ownership generation
 > `<generation>`. I own cross-run order and shared-file agreements only. Your
-> run retains exclusive ownership of its RESUME.md and registry row. Current
+> run retains exclusive ownership of its RESUME.md and global run file. Current
 > agreed order: `<order>`. Please reply with the remaining file footprint,
 > active ticket, and acknowledgement that cross-run conflicts will route
 > through this session.
