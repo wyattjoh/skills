@@ -98,13 +98,19 @@ revertible diff. Then:
 
    ```bash
    bun $SKILL_DIR/scripts/workspace.ts audit --workspace <hub>   # must pass
-   git -C <hub> add -A && git -C <hub> commit   # docs: compact workspace ADRs
+   cd <hub> && git add -A && git commit   # docs: compact workspace ADRs
    ```
 
 If `audit` fails or the apply is wrong, the tree is dirty but uncommitted:
-fix forward, or `git -C <hub> reset --hard && git -C <hub> clean -fd docs/adr`
-to return to the pre-compaction baseline and start over. Never commit a
-half-compacted hub.
+fix forward, or return to the pre-compaction baseline and start over. Do not
+run the reset yourself: print this command for the user to run, and wait for
+them to confirm before continuing.
+
+```bash
+cd <hub> && git reset --hard && git clean -fd docs/adr
+```
+
+Never commit a half-compacted hub.
 
 ## The archive is history, not context
 
