@@ -29,8 +29,9 @@ source as inline literals.
 > duration of an exploration session.
 
 > **Terminology:** as of dialkit 2.x, the panel's own UI labels saved entries
-> "versions" (e.g. "Version 1", a version menu reached from the toolbar's
-> "+") rather than "presets". Say "version" when describing the panel to the
+> "versions" (e.g. "Version 1", listed in the **Versions** menu on the panel
+> toolbar, whose **+ New version** item saves and selects a new version)
+> rather than "presets". Say "version" when describing the panel to the
 > user throughout this workflow. The config option and `DialStore` methods
 > referenced below (`savePreset`, `getPresets`, `seedPresets`, etc.) still use
 > the name "preset" in code, so no code or field name here needs to change.
@@ -41,15 +42,15 @@ source as inline literals.
 
 The user has a vague idea or wants to discover. Instrument the component(s)
 with a wide set of controls, then **explicitly guide the user to save 2 to 4
-named presets** ("Compact", "Bold", "Airy") using dialkit's "+" button. Once
-presets are saved, help them compare, pick a winner, or **merge across
+named versions** ("Compact", "Bold", "Airy") with the version menu's
+**+ New version** item. Once versions are saved, help them compare, pick a winner, or **merge across
 presets** ("I like Bold's color but Airy's spacing, synthesize").
 
 ### Tweak Mode
 
 The user has a specific component and a few specific knobs to dial in. Skip
-the multi-preset workflow. Instrument, let the user dial, capture the JSON,
-integrate.
+the guided comparison loop: instrument with a small seeded set (Phase 2), let
+the user dial, capture the JSON, integrate.
 
 When unsure, ask which mode. Default to Exploration.
 
@@ -143,7 +144,7 @@ Make these edits in this order:
    guarantees the panel never ships.
 
 3. **Add `<DialKitPersistence />`** next to `<DialRoot />` to survive HMR and
-   page refreshes. dialkit has no built-in persistence; values and presets live
+   page refreshes and to apply the Phase 2 seed presets. Values and presets live
    in a module-level singleton (`DialStore`) that wipes on full reloads. See
    [Persistence](#persistence) for the snippet to drop in.
 
@@ -173,11 +174,11 @@ Make these edits in this order:
 This is the killer pattern for exploration mode. The panel ships **already
 populated** with the seeded presets from Phase 3.
 
-1. Tell the user: "The dropdown at the top of the panel has the directions we
-   pre-seeded ('Compact', 'Bold', 'Airy', etc.). Click each to switch in the
-   live preview. Drag any control to refine within a preset (auto-saves to
-   the active one). Click **+** to add a new preset for any direction we
-   missed."
+1. Tell the user: "The panel's **Versions** menu (in its toolbar) has the directions
+   we pre-seeded ('Compact', 'Bold', 'Airy', etc.). Pick each to switch the
+   live preview. Drag any control to refine the active version (it
+   auto-saves). Use **+ New version** in that menu to add a version for any
+   direction we missed."
 2. When the user has narrowed down, ask them to either:
    - Tell you which preset wins ("Bold feels right"), or
    - Click **Copy** on each preset they're considering and paste the JSONs
@@ -267,18 +268,14 @@ strict, ordered list.
 
 ## Persistence
 
-> **Note:** dialkit (≥1.x) now ships a built-in `persist` option on
-> `useDialKit`/`useDialKitController` (`persist: true` or
-> `{ key, storage: 'localStorage'|'sessionStorage', presets: boolean }`) that
-> covers much of what the companion component below does. Check the installed
-> package version and its README before instrumenting; the built-in option
-> may let you skip copying `DialKitPersistence.tsx` entirely. The workflow
-> below remains a valid fallback for older versions or finer control.
+> dialkit also has a built-in `persist` option on `useDialKit`/`useDialKitController`
+> (`persist: true` or `{ key, storage: 'localStorage'|'sessionStorage', presets: boolean }`).
+> This workflow uses the companion component below because it also applies the Phase 2
+> `seedPresets`; check the installed package's README before replacing it with `persist`.
 
-Historically, dialkit had no built-in persistence: its `DialStore` is a
-module-level singleton (`export const DialStore = new DialStoreClass()`)
-holding panels, values, and presets in plain `Map`s. Anything that recreates
-that singleton wipes state:
+Without persistence, dialkit's `DialStore` is a module-level singleton
+(`export const DialStore = new DialStoreClass()`) holding panels, values, and presets in
+plain `Map`s. Anything that recreates that singleton wipes state:
 
 | Event                              | Wipes state? | Why                                                                                     |
 | ---------------------------------- | ------------ | --------------------------------------------------------------------------------------- |
