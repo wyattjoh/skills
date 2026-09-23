@@ -21,7 +21,7 @@ Configures [release-please](https://github.com/googleapis/release-please) in a p
 
 Use `WebFetch` on these URLs to get current documentation before proceeding.
 
-**Action version pin:** `@v5` (Apr 2026) and `@v4` are both usable. v5 only changes the runner runtime from Node 20 to Node 24 — no input/output changes. v4 received library bumps through `v4.4.1` (Apr 2026) and is the safer pin for self-hosted runners that haven't upgraded to Node 24, but no v4 release has shipped since v5.0.0, so treat "still maintained" as provisional and check for a newer v4 tag before relying on it. **Avoid `@v3`** — its last release was `v3.7.13` (Nov 2023), it runs on Node 16, and it predates the config-file-only manifest model (v4 removed most per-input configuration in favor of `release-please-config.json`). Both `release_created` (root) and `releases_created` (aggregate) outputs exist in v3 and v4 alike — the split is root-vs-aggregate, not a version difference.
+**Action version pin:** `@v5` (Apr 2026) and `@v4` are both usable. v5 only changes the runner runtime from Node 20 to Node 24 (no input/output changes). v4 received library bumps through `v4.4.1` (Apr 2026) and is the safer pin for self-hosted runners that haven't upgraded to Node 24, but no v4 release has shipped since v5.0.0, so treat "still maintained" as provisional and check for a newer v4 tag before relying on it. **Avoid `@v3`**: its last release was `v3.7.13` (Nov 2023), it runs on Node 16, and it predates the config-file-only manifest model (v4 removed most per-input configuration in favor of `release-please-config.json`). Both `release_created` (root) and `releases_created` (aggregate) outputs exist in v3 and v4 alike; the split is root-vs-aggregate, not a version difference.
 
 **Library version:** release-please-action v5.0.0 is the latest action release and bundles release-please library v17.6.0. The latest published library is v17.11.2 (see the [release-please CHANGELOG](https://github.com/googleapis/release-please/blob/main/CHANGELOG.md)), several minor versions ahead of what v5.0.0 bundles; upstream ships releases roughly weekly to biweekly. Last verified 2026-09-14. Check the action's own `package-lock.json` at your pinned tag if you need the exact bundled version.
 
@@ -186,8 +186,8 @@ If the project has an existing publish workflow triggered on `push: main`:
 ### OIDC-Authenticated Publishing
 
 JSR supports OIDC out of the box. npm requires enabling **Trusted Publishing**
-(GA 2025-07-31) per-package on npmjs.com first — linking the org/repo/workflow
-filename — plus npm CLI >= 11.5.1 and Node.js >= 22.14.0 in the runner. Once
+(GA 2025-07-31) per-package on npmjs.com first, linking the org/repo/workflow
+filename, plus npm CLI >= 11.5.1 and Node.js >= 22.14.0 in the runner. Once
 configured, a plain `npm publish` authenticates via OIDC and attaches
 provenance automatically; `--provenance` alone does **not** replace the need
 for a token without Trusted Publishing configured, since it only adds a build
@@ -267,7 +267,7 @@ For projects that ship compiled binaries (Go, Rust, Deno compile, Bun compile), 
 
 ## Manual Overrides
 
-Day-to-day, you'll often need to force a version bump, skip a release, or recover from a stuck release pipeline. Release-please supports several override mechanisms — pick the most local one for the job.
+Day-to-day, you'll often need to force a version bump, skip a release, or recover from a stuck release pipeline. Release-please supports several override mechanisms; pick the most local one for the job.
 
 ### Force a specific version
 
@@ -308,7 +308,7 @@ Useful when paired with `workflow_dispatch` for ad-hoc releases triggered from t
 
 ### Force a bump direction (always-bump-\*)
 
-`versioning-strategy` overrides Conventional Commits parsing entirely. `versioning-strategy` is the GitHub Action **input** name (added in v4.4.0); the equivalent **config-file** field is `versioning` (e.g. `{ "packages": { ".": { "versioning": "always-bump-minor" } } }`) — both accept the same enum values:
+`versioning-strategy` overrides Conventional Commits parsing entirely. `versioning-strategy` is the GitHub Action **input** name (added in v4.4.0); the equivalent **config-file** field is `versioning` (e.g. `{ "packages": { ".": { "versioning": "always-bump-minor" } } }`); both accept the same enum values:
 
 | Strategy            | Effect                                                           |
 | ------------------- | ---------------------------------------------------------------- |
@@ -398,7 +398,7 @@ The single most useful debugging signal is the PR label: `autorelease: pending` 
 
 5. **After merging a release PR, pull locally.** The PR modifies the manifest and `CHANGELOG.md`. Pull before pushing new commits.
 
-6. **Conventional commits are required.** `feat:` = minor, `fix:` = patch, `feat!:` or `BREAKING CHANGE:` = major. Default releasable types are `feat`, `fix`, and `deps` (source: [release-please README, "Release Please bot does not create a release PR"](https://github.com/googleapis/release-please#readme), verified 2026-09-14; the README lists these three prefixes explicitly and does not include `perf`). Everything else (`chore`, `build`, `docs`, `style`, `test`, `ci`, `refactor`, `perf`) is non-releasable by default — customize via `changelog-sections`.
+6. **Conventional commits are required.** `feat:` = minor, `fix:` = patch, `feat!:` or `BREAKING CHANGE:` = major. Default releasable types are `feat`, `fix`, and `deps` (source: [release-please README, "Release Please bot does not create a release PR"](https://github.com/googleapis/release-please#readme), verified 2026-09-14; the README lists these three prefixes explicitly and does not include `perf`). Everything else (`chore`, `build`, `docs`, `style`, `test`, `ci`, `refactor`, `perf`) is non-releasable by default; customize via `changelog-sections`.
 
 7. **The config JSON schema lags reality.** Upstream tracks this in [release-please#2518](https://github.com/googleapis/release-please/issues/2518). Verify config field support against the library version your action pin bundles, not against the schema alone.
 
@@ -415,12 +415,12 @@ The three linked issues are open upstream; last verified 2026-09-14. Re-check be
 
 Focused reference docs:
 
-- **[First-release bootstrap](references/first-release-bootstrap.md)** — Adopting release-please in a project with existing history.
-- **[Monorepo setup](references/monorepo.md)** — Multi-package configs, `separate-pull-requests`, linked versions.
-- **[Downstream updates](references/downstream-updates.md)** — Post-release jobs that touch other repos.
-- **[Binary artifacts](references/binary-artifacts.md)** — Multi-target compile + checksum + release upload.
-- **[Token strategy](references/token-strategy.md)** — `GITHUB_TOKEN` vs OIDC vs PAT vs GitHub App token.
-- **[Prereleases](references/prereleases.md)** — Alpha/beta/rc configurations.
+- **[First-release bootstrap](references/first-release-bootstrap.md)**: Adopting release-please in a project with existing history.
+- **[Monorepo setup](references/monorepo.md)**: Multi-package configs, `separate-pull-requests`, linked versions.
+- **[Downstream updates](references/downstream-updates.md)**: Post-release jobs that touch other repos.
+- **[Binary artifacts](references/binary-artifacts.md)**: Multi-target compile + checksum + release upload.
+- **[Token strategy](references/token-strategy.md)**: `GITHUB_TOKEN` vs OIDC vs PAT vs GitHub App token.
+- **[Prereleases](references/prereleases.md)**: Alpha/beta/rc configurations.
 
 Upstream:
 
