@@ -47,7 +47,7 @@ Short-lived JWT issued by GitHub at job start. Used by registries that trust Git
 
 **Supported registries:**
 
-- **npm** — `npm publish --provenance --access public`. Requires account-level opt-in on npmjs.com.
+- **npm**: Trusted Publishing, configured per package on npmjs.com (package Settings > Trusted publishing). Requires npm CLI >= 11.5.1 and Node.js >= 22.14.0; a plain `npm publish` then authenticates via OIDC and attaches provenance automatically ([docs](https://github.com/npm/documentation/blob/main/content/packages-and-modules/securing-your-code/trusted-publishers.mdx)).
 - **JSR** — `deno publish` (and `npx jsr publish`). Uses OIDC automatically when running in GitHub Actions.
 - **PyPI** — Trusted publishing. Configure publisher in PyPI project settings.
 - **crates.io** — Trusted publishing (newer; check current support).

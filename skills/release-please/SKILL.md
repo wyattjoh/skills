@@ -21,7 +21,7 @@ Configures [release-please](https://github.com/googleapis/release-please) in a p
 
 Use `WebFetch` on these URLs to get current documentation before proceeding.
 
-**Action version pin:** `@v5` (Apr 2026) and `@v4` are both usable. v5 only changes the runner runtime from Node 20 to Node 24 (no input/output changes). v4 received library bumps through `v4.4.1` (Apr 2026) and is the safer pin for self-hosted runners that haven't upgraded to Node 24, but no v4 release has shipped since v5.0.0, so treat "still maintained" as provisional and check for a newer v4 tag before relying on it. **Avoid `@v3`**: its last release was `v3.7.13` (Nov 2023), it runs on Node 16, and it predates the config-file-only manifest model (v4 removed most per-input configuration in favor of `release-please-config.json`). Both `release_created` (root) and `releases_created` (aggregate) outputs exist in v3 and v4 alike; the split is root-vs-aggregate, not a version difference.
+**Action version pin:** `@v5` (Apr 2026) and `@v4` are both usable. v5 only changes the runner runtime from Node 20 to Node 24 (no input/output changes). v4 received library bumps through `v4.4.1` (2026-02-20, bundling release-please v17.3.0) and is the safer pin for self-hosted runners that haven't upgraded to Node 24, but no v4 release has shipped since v5.0.0, so treat "still maintained" as provisional and check for a newer v4 tag before relying on it. **Avoid `@v3`**: its last release was `v3.7.13` (Nov 2023), it runs on Node 16, and it predates the config-file-only manifest model (v4 removed most per-input configuration in favor of `release-please-config.json`). Both `release_created` (root) and `releases_created` (aggregate) outputs exist in v3 and v4 alike; the split is root-vs-aggregate, not a version difference.
 
 **Library version:** release-please-action v5.0.0 is the latest action release and bundles release-please library v17.6.0. The latest published library is v17.11.2 (see the [release-please CHANGELOG](https://github.com/googleapis/release-please/blob/main/CHANGELOG.md)), several minor versions ahead of what v5.0.0 bundles; upstream ships releases roughly weekly to biweekly. Last verified 2026-09-14. Check the action's own `package-lock.json` at your pinned tag if you need the exact bundled version.
 
@@ -304,11 +304,11 @@ Remove `release-as` after the release is cut, or every subsequent PR keeps forci
     release-as: 2.0.0
 ```
 
-Useful when paired with `workflow_dispatch` for ad-hoc releases triggered from the GitHub UI.
+Useful when paired with `workflow_dispatch` for ad-hoc releases triggered from the GitHub UI. Caveat: the action only honors the `release-as` (and `versioning-strategy`) inputs when the `release-type` input is also set (config-less mode). In manifest mode (`release-please-config.json`), both inputs are ignored; use the commit footer or the config field instead ([source](https://github.com/googleapis/release-please-action/blob/v5.0.0/src/index.ts)).
 
 ### Force a bump direction (always-bump-\*)
 
-`versioning-strategy` overrides Conventional Commits parsing entirely. `versioning-strategy` is the GitHub Action **input** name (added in v4.4.0); the equivalent **config-file** field is `versioning` (e.g. `{ "packages": { ".": { "versioning": "always-bump-minor" } } }`); both accept the same enum values:
+`versioning-strategy` overrides Conventional Commits parsing entirely. `versioning-strategy` is the GitHub Action **input** name (added in v4.4.0, and honored only when the `release-type` input is also set, not in manifest mode); the equivalent **config-file** field is `versioning` (e.g. `{ "packages": { ".": { "versioning": "always-bump-minor" } } }`); both accept the same enum values:
 
 | Strategy            | Effect                                                           |
 | ------------------- | ---------------------------------------------------------------- |
@@ -339,7 +339,7 @@ For pre-1.0 projects, a breaking change bumps to 1.0.0 by default. Set `"bump-mi
 
 ### Force release-please to re-run
 
-If a release PR didn't open after qualifying commits, or didn't tag after merge, apply the **`release-please:force-run`** label to the merged release PR (or the latest merged PR with qualifying commits). Release-please picks this up on its next workflow run and reprocesses the release. This is the canonical fix for "release PR stale" and "tag workflow didn't fire" states.
+If a release PR didn't open after qualifying commits, or didn't tag after merge, re-run the failed (or latest) release-please workflow run; for the action, this is the [upstream-documented fix](https://github.com/googleapis/release-please#step-3-rerun-release-please). The **`release-please:force-run`** label only applies to the Release Please GitHub App: the action does not watch labels, and adding one does not trigger a `push` workflow. Also check older, already-released PRs for a stale `autorelease: pending` (or `autorelease: triggered`) label; remove it, then re-run.
 
 You can also push an empty commit to kick the workflow:
 
@@ -366,21 +366,21 @@ Alpha, beta, rc, and custom prerelease identifiers are a dedicated topic. See [r
 
 The single most useful debugging signal is the PR label: `autorelease: pending` vs `autorelease: tagged`. Pending means the release PR exists and is awaiting merge. Tagged means the release has been cut (post-merge state).
 
-| Symptom                                             | Likely cause                                                                      | Fix                                                                                              |
-| --------------------------------------------------- | --------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------ |
-| No release PR created                               | No qualifying commits since last release (all `docs:`/`chore:`/`ci:`)             | Check `git log` since last tag. Add a `feat:` or `fix:`.                                         |
-| No release PR despite qualifying commits            | Branch protection blocks GITHUB_TOKEN PRs                                         | Allow Actions to open PRs in repo settings (Settings > Actions > General).                       |
-| Release PR stale / state machine stuck              | Race or transient API failure left release-please mid-state                       | Apply the `release-please:force-run` label to the merged release PR, then re-run the workflow.   |
-| Tag wasn't created after release PR merge           | Release-please missed the tag step (workflow killed, API timeout, label mishap)   | Apply `release-please:force-run` to the merged release PR. Re-run the workflow.                  |
-| 0.x project jumped to 1.0.0                         | Breaking change without `bump-minor-pre-major`                                    | Add the flag.                                                                                    |
-| Release PR shows stale forced version               | Old `release-as` still in config                                                  | Remove after use.                                                                                |
-| Tag format wrong (missing `v`, missing component)   | Missing `include-v-in-tag` or `component` config                                  | See customizing docs.                                                                            |
-| Release PR merged but no GitHub release             | Workflow failed after release-please step, or `skip-github-release: true`         | Check workflow run logs.                                                                         |
-| Publish job didn't run on merge                     | Wrong output name in `if:`                                                        | v4 manifest mode uses `releases_created` (plural).                                               |
-| Version in manifest but not in `extra-files` target | Wrong `type` or `jsonpath`                                                        | Test jsonpath against the file; `json` type requires valid JSON.                                 |
-| Release PR body shows old version/changelog         | PR description stale after force-push; the release branch has the correct content | Inspect the release branch's `CHANGELOG.md` directly, not the PR body.                           |
-| Cannot manually rerun the release workflow          | No `workflow_dispatch:` trigger                                                   | Add `workflow_dispatch:` to the workflow's `on:` block.                                          |
-| New `fix:` commit not in the open release PR        | Release-please folds new commits into the in-flight PR on the next workflow run   | Expected behavior. Wait for the next push to `main`, or push an empty commit to force a refresh. |
+| Symptom                                             | Likely cause                                                                      | Fix                                                                                                            |
+| --------------------------------------------------- | --------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------- |
+| No release PR created                               | No qualifying commits since last release (all `docs:`/`chore:`/`ci:`)             | Check `git log` since last tag. Add a `feat:` or `fix:`.                                                       |
+| No release PR despite qualifying commits            | Branch protection blocks GITHUB_TOKEN PRs                                         | Allow Actions to open PRs in repo settings (Settings > Actions > General).                                     |
+| Release PR stale / state machine stuck              | Race or transient API failure left release-please mid-state                       | Remove any stale `autorelease: pending` label from an already-released PR, then re-run the workflow.           |
+| Tag wasn't created after release PR merge           | Release-please missed the tag step (workflow killed, API timeout, label mishap)   | Check for a stale `autorelease: pending` label, then re-run the workflow (add `workflow_dispatch:` if needed). |
+| 0.x project jumped to 1.0.0                         | Breaking change without `bump-minor-pre-major`                                    | Add the flag.                                                                                                  |
+| Release PR shows stale forced version               | Old `release-as` still in config                                                  | Remove after use.                                                                                              |
+| Tag format wrong (missing `v`, missing component)   | Missing `include-v-in-tag` or `component` config                                  | See customizing docs.                                                                                          |
+| Release PR merged but no GitHub release             | Workflow failed after release-please step, or `skip-github-release: true`         | Check workflow run logs.                                                                                       |
+| Publish job didn't run on merge                     | Wrong output name in `if:`                                                        | v4 manifest mode uses `releases_created` (plural).                                                             |
+| Version in manifest but not in `extra-files` target | Wrong `type` or `jsonpath`                                                        | Test jsonpath against the file; `json` type requires valid JSON.                                               |
+| Release PR body shows old version/changelog         | PR description stale after force-push; the release branch has the correct content | Inspect the release branch's `CHANGELOG.md` directly, not the PR body.                                         |
+| Cannot manually rerun the release workflow          | No `workflow_dispatch:` trigger                                                   | Add `workflow_dispatch:` to the workflow's `on:` block.                                                        |
+| New `fix:` commit not in the open release PR        | Release-please folds new commits into the in-flight PR on the next workflow run   | Expected behavior. Wait for the next push to `main`, or push an empty commit to force a refresh.               |
 
 ## Gotchas
 
@@ -406,7 +406,7 @@ The single most useful debugging signal is the PR label: `autorelease: pending` 
 
 The three linked issues are open upstream; last verified 2026-09-14. Re-check before recommending workarounds.
 
-- **`separate-pull-requests: true` with Go monorepos** can fail with "A pull request already exists" on release-please library v17.6.0. Confirmed open as [release-please#2773](https://github.com/googleapis/release-please/issues/2773) (opened 2026-05-09, explicitly reproduces on v17.6.0). Pin the action to a v4.x release that bundles v17.5.x if affected.
+- **`separate-pull-requests: true` with Go monorepos** can fail with "A pull request already exists" on release-please library v17.6.0. Confirmed open as [release-please#2773](https://github.com/googleapis/release-please/issues/2773) (opened 2026-05-09, explicitly reproduces on v17.6.0). No action release avoids it: the issue also reproduces on library v17.3.0 (bundled by action v4.4.1), and no v4.x release bundles v17.5.x. If affected, use `separate-pull-requests: false` until upstream ships a fix.
 - **`include-commit-authors`** (v17.5.0) is a no-op: author metadata is dropped. Tracked as [release-please#2761](https://github.com/googleapis/release-please/issues/2761) (P2); a fix, [PR #2892](https://github.com/googleapis/release-please/pull/2892), exists but is unmerged.
 - **`chore(deps)` commits** are recognized by the dependency manifest plugin but don't trigger releases. Use `fix(deps):` to trigger a patch release from a dependency bump. Confirmed open as [release-please#2764](https://github.com/googleapis/release-please/issues/2764) (P2, "DependencyManifest recognizes chore(deps) commits but never releases them").
 - **Label-application races**: occasional 422s when release-please tries to label a freshly created PR. Workflow retry usually clears it. No upstream issue tracks this.
