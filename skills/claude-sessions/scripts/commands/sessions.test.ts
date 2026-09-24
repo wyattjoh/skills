@@ -321,7 +321,7 @@ describe("sessions command", () => {
     expect(tableLines[1]!.split(/\s{2,}/)).toEqual([
       "------------------",
       "-----------------------------------",
-      "----------------------------------------------------",
+      "-".repeat(Math.max("project_identity".length, PROJECT_IDENTITY.length)),
       "------------------------",
       "---",
       "----------",

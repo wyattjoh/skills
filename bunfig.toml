@@ -1,6 +1,8 @@
 [install]
 # Only resolve package versions that have been published for at least 5 days.
 minimumReleaseAge = 432000
+# coordinate-implementation tracks the newest Effect v4 RC, so these packages skip the age gate.
+minimumReleaseAgeExcludes = ["effect", "@effect/ai-typesafe"]
 # Use flat hoisting (not the isolated .bun store) so the workspace member
 # resolves transitive deps the app imports directly, matching the pre-monorepo layout.
 linker = "hoisted"

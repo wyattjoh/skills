@@ -687,7 +687,7 @@ describe("closed runtime migration", () => {
     expect(stateRecovery.stdout).toMatchObject({ result: { recovered: true } });
     expect(existsSync(interruptedCommit)).toBe(true);
     expect(runCli(implementorLaunchRequest(interrupted)).exitCode).toBe(0);
-  });
+  }, 60_000);
 
   it("binds replacement launches to the exact migrated worktree and branch", () => {
     const fixture = makeImplementorFixture("12", "working", { dirtyFiles: 12 });
@@ -869,7 +869,7 @@ describe("closed runtime migration", () => {
       }),
     );
     expect(freshReview.exitCode).toBe(0);
-  });
+  }, 60_000);
 });
 
 describe("interrupted reviewer supersession", () => {

@@ -2,7 +2,7 @@
 	path = .claude/references/effect
 	url = https://github.com/Effect-TS/effect.git
 	shallow = true
-	branch = effect@3.22.1
+	branch = effect@3.22.2
 [submodule ".claude/references/varlock"]
 	path = .claude/references/varlock
 	url = https://github.com/dmno-dev/varlock.git
@@ -14,7 +14,7 @@
 [submodule ".claude/references/effect-v4"]
 	path = .claude/references/effect-v4
 	url = https://github.com/Effect-TS/effect.git
-	branch = effect@4.0.0-rc.116
+	branch = effect@4.0.0-rc.117
 	shallow = true
 [submodule ".claude/references/swift-composable-architecture"]
 	path = .claude/references/swift-composable-architecture

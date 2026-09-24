@@ -6,6 +6,8 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { openDb } from "../lib/db.ts";
 import { sync } from "../lib/ingest.ts";
+import { steeringPreset } from "../lib/judge/presets/steering.ts";
+import { buildState } from "../lib/judge/state.ts";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const PROJECT_IDENTITY = resolveProjectIdentity(".")!;
@@ -1304,7 +1306,15 @@ describe("interruptions command", () => {
 
     expect(baseline.code).toBe(0);
     expect(result.code).toBe(0);
-    expect(result.stderr).toBe("judge: estimated input tokens: 484\njudge: skipped (no_api_key)\n");
+    // Rows embed the checkout-dependent project identity, so derive the estimate from them.
+    const estimatedInputTokens = baselineDocument.rows.reduce(
+      (total, row) =>
+        total + Math.ceil(buildState(steeringPreset, row, { query: undefined }).length / 4),
+      0,
+    );
+    expect(result.stderr).toBe(
+      `judge: estimated input tokens: ${estimatedInputTokens}\njudge: skipped (no_api_key)\n`,
+    );
     expect(document.command).toBe("interruptions");
     expect(baselineDocument.count).toBe(5);
     expect(document.count).toBe(5);
@@ -1315,7 +1325,7 @@ describe("interruptions command", () => {
     expect(document.judge.error_class).toBe(null);
     expect(document.judge.rows_judged).toBe(0);
     expect(document.judge.rows_cached).toBe(0);
-    expect(typeof document.judge.estimated_input_tokens).toBe("number");
+    expect(document.judge.estimated_input_tokens).toBe(estimatedInputTokens);
     expect(document.rows.map(({ judge: _judge, ...row }) => row)).toEqual(baselineDocument.rows);
     expect(document.rows.map((row) => row.judge)).toEqual(
       baselineDocument.rows.map(() => ({

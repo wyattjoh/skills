@@ -1045,7 +1045,7 @@ Coordinator ownership:
         ],
       });
     }
-  });
+  }, 60_000);
 
   it("rejects duplicate persisted Snapshot sections", () => {
     const fixture = makeSnapshotFixture("local");

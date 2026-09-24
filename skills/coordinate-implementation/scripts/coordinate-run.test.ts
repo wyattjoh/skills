@@ -518,8 +518,8 @@ describe("portable downstream documentation", () => {
     expect(packageMetadata.os).toEqual(["darwin", "linux"]);
     expect(packageMetadata.engines).toEqual({ bun: ">=1.1.0" });
     expect(packageMetadata.dependencies).toEqual({
-      "@effect/ai-typesafe": "4.0.0-rc.116",
-      effect: "4.0.0-rc.116",
+      "@effect/ai-typesafe": "4.0.0-rc.117",
+      effect: "4.0.0-rc.117",
     });
     expect(downstream.includes("Never edit a run's `RESUME.md` or its global run file.")).toBe(
       true,
