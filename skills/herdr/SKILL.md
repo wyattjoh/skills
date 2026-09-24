@@ -168,6 +168,8 @@ herdr agent get reviewer
 herdr agent read reviewer --source recent-unwrapped --lines 120
 ```
 
+When the result is more than a short answer (a review, report, or ticket outcome), tell the agent in the prompt to write its final report to a file path you choose, such as `/tmp/<agent-name>-report.md`, and read that file once the wait settles. Rendered pane text wraps and truncates, so `agent read` is for checking state, not for collecting results.
+
 If a wait fails or returns `blocked`, inspect `agent get` and `agent read` before deciding what input to send. A timeout or stalled response does not prove the prompt was never delivered; do not blindly submit it again. Use the pane surface only when raw terminal control is intentional.
 
 ## Run an ordinary command in another pane
