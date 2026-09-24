@@ -111,7 +111,8 @@ When using Effect, also use the effect-ts skill and follow its critical rules.
 ### Step 4: Write Frontmatter
 
 All frontmatter fields are optional. If `name` is omitted, it defaults to the
-directory name. If `description` is omitted, it defaults to the first paragraph.
+directory name. If `description` is omitted, it defaults to the first non-empty line of the
+markdown body.
 However, `description` is **strongly recommended**.
 
 **Recommended fields:**

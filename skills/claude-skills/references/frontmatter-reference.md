@@ -41,7 +41,7 @@ name: my-skill-name
 
 - **Type:** `string`
 - **Required:** No (strongly recommended)
-- **Default:** First paragraph of the skill's markdown body
+- **Default:** First non-empty line of the skill's markdown body
 
 What the skill does and when to use it. Claude uses this to decide when to
 auto-load the skill. Maximum 1024 characters. Cannot contain XML tags. Write in
