@@ -53,10 +53,16 @@ Each line: file -> what it teaches, and which `SKILL.md` topic it backs.
 latest applicable guide). Read these when an example or older snippet uses a pre-1.26 API and you need
 the modern replacement. The highest-leverage ones for the idioms this skill teaches:
 
-- `MigratingTo1.7.md` — the `@Reducer` macro and the move off manual `Reducer` conformances.
-- `MigratingTo1.16.md` / `MigratingTo1.17.md` / `MigratingTo1.17.1.md` — observation and the shift away
-  from `ViewStore`/`WithViewStore` to `@ObservableState` + direct `store.field` access.
-- `MigratingTo1.25.md` — the most recent changes before the pinned 1.26.2.
+- `MigratingTo1.4.md`: the `@Reducer` macro and case key paths.
+- `MigratingTo1.7.md`: observation (`@ObservableState`, direct `store.field` access) and replacing
+  legacy APIs such as `WithViewStore`, `IfLetStore`, and `ForEachStore`.
+- `MigratingTo1.16.md`: `.appStorage` for `@Shared` switched to key-value observing.
+- `MigratingTo1.17.md` / `MigratingTo1.17.1.md`: `@Shared` extracted into the Sharing library (and
+  Sharing 2.0).
+- `MigratingTo1.25.md`: enum scopes, the streamlined `onChange`, and the
+  `ComposableArchitecture2Deprecations` trait that flags APIs slated for removal in 2.0 (such as
+  `Effect.concatenate` and `Effect.map`). 1.26.0 adds unlabeled `scope(_:action:)` and
+  `Scope(_:action:)` with no separate guide.
 
 (Use these to recognize and replace legacy patterns — `WithViewStore`, `@PresentationState`,
 `IfLetStore`/`ForEachStore`, `Effect.task` — none of which should appear in new code.)

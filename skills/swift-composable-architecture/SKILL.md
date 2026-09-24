@@ -59,7 +59,10 @@ These shape everything below; they are the "modern" TCA that differs from older 
 - **`@Reducer` works on enums.** A `@Reducer enum Destination` / `@Reducer enum Path` composes
   mutually-exclusive child features for navigation. This is the standard navigation idiom.
 - **`@CasePathable`** is auto-applied to `Action` enums by `@Reducer`, enabling key-path action
-  syntax: `store.scope(\.path, action: \.path)`, `store.receive(\.delegate.saved)`.
+  syntax: `store.scope(\.path, action: \.path)`, `store.receive(\.delegate.saved)`. Since 1.26.0
+  scopes can omit the `state:` label (`Scope(\.child, action: \.child)`,
+  `store.scope(\.child, action: \.child)`); the labeled `state:` forms still compile but are
+  deprecated behind the opt-in `ComposableArchitecture2Deprecations` trait.
 - **`@Presents`** replaces the old `@PresentationState` (property wrappers are incompatible with
   `@ObservableState`).
 - **Shared mutations go through `withLock`**: `state.$shared.withLock { $0 = ... }`.
@@ -102,7 +105,7 @@ For a _list of independently-stateful rows_ (as opposed to one child, or a navig
 
 - **TCA:** `.claude/references/swift-composable-architecture/Examples/CaseStudies/SwiftUICaseStudies/03-Effects-Basics.swift:70-77` (`.run`), `03-Effects-Cancellation.swift:47-54` (`.cancellable`), and `Examples/Search/Search/SearchView.swift:164-169` (debounce via `.task(id:)` + `Task.sleep`, the 1.26.2 idiom).
 - **Reference app:** `examples/reference-app/NoteListFeature.swift` — `.run(name:)`, a `CancelID` enum, and inline `@Dependency(\.defaultDatabase)` reads inside an effect.
-- **Effect vocabulary** (return one from `Reduce`): `.none` (state change only); `.run { send in }` (async); `.cancellable(id:cancelInFlight:)` + `.cancel(id:)` (replaceable/long-running — `cancelInFlight: true` supersedes a same-id effect in flight, the reducer-side way to debounce); `.merge(...)` (run several effects in parallel); `.concatenate(...)` (run them in order). Combinator definitions: `Sources/ComposableArchitecture/Effect.swift:229` (`merge`) and `:313` (`concatenate`). `.merge`/`.concatenate` usage in a feature: `Examples/VoiceMemos/VoiceMemos/VoiceMemo.swift`.
+- **Effect vocabulary** (return one from `Reduce`): `.none` (state change only); `.run { send in }` (async); `.cancellable(id:cancelInFlight:)` + `.cancel(id:)` (replaceable/long-running; `cancelInFlight: true` supersedes a same-id effect in flight, the reducer-side way to debounce); `.merge(...)` (run several effects in parallel); `.concatenate(...)` (run them in order; 1.25 deprecates it behind the `ComposableArchitecture2Deprecations` trait, so in new code prefer sequencing with `await` inside one `.run`, see `MigratingTo1.25.md`). Combinator definitions: `Sources/ComposableArchitecture/Effect.swift:229` (`merge`) and `:313` (`concatenate`). `.merge`/`.concatenate` usage in a feature: `Examples/VoiceMemos/VoiceMemos/VoiceMemo.swift`.
 
 ### 6. `BindableAction` + `BindingReducer` (forms)
 
