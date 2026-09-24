@@ -9,18 +9,19 @@ export type RawCliResult = { exitCode: number; stdout: string; stderr: string };
 
 let queue: Promise<unknown> = Promise.resolve();
 
+const applyEnv = (next: Env): void => {
+  for (const key of Object.keys(process.env)) {
+    if (next[key] === undefined) delete process.env[key];
+  }
+  for (const [key, value] of Object.entries(next)) {
+    if (value !== undefined) process.env[key] = value;
+  }
+};
+
 const replaceEnv = (env: Env): (() => void) => {
   const saved = { ...process.env };
-  const apply = (next: Env): void => {
-    for (const key of Object.keys(process.env)) {
-      if (next[key] === undefined) delete process.env[key];
-    }
-    for (const [key, value] of Object.entries(next)) {
-      if (value !== undefined) process.env[key] = value;
-    }
-  };
-  apply(env);
-  return () => apply(saved);
+  applyEnv(env);
+  return () => applyEnv(saved);
 };
 
 /**
