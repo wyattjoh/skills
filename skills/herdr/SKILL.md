@@ -208,6 +208,8 @@ If a larger recent read still does not reveal the completed response, ask the ag
 - Use `--no-focus` for background work unless the user asked to switch context.
 - Use `--current`, an explicit pane ID, or a unique agent name. Do not rely on another client's focused pane.
 - Parse IDs from JSON responses. Do not derive them from sidebar order or examples.
+- Start delegated agents in a new tab, never in the caller's own tab: one tab per task or ticket, with an implementor and its reviewer sharing it.
+- Close every pane you created once you have collected its results. Close its tab once the tab is empty.
 - Do not close workspaces, tabs, panes, or sessions you did not create unless the user explicitly asked. `workspace close --group` closes the primary workspace and its linked worktree workspaces; never add it merely to bypass `workspace_group_close_required`.
 - Use `--trust-repository` only after the user has verified the repository. It grants per-request Git trust; it is not a routine retry for a failed worktree command.
 - Client and server versions can differ after an update. Check `herdr status` before relying on new server features. A missing method is not permission to stop or upgrade a server.
