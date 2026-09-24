@@ -1,12 +1,5 @@
 import { describe, expect, it } from "bun:test";
-import {
-  chmodSync,
-  mkdirSync,
-  mkdtempSync,
-  readdirSync,
-  readFileSync,
-  writeFileSync,
-} from "node:fs";
+import { mkdirSync, mkdtempSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { Effect, Result } from "effect";
@@ -315,8 +308,8 @@ describe("publishing", () => {
 
   it("records a warning instead of failing when the root is unwritable", async () => {
     const { env, statePath } = sandbox();
-    mkdirSync(env.XDG_STATE_HOME);
-    chmodSync(env.XDG_STATE_HOME, 0o500);
+    // A regular file blocks the root even for uid 0, which bypasses mode bits.
+    writeFileSync(env.XDG_STATE_HOME, "");
 
     await Effect.runPromise(publishRun(statePath, fullState, "mutation", env));
 
@@ -394,8 +387,7 @@ describe("helper integration", () => {
     const root = mkdtempSync(join(tmpdir(), "coordinate-global-cli-"));
     const statePath = join(root, "RESUME.md");
     const blocked = join(root, "blocked");
-    mkdirSync(blocked);
-    chmodSync(blocked, 0o500);
+    writeFileSync(blocked, "");
     const state = (attempt: number) =>
       fullState
         .replace(`Run id: ${RUN_ID}\n`, "")
