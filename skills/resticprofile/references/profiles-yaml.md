@@ -20,7 +20,7 @@ The file is split into top-level blocks:
 | `restic-lock-retry-after: 1m` | Backoff before retrying a locked repo.                                                         |
 | `default-command: snapshots`  | Command used when none is given.                                                               |
 | `min-memory: 100`             | Refuse to start below MB of free RAM.                                                          |
-| `ionice: true` / `nice: 10`   | Linux-only IO/CPU niceness.                                                                    |
+| `ionice: true` / `nice: 10`   | `ionice` sets IO priority (Linux only); `nice` sets the Unix nice value (any OS).              |
 | `schedule-defaults:`          | Defaults merged into every profile's `schedule-*` settings.                                    |
 
 `schedule-defaults` fields mirror the `schedule-*` keys documented below (`permission`, `lock-wait`, `log`, `priority`, `capture-environment`, `ignore-on-battery`, ...).
@@ -156,7 +156,7 @@ Schedule modifiers (per command section):
 | `schedule-ignore-on-battery-less-than: 20` | Skip when charge is <= N%.                                                          |
 | `schedule-environment: [ FOO=bar ]`        | Extra env for scheduled run only.                                                   |
 | `schedule-capture-environment: HOME`       | Carry-over env names from the user session.                                         |
-| `schedule-after-network-online: true`      | macOS/systemd: wait for network.                                                    |
+| `schedule-after-network-online: true`      | systemd only: adds `After=network-online.target`. No effect with launchd.           |
 
 After changing any `schedule*` key, run `resticprofile schedule --all` so launchd picks up the new plist.
 

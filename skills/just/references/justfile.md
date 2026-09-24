@@ -228,28 +228,28 @@ Source: [attributes](https://just.systems/man/en/attributes.html). Attributes go
 "Since" is the minimum `just` version. **The local binary is 1.57.0**; verify
 anything newer against the target environment.
 
-| Attribute                                | Since       | Purpose                                                                     |
-| ---------------------------------------- | ----------- | --------------------------------------------------------------------------- |
-| `[private]`                              | 1.10        | Hide the recipe/alias/variable from `--list`.                               |
-| `[default]`                              | 1.43        | Mark as the default recipe.                                                 |
-| `[doc(DOC)]` / `[doc]`                   | 1.27        | Set (or, bare, suppress) the doc string.                                    |
-| `[group(NAME)]`                          | 1.27        | Assign to a group (shown by `--groups`).                                    |
-| `[confirm]` / `[confirm(PROMPT)]`        | 1.17 / 1.23 | Prompt before running (bypass with `--yes`).                                |
-| `[no-cd]`                                | 1.9         | Don't cd into the justfile dir before running.                              |
-| `[working-directory(PATH)]`              | 1.38        | Run the recipe in `PATH`.                                                   |
-| `[no-exit-message]` / `[exit-message]`   | 1.7 / 1.39  | Hide / force the failure message.                                           |
-| `[no-quiet]`                             | 1.23        | Echo this recipe even under global `quiet`.                                 |
-| `[positional-arguments]`                 | 1.29        | Expose args as `$0`, `$1`, ... for this recipe only.                        |
-| `[script]` / `[script(COMMAND)]`         | 1.33 / 1.32 | Run the whole body as one script via the interpreter (or `COMMAND`).        |
-| `[extension(EXT)]`                       | 1.32        | Temp-file extension for shebang/script recipes.                             |
-| `[env(NAME, VALUE)]`                     | 1.47        | Set an env var for the recipe.                                              |
-| `[metadata(VALUES...)]`                  | 1.42        | Attach string metadata exposed by JSON dumps.                               |
-| `[parallel]`                             | 1.42        | Run the recipe's dependencies in parallel.                                  |
-| `[linux]` `[macos]` `[windows]` `[unix]` | 1.8         | Recipe runs only on the matching OS; same-named recipes select by platform. |
-| `[cache(...)]`                           | 1.54        | Cache a script recipe by invocation, inputs, outputs, and extra data.       |
-| `[continue(SIGNALS)]`                    | 1.54        | Continue running after selected signals.                                    |
-| `[arg(ARG, ...)]` (min= / max=)          | 1.56.0      | Add per-argument constraints.                                               |
-| `[timestamp]` / `[timestamp(FORMAT)]`    | 1.58.0      | Prefix this recipe's output lines with a timestamp; optional format arg.    |
+| Attribute                                | Since       | Purpose                                                                                   |
+| ---------------------------------------- | ----------- | ----------------------------------------------------------------------------------------- |
+| `[private]`                              | 1.10        | Hide the recipe/alias/variable from `--list`.                                             |
+| `[default]`                              | 1.43        | Mark as the default recipe.                                                               |
+| `[doc(DOC)]` / `[doc]`                   | 1.27        | Set (or, bare, suppress) the doc string.                                                  |
+| `[group(NAME)]`                          | 1.27        | Assign to a group (shown by `--groups`).                                                  |
+| `[confirm]` / `[confirm(PROMPT)]`        | 1.17 / 1.23 | Prompt before running (bypass with `--yes`).                                              |
+| `[no-cd]`                                | 1.9         | Don't cd into the justfile dir before running.                                            |
+| `[working-directory(PATH)]`              | 1.38        | Run the recipe in `PATH`.                                                                 |
+| `[no-exit-message]` / `[exit-message]`   | 1.7 / 1.39  | Hide / force the failure message.                                                         |
+| `[no-quiet]`                             | 1.23        | Echo this recipe even under global `quiet`.                                               |
+| `[positional-arguments]`                 | 1.29        | Expose args as `$0`, `$1`, ... for this recipe only.                                      |
+| `[script]` / `[script(COMMAND)]`         | 1.33 / 1.32 | Run the whole body as one script via the interpreter (or `COMMAND`).                      |
+| `[extension(EXT)]`                       | 1.32        | Temp-file extension for shebang/script recipes.                                           |
+| `[env(NAME, VALUE)]`                     | 1.47        | Set an env var for the recipe.                                                            |
+| `[metadata(VALUES...)]`                  | 1.42        | Attach string metadata exposed by JSON dumps.                                             |
+| `[parallel]`                             | 1.42        | Run the recipe's dependencies in parallel.                                                |
+| `[linux]` `[macos]` `[windows]` `[unix]` | 1.8         | Recipe runs only on the matching OS; same-named recipes select by platform.               |
+| `[cache(...)]`                           | 1.54        | Cache a script recipe by invocation, inputs, outputs, and extra data.                     |
+| `[continue(SIGNALS)]`                    | 1.54        | Continue running after selected signals.                                                  |
+| `[arg(ARG, ...)]`                        | 1.45.0      | Per-argument options: pattern (1.45.0), help/long/short/value (1.46.0), min/max (1.56.0). |
+| `[timestamp]` / `[timestamp(FORMAT)]`    | 1.58.0      | Prefix this recipe's output lines with a timestamp; optional format arg.                  |
 
 ```just
 [private]

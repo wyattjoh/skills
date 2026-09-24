@@ -193,7 +193,7 @@ macOS: `brew install vhs ttyd ffmpeg`. Linux: distribution package or download f
 
 ## Common Pitfalls
 
-- `Set` after the first input is silently ignored (except `TypingSpeed`).
+- `Set` after the first input is ignored with only a `WARN` line in the output (except `TypingSpeed`).
 - `Require` after any input is silently ignored.
 - Default `Wait` regex `/>$/` does not match prompts that end in other characters (fish, starship, custom PS1). Pass an explicit regex or override `PS1` in `Hide` setup.
 - `Output frames` without trailing slash writes a single file literally named `frames`, not a PNG sequence.

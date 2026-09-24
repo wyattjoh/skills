@@ -91,7 +91,7 @@ Require <program>      # optional dependency assertions
 <input + timing>       # Type / Enter / Sleep / Wait / Hide / Show / …
 ```
 
-**Settings placement matters.** Every `Set` directive must sit above the first input or non-output command, or it is silently ignored. The only exception is `Set TypingSpeed`, which may be re-applied mid-tape.
+**Settings placement matters.** Every `Set` directive must sit above the first input or non-output command, or it is ignored: VHS prints a `WARN: 'Set ...' has been ignored` line and keeps rendering. The only exception is `Set TypingSpeed`, which may be re-applied mid-tape.
 
 **Multiple outputs in one run.** Stack `Output` lines to emit several formats from a single render:
 
@@ -187,7 +187,7 @@ If a render fails, the tape parser usually points at the line — `vhs validate`
 
 2. **Hidden secrets aren't really hidden.** `Hide` only suppresses frame capture — it does not prevent the shell from running the typed command, and the command can still touch the filesystem, hit the network, or read env vars. Don't `Type` real credentials in a tape; use placeholder values or env substitution.
 
-3. **Set must come before input.** The first `Type`/`Enter`/etc. freezes the configuration. A `Set Theme` placed below input is ignored without warning. `TypingSpeed` is the only setting safe to change mid-tape.
+3. **Set must come before input.** The first `Type`/`Enter`/etc. freezes the configuration. A `Set Theme` placed below input is ignored; VHS only prints a `WARN` line, so check the render output for it. `TypingSpeed` is the only setting safe to change mid-tape.
 
 4. **Default `Wait` regex is `/>$/`.** That works for most prompts but breaks on shells with non-`>`-terminated prompts (e.g. starship, fish defaults). Pass an explicit regex or override the prompt for the recording.
 
