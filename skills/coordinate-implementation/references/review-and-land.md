@@ -9,6 +9,11 @@ an instruction, CI job, or repository task referenced by one of those sources
 names it. Never infer a command from a language, manifest, lockfile, or tool
 installed on the machine.
 
+When repository instructions require a wrapper for heavy commands, such as a
+shared `flock` lock that serializes builds, lints, and tests across worktrees,
+include that wrapper in each gate's argv. Coordinator gate runs then contend
+for the same lock as worker runs instead of overlapping them.
+
 Pass an explicit empty `ci_files` array when the repository has no CI. If no
 executable gate exists, pass an empty `gates` array and
 `no_executable_gates: true`. If there are no safety constraints beyond the
