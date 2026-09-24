@@ -4,9 +4,9 @@ import { chmodSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "
 import { createServer, type Server, type Socket } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { runCliInProcess } from "./test-cli.ts";
 
 const CLI = join(import.meta.dir, "coordinate.ts");
-const decoder = new TextDecoder();
 const servers: Server[] = [];
 
 const request = (operation: string, input: Record<string, unknown>) => ({
@@ -15,28 +15,26 @@ const request = (operation: string, input: Record<string, unknown>) => ({
   input,
 });
 
-const runCli = (
+const runCli = async (
   body: unknown,
   env: Record<string, string | undefined> = process.env,
-): {
+): Promise<{
   exitCode: number;
   stdout: Record<string, unknown>;
   stderr: string;
-} => {
-  const child = Bun.spawnSync([process.execPath, CLI], {
-    env,
-    stdin: Buffer.from(JSON.stringify(body)),
-    stdout: "pipe",
-    stderr: "pipe",
-  });
+}> => {
+  const child = await runCliInProcess(body, env);
   return {
     exitCode: child.exitCode,
-    stdout: JSON.parse(decoder.decode(child.stdout)) as Record<string, unknown>,
-    stderr: decoder.decode(child.stderr),
+    stdout: JSON.parse(child.stdout) as Record<string, unknown>,
+    stderr: child.stderr,
   };
 };
 
-const runCliAsync = async (
+/**
+ * Spawns a real CLI process, for tests that exercise cross-process locking.
+ */
+const runCliProcess = async (
   body: unknown,
   env: Record<string, string | undefined> = process.env,
 ): Promise<{
@@ -277,7 +275,7 @@ const makeAcceptedRun = async (
     statePath,
     `${roleState(selectedHarness, ownerHarness)}\n## Tickets\n\n| NN | harness | model | effort | rounds | esc | status | sha |\n| --- | --- | --- | --- | --- | --- | --- | --- |\n| 01 | claude | opus | high | 0 | - | working | - |\n\n## Active tickets\n\n### 01\n\nWorktree: /tmp/run-01\nBranch: run-01\nImplementor: {"harness":"claude","model":"opus","effort":"high"}\nImplement skill: /implement\nSession: run-01\nTab: implement run 01\nPane: w1:p1\nArtifact: ${join(runPath, "briefs", "launch-01.json")}\nAttempt: 1\nRetry: 0 of 3\nPhase: working\nLast diagnostic: none\n`,
   );
-  const accepted = runCli(
+  const accepted = await runCli(
     request("snapshot.accept", {
       run_path: runPath,
       state_path: statePath,
@@ -289,7 +287,7 @@ const makeAcceptedRun = async (
   expect(accepted.exitCode).toBe(0);
   const artifactPath = join(runPath, "briefs", "handoff-5-attempt-1.json");
   const path = await serveSnapshot(80, 100);
-  const prepared = await runCliAsync(
+  const prepared = await runCli(
     request("coordinator.handoff.prepare", {
       state_path: statePath,
       run_path: runPath,
@@ -314,7 +312,7 @@ afterEach(async () => {
 });
 
 describe("released Herdr coordinator continuity documentation", () => {
-  it("disables automatic handoff and documents durable replacement recovery", () => {
+  it("disables automatic handoff and documents durable replacement recovery", async () => {
     const skill = readFileSync(join(import.meta.dir, "..", "SKILL.md"), "utf8");
     const handoff = readFileSync(join(import.meta.dir, "..", "references", "handoff.md"), "utf8");
     const helper = readFileSync(join(import.meta.dir, "..", "references", "helper-cli.md"), "utf8");
@@ -361,7 +359,7 @@ describe("automatic coordinator context handoff", () => {
   it("requests handoff at exactly 80 percent from normalized Herdr fields", async () => {
     const path = await serveSnapshot(80, 100);
 
-    const result = await runCliAsync(request("herdr.wait_any", waitInput(path, "waiting")));
+    const result = await runCli(request("herdr.wait_any", waitInput(path, "waiting")));
 
     expect(result.exitCode).toBe(0);
     expect(result.stdout.result).toEqual({
@@ -392,7 +390,7 @@ describe("automatic coordinator context handoff", () => {
   it("prioritizes a required safe-point handoff over a terminal worker", async () => {
     const path = await serveSnapshot(80, 100, "w1:p1", true, "w1:p0", "done");
 
-    const result = await runCliAsync(request("herdr.wait_any", waitInput(path, "waiting")));
+    const result = await runCli(request("herdr.wait_any", waitInput(path, "waiting")));
 
     expect(result.exitCode).toBe(0);
     expect((result.stdout.result as { reason: string }).reason).toBe("handoff");
@@ -402,7 +400,7 @@ describe("automatic coordinator context handoff", () => {
   it("defers an over-threshold handoff until review reaches a safe point", async () => {
     const path = await serveSnapshot(99, 100);
 
-    const result = await runCliAsync(request("herdr.wait_any", waitInput(path, "reviewing")));
+    const result = await runCli(request("herdr.wait_any", waitInput(path, "reviewing")));
 
     expect(result.exitCode).toBe(0);
     expect((result.stdout.result as { reason: string }).reason).toBe("timeout");
@@ -414,7 +412,7 @@ describe("automatic coordinator context handoff", () => {
   it("continues below the exact 80 percent threshold", async () => {
     const path = await serveSnapshot(799, 1_000);
 
-    const result = await runCliAsync(request("herdr.wait_any", waitInput(path, "waiting")));
+    const result = await runCli(request("herdr.wait_any", waitInput(path, "waiting")));
 
     expect(result.exitCode).toBe(0);
     expect((result.stdout.result as { reason: string }).reason).toBe("timeout");
@@ -428,7 +426,7 @@ describe("automatic coordinator context handoff", () => {
     const contextLimit = 9_007_199_254_740_989;
     const path = await serveSnapshot(contextUsed, contextLimit);
 
-    const result = await runCliAsync(request("herdr.wait_any", waitInput(path, "waiting")));
+    const result = await runCli(request("herdr.wait_any", waitInput(path, "waiting")));
 
     expect(result.exitCode).toBe(0);
     const wait = result.stdout.result as {
@@ -451,7 +449,7 @@ describe("automatic coordinator context handoff", () => {
   it("continues worker coordination when normalized context data is unavailable", async () => {
     const path = await serveSnapshot(undefined, undefined);
 
-    const result = await runCliAsync(request("herdr.wait_any", waitInput(path, "waiting")));
+    const result = await runCli(request("herdr.wait_any", waitInput(path, "waiting")));
 
     expect(result.exitCode).toBe(0);
     expect(result.stdout.errors).toEqual([]);
@@ -486,7 +484,7 @@ describe("successor readiness and predecessor close", () => {
     const fixture = await makeAcceptedRun();
     const path = await serveSnapshot(10, 100, "w9:p7", true, "w1:p2");
 
-    const ready = await runCliAsync(
+    const ready = await runCli(
       request("coordinator.handoff.ready", {
         artifact_path: fixture.artifactPath,
         socket_path: path,
@@ -513,14 +511,16 @@ describe("successor readiness and predecessor close", () => {
         handoff_artifact_sha256: artifactDigest,
       },
       snapshot_revision: (
-        runCli(
-          request("snapshot.check", {
-            run_path: fixture.runPath,
-            state_path: fixture.statePath,
-            writeback: null,
-            project_remote_writes: "allowed",
-            accepted_at: null,
-          }),
+        (
+          await runCli(
+            request("snapshot.check", {
+              run_path: fixture.runPath,
+              state_path: fixture.statePath,
+              writeback: null,
+              project_remote_writes: "allowed",
+              accepted_at: null,
+            }),
+          )
         ).stdout.result as { revision: string }
       ).revision,
       wait_reason: "timeout",
@@ -538,7 +538,7 @@ describe("successor readiness and predecessor close", () => {
     });
     expect(readFileSync(fixture.statePath, "utf8").match(/^Pane:.+$/gmu)).toEqual(["Pane: w9:p7"]);
 
-    const verified = runCli(
+    const verified = await runCli(
       request("coordinator.handoff.verify", {
         artifact_path: fixture.artifactPath,
         observed_marker: marker,
@@ -567,7 +567,7 @@ describe("successor readiness and predecessor close", () => {
     const fixture = await makeAcceptedRun();
     const path = await serveSnapshot(10, 100, "w9:p7", true, "w1:p2");
     const marker = "coordinator-ready-5-w1:p2";
-    const ready = await runCliAsync(
+    const ready = await runCli(
       request("coordinator.handoff.ready", {
         artifact_path: fixture.artifactPath,
         socket_path: path,
@@ -577,7 +577,7 @@ describe("successor readiness and predecessor close", () => {
     );
     expect(ready.exitCode).toBe(0);
 
-    const staleMarker = runCli(
+    const staleMarker = await runCli(
       request("coordinator.handoff.verify", {
         artifact_path: fixture.artifactPath,
         observed_marker: "coordinator-ready-4-w1:p0",
@@ -593,7 +593,7 @@ describe("successor readiness and predecessor close", () => {
     };
     forged.predecessor.pane = "w1:p9";
     writeFileSync(fixture.artifactPath, `${JSON.stringify(forged, null, 2)}\n`);
-    const forgedClose = runCli(
+    const forgedClose = await runCli(
       request("coordinator.handoff.verify", {
         artifact_path: fixture.artifactPath,
         observed_marker: marker,
@@ -611,7 +611,7 @@ describe("successor readiness and predecessor close", () => {
     const state = readFileSync(fixture.statePath, "utf8").replace("generation: 4", "generation: 5");
     writeFileSync(fixture.statePath, state);
 
-    const ready = runCli(
+    const ready = await runCli(
       request("coordinator.handoff.ready", {
         artifact_path: fixture.artifactPath,
         socket_path: "/missing/herdr.sock",
@@ -632,7 +632,7 @@ describe("successor readiness and predecessor close", () => {
     writeFileSync(join(fixture.runPath, "spec.md"), "# Changed design\n");
     const path = await serveSnapshot(10, 100, "w9:p7", true, "w1:p2");
 
-    const ready = await runCliAsync(
+    const ready = await runCli(
       request("coordinator.handoff.ready", {
         artifact_path: fixture.artifactPath,
         socket_path: path,
@@ -646,7 +646,7 @@ describe("successor readiness and predecessor close", () => {
       "coordinator.snapshot_changed",
     );
     expect(readOwnershipBlock(fixture.statePath)).toBe(predecessorOwnership);
-    const retry = runCli(
+    const retry = await runCli(
       request("coordinator.handoff.retry", {
         artifact_path: fixture.artifactPath,
         diagnostic: "snapshot changed before claim",
@@ -660,7 +660,7 @@ describe("successor readiness and predecessor close", () => {
     const fixture = await makeAcceptedRun();
     const path = await serveSnapshot(10, 100, "w9:p7", false, "w1:p2");
 
-    const ready = await runCliAsync(
+    const ready = await runCli(
       request("coordinator.handoff.ready", {
         artifact_path: fixture.artifactPath,
         socket_path: path,
@@ -702,7 +702,7 @@ describe("successor readiness and predecessor close", () => {
         writeFileSync(fixture.statePath, mutateDuringWait(readFileSync(fixture.statePath, "utf8")));
       });
 
-      const ready = await runCliAsync(
+      const ready = await runCli(
         request("coordinator.handoff.ready", {
           artifact_path: fixture.artifactPath,
           socket_path: path,
@@ -736,7 +736,7 @@ describe("successor readiness and predecessor close", () => {
       writeFileSync(fixture.statePath, mutateState(readFileSync(fixture.statePath, "utf8")));
       const path = await serveSnapshot(10, 100, "w9:p7", true, "w1:p2");
 
-      const ready = await runCliAsync(
+      const ready = await runCli(
         request("coordinator.handoff.ready", {
           artifact_path: fixture.artifactPath,
           socket_path: path,
@@ -762,7 +762,7 @@ describe("successor readiness and predecessor close", () => {
     it(`completes the ${ownerHarness} to ${successorHarness} ownership lifecycle`, async () => {
       const fixture = await makeAcceptedRun(successorHarness, ownerHarness);
       const path = await serveSnapshot(10, 100, "w9:p7", true, "w1:p2");
-      const ready = await runCliAsync(
+      const ready = await runCli(
         request("coordinator.handoff.ready", {
           artifact_path: fixture.artifactPath,
           socket_path: path,
@@ -775,7 +775,7 @@ describe("successor readiness and predecessor close", () => {
         successorHarness,
       );
       const marker = (ready.stdout.result as { marker: string }).marker;
-      const verified = runCli(
+      const verified = await runCli(
         request("coordinator.handoff.verify", {
           artifact_path: fixture.artifactPath,
           observed_marker: marker,
@@ -811,7 +811,7 @@ describe("safe coordinator handoff launch", () => {
       writeFileSync(statePath, roleState(successorHarness, ownerHarness));
 
       const path = await serveSnapshot(80, 100);
-      const result = await runCliAsync(
+      const result = await runCli(
         request("coordinator.handoff.prepare", {
           state_path: statePath,
           run_path: runPath,
@@ -920,7 +920,7 @@ describe("safe coordinator handoff launch", () => {
 
     for (const attempt of [1, 2, 3, 4]) {
       const artifactPath = join(runPath, "briefs", `handoff-5-attempt-${attempt}.json`);
-      const prepared = await runCliAsync(
+      const prepared = await runCli(
         request("coordinator.handoff.prepare", {
           state_path: statePath,
           run_path: runPath,
@@ -938,7 +938,7 @@ describe("safe coordinator handoff launch", () => {
       );
       expect(prepared.exitCode).toBe(0);
 
-      const retry = runCli(
+      const retry = await runCli(
         request("coordinator.handoff.retry", {
           artifact_path: artifactPath,
           diagnostic: `successor attempt ${attempt} exited before claim`,
@@ -991,7 +991,7 @@ describe("safe coordinator handoff launch", () => {
         },
       });
       if (attempt === 1) {
-        const recovered = runCli(
+        const recovered = await runCli(
           request("coordinator.handoff.retry", {
             artifact_path: artifactPath,
             diagnostic,
@@ -1002,7 +1002,7 @@ describe("safe coordinator handoff launch", () => {
           (recovered.stdout.result as { evidence_recovered: boolean }).evidence_recovered,
         ).toBe(true);
         const originalEvidence = readFileSync(evidencePath, "utf8");
-        const conflicting = runCli(
+        const conflicting = await runCli(
           request("coordinator.handoff.retry", {
             artifact_path: artifactPath,
             diagnostic: `${diagnostic} with changed detail`,
@@ -1028,7 +1028,7 @@ describe("safe coordinator handoff launch", () => {
     const artifactPath = join(runPath, "briefs", "handoff.json");
     const path = await serveSnapshot(79, 100);
 
-    const result = await runCliAsync(
+    const result = await runCli(
       request("coordinator.handoff.prepare", {
         state_path: statePath,
         run_path: runPath,
@@ -1063,7 +1063,7 @@ describe("safe coordinator handoff launch", () => {
     artifact.context.limit = 9_007_199_254_740_989;
     writeFileSync(fixture.artifactPath, `${JSON.stringify(artifact, null, 2)}\n`);
 
-    const retry = runCli(
+    const retry = await runCli(
       request("coordinator.handoff.retry", {
         artifact_path: fixture.artifactPath,
         diagnostic: "large boundary must stay below threshold",
@@ -1077,7 +1077,7 @@ describe("safe coordinator handoff launch", () => {
     expect(Bun.file(`${fixture.artifactPath}.retry.json`).size).toBe(0);
   });
 
-  it("rejects a valid sibling state file instead of canonical RESUME.md", () => {
+  it("rejects a valid sibling state file instead of canonical RESUME.md", async () => {
     const root = mkdtempSync(join(tmpdir(), "coordinate-handoff-state-path-"));
     const runPath = join(root, "run");
     mkdirSync(join(runPath, "briefs"), { recursive: true });
@@ -1086,7 +1086,7 @@ describe("safe coordinator handoff launch", () => {
     const siblingStatePath = join(runPath, "other.md");
     writeFileSync(siblingStatePath, state);
 
-    const result = runCli(
+    const result = await runCli(
       request("coordinator.handoff.prepare", {
         state_path: siblingStatePath,
         run_path: runPath,
@@ -1132,7 +1132,10 @@ describe("safe coordinator handoff launch", () => {
       previous_artifact_path: null,
     });
 
-    const results = await Promise.all([runCliAsync(prepareRequest), runCliAsync(prepareRequest)]);
+    const results = await Promise.all([
+      runCliProcess(prepareRequest),
+      runCliProcess(prepareRequest),
+    ]);
 
     expect(results.map((result) => result.exitCode)).toEqual([0, 0]);
     expect(
@@ -1145,7 +1148,7 @@ describe("safe coordinator handoff launch", () => {
     );
   });
 
-  it("rejects automatic handoff when the run records the released Herdr policy", () => {
+  it("rejects automatic handoff when the run records the released Herdr policy", async () => {
     const root = mkdtempSync(join(tmpdir(), "coordinate-handoff-disabled-state-"));
     const runPath = join(root, "run");
     mkdirSync(join(runPath, "briefs"), { recursive: true });
@@ -1158,7 +1161,7 @@ describe("safe coordinator handoff launch", () => {
     );
     const artifactPath = join(runPath, "briefs", "handoff.json");
 
-    const result = runCli(
+    const result = await runCli(
       request("coordinator.handoff.prepare", {
         state_path: statePath,
         run_path: runPath,
@@ -1187,7 +1190,7 @@ describe("safe coordinator handoff launch", () => {
     expect(Bun.file(artifactPath).size).toBe(0);
   });
 
-  it("rejects invalid durable handoff policy before launch", () => {
+  it("rejects invalid durable handoff policy before launch", async () => {
     const root = mkdtempSync(join(tmpdir(), "coordinate-handoff-invalid-state-"));
     const runPath = join(root, "run");
     mkdirSync(join(runPath, "briefs"), { recursive: true });
@@ -1198,7 +1201,7 @@ describe("safe coordinator handoff launch", () => {
     );
     const artifactPath = join(runPath, "briefs", "handoff.json");
 
-    const result = runCli(
+    const result = await runCli(
       request("coordinator.handoff.prepare", {
         state_path: statePath,
         run_path: runPath,
@@ -1222,14 +1225,14 @@ describe("safe coordinator handoff launch", () => {
     expect(Bun.file(artifactPath).size).toBe(0);
   });
 
-  it("does not prepare a successor during an unsafe operation", () => {
+  it("does not prepare a successor during an unsafe operation", async () => {
     const root = mkdtempSync(join(tmpdir(), "coordinate-handoff-unsafe-"));
     const runPath = join(root, "run");
     mkdirSync(join(runPath, "briefs"), { recursive: true });
     const statePath = join(runPath, "RESUME.md");
     writeFileSync(statePath, roleState("claude", "claude"));
 
-    const result = runCli(
+    const result = await runCli(
       request("coordinator.handoff.prepare", {
         state_path: statePath,
         run_path: runPath,

@@ -5,9 +5,7 @@ import { join } from "node:path";
 import { Effect } from "effect";
 import { acceptSnapshot } from "./lib/snapshot.ts";
 import { finalizeRun } from "./lib/run.ts";
-
-const CLI = join(import.meta.dir, "coordinate.ts");
-const decoder = new TextDecoder();
+import { runCliInProcess } from "./test-cli.ts";
 
 type Harness = "claude" | "pi";
 type Writeback = "none" | "final" | "live";
@@ -18,17 +16,12 @@ type RunFixture = {
   summaryPath: string;
 };
 
-const runCli = (operation: string, input: Record<string, unknown>) => {
-  const child = Bun.spawnSync([process.execPath, CLI], {
-    env: process.env,
-    stdin: Buffer.from(JSON.stringify({ schema_version: 1, operation, input })),
-    stdout: "pipe",
-    stderr: "pipe",
-  });
+const runCli = async (operation: string, input: Record<string, unknown>) => {
+  const child = await runCliInProcess({ schema_version: 1, operation, input });
   return {
     exitCode: child.exitCode,
-    stdout: JSON.parse(decoder.decode(child.stdout)) as Record<string, unknown>,
-    stderr: decoder.decode(child.stderr),
+    stdout: JSON.parse(child.stdout) as Record<string, unknown>,
+    stderr: child.stderr,
   };
 };
 
@@ -50,13 +43,13 @@ const role = (harness: Harness, purpose: "coordinator" | "implementor" | "review
 const roleBlock = (name: string, value: ReturnType<typeof role>): string =>
   `${name}:\n  harness: ${value.harness}\n  model: ${value.model}\n  effort: ${value.effort}`;
 
-const makeRun = (
+const makeRun = async (
   harnesses: { coordinator: Harness; implementor: Harness; reviewer: Harness },
   status: "landed" | "blocked",
   source: "local" | "remote" = "local",
   writeback: Writeback = "none",
   withDependent = false,
-): RunFixture => {
+): Promise<RunFixture> => {
   const root = mkdtempSync(join(tmpdir(), "coordinate-run-"));
   const runPath = join(root, "portable-run");
   const issuesPath = join(runPath, "issues");
@@ -129,7 +122,7 @@ const makeRun = (
     `# portable implementation run\n\nSchema version: 1\n\nPrefix: portable\nBase: main\nBase sha: 0123456789abcdef0123456789abcdef01234567\nMode: parallel\nParallel cap: 2\nBranch template: portable-NN-<slug>\n\n${roleBlock("Coordinator", coordinator)}\n  handoff: yes\n  threshold: 80 percent\n  unattended: block\n\n${roleBlock("Implementor", implementor)}\n\n${roleBlock("Reviewer", reviewer)}\n\n## Tickets\n\n| NN | harness | model | effort | rounds | esc | status | sha |\n| -- | ------- | ----- | ------ | ------ | --- | ------ | --- |\n| 01 | ${implementor.harness} | ${implementor.model} | ${implementor.effort} | 3 | ${status === "blocked" ? "yes" : "-"} | ${status} | ${status === "landed" ? "89abcdef0123456789abcdef0123456789abcdef" : "-"} |\n${withDependent ? "| 02 | - | - | - | 0 | - | queued | - |\n" : ""}${active}\n## Review evidence\n\n- Ticket 01 round 3 standards attempt 1: accepted; reviewer ${JSON.stringify(reviewer)}; report ${join(reviewsPath, "01-standards.md")}\n- Ticket 01 round 3 spec attempt 1: accepted; reviewer ${JSON.stringify(reviewer)}; report ${join(reviewsPath, "01-spec.md")}\n\n## Landed evidence\n\n${status === "landed" ? `- Ticket 01: ${join(reviewsPath, "01-landed.json")}; tip 89abcdef0123456789abcdef0123456789abcdef; branch portable-01-integration; cleanup native-safe` : ""}\n\n## Decisions\n\n- 2026-09-19 setup recorded\n\n## Retained landed branches\n\n${status === "landed" ? "- portable-01-integration (89abcdef0123456789abcdef0123456789abcdef) (retained by repository cleanup policy)" : ""}\n`,
   );
 
-  const accepted = runCli("snapshot.accept", {
+  const accepted = await runCli("snapshot.accept", {
     run_path: runPath,
     state_path: statePath,
     writeback,
@@ -141,7 +134,7 @@ const makeRun = (
   return { runPath, statePath, summaryPath: join(runPath, "SUMMARY.md") };
 };
 
-const finalize = (
+const finalize = async (
   fixture: RunFixture,
   closures: Array<{ ticket: string; reason: string }> = [],
   userAuthorized = false,
@@ -159,13 +152,13 @@ const finalize = (
   });
 
 describe("terminal run integration", () => {
-  it("completes a Claude-only run with a deterministic local summary", () => {
-    const fixture = makeRun(
+  it("completes a Claude-only run with a deterministic local summary", async () => {
+    const fixture = await makeRun(
       { coordinator: "claude", implementor: "claude", reviewer: "claude" },
       "landed",
     );
 
-    const result = finalize(fixture);
+    const result = await finalize(fixture);
 
     expect(result.exitCode).toBe(0);
     expect(result.stderr).toBe("");
@@ -185,15 +178,18 @@ describe("terminal run integration", () => {
     expect(summary.includes("portable-01-integration")).toBe(true);
   });
 
-  it("completes a run with an empty serialized finalization placeholder", () => {
-    const fixture = makeRun({ coordinator: "pi", implementor: "pi", reviewer: "pi" }, "landed");
+  it("completes a run with an empty serialized finalization placeholder", async () => {
+    const fixture = await makeRun(
+      { coordinator: "pi", implementor: "pi", reviewer: "pi" },
+      "landed",
+    );
     const state = readFileSync(fixture.statePath, "utf8");
     writeFileSync(
       fixture.statePath,
       state.replace("## Review evidence", "## Serialized finalization\n\n\n## Review evidence"),
     );
 
-    const result = finalize(fixture);
+    const result = await finalize(fixture);
 
     expect(result.exitCode).toBe(0);
     expect(result.stdout.result).toEqual({
@@ -207,8 +203,11 @@ describe("terminal run integration", () => {
     });
   });
 
-  it("rejects a completed run with populated serialized finalization state", () => {
-    const fixture = makeRun({ coordinator: "pi", implementor: "pi", reviewer: "pi" }, "landed");
+  it("rejects a completed run with populated serialized finalization state", async () => {
+    const fixture = await makeRun(
+      { coordinator: "pi", implementor: "pi", reviewer: "pi" },
+      "landed",
+    );
     const state = readFileSync(fixture.statePath, "utf8");
     writeFileSync(
       fixture.statePath,
@@ -218,7 +217,7 @@ describe("terminal run integration", () => {
       ),
     );
 
-    const result = finalize(fixture);
+    const result = await finalize(fixture);
 
     expect(result.exitCode).toBe(1);
     expect(result.stdout.errors).toEqual([
@@ -231,10 +230,13 @@ describe("terminal run integration", () => {
     ]);
   });
 
-  it("reports a Pi-only blocked empty frontier as waiting rather than success", () => {
-    const fixture = makeRun({ coordinator: "pi", implementor: "pi", reviewer: "pi" }, "blocked");
+  it("reports a Pi-only blocked empty frontier as waiting rather than success", async () => {
+    const fixture = await makeRun(
+      { coordinator: "pi", implementor: "pi", reviewer: "pi" },
+      "blocked",
+    );
 
-    const result = finalize(fixture);
+    const result = await finalize(fixture);
 
     expect(result.exitCode).toBe(0);
     expect(result.stdout.result).toEqual({
@@ -250,8 +252,8 @@ describe("terminal run integration", () => {
     expect(readFileSync(fixture.statePath, "utf8").includes('"status": "waiting"')).toBe(true);
   });
 
-  it("closes an explicitly authorized dependency-blocked remainder", () => {
-    const fixture = makeRun(
+  it("closes an explicitly authorized dependency-blocked remainder", async () => {
+    const fixture = await makeRun(
       { coordinator: "pi", implementor: "pi", reviewer: "pi" },
       "blocked",
       "local",
@@ -259,7 +261,7 @@ describe("terminal run integration", () => {
       true,
     );
 
-    const result = finalize(
+    const result = await finalize(
       fixture,
       [
         { ticket: "01", reason: "User closed the blocked root" },
@@ -283,15 +285,15 @@ describe("terminal run integration", () => {
     ).toBe(true);
   });
 
-  it("closes blocked work only with explicit authority and reports mixed-role tracker provenance", () => {
-    const fixture = makeRun(
+  it("closes blocked work only with explicit authority and reports mixed-role tracker provenance", async () => {
+    const fixture = await makeRun(
       { coordinator: "pi", implementor: "claude", reviewer: "pi" },
       "blocked",
       "remote",
       "final",
     );
 
-    const result = finalize(
+    const result = await finalize(
       fixture,
       [{ ticket: "01", reason: "User accepted deferred scope" }],
       true,
@@ -321,15 +323,15 @@ describe("terminal run integration", () => {
     expect(summary.includes("Pending tracker action: final via matt-tracker-publish")).toBe(true);
   });
 
-  it("preserves local completion when live tracker writeback is forbidden by current policy", () => {
-    const fixture = makeRun(
+  it("preserves local completion when live tracker writeback is forbidden by current policy", async () => {
+    const fixture = await makeRun(
       { coordinator: "claude", implementor: "pi", reviewer: "claude" },
       "landed",
       "remote",
       "live",
     );
 
-    const result = finalize(fixture, [], false, "forbidden");
+    const result = await finalize(fixture, [], false, "forbidden");
 
     expect(result.exitCode).toBe(0);
     expect(result.stdout.result).toEqual({
@@ -352,14 +354,14 @@ describe("terminal run integration", () => {
     ).toBe(true);
   });
 
-  it("requires the canonical SUMMARY.md path", () => {
-    const fixture = makeRun(
+  it("requires the canonical SUMMARY.md path", async () => {
+    const fixture = await makeRun(
       { coordinator: "claude", implementor: "claude", reviewer: "claude" },
       "landed",
     );
     const before = readFileSync(fixture.statePath, "utf8");
 
-    const result = finalize(fixture, [], false, "allowed", join(fixture.runPath, "other.md"));
+    const result = await finalize(fixture, [], false, "allowed", join(fixture.runPath, "other.md"));
 
     expect(result.exitCode).toBe(1);
     expect(result.stdout.errors).toEqual([
@@ -373,15 +375,15 @@ describe("terminal run integration", () => {
     expect(existsSync(join(fixture.runPath, "other.md"))).toBe(false);
   });
 
-  it("does not publish completed state before the immutable summary is durable", () => {
-    const fixture = makeRun(
+  it("does not publish completed state before the immutable summary is durable", async () => {
+    const fixture = await makeRun(
       { coordinator: "claude", implementor: "claude", reviewer: "claude" },
       "landed",
     );
     writeFileSync(fixture.summaryPath, "conflicting summary\n");
     const before = readFileSync(fixture.statePath, "utf8");
 
-    const result = finalize(fixture);
+    const result = await finalize(fixture);
 
     expect(result.exitCode).toBe(1);
     expect(result.stdout.errors).toEqual([
@@ -396,14 +398,14 @@ describe("terminal run integration", () => {
     expect(readFileSync(fixture.summaryPath, "utf8")).toBe("conflicting summary\n");
   });
 
-  it("rejects an unauthorized blocked-ticket closure without changing state", () => {
-    const fixture = makeRun(
+  it("rejects an unauthorized blocked-ticket closure without changing state", async () => {
+    const fixture = await makeRun(
       { coordinator: "pi", implementor: "claude", reviewer: "pi" },
       "blocked",
     );
     const before = readFileSync(fixture.statePath, "utf8");
 
-    const result = finalize(fixture, [{ ticket: "01", reason: "Close it" }], false);
+    const result = await finalize(fixture, [{ ticket: "01", reason: "Close it" }], false);
 
     expect(result.exitCode).toBe(1);
     expect(result.stdout.errors).toEqual([
@@ -417,13 +419,16 @@ describe("terminal run integration", () => {
     expect(existsSync(fixture.summaryPath)).toBe(false);
   });
 
-  it("rejects duplicate closure of an already-closed ticket without appending evidence", () => {
-    const fixture = makeRun({ coordinator: "pi", implementor: "pi", reviewer: "pi" }, "blocked");
+  it("rejects duplicate closure of an already-closed ticket without appending evidence", async () => {
+    const fixture = await makeRun(
+      { coordinator: "pi", implementor: "pi", reviewer: "pi" },
+      "blocked",
+    );
     const closure = [{ ticket: "01", reason: "User accepted deferred scope" }];
-    expect(finalize(fixture, closure, true).exitCode).toBe(0);
+    expect((await finalize(fixture, closure, true)).exitCode).toBe(0);
     const before = readFileSync(fixture.statePath, "utf8");
 
-    const result = finalize(fixture, closure, true);
+    const result = await finalize(fixture, closure, true);
 
     expect(result.exitCode).toBe(1);
     expect(result.stdout.errors).toEqual([
@@ -439,7 +444,7 @@ describe("terminal run integration", () => {
   });
 
   it("rejects finalization when snapshot acceptance changes before the state lock", async () => {
-    const fixture = makeRun(
+    const fixture = await makeRun(
       { coordinator: "claude", implementor: "claude", reviewer: "claude" },
       "landed",
     );

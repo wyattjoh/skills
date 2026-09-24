@@ -10,9 +10,9 @@ import {
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { runCliInProcess } from "./test-cli.ts";
 
 const CLI = join(import.meta.dir, "coordinate.ts");
-const decoder = new TextDecoder();
 
 type CliResult = {
   exitCode: number;
@@ -60,21 +60,19 @@ else process.exit(1);
   };
 };
 
-const runCli = (request: unknown, env: Record<string, string>): CliResult => {
-  const child = Bun.spawnSync([process.execPath, CLI], {
-    env,
-    stdin: Buffer.from(JSON.stringify(request)),
-    stdout: "pipe",
-    stderr: "pipe",
-  });
+const runCli = async (request: unknown, env: Record<string, string>): Promise<CliResult> => {
+  const child = await runCliInProcess(request, env);
   return {
     exitCode: child.exitCode,
-    stdout: JSON.parse(decoder.decode(child.stdout)) as Record<string, unknown>,
-    stderr: decoder.decode(child.stderr),
+    stdout: JSON.parse(child.stdout) as Record<string, unknown>,
+    stderr: child.stderr,
   };
 };
 
-const runCliAsync = async (request: unknown, env: Record<string, string>): Promise<CliResult> => {
+/**
+ * Spawns a real CLI process, for tests that exercise cross-process locking.
+ */
+const runCliProcess = async (request: unknown, env: Record<string, string>): Promise<CliResult> => {
   const child = Bun.spawn([process.execPath, CLI], {
     env,
     stdin: Buffer.from(JSON.stringify(request)),
@@ -147,10 +145,10 @@ const piCoordinator = {
 };
 
 describe("role discovery and validation", () => {
-  it("discovers installed harness models and effort values", () => {
+  it("discovers installed harness models and effort values", async () => {
     const fixture = makeEnvironment();
 
-    const result = runCli(request("roles.discover", {}), fixture.env);
+    const result = await runCli(request("roles.discover", {}), fixture.env);
 
     expect(result.exitCode).toBe(0);
     expect(result.stderr).toBe("");
@@ -188,10 +186,10 @@ describe("role discovery and validation", () => {
     });
   });
 
-  it("validates a quoted harness, model, and effort triple without substitution", () => {
+  it("validates a quoted harness, model, and effort triple without substitution", async () => {
     const fixture = makeEnvironment();
 
-    const result = runCli(
+    const result = await runCli(
       request("role.validate", {
         role: "coordinator",
         triple: "pi openai-codex/gpt-5.6-sol high",
@@ -212,17 +210,17 @@ describe("role discovery and validation", () => {
     });
   });
 
-  it("accepts Claude aliases and custom model input from a structured record", () => {
+  it("accepts Claude aliases and custom model input from a structured record", async () => {
     const fixture = makeEnvironment();
 
-    const alias = runCli(
+    const alias = await runCli(
       request("role.validate", {
         role: "reviewer",
         record: { harness: "claude", model: "sonnet", effort: "medium" },
       }),
       fixture.env,
     );
-    const custom = runCli(
+    const custom = await runCli(
       request("role.validate", {
         role: "implementor",
         record: { harness: "claude", model: "claude-fable-5-1", effort: "xhigh" },
@@ -242,17 +240,17 @@ describe("role discovery and validation", () => {
     });
   });
 
-  it("normalizes an agreeing model effort suffix and rejects a conflict", () => {
+  it("normalizes an agreeing model effort suffix and rejects a conflict", async () => {
     const fixture = makeEnvironment();
 
-    const agreeing = runCli(
+    const agreeing = await runCli(
       request("role.validate", {
         role: "implementor",
         triple: "pi openai-codex/gpt-5.6-sol:high high",
       }),
       fixture.env,
     );
-    const conflict = runCli(
+    const conflict = await runCli(
       request("role.validate", {
         role: "implementor",
         triple: "pi openai-codex/gpt-5.6-sol:low high",
@@ -275,24 +273,24 @@ describe("role discovery and validation", () => {
     ]);
   });
 
-  it("rejects unavailable harnesses, Pi models, and invalid effort combinations", () => {
+  it("rejects unavailable harnesses, Pi models, and invalid effort combinations", async () => {
     const fixture = makeEnvironment();
 
-    const invalidHarness = runCli(
+    const invalidHarness = await runCli(
       request("role.validate", {
         role: "coordinator",
         triple: "codex gpt-5.6-sol high",
       }),
       fixture.env,
     );
-    const missingModel = runCli(
+    const missingModel = await runCli(
       request("role.validate", {
         role: "implementor",
         triple: "pi openai-codex/not-installed high",
       }),
       fixture.env,
     );
-    const invalidEffort = runCli(
+    const invalidEffort = await runCli(
       request("role.validate", {
         role: "reviewer",
         triple: "claude sonnet minimal",
@@ -331,7 +329,7 @@ describe("role discovery and validation", () => {
 });
 
 describe("role documentation contract", () => {
-  it("documents all three quoted role flags and durable ownership fields", () => {
+  it("documents all three quoted role flags and durable ownership fields", async () => {
     const skill = readFileSync(join(import.meta.dir, "..", "SKILL.md"), "utf8");
     const resume = readFileSync(
       join(import.meta.dir, "..", "references", "resume-format.md"),
@@ -354,19 +352,19 @@ describe("role documentation contract", () => {
 });
 
 describe("coordinator ownership", () => {
-  it("claims cross-harness ownership, marks readiness, and verifies the observed marker", () => {
+  it("claims cross-harness ownership, marks readiness, and verifies the observed marker", async () => {
     const fixture = makeEnvironment();
     const statePath = join(fixture.root, "RESUME.md");
     writeFileSync(statePath, roleState("workspace:p1", 4, "claude"));
 
-    const invoking = runCli(
+    const invoking = await runCli(
       request("role.validate", {
         role: "coordinator",
         triple: "claude fable low",
       }),
       fixture.env,
     );
-    const selected = runCli(
+    const selected = await runCli(
       request("role.validate", {
         role: "coordinator",
         triple: "pi openai-codex/gpt-5.6-sol high",
@@ -383,7 +381,7 @@ describe("coordinator ownership", () => {
       (selected.stdout.result as { record: { harness: string } }).record.harness,
     ]).toEqual(["claude", "pi"]);
 
-    const claim = runCli(
+    const claim = await runCli(
       request("coordinator.claim", {
         state_path: statePath,
         expected_generation: 4,
@@ -412,7 +410,7 @@ describe("coordinator ownership", () => {
       },
     });
 
-    const ready = runCli(
+    const ready = await runCli(
       request("coordinator.ready", {
         state_path: statePath,
         generation: 5,
@@ -434,7 +432,7 @@ describe("coordinator ownership", () => {
       },
     });
 
-    const verified = runCli(
+    const verified = await runCli(
       request("coordinator.verify", {
         state_path: statePath,
         generation: 5,
@@ -478,11 +476,11 @@ describe("coordinator ownership", () => {
     };
 
     const results = await Promise.all([
-      runCliAsync(
+      runCliProcess(
         request("coordinator.claim", { ...baseInput, successor_pane: "workspace:p2" }),
         fixture.env,
       ),
-      runCliAsync(
+      runCliProcess(
         request("coordinator.claim", { ...baseInput, successor_pane: "workspace:p3" }),
         fixture.env,
       ),
@@ -507,13 +505,13 @@ describe("coordinator ownership", () => {
     expect(successorCount).toBe(1);
   });
 
-  it("rejects a stale generation without changing state", () => {
+  it("rejects a stale generation without changing state", async () => {
     const fixture = makeEnvironment();
     const statePath = join(fixture.root, "RESUME.md");
     const original = roleState();
     writeFileSync(statePath, original);
 
-    const result = runCli(
+    const result = await runCli(
       request("coordinator.claim", {
         state_path: statePath,
         expected_generation: 3,
@@ -538,13 +536,13 @@ describe("coordinator ownership", () => {
     expect(readFileSync(statePath, "utf8")).toBe(original);
   });
 
-  it("keeps the predecessor open when a claimed successor never becomes ready", () => {
+  it("keeps the predecessor open when a claimed successor never becomes ready", async () => {
     const fixture = makeEnvironment();
     const statePath = join(fixture.root, "RESUME.md");
     writeFileSync(statePath, roleState());
     const marker = "coordinator-ready-5-workspace:p2";
 
-    const claim = runCli(
+    const claim = await runCli(
       request("coordinator.claim", {
         state_path: statePath,
         expected_generation: 4,
@@ -555,7 +553,7 @@ describe("coordinator ownership", () => {
       }),
       fixture.env,
     );
-    const verify = runCli(
+    const verify = await runCli(
       request("coordinator.verify", {
         state_path: statePath,
         generation: 5,
@@ -578,12 +576,12 @@ describe("coordinator ownership", () => {
     expect(readFileSync(statePath, "utf8").includes("readiness: claiming")).toBe(true);
   });
 
-  it("rejects a readiness marker not observed from the successor pane", () => {
+  it("rejects a readiness marker not observed from the successor pane", async () => {
     const fixture = makeEnvironment();
     const statePath = join(fixture.root, "RESUME.md");
     writeFileSync(statePath, roleState("workspace:p2", 5));
 
-    const result = runCli(
+    const result = await runCli(
       request("coordinator.verify", {
         state_path: statePath,
         generation: 5,
@@ -605,13 +603,13 @@ describe("coordinator ownership", () => {
     ]);
   });
 
-  it("rejects claiming ownership from the already-current pane", () => {
+  it("rejects claiming ownership from the already-current pane", async () => {
     const fixture = makeEnvironment();
     const statePath = join(fixture.root, "RESUME.md");
     const original = roleState();
     writeFileSync(statePath, original);
 
-    const result = runCli(
+    const result = await runCli(
       request("coordinator.claim", {
         state_path: statePath,
         expected_generation: 4,
@@ -634,13 +632,13 @@ describe("coordinator ownership", () => {
     expect(readFileSync(statePath, "utf8")).toBe(original);
   });
 
-  it("rejects pane identifiers that could inject Markdown fields", () => {
+  it("rejects pane identifiers that could inject Markdown fields", async () => {
     const fixture = makeEnvironment();
     const statePath = join(fixture.root, "RESUME.md");
     const original = roleState();
     writeFileSync(statePath, original);
 
-    const result = runCli(
+    const result = await runCli(
       request("coordinator.claim", {
         state_path: statePath,
         expected_generation: 4,
@@ -664,7 +662,7 @@ describe("coordinator ownership", () => {
     expect(readFileSync(statePath, "utf8")).toBe(original);
   });
 
-  it("does not steal an old lock from a live claimant", () => {
+  it("does not steal an old lock from a live claimant", async () => {
     const fixture = makeEnvironment();
     const statePath = join(fixture.root, "RESUME.md");
     writeFileSync(statePath, roleState());
@@ -680,7 +678,7 @@ describe("coordinator ownership", () => {
     const old = new Date(Date.now() - 120_000);
     utimesSync(lockPath, old, old);
 
-    const result = runCli(
+    const result = await runCli(
       request("coordinator.claim", {
         state_path: statePath,
         expected_generation: 4,
@@ -704,7 +702,7 @@ describe("coordinator ownership", () => {
     expect(readFileSync(statePath, "utf8")).toBe(roleState());
   });
 
-  it("recovers a stale ownership lock before claiming", () => {
+  it("recovers a stale ownership lock before claiming", async () => {
     const fixture = makeEnvironment();
     const statePath = join(fixture.root, "RESUME.md");
     writeFileSync(statePath, roleState());
@@ -720,7 +718,7 @@ describe("coordinator ownership", () => {
     const stale = new Date(Date.now() - 120_000);
     utimesSync(lockPath, stale, stale);
 
-    const result = runCli(
+    const result = await runCli(
       request("coordinator.claim", {
         state_path: statePath,
         expected_generation: 4,

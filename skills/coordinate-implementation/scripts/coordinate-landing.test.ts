@@ -10,10 +10,9 @@ import {
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { GIT_ENV_KEYS, spawnGit } from "./lib/git.ts";
+import { runCliInProcess } from "./test-cli.ts";
 import { createFakeHerdrEnv } from "./test-herdr.ts";
 
-const CLI = join(import.meta.dir, "coordinate.ts");
-const decoder = new TextDecoder();
 const HERDR_ENV = createFakeHerdrEnv();
 
 type CliResult = {
@@ -30,21 +29,16 @@ type LandingFixture = {
   branch: string;
 };
 
-const runCli = (
+const runCli = async (
   operation: string,
   input: Record<string, unknown>,
   env: Record<string, string | undefined> = HERDR_ENV,
-): CliResult => {
-  const child = Bun.spawnSync([process.execPath, CLI], {
-    env,
-    stdin: Buffer.from(JSON.stringify({ schema_version: 1, operation, input })),
-    stdout: "pipe",
-    stderr: "pipe",
-  });
+): Promise<CliResult> => {
+  const child = await runCliInProcess({ schema_version: 1, operation, input }, env);
   return {
     exitCode: child.exitCode,
-    stdout: JSON.parse(decoder.decode(child.stdout).trim()) as Record<string, unknown>,
-    stderr: decoder.decode(child.stderr),
+    stdout: JSON.parse(child.stdout.trim()) as Record<string, unknown>,
+    stderr: child.stderr,
   };
 };
 
@@ -190,18 +184,18 @@ const makeFixture = (env: Record<string, string | undefined> = process.env): Lan
   return { root, repositoryPath, worktreePath, statePath, branch };
 };
 
-const markReadyToLand = (
+const markReadyToLand = async (
   fixture: LandingFixture,
   cycle = 0,
-): {
+): Promise<{
   standards: string;
   spec: string;
   selfReview: string;
-} => {
+}> => {
   const reviews = join(fixture.root, "run", "reviews");
   mkdirSync(reviews, { recursive: true });
   const gateEvidence = join(reviews, `07-cycle-${cycle}-test-gate.json`);
-  const gate = runCli("gate.record", {
+  const gate = await runCli("gate.record", {
     state_path: fixture.statePath,
     evidence_path: gateEvidence,
     worktree_path: fixture.worktreePath,
@@ -221,7 +215,7 @@ const markReadyToLand = (
   for (const axis of ["standards", "spec"] as const) {
     const artifactPath = join(reviews, `07-cycle-${cycle}-${axis}-attempt-1.json`);
     const reportPath = join(reviews, `07-cycle-${cycle}-${axis}-attempt-1.md`);
-    const launched = runCli("review.launch.prepare", {
+    const launched = await runCli("review.launch.prepare", {
       state_path: fixture.statePath,
       previous_artifact_path: null,
       artifact_path: artifactPath,
@@ -240,7 +234,7 @@ const markReadyToLand = (
       attempt: 1,
     });
     expect(launched.exitCode).toBe(0);
-    const recorded = runCli("review.launch.record", {
+    const recorded = await runCli("review.launch.record", {
       state_path: fixture.statePath,
       artifact_path: artifactPath,
       status: "completed",
@@ -254,7 +248,7 @@ const markReadyToLand = (
   const standards = evidence.standards!;
   const spec = evidence.spec!;
   const selfReview = join(reviews, `07-cycle-${cycle}-self-review.md`);
-  const finalized = runCli("review.round.finalize", {
+  const finalized = await runCli("review.round.finalize", {
     state_path: fixture.statePath,
     ticket: "07",
     round: cycle,
@@ -272,7 +266,7 @@ const markReadyToLand = (
 };
 
 describe("portable synchronization and landing", () => {
-  it("documents the landed helper interfaces and serialized state", () => {
+  it("documents the landed helper interfaces and serialized state", async () => {
     const skill = readFileSync(join(import.meta.dir, "..", "SKILL.md"), "utf8");
     const helper = readFileSync(join(import.meta.dir, "..", "references", "helper-cli.md"), "utf8");
     const procedure = readFileSync(
@@ -296,8 +290,8 @@ describe("portable synchronization and landing", () => {
     expect(resume).toContain("## Landed evidence");
   });
 
-  it("rejects caller-asserted runtime closure", () => {
-    const result = runCli("landing.complete", {
+  it("rejects caller-asserted runtime closure", async () => {
+    const result = await runCli("landing.complete", {
       state_path: "/run/RESUME.md",
       repository_path: "/repo",
       worktree_path: "/worktree",
@@ -315,12 +309,12 @@ describe("portable synchronization and landing", () => {
     });
   });
 
-  it("synchronizes multiple commits against the local integration branch without a remote", () => {
+  it("synchronizes multiple commits against the local integration branch without a remote", async () => {
     const fixture = makeFixture();
     commit(fixture.worktreePath, "one.txt", "one\n", "one");
     const ticketTip = commit(fixture.worktreePath, "two.txt", "two\n", "two");
 
-    const result = runCli("landing.synchronize", {
+    const result = await runCli("landing.synchronize", {
       state_path: fixture.statePath,
       repository_path: fixture.repositoryPath,
       worktree_path: fixture.worktreePath,
@@ -351,7 +345,7 @@ describe("portable synchronization and landing", () => {
     expect(existsSync(fixture.worktreePath)).toBe(true);
   });
 
-  it("serializes finalization while other implementors remain active", () => {
+  it("serializes finalization while other implementors remain active", async () => {
     const fixture = makeFixture();
     commit(fixture.worktreePath, "ticket.txt", "ticket\n", "ticket");
     const markdown = readFileSync(fixture.statePath, "utf8");
@@ -390,7 +384,7 @@ ${JSON.stringify(
       ),
     );
 
-    const result = runCli("landing.synchronize", {
+    const result = await runCli("landing.synchronize", {
       state_path: fixture.statePath,
       repository_path: fixture.repositoryPath,
       worktree_path: fixture.worktreePath,
@@ -411,11 +405,11 @@ ${JSON.stringify(
     expect(spawnGit(["rev-parse", "HEAD"], { cwd: fixture.worktreePath }).exitCode).toBe(0);
   });
 
-  it("rejects repository and worktree paths that do not match the active runtime", () => {
+  it("rejects repository and worktree paths that do not match the active runtime", async () => {
     const fixture = makeFixture();
     commit(fixture.worktreePath, "ticket.txt", "ticket\n", "ticket");
 
-    const result = runCli("landing.synchronize", {
+    const result = await runCli("landing.synchronize", {
       state_path: fixture.statePath,
       repository_path: fixture.repositoryPath,
       worktree_path: fixture.repositoryPath,
@@ -434,7 +428,7 @@ ${JSON.stringify(
     ]);
   });
 
-  it("fails closed when serialized state is locked by a live caller", () => {
+  it("fails closed when serialized state is locked by a live caller", async () => {
     const fixture = makeFixture();
     writeFileSync(
       `${fixture.statePath}.state-lock`,
@@ -445,7 +439,7 @@ ${JSON.stringify(
       })}\n`,
     );
 
-    const result = runCli("landing.synchronize", {
+    const result = await runCli("landing.synchronize", {
       state_path: fixture.statePath,
       repository_path: fixture.repositoryPath,
       worktree_path: fixture.worktreePath,
@@ -465,7 +459,7 @@ ${JSON.stringify(
     ]);
   });
 
-  it("sanitizes inherited Git location variables for fixtures and landing CLI operations", () => {
+  it("sanitizes inherited Git location variables for fixtures and landing CLI operations", async () => {
     expect(GIT_ENV_KEYS).toEqual([
       "GIT_DIR",
       "GIT_WORK_TREE",
@@ -496,7 +490,7 @@ ${JSON.stringify(
 
     const fixture = makeFixture(contaminated);
     commit(fixture.worktreePath, "ticket.txt", "ticket\n", "ticket", contaminated);
-    const result = runCli(
+    const result = await runCli(
       "landing.synchronize",
       {
         state_path: fixture.statePath,
@@ -521,7 +515,7 @@ ${JSON.stringify(
     );
   });
 
-  it("runs only the remote synchronization command required by repository policy", () => {
+  it("runs only the remote synchronization command required by repository policy", async () => {
     const fixture = makeFixture();
     commit(fixture.worktreePath, "ticket.txt", "ticket\n", "ticket");
     const marker = join(fixture.root, "remote-command-ran");
@@ -538,7 +532,7 @@ ${JSON.stringify(
       ),
     );
 
-    const missing = runCli("landing.synchronize", {
+    const missing = await runCli("landing.synchronize", {
       state_path: fixture.statePath,
       repository_path: fixture.repositoryPath,
       worktree_path: fixture.worktreePath,
@@ -556,7 +550,7 @@ ${JSON.stringify(
       },
     ]);
 
-    const arbitrary = runCli("landing.synchronize", {
+    const arbitrary = await runCli("landing.synchronize", {
       state_path: fixture.statePath,
       repository_path: fixture.repositoryPath,
       worktree_path: fixture.worktreePath,
@@ -574,7 +568,7 @@ ${JSON.stringify(
     ]);
     expect(existsSync(marker)).toBe(false);
 
-    const synchronized = runCli("landing.synchronize", {
+    const synchronized = await runCli("landing.synchronize", {
       state_path: fixture.statePath,
       repository_path: fixture.repositoryPath,
       worktree_path: fixture.worktreePath,
@@ -589,12 +583,12 @@ ${JSON.stringify(
     );
   });
 
-  it("records textual conflict resolution as coordinator work", () => {
+  it("records textual conflict resolution as coordinator work", async () => {
     const fixture = makeFixture();
     commit(fixture.worktreePath, "base.txt", "ticket change\n", "ticket change");
     commit(fixture.repositoryPath, "base.txt", "base change\n", "base change");
 
-    const synchronized = runCli("landing.synchronize", {
+    const synchronized = await runCli("landing.synchronize", {
       state_path: fixture.statePath,
       repository_path: fixture.repositoryPath,
       worktree_path: fixture.worktreePath,
@@ -613,7 +607,7 @@ ${JSON.stringify(
       }).exitCode,
     ).toBe(0);
 
-    const recorded = runCli("landing.conflict.record", {
+    const recorded = await runCli("landing.conflict.record", {
       state_path: fixture.statePath,
       ticket: "07",
       classification: "textual",
@@ -639,7 +633,7 @@ ${JSON.stringify(
     const settledState = readFileSync(fixture.statePath, "utf8");
     expect(settledState).toContain("Phase: gates");
 
-    const stale = runCli("landing.conflict.record", {
+    const stale = await runCli("landing.conflict.record", {
       state_path: fixture.statePath,
       ticket: "07",
       classification: "substantive",
@@ -659,19 +653,21 @@ ${JSON.stringify(
     expect(readFileSync(fixture.statePath, "utf8")).toBe(settledState);
   });
 
-  it("does not classify a resolved conflict while another caller owns the state lock", () => {
+  it("does not classify a resolved conflict while another caller owns the state lock", async () => {
     const fixture = makeFixture();
     commit(fixture.worktreePath, "base.txt", "ticket change\n", "ticket change");
     commit(fixture.repositoryPath, "base.txt", "base change\n", "base change");
     expect(
-      runCli("landing.synchronize", {
-        state_path: fixture.statePath,
-        repository_path: fixture.repositoryPath,
-        worktree_path: fixture.worktreePath,
-        ticket: "07",
-        remote_sync_argv: null,
-        completed_at: "2026-09-19T02:05:00Z",
-      }).exitCode,
+      (
+        await runCli("landing.synchronize", {
+          state_path: fixture.statePath,
+          repository_path: fixture.repositoryPath,
+          worktree_path: fixture.worktreePath,
+          ticket: "07",
+          remote_sync_argv: null,
+          completed_at: "2026-09-19T02:05:00Z",
+        })
+      ).exitCode,
     ).toBe(0);
     writeFileSync(join(fixture.worktreePath, "base.txt"), "resolved\n");
     expect(spawnGit(["add", "base.txt"], { cwd: fixture.worktreePath }).exitCode).toBe(0);
@@ -690,7 +686,7 @@ ${JSON.stringify(
       })}\n`,
     );
 
-    const result = runCli("landing.conflict.record", {
+    const result = await runCli("landing.conflict.record", {
       state_path: fixture.statePath,
       ticket: "07",
       classification: "textual",
@@ -711,19 +707,21 @@ ${JSON.stringify(
     expect(readFileSync(fixture.statePath, "utf8")).toBe(stateBefore);
   });
 
-  it("waits for and records user authority on scope decisions", () => {
+  it("waits for and records user authority on scope decisions", async () => {
     const fixture = makeFixture();
     commit(fixture.worktreePath, "base.txt", "ticket change\n", "ticket change");
     commit(fixture.repositoryPath, "base.txt", "base change\n", "base change");
     expect(
-      runCli("landing.synchronize", {
-        state_path: fixture.statePath,
-        repository_path: fixture.repositoryPath,
-        worktree_path: fixture.worktreePath,
-        ticket: "07",
-        remote_sync_argv: null,
-        completed_at: "2026-09-19T02:05:00Z",
-      }).exitCode,
+      (
+        await runCli("landing.synchronize", {
+          state_path: fixture.statePath,
+          repository_path: fixture.repositoryPath,
+          worktree_path: fixture.worktreePath,
+          ticket: "07",
+          remote_sync_argv: null,
+          completed_at: "2026-09-19T02:05:00Z",
+        })
+      ).exitCode,
     ).toBe(0);
     writeFileSync(join(fixture.worktreePath, "base.txt"), "authorized scope\n");
     expect(spawnGit(["add", "base.txt"], { cwd: fixture.worktreePath }).exitCode).toBe(0);
@@ -733,7 +731,7 @@ ${JSON.stringify(
       }).exitCode,
     ).toBe(0);
 
-    const waiting = runCli("landing.conflict.record", {
+    const waiting = await runCli("landing.conflict.record", {
       state_path: fixture.statePath,
       ticket: "07",
       classification: "scope",
@@ -747,7 +745,7 @@ ${JSON.stringify(
       readFileSync(fixture.statePath, "utf8").includes("scope decision (user authorized)"),
     ).toBe(false);
 
-    const authorized = runCli("landing.conflict.record", {
+    const authorized = await runCli("landing.conflict.record", {
       state_path: fixture.statePath,
       ticket: "07",
       classification: "scope",
@@ -762,19 +760,21 @@ ${JSON.stringify(
     );
   });
 
-  it("returns substantive conflict adaptation to the bound implementor", () => {
+  it("returns substantive conflict adaptation to the bound implementor", async () => {
     const fixture = makeFixture();
     commit(fixture.worktreePath, "base.txt", "ticket change\n", "ticket change");
     commit(fixture.repositoryPath, "base.txt", "base change\n", "base change");
     expect(
-      runCli("landing.synchronize", {
-        state_path: fixture.statePath,
-        repository_path: fixture.repositoryPath,
-        worktree_path: fixture.worktreePath,
-        ticket: "07",
-        remote_sync_argv: null,
-        completed_at: "2026-09-19T02:06:00Z",
-      }).exitCode,
+      (
+        await runCli("landing.synchronize", {
+          state_path: fixture.statePath,
+          repository_path: fixture.repositoryPath,
+          worktree_path: fixture.worktreePath,
+          ticket: "07",
+          remote_sync_argv: null,
+          completed_at: "2026-09-19T02:06:00Z",
+        })
+      ).exitCode,
     ).toBe(0);
     writeFileSync(join(fixture.worktreePath, "base.txt"), "adapted behavior\n");
     expect(spawnGit(["add", "base.txt"], { cwd: fixture.worktreePath }).exitCode).toBe(0);
@@ -784,7 +784,7 @@ ${JSON.stringify(
       }).exitCode,
     ).toBe(0);
 
-    const recorded = runCli("landing.conflict.record", {
+    const recorded = await runCli("landing.conflict.record", {
       state_path: fixture.statePath,
       ticket: "07",
       classification: "substantive",
@@ -801,23 +801,25 @@ ${JSON.stringify(
     );
   });
 
-  it("recovers a refused fast-forward through synchronization, re-review, and safe cleanup", () => {
+  it("recovers a refused fast-forward through synchronization, re-review, and safe cleanup", async () => {
     const fixture = makeFixture();
     commit(fixture.worktreePath, "ticket.txt", "ticket\n", "ticket");
     expect(
-      runCli("landing.synchronize", {
-        state_path: fixture.statePath,
-        repository_path: fixture.repositoryPath,
-        worktree_path: fixture.worktreePath,
-        ticket: "07",
-        remote_sync_argv: null,
-        completed_at: "2026-09-19T02:08:00Z",
-      }).exitCode,
+      (
+        await runCli("landing.synchronize", {
+          state_path: fixture.statePath,
+          repository_path: fixture.repositoryPath,
+          worktree_path: fixture.worktreePath,
+          ticket: "07",
+          remote_sync_argv: null,
+          completed_at: "2026-09-19T02:08:00Z",
+        })
+      ).exitCode,
     ).toBe(0);
-    markReadyToLand(fixture);
+    await markReadyToLand(fixture);
     commit(fixture.repositoryPath, "concurrent.txt", "concurrent\n", "concurrent landing");
 
-    const refused = runCli("landing.complete", {
+    const refused = await runCli("landing.complete", {
       state_path: fixture.statePath,
       repository_path: fixture.repositoryPath,
       worktree_path: fixture.worktreePath,
@@ -831,7 +833,7 @@ ${JSON.stringify(
     expect(existsSync(fixture.worktreePath)).toBe(true);
     expect(readFileSync(fixture.statePath, "utf8")).toContain('"phase": "resynchronize"');
 
-    const synchronized = runCli("landing.synchronize", {
+    const synchronized = await runCli("landing.synchronize", {
       state_path: fixture.statePath,
       repository_path: fixture.repositoryPath,
       worktree_path: fixture.worktreePath,
@@ -841,10 +843,10 @@ ${JSON.stringify(
     });
     expect(synchronized.exitCode).toBe(0);
     expect((synchronized.stdout.result as { cycle: number }).cycle).toBe(1);
-    const reviews = markReadyToLand(fixture, 1);
+    const reviews = await markReadyToLand(fixture, 1);
     const landedTip = spawnGit(["rev-parse", "HEAD"], { cwd: fixture.worktreePath }).stdout.trim();
 
-    const closeRuntime = runCli(
+    const closeRuntime = await runCli(
       "landing.complete",
       {
         state_path: fixture.statePath,
@@ -872,7 +874,7 @@ ${JSON.stringify(
     expect(existsSync(fixture.worktreePath)).toBe(true);
     expect(existsSync(join(fixture.root, "run", "reviews", "07-landed.json"))).toBe(false);
 
-    const landed = runCli("landing.complete", {
+    const landed = await runCli("landing.complete", {
       state_path: fixture.statePath,
       repository_path: fixture.repositoryPath,
       worktree_path: fixture.worktreePath,
@@ -936,22 +938,24 @@ ${JSON.stringify(
       },
       completed_at: "2026-09-19T02:12:00Z",
     });
-  }, 60_000);
+  }, 15_000);
 
-  it("recovers when the base advances between the ancestry check and fast-forward", () => {
+  it("recovers when the base advances between the ancestry check and fast-forward", async () => {
     const fixture = makeFixture();
     commit(fixture.worktreePath, "ticket.txt", "ticket\n", "ticket");
     expect(
-      runCli("landing.synchronize", {
-        state_path: fixture.statePath,
-        repository_path: fixture.repositoryPath,
-        worktree_path: fixture.worktreePath,
-        ticket: "07",
-        remote_sync_argv: null,
-        completed_at: "2026-09-19T02:11:00Z",
-      }).exitCode,
+      (
+        await runCli("landing.synchronize", {
+          state_path: fixture.statePath,
+          repository_path: fixture.repositoryPath,
+          worktree_path: fixture.worktreePath,
+          ticket: "07",
+          remote_sync_argv: null,
+          completed_at: "2026-09-19T02:11:00Z",
+        })
+      ).exitCode,
     ).toBe(0);
-    markReadyToLand(fixture);
+    await markReadyToLand(fixture);
 
     const bin = join(fixture.root, "race-bin");
     const marker = join(fixture.root, "race-injected");
@@ -980,7 +984,7 @@ process.exit(result.status ?? 1);
     );
     chmodSync(wrapper, 0o755);
 
-    const result = runCli(
+    const result = await runCli(
       "landing.complete",
       {
         state_path: fixture.statePath,
@@ -1005,22 +1009,24 @@ process.exit(result.status ?? 1);
     expect(readFileSync(fixture.statePath, "utf8")).toContain('"phase": "resynchronize"');
   });
 
-  it("rejects landed evidence paths outside the run directory", () => {
+  it("rejects landed evidence paths outside the run directory", async () => {
     const fixture = makeFixture();
     commit(fixture.worktreePath, "ticket.txt", "ticket\n", "ticket");
     expect(
-      runCli("landing.synchronize", {
-        state_path: fixture.statePath,
-        repository_path: fixture.repositoryPath,
-        worktree_path: fixture.worktreePath,
-        ticket: "07",
-        remote_sync_argv: null,
-        completed_at: "2026-09-19T02:12:00Z",
-      }).exitCode,
+      (
+        await runCli("landing.synchronize", {
+          state_path: fixture.statePath,
+          repository_path: fixture.repositoryPath,
+          worktree_path: fixture.worktreePath,
+          ticket: "07",
+          remote_sync_argv: null,
+          completed_at: "2026-09-19T02:12:00Z",
+        })
+      ).exitCode,
     ).toBe(0);
-    markReadyToLand(fixture);
+    await markReadyToLand(fixture);
 
-    const result = runCli("landing.complete", {
+    const result = await runCli("landing.complete", {
       state_path: fixture.statePath,
       repository_path: fixture.repositoryPath,
       worktree_path: fixture.worktreePath,
@@ -1041,38 +1047,42 @@ process.exit(result.status ?? 1);
     expect(existsSync(join(fixture.root, "outside-landed.json"))).toBe(false);
   });
 
-  it("refuses cleanup while the landed worktree is dirty", () => {
+  it("refuses cleanup while the landed worktree is dirty", async () => {
     const fixture = makeFixture();
     commit(fixture.worktreePath, "ticket.txt", "ticket\n", "ticket");
     expect(
-      runCli("landing.synchronize", {
-        state_path: fixture.statePath,
-        repository_path: fixture.repositoryPath,
-        worktree_path: fixture.worktreePath,
-        ticket: "07",
-        remote_sync_argv: null,
-        completed_at: "2026-09-19T02:12:00Z",
-      }).exitCode,
-    ).toBe(0);
-    markReadyToLand(fixture);
-    expect(
-      runCli(
-        "landing.complete",
-        {
+      (
+        await runCli("landing.synchronize", {
           state_path: fixture.statePath,
           repository_path: fixture.repositoryPath,
           worktree_path: fixture.worktreePath,
-          evidence_path: join(fixture.root, "run", "reviews", "07-landed.json"),
           ticket: "07",
-          cleanup_argv: null,
-          completed_at: "2026-09-19T02:13:00Z",
-        },
-        { ...HERDR_ENV, HERDR_TEST_LIVE_PANES: JSON.stringify(["work:p7"]) },
+          remote_sync_argv: null,
+          completed_at: "2026-09-19T02:12:00Z",
+        })
+      ).exitCode,
+    ).toBe(0);
+    await markReadyToLand(fixture);
+    expect(
+      (
+        await runCli(
+          "landing.complete",
+          {
+            state_path: fixture.statePath,
+            repository_path: fixture.repositoryPath,
+            worktree_path: fixture.worktreePath,
+            evidence_path: join(fixture.root, "run", "reviews", "07-landed.json"),
+            ticket: "07",
+            cleanup_argv: null,
+            completed_at: "2026-09-19T02:13:00Z",
+          },
+          { ...HERDR_ENV, HERDR_TEST_LIVE_PANES: JSON.stringify(["work:p7"]) },
+        )
       ).exitCode,
     ).toBe(0);
     writeFileSync(join(fixture.worktreePath, "dirty.txt"), "dirty\n");
 
-    const result = runCli("landing.complete", {
+    const result = await runCli("landing.complete", {
       state_path: fixture.statePath,
       repository_path: fixture.repositoryPath,
       worktree_path: fixture.worktreePath,
@@ -1093,7 +1103,7 @@ process.exit(result.status ?? 1);
     expect(existsSync(fixture.worktreePath)).toBe(true);
   });
 
-  it("uses an exact repository cleanup command instead of native fallback", () => {
+  it("uses an exact repository cleanup command instead of native fallback", async () => {
     const fixture = makeFixture();
     commit(fixture.worktreePath, "ticket.txt", "ticket\n", "ticket");
     writeFileSync(
@@ -1104,18 +1114,20 @@ process.exit(result.status ?? 1);
       ),
     );
     expect(
-      runCli("landing.synchronize", {
-        state_path: fixture.statePath,
-        repository_path: fixture.repositoryPath,
-        worktree_path: fixture.worktreePath,
-        ticket: "07",
-        remote_sync_argv: null,
-        completed_at: "2026-09-19T02:12:00Z",
-      }).exitCode,
+      (
+        await runCli("landing.synchronize", {
+          state_path: fixture.statePath,
+          repository_path: fixture.repositoryPath,
+          worktree_path: fixture.worktreePath,
+          ticket: "07",
+          remote_sync_argv: null,
+          completed_at: "2026-09-19T02:12:00Z",
+        })
+      ).exitCode,
     ).toBe(0);
-    markReadyToLand(fixture);
+    await markReadyToLand(fixture);
 
-    const result = runCli("landing.complete", {
+    const result = await runCli("landing.complete", {
       state_path: fixture.statePath,
       repository_path: fixture.repositoryPath,
       worktree_path: fixture.worktreePath,
@@ -1153,18 +1165,20 @@ process.exit(result.status ?? 1);
     ).toBe(0);
   });
 
-  it("enforces append-only fix commits when repository policy is silent", () => {
+  it("enforces append-only fix commits when repository policy is silent", async () => {
     const appended = makeFixture();
     const reviewedTip = commit(appended.worktreePath, "ticket.txt", "ticket\n", "ticket");
     expect(
-      runCli("landing.synchronize", {
-        state_path: appended.statePath,
-        repository_path: appended.repositoryPath,
-        worktree_path: appended.worktreePath,
-        ticket: "07",
-        remote_sync_argv: null,
-        completed_at: "2026-09-19T02:12:00Z",
-      }).exitCode,
+      (
+        await runCli("landing.synchronize", {
+          state_path: appended.statePath,
+          repository_path: appended.repositoryPath,
+          worktree_path: appended.worktreePath,
+          ticket: "07",
+          remote_sync_argv: null,
+          completed_at: "2026-09-19T02:12:00Z",
+        })
+      ).exitCode,
     ).toBe(0);
     writeFileSync(
       appended.statePath,
@@ -1173,7 +1187,7 @@ process.exit(result.status ?? 1);
         .replace('"previous_ticket_sha": null', `"previous_ticket_sha": "${reviewedTip}"`),
     );
     commit(appended.worktreePath, "fix.txt", "fix\n", "append fix");
-    const appendResult = runCli("landing.synchronize", {
+    const appendResult = await runCli("landing.synchronize", {
       state_path: appended.statePath,
       repository_path: appended.repositoryPath,
       worktree_path: appended.worktreePath,
@@ -1187,14 +1201,16 @@ process.exit(result.status ?? 1);
     const amended = makeFixture();
     const originalTip = commit(amended.worktreePath, "ticket.txt", "ticket\n", "ticket");
     expect(
-      runCli("landing.synchronize", {
-        state_path: amended.statePath,
-        repository_path: amended.repositoryPath,
-        worktree_path: amended.worktreePath,
-        ticket: "07",
-        remote_sync_argv: null,
-        completed_at: "2026-09-19T02:14:00Z",
-      }).exitCode,
+      (
+        await runCli("landing.synchronize", {
+          state_path: amended.statePath,
+          repository_path: amended.repositoryPath,
+          worktree_path: amended.worktreePath,
+          ticket: "07",
+          remote_sync_argv: null,
+          completed_at: "2026-09-19T02:14:00Z",
+        })
+      ).exitCode,
     ).toBe(0);
     writeFileSync(
       amended.statePath,
@@ -1209,7 +1225,7 @@ process.exit(result.status ?? 1);
         cwd: amended.worktreePath,
       }).exitCode,
     ).toBe(0);
-    const amendResult = runCli("landing.synchronize", {
+    const amendResult = await runCli("landing.synchronize", {
       state_path: amended.statePath,
       repository_path: amended.repositoryPath,
       worktree_path: amended.worktreePath,
@@ -1231,7 +1247,7 @@ process.exit(result.status ?? 1);
     expect(rejectedState.includes("Phase: commit policy fix required")).toBe(true);
   });
 
-  it("accepts explicit amend and squash fix policy overrides", () => {
+  it("accepts explicit amend and squash fix policy overrides", async () => {
     const amended = makeFixture();
     writeFileSync(
       amended.statePath,
@@ -1239,14 +1255,16 @@ process.exit(result.status ?? 1);
     );
     const reviewedTip = commit(amended.worktreePath, "ticket.txt", "ticket\n", "ticket");
     expect(
-      runCli("landing.synchronize", {
-        state_path: amended.statePath,
-        repository_path: amended.repositoryPath,
-        worktree_path: amended.worktreePath,
-        ticket: "07",
-        remote_sync_argv: null,
-        completed_at: "2026-09-19T02:16:00Z",
-      }).exitCode,
+      (
+        await runCli("landing.synchronize", {
+          state_path: amended.statePath,
+          repository_path: amended.repositoryPath,
+          worktree_path: amended.worktreePath,
+          ticket: "07",
+          remote_sync_argv: null,
+          completed_at: "2026-09-19T02:16:00Z",
+        })
+      ).exitCode,
     ).toBe(0);
     writeFileSync(
       amended.statePath,
@@ -1259,7 +1277,7 @@ process.exit(result.status ?? 1);
     expect(
       spawnGit(["commit", "-q", "--amend", "--no-edit"], { cwd: amended.worktreePath }).exitCode,
     ).toBe(0);
-    const amendResult = runCli("landing.synchronize", {
+    const amendResult = await runCli("landing.synchronize", {
       state_path: amended.statePath,
       repository_path: amended.repositoryPath,
       worktree_path: amended.worktreePath,
@@ -1283,7 +1301,7 @@ process.exit(result.status ?? 1);
     );
     commit(squashed.worktreePath, "one.txt", "one\n", "one");
     commit(squashed.worktreePath, "two.txt", "two\n", "two");
-    const shapeFix = runCli("landing.synchronize", {
+    const shapeFix = await runCli("landing.synchronize", {
       state_path: squashed.statePath,
       repository_path: squashed.repositoryPath,
       worktree_path: squashed.worktreePath,
@@ -1297,7 +1315,7 @@ process.exit(result.status ?? 1);
     expect(
       spawnGit(["commit", "-q", "-m", "squashed fix"], { cwd: squashed.worktreePath }).exitCode,
     ).toBe(0);
-    const squashResult = runCli("landing.synchronize", {
+    const squashResult = await runCli("landing.synchronize", {
       state_path: squashed.statePath,
       repository_path: squashed.repositoryPath,
       worktree_path: squashed.worktreePath,
@@ -1313,7 +1331,7 @@ process.exit(result.status ?? 1);
     });
   });
 
-  it("returns a fix action when repository commit shape requires one commit", () => {
+  it("returns a fix action when repository commit shape requires one commit", async () => {
     const fixture = makeFixture();
     commit(fixture.worktreePath, "one.txt", "one\n", "one");
     const ticketTip = commit(fixture.worktreePath, "two.txt", "two\n", "two");
@@ -1325,7 +1343,7 @@ process.exit(result.status ?? 1);
       ),
     );
 
-    const result = runCli("landing.synchronize", {
+    const result = await runCli("landing.synchronize", {
       state_path: fixture.statePath,
       repository_path: fixture.repositoryPath,
       worktree_path: fixture.worktreePath,

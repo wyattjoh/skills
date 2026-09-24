@@ -4,10 +4,10 @@ import { tmpdir } from "node:os";
 import { join, relative } from "node:path";
 import { spawnGit } from "./lib/git.ts";
 import { applyEscalationBlock } from "./lib/landing.ts";
+import { runCliInProcess } from "./test-cli.ts";
 import { createFakeHerdrEnv } from "./test-herdr.ts";
 
 const CLI = join(import.meta.dir, "coordinate.ts");
-const decoder = new TextDecoder();
 const HERDR_ENV = createFakeHerdrEnv();
 
 type CliResult = {
@@ -23,24 +23,23 @@ type ReviewFixture = {
   worktreePath: string;
 };
 
-const runCli = (
+const runCli = async (
   request: unknown,
   env: Record<string, string | undefined> = HERDR_ENV,
-): CliResult => {
-  const child = Bun.spawnSync([process.execPath, CLI], {
-    env,
-    stdin: Buffer.from(JSON.stringify(request)),
-    stdout: "pipe",
-    stderr: "pipe",
-  });
+): Promise<CliResult> => {
+  const child = await runCliInProcess(request, env);
   return {
     exitCode: child.exitCode,
-    stdout: JSON.parse(decoder.decode(child.stdout).trim()) as Record<string, unknown>,
-    stderr: decoder.decode(child.stderr),
+    stdout: JSON.parse(child.stdout.trim()) as Record<string, unknown>,
+    stderr: child.stderr,
   };
 };
 
-const runCliAsync = async (
+/**
+ * Spawns the CLI as a separate process. Only for tests that exercise real
+ * cross-process serialization, which the in-process queue would hide.
+ */
+const runCliProcess = async (
   request: unknown,
   env: Record<string, string | undefined> = HERDR_ENV,
 ): Promise<CliResult> => {
@@ -152,22 +151,22 @@ const policyRequest = (fixture: ReviewFixture) => ({
   },
 });
 
-const preparePolicy = (fixture: ReviewFixture): void => {
-  expect(runCli(policyRequest(fixture)).exitCode).toBe(0);
+const preparePolicy = async (fixture: ReviewFixture): Promise<void> => {
+  expect((await runCli(policyRequest(fixture))).exitCode).toBe(0);
 };
 
-const recordPassingGates = (
+const recordPassingGates = async (
   fixture: ReviewFixture,
   round: number,
   attempt = 1,
   suffix = "",
-): string[] => {
+): Promise<string[]> => {
   const paths: string[] = [];
   for (const [name, argv] of [
     ["format", ["bun", "run", "format:check"]],
     ["test", ["bun", "test"]],
   ] as const) {
-    const result = runCli({
+    const result = await runCli({
       schema_version: 1,
       operation: "gate.record",
       input: {
@@ -195,7 +194,10 @@ const recordPassingGates = (
   return paths;
 };
 
-const activateFixture = (fixture: ReviewFixture, implementor: "claude" | "pi"): void => {
+const activateFixture = async (
+  fixture: ReviewFixture,
+  implementor: "claude" | "pi",
+): Promise<void> => {
   const policy = readFileSync(fixture.statePath, "utf8").match(
     /^## Review policy\s*\n\n```json\n[\s\S]*?\n```\s*$/mu,
   )?.[0];
@@ -204,7 +206,7 @@ const activateFixture = (fixture: ReviewFixture, implementor: "claude" | "pi"): 
     .replaceAll("WORKTREE", fixture.worktreePath)
     .replace("## Decisions", `${policy}\n\n## Decisions`);
   writeFileSync(fixture.statePath, active);
-  recordPassingGates(fixture, 0);
+  await recordPassingGates(fixture, 0);
 };
 
 const reviewLaunchRequest = (
@@ -292,9 +294,9 @@ describe("review documentation contract", () => {
 });
 
 describe("review policy", () => {
-  it("persists explicit repository gates and derives the Pi fallback self-review", () => {
+  it("persists explicit repository gates and derives the Pi fallback self-review", async () => {
     const fixture = makeFixture("pi");
-    const result = runCli(policyRequest(fixture));
+    const result = await runCli(policyRequest(fixture));
 
     expect(result.exitCode).toBe(0);
     expect(result.stderr).toBe("");
@@ -313,9 +315,9 @@ describe("review policy", () => {
     expect(readFileSync(fixture.statePath, "utf8")).toContain('"argv": [');
   });
 
-  it("retains Matt self-review for Claude implementors", () => {
+  it("retains Matt self-review for Claude implementors", async () => {
     const fixture = makeFixture("claude");
-    const result = runCli(policyRequest(fixture));
+    const result = await runCli(policyRequest(fixture));
 
     expect(result.exitCode).toBe(0);
     expect(result.stdout).toMatchObject({
@@ -324,12 +326,12 @@ describe("review policy", () => {
     });
   });
 
-  it("rejects unresolved or inferred gate configuration", () => {
+  it("rejects unresolved or inferred gate configuration", async () => {
     const fixture = makeFixture("pi");
     const request = policyRequest(fixture);
     request.input.gates = [];
 
-    const result = runCli(request);
+    const result = await runCli(request);
 
     expect(result.exitCode).toBe(2);
     expect(result.stdout).toMatchObject({
@@ -342,12 +344,12 @@ describe("review policy", () => {
   });
 });
 
-const recordReview = (
+const recordReview = async (
   fixture: ReviewFixture,
   request: ReturnType<typeof reviewLaunchRequest>,
   report: string,
   completedAt = "2026-09-19T01:00:00Z",
-): CliResult =>
+): Promise<CliResult> =>
   runCli({
     schema_version: 1,
     operation: "review.launch.record",
@@ -385,12 +387,12 @@ const gateRecordRequest = (
 });
 
 describe("review launches and reports", () => {
-  it("builds a fresh shell-free Herdr reviewer launch with a strict prompt", () => {
+  it("builds a fresh shell-free Herdr reviewer launch with a strict prompt", async () => {
     const fixture = makeFixture("pi");
-    preparePolicy(fixture);
-    activateFixture(fixture, "pi");
+    await preparePolicy(fixture);
+    await activateFixture(fixture, "pi");
 
-    const result = runCli(reviewLaunchRequest(fixture, "standards"));
+    const result = await runCli(reviewLaunchRequest(fixture, "standards"));
 
     expect(result.exitCode).toBe(0);
     expect(result.stdout).toMatchObject({
@@ -447,11 +449,11 @@ describe("review launches and reports", () => {
     expect(artifact).toContain('"reviewer"');
   });
 
-  it("prevents caller-chosen paths from reusing a reviewer attempt identity", () => {
+  it("prevents caller-chosen paths from reusing a reviewer attempt identity", async () => {
     const fixture = makeFixture("pi");
-    preparePolicy(fixture);
-    activateFixture(fixture, "pi");
-    expect(runCli(reviewLaunchRequest(fixture, "standards")).exitCode).toBe(0);
+    await preparePolicy(fixture);
+    await activateFixture(fixture, "pi");
+    expect((await runCli(reviewLaunchRequest(fixture, "standards"))).exitCode).toBe(0);
 
     const reusedIdentity = reviewLaunchRequest(fixture, "standards");
     reusedIdentity.input.artifact_path = join(
@@ -464,7 +466,7 @@ describe("review launches and reports", () => {
       "reviews",
       "caller-selected-attempt-1.md",
     );
-    const rejected = runCli(reusedIdentity);
+    const rejected = await runCli(reusedIdentity);
 
     expect(rejected.exitCode).toBe(1);
     expect(rejected.stdout).toMatchObject({
@@ -473,18 +475,18 @@ describe("review launches and reports", () => {
     });
   });
 
-  it("canonicalizes relative and absolute state paths for reviewer attempt identity", () => {
+  it("canonicalizes relative and absolute state paths for reviewer attempt identity", async () => {
     const fixture = makeFixture("pi");
-    preparePolicy(fixture);
-    activateFixture(fixture, "pi");
+    await preparePolicy(fixture);
+    await activateFixture(fixture, "pi");
     const first = reviewLaunchRequest(fixture, "standards");
     first.input.state_path = relative(process.cwd(), fixture.statePath);
-    expect(runCli(first).exitCode).toBe(0);
+    expect((await runCli(first)).exitCode).toBe(0);
 
     const alias = reviewLaunchRequest(fixture, "standards");
     alias.input.artifact_path = join(fixture.runPath, "reviews", "absolute-alias.json");
     alias.input.report_path = join(fixture.runPath, "reviews", "absolute-alias.md");
-    const rejected = runCli(alias);
+    const rejected = await runCli(alias);
 
     expect(rejected.exitCode).toBe(1);
     expect(rejected.stdout).toMatchObject({
@@ -495,8 +497,8 @@ describe("review launches and reports", () => {
 
   it("serializes scan and artifact creation across different paths", async () => {
     const fixture = makeFixture("pi");
-    preparePolicy(fixture);
-    activateFixture(fixture, "pi");
+    await preparePolicy(fixture);
+    await activateFixture(fixture, "pi");
     for (let index = 0; index < 200; index += 1) {
       writeFileSync(
         join(fixture.runPath, "reviews", `unrelated-${index}.json`),
@@ -512,7 +514,7 @@ describe("review launches and reports", () => {
     second.input.report_path = join(fixture.runPath, "reviews", "parallel-second.md");
     second.input.pane = "workspace:parallel-second";
 
-    const results = await Promise.all([runCliAsync(first), runCliAsync(second)]);
+    const results = await Promise.all([runCliProcess(first), runCliProcess(second)]);
     const successes = results.filter((result) => result.exitCode === 0);
     const rejections = results.filter((result) => result.exitCode === 1);
 
@@ -524,10 +526,10 @@ describe("review launches and reports", () => {
     });
   });
 
-  it("requires the synchronized full-SHA base while finalization is serialized", () => {
+  it("requires the synchronized full-SHA base while finalization is serialized", async () => {
     const fixture = makeFixture("pi");
-    preparePolicy(fixture);
-    activateFixture(fixture, "pi");
+    await preparePolicy(fixture);
+    await activateFixture(fixture, "pi");
     const head = spawnGit(["rev-parse", "HEAD"], { cwd: fixture.worktreePath }).stdout.trim();
     writeFileSync(
       fixture.statePath,
@@ -563,9 +565,9 @@ ${JSON.stringify(
 ## Decisions`,
       ),
     );
-    const cycleOneGates = recordPassingGates(fixture, 0, 2, "-cycle-one");
+    const cycleOneGates = await recordPassingGates(fixture, 0, 2, "-cycle-one");
     const wrongBase = reviewLaunchRequest(fixture, "standards");
-    const rejected = runCli(wrongBase);
+    const rejected = await runCli(wrongBase);
     expect(rejected.exitCode).toBe(1);
     expect(rejected.stdout).toMatchObject({
       ok: false,
@@ -573,7 +575,7 @@ ${JSON.stringify(
     });
     const staleCycle = reviewLaunchRequest(fixture, "standards");
     staleCycle.input.base_ref = head;
-    const staleCycleResult = runCli(staleCycle);
+    const staleCycleResult = await runCli(staleCycle);
     expect(staleCycleResult.exitCode).toBe(1);
     expect(staleCycleResult.stdout).toMatchObject({
       ok: false,
@@ -583,7 +585,7 @@ ${JSON.stringify(
     const exactBase = reviewLaunchRequest(fixture, "standards");
     exactBase.input.base_ref = head;
     exactBase.input.gate_evidence_paths = cycleOneGates;
-    const accepted = runCli(exactBase);
+    const accepted = await runCli(exactBase);
     expect(accepted.exitCode).toBe(0);
     expect((accepted.stdout.result as { reviewed_head: string }).reviewed_head).toBe(head);
     expect(readFileSync(exactBase.input.artifact_path, "utf8")).toContain(
@@ -591,14 +593,14 @@ ${JSON.stringify(
     );
   }, 15_000);
 
-  it("refuses external review until every configured gate has passed", () => {
+  it("refuses external review until every configured gate has passed", async () => {
     const fixture = makeFixture("pi");
-    preparePolicy(fixture);
-    activateFixture(fixture, "pi");
+    await preparePolicy(fixture);
+    await activateFixture(fixture, "pi");
     const request = reviewLaunchRequest(fixture, "standards");
     request.input.gate_evidence_paths = request.input.gate_evidence_paths.slice(0, 1);
 
-    const result = runCli(request);
+    const result = await runCli(request);
 
     expect(result.exitCode).toBe(1);
     expect(result.stdout).toMatchObject({
@@ -607,10 +609,10 @@ ${JSON.stringify(
     });
   });
 
-  it("rejects stale gate evidence after the reviewed HEAD changes", () => {
+  it("rejects stale gate evidence after the reviewed HEAD changes", async () => {
     const fixture = makeFixture("pi");
-    preparePolicy(fixture);
-    activateFixture(fixture, "pi");
+    await preparePolicy(fixture);
+    await activateFixture(fixture, "pi");
     writeFileSync(join(fixture.worktreePath, "tracked.txt"), "new commit\n");
     expect(spawnGit(["add", "tracked.txt"], { cwd: fixture.worktreePath }).exitCode).toBe(0);
     expect(
@@ -628,7 +630,7 @@ ${JSON.stringify(
       ).exitCode,
     ).toBe(0);
 
-    const result = runCli(reviewLaunchRequest(fixture, "standards"));
+    const result = await runCli(reviewLaunchRequest(fixture, "standards"));
 
     expect(result.exitCode).toBe(1);
     expect(result.stdout).toMatchObject({
@@ -637,10 +639,10 @@ ${JSON.stringify(
     });
   });
 
-  it("rejects gate evidence whose persisted worktree differs from the active runtime", () => {
+  it("rejects gate evidence whose persisted worktree differs from the active runtime", async () => {
     const fixture = makeFixture("pi");
-    preparePolicy(fixture);
-    activateFixture(fixture, "pi");
+    await preparePolicy(fixture);
+    await activateFixture(fixture, "pi");
     const secondCheckout = join(fixture.root, "second-checkout");
     expect(
       spawnGit(["clone", "-q", fixture.worktreePath, secondCheckout], { cwd: fixture.root })
@@ -651,7 +653,7 @@ ${JSON.stringify(
     evidence.worktree_path = secondCheckout;
     writeFileSync(evidencePath, `${JSON.stringify(evidence, null, 2)}\n`);
 
-    const result = runCli(reviewLaunchRequest(fixture, "standards"));
+    const result = await runCli(reviewLaunchRequest(fixture, "standards"));
 
     expect(result.exitCode).toBe(1);
     expect(result.stdout).toMatchObject({
@@ -660,14 +662,14 @@ ${JSON.stringify(
     });
   });
 
-  it("persists clean PASS and actionable FAIL reports", () => {
+  it("persists clean PASS and actionable FAIL reports", async () => {
     const fixture = makeFixture("pi");
-    preparePolicy(fixture);
-    activateFixture(fixture, "pi");
+    await preparePolicy(fixture);
+    await activateFixture(fixture, "pi");
     const standards = reviewLaunchRequest(fixture, "standards");
     const spec = reviewLaunchRequest(fixture, "spec");
-    expect(runCli(standards).exitCode).toBe(0);
-    expect(runCli(spec).exitCode).toBe(0);
+    expect((await runCli(standards)).exitCode).toBe(0);
+    expect((await runCli(spec)).exitCode).toBe(0);
 
     const standardsRecord = {
       schema_version: 1,
@@ -681,7 +683,7 @@ ${JSON.stringify(
         completed_at: "2026-09-19T01:00:00Z",
       },
     };
-    const standardsClose = runCli(standardsRecord, {
+    const standardsClose = await runCli(standardsRecord, {
       ...HERDR_ENV,
       HERDR_TEST_LIVE_PANES: JSON.stringify(["workspace:p1"]),
     });
@@ -697,8 +699,8 @@ ${JSON.stringify(
         close: { command: "herdr", args: ["pane", "close", "workspace:p1"] },
       },
     });
-    const standardsResult = runCli(standardsRecord);
-    const specResult = runCli({
+    const standardsResult = await runCli(standardsRecord);
+    const specResult = await runCli({
       schema_version: 1,
       operation: "review.launch.record",
       input: {
@@ -743,15 +745,15 @@ ${JSON.stringify(
     expect(readFileSync(spec.input.report_path, "utf8")).toContain(failingReport("Spec"));
   });
 
-  it("refuses to overwrite a durable report with different content", () => {
+  it("refuses to overwrite a durable report with different content", async () => {
     const fixture = makeFixture("pi");
-    preparePolicy(fixture);
-    activateFixture(fixture, "pi");
+    await preparePolicy(fixture);
+    await activateFixture(fixture, "pi");
     const launch = reviewLaunchRequest(fixture, "standards");
-    expect(runCli(launch).exitCode).toBe(0);
-    expect(recordReview(fixture, launch, passingReport("Standards")).exitCode).toBe(0);
+    expect((await runCli(launch)).exitCode).toBe(0);
+    expect((await recordReview(fixture, launch, passingReport("Standards"))).exitCode).toBe(0);
 
-    const conflicting = recordReview(
+    const conflicting = await recordReview(
       fixture,
       launch,
       failingReport("Standards"),
@@ -766,12 +768,12 @@ ${JSON.stringify(
     expect(readFileSync(launch.input.report_path, "utf8")).toContain("PASS");
   });
 
-  it("rejects launch recording from an artifact outside the run directory", () => {
+  it("rejects launch recording from an artifact outside the run directory", async () => {
     const fixture = makeFixture("pi");
-    preparePolicy(fixture);
-    activateFixture(fixture, "pi");
+    await preparePolicy(fixture);
+    await activateFixture(fixture, "pi");
     const launch = reviewLaunchRequest(fixture, "standards");
-    expect(runCli(launch).exitCode).toBe(0);
+    expect((await runCli(launch)).exitCode).toBe(0);
     const artifact = JSON.parse(readFileSync(launch.input.artifact_path, "utf8")) as Record<
       string,
       unknown
@@ -782,7 +784,7 @@ ${JSON.stringify(
     artifact.report_path = outsideReport;
     writeFileSync(outsideArtifact, `${JSON.stringify(artifact, null, 2)}\n`);
 
-    const result = runCli({
+    const result = await runCli({
       schema_version: 1,
       operation: "review.launch.record",
       input: {
@@ -802,12 +804,12 @@ ${JSON.stringify(
     });
   });
 
-  it("rejects a report path that escapes the run through a symlink", () => {
+  it("rejects a report path that escapes the run through a symlink", async () => {
     const fixture = makeFixture("pi");
-    preparePolicy(fixture);
-    activateFixture(fixture, "pi");
+    await preparePolicy(fixture);
+    await activateFixture(fixture, "pi");
     const launch = reviewLaunchRequest(fixture, "standards");
-    expect(runCli(launch).exitCode).toBe(0);
+    expect((await runCli(launch)).exitCode).toBe(0);
     const outside = join(fixture.root, "outside");
     mkdirSync(outside);
     const link = join(fixture.runPath, "review-link");
@@ -819,7 +821,7 @@ ${JSON.stringify(
     artifact.report_path = join(link, "escaped.md");
     writeFileSync(launch.input.artifact_path, `${JSON.stringify(artifact, null, 2)}\n`);
 
-    const result = recordReview(fixture, launch, passingReport("Standards"));
+    const result = await recordReview(fixture, launch, passingReport("Standards"));
 
     expect(result.exitCode).toBe(1);
     expect(result.stdout).toMatchObject({
@@ -828,12 +830,12 @@ ${JSON.stringify(
     });
   });
 
-  it("rejects an artifact whose declared path differs from the supplied path", () => {
+  it("rejects an artifact whose declared path differs from the supplied path", async () => {
     const fixture = makeFixture("pi");
-    preparePolicy(fixture);
-    activateFixture(fixture, "pi");
+    await preparePolicy(fixture);
+    await activateFixture(fixture, "pi");
     const launch = reviewLaunchRequest(fixture, "standards");
-    expect(runCli(launch).exitCode).toBe(0);
+    expect((await runCli(launch)).exitCode).toBe(0);
     const artifact = JSON.parse(readFileSync(launch.input.artifact_path, "utf8")) as Record<
       string,
       unknown
@@ -841,7 +843,7 @@ ${JSON.stringify(
     artifact.artifact_path = join(fixture.runPath, "reviews", "different.json");
     writeFileSync(launch.input.artifact_path, `${JSON.stringify(artifact, null, 2)}\n`);
 
-    const result = recordReview(fixture, launch, passingReport("Standards"));
+    const result = await recordReview(fixture, launch, passingReport("Standards"));
 
     expect(result.exitCode).toBe(1);
     expect(result.stdout).toMatchObject({
@@ -850,14 +852,14 @@ ${JSON.stringify(
     });
   });
 
-  it("retries malformed verdicts with the same reviewer configuration", () => {
+  it("retries malformed verdicts with the same reviewer configuration", async () => {
     const fixture = makeFixture("pi");
-    preparePolicy(fixture);
-    activateFixture(fixture, "pi");
+    await preparePolicy(fixture);
+    await activateFixture(fixture, "pi");
     const launch = reviewLaunchRequest(fixture, "standards");
-    expect(runCli(launch).exitCode).toBe(0);
+    expect((await runCli(launch)).exitCode).toBe(0);
 
-    const malformed = recordReview(
+    const malformed = await recordReview(
       fixture,
       launch,
       failingReport("Standards").replace(/FAIL\n$/u, "PASS\n"),
@@ -874,7 +876,7 @@ ${JSON.stringify(
         next_attempt: 2,
       },
     });
-    const retry = runCli(reviewLaunchRequest(fixture, "standards", 2));
+    const retry = await runCli(reviewLaunchRequest(fixture, "standards", 2));
     expect(retry.exitCode).toBe(0);
     expect(retry.stdout).toMatchObject({
       result: {
@@ -904,20 +906,20 @@ ${JSON.stringify(
     });
   });
 
-  it("rejects retry attempts that change the reviewed base ref", () => {
+  it("rejects retry attempts that change the reviewed base ref", async () => {
     const fixture = makeFixture("pi");
-    preparePolicy(fixture);
-    activateFixture(fixture, "pi");
+    await preparePolicy(fixture);
+    await activateFixture(fixture, "pi");
     const first = reviewLaunchRequest(fixture, "standards");
-    expect(runCli(first).exitCode).toBe(0);
+    expect((await runCli(first)).exitCode).toBe(0);
     expect(
-      recordReview(fixture, first, failingReport("Standards").replace(/FAIL\n$/u, "PASS\n"))
+      (await recordReview(fixture, first, failingReport("Standards").replace(/FAIL\n$/u, "PASS\n")))
         .exitCode,
     ).toBe(0);
     const retry = reviewLaunchRequest(fixture, "standards", 2);
     retry.input.base_ref = "release";
 
-    const result = runCli(retry);
+    const result = await runCli(retry);
 
     expect(result.exitCode).toBe(1);
     expect(result.stdout).toMatchObject({
@@ -926,19 +928,20 @@ ${JSON.stringify(
     });
   });
 
-  it("rejects retry attempts that change the review source list", () => {
+  it("rejects retry attempts that change the review source list", async () => {
     const fixture = makeFixture("pi");
-    preparePolicy(fixture);
-    activateFixture(fixture, "pi");
+    await preparePolicy(fixture);
+    await activateFixture(fixture, "pi");
     const first = reviewLaunchRequest(fixture, "spec");
-    expect(runCli(first).exitCode).toBe(0);
+    expect((await runCli(first)).exitCode).toBe(0);
     expect(
-      recordReview(fixture, first, failingReport("Spec").replace(/FAIL\n$/u, "PASS\n")).exitCode,
+      (await recordReview(fixture, first, failingReport("Spec").replace(/FAIL\n$/u, "PASS\n")))
+        .exitCode,
     ).toBe(0);
     const retry = reviewLaunchRequest(fixture, "spec", 2);
     retry.input.context_paths = [...retry.input.context_paths, "unexpected.md"];
 
-    const result = runCli(retry);
+    const result = await runCli(retry);
 
     expect(result.exitCode).toBe(1);
     expect(result.stdout).toMatchObject({
@@ -947,14 +950,14 @@ ${JSON.stringify(
     });
   });
 
-  it("retries a report with a placeholder source location as malformed", () => {
+  it("retries a report with a placeholder source location as malformed", async () => {
     const fixture = makeFixture("pi");
-    preparePolicy(fixture);
-    activateFixture(fixture, "pi");
+    await preparePolicy(fixture);
+    await activateFixture(fixture, "pi");
     const launch = reviewLaunchRequest(fixture, "standards");
-    expect(runCli(launch).exitCode).toBe(0);
+    expect((await runCli(launch)).exitCode).toBe(0);
 
-    const result = recordReview(
+    const result = await recordReview(
       fixture,
       launch,
       failingReport("Standards").replace("src/example.ts:12", "unknown"),
@@ -973,15 +976,15 @@ ${JSON.stringify(
     });
   });
 
-  it("rejects and preserves reviewer worktree mutations", () => {
+  it("rejects and preserves reviewer worktree mutations", async () => {
     const fixture = makeFixture("pi");
-    preparePolicy(fixture);
-    activateFixture(fixture, "pi");
+    await preparePolicy(fixture);
+    await activateFixture(fixture, "pi");
     const launch = reviewLaunchRequest(fixture, "spec");
-    expect(runCli(launch).exitCode).toBe(0);
+    expect((await runCli(launch)).exitCode).toBe(0);
     writeFileSync(join(fixture.worktreePath, "reviewer-created.txt"), "do not discard\n");
 
-    const result = recordReview(fixture, launch, failingReport("Spec"));
+    const result = await recordReview(fixture, launch, failingReport("Spec"));
 
     expect(result.exitCode).toBe(0);
     expect(result.stdout).toMatchObject({
@@ -998,14 +1001,16 @@ ${JSON.stringify(
     expect(readFileSync(launch.input.report_path, "utf8")).toContain(failingReport("Spec"));
   });
 
-  it("retries reviewer infrastructure failures three times without changing role", () => {
+  it("retries reviewer infrastructure failures three times without changing role", async () => {
     const fixture = makeFixture("pi");
-    preparePolicy(fixture);
-    activateFixture(fixture, "pi");
+    await preparePolicy(fixture);
+    await activateFixture(fixture, "pi");
     const first = reviewLaunchRequest(fixture, "spec", 1);
-    expect(runCli(first).exitCode).toBe(0);
+    expect((await runCli(first)).exitCode).toBe(0);
 
-    const recordFailure = (request: ReturnType<typeof reviewLaunchRequest>): CliResult =>
+    const recordFailure = async (
+      request: ReturnType<typeof reviewLaunchRequest>,
+    ): Promise<CliResult> =>
       runCli({
         schema_version: 1,
         operation: "review.launch.record",
@@ -1019,22 +1024,22 @@ ${JSON.stringify(
         },
       });
 
-    expect(recordFailure(first).stdout).toMatchObject({
+    expect((await recordFailure(first)).stdout).toMatchObject({
       result: { action: "retry", retry_delay_seconds: 1, next_attempt: 2 },
     });
     const second = reviewLaunchRequest(fixture, "spec", 2);
-    expect(runCli(second).exitCode).toBe(0);
-    expect(recordFailure(second).stdout).toMatchObject({
+    expect((await runCli(second)).exitCode).toBe(0);
+    expect((await recordFailure(second)).stdout).toMatchObject({
       result: { action: "retry", retry_delay_seconds: 2, next_attempt: 3 },
     });
     const third = reviewLaunchRequest(fixture, "spec", 3);
-    expect(runCli(third).exitCode).toBe(0);
-    expect(recordFailure(third).stdout).toMatchObject({
+    expect((await runCli(third)).exitCode).toBe(0);
+    expect((await recordFailure(third)).stdout).toMatchObject({
       result: { action: "retry", retry_delay_seconds: 4, next_attempt: 4 },
     });
     const fourth = reviewLaunchRequest(fixture, "spec", 4);
-    expect(runCli(fourth).exitCode).toBe(0);
-    expect(recordFailure(fourth).stdout).toMatchObject({
+    expect((await runCli(fourth)).exitCode).toBe(0);
+    expect((await recordFailure(fourth)).stdout).toMatchObject({
       result: { action: "blocked", retry_delay_seconds: null, next_attempt: null },
     });
     const firstArtifact = JSON.parse(readFileSync(first.input.artifact_path, "utf8")) as {
@@ -1047,15 +1052,15 @@ ${JSON.stringify(
   });
 });
 
-const failedGateFixture = (): {
+const failedGateFixture = async (): Promise<{
   fixture: ReviewFixture;
   base: string;
   head: string;
   previousEvidencePath: string;
-} => {
+}> => {
   const fixture = makeFixture("pi");
-  preparePolicy(fixture);
-  activateFixture(fixture, "pi");
+  await preparePolicy(fixture);
+  await activateFixture(fixture, "pi");
   const base = spawnGit(["rev-parse", "HEAD"], { cwd: fixture.worktreePath }).stdout.trim();
   writeFileSync(join(fixture.worktreePath, "ticket.txt"), "ticket\n");
   expect(spawnGit(["add", "ticket.txt"], { cwd: fixture.worktreePath }).exitCode).toBe(0);
@@ -1091,7 +1096,7 @@ const failedGateFixture = (): {
       `## Serialized finalization\n\n\`\`\`json\n${JSON.stringify(finalization, null, 2)}\n\`\`\`\n\n## Decisions`,
     ),
   );
-  const failed = runCli(gateRecordRequest(fixture, "failed"));
+  const failed = await runCli(gateRecordRequest(fixture, "failed"));
   expect(failed.exitCode).toBe(0);
   return {
     fixture,
@@ -1101,24 +1106,24 @@ const failedGateFixture = (): {
   };
 };
 
-const legacyEscalationFixture = (
+const legacyEscalationFixture = async (
   implementor: "claude" | "pi",
-): {
+): Promise<{
   fixture: ReviewFixture;
   fixRequestPath: string;
-} => {
+}> => {
   const fixture = makeFixture(implementor);
-  preparePolicy(fixture);
-  activateFixture(fixture, implementor);
-  recordPassingGates(fixture, 3);
+  await preparePolicy(fixture);
+  await activateFixture(fixture, implementor);
+  await recordPassingGates(fixture, 3);
   const standards = reviewLaunchRequest(fixture, "standards", 1, 3);
   const spec = reviewLaunchRequest(fixture, "spec", 1, 3);
-  expect(runCli(standards).exitCode).toBe(0);
-  expect(runCli(spec).exitCode).toBe(0);
-  expect(recordReview(fixture, standards, failingReport("Standards")).exitCode).toBe(0);
-  expect(recordReview(fixture, spec, passingReport("Spec")).exitCode).toBe(0);
+  expect((await runCli(standards)).exitCode).toBe(0);
+  expect((await runCli(spec)).exitCode).toBe(0);
+  expect((await recordReview(fixture, standards, failingReport("Standards"))).exitCode).toBe(0);
+  expect((await recordReview(fixture, spec, passingReport("Spec"))).exitCode).toBe(0);
   const fixRequestPath = join(fixture.runPath, "briefs", "fixes-06-round-3.md");
-  const finalized = runCli({
+  const finalized = await runCli({
     schema_version: 1,
     operation: "review.round.finalize",
     input: {
@@ -1196,10 +1201,10 @@ const gateRerunRequest = (
 });
 
 describe("gates and review rounds", () => {
-  it("rejects gate evidence from a second checkout at the same HEAD", () => {
+  it("rejects gate evidence from a second checkout at the same HEAD", async () => {
     const fixture = makeFixture("pi");
-    preparePolicy(fixture);
-    activateFixture(fixture, "pi");
+    await preparePolicy(fixture);
+    await activateFixture(fixture, "pi");
     const secondCheckout = join(fixture.root, "second-checkout");
     expect(
       spawnGit(["clone", "-q", fixture.worktreePath, secondCheckout], { cwd: fixture.root })
@@ -1208,7 +1213,7 @@ describe("gates and review rounds", () => {
     const request = gateRecordRequest(fixture, "passed");
     request.input.worktree_path = secondCheckout;
 
-    const result = runCli(request);
+    const result = await runCli(request);
 
     expect(result.exitCode).toBe(1);
     expect(result.stdout).toMatchObject({
@@ -1217,12 +1222,12 @@ describe("gates and review rounds", () => {
     });
   });
 
-  it("records a red gate as a fix without treating it as infrastructure", () => {
+  it("records a red gate as a fix without treating it as infrastructure", async () => {
     const fixture = makeFixture("pi");
-    preparePolicy(fixture);
-    activateFixture(fixture, "pi");
+    await preparePolicy(fixture);
+    await activateFixture(fixture, "pi");
 
-    const result = runCli(gateRecordRequest(fixture, "failed"));
+    const result = await runCli(gateRecordRequest(fixture, "failed"));
 
     expect(result.exitCode).toBe(0);
     expect(result.stdout).toMatchObject({
@@ -1247,8 +1252,8 @@ describe("gates and review rounds", () => {
     });
   });
 
-  it("records an authorized passing same-HEAD rerun without fabricating a fix commit", () => {
-    const { fixture, base, head, previousEvidencePath } = failedGateFixture();
+  it("records an authorized passing same-HEAD rerun without fabricating a fix commit", async () => {
+    const { fixture, base, head, previousEvidencePath } = await failedGateFixture();
     writeFileSync(
       fixture.statePath,
       readFileSync(fixture.statePath, "utf8").replace(
@@ -1257,13 +1262,13 @@ describe("gates and review rounds", () => {
       ),
     );
     const before = readFileSync(fixture.statePath, "utf8");
-    const unauthorized = runCli(
+    const unauthorized = await runCli(
       gateRerunRequest(fixture, previousEvidencePath, { user_authorized: false }),
     );
     expect(unauthorized.exitCode).toBe(2);
     expect(readFileSync(fixture.statePath, "utf8")).toBe(before);
 
-    const result = runCli(
+    const result = await runCli(
       gateRerunRequest(fixture, previousEvidencePath, {
         completed_at: "2000-09-19T01:00:00Z",
       }),
@@ -1307,7 +1312,7 @@ describe("gates and review rounds", () => {
     expect(state.includes("Phase: gates after authorized no-change rerun")).toBe(true);
     expect(state.includes("user-authorized no-change rerun of gate test")).toBe(true);
 
-    const recovered = runCli(
+    const recovered = await runCli(
       gateRerunRequest(fixture, previousEvidencePath, {
         completed_at: "2000-09-19T01:00:00Z",
       }),
@@ -1317,11 +1322,11 @@ describe("gates and review rounds", () => {
     expect(readFileSync(fixture.statePath, "utf8")).toBe(state);
   });
 
-  it("rejects a no-change gate rerun from a dirty worktree", () => {
-    const dirty = failedGateFixture();
+  it("rejects a no-change gate rerun from a dirty worktree", async () => {
+    const dirty = await failedGateFixture();
     writeFileSync(join(dirty.fixture.worktreePath, "untracked.txt"), "dirty\n");
 
-    const result = runCli(gateRerunRequest(dirty.fixture, dirty.previousEvidencePath));
+    const result = await runCli(gateRerunRequest(dirty.fixture, dirty.previousEvidencePath));
 
     expect(result.exitCode).toBe(1);
     expect(result.stdout).toMatchObject({
@@ -1329,8 +1334,8 @@ describe("gates and review rounds", () => {
     });
   });
 
-  it("rejects a no-change gate rerun after HEAD changes", () => {
-    const changed = failedGateFixture();
+  it("rejects a no-change gate rerun after HEAD changes", async () => {
+    const changed = await failedGateFixture();
     writeFileSync(join(changed.fixture.worktreePath, "later.txt"), "later\n");
     expect(spawnGit(["add", "later.txt"], { cwd: changed.fixture.worktreePath }).exitCode).toBe(0);
     expect(
@@ -1340,7 +1345,7 @@ describe("gates and review rounds", () => {
       ).exitCode,
     ).toBe(0);
 
-    const result = runCli(gateRerunRequest(changed.fixture, changed.previousEvidencePath));
+    const result = await runCli(gateRerunRequest(changed.fixture, changed.previousEvidencePath));
 
     expect(result.exitCode).toBe(1);
     expect(result.stdout).toMatchObject({
@@ -1348,10 +1353,10 @@ describe("gates and review rounds", () => {
     });
   });
 
-  it("rejects a no-change gate rerun with mismatched prior evidence", () => {
-    const mismatched = failedGateFixture();
+  it("rejects a no-change gate rerun with mismatched prior evidence", async () => {
+    const mismatched = await failedGateFixture();
 
-    const result = runCli(
+    const result = await runCli(
       gateRerunRequest(mismatched.fixture, mismatched.previousEvidencePath, { name: "format" }),
     );
 
@@ -1361,38 +1366,44 @@ describe("gates and review rounds", () => {
     });
   });
 
-  it("applies bounded retries only to gate infrastructure failures", () => {
+  it("applies bounded retries only to gate infrastructure failures", async () => {
     const fixture = makeFixture("pi");
-    preparePolicy(fixture);
-    activateFixture(fixture, "pi");
+    await preparePolicy(fixture);
+    await activateFixture(fixture, "pi");
 
-    expect(runCli(gateRecordRequest(fixture, "infrastructure_failed", 1)).stdout).toMatchObject({
+    expect(
+      (await runCli(gateRecordRequest(fixture, "infrastructure_failed", 1))).stdout,
+    ).toMatchObject({
       result: { action: "retry", retry_delay_seconds: 1, next_attempt: 2 },
     });
-    expect(runCli(gateRecordRequest(fixture, "infrastructure_failed", 3)).stdout).toMatchObject({
+    expect(
+      (await runCli(gateRecordRequest(fixture, "infrastructure_failed", 3))).stdout,
+    ).toMatchObject({
       result: { action: "retry", retry_delay_seconds: 4, next_attempt: 4 },
     });
-    expect(runCli(gateRecordRequest(fixture, "infrastructure_failed", 4)).stdout).toMatchObject({
+    expect(
+      (await runCli(gateRecordRequest(fixture, "infrastructure_failed", 4))).stdout,
+    ).toMatchObject({
       result: { action: "blocked", retry_delay_seconds: null, next_attempt: null },
     });
   });
 
-  it("consolidates every actionable finding into one Pi fallback fix request", () => {
+  it("consolidates every actionable finding into one Pi fallback fix request", async () => {
     const fixture = makeFixture("pi");
-    preparePolicy(fixture);
-    activateFixture(fixture, "pi");
+    await preparePolicy(fixture);
+    await activateFixture(fixture, "pi");
     const standards = reviewLaunchRequest(fixture, "standards");
     const spec = reviewLaunchRequest(fixture, "spec");
-    expect(runCli(standards).exitCode).toBe(0);
-    expect(runCli(spec).exitCode).toBe(0);
-    expect(recordReview(fixture, standards, failingReport("Standards")).exitCode).toBe(0);
+    expect((await runCli(standards)).exitCode).toBe(0);
+    expect((await runCli(spec)).exitCode).toBe(0);
+    expect((await recordReview(fixture, standards, failingReport("Standards"))).exitCode).toBe(0);
     expect(
-      recordReview(fixture, spec, failingReport("Spec"), "2026-09-19T01:01:00Z").exitCode,
+      (await recordReview(fixture, spec, failingReport("Spec"), "2026-09-19T01:01:00Z")).exitCode,
     ).toBe(0);
     const selfReviewPath = join(fixture.runPath, "reviews", "06-round-0-self-review.md");
     const fixRequestPath = join(fixture.runPath, "briefs", "fixes-06-round-0.md");
 
-    const result = runCli({
+    const result = await runCli({
       schema_version: 1,
       operation: "review.round.finalize",
       input: {
@@ -1433,21 +1444,21 @@ describe("gates and review rounds", () => {
     expect(readFileSync(selfReviewPath, "utf8")).toContain("## Standards");
   });
 
-  it("accepts a clean Claude self-review round and retains both reports", () => {
+  it("accepts a clean Claude self-review round and retains both reports", async () => {
     const fixture = makeFixture("claude");
-    preparePolicy(fixture);
-    activateFixture(fixture, "claude");
+    await preparePolicy(fixture);
+    await activateFixture(fixture, "claude");
     const standards = reviewLaunchRequest(fixture, "standards");
     const spec = reviewLaunchRequest(fixture, "spec");
-    expect(runCli(standards).exitCode).toBe(0);
-    expect(runCli(spec).exitCode).toBe(0);
-    expect(recordReview(fixture, standards, passingReport("Standards")).exitCode).toBe(0);
+    expect((await runCli(standards)).exitCode).toBe(0);
+    expect((await runCli(spec)).exitCode).toBe(0);
+    expect((await recordReview(fixture, standards, passingReport("Standards"))).exitCode).toBe(0);
     expect(
-      recordReview(fixture, spec, passingReport("Spec"), "2026-09-19T01:01:00Z").exitCode,
+      (await recordReview(fixture, spec, passingReport("Spec"), "2026-09-19T01:01:00Z")).exitCode,
     ).toBe(0);
     const selfReviewPath = join(fixture.runPath, "reviews", "06-round-0-self-review.md");
 
-    const result = runCli({
+    const result = await runCli({
       schema_version: 1,
       operation: "review.round.finalize",
       input: {
@@ -1478,10 +1489,10 @@ describe("gates and review rounds", () => {
     expect(readFileSync(spec.input.report_path, "utf8")).toContain("PASS");
   });
 
-  it("rejects accepted review evidence after a failed gate changes finalization phase", () => {
+  it("rejects accepted review evidence after a failed gate changes finalization phase", async () => {
     const fixture = makeFixture("pi");
-    preparePolicy(fixture);
-    activateFixture(fixture, "pi");
+    await preparePolicy(fixture);
+    await activateFixture(fixture, "pi");
     const head = spawnGit(["rev-parse", "HEAD"], { cwd: fixture.worktreePath }).stdout.trim();
     const finalization = {
       ticket: "06",
@@ -1508,18 +1519,18 @@ describe("gates and review rounds", () => {
         `## Serialized finalization\n\n\`\`\`json\n${JSON.stringify(finalization, null, 2)}\n\`\`\`\n\n## Decisions`,
       ),
     );
-    const cycleZeroGates = recordPassingGates(fixture, 0, 2, "-cycle-zero");
+    const cycleZeroGates = await recordPassingGates(fixture, 0, 2, "-cycle-zero");
     const standards = reviewLaunchRequest(fixture, "standards");
     standards.input.gate_evidence_paths = cycleZeroGates;
     const spec = reviewLaunchRequest(fixture, "spec");
     spec.input.gate_evidence_paths = cycleZeroGates;
-    expect(runCli(standards).exitCode).toBe(0);
-    expect(runCli(spec).exitCode).toBe(0);
-    expect(recordReview(fixture, standards, passingReport("Standards")).exitCode).toBe(0);
-    expect(recordReview(fixture, spec, passingReport("Spec")).exitCode).toBe(0);
-    expect(runCli(gateRecordRequest(fixture, "failed", 2)).exitCode).toBe(0);
+    expect((await runCli(standards)).exitCode).toBe(0);
+    expect((await runCli(spec)).exitCode).toBe(0);
+    expect((await recordReview(fixture, standards, passingReport("Standards"))).exitCode).toBe(0);
+    expect((await recordReview(fixture, spec, passingReport("Spec"))).exitCode).toBe(0);
+    expect((await runCli(gateRecordRequest(fixture, "failed", 2))).exitCode).toBe(0);
 
-    const result = runCli({
+    const result = await runCli({
       schema_version: 1,
       operation: "review.round.finalize",
       input: {
@@ -1548,19 +1559,19 @@ describe("gates and review rounds", () => {
     expect(readFileSync(fixture.statePath, "utf8")).toContain('"phase": "fixing"');
   });
 
-  it("keeps remediation authorized after the third failed fix round", () => {
+  it("keeps remediation authorized after the third failed fix round", async () => {
     const fixture = makeFixture("pi");
-    preparePolicy(fixture);
-    activateFixture(fixture, "pi");
-    recordPassingGates(fixture, 3);
+    await preparePolicy(fixture);
+    await activateFixture(fixture, "pi");
+    await recordPassingGates(fixture, 3);
     const standards = reviewLaunchRequest(fixture, "standards", 1, 3);
     const spec = reviewLaunchRequest(fixture, "spec", 1, 3);
-    expect(runCli(standards).exitCode).toBe(0);
-    expect(runCli(spec).exitCode).toBe(0);
-    expect(recordReview(fixture, standards, failingReport("Standards")).exitCode).toBe(0);
-    expect(recordReview(fixture, spec, passingReport("Spec")).exitCode).toBe(0);
+    expect((await runCli(standards)).exitCode).toBe(0);
+    expect((await runCli(spec)).exitCode).toBe(0);
+    expect((await recordReview(fixture, standards, failingReport("Standards"))).exitCode).toBe(0);
+    expect((await recordReview(fixture, spec, passingReport("Spec"))).exitCode).toBe(0);
 
-    const result = runCli({
+    const result = await runCli({
       schema_version: 1,
       operation: "review.round.finalize",
       input: {
@@ -1592,8 +1603,8 @@ describe("gates and review rounds", () => {
     expect(state.includes("blocked, awaiting escalation role")).toBe(false);
   });
 
-  it("authorizes and idempotently recovers continuation with the existing ticket role", () => {
-    const { fixture, fixRequestPath } = legacyEscalationFixture("pi");
+  it("authorizes and idempotently recovers continuation with the existing ticket role", async () => {
+    const { fixture, fixRequestPath } = await legacyEscalationFixture("pi");
     const request = escalationRequest(fixture, fixRequestPath, "continue-existing", {
       harness: "pi",
       model: "openai/test",
@@ -1601,7 +1612,7 @@ describe("gates and review rounds", () => {
     });
     const liveEnv = { ...HERDR_ENV, HERDR_TEST_LIVE_PANES: '["workspace:p6"]' };
 
-    const result = runCli(request, liveEnv);
+    const result = await runCli(request, liveEnv);
 
     expect(result.exitCode).toBe(0);
     expect(result.stdout).toMatchObject({
@@ -1622,21 +1633,21 @@ describe("gates and review rounds", () => {
     expect(state).toContain("Phase: escalation fixes authorized, round 4");
     expect(state).toContain("user-authorized review escalation after round 3");
 
-    const recovered = runCli(request, liveEnv);
+    const recovered = await runCli(request, liveEnv);
     expect(recovered.exitCode).toBe(0);
     expect(recovered.stdout).toMatchObject({ result: { recovered: true } });
     expect(readFileSync(fixture.statePath, "utf8")).toBe(state);
   });
 
-  it("closes a superseded runtime before recording an idempotent replacement role", () => {
-    const { fixture, fixRequestPath } = legacyEscalationFixture("pi");
+  it("closes a superseded runtime before recording an idempotent replacement role", async () => {
+    const { fixture, fixRequestPath } = await legacyEscalationFixture("pi");
     const request = escalationRequest(fixture, fixRequestPath, "replace-implementor", {
       harness: "claude",
       model: "opus",
       effort: "high",
     });
 
-    const close = runCli(request, {
+    const close = await runCli(request, {
       ...HERDR_ENV,
       HERDR_TEST_LIVE_PANES: '["workspace:p6"]',
     });
@@ -1651,7 +1662,7 @@ describe("gates and review rounds", () => {
     const blockedState = readFileSync(fixture.statePath, "utf8");
     expect(blockedState).toContain("Phase: blocked, awaiting escalation role");
 
-    const authorized = runCli(request);
+    const authorized = await runCli(request);
     expect(authorized.exitCode).toBe(0);
     expect(authorized.stdout).toMatchObject({
       result: {
@@ -1669,7 +1680,7 @@ describe("gates and review rounds", () => {
     expect(state).toContain("escalation superseded runtime");
     expect(state).toContain('"artifact":"' + fixture.worktreePath + '/launch-06.json"');
 
-    const recovered = runCli(request);
+    const recovered = await runCli(request);
     expect(recovered.exitCode).toBe(0);
     expect(recovered.stdout).toMatchObject({
       result: { recovered: true, action: "prepare-replacement" },
@@ -1677,7 +1688,7 @@ describe("gates and review rounds", () => {
     expect(readFileSync(fixture.statePath, "utf8")).toBe(state);
   });
 
-  it("rejects escalation without explicit user authority or exhausted review state", () => {
+  it("rejects escalation without explicit user authority or exhausted review state", async () => {
     const fixture = makeFixture("pi", true);
     const fixRequestPath = join(fixture.runPath, "briefs", "fixes-06-round-3.md");
     writeFileSync(fixRequestPath, "# Fix request\n");
@@ -1688,11 +1699,11 @@ describe("gates and review rounds", () => {
     });
     unauthorized.input.user_authorized = false;
 
-    const rejectedAuthority = runCli(unauthorized);
+    const rejectedAuthority = await runCli(unauthorized);
     expect(rejectedAuthority.exitCode).toBe(2);
     expect(rejectedAuthority.stdout).toMatchObject({ errors: [{ code: "request.invalid" }] });
 
-    const rejectedState = runCli(
+    const rejectedState = await runCli(
       escalationRequest(fixture, fixRequestPath, "continue-existing", {
         harness: "pi",
         model: "openai/test",
@@ -1706,9 +1717,9 @@ describe("gates and review rounds", () => {
     });
   });
 
-  it("enforces continuation and replacement role selection", () => {
-    const continuation = legacyEscalationFixture("pi");
-    const wrongContinuation = runCli(
+  it("enforces continuation and replacement role selection", async () => {
+    const continuation = await legacyEscalationFixture("pi");
+    const wrongContinuation = await runCli(
       escalationRequest(continuation.fixture, continuation.fixRequestPath, "continue-existing", {
         harness: "claude",
         model: "opus",
@@ -1721,8 +1732,8 @@ describe("gates and review rounds", () => {
       errors: [{ code: "review.escalation_continue_role_mismatch" }],
     });
 
-    const replacement = legacyEscalationFixture("pi");
-    const unchangedReplacement = runCli(
+    const replacement = await legacyEscalationFixture("pi");
+    const unchangedReplacement = await runCli(
       escalationRequest(replacement.fixture, replacement.fixRequestPath, "replace-implementor", {
         harness: "pi",
         model: "openai/test",
