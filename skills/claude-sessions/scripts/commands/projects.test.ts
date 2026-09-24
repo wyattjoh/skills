@@ -9,6 +9,8 @@ import { sync } from "../lib/ingest.ts";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const PROJECT_IDENTITY = resolveProjectIdentity(".")!;
+// The last two path segments of the checkout, e.g. "wyattjoh/skills".
+const PROJECT_SEARCH = PROJECT_IDENTITY.split("/").slice(-2).join("/");
 const CLI = join(HERE, "..", "cli.ts");
 const FIXTURES_ROOT = join(HERE, "..", "testdata", "corpus");
 
@@ -104,8 +106,16 @@ describe("projects command", () => {
   });
 
   it("matches search against the canonical project root", async () => {
-    const lower = await runCli(["projects", "--no-sync", "--search=wyattjoh/skills"]);
-    const upper = await runCli(["projects", "--no-sync", "--search=WYATTJOH/SKILLS"]);
+    const lower = await runCli([
+      "projects",
+      "--no-sync",
+      `--search=${PROJECT_SEARCH.toLowerCase()}`,
+    ]);
+    const upper = await runCli([
+      "projects",
+      "--no-sync",
+      `--search=${PROJECT_SEARCH.toUpperCase()}`,
+    ]);
 
     expect(lower.code).toBe(0);
     expect(lower.stderr).toBe("");

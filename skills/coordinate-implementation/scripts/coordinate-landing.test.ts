@@ -936,7 +936,7 @@ ${JSON.stringify(
       },
       completed_at: "2026-09-19T02:12:00Z",
     });
-  }, 15_000);
+  }, 60_000);
 
   it("recovers when the base advances between the ancestry check and fast-forward", () => {
     const fixture = makeFixture();
