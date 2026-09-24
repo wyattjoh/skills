@@ -107,7 +107,7 @@ Scaffold the extension with Raycast's built-in **Create Extension** command
 - Parent folder to create the extension in
 
 It scaffolds the project locally; from there, `cd` into the extension
-directory and run `npm install`. Requires Node.js 22.14 or higher and npm 7
+directory and run `npm install`. Requires Node.js 22.22.2 or higher (the `@raycast/api` CLI minimum since 1.104.13) and npm 7
 or higher.
 (Source: https://developers.raycast.com/basics/create-your-first-extension)
 

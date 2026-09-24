@@ -11,6 +11,7 @@ In `release-please-config.json`:
   "packages": {
     ".": {
       "release-type": "node",
+      "versioning": "prerelease",
       "prerelease": true,
       "prerelease-type": "alpha"
     }
@@ -18,7 +19,7 @@ In `release-please-config.json`:
 }
 ```
 
-With `prerelease: true`, release-please produces versions like `1.0.0-alpha.1`, `1.0.0-alpha.2`, etc.
+With `"versioning": "prerelease"` plus `prerelease: true`, release-please produces prerelease versions (for example `1.2.1` to `1.3.0-alpha`, then incrementing the prerelease number) and marks the GitHub releases as prereleases. `prerelease: true` alone only marks GitHub releases as prereleases, and `prerelease-type` only takes effect with the `prerelease` versioning strategy ([customizing.md](https://github.com/googleapis/release-please/blob/main/docs/customizing.md)).
 
 `prerelease-type` values: `alpha`, `beta`, `rc`, or any custom string. The identifier appears in the version string.
 
@@ -51,6 +52,7 @@ With a parallel config file:
   "packages": {
     ".": {
       "release-type": "node",
+      "versioning": "prerelease",
       "prerelease": true,
       "prerelease-type": "next"
     }

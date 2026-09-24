@@ -93,9 +93,12 @@ Oxlint exits 0 on warnings. If the repository's policy is that warnings block a
 commit, add `--deny-warnings` or `--max-warnings 0`. Without one of those, a
 warning-level violation passes the hook and then fails a stricter CI job.
 
-## No type-aware rules
+## Type-aware rules are opt-in and not for pre-commit
 
-Oxlint analyses files individually and has no type information, so it does not replace
+By default Oxlint analyses files individually without type information. Type-aware
+rules exist behind `--type-aware` (which requires the `oxlint-tsgolint` package) and
+an experimental `--type-check` flag, but both build a whole TypeScript program, so
+they belong on pre-push or in CI, not pre-commit. Oxlint does not replace
 `tsc --noEmit`. Type checking cannot be scoped to staged files at all, because types
 cross file boundaries: a staged change can break a file that was not staged.
 

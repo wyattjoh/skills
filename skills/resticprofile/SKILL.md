@@ -181,7 +181,7 @@ Find the entry that matches the symptom.
 4. **Healthchecks.io shows no pings.** Either the run is failing before the post hook or the URL changed. The current UUIDs live in `profiles.yaml` under `send-before` / `send-after` / `send-after-fail`. Curl one manually with `-I` to confirm reachability.
 5. **Slow or huge backup.** Compare `status.json` to the previous run; a large `files_new` count usually points to a new directory that should be excluded. Add it under the profile's `backup.exclude:` (e.g. `<profile>.backup.exclude:`) and rerun `resticprofile show` to confirm.
 6. **Profile won't parse.** Run `resticprofile show` to get the YAML/template error with line numbers. Round-trip the file through `python -c "import yaml,sys;yaml.safe_load(open('profiles.yaml'))"` for a YAML-only sanity check.
-7. **Restic version mismatch.** `resticprofile version --verbose` prints both the resticprofile and restic versions. Upgrade with `brew upgrade resticprofile restic` if either is stale.
+7. **Restic version mismatch.** `resticprofile version --verbose` prints resticprofile build details (version, commit, Go version, OS, arch), not the restic version. The detected restic version appears as a `using restic <version>` debug line in `resticprofile -v --dry-run snapshots`. Upgrade with `brew upgrade resticprofile restic` if either is stale.
 
 ## Editing Etiquette
 

@@ -25,7 +25,8 @@ check state) and `bucket` (gh's own categorization of `state`) instead:
 
 ## Filter for Triage
 
-Keep checks where `bucket` is `fail` or `cancel`.
+Keep checks where `bucket` is `fail` or `cancel`, plus any check whose `state` is
+`STARTUP_FAILURE` (gh buckets that state as `pending`; see Bucketing Heuristics).
 
 `pass` and `skipping` are not failures. Anything still `bucket == "pending"` is not
 actionable yet, but its count is reported in the Phase 9 terminal summary so the user
@@ -67,15 +68,29 @@ investigation in Phase 2b, not the `bucket`/`state` value alone, but each raw
 `state` has a default leaning (`bucket` alone is too coarse to distinguish these —
 use `state` for this table):
 
-| State (`bucket`)           | Default leaning                                                               | Rationale                                                                                                                                                                                      |
-| -------------------------- | ----------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `FAILURE` (`fail`)         | `CI-FIX`                                                                      | Code is broken; the log usually points at the failing line. Override to `CI-FLAKE` only if there is concrete evidence of flakiness (random network, retried test, timing-dependent assertion). |
-| `TIMED_OUT` (`fail`)       | `CI-FIX` if a slow-loop / infinite-await is in the diff, otherwise `CI-FLAKE` | Distinguish "we made it slow" from "the runner was overloaded" by checking whether the timeout scope crosses code added on this branch.                                                        |
-| `CANCELLED` (`cancel`)     | `CI-SKIP`                                                                     | Most often auto-cancelled by a subsequent push or by the user. Only escalate to `CI-INFRA` if the cancellation came from a runner crash (visible in the log preamble).                         |
-| `ACTION_REQUIRED` (`fail`) | `CI-INFRA`                                                                    | Manual approval gate (deploy environment, third-party permission). Not a code fix; surface for user to handle.                                                                                 |
-| `STARTUP_FAILURE` (`fail`) | `CI-INFRA`                                                                    | Runner crashed before workflow steps ran. No code change available.                                                                                                                            |
+| State (`bucket`)                          | Default leaning                                                               | Rationale                                                                                                                                                                                      |
+| ----------------------------------------- | ----------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `FAILURE` (`fail`)                        | `CI-FIX`                                                                      | Code is broken; the log usually points at the failing line. Override to `CI-FLAKE` only if there is concrete evidence of flakiness (random network, retried test, timing-dependent assertion). |
+| `TIMED_OUT` (`fail`)                      | `CI-FIX` if a slow-loop / infinite-await is in the diff, otherwise `CI-FLAKE` | Distinguish "we made it slow" from "the runner was overloaded" by checking whether the timeout scope crosses code added on this branch.                                                        |
+| `CANCELLED` (`cancel`)                    | `CI-SKIP`                                                                     | Most often auto-cancelled by a subsequent push or by the user. Only escalate to `CI-INFRA` if the cancellation came from a runner crash (visible in the log preamble).                         |
+| `ACTION_REQUIRED` (`fail`)                | `CI-INFRA`                                                                    | Manual approval gate (deploy environment, third-party permission). Not a code fix; surface for user to handle.                                                                                 |
+| `STARTUP_FAILURE` (`pending`, not `fail`) | `CI-INFRA`                                                                    | Runner crashed before workflow steps ran. No code change available.                                                                                                                            |
 
 Override the default leaning when the log evidence is unambiguous.
+
+**`STARTUP_FAILURE` needs a manual look.** Verified against `gh`'s own source
+(`pkg/cmd/pr/checks/aggregate.go` in `cli/cli`, trunk as of 2026-09-21): the
+bucket-assignment switch has explicit cases for `SUCCESS`, `SKIPPED`/`NEUTRAL`,
+`ERROR`/`FAILURE`/`TIMED_OUT`/`ACTION_REQUIRED`, and `CANCELLED`, but no case
+for `STARTUP_FAILURE`. It falls through to the default branch, which sets
+`bucket = "pending"`. Phase 1's filter (`bucket == "fail" or "cancel"`) will
+therefore silently exclude a `STARTUP_FAILURE` check rather than surfacing it
+as `CI-INFRA`. If the reported pending count looks inconsistent with what CI
+should be doing (e.g., a check that never moved past pending while others on
+the same commit finished), fetch it individually
+(`gh api repos/{owner}/{repo}/commits/{sha}/check-runs`) or open the check's
+`link`, confirm its raw `conclusion` is `startup_failure`, and triage it as
+`CI-INFRA` by hand.
 
 ### Flake signals worth recognizing
 

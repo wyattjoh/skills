@@ -393,8 +393,8 @@ export default function Command() {
 
 ## AI Extensions
 
-`tools` is a **top-level manifest array**, separate from `ai` (which is
-reserved for `instructions`/`evals`, optionally moved to a root `ai.yaml`).
+`tools` is a **top-level manifest array**, separate from `ai` (which holds `instructions`, `evals`, and, since API 2.5.0,
+`skills`, `mcp`, and `modelProvider`; optionally moved to a root `ai.yaml`).
 Each tool entry needs `name` (required — maps implicitly to
 `src/tools/<name>.ts`, no `file` property), `title` (required), `description`
 (required), and an optional `icon`:

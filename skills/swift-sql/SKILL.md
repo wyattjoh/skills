@@ -10,16 +10,16 @@ Comprehensive patterns for swift-structured-queries, sqlite-data, and GRDB.swift
 
 ## Quick Decision: DSL vs #sql Macro
 
-| Use Case                            | Approach                   |
-| ----------------------------------- | -------------------------- |
-| Simple WHERE, ORDER BY              | DSL (`.where`, `.order`)   |
-| JOINs                               | DSL (`.join`, `.leftJoin`) |
-| Basic aggregates                    | DSL (`.count()`, `.sum()`) |
-| Aggregates with FILTER              | DSL (`.count(filter:)`)    |
-| Multi-column SELECT with aggregates | `@Selection` macro + DSL   |
-| Window functions (ROW_NUMBER, etc.) | `#sql` macro               |
-| CTEs (WITH clauses)                 | `#sql` macro               |
-| Complex subqueries                  | `#sql` macro               |
+| Use Case                            | Approach                    |
+| ----------------------------------- | --------------------------- |
+| Simple WHERE, ORDER BY              | DSL (`.where`, `.order`)    |
+| JOINs                               | DSL (`.join`, `.leftJoin`)  |
+| Basic aggregates                    | DSL (`.count()`, `.sum()`)  |
+| Aggregates with FILTER              | DSL (`.count(filter:)`)     |
+| Multi-column SELECT with aggregates | `@Selection` macro + DSL    |
+| Window functions (ROW_NUMBER, etc.) | `#sql` macro                |
+| CTEs (WITH clauses)                 | DSL (`With` + `@Selection`) |
+| Complex subqueries                  | `#sql` macro                |
 
 **Rule of thumb:** Always prefer DSL for type safety. Use `#sql` only when DSL cannot express the query.
 
@@ -135,7 +135,8 @@ let stats = try Medication
 
 ### When DSL Falls Short
 
-Use `#sql` for window functions, CTEs, or complex subqueries that the DSL cannot express.
+Use `#sql` for window functions or complex subqueries that the DSL cannot express. CTEs,
+including recursive ones, can be built with the DSL's `With` statement and `@Selection` types.
 
 ### QueryRepresentable for Custom Types
 

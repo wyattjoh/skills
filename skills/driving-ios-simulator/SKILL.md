@@ -124,11 +124,11 @@ These apply to most apps and are worth checking for the one you're driving:
 
 ## Setup notes (one-time)
 
-- Install the tooling: `brew tap facebook/fb && brew install idb-companion` (not in
-  homebrew-core, the tap is required) and `pip3 install fb-idb` (requires Python 3.10+,
-  per idb's official README).
-  This puts `idb` on your PATH (commonly `~/.local/bin/idb`) and `idb_companion` in
-  Homebrew's bin. The scripts prepend `~/.local/bin` to `PATH` so `idb` resolves
+- Install the tooling: `brew install facebook/fb/idb` (not in homebrew-core); this one
+  formula installs both the `idb` client and `idb_companion`, per
+  [idb's official README](https://github.com/facebook/idb#quick-start). The client
+  can alternatively come from `pip3 install fb-idb` (requires Python 3.10+), which puts
+  `idb` at `~/.local/bin/idb`. The scripts prepend `~/.local/bin` to `PATH` so `idb` resolves
   regardless of shell.
 - A booted simulator and an installed build of the target app must already exist. To
   build/install, use the project's Xcode build commands, then

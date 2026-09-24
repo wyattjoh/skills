@@ -95,7 +95,8 @@ instructions: |
 
 **`tools` is a top-level manifest array**, not nested under `ai` — see
 [Manifest Configuration](#manifest-configuration) below. An external
-`ai.yaml` file holds only `instructions` and `evals`:
+`ai.yaml` file holds `instructions` and `evals` (plus `skills`, `mcp`, and
+`modelProvider` since API 2.5.0):
 
 ```json
 {

@@ -41,7 +41,7 @@ name: my-skill-name
 
 - **Type:** `string`
 - **Required:** No (strongly recommended)
-- **Default:** First paragraph of the skill's markdown body
+- **Default:** First non-empty line of the skill's markdown body
 
 What the skill does and when to use it. Claude uses this to decide when to
 auto-load the skill. Maximum 1024 characters. Cannot contain XML tags. Write in
@@ -261,10 +261,11 @@ effort: high
 
 Set to `fork` to run the skill in an isolated sub-agent context with its own
 conversation history. The skill content becomes the prompt that drives the
-sub-agent. The sub-agent will not have access to the main conversation history
-or CLAUDE.md, except when the agent is `Explore` or `Plan`, which always skip
-CLAUDE.md. Only makes sense for skills with explicit task instructions, not
-passive reference content.
+sub-agent. The sub-agent does not have access to the main conversation
+history, but it does receive the project's CLAUDE.md hierarchy like any other
+subagent, except when the agent is `Explore` or `Plan`, which always skip
+CLAUDE.md (and git status). Only makes sense for skills with explicit task
+instructions, not passive reference content.
 
 A forked skill runs in the **background** by default (Claude Code
 v2.1.218+): the invoking turn continues, and the result arrives later. Set

@@ -153,23 +153,28 @@ export default class Greeter extends Cloudflare.Worker<Greeter>()(
 
 ## Command surface
 
-`bun alchemy <command> [file] [options]`. `[file]` defaults to `alchemy.run.ts`
-and must exist. Nearly every command takes `--stage`, `--profile`, `--env-file`,
-and `--yes`.
+`bun alchemy <command> [options]`. The stack file defaults to `alchemy.run.ts`
+and must exist. Pass another with `--config`/`-c <file>`, or positionally as
+`[file]` on `deploy`, `plan`, `destroy`, `dev`, and `unsafe nuke` only. Stack
+commands take `--stage`, `--profile`, and `--env-file`. `--yes`/`-y` exists only
+where a command asks for approval (`deploy`, `destroy`, `unsafe nuke`,
+`provider aws teardown`, `provider cloudflare token`); `plan`, `dev`, `logs`, and
+`drift` reject it. The global `--no-input` disables prompts and the TUI.
 
-| Command                                                     | Purpose                                            | Flags that matter                                            |
-| ----------------------------------------------------------- | -------------------------------------------------- | ------------------------------------------------------------ |
-| `deploy [file]`                                             | plan, approve, apply                               | `--dry-run`, `--force`, `--adopt`, `--yes`                   |
-| `plan [file]`                                               | preview only; same code path as `deploy --dry-run` | `--stage`                                                    |
-| `destroy [file]`                                            | delete this stack and stage in dependency order    | `--dry-run`, `--yes`                                         |
-| `unsafe nuke [file]`                                        | delete everything each provider can `list()`       | `--dry-run`, `--include`, `--exclude`, `--filter`, `--local` |
-| `dev [file]`                                                | hot-reloading loop; implies `--yes` and dev mode   | `--force`                                                    |
-| `tail` / `logs [file]`                                      | stream live logs / fetch past entries              | `--filter <ids>`, `--limit`, `--since`                       |
-| `login [file]`                                              | authenticate every provider in the stack           | `--configure`                                                |
-| `profile show\|clear`                                       | inspect or wipe `~/.alchemy/profiles.json`         | `--profile`                                                  |
-| `state stacks\|stages\|resources\|get\|export\|tree\|clear` | inspect and manage state                           | `--stack`, `--stage`, `--fqn`, `--local`                     |
-| `aws bootstrap`                                             | per-account assets bucket that Lambda needs        | `--region`, `--destroy`                                      |
-| `cloudflare bootstrap\|create-token\|state logs`            | state-store worker, API tokens, its logs           | `--force`, `--all-permissions`                               |
+| Command                                                                | Purpose                                                                                 | Flags that matter                                                              |
+| ---------------------------------------------------------------------- | --------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------ |
+| `deploy [file]`                                                        | plan, approve, apply                                                                    | `--dry-run`, `--force`, `--adopt`, `--yes`                                     |
+| `plan [file]`                                                          | preview only; same code path as `deploy --dry-run`                                      | `--stage`, `--detailed`                                                        |
+| `destroy [file]`                                                       | delete this stack and stage in dependency order                                         | `--dry-run`, `--yes`                                                           |
+| `drift`                                                                | re-observe the cloud and report drift; asks before repairing unless `--repair`          | `--repair` (repairs without asking; there is no `--yes`)                       |
+| `unsafe nuke [file]`                                                   | delete everything each provider's `list()` returns                                      | `--dry-run`, `--include`, `--exclude`, `--filter`, `--local`                   |
+| `dev [file]`                                                           | hot-reloading loop; implies `--yes` and dev mode                                        | `--force`                                                                      |
+| `logs`                                                                 | fetch past log entries, or stream live with `--tail`                                    | `--resource`/`-r <ids>`, `--tail`/`-t`, `--limit`, `--since`                   |
+| `profile [create\|rename\|edit\|refresh\|current\|list\|show\|delete]` | manage credentials in `~/.alchemy/profiles.json`; bare `profile` opens the dashboard    | `--add`, `--reconfigure`, `--remove` (on `edit`)                               |
+| `state [list\|read\|delete]`                                           | inspect and manage state (aliases `ls`/`cat`/`rm`); bare `state` opens the explorer     | `--backend <configured\|local>`, `--recursive`/`-r`                            |
+| `provider check-env`                                                   | CI preflight: verify the stack's provider env vars are set (exits 1 if any are missing) | `--provider`                                                                   |
+| `provider aws bootstrap\|teardown`                                     | per-account assets bucket that Lambda needs                                             | `--aws-profile`, `--region`, `--yes` (teardown only)                           |
+| `provider cloudflare bootstrap\|teardown\|token\|state logs`           | state-store worker, API tokens, its logs                                                | `--force` (bootstrap), `--all-permissions` (token), `--tail`/`-t` (state logs) |
 
 Plan symbols: `+` create, `~` update, `±` replace, `-` delete, `•` no-op, `λ`
 action run, `·` action skip.

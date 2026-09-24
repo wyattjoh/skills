@@ -114,7 +114,9 @@ Other discovery details worth knowing when placing a skill:
 ### Stacked Invocations
 
 Typing several skills in one prompt (`/skill-a /skill-b do XYZ`) loads **all**
-the leading skills, up to 5, not just the first.
+the leading skills (the first plus up to five more), not just the first.
+Expansion stops at the first token that isn't an inline user-invocable skill,
+so a forked skill such as `/code-review` ends the run.
 
 ### Reloading Skills Mid-Session
 
@@ -129,7 +131,7 @@ runs before `SessionStart` hooks finish.
 The `skillOverrides` setting controls a skill's visibility from `settings.json`
 instead of its own frontmatter — useful for skills checked into a shared repo
 you don't want to edit. The `/skills` menu writes it for you (highlight a
-skill, press `Space` to cycle states, `Enter` to save to
+skill, press `Space` or `Enter` to cycle states, `Esc` to save to
 `.claude/settings.local.json`). Each key is a skill name; each value is one of:
 
 | Value                   | Listed to Claude     | In `/` menu |
@@ -206,11 +208,13 @@ Authoring implications:
   doesn't run `!` commands, doesn't attach `@` file references, and doesn't
   substitute `${CLAUDE_PROJECT_DIR}` or `${CLAUDE_SESSION_ID}`. All of those
   reach Claude as literal text. In a cloud session the body behaves normally.
-- Claude Code skips a synced skill whose name collides with any other command,
-  comparing names case-, spacing-, and Unicode-insensitively.
-- To pull synced skills onto your own machine, run once with
-  `CLAUDE_CODE_SYNC_SKILLS=1 claude -p "..."`; they download to
-  `~/.claude/skills/synced/` and load in later interactive sessions.
+- When a synced skill's short name collides with any other command (compared
+  case-, spacing-, and Unicode-insensitively), `/<name>` runs the other command
+  and the synced skill stays reachable as `/anthropic-skills:<name>` (v2.1.269+).
+- Terminal sessions signed in with a claude.ai account sync these skills
+  automatically into `~/.claude/skills/synced/` (v2.1.273+), re-checking about
+  every 10 minutes. Set `CLAUDE_CODE_SYNC_SKILLS=1` to make a `-p` run wait for
+  the download, or `syncClaudeAiSkills: false` to opt out.
 
 ## Description Character Budget
 
@@ -222,8 +226,11 @@ front-load the key use case. The listing always contains every skill **name**;
 when it overflows, Claude Code drops **descriptions**, starting with the skills
 you invoke least, so the ones you use most keep their full text. To diagnose:
 
-1. Run `/doctor` for an estimate of the listing's context cost and its biggest
-   contributors. `--debug` also logs a warning when the listing overflows.
+1. Run `/skill-doctor` (Claude Code v2.1.252+) for a per-skill cost and
+   invocation-count breakdown, so you know which skills to turn off first;
+   `/doctor` also surfaces unused skills against their context cost as part of
+   its broader checkup. `--debug` also logs a warning when the listing
+   overflows.
 2. Check the Skills row in `/context`, which reports the listing size **after**
    the budget is applied, so it matches what the model receives.
 3. Keep the combined `description`/`when_to_use` text concise, and set
@@ -253,9 +260,11 @@ workflows are enabled. To turn them off, use the `disableBundledSkills` setting
 or the `CLAUDE_CODE_DISABLE_BUNDLED_SKILLS` environment variable, either of
 which disables every bundled skill except `/doctor`.
 
-- **`/simplify [focus]`**: Reviews recently changed files for code reuse,
-  quality, and efficiency, then fixes issues. Spawns three parallel review
-  agents. Pass text to focus: `/simplify focus on memory efficiency`
+- **`/simplify [target]`**: Reviews the changed code for cleanup
+  opportunities (reuse, simplification, efficiency, and abstraction level) and
+  applies the fixes. Spawns four parallel review agents. It does not look for
+  correctness bugs; use `/code-review` for that. Pass a path or PR reference to
+  review a specific target.
 - **`/batch <instruction>`**: Orchestrates large-scale changes across a
   codebase. Decomposes work into 5-30 independent units, spawns one agent per
   unit in isolated git worktrees, each opening a PR.

@@ -162,4 +162,4 @@ Tell the user that `git commit --no-verify` bypasses hooks for emergencies and t
   pre-push.
 - [`references/typescript.md`](references/typescript.md) — oxfmt and oxlint: the two
   distinct globs, check-only invocation, default severity and `--deny-warnings`, the
-  absence of type-aware rules, config and ignore resolution, binary resolution.
+  opt-in type-aware rules kept off pre-commit, config and ignore resolution, binary resolution.
