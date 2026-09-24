@@ -45,11 +45,14 @@ Verification:
 - If the repository defines no executable gate, replace this list with:
   > No executable repository gate is defined by the listed instructions or CI;
   > verify the ticket manually against its acceptance criteria.
-- Other workers share this machine. Run every heavy command (<commands the
-  repository instructions classify as heavy>) through the shared lock:
-  `<lock wrapper, e.g. flock <lock path>> <command>`. Wrap only the outermost
-  command. Another worker may hold the lock; wait for it and never delete the
-  lock file.
+- Other workers share this machine. Run every other heavy command (<commands
+  the repository instructions classify as heavy>) by prefixing it with
+  `<lock wrapper argv, e.g. flock /path/to/lock>`. The final gates above
+  already include this wrapper; run them exactly and never wrap them again,
+  because a nested lock on the same file waits forever. Another worker may
+  hold the lock; wait for it and never delete the lock file.
+- If the repository instructions define no shared lock, delete the previous
+  bullet and this one.
 - A Claude implementor completes Matt's `implement` self-review before handing
   off. A Pi implementor completes `## Standards` and `## Spec` in this same
   session; do not require a subagent extension.
