@@ -49,13 +49,14 @@ export const inspectRuntimeClose = (
 ): Effect.Effect<RuntimeCloseInspection, RuntimeCloseError> =>
   Effect.try({
     try: () => {
-      const process = Bun.spawnSync(["herdr", "pane", "get", paneId], {
+      const child = Bun.spawnSync(["herdr", "pane", "get", paneId], {
+        env: process.env,
         stdout: "pipe",
         stderr: "pipe",
       });
-      const stdout = process.stdout.toString().trim();
-      const stderr = process.stderr.toString().trim();
-      if (process.exitCode === 0) {
+      const stdout = child.stdout.toString().trim();
+      const stderr = child.stderr.toString().trim();
+      if (child.exitCode === 0) {
         const response = parseResponse(stdout);
         const result = response?.result;
         const pane =
@@ -85,12 +86,12 @@ export const inspectRuntimeClose = (
         typeof error === "object" && error !== null && !Array.isArray(error)
           ? (error as Record<string, unknown>).code
           : undefined;
-      if (process.exitCode === 1 && code === "pane_not_found") {
+      if (child.exitCode === 1 && code === "pane_not_found") {
         return { runtime_closed: true as const, pane_id: paneId, close: null };
       }
       throw runtimeCloseError(
         "runtime.close_inspection_failed",
-        `Could not inspect Herdr pane \`${paneId}\`: ${stderr || stdout || `exit ${process.exitCode}`}`,
+        `Could not inspect Herdr pane \`${paneId}\`: ${stderr || stdout || `exit ${child.exitCode}`}`,
         "Keep serialized state and the worktree intact, repair Herdr connectivity, then retry.",
       );
     },

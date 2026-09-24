@@ -13,9 +13,8 @@ import { createServer, type Server, type Socket } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { spawnGit } from "./lib/git.ts";
+import { runCliInProcess } from "./test-cli.ts";
 
-const CLI = join(import.meta.dir, "coordinate.ts");
-const decoder = new TextDecoder();
 const servers: Server[] = [];
 
 type CliResult = {
@@ -66,40 +65,16 @@ else process.exit(1);
   };
 };
 
-const runCli = (request: unknown, env: Record<string, string>): CliResult => {
-  const child = Bun.spawnSync([process.execPath, CLI], {
-    env,
-    stdin: Buffer.from(JSON.stringify(request)),
-    stdout: "pipe",
-    stderr: "pipe",
-  });
-  const stdout = decoder.decode(child.stdout);
-  const stderr = decoder.decode(child.stderr);
+const runCli = async (request: unknown, env: Record<string, string>): Promise<CliResult> => {
+  const child = await runCliInProcess(request, env);
   return {
     exitCode: child.exitCode,
-    stdout: JSON.parse(stdout) as Record<string, unknown>,
-    stderr,
+    stdout: JSON.parse(child.stdout) as Record<string, unknown>,
+    stderr: child.stderr,
   };
 };
 
-const runCliAsync = async (request: unknown, env: Record<string, string>): Promise<CliResult> => {
-  const child = Bun.spawn([process.execPath, CLI], {
-    env,
-    stdin: Buffer.from(JSON.stringify(request)),
-    stdout: "pipe",
-    stderr: "pipe",
-  });
-  const [exitCode, stdout, stderr] = await Promise.all([
-    child.exited,
-    new Response(child.stdout).text(),
-    new Response(child.stderr).text(),
-  ]);
-  return {
-    exitCode,
-    stdout: JSON.parse(stdout) as Record<string, unknown>,
-    stderr,
-  };
-};
+const runCliAsync = runCli;
 
 const request = (operation: string, input: Record<string, unknown>) => ({
   schema_version: 1,
@@ -168,7 +143,7 @@ const prepareWorktree = (
   },
   branch = "wyattjoh/ticket-04",
   name = "ticket 04",
-): CliResult =>
+): Promise<CliResult> =>
   runCli(
     request("worktree.prepare", {
       state_path: fixture.statePath,
@@ -261,7 +236,7 @@ describe("worktree and launch documentation contract", () => {
 });
 
 describe("policy-driven worktree preparation", () => {
-  it("uses native Git fallback, persists defaults, and strips inherited Git locations", () => {
+  it("uses native Git fallback, persists defaults, and strips inherited Git locations", async () => {
     const fixture = makeFixture();
     const decoy = join(fixture.root, "decoy");
     mkdirSync(decoy);
@@ -274,7 +249,7 @@ describe("policy-driven worktree preparation", () => {
     const decoyGitDir = spawnGit(["rev-parse", "--git-dir"], { cwd: decoy }).stdout.trim();
     fixture.env.GIT_DIR = join(decoy, decoyGitDir);
 
-    const result = prepareWorktree(fixture, "wyattjoh/ticket-04", "ticket 04's ünicode");
+    const result = await prepareWorktree(fixture, "wyattjoh/ticket-04", "ticket 04's ünicode");
 
     const worktree = join(fixture.worktreeRoot, "ticket 04's ünicode");
     expect(result.exitCode).toBe(0);
@@ -333,7 +308,7 @@ describe("policy-driven worktree preparation", () => {
         .filter((line) => line.startsWith("worktree "))
         .map((line) => realpathSync(line.slice("worktree ".length))),
     ).toEqual([realpathSync(fixture.repository), realpathSync(worktree)]);
-    const recovered = prepareWorktree(fixture, "wyattjoh/ticket-04", "ticket 04's ünicode");
+    const recovered = await prepareWorktree(fixture, "wyattjoh/ticket-04", "ticket 04's ünicode");
     expect((recovered.stdout.result as { worktree: unknown }).worktree).toEqual({
       path: worktree,
       branch: "wyattjoh/ticket-04",
@@ -353,11 +328,11 @@ describe("policy-driven worktree preparation", () => {
     expect(persisted.includes('"fixes": "append"')).toBe(true);
   });
 
-  it("preflights a repository-required tool before state or worktree creation", () => {
+  it("preflights a repository-required tool before state or worktree creation", async () => {
     const root = mkdtempSync(join(tmpdir(), "coordinate-worktree-preflight-"));
     const statePath = join(root, "RESUME.md");
     const worktreePath = join(root, "worktree");
-    const result = runCli(
+    const result = await runCli(
       request("worktree.preflight", {
         policy: {
           instruction_files: ["CLAUDE.md"],
@@ -391,7 +366,7 @@ describe("policy-driven worktree preparation", () => {
     expect(existsSync(worktreePath)).toBe(false);
   });
 
-  it("runs a repository-prescribed worktree tool and fails closed when it is unavailable", () => {
+  it("runs a repository-prescribed worktree tool and fails closed when it is unavailable", async () => {
     const fixture = makeFixture();
     const tool = writeCommand(
       join(fixture.root, "bin"),
@@ -451,7 +426,7 @@ process.exit(result.exitCode);
       commit: { commits: "single", fixes: "amend" },
     };
 
-    const preflight = runCli(request("worktree.preflight", { policy }), fixture.env);
+    const preflight = await runCli(request("worktree.preflight", { policy }), fixture.env);
     expect(preflight.exitCode).toBe(0);
     expect(preflight.stdout.result).toEqual({
       policy: {
@@ -472,7 +447,7 @@ process.exit(result.exitCode);
       required_tool: { name: "repo-worktrees", available: true },
     });
 
-    const created = runCli(
+    const created = await runCli(
       request("worktree.prepare", {
         state_path: fixture.statePath,
         repository_path: fixture.repository,
@@ -499,7 +474,7 @@ process.exit(result.exitCode);
 
     const missingState = join(fixture.root, "MISSING-RESUME.md");
     writeFileSync(missingState, state());
-    const missing = runCli(
+    const missing = await runCli(
       request("worktree.prepare", {
         state_path: missingState,
         repository_path: fixture.repository,
@@ -539,9 +514,9 @@ process.exit(result.exitCode);
 });
 
 describe("safe implementor launch", () => {
-  it("constructs exact Pi argument arrays and records durable runtime provenance", () => {
+  it("constructs exact Pi argument arrays and records durable runtime provenance", async () => {
     const fixture = makeFixture();
-    const prepared = prepareWorktree(fixture);
+    const prepared = await prepareWorktree(fixture);
     expect(prepared.exitCode).toBe(0);
     const worktree = (prepared.stdout.result as { worktree: { path: string } }).worktree.path;
     const implementSkill = join(fixture.root, "skills with spaces", "implement", "SKILL.md");
@@ -550,7 +525,7 @@ describe("safe implementor launch", () => {
     const artifactPath = join(fixture.root, "briefs", "launch-04.json");
     const prompt = "- leading prompt with apostrophe ' and ünicode";
 
-    const result = runCli(
+    const result = await runCli(
       request("implementor.launch.prepare", {
         state_path: fixture.statePath,
         artifact_path: artifactPath,
@@ -644,9 +619,9 @@ describe("safe implementor launch", () => {
     expect(persisted.includes("Retry: 0 of 3")).toBe(true);
   });
 
-  it("rejects artifact symlink escapes without changing state", () => {
+  it("rejects artifact symlink escapes without changing state", async () => {
     const fixture = makeFixture();
-    const prepared = prepareWorktree(fixture);
+    const prepared = await prepareWorktree(fixture);
     expect(prepared.exitCode).toBe(0);
     const worktree = (prepared.stdout.result as { worktree: { path: string } }).worktree.path;
     const implementSkill = join(fixture.root, "implement-symlink", "SKILL.md");
@@ -657,7 +632,7 @@ describe("safe implementor launch", () => {
     const artifactPath = join(fixture.root, "briefs", "launch-04.json");
     const before = readFileSync(fixture.statePath, "utf8");
 
-    const result = runCli(
+    const result = await runCli(
       request("implementor.launch.prepare", {
         state_path: fixture.statePath,
         artifact_path: artifactPath,
@@ -688,15 +663,15 @@ describe("safe implementor launch", () => {
     expect(existsSync(join(outside, "launch-04.json"))).toBe(false);
   });
 
-  it("rejects a role that differs from the persisted Implementor without artifacts or state changes", () => {
+  it("rejects a role that differs from the persisted Implementor without artifacts or state changes", async () => {
     const fixture = makeFixture();
-    const prepared = prepareWorktree(fixture, "wyattjoh/role-mismatch", "role-mismatch");
+    const prepared = await prepareWorktree(fixture, "wyattjoh/role-mismatch", "role-mismatch");
     expect(prepared.exitCode).toBe(0);
     const worktree = (prepared.stdout.result as { worktree: { path: string } }).worktree.path;
     const artifactPath = join(fixture.root, "briefs", "role-mismatch.json");
     const before = readFileSync(fixture.statePath, "utf8");
 
-    const result = runCli(
+    const result = await runCli(
       request("implementor.launch.prepare", {
         state_path: fixture.statePath,
         artifact_path: artifactPath,
@@ -729,9 +704,9 @@ describe("safe implementor launch", () => {
     expect(existsSync(artifactPath)).toBe(false);
   });
 
-  it("launches an explicitly rebound ticket role without changing the run default", () => {
+  it("launches an explicitly rebound ticket role without changing the run default", async () => {
     const fixture = makeFixture();
-    const prepared = prepareWorktree(fixture, "wyattjoh/rebound", "rebound");
+    const prepared = await prepareWorktree(fixture, "wyattjoh/rebound", "rebound");
     expect(prepared.exitCode).toBe(0);
     const worktree = (prepared.stdout.result as { worktree: { path: string } }).worktree.path;
     writeFileSync(
@@ -743,7 +718,7 @@ describe("safe implementor launch", () => {
     );
     const artifactPath = join(fixture.root, "briefs", "launch-rebound.json");
 
-    const result = runCli(
+    const result = await runCli(
       request("implementor.launch.prepare", {
         state_path: fixture.statePath,
         artifact_path: artifactPath,
@@ -772,9 +747,9 @@ describe("safe implementor launch", () => {
     expect(persisted).toContain('Implementor: {"harness":"claude","model":"opus","effort":"high"}');
   });
 
-  it("preserves an identical artifact when malformed state rejects recovery", () => {
+  it("preserves an identical artifact when malformed state rejects recovery", async () => {
     const fixture = makeFixture();
-    const prepared = prepareWorktree(fixture);
+    const prepared = await prepareWorktree(fixture);
     expect(prepared.exitCode).toBe(0);
     const worktree = (prepared.stdout.result as { worktree: { path: string } }).worktree.path;
     const implementSkill = join(fixture.root, "implement-malformed", "SKILL.md");
@@ -796,7 +771,9 @@ describe("safe implementor launch", () => {
       attempt: 1,
       max_attempts: 3,
     };
-    expect(runCli(request("implementor.launch.prepare", input), fixture.env).exitCode).toBe(0);
+    expect((await runCli(request("implementor.launch.prepare", input), fixture.env)).exitCode).toBe(
+      0,
+    );
     const artifact = readFileSync(artifactPath, "utf8");
     const malformed = readFileSync(fixture.statePath, "utf8").replace(
       "| 04 | pi | openai-codex/gpt-5.6-sol | high | 0 | - | working | - |",
@@ -804,7 +781,7 @@ describe("safe implementor launch", () => {
     );
     writeFileSync(fixture.statePath, malformed);
 
-    const result = runCli(request("implementor.launch.prepare", input), fixture.env);
+    const result = await runCli(request("implementor.launch.prepare", input), fixture.env);
 
     expect(result.exitCode).toBe(1);
     expect(result.stdout.errors).toEqual([
@@ -818,9 +795,9 @@ describe("safe implementor launch", () => {
     expect(readFileSync(artifactPath, "utf8")).toBe(artifact);
   });
 
-  it("recovers a structured Claude model containing spaces without changing its role", () => {
+  it("recovers a structured Claude model containing spaces without changing its role", async () => {
     const fixture = makeFixture();
-    const prepared = prepareWorktree(fixture, "wyattjoh/claude", "-leading-name");
+    const prepared = await prepareWorktree(fixture, "wyattjoh/claude", "-leading-name");
     expect(prepared.exitCode).toBe(0);
     const worktree = (prepared.stdout.result as { worktree: { path: string } }).worktree.path;
     const artifactPath = join(fixture.root, "briefs", "launch-04-claude.json");
@@ -848,7 +825,7 @@ describe("safe implementor launch", () => {
       max_attempts: 3,
     };
 
-    const result = runCli(request("implementor.launch.prepare", input), fixture.env);
+    const result = await runCli(request("implementor.launch.prepare", input), fixture.env);
 
     expect(result.exitCode).toBe(0);
     expect((result.stdout.result as { launch: unknown }).launch).toEqual({
@@ -893,14 +870,14 @@ describe("safe implementor launch", () => {
       ),
     ).toBe(true);
 
-    const recovered = runCli(request("implementor.launch.prepare", input), fixture.env);
+    const recovered = await runCli(request("implementor.launch.prepare", input), fixture.env);
     expect(recovered.exitCode).toBe(0);
     expect((recovered.stdout.result as { recovered: boolean }).recovered).toBe(true);
     expect(readFileSync(fixture.statePath, "utf8")).toBe(persisted);
 
     const differentArtifact = join(fixture.root, "briefs", "launch-04-different-role.json");
     const artifactBeforeMismatch = readFileSync(artifactPath, "utf8");
-    const mismatch = runCli(
+    const mismatch = await runCli(
       request("implementor.launch.prepare", {
         ...input,
         artifact_path: differentArtifact,
@@ -923,9 +900,9 @@ describe("safe implementor launch", () => {
     expect(existsSync(differentArtifact)).toBe(false);
   });
 
-  it("recovers a prepared launch and records an exact failure without changing its binding", () => {
+  it("recovers a prepared launch and records an exact failure without changing its binding", async () => {
     const fixture = makeFixture();
-    const prepared = prepareWorktree(fixture);
+    const prepared = await prepareWorktree(fixture);
     expect(prepared.exitCode).toBe(0);
     const worktree = (prepared.stdout.result as { worktree: { path: string } }).worktree.path;
     const implementSkill = join(fixture.root, "implement", "SKILL.md");
@@ -947,10 +924,12 @@ describe("safe implementor launch", () => {
       attempt: 1,
       max_attempts: 3,
     };
-    expect(runCli(request("implementor.launch.prepare", input), fixture.env).exitCode).toBe(0);
+    expect((await runCli(request("implementor.launch.prepare", input), fixture.env)).exitCode).toBe(
+      0,
+    );
 
-    const recovered = runCli(request("implementor.launch.prepare", input), fixture.env);
-    const failed = runCli(
+    const recovered = await runCli(request("implementor.launch.prepare", input), fixture.env);
+    const failed = await runCli(
       request("implementor.launch.record", {
         state_path: fixture.statePath,
         ticket: "04",
@@ -1001,7 +980,7 @@ describe("safe implementor launch", () => {
     writeFileSync(alternateSkill, "---\nname: implement\n---\n");
     const substitutedArtifact = join(fixture.root, "briefs", "launch-04-substituted.json");
     const beforeSubstitution = readFileSync(fixture.statePath, "utf8");
-    const substituted = runCli(
+    const substituted = await runCli(
       request("implementor.launch.prepare", {
         ...input,
         artifact_path: substitutedArtifact,
@@ -1022,7 +1001,7 @@ describe("safe implementor launch", () => {
     expect(readFileSync(fixture.statePath, "utf8")).toBe(beforeSubstitution);
     expect(existsSync(substitutedArtifact)).toBe(false);
 
-    const retry = runCli(
+    const retry = await runCli(
       request("implementor.launch.prepare", {
         ...input,
         artifact_path: join(fixture.root, "briefs", "launch-04-attempt-2.json"),
@@ -1042,7 +1021,7 @@ describe("safe implementor launch", () => {
 
   it("recovers only an authorized exhausted launch with its exact idle Herdr worker", async () => {
     const fixture = makeFixture();
-    const prepared = prepareWorktree(fixture);
+    const prepared = await prepareWorktree(fixture);
     expect(prepared.exitCode).toBe(0);
     const worktree = (prepared.stdout.result as { worktree: { path: string } }).worktree.path;
     const implementSkill = join(fixture.root, "implement-recovery", "SKILL.md");
@@ -1064,37 +1043,43 @@ describe("safe implementor launch", () => {
 
     const exhaustedArtifactPath = join(fixture.root, "briefs", "launch-04-attempt-4.json");
     expect(
-      runCli(
-        request("implementor.launch.prepare", {
-          ...baseInput,
-          artifact_path: exhaustedArtifactPath,
-          attempt: 4,
-        }),
-        fixture.env,
+      (
+        await runCli(
+          request("implementor.launch.prepare", {
+            ...baseInput,
+            artifact_path: exhaustedArtifactPath,
+            attempt: 4,
+          }),
+          fixture.env,
+        )
       ).exitCode,
     ).toBe(0);
     expect(
-      runCli(
-        request("implementor.launch.record", {
-          state_path: fixture.statePath,
-          ticket: "04",
-          attempt: 4,
-          status: "failed",
-          diagnostic: { stage: "start", exit_code: 2, stderr: "agent_name_taken" },
-        }),
-        fixture.env,
+      (
+        await runCli(
+          request("implementor.launch.record", {
+            state_path: fixture.statePath,
+            ticket: "04",
+            attempt: 4,
+            status: "failed",
+            diagnostic: { stage: "start", exit_code: 2, stderr: "agent_name_taken" },
+          }),
+          fixture.env,
+        )
       ).exitCode,
     ).toBe(0);
     expect(
-      runCli(
-        request("infrastructure.retry.record", {
-          state_path: fixture.statePath,
-          ticket: "04",
-          attempt: 4,
-          failure: "launch",
-          diagnostic: "agent_name_taken",
-        }),
-        fixture.env,
+      (
+        await runCli(
+          request("infrastructure.retry.record", {
+            state_path: fixture.statePath,
+            ticket: "04",
+            attempt: 4,
+            failure: "launch",
+            diagnostic: "agent_name_taken",
+          }),
+          fixture.env,
+        )
       ).exitCode,
     ).toBe(0);
 
@@ -1143,7 +1128,7 @@ describe("safe implementor launch", () => {
     };
     const exhausted = readFileSync(fixture.statePath, "utf8");
 
-    const terminalRecord = runCli(
+    const terminalRecord = await runCli(
       request("implementor.launch.record", {
         state_path: fixture.statePath,
         ticket: "04",
@@ -1164,7 +1149,7 @@ describe("safe implementor launch", () => {
     ]);
     expect(readFileSync(fixture.statePath, "utf8")).toBe(exhausted);
 
-    const unauthorized = runCli(
+    const unauthorized = await runCli(
       request("implementor.launch.recover", { ...recoveryInput, user_authorized: false }),
       fixture.env,
     );

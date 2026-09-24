@@ -5,9 +5,8 @@ import { createServer, type Server, type Socket } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { waitAnyWorker } from "./lib/herdr.ts";
+import { runCliInProcess } from "./test-cli.ts";
 
-const CLI = join(import.meta.dir, "coordinate.ts");
-const decoder = new TextDecoder();
 const servers: Server[] = [];
 
 const request = (operation: string, input: Record<string, unknown>) => ({
@@ -16,38 +15,16 @@ const request = (operation: string, input: Record<string, unknown>) => ({
   input,
 });
 
-const runCli = (body: unknown) => {
-  const child = Bun.spawnSync([process.execPath, CLI], {
-    env: process.env,
-    stdin: Buffer.from(JSON.stringify(body)),
-    stdout: "pipe",
-    stderr: "pipe",
-  });
+const runCli = async (body: unknown) => {
+  const child = await runCliInProcess(body);
   return {
     exitCode: child.exitCode,
-    stdout: JSON.parse(decoder.decode(child.stdout)) as Record<string, unknown>,
-    stderr: decoder.decode(child.stderr),
+    stdout: JSON.parse(child.stdout) as Record<string, unknown>,
+    stderr: child.stderr,
   };
 };
 
-const runCliAsync = async (body: unknown) => {
-  const child = Bun.spawn([process.execPath, CLI], {
-    env: process.env,
-    stdin: Buffer.from(JSON.stringify(body)),
-    stdout: "pipe",
-    stderr: "pipe",
-  });
-  const [exitCode, stdout, stderr] = await Promise.all([
-    child.exited,
-    new Response(child.stdout).text(),
-    new Response(child.stderr).text(),
-  ]);
-  return {
-    exitCode,
-    stdout: JSON.parse(stdout) as Record<string, unknown>,
-    stderr,
-  };
-};
+const runCliAsync = runCli;
 
 const ticket = (number: string, dependencies: string[], status = "queued") => ({
   number,
@@ -160,8 +137,8 @@ afterEach(async () => {
 });
 
 describe("bounded dependency scheduling", () => {
-  it("fills a wide ready frontier deterministically while reviewers use no capacity", () => {
-    const result = runCli(
+  it("fills a wide ready frontier deterministically while reviewers use no capacity", async () => {
+    const result = await runCli(
       request("scheduler.plan", {
         mode: "parallel",
         max_implementors: 2,
@@ -181,8 +158,8 @@ describe("bounded dependency scheduling", () => {
     });
   });
 
-  it("refills newly available capacity after a landing without duplicate launches", () => {
-    const result = runCli(
+  it("refills newly available capacity after a landing without duplicate launches", async () => {
+    const result = await runCli(
       request("scheduler.plan", {
         mode: "parallel",
         max_implementors: 2,
@@ -206,11 +183,11 @@ describe("bounded dependency scheduling", () => {
     });
   });
 
-  it("drains after a capacity reduction and refills after an increase", () => {
+  it("drains after a capacity reduction and refills after an increase", async () => {
     const tickets = [ticket("01", [], "working"), ticket("02", [], "working"), ticket("03", [])];
     const runtimes = [runtime("worker-01", "01"), runtime("worker-02", "02")];
 
-    const reduced = runCli(
+    const reduced = await runCli(
       request("scheduler.plan", {
         mode: "parallel",
         max_implementors: 1,
@@ -218,7 +195,7 @@ describe("bounded dependency scheduling", () => {
         runtimes,
       }),
     );
-    const increased = runCli(
+    const increased = await runCli(
       request("scheduler.plan", {
         mode: "parallel",
         max_implementors: 3,
@@ -245,8 +222,8 @@ describe("bounded dependency scheduling", () => {
     });
   });
 
-  it("keeps closed work terminal without treating it as a landed dependency", () => {
-    const result = runCli(
+  it("keeps closed work terminal without treating it as a landed dependency", async () => {
+    const result = await runCli(
       request("scheduler.plan", {
         mode: "parallel",
         max_implementors: 2,
@@ -265,8 +242,8 @@ describe("bounded dependency scheduling", () => {
     });
   });
 
-  it("treats serial mode as one implementor and requires a positive parallel cap", () => {
-    const serial = runCli(
+  it("treats serial mode as one implementor and requires a positive parallel cap", async () => {
+    const serial = await runCli(
       request("scheduler.plan", {
         mode: "serial",
         max_implementors: 1,
@@ -274,7 +251,7 @@ describe("bounded dependency scheduling", () => {
         runtimes: [],
       }),
     );
-    const missingCap = runCli(
+    const missingCap = await runCli(
       request("scheduler.plan", {
         mode: "parallel",
         max_implementors: null,
@@ -304,7 +281,7 @@ describe("bounded dependency scheduling", () => {
 });
 
 describe("wait-any request validation", () => {
-  it("rejects duplicate runtime, session, and pane identities with exact errors", () => {
+  it("rejects duplicate runtime, session, and pane identities with exact errors", async () => {
     const base = [
       worker("runtime-01", "01", "run-01", "w1:p1"),
       worker("runtime-02", "02", "run-02", "w1:p2"),
@@ -325,7 +302,7 @@ describe("wait-any request validation", () => {
     ];
 
     for (const candidate of cases) {
-      const result = runCli(
+      const result = await runCli(
         request("herdr.wait_any", {
           socket_path: "/tmp/herdr.sock",
           timeout_ms: 500,
@@ -343,9 +320,9 @@ describe("wait-any request validation", () => {
     }
   });
 
-  it("requires exactly three implementor launch retries", () => {
+  it("requires exactly three implementor launch retries", async () => {
     for (const maxAttempts of [2, 4]) {
-      const result = runCli(
+      const result = await runCli(
         request("implementor.launch.prepare", {
           state_path: "/run/RESUME.md",
           artifact_path: "/run/briefs/launch-04.json",
@@ -375,7 +352,7 @@ describe("wait-any request validation", () => {
 });
 
 describe("event-driven scheduling documentation", () => {
-  it("documents the bounded cap and helper cycle without legacy wake mechanisms", () => {
+  it("documents the bounded cap and helper cycle without legacy wake mechanisms", async () => {
     const skill = readFileSync(join(import.meta.dir, "..", "SKILL.md"), "utf8");
     const helper = readFileSync(join(import.meta.dir, "..", "references", "helper-cli.md"), "utf8");
     const resume = readFileSync(
@@ -1082,14 +1059,14 @@ describe("Herdr event-driven wait-any", () => {
 });
 
 describe("shared infrastructure retries", () => {
-  it("returns increasing bounded delays with the exact persisted binding", () => {
+  it("returns increasing bounded delays with the exact persisted binding", async () => {
     const root = mkdtempSync(join(tmpdir(), "coordinate-retry-"));
     const statePath = join(root, "RESUME.md");
     const delays: number[] = [];
 
     for (const attempt of [1, 2, 3]) {
       writeFileSync(statePath, retryState(attempt, attempt - 1));
-      const result = runCli(
+      const result = await runCli(
         request("infrastructure.retry.record", {
           state_path: statePath,
           ticket: "04",
@@ -1120,7 +1097,7 @@ describe("shared infrastructure retries", () => {
     expect(delays).toEqual([1000, 2000, 4000]);
   });
 
-  it("blocks only the affected ticket after three retries are exhausted", () => {
+  it("blocks only the affected ticket after three retries are exhausted", async () => {
     const root = mkdtempSync(join(tmpdir(), "coordinate-retry-"));
     const statePath = join(root, "RESUME.md");
     writeFileSync(
@@ -1131,7 +1108,7 @@ describe("shared infrastructure retries", () => {
       ),
     );
 
-    const result = runCli(
+    const result = await runCli(
       request("infrastructure.retry.record", {
         state_path: statePath,
         ticket: "04",
@@ -1153,7 +1130,7 @@ describe("shared infrastructure retries", () => {
 });
 
 describe("wait heartbeat and stall interval", () => {
-  it("accepts a 60 minute stall interval and rejects anything longer", () => {
+  it("accepts a 60 minute stall interval and rejects anything longer", async () => {
     const wait = (timeoutMs: number) =>
       runCli(
         request("herdr.wait_any", {
@@ -1163,8 +1140,8 @@ describe("wait heartbeat and stall interval", () => {
         }),
       );
 
-    const accepted = wait(3_600_000);
-    const rejected = wait(3_600_001);
+    const accepted = await wait(3_600_000);
+    const rejected = await wait(3_600_001);
 
     expect(accepted.exitCode).toBe(1);
     expect(rejected.exitCode).toBe(2);

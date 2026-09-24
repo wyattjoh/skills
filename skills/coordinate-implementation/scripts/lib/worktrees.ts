@@ -93,7 +93,7 @@ const executableExists = async (command: string): Promise<boolean> => {
       .then(() => true)
       .catch(() => false);
   }
-  return Bun.which(command) !== null;
+  return Bun.which(command, { PATH: process.env.PATH ?? "" }) !== null;
 };
 
 const repositoryPolicyPattern =

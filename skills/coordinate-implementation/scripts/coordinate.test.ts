@@ -12,6 +12,7 @@ import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { claimCoordinator } from "./lib/coordinator.ts";
 import { acceptSnapshot } from "./lib/snapshot.ts";
+import { runCliInProcess } from "./test-cli.ts";
 
 const CLI = join(import.meta.dir, "coordinate.ts");
 const decoder = new TextDecoder();
@@ -61,7 +62,10 @@ const makeEnvironment = (
   };
 };
 
-const runCli = (request: unknown, env: Record<string, string | undefined>): CliResult => {
+/**
+ * Spawns the real CLI so its stdin, stdout, and exit-code wrapper stays covered.
+ */
+const runCliSpawn = (request: unknown, env: Record<string, string | undefined>): CliResult => {
   const child = Bun.spawnSync([process.execPath, CLI], {
     env,
     stdin: Buffer.from(JSON.stringify(request)),
@@ -73,6 +77,19 @@ const runCli = (request: unknown, env: Record<string, string | undefined>): CliR
     exitCode: child.exitCode,
     stdout: JSON.parse(stdout) as unknown,
     stderr: decoder.decode(child.stderr),
+  };
+};
+
+const runCli = async (
+  request: unknown,
+  env: Record<string, string | undefined>,
+): Promise<CliResult> => {
+  const child = await runCliInProcess(request, env);
+  const stdout = child.stdout.trim();
+  return {
+    exitCode: child.exitCode,
+    stdout: JSON.parse(stdout) as unknown,
+    stderr: child.stderr,
   };
 };
 
@@ -259,7 +276,7 @@ const writeSnapshotRecord = (statePath: string, record: unknown): void => {
 };
 
 describe("versioned coordinate CLI", () => {
-  it("reports a successful capability-based preflight without mutating state", () => {
+  it("reports a successful capability-based preflight without mutating state", async () => {
     const fixture = makeEnvironment(completeCommands());
     const implement = join(fixture.skillRoot, "implement");
     mkdirSync(implement, { recursive: true });
@@ -268,7 +285,7 @@ describe("versioned coordinate CLI", () => {
     const state = "# sample implementation run\n\nSchema version: 1\n";
     writeFileSync(statePath, state);
 
-    const result = runCli(preflightRequest(fixture.skillRoot, statePath), fixture.env);
+    const result = await runCli(preflightRequest(fixture.skillRoot, statePath), fixture.env);
 
     expect(result.exitCode).toBe(0);
     expect(result.stderr).toBe("");
@@ -300,10 +317,10 @@ describe("versioned coordinate CLI", () => {
     expect(readFileSync(statePath, "utf8")).toBe(state);
   });
 
-  it("reports every missing baseline dependency in one result", () => {
+  it("reports every missing baseline dependency in one result", async () => {
     const fixture = makeEnvironment({});
 
-    const result = runCli(preflightRequest(fixture.skillRoot), fixture.env);
+    const result = await runCli(preflightRequest(fixture.skillRoot), fixture.env);
 
     expect(result.exitCode).toBe(1);
     expect(result.stderr).toBe("");
@@ -362,13 +379,13 @@ describe("versioned coordinate CLI", () => {
     });
   });
 
-  it("accepts Herdr 0.9.1 without normalized context metrics", () => {
+  it("accepts Herdr 0.9.1 without normalized context metrics", async () => {
     const fixture = makeEnvironment(completeCommands(false));
     const implement = join(fixture.skillRoot, "implement");
     mkdirSync(implement, { recursive: true });
     writeFileSync(join(implement, "SKILL.md"), "---\nname: implement\ndescription: test\n---\n");
 
-    const result = runCli(preflightRequest(fixture.skillRoot), fixture.env);
+    const result = await runCli(preflightRequest(fixture.skillRoot), fixture.env);
 
     expect(result.exitCode).toBe(0);
     expect(result.stderr).toBe("");
@@ -399,7 +416,7 @@ describe("versioned coordinate CLI", () => {
     });
   });
 
-  it("rejects Herdr without the snapshot and event machine API", () => {
+  it("rejects Herdr without the snapshot and event machine API", async () => {
     const commands = completeCommands(false);
     commands.herdr = `
 const args = process.argv.slice(2);
@@ -416,7 +433,7 @@ if (args[0] === "--version") {
     mkdirSync(implement, { recursive: true });
     writeFileSync(join(implement, "SKILL.md"), "---\nname: implement\ndescription: test\n---\n");
 
-    const result = runCli(preflightRequest(fixture.skillRoot), fixture.env);
+    const result = await runCli(preflightRequest(fixture.skillRoot), fixture.env);
 
     expect(result.exitCode).toBe(1);
     expect(result.stderr).toBe("");
@@ -443,7 +460,7 @@ if (args[0] === "--version") {
     ]);
   });
 
-  it("ignores normalized context field names on unrelated schema records", () => {
+  it("ignores normalized context field names on unrelated schema records", async () => {
     const commands = completeCommands();
     commands.herdr = `
 const args = process.argv.slice(2);
@@ -480,7 +497,7 @@ if (args[0] === "--version") {
     mkdirSync(implement, { recursive: true });
     writeFileSync(join(implement, "SKILL.md"), "---\nname: implement\ndescription: test\n---\n");
 
-    const result = runCli(preflightRequest(fixture.skillRoot), fixture.env);
+    const result = await runCli(preflightRequest(fixture.skillRoot), fixture.env);
 
     expect(result.exitCode).toBe(0);
     expect(result.stderr).toBe("");
@@ -511,10 +528,10 @@ if (args[0] === "--version") {
     });
   });
 
-  it("accepts a validated local snapshot without requiring a writeback choice", () => {
+  it("accepts a validated local snapshot without requiring a writeback choice", async () => {
     const fixture = makeSnapshotFixture("local");
 
-    const result = runCli(snapshotRequest("snapshot.accept", fixture, null), process.env);
+    const result = await runCli(snapshotRequest("snapshot.accept", fixture, null), process.env);
 
     expect(result.exitCode).toBe(0);
     expect(result.stderr).toBe("");
@@ -678,12 +695,12 @@ Coordinator ownership:
     expect(state.includes("- 2026-09-18 setup recorded")).toBe(true);
   });
 
-  it("allows scheduling when the accepted snapshot is unchanged", () => {
+  it("allows scheduling when the accepted snapshot is unchanged", async () => {
     const fixture = makeSnapshotFixture("local");
-    const accepted = runCli(snapshotRequest("snapshot.accept", fixture, null), process.env);
+    const accepted = await runCli(snapshotRequest("snapshot.accept", fixture, null), process.env);
     expect(accepted.exitCode).toBe(0);
 
-    const result = runCli(snapshotRequest("snapshot.check", fixture, null), process.env);
+    const result = await runCli(snapshotRequest("snapshot.check", fixture, null), process.env);
 
     expect(result.exitCode).toBe(0);
     expect(result.stderr).toBe("");
@@ -705,14 +722,14 @@ Coordinator ownership:
     });
   });
 
-  it("pauses scheduling and reports changed snapshot inputs until explicit acceptance", () => {
+  it("pauses scheduling and reports changed snapshot inputs until explicit acceptance", async () => {
     const fixture = makeSnapshotFixture("local");
-    const accepted = runCli(snapshotRequest("snapshot.accept", fixture, null), process.env);
+    const accepted = await runCli(snapshotRequest("snapshot.accept", fixture, null), process.env);
     expect(accepted.exitCode).toBe(0);
     const acceptedState = readFileSync(fixture.statePath, "utf8");
     writeFileSync(join(fixture.runPath, "spec.md"), "# Agreed design\n\nChanged design.\n");
 
-    const changed = runCli(snapshotRequest("snapshot.check", fixture, null), process.env);
+    const changed = await runCli(snapshotRequest("snapshot.check", fixture, null), process.env);
 
     expect(changed.exitCode).toBe(0);
     expect(changed.stderr).toBe("");
@@ -728,7 +745,7 @@ Coordinator ownership:
     });
     expect(readFileSync(fixture.statePath, "utf8")).toBe(acceptedState);
 
-    const revised = runCli(snapshotRequest("snapshot.accept", fixture, null), process.env);
+    const revised = await runCli(snapshotRequest("snapshot.accept", fixture, null), process.env);
     expect(revised.exitCode).toBe(0);
     expect(
       (revised.stdout as { result: { scheduling_allowed: boolean } }).result.scheduling_allowed,
@@ -738,11 +755,11 @@ Coordinator ownership:
     );
   });
 
-  it("persists each remote tracker writeback mode", () => {
+  it("persists each remote tracker writeback mode", async () => {
     for (const mode of ["none", "final", "live"] as const) {
       const fixture = makeSnapshotFixture("remote");
 
-      const result = runCli(snapshotRequest("snapshot.accept", fixture, mode), process.env);
+      const result = await runCli(snapshotRequest("snapshot.accept", fixture, mode), process.env);
 
       expect(result.exitCode).toBe(0);
       expect((result.stdout as { result: { writeback: string } }).result.writeback).toBe(mode);
@@ -750,12 +767,15 @@ Coordinator ownership:
     }
   });
 
-  it("preserves remote writeback until an explicit policy change", () => {
+  it("preserves remote writeback until an explicit policy change", async () => {
     const fixture = makeSnapshotFixture("remote");
-    const accepted = runCli(snapshotRequest("snapshot.accept", fixture, "final"), process.env);
+    const accepted = await runCli(
+      snapshotRequest("snapshot.accept", fixture, "final"),
+      process.env,
+    );
     expect(accepted.exitCode).toBe(0);
 
-    const resumed = runCli(snapshotRequest("snapshot.check", fixture, null), process.env);
+    const resumed = await runCli(snapshotRequest("snapshot.check", fixture, null), process.env);
     expect(resumed.exitCode).toBe(0);
     const resumedPolicy = resumed.stdout as {
       result: { status: string; writeback: string };
@@ -763,7 +783,7 @@ Coordinator ownership:
     expect(resumedPolicy.result.status).toBe("unchanged");
     expect(resumedPolicy.result.writeback).toBe("final");
 
-    const changed = runCli(snapshotRequest("snapshot.accept", fixture, "live"), process.env);
+    const changed = await runCli(snapshotRequest("snapshot.accept", fixture, "live"), process.env);
     expect(changed.exitCode).toBe(0);
     expect((readSnapshotRecord(fixture.statePath) as { writeback: string }).writeback).toBe("live");
     expect(lastStateLine(fixture.statePath)).toBe(
@@ -771,9 +791,9 @@ Coordinator ownership:
     );
   });
 
-  it("requires a writeback decision for a non-local source", () => {
+  it("requires a writeback decision for a non-local source", async () => {
     const fixture = makeSnapshotFixture("remote");
-    const inspection = runCli(snapshotRequest("snapshot.check", fixture, null), process.env);
+    const inspection = await runCli(snapshotRequest("snapshot.check", fixture, null), process.env);
     expect(inspection.exitCode).toBe(0);
     const initial = inspection.stdout as {
       result: { status: string; scheduling_allowed: boolean; writeback: string | null };
@@ -782,7 +802,7 @@ Coordinator ownership:
     expect(initial.result.scheduling_allowed).toBe(false);
     expect(initial.result.writeback).toBe(null);
 
-    const result = runCli(snapshotRequest("snapshot.accept", fixture, null), process.env);
+    const result = await runCli(snapshotRequest("snapshot.accept", fixture, null), process.env);
 
     expect(result.exitCode).toBe(1);
     expect(result.stdout).toEqual({
@@ -801,11 +821,11 @@ Coordinator ownership:
     });
   });
 
-  it("rejects remote writeback forbidden by project authority", () => {
+  it("rejects remote writeback forbidden by project authority", async () => {
     const fixture = makeSnapshotFixture("remote");
     const originalState = readFileSync(fixture.statePath, "utf8");
 
-    const result = runCli(
+    const result = await runCli(
       snapshotRequest("snapshot.accept", fixture, "live", "forbidden"),
       process.env,
     );
@@ -828,13 +848,16 @@ Coordinator ownership:
     expect(readFileSync(fixture.statePath, "utf8")).toBe(originalState);
   });
 
-  it("blocks a persisted remote writeback when project authority changes", () => {
+  it("blocks a persisted remote writeback when project authority changes", async () => {
     const fixture = makeSnapshotFixture("remote");
-    const accepted = runCli(snapshotRequest("snapshot.accept", fixture, "final"), process.env);
+    const accepted = await runCli(
+      snapshotRequest("snapshot.accept", fixture, "final"),
+      process.env,
+    );
     expect(accepted.exitCode).toBe(0);
     const acceptedState = readFileSync(fixture.statePath, "utf8");
 
-    const result = runCli(
+    const result = await runCli(
       snapshotRequest("snapshot.check", fixture, null, "forbidden"),
       process.env,
     );
@@ -858,7 +881,7 @@ Coordinator ownership:
     expect(readFileSync(fixture.statePath, "utf8")).toBe(acceptedState);
   });
 
-  it("rejects a snapshot input symlink that resolves outside the run folder", () => {
+  it("rejects a snapshot input symlink that resolves outside the run folder", async () => {
     const fixture = makeSnapshotFixture("local");
     const manifest = JSON.parse(readFileSync(fixture.manifestPath, "utf8")) as {
       specification: { path: string; source_reference: string };
@@ -870,7 +893,7 @@ Coordinator ownership:
     writeFileSync(outsidePath, "# Outside design\n\nMust not be hashed.\n");
     symlinkSync(outsidePath, join(fixture.runPath, "linked-spec.md"));
 
-    const result = runCli(snapshotRequest("snapshot.accept", fixture, null), process.env);
+    const result = await runCli(snapshotRequest("snapshot.accept", fixture, null), process.env);
 
     expect(result.exitCode).toBe(1);
     expect(result.stderr).toBe("");
@@ -890,7 +913,7 @@ Coordinator ownership:
     });
   });
 
-  it("rejects snapshot.json as the specification path", () => {
+  it("rejects snapshot.json as the specification path", async () => {
     const fixture = makeSnapshotFixture("local");
     const manifest = JSON.parse(readFileSync(fixture.manifestPath, "utf8")) as {
       specification: { path: string };
@@ -898,7 +921,7 @@ Coordinator ownership:
     manifest.specification.path = "snapshot.json";
     writeFileSync(fixture.manifestPath, `${JSON.stringify(manifest, null, 2)}\n`);
 
-    const result = runCli(snapshotRequest("snapshot.accept", fixture, null), process.env);
+    const result = await runCli(snapshotRequest("snapshot.accept", fixture, null), process.env);
 
     expect(result.exitCode).toBe(1);
     expect(result.stderr).toBe("");
@@ -918,7 +941,7 @@ Coordinator ownership:
     });
   });
 
-  it("rejects a normalized snapshot with an unknown blocking edge", () => {
+  it("rejects a normalized snapshot with an unknown blocking edge", async () => {
     const fixture = makeSnapshotFixture("local");
     const invalidManifest = JSON.parse(readFileSync(fixture.manifestPath, "utf8")) as {
       tickets: Array<{ blocked_by: string[] }>;
@@ -926,7 +949,7 @@ Coordinator ownership:
     invalidManifest.tickets[1]!.blocked_by = ["99"];
     writeFileSync(fixture.manifestPath, `${JSON.stringify(invalidManifest, null, 2)}\n`);
 
-    const result = runCli(snapshotRequest("snapshot.accept", fixture, null), process.env);
+    const result = await runCli(snapshotRequest("snapshot.accept", fixture, null), process.env);
 
     expect(result.exitCode).toBe(1);
     expect(result.stdout).toEqual({
@@ -945,14 +968,14 @@ Coordinator ownership:
     });
   });
 
-  it("rejects a normalized ticket without acceptance criteria", () => {
+  it("rejects a normalized ticket without acceptance criteria", async () => {
     const fixture = makeSnapshotFixture("local");
     writeFileSync(
       join(fixture.runPath, "issues/02-feature.md"),
       "# 02: Feature\n\n**Blocked by:** 01: Foundation.\n\n**Status:** ready-for-agent\n",
     );
 
-    const result = runCli(snapshotRequest("snapshot.accept", fixture, null), process.env);
+    const result = await runCli(snapshotRequest("snapshot.accept", fixture, null), process.env);
 
     expect(result.exitCode).toBe(1);
     expect(result.stdout).toEqual({
@@ -971,7 +994,7 @@ Coordinator ownership:
     });
   });
 
-  it("rejects malformed persisted Snapshot record invariants", () => {
+  it("rejects malformed persisted Snapshot record invariants", async () => {
     const cases: Array<{
       name: string;
       mutate: (record: Record<string, unknown>) => void;
@@ -1019,7 +1042,7 @@ Coordinator ownership:
 
     for (const testCase of cases) {
       const fixture = makeSnapshotFixture("local");
-      const accepted = runCli(snapshotRequest("snapshot.accept", fixture, null), process.env);
+      const accepted = await runCli(snapshotRequest("snapshot.accept", fixture, null), process.env);
       expect(accepted.exitCode).toBe(0);
       const record = structuredClone(readSnapshotRecord(fixture.statePath)) as Record<
         string,
@@ -1028,7 +1051,7 @@ Coordinator ownership:
       testCase.mutate(record);
       writeSnapshotRecord(fixture.statePath, record);
 
-      const result = runCli(snapshotRequest("snapshot.check", fixture, null), process.env);
+      const result = await runCli(snapshotRequest("snapshot.check", fixture, null), process.env);
 
       expect(result.exitCode).toBe(1);
       expect(result.stdout).toEqual({
@@ -1045,18 +1068,18 @@ Coordinator ownership:
         ],
       });
     }
-  }, 60_000);
+  });
 
-  it("rejects duplicate persisted Snapshot sections", () => {
+  it("rejects duplicate persisted Snapshot sections", async () => {
     const fixture = makeSnapshotFixture("local");
-    const accepted = runCli(snapshotRequest("snapshot.accept", fixture, null), process.env);
+    const accepted = await runCli(snapshotRequest("snapshot.accept", fixture, null), process.env);
     expect(accepted.exitCode).toBe(0);
     const markdown = readFileSync(fixture.statePath, "utf8");
     const section = snapshotRecordPattern.exec(markdown)?.[0];
     if (section === undefined) throw new Error("Snapshot section was not written");
     writeFileSync(fixture.statePath, `${markdown.trimEnd()}\n\n${section}\n`);
 
-    const result = runCli(snapshotRequest("snapshot.check", fixture, null), process.env);
+    const result = await runCli(snapshotRequest("snapshot.check", fixture, null), process.env);
 
     expect(result.exitCode).toBe(1);
     expect(result.stdout).toEqual({
@@ -1074,12 +1097,12 @@ Coordinator ownership:
     });
   });
 
-  it("rejects impossible snapshot acceptance timestamps", () => {
+  it("rejects impossible snapshot acceptance timestamps", async () => {
     const fixture = makeSnapshotFixture("local");
     const request = snapshotRequest("snapshot.accept", fixture, null);
     request.input.accepted_at = "2026-99-99T99:99:99Z";
 
-    const result = runCli(request, process.env);
+    const result = await runCli(request, process.env);
 
     expect(result.exitCode).toBe(2);
     expect(result.stdout).toEqual({
@@ -1098,12 +1121,12 @@ Coordinator ownership:
     });
   });
 
-  it("accepts schema version 1 Markdown state", () => {
+  it("accepts schema version 1 Markdown state", async () => {
     const fixture = makeEnvironment({});
     const statePath = join(fixture.root, "RESUME.md");
     writeFileSync(statePath, "# sample implementation run\n\nSchema version: 1\n");
 
-    const result = runCli(
+    const result = await runCli(
       {
         schema_version: 1,
         operation: "state.validate",
@@ -1123,12 +1146,12 @@ Coordinator ownership:
     });
   });
 
-  it("rejects state with no schema marker", () => {
+  it("rejects state with no schema marker", async () => {
     const fixture = makeEnvironment({});
     const statePath = join(fixture.root, "RESUME.md");
     writeFileSync(statePath, "# sample implementation run\n");
 
-    const result = runCli(
+    const result = await runCli(
       {
         schema_version: 1,
         operation: "state.validate",
@@ -1153,13 +1176,13 @@ Coordinator ownership:
     });
   });
 
-  it("rejects malformed state without rewriting it", () => {
+  it("rejects malformed state without rewriting it", async () => {
     const fixture = makeEnvironment({});
     const statePath = join(fixture.root, "RESUME.md");
     const state = "# sample implementation run\n\nSchema version: one\n";
     writeFileSync(statePath, state);
 
-    const result = runCli(
+    const result = await runCli(
       {
         schema_version: 1,
         operation: "state.validate",
@@ -1191,7 +1214,7 @@ Coordinator ownership:
     const statePath = join(fixture.root, "RESUME.md");
     writeFileSync(statePath, "# sample implementation run\n\nSchema version: 2\n");
 
-    const stateResult = runCli(
+    const stateResult = runCliSpawn(
       {
         schema_version: 1,
         operation: "state.validate",
@@ -1215,7 +1238,7 @@ Coordinator ownership:
       ],
     });
 
-    const requestResult = runCli(
+    const requestResult = runCliSpawn(
       { schema_version: 2, operation: "preflight", input: {} },
       fixture.env,
     );

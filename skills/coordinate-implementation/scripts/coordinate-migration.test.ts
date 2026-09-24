@@ -13,10 +13,9 @@ import {
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { spawnGit } from "./lib/git.ts";
+import { runCliInProcess } from "./test-cli.ts";
 import { createFakeHerdrEnv } from "./test-herdr.ts";
 
-const CLI = join(import.meta.dir, "coordinate.ts");
-const decoder = new TextDecoder();
 const HERDR_ENV = createFakeHerdrEnv();
 const OLD_ROLE = { harness: "claude", model: "opus", effort: "medium" } as const;
 const OLD_REVIEW_ROLE = { harness: "claude", model: "sonnet", effort: "medium" } as const;
@@ -40,21 +39,16 @@ type Fixture = {
   piSkillPath?: string;
 };
 
-const runCli = (
+const runCli = async (
   request: unknown,
   env: Record<string, string | undefined> = HERDR_ENV,
-): CliResult => {
-  const child = Bun.spawnSync([process.execPath, CLI], {
-    env,
-    stdin: Buffer.from(JSON.stringify(request)),
-    stdout: "pipe",
-    stderr: "pipe",
-  });
-  const stdout = JSON.parse(decoder.decode(child.stdout).trim()) as Record<string, unknown>;
+): Promise<CliResult> => {
+  const child = await runCliInProcess(request, env);
+  const stdout = JSON.parse(child.stdout.trim()) as Record<string, unknown>;
   return {
     exitCode: child.exitCode,
     stdout,
-    stderr: decoder.decode(child.stderr),
+    stderr: child.stderr,
   };
 };
 
@@ -251,12 +245,12 @@ const getFinalization = (state: string): string | null =>
   state.match(/^## Serialized finalization\s*\r?\n\r?\n```json\r?\n[\s\S]*?\r?\n```/mu)?.[0] ??
   null;
 
-const recordPassingGates = (
+const recordPassingGates = async (
   fixture: Fixture,
   attempt: number,
   fileSuffix: string,
   completedAt = `2026-09-23T12:${String(attempt).padStart(2, "0")}:00Z`,
-): string[] => {
+): Promise<string[]> => {
   const paths: string[] = [];
   for (const [name, argv] of [
     ["format", ["bun", "run", "format:check"]],
@@ -267,7 +261,7 @@ const recordPassingGates = (
       "reviews",
       `${fixture.ticket}-round-0-${name}-gate-attempt-${fileSuffix}.json`,
     );
-    const result = runCli(
+    const result = await runCli(
       request("gate.record", {
         state_path: fixture.statePath,
         evidence_path: evidencePath,
@@ -295,7 +289,7 @@ type ReviewFixture = Fixture & {
   specArtifactPath: string;
 };
 
-const makeReviewFixture = (includeHistoricalTickets = false): ReviewFixture => {
+const makeReviewFixture = async (includeHistoricalTickets = false): Promise<ReviewFixture> => {
   const root = mkdtempSync(join(tmpdir(), "coordinate-review-supersession-"));
   const runPath = join(root, "run");
   mkdirSync(join(runPath, "briefs"), { recursive: true });
@@ -310,7 +304,7 @@ const makeReviewFixture = (includeHistoricalTickets = false): ReviewFixture => {
   const specArtifactPath = join(runPath, "reviews", "13-round-0-spec-attempt-1.json");
   const initialState = `# review migration run\n\nSchema version: 1\n\nPrefix: test\n\nImplementor:\n  harness: pi\n  model: openai/test\n  effort: high\n\nReviewer:\n  harness: claude\n  model: sonnet\n  effort: medium\n\n## Tickets\n| NN | harness | model | effort | rounds | esc | status | sha |\n| --- | --- | --- | --- | --- | --- | --- | --- |\n| 13 | pi | openai/test | high | 0 | - | queued | - |\n\n## Active tickets\n\n## Decisions\n\n- Preserve review provenance.\n`;
   writeFileSync(statePath, initialState);
-  const policy = runCli(
+  const policy = await runCli(
     request("review.policy.prepare", {
       state_path: statePath,
       instruction_files: ["CLAUDE.md"],
@@ -342,7 +336,7 @@ const makeReviewFixture = (includeHistoricalTickets = false): ReviewFixture => {
     firstGatePaths: [] as string[],
     specArtifactPath,
   };
-  fixture.firstGatePaths = recordPassingGates(fixture, 1, "1");
+  fixture.firstGatePaths = await recordPassingGates(fixture, 1, "1");
   if (includeHistoricalTickets) {
     for (let ticketNumber = 1; ticketNumber <= 62; ticketNumber += 1) {
       const historicalTicket = String(ticketNumber).padStart(2, "0");
@@ -389,7 +383,7 @@ const makeReviewFixture = (includeHistoricalTickets = false): ReviewFixture => {
       );
     }
   }
-  const launch = runCli(
+  const launch = await runCli(
     request("review.launch.prepare", {
       state_path: statePath,
       previous_artifact_path: null,
@@ -410,7 +404,7 @@ const makeReviewFixture = (includeHistoricalTickets = false): ReviewFixture => {
     }),
   );
   expect(launch.exitCode).toBe(0);
-  const specLaunch = runCli(
+  const specLaunch = await runCli(
     request("review.launch.prepare", {
       state_path: statePath,
       previous_artifact_path: null,
@@ -502,7 +496,7 @@ const retryReviewer = (
 };
 
 describe("closed runtime migration", () => {
-  it("migrates tickets 12, 13, and 16 in place while preserving artifacts and worktrees", () => {
+  it("migrates tickets 12, 13, and 16 in place while preserving artifacts and worktrees", async () => {
     const cases = [
       { ticket: "12", phase: "working" as const, dirtyFiles: 12 },
       { ticket: "13", phase: "gates" as const, extraCommit: true },
@@ -517,7 +511,7 @@ describe("closed runtime migration", () => {
       }).stdout;
       const beforeFinalization = getFinalization(originalState);
 
-      const result = runCli(implementorMigrationRequest(fixture));
+      const result = await runCli(implementorMigrationRequest(fixture));
 
       expect(result.exitCode).toBe(0);
       expect(result.stdout).toMatchObject({
@@ -553,13 +547,13 @@ describe("closed runtime migration", () => {
     }
   });
 
-  it("refuses a live pane and leaves state, artifact, and evidence untouched", () => {
+  it("refuses a live pane and leaves state, artifact, and evidence untouched", async () => {
     const fixture = makeImplementorFixture("12", "working", { dirtyFiles: 12 });
     const before = readFileSync(fixture.statePath, "utf8");
     const artifact = readFileSync(fixture.artifactPath, "utf8");
     const env = { ...HERDR_ENV, HERDR_TEST_LIVE_PANES: JSON.stringify(["workspace:pold12"]) };
 
-    const result = runCli(implementorMigrationRequest(fixture), env);
+    const result = await runCli(implementorMigrationRequest(fixture), env);
 
     expect(result.exitCode).toBe(1);
     expect(result.stdout).toMatchObject({
@@ -573,13 +567,13 @@ describe("closed runtime migration", () => {
     ).toBe(false);
   });
 
-  it("rejects an old runtime binding that differs from the active ticket", () => {
+  it("rejects an old runtime binding that differs from the active ticket", async () => {
     const fixture = makeImplementorFixture("16", "working");
     const before = readFileSync(fixture.statePath, "utf8");
     const input = implementorMigrationRequest(fixture);
     (input.input.expected_binding as Record<string, unknown>).pane = "workspace:pwrong";
 
-    const result = runCli(input);
+    const result = await runCli(input);
 
     expect(result.exitCode).toBe(1);
     expect(result.stdout).toMatchObject({
@@ -592,11 +586,11 @@ describe("closed runtime migration", () => {
     ).toBe(false);
   });
 
-  it("rejects a replacement role that differs from the persisted Pi default", () => {
+  it("rejects a replacement role that differs from the persisted Pi default", async () => {
     const fixture = makeImplementorFixture("16", "working");
     const before = readFileSync(fixture.statePath, "utf8");
 
-    const result = runCli(
+    const result = await runCli(
       implementorMigrationRequest(fixture, {
         replacement_role: { harness: "pi", model: "openai/substitute", effort: "high" },
       }),
@@ -613,11 +607,11 @@ describe("closed runtime migration", () => {
     ).toBe(false);
   });
 
-  it("rejects a dirty gates-phase worktree without changing serialized finalization", () => {
+  it("rejects a dirty gates-phase worktree without changing serialized finalization", async () => {
     const fixture = makeImplementorFixture("13", "gates", { dirtyFiles: 1, extraCommit: true });
     const before = readFileSync(fixture.statePath, "utf8");
 
-    const result = runCli(implementorMigrationRequest(fixture));
+    const result = await runCli(implementorMigrationRequest(fixture));
 
     expect(result.exitCode).toBe(1);
     expect(result.stdout).toMatchObject({
@@ -630,16 +624,16 @@ describe("closed runtime migration", () => {
     );
   });
 
-  it("recovers a byte-identical authorized retry idempotently", () => {
+  it("recovers a byte-identical authorized retry idempotently", async () => {
     const fixture = makeImplementorFixture("16", "working");
     const input = implementorMigrationRequest(fixture);
-    const first = runCli(input);
+    const first = await runCli(input);
     expect(first.exitCode).toBe(0);
     const stateAfterFirst = readFileSync(fixture.statePath, "utf8");
     const evidencePath = join(fixture.runPath, "briefs", "implementor-runtime-migration-16.json");
     const evidenceAfterFirst = readFileSync(evidencePath, "utf8");
 
-    const retry = runCli(input);
+    const retry = await runCli(input);
 
     expect(retry.exitCode).toBe(0);
     expect(retry.stdout).toMatchObject({ result: { recovered: true, runtime_closed: true } });
@@ -647,32 +641,32 @@ describe("closed runtime migration", () => {
     expect(readFileSync(evidencePath, "utf8")).toBe(evidenceAfterFirst);
   });
 
-  it("fails closed on an uncommitted migration sidecar and recovers it byte-identically", () => {
+  it("fails closed on an uncommitted migration sidecar and recovers it byte-identically", async () => {
     const fixture = makeImplementorFixture("16", "working");
     const input = implementorMigrationRequest(fixture);
-    expect(runCli(input).exitCode).toBe(0);
+    expect((await runCli(input)).exitCode).toBe(0);
     const evidencePath = join(fixture.runPath, "briefs", "implementor-runtime-migration-16.json");
     const commitPath = `${evidencePath}.commit.json`;
     const heldCommitPath = `${commitPath}.pending`;
     renameSync(commitPath, heldCommitPath);
 
-    const pendingLaunch = runCli(implementorLaunchRequest(fixture));
+    const pendingLaunch = await runCli(implementorLaunchRequest(fixture));
     expect(pendingLaunch.exitCode).toBe(1);
     expect(pendingLaunch.stdout).toMatchObject({
       ok: false,
       errors: [{ code: "implementor.migration_pending" }],
     });
 
-    const recovered = runCli(input);
+    const recovered = await runCli(input);
     expect(recovered.exitCode).toBe(0);
     expect(recovered.stdout).toMatchObject({ result: { recovered: true } });
     expect(existsSync(commitPath)).toBe(true);
-    expect(runCli(implementorLaunchRequest(fixture)).exitCode).toBe(0);
+    expect((await runCli(implementorLaunchRequest(fixture))).exitCode).toBe(0);
 
     const interrupted = makeImplementorFixture("12", "working", { dirtyFiles: 12 });
     const originalState = readFileSync(interrupted.statePath, "utf8");
     const interruptedRequest = implementorMigrationRequest(interrupted);
-    expect(runCli(interruptedRequest).exitCode).toBe(0);
+    expect((await runCli(interruptedRequest)).exitCode).toBe(0);
     const interruptedEvidence = join(
       interrupted.runPath,
       "briefs",
@@ -681,19 +675,19 @@ describe("closed runtime migration", () => {
     const interruptedCommit = `${interruptedEvidence}.commit.json`;
     renameSync(interruptedCommit, `${interruptedCommit}.pending`);
     writeFileSync(interrupted.statePath, originalState);
-    expect(runCli(implementorLaunchRequest(interrupted)).exitCode).toBe(1);
-    const stateRecovery = runCli(interruptedRequest);
+    expect((await runCli(implementorLaunchRequest(interrupted))).exitCode).toBe(1);
+    const stateRecovery = await runCli(interruptedRequest);
     expect(stateRecovery.exitCode).toBe(0);
     expect(stateRecovery.stdout).toMatchObject({ result: { recovered: true } });
     expect(existsSync(interruptedCommit)).toBe(true);
-    expect(runCli(implementorLaunchRequest(interrupted)).exitCode).toBe(0);
-  }, 60_000);
+    expect((await runCli(implementorLaunchRequest(interrupted))).exitCode).toBe(0);
+  });
 
-  it("binds replacement launches to the exact migrated worktree and branch", () => {
+  it("binds replacement launches to the exact migrated worktree and branch", async () => {
     const fixture = makeImplementorFixture("12", "working", { dirtyFiles: 12 });
-    expect(runCli(implementorMigrationRequest(fixture)).exitCode).toBe(0);
+    expect((await runCli(implementorMigrationRequest(fixture))).exitCode).toBe(0);
     writeFileSync(join(fixture.worktreePath, "uncommitted-1.txt"), "changed after migration\n");
-    const changedSnapshot = runCli(implementorLaunchRequest(fixture));
+    const changedSnapshot = await runCli(implementorLaunchRequest(fixture));
     expect(changedSnapshot.exitCode).toBe(1);
     expect(changedSnapshot.stdout).toMatchObject({
       ok: false,
@@ -704,7 +698,7 @@ describe("closed runtime migration", () => {
     const alternateWorktree = makeWorktree(alternateRoot, fixture.branch);
     const wrongWorktreeRequest = implementorLaunchRequest(fixture);
     (wrongWorktreeRequest.input as Record<string, unknown>).worktree_path = alternateWorktree;
-    const wrongWorktree = runCli(wrongWorktreeRequest);
+    const wrongWorktree = await runCli(wrongWorktreeRequest);
     expect(wrongWorktree.exitCode).toBe(1);
     expect(wrongWorktree.stdout).toMatchObject({
       ok: false,
@@ -717,7 +711,7 @@ describe("closed runtime migration", () => {
     ).toBe(0);
     const wrongBranchRequest = implementorLaunchRequest(fixture);
     (wrongBranchRequest.input as Record<string, unknown>).branch = "ticket-12-rebound";
-    const wrongBranch = runCli(wrongBranchRequest);
+    const wrongBranch = await runCli(wrongBranchRequest);
     expect(wrongBranch.exitCode).toBe(1);
     expect(wrongBranch.stdout).toMatchObject({
       ok: false,
@@ -725,24 +719,24 @@ describe("closed runtime migration", () => {
     });
   });
 
-  it("requires explicit recovery and landing synchronization before further gates or reviews", () => {
+  it("requires explicit recovery and landing synchronization before further gates or reviews", async () => {
     const fixture = makeImplementorFixture("13", "gates", { extraCommit: true });
-    const preMigrationGates = recordPassingGates(
+    const preMigrationGates = await recordPassingGates(
       fixture,
       1,
       "pre-migration",
       "2099-09-23T12:01:00Z",
     );
-    expect(runCli(implementorMigrationRequest(fixture)).exitCode).toBe(0);
+    expect((await runCli(implementorMigrationRequest(fixture))).exitCode).toBe(0);
 
-    const unrecoveredLaunch = runCli(implementorLaunchRequest(fixture));
+    const unrecoveredLaunch = await runCli(implementorLaunchRequest(fixture));
     expect(unrecoveredLaunch.exitCode).toBe(1);
     expect(unrecoveredLaunch.stdout).toMatchObject({
       ok: false,
       errors: [{ code: "implementor.migration_recovery_required" }],
     });
 
-    const recovery = runCli(migrationRecoveryRequest(fixture));
+    const recovery = await runCli(migrationRecoveryRequest(fixture));
     expect(recovery.exitCode).toBe(0);
     expect(recovery.stdout).toMatchObject({
       ok: true,
@@ -755,8 +749,8 @@ describe("closed runtime migration", () => {
     ) as Record<string, unknown>;
     expect(finalization.phase).toBe("resynchronize");
 
-    expect(runCli(implementorLaunchRequest(fixture)).exitCode).toBe(0);
-    const staleGate = runCli(
+    expect((await runCli(implementorLaunchRequest(fixture))).exitCode).toBe(0);
+    const staleGate = await runCli(
       request("gate.record", {
         state_path: fixture.statePath,
         evidence_path: join(fixture.runPath, "reviews", "premature-gate.json"),
@@ -779,7 +773,7 @@ describe("closed runtime migration", () => {
     });
 
     const baseSha = spawnGit(["rev-parse", "HEAD^"], { cwd: fixture.worktreePath }).stdout.trim();
-    const prematureReview = runCli(
+    const prematureReview = await runCli(
       request("review.launch.prepare", {
         state_path: fixture.statePath,
         previous_artifact_path: null,
@@ -806,7 +800,7 @@ describe("closed runtime migration", () => {
     });
 
     expect(JSON.parse(readFileSync(preMigrationGates[0]!, "utf8")).finalization_cycle).toBe(0);
-    const synchronized = runCli(
+    const synchronized = await runCli(
       request("landing.synchronize", {
         state_path: fixture.statePath,
         repository_path: fixture.worktreePath,
@@ -821,7 +815,7 @@ describe("closed runtime migration", () => {
       ok: true,
       result: { phase: "gates", cycle: 1 },
     });
-    const stalePreMigrationGates = runCli(
+    const stalePreMigrationGates = await runCli(
       request("review.launch.prepare", {
         state_path: fixture.statePath,
         previous_artifact_path: null,
@@ -846,9 +840,14 @@ describe("closed runtime migration", () => {
       ok: false,
       errors: [{ code: "review.migration_gates_stale" }],
     });
-    const freshGates = recordPassingGates(fixture, 1, "post-recovery", "2000-09-23T12:08:00Z");
+    const freshGates = await recordPassingGates(
+      fixture,
+      1,
+      "post-recovery",
+      "2000-09-23T12:08:00Z",
+    );
     expect(JSON.parse(readFileSync(freshGates[0]!, "utf8")).finalization_cycle).toBe(1);
-    const freshReview = runCli(
+    const freshReview = await runCli(
       request("review.launch.prepare", {
         state_path: fixture.statePath,
         previous_artifact_path: null,
@@ -869,12 +868,12 @@ describe("closed runtime migration", () => {
       }),
     );
     expect(freshReview.exitCode).toBe(0);
-  }, 60_000);
+  });
 });
 
 describe("interrupted reviewer supersession", () => {
-  it("indexes only the active ticket among 62 live-like ticket artifacts", () => {
-    const fixture = makeReviewFixture(true);
+  it("indexes only the active ticket among 62 live-like ticket artifacts", async () => {
+    const fixture = await makeReviewFixture(true);
     const historicalArtifacts = readdirSync(join(fixture.runPath, "reviews")).filter((name) =>
       name.startsWith("historical-ticket-"),
     );
@@ -884,8 +883,8 @@ describe("interrupted reviewer supersession", () => {
     expect(existsSync(fixture.specArtifactPath)).toBe(true);
   });
 
-  it("binds a round-zero interrupted artifact to HEAD and base across finalization cycle one", () => {
-    const fixture = makeReviewFixture();
+  it("binds a round-zero interrupted artifact to HEAD and base across finalization cycle one", async () => {
+    const fixture = await makeReviewFixture();
     const state = readFileSync(fixture.statePath, "utf8");
     const finalizationBlockText = getFinalization(state);
     if (finalizationBlockText === null)
@@ -909,7 +908,7 @@ describe("interrupted reviewer supersession", () => {
       review_range: `other-base..${String(finalization.ticket_sha)}`,
     };
     writeFileSync(fixture.statePath, replaceFinalization(staleBase));
-    const staleBaseResult = runCli(supersedeReviewerRequest(fixture, "standards"));
+    const staleBaseResult = await runCli(supersedeReviewerRequest(fixture, "standards"));
     expect(staleBaseResult.exitCode).toBe(1);
     expect(staleBaseResult.stdout).toMatchObject({
       ok: false,
@@ -922,7 +921,7 @@ describe("interrupted reviewer supersession", () => {
       review_range: `${fixture.baseSha}..other-head`,
     };
     writeFileSync(fixture.statePath, replaceFinalization(staleHead));
-    const staleHeadResult = runCli(supersedeReviewerRequest(fixture, "standards"));
+    const staleHeadResult = await runCli(supersedeReviewerRequest(fixture, "standards"));
     expect(staleHeadResult.exitCode).toBe(1);
     expect(staleHeadResult.stdout).toMatchObject({
       ok: false,
@@ -930,7 +929,7 @@ describe("interrupted reviewer supersession", () => {
     });
 
     writeFileSync(fixture.statePath, cycleOneState);
-    const result = runCli(supersedeReviewerRequest(fixture, "standards"));
+    const result = await runCli(supersedeReviewerRequest(fixture, "standards"));
 
     expect(result.exitCode).toBe(0);
     expect(result.stdout).toMatchObject({
@@ -969,15 +968,15 @@ describe("interrupted reviewer supersession", () => {
     );
   });
 
-  it("requires a machine-observed closed pane and preserves prior artifacts", () => {
-    const fixture = makeReviewFixture();
+  it("requires a machine-observed closed pane and preserves prior artifacts", async () => {
+    const fixture = await makeReviewFixture();
     const input = supersedeReviewerRequest(fixture);
     const beforeState = readFileSync(fixture.statePath, "utf8");
     const oldArtifact = readFileSync(fixture.artifactPath, "utf8");
     const reportPath = join(fixture.runPath, "reviews", "13-round-0-standards-attempt-1.md");
     const evidencePath = `${reportPath}.json`;
 
-    const live = runCli(input, {
+    const live = await runCli(input, {
       ...HERDR_ENV,
       HERDR_TEST_LIVE_PANES: JSON.stringify(["workspace:prev13standardsa1"]),
     });
@@ -992,7 +991,7 @@ describe("interrupted reviewer supersession", () => {
     expect(existsSync(reportPath)).toBe(false);
     expect(existsSync(evidencePath)).toBe(false);
 
-    const closed = runCli(input);
+    const closed = await runCli(input);
 
     expect(closed.exitCode).toBe(0);
     expect(closed.stdout).toMatchObject({
@@ -1027,7 +1026,7 @@ describe("interrupted reviewer supersession", () => {
     });
     expect(readFileSync(fixture.statePath, "utf8").includes("attempt 1: superseded;")).toBe(true);
 
-    const lateReport = runCli(
+    const lateReport = await runCli(
       request("review.launch.record", {
         state_path: fixture.statePath,
         artifact_path: fixture.artifactPath,
@@ -1045,8 +1044,8 @@ describe("interrupted reviewer supersession", () => {
     expect(existsSync(reportPath)).toBe(false);
   });
 
-  it("hash-binds four legacy passing gates at baseline generation zero only for supersession", () => {
-    const fixture = makeReviewFixture();
+  it("hash-binds four legacy passing gates at baseline generation zero only for supersession", async () => {
+    const fixture = await makeReviewFixture();
     const legacyGates = [
       { name: "format", argv: ["bun", "run", "format:check"] },
       { name: "test", argv: ["bun", "test"] },
@@ -1073,7 +1072,7 @@ describe("interrupted reviewer supersession", () => {
         "reviews",
         `13-round-0-${gate.name}-gate-attempt-1.json`,
       );
-      const result = runCli(
+      const result = await runCli(
         request("gate.record", {
           state_path: fixture.statePath,
           evidence_path: evidencePath,
@@ -1109,8 +1108,8 @@ describe("interrupted reviewer supersession", () => {
       writeFileSync(artifactPath, `${JSON.stringify(artifact, null, 2)}\n`);
     }
 
-    expect(runCli(supersedeReviewerRequest(fixture, "standards")).exitCode).toBe(0);
-    expect(runCli(supersedeReviewerRequest(fixture, "spec")).exitCode).toBe(0);
+    expect((await runCli(supersedeReviewerRequest(fixture, "standards"))).exitCode).toBe(0);
+    expect((await runCli(supersedeReviewerRequest(fixture, "spec"))).exitCode).toBe(0);
     const expectedGateEvidence = legacyGatePaths.map((evidencePath) => {
       const raw = readFileSync(evidencePath, "utf8");
       const record = JSON.parse(raw) as {
@@ -1133,20 +1132,21 @@ describe("interrupted reviewer supersession", () => {
       expect(sidecar.supersession.gate_evidence).toEqual(expectedGateEvidence);
     }
 
-    const legacyRetry = runCli(retryReviewer(fixture, legacyGatePaths));
+    const legacyRetry = await runCli(retryReviewer(fixture, legacyGatePaths));
     expect(legacyRetry.exitCode).toBe(1);
     expect(legacyRetry.stdout).toMatchObject({
       ok: false,
       errors: [{ code: "review.superseded_gates_stale" }],
     });
 
-    const freshGatePaths = legacyGates.map((gate) => {
+    const freshGatePaths: string[] = [];
+    for (const gate of legacyGates) {
       const evidencePath = join(
         fixture.runPath,
         "reviews",
         `13-round-0-${gate.name}-gate-attempt-2.json`,
       );
-      const result = runCli(
+      const result = await runCli(
         request("gate.record", {
           state_path: fixture.statePath,
           evidence_path: evidencePath,
@@ -1163,8 +1163,8 @@ describe("interrupted reviewer supersession", () => {
         }),
       );
       expect(result.exitCode).toBe(0);
-      return evidencePath;
-    });
+      freshGatePaths.push(evidencePath);
+    }
     expect(
       freshGatePaths.map(
         (path) =>
@@ -1172,24 +1172,24 @@ describe("interrupted reviewer supersession", () => {
             .supersession_generation,
       ),
     ).toEqual([2, 2, 2, 2]);
-    const retry = runCli(retryReviewer(fixture, freshGatePaths));
+    const retry = await runCli(retryReviewer(fixture, freshGatePaths));
     expect(retry.stdout).toMatchObject({ ok: true });
     expect(retry.exitCode).toBe(0);
   });
 
-  it("requires every old reviewer axis to be superseded before the Pi retry", () => {
-    const fixture = makeReviewFixture();
-    const staleGatePaths = recordPassingGates(fixture, 2, "2", "2026-09-23T12:12:00Z");
-    expect(runCli(supersedeReviewerRequest(fixture, "standards")).exitCode).toBe(0);
+  it("requires every old reviewer axis to be superseded before the Pi retry", async () => {
+    const fixture = await makeReviewFixture();
+    const staleGatePaths = await recordPassingGates(fixture, 2, "2", "2026-09-23T12:12:00Z");
+    expect((await runCli(supersedeReviewerRequest(fixture, "standards"))).exitCode).toBe(0);
 
-    const incomplete = runCli(retryReviewer(fixture, staleGatePaths));
+    const incomplete = await runCli(retryReviewer(fixture, staleGatePaths));
     expect(incomplete.exitCode).toBe(1);
     expect(incomplete.stdout).toMatchObject({
       ok: false,
       errors: [{ code: "review.supersession_axes_incomplete" }],
     });
 
-    expect(runCli(supersedeReviewerRequest(fixture, "spec")).exitCode).toBe(0);
+    expect((await runCli(supersedeReviewerRequest(fixture, "spec"))).exitCode).toBe(0);
     expect(
       existsSync(
         `${join(fixture.runPath, "reviews", "13-round-0-standards-attempt-1.md")}.json.commit.json`,
@@ -1215,9 +1215,9 @@ describe("interrupted reviewer supersession", () => {
     expect(standardsEvidence.supersession_generation).toBe(1);
     expect(specEvidence.supersession_generation).toBe(2);
 
-    const freshGatePaths = recordPassingGates(fixture, 3, "3", "2026-09-23T12:12:00Z");
+    const freshGatePaths = await recordPassingGates(fixture, 3, "3", "2026-09-23T12:12:00Z");
     expect(JSON.parse(readFileSync(freshGatePaths[0]!, "utf8")).supersession_generation).toBe(2);
-    const retry = runCli(retryReviewer(fixture, freshGatePaths));
+    const retry = await runCli(retryReviewer(fixture, freshGatePaths));
     expect(retry.exitCode).toBe(0);
     expect(retry.stdout).toMatchObject({
       ok: true,
@@ -1238,26 +1238,26 @@ describe("interrupted reviewer supersession", () => {
     });
   });
 
-  it("uses durable generations instead of caller timestamps for gate freshness", () => {
-    const fixture = makeReviewFixture();
-    const staleGatePaths = recordPassingGates(fixture, 2, "2", "2099-09-23T12:05:00Z");
-    expect(runCli(supersedeReviewerRequest(fixture, "standards")).exitCode).toBe(0);
-    expect(runCli(supersedeReviewerRequest(fixture, "spec")).exitCode).toBe(0);
+  it("uses durable generations instead of caller timestamps for gate freshness", async () => {
+    const fixture = await makeReviewFixture();
+    const staleGatePaths = await recordPassingGates(fixture, 2, "2", "2099-09-23T12:05:00Z");
+    expect((await runCli(supersedeReviewerRequest(fixture, "standards"))).exitCode).toBe(0);
+    expect((await runCli(supersedeReviewerRequest(fixture, "spec"))).exitCode).toBe(0);
 
-    const stale = runCli(retryReviewer(fixture, staleGatePaths));
+    const stale = await runCli(retryReviewer(fixture, staleGatePaths));
     expect(stale.exitCode).toBe(1);
     expect(stale.stdout).toMatchObject({
       ok: false,
       errors: [{ code: "review.superseded_gates_stale" }],
     });
 
-    const freshGatePaths = recordPassingGates(fixture, 3, "3", "2000-09-23T12:11:00Z");
-    const retry = runCli(retryReviewer(fixture, freshGatePaths));
+    const freshGatePaths = await recordPassingGates(fixture, 3, "3", "2000-09-23T12:11:00Z");
+    const retry = await runCli(retryReviewer(fixture, freshGatePaths));
     expect(retry.exitCode).toBe(0);
   });
 
-  it("keeps two-axis generations ordered across an interrupted first commit write", () => {
-    const fixture = makeReviewFixture();
+  it("keeps two-axis generations ordered across an interrupted first commit write", async () => {
+    const fixture = await makeReviewFixture();
     const standardsInput = supersedeReviewerRequest(fixture, "standards");
     const specInput = supersedeReviewerRequest(fixture, "spec");
     const standardsEvidencePath = join(
@@ -1270,7 +1270,7 @@ describe("interrupted reviewer supersession", () => {
     const specCommitPath = `${specEvidencePath}.commit.json`;
     mkdirSync(standardsCommitPath);
 
-    const interrupted = runCli(standardsInput);
+    const interrupted = await runCli(standardsInput);
     expect(interrupted.exitCode).toBe(1);
     expect(interrupted.stdout).toMatchObject({
       ok: false,
@@ -1284,7 +1284,7 @@ describe("interrupted reviewer supersession", () => {
       supersession_generation: 1,
     });
 
-    const blockedSecondAxis = runCli(specInput);
+    const blockedSecondAxis = await runCli(specInput);
     expect(blockedSecondAxis.exitCode).toBe(1);
     expect(blockedSecondAxis.stdout).toMatchObject({
       ok: false,
@@ -1293,21 +1293,21 @@ describe("interrupted reviewer supersession", () => {
     expect(readFileSync(fixture.statePath, "utf8")).toBe(stateAfterInterruptedWrite);
     expect(existsSync(specEvidencePath)).toBe(false);
 
-    const retryStandards = runCli(standardsInput);
+    const retryStandards = await runCli(standardsInput);
     expect(retryStandards.exitCode).toBe(0);
     expect(retryStandards.stdout).toMatchObject({
       result: { recovered: true, next_attempt: 2 },
     });
     expect(existsSync(standardsCommitPath)).toBe(true);
 
-    const retrySpec = runCli(specInput);
+    const retrySpec = await runCli(specInput);
     expect(retrySpec.exitCode).toBe(0);
     expect(JSON.parse(readFileSync(specEvidencePath, "utf8"))).toMatchObject({
       supersession_generation: 2,
     });
     expect(existsSync(specCommitPath)).toBe(true);
 
-    const freshGatePaths = recordPassingGates(fixture, 2, "2", "2026-09-23T12:11:00Z");
-    expect(runCli(retryReviewer(fixture, freshGatePaths)).exitCode).toBe(0);
+    const freshGatePaths = await recordPassingGates(fixture, 2, "2", "2026-09-23T12:11:00Z");
+    expect((await runCli(retryReviewer(fixture, freshGatePaths))).exitCode).toBe(0);
   });
 });

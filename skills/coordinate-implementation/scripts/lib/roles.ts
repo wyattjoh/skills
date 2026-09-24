@@ -51,7 +51,11 @@ type CommandOutput = {
 
 const run = (command: string, args: string[]): CommandOutput => {
   try {
-    const result = Bun.spawnSync([command, ...args], { stdout: "pipe", stderr: "pipe" });
+    const result = Bun.spawnSync([command, ...args], {
+      env: process.env,
+      stdout: "pipe",
+      stderr: "pipe",
+    });
     return { exitCode: result.exitCode, stdout: result.stdout.toString().trim() };
   } catch {
     return { exitCode: 1, stdout: "" };

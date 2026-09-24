@@ -338,6 +338,9 @@ export function openDb(path: string = resolveDbPath()): Database {
     mkdirSync(dirname(path), { recursive: true });
   }
   const db = new Database(path);
+  // Wait out brief locks from another connection (a concurrent sync or a
+  // closing writer) instead of failing with "database is locked".
+  db.exec("PRAGMA busy_timeout = 5000;");
   db.exec("PRAGMA journal_mode = WAL;");
   db.exec("PRAGMA foreign_keys = ON;");
   migrate(db);
