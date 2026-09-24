@@ -8,7 +8,7 @@ description: This skill should be used when the user asks about Effect-TS patter
 Expert guidance for functional programming with the Effect library, covering error handling, dependency injection,
 composability, and testing patterns.
 
-This skill documents **Effect v3** (`3.22.1`), the current npm `latest`. If the project depends on `effect@4.x`, stop
+This skill documents **Effect v3** (`3.22.2`), the current npm `latest`. If the project depends on `effect@4.x`, stop
 and use the `effect-ts-beta` skill: v4 renames a large part of the API surface and removes Effect subtyping, so the
 patterns here will not compile. Check with:
 
@@ -23,14 +23,14 @@ Before starting any Effect-related work, verify the Effect-TS source code exists
 If it is missing, clone it before proceeding and tell the user you did:
 
 ```bash
-git clone --depth=1 --branch effect@3.22.1 https://github.com/Effect-TS/effect.git "$SKILL_DIR/.source"
+git clone --depth=1 --branch effect@3.22.2 https://github.com/Effect-TS/effect.git "$SKILL_DIR/.source"
 ```
 
 The `main` branch tracks Effect v4, which has breaking API changes relative to
 the v3 patterns documented in this skill.
 Service definition alone moved from `Context.Tag` to `Context.Service`, with the
 identifier and type parameters in the opposite order. Pin the clone to a v3 tag,
-matching the `effect@3.22.1` reference submodule pinned in the root `CLAUDE.md`,
+matching the `effect@3.22.2` reference submodule pinned in the root `CLAUDE.md`,
 rather than cloning `main` unpinned.
 
 ## Research Strategy

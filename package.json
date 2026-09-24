@@ -15,15 +15,15 @@
     "format:check": "oxfmt --check"
   },
   "dependencies": {
-    "yaml": "^2.9.0"
+    "yaml": "^2.9.1"
   },
   "devDependencies": {
-    "@types/bun": "1.4.0",
-    "@types/node": "^26.4.1",
-    "lefthook": "2.1.12",
-    "oxfmt": "^0.65.0",
-    "oxlint": "^1.81.0",
-    "typescript": "^7"
+    "@types/bun": "1.4.2",
+    "@types/node": "^26.6.2",
+    "lefthook": "2.1.14",
+    "oxfmt": "^0.68.0",
+    "oxlint": "^1.83.0",
+    "typescript": "^7.0.2"
   },
   "engines": {
     "bun": ">=1.1.0"

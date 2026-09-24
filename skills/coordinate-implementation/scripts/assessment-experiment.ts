@@ -32,7 +32,7 @@ type StallRequestArtifact = {
     {
       type: "noul";
       instructions: string;
-      criteria: { false: string; true: string };
+      criteria?: { false: string; true: string };
     }
   >;
 };

@@ -7,8 +7,8 @@
     "test": "bun test"
   },
   "dependencies": {
-    "@happy-dom/global-registrator": "^20.11.6",
-    "effect": "^3.22.1",
-    "mermaid": "^11.17.2"
+    "@happy-dom/global-registrator": "^20.14.5",
+    "effect": "^3.22.2",
+    "mermaid": "^12.0.0"
   }
 }
