@@ -63,6 +63,7 @@ export type PreflightOutcome = {
 const probeCommand = (command: string, args: string[]): CommandCapability => {
   try {
     const result = Bun.spawnSync([command, ...args], {
+      env: process.env,
       stdout: "pipe",
       stderr: "pipe",
     });
@@ -79,6 +80,7 @@ const probeCommand = (command: string, args: string[]): CommandCapability => {
 const readHerdrSchema = (): unknown | undefined => {
   try {
     const result = Bun.spawnSync(["herdr", "api", "schema", "--json"], {
+      env: process.env,
       stdout: "pipe",
       stderr: "pipe",
     });
@@ -135,7 +137,7 @@ const exposesNormalizedContext = (schema: unknown): boolean => {
 };
 
 const defaultSkillRoots = (): string[] => {
-  const home = homedir();
+  const home = process.env.HOME || homedir();
   const claudeConfig = process.env.CLAUDE_CONFIG_DIR ?? join(home, ".claude");
   const piConfig = process.env.PI_CODING_AGENT_DIR ?? join(home, ".pi", "agent");
   return [

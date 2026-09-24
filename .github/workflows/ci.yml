@@ -14,6 +14,9 @@ jobs:
   test:
     name: test
     runs-on: ubuntu-latest
+    # A healthy run takes about 3 minutes. Cap hung runs instead of letting
+    # them burn GitHub's 6 hour default.
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v7
 
