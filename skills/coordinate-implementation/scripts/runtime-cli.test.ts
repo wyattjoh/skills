@@ -5,6 +5,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { claimEngineLease } from "./lib/engine-lease.ts";
 import type { HerdrActuator } from "./lib/herdr-actuator.ts";
+import { runCliInProcess } from "./test-cli.ts";
 import { runRuntimeCommand, type RuntimeDeps, type WorkflowModule } from "./lib/runtime-cli.ts";
 
 type Output = { ok: boolean; result: Record<string, any>; errors: Array<{ code: string }> };
@@ -164,6 +165,42 @@ describe("runtime CLI", () => {
     const stopped = await cli(["stop", "--run", runPath, "--force"], deps);
 
     expect(stopped.result).toEqual({ engine: "fenced", fenced_generation: 1, generation: 2 });
+  });
+
+  it("refuses mutating helper operations while a live engine owns the run", async () => {
+    const { runPath } = makeRun();
+    const statePath = join(runPath, "RESUME.md");
+    await Effect.runPromise(
+      claimEngineLease({
+        statePath,
+        expectedGeneration: 0,
+        pid: process.pid,
+        host: "host-a",
+        pane: "w1:p9",
+        scriptSha256: "x",
+        now: new Date(),
+      }),
+    );
+
+    const refused = await runCliInProcess(
+      {
+        schema_version: 1,
+        operation: "infrastructure.retry.record",
+        input: {
+          state_path: statePath,
+          ticket: "02",
+          attempt: 1,
+          failure: "worker",
+          diagnostic: "exited",
+        },
+      },
+      process.env,
+    );
+
+    expect(refused.exitCode).toBe(1);
+    expect((JSON.parse(refused.stdout) as { errors: Array<{ code: string }> }).errors).toEqual([
+      expect.objectContaining({ code: "engine.active" }),
+    ]);
   });
 
   it("rejects unknown commands as usage errors", async () => {

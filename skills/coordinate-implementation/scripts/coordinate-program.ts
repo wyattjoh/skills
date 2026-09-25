@@ -3,6 +3,7 @@ import {
   failureResponse,
   parseRequest,
   successResponse,
+  type CliIssue,
   type CoordinateRequest,
   type CoordinateResponse,
 } from "./lib/contract.ts";
@@ -14,6 +15,7 @@ import {
   retryCoordinatorHandoff,
   verifyCoordinatorHandoff,
 } from "./lib/handoff.ts";
+import { liveEngineLease } from "./lib/engine-lease.ts";
 import { drainGlobalWarnings, setCurrentOperation } from "./lib/global-state.ts";
 import { waitAnyWorker } from "./lib/herdr.ts";
 import {
@@ -443,6 +445,43 @@ const execute = (request: CoordinateRequest, output: Output): Effect.Effect<numb
   });
 
 /**
+ * Operations a coordinator may run while an Engine holds the run: read-only
+ * checks, snapshot acceptance for a `snapshot_changed` escalation, and
+ * coordinator ownership, which the Engine never writes.
+ */
+const ENGINE_SAFE_OPERATIONS = new Set<string>([
+  "preflight",
+  "state.validate",
+  "snapshot.check",
+  "snapshot.accept",
+  "roles.discover",
+  "role.validate",
+  "scheduler.plan",
+  "herdr.wait_any",
+  "coordinator.claim",
+  "coordinator.ready",
+  "coordinator.verify",
+]);
+
+const engineGuard = (request: CoordinateRequest): Effect.Effect<CliIssue | undefined> =>
+  Effect.gen(function* () {
+    const input = request.input as { statePath?: unknown };
+    if (ENGINE_SAFE_OPERATIONS.has(request.operation) || typeof input.statePath !== "string") {
+      return undefined;
+    }
+    const lease = yield* liveEngineLease(input.statePath, new Date()).pipe(
+      Effect.orElseSucceed(() => null),
+    );
+    if (lease === null) return undefined;
+    return {
+      code: "engine.active",
+      message: `Engine generation ${lease.generation} (pid ${lease.pid}) owns this run, so \`${request.operation}\` would race its writes.`,
+      remediation:
+        "Answer the escalation through runtime.ts instead, or run `runtime.ts stop` before this recovery operation.",
+    };
+  });
+
+/**
  * Runs one coordinator request and returns the exact CLI stdout and exit code.
  *
  * The CLI entry point and in-process tests share this function, so both see the
@@ -461,6 +500,11 @@ export const runCoordinatorRequest = async (
   const program = Effect.gen(function* () {
     const request = yield* parseRequest(raw);
     setCurrentOperation(request.operation);
+    const blocked = yield* engineGuard(request);
+    if (blocked !== undefined) {
+      print(output, failureResponse(request.operation, [blocked], null));
+      return 1;
+    }
     return yield* execute(request, output);
   });
   const outcome = await Effect.runPromise(Effect.result(program));

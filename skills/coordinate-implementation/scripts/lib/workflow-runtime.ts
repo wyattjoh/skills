@@ -62,6 +62,7 @@ export type TicketOps = {
   fix: (ticket: TicketInfo, request: FixRequest) => Effect.Effect<void, WorkflowError>;
   land: (ticket: TicketInfo) => Effect.Effect<LandOutcome, WorkflowError>;
   beforeLaunch: () => Effect.Effect<void, WorkflowError>;
+  finish: () => Effect.Effect<void, WorkflowError>;
 };
 
 /**

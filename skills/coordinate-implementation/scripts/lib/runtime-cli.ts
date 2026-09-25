@@ -13,6 +13,7 @@ import {
   readEngineHeartbeat,
   readEngineLease,
   releaseEngineLease,
+  STALE_AFTER_MS,
   type EngineLease,
 } from "./engine-lease.ts";
 import { runEngine, stopRequestPath, type EngineWorkflow } from "./engine.ts";
@@ -25,11 +26,6 @@ import { makeHerdrActuator, type HerdrActuator } from "./herdr-actuator.ts";
  * Heartbeat cadence of a production engine.
  */
 export const HEARTBEAT_MS = 10_000;
-
-/**
- * Heartbeat age after which `wait` and `start` treat the engine as stale.
- */
-export const STALE_AFTER_MS = 45_000;
 
 /**
  * Longest `wait` budget, kept below the shortest supported harness tool limit.

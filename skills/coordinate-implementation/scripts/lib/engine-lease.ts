@@ -314,6 +314,28 @@ export const engineLiveness = (
 };
 
 /**
+ * Heartbeat age after which an engine is considered stale.
+ */
+export const STALE_AFTER_MS = 45_000;
+
+/**
+ * Returns the live engine lease that currently owns the run, or null.
+ *
+ * @param statePath - Run RESUME.md path.
+ * @param now - Observation time.
+ * @returns An Effect containing the live lease or null; unreadable leases count as live.
+ */
+export const liveEngineLease = (
+  statePath: string,
+  now: Date,
+): Effect.Effect<EngineLease | null, EngineLeaseError> =>
+  Effect.gen(function* () {
+    const lease = yield* readEngineLease(statePath);
+    const heartbeat = yield* readEngineHeartbeat(statePath);
+    return engineLiveness(lease, heartbeat, now, STALE_AFTER_MS) === "alive" ? lease : null;
+  });
+
+/**
  * Reports whether a process id is alive on this host.
  *
  * @param pid - Process id to probe.

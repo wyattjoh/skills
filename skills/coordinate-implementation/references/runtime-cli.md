@@ -41,9 +41,17 @@ code 0 is success, 1 an operation failure, 2 a usage error.
      means the process is alive but silent: run `stop --force`, then `start`.
    - `reason: "budget"`: nothing needs you. Report progress briefly if useful and
      wait again.
-4. Stop when an `engine.completed` event arrives, then read `SUMMARY.md`.
+4. Stop when `engine.completed` arrives. The preceding `run.finalized` event
+   reports the finalize status: `completed` means `SUMMARY.md` is written;
+   `waiting` lists blocked tickets to resolve and restart, or to close with the
+   user's explicit decision through `run.finalize`.
 
 Never poll with sleeps, cron, or background shells. `wait` is the only wait.
+
+While a live Engine holds the run, the helper CLI refuses every operation that
+could race its writes with `engine.active`. Read-only checks,
+`snapshot.accept`, and coordinator ownership operations stay available. Run
+`stop` first before any manual recovery operation.
 
 ## Escalations
 

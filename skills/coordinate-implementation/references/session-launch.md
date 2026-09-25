@@ -49,8 +49,9 @@ again during review.
 After resolving this policy, invoke `worktree.preflight` with the complete
 `policy` object. It is read-only and must succeed before RESUME.md or any
 worktree is created. A missing repository-required tool stops here without
-native fallback. Persist the resolved policy as RESUME.md's
-`## Repository policy` record before starting the Engine; the Engine reads it
+native fallback. Once RESUME.md exists, repeat `worktree.preflight` with
+`state_path` so the helper persists the resolved policy as RESUME.md's
+`## Repository policy` record before the Engine starts; the Engine reads it
 before each launch.
 
 For each ticket, the Engine then invokes `worktree.prepare`:

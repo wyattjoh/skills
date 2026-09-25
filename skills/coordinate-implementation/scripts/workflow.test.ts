@@ -104,6 +104,7 @@ const fakeOps = (
       ) as never,
     fix: (ticket, request) => record(ticket, "fix", request).pipe(Effect.asVoid),
     beforeLaunch: () => Effect.void,
+    finish: () => Effect.void,
     land: (ticket) =>
       Effect.gen(function* () {
         const outcome = (yield* record(ticket, "land", next(ticket, "land", "landed"))) as string;

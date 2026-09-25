@@ -288,6 +288,11 @@ with `worktree.tool_unavailable`; native Git is never selected as a substitute.
 This policy-aware check is separate from the generic baseline `preflight`,
 which remains unchanged and runs before initial setup.
 
+Pass an optional `state_path` once RESUME.md exists. After the checks pass,
+the helper then persists the serialized policy as RESUME.md's
+`## Repository policy` record, the same record `worktree.prepare` writes. The
+Engine requires that record before its first launch.
+
 ## `worktree.prepare`
 
 Resolve and persist repository policy before creating one ticket worktree. The

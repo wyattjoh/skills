@@ -211,9 +211,9 @@ Engine starts in the last step.
 3. **Repository policy.** Resolve the complete worktree, branch, setup,
    cleanup, remote, and commit policy from repository instructions as
    described in [session-launch.md](references/session-launch.md). Require
-   `worktree.preflight` to pass, then persist it as the `## Repository policy`
-   record. Persist the one authorized remote synchronization argv, or null for
-   local-only.
+   `worktree.preflight` to pass, then call it again with `state_path` so the
+   helper persists the `## Repository policy` record, including the one
+   authorized remote synchronization argv, or null for local-only.
 4. **Common brief.** Resolve `<run>/briefs/common.md` from
    [common-brief.md](references/common-brief.md), repository instructions,
    and CI. No placeholder may remain.
@@ -290,12 +290,16 @@ reviewed new script.
 
 ## Finish the run
 
-When `engine.completed` arrives, call `run.finalize` with empty closures and
-`user_authorized: false`. It reads the accepted dependency graph and returns
-`active`, `waiting`, or `completed`. A blocked empty frontier is `waiting`,
-never success. Close blocked work only from an explicit user decision naming
-each blocked or dependency-blocked ticket and reason; pass those closures
-together with `user_authorized: true`. The operation moves preserved runtime
+Before it exits, the Engine calls `run.finalize` with empty closures and emits
+`run.finalized` with the returned `status`, `landed`, `blocked`, and `runnable`
+tickets, followed by `engine.completed`. `completed` means `SUMMARY.md` exists.
+`waiting` (a blocked empty frontier) is never success and is an attention
+event. For each blocked ticket, either resolve the cause and run `start` again
+(tickets that failed inside the Engine are retried on the next start), or close
+it: only from an explicit user decision naming each blocked or
+dependency-blocked ticket and reason, call `run.finalize` yourself with those
+closures and `user_authorized: true`. The Engine has released its lease by
+then, so the helper accepts the call. The operation moves preserved runtime
 provenance to `## Closed ticket runtimes`, writes `## Run outcome`, and writes
 `SUMMARY.md` only when every ticket is `landed` or `closed`. The summary
 includes landed, blocked, and closed tickets, role provenance, review evidence,

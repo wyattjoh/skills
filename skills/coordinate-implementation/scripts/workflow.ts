@@ -74,6 +74,7 @@ export const workflow = (
           },
           catch: (error) => error,
         });
+        yield* ops.finish();
       }),
     ),
 });

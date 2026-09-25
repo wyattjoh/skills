@@ -447,6 +447,17 @@ process.exit(result.exitCode);
       required_tool: { name: "repo-worktrees", available: true },
     });
 
+    const persisted = await runCli(
+      request("worktree.preflight", { policy, state_path: fixture.statePath }),
+      fixture.env,
+    );
+    expect(persisted.exitCode).toBe(0);
+    expect(
+      readFileSync(fixture.statePath, "utf8").includes(
+        '"remote_sync_argv": [\n    "git",\n    "fetch",\n    "upstream"\n  ]',
+      ),
+    ).toBe(true);
+
     const created = await runCli(
       request("worktree.prepare", {
         state_path: fixture.statePath,

@@ -20,6 +20,7 @@ import { prepareImplementorLaunch, recordImplementorLaunch } from "./implementor
 import { checkIntegration, operationInProgress } from "./integration.ts";
 import { checkLandingRebase, completeLanding, type LandingRebaseResult } from "./landing.ts";
 import { recordInfrastructureRetry } from "./retry.ts";
+import { finalizeRun } from "./run.ts";
 import {
   finalizeReviewRound,
   prepareReviewerLaunch,
@@ -1013,7 +1014,36 @@ export const builtinTicketOps = (
         }
       });
 
+    const finish: TicketOps["finish"] = () =>
+      Effect.gen(function* () {
+        const result = yield* call(
+          finalizeRun({
+            runPath,
+            statePath,
+            summaryPath: join(runPath, "SUMMARY.md"),
+            closures: [],
+            userAuthorized: false,
+            projectRemoteWrites: options.projectRemoteWrites,
+            completedAt: utc(),
+          }),
+        );
+        yield* emit(
+          "run.finalized",
+          null,
+          {
+            status: result.status,
+            landed: result.landed_tickets,
+            blocked: result.blocked_tickets,
+            runnable: result.runnable_tickets,
+            summary_path: result.summary_path,
+            tracker_action: result.tracker_action,
+          },
+          result.status !== "completed",
+        );
+      });
+
     return {
+      finish,
       beforeLaunch,
       implement,
       rebase,

@@ -109,6 +109,14 @@ Parallel cap:    2
 Stall interval:  10m
 Branch template: ex-NN-<slug>
 
+Coordinator:
+  harness:    claude
+  model:      fable
+  effort:     low
+  handoff:    disabled
+  threshold:  unavailable
+  unattended: block
+
 Implementor:
   harness: pi
   model:   openai/test
@@ -382,6 +390,10 @@ describe("built-in ticket operations", () => {
     ]);
     expect(types.filter((type) => type === "ticket.landed").length).toBe(3);
     expect(types.filter((type) => type === "ticket.fix_requested").length).toBe(1);
+    expect(events.events.find((event) => event.type === "run.finalized")?.data.status).toBe(
+      "completed",
+    );
+    expect(readFileSync(join(fixture.runPath, "SUMMARY.md"), "utf8").length > 0).toBe(true);
   }, 60_000);
 
   it("resumes after the engine dies mid-run without relaunching live implementors", async () => {

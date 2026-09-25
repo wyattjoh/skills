@@ -226,6 +226,7 @@ export type RepositoryPolicy = {
  */
 export type WorktreePreflightInput = {
   policy: RepositoryPolicy;
+  statePath: string | undefined;
 };
 
 /**
@@ -1721,10 +1722,21 @@ export const parseRequest = (raw: string): Effect.Effect<CoordinateRequest, Requ
           operation,
         );
       }
+      const statePathValue = parsed.input.state_path;
+      const statePath =
+        statePathValue === undefined || statePathValue === null
+          ? undefined
+          : nonEmptyString(statePathValue);
+      if (statePathValue !== undefined && statePathValue !== null && statePath === undefined) {
+        return yield* invalidRequest(
+          "`worktree.preflight` `state_path` must be a non-empty path when present.",
+          operation,
+        );
+      }
       return {
         schemaVersion: CONTRACT_SCHEMA_VERSION,
         operation,
-        input: { policy },
+        input: { policy, statePath },
       };
     }
 
