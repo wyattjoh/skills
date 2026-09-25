@@ -6,14 +6,7 @@ import type { CliIssue } from "./contract.ts";
 /**
  * Situations the engine cannot resolve inside the review and fix contract.
  */
-export type EscalationKind =
-  | "question"
-  | "scope"
-  | "snapshot_changed"
-  | "retry_exhausted"
-  | "review_churn"
-  | "stall_pause"
-  | "report_missing";
+export type EscalationKind = "question" | "snapshot_changed" | "retry_exhausted" | "stall_pause";
 
 /**
  * Durable request for judgment that parks exactly one ticket.

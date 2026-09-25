@@ -280,8 +280,6 @@ export const createRun = async (options: RunOptions): Promise<Run> => {
   const frontier: Run["frontier"] = (body, frontierOptions) =>
     perform(
       Effect.gen(function* () {
-        const cap = frontierOptions?.parallel ?? initial.cap;
-        const mode = frontierOptions?.parallel === undefined ? initial.mode : "parallel";
         const running = new Map<string, Fiber.Fiber<void, never>>();
         const blocked = new Map<string, CliIssue>();
         const finished = yield* Queue.unbounded<string>();
@@ -290,6 +288,9 @@ export const createRun = async (options: RunOptions): Promise<Run> => {
         while (true) {
           const markdown = yield* Effect.promise(() => readFile(context.statePath, "utf8"));
           const recorded = parseTicketStatuses(markdown);
+          const current = parseCap(markdown);
+          const cap = frontierOptions?.parallel ?? current.cap;
+          const mode = frontierOptions?.parallel === undefined ? current.mode : "parallel";
           const schedulerTickets: SchedulerTicket[] = tickets.map((ticket) => {
             const status = recorded.get(ticket.number) ?? "queued";
             const effective = running.has(ticket.number)

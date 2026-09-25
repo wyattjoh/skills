@@ -319,7 +319,7 @@ describe("review documentation contract", () => {
     expect(procedure).toContain(
       "Never reset, stash, commit, or discard reviewer changes automatically",
     );
-    expect(skill).toContain("Review fixes are pre-authorized");
+    expect(skill).toContain("Review fixes are\n  pre-authorized regardless of round");
     expect(procedure).toContain("terminal remediation result");
     expect(procedure).toContain("result returned directly by the blocking Herdr prompt");
     expect(procedure).toContain("do not summarize, end the turn, or wait for another");

@@ -172,7 +172,7 @@ client and can move at any time.
 Cross-run discovery uses machine-local global run files under
 `$XDG_STATE_HOME/coordinate-implementation/runs/` (default
 `~/.local/state/...`). The helper rewrites a run's file atomically after every
-RESUME.md mutation, and the Engine mirrors its lease there. Never write these
+RESUME.md mutation, and the Engine refreshes its heartbeat there. Never write these
 files yourself. The layout, versioned schemas, and reader protocol are in
 [registry.md](references/registry.md). The old `.scratch/coordinators.md`
 registry is retired: never read or update it, and leave any existing copy for
@@ -269,17 +269,19 @@ write-once and the Engine delivers them to the parked ticket.
   yourself when `spec.md` or the tickets settle it, citing the source.
   Otherwise ask the user and answer with `--by user`. Never invent product
   intent.
-- `scope`, `retry_exhausted`: ask the user and answer with `--by user`.
+- `retry_exhausted`: ask the user and answer with `--by user`. The ticket stays
+  blocked until its cause is fixed and the Engine is started again.
 - `snapshot_changed`: report every changed input. Only after the user
   explicitly accepts the new revision, call `snapshot.accept`, then answer with
-  `--by user`.
-- `review_churn`: read the ticket's findings. Review fixes are pre-authorized
-  regardless of round, so answer to continue unless the user decides
-  otherwise.
-- `stall_pause`, `report_missing`: read the named pane, then answer with what
-  the Engine should tell the implementor, or ask the user when the evidence
+  `--by user`. The Engine re-checks the snapshot; the answer text is recorded
+  only.
+- `stall_pause`: read the named pane, then answer with the exact prompt the
+  Engine should deliver to the implementor, or ask the user when the evidence
   does not settle it. [stall-check.md](references/stall-check.md) describes
   the stall seam.
+- `attention.review_churn` is an event, not an escalation. Review fixes are
+  pre-authorized regardless of round, so keep waiting unless the user decides
+  to stop the ticket.
 
 ### Mid-run changes
 

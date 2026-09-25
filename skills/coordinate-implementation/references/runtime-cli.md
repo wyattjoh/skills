@@ -56,21 +56,22 @@ could race its writes with `engine.active`. Read-only checks,
 ## Escalations
 
 Anything outside the review and fix contract parks only its ticket and opens a
-write-once record in `<run>/escalations/<id>.json`:
+write-once record in `<run>/escalations/<id>.json`. Other tickets keep running
+the whole time. Answer with `answer --id <id> --text "<decision>"`, adding
+`--by user` when the text is the user's decision. Answers are immutable.
 
-| Kind               | Raised when                                                      | Who answers                                                   |
-| ------------------ | ---------------------------------------------------------------- | ------------------------------------------------------------- |
-| `question`         | An implementor wrote a `TICKET BLOCKED` question file            | Coordinator from the spec and tickets; otherwise ask the user |
-| `scope`            | A rebase or review needs a product scope decision                | User                                                          |
-| `snapshot_changed` | `spec.md`, `snapshot.json`, or a ticket changed after acceptance | User, through the snapshot acceptance flow                    |
-| `retry_exhausted`  | A launch, gate, reviewer, or Herdr retry budget is spent         | User                                                          |
-| `review_churn`     | A ticket reaches the configured review round                     | Coordinator; the engine keeps looping unless told otherwise   |
-| `stall_pause`      | The stall assessment selected `pause`                            | Coordinator after reading the pane, or the user               |
-| `report_missing`   | An agent went idle without writing its required report file      | Coordinator after reading the pane                            |
+| Kind               | Raised when                                                             | What the answer does                                                                                                  |
+| ------------------ | ----------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------- |
+| `question`         | An implementor wrote its `TICKET BLOCKED` question file                 | Delivered to the implementor verbatim as the answer; the ticket resumes                                               |
+| `stall_pause`      | The stall assessment selected `pause`                                   | Delivered to the implementor verbatim as a prompt; the ticket resumes under stall supervision                         |
+| `snapshot_changed` | An input changed after acceptance; this holds new launches only         | Recorded only. The Engine re-checks the snapshot and escalates again until `snapshot.accept` records the new revision |
+| `retry_exhausted`  | A launch, gate, or reviewer retry budget is spent, or the base is dirty | Recorded only. The ticket blocks; for a dirty base checkout, landing retries after the answer                         |
 
-Answer with `answer --id <id> --text "<decision>"`. Pass `--by user` when the
-text is the user's decision. Answers are immutable. Other tickets keep running
-the whole time.
+`review_churn` is not an escalation. The Engine emits `attention.review_churn`
+when a ticket reaches the configured review round and keeps looping, because
+review fixes are pre-authorized. To stop a churning ticket, run `stop` and
+decide with the user. Scope questions arrive as `question` escalations, since
+implementors resolve their own rebases.
 
 ## Script changes
 

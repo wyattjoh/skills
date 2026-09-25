@@ -13,7 +13,7 @@ import {
   type EngineLease,
 } from "./engine-lease.ts";
 import { openEventLog, type EventLog, type RuntimeEvent } from "./event-log.ts";
-import type { StateMutationError } from "./state-mutation.ts";
+import { heartbeatStateFile, type StateMutationError } from "./state-mutation.ts";
 
 /**
  * Services the engine hands to the workflow it runs.
@@ -172,6 +172,7 @@ export const runEngine = (options: EngineOptions): Effect.Effect<EngineExit, Eng
             .toISOString()
             .replace(/\.\d{3}Z$/, "Z"),
         }).pipe(Effect.ignore);
+        yield* heartbeatStateFile(options.statePath);
         const current = yield* readEngineLease(options.statePath).pipe(
           Effect.orElseSucceed(() => lease),
         );

@@ -42,7 +42,7 @@ describe("escalation inbox", () => {
   it("lists only unanswered escalations and releases a waiter on answer", async () => {
     const run = runDir();
     await Effect.runPromise(openEscalation(run, question()));
-    await Effect.runPromise(openEscalation(run, question(escalationId("04", "scope", 2, 1))));
+    await Effect.runPromise(openEscalation(run, question(escalationId("04", "stall_pause", 2, 1))));
 
     const answer = await Effect.runPromise(
       Effect.gen(function* () {
@@ -59,7 +59,7 @@ describe("escalation inbox", () => {
     const open = await Effect.runPromise(listOpenEscalations(run));
 
     expect(answer.answer).toBe("Drop them and log a warning.");
-    expect(open.map((entry) => entry.id)).toEqual(["04-scope-2-1"]);
+    expect(open.map((entry) => entry.id)).toEqual(["04-stall_pause-2-1"]);
   });
 
   it("refuses a second answer and answers for unknown ids", async () => {

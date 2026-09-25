@@ -279,6 +279,32 @@ describe("workflow frontier", () => {
     ).toEqual({ value: ["01", "05"] });
   });
 
+  it("applies a raised parallel cap on the next scheduling pass without a restart", async () => {
+    const runPath = makeRun({}, 1);
+    const trace: Trace = { calls: [], active: 0, peak: 0 };
+    const base = fakeOps(runPath, trace);
+    const ops: TicketOps = {
+      ...base,
+      implement: (ticket) =>
+        Effect.gen(function* () {
+          if (ticket.number === "01") {
+            const path = join(runPath, "RESUME.md");
+            writeFileSync(
+              path,
+              readFileSync(path, "utf8").replace("Parallel cap:    1", "Parallel cap:    3"),
+            );
+          }
+          yield* base.implement(ticket);
+        }),
+    };
+
+    await runWorkflow(runPath, ops, async (run) => {
+      await run.frontier((ticket) => standardTicket(ticket));
+    });
+
+    expect(trace.peak).toBe(3);
+  });
+
   it("computes reporting waves from the graph", () => {
     const waves = computeWaves(
       GRAPH.map((ticket) => ({ number: ticket.number, path: "", blockedBy: ticket.blocked_by })),
