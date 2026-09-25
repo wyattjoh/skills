@@ -11,6 +11,26 @@ The skills cover code review, pull requests, release automation, dependency mana
 iOS development, research, workspace orchestration, and other repeatable engineering
 tasks. Each skill is self-contained, inspectable, and installable on its own.
 
+## Install as a Claude Code plugin
+
+This repository is also a Claude Code plugin marketplace. Installing the `wyattjoh` plugin
+loads every skill under `skills/` and every agent under `agents/` in one step, and
+`/plugin update` keeps them current:
+
+```bash
+claude plugin marketplace add wyattjoh/skills
+claude plugin install wyattjoh@wyattjoh-skills
+```
+
+Inside a Claude Code session, the equivalent commands are
+`/plugin marketplace add wyattjoh/skills` and `/plugin install wyattjoh@wyattjoh-skills`.
+
+Plugin skills are namespaced by the plugin name, so `pr-create` runs as
+`/wyattjoh:pr-create`. Claude Code ignores `permissionMode` in plugin-shipped agents, so
+agents such as `researcher` that start in plan mode when linked with `just link` start in
+the session's mode when loaded from the plugin. The manifests live in
+[`.claude-plugin/`](.claude-plugin/).
+
 ## Install skills
 
 Use the open source [Skills CLI](https://github.com/vercel-labs/skills) to browse and
@@ -141,6 +161,7 @@ Restart Claude Code after adding or changing an agent definition.
 ```text
 skills/              # One directory per published skill, with SKILL.md and optional supporting files
 agents/              # Claude Code subagent definitions
+.claude-plugin/      # Claude Code plugin and marketplace manifests
 .claude/skills/      # Skills internal to this repository, not published
 .claude/references/  # Shared authoring documentation and pinned dependency submodules
 .claude/rules/       # Repository-specific authoring conventions

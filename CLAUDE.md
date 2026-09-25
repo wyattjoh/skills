@@ -17,6 +17,7 @@ For how Claude Code auto-loads skills, agents, rules, and memory, see
 ```
 skills/              # one directory per published skill, each with a SKILL.md (plus optional scripts/ and references/)
 agents/              # one Markdown file per agent
+.claude-plugin/      # plugin.json and marketplace.json, so the repo installs as a Claude Code plugin
 .claude/skills/      # skills internal to this repo, not published (e.g. claude-skills-update)
 .claude/references/  # shared reference docs for authoring in this repo, plus pinned dependency submodules
 .claude/rules/       # path-scoped authoring conventions for this repo
@@ -52,6 +53,14 @@ Claude edits matching files:
 
 - One Markdown file per agent under `agents/`. Restart Claude Code to load agent changes.
 - Follow the frontmatter conventions in [`.claude/rules/agents.md`](.claude/rules/agents.md).
+
+## Plugin packaging
+
+The repository root is a Claude Code plugin (`wyattjoh`) and a single-plugin marketplace
+(`wyattjoh-skills`), defined in `.claude-plugin/`. The plugin relies on the default
+`skills/` and `agents/` directories, so new skills and agents ship without manifest
+edits. `version` is intentionally omitted so installs track the commit SHA. Run
+`claude plugin validate .` after touching either manifest.
 
 ## Available scripts
 

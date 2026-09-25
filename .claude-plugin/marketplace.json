@@ -1,0 +1,15 @@
+{
+  "name": "wyattjoh-skills",
+  "description": "Wyatt Johnson's Claude Code skills and agents",
+  "owner": {
+    "name": "Wyatt Johnson",
+    "url": "https://github.com/wyattjoh"
+  },
+  "plugins": [
+    {
+      "name": "wyattjoh",
+      "source": "./",
+      "description": "Reusable Claude Code skills and agents for software development workflows"
+    }
+  ]
+}
