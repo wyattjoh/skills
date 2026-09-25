@@ -17,6 +17,7 @@ import type {
 } from "./contract.ts";
 import { activeRuntimeBlockPattern, parseActiveRuntimeFields } from "./active-runtime.ts";
 import { spawnGit } from "./git.ts";
+import { herdrPromptCommand } from "./harness-launch.ts";
 import { IntegrationError, parseIntegration } from "./integration.ts";
 import {
   applyFinalReviewOutcome,
@@ -527,10 +528,7 @@ const buildReviewerLaunch = (
         ...harnessArgs,
       ],
     },
-    prompt: {
-      command: "herdr",
-      args: ["agent", "prompt", session, prompt, "--wait", "--timeout", "300000"],
-    },
+    prompt: herdrPromptCommand(session, prompt),
   };
 };
 

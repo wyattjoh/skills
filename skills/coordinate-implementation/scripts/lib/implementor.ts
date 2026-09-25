@@ -16,6 +16,7 @@ import { createHash, randomUUID } from "node:crypto";
 import { activeRuntimeBlockPattern, parseActiveRuntimeFields } from "./active-runtime.ts";
 import {
   buildHarnessLaunch,
+  herdrPromptCommand,
   type ArgumentCommand,
   type HarnessLaunchPlan,
 } from "./harness-launch.ts";
@@ -680,10 +681,7 @@ const parsePromptCommand = (value: unknown, session: string): ArgumentCommand | 
     strings[8] === session &&
     strings[9]!.length > 0
   ) {
-    return {
-      command: "herdr",
-      args: ["agent", "prompt", session, strings[9]!, "--wait", "--timeout", "300000"],
-    };
+    return herdrPromptCommand(session, strings[9]!);
   }
   return null;
 };

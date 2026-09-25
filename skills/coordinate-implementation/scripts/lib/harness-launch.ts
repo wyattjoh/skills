@@ -62,9 +62,40 @@ export const buildHarnessLaunch = (input: HarnessLaunchInput): HarnessLaunchPlan
         ...harnessArgs,
       ],
     },
-    prompt: {
-      command: "herdr",
-      args: ["agent", "prompt", input.session, input.prompt, "--wait", "--timeout", "300000"],
-    },
+    prompt: herdrPromptCommand(input.session, input.prompt),
   };
+};
+
+/**
+ * Builds the Herdr command that delivers one prompt to a session and waits for it.
+ *
+ * @param session - Herdr agent session name.
+ * @param prompt - Exact prompt text.
+ * @returns The shell-free `herdr agent prompt` command.
+ */
+export const herdrPromptCommand = (session: string, prompt: string): ArgumentCommand => ({
+  command: "herdr",
+  args: ["agent", "prompt", session, prompt, "--wait", "--timeout", "300000"],
+});
+
+/**
+ * Reads the session and prompt text back from a {@link herdrPromptCommand} command.
+ *
+ * @param command - A command built by {@link herdrPromptCommand}.
+ * @returns The target session and prompt text.
+ */
+export const herdrPromptTarget = (
+  command: ArgumentCommand,
+): { session: string; prompt: string } => {
+  const [verb, action, session, prompt] = command.args;
+  if (
+    command.command !== "herdr" ||
+    verb !== "agent" ||
+    action !== "prompt" ||
+    session === undefined ||
+    prompt === undefined
+  ) {
+    throw new Error(`Not a Herdr prompt command: ${JSON.stringify(command)}`);
+  }
+  return { session, prompt };
 };
