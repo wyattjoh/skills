@@ -230,7 +230,7 @@ Integration: {"cycle":0,"phase":"gates","base_sha":"0123456789abcdef0123456789ab
 | `Mode`            | `parallel` or `serial`. Controls only which queued tickets start; it does not terminate active workers                                                               |
 | `Parallel cap`    | Positive maximum active implementors; exactly `1` in serial mode                                                                                                     |
 | `Run id`          | Lowercase UUID naming the run's global state file. Generate it when creating the file; the helper backfills a missing one on its first locked write. Never change it |
-| `Stall interval`  | `<N>m` with integer `N` from 2 to 60; `10m` by default. The `herdr.wait_any` timeout, and therefore the stall-check cadence, for the core loop                       |
+| `Stall interval`  | `<N>m` with integer `N` from 2 to 60; `10m` by default. The period of the Engine's per-ticket stall timer                                                            |
 | `Branch template` | Branch pattern resolved from repository instructions, or `<prefix>-NN-<slug>` when the repository is silent                                                          |
 
 `Base` is the one field where the file beats the flag. `Implementor` and `Mode`

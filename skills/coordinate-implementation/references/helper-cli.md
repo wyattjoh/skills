@@ -1,7 +1,16 @@
 # Coordinate helper CLI
 
-The bundled Bun helper is the public mechanical boundary for the coordinator.
-It reads exactly one JSON request from stdin, writes exactly one JSON result to
+> The detached Engine now calls most of these operations itself. The
+> coordinator calls only the setup operations (`preflight`, `roles.discover`,
+> `role.validate`, `worktree.preflight`, `review.policy.prepare`,
+> `snapshot.accept`, `snapshot.check`), the coordinator ownership operations,
+> and `run.finalize`. Treat every other operation as an Engine internal and a
+> recovery tool: invoke one by hand only with explicit user authority and only
+> after `runtime.ts stop` confirms no Engine holds the run's lease. The
+> coordinator's own contract is [runtime-cli.md](runtime-cli.md).
+
+The bundled Bun helper is the mechanical boundary for the coordinator and the
+Engine. It reads exactly one JSON request from stdin, writes exactly one JSON result to
 stdout, and writes no human-oriented text around that result.
 
 Run it as:
@@ -611,7 +620,7 @@ control socket:
 }
 ```
 
-`timeout_ms` is an integer from 1 to 3600000. In the core loop it is the run's
+`timeout_ms` is an integer from 1 to 3600000. For a stall-cadence wait it is the run's
 `Stall interval:` in milliseconds (the example is the 10 minute default).
 The optional `state_path` names the run's RESUME.md. When present, the helper
 refreshes that run's global heartbeat under the state lock after the wait

@@ -1,5 +1,10 @@
 # Review, gate, fix, and landing pipeline
 
+The coordinator resolves the pipeline below before starting the Engine. Every
+later section describes what the Engine's built-in steps execute for each
+ticket; the coordinator uses them to read evidence, answer escalations, and
+perform explicitly authorized recovery after `runtime.ts stop`.
+
 ## Resolve the pipeline before workers launch
 
 Read every repository instruction file and the CI configuration before creating

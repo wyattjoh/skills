@@ -494,6 +494,10 @@ describe("portable downstream documentation", () => {
       expect(smoke.includes(scenario)).toBe(true);
     }
     expect(skill.includes("`run.finalize`")).toBe(true);
+    expect(smoke.includes("## Engine supervision")).toBe(true);
+    expect(smoke.includes("`engine.script_changed`")).toBe(true);
+    expect(smoke.includes("`TICKET BLOCKED NN: <question>`")).toBe(true);
+    expect(skill.includes("When `engine.completed` arrives, call `run.finalize`")).toBe(true);
     expect(packageMetadata.os).toEqual(["darwin", "linux"]);
     expect(packageMetadata.engines).toEqual({ bun: ">=1.1.0" });
     expect(packageMetadata.dependencies).toEqual({

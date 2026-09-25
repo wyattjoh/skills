@@ -1,43 +1,43 @@
 ---
 name: coordinate-implementation
-description: Orchestrates a multi-ticket implementation run. Points at a `.scratch/<slug>/` folder holding a spec and numbered issues, then runs dependency-ready tickets in parallel by default, reviews each result on two axes, loops fixes back, and fast-forwards the integration branch. Repository-specific commands and safety constraints are discovered from project instructions and CI rather than assumed. Scheduling mode and validated Coordinator, Implementor, and Reviewer role records survive resumes and mid-run changes in RESUME.md. Triggers on "/coordinate-implementation", "implement the tickets in", "orchestrate the run", "resume the implementation run".
+description: Orchestrates a multi-ticket implementation run through a detached workflow runtime. Points at a `.scratch/<slug>/` folder holding a spec and numbered issues, prepares the run, then starts an Engine in its own Herdr tab that runs dependency-ready tickets in parallel, reviews each result on two axes, loops fixes back, and lands each ticket on the integration branch. The coordinator supervises through bounded waits and answers escalations. Repository-specific commands and safety constraints are discovered from project instructions and CI rather than assumed. Scheduling mode and validated Coordinator, Implementor, and Reviewer role records survive resumes and mid-run changes in RESUME.md. Triggers on "/coordinate-implementation", "implement the tickets in", "orchestrate the run", "resume the implementation run".
 argument-hint: "[.scratch/<slug> | resume .scratch/<slug>] [--base <branch>] [--coordinator '<harness> <model> <effort>'] [--implementor '<harness> <model> <effort>'] [--reviewer '<harness> <model> <effort>'] [--serial | --parallel <N>] [--stall-interval <minutes>]"
-compatibility: Requires macOS or Linux, Git, Bun, Herdr 0.9.1 or later with the machine-readable event and snapshot API, Matt Pocock's implement skill, at least one supported harness (Pi or Claude Code), and a TypeSafe API key stored in Bun secrets.
+compatibility: Requires macOS or Linux, Git, Bun, flock, Herdr 0.9.1 or later with the machine-readable event and snapshot API, Matt Pocock's implement skill, at least one supported harness (Pi or Claude Code), and a TypeSafe API key stored in Bun secrets.
 disable-model-invocation: true
 effort: low
 ---
 
 # Coordinate an implementation run
 
-You are the **orchestrator**. You never implement a ticket yourself. You run
-one implementor session per ticket, start every dependency-ready ticket in
-parallel by default, review each policy-compliant ticket branch, send fixes
-back into the same session, and land it on the configured integration branch.
+You are the **coordinator**. You never implement a ticket yourself, and you no
+longer drive tickets step by step. You prepare the run, start a detached
+**Engine** that executes the run's workflow script, then supervise it through
+bounded waits and answer the escalations it raises. The Engine launches and
+prompts every implementor and reviewer, runs stall checks and gates, reads
+agent reports from files, drives fix rounds, and lands tickets. Your context
+limits, compaction, and restarts never interrupt ticket progress. The design
+is recorded in
+[0003-detached-workflow-runtime.md](docs/adr/0003-detached-workflow-runtime.md).
 
-The baseline environment is macOS or Linux with Git, Bun, Herdr 0.9.1 or
-later, Matt Pocock's `implement` skill, at least one supported harness (Pi or
-Claude Code), and a TypeSafe API key in Bun secrets under service
+The baseline environment is macOS or Linux with Git, Bun, `flock`, Herdr 0.9.1
+or later, Matt Pocock's `implement` skill, at least one supported harness (Pi
+or Claude Code), and a TypeSafe API key in Bun secrets under service
 `com.wyattjoh.coordinate-implementation` and name `typesafe-api-key`. Herdr
 must expose the machine-readable `events.subscribe` and `session.snapshot`
-methods. Coordination must run inside a Herdr-managed pane
-with `HERDR_ENV=1`. Load the `herdr` skill in the same invocation using the
-active harness's supported skill syntax so the coordinator can identify and
-control its own pane.
+methods. Coordination must run inside a Herdr-managed pane with
+`HERDR_ENV=1`. Load the `herdr` skill in the same invocation using the active
+harness's supported skill syntax so the coordinator can identify and control
+its own pane.
 
-Before creating or changing run state, invoke the versioned Bun helper's
-`preflight` operation. On resume, pass the existing RESUME.md as `state_path`.
-Stop on any nonzero exit or `ok: false`; preflight reports all detected
-problems and never mutates state. The complete request and result contract is
-[helper-cli.md](references/helper-cli.md).
+Two Bun entry points do the mechanical work:
 
-After preflight, coordination starts only from the accepted normalized local
-snapshot defined in
-[normalized-snapshot.md](references/normalized-snapshot.md). Materialize
-`snapshot.json`, the agreed specification, and every numbered ticket before
-scheduling. Use `snapshot.accept` for the initial revision, then
-`snapshot.check` before every scheduling pass and review. A result with
-`scheduling_allowed: false` pauses new scheduling until the user explicitly
-accepts and records the changed revision.
+- `bun $SKILL_DIR/scripts/coordinate.ts` is the JSON helper. You call it for
+  setup (`preflight`, `roles.discover`, `role.validate`, `worktree.preflight`,
+  `review.policy.prepare`, `snapshot.accept`, `snapshot.check`), for
+  `run.finalize`, and for explicitly authorized recovery. The Engine calls
+  every other operation. Contract: [helper-cli.md](references/helper-cli.md).
+- `bun $SKILL_DIR/scripts/runtime.ts` starts, waits on, answers, inspects, and
+  stops the Engine. Contract: [runtime-cli.md](references/runtime-cli.md).
 
 Arguments: `$ARGUMENTS`
 
@@ -45,14 +45,11 @@ Arguments: `$ARGUMENTS`
 - `resume .scratch/<slug>` is the form a restarted or replacement session
   receives; do the **Resume** steps first.
 - `--base <branch>` names the integration branch workers branch from and the
-  coordinator fast-forwards. Default `main`. Recorded as `Base:` in RESUME.md
-  on first run; later invocations read it from there.
+  Engine fast-forwards. Default `main`. Recorded as `Base:` in RESUME.md on
+  first run; later invocations read it from there.
 - `Branch template:` in RESUME.md records the repository's branch naming rule.
   Resolve it from repository instructions on first run, or use
-  `<prefix>-NN-<slug>` when the repository has no rule. Before creating any
-  worktree, resolve the complete repository policy, require
-  `worktree.preflight` to pass, then persist and apply it through
-  `worktree.prepare` as described in [session-launch.md](references/session-launch.md).
+  `<prefix>-NN-<slug>` when the repository has no rule.
 - `--coordinator`, `--implementor`, and `--reviewer` each accept one quoted
   `'<harness> <model> <effort>'` triple. Harness is exactly `claude` or `pi`.
   Validate every supplied triple with the helper's `role.validate` operation.
@@ -63,15 +60,14 @@ Arguments: `$ARGUMENTS`
   implementor count, and is required for a first parallel run. Reject both flags
   together and reject a first run with neither. On resume with neither flag,
   preserve both recorded values. An explicit flag on resume is a preference
-  change: write and log it before scheduling more work. A lower cap drains
+  change: write and log it before starting the Engine. A lower cap drains
   existing implementors without terminating them; a higher cap applies on the
-  next scheduling pass.
+  Engine's next scheduling pass.
 - `--stall-interval <minutes>` records `Stall interval: <N>m`, an integer from
-  2 to 60. A first run without the flag records `10m`. It is the `timeout_ms`
-  of every core-loop `herdr.wait_any` call, so it sets how often working
-  implementors get a stall check. On resume the file wins unless the flag is
+  2 to 60. A first run without the flag records `10m`. It is the period of the
+  Engine's per-ticket stall timer. On resume the file wins unless the flag is
   present; an explicit flag or a stated preference is written and logged in
-  `## Decisions` before the next wait.
+  `## Decisions`.
 
 Before presenting role choices, call `roles.discover`. Offer only harnesses
 reported as available, Pi models from its installed catalog, Claude Code's
@@ -79,7 +75,7 @@ reported as available, Pi models from its installed catalog, Claude Code's
 efforts reported for the selected harness.
 
 Collect every missing startup value in one structured interaction before
-creating state or launching any session. The interaction covers the run folder,
+creating state or starting the Engine. The interaction covers the run folder,
 base branch, scheduling mode or parallel cap when needed, and complete
 Coordinator, Implementor, and Reviewer triples. Offer a current-session
 Coordinator triple only when its harness, model, and effort are known. Validate
@@ -105,10 +101,14 @@ Everywhere below, `<base>` means that branch. The main checkout is never
   snapshot.json      # normalized source metadata, stable references, and ticket graph
   spec.md            # the agreed design; review axis 2 reads it
   issues/NN-*.md     # one ticket per file, `Blocked by:` + `Status:` lines, checkboxes
+  run.ts                    # the workflow script the Engine executes; from references/run-template.ts
   briefs/common.md          # resolved repository contract; create from references/common-brief.md if absent
   briefs/fixes-NN-round-R.md # consolidated actionable findings for one fix round
   reviews/                  # immutable gate, self-review, Standards, and Spec evidence
   assessments/stall/        # immutable bounded TypeSafe request/evidence chains
+  escalations/              # write-once escalation records and their answers
+  steps/                    # write-once results of custom workflow steps
+  events.ndjson             # the Engine's append-only event log
   RESUME.md                 # the ONLY mutable coordination state; format: references/resume-format.md
   SUMMARY.md                # deterministic local terminal summary written by run.finalize
 $XDG_STATE_HOME/coordinate-implementation/
@@ -117,13 +117,10 @@ $XDG_STATE_HOME/coordinate-implementation/
 ```
 
 Ticket readiness comes from the accepted dependency graph. A ticket is
-unblocked only when every listed blocker has status `landed`. Before every
-launch pass, call `scheduler.plan` with the persisted mode, parallel cap,
-ticket states, and active runtimes. Launch its deterministic `launch_tickets`
-order. Only runtimes whose role is `implementor` and state is `active` consume
-capacity; temporary reviewers do not. Do not serialize parallel mode merely
-because two tickets might touch nearby code. Each implementor rebases its own
-branch onto the latest `<base>` before review and landing.
+unblocked only when every listed blocker has status `landed`. The Engine
+schedules the frontier from the persisted mode and parallel cap. Only
+implementors consume capacity; temporary reviewers do not. Do not serialize
+parallel mode merely because two tickets might touch nearby code.
 
 ## Preferences
 
@@ -143,42 +140,40 @@ rules for keeping the record true:
   or effort.
 - **On resume, an explicit flag wins and is written back.** `--implementor`,
   `--reviewer`, `--serial`, `--parallel <N>`, or `--stall-interval <minutes>`
-  passed at resume is a preference change: validate it, write it, and log it. `--coordinator` must match the
-  invoking replacement session; live coordinator changes are unsupported.
-  `--base` is the exception and the file wins; resume-format.md says why.
+  passed at resume is a preference change: validate it, write it, and log it.
+  `--coordinator` must match the invoking replacement session; live
+  coordinator changes are unsupported. `--base` is the exception and the file
+  wins; resume-format.md says why.
 - **A session binds its record at launch.** The run-wide `Implementor:` and
-  `Reviewer:` records govern future launches only. A ticket already running
-  keeps its implementor record in the table row for its whole life, and every
-  reviewer launch records the Reviewer default it bound. A Coordinator change
-  requires the prior process to end and the replacement invocation to already
-  use the selected record; it never becomes a state-only rewrite.
+  `Reviewer:` records govern future launches only. The Engine reads them from
+  RESUME.md before each step. A ticket already running keeps its implementor
+  record in the table row for its whole life, and every reviewer launch
+  records the Reviewer default it bound. A Coordinator change requires the
+  prior process to end and the replacement invocation to already use the
+  selected record; it never becomes a state-only rewrite.
 - **Log every change.** Append a dated line to `## Decisions` with the reason.
-- **Re-read RESUME.md at each progress tick**, so a hand edit is honored and
+- **Re-read RESUME.md whenever `wait` returns**, so a hand edit is honored and
   you never overwrite one blindly.
-- **Never bake a preference value into a scheduled prompt.** See
-  [Progress loop](#progress-loop).
+- **Never bake a preference value into `run.ts`.** The workflow script reads
+  tickets from the accepted snapshot and roles from RESUME.md.
 
 ## Several coordinators on one repo
 
 Each run has a unique `Prefix:` (for example `dcs`) that names its worker
-sessions `<prefix>-NN`, its herdr tabs `claude <prefix> NN <slug>`, and its
-coordinator pane label `coordinator <prefix>`. Render the run's
-`Branch template:` from RESUME.md, then let `worktree.prepare` apply the
-persisted repository policy. Always use the actual worktree path and branch
-returned by the helper.
-The coordinator's own herdr tab is always labelled `coordinator`: on start and
-on resume, run `herdr tab rename "$HERDR_TAB_ID" "coordinator"` before anything
-else. Identify yourself from the `HERDR_PANE_ID` / `HERDR_TAB_ID` /
-`HERDR_WORKSPACE_ID` environment variables injected into every managed pane,
-never by inspecting `herdr pane list` for the focused pane: focus can belong to
-the user or another client and can move at any time.
+sessions `<prefix>-NN`, its Engine tab `engine <prefix>`, and its coordinator
+pane label `coordinator <prefix>`. The coordinator's own Herdr tab is always
+labelled `coordinator`: on start and on resume, run
+`herdr tab rename "$HERDR_TAB_ID" "coordinator"` before anything else. Identify
+yourself from the `HERDR_PANE_ID` / `HERDR_TAB_ID` / `HERDR_WORKSPACE_ID`
+environment variables injected into every managed pane, never by inspecting
+`herdr pane list` for the focused pane: focus can belong to the user or another
+client and can move at any time.
 
 Cross-run discovery uses machine-local global run files under
 `$XDG_STATE_HOME/coordinate-implementation/runs/` (default
 `~/.local/state/...`). The helper rewrites a run's file atomically after every
-RESUME.md mutation and refreshes its heartbeat whenever a `herdr.wait_any`
-carrying `state_path` returns. Never write these files yourself. The layout,
-versioned schemas, and reader protocol are in
+RESUME.md mutation, and the Engine mirrors its lease there. Never write these
+files yourself. The layout, versioned schemas, and reader protocol are in
 [registry.md](references/registry.md). The old `.scratch/coordinators.md`
 registry is retired: never read or update it, and leave any existing copy for
 the user to delete.
@@ -191,267 +186,168 @@ the user to delete.
 - Cross-run merge order and shared-file assignments live in the repository's
   agreements file, written only through `agreements.update` by its owner run.
 
-Runs that share a `<base>` land through one dedicated base checkout and
-serialize by rebase-and-retry, no lock. The main checkout holds `main`;
-non-main base checkouts follow the coordinator harness's native worktree
-lifecycle: [session-launch.md](references/session-launch.md) and
-[review-and-land.md](references/review-and-land.md). Runs on different repos
-need nothing beyond their own herdr workspace.
+Runs that share a `<base>` land through one dedicated base checkout. Every
+landing, from any run or from `land-local`, holds the shared
+`<git-common-dir>/land-local.lock` only for the ancestor check and
+`git merge --ff-only`; a ticket whose branch is no longer based on `<base>`
+bounces back to its implementor to rebase. Runs on different repos need
+nothing beyond their own Herdr workspace.
 
-## Core loop (standing instructions)
+## Start a run
 
-Before the first iteration, complete the read-only helper preflight described
-in [helper-cli.md](references/helper-cli.md). Only after it succeeds, resolve
-`<run>/briefs/common.md` from [common-brief.md](references/common-brief.md),
-repository instructions, and CI. No placeholder may remain when a worker
-launches. Create the schema-2 run state, persist exact gate argv arrays and
-resolved safety constraints with `review.policy.prepare`, then accept the
-normalized snapshot. Review policy preparation must precede every worker
-launch; never infer a command from the detected toolchain.
-For a non-local source, ask once for `none`, `final`, or `live` writeback and
-pass the repository's authoritative remote-write policy. A local source records
-`none` without a remote-write prompt. Rename your own tab to
-`coordinator` and label your pane `coordinator <prefix>` (see above). Then
-repeat until every ticket is landed or the user explicitly closes each
-remaining blocked ticket:
+Rename your tab to `coordinator` and label your pane `coordinator <prefix>`
+(see above), then prepare the run in this order. Nothing launches until the
+Engine starts in the last step.
 
-1. **Schedule.** Invoke `snapshot.check` and stop this scheduling pass unless
-   it returns `unchanged` with `scheduling_allowed: true`. Report every changed
-   input. Read `Mode:`, `Parallel cap:`, the accepted dependency graph, ticket
-   states, and active runtime records from RESUME.md. Verify `Base sha:` against
-   the base checkout and update it if the branch moved. Call `scheduler.plan`
-   and launch every returned ticket in order. Bind the current `Implementor:`
-   record into each selected ticket's table row before starting it; that row,
-   not the run-wide record, governs the ticket from then on. The required
-   `implement` skill is fixed and explicitly loaded for both harnesses. Do not
-   require it to appear in model discovery. Resolve repository worktree,
-   branch, setup, cleanup, remote, and commit policy before creating the
-   worktree. Persist the one authorized remote synchronization argv (or null
-   for local-only) and never accept a caller-selected substitute. Require
-   `worktree.preflight` to pass before state mutation, then
-   call `worktree.prepare`, create the Herdr tab at the returned path, and call
-   `implementor.launch.prepare`. Execute only its argument arrays and persist
-   the observed outcome with `implementor.launch.record`. Exact procedure:
-   [session-launch.md](references/session-launch.md).
-2. **Wait.** Call `herdr.wait_any` once with every active worker,
-   `coordinator: null`, the run's RESUME.md as `state_path`, and `timeout_ms`
-   set to the persisted `Stall interval:` in milliseconds. Start this cycle as
-   soon as the first wave launches; each timeout is the stall check. The cycle
-   ends only through the terminal rules in step 7: a paused or blocked ticket
-   stops only that ticket while every other active worker keeps waiting. It
-   subscribes before snapshotting.
-   Persist refreshed pane ids from its complete worker snapshot. On `pane_exited`,
-   act on the named runtime. On `status: idle` or `status: done`, first verify a
-   clean worktree and at least one ticket commit beyond the current base; run the
-   enforced TypeSafe lifecycle from [stall-check.md](references/stall-check.md)
-   when either check fails. Continue to review only when both checks pass. On
-   `timeout`, run the same TypeSafe prepare/evaluate/apply lifecycle for each
-   working runtime before snapshot-integrity and base checks, run one scheduling
-   pass, then issue another bounded wait. Do not create cron jobs, shell wait loops, background
-   monitors, or harness-native tasks.
-3. **Review** when wait-any returns an idle or done implementor whose worktree
-   is clean and branch has at least one ticket commit beyond the current base.
-   Any non-review-ready settled worker goes through the stall lifecycle instead. Invoke `snapshot.check` first and do not begin review or landing
-   against a changed revision. Tickets integrate independently, so several
-   ready tickets may run gates and reviews in parallel. Call
-   `landing.rebase.check` for each ticket before its gates; when it returns
-   `rebase`, send its prompt to the same implementor, which rebases its own
-   branch in its own worktree, then call `landing.rebase.record`. Then
-   require the recorded repository commit policy, green recorded gates,
-   the harness-appropriate implementor self-review, and fresh independent Herdr
-   sessions for Standards and Spec. Never edit a ticket's `Integration` record
-   in RESUME.md. If an explicitly authorized
-   recovery finds an interrupted Claude reviewer attempt, supersede only after Herdr confirms
-   its exact pane is absent, then rerun every configured gate before preparing
-   fresh Pi review attempts. See `review.attempt.supersede` in
-   [helper-cli.md](references/helper-cli.md). Use the full-SHA `review_range`
-   returned by `landing.rebase.check` or `landing.rebase.record` for gates and
-   both review axes. Capture and
-   persist each complete report with `review.launch.record`. When it returns
-   `close-runtime`, execute only its exact Herdr close argv and repeat the
-   byte-identical record call. Do not act on `after_close_action` until the
-   helper observes the pane absent and returns that action. Procedure:
-   [review-and-land.md](references/review-and-land.md).
-4. **Fix loop.** Finalize both axes with `review.round.finalize`. Send its one
-   consolidated request, containing every actionable finding, to the same worker
-   session. Every review remediation is pre-authorized by this standing loop,
-   regardless of the round number: never stop to ask the user before sending an
-   `action: fix` request. Continue until a fresh review passes or the worker
-   reports a genuine external blocker. Apply the recorded fix-commit policy,
-   which defaults to appending a commit when repository instructions are silent,
-   then print `FIXES DONE NN`. Include that runtime in the next wait-any call.
-   A terminal result from the blocking remediation prompt is itself the wake signal;
-   do not summarize, end the turn, or wait for another event. Immediately call
-   `landing.rebase.check` to validate the clean appended tip, then restart the
-   pipeline from every recorded gate. The same rule applies when terminal status
-   arrives through `herdr.wait_any`. Every fix round receives new self-review and
-   fresh Standards and Spec sessions. If a failed gate passes on
-   an unchanged rerun, never create an empty fix commit. Obtain explicit user
-   authority and call `gate.rerun.record` with the failed evidence and fresh
-   passing output. It fails closed unless the gate, clean worktree, HEAD, and
-   append-only integration binding are unchanged.
-5. **Land.** After the ticket's integration reaches `ready-to-land`, call
-   `landing.complete` from the recorded local base checkout. It fast-forwards
-   under the shared `land-local.lock`. If it returns `rebase`, send its prompt
-   to the same implementor, call `landing.rebase.record` after the rebase, and
-   rerun every gate. Both reviews rerun only when the rebase changed the
-   ticket's patch id. Scope choices wait for user authority and are recorded
-   before gates continue. When it returns `close-runtime`, execute
-   only its exact Herdr pane-close argv and repeat the same `landing.complete`
-   call. Cleanup remains blocked until the helper observes that exact pane is
-   absent; callers cannot assert closure.
-6. **Record and refill.** Only a successful `landing.complete` may mark the
-   ticket landed. It verifies a clean landed worktree, removes the native
-   fallback without force or runs the exact repository cleanup argv, retains
-   the branch, writes immutable landed evidence, updates `Base sha:`, removes
-   the active runtime and its integration, and returns `schedule`. Immediately
-   pass the new landed state to `scheduler.plan`
-   so every newly unblocked ticket can start.
-7. **Evaluate terminal state.** When `scheduler.plan` returns no launch and no
-   implementor is active, call `run.finalize`. It reads the accepted dependency
-   graph and returns `active`, `waiting`, or `completed`. A blocked empty
-   frontier is `waiting`, never success. Continue independent work when any
-   ticket remains runnable. Close blocked work only from an explicit user
-   decision naming each blocked or dependency-blocked ticket and reason; pass
-   those closures together with `user_authorized: true`. The operation moves preserved runtime provenance to
-   `## Closed ticket runtimes`, writes `## Run outcome`, and writes `SUMMARY.md`
-   only when every ticket is `landed` or `closed`. The summary includes landed,
-   blocked, and closed tickets, role provenance, review evidence, retained
-   branches, and pending tracker action. For `final` or `live`, delegate the
-   returned action to the persisted Matt tracker workflow only when current
-   project authority allows it. `none` performs no writeback. Local completion
-   and its summary are always recorded even when tracker action is pending or
-   forbidden. The helper publishes the returned status to the global run file.
+1. **Preflight.** Invoke the helper's `preflight` operation with
+   `state_path: null` (the existing RESUME.md on resume). Stop on any nonzero
+   exit or `ok: false`; preflight reports every problem and never mutates
+   state.
+2. **Collect and validate** the startup values and role triples as described
+   above, then create the schema-2 RESUME.md from
+   [resume-format.md](references/resume-format.md) with `Base:`, `Base sha:`,
+   `Mode:`, `Parallel cap:`, `Stall interval:`, `Branch template:`, all three
+   role records, and coordinator ownership.
+3. **Repository policy.** Resolve the complete worktree, branch, setup,
+   cleanup, remote, and commit policy from repository instructions as
+   described in [session-launch.md](references/session-launch.md). Require
+   `worktree.preflight` to pass, then persist it as the `## Repository policy`
+   record. Persist the one authorized remote synchronization argv, or null for
+   local-only.
+4. **Common brief.** Resolve `<run>/briefs/common.md` from
+   [common-brief.md](references/common-brief.md), repository instructions,
+   and CI. No placeholder may remain.
+5. **Review policy.** Persist exact gate argv arrays and resolved safety
+   constraints with `review.policy.prepare`. Never infer a command from the
+   detected toolchain.
+6. **Accept the snapshot.** Materialize `snapshot.json`, the agreed
+   specification, and every numbered ticket as defined in
+   [normalized-snapshot.md](references/normalized-snapshot.md), then call
+   `snapshot.accept`. For a non-local source, ask once for `none`, `final`, or
+   `live` writeback and pass the repository's authoritative remote-write
+   policy. A local source records `none` without a remote-write prompt.
+7. **Write the workflow script.** Copy
+   [run-template.ts](references/run-template.ts) to `<run>/run.ts` and replace
+   `SKILL_DIR` with the absolute skill path. Keep the default
+   `standardTicket` pipeline unless the user asks for a different one; a
+   custom script must stay deterministic given its step results.
+8. **Start the Engine** with
+   `bun $SKILL_DIR/scripts/runtime.ts start --run .scratch/<slug> --script .scratch/<slug>/run.ts`.
+   It opens tab `engine <prefix>` and returns once the Engine holds its lease.
+
+## Supervise the Engine
+
+Loop on `runtime.ts wait --run .scratch/<slug>` until the run finishes. Omit
+`--cursor`: the persisted Event Cursor survives compaction and restarts. Act on
+the result, then call `wait` again. The complete result shape, commands, and
+escalation table are in [runtime-cli.md](references/runtime-cli.md).
+
+- `reason: "budget"`: nothing needs you. Report progress briefly when useful.
+- `reason: "engine"`: `engine.liveness` is `stale`, `released`, or `none`. Run
+  `start` again with the same script; it reconciles from RESUME.md and
+  evidence, and nothing that already happened repeats. For
+  `engine.unresponsive`, run `stop --force`, then `start`.
+- `reason: "attention"`: handle every `attention` event and every entry in
+  `open_escalations`. An `engine.failed` event carries its issue: report it
+  faithfully, fix the cause with the user, then `start` again.
+  `engine.completed` ends the loop (see [Finish the run](#finish-the-run)).
+
+Never poll with sleeps, cron tools, scheduled prompts, background shells, or a
+native harness task manager. `wait` is the only wait. Never launch, prompt, or
+close an implementor or reviewer pane, run a gate, or land a ticket yourself
+while the Engine runs.
+
+### Answer escalations
+
+An escalation parks only its ticket; every other ticket keeps running. Answer
+each one with `runtime.ts answer --id <id> --text "<decision>"`. Answers are
+write-once and the Engine delivers them to the parked ticket.
+
+- `question`: an implementor wrote a `TICKET BLOCKED` question. Answer it
+  yourself when `spec.md` or the tickets settle it, citing the source.
+  Otherwise ask the user and answer with `--by user`. Never invent product
+  intent.
+- `scope`, `retry_exhausted`: ask the user and answer with `--by user`.
+- `snapshot_changed`: report every changed input. Only after the user
+  explicitly accepts the new revision, call `snapshot.accept`, then answer with
+  `--by user`.
+- `review_churn`: read the ticket's findings. Review fixes are pre-authorized
+  regardless of round, so answer to continue unless the user decides
+  otherwise.
+- `stall_pause`, `report_missing`: read the named pane, then answer with what
+  the Engine should tell the implementor, or ask the user when the evidence
+  does not settle it. [stall-check.md](references/stall-check.md) describes
+  the stall seam.
+
+### Mid-run changes
+
+Write a stated preference to RESUME.md and log it before replying; the Engine
+reads it before its next step. A changed `run.ts` makes `start` fail with
+`engine.script_changed` until you pass `--accept-script <sha256>` for the
+reviewed new script.
+
+## Finish the run
+
+When `engine.completed` arrives, call `run.finalize` with empty closures and
+`user_authorized: false`. It reads the accepted dependency graph and returns
+`active`, `waiting`, or `completed`. A blocked empty frontier is `waiting`,
+never success. Close blocked work only from an explicit user decision naming
+each blocked or dependency-blocked ticket and reason; pass those closures
+together with `user_authorized: true`. The operation moves preserved runtime
+provenance to `## Closed ticket runtimes`, writes `## Run outcome`, and writes
+`SUMMARY.md` only when every ticket is `landed` or `closed`. The summary
+includes landed, blocked, and closed tickets, role provenance, review evidence,
+retained branches, and pending tracker action. For `final` or `live`, delegate
+the returned action to the persisted Matt tracker workflow only when current
+project authority allows it. `none` performs no writeback. Local completion and
+its summary are always recorded even when tracker action is pending or
+forbidden. Report the outcome from `SUMMARY.md`.
+
+## What the Engine does
+
+The default `standardTicket` pipeline implements, then repeats rebase, gates,
+self-review, both external reviews, and fixes until the ticket lands. You do
+not perform these steps, but you must understand them to answer escalations
+and recover. Details: [session-launch.md](references/session-launch.md),
+[review-and-land.md](references/review-and-land.md),
+[stall-check.md](references/stall-check.md).
+
+- It creates each worktree through `worktree.prepare`, launches the
+  implementor through `implementor.launch.prepare` and
+  `implementor.launch.record`, and retries infrastructure failures three times
+  with the exact bound role before escalating `retry_exhausted`.
+- Before gates, `landing.rebase.check` decides whether the implementor must
+  rebase its own branch in its own worktree; `landing.rebase.record` records
+  the new integration cycle. Every gate reruns after a rebase; both reviews
+  rerun only when the ticket's patch identity changed.
+- Standards and Spec reviews always run as fresh independent Herdr sessions
+  under the persisted Reviewer role, after the harness-appropriate
+  implementor self-review. A finding always means FAIL and returns one
+  consolidated fix request to the same implementor.
+- `landing.complete` fast-forwards `<base>` under the shared land lock, writes
+  landed evidence, cleans up the worktree without force, and retains the
+  branch.
 
 Session markers the implementor prints: `TICKET DONE NN`,
-`TICKET BLOCKED NN: <question>`, `FIXES DONE NN`. Herdr agent status is the
-wake authority, not marker text; implementors forget to print it.
+`TICKET BLOCKED NN: <question>`, `FIXES DONE NN`, `REBASE DONE NN`. Herdr agent
+status and the report files are the wake authority, not marker text.
 
-## Event-driven wait cycle
+## Manual recovery
 
-Keep exactly one bounded `herdr.wait_any` call in flight while implementors are
-active. Supply each runtime's durable id, ticket, session name, and latest pane
-id, the RESUME.md `state_path`, the `Stall interval:` as `timeout_ms`, and set
-`coordinator` to `null`. The helper subscribes to every worker
-pane's status plus pane exit events, waits for the subscription acknowledgement,
-and only then takes its immediate snapshot. This ordering preserves events that
-race with bootstrap. When no implementor is active, do not open an empty wait;
-persist state, report the blocked or complete frontier, and end the turn.
+Recovery operations exist for explicitly authorized repairs the Engine cannot
+decide: `implementor.launch.recover`, `implementor.runtime.migrate`,
+`implementor.runtime.migration.recover`, `review.attempt.supersede`,
+`gate.rerun.record`, and `review.escalation.authorize`. Use one only with
+explicit user authority, only after `runtime.ts stop` confirms the Engine
+released its lease, and exactly as [helper-cli.md](references/helper-cli.md)
+specifies. Then `start` the Engine again.
 
-An already-present or subsequent `idle`, `done`, `blocked`, or pane-exited
-condition wakes the coordinator with the affected runtime identity. Herdr 0.9.1
-does not expose model context utilization through its machine-readable API, so
-this workflow never parses rendered pane or status text and never attempts a
-context-triggered coordinator handoff.
-
-If several workers settle together, process their events one at a time, then
-serialize review and landing in dependency order. The helper's timeout is not
-success. It returns a complete refreshed snapshot used to:
-
-- persist compacted pane identifiers before another action;
-- inspect `git status --short`, `git log --oneline <base>..HEAD`, and at most 40
-  recent pane lines for workers that remain `working`;
-- run `snapshot.check`, compare `Base sha:`, and evaluate coordinator context;
-- run `scheduler.plan` so a persisted capacity change takes effect.
-
-Apply [stall-check.md](references/stall-check.md) only on timeout or for an
-idle or done implementor that fails deterministic review-readiness checks. Its
-validated TypeSafe disposition is authoritative inside the bounded stall seam. Execute only the action selected by `stall.assessment.apply`; a provider,
-credential, validation, stale-evidence, or binding failure pauses the seam
-without fallback. After those checks, call wait-any again. Never replace this cycle with polling,
-cron tools, scheduled prompts, background Bash monitors, Python parsing, or a
-native harness task manager.
-
-## Infrastructure retries
-
-Worker crashes, Herdr transport failures, and launch failures use the same
-three-retry policy. After recording the observed failure, call
-`infrastructure.retry.record`. For `action: retry`, wait its returned bounded
-increasing `delay_ms`, then relaunch in the same worktree with the exact returned
-binding and the next attempt number. Never substitute a harness, model, effort,
-skill, branch, or worktree. For `action: block`, leave only that ticket blocked
-and immediately call `scheduler.plan` so independent ready tickets continue.
-
-A blocked `retry exhausted` launch may return to `working` only through
-`implementor.launch.recover`, and only after the user confirms that a
-coordinator compatibility defect prevented prompt delivery while the exact
-worker remained alive. Pass the Herdr socket and diagnostic to the helper. It
-validates the immutable attempt-4 artifact, bound role, worktree, branch,
-session, pane, and live `idle` or `done` worker. Execute only its returned
-prompt array, never the start array, then record the observed attempt-4 outcome.
-
-## Crash-restart
-
-Only when a worker session actually fails (crash, unrecoverable context loss)
-restart that ticket in the same worktree, **with the record bound in its table
-row**: same harness, same model, and same effort, with the partial
-work described in its `IMPORTANT CONTEXT` clause. Never escalate here and never
-read the run-wide `Implementor:`. A crash is evidence about a process, not
-about a model, and silently substituting a different one is how an override
-gets lost to a network blip.
-
-A network outage or a compaction is not immediately a worker failure: resume
-the same session with a prompt first (or `claude --resume` in its worktree).
-Re-prompt only if a compaction is followed by no edits across two bounded
-timeout snapshots.
-
-An explicitly authorized migration from a closed Claude implementor to the
-persisted Pi Implementor default is a separate, narrow recovery path, not a
-normal crash restart or role-selection shortcut. Call
-`implementor.runtime.migrate` with the exact old binding and
-`user_authorized: true`; it fails if Herdr still sees the old pane, preserves the
-launch artifact and worktree, and does not alter ticket implementation. A dirty
-`working` worktree is retained in place. A `gates`-phase migration requires a
-clean integrated tip and preserves its `Integration` record in the evidence. Its
-immutable evidence binds the original HEAD, status, changed-file contents, worktree,
-and branch; replacement launch must match that baseline exactly. For a `gates`-
-phase migration, call `implementor.runtime.migration.recover` with explicit user
-authority and the evidence SHA-256. Prepare the replacement in the same
-worktree and branch, which carries the record as `rebase-required`, then
-complete `landing.rebase.check` before recording any gates or launching
-reviewers.
-
-## Manual role replacement
-
-Review fixes never require escalation authority. A failed round always returns
-`action: fix` with the next round and stays on the same ticket-bound implementor;
-repeat gates and fresh review until it passes. Do not interpret a round count as
-a stopping condition.
-
-`review.escalation.authorize` remains only for recovering an already-blocked
-legacy run or for an explicit operator-directed per-ticket role replacement.
-It requires the exact blocked fix request and explicit authority. Execute only
-its returned prompt or runtime-close action, then launch replacements through
-`implementor.launch.prepare`. The transition is idempotent and preserves the
-superseded runtime provenance. Never rewrite the run-wide `Implementor:`: one
-ticket's difficulty is not a judgement about the remaining tickets.
-
-A closed interrupted Claude review may be superseded only with explicit user
-authority and immutable attempt binding. `review.attempt.supersede` records no
-report or verdict, requires Herdr to report the exact pane absent, and preserves
-the prior artifact. When replacing Claude review with Pi, supersede every prior
-Claude axis for the ticket and round before launching either Pi axis. Reviewer
-attempt identity is unique by active ticket, round, axis, and attempt, and every
-retry must name the exact immediately preceding artifact. The index canonicalizes
-state paths, ignores artifacts for historical tickets, and serializes its scan
-through artifact creation under the run-state lock. Before a Pi retry can launch,
-rerun every persisted gate with a distinct path and a higher attempt number. Gate
-records bind the current monotonic supersession generation under that same lock.
-Legacy gates without a generation are accepted only as SHA-256-bound generation-0
-baselines during supersession, never as new gate evidence. A pending axis commit
-blocks the next axis until its exact retry commits. Caller timestamps are
-metadata, not freshness proof. The integration cycle is
-independent of review round, so interrupted attempts stay bound to their
-reviewed HEAD, base SHA, and range. Gate evidence binds the ticket's current
-integration cycle whenever one exists, including after migration recovery.
-Migration and supersession consumers fail closed until immutable evidence, state
-references, and commit markers agree. Do
-not supersede a live pane or an attempt that already has a report.
-
-`Coordinator.unattended` is retained for schema compatibility and never gates
-ordinary remediation. A `TICKET BLOCKED` question, a scope decision, and an
-invalid-record prompt still wait for the user because they require information
-outside the review/fix contract.
+A crashed worker restarts in the same worktree **with the record bound in its
+table row**. Never read the run-wide `Implementor:` for it and never
+substitute a harness, model, effort, skill, branch, or worktree. A crash is
+evidence about a process, not about a model. One ticket's difficulty is not a
+judgement about the remaining tickets, so never rewrite the run-wide
+`Implementor:` to recover one ticket.
 
 ## Coordinator continuity
 
@@ -461,11 +357,11 @@ and `Coordinator.threshold: unavailable` in RESUME.md. Continue through the
 active harness's normal context compaction without replacing the coordinator.
 Never parse rendered pane output to estimate context use.
 
-If the coordinator process exits or cannot recover after compaction, leave its
-pane and durable state intact until the user starts a replacement with
-`resume .scratch/<slug>`. The replacement follows the normal Resume procedure,
-refreshes worker panes from Herdr, and claims ownership through the existing
-coordinator compare-and-swap operations. It must not invoke any
+The Engine keeps running while the coordinator compacts or exits. If the
+coordinator process exits or cannot recover, leave its pane and durable state
+intact until the user starts a replacement with `resume .scratch/<slug>`. The
+replacement follows the Resume procedure and claims ownership through the
+existing coordinator compare-and-swap operations. It must not invoke any
 `coordinator.handoff.*` operation. Full recovery rules:
 [handoff.md](references/handoff.md).
 
@@ -474,45 +370,38 @@ coordinator compare-and-swap operations. It must not invoke any
 When invoked as `resume .scratch/<slug>` for a restart or replacement:
 
 1. Run the helper `preflight` operation with the run's `RESUME.md` as
-   `state_path`, then invoke `snapshot.check` and require `unchanged` with
-   `scheduling_allowed: true`. A changed snapshot blocks resume scheduling and
-   reports its changed inputs until the user explicitly runs the acceptance
-   flow. Then validate the remaining fields against
-   [resume-format.md](references/resume-format.md). It names the prefix, base,
-   base sha, scheduling mode, branch template, all three role records,
-   coordinator ownership, every active
-   ticket's worktree and pane, and what remains. Missing, malformed, or
+   `state_path`, then invoke `snapshot.check`. A changed snapshot reports its
+   changed inputs and waits for the user's explicit acceptance flow. Then
+   validate the remaining fields against
+   [resume-format.md](references/resume-format.md). Missing, malformed, or
    unsupported schema versions stop the resume without migration. Any other
    mismatch also stops with an explanation; nothing is guessed.
    If `--coordinator` differs from the persisted record or the invoking
    session, stop and ask the user to start a matching replacement session.
    Differing `--implementor`, `--reviewer`, `--serial`, `--parallel <N>`, or
-   `--stall-interval <minutes>` values are preference changes: validate them, write them, and log them in
-   `## Decisions`. Implementor and Reviewer changes apply only to future
-   launches.
-2. `herdr pane list`; pane ids compact, so trust the list over RESUME.md.
-   Rename your own tab to `coordinator` and label your own pane
+   `--stall-interval <minutes>` values are preference changes: validate them,
+   write them, and log them in `## Decisions`.
+2. Rename your own tab to `coordinator` and label your own pane
    `coordinator <prefix>`, using `$HERDR_TAB_ID` and `$HERDR_PANE_ID`.
-3. Compare `Base sha:` with the base checkout. If it moved, inspect every
-   active branch against the new base, then record the observed sha.
-4. Check the global run files for a conflicting live prefix as described in
+3. Check the global run files for a conflicting live prefix as described in
    [Several coordinators on one repo](#several-coordinators-on-one-repo).
-5. When active runtimes exist, call `herdr.wait_any` with a short bounded
-   timeout, `state_path`, and `coordinator: null`. Persist every refreshed pane id from the
-   returned complete snapshot. A valid active runtime remains active even when
-   its recorded compact pane id changed; do not relaunch it.
-6. Run `scheduler.plan`. If this is a replacement coordinator, use the normal
-   coordinator claim and readiness operations after verifying that the previous
-   process is no longer active. Do not invoke `coordinator.handoff.*`.
-7. Report the state in a short list and end the turn.
+4. If this is a replacement coordinator, verify the previous process is no
+   longer active, then use the normal coordinator claim and readiness
+   operations. Do not invoke `coordinator.handoff.*`.
+5. Run `runtime.ts status`. Then run `start` with the recorded `run.ts`: it
+   attaches to a live Engine or starts a new generation that reconciles from
+   RESUME.md without relaunching live workers.
+6. Report the state in a short list and continue the supervision loop.
 
 ## Rules that are not negotiable
 
 - Preflight must succeed before creating or mutating RESUME.md. Never infer
   context use from rendered terminal text or invoke automatic handoff.
-- Scheduling, review, and landing require an accepted, unchanged snapshot.
-  Changed input hashes pause new work until explicit `snapshot.accept` records
-  the revision and decision.
+- The Engine schedules, reviews, and lands only against an accepted,
+  unchanged snapshot. Changed input hashes pause affected work until explicit
+  `snapshot.accept` records the revision and decision.
+- Exactly one Engine drives a run. Never start a second one, and never mutate
+  ticket state through the helper while an Engine holds the lease.
 - Persist and obey the tracker writeback mode. Delegate `final` and `live`
   updates to the configured Matt tracker workflow only when current project
   authority permits them. `none` never writes. Always preserve the local final
@@ -527,20 +416,9 @@ When invoked as `resume .scratch/<slug>` for a restart or replacement:
   allowed and fix rounds append commits.
 - Every commit passes the repository's required gates before review. Resolve
   exact argv arrays and safety constraints from repository instructions and CI,
-  then persist them with `review.policy.prepare` before worker launch. Claude may
-  use its supported background facility; Pi runs synchronously through its
-  normal shell tool. The full procedure is in
-  [review-and-land.md](references/review-and-land.md).
-- Claude implementors retain Matt's `implement` self-review. Pi implementors do
-  one in-session Standards and Spec fallback without subagents. External
-  Standards and Spec reviews always run as separate fresh Herdr sessions under
-  the persisted Reviewer role.
-- Persist a complete report before closing each reviewer pane. Execute only the
-  exact close argv returned by `review.launch.record`, then repeat the same call
-  until Herdr-observed closure reveals the recorded `after_close_action`. Any
-  worktree status change contaminates that report, rejects its findings, and
-  stops for manual cleanup without discarding the mutation. A finding always
-  means FAIL.
+  then persist them with `review.policy.prepare` before starting the Engine.
+- Answer a `TICKET BLOCKED` question from the spec and tickets first; ask the
+  user when they do not settle it. Scope decisions always belong to the user.
 - Never push or write to forge issues. The only permitted remote write is a
   persisted `final` or `live` update through the configured Matt tracker
   workflow when authoritative project policy allows it. All other remote
