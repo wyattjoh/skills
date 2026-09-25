@@ -19,7 +19,7 @@ import {
   type RenderOptions,
 } from "../lib/output.ts";
 import type { Command, CommandOption } from "./index.ts";
-export type { Command, CommandOption } from "./index.ts";
+export type { Command } from "./index.ts";
 
 /** A markdown plan that contains one or more case-insensitive matches. */
 export interface PlanMatch {

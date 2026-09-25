@@ -15,9 +15,6 @@
     "format:check": "oxfmt --check",
     "knip": "knip"
   },
-  "dependencies": {
-    "yaml": "^2.9.1"
-  },
   "devDependencies": {
     "@types/bun": "1.4.2",
     "@types/node": "^26.6.2",
