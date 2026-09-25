@@ -207,7 +207,8 @@ Engine starts in the last step.
    above, then create the schema-2 RESUME.md from
    [resume-format.md](references/resume-format.md) with `Base:`, `Base sha:`,
    `Mode:`, `Parallel cap:`, `Stall interval:`, `Branch template:`, all three
-   role records, and coordinator ownership.
+   role records, and coordinator ownership. Leave out every helper-managed
+   section; the operations below create them.
 3. **Repository policy.** Resolve the complete worktree, branch, setup,
    cleanup, remote, and commit policy from repository instructions as
    described in [session-launch.md](references/session-launch.md). Require

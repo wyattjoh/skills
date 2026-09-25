@@ -15,6 +15,12 @@ coordinator validates the remaining fields against this template. Fix any
 mismatch by hand. See [helper-cli.md](helper-cli.md#statevalidate) for the JSON
 operation contract.
 
+When you create RESUME.md, omit every helper-managed section: `## Repository
+policy`, `## Review policy`, `## Snapshot`, `## Engine lease`, `## Run outcome`,
+and `Integration:` lines. The owning operation creates each one, and an empty
+heading is rejected as malformed (for example, `snapshot.accept` fails with
+`snapshot.state_invalid`). The template shows them as they look once written.
+
 ## Template
 
 The fence below is `text`, not `markdown`, so the formatter leaves the nested
