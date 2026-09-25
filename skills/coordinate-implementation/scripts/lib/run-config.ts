@@ -192,3 +192,12 @@ export const renderBranch = (
  */
 export const ticketSlug = (path: string): string =>
   (path.split("/").at(-1) ?? path).replace(/^\d+-/u, "").replace(/\.md$/u, "");
+
+/**
+ * Native worktree directory name for a branch: one path component, with every
+ * directory separator in the branch name replaced by `-`.
+ *
+ * @param branch - Rendered branch name, which may contain `/`.
+ * @returns A single filesystem path component.
+ */
+export const worktreeDirectoryName = (branch: string): string => branch.replaceAll(/[\\/]/gu, "-");

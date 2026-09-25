@@ -107,7 +107,7 @@ Base sha:        ${git(repository, ["rev-parse", "main"])}
 Mode:            parallel
 Parallel cap:    2
 Stall interval:  10m
-Branch template: ex-NN-<slug>
+Branch template: wyattjoh/ex-NN-<slug>
 
 Coordinator:
   harness:    claude
@@ -134,7 +134,7 @@ ${JSON.stringify(
   {
     instruction_files: ["CLAUDE.md"],
     worktree: { kind: "native", tool: "git", root: join(root, "worktrees"), create_argv: null },
-    branch_naming: "ex-NN-<slug>",
+    branch_naming: "wyattjoh/ex-NN-<slug>",
     setup_argvs: [],
     cleanup: "native-safe",
     remote: "local-only",

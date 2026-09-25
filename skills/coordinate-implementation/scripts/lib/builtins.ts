@@ -35,6 +35,7 @@ import {
   readTicketStatus,
   renderBranch,
   ticketSlug,
+  worktreeDirectoryName,
   type ActiveTicket,
   type RunConfig,
 } from "./run-config.ts";
@@ -307,7 +308,7 @@ export const builtinTicketOps = (
             repositoryPath: options.repository,
             baseBranch: cfg.base,
             branch,
-            worktreeName: branch,
+            worktreeName: worktreeDirectoryName(branch),
             expectedWorktreePath: undefined,
             policy: cfg.repositoryPolicy,
           }),
