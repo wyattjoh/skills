@@ -257,8 +257,12 @@ remaining blocked ticket:
    the chosen branch to the latest `<base>` before its final gates and review,
    then require the recorded repository commit policy, green recorded gates,
    the harness-appropriate implementor self-review, and fresh independent Herdr
-   sessions for Standards and Spec. If an explicitly authorized recovery finds
-   an interrupted Claude reviewer attempt, supersede only after Herdr confirms
+   sessions for Standards and Spec. If the user explicitly prioritizes another
+   ready ticket while one owns the slot, synchronize the current clean tip and
+   call `landing.yield` with its full SHA. Finalize the prioritized ticket,
+   then synchronize the suspended ticket and rerun all gates and both reviews.
+   Never clear the slot by editing RESUME.md. If an explicitly authorized
+   recovery finds an interrupted Claude reviewer attempt, supersede only after Herdr confirms
    its exact pane is absent, then rerun every configured gate before preparing
    fresh Pi review attempts. See `review.attempt.supersede` in
    [helper-cli.md](references/helper-cli.md). Claim the serialized finalization slot and

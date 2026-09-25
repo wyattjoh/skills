@@ -1149,6 +1149,40 @@ A textual conflict returns `resolve-conflicts`, the sorted conflict paths, and
 leaves the rebase plus serialized slot in place. A non-conflict Git failure is
 an operation error.
 
+When an explicitly authorized `landing.yield` has suspended this ticket, its
+next `landing.synchronize` call atomically reclaims the saved record only if the
+worktree is clean and HEAD still matches the suspended full SHA. It increments
+the cycle and rebases onto the latest base, invalidating prior gates and review.
+Another ticket may claim the free slot while the suspension remains recorded.
+
+## `landing.yield`
+
+With explicit user authority, suspend a clean `gates`-phase finalization to
+prioritize another ready ticket without dropping the original evidence:
+
+```json
+{
+  "schema_version": 1,
+  "operation": "landing.yield",
+  "input": {
+    "state_path": ".scratch/example/RESUME.md",
+    "repository_path": "/repo",
+    "worktree_path": "/worktrees/example/ticket-04",
+    "ticket": "04",
+    "expected_ticket_sha": "0123456789abcdef0123456789abcdef01234567",
+    "user_authorized": true,
+    "completed_at": "2026-09-19T01:13:00Z"
+  }
+}
+```
+
+The helper verifies the current owner, exact SHA, base, branch, and clean
+worktree under the state lock. It preserves the complete record in the single
+`## Suspended finalization` slot and frees `## Serialized finalization`. Never
+edit either slot manually. A suspended ticket remains active; after the
+prioritized ticket lands, synchronize the suspended ticket again and rerun all
+gates and both reviews against the new base. A second suspension is rejected.
+
 ## `landing.conflict.record`
 
 After completing the conflicted rebase, record its coordinator classification:

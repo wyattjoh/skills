@@ -23,7 +23,12 @@ import {
   recoverImplementorLaunch,
   recordImplementorLaunch,
 } from "./lib/implementor.ts";
-import { completeLanding, recordLandingConflict, synchronizeLanding } from "./lib/landing.ts";
+import {
+  completeLanding,
+  recordLandingConflict,
+  synchronizeLanding,
+  yieldLanding,
+} from "./lib/landing.ts";
 import { runPreflight } from "./lib/preflight.ts";
 import {
   authorizeReviewEscalation,
@@ -145,6 +150,16 @@ const execute = (request: CoordinateRequest): Effect.Effect<number, never> =>
 
     if (request.operation === "landing.synchronize") {
       const outcome = yield* Effect.result(synchronizeLanding(request.input));
+      if (Result.isFailure(outcome)) {
+        print(failureResponse(request.operation, [outcome.failure.issue], null));
+        return 1;
+      }
+      print(successResponse(request.operation, outcome.success));
+      return 0;
+    }
+
+    if (request.operation === "landing.yield") {
+      const outcome = yield* Effect.result(yieldLanding(request.input));
       if (Result.isFailure(outcome)) {
         print(failureResponse(request.operation, [outcome.failure.issue], null));
         return 1;

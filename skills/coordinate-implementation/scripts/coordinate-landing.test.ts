@@ -282,6 +282,7 @@ describe("portable synchronization and landing", () => {
     expect(skill).toContain("`landing.conflict.record`");
     expect(skill).toContain("`landing.complete`");
     expect(helper).toContain("## `landing.synchronize`");
+    expect(helper).toContain("## `landing.yield`");
     expect(helper).toContain("## `landing.conflict.record`");
     expect(helper).toContain("## `landing.complete`");
     expect(procedure).toContain("latest local integration branch");
@@ -343,6 +344,182 @@ describe("portable synchronization and landing", () => {
     expect(spawnGit(["remote"], { cwd: fixture.repositoryPath }).stdout).toBe("");
     expect(readFileSync(fixture.statePath, "utf8")).toContain("## Serialized finalization");
     expect(existsSync(fixture.worktreePath)).toBe(true);
+  });
+
+  it("yields a clean gates-phase ticket and resynchronizes its preserved tip after the base advances", async () => {
+    const fixture = makeFixture();
+    const originalTip = commit(fixture.worktreePath, "ticket.txt", "ticket\n", "ticket");
+    const synchronized = await runCli("landing.synchronize", {
+      state_path: fixture.statePath,
+      repository_path: fixture.repositoryPath,
+      worktree_path: fixture.worktreePath,
+      ticket: "07",
+      remote_sync_argv: null,
+      completed_at: "2026-09-19T02:00:00Z",
+    });
+    expect(synchronized.exitCode).toBe(0);
+
+    const yielded = await runCli("landing.yield", {
+      state_path: fixture.statePath,
+      repository_path: fixture.repositoryPath,
+      worktree_path: fixture.worktreePath,
+      ticket: "07",
+      expected_ticket_sha: originalTip,
+      user_authorized: true,
+      completed_at: "2026-09-19T02:01:00Z",
+    });
+    expect(yielded.exitCode).toBe(0);
+    expect(yielded.stdout.result).toEqual({
+      ticket: "07",
+      ticket_sha: originalTip,
+      action: "suspended",
+    });
+    const suspendedState = readFileSync(fixture.statePath, "utf8");
+    expect(suspendedState).toContain("## Suspended finalization");
+    expect(suspendedState.includes("## Serialized finalization")).toBe(false);
+    expect(suspendedState).toContain(`"ticket_sha": "${originalTip}"`);
+    expect(suspendedState).toContain("Phase: finalization suspended");
+    expect(suspendedState).toContain(
+      `finalization yielded (user authorized); preserved tip ${originalTip}`,
+    );
+
+    const newBase = commit(
+      fixture.repositoryPath,
+      "base-next.txt",
+      "new base\n",
+      "land another ticket",
+    );
+    const resumed = await runCli("landing.synchronize", {
+      state_path: fixture.statePath,
+      repository_path: fixture.repositoryPath,
+      worktree_path: fixture.worktreePath,
+      ticket: "07",
+      remote_sync_argv: null,
+      completed_at: "2026-09-19T02:02:00Z",
+    });
+    expect(resumed.exitCode).toBe(0);
+    expect(resumed.stdout.result).toMatchObject({
+      ticket: "07",
+      action: "run-gates",
+      base_sha: newBase,
+      cycle: 1,
+    });
+    const restoredState = readFileSync(fixture.statePath, "utf8");
+    expect(restoredState).toContain("## Serialized finalization");
+    expect(restoredState.includes("## Suspended finalization")).toBe(false);
+    expect(
+      spawnGit(["merge-base", "--is-ancestor", newBase, "HEAD"], {
+        cwd: fixture.worktreePath,
+      }).exitCode,
+    ).toBe(0);
+  });
+
+  it("lets another ticket claim the yielded slot while preserving the suspended owner", async () => {
+    const fixture = makeFixture();
+    const tip = commit(fixture.worktreePath, "ticket.txt", "ticket\n", "ticket");
+    const otherWorktree = join(fixture.root, "worktrees", "ticket-08");
+    expect(
+      spawnGit(["worktree", "add", "-q", "-b", "ticket-08", otherWorktree, "main"], {
+        cwd: fixture.repositoryPath,
+      }).exitCode,
+    ).toBe(0);
+    commit(otherWorktree, "other.txt", "other\n", "other ticket");
+    const state = readFileSync(fixture.statePath, "utf8");
+    writeFileSync(
+      fixture.statePath,
+      state.replace(
+        "## Review evidence",
+        `### 08
+
+Worktree: ${otherWorktree}
+Branch: ticket-08
+Pane: work:p8
+Phase: committed, awaiting review
+
+## Review evidence`,
+      ),
+    );
+    const synced = await runCli("landing.synchronize", {
+      state_path: fixture.statePath,
+      repository_path: fixture.repositoryPath,
+      worktree_path: fixture.worktreePath,
+      ticket: "07",
+      remote_sync_argv: null,
+      completed_at: "2026-09-19T02:00:00Z",
+    });
+    expect(synced.exitCode).toBe(0);
+    const yielded = await runCli("landing.yield", {
+      state_path: fixture.statePath,
+      repository_path: fixture.repositoryPath,
+      worktree_path: fixture.worktreePath,
+      ticket: "07",
+      expected_ticket_sha: tip,
+      user_authorized: true,
+      completed_at: "2026-09-19T02:01:00Z",
+    });
+    expect(yielded.exitCode).toBe(0);
+    const other = await runCli("landing.synchronize", {
+      state_path: fixture.statePath,
+      repository_path: fixture.repositoryPath,
+      worktree_path: otherWorktree,
+      ticket: "08",
+      remote_sync_argv: null,
+      completed_at: "2026-09-19T02:02:00Z",
+    });
+    expect(other.exitCode).toBe(0);
+    const occupied = await runCli("landing.synchronize", {
+      state_path: fixture.statePath,
+      repository_path: fixture.repositoryPath,
+      worktree_path: fixture.worktreePath,
+      ticket: "07",
+      remote_sync_argv: null,
+      completed_at: "2026-09-19T02:03:00Z",
+    });
+    expect(occupied.exitCode).toBe(1);
+    expect(occupied.stdout.errors).toMatchObject([{ code: "landing.serialized" }]);
+    const pending = readFileSync(fixture.statePath, "utf8");
+    expect(pending).toContain("## Suspended finalization");
+    expect(pending).toContain("## Serialized finalization");
+    expect(pending).toContain(`"ticket_sha": "${tip}"`);
+  });
+
+  it("rejects stale, dirty, and unauthorized yields without losing the finalization", async () => {
+    const fixture = makeFixture();
+    const tip = commit(fixture.worktreePath, "ticket.txt", "ticket\n", "ticket");
+    const synced = await runCli("landing.synchronize", {
+      state_path: fixture.statePath,
+      repository_path: fixture.repositoryPath,
+      worktree_path: fixture.worktreePath,
+      ticket: "07",
+      remote_sync_argv: null,
+      completed_at: "2026-09-19T02:00:00Z",
+    });
+    expect(synced.exitCode).toBe(0);
+    const input = {
+      state_path: fixture.statePath,
+      repository_path: fixture.repositoryPath,
+      worktree_path: fixture.worktreePath,
+      ticket: "07",
+      expected_ticket_sha: tip,
+      user_authorized: true,
+      completed_at: "2026-09-19T02:01:00Z",
+    };
+    const unauthorized = await runCli("landing.yield", { ...input, user_authorized: false });
+    expect(unauthorized.exitCode).toBe(2);
+    expect(unauthorized.stdout.errors).toMatchObject([{ code: "request.invalid" }]);
+    const wrongTip = await runCli("landing.yield", {
+      ...input,
+      expected_ticket_sha: "f".repeat(40),
+    });
+    expect(wrongTip.exitCode).toBe(1);
+    expect(wrongTip.stdout.errors).toMatchObject([{ code: "landing.yield_binding_mismatch" }]);
+    writeFileSync(join(fixture.worktreePath, "untracked.txt"), "dirty\n");
+    const dirty = await runCli("landing.yield", input);
+    expect(dirty.exitCode).toBe(1);
+    expect(dirty.stdout.errors).toMatchObject([{ code: "landing.yield_stale" }]);
+    const state = readFileSync(fixture.statePath, "utf8");
+    expect(state).toContain("## Serialized finalization");
+    expect(state.includes("## Suspended finalization")).toBe(false);
   });
 
   it("serializes finalization while other implementors remain active", async () => {

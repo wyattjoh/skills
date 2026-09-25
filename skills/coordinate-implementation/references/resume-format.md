@@ -460,6 +460,16 @@ refused fast-forward records `resynchronize` and clears stale final-review
 paths. Scope conflicts may remain `awaiting-user`. Never clear or transfer this
 record by hand merely to admit another ticket.
 
+### `## Suspended finalization`
+
+At most one helper-owned JSON record exists after an explicitly authorized
+`landing.yield` of a clean gates-phase ticket. It preserves the exact original
+finalization binding and frees the serialized slot for another ready ticket.
+The ticket remains active, not landed or closed. `landing.synchronize` for the
+same ticket reclaims it only when its clean worktree still matches the saved
+full SHA, then rebases onto the latest base with a new cycle. Repeat all gates
+and both reviews. Never create, remove, or restore this record by hand.
+
 ### `## Review evidence`
 
 Append-only review provenance. Each reviewer attempt records ticket, round,

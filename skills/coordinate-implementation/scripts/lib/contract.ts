@@ -44,6 +44,7 @@ export type CoordinateOperation =
   | "review.round.finalize"
   | "review.escalation.authorize"
   | "landing.synchronize"
+  | "landing.yield"
   | "landing.conflict.record"
   | "landing.complete"
   | "run.finalize"
@@ -629,6 +630,19 @@ export type LandingSynchronizeInput = {
 };
 
 /**
+ * Explicitly authorized suspension of one clean, synchronized finalization.
+ */
+export type LandingYieldInput = {
+  statePath: string;
+  repositoryPath: string;
+  worktreePath: string;
+  ticket: string;
+  expectedTicketSha: string;
+  userAuthorized: true;
+  completedAt: string;
+};
+
+/**
  * Coordinator classification recorded after a conflicted synchronization is resolved.
  */
 export type ConflictClassification = "textual" | "substantive" | "scope";
@@ -868,6 +882,11 @@ export type CoordinateRequest =
       schemaVersion: typeof CONTRACT_SCHEMA_VERSION;
       operation: "landing.synchronize";
       input: LandingSynchronizeInput;
+    }
+  | {
+      schemaVersion: typeof CONTRACT_SCHEMA_VERSION;
+      operation: "landing.yield";
+      input: LandingYieldInput;
     }
   | {
       schemaVersion: typeof CONTRACT_SCHEMA_VERSION;
@@ -1340,6 +1359,7 @@ export const parseRequest = (raw: string): Effect.Effect<CoordinateRequest, Requ
       "review.round.finalize",
       "review.escalation.authorize",
       "landing.synchronize",
+      "landing.yield",
       "landing.conflict.record",
       "landing.complete",
       "run.finalize",
@@ -1811,6 +1831,44 @@ export const parseRequest = (raw: string): Effect.Effect<CoordinateRequest, Requ
           worktreePath,
           ticket,
           remoteSyncArgv,
+          completedAt,
+        },
+      };
+    }
+
+    if (operation === "landing.yield") {
+      const statePath = nonEmptyString(parsed.input.state_path);
+      const repositoryPath = nonEmptyString(parsed.input.repository_path);
+      const worktreePath = nonEmptyString(parsed.input.worktree_path);
+      const ticket = singleLineString(parsed.input.ticket);
+      const expectedTicketSha = singleLineString(parsed.input.expected_ticket_sha);
+      const completedAt = parsed.input.completed_at;
+      if (
+        statePath === undefined ||
+        repositoryPath === undefined ||
+        worktreePath === undefined ||
+        ticket === undefined ||
+        !/^\d{2}$/u.test(ticket) ||
+        expectedTicketSha === undefined ||
+        !/^[a-f0-9]{40,64}$/u.test(expectedTicketSha) ||
+        parsed.input.user_authorized !== true ||
+        !isUtcIsoTimestamp(completedAt)
+      ) {
+        return yield* invalidRequest(
+          "`landing.yield` requires state_path, repository_path, worktree_path, a two-digit ticket, expected_ticket_sha, user_authorized: true, and completed_at.",
+          operation,
+        );
+      }
+      return {
+        schemaVersion: CONTRACT_SCHEMA_VERSION,
+        operation,
+        input: {
+          statePath,
+          repositoryPath,
+          worktreePath,
+          ticket,
+          expectedTicketSha,
+          userAuthorized: true,
           completedAt,
         },
       };

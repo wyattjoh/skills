@@ -51,6 +51,13 @@ slot. Process ready tickets in dependency order. Use the returned full-SHA
 each review diff limited to that ticket instead of making later base commits
 appear as reversals.
 
+When the user explicitly prioritizes another ready ticket, finish the current
+worker and synchronize its clean committed tip to `gates`, then use
+`landing.yield` with that exact full SHA. This preserves one suspended
+finalization record and frees the slot. After the prioritized ticket lands,
+call `landing.synchronize` for the suspended ticket and rerun all gates and both
+reviews against the new base. Do not hand-edit state or yield a dirty branch.
+
 A `resolve-conflicts` result leaves the serialized slot and Git conflict in
 place. Resolve textual conflicts yourself with the `resolving-merge-conflicts`
 skill, never by asking the implementor to operate the rebase. Preserve the

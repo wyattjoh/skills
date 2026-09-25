@@ -8,6 +8,7 @@ import type {
   LandingCompleteInput,
   LandingConflictRecordInput,
   LandingSynchronizeInput,
+  LandingYieldInput,
 } from "./contract.ts";
 import { activeRuntimeBlockPattern, parseActiveRuntimeFields } from "./active-runtime.ts";
 import { cleanGitEnv, spawnGit } from "./git.ts";
@@ -91,6 +92,33 @@ const parseFinalization = (markdown: string): FinalizationRecord | undefined => 
 
 const renderFinalization = (record: FinalizationRecord): string =>
   `## Serialized finalization\n\n\`\`\`json\n${JSON.stringify(record, null, 2)}\n\`\`\``;
+
+const suspendedPattern =
+  /^## Suspended finalization\s*\r?\n\r?\n```json\r?\n([\s\S]*?)\r?\n```\s*$/mu;
+
+const parseSuspended = (markdown: string): FinalizationRecord | undefined => {
+  const match = markdown.match(suspendedPattern);
+  if (match === null) return undefined;
+  try {
+    const value = JSON.parse(match[1]!) as FinalizationRecord;
+    if (
+      value.phase !== "gates" ||
+      !/^\d{2}$/u.test(value.ticket) ||
+      !/^[a-f0-9]{40,64}$/u.test(value.ticket_sha ?? "")
+    )
+      throw new Error("invalid suspended binding");
+    return value;
+  } catch {
+    throw landingError(
+      "landing.suspension_malformed",
+      "RESUME.md contains malformed suspended finalization evidence.",
+      "Repair the suspension from its recorded ticket, SHA, and gate evidence before continuing.",
+    );
+  }
+};
+
+const renderSuspended = (record: FinalizationRecord): string =>
+  `## Suspended finalization\n\n\`\`\`json\n${JSON.stringify(record, null, 2)}\n\`\`\``;
 
 const upsertFinalization = (markdown: string, record: FinalizationRecord): string => {
   const rendered = renderFinalization(record);
@@ -308,6 +336,89 @@ const updateFinalization = (
   ).pipe(Effect.mapError(fromMutationError));
 
 /**
+ * Suspends a clean gates-phase finalization so an earlier ready ticket can land first.
+ * The exact record is retained and must be revalidated on its next synchronization.
+ *
+ * @param input - Authorized ticket, repository and worktree binding, and expected HEAD.
+ * @returns The suspended ticket and preserved tip.
+ */
+export const yieldLanding = (
+  input: LandingYieldInput,
+): Effect.Effect<{ ticket: string; ticket_sha: string; action: "suspended" }, LandingError> =>
+  mutateStateFile(input.statePath, (markdown) =>
+    Effect.gen(function* () {
+      yield* validateStateText(input.statePath, markdown).pipe(
+        Effect.mapError((error) => new LandingError({ issue: error.issue })),
+      );
+      const record = parseFinalization(markdown);
+      if (
+        record?.ticket !== input.ticket ||
+        record.phase !== "gates" ||
+        record.ticket_sha !== input.expectedTicketSha ||
+        parseSuspended(markdown) !== undefined
+      ) {
+        return yield* landingError(
+          "landing.yield_binding_mismatch",
+          "Only the exact active, synchronized gates-phase ticket can yield an empty suspension slot.",
+          "Finish the current worker, synchronize its clean tip, and pass the returned full SHA.",
+        );
+      }
+      const runtime = parseActiveTicket(markdown, input.ticket);
+      yield* validateRepositoryAndWorktree(
+        input.repositoryPath,
+        input.worktreePath,
+        runtime.worktree,
+        runtime.branch,
+        record.base_branch,
+      );
+      const head = spawnGit(["rev-parse", "HEAD"], { cwd: input.worktreePath });
+      const base = spawnGit(["rev-parse", record.base_branch], { cwd: input.repositoryPath });
+      const status = spawnGit(["status", "--porcelain=v1", "--untracked-files=all"], {
+        cwd: input.worktreePath,
+      });
+      if (
+        head.exitCode !== 0 ||
+        base.exitCode !== 0 ||
+        status.exitCode !== 0 ||
+        status.stdout !== "" ||
+        head.stdout.trim() !== record.ticket_sha ||
+        base.stdout.trim() !== record.base_sha
+      ) {
+        return yield* landingError(
+          "landing.yield_stale",
+          "The ticket worktree, HEAD, or integration base changed before yielding.",
+          "Resynchronize and rerun gates before yielding the current finalization.",
+        );
+      }
+      const insertion = /^## Review evidence\s*$/mu.exec(markdown)?.index ?? markdown.length;
+      const suspended = `${markdown.slice(0, insertion).trimEnd()}\n\n${renderSuspended(record)}\n\n${markdown.slice(insertion).trimStart()}`;
+      const withoutActive = updateActivePhase(
+        suspended.replace(finalizationPattern, ""),
+        input.ticket,
+        "finalization suspended",
+      );
+      const decisions = /^## Decisions\s*$/mu.exec(withoutActive);
+      if (decisions === null) {
+        return yield* landingError(
+          "landing.decisions_missing",
+          "RESUME.md has no Decisions section for the authorized finalization yield.",
+          "Repair the schema-1 state template before yielding.",
+        );
+      }
+      const decisionAt = decisions.index + decisions[0].length;
+      const updated = `${withoutActive.slice(0, decisionAt)}\n\n- ${input.completedAt} ticket ${input.ticket} finalization yielded (user authorized); preserved tip ${record.ticket_sha}.\n${withoutActive.slice(decisionAt).replace(/^\s*/u, "")}`;
+      return {
+        markdown: updated,
+        result: {
+          ticket: input.ticket,
+          ticket_sha: record.ticket_sha!,
+          action: "suspended" as const,
+        },
+      };
+    }),
+  ).pipe(Effect.mapError(fromMutationError));
+
+/**
  * Claims the single finalization slot and rebases one clean ticket branch onto the local base.
  *
  * @param input - Run state, integration checkout, ticket worktree, and optional policy command.
@@ -341,11 +452,41 @@ export const synchronizeLanding = (
         const policy = parseRepositoryPolicy(markdown);
         const baseBranch = parseBaseBranch(markdown);
         const runtime = parseActiveTicket(markdown, input.ticket);
-        const existing = parseFinalization(markdown);
-        if (existing !== undefined && existing.ticket !== input.ticket) {
+        const active = parseFinalization(markdown);
+        const suspended = parseSuspended(markdown);
+        if (active === undefined && suspended?.ticket === input.ticket) {
+          if (
+            realpathSync(runtime.worktree) !== realpathSync(input.worktreePath) ||
+            suspended.base_branch !== baseBranch
+          ) {
+            return yield* landingError(
+              "landing.suspension_mismatch",
+              "Suspended finalization does not match this runtime and base branch.",
+              "Use the recorded ticket worktree and integration branch.",
+            );
+          }
+          const head = spawnGit(["rev-parse", "HEAD"], { cwd: input.worktreePath });
+          const status = spawnGit(["status", "--porcelain=v1", "--untracked-files=all"], {
+            cwd: input.worktreePath,
+          });
+          if (
+            head.exitCode !== 0 ||
+            status.exitCode !== 0 ||
+            head.stdout.trim() !== suspended.ticket_sha ||
+            status.stdout !== ""
+          ) {
+            return yield* landingError(
+              "landing.suspension_changed",
+              "The suspended ticket HEAD or worktree changed before resumption.",
+              "Inspect the branch and recorded suspension; do not discard its evidence.",
+            );
+          }
+        }
+        const existing = active ?? (suspended?.ticket === input.ticket ? suspended : undefined);
+        if (active !== undefined && active.ticket !== input.ticket) {
           return yield* landingError(
             "landing.serialized",
-            `Ticket \`${existing.ticket}\` already owns serialized finalization in phase \`${existing.phase}\`.`,
+            `Ticket \`${active.ticket}\` already owns serialized finalization in phase \`${active.phase}\`.`,
             "Keep other implementors running, but wait for that ticket to leave synchronization, gates, review, and landing.",
           );
         }
@@ -356,8 +497,12 @@ export const synchronizeLanding = (
             "Finish and classify the recorded conflict before synchronizing again.",
           );
         }
-        const cycle =
-          existing?.phase === "resynchronize" ? existing.cycle + 1 : (existing?.cycle ?? 0);
+        const resuming = active === undefined && suspended?.ticket === input.ticket;
+        const cycle = resuming
+          ? suspended!.cycle + 1
+          : existing?.phase === "resynchronize"
+            ? existing.cycle + 1
+            : (existing?.cycle ?? 0);
         const record: FinalizationRecord = {
           ticket: input.ticket,
           cycle,
@@ -376,13 +521,20 @@ export const synchronizeLanding = (
           self_review_path: null,
           completed_at: input.completedAt,
         };
+        const restored = resuming ? markdown.replace(suspendedPattern, "") : markdown;
         return {
           markdown: updateActivePhase(
-            upsertFinalization(markdown, record),
+            upsertFinalization(restored, record),
             input.ticket,
             "synchronizing with local base",
           ),
-          result: { policy, baseBranch, runtime, record, previousPhase: existing?.phase },
+          result: {
+            policy,
+            baseBranch,
+            runtime,
+            record,
+            previousPhase: resuming ? "resynchronize" : existing?.phase,
+          },
         };
       }),
     ).pipe(Effect.mapError(fromMutationError));
