@@ -16,6 +16,7 @@ import {
   type EngineLease,
 } from "./engine-lease.ts";
 import { runEngine, stopRequestPath, type EngineWorkflow } from "./engine.ts";
+import { answerEscalation, listOpenEscalations } from "./escalations.ts";
 import { readEventsSince, type RuntimeEvent } from "./event-log.ts";
 import { projectRun } from "./global-state.ts";
 import { makeHerdrActuator, type HerdrActuator } from "./herdr-actuator.ts";
@@ -381,6 +382,7 @@ const wait = async (flags: Flags, deps: RuntimeDeps): Promise<Record<string, unk
         events,
         omitted_events: page.events.length - events.length,
         attention,
+        open_escalations: await run(listOpenEscalations(runPath), withIssue),
         next_cursor: page.next_cursor,
         engine,
       };
@@ -402,9 +404,35 @@ const status = async (flags: Flags, deps: RuntimeDeps): Promise<Record<string, u
     engine: await observeEngine(statePath, deps),
     last_seq: await lastSeq(runPath),
     cursor: await readCursor(runPath),
+    open_escalations: await run(listOpenEscalations(runPath), withIssue),
     tickets: projection?.tickets ?? [],
     active_runtimes: projection?.active_runtimes ?? [],
   };
+};
+
+const answer = async (flags: Flags, deps: RuntimeDeps): Promise<Record<string, unknown>> => {
+  const { runPath } = runPaths(flags);
+  const by = stringFlag(flags, "by") ?? "coordinator";
+  if (by !== "coordinator" && by !== "user") {
+    fail(
+      "runtime.usage",
+      "`--by` must be `coordinator` or `user`.",
+      "Pass who decided the answer.",
+    );
+  }
+  const recorded = await run(
+    answerEscalation(runPath, {
+      id: requiredFlag(flags, "id"),
+      answer: requiredFlag(flags, "text"),
+      answered_by: by as "coordinator" | "user",
+      answered_at: deps
+        .now()
+        .toISOString()
+        .replace(/\.\d{3}Z$/, "Z"),
+    }),
+    withIssue,
+  );
+  return { answered: recorded };
 };
 
 const revoke = async (statePath: string, lease: EngineLease, deps: RuntimeDeps) => {
@@ -462,6 +490,7 @@ const COMMANDS: Record<
   wait,
   status,
   stop,
+  answer,
 };
 
 /**
@@ -482,7 +511,7 @@ export const runRuntimeCommand = async (
       fail(
         "runtime.usage",
         `Unknown command \`${name ?? ""}\`.`,
-        "Use one of: start, wait, status, stop.",
+        "Use one of: start, wait, answer, status, stop.",
       );
     }
     const result = await command!(parseFlags(rest), deps);
