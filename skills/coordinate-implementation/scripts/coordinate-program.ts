@@ -464,6 +464,7 @@ export const runCoordinatorRequest = async (
     return yield* execute(request);
   });
   const outcome = await Effect.runPromise(Effect.result(program));
+  setCurrentOperation(null);
   let exitCode: number;
   if (Result.isFailure(outcome)) {
     print(failureResponse(outcome.failure.operation, [outcome.failure.issue], null));
