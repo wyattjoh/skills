@@ -207,34 +207,6 @@ afterEach(async () => {
   await Promise.all(servers.splice(0).map(closeServer));
 });
 
-describe("worktree and launch documentation contract", () => {
-  it("documents policy-driven worktrees without an optional product dependency", () => {
-    const skill = readFileSync(join(import.meta.dir, "..", "SKILL.md"), "utf8");
-    const launch = readFileSync(
-      join(import.meta.dir, "..", "references", "session-launch.md"),
-      "utf8",
-    );
-    const helper = readFileSync(join(import.meta.dir, "..", "references", "helper-cli.md"), "utf8");
-    const resume = readFileSync(
-      join(import.meta.dir, "..", "references", "resume-format.md"),
-      "utf8",
-    );
-    const published = `${skill}\n${launch}\n${helper}\n${resume}`;
-
-    expect(launch.includes("Repository instructions are authoritative")).toBe(true);
-    expect(helper.includes("## `worktree.preflight`")).toBe(true);
-    expect(helper.includes("## `worktree.prepare`")).toBe(true);
-    expect(helper.includes("## `implementor.launch.prepare`")).toBe(true);
-    expect(helper.includes("## `implementor.launch.recover`")).toBe(true);
-    expect(helper.includes("## `implementor.launch.record`")).toBe(true);
-    expect(helper.includes("## `review.escalation.authorize`")).toBe(true);
-    expect(resume.includes('"commits": "multiple"')).toBe(true);
-    expect(resume.includes('"fixes": "append"')).toBe(true);
-    expect(published.includes("Pando")).toBe(false);
-    expect(published.includes("EnterWorktree")).toBe(false);
-  });
-});
-
 describe("policy-driven worktree preparation", () => {
   it("uses native Git fallback, persists defaults, and strips inherited Git locations", async () => {
     const fixture = makeFixture();

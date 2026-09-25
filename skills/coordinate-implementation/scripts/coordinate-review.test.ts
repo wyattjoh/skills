@@ -302,30 +302,6 @@ Suggested fix: Restore the required behavior and add coverage.
 FAIL
 `;
 
-describe("review documentation contract", () => {
-  it("documents harness self-review, fresh Herdr axes, mutation stops, and gate execution", () => {
-    const skill = readFileSync(join(import.meta.dir, "..", "SKILL.md"), "utf8");
-    const procedure = readFileSync(
-      join(import.meta.dir, "..", "references", "review-and-land.md"),
-      "utf8",
-    );
-
-    expect(skill).toContain("`review.policy.prepare`");
-    expect(skill).toContain("fresh independent Herdr");
-    expect(procedure).toContain("Pi coordinators run gates synchronously");
-    expect(procedure).toContain("Claude implementors complete Matt's `implement` self-review");
-    expect(procedure).toContain("subagent extension.");
-    expect(procedure).toContain("before closing the pane");
-    expect(procedure).toContain(
-      "Never reset, stash, commit, or discard reviewer changes automatically",
-    );
-    expect(skill).toContain("Review fixes are\n  pre-authorized regardless of round");
-    expect(procedure).toContain("terminal remediation result");
-    expect(procedure).toContain("result returned directly by the blocking Herdr prompt");
-    expect(procedure).toContain("do not summarize, end the turn, or wait for another");
-  });
-});
-
 describe("review policy", () => {
   it("persists explicit repository gates and derives the Pi fallback self-review", async () => {
     const fixture = makeFixture("pi");

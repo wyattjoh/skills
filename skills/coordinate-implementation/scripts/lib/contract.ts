@@ -1263,6 +1263,51 @@ const invalidRequest = (message: string, operation: string | null): RequestError
   });
 
 /**
+ * Every operation the helper CLI accepts, in documentation order.
+ */
+export const COORDINATE_OPERATIONS: readonly CoordinateOperation[] = [
+  "preflight",
+  "state.validate",
+  "roles.discover",
+  "role.validate",
+  "coordinator.claim",
+  "coordinator.ready",
+  "coordinator.verify",
+  "coordinator.handoff.prepare",
+  "coordinator.handoff.retry",
+  "coordinator.handoff.ready",
+  "coordinator.handoff.verify",
+  "snapshot.check",
+  "snapshot.accept",
+  "worktree.preflight",
+  "worktree.prepare",
+  "implementor.runtime.migrate",
+  "implementor.runtime.migration.recover",
+  "implementor.launch.prepare",
+  "implementor.launch.recover",
+  "implementor.launch.record",
+  "scheduler.plan",
+  "herdr.wait_any",
+  "stall.assessment.prepare",
+  "stall.assessment.evaluate",
+  "stall.assessment.apply",
+  "infrastructure.retry.record",
+  "review.policy.prepare",
+  "review.attempt.supersede",
+  "review.launch.prepare",
+  "review.launch.record",
+  "gate.record",
+  "gate.rerun.record",
+  "review.round.finalize",
+  "review.escalation.authorize",
+  "landing.rebase.check",
+  "landing.rebase.record",
+  "landing.complete",
+  "run.finalize",
+  "agreements.update",
+];
+
+/**
  * Parses and validates one JSON request read from stdin.
  *
  * @param raw - Complete stdin text for a single invocation.
@@ -1293,50 +1338,9 @@ export const parseRequest = (raw: string): Effect.Effect<CoordinateRequest, Requ
         },
       });
     }
-    const operations: CoordinateOperation[] = [
-      "preflight",
-      "state.validate",
-      "roles.discover",
-      "role.validate",
-      "coordinator.claim",
-      "coordinator.ready",
-      "coordinator.verify",
-      "coordinator.handoff.prepare",
-      "coordinator.handoff.retry",
-      "coordinator.handoff.ready",
-      "coordinator.handoff.verify",
-      "snapshot.check",
-      "snapshot.accept",
-      "worktree.preflight",
-      "worktree.prepare",
-      "implementor.runtime.migrate",
-      "implementor.runtime.migration.recover",
-      "implementor.launch.prepare",
-      "implementor.launch.recover",
-      "implementor.launch.record",
-      "scheduler.plan",
-      "herdr.wait_any",
-      "stall.assessment.prepare",
-      "stall.assessment.evaluate",
-      "stall.assessment.apply",
-      "infrastructure.retry.record",
-      "review.policy.prepare",
-      "review.attempt.supersede",
-      "review.launch.prepare",
-      "review.launch.record",
-      "gate.record",
-      "gate.rerun.record",
-      "review.round.finalize",
-      "review.escalation.authorize",
-      "landing.rebase.check",
-      "landing.rebase.record",
-      "landing.complete",
-      "run.finalize",
-      "agreements.update",
-    ];
-    if (operation === null || !operations.includes(operation as CoordinateOperation)) {
+    if (operation === null || !COORDINATE_OPERATIONS.includes(operation as CoordinateOperation)) {
       return yield* invalidRequest(
-        `Request \`operation\` must be one of: ${operations.join(", ")}.`,
+        `Request \`operation\` must be one of: ${COORDINATE_OPERATIONS.join(", ")}.`,
         operation,
       );
     }

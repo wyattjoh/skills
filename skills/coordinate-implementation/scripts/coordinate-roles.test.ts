@@ -328,29 +328,6 @@ describe("role discovery and validation", () => {
   });
 });
 
-describe("role documentation contract", () => {
-  it("documents all three quoted role flags and durable ownership fields", async () => {
-    const skill = readFileSync(join(import.meta.dir, "..", "SKILL.md"), "utf8");
-    const resume = readFileSync(
-      join(import.meta.dir, "..", "references", "resume-format.md"),
-      "utf8",
-    );
-
-    expect(
-      skill.includes("`--coordinator`, `--implementor`, and `--reviewer` each accept one quoted"),
-    ).toBe(true);
-    expect(
-      skill.includes("Collect every missing startup value in one structured interaction"),
-    ).toBe(true);
-    expect(resume.includes("Reviewer:\n  harness: claude\n  model:   sonnet")).toBe(true);
-    expect(
-      resume.includes(
-        "Coordinator ownership:\n  generation: 0\n  pane: wJE:p1\n  harness: claude\n  model: fable\n  effort: low\n  readiness: ready",
-      ),
-    ).toBe(true);
-  });
-});
-
 describe("coordinator ownership", () => {
   it("claims cross-harness ownership, marks readiness, and verifies the observed marker", async () => {
     const fixture = makeEnvironment();

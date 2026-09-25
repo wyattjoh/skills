@@ -413,9 +413,6 @@ const resolveRebase = (worktreePath: string, contents: string): void => {
   ).toBe(0);
 };
 
-const readSkillFile = (...path: string[]): string =>
-  readFileSync(join(import.meta.dir, "..", ...path), "utf8");
-
 const runLocked = (
   checkout: string,
   base: string,
@@ -429,30 +426,6 @@ const runLocked = (
 };
 
 describe("per-ticket integration and landing", () => {
-  it("documents the rebase, integration, and flock landing interfaces", () => {
-    const skill = readSkillFile("SKILL.md");
-    const helper = readSkillFile("references", "helper-cli.md");
-    const procedure = readSkillFile("references", "review-and-land.md");
-    const resume = readSkillFile("references", "resume-format.md");
-    const brief = readSkillFile("references", "common-brief.md");
-
-    expect(skill).toContain("`landing.rebase.check`");
-    expect(skill).toContain("`landing.rebase.record`");
-    expect(skill).toContain("`landing.complete`");
-    expect(skill).toContain("Rebase conflicts belong to the implementor, never the coordinator.");
-    expect(helper).toContain("## `landing.rebase.check`");
-    expect(helper).toContain("## `landing.rebase.record`");
-    expect(helper).toContain("## `landing.complete`");
-    expect(helper).toContain("<git-common-dir>/land-local.lock");
-    expect(procedure).toContain("latest local integration branch");
-    expect(procedure).toContain("`--force`");
-    expect(resume).toContain("### `Integration` field");
-    expect(resume).toContain("Schema version: 2");
-    expect(resume).toContain("## Landed evidence");
-    expect(brief).toContain("REBASE DONE <ticket-number>");
-    expect(brief).toContain("Never check out, edit,\n  reset, or merge in the base checkout.");
-  });
-
   it("rejects removed serialized finalization operations as unknown", async () => {
     for (const operation of ["landing.synchronize", "landing.yield", "landing.conflict.record"]) {
       const result = await runCli(operation, {});

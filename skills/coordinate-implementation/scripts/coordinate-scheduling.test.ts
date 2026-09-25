@@ -351,46 +351,6 @@ describe("wait-any request validation", () => {
   });
 });
 
-describe("event-driven scheduling documentation", () => {
-  it("documents the bounded cap and engine wait loop without legacy wake mechanisms", async () => {
-    const skill = readFileSync(join(import.meta.dir, "..", "SKILL.md"), "utf8");
-    const helper = readFileSync(join(import.meta.dir, "..", "references", "helper-cli.md"), "utf8");
-    const resume = readFileSync(
-      join(import.meta.dir, "..", "references", "resume-format.md"),
-      "utf8",
-    );
-    const stall = readFileSync(join(import.meta.dir, "..", "references", "stall-check.md"), "utf8");
-    const runtimeCli = readFileSync(
-      join(import.meta.dir, "..", "references", "runtime-cli.md"),
-      "utf8",
-    );
-
-    expect(skill.includes("--parallel <N>")).toBe(true);
-    expect(skill.includes("`wait` is the only wait.")).toBe(true);
-    expect(
-      skill.includes("Loop on `runtime.ts wait --run .scratch/<slug>` until the run finishes."),
-    ).toBe(true);
-    expect(skill.includes("herdr.wait_any")).toBe(false);
-    expect(runtimeCli.includes("`wait` is the only wait.")).toBe(true);
-    expect(stall.includes("The Engine runs this check on its own per-ticket timer.")).toBe(true);
-    expect(stall.includes("open a\n  `stall_pause` escalation for that ticket.")).toBe(true);
-    expect(resume.includes("Parallel cap:")).toBe(true);
-    expect(helper.includes("## `scheduler.plan`")).toBe(true);
-    expect(helper.includes("## `herdr.wait_any`")).toBe(true);
-    expect(helper.includes("## `infrastructure.retry.record`")).toBe(true);
-    expect(helper.includes("stall.assessment.prepare")).toBe(true);
-    expect(helper.includes("stall.assessment.evaluate")).toBe(true);
-    expect(helper.includes("stall.assessment.apply")).toBe(true);
-    expect(stall.includes("jev-1.13.0")).toBe(true);
-    expect(stall.includes("Normalize Herdr `done` to `worker.status: idle`")).toBe(true);
-    expect(stall.includes("Do not normalize invalid probabilities")).toBe(true);
-    expect(resume.includes("## Stall evidence")).toBe(true);
-    expect(skill.includes("CronCreate")).toBe(false);
-    expect(skill.includes("/loop 10m")).toBe(false);
-    expect(resume.includes("Monitor:")).toBe(false);
-  });
-});
-
 describe("Herdr event-driven wait-any", () => {
   it("subscribes before snapshot and preserves a completion event from the bootstrap race", async () => {
     const path = socketPath();

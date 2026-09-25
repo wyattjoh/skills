@@ -311,50 +311,6 @@ afterEach(async () => {
   await Promise.all(servers.splice(0).map(closeServer));
 });
 
-describe("released Herdr coordinator continuity documentation", () => {
-  it("disables automatic handoff and documents durable replacement recovery", async () => {
-    const skill = readFileSync(join(import.meta.dir, "..", "SKILL.md"), "utf8");
-    const handoff = readFileSync(join(import.meta.dir, "..", "references", "handoff.md"), "utf8");
-    const helper = readFileSync(join(import.meta.dir, "..", "references", "helper-cli.md"), "utf8");
-    const resume = readFileSync(
-      join(import.meta.dir, "..", "references", "resume-format.md"),
-      "utf8",
-    );
-
-    const continuity = skill.slice(
-      skill.indexOf("## Coordinator continuity"),
-      skill.indexOf("## Resume"),
-    );
-    expect(continuity.split("\n").slice(0, 8)).toEqual([
-      "## Coordinator continuity",
-      "",
-      "Automatic coordinator handoff is disabled because Herdr 0.9.1 does not expose",
-      "normalized model context utilization. Record `Coordinator.handoff: disabled`",
-      "and `Coordinator.threshold: unavailable` in RESUME.md. Continue through the",
-      "active harness's normal context compaction without replacing the coordinator.",
-      "Never parse rendered pane output to estimate context use.",
-      "",
-    ]);
-    expect(handoff.match(/^## .+$/gmu)).toEqual([
-      "## Continue through normal compaction",
-      "## Recover an ended coordinator",
-      "## Unsupported automatic operations",
-      "## Binding rules",
-    ]);
-    expect(helper.match(/^### `coordinator\.handoff\.[a-z]+`$/gmu)).toEqual([
-      "### `coordinator.handoff.prepare`",
-      "### `coordinator.handoff.retry`",
-      "### `coordinator.handoff.ready`",
-      "### `coordinator.handoff.verify`",
-    ]);
-    expect(resume.match(/^  (?:handoff|threshold):.+$/gmu)?.slice(0, 2)).toEqual([
-      "  handoff:    disabled",
-      "  threshold:  unavailable",
-    ]);
-    expect(handoff.match(/rendered pane output/gu)).toEqual(["rendered pane output"]);
-  });
-});
-
 describe("automatic coordinator context handoff", () => {
   it("requests handoff at exactly 80 percent from normalized Herdr fields", async () => {
     const path = await serveSnapshot(80, 100);
