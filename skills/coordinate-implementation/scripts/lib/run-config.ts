@@ -1,9 +1,10 @@
 import { activeRuntimeBlockPattern, parseActiveRuntimeFields } from "./active-runtime.ts";
 import type { RepositoryPolicy, RoleRecord } from "./contract.ts";
+import { parseStallInterval, STALL_INTERVAL_BOUNDS } from "./global-state.ts";
 import { parseIntegration, type IntegrationRecord } from "./integration.ts";
+import { readRepositoryPolicy } from "./policy-records.ts";
 import { ticketRows } from "./resume-sections.ts";
 import { parsePolicy, parseRoleBlock, type ReviewPolicy } from "./review.ts";
-import type { SerializedRepositoryPolicy } from "./worktrees.ts";
 import { WorkflowError } from "./workflow-runtime.ts";
 
 /**
@@ -56,16 +57,19 @@ const scalar = (markdown: string, name: string): string => {
 };
 
 const repositoryPolicy = (markdown: string): RepositoryPolicy => {
-  const match = /^## Repository policy\s*\r?\n\r?\n```json\r?\n([\s\S]*?)\r?\n```\s*$/mu.exec(
-    markdown,
-  );
-  if (match === null) {
-    throw configError(
-      "runtime.repository_policy_missing",
-      "RESUME.md has no persisted Repository policy.",
-    );
+  const record = readRepositoryPolicy(markdown);
+  if ("problem" in record) {
+    throw record.problem === "missing"
+      ? configError(
+          "runtime.repository_policy_missing",
+          "RESUME.md has no persisted Repository policy.",
+        )
+      : configError(
+          "runtime.repository_policy_malformed",
+          "RESUME.md contains an incomplete Repository policy.",
+        );
   }
-  const value = JSON.parse(match[1]!) as SerializedRepositoryPolicy;
+  const value = record.policy;
   return {
     instructionFiles: value.instruction_files,
     worktree: {
@@ -103,12 +107,18 @@ const withIssue = <A>(body: () => A): A => {
  */
 export const readRunConfig = (markdown: string): RunConfig =>
   withIssue(() => {
-    const interval = /^(\d+)m$/u.exec(scalar(markdown, "Stall interval"));
+    const interval = parseStallInterval(markdown);
+    if (interval === null) {
+      throw configError(
+        "runtime.config_malformed",
+        `RESUME.md \`Stall interval:\` must be ${STALL_INTERVAL_BOUNDS.min}m to ${STALL_INTERVAL_BOUNDS.max}m.`,
+      );
+    }
     return {
       prefix: scalar(markdown, "Prefix"),
       base: scalar(markdown, "Base"),
       branchTemplate: scalar(markdown, "Branch template"),
-      stallIntervalMs: Number(interval?.[1] ?? "10") * 60_000,
+      stallIntervalMs: interval * 60_000,
       implementor: parseRoleBlock(markdown, "Implementor"),
       reviewer: parseRoleBlock(markdown, "Reviewer"),
       reviewPolicy: parsePolicy(markdown),

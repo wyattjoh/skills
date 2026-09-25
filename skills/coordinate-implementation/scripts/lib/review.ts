@@ -15,6 +15,7 @@ import type {
   ReviewRoundFinalizeInput,
   RoleRecord,
 } from "./contract.ts";
+import { activeRuntimeBlockPattern, parseActiveRuntimeFields } from "./active-runtime.ts";
 import { spawnGit } from "./git.ts";
 import { IntegrationError, parseIntegration } from "./integration.ts";
 import {
@@ -24,6 +25,7 @@ import {
   applyNoChangeGateRerun,
   LandingError,
 } from "./landing.ts";
+import { readJsonSection, readRepositoryPolicy } from "./policy-records.ts";
 import { appendSectionLine, readRoleBlock, sameRole } from "./resume-sections.ts";
 import { inspectRuntimeClose } from "./runtime-close.ts";
 import { mutateStateFile, StateMutationError, withStateLock } from "./state-mutation.ts";
@@ -286,46 +288,34 @@ const parsePrefix = (markdown: string): string => {
  * @returns The persisted review policy.
  */
 export const parsePolicy = (markdown: string): ReviewPolicy => {
-  const matches = [
-    ...markdown.matchAll(/^## Review policy\s*\r?\n\r?\n```json\r?\n([\s\S]*?)\r?\n```\s*$/gmu),
-  ];
-  if (matches.length !== 1) {
-    throw reviewError(
-      "review.policy_missing",
-      "RESUME.md has no single resolved `## Review policy` record.",
-      "Run `review.policy.prepare` before launching workers or reviewers.",
-    );
-  }
-  try {
-    return JSON.parse(matches[0]![1]!) as ReviewPolicy;
-  } catch {
-    throw reviewError(
-      "review.policy_malformed",
-      "RESUME.md contains malformed review policy JSON.",
-      "Repair the policy from authoritative repository instructions and CI, then retry.",
-    );
-  }
+  const record = readJsonSection(markdown, "Review policy");
+  if ("value" in record) return record.value as ReviewPolicy;
+  throw record.problem === "missing"
+    ? reviewError(
+        "review.policy_missing",
+        "RESUME.md has no single resolved `## Review policy` record.",
+        "Run `review.policy.prepare` before launching workers or reviewers.",
+      )
+    : reviewError(
+        "review.policy_malformed",
+        "RESUME.md contains malformed review policy JSON.",
+        "Repair the policy from authoritative repository instructions and CI, then retry.",
+      );
 };
 
 const parseActiveTicket = (
   markdown: string,
   ticket: string,
 ): { worktree: string; branch: string; implementor: RoleRecord } => {
-  const match = markdown.match(
-    new RegExp(`^### ${ticket}\\r?\\n([\\s\\S]*?)(?=^### |^## |(?![\\s\\S]))`, "mu"),
-  );
-  if (match === null) {
+  const block = activeRuntimeBlockPattern(ticket).exec(markdown)?.[0];
+  if (block === undefined) {
     throw reviewError(
       "review.ticket_runtime_missing",
       `RESUME.md has no active runtime for ticket \`${ticket}\`.`,
       "Restore the ticket runtime before preparing external review.",
     );
   }
-  const fields: Record<string, string> = {};
-  for (const line of match[1]!.split(/\r?\n/u)) {
-    const field = line.match(/^([A-Za-z][A-Za-z ]*):\s*(.*)$/u);
-    if (field !== null) fields[field[1]!] = field[2]!;
-  }
+  const fields = parseActiveRuntimeFields(block);
   let implementor: RoleRecord;
   try {
     implementor = JSON.parse(fields.Implementor ?? "") as RoleRecord;
@@ -2755,19 +2745,14 @@ const readStoredEvidence = (path: string): Effect.Effect<StoredReviewEvidence, R
   );
 
 const parseFixCommitPolicy = (markdown: string): "append" | "amend" | "squash" => {
-  const match = markdown.match(
-    /^## Repository policy\s*\r?\n\r?\n```json\r?\n([\s\S]*?)\r?\n```\s*$/mu,
+  const record = readRepositoryPolicy(markdown);
+  if ("policy" in record) return record.policy.commit.fixes;
+  if (record.problem === "missing") return "append";
+  throw reviewError(
+    "review.repository_policy_malformed",
+    "RESUME.md contains an incomplete Repository policy.",
+    "Repair the persisted remote, cleanup, and commit records before consolidating review.",
   );
-  if (match === null) return "append";
-  try {
-    const value = JSON.parse(match[1]!) as {
-      commit: { fixes: unknown | undefined } | undefined;
-    };
-    const fixes = value.commit?.fixes;
-    return fixes === "amend" || fixes === "squash" ? fixes : "append";
-  } catch {
-    return "append";
-  }
 };
 
 /**

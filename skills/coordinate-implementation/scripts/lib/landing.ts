@@ -24,6 +24,7 @@ import {
   recordRebase,
   writeIntegration,
 } from "./integration.ts";
+import { readJsonSection, readRepositoryPolicy } from "./policy-records.ts";
 import { appendSectionLine, updateTicketCells } from "./resume-sections.ts";
 import { inspectRuntimeClose } from "./runtime-close.ts";
 import { mutateStateFile, StateMutationError } from "./state-mutation.ts";
@@ -78,52 +79,19 @@ const fromMutationError = (error: unknown): LandingError => {
 };
 
 const parseRepositoryPolicy = (markdown: string): PersistedRepositoryPolicy => {
-  const match = markdown.match(
-    /^## Repository policy\s*\r?\n\r?\n```json\r?\n([\s\S]*?)\r?\n```\s*$/mu,
-  );
-  if (match === null) {
-    throw landingError(
-      "landing.repository_policy_missing",
-      "RESUME.md has no persisted Repository policy.",
-      "Resolve repository synchronization, cleanup, and commit policy before integration.",
-    );
-  }
-  try {
-    const value = JSON.parse(match[1]!) as Partial<PersistedRepositoryPolicy>;
-    const commit = value.commit;
-    const remoteSyncArgv = value.remote_sync_argv;
-    if (
-      (value.remote !== "local-only" && value.remote !== "repository") ||
-      (value.remote === "local-only" && remoteSyncArgv !== null) ||
-      (value.remote === "repository" &&
-        (!Array.isArray(remoteSyncArgv) ||
-          remoteSyncArgv.length === 0 ||
-          remoteSyncArgv.some(
-            (argument) =>
-              typeof argument !== "string" || argument.length === 0 || /[\r\n]/u.test(argument),
-          ))) ||
-      (value.cleanup !== "native-safe" && value.cleanup !== "repository") ||
-      commit === undefined ||
-      (commit.commits !== "multiple" &&
-        commit.commits !== "single" &&
-        commit.commits !== "squash") ||
-      (commit.fixes !== "append" && commit.fixes !== "amend" && commit.fixes !== "squash")
-    ) {
-      throw new Error("invalid policy fields");
-    }
-    return {
-      remote: value.remote,
-      remote_sync_argv: value.remote === "repository" ? (remoteSyncArgv ?? null) : null,
-      cleanup: value.cleanup,
-      commit,
-    };
-  } catch {
-    throw landingError(
-      "landing.repository_policy_malformed",
-      "RESUME.md contains an incomplete Repository policy.",
-      "Repair the persisted remote, cleanup, and commit records before integration.",
-    );
-  }
+  const record = readRepositoryPolicy(markdown);
+  if ("policy" in record) return record.policy;
+  throw record.problem === "missing"
+    ? landingError(
+        "landing.repository_policy_missing",
+        "RESUME.md has no persisted Repository policy.",
+        "Resolve repository synchronization, cleanup, and commit policy before integration.",
+      )
+    : landingError(
+        "landing.repository_policy_malformed",
+        "RESUME.md contains an incomplete Repository policy.",
+        "Repair the persisted remote, cleanup, and commit records before integration.",
+      );
 };
 
 const parseBaseBranch = (markdown: string): string => {
@@ -139,16 +107,17 @@ const parseBaseBranch = (markdown: string): string => {
 };
 
 const parseGateCount = (markdown: string): number => {
-  const match = markdown.match(
-    /^## Review policy\s*\r?\n\r?\n```json\r?\n([\s\S]*?)\r?\n```\s*$/mu,
+  const record = readJsonSection(markdown, "Review policy");
+  const gates =
+    "value" in record && typeof record.value === "object" && record.value !== null
+      ? (record.value as { gates?: unknown }).gates
+      : undefined;
+  if (Array.isArray(gates)) return gates.length;
+  throw landingError(
+    "landing.review_policy_malformed",
+    "RESUME.md has no single Review policy with a gates list.",
+    "Run `review.policy.prepare` before integration.",
   );
-  if (match === null) return 0;
-  try {
-    const gates = (JSON.parse(match[1]!) as { gates: unknown }).gates;
-    return Array.isArray(gates) ? gates.length : 0;
-  } catch {
-    return 0;
-  }
 };
 
 const parseActiveTicket = (
