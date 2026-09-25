@@ -1,6 +1,7 @@
-import { Data, Effect } from "effect";
+import { Context, Data, Effect } from "effect";
 import { randomUUID } from "node:crypto";
 import { link, mkdir, readFile, rename, rm, stat, writeFile } from "node:fs/promises";
+import type { CliIssue } from "./contract.ts";
 import { ensureRunId, publishRun, recordGlobalWarning } from "./global-state.ts";
 
 /**
@@ -28,6 +29,24 @@ export class StateMutationError extends Data.TaggedError("StateMutationError")<{
 }> {}
 
 class StateLockBusyError extends Error {}
+
+/**
+ * Raised as a defect when {@link StateMutationGuard} rejects a mutation, so operation-specific
+ * error mappers cannot rename it. The Engine converts it back into a typed failure.
+ */
+export class StateGuardRejected extends Data.TaggedError("StateGuardRejected")<{
+  issue: CliIssue;
+}> {}
+
+/**
+ * Check run against the latest RESUME.md text under the state lock before every mutation in
+ * scope. It returns null to allow the write, or the issue that refuses it. The Engine provides
+ * its lease fence here so a superseded generation can never write.
+ */
+export const StateMutationGuard = Context.Reference<(markdown: string) => CliIssue | null>(
+  "coordinate-implementation/StateMutationGuard",
+  { defaultValue: () => () => null },
+);
 
 type LockRecord = {
   pid: number;
@@ -177,6 +196,8 @@ export const mutateStateFile = <Result, DomainError>(
       if (afterRead !== undefined) {
         yield* stateIo(() => afterRead(markdown));
       }
+      const refusal = (yield* StateMutationGuard)(markdown);
+      if (refusal !== null) return yield* Effect.die(new StateGuardRejected({ issue: refusal }));
       const identified = ensureRunId(markdown);
       const update = yield* transform(identified);
       const updatedMarkdown = update.markdown ?? identified;

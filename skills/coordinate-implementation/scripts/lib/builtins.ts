@@ -4,7 +4,7 @@ import { mkdir, readdir, readFile, rename } from "node:fs/promises";
 import { join } from "node:path";
 import { evaluateStallLive } from "./assessment.ts";
 import type { CliIssue, RoleRecord } from "./contract.ts";
-import { assertLease, type EngineContext } from "./engine.ts";
+import { leaseFence, type EngineContext } from "./engine.ts";
 import {
   awaitAnswer,
   escalationDir,
@@ -42,6 +42,7 @@ import {
 } from "./run-config.ts";
 import { checkSnapshot } from "./snapshot.ts";
 import { runStallCheck, type StallCheck, type StallObservation } from "./stall-loop.ts";
+import { StateGuardRejected, StateMutationGuard } from "./state-mutation.ts";
 import {
   WorkflowError,
   type FixRequest,
@@ -192,11 +193,21 @@ export const builtinTicketOps = (
       );
 
     /**
-     * Runs one helper operation while holding the engine's state permit and lease.
+     * Runs one helper operation under the engine's state permit. Every state write it makes is
+     * fenced on this engine's lease under the state lock.
      */
+    const fence = leaseFence(context.lease.generation);
     const call = <A, E>(effect: Effect.Effect<A, E>): Effect.Effect<A, WorkflowError> =>
       context.exclusive(
-        assertLease(context).pipe(Effect.andThen(effect), Effect.mapError(toWorkflowError)),
+        effect.pipe(
+          Effect.provideService(StateMutationGuard, fence),
+          Effect.catchDefect((defect) =>
+            defect instanceof StateGuardRejected
+              ? Effect.fail(new WorkflowError(defect.issue))
+              : Effect.die(defect),
+          ),
+          Effect.mapError(toWorkflowError),
+        ),
       );
 
     const emit = (

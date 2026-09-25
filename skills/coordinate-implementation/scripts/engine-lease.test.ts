@@ -1,5 +1,6 @@
 import { describe, expect, it } from "bun:test";
-import { Effect, Result } from "effect";
+import { Cause, Effect, Exit, Result } from "effect";
+import { readFileSync } from "node:fs";
 import { mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -14,7 +15,13 @@ import {
   releaseEngineLease,
   writeEngineHeartbeat,
 } from "./lib/engine-lease.ts";
-import type { StateMutationError } from "./lib/state-mutation.ts";
+import { leaseFence } from "./lib/engine.ts";
+import {
+  mutateStateFile,
+  StateGuardRejected,
+  StateMutationGuard,
+  type StateMutationError,
+} from "./lib/state-mutation.ts";
 
 const now = new Date("2026-09-25T12:00:00.000Z");
 
@@ -88,6 +95,28 @@ describe("engine lease", () => {
 
     expect(failureCode(stale)).toBe("engine.lease_lost");
     expect(current).toBe("written");
+  });
+
+  it("fences every state mutation in scope of the Engine guard", async () => {
+    const statePath = stateFile();
+    await Effect.runPromise(claim(statePath, 0));
+    await Effect.runPromise(claim(statePath, 1));
+    const before = readFileSync(statePath, "utf8");
+    const write = (generation: number) =>
+      Effect.runPromiseExit(
+        mutateStateFile(statePath, (markdown) =>
+          Effect.succeed({ markdown: `${markdown}\nwrite ${generation}\n`, result: generation }),
+        ).pipe(Effect.provideService(StateMutationGuard, leaseFence(generation))),
+      );
+
+    const stale = await write(1);
+
+    const defect = Exit.isFailure(stale) ? Cause.squash(stale.cause) : null;
+    expect(defect instanceof StateGuardRejected ? defect.issue.code : "none").toBe(
+      "engine.lease_lost",
+    );
+    expect(readFileSync(statePath, "utf8")).toBe(before);
+    expect(await write(2)).toEqual(Exit.succeed(2));
   });
 
   it("refuses fenced writes after release", async () => {
