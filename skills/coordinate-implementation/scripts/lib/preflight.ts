@@ -3,6 +3,7 @@ import { existsSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import type { CliIssue, PreflightInput } from "./contract.ts";
+import { runProbe } from "./probe.ts";
 import { validateStateFile, type StateSummary } from "./state.ts";
 import { isRecord } from "./values.ts";
 
@@ -63,31 +64,19 @@ export type PreflightOutcome = {
 };
 
 const probeCommand = (command: string, args: string[]): CommandCapability => {
-  try {
-    const result = Bun.spawnSync([command, ...args], {
-      env: process.env,
-      stdout: "pipe",
-      stderr: "pipe",
-    });
-    const version = result.stdout.toString().trim();
-    if (result.exitCode !== 0 || version.length === 0) {
-      return { available: false, version: null };
-    }
-    return { available: true, version: version.split(/\r?\n/u)[0]! };
-  } catch {
+  const result = runProbe([command, ...args]);
+  const version = result.stdout.trim();
+  if (result.exitCode !== 0 || version.length === 0) {
     return { available: false, version: null };
   }
+  return { available: true, version: version.split(/\r?\n/u)[0]! };
 };
 
 const readHerdrSchema = (): unknown | undefined => {
   try {
-    const result = Bun.spawnSync(["herdr", "api", "schema", "--json"], {
-      env: process.env,
-      stdout: "pipe",
-      stderr: "pipe",
-    });
+    const result = runProbe(["herdr", "api", "schema", "--json"]);
     if (result.exitCode !== 0) return undefined;
-    return JSON.parse(result.stdout.toString()) as unknown;
+    return JSON.parse(result.stdout) as unknown;
   } catch {
     return undefined;
   }

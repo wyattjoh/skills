@@ -1,5 +1,6 @@
 import { Effect } from "effect";
 import type { CliIssue, HarnessName, RoleName, RoleRecord, RoleValidateInput } from "./contract.ts";
+import { runProbe } from "./probe.ts";
 
 /**
  * Model choices exposed by one installed harness.
@@ -50,16 +51,8 @@ type CommandOutput = {
 };
 
 const run = (command: string, args: string[]): CommandOutput => {
-  try {
-    const result = Bun.spawnSync([command, ...args], {
-      env: process.env,
-      stdout: "pipe",
-      stderr: "pipe",
-    });
-    return { exitCode: result.exitCode, stdout: result.stdout.toString().trim() };
-  } catch {
-    return { exitCode: 1, stdout: "" };
-  }
+  const result = runProbe([command, ...args]);
+  return { exitCode: result.exitCode, stdout: result.stdout.trim() };
 };
 
 const probeVersion = (harness: HarnessName): string | null => {
