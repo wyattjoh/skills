@@ -1,7 +1,8 @@
 import { Context, Data, Effect } from "effect";
 import { randomUUID } from "node:crypto";
-import { link, mkdir, readFile, rename, rm, stat, writeFile } from "node:fs/promises";
+import { link, mkdir, readFile, rm, stat, writeFile } from "node:fs/promises";
 import type { CliIssue } from "./contract.ts";
+import { replaceFileAtomically } from "./fs-atomic.ts";
 import { ensureRunId, publishRun, recordGlobalWarning } from "./global-state.ts";
 
 /**
@@ -147,17 +148,8 @@ const releaseLock = async (lock: LockHandle): Promise<void> => {
   if (record?.token === lock.token) await rm(lock.path, { force: true });
 };
 
-const writeStateAtomically = async (path: string, markdown: string): Promise<void> => {
-  const temporary = `${path}.${process.pid}.${randomUUID()}.tmp`;
-  const mode = (await stat(path)).mode;
-  try {
-    await writeFile(temporary, markdown, { mode });
-    await rename(temporary, path);
-  } catch (error) {
-    await rm(temporary, { force: true });
-    throw error;
-  }
-};
+const writeStateAtomically = async (path: string, markdown: string): Promise<void> =>
+  replaceFileAtomically(path, markdown, (await stat(path)).mode);
 
 const stateIo = <Result>(
   action: () => Promise<Result>,

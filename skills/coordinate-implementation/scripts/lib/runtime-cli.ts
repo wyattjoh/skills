@@ -1,7 +1,7 @@
 import { Effect, Result } from "effect";
 import { createHash } from "node:crypto";
 import { existsSync } from "node:fs";
-import { readFile, rename, writeFile } from "node:fs/promises";
+import { readFile, writeFile } from "node:fs/promises";
 import { hostname } from "node:os";
 import { join, resolve } from "node:path";
 import type { CliIssue } from "./contract.ts";
@@ -19,6 +19,7 @@ import {
 import { runEngine, stopRequestPath, type EngineWorkflow } from "./engine.ts";
 import { answerEscalation, listOpenEscalations } from "./escalations.ts";
 import { readEventsSince, type RuntimeEvent } from "./event-log.ts";
+import { replaceFileAtomically } from "./fs-atomic.ts";
 import { projectRun } from "./global-state.ts";
 import { makeHerdrActuator, type HerdrActuator } from "./herdr-actuator.ts";
 
@@ -200,11 +201,8 @@ const readCursor = async (runPath: string): Promise<number> => {
   }
 };
 
-const writeCursor = async (runPath: string, cursor: number): Promise<void> => {
-  const path = cursorPath(runPath);
-  await writeFile(`${path}.tmp`, `${JSON.stringify({ cursor })}\n`, "utf8");
-  await rename(`${path}.tmp`, path);
-};
+const writeCursor = (runPath: string, cursor: number): Promise<void> =>
+  replaceFileAtomically(cursorPath(runPath), `${JSON.stringify({ cursor })}\n`);
 
 type EngineView = {
   liveness: ReturnType<typeof engineLiveness>;

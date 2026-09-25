@@ -51,18 +51,22 @@ export type SpawnGitOptions = {
 };
 
 /**
- * Runs Git with repository-location variables removed and commit signing
- * disabled, so fixture commits cannot invoke local signing agents.
+ * Runs one exact argument array with Git's repository-location variables removed, so a command
+ * launched from a linked worktree hook cannot act on the caller's repository.
  *
- * @param args - Exact Git argument array.
- * @param options - Optional working directory and base environment.
- * @returns The exit code and decoded output streams.
+ * @param argv - Exact command and arguments; never interpreted by a shell.
+ * @param options - Optional working directory, base environment, and stdin text.
+ * @returns The exit code and decoded output streams; a spawn failure reports exit code 127.
  */
-export const spawnGit = (args: string[], options: Partial<SpawnGitOptions> = {}): GitResult => {
+export const spawnClean = (
+  argv: string[],
+  options: Partial<SpawnGitOptions> & { stdin?: string } = {},
+): GitResult => {
   try {
-    const child = Bun.spawnSync(["git", "-c", "commit.gpgsign=false", ...args], {
+    const child = Bun.spawnSync(argv, {
       ...(options.cwd === undefined ? {} : { cwd: options.cwd }),
       env: cleanGitEnv(options.env),
+      ...(options.stdin === undefined ? {} : { stdin: new TextEncoder().encode(options.stdin) }),
       stdout: "pipe",
       stderr: "pipe",
     });
@@ -72,10 +76,17 @@ export const spawnGit = (args: string[], options: Partial<SpawnGitOptions> = {})
       stderr: child.stderr.toString(),
     };
   } catch (error) {
-    return {
-      exitCode: 1,
-      stdout: "",
-      stderr: (error as Error).message,
-    };
+    return { exitCode: 127, stdout: "", stderr: (error as Error).message };
   }
 };
+
+/**
+ * Runs Git through {@link spawnClean} with commit signing disabled, so fixture commits cannot
+ * invoke local signing agents.
+ *
+ * @param args - Exact Git argument array.
+ * @param options - Optional working directory and base environment.
+ * @returns The exit code and decoded output streams.
+ */
+export const spawnGit = (args: string[], options: Partial<SpawnGitOptions> = {}): GitResult =>
+  spawnClean(["git", "-c", "commit.gpgsign=false", ...args], options);

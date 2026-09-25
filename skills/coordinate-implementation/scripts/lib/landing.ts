@@ -9,7 +9,7 @@ import type {
   LandingRebaseCheckInput,
 } from "./contract.ts";
 import { activeRuntimeBlockPattern, parseActiveRuntimeFields } from "./active-runtime.ts";
-import { cleanGitEnv, spawnGit } from "./git.ts";
+import { spawnClean, spawnGit } from "./git.ts";
 import {
   bindIntegration,
   checkIntegration,
@@ -212,19 +212,7 @@ const runExactCommand = (
   action: string,
 ): Effect.Effect<void, LandingError> =>
   Effect.gen(function* () {
-    const result = yield* Effect.sync(() => {
-      try {
-        const child = Bun.spawnSync(argv, {
-          cwd,
-          env: cleanGitEnv(),
-          stdout: "pipe",
-          stderr: "pipe",
-        });
-        return { exitCode: child.exitCode, stderr: child.stderr.toString() };
-      } catch (error) {
-        return { exitCode: 1, stderr: (error as Error).message };
-      }
-    });
+    const result = yield* Effect.sync(() => spawnClean(argv, { cwd }));
     if (result.exitCode !== 0) return yield* gitFailure(action, result.stderr);
   });
 
@@ -760,20 +748,8 @@ export const landTicket = (input: {
       input.ticketSha,
     ];
     const child = yield* Effect.sync(() => {
-      try {
-        const result = Bun.spawnSync(argv, {
-          cwd: input.repositoryPath,
-          env: cleanGitEnv(),
-          stdout: "pipe",
-          stderr: "pipe",
-        });
-        return {
-          exitCode: result.exitCode,
-          output: `${result.stdout.toString()}${result.stderr.toString()}`.trim(),
-        };
-      } catch (error) {
-        return { exitCode: 127, output: (error as Error).message };
-      }
+      const result = spawnClean(argv, { cwd: input.repositoryPath });
+      return { exitCode: result.exitCode, output: `${result.stdout}${result.stderr}`.trim() };
     });
     if (child.exitCode === 0) return { outcome: "landed" as const, output: child.output };
     if (child.exitCode === 1) return { outcome: "timeout" as const, output: child.output };

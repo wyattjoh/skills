@@ -2,7 +2,7 @@ import { Data } from "effect";
 import { existsSync } from "node:fs";
 import type { CliIssue } from "./contract.ts";
 import { activeRuntimeBlockPattern, parseActiveRuntimeFields } from "./active-runtime.ts";
-import { cleanGitEnv, spawnGit } from "./git.ts";
+import { spawnClean, spawnGit } from "./git.ts";
 
 /**
  * Patch identity recorded for an empty diff, matching Git's null object id width.
@@ -191,24 +191,15 @@ export const checkIntegration = (worktreePath: string, baseBranch: string): bool
 };
 
 const patchIds = (patch: string, cwd: string): string[] => {
-  const child = Bun.spawnSync(["git", "patch-id", "--stable"], {
-    cwd,
-    env: cleanGitEnv(),
-    stdin: new TextEncoder().encode(patch),
-    stdout: "pipe",
-    stderr: "pipe",
-  });
+  const child = spawnClean(["git", "patch-id", "--stable"], { cwd, stdin: patch });
   if (child.exitCode !== 0) {
     throw integrationError(
       "integration.git_failed",
-      `Patch identity failed: ${child.stderr.toString().trim() || "git patch-id returned a nonzero exit code."}`,
+      `Patch identity failed: ${child.stderr.trim() || "git patch-id returned a nonzero exit code."}`,
       "Inspect the ticket worktree and retry.",
     );
   }
-  return child.stdout
-    .toString()
-    .split(/\r?\n/u)
-    .filter((line) => line.length > 0);
+  return child.stdout.split(/\r?\n/u).filter((line) => line.length > 0);
 };
 
 /**

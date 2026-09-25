@@ -1,7 +1,8 @@
 import { Data, Effect } from "effect";
-import { readFile, rename, writeFile } from "node:fs/promises";
+import { readFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import type { CliIssue } from "./contract.ts";
+import { replaceFileAtomically } from "./fs-atomic.ts";
 import { mutateStateFile, StateMutationError } from "./state-mutation.ts";
 
 /**
@@ -263,12 +264,7 @@ export const writeEngineHeartbeat = (
   heartbeat: EngineHeartbeat,
 ): Effect.Effect<void, EngineLeaseError> =>
   Effect.tryPromise({
-    try: async () => {
-      const path = heartbeatPath(statePath);
-      const temporary = `${path}.${process.pid}.tmp`;
-      await writeFile(temporary, `${JSON.stringify(heartbeat)}\n`, "utf8");
-      await rename(temporary, path);
-    },
+    try: () => replaceFileAtomically(heartbeatPath(statePath), `${JSON.stringify(heartbeat)}\n`),
     catch: (error) => fromUnknown(error) as EngineLeaseError,
   });
 

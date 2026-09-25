@@ -1,19 +1,10 @@
 import { Data, Effect, Result } from "effect";
 import { basename, dirname, isAbsolute, relative, resolve, sep } from "node:path";
-import {
-  lstat,
-  mkdir,
-  readFile,
-  readlink,
-  realpath,
-  rename,
-  rm,
-  stat,
-  writeFile,
-} from "node:fs/promises";
+import { lstat, readFile, readlink, realpath, rm, stat } from "node:fs/promises";
 import { realpathSync } from "node:fs";
-import { createHash, randomUUID } from "node:crypto";
+import { createHash } from "node:crypto";
 import { activeRuntimeBlockPattern, parseActiveRuntimeFields } from "./active-runtime.ts";
+import { ImmutableContentConflict, writeImmutable } from "./fs-atomic.ts";
 import {
   buildHarnessLaunch,
   herdrPromptCommand,
@@ -378,8 +369,6 @@ const writeArtifact = (
 ): Effect.Effect<boolean, ImplementorError> =>
   Effect.tryPromise({
     try: async () => {
-      await mkdir(dirname(input.artifactPath), { recursive: true });
-      const temporary = `${input.artifactPath}.${process.pid}.${randomUUID()}.tmp`;
       const artifact = {
         schema_version: 1,
         ticket: input.ticket,
@@ -394,19 +383,20 @@ const writeArtifact = (
         max_attempts: input.maxAttempts,
         launch: plan,
       };
-      const rendered = `${JSON.stringify(artifact, null, 2)}\n`;
-      const existing = await readFile(input.artifactPath, "utf8").catch(() => null);
-      if (existing !== null && existing !== rendered) {
+      try {
+        return await writeImmutable(
+          input.artifactPath,
+          `${JSON.stringify(artifact, null, 2)}\n`,
+          0o600,
+        );
+      } catch (error) {
+        if (!(error instanceof ImmutableContentConflict)) throw error;
         throw implementorError(
           "implementor.artifact_conflict",
           `Launch artifact \`${input.artifactPath}\` already contains a different launch.`,
           "Keep the existing provenance and choose a new run-local artifact path for a new attempt.",
         );
       }
-      if (existing === rendered) return false;
-      await writeFile(temporary, rendered, { mode: 0o600 });
-      await rename(temporary, input.artifactPath);
-      return true;
     },
     catch: (error) =>
       error instanceof ImplementorError
@@ -1123,22 +1113,16 @@ const persistMigrationEvidence = (
 ): Effect.Effect<void, ImplementorError> =>
   Effect.tryPromise({
     try: async () => {
-      await mkdir(dirname(path), { recursive: true });
-      const existing = await readFile(path, "utf8").catch((error: unknown) => {
-        if (error instanceof Error && "code" in error && error.code === "ENOENT") return null;
-        throw error;
-      });
-      if (existing !== null) {
-        if (existing !== serialized) {
-          throw implementorError(
-            "implementor.migration_evidence_conflict",
-            "Runtime migration evidence already exists with different content.",
-            "Preserve the prior evidence and retry only the byte-identical migration request.",
-          );
-        }
-        return;
+      try {
+        await writeImmutable(path, serialized, 0o600);
+      } catch (error) {
+        if (!(error instanceof ImmutableContentConflict)) throw error;
+        throw implementorError(
+          "implementor.migration_evidence_conflict",
+          "Runtime migration evidence already exists with different content.",
+          "Preserve the prior evidence and retry only the byte-identical migration request.",
+        );
       }
-      await writeFile(path, serialized, { flag: "wx", mode: 0o600 });
     },
     catch: (error) =>
       error instanceof ImplementorError

@@ -1,8 +1,8 @@
 import { Data, Effect } from "effect";
-import { existsSync } from "node:fs";
-import { readFile, writeFile } from "node:fs/promises";
+import { readFile } from "node:fs/promises";
 import { resolve } from "node:path";
 import type { CliIssue, RoleRecord, RunFinalizeInput, WritebackMode } from "./contract.ts";
+import { ImmutableContentConflict, writeImmutable } from "./fs-atomic.ts";
 import {
   appendSectionLine,
   readRoleBlock,
@@ -328,16 +328,16 @@ const ensureCanonicalRunPaths = (runPath: string, statePath: string, summaryPath
 };
 
 const writeSummary = async (path: string, content: string): Promise<void> => {
-  if (existsSync(path)) {
-    const existing = await readFile(path, "utf8");
-    if (existing === content) return;
+  try {
+    await writeImmutable(path, content);
+  } catch (error) {
+    if (!(error instanceof ImmutableContentConflict)) throw error;
     throw runError(
       "run.summary_conflict",
       "The final summary path already contains different content.",
       "Preserve the existing summary and resolve the run-state conflict before retrying.",
     );
   }
-  await writeFile(path, content, { flag: "wx" });
 };
 
 /**

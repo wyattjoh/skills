@@ -1,8 +1,9 @@
 import { Effect, Fiber, Queue } from "effect";
-import { mkdir, open, readFile, rename } from "node:fs/promises";
-import { dirname, join } from "node:path";
+import { readFile } from "node:fs/promises";
+import { join } from "node:path";
 import type { CliIssue, SchedulerTicket } from "./contract.ts";
 import type { EngineContext } from "./engine.ts";
+import { replaceFileAtomically } from "./fs-atomic.ts";
 import { ticketRows } from "./resume-sections.ts";
 import { planSchedule } from "./scheduler.ts";
 
@@ -223,16 +224,7 @@ export const memoizedStep = async <T>(path: string, body: () => Promise<T>): Pro
     if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
   }
   const value = await body();
-  await mkdir(dirname(path), { recursive: true });
-  const temporary = `${path}.${process.pid}.tmp`;
-  const handle = await open(temporary, "wx");
-  try {
-    await handle.writeFile(`${JSON.stringify({ value }, null, 2)}\n`, "utf8");
-    await handle.sync();
-  } finally {
-    await handle.close();
-  }
-  await rename(temporary, path);
+  await replaceFileAtomically(path, `${JSON.stringify({ value }, null, 2)}\n`);
   return value;
 };
 

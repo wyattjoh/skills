@@ -1,9 +1,10 @@
 import { Effect } from "effect";
 import { createHash, randomUUID } from "node:crypto";
-import { mkdir, readFile, realpath, rename, rm, writeFile } from "node:fs/promises";
+import { mkdir, readFile, realpath } from "node:fs/promises";
 import { dirname, isAbsolute, join, resolve } from "node:path";
 import { activeRuntimeBlockPattern, parseActiveRuntimeFields } from "./active-runtime.ts";
 import type { CliIssue } from "./contract.ts";
+import { replaceFileAtomically } from "./fs-atomic.ts";
 import { spawnGit } from "./git.ts";
 import { sectionText, ticketRows } from "./resume-sections.ts";
 
@@ -363,14 +364,7 @@ export const projectRun = (
  */
 export const writeJsonAtomically = async (path: string, value: unknown): Promise<void> => {
   await mkdir(dirname(path), { recursive: true, mode: 0o700 });
-  const temporary = `${path}.${process.pid}.${randomUUID()}.tmp`;
-  try {
-    await writeFile(temporary, `${JSON.stringify(value, null, 2)}\n`, { mode: 0o600 });
-    await rename(temporary, path);
-  } catch (error) {
-    await rm(temporary, { force: true });
-    throw error;
-  }
+  await replaceFileAtomically(path, `${JSON.stringify(value, null, 2)}\n`, 0o600);
 };
 
 const readJson = async <Value>(path: string): Promise<Value | null> =>

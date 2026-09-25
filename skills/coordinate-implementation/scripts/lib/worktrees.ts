@@ -8,7 +8,7 @@ import type {
   WorktreePreflightInput,
   WorktreePrepareInput,
 } from "./contract.ts";
-import { cleanGitEnv, spawnGit } from "./git.ts";
+import { spawnClean, spawnGit } from "./git.ts";
 import { appendSectionLine } from "./resume-sections.ts";
 import { mutateStateFile, StateMutationError } from "./state-mutation.ts";
 import { validateStateText } from "./state.ts";
@@ -216,22 +216,7 @@ const runExactCommand = (
   action: string,
 ): Effect.Effect<void, WorktreeError> =>
   Effect.gen(function* () {
-    const result = yield* Effect.sync(() => {
-      try {
-        const child = Bun.spawnSync(argv, {
-          cwd,
-          env: cleanGitEnv(),
-          stdout: "pipe",
-          stderr: "pipe",
-        });
-        return {
-          exitCode: child.exitCode,
-          stderr: child.stderr.toString(),
-        };
-      } catch (error) {
-        return { exitCode: 1, stderr: (error as Error).message };
-      }
-    });
+    const result = yield* Effect.sync(() => spawnClean(argv, { cwd }));
     if (result.exitCode !== 0) {
       return yield* worktreeError(
         "worktree.command_failed",

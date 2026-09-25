@@ -1,6 +1,6 @@
 import { Data, Effect } from "effect";
 import { createHash } from "node:crypto";
-import { mkdir, readFile, readdir, realpath, writeFile } from "node:fs/promises";
+import { readFile, readdir, realpath } from "node:fs/promises";
 import { basename, dirname, isAbsolute, relative, resolve, sep } from "node:path";
 import { isUtcIsoTimestamp } from "./contract.ts";
 import type {
@@ -16,6 +16,7 @@ import type {
   RoleRecord,
 } from "./contract.ts";
 import { activeRuntimeBlockPattern, parseActiveRuntimeFields } from "./active-runtime.ts";
+import { ImmutableContentConflict, writeImmutable as writeImmutableFile } from "./fs-atomic.ts";
 import { spawnGit } from "./git.ts";
 import { herdrPromptCommand } from "./harness-launch.ts";
 import { IntegrationError, parseIntegration } from "./integration.ts";
@@ -533,15 +534,10 @@ const buildReviewerLaunch = (
 };
 
 const writeImmutable = async (path: string, content: string): Promise<void> => {
-  await mkdir(dirname(path), { recursive: true });
   try {
-    await writeFile(path, content, { flag: "wx" });
-    return;
+    await writeImmutableFile(path, content);
   } catch (error) {
-    if (!(error instanceof Error && "code" in error && error.code === "EEXIST")) throw error;
-  }
-  const existing = await readFile(path, "utf8");
-  if (existing !== content) {
+    if (!(error instanceof ImmutableContentConflict)) throw error;
     throw reviewError(
       "review.evidence_conflict",
       `Durable evidence already exists at ${path} with different content.`,
