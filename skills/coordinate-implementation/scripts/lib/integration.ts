@@ -156,20 +156,6 @@ export const writeIntegration = (
   return markdown.replace(pattern, updated);
 };
 
-/**
- * Removes one ticket's integration record while leaving the rest of its runtime block intact.
- *
- * @param markdown - Complete run-state Markdown.
- * @param ticket - Two-digit ticket number.
- * @returns Updated Markdown.
- */
-export const removeIntegration = (markdown: string, ticket: string): string => {
-  const pattern = activeRuntimeBlockPattern(ticket);
-  const block = markdown.match(pattern)?.[0];
-  if (block === undefined) return markdown;
-  return markdown.replace(pattern, block.replace(/^Integration:.*\r?\n?/mu, ""));
-};
-
 const gitValue = (args: string[], cwd: string, action: string): string => {
   const result = spawnGit(args, { cwd });
   if (result.exitCode !== 0) {

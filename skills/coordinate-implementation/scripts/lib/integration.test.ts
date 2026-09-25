@@ -12,7 +12,6 @@ import {
   type ObservedIntegration,
   parseIntegration,
   recordRebase,
-  removeIntegration,
   ticketPatchId,
   writeIntegration,
 } from "./integration.ts";
@@ -117,16 +116,13 @@ describe("rebase recording", () => {
 describe("Integration field persistence", () => {
   const markdown = `## Active tickets\n\n### 07\n\nWorktree: /w\nPhase: working\nLast diagnostic: none\n\n### 08\n\nWorktree: /x\n\n## Decisions\n`;
 
-  test("writes, reads, and removes one ticket's record without touching others", () => {
+  test("writes and reads one ticket's record without touching others", () => {
     const record = bindIntegration(undefined, observed(), options);
     const written = writeIntegration(markdown, "07", record, "gates");
 
     expect(parseIntegration(written, "07")).toEqual(record);
     expect(parseIntegration(written, "08")).toBe(undefined);
     expect(written).toContain("Phase: gates\nLast diagnostic: none\nIntegration: {");
-    expect(removeIntegration(written, "07")).toBe(
-      markdown.replace("Phase: working", "Phase: gates"),
-    );
   });
 
   test("refuses a malformed record", () => {

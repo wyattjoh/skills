@@ -109,9 +109,6 @@ Coordinator:
   harness: pi
   model: openai-codex/gpt-5.6-sol
   effort: high
-  handoff: yes
-  threshold: 200000
-  unattended: block
 
 Implementor:
   harness: claude

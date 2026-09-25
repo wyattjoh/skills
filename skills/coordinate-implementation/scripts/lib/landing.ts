@@ -7,7 +7,6 @@ import type {
   CommitPolicy,
   LandingCompleteInput,
   LandingRebaseCheckInput,
-  LandingRebaseRecordInput,
 } from "./contract.ts";
 import { activeRuntimeBlockPattern, parseActiveRuntimeFields } from "./active-runtime.ts";
 import { cleanGitEnv, spawnGit } from "./git.ts";
@@ -23,7 +22,6 @@ import {
   parseIntegration,
   rebasePrompt,
   recordRebase,
-  removeIntegration,
   writeIntegration,
 } from "./integration.ts";
 import { inspectRuntimeClose } from "./runtime-close.ts";
@@ -492,62 +490,6 @@ export const checkLandingRebase = (
     ).pipe(Effect.mapError(fromMutationError));
   });
 
-/**
- * Validates an implementor's rebased clean tip and records the next integration cycle.
- *
- * Gates always rerun after a rebase. Both reviews are kept only when the ticket patch id is
- * unchanged from the reviewed patch id; otherwise Standards and Spec rerun.
- *
- * @param input - Run state, integration checkout, ticket worktree, and timestamp.
- * @returns The new integration binding and the next coordinator action.
- */
-export const recordLandingRebase = (
-  input: LandingRebaseRecordInput,
-): Effect.Effect<LandingRebaseResult, LandingError> =>
-  Effect.gen(function* () {
-    const prepared = yield* prepareIntegration(input);
-    return yield* mutateStateFile(input.statePath, (markdown) =>
-      Effect.gen(function* () {
-        const prior = yield* attempt(() => parseIntegration(markdown, input.ticket));
-        if (prior?.phase !== "rebase-required") {
-          return yield* landingError(
-            "landing.rebase_not_required",
-            `Ticket \`${input.ticket}\` has no pending rebase to record.`,
-            "Call landing.rebase.check; record a rebase only after it returns action `rebase`.",
-          );
-        }
-        const upToDate = yield* attempt(() =>
-          checkIntegration(input.worktreePath, prepared.baseBranch),
-        );
-        if (!upToDate) {
-          return yield* landingError(
-            "landing.rebase_incomplete",
-            `Ticket branch does not contain the local integration branch \`${prepared.baseBranch}\`.`,
-            "Return the rebase prompt to the bound implementor and record only its completed rebase.",
-          );
-        }
-        const observed = yield* attempt(() =>
-          observeIntegration(input.worktreePath, prepared.baseBranch),
-        );
-        const record = recordRebase(prior, observed, {
-          minimumCycle: 0,
-          commitShapeValid: commitShapeValid(prepared.policy.commit, observed.commit_count),
-          gateCount: parseGateCount(markdown),
-          completedAt: input.completedAt,
-        });
-        return {
-          markdown: writeIntegration(markdown, input.ticket, record, phaseLabels[record.phase]),
-          result: rebaseResult(input.ticket, record, {
-            baseBranch: prepared.baseBranch,
-            commitPolicy: prepared.policy.commit,
-            remoteSynchronized: prepared.remoteSynchronized,
-            worktreePath: input.worktreePath,
-          }),
-        };
-      }),
-    ).pipe(Effect.mapError(fromMutationError));
-  });
-
 const ticketTableSection = (markdown: string): { start: number; end: number; text: string } => {
   const heading = /^## Tickets\s*$/mu.exec(markdown);
   if (heading === null) {
@@ -834,68 +776,6 @@ export const applyFinalReviewOutcome = (
       completed_at: input.completedAt,
     },
     "review passed; ready to land",
-  );
-};
-
-/**
- * Reconstructs the blocked escalation state used by legacy runs.
- *
- * @param markdown - Latest locked run-state Markdown after recording the failed review.
- * @param input - Ticket, completed round, and decision timestamp.
- * @returns Updated state that preserves the runtime but releases its integration record.
- */
-export const applyEscalationBlock = (
-  markdown: string,
-  input: { ticket: string; round: number; completedAt: string },
-): string => {
-  const section = ticketTableSection(markdown);
-  const lines = section.text.split(/\r?\n/u);
-  const headerIndex = lines.findIndex((line) => line.trimStart().startsWith("| NN"));
-  const columns =
-    headerIndex < 0
-      ? []
-      : lines[headerIndex]!.split("|")
-          .slice(1, -1)
-          .map((cell) => cell.trim());
-  const rowIndex = lines.findIndex((line) => line.split("|")[1]?.trim() === input.ticket);
-  const roundsIndex = columns.indexOf("rounds");
-  const escalationIndex = columns.indexOf("esc");
-  const statusIndex = columns.indexOf("status");
-  if (
-    headerIndex < 0 ||
-    rowIndex < 0 ||
-    roundsIndex < 0 ||
-    escalationIndex < 0 ||
-    statusIndex < 0
-  ) {
-    throw landingError(
-      "landing.ticket_table_malformed",
-      "Ticket table is missing rounds, esc, or status columns for escalation.",
-      "Repair the schema-2 ticket table before recording escalation.",
-    );
-  }
-  const cells = lines[rowIndex]!.split("|")
-    .slice(1, -1)
-    .map((cell) => cell.trim());
-  cells[roundsIndex] = String(input.round);
-  cells[escalationIndex] = "yes";
-  cells[statusIndex] = "blocked";
-  lines[rowIndex] = `| ${cells.join(" | ")} |`;
-  const withTicket = `${markdown.slice(0, section.start)}${lines.join("\n")}${markdown.slice(section.end)}`;
-  const pattern = activeRuntimeBlockPattern(input.ticket);
-  const released = removeIntegration(withTicket, input.ticket);
-  const block = released.match(pattern)?.[0];
-  const withPhase =
-    block === undefined
-      ? released
-      : released.replace(
-          pattern,
-          block.replace(/^Phase:.*$/mu, "Phase: blocked, awaiting escalation role"),
-        );
-  return appendSectionLine(
-    withPhase,
-    "Decisions",
-    `- ${input.completedAt.slice(0, 10)} ticket ${input.ticket} blocked after fix round ${input.round}; awaiting explicit escalation role`,
   );
 };
 

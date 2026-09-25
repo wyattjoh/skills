@@ -241,19 +241,6 @@ const rebaseCheck = (
     completed_at: completedAt,
   });
 
-const rebaseRecord = (
-  fixture: LandingFixture,
-  binding: TicketBinding = primary(fixture),
-  completedAt = "2026-09-19T02:30:00Z",
-): Promise<CliResult> =>
-  runCli("landing.rebase.record", {
-    state_path: fixture.statePath,
-    repository_path: fixture.repositoryPath,
-    worktree_path: binding.worktreePath,
-    ticket: binding.ticket,
-    completed_at: completedAt,
-  });
-
 const landingInput = (
   fixture: LandingFixture,
   binding: TicketBinding = primary(fixture),
@@ -546,12 +533,12 @@ describe("per-ticket integration and landing", () => {
     );
     expect(readFileSync(fixture.statePath, "utf8")).toContain("Phase: rebase required");
 
-    const incomplete = await rebaseRecord(fixture);
-    expect(incomplete.exitCode).toBe(1);
-    expect(incomplete.stdout).toMatchObject({ errors: [{ code: "landing.rebase_incomplete" }] });
+    const incomplete = await rebaseCheck(fixture, primary(fixture), "2026-09-19T02:30:00Z");
+    expect(incomplete.exitCode).toBe(0);
+    expect(incomplete.stdout.result).toMatchObject({ action: "rebase", cycle: 0 });
 
     expect(spawnGit(["rebase", "main"], { cwd: fixture.worktreePath }).exitCode).toBe(0);
-    const recorded = await rebaseRecord(fixture);
+    const recorded = await rebaseCheck(fixture, primary(fixture), "2026-09-19T02:30:00Z");
     const rebasedTip = spawnGit(["rev-parse", "HEAD"], { cwd: fixture.worktreePath }).stdout.trim();
     expect(recorded.exitCode).toBe(0);
     expect(recorded.stdout.result).toMatchObject({
@@ -565,9 +552,9 @@ describe("per-ticket integration and landing", () => {
       prompt: null,
     });
 
-    const notPending = await rebaseRecord(fixture);
-    expect(notPending.exitCode).toBe(1);
-    expect(notPending.stdout).toMatchObject({ errors: [{ code: "landing.rebase_not_required" }] });
+    const unchanged = await rebaseCheck(fixture, primary(fixture), "2026-09-19T02:30:00Z");
+    expect(unchanged.exitCode).toBe(0);
+    expect(unchanged.stdout.result).toMatchObject({ action: "run-gates", cycle: 1 });
   });
 
   it("refuses a dirty worktree or an unfinished rebase without changing state", async () => {
@@ -578,7 +565,7 @@ describe("per-ticket integration and landing", () => {
     const before = readFileSync(fixture.statePath, "utf8");
 
     expect(spawnGit(["rebase", "main"], { cwd: fixture.worktreePath }).exitCode).toBe(1);
-    const unfinished = await rebaseRecord(fixture);
+    const unfinished = await rebaseCheck(fixture, primary(fixture), "2026-09-19T02:30:00Z");
     expect(unfinished.exitCode).toBe(1);
     expect(unfinished.stdout).toMatchObject({
       errors: [{ code: "landing.operation_in_progress" }],
@@ -587,7 +574,7 @@ describe("per-ticket integration and landing", () => {
 
     resolveRebase(fixture.worktreePath, "landed\nticket\n");
     writeFileSync(join(fixture.worktreePath, "scratch.txt"), "dirty\n");
-    const dirty = await rebaseRecord(fixture);
+    const dirty = await rebaseCheck(fixture, primary(fixture), "2026-09-19T02:30:00Z");
     expect(dirty.exitCode).toBe(1);
     expect(dirty.stdout).toMatchObject({ errors: [{ code: "landing.worktree_dirty" }] });
     expect(readFileSync(fixture.statePath, "utf8")).toBe(before);
@@ -616,7 +603,7 @@ describe("per-ticket integration and landing", () => {
     );
 
     expect(spawnGit(["rebase", "main"], { cwd: fixture.worktreePath }).exitCode).toBe(0);
-    const recorded = await rebaseRecord(fixture);
+    const recorded = await rebaseCheck(fixture, primary(fixture), "2026-09-19T02:30:00Z");
     expect(recorded.exitCode).toBe(0);
     expect(recorded.stdout.result).toMatchObject({
       action: "run-gates",
@@ -671,7 +658,7 @@ describe("per-ticket integration and landing", () => {
     expect(spawnGit(["rebase", "main"], { cwd: fixture.worktreePath }).exitCode).toBe(1);
     resolveRebase(fixture.worktreePath, "landed\nticket\n");
 
-    const recorded = await rebaseRecord(fixture);
+    const recorded = await rebaseCheck(fixture, primary(fixture), "2026-09-19T02:30:00Z");
     expect(recorded.exitCode).toBe(0);
     expect(recorded.stdout.result).toMatchObject({
       action: "run-gates",
