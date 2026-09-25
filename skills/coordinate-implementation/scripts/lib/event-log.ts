@@ -31,7 +31,8 @@ export type RuntimeEventInput = {
 };
 
 /**
- * Single-writer handle over one run's event log.
+ * Single-writer handle over one run's event log. Concurrent appends are
+ * serialized in call order.
  */
 export type EventLog = {
   path: string;
@@ -164,28 +165,36 @@ export const openEventLog = (
         await truncate(path, parsed.completeBytes);
       }
       let seq = parsed.events.at(-1)?.seq ?? 0;
+      // Engine fibers append concurrently. Chaining every write behind the
+      // previous one keeps `seq` assignment and file order in lockstep.
+      let tail: Promise<unknown> = Promise.resolve();
+      const write = async (input: RuntimeEventInput): Promise<RuntimeEvent> => {
+        const event: RuntimeEvent = {
+          seq: seq + 1,
+          at: now()
+            .toISOString()
+            .replace(/\.\d{3}Z$/, "Z"),
+          type: input.type,
+          ticket: input.ticket,
+          attention: input.attention,
+          data: input.data,
+        };
+        const handle = await open(path, "a");
+        try {
+          await handle.appendFile(`${JSON.stringify(event)}\n`, "utf8");
+          await handle.sync();
+        } finally {
+          await handle.close();
+        }
+        seq = event.seq;
+        return event;
+      };
       const append = (input: RuntimeEventInput): Effect.Effect<RuntimeEvent, EventLogError> =>
         Effect.tryPromise({
-          try: async () => {
-            const event: RuntimeEvent = {
-              seq: seq + 1,
-              at: now()
-                .toISOString()
-                .replace(/\.\d{3}Z$/, "Z"),
-              type: input.type,
-              ticket: input.ticket,
-              attention: input.attention,
-              data: input.data,
-            };
-            const handle = await open(path, "a");
-            try {
-              await handle.appendFile(`${JSON.stringify(event)}\n`, "utf8");
-              await handle.sync();
-            } finally {
-              await handle.close();
-            }
-            seq = event.seq;
-            return event;
+          try: () => {
+            const result = tail.then(() => write(input));
+            tail = result.catch(() => undefined);
+            return result;
           },
           catch: (error) => toError(error, "event_log.append_failed", "append to the event log"),
         });

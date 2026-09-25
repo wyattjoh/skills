@@ -26,6 +26,14 @@ const withHub = <A>(
 
 const tick = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
+const until = async (condition: () => boolean, timeoutMs = 2_000) => {
+  const deadline = Date.now() + timeoutMs;
+  while (!condition()) {
+    if (Date.now() > deadline) throw new Error("Timed out waiting for the fake Herdr server.");
+    await tick(5);
+  }
+};
+
 describe("Herdr event hub", () => {
   it("resolves immediately from the snapshot when the status already matches", async () => {
     const server = await serve([{ session: "ex-01", pane: "w1:p1", status: "idle" }]);
@@ -111,9 +119,9 @@ describe("Herdr event hub", () => {
           const waiting = yield* Effect.forkChild(
             hub.awaitStatus({ session: "ex-05", paneId: "w1:p5" }, ["done"]),
           );
-          yield* Effect.promise(() => tick(100));
+          yield* Effect.promise(() => until(() => server.subscriptions === 1));
           server.dropSubscribers();
-          yield* Effect.promise(() => tick(100));
+          yield* Effect.promise(() => until(() => server.subscriptions === 2));
           server.setStatus("ex-05", "done", true);
           return yield* Fiber.join(waiting);
         }),

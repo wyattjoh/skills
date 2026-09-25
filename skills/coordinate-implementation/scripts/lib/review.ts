@@ -635,7 +635,12 @@ const discoverReviewAttempts = async (
   let visited = 0;
   while (directories.length > 0) {
     const directory = directories.pop()!;
-    const entries = await readdir(directory, { withFileTypes: true });
+    // Concurrent run-state writers create and remove transient lock and
+    // temporary entries under the run folder while this scan walks it.
+    const entries = await readdir(directory, { withFileTypes: true }).catch((error: unknown) => {
+      if (error instanceof Error && "code" in error && error.code === "ENOENT") return [];
+      throw error;
+    });
     for (const entry of entries) {
       if (entry.isSymbolicLink()) continue;
       const path = resolve(directory, entry.name);
@@ -652,7 +657,11 @@ const discoverReviewAttempts = async (
           "Keep prior attempt artifacts in the reviews directory or reconcile the run before launching.",
         );
       }
-      const raw = await readFile(path, "utf8");
+      const raw = await readFile(path, "utf8").catch((error: unknown) => {
+        if (error instanceof Error && "code" in error && error.code === "ENOENT") return null;
+        throw error;
+      });
+      if (raw === null) continue;
       let parsed: unknown;
       try {
         parsed = JSON.parse(raw) as unknown;

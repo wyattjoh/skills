@@ -42,6 +42,32 @@ describe("engine event log", () => {
     });
   });
 
+  it("serializes concurrent appends into a contiguous sequence", async () => {
+    const run = runDir();
+    const log = await Effect.runPromise(openEventLog(run, fixedClock));
+
+    const events = await Promise.all(
+      ["a", "b", "c", "d"].map((type) =>
+        Effect.runPromise(log.append({ type, ticket: null, attention: false, data: {} })),
+      ),
+    );
+    const page = await Effect.runPromise(readEventsSince(run, 0));
+
+    expect(events.map((event) => [event.seq, event.type])).toEqual([
+      [1, "a"],
+      [2, "b"],
+      [3, "c"],
+      [4, "d"],
+    ]);
+    expect(page.events.map((event) => [event.seq, event.type])).toEqual([
+      [1, "a"],
+      [2, "b"],
+      [3, "c"],
+      [4, "d"],
+    ]);
+    expect(log.lastSeq()).toBe(4);
+  });
+
   it("continues the sequence after reopening", async () => {
     const run = runDir();
     const first = await Effect.runPromise(openEventLog(run, fixedClock));

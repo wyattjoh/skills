@@ -15,7 +15,7 @@ import {
 import { runGateProcess } from "./gate-runner.ts";
 import { spawnGit } from "./git.ts";
 import { makeHerdrActuator, type HerdrActuator } from "./herdr-actuator.ts";
-import { makeHerdrHub, type HerdrHub, type PaneStatus } from "./herdr-hub.ts";
+import { makeHerdrHub, statusFromSnapshot, type HerdrHub, type PaneStatus } from "./herdr-hub.ts";
 import { prepareImplementorLaunch, recordImplementorLaunch } from "./implementor.ts";
 import { checkIntegration, operationInProgress } from "./integration.ts";
 import { checkLandingRebase, completeLanding, type LandingRebaseResult } from "./landing.ts";
@@ -477,6 +477,20 @@ export const builtinTicketOps = (
             yield* emit("implementor.exited", ticket.number, { purpose }, true);
             yield* retryImplementor(ticket, runtime.attempt, "worker", "Implementor pane exited.");
             continue;
+          }
+          if (outcome !== "timeout") {
+            // An event can predate the prompt this wait follows, for example
+            // the idle that ended the previous prompt when a snapshot already
+            // settled that earlier wait. Only a live status counts as a stop,
+            // and the worker may finish while the snapshot is in flight.
+            const snapshot = yield* hub.snapshot().pipe(Effect.mapError(toWorkflowError));
+            const live = yield* Effect.try({
+              try: () =>
+                statusFromSnapshot({ session: runtime.session, paneId: runtime.pane }, snapshot),
+              catch: (error) => toWorkflowError(error),
+            });
+            if (live.status === "working") continue;
+            if (ready(runtime, yield* config)) return;
           }
           const details = yield* Effect.promise(() => ticketDetails(runPath, ticket));
           sequence += 1;

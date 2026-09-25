@@ -117,6 +117,22 @@ const fakeOps = (
   };
 };
 
+/**
+ * Holds each landing, up to a bound, until the expected number of implementors
+ * has overlapped, so peak assertions do not depend on scheduler timing under
+ * load. A cap below `peak` still fails the assertion once the bound expires.
+ */
+const holdLandings =
+  (base: TicketOps, trace: Trace, peak: number, except: string[] = []): TicketOps["land"] =>
+  (ticket) =>
+    Effect.gen(function* () {
+      const deadline = Date.now() + 2_000;
+      while (!except.includes(ticket.number) && trace.peak < peak && Date.now() < deadline) {
+        yield* Effect.sleep(5);
+      }
+      return yield* base.land(ticket);
+    });
+
 const runWorkflow = async (runPath: string, ops: TicketOps, body: (run: Run) => Promise<void>) => {
   const module = workflow(body, { ops: () => ops });
   return Effect.runPromise(
@@ -140,7 +156,10 @@ describe("workflow frontier", () => {
     const trace: Trace = { calls: [], active: 0, peak: 0 };
     let result: unknown;
 
-    const exit = await runWorkflow(runPath, fakeOps(runPath, trace), async (run) => {
+    const base = fakeOps(runPath, trace);
+    const ops: TicketOps = { ...base, land: holdLandings(base, trace, 2) };
+
+    const exit = await runWorkflow(runPath, ops, async (run) => {
       result = await run.frontier((ticket) => standardTicket(ticket));
     });
     const implemented = trace.calls.filter((call) => call.endsWith(":implement"));
@@ -296,6 +315,7 @@ describe("workflow frontier", () => {
           }
           yield* base.implement(ticket);
         }),
+      land: holdLandings(base, trace, 3, ["01"]),
     };
 
     await runWorkflow(runPath, ops, async (run) => {

@@ -68,7 +68,15 @@ type Waiter = {
 
 const sleep = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
 
-const statusFromSnapshot = (target: WatchTarget, snapshot: RawSnapshot): WatchResult => {
+/**
+ * Resolves a target's current status from one Herdr snapshot, preferring the
+ * session name and falling back to the pane id.
+ *
+ * @param target - Agent identity to resolve.
+ * @param snapshot - Herdr snapshot read after the event of interest.
+ * @returns The target's status and current pane id.
+ */
+export const statusFromSnapshot = (target: WatchTarget, snapshot: RawSnapshot): WatchResult => {
   const named = snapshot.agents.filter(
     (agent) =>
       agent.name === target.session ||
