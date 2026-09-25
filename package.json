@@ -12,14 +12,13 @@
     "check": "tsc --noEmit",
     "lint": "oxlint --ignore-pattern '.claude/references/**'",
     "format": "oxfmt",
-    "format:check": "oxfmt --check"
-  },
-  "dependencies": {
-    "yaml": "^2.9.1"
+    "format:check": "oxfmt --check",
+    "knip": "knip"
   },
   "devDependencies": {
     "@types/bun": "1.4.2",
     "@types/node": "^26.6.2",
+    "knip": "^6.37.0",
     "lefthook": "2.1.14",
     "oxfmt": "^0.68.0",
     "oxlint": "^1.83.0",

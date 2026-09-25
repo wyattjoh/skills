@@ -62,6 +62,7 @@ Claude edits matching files:
 | `bun run lint`         | Lint with oxlint (config: `.oxlintrc.json`)        |
 | `bun run format`       | Format with oxfmt (config: `.oxfmtrc.json`)        |
 | `bun run format:check` | Verify formatting without writing                  |
+| `bun run knip`         | Find unused files, deps, and exports (`knip.json`) |
 | `just link`            | Symlink `agents/*.md` into `~/.claude/agents/`     |
 | `just unlink`          | Remove agent symlinks pointing at this checkout    |
 
