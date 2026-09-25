@@ -4,10 +4,8 @@ import { tmpdir } from "node:os";
 import { join, relative } from "node:path";
 import { spawnGit } from "./lib/git.ts";
 import { parseIntegration, writeIntegration, type IntegrationRecord } from "./lib/integration.ts";
-import { runCliInProcess } from "./test-cli.ts";
+import { type CliResult, runJson, runJsonProcess } from "./test-cli.ts";
 import { createFakeHerdrEnv } from "./test-herdr.ts";
-
-const CLI = join(import.meta.dir, "coordinate.ts");
 
 const integrationRecord = (
   base: string,
@@ -44,11 +42,10 @@ const readIntegration = (statePath: string): IntegrationRecord | undefined =>
   parseIntegration(readFileSync(statePath, "utf8"), "06");
 const HERDR_ENV = createFakeHerdrEnv();
 
-type CliResult = {
-  exitCode: number;
-  stdout: Record<string, unknown>;
-  stderr: string;
-};
+const runCli = (body: unknown, env: Record<string, string | undefined> = HERDR_ENV) =>
+  runJson(body, env);
+const runCliProcess = (body: unknown, env: Record<string, string | undefined> = HERDR_ENV) =>
+  runJsonProcess(body, env);
 
 type ReviewFixture = {
   root: string;
@@ -57,40 +54,10 @@ type ReviewFixture = {
   worktreePath: string;
 };
 
-const runCli = async (
-  request: unknown,
-  env: Record<string, string | undefined> = HERDR_ENV,
-): Promise<CliResult> => {
-  const child = await runCliInProcess(request, env);
-  return {
-    exitCode: child.exitCode,
-    stdout: JSON.parse(child.stdout.trim()) as Record<string, unknown>,
-    stderr: child.stderr,
-  };
-};
-
 /**
  * Spawns the CLI as a separate process. Only for tests that exercise real
  * cross-process serialization, which the in-process queue would hide.
  */
-const runCliProcess = async (
-  request: unknown,
-  env: Record<string, string | undefined> = HERDR_ENV,
-): Promise<CliResult> => {
-  const child = Bun.spawn([process.execPath, CLI], {
-    env,
-    stdin: Buffer.from(JSON.stringify(request)),
-    stdout: "pipe",
-    stderr: "pipe",
-  });
-  const [exitCode, stdout, stderr] = await Promise.all([
-    child.exited,
-    new Response(child.stdout).text(),
-    new Response(child.stderr).text(),
-  ]);
-  return { exitCode, stdout: JSON.parse(stdout) as Record<string, unknown>, stderr };
-};
-
 const stateText = (implementor: "claude" | "pi", active: boolean): string => `# review run
 
 Schema version: 2

@@ -5,7 +5,7 @@ import { join } from "node:path";
 import { Effect } from "effect";
 import { acceptSnapshot } from "./lib/snapshot.ts";
 import { finalizeRun } from "./lib/run.ts";
-import { runCliInProcess } from "./test-cli.ts";
+import { request, runJson } from "./test-cli.ts";
 
 type Harness = "claude" | "pi";
 type Writeback = "none" | "final" | "live";
@@ -16,14 +16,8 @@ type RunFixture = {
   summaryPath: string;
 };
 
-const runCli = async (operation: string, input: Record<string, unknown>) => {
-  const child = await runCliInProcess({ schema_version: 1, operation, input });
-  return {
-    exitCode: child.exitCode,
-    stdout: JSON.parse(child.stdout) as Record<string, unknown>,
-    stderr: child.stderr,
-  };
-};
+const runCli = (operation: string, input: Record<string, unknown>) =>
+  runJson(request(operation, input));
 
 const role = (harness: Harness, purpose: "coordinator" | "implementor" | "reviewer") => {
   if (harness === "pi") {

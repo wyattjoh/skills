@@ -1,56 +1,19 @@
 import { describe, expect, it } from "bun:test";
-import {
-  chmodSync,
-  mkdirSync,
-  mkdtempSync,
-  readFileSync,
-  statSync,
-  utimesSync,
-  writeFileSync,
-} from "node:fs";
+import { mkdtempSync, readFileSync, statSync, utimesSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { runCliInProcess } from "./test-cli.ts";
+import { request, runJson, runJsonProcess } from "./test-cli.ts";
+import { installFakeHarnesses } from "./test-fixtures.ts";
 
-const CLI = join(import.meta.dir, "coordinate.ts");
-
-type CliResult = {
-  exitCode: number;
-  stdout: Record<string, unknown>;
-  stderr: string;
-};
-
-const writeCommand = (directory: string, name: string, body: string): void => {
-  const path = join(directory, name);
-  writeFileSync(path, `#!${process.execPath}\n${body}\n`);
-  chmodSync(path, 0o755);
-};
+const runCli = runJson;
+const runCliProcess = runJsonProcess;
 
 const makeEnvironment = (): { env: Record<string, string>; root: string } => {
   const root = mkdtempSync(join(tmpdir(), "coordinate-roles-"));
-  const bin = join(root, "bin");
-  mkdirSync(bin, { recursive: true });
-  writeCommand(
-    bin,
-    "pi",
-    `
-const args = process.argv.slice(2);
-if (args[0] === "--version") console.log("pi 0.80.3");
-else if (args[0] === "--help") console.log("--thinking <level>  Set thinking level: off, minimal, low, medium, high, xhigh, max");
-else if (args[0] === "--list-models") console.log("provider      model       context\\nopenai-codex  gpt-5.6-sol 272K\\nstrix         Muse-30B    131K");
-else process.exit(1);
-`,
-  );
-  writeCommand(
-    bin,
-    "claude",
-    `
-const args = process.argv.slice(2);
-if (args[0] === "--version") console.log("Claude Code 2.1.80");
-else if (args[0] === "--help") console.log("--effort <level>  Effort level (low, medium, high, xhigh, max)");
-else process.exit(1);
-`,
-  );
+  const bin = installFakeHarnesses(join(root, "bin"), [
+    "openai-codex  gpt-5.6-sol 272K",
+    "strix         Muse-30B    131K",
+  ]);
   return {
     root,
     env: {
@@ -60,43 +23,9 @@ else process.exit(1);
   };
 };
 
-const runCli = async (request: unknown, env: Record<string, string>): Promise<CliResult> => {
-  const child = await runCliInProcess(request, env);
-  return {
-    exitCode: child.exitCode,
-    stdout: JSON.parse(child.stdout) as Record<string, unknown>,
-    stderr: child.stderr,
-  };
-};
-
 /**
  * Spawns a real CLI process, for tests that exercise cross-process locking.
  */
-const runCliProcess = async (request: unknown, env: Record<string, string>): Promise<CliResult> => {
-  const child = Bun.spawn([process.execPath, CLI], {
-    env,
-    stdin: Buffer.from(JSON.stringify(request)),
-    stdout: "pipe",
-    stderr: "pipe",
-  });
-  const [exitCode, stdout, stderr] = await Promise.all([
-    child.exited,
-    new Response(child.stdout).text(),
-    new Response(child.stderr).text(),
-  ]);
-  return {
-    exitCode,
-    stdout: JSON.parse(stdout) as Record<string, unknown>,
-    stderr,
-  };
-};
-
-const request = (operation: string, input: Record<string, unknown>) => ({
-  schema_version: 1,
-  operation,
-  input,
-});
-
 const roleState = (
   pane = "workspace:p1",
   generation = 4,

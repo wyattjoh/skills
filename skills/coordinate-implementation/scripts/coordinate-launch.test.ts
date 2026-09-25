@@ -1,6 +1,5 @@
 import { afterEach, describe, expect, it } from "bun:test";
 import {
-  chmodSync,
   existsSync,
   mkdirSync,
   mkdtempSync,
@@ -9,51 +8,20 @@ import {
   symlinkSync,
   writeFileSync,
 } from "node:fs";
-import { createServer, type Server, type Socket } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { spawnGit } from "./lib/git.ts";
-import { runCliInProcess } from "./test-cli.ts";
+import { type CliResult, request, runJson } from "./test-cli.ts";
+import { installFakeHarnesses, writeCommand } from "./test-fixtures.ts";
+import { startFakeHerdr, type FakeHerdrServer } from "./test-herdr-server.ts";
 
-const servers: Server[] = [];
+const fakes: FakeHerdrServer[] = [];
 
-type CliResult = {
-  exitCode: number;
-  stdout: Record<string, unknown>;
-  stderr: string;
-};
-
-const writeCommand = (directory: string, name: string, body: string): string => {
-  const path = join(directory, name);
-  writeFileSync(path, `#!${process.execPath}\n${body}\n`);
-  chmodSync(path, 0o755);
-  return path;
-};
+const runCli = runJson;
+const runCliAsync = runJson;
 
 const makeHarnessEnvironment = (root: string): Record<string, string> => {
-  const bin = join(root, "bin");
-  mkdirSync(bin, { recursive: true });
-  writeCommand(
-    bin,
-    "pi",
-    `
-const args = process.argv.slice(2);
-if (args[0] === "--version") console.log("pi 0.80.3");
-else if (args[0] === "--help") console.log("--thinking <level>  Set thinking level: off, minimal, low, medium, high, xhigh, max");
-else if (args[0] === "--list-models") console.log("provider      model       context\\nopenai-codex  gpt-5.6-sol 272K");
-else process.exit(1);
-`,
-  );
-  writeCommand(
-    bin,
-    "claude",
-    `
-const args = process.argv.slice(2);
-if (args[0] === "--version") console.log("Claude Code 2.1.80");
-else if (args[0] === "--help") console.log("--effort <level>  Effort level (low, medium, high, xhigh, max)");
-else process.exit(1);
-`,
-  );
+  const bin = installFakeHarnesses(join(root, "bin"));
   return {
     ...Object.fromEntries(
       Object.entries(process.env).filter(
@@ -64,23 +32,6 @@ else process.exit(1);
     PATH: `${bin}:${process.env.PATH ?? ""}`,
   };
 };
-
-const runCli = async (request: unknown, env: Record<string, string>): Promise<CliResult> => {
-  const child = await runCliInProcess(request, env);
-  return {
-    exitCode: child.exitCode,
-    stdout: JSON.parse(child.stdout) as Record<string, unknown>,
-    stderr: child.stderr,
-  };
-};
-
-const runCliAsync = runCli;
-
-const request = (operation: string, input: Record<string, unknown>) => ({
-  schema_version: 1,
-  operation,
-  input,
-});
 
 const initializeRepository = (root: string): string => {
   const repository = join(root, "repository");
@@ -156,38 +107,6 @@ const prepareWorktree = (
     fixture.env,
   );
 
-const listen = async (server: Server, path: string): Promise<void> => {
-  servers.push(server);
-  await new Promise<void>((resolve, reject) => {
-    server.once("error", reject);
-    server.listen(path, () => resolve());
-  });
-};
-
-const closeServer = async (server: Server): Promise<void> => {
-  if (!server.listening) return;
-  await new Promise<void>((resolve) => server.close(() => resolve()));
-};
-
-const writeLine = (socket: Socket, value: unknown): void => {
-  socket.write(`${JSON.stringify(value)}\n`);
-};
-
-const recoverySnapshot = (
-  session: string,
-  pane: string,
-  status: string,
-): Record<string, unknown> => ({
-  id: "snapshot",
-  result: {
-    type: "session_snapshot",
-    snapshot: {
-      panes: [{ pane_id: pane, agent_status: status }],
-      agents: [{ name: session, pane_id: pane, agent_status: status }],
-    },
-  },
-});
-
 const makeFixture = () => {
   const root = mkdtempSync(join(tmpdir(), "coordinate-launch-"));
   const repository = initializeRepository(root);
@@ -204,7 +123,7 @@ const makeFixture = () => {
 };
 
 afterEach(async () => {
-  await Promise.all(servers.splice(0).map(closeServer));
+  await Promise.all(fakes.splice(0).map((fake) => fake.close()));
 });
 
 describe("policy-driven worktree preparation", () => {
@@ -1084,22 +1003,11 @@ describe("safe implementor launch", () => {
     ];
     writeFileSync(exhaustedArtifactPath, `${JSON.stringify(exhaustedArtifact, null, 2)}\n`);
 
-    const socket = join(fixture.root, "herdr.sock");
-    let observedPane = "workspace:p9";
-    const server = createServer((connection) => {
-      let buffered = "";
-      connection.on("data", (chunk) => {
-        buffered += chunk.toString();
-        for (const line of buffered.split("\n").slice(0, -1)) {
-          const message = JSON.parse(line) as { method: string };
-          if (message.method === "session.snapshot") {
-            writeLine(connection, recoverySnapshot("pci-04", observedPane, "idle"));
-          }
-        }
-        buffered = buffered.slice(buffered.lastIndexOf("\n") + 1);
-      });
-    });
-    await listen(server, socket);
+    const herdr = await startFakeHerdr([
+      { session: "pci-04", pane: "workspace:p9", status: "idle" },
+    ]);
+    fakes.push(herdr);
+    const socket = herdr.path;
     const recoveryInput = {
       state_path: fixture.statePath,
       ticket: "04",
@@ -1154,7 +1062,7 @@ describe("safe implementor launch", () => {
     ]);
     expect(readFileSync(fixture.statePath, "utf8")).toBe(exhausted);
 
-    observedPane = "workspace:p4";
+    herdr.agents[0]!.pane = "workspace:p4";
     const recovered = await runCliAsync(
       request("implementor.launch.recover", recoveryInput),
       fixture.env,

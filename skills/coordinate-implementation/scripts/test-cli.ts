@@ -56,3 +56,63 @@ export const runCliInProcess = (
   queue = run.catch(() => undefined);
   return run;
 };
+
+/**
+ * Parsed result of one coordinator request.
+ */
+export type CliResult = { exitCode: number; stdout: Record<string, unknown>; stderr: string };
+
+/**
+ * Builds a schema-1 coordinator request.
+ *
+ * @param operation Operation name.
+ * @param input Operation input.
+ * @returns The request envelope.
+ */
+export const request = (operation: string, input: Record<string, unknown>) => ({
+  schema_version: 1,
+  operation,
+  input,
+});
+
+/**
+ * Runs one request in-process through {@link runCliInProcess} and parses its JSON stdout.
+ *
+ * @param body Request value.
+ * @param env Complete environment the request sees.
+ * @returns Exit code, parsed stdout, and stderr.
+ */
+export const runJson = async (body: unknown, env: Env = process.env): Promise<CliResult> => {
+  const child = await runCliInProcess(body, env);
+  return {
+    exitCode: child.exitCode,
+    stdout: JSON.parse(child.stdout.trim()) as Record<string, unknown>,
+    stderr: child.stderr,
+  };
+};
+
+const CLI = new URL("./coordinate.ts", import.meta.url).pathname;
+
+/**
+ * Runs one request in a spawned CLI process, for tests that need real process concurrency.
+ * The environment is always passed explicitly, because Bun children ignore runtime changes to
+ * `process.env`.
+ *
+ * @param body Request value.
+ * @param env Complete environment the process sees.
+ * @returns Exit code, parsed stdout, and stderr.
+ */
+export const runJsonProcess = async (body: unknown, env: Env = process.env): Promise<CliResult> => {
+  const child = Bun.spawn([process.execPath, CLI], {
+    env,
+    stdin: Buffer.from(JSON.stringify(body)),
+    stdout: "pipe",
+    stderr: "pipe",
+  });
+  const [exitCode, stdout, stderr] = await Promise.all([
+    child.exited,
+    new Response(child.stdout).text(),
+    new Response(child.stderr).text(),
+  ]);
+  return { exitCode, stdout: JSON.parse(stdout) as Record<string, unknown>, stderr };
+};

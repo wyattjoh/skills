@@ -2,22 +2,9 @@ import { describe, expect, it } from "bun:test";
 import { mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { runCliInProcess } from "./test-cli.ts";
+import { request, runJson } from "./test-cli.ts";
 
-const request = (operation: string, input: Record<string, unknown>) => ({
-  schema_version: 1,
-  operation,
-  input,
-});
-
-const runCli = async (body: unknown) => {
-  const child = await runCliInProcess(body);
-  return {
-    exitCode: child.exitCode,
-    stdout: JSON.parse(child.stdout) as Record<string, unknown>,
-    stderr: child.stderr,
-  };
-};
+const runCli = (body: unknown) => runJson(body);
 
 const ticket = (number: string, dependencies: string[], status = "queued") => ({
   number,

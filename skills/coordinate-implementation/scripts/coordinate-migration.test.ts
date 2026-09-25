@@ -14,7 +14,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { spawnGit } from "./lib/git.ts";
 import { parseIntegration, writeIntegration, type IntegrationRecord } from "./lib/integration.ts";
-import { runCliInProcess } from "./test-cli.ts";
+import { request, runJson } from "./test-cli.ts";
 import { createFakeHerdrEnv } from "./test-herdr.ts";
 
 const HERDR_ENV = createFakeHerdrEnv();
@@ -23,11 +23,8 @@ const OLD_REVIEW_ROLE = { harness: "claude", model: "sonnet", effort: "medium" }
 const PI_IMPLEMENTOR = { harness: "pi", model: "openai/test", effort: "high" } as const;
 const PI_REVIEWER = { harness: "pi", model: "openai/reviewer-test", effort: "medium" } as const;
 
-type CliResult = {
-  exitCode: number;
-  stdout: Record<string, unknown>;
-  stderr: string;
-};
+const runCli = (body: unknown, env: Record<string, string | undefined> = HERDR_ENV) =>
+  runJson(body, env);
 
 type Fixture = {
   root: string;
@@ -39,25 +36,6 @@ type Fixture = {
   artifactPath: string;
   piSkillPath?: string;
 };
-
-const runCli = async (
-  request: unknown,
-  env: Record<string, string | undefined> = HERDR_ENV,
-): Promise<CliResult> => {
-  const child = await runCliInProcess(request, env);
-  const stdout = JSON.parse(child.stdout.trim()) as Record<string, unknown>;
-  return {
-    exitCode: child.exitCode,
-    stdout,
-    stderr: child.stderr,
-  };
-};
-
-const request = (operation: string, input: Record<string, unknown>) => ({
-  schema_version: 1,
-  operation,
-  input,
-});
 
 const makeWorktree = (root: string, branch: string, extraCommit = false): string => {
   const worktreePath = join(root, "worktree");

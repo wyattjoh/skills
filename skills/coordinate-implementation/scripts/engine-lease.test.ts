@@ -1,9 +1,6 @@
 import { describe, expect, it } from "bun:test";
 import { Cause, Effect, Exit, Result } from "effect";
 import { readFileSync } from "node:fs";
-import { mkdtempSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
 import {
   claimEngineLease,
   EngineLeaseError,
@@ -22,15 +19,11 @@ import {
   StateMutationGuard,
   type StateMutationError,
 } from "./lib/state-mutation.ts";
+import { tempStateFile } from "./test-fixtures.ts";
 
 const now = new Date("2026-09-25T12:00:00.000Z");
 
-const stateFile = (): string => {
-  const dir = mkdtempSync(join(tmpdir(), "coordinate-lease-"));
-  const path = join(dir, "RESUME.md");
-  writeFileSync(path, "# Run\n\nSchema version: 2\n");
-  return path;
-};
+const stateFile = (): string => tempStateFile("coordinate-lease-");
 
 const claim = (statePath: string, expectedGeneration: number, pid = 101) =>
   claimEngineLease({

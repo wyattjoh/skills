@@ -10,16 +10,16 @@ import {
   rebasePrompt,
   ticketPatchId,
 } from "./lib/integration.ts";
-import { runCliInProcess } from "./test-cli.ts";
+import { type CliResult, request, runJson } from "./test-cli.ts";
 import { createFakeHerdrEnv } from "./test-herdr.ts";
 
 const HERDR_ENV = createFakeHerdrEnv();
 
-type CliResult = {
-  exitCode: number;
-  stdout: Record<string, unknown>;
-  stderr: string;
-};
+const runCli = (
+  operation: string,
+  input: Record<string, unknown>,
+  env: Record<string, string | undefined> = HERDR_ENV,
+) => runJson(request(operation, input), env);
 
 type LandingFixture = {
   root: string;
@@ -27,19 +27,6 @@ type LandingFixture = {
   worktreePath: string;
   statePath: string;
   branch: string;
-};
-
-const runCli = async (
-  operation: string,
-  input: Record<string, unknown>,
-  env: Record<string, string | undefined> = HERDR_ENV,
-): Promise<CliResult> => {
-  const child = await runCliInProcess({ schema_version: 1, operation, input }, env);
-  return {
-    exitCode: child.exitCode,
-    stdout: JSON.parse(child.stdout.trim()) as Record<string, unknown>,
-    stderr: child.stderr,
-  };
 };
 
 const commit = (

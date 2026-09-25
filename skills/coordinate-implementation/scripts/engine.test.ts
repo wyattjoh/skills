@@ -1,18 +1,13 @@
 import { describe, expect, it } from "bun:test";
 import { Effect, Fiber, Result } from "effect";
-import { mkdtempSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
-import { dirname, join } from "node:path";
+import { writeFileSync } from "node:fs";
+import { dirname } from "node:path";
 import { claimEngineLease, readEngineLease } from "./lib/engine-lease.ts";
 import { runEngine, stopRequestPath, type EngineWorkflow } from "./lib/engine.ts";
 import { readEventsSince } from "./lib/event-log.ts";
+import { tempStateFile } from "./test-fixtures.ts";
 
-const stateFile = (): string => {
-  const dir = mkdtempSync(join(tmpdir(), "coordinate-engine-"));
-  const path = join(dir, "RESUME.md");
-  writeFileSync(path, "# Run\n\nSchema version: 2\n");
-  return path;
-};
+const stateFile = (): string => tempStateFile("coordinate-engine-");
 
 const options = (statePath: string, workflow: EngineWorkflow) => ({
   statePath,
