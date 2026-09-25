@@ -228,7 +228,9 @@ Engine starts in the last step.
    policy. A local source records `none` without a remote-write prompt.
 7. **Write the workflow script.** Copy
    [run-template.ts](references/run-template.ts) to `<run>/run.ts` and replace
-   `SKILL_DIR` with the absolute skill path. Keep the default
+   every placeholder it lists: the absolute skill path, the recorded base
+   checkout, the Pi implement skill path (delete that line for Claude
+   implementors), and the authoritative project remote-write policy. Keep the default
    `standardTicket` pipeline unless the user asks for a different one; a
    custom script must stay deterministic given its step results.
 8. **Start the Engine** with
