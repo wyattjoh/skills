@@ -1,5 +1,5 @@
 import { Effect } from "effect";
-import { createHash, randomUUID } from "node:crypto";
+import { randomUUID } from "node:crypto";
 import { mkdir, readFile, realpath } from "node:fs/promises";
 import { dirname, isAbsolute, join, resolve } from "node:path";
 import { activeRuntimeBlockPattern, parseActiveRuntimeFields } from "./active-runtime.ts";
@@ -7,6 +7,7 @@ import type { CliIssue } from "./contract.ts";
 import { replaceFileAtomically } from "./fs-atomic.ts";
 import { spawnGit } from "./git.ts";
 import { sectionText, ticketRows } from "./resume-sections.ts";
+import { sha256Hex } from "./values.ts";
 
 /**
  * Schema version of `runs/<run-id>.json`. Bump only when an existing field is
@@ -158,8 +159,7 @@ export const globalStateRoot = (env: Record<string, string | undefined>): string
  * @param commonDir - Realpath of the repository's Git common directory.
  * @returns First 12 hex characters of the path's SHA-256.
  */
-export const repositoryId = (commonDir: string): string =>
-  createHash("sha256").update(commonDir).digest("hex").slice(0, 12);
+export const repositoryId = (commonDir: string): string => sha256Hex(commonDir).slice(0, 12);
 
 const RUN_ID_PATTERN = /^Run id:[ \t]*(\S+)[ \t]*$/mu;
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/u;

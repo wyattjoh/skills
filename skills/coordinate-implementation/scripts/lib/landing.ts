@@ -1,7 +1,7 @@
 import { Data, Effect } from "effect";
 import { existsSync, realpathSync } from "node:fs";
 import { mkdir, readFile, realpath, writeFile } from "node:fs/promises";
-import { basename, dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
+import { dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import type {
   CliIssue,
   CommitPolicy,
@@ -9,7 +9,7 @@ import type {
   LandingRebaseCheckInput,
 } from "./contract.ts";
 import { activeRuntimeBlockPattern, parseActiveRuntimeFields } from "./active-runtime.ts";
-import { spawnClean, spawnGit } from "./git.ts";
+import { checkoutIdentity, spawnClean, spawnGit } from "./git.ts";
 import {
   bindIntegration,
   checkIntegration,
@@ -27,8 +27,9 @@ import {
 import { readJsonSection, readRepositoryPolicy } from "./policy-records.ts";
 import { appendSectionLine, updateTicketCells } from "./resume-sections.ts";
 import { inspectRuntimeClose } from "./runtime-close.ts";
-import { mutateStateFile, StateMutationError } from "./state-mutation.ts";
+import { mutateStateFile, mutationIssue } from "./state-mutation.ts";
 import { validateStateText } from "./state.ts";
+import { canonicalPathAllowingMissing } from "./values.ts";
 
 type PersistedRepositoryPolicy = {
   remote: "local-only" | "repository";
@@ -68,14 +69,14 @@ const attempt = <Value>(evaluate: () => Value): Effect.Effect<Value, LandingErro
 const fromMutationError = (error: unknown): LandingError => {
   if (error instanceof LandingError) return error;
   if (error instanceof IntegrationError) return new LandingError({ issue: error.issue });
-  const detail = error instanceof StateMutationError ? error.message : (error as Error).message;
-  return landingError(
-    error instanceof StateMutationError && error.kind === "lock_busy"
-      ? "landing.state_busy"
-      : "landing.state_io_failed",
-    `Could not update ticket integration state: ${detail}`,
-    "Verify RESUME.md is writable, then retry the same operation.",
-  );
+  return new LandingError({
+    issue: mutationIssue(
+      error,
+      "landing",
+      "ticket integration state",
+      "Verify RESUME.md is writable, then retry the same operation.",
+    ),
+  });
 };
 
 const parseRepositoryPolicy = (markdown: string): PersistedRepositoryPolicy => {
@@ -158,21 +159,18 @@ const validateRepositoryAndWorktree = (
   baseBranch: string,
 ): Effect.Effect<void, LandingError> =>
   Effect.gen(function* () {
-    const repositoryRoot = spawnGit(["rev-parse", "--show-toplevel"], { cwd: repositoryPath });
-    const worktreeRoot = spawnGit(["rev-parse", "--show-toplevel"], { cwd: worktreePath });
-    const currentBranch = spawnGit(["symbolic-ref", "--short", "HEAD"], { cwd: worktreePath });
+    const repository = checkoutIdentity(repositoryPath);
+    const worktree = checkoutIdentity(worktreePath);
     const baseExists = spawnGit(["show-ref", "--verify", `refs/heads/${baseBranch}`], {
       cwd: repositoryPath,
     });
-    if (repositoryRoot.exitCode !== 0)
-      return yield* gitFailure("Repository validation", repositoryRoot.stderr);
-    if (worktreeRoot.exitCode !== 0)
-      return yield* gitFailure("Worktree validation", worktreeRoot.stderr);
+    if (!repository.ok) return yield* gitFailure("Repository validation", repository.stderr);
+    if (!worktree.ok) return yield* gitFailure("Worktree validation", worktree.stderr);
     if (
-      realpathSync(repositoryRoot.stdout.trim()) !== realpathSync(repositoryPath) ||
-      realpathSync(worktreeRoot.stdout.trim()) !== realpathSync(worktreePath) ||
+      !repository.isRoot ||
+      !worktree.isRoot ||
       realpathSync(activeWorktree) !== realpathSync(worktreePath) ||
-      currentBranch.stdout.trim() !== branch
+      worktree.branch !== branch
     ) {
       return yield* landingError(
         "landing.runtime_mismatch",
@@ -188,23 +186,6 @@ const validateRepositoryAndWorktree = (
       );
     }
   });
-
-const canonicalPathAllowingMissing = async (path: string): Promise<string> => {
-  let cursor = resolve(path);
-  const missing: string[] = [];
-  while (true) {
-    try {
-      const existing = await realpath(cursor);
-      return resolve(existing, ...missing);
-    } catch (error) {
-      if (!(error instanceof Error && "code" in error && error.code === "ENOENT")) throw error;
-      const parent = dirname(cursor);
-      if (parent === cursor) throw error;
-      missing.unshift(basename(cursor));
-      cursor = parent;
-    }
-  }
-};
 
 const runExactCommand = (
   argv: string[],
@@ -868,18 +849,11 @@ const validateReadyLanding = (
         "Use the recorded worktree for landing and cleanup.",
       );
     }
-    const repositoryRoot = spawnGit(["rev-parse", "--show-toplevel"], {
-      cwd: input.repositoryPath,
-    });
-    const repositoryBranch = spawnGit(["symbolic-ref", "--short", "HEAD"], {
-      cwd: input.repositoryPath,
-    });
-    if (repositoryRoot.exitCode !== 0)
-      return yield* gitFailure("Integration checkout validation", repositoryRoot.stderr);
-    if (
-      realpathSync(repositoryRoot.stdout.trim()) !== realpathSync(input.repositoryPath) ||
-      repositoryBranch.stdout.trim() !== baseBranch
-    ) {
+    const checkout = checkoutIdentity(input.repositoryPath);
+    if (!checkout.ok) {
+      return yield* gitFailure("Integration checkout validation", checkout.stderr);
+    }
+    if (!checkout.isRoot || checkout.branch !== baseBranch) {
       return yield* landingError(
         "landing.base_checkout_mismatch",
         "Landing must run from the recorded local integration branch checkout.",

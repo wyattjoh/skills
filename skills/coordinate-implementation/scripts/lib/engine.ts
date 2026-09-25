@@ -5,6 +5,7 @@ import type { CliIssue } from "./contract.ts";
 import {
   claimEngineLease,
   EngineLeaseError,
+  leaseHeld,
   leaseIssue,
   parseEngineLease,
   readEngineLease,
@@ -166,7 +167,7 @@ export const runEngine = (options: EngineOptions): Effect.Effect<EngineExit, Eng
         const current = yield* readEngineLease(options.statePath).pipe(
           Effect.orElseSucceed(() => lease),
         );
-        if (current === null || current.generation !== generation || current.released_at !== null) {
+        if (!leaseHeld(current, generation)) {
           return "lease_lost" as const;
         }
         if (yield* stopRequested(options.statePath, generation)) return "stopped" as const;
@@ -233,7 +234,7 @@ export const leaseFence =
     } catch (error) {
       return (error as EngineLeaseError).issue;
     }
-    return current !== null && current.generation === generation && current.released_at === null
+    return leaseHeld(current, generation)
       ? null
       : {
           code: "engine.lease_lost",

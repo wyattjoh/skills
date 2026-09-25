@@ -2,17 +2,13 @@
  * Readers for the fenced JSON policy records persisted in RESUME.md. Each reader reports
  * `missing` or `malformed` as a value so operations keep their own error codes.
  */
+import { escapeRegExp, isRecord } from "./values.ts";
 import type { SerializedRepositoryPolicy } from "./worktrees.ts";
 
 /**
  * Why a persisted JSON record could not be read.
  */
 export type JsonRecordProblem = { problem: "missing" | "malformed" };
-
-const escapeRegExp = (value: string): string => value.replace(/[.*+?^${}()|[\]\\]/gu, "\\$&");
-
-const isRecord = (value: unknown): value is Record<string, unknown> =>
-  typeof value === "object" && value !== null && !Array.isArray(value);
 
 /**
  * Reads the single fenced JSON block under `## <name>`.

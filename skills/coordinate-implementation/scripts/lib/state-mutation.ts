@@ -29,6 +29,30 @@ export class StateMutationError extends Data.TaggedError("StateMutationError")<{
   message: string;
 }> {}
 
+/**
+ * Describes a failed state update with an operation's own codes: `<domain>.state_busy` when
+ * another writer holds the lock, otherwise `<domain>.state_io_failed`.
+ *
+ * @param error - StateMutationError or any other thrown error.
+ * @param domain - Error-code prefix, such as `landing`.
+ * @param subject - What was being updated, such as `ticket integration state`.
+ * @param remediation - Operator guidance for the failure.
+ * @returns The issue to wrap in the operation's typed error.
+ */
+export const mutationIssue = (
+  error: unknown,
+  domain: string,
+  subject: string,
+  remediation: string,
+): CliIssue => ({
+  code:
+    error instanceof StateMutationError && error.kind === "lock_busy"
+      ? `${domain}.state_busy`
+      : `${domain}.state_io_failed`,
+  message: `Could not update ${subject}: ${(error as Error).message}`,
+  remediation,
+});
+
 class StateLockBusyError extends Error {}
 
 /**

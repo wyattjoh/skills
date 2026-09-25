@@ -1,4 +1,5 @@
 import { Data, Effect } from "effect";
+import { isRecord } from "./values.ts";
 
 /**
  * JSON schema version supported by the coordinate helper request and result envelopes.
@@ -760,9 +761,6 @@ export class RequestError extends Data.TaggedError("RequestError")<{
   issue: CliIssue;
   operation: string | null;
 }> {}
-
-const isRecord = (value: unknown): value is Record<string, unknown> =>
-  typeof value === "object" && value !== null && !Array.isArray(value);
 
 /**
  * Tests whether a value is a real UTC timestamp in whole-second ISO-8601 form.

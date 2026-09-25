@@ -6,8 +6,7 @@
  */
 
 import type { RoleRecord } from "./contract.ts";
-
-const escapeRegExp = (value: string): string => value.replace(/[.*+?^${}()|[\]\\]/gu, "\\$&");
+import { escapeRegExp } from "./values.ts";
 
 /**
  * Location of one `## <name>` section: the heading start, the first character after the heading

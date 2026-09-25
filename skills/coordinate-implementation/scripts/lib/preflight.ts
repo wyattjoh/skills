@@ -4,6 +4,7 @@ import { homedir } from "node:os";
 import { join } from "node:path";
 import type { CliIssue, PreflightInput } from "./contract.ts";
 import { validateStateFile, type StateSummary } from "./state.ts";
+import { isRecord } from "./values.ts";
 
 /**
  * Availability and version reported for one required executable.
@@ -91,9 +92,6 @@ const readHerdrSchema = (): unknown | undefined => {
     return undefined;
   }
 };
-
-const isRecord = (value: unknown): value is Record<string, unknown> =>
-  typeof value === "object" && value !== null && !Array.isArray(value);
 
 const containsString = (value: unknown, expected: string): boolean => {
   if (value === expected) return true;

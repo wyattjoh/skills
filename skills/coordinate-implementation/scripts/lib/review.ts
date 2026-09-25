@@ -1,7 +1,6 @@
 import { Data, Effect } from "effect";
-import { createHash } from "node:crypto";
 import { readFile, readdir, realpath } from "node:fs/promises";
-import { basename, dirname, isAbsolute, relative, resolve, sep } from "node:path";
+import { dirname, isAbsolute, relative, resolve, sep } from "node:path";
 import { isUtcIsoTimestamp } from "./contract.ts";
 import type {
   CliIssue,
@@ -30,8 +29,9 @@ import {
 import { readJsonSection, readRepositoryPolicy } from "./policy-records.ts";
 import { appendSectionLine, readRoleBlock, sameRole } from "./resume-sections.ts";
 import { inspectRuntimeClose } from "./runtime-close.ts";
-import { mutateStateFile, StateMutationError, withStateLock } from "./state-mutation.ts";
+import { mutateStateFile, mutationIssue, withStateLock } from "./state-mutation.ts";
 import { validateStateText } from "./state.ts";
+import { canonicalPathAllowingMissing, isRecord, sha256Hex } from "./values.ts";
 
 /**
  * Fixed review and gate infrastructure retry limit.
@@ -83,14 +83,14 @@ const reviewError = (code: string, message: string, remediation: string): Review
 
 const fromMutationError = (error: unknown): ReviewError => {
   if (error instanceof ReviewError) return error;
-  const detail = error instanceof StateMutationError ? error.message : (error as Error).message;
-  return reviewError(
-    error instanceof StateMutationError && error.kind === "lock_busy"
-      ? "review.state_busy"
-      : "review.state_io_failed",
-    `Could not update review state: ${detail}`,
-    "Verify RESUME.md and its directory are writable, then retry with the same review policy.",
-  );
+  return new ReviewError({
+    issue: mutationIssue(
+      error,
+      "review",
+      "review state",
+      "Verify RESUME.md and its directory are writable, then retry with the same review policy.",
+    ),
+  });
 };
 
 /**
@@ -259,9 +259,6 @@ type ReviewArtifact = {
   launch: ReviewerLaunchPlan;
 };
 
-const isRecord = (value: unknown): value is Record<string, unknown> =>
-  typeof value === "object" && value !== null && !Array.isArray(value);
-
 const isRoleRecord = (value: unknown): value is RoleRecord =>
   isRecord(value) &&
   (value.harness === "claude" || value.harness === "pi") &&
@@ -351,23 +348,6 @@ const canonicalPathsEqual = async (left: string, right: string): Promise<boolean
     return (await canonicalExistingPath(left)) === (await canonicalExistingPath(right));
   } catch {
     return false;
-  }
-};
-
-const canonicalPathAllowingMissing = async (path: string): Promise<string> => {
-  let cursor = resolve(path);
-  const missing: string[] = [];
-  while (true) {
-    try {
-      const existing = await realpath(cursor);
-      return resolve(existing, ...missing);
-    } catch (error) {
-      if (!(error instanceof Error && "code" in error && error.code === "ENOENT")) throw error;
-      const parent = dirname(cursor);
-      if (parent === cursor) throw error;
-      missing.unshift(basename(cursor));
-      cursor = parent;
-    }
   }
 };
 
@@ -718,7 +698,7 @@ const readSupersessionState = async (
     commitValue.kind !== "coordinate-review-attempt-supersession-commit" ||
     commitValue.status !== "committed" ||
     commitValue.evidence_path !== evidencePath ||
-    commitValue.evidence_sha256 !== createHash("sha256").update(raw).digest("hex") ||
+    commitValue.evidence_sha256 !== sha256Hex(raw) ||
     commitValue.state_reference !== stateReference ||
     !Number.isInteger(supersessionGeneration) ||
     supersessionGeneration !== referenceGeneration ||
@@ -840,7 +820,7 @@ export const supersedeInterruptedReviewerAttempt = (
           );
         }
         const expected = input.expectedBinding;
-        const artifactSha256 = createHash("sha256").update(artifactRaw).digest("hex");
+        const artifactSha256 = sha256Hex(artifactRaw);
         const statePathMatches =
           typeof artifact.state_path === "string" &&
           (yield* reviewIo(
@@ -1069,7 +1049,7 @@ export const supersedeInterruptedReviewerAttempt = (
             name: configured.name,
             attempt: attempt as number,
             evidence_path: path,
-            sha256: createHash("sha256").update(raw).digest("hex"),
+            sha256: sha256Hex(raw),
             supersession_generation: gateSupersessionGeneration as number,
           });
         }
@@ -1198,7 +1178,7 @@ export const supersedeInterruptedReviewerAttempt = (
           kind: "coordinate-review-attempt-supersession-commit",
           status: "committed",
           evidence_path: evidencePath,
-          evidence_sha256: createHash("sha256").update(serializedEvidence).digest("hex"),
+          evidence_sha256: sha256Hex(serializedEvidence),
           state_reference: evidenceLine,
           supersession_generation: supersessionGeneration,
           committed_at: input.completedAt,
@@ -1575,7 +1555,7 @@ export const prepareReviewerLaunch = (
               details?.user_authorized !== true ||
               details.pane_closed !== true ||
               details.pane_id !== entry.artifact.pane ||
-              details.artifact_sha256 !== createHash("sha256").update(entry.raw).digest("hex") ||
+              details.artifact_sha256 !== sha256Hex(entry.raw) ||
               details.replacement_attempt !== entry.artifact.attempt + 1 ||
               !isRoleRecord(details.replacement_reviewer) ||
               !sameRole(details.replacement_reviewer, input.role) ||
@@ -1645,7 +1625,7 @@ export const prepareReviewerLaunch = (
                 "review.previous_gate_read_failed",
                 `Could not read superseded gate evidence at ${gate.path}`,
               );
-              if (createHash("sha256").update(raw).digest("hex") !== gate.sha256) {
+              if (sha256Hex(raw) !== gate.sha256) {
                 return yield* reviewError(
                   "review.superseded_gates_stale",
                   `Gate evidence for superseded ${entry.artifact.axis} attempt was changed.`,
@@ -1800,8 +1780,7 @@ export const prepareReviewerLaunch = (
               !isRoleRecord(previousEvidence.reviewer) ||
               !sameRole(previousEvidence.reviewer, previous.reviewer) ||
               supersession.user_authorized !== true ||
-              supersession.artifact_sha256 !==
-                createHash("sha256").update(previousRaw).digest("hex") ||
+              supersession.artifact_sha256 !== sha256Hex(previousRaw) ||
               supersession.pane_closed !== true ||
               supersession.pane_id !== previous.pane ||
               supersession.replacement_attempt !== input.attempt ||
@@ -1908,7 +1887,7 @@ export const prepareReviewerLaunch = (
               if (
                 !isRecord(priorGateRecord) ||
                 priorGateSupersessionGeneration !== prior.supersessionGeneration ||
-                createHash("sha256").update(priorGateRaw).digest("hex") !== prior.sha256
+                sha256Hex(priorGateRaw) !== prior.sha256
               ) {
                 return yield* reviewError(
                   "review.retry_mismatch",

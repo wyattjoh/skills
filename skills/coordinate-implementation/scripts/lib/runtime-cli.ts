@@ -1,5 +1,4 @@
 import { Effect, Result } from "effect";
-import { createHash } from "node:crypto";
 import { existsSync } from "node:fs";
 import { readFile, writeFile } from "node:fs/promises";
 import { hostname } from "node:os";
@@ -9,6 +8,7 @@ import {
   claimEngineLease,
   engineLiveness,
   isPidAlive,
+  leaseHeld,
   leaseIssue,
   readEngineHeartbeat,
   readEngineLease,
@@ -22,6 +22,7 @@ import { readEventsSince, type RuntimeEvent } from "./event-log.ts";
 import { replaceFileAtomically } from "./fs-atomic.ts";
 import { projectRun } from "./global-state.ts";
 import { makeHerdrActuator, type HerdrActuator } from "./herdr-actuator.ts";
+import { sha256Hex } from "./values.ts";
 
 /**
  * Heartbeat cadence of a production engine.
@@ -178,10 +179,7 @@ const runPaths = (flags: Flags): RunPaths => {
   return { runPath, statePath };
 };
 
-const sha256 = async (path: string): Promise<string> =>
-  createHash("sha256")
-    .update(await readFile(path))
-    .digest("hex");
+const sha256 = async (path: string): Promise<string> => sha256Hex(await readFile(path));
 
 const shellQuote = (value: string): string =>
   /^[\w./:@=-]+$/u.test(value) ? value : `'${value.replaceAll("'", `'\\''`)}'`;
@@ -456,7 +454,7 @@ const stop = async (flags: Flags, deps: RuntimeDeps): Promise<Record<string, unk
   const deadline = deps.now().getTime() + (flags.has("force") ? 0 : deps.startTimeoutMs);
   while (deps.now().getTime() < deadline) {
     const current = await run(readEngineLease(statePath), withIssue);
-    if (current?.generation !== lease.generation || current.released_at !== null) {
+    if (!leaseHeld(current, lease.generation)) {
       return { engine: "stopped", generation: lease.generation };
     }
     await deps.sleep(deps.pollMs);

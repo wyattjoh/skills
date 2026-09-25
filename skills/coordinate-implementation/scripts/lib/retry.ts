@@ -2,7 +2,7 @@ import { Data, Effect } from "effect";
 import { activeRuntimeBlockPattern, parseActiveRuntimeFields } from "./active-runtime.ts";
 import type { CliIssue, InfrastructureRetryRecordInput, RoleRecord } from "./contract.ts";
 import { updateTicketCells } from "./resume-sections.ts";
-import { mutateStateFile, StateMutationError } from "./state-mutation.ts";
+import { mutateStateFile, mutationIssue } from "./state-mutation.ts";
 import { validateStateText } from "./state.ts";
 
 /**
@@ -64,14 +64,14 @@ const retryError = (code: string, message: string, remediation: string): Infrast
 
 const fromMutationError = (error: unknown): InfrastructureRetryError => {
   if (error instanceof InfrastructureRetryError) return error;
-  const detail = error instanceof StateMutationError ? error.message : (error as Error).message;
-  return retryError(
-    error instanceof StateMutationError && error.kind === "lock_busy"
-      ? "retry.state_busy"
-      : "retry.state_io_failed",
-    `Could not update infrastructure retry state: ${detail}`,
-    "Verify RESUME.md and its directory are writable, then retry with the recorded binding.",
-  );
+  return new InfrastructureRetryError({
+    issue: mutationIssue(
+      error,
+      "retry",
+      "infrastructure retry state",
+      "Verify RESUME.md and its directory are writable, then retry with the recorded binding.",
+    ),
+  });
 };
 
 const parseRole = (serialized: string | undefined): RoleRecord | undefined => {

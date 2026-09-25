@@ -1,8 +1,6 @@
 import { Data, Effect, Result } from "effect";
-import { basename, dirname, isAbsolute, relative, resolve, sep } from "node:path";
+import { dirname, isAbsolute, relative, resolve, sep } from "node:path";
 import { lstat, readFile, readlink, realpath, rm, stat } from "node:fs/promises";
-import { realpathSync } from "node:fs";
-import { createHash } from "node:crypto";
 import { activeRuntimeBlockPattern, parseActiveRuntimeFields } from "./active-runtime.ts";
 import { ImmutableContentConflict, writeImmutable } from "./fs-atomic.ts";
 import {
@@ -22,11 +20,11 @@ import type {
   ImplementorLaunchRecordInput,
   RoleRecord,
 } from "./contract.ts";
-import { spawnGit } from "./git.ts";
+import { checkoutIdentity, spawnGit } from "./git.ts";
 import { IntegrationError, parseIntegration, type IntegrationRecord } from "./integration.ts";
 import { validateRole } from "./roles.ts";
 import { inspectRuntimeClose } from "./runtime-close.ts";
-import { mutateStateFile, StateMutationError } from "./state-mutation.ts";
+import { mutateStateFile, mutationIssue } from "./state-mutation.ts";
 import {
   appendSectionLine,
   isTicketTableProblem,
@@ -37,6 +35,7 @@ import {
   updateTicketCells,
 } from "./resume-sections.ts";
 import { validateStateText } from "./state.ts";
+import { canonicalPathAllowingMissing, sha256Hex } from "./values.ts";
 
 /**
  * Portable Herdr start and prompt commands for one implementor.
@@ -98,14 +97,14 @@ const implementorError = (code: string, message: string, remediation: string): I
 
 const fromMutationError = (error: unknown): ImplementorError => {
   if (error instanceof ImplementorError) return error;
-  const detail = error instanceof StateMutationError ? error.message : (error as Error).message;
-  return implementorError(
-    error instanceof StateMutationError && error.kind === "lock_busy"
-      ? "implementor.state_busy"
-      : "implementor.state_io_failed",
-    `Could not update implementor runtime state: ${detail}`,
-    "Verify RESUME.md and its directory are writable, then retry with the same bound role.",
-  );
+  return new ImplementorError({
+    issue: mutationIssue(
+      error,
+      "implementor",
+      "implementor runtime state",
+      "Verify RESUME.md and its directory are writable, then retry with the same bound role.",
+    ),
+  });
 };
 
 const isRoleRecord = (value: unknown): value is RoleRecord =>
@@ -293,23 +292,6 @@ const buildLaunchPlan = (input: ImplementorLaunchPrepareInput): ImplementorLaunc
     skillPath: input.implementSkillPath,
   });
 
-const canonicalPathAllowingMissing = async (path: string): Promise<string> => {
-  let cursor = resolve(path);
-  const missing: string[] = [];
-  while (true) {
-    try {
-      const existing = await realpath(cursor);
-      return resolve(existing, ...missing);
-    } catch (error) {
-      if (!(error instanceof Error && "code" in error && error.code === "ENOENT")) throw error;
-      const parent = dirname(cursor);
-      if (parent === cursor) throw error;
-      missing.unshift(basename(cursor));
-      cursor = parent;
-    }
-  }
-};
-
 const ensurePathInsideState = (
   statePath: string,
   artifactPath: string,
@@ -347,14 +329,8 @@ const verifyWorktree = (
   branch: string,
 ): Effect.Effect<void, ImplementorError> =>
   Effect.gen(function* () {
-    const root = spawnGit(["rev-parse", "--show-toplevel"], { cwd: worktreePath });
-    const current = spawnGit(["symbolic-ref", "--short", "HEAD"], { cwd: worktreePath });
-    if (
-      root.exitCode !== 0 ||
-      current.exitCode !== 0 ||
-      realpathSync(root.stdout.trim()) !== realpathSync(worktreePath) ||
-      current.stdout.trim() !== branch
-    ) {
+    const identity = checkoutIdentity(worktreePath);
+    if (!identity.ok || !identity.isRoot || identity.branch !== branch) {
       return yield* implementorError(
         "implementor.worktree_mismatch",
         `Worktree \`${worktreePath}\` is not the expected branch \`${branch}\`.`,
@@ -1171,17 +1147,13 @@ const captureMigrationWorktreeSnapshot = (
             entry = {
               path,
               kind: "symlink",
-              sha256: createHash("sha256")
-                .update(await readlink(absolute))
-                .digest("hex"),
+              sha256: sha256Hex(await readlink(absolute)),
             };
           } else if (metadata.isFile()) {
             entry = {
               path,
               kind: "file",
-              sha256: createHash("sha256")
-                .update(await readFile(absolute))
-                .digest("hex"),
+              sha256: sha256Hex(await readFile(absolute)),
             };
           } else if (metadata.isDirectory()) {
             const nestedHead = spawnGit(["rev-parse", "HEAD"], { cwd: absolute });
@@ -1198,7 +1170,7 @@ const captureMigrationWorktreeSnapshot = (
             entry = {
               path,
               kind: "repository",
-              sha256: createHash("sha256").update(nestedHead.stdout.trim()).digest("hex"),
+              sha256: sha256Hex(nestedHead.stdout.trim()),
             };
           } else {
             throw new Error(`Unsupported worktree entry ${path}`);
@@ -1208,7 +1180,7 @@ const captureMigrationWorktreeSnapshot = (
             entry = {
               path,
               kind: "missing",
-              sha256: createHash("sha256").update("missing").digest("hex"),
+              sha256: sha256Hex("missing"),
             };
           } else {
             throw error;
@@ -1220,7 +1192,7 @@ const captureMigrationWorktreeSnapshot = (
       return {
         head: headResult.stdout.trim(),
         status: statusResult.stdout,
-        content_sha256: createHash("sha256").update(JSON.stringify(manifest)).digest("hex"),
+        content_sha256: sha256Hex(JSON.stringify(manifest)),
       };
     },
     catch: (error) =>
@@ -1299,7 +1271,7 @@ const readCommittedMigrationEvidence = (
         commit.kind !== "coordinate-implementor-runtime-migration-commit" ||
         commit.status !== "committed" ||
         commit.evidence_path !== evidencePath ||
-        commit.evidence_sha256 !== createHash("sha256").update(raw).digest("hex") ||
+        commit.evidence_sha256 !== sha256Hex(raw) ||
         JSON.stringify(commit.state_references) !== JSON.stringify(references)
       ) {
         throw implementorError(
@@ -1606,7 +1578,7 @@ export const migrateClosedImplementorRuntime = (
           old_binding: actualBinding,
           replacement_role: persistedDefault,
           old_runtime_block: originalBlock,
-          old_artifact_sha256: createHash("sha256").update(artifactRaw).digest("hex"),
+          old_artifact_sha256: sha256Hex(artifactRaw),
           old_integration: oldIntegration ?? null,
           old_integration_cycle: oldIntegration?.cycle ?? null,
           worktree_snapshot: worktreeSnapshot,
@@ -1619,7 +1591,7 @@ export const migrateClosedImplementorRuntime = (
           kind: "coordinate-implementor-runtime-migration-commit",
           status: "committed",
           evidence_path: evidencePath,
-          evidence_sha256: createHash("sha256").update(serializedEvidence).digest("hex"),
+          evidence_sha256: sha256Hex(serializedEvidence),
           state_references: [closedEntry, decisionLine],
           committed_at: input.completedAt,
         };
@@ -1750,9 +1722,7 @@ export const recoverImplementorRuntimeMigration = (
               "Repair the run-local evidence path and retry recovery.",
             ),
         });
-        if (
-          createHash("sha256").update(evidenceRaw).digest("hex") !== input.migrationEvidenceSha256
-        ) {
+        if (sha256Hex(evidenceRaw) !== input.migrationEvidenceSha256) {
           return yield* implementorError(
             "implementor.migration_recovery_binding_mismatch",
             "Recovery request does not identify the exact committed migration evidence bytes.",

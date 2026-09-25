@@ -1,3 +1,5 @@
+import { realpathSync } from "node:fs";
+
 /**
  * Environment variables that redirect Git away from its argument or working directory.
  */
@@ -90,3 +92,28 @@ export const spawnClean = (
  */
 export const spawnGit = (args: string[], options: Partial<SpawnGitOptions> = {}): GitResult =>
   spawnClean(["git", "-c", "commit.gpgsign=false", ...args], options);
+
+/**
+ * What Git reports about one checkout.
+ */
+export type CheckoutIdentity =
+  | { ok: true; isRoot: boolean; branch: string | null }
+  | { ok: false; stderr: string };
+
+/**
+ * Reports whether a path is the top level of a Git checkout and which branch it has checked out.
+ *
+ * @param path - Repository or worktree path.
+ * @returns `isRoot` when the path is the checkout's top level, and the branch or null when
+ * detached; or the Git error when the path is not inside a checkout.
+ */
+export const checkoutIdentity = (path: string): CheckoutIdentity => {
+  const root = spawnGit(["rev-parse", "--show-toplevel"], { cwd: path });
+  if (root.exitCode !== 0) return { ok: false, stderr: root.stderr };
+  const branch = spawnGit(["symbolic-ref", "--short", "HEAD"], { cwd: path });
+  return {
+    ok: true,
+    isRoot: realpathSync(root.stdout.trim()) === realpathSync(path),
+    branch: branch.exitCode === 0 ? branch.stdout.trim() : null,
+  };
+};

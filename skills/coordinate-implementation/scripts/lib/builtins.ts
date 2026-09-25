@@ -45,6 +45,7 @@ import {
 import { checkSnapshot } from "./snapshot.ts";
 import { runStallCheck, type StallCheck, type StallObservation } from "./stall-loop.ts";
 import { StateGuardRejected, StateMutationGuard } from "./state-mutation.ts";
+import { utcSeconds } from "./values.ts";
 import {
   WorkflowError,
   type FixRequest,
@@ -71,8 +72,6 @@ export type BuiltinOptions = {
 };
 
 const MAX_IMPLEMENTOR_ATTEMPTS = 3;
-
-const utc = (): string => new Date().toISOString().replace(/\.\d{3}Z$/u, "Z");
 
 const issueOf = (error: unknown): CliIssue => {
   if (typeof error === "object" && error !== null && "issue" in error) {
@@ -244,7 +243,7 @@ export const builtinTicketOps = (
           ticket: ticket.number,
           summary,
           detail,
-          opened_at: utc(),
+          opened_at: utcSeconds(),
         }).pipe(Effect.mapError(toWorkflowError));
         if (created) {
           yield* emit(`attention.${kind}`, ticket.number, { id, summary }, true);
@@ -620,7 +619,7 @@ export const builtinTicketOps = (
           repositoryPath: options.repository,
           worktreePath: runtime.worktree,
           ticket: ticket.number,
-          completedAt: utc(),
+          completedAt: utcSeconds(),
         }),
       );
 
@@ -697,7 +696,7 @@ export const builtinTicketOps = (
                 exitCode: run.exitCode ?? -1,
                 stdout: run.stdout,
                 stderr: run.stderr,
-                completedAt: utc(),
+                completedAt: utcSeconds(),
               }),
             );
             yield* emit("gate.recorded", ticket.number, {
@@ -847,7 +846,7 @@ export const builtinTicketOps = (
                     stderr: `Reviewer finished (${status.status}) without writing ${reviewDraftPath(reportPath)}.`,
                   }
                 : undefined,
-            completedAt: utc(),
+            completedAt: utcSeconds(),
           };
           let recorded = yield* call(recordReviewerLaunch(input));
           if (recorded.action === "close-runtime") {
@@ -927,7 +926,7 @@ export const builtinTicketOps = (
                 : "standards-spec-single-session",
             selfReviewReport: report,
             fixRequestPath: join(runPath, "briefs", `fixes-${ticket.number}-round-${round}.md`),
-            completedAt: utc(),
+            completedAt: utcSeconds(),
           }),
         );
         yield* emit("review.round_finalized", ticket.number, {
@@ -975,7 +974,7 @@ export const builtinTicketOps = (
             ticket: ticket.number,
             cleanupArgv: undefined,
             lockWaitSeconds: undefined,
-            completedAt: utc(),
+            completedAt: utcSeconds(),
           };
           const outcome = yield* Effect.result(call(completeLanding(input)));
           if (Result.isFailure(outcome)) {
@@ -1045,7 +1044,7 @@ export const builtinTicketOps = (
             closures: [],
             userAuthorized: false,
             projectRemoteWrites: options.projectRemoteWrites,
-            completedAt: utc(),
+            completedAt: utcSeconds(),
           }),
         );
         yield* emit(

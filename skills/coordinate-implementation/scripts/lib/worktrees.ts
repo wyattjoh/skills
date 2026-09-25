@@ -8,9 +8,9 @@ import type {
   WorktreePreflightInput,
   WorktreePrepareInput,
 } from "./contract.ts";
-import { spawnClean, spawnGit } from "./git.ts";
+import { checkoutIdentity, spawnClean, spawnGit } from "./git.ts";
 import { appendSectionLine } from "./resume-sections.ts";
-import { mutateStateFile, StateMutationError } from "./state-mutation.ts";
+import { mutateStateFile, mutationIssue } from "./state-mutation.ts";
 import { validateStateText } from "./state.ts";
 
 /**
@@ -140,17 +140,18 @@ const persistPolicy = (
       };
     }),
   ).pipe(
-    Effect.mapError((error) => {
-      if (error instanceof WorktreeError) return error;
-      const detail = error instanceof StateMutationError ? error.message : (error as Error).message;
-      return worktreeError(
-        error instanceof StateMutationError && error.kind === "lock_busy"
-          ? "worktree.state_busy"
-          : "worktree.state_io_failed",
-        `Could not persist repository policy: ${detail}`,
-        "Verify RESUME.md is writable and retry before creating a worktree.",
-      );
-    }),
+    Effect.mapError((error) =>
+      error instanceof WorktreeError
+        ? error
+        : new WorktreeError({
+            issue: mutationIssue(
+              error,
+              "worktree",
+              "repository policy",
+              "Verify RESUME.md is writable and retry before creating a worktree.",
+            ),
+          }),
+    ),
   );
 
 const gitFailure = (action: string, stderr: string): WorktreeError =>
@@ -200,14 +201,10 @@ const inspectExistingWorktree = (
   path: string,
   branch: string,
 ): { exists: boolean; matches: boolean } => {
-  const root = spawnGit(["rev-parse", "--show-toplevel"], { cwd: path });
-  if (root.exitCode !== 0) return { exists: false, matches: false };
-  const current = spawnGit(["symbolic-ref", "--short", "HEAD"], { cwd: path });
-  return {
-    exists: true,
-    matches:
-      realpathSync(root.stdout.trim()) === realpathSync(path) && current.stdout.trim() === branch,
-  };
+  const identity = checkoutIdentity(path);
+  return identity.ok
+    ? { exists: true, matches: identity.isRoot && identity.branch === branch }
+    : { exists: false, matches: false };
 };
 
 const runExactCommand = (

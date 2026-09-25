@@ -11,7 +11,7 @@ import {
   updateTicketCells,
 } from "./resume-sections.ts";
 import { checkSnapshot } from "./snapshot.ts";
-import { mutateStateFile, StateMutationError } from "./state-mutation.ts";
+import { mutateStateFile, mutationIssue, StateMutationError } from "./state-mutation.ts";
 
 /**
  * Tracker work that remains after local run completion.
@@ -82,11 +82,14 @@ const runError = (code: string, message: string, remediation: string): RunFinali
 
 const fromMutationError = (error: StateMutationError | RunFinalizeError): RunFinalizeError => {
   if (error instanceof RunFinalizeError) return error;
-  return runError(
-    error.kind === "lock_busy" ? "run.state_busy" : "run.state_io_failed",
-    `Could not update terminal run state: ${error.message}`,
-    "Verify RESUME.md is writable, then retry the same finalization request.",
-  );
+  return new RunFinalizeError({
+    issue: mutationIssue(
+      error,
+      "run",
+      "terminal run state",
+      "Verify RESUME.md is writable, then retry the same finalization request.",
+    ),
+  });
 };
 
 const parseRole = (markdown: string, name: string): RoleRecord => {
