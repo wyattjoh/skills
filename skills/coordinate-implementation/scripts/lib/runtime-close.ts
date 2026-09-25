@@ -1,6 +1,7 @@
 import { Data, Effect } from "effect";
 import type { CliIssue } from "./contract.ts";
 import type { ArgumentCommand } from "./harness-launch.ts";
+import { runProbe } from "./probe.ts";
 
 /**
  * Failure while inspecting the exact Herdr pane bound to one agent runtime.
@@ -49,13 +50,9 @@ export const inspectRuntimeClose = (
 ): Effect.Effect<RuntimeCloseInspection, RuntimeCloseError> =>
   Effect.try({
     try: () => {
-      const child = Bun.spawnSync(["herdr", "pane", "get", paneId], {
-        env: process.env,
-        stdout: "pipe",
-        stderr: "pipe",
-      });
-      const stdout = child.stdout.toString().trim();
-      const stderr = child.stderr.toString().trim();
+      const child = runProbe(["herdr", "pane", "get", paneId]);
+      const stdout = child.stdout.trim();
+      const stderr = child.stderr.trim();
       if (child.exitCode === 0) {
         const response = parseResponse(stdout);
         const result = response?.result;

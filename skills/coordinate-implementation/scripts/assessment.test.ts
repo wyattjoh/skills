@@ -2,14 +2,10 @@ import { describe, expect, it } from "bun:test";
 import { Effect } from "effect";
 import { DecisionModel } from "effect/unstable/ai";
 import {
-  decideAcceptanceDisposition,
   decideStallDisposition,
-  evaluateAcceptance,
   evaluateStall,
   STALL_REPROMPTS,
   STALL_REPROMPT_THRESHOLD,
-  type AcceptanceAssessment,
-  type AcceptanceState,
   type StallProbabilities,
   type StallState,
 } from "./lib/assessment.ts";
@@ -163,121 +159,6 @@ describe("provider-neutral stall evaluation", () => {
     expect(result).toEqual({
       answers: probabilities,
       usage: { input_tokens: 42, output_tokens: 0 },
-    });
-  });
-});
-
-const acceptanceState: AcceptanceState = {
-  schema_version: 1,
-  assessment_id: "acceptance-clear-pass-001",
-  ticket: {
-    number: "2",
-    title: "Add a greeting",
-    body: "Create and test a greeting helper.",
-    acceptance_criteria: [
-      { id: "AC1", text: "The helper returns hello." },
-      { id: "AC2", text: "A passing test covers the helper." },
-    ],
-  },
-  agreed_spec: "The greeting helper returns the exact string hello.",
-  synchronized_diff: "+ export const greeting = () => 'hello';",
-  changed_files: ["src/greeting.ts", "src/greeting.test.ts"],
-  gates: [{ command: "bun test", status: "passed", output: "1 pass", truncated: false }],
-  implementor_self_review: "Both criteria are implemented and covered.",
-};
-
-const acceptanceAssessment = (
-  satisfaction: number,
-  evidenceSufficiency: number,
-): AcceptanceAssessment => ({
-  criteria: acceptanceState.ticket.acceptance_criteria.map((criterion) => ({
-    ...criterion,
-    satisfaction,
-    evidence_sufficiency: evidenceSufficiency,
-  })),
-  usage: { input_tokens: 100, output_tokens: 0 },
-});
-
-describe("acceptance assessment policy", () => {
-  it("returns demonstrated failures to implementation with deterministic evidence", () => {
-    expect(decideAcceptanceDisposition("preflight-only", acceptanceAssessment(0.1, 0.9))).toEqual({
-      disposition: "fix",
-      failed_criteria: ["AC1", "AC2"],
-      prompt: [
-        "Return to implementation for the acceptance criteria listed below.",
-        "Fix each demonstrated failure or provide stronger direct evidence, then rerun gates and self-review.",
-        "- AC1: The helper returns hello. (satisfaction=0.100, evidence_sufficiency=0.900)",
-        "- AC2: A passing test covers the helper. (satisfaction=0.100, evidence_sufficiency=0.900)",
-      ].join("\n"),
-    });
-  });
-
-  it("routes ambiguous evidence to the Spec reviewer", () => {
-    expect(
-      decideAcceptanceDisposition("replace-spec-reviewer", acceptanceAssessment(0.6, 0.5)),
-    ).toEqual({
-      disposition: "spec-review",
-      failed_criteria: [],
-      prompt: null,
-    });
-  });
-
-  it("continues or skips Spec review only according to the selected policy", () => {
-    const assessment = acceptanceAssessment(0.9, 0.9);
-    expect(decideAcceptanceDisposition("preflight-only", assessment)).toEqual({
-      disposition: "continue-spec-review",
-      failed_criteria: [],
-      prompt: null,
-    });
-    expect(decideAcceptanceDisposition("replace-spec-reviewer", assessment)).toEqual({
-      disposition: "skip-spec-review",
-      failed_criteria: [],
-      prompt: null,
-    });
-  });
-});
-
-describe("provider-neutral acceptance evaluation", () => {
-  it("asks satisfaction and evidence-sufficiency questions for every criterion", async () => {
-    const model = Effect.runSync(
-      DecisionModel.make({
-        decide: ({ decisions }) =>
-          Effect.succeed({
-            answers: Object.fromEntries(
-              Object.keys(decisions).map((key) => [
-                key,
-                {
-                  _tag: "Probability" as const,
-                  probability: key.endsWith(".satisfied") ? 0.91 : 0.88,
-                },
-              ]),
-            ),
-            usage: { inputTokens: 123, outputTokens: 0 },
-          }),
-      }),
-    );
-    const result = await Effect.runPromise(
-      evaluateAcceptance(acceptanceState).pipe(
-        Effect.provideService(DecisionModel.DecisionModel, model),
-      ),
-    );
-
-    expect(result).toEqual({
-      criteria: [
-        {
-          id: "AC1",
-          text: "The helper returns hello.",
-          satisfaction: 0.91,
-          evidence_sufficiency: 0.88,
-        },
-        {
-          id: "AC2",
-          text: "A passing test covers the helper.",
-          satisfaction: 0.91,
-          evidence_sufficiency: 0.88,
-        },
-      ],
-      usage: { input_tokens: 123, output_tokens: 0 },
     });
   });
 });

@@ -4,11 +4,8 @@ import { tmpdir } from "node:os";
 import { join, relative } from "node:path";
 import { spawnGit } from "./lib/git.ts";
 import { parseIntegration, writeIntegration, type IntegrationRecord } from "./lib/integration.ts";
-import { applyEscalationBlock } from "./lib/landing.ts";
-import { runCliInProcess } from "./test-cli.ts";
+import { type CliResult, runJson, runJsonProcess } from "./test-cli.ts";
 import { createFakeHerdrEnv } from "./test-herdr.ts";
-
-const CLI = join(import.meta.dir, "coordinate.ts");
 
 const integrationRecord = (
   base: string,
@@ -45,11 +42,10 @@ const readIntegration = (statePath: string): IntegrationRecord | undefined =>
   parseIntegration(readFileSync(statePath, "utf8"), "06");
 const HERDR_ENV = createFakeHerdrEnv();
 
-type CliResult = {
-  exitCode: number;
-  stdout: Record<string, unknown>;
-  stderr: string;
-};
+const runCli = (body: unknown, env: Record<string, string | undefined> = HERDR_ENV) =>
+  runJson(body, env);
+const runCliProcess = (body: unknown, env: Record<string, string | undefined> = HERDR_ENV) =>
+  runJsonProcess(body, env);
 
 type ReviewFixture = {
   root: string;
@@ -58,40 +54,10 @@ type ReviewFixture = {
   worktreePath: string;
 };
 
-const runCli = async (
-  request: unknown,
-  env: Record<string, string | undefined> = HERDR_ENV,
-): Promise<CliResult> => {
-  const child = await runCliInProcess(request, env);
-  return {
-    exitCode: child.exitCode,
-    stdout: JSON.parse(child.stdout.trim()) as Record<string, unknown>,
-    stderr: child.stderr,
-  };
-};
-
 /**
  * Spawns the CLI as a separate process. Only for tests that exercise real
  * cross-process serialization, which the in-process queue would hide.
  */
-const runCliProcess = async (
-  request: unknown,
-  env: Record<string, string | undefined> = HERDR_ENV,
-): Promise<CliResult> => {
-  const child = Bun.spawn([process.execPath, CLI], {
-    env,
-    stdin: Buffer.from(JSON.stringify(request)),
-    stdout: "pipe",
-    stderr: "pipe",
-  });
-  const [exitCode, stdout, stderr] = await Promise.all([
-    child.exited,
-    new Response(child.stdout).text(),
-    new Response(child.stderr).text(),
-  ]);
-  return { exitCode, stdout: JSON.parse(stdout) as Record<string, unknown>, stderr };
-};
-
 const stateText = (implementor: "claude" | "pi", active: boolean): string => `# review run
 
 Schema version: 2
@@ -102,9 +68,6 @@ Coordinator:
   harness:    pi
   model:      openai/test
   effort:     high
-  handoff:    no
-  threshold:  1000
-  unattended: block
 
 Implementor:
   harness: ${implementor}
@@ -301,30 +264,6 @@ Suggested fix: Restore the required behavior and add coverage.
 
 FAIL
 `;
-
-describe("review documentation contract", () => {
-  it("documents harness self-review, fresh Herdr axes, mutation stops, and gate execution", () => {
-    const skill = readFileSync(join(import.meta.dir, "..", "SKILL.md"), "utf8");
-    const procedure = readFileSync(
-      join(import.meta.dir, "..", "references", "review-and-land.md"),
-      "utf8",
-    );
-
-    expect(skill).toContain("`review.policy.prepare`");
-    expect(skill).toContain("fresh independent Herdr");
-    expect(procedure).toContain("Pi coordinators run gates synchronously");
-    expect(procedure).toContain("Claude implementors complete Matt's `implement` self-review");
-    expect(procedure).toContain("subagent extension.");
-    expect(procedure).toContain("before closing the pane");
-    expect(procedure).toContain(
-      "Never reset, stash, commit, or discard reviewer changes automatically",
-    );
-    expect(skill).toContain("Review fixes are\n  pre-authorized regardless of round");
-    expect(procedure).toContain("terminal remediation result");
-    expect(procedure).toContain("result returned directly by the blocking Herdr prompt");
-    expect(procedure).toContain("do not summarize, end the turn, or wait for another");
-  });
-});
 
 describe("review policy", () => {
   it("persists explicit repository gates and derives the Pi fallback self-review", async () => {
@@ -1080,74 +1019,6 @@ const failedGateFixture = async (): Promise<{
   };
 };
 
-const legacyEscalationFixture = async (
-  implementor: "claude" | "pi",
-): Promise<{
-  fixture: ReviewFixture;
-  fixRequestPath: string;
-}> => {
-  const fixture = makeFixture(implementor);
-  await preparePolicy(fixture);
-  await activateFixture(fixture, implementor);
-  await recordPassingGates(fixture, 3);
-  const standards = reviewLaunchRequest(fixture, "standards", 1, 3);
-  const spec = reviewLaunchRequest(fixture, "spec", 1, 3);
-  expect((await runCli(standards)).exitCode).toBe(0);
-  expect((await runCli(spec)).exitCode).toBe(0);
-  expect((await recordReview(fixture, standards, failingReport("Standards"))).exitCode).toBe(0);
-  expect((await recordReview(fixture, spec, passingReport("Spec"))).exitCode).toBe(0);
-  const fixRequestPath = join(fixture.runPath, "briefs", "fixes-06-round-3.md");
-  const finalized = await runCli({
-    schema_version: 1,
-    operation: "review.round.finalize",
-    input: {
-      state_path: fixture.statePath,
-      ticket: "06",
-      round: 3,
-      standards_evidence_path: `${standards.input.report_path}.json`,
-      spec_evidence_path: `${spec.input.report_path}.json`,
-      self_review_path: join(fixture.runPath, "reviews", "06-round-3-self-review.md"),
-      self_review_method: "standards-spec-single-session",
-      self_review_report:
-        "# Pi self-review\n\n## Standards\n\nNo findings.\n\n## Spec\n\nNo findings.\n",
-      fix_request_path: fixRequestPath,
-      completed_at: "2026-09-19T02:00:00Z",
-    },
-  });
-  expect(finalized.exitCode).toBe(0);
-  expect(finalized.stdout).toMatchObject({ result: { action: "fix" } });
-  writeFileSync(
-    fixture.statePath,
-    applyEscalationBlock(readFileSync(fixture.statePath, "utf8"), {
-      ticket: "06",
-      round: 3,
-      completedAt: "2026-09-19T02:00:00Z",
-    }),
-  );
-  return { fixture, fixRequestPath };
-};
-
-const escalationRequest = (
-  fixture: ReviewFixture,
-  fixRequestPath: string,
-  strategy: "continue-existing" | "replace-implementor",
-  role: { harness: "claude" | "pi"; model: string; effort: string },
-) => ({
-  schema_version: 1,
-  operation: "review.escalation.authorize",
-  input: {
-    state_path: fixture.statePath,
-    ticket: "06",
-    round: 3,
-    strategy,
-    role,
-    fix_request_path: fixRequestPath,
-    user_authorized: true,
-    decision: "User selected one additional bounded remediation round.",
-    completed_at: "2026-09-19T02:05:00Z",
-  },
-});
-
 const gateRerunRequest = (
   fixture: ReviewFixture,
   previousEvidencePath: string,
@@ -1553,149 +1424,5 @@ describe("gates and review rounds", () => {
     const state = readFileSync(fixture.statePath, "utf8");
     expect(state).toContain("Ticket 06 round 3 finalized: FAIL");
     expect(state.includes("blocked, awaiting escalation role")).toBe(false);
-  });
-
-  it("authorizes and idempotently recovers continuation with the existing ticket role", async () => {
-    const { fixture, fixRequestPath } = await legacyEscalationFixture("pi");
-    const request = escalationRequest(fixture, fixRequestPath, "continue-existing", {
-      harness: "pi",
-      model: "openai/test",
-      effort: "high",
-    });
-    const liveEnv = { ...HERDR_ENV, HERDR_TEST_LIVE_PANES: '["workspace:p6"]' };
-
-    const result = await runCli(request, liveEnv);
-
-    expect(result.exitCode).toBe(0);
-    expect(result.stdout).toMatchObject({
-      result: {
-        ticket: "06",
-        exhausted_round: 3,
-        next_round: 4,
-        strategy: "continue-existing",
-        recovered: false,
-        action: "prompt-existing",
-        runtime_closed: false,
-        pane_id: "workspace:p6",
-        worker: { pane: "workspace:p6" },
-      },
-    });
-    const state = readFileSync(fixture.statePath, "utf8");
-    expect(state).toContain("| 06 | pi | openai/test | high | 3 | yes | working | - |");
-    expect(state).toContain("Phase: escalation fixes authorized, round 4");
-    expect(state).toContain("user-authorized review escalation after round 3");
-
-    const recovered = await runCli(request, liveEnv);
-    expect(recovered.exitCode).toBe(0);
-    expect(recovered.stdout).toMatchObject({ result: { recovered: true } });
-    expect(readFileSync(fixture.statePath, "utf8")).toBe(state);
-  });
-
-  it("closes a superseded runtime before recording an idempotent replacement role", async () => {
-    const { fixture, fixRequestPath } = await legacyEscalationFixture("pi");
-    const request = escalationRequest(fixture, fixRequestPath, "replace-implementor", {
-      harness: "claude",
-      model: "opus",
-      effort: "high",
-    });
-
-    const close = await runCli(request, {
-      ...HERDR_ENV,
-      HERDR_TEST_LIVE_PANES: '["workspace:p6"]',
-    });
-    expect(close.exitCode).toBe(0);
-    expect(close.stdout).toMatchObject({
-      result: {
-        action: "close-runtime",
-        runtime_closed: false,
-        close: { command: "herdr", args: ["pane", "close", "workspace:p6"] },
-      },
-    });
-    const blockedState = readFileSync(fixture.statePath, "utf8");
-    expect(blockedState).toContain("Phase: blocked, awaiting escalation role");
-
-    const authorized = await runCli(request);
-    expect(authorized.exitCode).toBe(0);
-    expect(authorized.stdout).toMatchObject({
-      result: {
-        strategy: "replace-implementor",
-        role: { harness: "claude", model: "opus", effort: "high" },
-        recovered: false,
-        action: "prepare-replacement",
-        worker: null,
-        runtime_closed: true,
-      },
-    });
-    const state = readFileSync(fixture.statePath, "utf8");
-    expect(state).toContain("| 06 | claude | opus | high | 3 | yes | blocked | - |");
-    expect(state.includes("### 06")).toBe(false);
-    expect(state).toContain("escalation superseded runtime");
-    expect(state).toContain('"artifact":"' + fixture.worktreePath + '/launch-06.json"');
-
-    const recovered = await runCli(request);
-    expect(recovered.exitCode).toBe(0);
-    expect(recovered.stdout).toMatchObject({
-      result: { recovered: true, action: "prepare-replacement" },
-    });
-    expect(readFileSync(fixture.statePath, "utf8")).toBe(state);
-  });
-
-  it("rejects escalation without explicit user authority or exhausted review state", async () => {
-    const fixture = makeFixture("pi", true);
-    const fixRequestPath = join(fixture.runPath, "briefs", "fixes-06-round-3.md");
-    writeFileSync(fixRequestPath, "# Fix request\n");
-    const unauthorized = escalationRequest(fixture, fixRequestPath, "continue-existing", {
-      harness: "pi",
-      model: "openai/test",
-      effort: "high",
-    });
-    unauthorized.input.user_authorized = false;
-
-    const rejectedAuthority = await runCli(unauthorized);
-    expect(rejectedAuthority.exitCode).toBe(2);
-    expect(rejectedAuthority.stdout).toMatchObject({ errors: [{ code: "request.invalid" }] });
-
-    const rejectedState = await runCli(
-      escalationRequest(fixture, fixRequestPath, "continue-existing", {
-        harness: "pi",
-        model: "openai/test",
-        effort: "high",
-      }),
-      { ...HERDR_ENV, HERDR_TEST_LIVE_PANES: '["workspace:p6"]' },
-    );
-    expect(rejectedState.exitCode).toBe(1);
-    expect(rejectedState.stdout).toMatchObject({
-      errors: [{ code: "review.escalation_state_invalid" }],
-    });
-  });
-
-  it("enforces continuation and replacement role selection", async () => {
-    const continuation = await legacyEscalationFixture("pi");
-    const wrongContinuation = await runCli(
-      escalationRequest(continuation.fixture, continuation.fixRequestPath, "continue-existing", {
-        harness: "claude",
-        model: "opus",
-        effort: "high",
-      }),
-      { ...HERDR_ENV, HERDR_TEST_LIVE_PANES: '["workspace:p6"]' },
-    );
-    expect(wrongContinuation.exitCode).toBe(1);
-    expect(wrongContinuation.stdout).toMatchObject({
-      errors: [{ code: "review.escalation_continue_role_mismatch" }],
-    });
-
-    const replacement = await legacyEscalationFixture("pi");
-    const unchangedReplacement = await runCli(
-      escalationRequest(replacement.fixture, replacement.fixRequestPath, "replace-implementor", {
-        harness: "pi",
-        model: "openai/test",
-        effort: "high",
-      }),
-      { ...HERDR_ENV, HERDR_TEST_LIVE_PANES: '["workspace:p6"]' },
-    );
-    expect(unchangedReplacement.exitCode).toBe(1);
-    expect(unchangedReplacement.stdout).toMatchObject({
-      errors: [{ code: "review.escalation_replacement_role_unchanged" }],
-    });
   });
 });

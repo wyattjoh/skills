@@ -1,10 +1,17 @@
 import { Data, Effect } from "effect";
-import { existsSync } from "node:fs";
-import { readFile, writeFile } from "node:fs/promises";
+import { readFile } from "node:fs/promises";
 import { resolve } from "node:path";
 import type { CliIssue, RoleRecord, RunFinalizeInput, WritebackMode } from "./contract.ts";
+import { ImmutableContentConflict, writeImmutable } from "./fs-atomic.ts";
+import {
+  appendSectionLine,
+  readRoleBlock,
+  readTicketRows,
+  sectionBounds,
+  updateTicketCells,
+} from "./resume-sections.ts";
 import { checkSnapshot } from "./snapshot.ts";
-import { mutateStateFile, StateMutationError } from "./state-mutation.ts";
+import { mutateStateFile, mutationIssue, StateMutationError } from "./state-mutation.ts";
 
 /**
  * Tracker work that remains after local run completion.
@@ -52,11 +59,7 @@ type TicketRow = {
 };
 
 type TicketTable = {
-  start: number;
-  end: number;
-  lines: string[];
   rows: TicketRow[];
-  statusIndex: number;
 };
 
 type SnapshotManifest = {
@@ -79,97 +82,58 @@ const runError = (code: string, message: string, remediation: string): RunFinali
 
 const fromMutationError = (error: StateMutationError | RunFinalizeError): RunFinalizeError => {
   if (error instanceof RunFinalizeError) return error;
-  return runError(
-    error.kind === "lock_busy" ? "run.state_busy" : "run.state_io_failed",
-    `Could not update terminal run state: ${error.message}`,
-    "Verify RESUME.md is writable, then retry the same finalization request.",
-  );
-};
-
-const sectionBounds = (markdown: string, name: string): { start: number; end: number } | null => {
-  const heading = new RegExp(`^## ${name.replace(/[.*+?^${}()|[\]\\]/gu, "\\$&")}\\s*$`, "mu").exec(
-    markdown,
-  );
-  if (heading === null) return null;
-  const start = heading.index;
-  const contentStart = heading.index + heading[0].length;
-  const next = /^## /gmu;
-  next.lastIndex = contentStart;
-  return { start, end: next.exec(markdown)?.index ?? markdown.length };
+  return new RunFinalizeError({
+    issue: mutationIssue(
+      error,
+      "run",
+      "terminal run state",
+      "Verify RESUME.md is writable, then retry the same finalization request.",
+    ),
+  });
 };
 
 const parseRole = (markdown: string, name: string): RoleRecord => {
-  const match = new RegExp(
-    `^${name}:\\s*\\n\\s+harness:\\s*(claude|pi)\\s*\\n\\s+model:\\s*(.+?)\\s*\\n\\s+effort:\\s*(\\S+)\\s*$`,
-    "mu",
-  ).exec(markdown);
-  if (match === null) {
-    throw runError(
-      "run.role_malformed",
-      `RESUME.md has no complete ${name} role record.`,
-      "Repair the schema-2 role records before evaluating run completion.",
-    );
-  }
-  return { harness: match[1] as RoleRecord["harness"], model: match[2]!, effort: match[3]! };
+  const role = readRoleBlock(markdown, name);
+  if (typeof role !== "string") return role;
+  throw runError(
+    "run.role_malformed",
+    `RESUME.md has no complete ${name} role record.`,
+    "Repair the schema-2 role records before evaluating run completion.",
+  );
 };
 
+const REQUIRED_COLUMNS = ["NN", "harness", "model", "effort", "status", "sha"] as const;
+
 const parseTicketTable = (markdown: string): TicketTable => {
-  const bounds = sectionBounds(markdown, "Tickets");
-  if (bounds === null) {
-    throw runError(
-      "run.tickets_missing",
-      "RESUME.md has no Tickets section.",
-      "Restore the schema-2 ticket table before evaluating run completion.",
-    );
+  const parsed = readTicketRows(markdown);
+  if (!Array.isArray(parsed)) {
+    throw parsed.kind === "section_missing"
+      ? runError(
+          "run.tickets_missing",
+          "RESUME.md has no Tickets section.",
+          "Restore the schema-2 ticket table before evaluating run completion.",
+        )
+      : runError(
+          "run.tickets_malformed",
+          "RESUME.md ticket table has no NN header row.",
+          "Repair the schema-2 ticket table before evaluating run completion.",
+        );
   }
-  const section = markdown.slice(bounds.start, bounds.end);
-  const lines = section.split(/\r?\n/u);
-  const headerIndex = lines.findIndex((line) => line.trimStart().startsWith("| NN"));
-  if (headerIndex < 0) {
-    throw runError(
-      "run.tickets_malformed",
-      "RESUME.md ticket table has no NN header row.",
-      "Repair the schema-2 ticket table before evaluating run completion.",
-    );
-  }
-  const headers = lines[headerIndex]!.split("|")
-    .slice(1, -1)
-    .map((cell) => cell.trim());
-  const indexes = {
-    number: headers.indexOf("NN"),
-    harness: headers.indexOf("harness"),
-    model: headers.indexOf("model"),
-    effort: headers.indexOf("effort"),
-    status: headers.indexOf("status"),
-    sha: headers.indexOf("sha"),
-  };
-  if (Object.values(indexes).some((index) => index < 0)) {
+  if (parsed.some((row) => REQUIRED_COLUMNS.some((column) => row[column] === undefined))) {
     throw runError(
       "run.tickets_malformed",
       "RESUME.md ticket table is missing a required schema-2 column.",
       "Restore NN, harness, model, effort, status, and sha columns before finalization.",
     );
   }
-  const rows = lines.slice(headerIndex + 2).flatMap((line) => {
-    if (!line.trimStart().startsWith("|")) return [];
-    const cells = line
-      .split("|")
-      .slice(1, -1)
-      .map((cell) => cell.trim());
-    const number = cells[indexes.number]!;
-    return /^\d+$/u.test(number)
-      ? [
-          {
-            number,
-            harness: cells[indexes.harness]!,
-            model: cells[indexes.model]!,
-            effort: cells[indexes.effort]!,
-            status: cells[indexes.status]!,
-            sha: cells[indexes.sha]!,
-          },
-        ]
-      : [];
-  });
+  const rows = parsed.map((row) => ({
+    number: row.NN,
+    harness: row.harness!,
+    model: row.model!,
+    effort: row.effort!,
+    status: row.status!,
+    sha: row.sha!,
+  }));
   if (rows.length === 0 || new Set(rows.map((row) => row.number)).size !== rows.length) {
     throw runError(
       "run.tickets_malformed",
@@ -177,26 +141,16 @@ const parseTicketTable = (markdown: string): TicketTable => {
       "Repair the schema-2 ticket table before evaluating run completion.",
     );
   }
-  return { start: bounds.start, end: bounds.end, lines, rows, statusIndex: indexes.status };
+  return { rows };
 };
 
-const replaceTicketStatuses = (
-  markdown: string,
-  table: TicketTable,
-  closedTickets: Set<string>,
-): string => {
-  if (closedTickets.size === 0) return markdown;
-  const lines = table.lines.map((line) => {
-    if (!line.trimStart().startsWith("|")) return line;
-    const cells = line
-      .split("|")
-      .slice(1, -1)
-      .map((cell) => cell.trim());
-    if (!closedTickets.has(cells[0]!)) return line;
-    cells[table.statusIndex] = "closed";
-    return `| ${cells.join(" | ")} |`;
-  });
-  return `${markdown.slice(0, table.start)}${lines.join("\n")}${markdown.slice(table.end)}`;
+const replaceTicketStatuses = (markdown: string, closedTickets: Set<string>): string => {
+  let updated = markdown;
+  for (const ticket of closedTickets) {
+    const next = updateTicketCells(updated, ticket, { status: "closed" });
+    if (typeof next === "string") updated = next;
+  }
+  return updated;
 };
 
 const parseRuntimeBlocks = (markdown: string, sectionName: string): ActiveBlock[] => {
@@ -254,17 +208,14 @@ const replaceManagedSection = (markdown: string, name: string, body: string): st
 };
 
 const appendDecision = (markdown: string, line: string): string => {
-  const bounds = sectionBounds(markdown, "Decisions");
-  if (bounds === null) {
+  if (sectionBounds(markdown, "Decisions") === null) {
     throw runError(
       "run.decisions_missing",
       "RESUME.md has no Decisions section.",
       "Restore the append-only Decisions section before closing blocked work.",
     );
   }
-  const section = markdown.slice(bounds.start, bounds.end).trimEnd();
-  if (section.split(/\r?\n/u).includes(line)) return markdown;
-  return `${markdown.slice(0, bounds.start)}${section}\n${line}\n\n${markdown.slice(bounds.end).trimStart()}`;
+  return appendSectionLine(markdown, "Decisions", line, { spacing: "tight" });
 };
 
 const readManifest = async (runPath: string): Promise<SnapshotManifest> => {
@@ -380,16 +331,16 @@ const ensureCanonicalRunPaths = (runPath: string, statePath: string, summaryPath
 };
 
 const writeSummary = async (path: string, content: string): Promise<void> => {
-  if (existsSync(path)) {
-    const existing = await readFile(path, "utf8");
-    if (existing === content) return;
+  try {
+    await writeImmutable(path, content);
+  } catch (error) {
+    if (!(error instanceof ImmutableContentConflict)) throw error;
     throw runError(
       "run.summary_conflict",
       "The final summary path already contains different content.",
       "Preserve the existing summary and resolve the run-state conflict before retrying.",
     );
   }
-  await writeFile(path, content, { flag: "wx" });
 };
 
 /**
@@ -550,7 +501,7 @@ export const finalizeRun = (
               }
             }
 
-            let updated = replaceTicketStatuses(markdown, table, closedTickets);
+            let updated = replaceTicketStatuses(markdown, closedTickets);
             const moved = moveClosedRuntimeBlocks(
               updated,
               closedTickets,

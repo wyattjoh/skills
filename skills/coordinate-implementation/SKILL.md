@@ -9,14 +9,14 @@ effort: low
 
 # Coordinate an implementation run
 
-You are the **coordinator**. You never implement a ticket yourself, and you no
-longer drive tickets step by step. You prepare the run, start a detached
+You are the **coordinator**. You never implement a ticket yourself, and you do
+not drive tickets step by step. You prepare the run, start a detached
 **Engine** that executes the run's workflow script, then supervise it through
 bounded waits and answer the escalations it raises. The Engine launches and
 prompts every implementor and reviewer, runs stall checks and gates, reads
-agent reports from files, drives fix rounds, and lands tickets. Your context
-limits, compaction, and restarts never interrupt ticket progress. The design
-is recorded in
+agent reports from files, drives fix rounds, and lands tickets, so your
+context limits, compaction, and restarts never interrupt ticket progress. The
+design is recorded in
 [0003-detached-workflow-runtime.md](docs/adr/0003-detached-workflow-runtime.md).
 
 The baseline environment is macOS or Linux with Git, Bun, `flock`, Herdr 0.9.1
@@ -31,209 +31,162 @@ its own pane.
 
 Two Bun entry points do the mechanical work:
 
-- `bun $SKILL_DIR/scripts/coordinate.ts` is the JSON helper. You call it for
-  setup (`preflight`, `roles.discover`, `role.validate`, `worktree.preflight`,
-  `review.policy.prepare`, `snapshot.accept`, `snapshot.check`), for
-  `run.finalize`, and for explicitly authorized recovery. The Engine calls
-  every other operation. Contract: [helper-cli.md](references/helper-cli.md).
+- `bun $SKILL_DIR/scripts/coordinate.ts` is the JSON helper for setup,
+  coordinator ownership, `run.finalize`, and explicitly authorized recovery.
+  Contract: [helper-cli.md](references/helper-cli.md).
 - `bun $SKILL_DIR/scripts/runtime.ts` starts, waits on, answers, inspects, and
   stops the Engine. Contract: [runtime-cli.md](references/runtime-cli.md).
 
-Arguments: `$ARGUMENTS`
+## Arguments
+
+`$ARGUMENTS`
 
 - A run folder (`.scratch/<slug>`) starts or continues a run.
 - `resume .scratch/<slug>` is the form a restarted or replacement session
   receives; do the **Resume** steps first.
 - `--base <branch>` names the integration branch workers branch from and the
-  Engine fast-forwards. Default `main`. Recorded as `Base:` in RESUME.md on
-  first run; later invocations read it from there.
-- `Branch template:` in RESUME.md records the repository's branch naming rule.
-  Resolve it from repository instructions on first run, or use
-  `<prefix>-NN-<slug>` when the repository has no rule.
+  Engine fast-forwards. Default `main`. Recorded as `Base:` on the first run;
+  later invocations read it from RESUME.md, and the file wins over the flag.
+  Everywhere below, `<base>` means that branch.
 - `--coordinator`, `--implementor`, and `--reviewer` each accept one quoted
   `'<harness> <model> <effort>'` triple. Harness is exactly `claude` or `pi`.
-  Validate every supplied triple with the helper's `role.validate` operation.
-  Never infer a harness from a model and never substitute a nearby model or
-  effort after validation fails.
 - `--serial` records `Mode: serial` and `Parallel cap: 1`. `--parallel <N>`
-  requires a positive integer, records `Mode: parallel` and that maximum active
-  implementor count, and is required for a first parallel run. Reject both flags
-  together and reject a first run with neither. On resume with neither flag,
-  preserve both recorded values. An explicit flag on resume is a preference
-  change: write and log it before starting the Engine. A lower cap drains
-  existing implementors without terminating them; a higher cap applies on the
-  Engine's next scheduling pass.
+  requires a positive integer and records `Mode: parallel` and that maximum
+  active implementor count. Reject both flags together, and reject a first run
+  with neither. A lower cap drains existing implementors without terminating
+  them; a higher cap applies on the Engine's next scheduling pass.
 - `--stall-interval <minutes>` records `Stall interval: <N>m`, an integer from
-  2 to 60. A first run without the flag records `10m`. It is the period of the
-  Engine's per-ticket stall timer. On resume the file wins unless the flag is
-  present; an explicit flag or a stated preference is written and logged in
-  `## Decisions`.
+  2 to 60, default `10m`. It is the period of the Engine's per-ticket stall
+  timer.
 
-Before presenting role choices, call `roles.discover`. Offer only harnesses
-reported as available, Pi models from its installed catalog, Claude Code's
-`fable`, `opus`, and `sonnet` aliases plus custom model input, and the exact
-efforts reported for the selected harness.
+On resume, a flag other than `--base` and `--coordinator` is a preference
+change: validate it, write it, and log it before starting the Engine. Without
+flags, the recorded values stand.
 
-Collect every missing startup value in one structured interaction before
-creating state or starting the Engine. The interaction covers the run folder,
-base branch, scheduling mode or parallel cap when needed, and complete
-Coordinator, Implementor, and Reviewer triples. Offer a current-session
-Coordinator triple only when its harness, model, and effort are known. Validate
-all three resolved records through `role.validate`, then persist all three in
-RESUME.md before any launch. If the user explicitly supplies every value, do
-not ask again.
+`Branch template:` records the repository's branch naming rule. Resolve it
+from repository instructions on the first run, or use `<prefix>-NN-<slug>` when
+the repository has no rule.
 
-Compare the selected or persisted Coordinator record with the invoking session.
-An exact match keeps the current pane and initializes or resumes its ownership.
-Herdr 0.9.1 cannot support a live coordinator replacement, so any harness,
-model, or effort mismatch stops before state mutation. Ask the user to start a
-matching coordinator session, then invoke or resume the run there. Never rewrite
-the Coordinator record to make the invoking pane appear to match it. Recovery
-rules are in [handoff.md](references/handoff.md).
+## Roles and preferences
 
-Everywhere below, `<base>` means that branch. The main checkout is never
-`<base>` unless `<base>` is `main`.
+Which harness, model, and effort each role runs are **recorded state** in
+RESUME.md, not conversational memory. The format, installed-harness discovery,
+and validation rules are in [resume-format.md](references/resume-format.md).
+
+- Before presenting role choices, call `roles.discover`. Offer only harnesses
+  it reports as available, Pi models from the installed catalog, Claude Code's
+  `fable`, `opus`, and `sonnet` aliases plus custom model input, and the exact
+  efforts reported for the selected harness.
+- Collect every missing startup value (run folder, base branch, scheduling
+  mode or cap, and all three role triples) in one structured interaction before
+  creating state. Offer a current-session Coordinator triple only when its
+  harness, model, and effort are known. If the user supplied every value, do
+  not ask again.
+- Validate every triple with `role.validate` and write it exactly as resolved.
+  Never infer a harness from a model, and never substitute a nearby harness,
+  model, or effort, including after validation fails.
+- **The write is the acknowledgement.** A preference the user states and you
+  have not yet written to RESUME.md does not exist. Write the file, append a
+  dated line with the reason to `## Decisions`, then reply.
+- Re-read RESUME.md whenever `wait` returns, so a hand edit is honored and
+  never overwritten blindly.
+- `Implementor:` and `Reviewer:` govern future launches only; the Engine reads
+  them before each step. A running ticket keeps the implementor record bound
+  in its table row for its whole life, and every reviewer launch records the
+  Reviewer default it bound.
+- The Coordinator record must match the invoking session exactly. Herdr 0.9.1
+  cannot replace a live coordinator, so any harness, model, or effort mismatch
+  stops before state mutation: ask the user to start a matching session and
+  invoke or resume the run there. Never rewrite the Coordinator record to make
+  the invoking pane appear to match it.
+- Never bake a preference value into `run.ts`.
 
 ## Run folder contract
 
 ```
 .scratch/<slug>/
-  snapshot.json      # normalized source metadata, stable references, and ticket graph
-  spec.md            # the agreed design; review axis 2 reads it
-  issues/NN-*.md     # one ticket per file, `Blocked by:` + `Status:` lines, checkboxes
-  run.ts                    # the workflow script the Engine executes; from references/run-template.ts
-  briefs/common.md          # resolved repository contract; create from references/common-brief.md if absent
+  snapshot.json              # normalized source metadata, stable references, and ticket graph
+  spec.md                    # the agreed design; review axis 2 reads it
+  issues/NN-*.md             # one ticket per file, `Blocked by:` + `Status:` lines, checkboxes
+  run.ts                     # the workflow script the Engine executes; from references/run-template.ts
+  briefs/common.md           # resolved repository contract; create from references/common-brief.md if absent
   briefs/fixes-NN-round-R.md # consolidated actionable findings for one fix round
-  reviews/                  # immutable gate, self-review, Standards, and Spec evidence
-  assessments/stall/        # immutable bounded TypeSafe request/evidence chains
-  escalations/              # write-once escalation records and their answers
-  steps/                    # write-once results of custom workflow steps
-  events.ndjson             # the Engine's append-only event log
-  RESUME.md                 # the ONLY mutable coordination state; format: references/resume-format.md
-  SUMMARY.md                # deterministic local terminal summary written by run.finalize
+  reviews/                   # immutable gate, self-review, Standards, and Spec evidence
+  assessments/stall/         # immutable bounded TypeSafe request/evidence chains
+  escalations/               # write-once escalation records and their answers
+  steps/                     # write-once results of custom workflow steps
+  events.ndjson              # the Engine's append-only event log
+  RESUME.md                  # the ONLY mutable coordination state; format: references/resume-format.md
+  SUMMARY.md                 # deterministic local terminal summary written by run.finalize
 $XDG_STATE_HOME/coordinate-implementation/
-  runs/<run-id>.json        # helper-written global run summary and heartbeat (below)
-  agreements/<repo-id>.json # helper-written cross-run agreements for one repository
+  runs/<run-id>.json         # helper-written global run summary and heartbeat
+  agreements/<repo-id>.json  # helper-written cross-run agreements for one repository
 ```
 
-Ticket readiness comes from the accepted dependency graph. A ticket is
-unblocked only when every listed blocker has status `landed`. The Engine
-schedules the frontier from the persisted mode and parallel cap. Only
-implementors consume capacity; temporary reviewers do not. Do not serialize
-parallel mode merely because two tickets might touch nearby code.
-
-## Preferences
-
-Which harness, model, and effort each role runs are **recorded state**, not
-conversational memory. The canonical format, installed-harness discovery, and
-validation rules are in [resume-format.md](references/resume-format.md). The
-rules for keeping the record true:
-
-- **The write is the acknowledgement.** A preference the user states and you
-  have not yet written to RESUME.md does not exist. Write the file _before_
-  you reply, then reply. This is not negotiable: the alternative is a
-  preference that survives only as long as your context does.
-- **Resolve once, persist the resolution.** You have the conversation; a
-  successor does not. Write the explicitly selected and validated `harness`,
-  `model`, and `effort` exactly as resolved. Never infer a harness from a model,
-  make a later reader re-derive a field, or substitute another harness, model,
-  or effort.
-- **On resume, an explicit flag wins and is written back.** `--implementor`,
-  `--reviewer`, `--serial`, `--parallel <N>`, or `--stall-interval <minutes>`
-  passed at resume is a preference change: validate it, write it, and log it.
-  `--coordinator` must match the invoking replacement session; live
-  coordinator changes are unsupported. `--base` is the exception and the file
-  wins; resume-format.md says why.
-- **A session binds its record at launch.** The run-wide `Implementor:` and
-  `Reviewer:` records govern future launches only. The Engine reads them from
-  RESUME.md before each step. A ticket already running keeps its implementor
-  record in the table row for its whole life, and every reviewer launch
-  records the Reviewer default it bound. A Coordinator change requires the
-  prior process to end and the replacement invocation to already use the
-  selected record; it never becomes a state-only rewrite.
-- **Log every change.** Append a dated line to `## Decisions` with the reason.
-- **Re-read RESUME.md whenever `wait` returns**, so a hand edit is honored and
-  you never overwrite one blindly.
-- **Never bake a preference value into `run.ts`.** The workflow script reads
-  tickets from the accepted snapshot and roles from RESUME.md.
+A ticket is unblocked only when every blocker in the accepted dependency graph
+has status `landed`. The Engine schedules the frontier from the persisted mode
+and cap. Only implementors consume capacity; temporary reviewers do not. Do not
+serialize parallel mode merely because two tickets might touch nearby code.
 
 ## Several coordinators on one repo
 
 Each run has a unique `Prefix:` (for example `dcs`) that names its worker
 sessions `<prefix>-NN`, its Engine tab `engine <prefix>`, and its coordinator
-pane label `coordinator <prefix>`. The coordinator's own Herdr tab is always
-labelled `coordinator`: on start and on resume, run
-`herdr tab rename "$HERDR_TAB_ID" "coordinator"` before anything else. Identify
-yourself from the `HERDR_PANE_ID` / `HERDR_TAB_ID` / `HERDR_WORKSPACE_ID`
-environment variables injected into every managed pane, never by inspecting
-`herdr pane list` for the focused pane: focus can belong to the user or another
-client and can move at any time.
+pane label `coordinator <prefix>`. On start and on resume, first run
+`herdr tab rename "$HERDR_TAB_ID" "coordinator"` and label your pane
+`coordinator <prefix>`. Identify yourself only from the `HERDR_PANE_ID`,
+`HERDR_TAB_ID`, and `HERDR_WORKSPACE_ID` environment variables, never from the
+focused pane in `herdr pane list`: focus can move at any time.
 
-Cross-run discovery uses machine-local global run files under
-`$XDG_STATE_HOME/coordinate-implementation/runs/` (default
-`~/.local/state/...`). The helper rewrites a run's file atomically after every
-RESUME.md mutation, and the Engine refreshes its heartbeat there. Never write these
-files yourself. The layout, versioned schemas, and reader protocol are in
-[registry.md](references/registry.md). The old `.scratch/coordinators.md`
-registry is retired: never read or update it, and leave any existing copy for
-the user to delete.
+Cross-run discovery uses the global run files, which only the helper and
+Engine write ([registry.md](references/registry.md)). On start or resume, read
+the run files whose `repo.common_dir` matches this repository. Refuse to start
+if another run id records the same `prefix` with a heartbeat newer than twice
+its stall interval. Warn the user when two runs on the same base touch the same
+ticket files or implementation areas, then continue. Cross-run merge order and
+shared-file assignments live in the repository's agreements file, written only
+through `agreements.update` by its owner run.
 
-- On start or resume: read the run files whose `repo.common_dir` matches this
-  repository. Refuse to start if another run id records the same `prefix` with
-  a heartbeat newer than twice its stall interval. Warn the user when two runs
-  on the same base touch the same ticket files or implementation areas, then
-  continue.
-- Cross-run merge order and shared-file assignments live in the repository's
-  agreements file, written only through `agreements.update` by its owner run.
-
-Runs that share a `<base>` land through one dedicated base checkout. Every
-landing, from any run or from `land-local`, holds the shared
+Every landing, from any run or from `land-local`, holds the shared
 `<git-common-dir>/land-local.lock` only for the ancestor check and
-`git merge --ff-only`; a ticket whose branch is no longer based on `<base>`
-bounces back to its implementor to rebase. Runs on different repos need
-nothing beyond their own Herdr workspace.
+`git merge --ff-only`.
 
 ## Start a run
 
-Rename your tab to `coordinator` and label your pane `coordinator <prefix>`
-(see above), then prepare the run in this order. Nothing launches until the
-Engine starts in the last step.
+Rename your tab and label your pane (above), then prepare the run in this
+order. Nothing launches until the Engine starts in the last step.
 
-1. **Preflight.** Invoke the helper's `preflight` operation with
-   `state_path: null` (the existing RESUME.md on resume). Stop on any nonzero
-   exit or `ok: false`; preflight reports every problem and never mutates
-   state.
-2. **Collect and validate** the startup values and role triples as described
-   above, then create the schema-2 RESUME.md from
-   [resume-format.md](references/resume-format.md) with `Base:`, `Base sha:`,
-   `Mode:`, `Parallel cap:`, `Stall interval:`, `Branch template:`, all three
-   role records, and coordinator ownership. Leave out every helper-managed
-   section; the operations below create them.
-3. **Repository policy.** Resolve the complete worktree, branch, setup,
-   cleanup, remote, and commit policy from repository instructions as
-   described in [session-launch.md](references/session-launch.md). Require
-   `worktree.preflight` to pass, then call it again with `state_path` so the
-   helper persists the `## Repository policy` record, including the one
-   authorized remote synchronization argv, or null for local-only.
+1. **Preflight.** Invoke `preflight` with `state_path: null`. Stop on any
+   nonzero exit or `ok: false`; preflight reports every problem and never
+   mutates state.
+2. **Collect and validate** the startup values and role triples, then create
+   the schema-2 RESUME.md from [resume-format.md](references/resume-format.md)
+   with `Base:`, `Base sha:`, `Mode:`, `Parallel cap:`, `Stall interval:`,
+   `Branch template:`, all three role records, and coordinator ownership. Leave
+   out every helper-managed section; the operations below create them.
+3. **Repository policy.** Resolve the worktree, branch, setup, cleanup,
+   remote, and commit policy as described in
+   [session-launch.md](references/session-launch.md). Require
+   `worktree.preflight` to pass, then call it again with `state_path` to
+   persist `## Repository policy`.
 4. **Common brief.** Resolve `<run>/briefs/common.md` from
    [common-brief.md](references/common-brief.md), repository instructions,
    and CI. No placeholder may remain.
-5. **Review policy.** Persist exact gate argv arrays and resolved safety
-   constraints with `review.policy.prepare`. Never infer a command from the
-   detected toolchain.
+5. **Review policy.** Persist exact gate argv arrays and safety constraints
+   with `review.policy.prepare`, as described in
+   [review-and-land.md](references/review-and-land.md). Never infer a command
+   from the detected toolchain.
 6. **Accept the snapshot.** Materialize `snapshot.json`, the agreed
    specification, and every numbered ticket as defined in
    [normalized-snapshot.md](references/normalized-snapshot.md), then call
    `snapshot.accept`. For a non-local source, ask once for `none`, `final`, or
    `live` writeback and pass the repository's authoritative remote-write
-   policy. A local source records `none` without a remote-write prompt.
+   policy. A local source records `none` without a prompt.
 7. **Write the workflow script.** Copy
    [run-template.ts](references/run-template.ts) to `<run>/run.ts` and replace
-   every placeholder it lists: the absolute skill path, the recorded base
-   checkout, the Pi implement skill path (delete that line for Claude
-   implementors), and the authoritative project remote-write policy. Keep the default
-   `standardTicket` pipeline unless the user asks for a different one; a
-   custom script must stay deterministic given its step results.
+   every placeholder it lists. Keep the default `standardTicket` pipeline
+   unless the user asks for a different one; a custom script must stay
+   deterministic given its step results.
 8. **Start the Engine** with
    `bun $SKILL_DIR/scripts/runtime.ts start --run .scratch/<slug> --script .scratch/<slug>/run.ts`.
    It opens tab `engine <prefix>` and returns once the Engine holds its lease.
@@ -242,8 +195,7 @@ Engine starts in the last step.
 
 Loop on `runtime.ts wait --run .scratch/<slug>` until the run finishes. Omit
 `--cursor`: the persisted Event Cursor survives compaction and restarts. Act on
-the result, then call `wait` again. The complete result shape, commands, and
-escalation table are in [runtime-cli.md](references/runtime-cli.md).
+the result, then call `wait` again.
 
 - `reason: "budget"`: nothing needs you. Report progress briefly when useful.
 - `reason: "engine"`: `engine.liveness` is `stale`, `released`, or `none`. Run
@@ -251,191 +203,152 @@ escalation table are in [runtime-cli.md](references/runtime-cli.md).
   evidence, and nothing that already happened repeats. For
   `engine.unresponsive`, run `stop --force`, then `start`.
 - `reason: "attention"`: handle every `attention` event and every entry in
-  `open_escalations`. An `engine.failed` event carries its issue: report it
-  faithfully, fix the cause with the user, then `start` again.
-  `engine.completed` ends the loop (see [Finish the run](#finish-the-run)).
+  `open_escalations`. Report an `engine.failed` event faithfully, fix the cause
+  with the user, then `start` again. `engine.completed` ends the loop.
 
-Never poll with sleeps, cron tools, scheduled prompts, background shells, or a
-native harness task manager. `wait` is the only wait. Never launch, prompt, or
-close an implementor or reviewer pane, run a gate, or land a ticket yourself
-while the Engine runs.
+`wait` is the only wait. Never poll with sleeps, cron tools, scheduled prompts,
+background shells, or a native harness task manager. While the Engine runs,
+never launch, prompt, or close an implementor or reviewer pane, run a gate, or
+land a ticket yourself.
+
+A changed `run.ts` makes `start` fail with `engine.script_changed` until you
+pass `--accept-script <sha256>` for the reviewed new script.
 
 ### Answer escalations
 
 An escalation parks only its ticket; every other ticket keeps running. Answer
-each one with `runtime.ts answer --id <id> --text "<decision>"`. Answers are
-write-once and the Engine delivers them to the parked ticket.
+each one with `runtime.ts answer --id <id> --text "<decision>"`, adding
+`--by user` when the text is the user's decision. Answers are write-once.
 
-- `question`: an implementor wrote a `TICKET BLOCKED` question. Answer it
-  yourself when `spec.md` or the tickets settle it, citing the source.
-  Otherwise ask the user and answer with `--by user`. Never invent product
-  intent.
-- `retry_exhausted`: ask the user and answer with `--by user`. The ticket stays
-  blocked until its cause is fixed and the Engine is started again.
+- `question`: an implementor's `TICKET BLOCKED` question. Answer it yourself
+  when `spec.md` or the tickets settle it, citing the source. Otherwise ask the
+  user. Never invent product intent, and scope decisions always belong to the
+  user.
+- `retry_exhausted`: ask the user. The ticket stays blocked until its cause is
+  fixed and the Engine is started again.
 - `snapshot_changed`: report every changed input. Only after the user
-  explicitly accepts the new revision, call `snapshot.accept`, then answer with
-  `--by user`. The Engine re-checks the snapshot; the answer text is recorded
-  only.
+  explicitly accepts the new revision, call `snapshot.accept`, then answer.
 - `stall_pause`: read the named pane, then answer with the exact prompt the
-  Engine should deliver to the implementor, or ask the user when the evidence
-  does not settle it. [stall-check.md](references/stall-check.md) describes
-  the stall seam.
+  Engine should deliver, or ask the user when the evidence does not settle it
+  ([stall-check.md](references/stall-check.md)).
 - `attention.review_churn` is an event, not an escalation. Review fixes are
   pre-authorized regardless of round, so keep waiting unless the user decides
   to stop the ticket.
 
-### Mid-run changes
-
-Write a stated preference to RESUME.md and log it before replying; the Engine
-reads it before its next step. A changed `run.ts` makes `start` fail with
-`engine.script_changed` until you pass `--accept-script <sha256>` for the
-reviewed new script.
-
 ## Finish the run
 
-Before it exits, the Engine calls `run.finalize` with empty closures and emits
-`run.finalized` with the returned `status`, `landed`, `blocked`, and `runnable`
-tickets, followed by `engine.completed`. `completed` means `SUMMARY.md` exists.
-`waiting` (a blocked empty frontier) is never success and is an attention
-event. For each blocked ticket, either resolve the cause and run `start` again
-(tickets that failed inside the Engine are retried on the next start), or close
-it: only from an explicit user decision naming each blocked or
-dependency-blocked ticket and reason, call `run.finalize` yourself with those
-closures and `user_authorized: true`. The Engine has released its lease by
-then, so the helper accepts the call. The operation moves preserved runtime
-provenance to `## Closed ticket runtimes`, writes `## Run outcome`, and writes
-`SUMMARY.md` only when every ticket is `landed` or `closed`. The summary
-includes landed, blocked, and closed tickets, role provenance, review evidence,
-retained branches, and pending tracker action. For `final` or `live`, delegate
-the returned action to the persisted Matt tracker workflow only when current
-project authority allows it. `none` performs no writeback. Local completion and
-its summary are always recorded even when tracker action is pending or
-forbidden. Report the outcome from `SUMMARY.md`.
+Before it exits, the Engine calls `run.finalize` and emits `run.finalized`
+with the returned `status`, `landed`, `blocked`, and `runnable` tickets,
+followed by `engine.completed`. `completed` means `SUMMARY.md` exists.
+`waiting` (a blocked empty frontier) is never success. For each blocked ticket,
+either resolve the cause and run `start` again, or close it: only from an
+explicit user decision naming each blocked or dependency-blocked ticket and
+reason, call `run.finalize` yourself with those closures and
+`user_authorized: true`. `SUMMARY.md` is written only when every ticket is
+`landed` or `closed`.
+
+For `final` or `live` writeback, delegate the returned tracker action to the
+persisted Matt tracker workflow only when current project authority allows it;
+`none` performs no writeback. Local completion and its summary are always
+recorded, even when tracker action is pending or forbidden. Report the outcome
+from `SUMMARY.md`.
 
 ## What the Engine does
 
 The default `standardTicket` pipeline implements, then repeats rebase, gates,
-self-review, both external reviews, and fixes until the ticket lands. You do
-not perform these steps, but you must understand them to answer escalations
-and recover. Details: [session-launch.md](references/session-launch.md),
-[review-and-land.md](references/review-and-land.md),
+self-review, both external reviews, and fixes until the ticket lands. You need
+this to answer escalations and recover; details are in
+[session-launch.md](references/session-launch.md),
+[review-and-land.md](references/review-and-land.md), and
 [stall-check.md](references/stall-check.md).
 
-- It creates each worktree through `worktree.prepare`, launches the
-  implementor through `implementor.launch.prepare` and
-  `implementor.launch.record`, and retries infrastructure failures three times
-  with the exact bound role before escalating `retry_exhausted`.
-- Before gates, `landing.rebase.check` decides whether the implementor must
-  rebase its own branch in its own worktree; `landing.rebase.record` records
-  the new integration cycle. Every gate reruns after a rebase; both reviews
-  rerun only when the ticket's patch identity changed.
-- Standards and Spec reviews always run as fresh independent Herdr sessions
-  under the persisted Reviewer role, after the harness-appropriate
-  implementor self-review. A finding always means FAIL and returns one
-  consolidated fix request to the same implementor.
-- `landing.complete` fast-forwards `<base>` under the shared land lock, writes
-  landed evidence, cleans up the worktree without force, and retains the
-  branch.
+- Infrastructure failures retry three times with the exact bound role before a
+  `retry_exhausted` escalation.
+- When `<base>` has moved, the implementor rebases its own branch in its own
+  worktree. Every gate reruns after a rebase; both reviews rerun only when the
+  ticket's patch identity changed.
+- Standards and Spec reviews run as fresh Herdr sessions under the persisted
+  Reviewer role, after the implementor's self-review. Any finding means FAIL
+  and one consolidated fix request to the same implementor.
+- Landing fast-forwards `<base>` under the land lock, cleans up the worktree
+  without force, and retains the branch.
 
-Session markers the implementor prints: `TICKET DONE NN`,
-`TICKET BLOCKED NN: <question>`, `FIXES DONE NN`, `REBASE DONE NN`. Herdr agent
-status and the report files are the wake authority, not marker text.
+Implementors print `TICKET DONE NN`, `TICKET BLOCKED NN: <question>`,
+`FIXES DONE NN`, and `REBASE DONE NN`. Herdr agent status and the report files
+are the wake authority, not marker text.
 
 ## Manual recovery
 
-Recovery operations exist for explicitly authorized repairs the Engine cannot
-decide: `implementor.launch.recover`, `implementor.runtime.migrate`,
-`implementor.runtime.migration.recover`, `review.attempt.supersede`,
-`gate.rerun.record`, and `review.escalation.authorize`. Use one only with
-explicit user authority, only after `runtime.ts stop` confirms the Engine
-released its lease, and exactly as [helper-cli.md](references/helper-cli.md)
-specifies. Then `start` the Engine again.
+The recovery operations in [helper-cli.md](references/helper-cli.md)
+(`implementor.launch.recover`, `implementor.runtime.migrate`,
+`implementor.runtime.migration.recover`, `review.attempt.supersede`, and
+`gate.rerun.record`) exist for explicitly authorized repairs the Engine cannot
+decide. Use one only with explicit user authority, only after `runtime.ts stop`
+confirms the Engine released its lease, and exactly as documented. Then
+`start` the Engine again.
 
-A crashed worker restarts in the same worktree **with the record bound in its
-table row**. Never read the run-wide `Implementor:` for it and never
-substitute a harness, model, effort, skill, branch, or worktree. A crash is
-evidence about a process, not about a model. One ticket's difficulty is not a
-judgement about the remaining tickets, so never rewrite the run-wide
-`Implementor:` to recover one ticket.
+A crashed worker restarts in the same worktree with the record bound in its
+table row. Never read the run-wide `Implementor:` for it, and never substitute
+a harness, model, effort, skill, branch, or worktree. A crash is evidence about
+a process, not about a model, so never rewrite the run-wide `Implementor:` to
+recover one ticket.
 
 ## Coordinator continuity
 
-Automatic coordinator handoff is disabled because Herdr 0.9.1 does not expose
-normalized model context utilization. Record `Coordinator.handoff: disabled`
-and `Coordinator.threshold: unavailable` in RESUME.md. Continue through the
-active harness's normal context compaction without replacing the coordinator.
-Never parse rendered pane output to estimate context use.
+Herdr 0.9.1 does not expose normalized model context utilization, so there is
+no automatic coordinator handoff. Continue through the active harness's normal
+context compaction; never parse rendered pane output, titles, or token
+metadata to estimate context use. Before a turn ends, answer every escalation
+you already decided and persist every stated preference and decision.
 
 The Engine keeps running while the coordinator compacts or exits. If the
 coordinator process exits or cannot recover, leave its pane and durable state
 intact until the user starts a replacement with `resume .scratch/<slug>`. The
-replacement follows the Resume procedure and claims ownership through the
-existing coordinator compare-and-swap operations. It must not invoke any
-`coordinator.handoff.*` operation. Full recovery rules:
-[handoff.md](references/handoff.md).
+coordinator generation and the Engine Lease are independent: a replacement
+never claims or releases the Engine Lease, and never relaunches workers that
+remain present in Herdr.
 
 ## Resume
 
-When invoked as `resume .scratch/<slug>` for a restart or replacement:
+When invoked as `resume .scratch/<slug>`:
 
-1. Run the helper `preflight` operation with the run's `RESUME.md` as
-   `state_path`, then invoke `snapshot.check`. A changed snapshot reports its
-   changed inputs and waits for the user's explicit acceptance flow. Then
-   validate the remaining fields against
-   [resume-format.md](references/resume-format.md). Missing, malformed, or
-   unsupported schema versions stop the resume without migration. Any other
-   mismatch also stops with an explanation; nothing is guessed.
-   If `--coordinator` differs from the persisted record or the invoking
-   session, stop and ask the user to start a matching replacement session.
-   Differing `--implementor`, `--reviewer`, `--serial`, `--parallel <N>`, or
-   `--stall-interval <minutes>` values are preference changes: validate them,
-   write them, and log them in `## Decisions`.
-2. Rename your own tab to `coordinator` and label your own pane
-   `coordinator <prefix>`, using `$HERDR_TAB_ID` and `$HERDR_PANE_ID`.
-3. Check the global run files for a conflicting live prefix as described in
-   [Several coordinators on one repo](#several-coordinators-on-one-repo).
-4. If this is a replacement coordinator, verify the previous process is no
-   longer active, then use the normal coordinator claim and readiness
-   operations. Do not invoke `coordinator.handoff.*`.
-5. Run `runtime.ts status`. Then run `start` with the recorded `run.ts`: it
+1. Run `preflight` with the run's `RESUME.md` as `state_path`, then
+   `snapshot.check`. A changed snapshot reports its changed inputs and waits
+   for the user's explicit acceptance. Validate the remaining fields against
+   [resume-format.md](references/resume-format.md); a missing, malformed, or
+   unsupported schema, or any other mismatch, stops with an explanation and
+   nothing is guessed. Apply the Coordinator match rule and any preference
+   flags (see [Arguments](#arguments)).
+2. Rename your tab and label your pane.
+3. Check the global run files for a conflicting live prefix.
+4. If this is a replacement, verify the previous coordinator process is no
+   longer active, then take ownership with `coordinator.claim` followed by
+   `coordinator.ready`. Do not close a live predecessor to make a claim
+   succeed.
+5. Run `runtime.ts status`, then `start` with the recorded `run.ts`: it
    attaches to a live Engine or starts a new generation that reconciles from
    RESUME.md without relaunching live workers.
 6. Report the state in a short list and continue the supervision loop.
 
 ## Rules that are not negotiable
 
-- Preflight must succeed before creating or mutating RESUME.md. Never infer
-  context use from rendered terminal text or invoke automatic handoff.
-- The Engine schedules, reviews, and lands only against an accepted,
-  unchanged snapshot. Changed input hashes pause affected work until explicit
+- Preflight must succeed before creating or mutating RESUME.md.
+- The Engine schedules, reviews, and lands only against an accepted, unchanged
+  snapshot. Changed input hashes pause affected work until explicit
   `snapshot.accept` records the revision and decision.
 - Exactly one Engine drives a run. Never start a second one, and never mutate
   ticket state through the helper while an Engine holds the lease.
-- Persist and obey the tracker writeback mode. Delegate `final` and `live`
-  updates to the configured Matt tracker workflow only when current project
-  authority permits them. `none` never writes. Always preserve the local final
-  summary and report pending or forbidden tracker action. Never add
-  tracker-specific commands to the coordinator.
-- A preference the user states and you have not written to RESUME.md does not
-  exist. Write before you reply.
 - Never substitute a default model, effort, harness, worktree tool, or required
   skill to keep a run moving. A record that will not launch stops the ticket
   and is reported.
 - Repository commit policy wins. When it is silent, multiple commits are
   allowed and fix rounds append commits.
-- Every commit passes the repository's required gates before review. Resolve
-  exact argv arrays and safety constraints from repository instructions and CI,
-  then persist them with `review.policy.prepare` before starting the Engine.
-- Answer a `TICKET BLOCKED` question from the spec and tickets first; ask the
-  user when they do not settle it. Scope decisions always belong to the user.
 - Never push or write to forge issues. The only permitted remote write is a
   persisted `final` or `live` update through the configured Matt tracker
-  workflow when authoritative project policy allows it. All other remote
-  writes remain forbidden.
+  workflow when authoritative project policy allows it. Never add
+  tracker-specific commands to the coordinator.
 - Enforce every project-specific safety constraint recorded in the shared
   brief. Do not invent restrictions that the repository does not require.
-- Rebase conflicts belong to the implementor, never the coordinator. The
-  implementor rebases its own branch in its own worktree and resolves
-  conflicts there; never rebase, merge, or edit a ticket branch or the base
-  checkout yourself.
+- Rebase conflicts belong to the implementor, never the coordinator. Never
+  rebase, merge, or edit a ticket branch or the base checkout yourself.
 - Report outcomes faithfully: a red gate is reported as red with its output.

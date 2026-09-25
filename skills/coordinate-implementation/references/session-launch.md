@@ -1,18 +1,15 @@
-# Starting an implementor session
+# Starting implementor sessions
 
-All paths below: `<repo>` is the repository root, `<run>` is the run folder,
-`<base>` is the local integration branch, and `NN` is the zero-padded ticket.
+`<repo>` is the repository root, `<run>` the run folder, `<base>` the local
+integration branch, and `NN` the zero-padded ticket.
 
-The coordinator performs only step 1, resolving and persisting repository
-policy, before it starts the Engine. The Engine executes steps 2 through 4 for
-every launch and retry through the versioned helper contract in
-[helper-cli.md](helper-cli.md), and it never assembles a shell command for a
-harness process. Steps 2 through 5 stay documented here as reference for
-reading launch artifacts and for explicitly authorized recovery after
-`runtime.ts stop`. Never launch an implementor by hand while an Engine holds
-the run's lease.
+The coordinator resolves and persists repository policy before it starts the
+Engine. The Engine then launches every implementor and retry through the
+helper operations in [engine-operations.md](engine-operations.md) and never
+assembles a shell command for a harness process. Never launch an implementor by
+hand while an Engine holds the run's lease.
 
-## 1. Resolve repository policy
+## Resolve repository policy
 
 Before creating any worktree, read the repository instruction files that govern:
 
@@ -37,199 +34,56 @@ worktree root during initial setup and pass `kind: native`. The helper uses
 optional worktree product, a remote, or a directory layout.
 
 When repository instructions do not define commit shape, pass `commit: null`.
-The helper records the portable defaults:
-
-- multiple commits are allowed;
-- fix rounds append commits.
-
-Repository policy may instead resolve `single` or `squash` commit shape and
-`amend` or `squash` fix behavior. Record the resolved values, do not infer them
-again during review.
-
-After resolving this policy, invoke `worktree.preflight` with the complete
-`policy` object. It is read-only and must succeed before RESUME.md or any
-worktree is created. A missing repository-required tool stops here without
-native fallback. Once RESUME.md exists, repeat `worktree.preflight` with
-`state_path` so the helper persists the resolved policy as RESUME.md's
-`## Repository policy` record before the Engine starts; the Engine reads it
-before each launch.
-
-For each ticket, the Engine then invokes `worktree.prepare`:
-
-```json
-{
-  "schema_version": 1,
-  "operation": "worktree.prepare",
-  "input": {
-    "state_path": ".scratch/example/RESUME.md",
-    "repository_path": "/repo",
-    "base_branch": "main",
-    "branch": "feature/ticket-04",
-    "worktree_name": "ticket-04",
-    "policy": {
-      "instruction_files": ["CLAUDE.md"],
-      "worktree": {
-        "kind": "native",
-        "tool": null,
-        "root": "/worktrees/example",
-        "create_argv": null
-      },
-      "branch_naming": "feature/ticket-NN",
-      "setup_argvs": [],
-      "cleanup": "native-safe",
-      "remote": "local-only",
-      "remote_sync_argv": null,
-      "commit": null
-    }
-  }
-}
-```
+The helper records the portable defaults: multiple commits are allowed and fix
+rounds append commits. Repository policy may instead resolve `single` or
+`squash` commit shape and `amend` or `squash` fix behavior.
 
 Use `remote_sync_argv: null` for local-only policy. Repository remote policy
 must persist the exact non-empty argv array that `landing.rebase.check` runs
-before its ancestor check; callers cannot substitute another command.
+before its ancestor check.
 
-For repository tooling, also pass `expected_worktree_path`. The helper validates
-that the prescribed command produced the requested branch at that exact path.
-On retry, an already matching worktree is recovered rather than recreated.
+Invoke `worktree.preflight` with the complete `policy` object. It is read-only
+and must succeed before RESUME.md or any worktree is created. Once RESUME.md
+exists, repeat it with `state_path` so the helper persists the policy as
+`## Repository policy`; the Engine reads that record before each launch.
 
-## 2. Create the Herdr tab
+## What the Engine does at launch
 
-The Engine creates the worker tab at the prepared worktree so the harness starts in the
-correct project:
+For each ticket the Engine creates the worktree (`worktree.prepare`), creates
+tab `implement <prefix> NN <slug>` at that worktree (adopting an existing tab
+with the same label after a restart), and calls `implementor.launch.prepare`.
+That operation validates the role against the installed harness and the
+ticket-row binding (or the run-wide `Implementor:` default for a new ticket),
+writes an inspectable launch artifact, and records the runtime block, with its
+`Implementor:` role as compact JSON, before any process starts.
 
-```text
-herdr tab create --workspace <workspace> --cwd <worktree> --label "implement <prefix> NN <slug>" --no-focus
-```
+Pi launches with `--approve --skill <implement SKILL.md>` and a prompt that
+begins with `/skill:implement`. Claude Code launches with
+`--permission-mode auto` and a prompt that begins with `/implement`. The Engine
+executes the returned `launch.start` and `launch.prompt` argument arrays
+exactly, then records the outcome with `implementor.launch.record`. A failed
+launch goes through `infrastructure.retry.record`: attempts 1 through 4 reuse
+the exact persisted binding, and the fourth failure parks the ticket with a
+`retry_exhausted` escalation. A retry never substitutes a harness, model,
+effort, skill, worktree, or branch.
 
-It uses the machine-readable result to capture the actual tab and root pane
-ids, and adopts an existing tab with the same label after a restart. It never
-guesses compact Herdr ids.
-
-## 3. Prepare a shell-free launch
-
-The Engine calls `implementor.launch.prepare` with the actual worktree, branch, session,
-tab, and pane. The operation:
-
-1. validates the requested role against the installed harness and, while
-   holding the state lock, the ticket-row binding when one exists or otherwise
-   the run-wide `Implementor:` default;
-2. verifies the worktree and branch;
-3. constructs Herdr and harness argument arrays;
-4. writes an inspectable JSON launch artifact;
-5. binds the role into the ticket row;
-6. records the runtime block before any process starts, with `Implementor:` as
-   compact JSON containing exactly `harness`, `model`, and `effort`.
-
-The JSON role binding preserves custom model values byte-for-byte, including
-spaces, and recovery parses it structurally rather than splitting display text.
-Only `review.escalation.authorize` may replace an existing ticket-row binding;
-the launch helper consumes that exact role without changing the run-wide
-default.
-
-Pi additionally requires the installed `implement/SKILL.md` path. The start
-array includes `--approve` and `--skill <path>`, and the prompt begins with
-`/skill:implement`. Claude Code uses `--permission-mode auto`, and its prompt
-begins with `/implement`. The required skill is fixed by the workflow and is
-not an arbitrary run preference.
-
-```json
-{
-  "schema_version": 1,
-  "operation": "implementor.launch.prepare",
-  "input": {
-    "state_path": ".scratch/example/RESUME.md",
-    "artifact_path": ".scratch/example/briefs/launch-04.json",
-    "ticket": "04",
-    "worktree_path": "/worktrees/example/ticket-04",
-    "branch": "feature/ticket-04",
-    "session": "example-04",
-    "tab": "implement example 04",
-    "pane": "w1:p4",
-    "role": {
-      "harness": "pi",
-      "model": "openai-codex/gpt-5.6-sol",
-      "effort": "high"
-    },
-    "implement_skill_path": "/home/user/.pi/agent/skills/implement/SKILL.md",
-    "prompt": "You are implementing ticket 04...",
-    "attempt": 1,
-    "max_attempts": 3
-  }
-}
-```
-
-The result contains two command objects, each with `command` and `args`. The
-Engine executes them as process argument arrays in order: `launch.start`, then `launch.prompt`.
-Do not join, quote, interpolate, or pass them through `sh -c`. Paths, Unicode,
-apostrophes, leading dashes, and prompt text remain single arguments.
-
-## 4. Record the observed outcome
-
-After executing the two arrays, the Engine calls `implementor.launch.record`.
-
-For success:
-
-```json
-{
-  "schema_version": 1,
-  "operation": "implementor.launch.record",
-  "input": {
-    "state_path": ".scratch/example/RESUME.md",
-    "ticket": "04",
-    "attempt": 1,
-    "status": "started",
-    "diagnostic": null
-  }
-}
-```
-
-For failure, pass `status: failed` and the exact stage, exit code, and stderr.
-The helper keeps the runtime block active and records `Phase: launch failed`.
-Then call `infrastructure.retry.record` for the same ticket and attempt. It
-returns either the next bounded delay and exact persisted binding, or
-`action: block` after three retries are exhausted. It never changes harness,
-model, effort, required skill, worktree, or branch.
-
-For `action: retry`, the Engine waits the returned delay and calls
-`implementor.launch.prepare` with the next attempt number, a new attempt-specific
-artifact path, and the exact returned binding. The schema-1 `max_attempts` field
-is retained for compatibility and must be `3`, meaning three retries after the
-initial launch. Attempts therefore run from 1 through 4. A retry is not
-permission to substitute a model or tool. For `action: block`, the Engine parks
-the ticket with a `retry_exhausted` escalation.
-
-## 5. Recover a partial launch
+## Recover a partial launch
 
 After a restart the Engine reconciles a partial launch from RESUME.md and the
-launch artifact without starting a second process. The same state-first
-procedure applies to explicitly authorized manual recovery:
-
-1. Read the ticket row and active runtime block.
-2. Verify the recorded worktree and branch.
-3. Parse the active runtime's compact JSON `Implementor:` value and require the
-   exact harness, model, and effort, including any spaces in the model.
-4. Read the recorded JSON artifact.
-5. Refresh the current Herdr pane id from Herdr.
-6. If preparation completed but no process started, call
-   `implementor.launch.prepare` again with the same attempt. It returns
-   `recovered: true` and the same argument arrays.
-7. If the agent exists but the outcome write was interrupted, inspect Herdr and
-   call `implementor.launch.record` with the observed result.
-8. If the prior attempt failed, call `infrastructure.retry.record`. Only when it
-   returns `action: retry` prepare the next attempt from its exact binding.
+launch artifact without starting a second process. Manual recovery, with the
+Engine stopped and explicit user authority, follows the same state-first
+order: read the ticket row and runtime block, verify the worktree and branch,
+parse the runtime's JSON `Implementor:` role exactly, read the artifact, and
+refresh the pane id from Herdr. Then re-prepare the same attempt (it returns
+`recovered: true` and the same arrays), record an observed outcome, or apply
+`infrastructure.retry.record`, whichever step the state shows is missing.
 
 If attempt 4 is already `retry exhausted`, do not prepare another launch or
 restart an agent that is still alive. Only after the user explicitly confirms a
-coordinator compatibility defect, call `implementor.launch.recover` with the
-Herdr socket, exact diagnostic, and recovery timestamp. The helper validates
-the preserved role, legacy artifact, worktree, branch, session, pane, and live
-idle or done worker, then normalizes the known invalid prompt argv without
-rewriting its provenance. Execute only the returned `prompt` array, then record the observed
-attempt-4 result with `implementor.launch.record`. Never execute `start` during
-this recovery.
+coordinator compatibility defect, use `implementor.launch.recover` as
+[helper-cli.md](helper-cli.md) describes and execute only its returned
+`prompt` array; never execute `start` during that recovery.
 
 A conflicting persisted role, branch, worktree, required skill path, session,
-pane, artifact, or attempt fails recovery without changing state. An
-already-existing identical artifact is preserved. Do not rewrite the runtime
-to match conversational memory.
+pane, artifact, or attempt fails recovery without changing state. Do not
+rewrite the runtime to match conversational memory.

@@ -1,7 +1,6 @@
 import { Effect, Result } from "effect";
-import { createHash } from "node:crypto";
 import { existsSync } from "node:fs";
-import { readFile, rename, writeFile } from "node:fs/promises";
+import { readFile, writeFile } from "node:fs/promises";
 import { hostname } from "node:os";
 import { join, resolve } from "node:path";
 import type { CliIssue } from "./contract.ts";
@@ -9,6 +8,7 @@ import {
   claimEngineLease,
   engineLiveness,
   isPidAlive,
+  leaseHeld,
   leaseIssue,
   readEngineHeartbeat,
   readEngineLease,
@@ -19,8 +19,10 @@ import {
 import { runEngine, stopRequestPath, type EngineWorkflow } from "./engine.ts";
 import { answerEscalation, listOpenEscalations } from "./escalations.ts";
 import { readEventsSince, type RuntimeEvent } from "./event-log.ts";
+import { replaceFileAtomically } from "./fs-atomic.ts";
 import { projectRun } from "./global-state.ts";
 import { makeHerdrActuator, type HerdrActuator } from "./herdr-actuator.ts";
+import { sha256Hex } from "./values.ts";
 
 /**
  * Heartbeat cadence of a production engine.
@@ -177,10 +179,7 @@ const runPaths = (flags: Flags): RunPaths => {
   return { runPath, statePath };
 };
 
-const sha256 = async (path: string): Promise<string> =>
-  createHash("sha256")
-    .update(await readFile(path))
-    .digest("hex");
+const sha256 = async (path: string): Promise<string> => sha256Hex(await readFile(path));
 
 const shellQuote = (value: string): string =>
   /^[\w./:@=-]+$/u.test(value) ? value : `'${value.replaceAll("'", `'\\''`)}'`;
@@ -200,11 +199,8 @@ const readCursor = async (runPath: string): Promise<number> => {
   }
 };
 
-const writeCursor = async (runPath: string, cursor: number): Promise<void> => {
-  const path = cursorPath(runPath);
-  await writeFile(`${path}.tmp`, `${JSON.stringify({ cursor })}\n`, "utf8");
-  await rename(`${path}.tmp`, path);
-};
+const writeCursor = (runPath: string, cursor: number): Promise<void> =>
+  replaceFileAtomically(cursorPath(runPath), `${JSON.stringify({ cursor })}\n`);
 
 type EngineView = {
   liveness: ReturnType<typeof engineLiveness>;
@@ -458,7 +454,7 @@ const stop = async (flags: Flags, deps: RuntimeDeps): Promise<Record<string, unk
   const deadline = deps.now().getTime() + (flags.has("force") ? 0 : deps.startTimeoutMs);
   while (deps.now().getTime() < deadline) {
     const current = await run(readEngineLease(statePath), withIssue);
-    if (current?.generation !== lease.generation || current.released_at !== null) {
+    if (!leaseHeld(current, lease.generation)) {
       return { engine: "stopped", generation: lease.generation };
     }
     await deps.sleep(deps.pollMs);

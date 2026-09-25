@@ -1,8 +1,10 @@
 import { Data, Effect } from "effect";
-import { readFile, rename, writeFile } from "node:fs/promises";
+import { readFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import type { CliIssue } from "./contract.ts";
+import { replaceFileAtomically } from "./fs-atomic.ts";
 import { mutateStateFile, StateMutationError } from "./state-mutation.ts";
+import { utcSeconds } from "./values.ts";
 
 /**
  * Durable identity of the engine allowed to mutate one run.
@@ -70,8 +72,6 @@ export const leaseIssue = (error: EngineLeaseError | StateMutationError): CliIss
       };
 
 const SECTION = /^## Engine lease\s*\n+```json\n([\s\S]*?)\n```\s*$/mu;
-
-const utc = (date: Date): string => date.toISOString().replace(/\.\d{3}Z$/, "Z");
 
 /**
  * Parses the engine lease section, returning null when no engine ever claimed the run.
@@ -185,12 +185,22 @@ export const claimEngineLease = (
         host: input.host,
         pane: input.pane,
         script_sha256: input.scriptSha256,
-        claimed_at: utc(input.now),
+        claimed_at: utcSeconds(input.now),
         released_at: null,
       };
       return { markdown: replaceLease(markdown, lease), result: lease };
     }),
   );
+
+/**
+ * Tests whether `generation` still holds an unreleased lease.
+ *
+ * @param lease - Lease parsed from RESUME.md, or null when absent.
+ * @param generation - Generation the caller claimed.
+ * @returns True while that generation owns the run.
+ */
+export const leaseHeld = (lease: EngineLease | null, generation: number): boolean =>
+  lease !== null && lease.generation === generation && lease.released_at === null;
 
 /**
  * Runs a state mutation only while the caller still holds the given generation.
@@ -210,7 +220,7 @@ export const fencedMutate = <Result, DomainError>(
   mutateStateFile(statePath, (markdown) =>
     Effect.gen(function* () {
       const lease = yield* parseEffect(markdown);
-      if (lease === null || lease.generation !== generation || lease.released_at !== null) {
+      if (!leaseHeld(lease, generation)) {
         return yield* leaseError(
           "engine.lease_lost",
           `Engine generation ${generation} no longer holds this run.`,
@@ -237,7 +247,7 @@ export const releaseEngineLease = (
   fencedMutate(statePath, generation, (markdown) =>
     Effect.gen(function* () {
       const lease = (yield* parseEffect(markdown))!;
-      const released = { ...lease, released_at: utc(now) };
+      const released = { ...lease, released_at: utcSeconds(now) };
       return { markdown: replaceLease(markdown, released), result: released };
     }),
   );
@@ -263,12 +273,7 @@ export const writeEngineHeartbeat = (
   heartbeat: EngineHeartbeat,
 ): Effect.Effect<void, EngineLeaseError> =>
   Effect.tryPromise({
-    try: async () => {
-      const path = heartbeatPath(statePath);
-      const temporary = `${path}.${process.pid}.tmp`;
-      await writeFile(temporary, `${JSON.stringify(heartbeat)}\n`, "utf8");
-      await rename(temporary, path);
-    },
+    try: () => replaceFileAtomically(heartbeatPath(statePath), `${JSON.stringify(heartbeat)}\n`),
     catch: (error) => fromUnknown(error) as EngineLeaseError,
   });
 

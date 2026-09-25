@@ -1,6 +1,8 @@
-import { Data, Effect } from "effect";
+import { Context, Data, Effect } from "effect";
 import { randomUUID } from "node:crypto";
-import { link, mkdir, readFile, rename, rm, stat, writeFile } from "node:fs/promises";
+import { link, mkdir, readFile, rm, stat, writeFile } from "node:fs/promises";
+import type { CliIssue } from "./contract.ts";
+import { replaceFileAtomically } from "./fs-atomic.ts";
 import { ensureRunId, publishRun, recordGlobalWarning } from "./global-state.ts";
 
 /**
@@ -27,7 +29,49 @@ export class StateMutationError extends Data.TaggedError("StateMutationError")<{
   message: string;
 }> {}
 
+/**
+ * Describes a failed state update with an operation's own codes: `<domain>.state_busy` when
+ * another writer holds the lock, otherwise `<domain>.state_io_failed`.
+ *
+ * @param error - StateMutationError or any other thrown error.
+ * @param domain - Error-code prefix, such as `landing`.
+ * @param subject - What was being updated, such as `ticket integration state`.
+ * @param remediation - Operator guidance for the failure.
+ * @returns The issue to wrap in the operation's typed error.
+ */
+export const mutationIssue = (
+  error: unknown,
+  domain: string,
+  subject: string,
+  remediation: string,
+): CliIssue => ({
+  code:
+    error instanceof StateMutationError && error.kind === "lock_busy"
+      ? `${domain}.state_busy`
+      : `${domain}.state_io_failed`,
+  message: `Could not update ${subject}: ${(error as Error).message}`,
+  remediation,
+});
+
 class StateLockBusyError extends Error {}
+
+/**
+ * Raised as a defect when {@link StateMutationGuard} rejects a mutation, so operation-specific
+ * error mappers cannot rename it. The Engine converts it back into a typed failure.
+ */
+export class StateGuardRejected extends Data.TaggedError("StateGuardRejected")<{
+  issue: CliIssue;
+}> {}
+
+/**
+ * Check run against the latest RESUME.md text under the state lock before every mutation in
+ * scope. It returns null to allow the write, or the issue that refuses it. The Engine provides
+ * its lease fence here so a superseded generation can never write.
+ */
+export const StateMutationGuard = Context.Reference<(markdown: string) => CliIssue | null>(
+  "coordinate-implementation/StateMutationGuard",
+  { defaultValue: () => () => null },
+);
 
 type LockRecord = {
   pid: number;
@@ -128,17 +172,8 @@ const releaseLock = async (lock: LockHandle): Promise<void> => {
   if (record?.token === lock.token) await rm(lock.path, { force: true });
 };
 
-const writeStateAtomically = async (path: string, markdown: string): Promise<void> => {
-  const temporary = `${path}.${process.pid}.${randomUUID()}.tmp`;
-  const mode = (await stat(path)).mode;
-  try {
-    await writeFile(temporary, markdown, { mode });
-    await rename(temporary, path);
-  } catch (error) {
-    await rm(temporary, { force: true });
-    throw error;
-  }
-};
+const writeStateAtomically = async (path: string, markdown: string): Promise<void> =>
+  replaceFileAtomically(path, markdown, (await stat(path)).mode);
 
 const stateIo = <Result>(
   action: () => Promise<Result>,
@@ -177,6 +212,8 @@ export const mutateStateFile = <Result, DomainError>(
       if (afterRead !== undefined) {
         yield* stateIo(() => afterRead(markdown));
       }
+      const refusal = (yield* StateMutationGuard)(markdown);
+      if (refusal !== null) return yield* Effect.die(new StateGuardRejected({ issue: refusal }));
       const identified = ensureRunId(markdown);
       const update = yield* transform(identified);
       const updatedMarkdown = update.markdown ?? identified;

@@ -1,7 +1,8 @@
 import { Data, Effect } from "effect";
 import { activeRuntimeBlockPattern, parseActiveRuntimeFields } from "./active-runtime.ts";
 import type { CliIssue, InfrastructureRetryRecordInput, RoleRecord } from "./contract.ts";
-import { mutateStateFile, StateMutationError } from "./state-mutation.ts";
+import { updateTicketCells } from "./resume-sections.ts";
+import { mutateStateFile, mutationIssue } from "./state-mutation.ts";
 import { validateStateText } from "./state.ts";
 
 /**
@@ -63,14 +64,14 @@ const retryError = (code: string, message: string, remediation: string): Infrast
 
 const fromMutationError = (error: unknown): InfrastructureRetryError => {
   if (error instanceof InfrastructureRetryError) return error;
-  const detail = error instanceof StateMutationError ? error.message : (error as Error).message;
-  return retryError(
-    error instanceof StateMutationError && error.kind === "lock_busy"
-      ? "retry.state_busy"
-      : "retry.state_io_failed",
-    `Could not update infrastructure retry state: ${detail}`,
-    "Verify RESUME.md and its directory are writable, then retry with the recorded binding.",
-  );
+  return new InfrastructureRetryError({
+    issue: mutationIssue(
+      error,
+      "retry",
+      "infrastructure retry state",
+      "Verify RESUME.md and its directory are writable, then retry with the recorded binding.",
+    ),
+  });
 };
 
 const parseRole = (serialized: string | undefined): RoleRecord | undefined => {
@@ -119,29 +120,9 @@ const parseBinding = (fields: Record<string, string>): RetryBinding | undefined 
 };
 
 const updateTicketStatus = (markdown: string, ticket: string, status: string): string => {
-  const heading = /^## Tickets\s*$/mu.exec(markdown);
-  if (heading === null) throw new Error("missing ticket table");
-  const start = heading.index + heading[0].length;
-  const next = /^## /gmu;
-  next.lastIndex = start;
-  const end = next.exec(markdown)?.index ?? markdown.length;
-  const section = markdown.slice(start, end);
-  const lines = section.split(/\r?\n/u);
-  const header = lines.find((line) => line.trimStart().startsWith("| NN"));
-  if (header === undefined) throw new Error("missing ticket table header");
-  const columns = header
-    .split("|")
-    .slice(1, -1)
-    .map((cell) => cell.trim());
-  const statusIndex = columns.indexOf("status");
-  const rowIndex = lines.findIndex((line) => line.split("|")[1]?.trim() === ticket);
-  if (statusIndex < 0 || rowIndex < 0) throw new Error("missing ticket status row");
-  const cells = lines[rowIndex]!.split("|")
-    .slice(1, -1)
-    .map((cell) => cell.trim());
-  cells[statusIndex] = status;
-  lines[rowIndex] = `| ${cells.join(" | ")} |`;
-  return `${markdown.slice(0, start)}${lines.join("\n")}${markdown.slice(end)}`;
+  const updated = updateTicketCells(markdown, ticket, { status });
+  if (typeof updated !== "string") throw new Error(`ticket table ${updated.kind}`);
+  return updated;
 };
 
 /**

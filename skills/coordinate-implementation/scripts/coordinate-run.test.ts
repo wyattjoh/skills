@@ -5,7 +5,7 @@ import { join } from "node:path";
 import { Effect } from "effect";
 import { acceptSnapshot } from "./lib/snapshot.ts";
 import { finalizeRun } from "./lib/run.ts";
-import { runCliInProcess } from "./test-cli.ts";
+import { request, runJson } from "./test-cli.ts";
 
 type Harness = "claude" | "pi";
 type Writeback = "none" | "final" | "live";
@@ -16,14 +16,8 @@ type RunFixture = {
   summaryPath: string;
 };
 
-const runCli = async (operation: string, input: Record<string, unknown>) => {
-  const child = await runCliInProcess({ schema_version: 1, operation, input });
-  return {
-    exitCode: child.exitCode,
-    stdout: JSON.parse(child.stdout) as Record<string, unknown>,
-    stderr: child.stderr,
-  };
-};
+const runCli = (operation: string, input: Record<string, unknown>) =>
+  runJson(request(operation, input));
 
 const role = (harness: Harness, purpose: "coordinator" | "implementor" | "reviewer") => {
   if (harness === "pi") {
@@ -119,7 +113,7 @@ const makeRun = async (
       : "\n## Active tickets\n";
   writeFileSync(
     statePath,
-    `# portable implementation run\n\nSchema version: 2\n\nPrefix: portable\nBase: main\nBase sha: 0123456789abcdef0123456789abcdef01234567\nMode: parallel\nParallel cap: 2\nBranch template: portable-NN-<slug>\n\n${roleBlock("Coordinator", coordinator)}\n  handoff: yes\n  threshold: 80 percent\n  unattended: block\n\n${roleBlock("Implementor", implementor)}\n\n${roleBlock("Reviewer", reviewer)}\n\n## Tickets\n\n| NN | harness | model | effort | rounds | esc | status | sha |\n| -- | ------- | ----- | ------ | ------ | --- | ------ | --- |\n| 01 | ${implementor.harness} | ${implementor.model} | ${implementor.effort} | 3 | ${status === "blocked" ? "yes" : "-"} | ${status} | ${status === "landed" ? "89abcdef0123456789abcdef0123456789abcdef" : "-"} |\n${withDependent ? "| 02 | - | - | - | 0 | - | queued | - |\n" : ""}${active}\n## Review evidence\n\n- Ticket 01 round 3 standards attempt 1: accepted; reviewer ${JSON.stringify(reviewer)}; report ${join(reviewsPath, "01-standards.md")}\n- Ticket 01 round 3 spec attempt 1: accepted; reviewer ${JSON.stringify(reviewer)}; report ${join(reviewsPath, "01-spec.md")}\n\n## Landed evidence\n\n${status === "landed" ? `- Ticket 01: ${join(reviewsPath, "01-landed.json")}; tip 89abcdef0123456789abcdef0123456789abcdef; branch portable-01-integration; cleanup native-safe` : ""}\n\n## Decisions\n\n- 2026-09-19 setup recorded\n\n## Retained landed branches\n\n${status === "landed" ? "- portable-01-integration (89abcdef0123456789abcdef0123456789abcdef) (retained by repository cleanup policy)" : ""}\n`,
+    `# portable implementation run\n\nSchema version: 2\n\nPrefix: portable\nBase: main\nBase sha: 0123456789abcdef0123456789abcdef01234567\nMode: parallel\nParallel cap: 2\nBranch template: portable-NN-<slug>\n\n${roleBlock("Coordinator", coordinator)}\n\n${roleBlock("Implementor", implementor)}\n\n${roleBlock("Reviewer", reviewer)}\n\n## Tickets\n\n| NN | harness | model | effort | rounds | esc | status | sha |\n| -- | ------- | ----- | ------ | ------ | --- | ------ | --- |\n| 01 | ${implementor.harness} | ${implementor.model} | ${implementor.effort} | 3 | ${status === "blocked" ? "yes" : "-"} | ${status} | ${status === "landed" ? "89abcdef0123456789abcdef0123456789abcdef" : "-"} |\n${withDependent ? "| 02 | - | - | - | 0 | - | queued | - |\n" : ""}${active}\n## Review evidence\n\n- Ticket 01 round 3 standards attempt 1: accepted; reviewer ${JSON.stringify(reviewer)}; report ${join(reviewsPath, "01-standards.md")}\n- Ticket 01 round 3 spec attempt 1: accepted; reviewer ${JSON.stringify(reviewer)}; report ${join(reviewsPath, "01-spec.md")}\n\n## Landed evidence\n\n${status === "landed" ? `- Ticket 01: ${join(reviewsPath, "01-landed.json")}; tip 89abcdef0123456789abcdef0123456789abcdef; branch portable-01-integration; cleanup native-safe` : ""}\n\n## Decisions\n\n- 2026-09-19 setup recorded\n\n## Retained landed branches\n\n${status === "landed" ? "- portable-01-integration (89abcdef0123456789abcdef0123456789abcdef) (retained by repository cleanup policy)" : ""}\n`,
   );
 
   const accepted = await runCli("snapshot.accept", {
@@ -460,59 +454,5 @@ describe("terminal run integration", () => {
     expect(error.issue.code).toBe("run.snapshot_changed");
     expect(readFileSync(fixture.statePath, "utf8").includes("## Run outcome")).toBe(false);
     expect(existsSync(fixture.summaryPath)).toBe(false);
-  });
-});
-
-describe("portable downstream documentation", () => {
-  it("documents the smoke matrix and keeps downstream coordination event-driven and run-owned", () => {
-    const skill = readFileSync(join(import.meta.dir, "..", "SKILL.md"), "utf8");
-    const smoke = readFileSync(
-      join(import.meta.dir, "..", "references", "manual-smoke.md"),
-      "utf8",
-    );
-    const packageMetadata = JSON.parse(
-      readFileSync(join(import.meta.dir, "..", "package.json"), "utf8"),
-    ) as Record<string, unknown>;
-    const downstream = readFileSync(
-      join(import.meta.dir, "..", "..", "core-coordinator", "SKILL.md"),
-      "utf8",
-    );
-    const loop = readFileSync(
-      join(import.meta.dir, "..", "..", "core-coordinator", "references", "loop.md"),
-      "utf8",
-    );
-
-    for (const scenario of [
-      "Claude-only",
-      "Pi-only",
-      "Mixed roles",
-      "Parallel frontier",
-      "Conflict adaptation",
-      "Reviewer failure",
-      "Herdr 0.9.1 coordinator continuity",
-    ]) {
-      expect(smoke.includes(scenario)).toBe(true);
-    }
-    expect(skill.includes("`run.finalize`")).toBe(true);
-    expect(smoke.includes("## Engine supervision")).toBe(true);
-    expect(smoke.includes("`engine.script_changed`")).toBe(true);
-    expect(smoke.includes("`TICKET BLOCKED NN: <question>`")).toBe(true);
-    expect(
-      skill.includes("Before it exits, the Engine calls `run.finalize` with empty closures"),
-    ).toBe(true);
-    expect(packageMetadata.os).toEqual(["darwin", "linux"]);
-    expect(packageMetadata.engines).toEqual({ bun: ">=1.1.0" });
-    expect(packageMetadata.dependencies).toEqual({
-      "@effect/ai-typesafe": "4.0.0-rc.117",
-      effect: "4.0.0-rc.117",
-    });
-    expect(downstream.includes("Never edit a run's `RESUME.md` or its global run file.")).toBe(
-      true,
-    );
-    expect(downstream.includes("`agreements.update`")).toBe(true);
-    expect(loop.includes("event-driven")).toBe(true);
-    for (const legacy of ["CronCreate", "CronDelete", "python3", "ListAgents", "SendMessage"]) {
-      expect(`${downstream}\n${loop}`.includes(legacy)).toBe(false);
-    }
   });
 });

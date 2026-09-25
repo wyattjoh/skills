@@ -113,9 +113,6 @@ Coordinator:
   harness:    claude
   model:      fable
   effort:     low
-  handoff:    disabled
-  threshold:  unavailable
-  unattended: block
 
 Implementor:
   harness: pi

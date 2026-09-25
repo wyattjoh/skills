@@ -4,21 +4,23 @@ import { mkdir, readdir, readFile, rename } from "node:fs/promises";
 import { join } from "node:path";
 import { evaluateStallLive } from "./assessment.ts";
 import type { CliIssue, RoleRecord } from "./contract.ts";
-import { assertLease, type EngineContext } from "./engine.ts";
+import { leaseFence, type EngineContext } from "./engine.ts";
 import {
   awaitAnswer,
-  escalationDir,
-  escalationId,
   openEscalation,
+  pendingOrNextEscalationId,
   type EscalationKind,
 } from "./escalations.ts";
 import { runGateProcess } from "./gate-runner.ts";
 import { spawnGit } from "./git.ts";
+import { herdrPromptTarget } from "./harness-launch.ts";
 import { makeHerdrActuator, type HerdrActuator } from "./herdr-actuator.ts";
 import { makeHerdrHub, statusFromSnapshot, type HerdrHub, type PaneStatus } from "./herdr-hub.ts";
+import { agentsNamed } from "./herdr-protocol.ts";
 import { prepareImplementorLaunch, recordImplementorLaunch } from "./implementor.ts";
 import { checkIntegration, operationInProgress } from "./integration.ts";
 import { checkLandingRebase, completeLanding, type LandingRebaseResult } from "./landing.ts";
+import { ticketRows } from "./resume-sections.ts";
 import { recordInfrastructureRetry } from "./retry.ts";
 import { finalizeRun } from "./run.ts";
 import {
@@ -26,6 +28,7 @@ import {
   prepareReviewerLaunch,
   recordGate,
   recordReviewerLaunch,
+  REVIEW_MAX_INFRASTRUCTURE_ATTEMPTS,
   reviewDraftPath,
 } from "./review.ts";
 import {
@@ -41,6 +44,8 @@ import {
 } from "./run-config.ts";
 import { checkSnapshot } from "./snapshot.ts";
 import { runStallCheck, type StallCheck, type StallObservation } from "./stall-loop.ts";
+import { StateGuardRejected, StateMutationGuard } from "./state-mutation.ts";
+import { utcSeconds } from "./values.ts";
 import {
   WorkflowError,
   type FixRequest,
@@ -67,8 +72,6 @@ export type BuiltinOptions = {
 };
 
 const MAX_IMPLEMENTOR_ATTEMPTS = 3;
-
-const utc = (): string => new Date().toISOString().replace(/\.\d{3}Z$/u, "Z");
 
 const issueOf = (error: unknown): CliIssue => {
   if (typeof error === "object" && error !== null && "issue" in error) {
@@ -99,6 +102,10 @@ const clean = (worktree: string): boolean =>
 
 const commitsBeyond = (worktree: string, base: string): number =>
   Number(git(worktree, ["rev-list", "--count", `${base}..HEAD`]) || "0");
+
+/** File-name prefix of every gate evidence file for one ticket tip. */
+const gatePrefix = (ticket: TicketInfo, tip: string): string =>
+  `${ticket.number}-${tip.slice(0, 12)}-gate-`;
 
 const readText = (path: string): Promise<string | undefined> =>
   readFile(path, "utf8").catch(() => undefined);
@@ -162,6 +169,10 @@ export const builtinTicketOps = (
     const gateSlots = yield* Semaphore.make(options.gateConcurrency);
     const { statePath, runPath } = context;
     const workspace = options.workspace;
+    const reviews = join(runPath, "reviews");
+    /** Path stem shared by one reviewer attempt's launch artifact, report, and evidence. */
+    const reviewStem = (ticket: TicketInfo, round: number, axis: ReviewAxis, attempt: number) =>
+      join(reviews, `${ticket.number}-r${round}-${axis}-a${attempt}`);
 
     const markdown = Effect.promise(() => readFile(statePath, "utf8"));
     const config = markdown.pipe(
@@ -191,11 +202,21 @@ export const builtinTicketOps = (
       );
 
     /**
-     * Runs one helper operation while holding the engine's state permit and lease.
+     * Runs one helper operation under the engine's state permit. Every state write it makes is
+     * fenced on this engine's lease under the state lock.
      */
+    const fence = leaseFence(context.lease.generation);
     const call = <A, E>(effect: Effect.Effect<A, E>): Effect.Effect<A, WorkflowError> =>
       context.exclusive(
-        assertLease(context).pipe(Effect.andThen(effect), Effect.mapError(toWorkflowError)),
+        effect.pipe(
+          Effect.provideService(StateMutationGuard, fence),
+          Effect.catchDefect((defect) =>
+            defect instanceof StateGuardRejected
+              ? Effect.fail(new WorkflowError(defect.issue))
+              : Effect.die(defect),
+          ),
+          Effect.mapError(toWorkflowError),
+        ),
       );
 
     const emit = (
@@ -213,26 +234,16 @@ export const builtinTicketOps = (
       detail: string,
     ): Effect.Effect<string, WorkflowError> =>
       Effect.gen(function* () {
-        const names = yield* Effect.promise(() =>
-          readdir(escalationDir(runPath)).catch(() => [] as string[]),
+        const id = yield* pendingOrNextEscalationId(runPath, ticket.number, kind, cycle).pipe(
+          Effect.mapError(toWorkflowError),
         );
-        const prefix = `${ticket.number}-${kind}-${cycle}-`;
-        const opened = names.filter(
-          (name) =>
-            name.startsWith(prefix) && name.endsWith(".json") && !name.endsWith(".answer.json"),
-        );
-        const answered = new Set(
-          names.filter((name) => name.endsWith(".answer.json")).map((name) => name.slice(0, -12)),
-        );
-        const pending = opened.map((name) => name.slice(0, -5)).find((id) => !answered.has(id));
-        const id = pending ?? escalationId(ticket.number, kind, cycle, opened.length + 1);
         const { created } = yield* openEscalation(runPath, {
           id,
           kind,
           ticket: ticket.number,
           summary,
           detail,
-          opened_at: utc(),
+          opened_at: utcSeconds(),
         }).pipe(Effect.mapError(toWorkflowError));
         if (created) {
           yield* emit(`attention.${kind}`, ticket.number, { id, summary }, true);
@@ -354,7 +365,8 @@ export const builtinTicketOps = (
           );
           return yield* retryImplementor(ticket, attempt, "launch", started.stderr);
         }
-        yield* deliver(`${cfg.prefix}-${ticket.number}`, plan.launch.prompt.args[3]!);
+        const target = herdrPromptTarget(plan.launch.prompt);
+        yield* deliver(target.session, target.prompt);
         yield* call(
           recordImplementorLaunch({
             statePath,
@@ -374,12 +386,7 @@ export const builtinTicketOps = (
     const resumeLaunch = (ticket: TicketInfo, runtime: ActiveTicket, cfg: RunConfig) =>
       Effect.gen(function* () {
         const snapshot = yield* hub.snapshot().pipe(Effect.mapError(toWorkflowError));
-        const live = snapshot.agents.some(
-          (agent) =>
-            agent.name === runtime.session ||
-            agent.displayAgent === runtime.session ||
-            agent.title === runtime.session,
-        );
+        const live = agentsNamed(snapshot, runtime.session).length > 0;
         if (!live) {
           yield* launch(ticket, runtime.attempt, cfg, runtime.implementor);
           return;
@@ -455,6 +462,9 @@ export const builtinTicketOps = (
       ready: (runtime: ActiveTicket, cfg: RunConfig) => boolean,
     ): Effect.Effect<void, WorkflowError> =>
       Effect.gen(function* () {
+        // Readiness probes run git and may throw; surface that as a typed failure.
+        const isReady = (runtime: ActiveTicket, cfg: RunConfig) =>
+          Effect.try({ try: () => ready(runtime, cfg), catch: toWorkflowError });
         let previous: StallObservation | null = null;
         let sequence = 0;
         while (true) {
@@ -472,7 +482,9 @@ export const builtinTicketOps = (
             Effect.sleep(cfg.stallIntervalMs).pipe(Effect.as("timeout" as const)),
           ).pipe(Effect.mapError(toWorkflowError));
           if (yield* handleQuestion(ticket, runtime)) continue;
-          if (outcome !== "timeout" && outcome !== "exited" && ready(runtime, cfg)) return;
+          if (outcome !== "timeout" && outcome !== "exited" && (yield* isReady(runtime, cfg))) {
+            return;
+          }
           if (outcome === "exited") {
             yield* emit("implementor.exited", ticket.number, { purpose }, true);
             yield* retryImplementor(ticket, runtime.attempt, "worker", "Implementor pane exited.");
@@ -490,7 +502,7 @@ export const builtinTicketOps = (
               catch: (error) => toWorkflowError(error),
             });
             if (live.status === "working") continue;
-            if (ready(runtime, yield* config)) return;
+            if (yield* isReady(runtime, yield* config)) return;
           }
           const details = yield* Effect.promise(() => ticketDetails(runPath, ticket));
           sequence += 1;
@@ -584,13 +596,12 @@ export const builtinTicketOps = (
 
     const failedGates = (ticket: TicketInfo, runtime: ActiveTicket) =>
       Effect.promise(async () => {
-        const tip = head(runtime.worktree).slice(0, 12);
-        const dir = join(runPath, "reviews");
-        const names = await readdir(dir).catch(() => [] as string[]);
+        const prefix = gatePrefix(ticket, head(runtime.worktree));
+        const names = await readdir(reviews).catch(() => [] as string[]);
         const failed = new Set<string>();
         for (const name of names) {
-          if (!name.startsWith(`${ticket.number}-${tip}-gate-`)) continue;
-          const evidence = JSON.parse((await readText(join(dir, name))) ?? "{}") as {
+          if (!name.startsWith(prefix)) continue;
+          const evidence = JSON.parse((await readText(join(reviews, name))) ?? "{}") as {
             status?: string;
             gate?: { name?: string };
           };
@@ -608,7 +619,7 @@ export const builtinTicketOps = (
           repositoryPath: options.repository,
           worktreePath: runtime.worktree,
           ticket: ticket.number,
-          completedAt: utc(),
+          completedAt: utcSeconds(),
         }),
       );
 
@@ -658,11 +669,10 @@ export const builtinTicketOps = (
         const failed: string[] = [];
         for (const gate of cfg.reviewPolicy.gates) {
           if (passed.has(gate.name)) continue;
-          const reviews = join(runPath, "reviews");
           yield* Effect.promise(() => mkdir(reviews, { recursive: true }));
           let attempt =
             (yield* Effect.promise(() => readdir(reviews))).filter((name) =>
-              name.startsWith(`${ticket.number}-${tip.slice(0, 12)}-gate-${gate.name}-a`),
+              name.startsWith(`${gatePrefix(ticket, tip)}${gate.name}-a`),
             ).length + 1;
           while (true) {
             yield* emit("gate.started", ticket.number, { name: gate.name, attempt });
@@ -675,7 +685,7 @@ export const builtinTicketOps = (
                 statePath,
                 evidencePath: join(
                   reviews,
-                  `${ticket.number}-${tip.slice(0, 12)}-gate-${gate.name}-a${attempt}.json`,
+                  `${gatePrefix(ticket, tip)}${gate.name}-a${attempt}.json`,
                 ),
                 worktreePath: runtime.worktree,
                 ticket: ticket.number,
@@ -686,7 +696,7 @@ export const builtinTicketOps = (
                 exitCode: run.exitCode ?? -1,
                 stdout: run.stdout,
                 stderr: run.stderr,
-                completedAt: utc(),
+                completedAt: utcSeconds(),
               }),
             );
             yield* emit("gate.recorded", ticket.number, {
@@ -722,7 +732,7 @@ export const builtinTicketOps = (
       });
 
     const selfReviewPaths = (ticket: TicketInfo, round: number) => {
-      const path = join(runPath, "reviews", `${ticket.number}-r${round}-self-review.md`);
+      const path = join(reviews, `${ticket.number}-r${round}-self-review.md`);
       return { path, draft: `${path}.draft.md` };
     };
 
@@ -746,11 +756,10 @@ export const builtinTicketOps = (
         const cfg = yield* config;
         const runtime = yield* requireActive(ticket);
         const round = nextReviewRound(text, ticket.number);
-        const reviews = join(runPath, "reviews");
         const tip = head(runtime.worktree);
         let previousArtifact: string | undefined;
         for (let attempt = 1; ; attempt++) {
-          const base = join(reviews, `${ticket.number}-r${round}-${axis}-a${attempt}`);
+          const base = reviewStem(ticket, round, axis, attempt);
           const artifactPath = `${base}.launch.json`;
           const reportPath = `${base}.md`;
           const evidence =
@@ -774,7 +783,7 @@ export const builtinTicketOps = (
             const names = await readdir(reviews).catch(() => [] as string[]);
             const paths: string[] = [];
             for (const name of names.filter((candidate) =>
-              candidate.startsWith(`${ticket.number}-${tip.slice(0, 12)}-gate-`),
+              candidate.startsWith(gatePrefix(ticket, tip)),
             )) {
               const stored = JSON.parse((await readText(join(reviews, name))) ?? "{}") as {
                 status?: string;
@@ -802,20 +811,20 @@ export const builtinTicketOps = (
                 axis === "standards"
                   ? landed.map((file) => join(options.repository, file))
                   : [join(runPath, "spec.md"), join(runPath, ticket.path)],
-              landedTickets: [
-                ...text.matchAll(/^\|\s*(\d+)\s*\|.*\|\s*landed\s*\|[^|]*\|\s*$/gmu),
-              ].map((match) => match[1]!),
+              landedTickets: ticketRows(text)
+                .filter((row) => row.status === "landed")
+                .map((row) => row.NN),
               gateEvidencePaths: gateEvidence,
               attempt,
             }),
           );
-          const session = prepared.launch.prompt.args[2]!;
+          const { session, prompt } = herdrPromptTarget(prepared.launch.prompt);
           if (!prepared.recovered) {
             const started = yield* actuator
               .run(prepared.launch.start)
               .pipe(Effect.mapError(toWorkflowError));
             if (started.exitCode === 0) {
-              yield* deliver(session, prepared.launch.prompt.args[3]!);
+              yield* deliver(session, prompt);
             }
           }
           yield* emit("reviewer.launched", ticket.number, { axis, round, attempt });
@@ -837,7 +846,7 @@ export const builtinTicketOps = (
                     stderr: `Reviewer finished (${status.status}) without writing ${reviewDraftPath(reportPath)}.`,
                   }
                 : undefined,
-            completedAt: utc(),
+            completedAt: utcSeconds(),
           };
           let recorded = yield* call(recordReviewerLaunch(input));
           if (recorded.action === "close-runtime") {
@@ -870,12 +879,8 @@ export const builtinTicketOps = (
 
     const acceptedEvidence = (ticket: TicketInfo, round: number, axis: ReviewAxis) =>
       Effect.promise(async () => {
-        for (let attempt = 4; attempt >= 1; attempt--) {
-          const path = join(
-            runPath,
-            "reviews",
-            `${ticket.number}-r${round}-${axis}-a${attempt}.md.json`,
-          );
+        for (let attempt = REVIEW_MAX_INFRASTRUCTURE_ATTEMPTS; attempt >= 1; attempt--) {
+          const path = `${reviewStem(ticket, round, axis, attempt)}.md.json`;
           const stored = (await readText(path)) ?? undefined;
           if (
             stored !== undefined &&
@@ -921,7 +926,7 @@ export const builtinTicketOps = (
                 : "standards-spec-single-session",
             selfReviewReport: report,
             fixRequestPath: join(runPath, "briefs", `fixes-${ticket.number}-round-${round}.md`),
-            completedAt: utc(),
+            completedAt: utcSeconds(),
           }),
         );
         yield* emit("review.round_finalized", ticket.number, {
@@ -952,7 +957,7 @@ export const builtinTicketOps = (
         const text =
           request.kind === "review"
             ? `Apply every finding in ${request.path}. Follow the fix-commit policy it states, rerun every required gate and your self-review, then print \`FIXES DONE ${ticket.number}\`.`
-            : `These required gates failed on your current commit: ${request.failed.join(", ")}. Their full output is in ${join(runPath, "reviews")} (files starting with ${ticket.number}-${head(runtime.worktree).slice(0, 12)}-gate-). Fix the cause, commit per the repository policy, rerun every required gate, then print \`FIXES DONE ${ticket.number}\`.`;
+            : `These required gates failed on your current commit: ${request.failed.join(", ")}. Their full output is in ${reviews} (files starting with ${gatePrefix(ticket, head(runtime.worktree))}). Fix the cause, commit per the repository policy, rerun every required gate, then print \`FIXES DONE ${ticket.number}\`.`;
         yield* emit("ticket.fix_requested", ticket.number, { kind: request.kind });
         yield* fixWith(ticket, runtime, text);
       });
@@ -965,11 +970,11 @@ export const builtinTicketOps = (
             statePath,
             repositoryPath: options.repository,
             worktreePath: runtime.worktree,
-            evidencePath: join(runPath, "reviews", `${ticket.number}-landed.json`),
+            evidencePath: join(reviews, `${ticket.number}-landed.json`),
             ticket: ticket.number,
             cleanupArgv: undefined,
             lockWaitSeconds: undefined,
-            completedAt: utc(),
+            completedAt: utcSeconds(),
           };
           const outcome = yield* Effect.result(call(completeLanding(input)));
           if (Result.isFailure(outcome)) {
@@ -1039,7 +1044,7 @@ export const builtinTicketOps = (
             closures: [],
             userAuthorized: false,
             projectRemoteWrites: options.projectRemoteWrites,
-            completedAt: utc(),
+            completedAt: utcSeconds(),
           }),
         );
         yield* emit(

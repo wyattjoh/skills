@@ -1,16 +1,15 @@
 import { Data, Effect } from "effect";
 import { existsSync, realpathSync } from "node:fs";
 import { mkdir, readFile, realpath, writeFile } from "node:fs/promises";
-import { basename, dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
+import { dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import type {
   CliIssue,
   CommitPolicy,
   LandingCompleteInput,
   LandingRebaseCheckInput,
-  LandingRebaseRecordInput,
 } from "./contract.ts";
 import { activeRuntimeBlockPattern, parseActiveRuntimeFields } from "./active-runtime.ts";
-import { cleanGitEnv, spawnGit } from "./git.ts";
+import { checkoutIdentity, spawnClean, spawnGit } from "./git.ts";
 import {
   bindIntegration,
   checkIntegration,
@@ -23,12 +22,14 @@ import {
   parseIntegration,
   rebasePrompt,
   recordRebase,
-  removeIntegration,
   writeIntegration,
 } from "./integration.ts";
+import { readJsonSection, readRepositoryPolicy } from "./policy-records.ts";
+import { appendSectionLine, updateTicketCells } from "./resume-sections.ts";
 import { inspectRuntimeClose } from "./runtime-close.ts";
-import { mutateStateFile, StateMutationError } from "./state-mutation.ts";
+import { mutateStateFile, mutationIssue } from "./state-mutation.ts";
 import { validateStateText } from "./state.ts";
+import { canonicalPathAllowingMissing } from "./values.ts";
 
 type PersistedRepositoryPolicy = {
   remote: "local-only" | "repository";
@@ -68,63 +69,30 @@ const attempt = <Value>(evaluate: () => Value): Effect.Effect<Value, LandingErro
 const fromMutationError = (error: unknown): LandingError => {
   if (error instanceof LandingError) return error;
   if (error instanceof IntegrationError) return new LandingError({ issue: error.issue });
-  const detail = error instanceof StateMutationError ? error.message : (error as Error).message;
-  return landingError(
-    error instanceof StateMutationError && error.kind === "lock_busy"
-      ? "landing.state_busy"
-      : "landing.state_io_failed",
-    `Could not update ticket integration state: ${detail}`,
-    "Verify RESUME.md is writable, then retry the same operation.",
-  );
+  return new LandingError({
+    issue: mutationIssue(
+      error,
+      "landing",
+      "ticket integration state",
+      "Verify RESUME.md is writable, then retry the same operation.",
+    ),
+  });
 };
 
 const parseRepositoryPolicy = (markdown: string): PersistedRepositoryPolicy => {
-  const match = markdown.match(
-    /^## Repository policy\s*\r?\n\r?\n```json\r?\n([\s\S]*?)\r?\n```\s*$/mu,
-  );
-  if (match === null) {
-    throw landingError(
-      "landing.repository_policy_missing",
-      "RESUME.md has no persisted Repository policy.",
-      "Resolve repository synchronization, cleanup, and commit policy before integration.",
-    );
-  }
-  try {
-    const value = JSON.parse(match[1]!) as Partial<PersistedRepositoryPolicy>;
-    const commit = value.commit;
-    const remoteSyncArgv = value.remote_sync_argv;
-    if (
-      (value.remote !== "local-only" && value.remote !== "repository") ||
-      (value.remote === "local-only" && remoteSyncArgv !== null) ||
-      (value.remote === "repository" &&
-        (!Array.isArray(remoteSyncArgv) ||
-          remoteSyncArgv.length === 0 ||
-          remoteSyncArgv.some(
-            (argument) =>
-              typeof argument !== "string" || argument.length === 0 || /[\r\n]/u.test(argument),
-          ))) ||
-      (value.cleanup !== "native-safe" && value.cleanup !== "repository") ||
-      commit === undefined ||
-      (commit.commits !== "multiple" &&
-        commit.commits !== "single" &&
-        commit.commits !== "squash") ||
-      (commit.fixes !== "append" && commit.fixes !== "amend" && commit.fixes !== "squash")
-    ) {
-      throw new Error("invalid policy fields");
-    }
-    return {
-      remote: value.remote,
-      remote_sync_argv: value.remote === "repository" ? (remoteSyncArgv ?? null) : null,
-      cleanup: value.cleanup,
-      commit,
-    };
-  } catch {
-    throw landingError(
-      "landing.repository_policy_malformed",
-      "RESUME.md contains an incomplete Repository policy.",
-      "Repair the persisted remote, cleanup, and commit records before integration.",
-    );
-  }
+  const record = readRepositoryPolicy(markdown);
+  if ("policy" in record) return record.policy;
+  throw record.problem === "missing"
+    ? landingError(
+        "landing.repository_policy_missing",
+        "RESUME.md has no persisted Repository policy.",
+        "Resolve repository synchronization, cleanup, and commit policy before integration.",
+      )
+    : landingError(
+        "landing.repository_policy_malformed",
+        "RESUME.md contains an incomplete Repository policy.",
+        "Repair the persisted remote, cleanup, and commit records before integration.",
+      );
 };
 
 const parseBaseBranch = (markdown: string): string => {
@@ -140,16 +108,17 @@ const parseBaseBranch = (markdown: string): string => {
 };
 
 const parseGateCount = (markdown: string): number => {
-  const match = markdown.match(
-    /^## Review policy\s*\r?\n\r?\n```json\r?\n([\s\S]*?)\r?\n```\s*$/mu,
+  const record = readJsonSection(markdown, "Review policy");
+  const gates =
+    "value" in record && typeof record.value === "object" && record.value !== null
+      ? (record.value as { gates?: unknown }).gates
+      : undefined;
+  if (Array.isArray(gates)) return gates.length;
+  throw landingError(
+    "landing.review_policy_malformed",
+    "RESUME.md has no single Review policy with a gates list.",
+    "Run `review.policy.prepare` before integration.",
   );
-  if (match === null) return 0;
-  try {
-    const gates = (JSON.parse(match[1]!) as { gates: unknown }).gates;
-    return Array.isArray(gates) ? gates.length : 0;
-  } catch {
-    return 0;
-  }
 };
 
 const parseActiveTicket = (
@@ -190,21 +159,18 @@ const validateRepositoryAndWorktree = (
   baseBranch: string,
 ): Effect.Effect<void, LandingError> =>
   Effect.gen(function* () {
-    const repositoryRoot = spawnGit(["rev-parse", "--show-toplevel"], { cwd: repositoryPath });
-    const worktreeRoot = spawnGit(["rev-parse", "--show-toplevel"], { cwd: worktreePath });
-    const currentBranch = spawnGit(["symbolic-ref", "--short", "HEAD"], { cwd: worktreePath });
+    const repository = checkoutIdentity(repositoryPath);
+    const worktree = checkoutIdentity(worktreePath);
     const baseExists = spawnGit(["show-ref", "--verify", `refs/heads/${baseBranch}`], {
       cwd: repositoryPath,
     });
-    if (repositoryRoot.exitCode !== 0)
-      return yield* gitFailure("Repository validation", repositoryRoot.stderr);
-    if (worktreeRoot.exitCode !== 0)
-      return yield* gitFailure("Worktree validation", worktreeRoot.stderr);
+    if (!repository.ok) return yield* gitFailure("Repository validation", repository.stderr);
+    if (!worktree.ok) return yield* gitFailure("Worktree validation", worktree.stderr);
     if (
-      realpathSync(repositoryRoot.stdout.trim()) !== realpathSync(repositoryPath) ||
-      realpathSync(worktreeRoot.stdout.trim()) !== realpathSync(worktreePath) ||
+      !repository.isRoot ||
+      !worktree.isRoot ||
       realpathSync(activeWorktree) !== realpathSync(worktreePath) ||
-      currentBranch.stdout.trim() !== branch
+      worktree.branch !== branch
     ) {
       return yield* landingError(
         "landing.runtime_mismatch",
@@ -221,42 +187,13 @@ const validateRepositoryAndWorktree = (
     }
   });
 
-const canonicalPathAllowingMissing = async (path: string): Promise<string> => {
-  let cursor = resolve(path);
-  const missing: string[] = [];
-  while (true) {
-    try {
-      const existing = await realpath(cursor);
-      return resolve(existing, ...missing);
-    } catch (error) {
-      if (!(error instanceof Error && "code" in error && error.code === "ENOENT")) throw error;
-      const parent = dirname(cursor);
-      if (parent === cursor) throw error;
-      missing.unshift(basename(cursor));
-      cursor = parent;
-    }
-  }
-};
-
 const runExactCommand = (
   argv: string[],
   cwd: string,
   action: string,
 ): Effect.Effect<void, LandingError> =>
   Effect.gen(function* () {
-    const result = yield* Effect.sync(() => {
-      try {
-        const child = Bun.spawnSync(argv, {
-          cwd,
-          env: cleanGitEnv(),
-          stdout: "pipe",
-          stderr: "pipe",
-        });
-        return { exitCode: child.exitCode, stderr: child.stderr.toString() };
-      } catch (error) {
-        return { exitCode: 1, stderr: (error as Error).message };
-      }
-    });
+    const result = yield* Effect.sync(() => spawnClean(argv, { cwd }));
     if (result.exitCode !== 0) return yield* gitFailure(action, result.stderr);
   });
 
@@ -286,7 +223,7 @@ const phaseActions = {
 } as const;
 
 /**
- * Integration binding returned by `landing.rebase.check` and `landing.rebase.record`.
+ * Integration binding returned by `landing.rebase.check`.
  */
 export type LandingRebaseResult = {
   ticket: string;
@@ -492,129 +429,37 @@ export const checkLandingRebase = (
     ).pipe(Effect.mapError(fromMutationError));
   });
 
-/**
- * Validates an implementor's rebased clean tip and records the next integration cycle.
- *
- * Gates always rerun after a rebase. Both reviews are kept only when the ticket patch id is
- * unchanged from the reviewed patch id; otherwise Standards and Spec rerun.
- *
- * @param input - Run state, integration checkout, ticket worktree, and timestamp.
- * @returns The new integration binding and the next coordinator action.
- */
-export const recordLandingRebase = (
-  input: LandingRebaseRecordInput,
-): Effect.Effect<LandingRebaseResult, LandingError> =>
-  Effect.gen(function* () {
-    const prepared = yield* prepareIntegration(input);
-    return yield* mutateStateFile(input.statePath, (markdown) =>
-      Effect.gen(function* () {
-        const prior = yield* attempt(() => parseIntegration(markdown, input.ticket));
-        if (prior?.phase !== "rebase-required") {
-          return yield* landingError(
-            "landing.rebase_not_required",
-            `Ticket \`${input.ticket}\` has no pending rebase to record.`,
-            "Call landing.rebase.check; record a rebase only after it returns action `rebase`.",
-          );
-        }
-        const upToDate = yield* attempt(() =>
-          checkIntegration(input.worktreePath, prepared.baseBranch),
-        );
-        if (!upToDate) {
-          return yield* landingError(
-            "landing.rebase_incomplete",
-            `Ticket branch does not contain the local integration branch \`${prepared.baseBranch}\`.`,
-            "Return the rebase prompt to the bound implementor and record only its completed rebase.",
-          );
-        }
-        const observed = yield* attempt(() =>
-          observeIntegration(input.worktreePath, prepared.baseBranch),
-        );
-        const record = recordRebase(prior, observed, {
-          minimumCycle: 0,
-          commitShapeValid: commitShapeValid(prepared.policy.commit, observed.commit_count),
-          gateCount: parseGateCount(markdown),
-          completedAt: input.completedAt,
-        });
-        return {
-          markdown: writeIntegration(markdown, input.ticket, record, phaseLabels[record.phase]),
-          result: rebaseResult(input.ticket, record, {
-            baseBranch: prepared.baseBranch,
-            commitPolicy: prepared.policy.commit,
-            remoteSynchronized: prepared.remoteSynchronized,
-            worktreePath: input.worktreePath,
-          }),
-        };
-      }),
-    ).pipe(Effect.mapError(fromMutationError));
-  });
-
-const ticketTableSection = (markdown: string): { start: number; end: number; text: string } => {
-  const heading = /^## Tickets\s*$/mu.exec(markdown);
-  if (heading === null) {
-    throw landingError(
-      "landing.tickets_missing",
-      "RESUME.md has no Tickets section.",
-      "Repair the schema-2 ticket table before recording landing.",
-    );
-  }
-  const start = heading.index + heading[0].length;
-  const next = /^## /gmu;
-  next.lastIndex = start;
-  const end = next.exec(markdown)?.index ?? markdown.length;
-  return { start, end, text: markdown.slice(start, end) };
-};
-
 const updateTicketAsLanded = (markdown: string, ticket: string, sha: string): string => {
-  const section = ticketTableSection(markdown);
-  const lines = section.text.split(/\r?\n/u);
-  const headerIndex = lines.findIndex((line) => line.trimStart().startsWith("| NN"));
-  const columns =
-    headerIndex < 0
-      ? []
-      : lines[headerIndex]!.split("|")
-          .slice(1, -1)
-          .map((cell) => cell.trim());
-  const rowIndex = lines.findIndex((line) => line.split("|")[1]?.trim() === ticket);
-  if (headerIndex < 0 || rowIndex < 0) {
-    throw landingError(
-      "landing.ticket_missing",
-      `Ticket \`${ticket}\` is absent from the state table.`,
-      "Restore the normalized ticket row before recording landing.",
-    );
+  const updated = updateTicketCells(markdown, ticket, { status: "landed", sha });
+  if (typeof updated === "string") return updated;
+  switch (updated.kind) {
+    case "section_missing":
+      throw landingError(
+        "landing.tickets_missing",
+        "RESUME.md has no Tickets section.",
+        "Repair the schema-2 ticket table before recording landing.",
+      );
+    case "header_missing":
+    case "row_missing":
+      throw landingError(
+        "landing.ticket_missing",
+        `Ticket \`${ticket}\` is absent from the state table.`,
+        "Restore the normalized ticket row before recording landing.",
+      );
+    case "row_malformed":
+    case "column_missing":
+      throw landingError(
+        "landing.ticket_table_malformed",
+        "Ticket table is missing status or sha columns.",
+        "Repair the schema-2 ticket table before recording landing.",
+      );
   }
-  const cells = lines[rowIndex]!.split("|")
-    .slice(1, -1)
-    .map((cell) => cell.trim());
-  const statusIndex = columns.indexOf("status");
-  const shaIndex = columns.indexOf("sha");
-  if (cells.length !== columns.length || statusIndex < 0 || shaIndex < 0) {
-    throw landingError(
-      "landing.ticket_table_malformed",
-      "Ticket table is missing status or sha columns.",
-      "Repair the schema-2 ticket table before recording landing.",
-    );
-  }
-  cells[statusIndex] = "landed";
-  cells[shaIndex] = sha;
-  lines[rowIndex] = `| ${cells.join(" | ")} |`;
-  return `${markdown.slice(0, section.start)}${lines.join("\n")}${markdown.slice(section.end)}`;
-};
-
-const appendSectionLine = (markdown: string, heading: string, line: string): string => {
-  const expression = new RegExp(`^## ${heading}\\s*$`, "mu");
-  const match = expression.exec(markdown);
-  if (match === null) return `${markdown.trimEnd()}\n\n## ${heading}\n\n${line}\n`;
-  const start = match.index + match[0].length;
-  const next = /^## /gmu;
-  next.lastIndex = start;
-  const end = next.exec(markdown)?.index ?? markdown.length;
-  const section = markdown.slice(start, end).trimEnd();
-  if (section.split(/\r?\n/u).includes(line)) return markdown;
-  return `${markdown.slice(0, start)}${section}\n\n${line}\n${markdown.slice(end)}`;
 };
 
 const appendRetainedBranch = (markdown: string, branch: string, sha: string): string =>
-  appendSectionLine(markdown, "Retained landed branches", `- ${branch} (${sha})`);
+  appendSectionLine(markdown, "Retained landed branches", `- ${branch} (${sha})`, {
+    spacing: "blank",
+  });
 
 const appendLandedEvidence = (
   markdown: string,
@@ -628,6 +473,7 @@ const appendLandedEvidence = (
     markdown,
     "Landed evidence",
     `- Ticket ${ticket}: ${evidencePath}; tip ${ticketSha}; branch ${branch}; cleanup ${cleanup}`,
+    { spacing: "blank" },
   );
 
 /**
@@ -769,7 +615,10 @@ export const applyNoChangeGateRerun = (
     },
     "gates after authorized no-change rerun",
   );
-  return { markdown: appendSectionLine(updated, "Decisions", decision), recovered: false };
+  return {
+    markdown: appendSectionLine(updated, "Decisions", decision, { spacing: "blank" }),
+    recovered: false,
+  };
 };
 
 /**
@@ -838,68 +687,6 @@ export const applyFinalReviewOutcome = (
 };
 
 /**
- * Reconstructs the blocked escalation state used by legacy runs.
- *
- * @param markdown - Latest locked run-state Markdown after recording the failed review.
- * @param input - Ticket, completed round, and decision timestamp.
- * @returns Updated state that preserves the runtime but releases its integration record.
- */
-export const applyEscalationBlock = (
-  markdown: string,
-  input: { ticket: string; round: number; completedAt: string },
-): string => {
-  const section = ticketTableSection(markdown);
-  const lines = section.text.split(/\r?\n/u);
-  const headerIndex = lines.findIndex((line) => line.trimStart().startsWith("| NN"));
-  const columns =
-    headerIndex < 0
-      ? []
-      : lines[headerIndex]!.split("|")
-          .slice(1, -1)
-          .map((cell) => cell.trim());
-  const rowIndex = lines.findIndex((line) => line.split("|")[1]?.trim() === input.ticket);
-  const roundsIndex = columns.indexOf("rounds");
-  const escalationIndex = columns.indexOf("esc");
-  const statusIndex = columns.indexOf("status");
-  if (
-    headerIndex < 0 ||
-    rowIndex < 0 ||
-    roundsIndex < 0 ||
-    escalationIndex < 0 ||
-    statusIndex < 0
-  ) {
-    throw landingError(
-      "landing.ticket_table_malformed",
-      "Ticket table is missing rounds, esc, or status columns for escalation.",
-      "Repair the schema-2 ticket table before recording escalation.",
-    );
-  }
-  const cells = lines[rowIndex]!.split("|")
-    .slice(1, -1)
-    .map((cell) => cell.trim());
-  cells[roundsIndex] = String(input.round);
-  cells[escalationIndex] = "yes";
-  cells[statusIndex] = "blocked";
-  lines[rowIndex] = `| ${cells.join(" | ")} |`;
-  const withTicket = `${markdown.slice(0, section.start)}${lines.join("\n")}${markdown.slice(section.end)}`;
-  const pattern = activeRuntimeBlockPattern(input.ticket);
-  const released = removeIntegration(withTicket, input.ticket);
-  const block = released.match(pattern)?.[0];
-  const withPhase =
-    block === undefined
-      ? released
-      : released.replace(
-          pattern,
-          block.replace(/^Phase:.*$/mu, "Phase: blocked, awaiting escalation role"),
-        );
-  return appendSectionLine(
-    withPhase,
-    "Decisions",
-    `- ${input.completedAt.slice(0, 10)} ticket ${input.ticket} blocked after fix round ${input.round}; awaiting explicit escalation role`,
-  );
-};
-
-/**
  * Outcome of the locked fast-forward step.
  */
 export type LandTicketOutcome = "landed" | "rebase_required" | "dirty" | "timeout";
@@ -942,20 +729,8 @@ export const landTicket = (input: {
       input.ticketSha,
     ];
     const child = yield* Effect.sync(() => {
-      try {
-        const result = Bun.spawnSync(argv, {
-          cwd: input.repositoryPath,
-          env: cleanGitEnv(),
-          stdout: "pipe",
-          stderr: "pipe",
-        });
-        return {
-          exitCode: result.exitCode,
-          output: `${result.stdout.toString()}${result.stderr.toString()}`.trim(),
-        };
-      } catch (error) {
-        return { exitCode: 127, output: (error as Error).message };
-      }
+      const result = spawnClean(argv, { cwd: input.repositoryPath });
+      return { exitCode: result.exitCode, output: `${result.stdout}${result.stderr}`.trim() };
     });
     if (child.exitCode === 0) return { outcome: "landed" as const, output: child.output };
     if (child.exitCode === 1) return { outcome: "timeout" as const, output: child.output };
@@ -1074,18 +849,11 @@ const validateReadyLanding = (
         "Use the recorded worktree for landing and cleanup.",
       );
     }
-    const repositoryRoot = spawnGit(["rev-parse", "--show-toplevel"], {
-      cwd: input.repositoryPath,
-    });
-    const repositoryBranch = spawnGit(["symbolic-ref", "--short", "HEAD"], {
-      cwd: input.repositoryPath,
-    });
-    if (repositoryRoot.exitCode !== 0)
-      return yield* gitFailure("Integration checkout validation", repositoryRoot.stderr);
-    if (
-      realpathSync(repositoryRoot.stdout.trim()) !== realpathSync(input.repositoryPath) ||
-      repositoryBranch.stdout.trim() !== baseBranch
-    ) {
+    const checkout = checkoutIdentity(input.repositoryPath);
+    if (!checkout.ok) {
+      return yield* gitFailure("Integration checkout validation", checkout.stderr);
+    }
+    if (!checkout.isRoot || checkout.branch !== baseBranch) {
       return yield* landingError(
         "landing.base_checkout_mismatch",
         "Landing must run from the recorded local integration branch checkout.",

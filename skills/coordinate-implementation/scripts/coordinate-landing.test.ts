@@ -10,16 +10,16 @@ import {
   rebasePrompt,
   ticketPatchId,
 } from "./lib/integration.ts";
-import { runCliInProcess } from "./test-cli.ts";
+import { type CliResult, request, runJson } from "./test-cli.ts";
 import { createFakeHerdrEnv } from "./test-herdr.ts";
 
 const HERDR_ENV = createFakeHerdrEnv();
 
-type CliResult = {
-  exitCode: number;
-  stdout: Record<string, unknown>;
-  stderr: string;
-};
+const runCli = (
+  operation: string,
+  input: Record<string, unknown>,
+  env: Record<string, string | undefined> = HERDR_ENV,
+) => runJson(request(operation, input), env);
 
 type LandingFixture = {
   root: string;
@@ -27,19 +27,6 @@ type LandingFixture = {
   worktreePath: string;
   statePath: string;
   branch: string;
-};
-
-const runCli = async (
-  operation: string,
-  input: Record<string, unknown>,
-  env: Record<string, string | undefined> = HERDR_ENV,
-): Promise<CliResult> => {
-  const child = await runCliInProcess({ schema_version: 1, operation, input }, env);
-  return {
-    exitCode: child.exitCode,
-    stdout: JSON.parse(child.stdout.trim()) as Record<string, unknown>,
-    stderr: child.stderr,
-  };
 };
 
 const commit = (
@@ -241,19 +228,6 @@ const rebaseCheck = (
     completed_at: completedAt,
   });
 
-const rebaseRecord = (
-  fixture: LandingFixture,
-  binding: TicketBinding = primary(fixture),
-  completedAt = "2026-09-19T02:30:00Z",
-): Promise<CliResult> =>
-  runCli("landing.rebase.record", {
-    state_path: fixture.statePath,
-    repository_path: fixture.repositoryPath,
-    worktree_path: binding.worktreePath,
-    ticket: binding.ticket,
-    completed_at: completedAt,
-  });
-
 const landingInput = (
   fixture: LandingFixture,
   binding: TicketBinding = primary(fixture),
@@ -413,9 +387,6 @@ const resolveRebase = (worktreePath: string, contents: string): void => {
   ).toBe(0);
 };
 
-const readSkillFile = (...path: string[]): string =>
-  readFileSync(join(import.meta.dir, "..", ...path), "utf8");
-
 const runLocked = (
   checkout: string,
   base: string,
@@ -429,30 +400,6 @@ const runLocked = (
 };
 
 describe("per-ticket integration and landing", () => {
-  it("documents the rebase, integration, and flock landing interfaces", () => {
-    const skill = readSkillFile("SKILL.md");
-    const helper = readSkillFile("references", "helper-cli.md");
-    const procedure = readSkillFile("references", "review-and-land.md");
-    const resume = readSkillFile("references", "resume-format.md");
-    const brief = readSkillFile("references", "common-brief.md");
-
-    expect(skill).toContain("`landing.rebase.check`");
-    expect(skill).toContain("`landing.rebase.record`");
-    expect(skill).toContain("`landing.complete`");
-    expect(skill).toContain("Rebase conflicts belong to the implementor, never the coordinator.");
-    expect(helper).toContain("## `landing.rebase.check`");
-    expect(helper).toContain("## `landing.rebase.record`");
-    expect(helper).toContain("## `landing.complete`");
-    expect(helper).toContain("<git-common-dir>/land-local.lock");
-    expect(procedure).toContain("latest local integration branch");
-    expect(procedure).toContain("`--force`");
-    expect(resume).toContain("### `Integration` field");
-    expect(resume).toContain("Schema version: 2");
-    expect(resume).toContain("## Landed evidence");
-    expect(brief).toContain("REBASE DONE <ticket-number>");
-    expect(brief).toContain("Never check out, edit,\n  reset, or merge in the base checkout.");
-  });
-
   it("rejects removed serialized finalization operations as unknown", async () => {
     for (const operation of ["landing.synchronize", "landing.yield", "landing.conflict.record"]) {
       const result = await runCli(operation, {});
@@ -573,12 +520,12 @@ describe("per-ticket integration and landing", () => {
     );
     expect(readFileSync(fixture.statePath, "utf8")).toContain("Phase: rebase required");
 
-    const incomplete = await rebaseRecord(fixture);
-    expect(incomplete.exitCode).toBe(1);
-    expect(incomplete.stdout).toMatchObject({ errors: [{ code: "landing.rebase_incomplete" }] });
+    const incomplete = await rebaseCheck(fixture, primary(fixture), "2026-09-19T02:30:00Z");
+    expect(incomplete.exitCode).toBe(0);
+    expect(incomplete.stdout.result).toMatchObject({ action: "rebase", cycle: 0 });
 
     expect(spawnGit(["rebase", "main"], { cwd: fixture.worktreePath }).exitCode).toBe(0);
-    const recorded = await rebaseRecord(fixture);
+    const recorded = await rebaseCheck(fixture, primary(fixture), "2026-09-19T02:30:00Z");
     const rebasedTip = spawnGit(["rev-parse", "HEAD"], { cwd: fixture.worktreePath }).stdout.trim();
     expect(recorded.exitCode).toBe(0);
     expect(recorded.stdout.result).toMatchObject({
@@ -592,9 +539,9 @@ describe("per-ticket integration and landing", () => {
       prompt: null,
     });
 
-    const notPending = await rebaseRecord(fixture);
-    expect(notPending.exitCode).toBe(1);
-    expect(notPending.stdout).toMatchObject({ errors: [{ code: "landing.rebase_not_required" }] });
+    const unchanged = await rebaseCheck(fixture, primary(fixture), "2026-09-19T02:30:00Z");
+    expect(unchanged.exitCode).toBe(0);
+    expect(unchanged.stdout.result).toMatchObject({ action: "run-gates", cycle: 1 });
   });
 
   it("refuses a dirty worktree or an unfinished rebase without changing state", async () => {
@@ -605,7 +552,7 @@ describe("per-ticket integration and landing", () => {
     const before = readFileSync(fixture.statePath, "utf8");
 
     expect(spawnGit(["rebase", "main"], { cwd: fixture.worktreePath }).exitCode).toBe(1);
-    const unfinished = await rebaseRecord(fixture);
+    const unfinished = await rebaseCheck(fixture, primary(fixture), "2026-09-19T02:30:00Z");
     expect(unfinished.exitCode).toBe(1);
     expect(unfinished.stdout).toMatchObject({
       errors: [{ code: "landing.operation_in_progress" }],
@@ -614,7 +561,7 @@ describe("per-ticket integration and landing", () => {
 
     resolveRebase(fixture.worktreePath, "landed\nticket\n");
     writeFileSync(join(fixture.worktreePath, "scratch.txt"), "dirty\n");
-    const dirty = await rebaseRecord(fixture);
+    const dirty = await rebaseCheck(fixture, primary(fixture), "2026-09-19T02:30:00Z");
     expect(dirty.exitCode).toBe(1);
     expect(dirty.stdout).toMatchObject({ errors: [{ code: "landing.worktree_dirty" }] });
     expect(readFileSync(fixture.statePath, "utf8")).toBe(before);
@@ -643,7 +590,7 @@ describe("per-ticket integration and landing", () => {
     );
 
     expect(spawnGit(["rebase", "main"], { cwd: fixture.worktreePath }).exitCode).toBe(0);
-    const recorded = await rebaseRecord(fixture);
+    const recorded = await rebaseCheck(fixture, primary(fixture), "2026-09-19T02:30:00Z");
     expect(recorded.exitCode).toBe(0);
     expect(recorded.stdout.result).toMatchObject({
       action: "run-gates",
@@ -698,7 +645,7 @@ describe("per-ticket integration and landing", () => {
     expect(spawnGit(["rebase", "main"], { cwd: fixture.worktreePath }).exitCode).toBe(1);
     resolveRebase(fixture.worktreePath, "landed\nticket\n");
 
-    const recorded = await rebaseRecord(fixture);
+    const recorded = await rebaseCheck(fixture, primary(fixture), "2026-09-19T02:30:00Z");
     expect(recorded.exitCode).toBe(0);
     expect(recorded.stdout.result).toMatchObject({
       action: "run-gates",

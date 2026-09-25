@@ -1,4 +1,3 @@
-import { createHash } from "node:crypto";
 import { basename, isAbsolute, join, relative, sep } from "node:path";
 import { readFile, realpath } from "node:fs/promises";
 import { Data, Effect, Result } from "effect";
@@ -9,8 +8,10 @@ import {
   type SnapshotInput,
   type WritebackMode,
 } from "./contract.ts";
+import { appendSectionLine } from "./resume-sections.ts";
 import { mutateStateFile, StateMutationError, type StateMutationHooks } from "./state-mutation.ts";
 import { validateStateText } from "./state.ts";
+import { isRecord, sha256Hex } from "./values.ts";
 
 /**
  * Source metadata carried by every normalized snapshot.
@@ -122,9 +123,6 @@ const stateFailure = (message: string): SnapshotError =>
       remediation: "Repair the Snapshot section in RESUME.md manually, then retry.",
     },
   });
-
-const isRecord = (value: unknown): value is Record<string, unknown> =>
-  typeof value === "object" && value !== null && !Array.isArray(value);
 
 const isNonEmptyString = (value: unknown): value is string =>
   typeof value === "string" && value.trim().length > 0;
@@ -344,8 +342,7 @@ const parseBlockedBy = (markdown: string): string[] | undefined => {
   return [...value.matchAll(/\b(\d{2,})\s*:/gu)].map((match) => match[1]!);
 };
 
-const digest = (content: string | Uint8Array): string =>
-  createHash("sha256").update(content).digest("hex");
+const digest = (content: string | Uint8Array): string => sha256Hex(content);
 
 const loadCandidate = (runPath: string): Effect.Effect<SnapshotCandidate, SnapshotError> =>
   Effect.gen(function* () {
@@ -603,18 +600,8 @@ const replaceSnapshotSection = (markdown: string, accepted: AcceptedSnapshot): s
   return `${markdown.trimEnd()}\n\n${section}\n`;
 };
 
-const appendDecision = (markdown: string, decision: string): string => {
-  const headingMatch = /^## Decisions$/mu.exec(markdown);
-  if (headingMatch === null || headingMatch.index === undefined) {
-    return `${markdown.trimEnd()}\n\n## Decisions\n\n${decision}\n`;
-  }
-  const contentStart = headingMatch.index + headingMatch[0].length;
-  const nextHeadingOffset = markdown.slice(contentStart).search(/\n## /u);
-  const sectionEnd = nextHeadingOffset < 0 ? markdown.length : contentStart + nextHeadingOffset;
-  const before = markdown.slice(0, sectionEnd).trimEnd();
-  const after = markdown.slice(sectionEnd);
-  return `${before}\n\n${decision}\n${after}`;
-};
+const appendDecision = (markdown: string, decision: string): string =>
+  appendSectionLine(markdown, "Decisions", decision, { spacing: "blank" });
 
 const acceptanceDecision = (
   acceptedAt: string,

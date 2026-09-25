@@ -36,10 +36,9 @@ Only the helper writes global files. Coordinators and readers never edit them.
 - **Mutation.** After every RESUME.md write through the state lock, the helper
   projects the new text and replaces `runs/<run-id>.json`. It preserves the
   previous `heartbeat_at`.
-- **Heartbeat.** When a `herdr.wait_any` request carrying `state_path` returns
-  for any reason, the helper takes the same state lock, reprojects RESUME.md,
-  and sets `heartbeat_at`. It preserves the previous `updated_at` and
-  `last_operation`.
+- **Heartbeat.** While an Engine holds the run, it periodically takes the same
+  state lock, reprojects RESUME.md, and sets `heartbeat_at`. It preserves the
+  previous `updated_at` and `last_operation`.
 - **Agreements.** `agreements.update` replaces `agreements/<repo-id>.json`
   under that file's own lock.
 

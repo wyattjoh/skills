@@ -26,27 +26,14 @@ code 0 is success, 1 an operation failure, 2 a usage error.
 
 `engine` is internal: `start` runs it inside the engine pane.
 
-## The coordinator loop
+## Results and the Engine guard
 
-1. `start` once. A `running` result means an engine already holds the lease; do
-   not start another.
-2. Call `wait`. Omit `--cursor` to resume from the cursor persisted by the last
-   `wait`, which survives coordinator compaction and restarts.
-3. Act on the result, then call `wait` again:
-   - `reason: "attention"`: handle each `attention` event and each entry in
-     `open_escalations` (below).
-   - `reason: "engine"`: `engine.liveness` is `stale`, `released`, or `none`.
-     Run `start` again with the same script. It reconciles from RESUME.md and
-     evidence, and nothing that already happened repeats. `engine.unresponsive`
-     means the process is alive but silent: run `stop --force`, then `start`.
-   - `reason: "budget"`: nothing needs you. Report progress briefly if useful and
-     wait again.
-4. Stop when `engine.completed` arrives. The preceding `run.finalized` event
-   reports the finalize status: `completed` means `SUMMARY.md` is written;
-   `waiting` lists blocked tickets to resolve and restart, or to close with the
-   user's explicit decision through `run.finalize`.
-
-Never poll with sleeps, cron, or background shells. `wait` is the only wait.
+The coordinator loop that consumes these results is in
+[SKILL.md](../SKILL.md#supervise-the-engine). A `wait` result carries a
+`reason` (`attention`, `engine`, or `budget`), the most recent events since the
+cursor with an `omitted_events` count, the Engine's liveness, and every open
+escalation. `run.finalized` precedes `engine.completed` and reports the
+finalize status.
 
 While a live Engine holds the run, the helper CLI refuses every operation that
 could race its writes with `engine.active`. Read-only checks,

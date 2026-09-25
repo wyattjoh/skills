@@ -1,4 +1,3 @@
-import { createHash } from "node:crypto";
 import { mkdir, readFile, realpath, writeFile } from "node:fs/promises";
 import { basename, dirname, isAbsolute, join, relative, resolve } from "node:path";
 import { Data, Effect, Schema } from "effect";
@@ -19,6 +18,7 @@ import {
   type StallAssessment,
   type StallDisposition,
 } from "./assessment.ts";
+import { sha256Hex } from "./values.ts";
 
 /**
  * Serializable provider or validation failure retained in immutable evidence.
@@ -157,8 +157,7 @@ const fromUnknown = (error: unknown): StallAssessmentError => {
   );
 };
 
-const sha256 = (value: string): string =>
-  `sha256:${createHash("sha256").update(value).digest("hex")}`;
+const sha256 = (value: string): string => `sha256:${sha256Hex(value)}`;
 
 const stateBindingSha256 = (state: StallState): string =>
   sha256(

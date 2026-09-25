@@ -1,6 +1,5 @@
 import { Data, Effect } from "effect";
 import { readFile } from "node:fs/promises";
-import { activeRuntimeBlockPattern, parseActiveRuntimeFields } from "./active-runtime.ts";
 import type {
   CliIssue,
   CoordinatorClaimInput,
@@ -9,6 +8,7 @@ import type {
   HarnessName,
   RoleRecord,
 } from "./contract.ts";
+import { fieldBlockPattern, readFieldBlock, roleFromFields, sameRole } from "./resume-sections.ts";
 import {
   mutateStateFile,
   StateMutationError,
@@ -33,41 +33,6 @@ export type CoordinatorOwnership = {
   effort: string;
   readiness: CoordinatorReadiness;
   marker: string;
-  predecessor_pane: string | undefined;
-  handoff_artifact_sha256: string | undefined;
-};
-
-/**
- * Persisted coordinator handoff policy for released and legacy run states.
- */
-export type CoordinatorHandoffPolicy =
-  | { handoff: "disabled"; thresholdPercent: null }
-  | { handoff: "yes"; thresholdPercent: 80 };
-
-/**
- * Persisted selected role and current ownership read from one valid run state.
- */
-export type CoordinatorBinding = {
-  role: RoleRecord;
-  ownership: CoordinatorOwnership;
-} & CoordinatorHandoffPolicy;
-
-/**
- * Refreshed active runtime pane applied atomically with successor readiness.
- */
-export type CoordinatorRuntimeRefresh = {
-  ticket: string;
-  session: string;
-  attempt: number;
-  previousPane: string;
-  pane: string;
-};
-
-/**
- * Automatic handoff claim values committed with worker refresh and readiness.
- */
-export type CoordinatorHandoffClaimReadyInput = CoordinatorClaimInput & {
-  artifactSha256: string;
 };
 
 /**
@@ -80,61 +45,25 @@ export class CoordinatorError extends Data.TaggedError("CoordinatorError")<{
 const coordinatorError = (code: string, message: string, remediation: string): CoordinatorError =>
   new CoordinatorError({ issue: { code, message, remediation } });
 
-const blockPattern = (label: string): RegExp =>
-  new RegExp(`^${label}:\\r?\\n((?:  [^\\r\\n]*(?:\\r?\\n|$))+)`, "gmu");
-
 const parseFields = (markdown: string, label: string): Record<string, string> => {
-  const matches = [...markdown.matchAll(blockPattern(label))];
-  if (matches.length !== 1) {
-    throw coordinatorError(
-      "state.coordinator_fields_malformed",
-      `RESUME.md must contain exactly one \`${label}:\` block.`,
-      "Repair the schema-2 role and ownership blocks manually, then retry.",
-    );
-  }
-  const fields: Record<string, string> = {};
-  for (const line of matches[0]![1]!.split(/\r?\n/u)) {
-    if (line.length === 0) continue;
-    const field = line.match(/^  ([a-z][a-z ]*):\s*(.*)$/u);
-    if (field === null || field[2]!.length === 0 || fields[field[1]!] !== undefined) {
-      throw coordinatorError(
-        "state.coordinator_fields_malformed",
-        `RESUME.md has malformed or duplicate fields in \`${label}:\`.`,
-        "Repair the schema-2 role and ownership blocks manually, then retry.",
-      );
-    }
-    fields[field[1]!] = field[2]!;
-  }
-  return fields;
+  const fields = readFieldBlock(markdown, label);
+  if (typeof fields !== "string") return fields;
+  throw coordinatorError(
+    "state.coordinator_fields_malformed",
+    fields === "block_count"
+      ? `RESUME.md must contain exactly one \`${label}:\` block.`
+      : `RESUME.md has malformed or duplicate fields in \`${label}:\`.`,
+    "Repair the schema-2 role and ownership blocks manually, then retry.",
+  );
 };
 
 const parseCoordinatorRole = (markdown: string): RoleRecord => {
-  const fields = parseFields(markdown, "Coordinator");
-  const harness = fields.harness;
-  const model = fields.model;
-  const effort = fields.effort;
-  if ((harness !== "claude" && harness !== "pi") || model === undefined || effort === undefined) {
-    throw coordinatorError(
-      "state.coordinator_role_malformed",
-      "RESUME.md has an incomplete or malformed Coordinator role record.",
-      "Persist harness, model, and effort under `Coordinator:` before takeover.",
-    );
-  }
-  return { harness, model, effort };
-};
-
-const parseHandoffPolicy = (markdown: string): CoordinatorHandoffPolicy => {
-  const fields = parseFields(markdown, "Coordinator");
-  if (fields.handoff === "disabled" && fields.threshold === "unavailable") {
-    return { handoff: "disabled", thresholdPercent: null };
-  }
-  if (fields.handoff === "yes" && fields.threshold === "80 percent") {
-    return { handoff: "yes", thresholdPercent: 80 };
-  }
+  const role = roleFromFields(parseFields(markdown, "Coordinator"));
+  if (role !== null) return role;
   throw coordinatorError(
-    "state.coordinator_handoff_policy_malformed",
-    "RESUME.md must record `handoff: disabled` with `threshold: unavailable` for Herdr 0.9.1, or a valid legacy automatic policy.",
-    "Repair the schema-2 Coordinator handoff policy before coordinator takeover.",
+    "state.coordinator_role_malformed",
+    "RESUME.md has an incomplete or malformed Coordinator role record.",
+    "Persist harness, model, and effort under `Coordinator:` before takeover.",
   );
 };
 
@@ -143,8 +72,6 @@ const parseOwnership = (markdown: string): CoordinatorOwnership => {
   const generation = Number(fields.generation);
   const readiness = fields.readiness;
   const harness = fields.harness;
-  const predecessorPane = fields["predecessor pane"];
-  const handoffArtifactSha256 = fields["handoff artifact hash"];
   if (
     !Number.isInteger(generation) ||
     generation < 0 ||
@@ -153,9 +80,7 @@ const parseOwnership = (markdown: string): CoordinatorOwnership => {
     fields.model === undefined ||
     fields.effort === undefined ||
     (readiness !== "claiming" && readiness !== "ready") ||
-    fields.marker === undefined ||
-    (predecessorPane === undefined) !== (handoffArtifactSha256 === undefined) ||
-    (handoffArtifactSha256 !== undefined && !/^sha256:[a-f0-9]{64}$/u.test(handoffArtifactSha256))
+    fields.marker === undefined
   ) {
     throw coordinatorError(
       "state.coordinator_ownership_malformed",
@@ -171,8 +96,6 @@ const parseOwnership = (markdown: string): CoordinatorOwnership => {
     effort: fields.effort,
     readiness,
     marker: fields.marker,
-    predecessor_pane: predecessorPane,
-    handoff_artifact_sha256: handoffArtifactSha256,
   };
 };
 
@@ -186,20 +109,11 @@ const renderOwnership = (ownership: CoordinatorOwnership): string =>
     `  effort: ${ownership.effort}`,
     `  readiness: ${ownership.readiness}`,
     `  marker: ${ownership.marker}`,
-    ...(ownership.predecessor_pane === undefined
-      ? []
-      : [
-          `  predecessor pane: ${ownership.predecessor_pane}`,
-          `  handoff artifact hash: ${ownership.handoff_artifact_sha256}`,
-        ]),
     "",
   ].join("\n");
 
 const replaceOwnership = (markdown: string, ownership: CoordinatorOwnership): string =>
-  markdown.replace(blockPattern("Coordinator ownership"), renderOwnership(ownership));
-
-const sameRole = (left: RoleRecord, right: RoleRecord): boolean =>
-  left.harness === right.harness && left.model === right.model && left.effort === right.effort;
+  markdown.replace(fieldBlockPattern("Coordinator ownership"), renderOwnership(ownership));
 
 const fromUnknown = (error: unknown): CoordinatorError => {
   if (error instanceof CoordinatorError) return error;
@@ -254,27 +168,6 @@ const readState = (path: string): Effect.Effect<string, CoordinatorError> =>
   }).pipe(Effect.tap((markdown) => validateMarkdown(path, markdown)));
 
 /**
- * Reads the selected coordinator role and current ownership from valid state.
- *
- * @param path - Path to the run's RESUME.md document.
- * @returns An Effect containing the persisted coordinator binding.
- */
-export const readCoordinatorBinding = (
-  path: string,
-): Effect.Effect<CoordinatorBinding, CoordinatorError> =>
-  Effect.gen(function* () {
-    const markdown = yield* readState(path);
-    return yield* Effect.try({
-      try: () => ({
-        role: parseCoordinatorRole(markdown),
-        ownership: parseOwnership(markdown),
-        ...parseHandoffPolicy(markdown),
-      }),
-      catch: fromUnknown,
-    });
-  });
-
-/**
  * Atomically claims the next coordinator generation from an expected predecessor.
  *
  * @param input - Expected owner, selected successor pane, and persisted successor role.
@@ -324,159 +217,8 @@ export const claimCoordinator = (
         effort: input.successorRole.effort,
         readiness: "claiming",
         marker: `coordinator-ready-${generation}-${input.successorPane}`,
-        predecessor_pane: undefined,
-        handoff_artifact_sha256: undefined,
       };
       return { markdown: replaceOwnership(markdown, claimed), result: claimed };
-    },
-    hooks,
-  );
-
-const activeRuntimeIdentities = (
-  markdown: string,
-): Array<{ ticket: string; session: string; attempt: number; pane: string }> => {
-  const heading = /^## Active tickets\s*$/mu.exec(markdown);
-  if (heading === null) return [];
-  const start = heading.index + heading[0].length;
-  const nextSection = /^## /gmu;
-  nextSection.lastIndex = start;
-  const end = nextSection.exec(markdown)?.index ?? markdown.length;
-  const section = markdown.slice(start, end);
-  const headings = [...section.matchAll(/^### (\d+)\s*$/gmu)];
-  const tickets = new Set<string>();
-  return headings.map((match, index) => {
-    const ticket = match[1]!;
-    const absoluteStart = start + match.index;
-    const absoluteEnd = index + 1 < headings.length ? start + headings[index + 1]!.index : end;
-    const fields = parseActiveRuntimeFields(markdown.slice(absoluteStart, absoluteEnd));
-    const attempt = Number(fields.Attempt);
-    if (
-      tickets.has(ticket) ||
-      fields.Session === undefined ||
-      fields.Pane === undefined ||
-      !Number.isInteger(attempt) ||
-      attempt < 1
-    ) {
-      throw coordinatorError(
-        "coordinator.worker_state_changed",
-        "The complete active-runtime identity set became malformed before successor readiness.",
-        "Keep the predecessor open and restart handoff from a fresh active-worker snapshot.",
-      );
-    }
-    tickets.add(ticket);
-    return { ticket, session: fields.Session, attempt, pane: fields.Pane };
-  });
-};
-
-const assertCompleteWorkerSet = (markdown: string, workers: CoordinatorRuntimeRefresh[]): void => {
-  const current = activeRuntimeIdentities(markdown).toSorted((left, right) =>
-    left.ticket.localeCompare(right.ticket),
-  );
-  const expected = workers
-    .map((worker) => ({
-      ticket: worker.ticket,
-      session: worker.session,
-      attempt: worker.attempt,
-      pane: worker.previousPane,
-    }))
-    .toSorted((left, right) => left.ticket.localeCompare(right.ticket));
-  if (JSON.stringify(current) !== JSON.stringify(expected)) {
-    throw coordinatorError(
-      "coordinator.worker_state_changed",
-      "The complete active-runtime identity set changed before successor readiness.",
-      "Keep the predecessor open and restart handoff from a fresh active-worker snapshot.",
-    );
-  }
-};
-
-const refreshWorkerPanes = (markdown: string, workers: CoordinatorRuntimeRefresh[]): string => {
-  let refreshed = markdown;
-  for (const worker of workers) {
-    const pattern = activeRuntimeBlockPattern(worker.ticket);
-    const block = refreshed.match(pattern)?.[0];
-    if (block === undefined) {
-      throw coordinatorError(
-        "coordinator.worker_state_changed",
-        `Active runtime \`${worker.ticket}\` disappeared before successor readiness.`,
-        "Keep the predecessor open and restart handoff from a fresh active-worker snapshot.",
-      );
-    }
-    const fields = parseActiveRuntimeFields(block);
-    if (
-      fields.Session !== worker.session ||
-      Number(fields.Attempt) !== worker.attempt ||
-      fields.Pane !== worker.previousPane
-    ) {
-      throw coordinatorError(
-        "coordinator.worker_state_changed",
-        `Active runtime \`${worker.ticket}\` changed before successor readiness.`,
-        "Keep the predecessor open and restart handoff from a fresh active-worker snapshot.",
-      );
-    }
-    refreshed = refreshed.replace(pattern, block.replace(/^Pane: .*$/mu, `Pane: ${worker.pane}`));
-  }
-  return refreshed;
-};
-
-/**
- * Atomically claims automatic handoff ownership, refreshes workers, and records readiness.
- *
- * @param input - Expected predecessor, selected successor, and prepared artifact digest.
- * @param workers - Complete active runtime pane refreshes observed after wait subscription.
- * @param hooks - Optional deterministic state-mutation hooks for tests.
- * @returns An Effect containing the single ready successor ownership record.
- */
-export const claimReadyCoordinator = (
-  input: CoordinatorHandoffClaimReadyInput,
-  workers: CoordinatorRuntimeRefresh[],
-  hooks: StateMutationHooks | undefined = undefined,
-): Effect.Effect<CoordinatorOwnership, CoordinatorError> =>
-  ownershipUpdate(
-    input.statePath,
-    (markdown) => {
-      const ownership = parseOwnership(markdown);
-      if (input.successorPane === ownership.pane) {
-        throw coordinatorError(
-          "coordinator.same_pane",
-          `Pane \`${input.successorPane}\` already owns this run; takeover is unnecessary.`,
-          "Continue in the current pane without changing the ownership generation.",
-        );
-      }
-      if (
-        ownership.generation !== input.expectedGeneration ||
-        ownership.pane !== input.expectedPredecessorPane ||
-        ownership.readiness !== "ready" ||
-        !sameRole(ownership, input.expectedPredecessorRole)
-      ) {
-        throw coordinatorError(
-          "coordinator.claim_stale",
-          `Coordinator ownership changed before this claim; expected generation ${input.expectedGeneration}, predecessor pane \`${input.expectedPredecessorPane}\`, and role ${input.expectedPredecessorRole.harness}/${input.expectedPredecessorRole.model}/${input.expectedPredecessorRole.effort}.`,
-          "Keep the predecessor open, re-read state, and restart automatic handoff.",
-        );
-      }
-      const persistedRole = parseCoordinatorRole(markdown);
-      if (!sameRole(persistedRole, input.successorRole)) {
-        throw coordinatorError(
-          "coordinator.role_mismatch",
-          "The successor role does not match the persisted Coordinator role.",
-          "Persist and validate the selected Coordinator role before launching or claiming.",
-        );
-      }
-      const generation = ownership.generation + 1;
-      const ready: CoordinatorOwnership = {
-        generation,
-        pane: input.successorPane,
-        harness: input.successorRole.harness,
-        model: input.successorRole.model,
-        effort: input.successorRole.effort,
-        readiness: "ready",
-        marker: `coordinator-ready-${generation}-${input.successorPane}`,
-        predecessor_pane: ownership.pane,
-        handoff_artifact_sha256: input.artifactSha256,
-      };
-      assertCompleteWorkerSet(markdown, workers);
-      const refreshed = refreshWorkerPanes(markdown, workers);
-      return { markdown: replaceOwnership(refreshed, ready), result: ready };
     },
     hooks,
   );
@@ -490,21 +232,6 @@ export const claimReadyCoordinator = (
  */
 export const markCoordinatorReady = (
   input: CoordinatorReadyInput,
-  hooks: StateMutationHooks | undefined = undefined,
-): Effect.Effect<CoordinatorOwnership, CoordinatorError> =>
-  markCoordinatorReadyWithWorkers(input, [], hooks);
-
-/**
- * Atomically persists refreshed worker panes and marks the claimed coordinator ready.
- *
- * @param input - Claimed generation, successor pane, and marker.
- * @param workers - Complete active runtime pane refreshes observed after wait subscription.
- * @param hooks - Optional deterministic state-mutation hooks for tests.
- * @returns An Effect containing the ready ownership record.
- */
-export const markCoordinatorReadyWithWorkers = (
-  input: CoordinatorReadyInput,
-  workers: CoordinatorRuntimeRefresh[],
   hooks: StateMutationHooks | undefined = undefined,
 ): Effect.Effect<CoordinatorOwnership, CoordinatorError> =>
   ownershipUpdate(
@@ -523,9 +250,8 @@ export const markCoordinatorReadyWithWorkers = (
           "Re-read RESUME.md. Only the current claiming successor may mark itself ready.",
         );
       }
-      const refreshed = refreshWorkerPanes(markdown, workers);
       const ready: CoordinatorOwnership = { ...ownership, readiness: "ready" };
-      return { markdown: replaceOwnership(refreshed, ready), result: ready };
+      return { markdown: replaceOwnership(markdown, ready), result: ready };
     },
     hooks,
   );

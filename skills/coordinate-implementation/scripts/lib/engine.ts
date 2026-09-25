@@ -5,15 +5,16 @@ import type { CliIssue } from "./contract.ts";
 import {
   claimEngineLease,
   EngineLeaseError,
-  fencedMutate,
+  leaseHeld,
   leaseIssue,
+  parseEngineLease,
   readEngineLease,
   releaseEngineLease,
   writeEngineHeartbeat,
   type EngineLease,
 } from "./engine-lease.ts";
 import { openEventLog, type EventLog, type RuntimeEvent } from "./event-log.ts";
-import { heartbeatStateFile, type StateMutationError } from "./state-mutation.ts";
+import { heartbeatStateFile } from "./state-mutation.ts";
 
 /**
  * Services the engine hands to the workflow it runs.
@@ -28,11 +29,6 @@ export type EngineContext = {
     data: Record<string, unknown>,
     attention?: boolean,
   ) => Effect.Effect<RuntimeEvent, EngineError>;
-  mutate: <Result, DomainError>(
-    transform: (
-      markdown: string,
-    ) => Effect.Effect<{ markdown: string | undefined; result: Result }, DomainError>,
-  ) => Effect.Effect<Result, EngineLeaseError | StateMutationError | DomainError>;
   exclusive: <A, E, R>(effect: Effect.Effect<A, E, R>) => Effect.Effect<A, E, R>;
 };
 
@@ -71,9 +67,6 @@ export type EngineExit =
 export class EngineError extends Data.TaggedError("EngineError")<{
   issue: CliIssue;
 }> {}
-
-const engineError = (code: string, message: string, remediation: string): EngineError =>
-  new EngineError({ issue: { code, message, remediation } });
 
 /**
  * Stop request file written by `runtime.ts stop` beside RESUME.md.
@@ -141,8 +134,6 @@ export const runEngine = (options: EngineOptions): Effect.Effect<EngineExit, Eng
       statePath: options.statePath,
       lease,
       emit,
-      mutate: (transform) =>
-        Semaphore.withPermits(semaphore, 1)(fencedMutate(options.statePath, generation, transform)),
       exclusive: (effect) => Semaphore.withPermits(semaphore, 1)(effect),
     };
 
@@ -176,7 +167,7 @@ export const runEngine = (options: EngineOptions): Effect.Effect<EngineExit, Eng
         const current = yield* readEngineLease(options.statePath).pipe(
           Effect.orElseSucceed(() => lease),
         );
-        if (current === null || current.generation !== generation || current.released_at !== null) {
+        if (!leaseHeld(current, generation)) {
           return "lease_lost" as const;
         }
         if (yield* stopRequested(options.statePath, generation)) return "stopped" as const;
@@ -228,25 +219,26 @@ export const runEngine = (options: EngineOptions): Effect.Effect<EngineExit, Eng
   });
 
 /**
- * Fails when the caller no longer holds the lease; used by long workflow steps.
+ * Refuses a state write unless `generation` still holds an unreleased lease in `markdown`.
+ * Provide it as the {@link StateMutationGuard} so the check runs under the state lock.
  *
- * @param context - Engine context.
- * @returns An Effect that fails with `engine.lease_lost` after supersession.
+ * @param generation - Generation the calling engine claimed.
+ * @returns A guard that returns `engine.lease_lost` after supersession.
  */
-export const assertLease = (context: EngineContext): Effect.Effect<void, EngineError> =>
-  readEngineLease(context.statePath).pipe(
-    Effect.mapError((error) => new EngineError({ issue: error.issue })),
-    Effect.flatMap((current) =>
-      current !== null &&
-      current.generation === context.lease.generation &&
-      current.released_at === null
-        ? Effect.void
-        : Effect.fail(
-            engineError(
-              "engine.lease_lost",
-              `Engine generation ${context.lease.generation} no longer holds this run.`,
-              "Exit this engine; the current lease holder owns the run.",
-            ),
-          ),
-    ),
-  );
+export const leaseFence =
+  (generation: number) =>
+  (markdown: string): CliIssue | null => {
+    let current: ReturnType<typeof parseEngineLease>;
+    try {
+      current = parseEngineLease(markdown);
+    } catch (error) {
+      return (error as EngineLeaseError).issue;
+    }
+    return leaseHeld(current, generation)
+      ? null
+      : {
+          code: "engine.lease_lost",
+          message: `Engine generation ${generation} no longer holds this run.`,
+          remediation: "Exit this engine; the current lease holder owns the run.",
+        };
+  };

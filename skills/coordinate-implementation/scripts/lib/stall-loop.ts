@@ -12,6 +12,7 @@ import {
   type StallAssessmentApplyResult,
   type StallAssessmentDependencies,
 } from "./stall-assessment.ts";
+import { utcSeconds } from "./values.ts";
 
 /**
  * Bounded observation of one worker at one moment.
@@ -66,8 +67,6 @@ const git = (worktree: string, args: string[]): string => {
   return result.exitCode === 0 ? result.stdout.toString().trimEnd() : "";
 };
 
-const utc = (date: Date): string => date.toISOString().replace(/\.\d{3}Z$/, "Z");
-
 /**
  * Collects the bounded fields the stall policy allows: 40 pane lines and Git summaries.
  *
@@ -84,7 +83,7 @@ export const observeWorker = (
   actuator.readPane(target.worker.paneId, 40).pipe(
     Effect.orElseSucceed(() => ""),
     Effect.map((tail) => ({
-      observed_at: utc(now),
+      observed_at: utcSeconds(now),
       pane_tail: tail.split("\n").slice(-40),
       head: git(target.worktree, ["rev-parse", "HEAD"]),
       git_status: git(target.worktree, ["status", "--short"]),

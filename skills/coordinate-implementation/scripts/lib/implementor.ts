@@ -1,21 +1,11 @@
 import { Data, Effect, Result } from "effect";
-import { basename, dirname, isAbsolute, relative, resolve, sep } from "node:path";
-import {
-  lstat,
-  mkdir,
-  readFile,
-  readlink,
-  realpath,
-  rename,
-  rm,
-  stat,
-  writeFile,
-} from "node:fs/promises";
-import { realpathSync } from "node:fs";
-import { createHash, randomUUID } from "node:crypto";
+import { dirname, isAbsolute, relative, resolve, sep } from "node:path";
+import { lstat, readFile, readlink, realpath, rm, stat } from "node:fs/promises";
 import { activeRuntimeBlockPattern, parseActiveRuntimeFields } from "./active-runtime.ts";
+import { ImmutableContentConflict, writeImmutable } from "./fs-atomic.ts";
 import {
   buildHarnessLaunch,
+  herdrPromptCommand,
   type ArgumentCommand,
   type HarnessLaunchPlan,
 } from "./harness-launch.ts";
@@ -30,12 +20,22 @@ import type {
   ImplementorLaunchRecordInput,
   RoleRecord,
 } from "./contract.ts";
-import { spawnGit } from "./git.ts";
+import { checkoutIdentity, spawnGit } from "./git.ts";
 import { IntegrationError, parseIntegration, type IntegrationRecord } from "./integration.ts";
 import { validateRole } from "./roles.ts";
 import { inspectRuntimeClose } from "./runtime-close.ts";
-import { mutateStateFile, StateMutationError } from "./state-mutation.ts";
+import { mutateStateFile, mutationIssue } from "./state-mutation.ts";
+import {
+  appendSectionLine,
+  isTicketTableProblem,
+  readRoleBlock,
+  readTicketRow,
+  sameRole,
+  type TicketTableProblem,
+  updateTicketCells,
+} from "./resume-sections.ts";
 import { validateStateText } from "./state.ts";
+import { canonicalPathAllowingMissing, sha256Hex } from "./values.ts";
 
 /**
  * Portable Herdr start and prompt commands for one implementor.
@@ -97,14 +97,14 @@ const implementorError = (code: string, message: string, remediation: string): I
 
 const fromMutationError = (error: unknown): ImplementorError => {
   if (error instanceof ImplementorError) return error;
-  const detail = error instanceof StateMutationError ? error.message : (error as Error).message;
-  return implementorError(
-    error instanceof StateMutationError && error.kind === "lock_busy"
-      ? "implementor.state_busy"
-      : "implementor.state_io_failed",
-    `Could not update implementor runtime state: ${detail}`,
-    "Verify RESUME.md and its directory are writable, then retry with the same bound role.",
-  );
+  return new ImplementorError({
+    issue: mutationIssue(
+      error,
+      "implementor",
+      "implementor runtime state",
+      "Verify RESUME.md and its directory are writable, then retry with the same bound role.",
+    ),
+  });
 };
 
 const isRoleRecord = (value: unknown): value is RoleRecord =>
@@ -116,42 +116,20 @@ const isRoleRecord = (value: unknown): value is RoleRecord =>
   typeof (value as Record<string, unknown>).model === "string" &&
   typeof (value as Record<string, unknown>).effort === "string";
 
-const sameRole = (left: RoleRecord, right: RoleRecord): boolean =>
-  left.harness === right.harness && left.model === right.model && left.effort === right.effort;
-
 const parsePersistedImplementor = (markdown: string): RoleRecord => {
-  const matches = [...markdown.matchAll(/^Implementor:\r?\n((?:  [^\r\n]*(?:\r?\n|$))+)/gmu)];
-  if (matches.length !== 1) {
-    throw implementorError(
-      "state.implementor_role_malformed",
-      "RESUME.md must contain exactly one complete `Implementor:` role block.",
-      "Repair the schema-2 Implementor harness, model, and effort before launching.",
-    );
-  }
-  const fields: Record<string, string> = {};
-  for (const line of matches[0]![1]!.split(/\r?\n/u)) {
-    if (line.length === 0) continue;
-    const field = line.match(/^  ([a-z]+):\s*(.*)$/u);
-    if (field === null || field[2]!.length === 0 || fields[field[1]!] !== undefined) {
-      throw implementorError(
-        "state.implementor_role_malformed",
-        "RESUME.md has malformed or duplicate fields in its `Implementor:` role block.",
-        "Repair the schema-2 Implementor harness, model, and effort before launching.",
-      );
-    }
-    fields[field[1]!] = field[2]!;
-  }
-  const harness = fields.harness;
-  const model = fields.model;
-  const effort = fields.effort;
-  if ((harness !== "claude" && harness !== "pi") || model === undefined || effort === undefined) {
-    throw implementorError(
-      "state.implementor_role_malformed",
-      "RESUME.md has an incomplete or malformed `Implementor:` role block.",
-      "Repair the schema-2 Implementor harness, model, and effort before launching.",
-    );
-  }
-  return { harness, model, effort };
+  const role = readRoleBlock(markdown, "Implementor");
+  if (typeof role !== "string") return role;
+  const messages = {
+    block_count: "RESUME.md must contain exactly one complete `Implementor:` role block.",
+    fields_malformed:
+      "RESUME.md has malformed or duplicate fields in its `Implementor:` role block.",
+    role_incomplete: "RESUME.md has an incomplete or malformed `Implementor:` role block.",
+  };
+  throw implementorError(
+    "state.implementor_role_malformed",
+    messages[role],
+    "Repair the schema-2 Implementor harness, model, and effort before launching.",
+  );
 };
 
 const validatePersistedState = (
@@ -163,20 +141,43 @@ const validatePersistedState = (
     Effect.asVoid,
   );
 
-const tableSection = (markdown: string): { start: number; end: number; text: string } => {
-  const heading = /^## Tickets\s*$/mu.exec(markdown);
-  if (heading === null) {
-    throw implementorError(
-      "state.tickets_missing",
-      "RESUME.md has no `## Tickets` section.",
-      "Repair the schema-2 ticket table before launching an implementor.",
-    );
+const ticketTableError = (
+  problem: TicketTableProblem,
+  ticket: string,
+  repair: string,
+): ImplementorError => {
+  switch (problem.kind) {
+    case "section_missing":
+      return implementorError(
+        "state.tickets_missing",
+        "RESUME.md has no `## Tickets` section.",
+        repair,
+      );
+    case "header_missing":
+      return implementorError(
+        "state.ticket_table_malformed",
+        "RESUME.md ticket table has no `NN` header row.",
+        repair,
+      );
+    case "row_missing":
+      return implementorError(
+        "state.ticket_missing",
+        `RESUME.md has no ticket row for \`${ticket}\`.`,
+        "Add the normalized ticket to state before preparing its launch.",
+      );
+    case "row_malformed":
+      return implementorError(
+        "state.ticket_table_malformed",
+        `Ticket \`${ticket}\` does not match the ticket table columns.`,
+        repair.replace("ticket table", "ticket row"),
+      );
+    case "column_missing":
+      return implementorError(
+        "state.ticket_table_malformed",
+        `Ticket table is missing required \`${problem.column}\` column.`,
+        repair,
+      );
   }
-  const start = heading.index + heading[0].length;
-  const next = /^## /gmu;
-  next.lastIndex = start;
-  const end = next.exec(markdown)?.index ?? markdown.length;
-  return { start, end, text: markdown.slice(start, end) };
 };
 
 const updateTicketRow = (
@@ -184,86 +185,25 @@ const updateTicketRow = (
   ticket: string,
   updates: Record<string, string>,
 ): string => {
-  const section = tableSection(markdown);
-  const lines = section.text.split(/\r?\n/u);
-  const headerIndex = lines.findIndex((line) => line.trimStart().startsWith("| NN"));
-  if (headerIndex < 0) {
-    throw implementorError(
-      "state.ticket_table_malformed",
-      "RESUME.md ticket table has no `NN` header row.",
-      "Repair the schema-2 ticket table before launching an implementor.",
-    );
-  }
-  const columns = lines[headerIndex]!.split("|")
-    .slice(1, -1)
-    .map((cell) => cell.trim());
-  const rowIndex = lines.findIndex((line) => {
-    const first = line.split("|")[1]?.trim();
-    return first === ticket;
+  const repair = "Repair the schema-2 ticket table before launching an implementor.";
+  const row = readTicketRow(markdown, ticket);
+  if (isTicketTableProblem(row)) throw ticketTableError(row, ticket, repair);
+  const updated = updateTicketCells(markdown, ticket, {
+    ...updates,
+    ...(row.skills === undefined ? {} : { skills: "implement" }),
   });
-  if (rowIndex < 0) {
-    throw implementorError(
-      "state.ticket_missing",
-      `RESUME.md has no ticket row for \`${ticket}\`.`,
-      "Add the normalized ticket to state before preparing its launch.",
-    );
-  }
-  const cells = lines[rowIndex]!.split("|")
-    .slice(1, -1)
-    .map((cell) => cell.trim());
-  if (cells.length !== columns.length) {
-    throw implementorError(
-      "state.ticket_table_malformed",
-      `Ticket \`${ticket}\` does not match the ticket table columns.`,
-      "Repair the schema-2 ticket row before launching an implementor.",
-    );
-  }
-  for (const [column, value] of Object.entries(updates)) {
-    const index = columns.indexOf(column);
-    if (index < 0) {
-      throw implementorError(
-        "state.ticket_table_malformed",
-        `Ticket table is missing required \`${column}\` column.`,
-        "Repair the schema-2 ticket table before launching an implementor.",
-      );
-    }
-    cells[index] = value;
-  }
-  const skillsIndex = columns.indexOf("skills");
-  if (skillsIndex >= 0) cells[skillsIndex] = "implement";
-  lines[rowIndex] = `| ${cells.join(" | ")} |`;
-  return `${markdown.slice(0, section.start)}${lines.join("\n")}${markdown.slice(section.end)}`;
+  if (typeof updated !== "string") throw ticketTableError(updated, ticket, repair);
+  return updated;
 };
 
 const ticketField = (markdown: string, ticket: string, column: string): string => {
-  const section = tableSection(markdown);
-  const lines = section.text.split(/\r?\n/u);
-  const header = lines.find((line) => line.trimStart().startsWith("| NN"));
-  const row = lines.find((line) => line.split("|")[1]?.trim() === ticket);
-  if (header === undefined || row === undefined) {
-    throw implementorError(
-      "state.ticket_table_malformed",
-      `Ticket \`${ticket}\` is missing from the ticket table.`,
-      "Repair the schema-2 ticket table before recovering an implementor.",
-    );
-  }
-  const columns = header
-    .split("|")
-    .slice(1, -1)
-    .map((cell) => cell.trim());
-  const cells = row
-    .split("|")
-    .slice(1, -1)
-    .map((cell) => cell.trim());
-  const index = columns.indexOf(column);
-  if (index < 0 || cells.length !== columns.length) {
-    throw implementorError(
-      "state.ticket_table_malformed",
-      `Ticket \`${ticket}\` does not have a valid \`${column}\` field.`,
-      "Repair the schema-2 ticket table before recovering an implementor.",
-    );
-  }
-  return cells[index]!;
+  const repair = "Repair the schema-2 ticket table before recovering an implementor.";
+  const row = readTicketRow(markdown, ticket);
+  if (isTicketTableProblem(row)) throw ticketTableError(row, ticket, repair);
+  const value = row[column];
+  if (value === undefined)
+    throw ticketTableError({ kind: "column_missing", column }, ticket, repair);
+  return value;
 };
 
 const parseTicketRole = (markdown: string, ticket: string): RoleRecord | null => {
@@ -282,7 +222,7 @@ const parseTicketRole = (markdown: string, ticket: string): RoleRecord | null =>
     throw implementorError(
       "state.ticket_role_malformed",
       `Ticket \`${ticket}\` has an incomplete bound Implementor role.`,
-      "Repair the ticket row from its immutable launch or escalation evidence before launching.",
+      "Repair the ticket row from its immutable launch or migration evidence before launching.",
     );
   }
   return { harness, model, effort };
@@ -352,23 +292,6 @@ const buildLaunchPlan = (input: ImplementorLaunchPrepareInput): ImplementorLaunc
     skillPath: input.implementSkillPath,
   });
 
-const canonicalPathAllowingMissing = async (path: string): Promise<string> => {
-  let cursor = resolve(path);
-  const missing: string[] = [];
-  while (true) {
-    try {
-      const existing = await realpath(cursor);
-      return resolve(existing, ...missing);
-    } catch (error) {
-      if (!(error instanceof Error && "code" in error && error.code === "ENOENT")) throw error;
-      const parent = dirname(cursor);
-      if (parent === cursor) throw error;
-      missing.unshift(basename(cursor));
-      cursor = parent;
-    }
-  }
-};
-
 const ensurePathInsideState = (
   statePath: string,
   artifactPath: string,
@@ -406,14 +329,8 @@ const verifyWorktree = (
   branch: string,
 ): Effect.Effect<void, ImplementorError> =>
   Effect.gen(function* () {
-    const root = spawnGit(["rev-parse", "--show-toplevel"], { cwd: worktreePath });
-    const current = spawnGit(["symbolic-ref", "--short", "HEAD"], { cwd: worktreePath });
-    if (
-      root.exitCode !== 0 ||
-      current.exitCode !== 0 ||
-      realpathSync(root.stdout.trim()) !== realpathSync(worktreePath) ||
-      current.stdout.trim() !== branch
-    ) {
+    const identity = checkoutIdentity(worktreePath);
+    if (!identity.ok || !identity.isRoot || identity.branch !== branch) {
       return yield* implementorError(
         "implementor.worktree_mismatch",
         `Worktree \`${worktreePath}\` is not the expected branch \`${branch}\`.`,
@@ -428,8 +345,6 @@ const writeArtifact = (
 ): Effect.Effect<boolean, ImplementorError> =>
   Effect.tryPromise({
     try: async () => {
-      await mkdir(dirname(input.artifactPath), { recursive: true });
-      const temporary = `${input.artifactPath}.${process.pid}.${randomUUID()}.tmp`;
       const artifact = {
         schema_version: 1,
         ticket: input.ticket,
@@ -444,19 +359,20 @@ const writeArtifact = (
         max_attempts: input.maxAttempts,
         launch: plan,
       };
-      const rendered = `${JSON.stringify(artifact, null, 2)}\n`;
-      const existing = await readFile(input.artifactPath, "utf8").catch(() => null);
-      if (existing !== null && existing !== rendered) {
+      try {
+        return await writeImmutable(
+          input.artifactPath,
+          `${JSON.stringify(artifact, null, 2)}\n`,
+          0o600,
+        );
+      } catch (error) {
+        if (!(error instanceof ImmutableContentConflict)) throw error;
         throw implementorError(
           "implementor.artifact_conflict",
           `Launch artifact \`${input.artifactPath}\` already contains a different launch.`,
           "Keep the existing provenance and choose a new run-local artifact path for a new attempt.",
         );
       }
-      if (existing === rendered) return false;
-      await writeFile(temporary, rendered, { mode: 0o600 });
-      await rename(temporary, input.artifactPath);
-      return true;
     },
     catch: (error) =>
       error instanceof ImplementorError
@@ -557,7 +473,7 @@ export const prepareImplementorLaunch = (
           return yield* implementorError(
             "implementor.role_mismatch",
             "Requested implementor role does not match the ticket-bound or run-default Implementor role.",
-            "Launch an already bound ticket with its exact row role. Only a helper-recorded review escalation may replace that per-ticket binding.",
+            "Launch an already bound ticket with its exact row role. Only an authorized implementor.runtime.migrate may replace that per-ticket binding.",
           );
         }
         const migration = yield* readCommittedMigrationEvidence(
@@ -731,10 +647,7 @@ const parsePromptCommand = (value: unknown, session: string): ArgumentCommand | 
     strings[8] === session &&
     strings[9]!.length > 0
   ) {
-    return {
-      command: "herdr",
-      args: ["agent", "prompt", session, strings[9]!, "--wait", "--timeout", "300000"],
-    };
+    return herdrPromptCommand(session, strings[9]!);
   }
   return null;
 };
@@ -1114,21 +1027,6 @@ type ImplementorMigrationCommit = {
   committed_at: string;
 };
 
-const appendSectionEntry = (markdown: string, headingText: string, entry: string): string => {
-  if (markdown.split(/\r?\n/u).includes(entry)) return markdown;
-  const heading = [...markdown.matchAll(/^## [^\r\n]+\s*$/gmu)].find(
-    (match) => match[0].trim() === headingText,
-  );
-  if (heading === undefined) {
-    return `${markdown.trimEnd()}\n\n${headingText}\n\n${entry}\n`;
-  }
-  const sectionStart = heading.index! + heading[0].length;
-  const next = /^## /gmu;
-  next.lastIndex = sectionStart;
-  const sectionEnd = next.exec(markdown)?.index ?? markdown.length;
-  return `${markdown.slice(0, sectionEnd).trimEnd()}\n${entry}\n\n${markdown.slice(sectionEnd).trimStart()}`;
-};
-
 /**
  * Integration record the replacement runtime inherits from its migrated predecessor. A
  * gates-phase migration must re-establish integration, so its record carries forward as
@@ -1191,22 +1089,16 @@ const persistMigrationEvidence = (
 ): Effect.Effect<void, ImplementorError> =>
   Effect.tryPromise({
     try: async () => {
-      await mkdir(dirname(path), { recursive: true });
-      const existing = await readFile(path, "utf8").catch((error: unknown) => {
-        if (error instanceof Error && "code" in error && error.code === "ENOENT") return null;
-        throw error;
-      });
-      if (existing !== null) {
-        if (existing !== serialized) {
-          throw implementorError(
-            "implementor.migration_evidence_conflict",
-            "Runtime migration evidence already exists with different content.",
-            "Preserve the prior evidence and retry only the byte-identical migration request.",
-          );
-        }
-        return;
+      try {
+        await writeImmutable(path, serialized, 0o600);
+      } catch (error) {
+        if (!(error instanceof ImmutableContentConflict)) throw error;
+        throw implementorError(
+          "implementor.migration_evidence_conflict",
+          "Runtime migration evidence already exists with different content.",
+          "Preserve the prior evidence and retry only the byte-identical migration request.",
+        );
       }
-      await writeFile(path, serialized, { flag: "wx", mode: 0o600 });
     },
     catch: (error) =>
       error instanceof ImplementorError
@@ -1255,17 +1147,13 @@ const captureMigrationWorktreeSnapshot = (
             entry = {
               path,
               kind: "symlink",
-              sha256: createHash("sha256")
-                .update(await readlink(absolute))
-                .digest("hex"),
+              sha256: sha256Hex(await readlink(absolute)),
             };
           } else if (metadata.isFile()) {
             entry = {
               path,
               kind: "file",
-              sha256: createHash("sha256")
-                .update(await readFile(absolute))
-                .digest("hex"),
+              sha256: sha256Hex(await readFile(absolute)),
             };
           } else if (metadata.isDirectory()) {
             const nestedHead = spawnGit(["rev-parse", "HEAD"], { cwd: absolute });
@@ -1282,7 +1170,7 @@ const captureMigrationWorktreeSnapshot = (
             entry = {
               path,
               kind: "repository",
-              sha256: createHash("sha256").update(nestedHead.stdout.trim()).digest("hex"),
+              sha256: sha256Hex(nestedHead.stdout.trim()),
             };
           } else {
             throw new Error(`Unsupported worktree entry ${path}`);
@@ -1292,7 +1180,7 @@ const captureMigrationWorktreeSnapshot = (
             entry = {
               path,
               kind: "missing",
-              sha256: createHash("sha256").update("missing").digest("hex"),
+              sha256: sha256Hex("missing"),
             };
           } else {
             throw error;
@@ -1304,7 +1192,7 @@ const captureMigrationWorktreeSnapshot = (
       return {
         head: headResult.stdout.trim(),
         status: statusResult.stdout,
-        content_sha256: createHash("sha256").update(JSON.stringify(manifest)).digest("hex"),
+        content_sha256: sha256Hex(JSON.stringify(manifest)),
       };
     },
     catch: (error) =>
@@ -1383,7 +1271,7 @@ const readCommittedMigrationEvidence = (
         commit.kind !== "coordinate-implementor-runtime-migration-commit" ||
         commit.status !== "committed" ||
         commit.evidence_path !== evidencePath ||
-        commit.evidence_sha256 !== createHash("sha256").update(raw).digest("hex") ||
+        commit.evidence_sha256 !== sha256Hex(raw) ||
         JSON.stringify(commit.state_references) !== JSON.stringify(references)
       ) {
         throw implementorError(
@@ -1690,7 +1578,7 @@ export const migrateClosedImplementorRuntime = (
           old_binding: actualBinding,
           replacement_role: persistedDefault,
           old_runtime_block: originalBlock,
-          old_artifact_sha256: createHash("sha256").update(artifactRaw).digest("hex"),
+          old_artifact_sha256: sha256Hex(artifactRaw),
           old_integration: oldIntegration ?? null,
           old_integration_cycle: oldIntegration?.cycle ?? null,
           worktree_snapshot: worktreeSnapshot,
@@ -1703,7 +1591,7 @@ export const migrateClosedImplementorRuntime = (
           kind: "coordinate-implementor-runtime-migration-commit",
           status: "committed",
           evidence_path: evidencePath,
-          evidence_sha256: createHash("sha256").update(serializedEvidence).digest("hex"),
+          evidence_sha256: sha256Hex(serializedEvidence),
           state_references: [closedEntry, decisionLine],
           committed_at: input.completedAt,
         };
@@ -1742,8 +1630,10 @@ export const migrateClosedImplementorRuntime = (
             );
           }
         }
-        updated = appendSectionEntry(updated, "## Closed ticket runtimes", closedEntry);
-        updated = appendSectionEntry(updated, "## Decisions", decisionLine);
+        updated = appendSectionLine(updated, "Closed ticket runtimes", closedEntry, {
+          spacing: "tight",
+        });
+        updated = appendSectionLine(updated, "Decisions", decisionLine, { spacing: "tight" });
         return {
           markdown: updated,
           result: {
@@ -1832,9 +1722,7 @@ export const recoverImplementorRuntimeMigration = (
               "Repair the run-local evidence path and retry recovery.",
             ),
         });
-        if (
-          createHash("sha256").update(evidenceRaw).digest("hex") !== input.migrationEvidenceSha256
-        ) {
+        if (sha256Hex(evidenceRaw) !== input.migrationEvidenceSha256) {
           return yield* implementorError(
             "implementor.migration_recovery_binding_mismatch",
             "Recovery request does not identify the exact committed migration evidence bytes.",
@@ -1875,7 +1763,7 @@ export const recoverImplementorRuntimeMigration = (
         }
         const decision = `- ${input.completedAt} user-authorized ${recoveryReference}; evidence_sha256 ${input.migrationEvidenceSha256}; integration cycle ${evidence.old_integration_cycle} released as rebase-required at ${snapshot.head}`;
         return {
-          markdown: appendSectionEntry(markdown, "## Decisions", decision),
+          markdown: appendSectionLine(markdown, "Decisions", decision, { spacing: "tight" }),
           result: result(false),
         };
       }),

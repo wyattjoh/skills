@@ -1,18 +1,12 @@
 import { describe, expect, it } from "bun:test";
 import { Effect } from "effect";
-import {
-  chmodSync,
-  mkdirSync,
-  mkdtempSync,
-  readFileSync,
-  symlinkSync,
-  writeFileSync,
-} from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { claimCoordinator } from "./lib/coordinator.ts";
 import { acceptSnapshot } from "./lib/snapshot.ts";
 import { runCliInProcess } from "./test-cli.ts";
+import { writeCommand } from "./test-fixtures.ts";
 
 const CLI = join(import.meta.dir, "coordinate.ts");
 const decoder = new TextDecoder();
@@ -29,12 +23,6 @@ type CliResult = {
   exitCode: number;
   stdout: unknown;
   stderr: string;
-};
-
-const writeCommand = (directory: string, name: string, body: string): void => {
-  const path = join(directory, name);
-  writeFileSync(path, `#!${process.execPath}\n${body}\n`);
-  chmodSync(path, 0o755);
 };
 
 const makeEnvironment = (
@@ -681,8 +669,6 @@ Coordinator ownership:
       effort: "high",
       readiness: "claiming",
       marker: "coordinator-ready-5-workspace:p2",
-      predecessor_pane: undefined,
-      handoff_artifact_sha256: undefined,
     });
     expect(readSnapshotRecord(fixture.statePath)).toEqual({
       revision: LOCAL_REVISION,

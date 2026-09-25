@@ -1,27 +1,11 @@
 import { Data } from "effect";
 import { createConnection, type Socket } from "node:net";
-import type { CliIssue, HerdrWorkerInput } from "./contract.ts";
+import type { CliIssue } from "./contract.ts";
 
-/**
- * Agent statuses that end a wait for a worker.
- */
-export const TERMINAL_STATUSES = new Set(["idle", "done", "blocked"]);
 /**
  * Every recognized live agent status.
  */
 export const AGENT_STATUSES = new Set(["idle", "working", "blocked", "done", "unknown"]);
-
-/**
- * Refreshed status snapshot for one durable worker runtime.
- */
-export type HerdrWorkerSnapshot = {
-  runtime_id: string;
-  ticket: string;
-  session: string;
-  pane_id: string;
-  previous_pane_id: string;
-  status: "idle" | "working" | "blocked" | "done" | "unknown" | "exited";
-};
 
 /**
  * Typed Herdr socket, protocol, or event failure.
@@ -281,7 +265,7 @@ export const openSubscription = async (
 /**
  * Agent status reported for a live pane.
  */
-export type LiveAgentStatus = Exclude<HerdrWorkerSnapshot["status"], "exited">;
+export type LiveAgentStatus = "idle" | "working" | "blocked" | "done" | "unknown";
 
 /**
  * One agent entry from a Herdr session snapshot.
@@ -434,38 +418,14 @@ export const readSnapshot = async (
 };
 
 /**
- * Resolves durable worker bindings against a snapshot by session name, then pane.
+ * Finds the agents Herdr reports under one session name. Herdr exposes the
+ * name through `name`, `displayAgent`, or `title` depending on the harness.
  *
- * @param workers - Durable worker bindings.
  * @param snapshot - Current Herdr snapshot.
- * @returns Refreshed worker snapshots.
+ * @param session - Durable session name.
+ * @returns Every agent carrying that session name.
  */
-export const resolveWorkers = (
-  workers: HerdrWorkerInput[],
-  snapshot: RawSnapshot,
-): HerdrWorkerSnapshot[] =>
-  workers.map((worker) => {
-    const named = snapshot.agents.filter(
-      (agent) =>
-        agent.name === worker.session ||
-        agent.displayAgent === worker.session ||
-        agent.title === worker.session,
-    );
-    if (named.length > 1) {
-      throw herdrError(
-        "herdr.worker_ambiguous",
-        `Herdr reported multiple agents named \`${worker.session}\`.`,
-        "Restore unique worker session names before resuming coordination.",
-      );
-    }
-    const pane = snapshot.panes.find((candidate) => candidate.paneId === worker.paneId);
-    const current = named[0];
-    return {
-      runtime_id: worker.runtimeId,
-      ticket: worker.ticket,
-      session: worker.session,
-      pane_id: current?.paneId ?? pane?.paneId ?? worker.paneId,
-      previous_pane_id: worker.paneId,
-      status: current?.status ?? pane?.status ?? "exited",
-    };
-  });
+export const agentsNamed = (snapshot: RawSnapshot, session: string): RawAgent[] =>
+  snapshot.agents.filter(
+    (agent) => agent.name === session || agent.displayAgent === session || agent.title === session,
+  );

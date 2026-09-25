@@ -28,10 +28,6 @@ _Avoid_: pane guess, coordinator intuition
 A new immutable request that references the exact prior failed Assessment Evidence for unchanged state. Provider failures never overwrite evidence or retry automatically.
 _Avoid_: overwrite, silent retry
 
-**Fixture Oracle**:
-A controller-owned expected Disposition for a fabricated scenario that is withheld from every assessed model and worker.
-_Avoid_: answer key in model context, judge prompt
-
 **Engine**:
 The detached, long-lived process in its own Herdr tab that executes a run's Workflow Script, launches and prompts every agent, runs gates, reads agent reports from files, and lands tickets. The coordinator only starts it, waits on its events, and answers its Escalations.
 _Avoid_: daemon, background coordinator, runner

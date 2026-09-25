@@ -1,8 +1,10 @@
 import { Effect, Fiber, Queue } from "effect";
-import { mkdir, open, readFile, rename } from "node:fs/promises";
-import { dirname, join } from "node:path";
+import { readFile } from "node:fs/promises";
+import { join } from "node:path";
 import type { CliIssue, SchedulerTicket } from "./contract.ts";
 import type { EngineContext } from "./engine.ts";
+import { replaceFileAtomically } from "./fs-atomic.ts";
+import { ticketRows } from "./resume-sections.ts";
 import { planSchedule } from "./scheduler.ts";
 
 /**
@@ -155,19 +157,10 @@ export const readTicketGraph = async (runPath: string): Promise<TicketInfo[]> =>
  * @param markdown - RESUME.md text.
  * @returns Map from ticket number to recorded status.
  */
-export const parseTicketStatuses = (markdown: string): Map<string, string> => {
-  const statuses = new Map<string, string>();
-  const heading = /^## Tickets\s*$/mu.exec(markdown);
-  if (heading === null) return statuses;
-  const lines = markdown.slice(heading.index + heading[0].length).split("\n");
-  for (const line of lines) {
-    if (line.startsWith("## ")) break;
-    const cells = line.split("|").map((cell) => cell.trim());
-    if (cells.length < 9 || !/^\d+$/u.test(cells[1]!)) continue;
-    statuses.set(cells[1]!, cells[7]!);
-  }
-  return statuses;
-};
+export const parseTicketStatuses = (markdown: string): Map<string, string> =>
+  new Map(
+    ticketRows(markdown).flatMap((row) => (row.status === undefined ? [] : [[row.NN, row.status]])),
+  );
 
 const parseCap = (markdown: string): { mode: "parallel" | "serial"; cap: number } => {
   const mode = /^Mode:\s*(serial|parallel)\s*$/mu.exec(markdown)?.[1] as
@@ -231,16 +224,7 @@ export const memoizedStep = async <T>(path: string, body: () => Promise<T>): Pro
     if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
   }
   const value = await body();
-  await mkdir(dirname(path), { recursive: true });
-  const temporary = `${path}.${process.pid}.tmp`;
-  const handle = await open(temporary, "wx");
-  try {
-    await handle.writeFile(`${JSON.stringify({ value }, null, 2)}\n`, "utf8");
-    await handle.sync();
-  } finally {
-    await handle.close();
-  }
-  await rename(temporary, path);
+  await replaceFileAtomically(path, `${JSON.stringify({ value }, null, 2)}\n`);
   return value;
 };
 
