@@ -119,7 +119,7 @@ const makeRun = async (
       : "\n## Active tickets\n";
   writeFileSync(
     statePath,
-    `# portable implementation run\n\nSchema version: 1\n\nPrefix: portable\nBase: main\nBase sha: 0123456789abcdef0123456789abcdef01234567\nMode: parallel\nParallel cap: 2\nBranch template: portable-NN-<slug>\n\n${roleBlock("Coordinator", coordinator)}\n  handoff: yes\n  threshold: 80 percent\n  unattended: block\n\n${roleBlock("Implementor", implementor)}\n\n${roleBlock("Reviewer", reviewer)}\n\n## Tickets\n\n| NN | harness | model | effort | rounds | esc | status | sha |\n| -- | ------- | ----- | ------ | ------ | --- | ------ | --- |\n| 01 | ${implementor.harness} | ${implementor.model} | ${implementor.effort} | 3 | ${status === "blocked" ? "yes" : "-"} | ${status} | ${status === "landed" ? "89abcdef0123456789abcdef0123456789abcdef" : "-"} |\n${withDependent ? "| 02 | - | - | - | 0 | - | queued | - |\n" : ""}${active}\n## Review evidence\n\n- Ticket 01 round 3 standards attempt 1: accepted; reviewer ${JSON.stringify(reviewer)}; report ${join(reviewsPath, "01-standards.md")}\n- Ticket 01 round 3 spec attempt 1: accepted; reviewer ${JSON.stringify(reviewer)}; report ${join(reviewsPath, "01-spec.md")}\n\n## Landed evidence\n\n${status === "landed" ? `- Ticket 01: ${join(reviewsPath, "01-landed.json")}; tip 89abcdef0123456789abcdef0123456789abcdef; branch portable-01-integration; cleanup native-safe` : ""}\n\n## Decisions\n\n- 2026-09-19 setup recorded\n\n## Retained landed branches\n\n${status === "landed" ? "- portable-01-integration (89abcdef0123456789abcdef0123456789abcdef) (retained by repository cleanup policy)" : ""}\n`,
+    `# portable implementation run\n\nSchema version: 2\n\nPrefix: portable\nBase: main\nBase sha: 0123456789abcdef0123456789abcdef01234567\nMode: parallel\nParallel cap: 2\nBranch template: portable-NN-<slug>\n\n${roleBlock("Coordinator", coordinator)}\n  handoff: yes\n  threshold: 80 percent\n  unattended: block\n\n${roleBlock("Implementor", implementor)}\n\n${roleBlock("Reviewer", reviewer)}\n\n## Tickets\n\n| NN | harness | model | effort | rounds | esc | status | sha |\n| -- | ------- | ----- | ------ | ------ | --- | ------ | --- |\n| 01 | ${implementor.harness} | ${implementor.model} | ${implementor.effort} | 3 | ${status === "blocked" ? "yes" : "-"} | ${status} | ${status === "landed" ? "89abcdef0123456789abcdef0123456789abcdef" : "-"} |\n${withDependent ? "| 02 | - | - | - | 0 | - | queued | - |\n" : ""}${active}\n## Review evidence\n\n- Ticket 01 round 3 standards attempt 1: accepted; reviewer ${JSON.stringify(reviewer)}; report ${join(reviewsPath, "01-standards.md")}\n- Ticket 01 round 3 spec attempt 1: accepted; reviewer ${JSON.stringify(reviewer)}; report ${join(reviewsPath, "01-spec.md")}\n\n## Landed evidence\n\n${status === "landed" ? `- Ticket 01: ${join(reviewsPath, "01-landed.json")}; tip 89abcdef0123456789abcdef0123456789abcdef; branch portable-01-integration; cleanup native-safe` : ""}\n\n## Decisions\n\n- 2026-09-19 setup recorded\n\n## Retained landed branches\n\n${status === "landed" ? "- portable-01-integration (89abcdef0123456789abcdef0123456789abcdef) (retained by repository cleanup policy)" : ""}\n`,
   );
 
   const accepted = await runCli("snapshot.accept", {
@@ -178,32 +178,7 @@ describe("terminal run integration", () => {
     expect(summary.includes("portable-01-integration")).toBe(true);
   });
 
-  it("completes a run with an empty serialized finalization placeholder", async () => {
-    const fixture = await makeRun(
-      { coordinator: "pi", implementor: "pi", reviewer: "pi" },
-      "landed",
-    );
-    const state = readFileSync(fixture.statePath, "utf8");
-    writeFileSync(
-      fixture.statePath,
-      state.replace("## Review evidence", "## Serialized finalization\n\n\n## Review evidence"),
-    );
-
-    const result = await finalize(fixture);
-
-    expect(result.exitCode).toBe(0);
-    expect(result.stdout.result).toEqual({
-      status: "completed",
-      landed_tickets: ["01"],
-      blocked_tickets: [],
-      closed_tickets: [],
-      runnable_tickets: [],
-      summary_path: fixture.summaryPath,
-      tracker_action: { mode: "none", status: "not-applicable", workflow: null },
-    });
-  });
-
-  it("rejects a completed run with populated serialized finalization state", async () => {
+  it("rejects a completed run that still holds a ticket integration", async () => {
     const fixture = await makeRun(
       { coordinator: "pi", implementor: "pi", reviewer: "pi" },
       "landed",
@@ -212,8 +187,8 @@ describe("terminal run integration", () => {
     writeFileSync(
       fixture.statePath,
       state.replace(
-        "## Review evidence",
-        '## Serialized finalization\n\n```json\n{"ticket":"01"}\n```\n\n## Review evidence',
+        "## Active tickets\n",
+        '## Active tickets\n\n### 01\n\nWorktree: /worktrees/01\nBranch: portable-01-integration\nPhase: ready to land\nIntegration: {"cycle":0}\n',
       ),
     );
 
@@ -223,9 +198,8 @@ describe("terminal run integration", () => {
     expect(result.stdout.errors).toEqual([
       {
         code: "run.terminal_runtime_present",
-        message: "A completed run cannot retain an active runtime or serialized finalization slot.",
-        remediation:
-          "Close the runtime and finish or release serialized finalization before retrying.",
+        message: "A completed run cannot retain an active runtime or its ticket integration.",
+        remediation: "Close the runtime and finish or land its ticket integration before retrying.",
       },
     ]);
   });

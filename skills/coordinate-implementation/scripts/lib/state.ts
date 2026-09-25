@@ -5,7 +5,7 @@ import type { CliIssue } from "./contract.ts";
 /**
  * Markdown run-state schema version supported by this helper.
  */
-export const RUN_STATE_SCHEMA_VERSION = 1 as const;
+export const RUN_STATE_SCHEMA_VERSION = 2 as const;
 
 /**
  * Validated identity of a Markdown run-state document.
@@ -29,7 +29,7 @@ const repairRemediation = "Repair the state manually. Automatic state migration 
  *
  * @param path - Display path included in the returned state summary.
  * @param markdown - Complete Markdown state document.
- * @returns An Effect containing the schema-1 state summary or a typed validation error.
+ * @returns An Effect containing the schema-2 state summary or a typed validation error.
  */
 export const validateStateText = (
   path: string,
@@ -71,11 +71,22 @@ export const validateStateText = (
     }
 
     const version = Number(value);
+    if (version === 1) {
+      return yield* new StateError({
+        issue: {
+          code: "state.schema_unsupported",
+          message:
+            "RESUME.md uses schema version 1, whose serialized finalization slot this helper no longer supports; it supports version 2.",
+          remediation:
+            "Finish this run with the previous skill version or start a new run. Schema-1 state is never migrated.",
+        },
+      });
+    }
     if (version !== RUN_STATE_SCHEMA_VERSION) {
       return yield* new StateError({
         issue: {
           code: "state.schema_unsupported",
-          message: `RESUME.md uses unsupported schema version ${version}; this helper supports version 1.`,
+          message: `RESUME.md uses unsupported schema version ${version}; this helper supports version 2.`,
           remediation:
             "Use a helper that supports this state schema or recover the run manually. Automatic state migration is not supported.",
         },
@@ -86,7 +97,7 @@ export const validateStateText = (
   });
 
 /**
- * Reads and validates a schema-version-1 Markdown run-state document without modifying it.
+ * Reads and validates a schema-version-2 Markdown run-state document without modifying it.
  *
  * @param path - Path to the run's RESUME.md file.
  * @returns An Effect containing the validated state summary or a typed read or validation error.

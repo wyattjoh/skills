@@ -23,12 +23,7 @@ import {
   recoverImplementorLaunch,
   recordImplementorLaunch,
 } from "./lib/implementor.ts";
-import {
-  completeLanding,
-  recordLandingConflict,
-  synchronizeLanding,
-  yieldLanding,
-} from "./lib/landing.ts";
+import { checkLandingRebase, completeLanding, recordLandingRebase } from "./lib/landing.ts";
 import { runPreflight } from "./lib/preflight.ts";
 import {
   authorizeReviewEscalation,
@@ -148,8 +143,8 @@ const execute = (request: CoordinateRequest, output: Output): Effect.Effect<numb
       return 0;
     }
 
-    if (request.operation === "landing.synchronize") {
-      const outcome = yield* Effect.result(synchronizeLanding(request.input));
+    if (request.operation === "landing.rebase.check") {
+      const outcome = yield* Effect.result(checkLandingRebase(request.input));
       if (Result.isFailure(outcome)) {
         print(output, failureResponse(request.operation, [outcome.failure.issue], null));
         return 1;
@@ -158,18 +153,8 @@ const execute = (request: CoordinateRequest, output: Output): Effect.Effect<numb
       return 0;
     }
 
-    if (request.operation === "landing.yield") {
-      const outcome = yield* Effect.result(yieldLanding(request.input));
-      if (Result.isFailure(outcome)) {
-        print(output, failureResponse(request.operation, [outcome.failure.issue], null));
-        return 1;
-      }
-      print(output, successResponse(request.operation, outcome.success));
-      return 0;
-    }
-
-    if (request.operation === "landing.conflict.record") {
-      const outcome = yield* Effect.result(recordLandingConflict(request.input));
+    if (request.operation === "landing.rebase.record") {
+      const outcome = yield* Effect.result(recordLandingRebase(request.input));
       if (Result.isFailure(outcome)) {
         print(output, failureResponse(request.operation, [outcome.failure.issue], null));
         return 1;

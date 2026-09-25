@@ -78,8 +78,8 @@ Then invoke `worktree.prepare`:
 ```
 
 Use `remote_sync_argv: null` for local-only policy. Repository remote policy
-must persist the exact non-empty argv array later accepted by
-`landing.synchronize`; callers cannot substitute another command.
+must persist the exact non-empty argv array that `landing.rebase.check` runs
+before its ancestor check; callers cannot substitute another command.
 
 For repository tooling, also pass `expected_worktree_path`. The helper validates
 that the prescribed command produced the requested branch at that exact path.

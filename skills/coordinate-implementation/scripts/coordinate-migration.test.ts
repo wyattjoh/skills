@@ -13,6 +13,7 @@ import {
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { spawnGit } from "./lib/git.ts";
+import { parseIntegration, writeIntegration, type IntegrationRecord } from "./lib/integration.ts";
 import { runCliInProcess } from "./test-cli.ts";
 import { createFakeHerdrEnv } from "./test-herdr.ts";
 
@@ -79,35 +80,31 @@ const makeWorktree = (root: string, branch: string, extraCommit = false): string
   return worktreePath;
 };
 
-const finalizationBlock = (ticket: string, baseSha: string, head: string): string =>
-  `## Serialized finalization\n\n\`\`\`json\n${JSON.stringify(
-    {
-      ticket,
-      cycle: 0,
-      phase: "gates",
-      base_branch: "main",
-      base_sha: baseSha,
-      ticket_sha: head,
-      review_range: `${baseSha}..${head}`,
-      commit_count: 1,
-      commit_policy: { commits: "multiple", fixes: "append" },
-      remote_sync_argv: null,
-      conflicts: [],
-      previous_ticket_sha: null,
-      standards_evidence_path: null,
-      spec_evidence_path: null,
-      self_review_path: null,
-      completed_at: "2026-09-23T11:53:27Z",
-    },
-    null,
-    2,
-  )}\n\`\`\`\n`;
+const integrationLine = (baseSha: string, head: string): string =>
+  `Integration: ${JSON.stringify({
+    cycle: 0,
+    phase: "gates",
+    base_sha: baseSha,
+    ticket_sha: head,
+    review_range: `${baseSha}..${head}`,
+    commit_count: 1,
+    patch_id: "a".repeat(40),
+    commit_patch_ids: ["b".repeat(40)],
+    passed_gates: [],
+    reviewed_head: null,
+    reviewed_patch_id: null,
+    reviewed_commit_patch_ids: null,
+    standards_evidence_path: null,
+    spec_evidence_path: null,
+    self_review_path: null,
+    completed_at: "2026-09-23T11:53:27Z",
+  })}\n`;
 
 const makeImplementorFixture = (
   ticket: string,
   phase: "working" | "gates",
   options: { dirtyFiles?: number; extraCommit?: boolean } = {},
-): Fixture & { finalization: string | undefined } => {
+): Fixture & { integration: string | undefined } => {
   const root = mkdtempSync(join(tmpdir(), "coordinate-migration-"));
   const runPath = join(root, "run");
   mkdirSync(join(runPath, "briefs"), { recursive: true });
@@ -127,8 +124,8 @@ const makeImplementorFixture = (
   const piSkillPath = join(root, "pi-implement", "SKILL.md");
   mkdirSync(join(root, "pi-implement"), { recursive: true });
   writeFileSync(piSkillPath, "# Test implement skill\n");
-  const finalization = phase === "gates" ? finalizationBlock(ticket, baseSha, head) : undefined;
-  const state = `# migration run\n\nSchema version: 1\n\nPrefix: migration\n\nBase: main\n\nImplementor:\n  harness: pi\n  model: openai/test\n  effort: high\n\nReviewer:\n  harness: pi\n  model: openai/reviewer-test\n  effort: medium\n\n## Tickets\n| NN | harness | model | effort | rounds | esc | status | sha |\n| --- | --- | --- | --- | --- | --- | --- | --- |\n| ${ticket} | claude | opus | medium | 0 | - | working | - |\n\n## Active tickets\n\n### ${ticket}\n\nWorktree: ${worktreePath}\nBranch: ${branch}\nImplementor: ${JSON.stringify(OLD_ROLE)}\nImplement skill: /implement\nSession: claude-${ticket}\nTab: implement ${ticket}\nPane: workspace:pold${ticket}\nArtifact: ${artifactPath}\nAttempt: 1\nRetry: 0 of 3\nLast diagnostic: none\nPhase: ${phase}\n\n${finalization ?? ""}## Repository policy\n\n\`\`\`json\n${JSON.stringify({ remote: "local-only", remote_sync_argv: null, cleanup: "native-safe", commit: { commits: "multiple", fixes: "append" } }, null, 2)}\n\`\`\`\n\n## Review policy\n\n\`\`\`json\n${JSON.stringify(
+  const integration = phase === "gates" ? integrationLine(baseSha, head) : undefined;
+  const state = `# migration run\n\nSchema version: 2\n\nPrefix: migration\n\nBase: main\n\nImplementor:\n  harness: pi\n  model: openai/test\n  effort: high\n\nReviewer:\n  harness: pi\n  model: openai/reviewer-test\n  effort: medium\n\n## Tickets\n| NN | harness | model | effort | rounds | esc | status | sha |\n| --- | --- | --- | --- | --- | --- | --- | --- |\n| ${ticket} | claude | opus | medium | 0 | - | working | - |\n\n## Active tickets\n\n### ${ticket}\n\nWorktree: ${worktreePath}\nBranch: ${branch}\nImplementor: ${JSON.stringify(OLD_ROLE)}\nImplement skill: /implement\nSession: claude-${ticket}\nTab: implement ${ticket}\nPane: workspace:pold${ticket}\nArtifact: ${artifactPath}\nAttempt: 1\nRetry: 0 of 3\nLast diagnostic: none\nPhase: ${phase}\n${integration ?? ""}\n## Repository policy\n\n\`\`\`json\n${JSON.stringify({ remote: "local-only", remote_sync_argv: null, cleanup: "native-safe", commit: { commits: "multiple", fixes: "append" } }, null, 2)}\n\`\`\`\n\n## Review policy\n\n\`\`\`json\n${JSON.stringify(
     {
       instruction_files: ["CLAUDE.md"],
       ci_files: [".github/workflows/ci.yml"],
@@ -177,12 +174,12 @@ const makeImplementorFixture = (
     ticket,
     artifactPath,
     piSkillPath,
-    finalization,
+    integration,
   };
 };
 
 const implementorMigrationRequest = (
-  fixture: Fixture & { finalization: string | undefined },
+  fixture: Fixture & { integration: string | undefined },
   overrides: Record<string, unknown> = {},
 ) =>
   request("implementor.runtime.migrate", {
@@ -199,7 +196,7 @@ const implementorMigrationRequest = (
       artifact_path: fixture.artifactPath,
       attempt: 1,
       retry: "0 of 3",
-      phase: fixture.finalization === undefined ? "working" : "gates",
+      phase: fixture.integration === undefined ? "working" : "gates",
     },
     replacement_role: PI_IMPLEMENTOR,
     user_authorized: true,
@@ -241,9 +238,8 @@ const implementorLaunchRequest = (fixture: Fixture) =>
     max_attempts: 3,
   });
 
-const getFinalization = (state: string): string | null =>
-  state.match(/^## Serialized finalization\s*\r?\n\r?\n```json\r?\n[\s\S]*?\r?\n```/mu)?.[0] ??
-  null;
+const getIntegration = (state: string, ticket: string): IntegrationRecord | undefined =>
+  parseIntegration(state, ticket);
 
 const recordPassingGates = async (
   fixture: Fixture,
@@ -302,7 +298,7 @@ const makeReviewFixture = async (includeHistoricalTickets = false): Promise<Revi
   const statePath = join(runPath, "RESUME.md");
   const artifactPath = join(runPath, "reviews", "13-round-0-standards-attempt-1.json");
   const specArtifactPath = join(runPath, "reviews", "13-round-0-spec-attempt-1.json");
-  const initialState = `# review migration run\n\nSchema version: 1\n\nPrefix: test\n\nImplementor:\n  harness: pi\n  model: openai/test\n  effort: high\n\nReviewer:\n  harness: claude\n  model: sonnet\n  effort: medium\n\n## Tickets\n| NN | harness | model | effort | rounds | esc | status | sha |\n| --- | --- | --- | --- | --- | --- | --- | --- |\n| 13 | pi | openai/test | high | 0 | - | queued | - |\n\n## Active tickets\n\n## Decisions\n\n- Preserve review provenance.\n`;
+  const initialState = `# review migration run\n\nSchema version: 2\n\nPrefix: test\n\nImplementor:\n  harness: pi\n  model: openai/test\n  effort: high\n\nReviewer:\n  harness: claude\n  model: sonnet\n  effort: medium\n\n## Tickets\n| NN | harness | model | effort | rounds | esc | status | sha |\n| --- | --- | --- | --- | --- | --- | --- | --- |\n| 13 | pi | openai/test | high | 0 | - | queued | - |\n\n## Active tickets\n\n## Decisions\n\n- Preserve review provenance.\n`;
   writeFileSync(statePath, initialState);
   const policy = await runCli(
     request("review.policy.prepare", {
@@ -322,7 +318,7 @@ const makeReviewFixture = async (includeHistoricalTickets = false): Promise<Revi
   const preparedState = readFileSync(statePath, "utf8");
   const policyBlock = preparedState.match(/^## Review policy\s*\n\n```json\n[\s\S]*?\n```/mu)?.[0];
   expect(typeof policyBlock).toBe("string");
-  const activeState = `# review migration run\n\nSchema version: 1\n\nPrefix: test\n\nImplementor:\n  harness: pi\n  model: openai/test\n  effort: high\n\nReviewer:\n  harness: claude\n  model: sonnet\n  effort: medium\n\n## Tickets\n| NN | harness | model | effort | rounds | esc | status | sha |\n| --- | --- | --- | --- | --- | --- | --- | --- |\n| 13 | pi | openai/test | high | 0 | - | review | ${head} |\n\n## Active tickets\n\n### 13\n\nWorktree: ${worktreePath}\nBranch: ${branch}\nImplementor: ${JSON.stringify(PI_IMPLEMENTOR)}\nSession: pi-13\nTab: implement 13\nPane: workspace:implementor-13\nArtifact: ${join(runPath, "briefs", "launch-13.json")}\nAttempt: 1\nRetry: 0 of 3\nLast diagnostic: none\nPhase: committed, awaiting review\n\n${finalizationBlock(ticket, baseSha, head)}\n${policyBlock}\n\n## Decisions\n\n- Preserve review provenance.\n`;
+  const activeState = `# review migration run\n\nSchema version: 2\n\nPrefix: test\n\nImplementor:\n  harness: pi\n  model: openai/test\n  effort: high\n\nReviewer:\n  harness: claude\n  model: sonnet\n  effort: medium\n\n## Tickets\n| NN | harness | model | effort | rounds | esc | status | sha |\n| --- | --- | --- | --- | --- | --- | --- | --- |\n| 13 | pi | openai/test | high | 0 | - | review | ${head} |\n\n## Active tickets\n\n### 13\n\nWorktree: ${worktreePath}\nBranch: ${branch}\nImplementor: ${JSON.stringify(PI_IMPLEMENTOR)}\nSession: pi-13\nTab: implement 13\nPane: workspace:implementor-13\nArtifact: ${join(runPath, "briefs", "launch-13.json")}\nAttempt: 1\nRetry: 0 of 3\nLast diagnostic: none\nPhase: committed, awaiting review\n${integrationLine(baseSha, head)}\n${policyBlock}\n\n## Decisions\n\n- Preserve review provenance.\n`;
   writeFileSync(statePath, activeState);
   const fixture = {
     root,
@@ -509,8 +505,6 @@ describe("closed runtime migration", () => {
       const originalStatus = spawnGit(["status", "--porcelain=v1", "--untracked-files=all"], {
         cwd: fixture.worktreePath,
       }).stdout;
-      const beforeFinalization = getFinalization(originalState);
-
       const result = await runCli(implementorMigrationRequest(fixture));
 
       expect(result.exitCode).toBe(0);
@@ -525,14 +519,30 @@ describe("closed runtime migration", () => {
           old_role: OLD_ROLE,
           replacement_role: PI_IMPLEMENTOR,
           dirty_worktree_preserved: originalStatus.trim().length > 0,
-          serialized_finalization_preserved: true,
+          integration_preserved: scenario.phase === "gates",
         },
       });
       const migratedState = readFileSync(fixture.statePath, "utf8");
       expect(migratedState.includes(`### ${scenario.ticket}\n`)).toBe(false);
       expect(migratedState.includes(`| ${scenario.ticket} | pi | openai/test | high |`)).toBe(true);
       expect(migratedState.includes("Closed ticket runtimes")).toBe(true);
-      expect(getFinalization(migratedState)).toBe(beforeFinalization);
+      expect(
+        JSON.parse(
+          readFileSync(
+            join(
+              fixture.runPath,
+              "briefs",
+              `implementor-runtime-migration-${scenario.ticket}.json`,
+            ),
+            "utf8",
+          ),
+        ),
+      ).toMatchObject({
+        schema_version: 3,
+        old_integration:
+          scenario.phase === "gates" ? getIntegration(originalState, scenario.ticket) : null,
+        old_integration_cycle: scenario.phase === "gates" ? 0 : null,
+      });
       expect(readFileSync(fixture.artifactPath, "utf8")).toBe(originalArtifact);
       expect(
         spawnGit(["status", "--porcelain=v1", "--untracked-files=all"], {
@@ -607,7 +617,7 @@ describe("closed runtime migration", () => {
     ).toBe(false);
   });
 
-  it("rejects a dirty gates-phase worktree without changing serialized finalization", async () => {
+  it("rejects a dirty gates-phase worktree without changing its integration", async () => {
     const fixture = makeImplementorFixture("13", "gates", { dirtyFiles: 1, extraCommit: true });
     const before = readFileSync(fixture.statePath, "utf8");
 
@@ -619,9 +629,6 @@ describe("closed runtime migration", () => {
       errors: [{ code: "implementor.migration_worktree_dirty" }],
     });
     expect(readFileSync(fixture.statePath, "utf8")).toBe(before);
-    expect(getFinalization(readFileSync(fixture.statePath, "utf8"))).toBe(
-      fixture.finalization?.trimEnd() ?? null,
-    );
   });
 
   it("recovers a byte-identical authorized retry idempotently", async () => {
@@ -719,7 +726,7 @@ describe("closed runtime migration", () => {
     });
   });
 
-  it("requires explicit recovery and landing synchronization before further gates or reviews", async () => {
+  it("requires explicit recovery and a rebase check before further gates or reviews", async () => {
     const fixture = makeImplementorFixture("13", "gates", { extraCommit: true });
     const preMigrationGates = await recordPassingGates(
       fixture,
@@ -740,16 +747,14 @@ describe("closed runtime migration", () => {
     expect(recovery.exitCode).toBe(0);
     expect(recovery.stdout).toMatchObject({
       ok: true,
-      result: { phase: "resynchronize", recovered: false },
+      result: { action: "prepare-and-check-rebase", phase: "rebase-required", recovered: false },
     });
-    const finalization = JSON.parse(
-      getFinalization(readFileSync(fixture.statePath, "utf8"))!.match(
-        /```json\n([\s\S]*?)\n```/u,
-      )![1]!,
-    ) as Record<string, unknown>;
-    expect(finalization.phase).toBe("resynchronize");
 
     expect((await runCli(implementorLaunchRequest(fixture))).exitCode).toBe(0);
+    expect(getIntegration(readFileSync(fixture.statePath, "utf8"), "13")).toMatchObject({
+      cycle: 0,
+      phase: "rebase-required",
+    });
     const staleGate = await runCli(
       request("gate.record", {
         state_path: fixture.statePath,
@@ -769,7 +774,7 @@ describe("closed runtime migration", () => {
     expect(staleGate.exitCode).toBe(1);
     expect(staleGate.stdout).toMatchObject({
       ok: false,
-      errors: [{ code: "review.finalization_stale" }],
+      errors: [{ code: "review.integration_stale" }],
     });
 
     const baseSha = spawnGit(["rev-parse", "HEAD^"], { cwd: fixture.worktreePath }).stdout.trim();
@@ -796,24 +801,23 @@ describe("closed runtime migration", () => {
     expect(prematureReview.exitCode).toBe(1);
     expect(prematureReview.stdout).toMatchObject({
       ok: false,
-      errors: [{ code: "review.finalization_stale" }],
+      errors: [{ code: "review.integration_stale" }],
     });
 
-    expect(JSON.parse(readFileSync(preMigrationGates[0]!, "utf8")).finalization_cycle).toBe(0);
-    const synchronized = await runCli(
-      request("landing.synchronize", {
+    expect(JSON.parse(readFileSync(preMigrationGates[0]!, "utf8")).integration_cycle).toBe(0);
+    const checked = await runCli(
+      request("landing.rebase.check", {
         state_path: fixture.statePath,
         repository_path: fixture.worktreePath,
         worktree_path: fixture.worktreePath,
         ticket: "13",
-        remote_sync_argv: null,
         completed_at: "2026-09-23T12:07:00Z",
       }),
     );
-    expect(synchronized.exitCode).toBe(0);
-    expect(synchronized.stdout).toMatchObject({
+    expect(checked.exitCode).toBe(0);
+    expect(checked.stdout).toMatchObject({
       ok: true,
-      result: { phase: "gates", cycle: 1 },
+      result: { action: "run-gates", phase: "gates", cycle: 1, reviews_kept: false },
     });
     const stalePreMigrationGates = await runCli(
       request("review.launch.prepare", {
@@ -846,7 +850,7 @@ describe("closed runtime migration", () => {
       "post-recovery",
       "2000-09-23T12:08:00Z",
     );
-    expect(JSON.parse(readFileSync(freshGates[0]!, "utf8")).finalization_cycle).toBe(1);
+    expect(JSON.parse(readFileSync(freshGates[0]!, "utf8")).integration_cycle).toBe(1);
     const freshReview = await runCli(
       request("review.launch.prepare", {
         state_path: fixture.statePath,
@@ -883,49 +887,46 @@ describe("interrupted reviewer supersession", () => {
     expect(existsSync(fixture.specArtifactPath)).toBe(true);
   });
 
-  it("binds a round-zero interrupted artifact to HEAD and base across finalization cycle one", async () => {
+  it("binds a round-zero interrupted artifact to HEAD and base across integration cycle one", async () => {
     const fixture = await makeReviewFixture();
     const state = readFileSync(fixture.statePath, "utf8");
-    const finalizationBlockText = getFinalization(state);
-    if (finalizationBlockText === null)
-      throw new Error("Serialized finalization block is missing.");
-    const jsonStart = finalizationBlockText.indexOf("```json\n") + "```json\n".length;
-    const jsonEnd = finalizationBlockText.lastIndexOf("\n```");
-    const finalization = JSON.parse(finalizationBlockText.slice(jsonStart, jsonEnd)) as Record<
-      string,
-      unknown
-    >;
-    finalization.cycle = 1;
-    const replaceFinalization = (value: Record<string, unknown>): string =>
-      state.replace(
-        finalizationBlockText,
-        `${finalizationBlockText.slice(0, jsonStart)}${JSON.stringify(value, null, 2)}${finalizationBlockText.slice(jsonEnd)}`,
-      );
-    const cycleOneState = replaceFinalization(finalization);
-    const staleBase = {
-      ...finalization,
-      base_sha: "other-base",
-      review_range: `other-base..${String(finalization.ticket_sha)}`,
-    };
-    writeFileSync(fixture.statePath, replaceFinalization(staleBase));
+    const integration = getIntegration(state, "13");
+    if (integration === undefined) throw new Error("Integration record is missing.");
+    const replaceIntegration = (value: IntegrationRecord): string =>
+      writeIntegration(state, "13", value, undefined);
+    const cycleOneState = replaceIntegration({ ...integration, cycle: 1 });
+    const otherBase = "f".repeat(40);
+    writeFileSync(
+      fixture.statePath,
+      replaceIntegration({
+        ...integration,
+        cycle: 1,
+        base_sha: otherBase,
+        review_range: `${otherBase}..${integration.ticket_sha}`,
+      }),
+    );
     const staleBaseResult = await runCli(supersedeReviewerRequest(fixture, "standards"));
     expect(staleBaseResult.exitCode).toBe(1);
     expect(staleBaseResult.stdout).toMatchObject({
       ok: false,
-      errors: [{ code: "review.supersession_finalization_stale" }],
+      errors: [{ code: "review.supersession_integration_stale" }],
     });
 
-    const staleHead = {
-      ...finalization,
-      ticket_sha: "other-head",
-      review_range: `${fixture.baseSha}..other-head`,
-    };
-    writeFileSync(fixture.statePath, replaceFinalization(staleHead));
+    const otherHead = "e".repeat(40);
+    writeFileSync(
+      fixture.statePath,
+      replaceIntegration({
+        ...integration,
+        cycle: 1,
+        ticket_sha: otherHead,
+        review_range: `${fixture.baseSha}..${otherHead}`,
+      }),
+    );
     const staleHeadResult = await runCli(supersedeReviewerRequest(fixture, "standards"));
     expect(staleHeadResult.exitCode).toBe(1);
     expect(staleHeadResult.stdout).toMatchObject({
       ok: false,
-      errors: [{ code: "review.supersession_finalization_stale" }],
+      errors: [{ code: "review.supersession_integration_stale" }],
     });
 
     writeFileSync(fixture.statePath, cycleOneState);
@@ -957,15 +958,12 @@ describe("interrupted reviewer supersession", () => {
       head_after: artifact.reviewed_head,
       supersession_generation: 1,
     });
-    const finalizationAfterSupersession = readFileSync(fixture.statePath, "utf8");
-    expect(finalizationAfterSupersession).toContain('"cycle": 1');
-    expect(finalizationAfterSupersession).toContain(`"base_sha": "${fixture.baseSha}"`);
-    expect(finalizationAfterSupersession).toContain(
-      `"ticket_sha": "${artifact.reviewed_head as string}"`,
-    );
-    expect(finalizationAfterSupersession).toContain(
-      `"review_range": "${fixture.baseSha}..${artifact.reviewed_head as string}"`,
-    );
+    expect(getIntegration(readFileSync(fixture.statePath, "utf8"), "13")).toMatchObject({
+      cycle: 1,
+      base_sha: fixture.baseSha,
+      ticket_sha: artifact.reviewed_head as string,
+      review_range: `${fixture.baseSha}..${artifact.reviewed_head as string}`,
+    });
   });
 
   it("requires a machine-observed closed pane and preserves prior artifacts", async () => {

@@ -98,13 +98,6 @@ const sectionBounds = (markdown: string, name: string): { start: number; end: nu
   return { start, end: next.exec(markdown)?.index ?? markdown.length };
 };
 
-const sectionHasContent = (markdown: string, name: string): boolean => {
-  const bounds = sectionBounds(markdown, name);
-  if (bounds === null) return false;
-  const section = markdown.slice(bounds.start, bounds.end);
-  return section.replace(/^## [^\r\n]*(?:\r?\n)?/u, "").trim().length > 0;
-};
-
 const parseRole = (markdown: string, name: string): RoleRecord => {
   const match = new RegExp(
     `^${name}:\\s*\\n\\s+harness:\\s*(claude|pi)\\s*\\n\\s+model:\\s*(.+?)\\s*\\n\\s+effort:\\s*(\\S+)\\s*$`,
@@ -114,7 +107,7 @@ const parseRole = (markdown: string, name: string): RoleRecord => {
     throw runError(
       "run.role_malformed",
       `RESUME.md has no complete ${name} role record.`,
-      "Repair the schema-1 role records before evaluating run completion.",
+      "Repair the schema-2 role records before evaluating run completion.",
     );
   }
   return { harness: match[1] as RoleRecord["harness"], model: match[2]!, effort: match[3]! };
@@ -126,7 +119,7 @@ const parseTicketTable = (markdown: string): TicketTable => {
     throw runError(
       "run.tickets_missing",
       "RESUME.md has no Tickets section.",
-      "Restore the schema-1 ticket table before evaluating run completion.",
+      "Restore the schema-2 ticket table before evaluating run completion.",
     );
   }
   const section = markdown.slice(bounds.start, bounds.end);
@@ -136,7 +129,7 @@ const parseTicketTable = (markdown: string): TicketTable => {
     throw runError(
       "run.tickets_malformed",
       "RESUME.md ticket table has no NN header row.",
-      "Repair the schema-1 ticket table before evaluating run completion.",
+      "Repair the schema-2 ticket table before evaluating run completion.",
     );
   }
   const headers = lines[headerIndex]!.split("|")
@@ -153,7 +146,7 @@ const parseTicketTable = (markdown: string): TicketTable => {
   if (Object.values(indexes).some((index) => index < 0)) {
     throw runError(
       "run.tickets_malformed",
-      "RESUME.md ticket table is missing a required schema-1 column.",
+      "RESUME.md ticket table is missing a required schema-2 column.",
       "Restore NN, harness, model, effort, status, and sha columns before finalization.",
     );
   }
@@ -181,7 +174,7 @@ const parseTicketTable = (markdown: string): TicketTable => {
     throw runError(
       "run.tickets_malformed",
       "RESUME.md ticket table is empty or contains duplicate tickets.",
-      "Repair the schema-1 ticket table before evaluating run completion.",
+      "Repair the schema-2 ticket table before evaluating run completion.",
     );
   }
   return { start: bounds.start, end: bounds.end, lines, rows, statusIndex: indexes.status };
@@ -597,15 +590,11 @@ export const finalizeRun = (
             const completed = currentTable.rows.every(
               (row) => row.status === "landed" || row.status === "closed",
             );
-            if (
-              completed &&
-              (parseRuntimeBlocks(updated, "Active tickets").length > 0 ||
-                sectionHasContent(updated, "Serialized finalization"))
-            ) {
+            if (completed && parseRuntimeBlocks(updated, "Active tickets").length > 0) {
               throw runError(
                 "run.terminal_runtime_present",
-                "A completed run cannot retain an active runtime or serialized finalization slot.",
-                "Close the runtime and finish or release serialized finalization before retrying.",
+                "A completed run cannot retain an active runtime or its ticket integration.",
+                "Close the runtime and finish or land its ticket integration before retrying.",
               );
             }
             const active = currentTable.rows.some((row) =>
@@ -680,7 +669,7 @@ export const finalizeRun = (
               : runError(
                   "run.state_malformed",
                   `Could not evaluate terminal run state: ${(error as Error).message}`,
-                  "Repair RESUME.md to the documented schema-1 format, then retry.",
+                  "Repair RESUME.md to the documented schema-2 format, then retry.",
                 ),
         });
         if (computed.result.summary !== null) {

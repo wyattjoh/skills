@@ -67,7 +67,7 @@ they are part of `snapshot.json`.
 
 ## Initial acceptance
 
-After preflight succeeds and the schema-1 `RESUME.md` exists, invoke
+After preflight succeeds and the schema-2 `RESUME.md` exists, invoke
 `snapshot.accept`. Pass the run path, state path, authoritative project
 remote-write policy, an explicit UTC acceptance timestamp, and the writeback
 choice described below.

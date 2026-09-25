@@ -83,4 +83,11 @@ Git and completion:
   actionable Standards and Spec finding. Apply the recorded fix-commit policy,
   rerun all required gates and this harness's self-review, then print
   `FIXES DONE <ticket-number>`.
+- The coordinator may send a `REBASE REQUIRED` request when <base branch>
+  advanced. Rebase your own branch onto <base branch> in this worktree with
+  `git rebase <base branch>`, and resolve any conflicts here, preserving the
+  intent of both the landed change and this ticket. Never check out, edit,
+  reset, or merge in the base checkout. Do not squash or reword existing
+  commits beyond what conflict resolution requires. When the rebase is complete
+  and the worktree is clean, print `REBASE DONE <ticket-number>`.
 ```

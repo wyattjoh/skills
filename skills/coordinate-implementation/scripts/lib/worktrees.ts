@@ -137,7 +137,7 @@ const persistPolicy = (
         return yield* worktreeError(
           "state.tickets_missing",
           "RESUME.md has no `## Tickets` section where repository policy can be persisted.",
-          "Repair the schema-1 state template before preparing a worktree.",
+          "Repair the schema-2 state template before preparing a worktree.",
         );
       }
       const source =

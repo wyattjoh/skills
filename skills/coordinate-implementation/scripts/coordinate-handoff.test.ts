@@ -185,7 +185,7 @@ const roleState = (
   ownerHarness: "claude" | "pi",
 ): string => `# handoff run
 
-Schema version: 1
+Schema version: 2
 
 Coordinator:
   harness: ${selectedHarness}

@@ -89,7 +89,7 @@ const parseFields = (markdown: string, label: string): Record<string, string> =>
     throw coordinatorError(
       "state.coordinator_fields_malformed",
       `RESUME.md must contain exactly one \`${label}:\` block.`,
-      "Repair the schema-1 role and ownership blocks manually, then retry.",
+      "Repair the schema-2 role and ownership blocks manually, then retry.",
     );
   }
   const fields: Record<string, string> = {};
@@ -100,7 +100,7 @@ const parseFields = (markdown: string, label: string): Record<string, string> =>
       throw coordinatorError(
         "state.coordinator_fields_malformed",
         `RESUME.md has malformed or duplicate fields in \`${label}:\`.`,
-        "Repair the schema-1 role and ownership blocks manually, then retry.",
+        "Repair the schema-2 role and ownership blocks manually, then retry.",
       );
     }
     fields[field[1]!] = field[2]!;
@@ -134,7 +134,7 @@ const parseHandoffPolicy = (markdown: string): CoordinatorHandoffPolicy => {
   throw coordinatorError(
     "state.coordinator_handoff_policy_malformed",
     "RESUME.md must record `handoff: disabled` with `threshold: unavailable` for Herdr 0.9.1, or a valid legacy automatic policy.",
-    "Repair the schema-1 Coordinator handoff policy before coordinator takeover.",
+    "Repair the schema-2 Coordinator handoff policy before coordinator takeover.",
   );
 };
 

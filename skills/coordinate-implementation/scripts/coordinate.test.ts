@@ -96,6 +96,7 @@ const runCli = async (
 const completeCommands = (withContextMetrics = true): Record<string, string> => ({
   git: 'console.log("git version 2.45.0")',
   bun: 'console.log("1.4.0")',
+  flock: 'console.log("flock 0.4.0")',
   pi: 'console.log("pi 0.80.3")',
   herdr: `
 const args = process.argv.slice(2);
@@ -238,7 +239,7 @@ const makeSnapshotFixture = (sourceKind: "local" | "remote"): SnapshotFixture =>
   const statePath = join(runPath, "RESUME.md");
   writeFileSync(
     statePath,
-    "# portable implementation run\n\nSchema version: 1\n\n## Decisions\n\n- 2026-09-18 setup recorded\n",
+    "# portable implementation run\n\nSchema version: 2\n\n## Decisions\n\n- 2026-09-18 setup recorded\n",
   );
   return { runPath, statePath, manifestPath };
 };
@@ -282,7 +283,7 @@ describe("versioned coordinate CLI", () => {
     mkdirSync(implement, { recursive: true });
     writeFileSync(join(implement, "SKILL.md"), "---\nname: implement\ndescription: test\n---\n");
     const statePath = join(fixture.root, "RESUME.md");
-    const state = "# sample implementation run\n\nSchema version: 1\n";
+    const state = "# sample implementation run\n\nSchema version: 2\n";
     writeFileSync(statePath, state);
 
     const result = await runCli(preflightRequest(fixture.skillRoot, statePath), fixture.env);
@@ -298,6 +299,7 @@ describe("versioned coordinate CLI", () => {
         capabilities: {
           git: { available: true, version: "git version 2.45.0" },
           bun: { available: true, version: "1.4.0" },
+          flock: { available: true, version: "flock 0.4.0" },
           herdr: {
             available: true,
             version: "herdr 9.9.9",
@@ -310,7 +312,7 @@ describe("versioned coordinate CLI", () => {
           { name: "pi", available: true, version: "pi 0.80.3" },
         ],
         skills: [{ name: "implement", available: true, path: join(implement, "SKILL.md") }],
-        state: { path: statePath, schema_version: 1 },
+        state: { path: statePath, schema_version: 2 },
       },
       errors: [],
     });
@@ -333,6 +335,7 @@ describe("versioned coordinate CLI", () => {
         capabilities: {
           git: { available: false, version: null },
           bun: { available: false, version: null },
+          flock: { available: false, version: null },
           herdr: {
             available: false,
             version: null,
@@ -357,6 +360,11 @@ describe("versioned coordinate CLI", () => {
           code: "dependency.bun_missing",
           message: "Bun is unavailable or `bun --version` failed.",
           remediation: "Install Bun and ensure `bun` is on PATH.",
+        },
+        {
+          code: "dependency.flock_missing",
+          message: "flock is unavailable or `flock --version` failed.",
+          remediation: "Install flock and ensure `flock` is on PATH.",
         },
         {
           code: "dependency.herdr_missing",
@@ -398,6 +406,7 @@ describe("versioned coordinate CLI", () => {
         capabilities: {
           git: { available: true, version: "git version 2.45.0" },
           bun: { available: true, version: "1.4.0" },
+          flock: { available: true, version: "flock 0.4.0" },
           herdr: {
             available: true,
             version: "herdr 9.9.9",
@@ -510,6 +519,7 @@ if (args[0] === "--version") {
         capabilities: {
           git: { available: true, version: "git version 2.45.0" },
           bun: { available: true, version: "1.4.0" },
+          flock: { available: true, version: "flock 0.4.0" },
           herdr: {
             available: true,
             version: "herdr 9.9.9",
@@ -1124,7 +1134,7 @@ Coordinator ownership:
   it("accepts schema version 1 Markdown state", async () => {
     const fixture = makeEnvironment({});
     const statePath = join(fixture.root, "RESUME.md");
-    writeFileSync(statePath, "# sample implementation run\n\nSchema version: 1\n");
+    writeFileSync(statePath, "# sample implementation run\n\nSchema version: 2\n");
 
     const result = await runCli(
       {
@@ -1141,7 +1151,7 @@ Coordinator ownership:
       schema_version: 1,
       operation: "state.validate",
       ok: true,
-      result: { state: { path: statePath, schema_version: 1 } },
+      result: { state: { path: statePath, schema_version: 2 } },
       errors: [],
     });
   });
@@ -1209,10 +1219,44 @@ Coordinator ownership:
     expect(readFileSync(statePath, "utf8")).toBe(state);
   });
 
+  it("refuses schema-1 run state without migrating it", () => {
+    const fixture = makeEnvironment({});
+    const statePath = join(fixture.root, "RESUME.md");
+    const state = "# sample implementation run\n\nSchema version: 1\n";
+    writeFileSync(statePath, state);
+
+    const result = runCliSpawn(
+      {
+        schema_version: 1,
+        operation: "state.validate",
+        input: { state_path: statePath },
+      },
+      fixture.env,
+    );
+
+    expect(result.exitCode).toBe(1);
+    expect(result.stdout).toEqual({
+      schema_version: 1,
+      operation: "state.validate",
+      ok: false,
+      result: null,
+      errors: [
+        {
+          code: "state.schema_unsupported",
+          message:
+            "RESUME.md uses schema version 1, whose serialized finalization slot this helper no longer supports; it supports version 2.",
+          remediation:
+            "Finish this run with the previous skill version or start a new run. Schema-1 state is never migrated.",
+        },
+      ],
+    });
+    expect(readFileSync(statePath, "utf8")).toBe(state);
+  });
+
   it("rejects unsupported request and state schema versions", () => {
     const fixture = makeEnvironment({});
     const statePath = join(fixture.root, "RESUME.md");
-    writeFileSync(statePath, "# sample implementation run\n\nSchema version: 2\n");
+    writeFileSync(statePath, "# sample implementation run\n\nSchema version: 3\n");
 
     const stateResult = runCliSpawn(
       {
@@ -1231,7 +1275,7 @@ Coordinator ownership:
       errors: [
         {
           code: "state.schema_unsupported",
-          message: "RESUME.md uses unsupported schema version 2; this helper supports version 1.",
+          message: "RESUME.md uses unsupported schema version 3; this helper supports version 2.",
           remediation:
             "Use a helper that supports this state schema or recover the run manually. Automatic state migration is not supported.",
         },

@@ -24,7 +24,7 @@ const NOW = "2026-09-23T12:00:00.000Z";
 
 const fullState = `# sample implementation run
 
-Schema version: 1
+Schema version: 2
 Run id: ${RUN_ID}
 
 Prefix:          dcs
@@ -185,7 +185,7 @@ describe("run projection", () => {
   });
 
   it("projects unparseable sections as nulls and empty lists", () => {
-    const partial = `Schema version: 1\nRun id: ${RUN_ID}\nStall interval: 90m\n`;
+    const partial = `Schema version: 2\nRun id: ${RUN_ID}\nStall interval: 90m\n`;
     expect(projectRun(partial, "/runs/x/RESUME.md", REPO, NOW)).toEqual({
       ...expectedProjection,
       run_folder: "/runs/x",
@@ -205,12 +205,12 @@ describe("run projection", () => {
   });
 
   it("returns null without a valid run id", () => {
-    expect(projectRun("Schema version: 1\nRun id: nope\n", "/r/RESUME.md", REPO, NOW)).toBe(null);
+    expect(projectRun("Schema version: 2\nRun id: nope\n", "/r/RESUME.md", REPO, NOW)).toBe(null);
   });
 
   it("defaults and bounds the stall interval", () => {
     expect([
-      parseStallInterval("Schema version: 1\n"),
+      parseStallInterval("Schema version: 2\n"),
       parseStallInterval("Stall interval: 2m\n"),
       parseStallInterval("Stall interval: 60m\n"),
       parseStallInterval("Stall interval: 1m\n"),
@@ -219,8 +219,8 @@ describe("run projection", () => {
   });
 
   it("backfills the run id directly after the schema marker only once", () => {
-    const backfilled = ensureRunId("# run\n\nSchema version: 1\n\nPrefix: dcs\n", () => RUN_ID);
-    expect(backfilled).toBe(`# run\n\nSchema version: 1\nRun id: ${RUN_ID}\n\nPrefix: dcs\n`);
+    const backfilled = ensureRunId("# run\n\nSchema version: 2\n\nPrefix: dcs\n", () => RUN_ID);
+    expect(backfilled).toBe(`# run\n\nSchema version: 2\nRun id: ${RUN_ID}\n\nPrefix: dcs\n`);
     expect(ensureRunId(backfilled, () => "other")).toBe(backfilled);
   });
 });
@@ -236,7 +236,7 @@ describe("global run file versioning", () => {
     });
     const nullable = flatten(
       projectRun(
-        "Schema version: 1\nRun id: " + RUN_ID,
+        "Schema version: 2\nRun id: " + RUN_ID,
         "/r/RESUME.md",
         { common_dir: null, base_checkout: null },
         NOW,

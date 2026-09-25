@@ -1,48 +1,34 @@
 import { Data, Effect } from "effect";
 import { existsSync, realpathSync } from "node:fs";
 import { mkdir, readFile, realpath, writeFile } from "node:fs/promises";
-import { basename, dirname, isAbsolute, relative, resolve, sep } from "node:path";
+import { basename, dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import type {
   CliIssue,
   CommitPolicy,
   LandingCompleteInput,
-  LandingConflictRecordInput,
-  LandingSynchronizeInput,
-  LandingYieldInput,
+  LandingRebaseCheckInput,
+  LandingRebaseRecordInput,
 } from "./contract.ts";
 import { activeRuntimeBlockPattern, parseActiveRuntimeFields } from "./active-runtime.ts";
 import { cleanGitEnv, spawnGit } from "./git.ts";
+import {
+  bindIntegration,
+  checkIntegration,
+  isAppendedFix,
+  IntegrationError,
+  type IntegrationPhase,
+  type IntegrationRecord,
+  observeIntegration,
+  operationInProgress,
+  parseIntegration,
+  rebasePrompt,
+  recordRebase,
+  removeIntegration,
+  writeIntegration,
+} from "./integration.ts";
 import { inspectRuntimeClose } from "./runtime-close.ts";
 import { mutateStateFile, StateMutationError } from "./state-mutation.ts";
 import { validateStateText } from "./state.ts";
-
-type FinalizationPhase =
-  | "synchronizing"
-  | "conflict"
-  | "awaiting-user"
-  | "fixing"
-  | "gates"
-  | "ready-to-land"
-  | "resynchronize";
-
-type FinalizationRecord = {
-  ticket: string;
-  cycle: number;
-  phase: FinalizationPhase;
-  base_branch: string;
-  base_sha: string | null;
-  ticket_sha: string | null;
-  review_range: string | null;
-  commit_count: number | null;
-  commit_policy: CommitPolicy;
-  remote_sync_argv: string[] | null;
-  conflicts: string[];
-  previous_ticket_sha: string | null;
-  standards_evidence_path: string | null;
-  spec_evidence_path: string | null;
-  self_review_path: string | null;
-  completed_at: string;
-};
 
 type PersistedRepositoryPolicy = {
   remote: "local-only" | "repository";
@@ -52,7 +38,12 @@ type PersistedRepositoryPolicy = {
 };
 
 /**
- * Typed synchronization, conflict, landing, or cleanup failure returned through the CLI.
+ * Default seconds to wait for the shared `land-local.lock`, matching the land-local skill.
+ */
+export const LAND_LOCK_WAIT_SECONDS = 110 as const;
+
+/**
+ * Typed rebase, landing, or cleanup failure returned through the CLI.
  */
 export class LandingError extends Data.TaggedError("LandingError")<{
   issue: CliIssue;
@@ -61,75 +52,30 @@ export class LandingError extends Data.TaggedError("LandingError")<{
 const landingError = (code: string, message: string, remediation: string): LandingError =>
   new LandingError({ issue: { code, message, remediation } });
 
+const toLandingError = (error: unknown): LandingError => {
+  if (error instanceof LandingError) return error;
+  if (error instanceof IntegrationError) return new LandingError({ issue: error.issue });
+  return landingError(
+    "landing.unexpected_failure",
+    `Landing failed unexpectedly: ${(error as Error).message}`,
+    "Inspect the run state and ticket worktree, then retry the same operation.",
+  );
+};
+
+const attempt = <Value>(evaluate: () => Value): Effect.Effect<Value, LandingError> =>
+  Effect.try({ try: evaluate, catch: toLandingError });
+
 const fromMutationError = (error: unknown): LandingError => {
   if (error instanceof LandingError) return error;
+  if (error instanceof IntegrationError) return new LandingError({ issue: error.issue });
   const detail = error instanceof StateMutationError ? error.message : (error as Error).message;
   return landingError(
     error instanceof StateMutationError && error.kind === "lock_busy"
       ? "landing.state_busy"
       : "landing.state_io_failed",
-    `Could not update serialized finalization state: ${detail}`,
+    `Could not update ticket integration state: ${detail}`,
     "Verify RESUME.md is writable, then retry the same operation.",
   );
-};
-
-const finalizationPattern =
-  /^## Serialized finalization\s*\r?\n\r?\n```json\r?\n([\s\S]*?)\r?\n```\s*$/mu;
-
-const parseFinalization = (markdown: string): FinalizationRecord | undefined => {
-  const match = markdown.match(finalizationPattern);
-  if (match === null) return undefined;
-  try {
-    return JSON.parse(match[1]!) as FinalizationRecord;
-  } catch {
-    throw landingError(
-      "landing.finalization_malformed",
-      "RESUME.md contains malformed serialized finalization JSON.",
-      "Repair the finalization record from durable evidence before continuing.",
-    );
-  }
-};
-
-const renderFinalization = (record: FinalizationRecord): string =>
-  `## Serialized finalization\n\n\`\`\`json\n${JSON.stringify(record, null, 2)}\n\`\`\``;
-
-const suspendedPattern =
-  /^## Suspended finalization\s*\r?\n\r?\n```json\r?\n([\s\S]*?)\r?\n```\s*$/mu;
-
-const parseSuspended = (markdown: string): FinalizationRecord | undefined => {
-  const match = markdown.match(suspendedPattern);
-  if (match === null) return undefined;
-  try {
-    const value = JSON.parse(match[1]!) as FinalizationRecord;
-    if (
-      value.phase !== "gates" ||
-      !/^\d{2}$/u.test(value.ticket) ||
-      !/^[a-f0-9]{40,64}$/u.test(value.ticket_sha ?? "")
-    )
-      throw new Error("invalid suspended binding");
-    return value;
-  } catch {
-    throw landingError(
-      "landing.suspension_malformed",
-      "RESUME.md contains malformed suspended finalization evidence.",
-      "Repair the suspension from its recorded ticket, SHA, and gate evidence before continuing.",
-    );
-  }
-};
-
-const renderSuspended = (record: FinalizationRecord): string =>
-  `## Suspended finalization\n\n\`\`\`json\n${JSON.stringify(record, null, 2)}\n\`\`\``;
-
-const upsertFinalization = (markdown: string, record: FinalizationRecord): string => {
-  const rendered = renderFinalization(record);
-  if (finalizationPattern.test(markdown)) return markdown.replace(finalizationPattern, rendered);
-  const insertion =
-    /^## Review evidence\s*$/mu.exec(markdown)?.index ??
-    /^## Decisions\s*$/mu.exec(markdown)?.index ??
-    markdown.length;
-  return `${markdown.slice(0, insertion).trimEnd()}\n\n${rendered}\n\n${markdown
-    .slice(insertion)
-    .trimStart()}`;
 };
 
 const parseRepositoryPolicy = (markdown: string): PersistedRepositoryPolicy => {
@@ -140,7 +86,7 @@ const parseRepositoryPolicy = (markdown: string): PersistedRepositoryPolicy => {
     throw landingError(
       "landing.repository_policy_missing",
       "RESUME.md has no persisted Repository policy.",
-      "Resolve repository synchronization, cleanup, and commit policy before finalization.",
+      "Resolve repository synchronization, cleanup, and commit policy before integration.",
     );
   }
   try {
@@ -176,7 +122,7 @@ const parseRepositoryPolicy = (markdown: string): PersistedRepositoryPolicy => {
     throw landingError(
       "landing.repository_policy_malformed",
       "RESUME.md contains an incomplete Repository policy.",
-      "Repair the persisted remote, cleanup, and commit records before finalization.",
+      "Repair the persisted remote, cleanup, and commit records before integration.",
     );
   }
 };
@@ -187,10 +133,23 @@ const parseBaseBranch = (markdown: string): string => {
     throw landingError(
       "landing.base_malformed",
       "RESUME.md must contain exactly one non-empty Base field.",
-      "Repair the schema-1 run header before synchronization.",
+      "Repair the schema-2 run header before integration.",
     );
   }
   return matches[0]![1]!;
+};
+
+const parseGateCount = (markdown: string): number => {
+  const match = markdown.match(
+    /^## Review policy\s*\r?\n\r?\n```json\r?\n([\s\S]*?)\r?\n```\s*$/mu,
+  );
+  if (match === null) return 0;
+  try {
+    const gates = (JSON.parse(match[1]!) as { gates: unknown }).gates;
+    return Array.isArray(gates) ? gates.length : 0;
+  } catch {
+    return 0;
+  }
 };
 
 const parseActiveTicket = (
@@ -202,7 +161,7 @@ const parseActiveTicket = (
     throw landingError(
       "landing.runtime_missing",
       `Ticket \`${ticket}\` has no active runtime block.`,
-      "Restore its durable runtime before synchronization or landing.",
+      "Restore its durable runtime before integration or landing.",
     );
   }
   const fields = parseActiveRuntimeFields(block);
@@ -214,16 +173,6 @@ const parseActiveTicket = (
     );
   }
   return { worktree: fields.Worktree, branch: fields.Branch, pane: fields.Pane };
-};
-
-const updateActivePhase = (markdown: string, ticket: string, phase: string): string => {
-  const pattern = activeRuntimeBlockPattern(ticket);
-  const block = markdown.match(pattern)?.[0];
-  if (block === undefined) return markdown;
-  const updated = /^Phase:.*$/mu.test(block)
-    ? block.replace(/^Phase:.*$/mu, `Phase: ${phase}`)
-    : `${block.trimEnd()}\nPhase: ${phase}\n`;
-  return markdown.replace(pattern, updated);
 };
 
 const gitFailure = (action: string, stderr: string): LandingError =>
@@ -267,7 +216,7 @@ const validateRepositoryAndWorktree = (
       return yield* landingError(
         "landing.base_missing",
         `Local integration branch \`${baseBranch}\` does not exist.`,
-        "Restore or select the persisted local integration branch before synchronization.",
+        "Restore or select the persisted local integration branch before integration.",
       );
     }
   });
@@ -311,240 +260,130 @@ const runExactCommand = (
     if (result.exitCode !== 0) return yield* gitFailure(action, result.stderr);
   });
 
-const updateFinalization = (
-  statePath: string,
+const readState = (statePath: string): Effect.Effect<string, LandingError> =>
+  Effect.tryPromise({
+    try: () => readFile(statePath, "utf8"),
+    catch: (error) =>
+      landingError(
+        "landing.state_read_failed",
+        `Could not read run state: ${(error as Error).message}`,
+        "Verify RESUME.md is readable before integration or landing.",
+      ),
+  });
+
+const phaseLabels: Record<IntegrationPhase, string> = {
+  gates: "gates",
+  fixing: "commit policy fix required",
+  "rebase-required": "rebase required",
+  "ready-to-land": "ready to land",
+};
+
+const phaseActions = {
+  gates: "run-gates",
+  fixing: "fix-commits",
+  "rebase-required": "rebase",
+  "ready-to-land": "land",
+} as const;
+
+/**
+ * Integration binding returned by `landing.rebase.check` and `landing.rebase.record`.
+ */
+export type LandingRebaseResult = {
+  ticket: string;
+  action: "run-gates" | "fix-commits" | "rebase" | "land";
+  phase: IntegrationPhase;
+  cycle: number;
+  base_branch: string;
+  base_sha: string;
+  ticket_sha: string;
+  review_range: string;
+  commit_count: number;
+  commit_policy: CommitPolicy;
+  patch_id: string;
+  reviews_kept: boolean;
+  remote_synchronized: boolean;
+  prompt: string | null;
+};
+
+const rebaseResult = (
   ticket: string,
-  record: FinalizationRecord,
-  phase: string,
-): Effect.Effect<void, LandingError> =>
-  mutateStateFile(statePath, (markdown) =>
-    Effect.gen(function* () {
-      const current = parseFinalization(markdown);
-      if (current?.ticket !== ticket) {
-        return yield* landingError(
-          "landing.serialization_lost",
-          `Ticket \`${ticket}\` no longer owns serialized finalization.`,
-          "Reload RESUME.md and continue only with the recorded finalization ticket.",
-        );
-      }
-      let updated = updateActivePhase(upsertFinalization(markdown, record), ticket, phase);
-      if (record.base_sha !== null) {
-        updated = updated.replace(/^Base sha:\s*.*$/mu, `Base sha:        ${record.base_sha}`);
-      }
-      return { markdown: updated, result: undefined };
-    }),
-  ).pipe(Effect.mapError(fromMutationError));
-
-/**
- * Suspends a clean gates-phase finalization so an earlier ready ticket can land first.
- * The exact record is retained and must be revalidated on its next synchronization.
- *
- * @param input - Authorized ticket, repository and worktree binding, and expected HEAD.
- * @returns The suspended ticket and preserved tip.
- */
-export const yieldLanding = (
-  input: LandingYieldInput,
-): Effect.Effect<{ ticket: string; ticket_sha: string; action: "suspended" }, LandingError> =>
-  mutateStateFile(input.statePath, (markdown) =>
-    Effect.gen(function* () {
-      yield* validateStateText(input.statePath, markdown).pipe(
-        Effect.mapError((error) => new LandingError({ issue: error.issue })),
-      );
-      const record = parseFinalization(markdown);
-      if (
-        record?.ticket !== input.ticket ||
-        record.phase !== "gates" ||
-        record.ticket_sha !== input.expectedTicketSha ||
-        parseSuspended(markdown) !== undefined
-      ) {
-        return yield* landingError(
-          "landing.yield_binding_mismatch",
-          "Only the exact active, synchronized gates-phase ticket can yield an empty suspension slot.",
-          "Finish the current worker, synchronize its clean tip, and pass the returned full SHA.",
-        );
-      }
-      const runtime = parseActiveTicket(markdown, input.ticket);
-      yield* validateRepositoryAndWorktree(
-        input.repositoryPath,
-        input.worktreePath,
-        runtime.worktree,
-        runtime.branch,
-        record.base_branch,
-      );
-      const head = spawnGit(["rev-parse", "HEAD"], { cwd: input.worktreePath });
-      const base = spawnGit(["rev-parse", record.base_branch], { cwd: input.repositoryPath });
-      const status = spawnGit(["status", "--porcelain=v1", "--untracked-files=all"], {
-        cwd: input.worktreePath,
-      });
-      if (
-        head.exitCode !== 0 ||
-        base.exitCode !== 0 ||
-        status.exitCode !== 0 ||
-        status.stdout !== "" ||
-        head.stdout.trim() !== record.ticket_sha ||
-        base.stdout.trim() !== record.base_sha
-      ) {
-        return yield* landingError(
-          "landing.yield_stale",
-          "The ticket worktree, HEAD, or integration base changed before yielding.",
-          "Resynchronize and rerun gates before yielding the current finalization.",
-        );
-      }
-      const insertion = /^## Review evidence\s*$/mu.exec(markdown)?.index ?? markdown.length;
-      const suspended = `${markdown.slice(0, insertion).trimEnd()}\n\n${renderSuspended(record)}\n\n${markdown.slice(insertion).trimStart()}`;
-      const withoutActive = updateActivePhase(
-        suspended.replace(finalizationPattern, ""),
-        input.ticket,
-        "finalization suspended",
-      );
-      const decisions = /^## Decisions\s*$/mu.exec(withoutActive);
-      if (decisions === null) {
-        return yield* landingError(
-          "landing.decisions_missing",
-          "RESUME.md has no Decisions section for the authorized finalization yield.",
-          "Repair the schema-1 state template before yielding.",
-        );
-      }
-      const decisionAt = decisions.index + decisions[0].length;
-      const updated = `${withoutActive.slice(0, decisionAt)}\n\n- ${input.completedAt} ticket ${input.ticket} finalization yielded (user authorized); preserved tip ${record.ticket_sha}.\n${withoutActive.slice(decisionAt).replace(/^\s*/u, "")}`;
-      return {
-        markdown: updated,
-        result: {
-          ticket: input.ticket,
-          ticket_sha: record.ticket_sha!,
-          action: "suspended" as const,
-        },
-      };
-    }),
-  ).pipe(Effect.mapError(fromMutationError));
-
-/**
- * Claims the single finalization slot and rebases one clean ticket branch onto the local base.
- *
- * @param input - Run state, integration checkout, ticket worktree, and optional policy command.
- * @returns The exact review range or the conflict/fix action required next.
- */
-export const synchronizeLanding = (
-  input: LandingSynchronizeInput,
-): Effect.Effect<
-  {
-    ticket: string;
-    action: "run-gates" | "resolve-conflicts" | "fix-commits";
-    phase: "gates" | "conflict" | "fixing";
-    base_branch: string;
-    base_sha: string;
-    ticket_sha: string;
-    review_range: string;
-    commit_count: number;
-    commit_policy: CommitPolicy;
-    remote_sync_argv: string[] | null;
-    conflicts: string[];
-    cycle: number;
+  record: IntegrationRecord,
+  context: {
+    baseBranch: string;
+    commitPolicy: CommitPolicy;
+    remoteSynchronized: boolean;
+    worktreePath: string;
   },
+): LandingRebaseResult => ({
+  ticket,
+  action: phaseActions[record.phase],
+  phase: record.phase,
+  cycle: record.cycle,
+  base_branch: context.baseBranch,
+  base_sha: record.base_sha,
+  ticket_sha: record.ticket_sha,
+  review_range: record.review_range,
+  commit_count: record.commit_count,
+  commit_policy: context.commitPolicy,
+  patch_id: record.patch_id,
+  reviews_kept: record.reviewed_patch_id !== null && record.reviewed_patch_id === record.patch_id,
+  remote_synchronized: context.remoteSynchronized,
+  prompt:
+    record.phase === "rebase-required"
+      ? rebasePrompt({
+          ticket,
+          baseBranch: context.baseBranch,
+          baseSha: record.base_sha,
+          worktreePath: context.worktreePath,
+        })
+      : null,
+});
+
+const commitShapeValid = (policy: CommitPolicy, count: number): boolean =>
+  policy.commits === "multiple" ? count > 0 : count === 1;
+
+type IntegrationInput = {
+  statePath: string;
+  repositoryPath: string;
+  worktreePath: string;
+  ticket: string;
+  completedAt: string;
+};
+
+const prepareIntegration = (
+  input: IntegrationInput,
+): Effect.Effect<
+  { policy: PersistedRepositoryPolicy; baseBranch: string; remoteSynchronized: boolean },
   LandingError
 > =>
   Effect.gen(function* () {
-    const claim = yield* mutateStateFile(input.statePath, (markdown) =>
-      Effect.gen(function* () {
-        yield* validateStateText(input.statePath, markdown).pipe(
-          Effect.mapError((error) => new LandingError({ issue: error.issue })),
-        );
-        const policy = parseRepositoryPolicy(markdown);
-        const baseBranch = parseBaseBranch(markdown);
-        const runtime = parseActiveTicket(markdown, input.ticket);
-        const active = parseFinalization(markdown);
-        const suspended = parseSuspended(markdown);
-        if (active === undefined && suspended?.ticket === input.ticket) {
-          if (
-            realpathSync(runtime.worktree) !== realpathSync(input.worktreePath) ||
-            suspended.base_branch !== baseBranch
-          ) {
-            return yield* landingError(
-              "landing.suspension_mismatch",
-              "Suspended finalization does not match this runtime and base branch.",
-              "Use the recorded ticket worktree and integration branch.",
-            );
-          }
-          const head = spawnGit(["rev-parse", "HEAD"], { cwd: input.worktreePath });
-          const status = spawnGit(["status", "--porcelain=v1", "--untracked-files=all"], {
-            cwd: input.worktreePath,
-          });
-          if (
-            head.exitCode !== 0 ||
-            status.exitCode !== 0 ||
-            head.stdout.trim() !== suspended.ticket_sha ||
-            status.stdout !== ""
-          ) {
-            return yield* landingError(
-              "landing.suspension_changed",
-              "The suspended ticket HEAD or worktree changed before resumption.",
-              "Inspect the branch and recorded suspension; do not discard its evidence.",
-            );
-          }
-        }
-        const existing = active ?? (suspended?.ticket === input.ticket ? suspended : undefined);
-        if (active !== undefined && active.ticket !== input.ticket) {
-          return yield* landingError(
-            "landing.serialized",
-            `Ticket \`${active.ticket}\` already owns serialized finalization in phase \`${active.phase}\`.`,
-            "Keep other implementors running, but wait for that ticket to leave synchronization, gates, review, and landing.",
-          );
-        }
-        if (existing?.phase === "conflict" || existing?.phase === "awaiting-user") {
-          return yield* landingError(
-            "landing.conflict_pending",
-            `Ticket \`${input.ticket}\` has unresolved synchronization coordination work.`,
-            "Finish and classify the recorded conflict before synchronizing again.",
-          );
-        }
-        const resuming = active === undefined && suspended?.ticket === input.ticket;
-        const cycle = resuming
-          ? suspended!.cycle + 1
-          : existing?.phase === "resynchronize"
-            ? existing.cycle + 1
-            : (existing?.cycle ?? 0);
-        const record: FinalizationRecord = {
-          ticket: input.ticket,
-          cycle,
-          phase: "synchronizing",
-          base_branch: baseBranch,
-          base_sha: existing?.base_sha ?? null,
-          ticket_sha: existing?.ticket_sha ?? null,
-          review_range: null,
-          commit_count: null,
-          commit_policy: policy.commit,
-          remote_sync_argv: policy.remote_sync_argv,
-          conflicts: [],
-          previous_ticket_sha: existing?.previous_ticket_sha ?? null,
-          standards_evidence_path: null,
-          spec_evidence_path: null,
-          self_review_path: null,
-          completed_at: input.completedAt,
-        };
-        const restored = resuming ? markdown.replace(suspendedPattern, "") : markdown;
-        return {
-          markdown: updateActivePhase(
-            upsertFinalization(restored, record),
-            input.ticket,
-            "synchronizing with local base",
-          ),
-          result: {
-            policy,
-            baseBranch,
-            runtime,
-            record,
-            previousPhase: resuming ? "resynchronize" : existing?.phase,
-          },
-        };
-      }),
-    ).pipe(Effect.mapError(fromMutationError));
-
+    const markdown = yield* readState(input.statePath);
+    yield* validateStateText(input.statePath, markdown).pipe(
+      Effect.mapError((error) => new LandingError({ issue: error.issue })),
+    );
+    const policy = yield* attempt(() => parseRepositoryPolicy(markdown));
+    const baseBranch = yield* attempt(() => parseBaseBranch(markdown));
+    const runtime = yield* attempt(() => parseActiveTicket(markdown, input.ticket));
+    const boundWorktree = yield* Effect.sync(() => {
+      try {
+        return realpathSync(runtime.worktree) === realpathSync(input.worktreePath);
+      } catch {
+        return false;
+      }
+    });
+    if (boundWorktree && (yield* attempt(() => operationInProgress(input.worktreePath)))) {
+      return yield* landingError(
+        "landing.operation_in_progress",
+        "A rebase, merge, or cherry-pick is still in progress in the ticket worktree.",
+        "Return the ticket to its implementor to finish the operation in its own worktree.",
+      );
+    }
     yield* validateRepositoryAndWorktree(
       input.repositoryPath,
       input.worktreePath,
-      claim.runtime.worktree,
-      claim.runtime.branch,
-      claim.baseBranch,
+      runtime.worktree,
+      runtime.branch,
+      baseBranch,
     );
     const status = spawnGit(["status", "--porcelain=v1", "--untracked-files=all"], {
       cwd: input.worktreePath,
@@ -553,318 +392,161 @@ export const synchronizeLanding = (
     if (status.stdout !== "") {
       return yield* landingError(
         "landing.worktree_dirty",
-        "Ticket worktree must be clean before synchronization.",
-        "Commit policy-compliant work or return it to the bound implementor before finalization.",
+        "Ticket worktree must be clean before its integration is checked.",
+        "Return uncommitted work to the bound implementor to commit under the persisted policy.",
       );
     }
-    if (claim.policy.remote === "local-only" && input.remoteSyncArgv !== undefined) {
-      return yield* landingError(
-        "landing.remote_policy_mismatch",
-        "Local-only repository policy forbids a remote synchronization command.",
-        "Pass remote_sync_argv as null and synchronize from the current local integration branch.",
-      );
-    }
-    if (claim.policy.remote === "repository" && input.remoteSyncArgv === undefined) {
-      return yield* landingError(
-        "landing.remote_policy_mismatch",
-        "Repository synchronization policy requires an exact remote command.",
-        "Pass the argument array authorized by repository instructions or explicit run policy.",
-      );
-    }
-    if (
-      claim.policy.remote === "repository" &&
-      JSON.stringify(input.remoteSyncArgv) !== JSON.stringify(claim.policy.remote_sync_argv)
-    ) {
-      return yield* landingError(
-        "landing.remote_policy_mismatch",
-        "Remote synchronization command does not match persisted repository policy.",
-        "Pass the exact remote_sync_argv persisted in Repository policy.",
-      );
-    }
-    if (input.remoteSyncArgv !== undefined) {
+    if (policy.remote_sync_argv !== null) {
       yield* runExactCommand(
-        input.remoteSyncArgv,
+        policy.remote_sync_argv,
         input.repositoryPath,
         "Repository synchronization",
       );
     }
-
-    const ticketBefore = spawnGit(["rev-parse", "HEAD"], { cwd: input.worktreePath });
-    if (ticketBefore.exitCode !== 0)
-      return yield* gitFailure("Ticket HEAD lookup", ticketBefore.stderr);
-    if (
-      claim.previousPhase !== "resynchronize" &&
-      claim.policy.commit.fixes === "append" &&
-      claim.record.previous_ticket_sha !== null
-    ) {
-      const ancestor = spawnGit(
-        [
-          "merge-base",
-          "--is-ancestor",
-          claim.record.previous_ticket_sha,
-          ticketBefore.stdout.trim(),
-        ],
-        { cwd: input.worktreePath },
-      );
-      if (
-        ancestor.exitCode !== 0 ||
-        claim.record.previous_ticket_sha === ticketBefore.stdout.trim()
-      ) {
-        yield* updateFinalization(
-          input.statePath,
-          input.ticket,
-          {
-            ...claim.record,
-            phase: "fixing",
-            ticket_sha: ticketBefore.stdout.trim(),
-            completed_at: input.completedAt,
-          },
-          "commit policy fix required",
-        );
-        return yield* landingError(
-          "landing.fix_policy_violated",
-          "The fix round did not append a commit to the previously reviewed ticket tip.",
-          "Return the ticket to its bound implementor and apply the persisted append fix policy.",
-        );
-      }
-    }
-
-    const rebased = spawnGit(["rebase", claim.baseBranch], { cwd: input.worktreePath });
-    if (rebased.exitCode !== 0) {
-      const conflictResult = spawnGit(["diff", "--name-only", "--diff-filter=U"], {
-        cwd: input.worktreePath,
-      });
-      const conflicts = conflictResult.stdout
-        .split(/\r?\n/u)
-        .filter((path) => path.length > 0)
-        .toSorted();
-      if (conflicts.length === 0)
-        return yield* gitFailure("Ticket synchronization", rebased.stderr);
-      const baseSha = spawnGit(["rev-parse", claim.baseBranch], {
-        cwd: input.repositoryPath,
-      }).stdout.trim();
-      const record = {
-        ...claim.record,
-        phase: "conflict" as const,
-        base_sha: baseSha,
-        ticket_sha: ticketBefore.stdout.trim(),
-        conflicts,
-      };
-      yield* updateFinalization(input.statePath, input.ticket, record, "synchronization conflict");
-      return {
-        ticket: input.ticket,
-        action: "resolve-conflicts" as const,
-        phase: "conflict" as const,
-        base_branch: claim.baseBranch,
-        base_sha: baseSha,
-        ticket_sha: ticketBefore.stdout.trim(),
-        review_range: `${baseSha}..${ticketBefore.stdout.trim()}`,
-        commit_count: Number(
-          spawnGit(["rev-list", "--count", `${claim.baseBranch}..HEAD`], {
-            cwd: input.worktreePath,
-          }).stdout.trim() || "0",
-        ),
-        commit_policy: claim.policy.commit,
-        remote_sync_argv: claim.policy.remote_sync_argv,
-        conflicts,
-        cycle: claim.record.cycle,
-      };
-    }
-
-    const baseShaResult = spawnGit(["rev-parse", claim.baseBranch], { cwd: input.repositoryPath });
-    const ticketShaResult = spawnGit(["rev-parse", "HEAD"], { cwd: input.worktreePath });
-    const countResult = spawnGit(["rev-list", "--count", `${claim.baseBranch}..HEAD`], {
-      cwd: input.worktreePath,
-    });
-    if (baseShaResult.exitCode !== 0)
-      return yield* gitFailure("Base HEAD lookup", baseShaResult.stderr);
-    if (ticketShaResult.exitCode !== 0)
-      return yield* gitFailure("Ticket HEAD lookup", ticketShaResult.stderr);
-    if (countResult.exitCode !== 0)
-      return yield* gitFailure("Commit range lookup", countResult.stderr);
-    const baseSha = baseShaResult.stdout.trim();
-    const ticketSha = ticketShaResult.stdout.trim();
-    const commitCount = Number(countResult.stdout.trim());
-    const commitShapeValid =
-      claim.policy.commit.commits === "multiple" ? commitCount > 0 : commitCount === 1;
-    const action = commitShapeValid ? ("run-gates" as const) : ("fix-commits" as const);
-    const phase = commitShapeValid ? ("gates" as const) : ("fixing" as const);
-    const record: FinalizationRecord = {
-      ...claim.record,
-      phase,
-      base_sha: baseSha,
-      ticket_sha: ticketSha,
-      review_range: `${baseSha}..${ticketSha}`,
-      commit_count: commitCount,
-      conflicts: [],
-      previous_ticket_sha: commitShapeValid ? null : ticketSha,
-    };
-    yield* updateFinalization(
-      input.statePath,
-      input.ticket,
-      record,
-      commitShapeValid ? "gates" : "commit policy fix required",
-    );
-    return {
-      ticket: input.ticket,
-      action,
-      phase,
-      base_branch: claim.baseBranch,
-      base_sha: baseSha,
-      ticket_sha: ticketSha,
-      review_range: `${baseSha}..${ticketSha}`,
-      commit_count: commitCount,
-      commit_policy: claim.policy.commit,
-      remote_sync_argv: claim.policy.remote_sync_argv,
-      conflicts: [],
-      cycle: claim.record.cycle,
-    };
+    return { policy, baseBranch, remoteSynchronized: policy.remote_sync_argv !== null };
   });
 
 /**
- * Records the coordinator's classification after a synchronization conflict is resolved.
+ * Checks whether a clean ticket branch already contains the local base and binds its integration.
  *
- * @param input - Conflict classification and any explicit user-authorized scope decision.
- * @returns The next finalization action.
+ * Runs the repository-authorized `remote_sync_argv` first when the persisted policy has one. An
+ * up-to-date tip is bound at its current integration cycle. A tip behind the base is recorded as
+ * `rebase-required` and the result carries the prompt for the bound implementor, who rebases in
+ * its own worktree. Under the append fix policy, a fixing ticket must preserve every commit patch
+ * id recorded at the failed review and add at least one commit.
+ *
+ * @param input - Run state, integration checkout, ticket worktree, and timestamp.
+ * @returns The persisted integration binding and the next coordinator action.
  */
-export const recordLandingConflict = (
-  input: LandingConflictRecordInput,
-): Effect.Effect<
-  {
-    ticket: string;
-    classification: LandingConflictRecordInput["classification"];
-    action: "run-gates" | "fix" | "await-user";
-    phase: "gates" | "fixing" | "awaiting-user";
-    base_sha: string;
-    ticket_sha: string;
-    review_range: string;
-    commit_count: number;
-    decision: string | null;
-    user_authorized: boolean;
-  },
-  LandingError
-> =>
-  mutateStateFile(input.statePath, (markdown) =>
-    Effect.gen(function* () {
-      const finalization = parseFinalization(markdown);
-      if (
-        finalization === undefined ||
-        finalization.ticket !== input.ticket ||
-        (finalization.phase !== "conflict" && finalization.phase !== "awaiting-user")
-      ) {
-        return yield* landingError(
-          "landing.conflict_not_pending",
-          `Ticket \`${input.ticket}\` has no pending serialized conflict to classify.`,
-          "Synchronize the ticket and resolve its recorded conflict before classifying it.",
+export const checkLandingRebase = (
+  input: LandingRebaseCheckInput,
+): Effect.Effect<LandingRebaseResult, LandingError> =>
+  Effect.gen(function* () {
+    const prepared = yield* prepareIntegration(input);
+    return yield* mutateStateFile(input.statePath, (markdown) =>
+      Effect.gen(function* () {
+        const prior = yield* attempt(() => parseIntegration(markdown, input.ticket));
+        const observed = yield* attempt(() =>
+          observeIntegration(input.worktreePath, prepared.baseBranch),
         );
-      }
-      const runtime = parseActiveTicket(markdown, input.ticket);
-      const status = spawnGit(["status", "--porcelain=v1", "--untracked-files=all"], {
-        cwd: runtime.worktree,
-      });
-      const unmerged = spawnGit(["diff", "--name-only", "--diff-filter=U"], {
-        cwd: runtime.worktree,
-      });
-      if (status.exitCode !== 0)
-        return yield* gitFailure("Resolved worktree status", status.stderr);
-      if (unmerged.exitCode !== 0) return yield* gitFailure("Conflict status", unmerged.stderr);
-      if (status.stdout !== "" || unmerged.stdout !== "") {
-        return yield* landingError(
-          "landing.conflict_unresolved",
-          "Synchronization conflict resolution must be complete and clean before classification.",
-          "Finish the rebase and commit the textual resolution before recording its classification.",
+        const upToDate = yield* attempt(() =>
+          checkIntegration(input.worktreePath, prepared.baseBranch),
         );
-      }
-      const baseResult = spawnGit(["rev-parse", finalization.base_branch], {
-        cwd: runtime.worktree,
-      });
-      const ticketResult = spawnGit(["rev-parse", "HEAD"], { cwd: runtime.worktree });
-      const countResult = spawnGit(["rev-list", "--count", `${finalization.base_branch}..HEAD`], {
-        cwd: runtime.worktree,
-      });
-      if (baseResult.exitCode !== 0)
-        return yield* gitFailure("Base HEAD lookup", baseResult.stderr);
-      if (ticketResult.exitCode !== 0)
-        return yield* gitFailure("Ticket HEAD lookup", ticketResult.stderr);
-      if (countResult.exitCode !== 0)
-        return yield* gitFailure("Commit range lookup", countResult.stderr);
-      const baseSha = baseResult.stdout.trim();
-      const ticketSha = ticketResult.stdout.trim();
-      const commitCount = Number(countResult.stdout.trim());
-      const commitShapeValid =
-        finalization.commit_policy.commits === "multiple" ? commitCount > 0 : commitCount === 1;
-      if (!commitShapeValid) {
-        return yield* landingError(
-          "landing.commit_policy_violated",
-          `Resolved ticket range contains ${commitCount} commits under \`${finalization.commit_policy.commits}\` policy.`,
-          "Return commit-shape adaptation to the bound implementor before final gates.",
-        );
-      }
-
-      const awaitingUser = input.classification === "scope" && !input.userAuthorized;
-      const substantive = input.classification === "substantive";
-      const phase: "awaiting-user" | "fixing" | "gates" = awaitingUser
-        ? "awaiting-user"
-        : substantive
-          ? "fixing"
-          : "gates";
-      const action: "await-user" | "fix" | "run-gates" = awaitingUser
-        ? "await-user"
-        : substantive
-          ? "fix"
-          : "run-gates";
-      const record: FinalizationRecord = {
-        ...finalization,
-        phase,
-        base_sha: baseSha,
-        ticket_sha: ticketSha,
-        review_range: `${baseSha}..${ticketSha}`,
-        commit_count: commitCount,
-        conflicts: [],
-        previous_ticket_sha: substantive ? ticketSha : null,
-        completed_at: input.completedAt,
-      };
-      let updated = upsertFinalization(markdown, record);
-      updated = updateActivePhase(
-        updated,
-        input.ticket,
-        awaitingUser
-          ? "awaiting user scope authority"
-          : substantive
-            ? "substantive conflict adaptation requires implementor fix"
-            : "gates",
-      );
-      if (input.classification === "scope" && input.userAuthorized) {
-        const decisionHeading = /^## Decisions\s*$/mu.exec(updated);
-        if (decisionHeading === null) {
+        if (
+          prior?.phase === "fixing" &&
+          prepared.policy.commit.fixes === "append" &&
+          prior.reviewed_commit_patch_ids !== null &&
+          !isAppendedFix(prior.reviewed_commit_patch_ids, observed.commit_patch_ids)
+        ) {
           return yield* landingError(
-            "landing.decisions_missing",
-            "RESUME.md has no Decisions section for the authorized scope choice.",
-            "Repair the schema-1 state template before proceeding.",
+            "landing.fix_policy_violated",
+            "The fix round did not append commits to the commits recorded at the last review.",
+            "Return the ticket to its bound implementor and apply the persisted append fix policy.",
           );
         }
-        const insertion = decisionHeading.index + decisionHeading[0].length;
-        updated = `${updated.slice(0, insertion)}\n\n- ${input.completedAt.slice(0, 10)} ticket ${input.ticket} scope decision (user authorized): ${input.decision}\n${updated
-          .slice(insertion)
-          .replace(/^\s*/u, "")}`;
-      }
-      return {
-        markdown: updated,
-        result: {
-          ticket: input.ticket,
-          classification: input.classification,
-          action,
-          phase,
-          base_sha: baseSha,
-          ticket_sha: ticketSha,
-          review_range: `${baseSha}..${ticketSha}`,
-          commit_count: commitCount,
-          decision: input.decision ?? null,
-          user_authorized: input.userAuthorized,
-        },
-      };
-    }),
-  ).pipe(Effect.mapError(fromMutationError));
+        const options = {
+          minimumCycle: 0,
+          commitShapeValid: commitShapeValid(prepared.policy.commit, observed.commit_count),
+          gateCount: parseGateCount(markdown),
+          completedAt: input.completedAt,
+        };
+        let record: IntegrationRecord;
+        if (!upToDate) {
+          record = {
+            ...(prior ?? bindIntegration(undefined, observed, options)),
+            phase: "rebase-required",
+            base_sha: observed.base_sha,
+            ticket_sha: observed.ticket_sha,
+            review_range: `${observed.base_sha}..${observed.ticket_sha}`,
+            commit_count: observed.commit_count,
+            patch_id: observed.patch_id,
+            commit_patch_ids: observed.commit_patch_ids,
+            passed_gates: [],
+            completed_at: input.completedAt,
+          };
+          if (
+            prior?.phase === "rebase-required" &&
+            prior.base_sha === observed.base_sha &&
+            prior.ticket_sha === observed.ticket_sha
+          ) {
+            record = prior;
+          }
+        } else if (prior?.phase === "rebase-required") {
+          record = recordRebase(prior, observed, options);
+        } else {
+          record = bindIntegration(prior, observed, options);
+        }
+        return {
+          markdown:
+            record === prior
+              ? undefined
+              : writeIntegration(markdown, input.ticket, record, phaseLabels[record.phase]),
+          result: rebaseResult(input.ticket, record, {
+            baseBranch: prepared.baseBranch,
+            commitPolicy: prepared.policy.commit,
+            remoteSynchronized: prepared.remoteSynchronized,
+            worktreePath: input.worktreePath,
+          }),
+        };
+      }),
+    ).pipe(Effect.mapError(fromMutationError));
+  });
+
+/**
+ * Validates an implementor's rebased clean tip and records the next integration cycle.
+ *
+ * Gates always rerun after a rebase. Both reviews are kept only when the ticket patch id is
+ * unchanged from the reviewed patch id; otherwise Standards and Spec rerun.
+ *
+ * @param input - Run state, integration checkout, ticket worktree, and timestamp.
+ * @returns The new integration binding and the next coordinator action.
+ */
+export const recordLandingRebase = (
+  input: LandingRebaseRecordInput,
+): Effect.Effect<LandingRebaseResult, LandingError> =>
+  Effect.gen(function* () {
+    const prepared = yield* prepareIntegration(input);
+    return yield* mutateStateFile(input.statePath, (markdown) =>
+      Effect.gen(function* () {
+        const prior = yield* attempt(() => parseIntegration(markdown, input.ticket));
+        if (prior?.phase !== "rebase-required") {
+          return yield* landingError(
+            "landing.rebase_not_required",
+            `Ticket \`${input.ticket}\` has no pending rebase to record.`,
+            "Call landing.rebase.check; record a rebase only after it returns action `rebase`.",
+          );
+        }
+        const upToDate = yield* attempt(() =>
+          checkIntegration(input.worktreePath, prepared.baseBranch),
+        );
+        if (!upToDate) {
+          return yield* landingError(
+            "landing.rebase_incomplete",
+            `Ticket branch does not contain the local integration branch \`${prepared.baseBranch}\`.`,
+            "Return the rebase prompt to the bound implementor and record only its completed rebase.",
+          );
+        }
+        const observed = yield* attempt(() =>
+          observeIntegration(input.worktreePath, prepared.baseBranch),
+        );
+        const record = recordRebase(prior, observed, {
+          minimumCycle: 0,
+          commitShapeValid: commitShapeValid(prepared.policy.commit, observed.commit_count),
+          gateCount: parseGateCount(markdown),
+          completedAt: input.completedAt,
+        });
+        return {
+          markdown: writeIntegration(markdown, input.ticket, record, phaseLabels[record.phase]),
+          result: rebaseResult(input.ticket, record, {
+            baseBranch: prepared.baseBranch,
+            commitPolicy: prepared.policy.commit,
+            remoteSynchronized: prepared.remoteSynchronized,
+            worktreePath: input.worktreePath,
+          }),
+        };
+      }),
+    ).pipe(Effect.mapError(fromMutationError));
+  });
 
 const ticketTableSection = (markdown: string): { start: number; end: number; text: string } => {
   const heading = /^## Tickets\s*$/mu.exec(markdown);
@@ -872,7 +554,7 @@ const ticketTableSection = (markdown: string): { start: number; end: number; tex
     throw landingError(
       "landing.tickets_missing",
       "RESUME.md has no Tickets section.",
-      "Repair the schema-1 ticket table before recording landing.",
+      "Repair the schema-2 ticket table before recording landing.",
     );
   }
   const start = heading.index + heading[0].length;
@@ -909,7 +591,7 @@ const updateTicketAsLanded = (markdown: string, ticket: string, sha: string): st
     throw landingError(
       "landing.ticket_table_malformed",
       "Ticket table is missing status or sha columns.",
-      "Repair the schema-1 ticket table before recording landing.",
+      "Repair the schema-2 ticket table before recording landing.",
     );
   }
   cells[statusIndex] = "landed";
@@ -941,47 +623,88 @@ const appendLandedEvidence = (
   ticketSha: string,
   branch: string,
   cleanup: "native-safe" | "repository",
-): string => {
-  const withoutFinalization = markdown.replace(finalizationPattern, "");
-  return appendSectionLine(
-    withoutFinalization,
+): string =>
+  appendSectionLine(
+    markdown,
     "Landed evidence",
     `- Ticket ${ticket}: ${evidencePath}; tip ${ticketSha}; branch ${branch}; cleanup ${cleanup}`,
   );
-};
 
 /**
- * Marks an owned synchronized ticket as requiring an implementor fix.
+ * Marks an integrated ticket as requiring an implementor fix and records the append baseline.
  *
  * @param markdown - Latest locked run-state Markdown.
  * @param input - Ticket, reviewed tip, completion time, and active phase label.
- * @returns Updated Markdown, or the original text when no serialized finalization exists.
+ * @returns Updated Markdown, or the original text when the ticket has no integration record.
+ * @throws LandingError when the fix evidence does not match the integrated tip.
  */
-export const applyFinalizationFix = (
+export const applyIntegrationFix = (
   markdown: string,
   input: { ticket: string; reviewedHead: string; completedAt: string; phase: string },
 ): string => {
-  const finalization = parseFinalization(markdown);
-  if (finalization === undefined) return markdown;
-  if (finalization.ticket !== input.ticket || finalization.ticket_sha !== input.reviewedHead) {
+  const integration = parseIntegration(markdown, input.ticket);
+  if (integration === undefined) return markdown;
+  if (integration.ticket_sha !== input.reviewedHead) {
     throw landingError(
       "landing.review_stale",
-      "Fix evidence does not match the ticket owning serialized finalization.",
-      "Rerun synchronization and gates against the current serialized ticket tip.",
+      "Fix evidence does not match the ticket's integrated tip.",
+      "Run landing.rebase.check and rerun gates against the current ticket tip.",
     );
   }
-  return updateActivePhase(
-    upsertFinalization(markdown, {
-      ...finalization,
+  return writeIntegration(
+    markdown,
+    input.ticket,
+    {
+      ...integration,
       phase: "fixing",
-      previous_ticket_sha: input.reviewedHead,
+      passed_gates: [],
+      reviewed_head: null,
+      reviewed_patch_id: null,
+      reviewed_commit_patch_ids: integration.commit_patch_ids,
       standards_evidence_path: null,
       spec_evidence_path: null,
       self_review_path: null,
       completed_at: input.completedAt,
-    }),
-    input.ticket,
+    },
     input.phase,
+  );
+};
+
+/**
+ * Records one passing gate for the current integration cycle. When reviews were kept across a
+ * rebase and every configured gate has now passed, the ticket becomes ready to land.
+ *
+ * @param markdown - Latest locked run-state Markdown.
+ * @param input - Ticket, gate name, gated HEAD, and every configured gate name.
+ * @returns Updated Markdown, or the original text when the ticket has no integration record.
+ */
+export const applyGatePass = (
+  markdown: string,
+  input: { ticket: string; name: string; head: string; gateNames: string[] },
+): string => {
+  const integration = parseIntegration(markdown, input.ticket);
+  if (
+    integration === undefined ||
+    integration.phase !== "gates" ||
+    integration.ticket_sha !== input.head
+  ) {
+    return markdown;
+  }
+  const passed = integration.passed_gates.includes(input.name)
+    ? integration.passed_gates
+    : [...integration.passed_gates, input.name];
+  const reviewsKept =
+    integration.reviewed_patch_id !== null &&
+    integration.reviewed_patch_id === integration.patch_id &&
+    integration.standards_evidence_path !== null &&
+    integration.spec_evidence_path !== null &&
+    integration.self_review_path !== null;
+  const ready = reviewsKept && input.gateNames.every((name) => passed.includes(name));
+  return writeIntegration(
+    markdown,
+    input.ticket,
+    { ...integration, passed_gates: passed, phase: ready ? "ready-to-land" : "gates" },
+    ready ? "gates passed; reviews kept; ready to land" : undefined,
   );
 };
 
@@ -989,8 +712,9 @@ export const applyFinalizationFix = (
  * Restores gate review after an authorized same-HEAD rerun proves a failed gate was transient.
  *
  * @param markdown - Latest locked run-state Markdown.
- * @param input - Exact gate evidence, unchanged ticket identity, and reconstructed range details.
+ * @param input - Exact gate evidence and unchanged ticket identity.
  * @returns Updated Markdown plus whether the same transition was already durable.
+ * @throws LandingError when the ticket is not in an append-only fixing phase at this tip.
  */
 export const applyNoChangeGateRerun = (
   markdown: string,
@@ -998,84 +722,66 @@ export const applyNoChangeGateRerun = (
     ticket: string;
     name: string;
     reviewedHead: string;
-    baseSha: string;
-    commitCount: number;
     previousEvidencePath: string;
     evidencePath: string;
     diagnostic: string;
     completedAt: string;
+    fixes: CommitPolicy["fixes"];
   },
 ): { markdown: string; recovered: boolean } => {
-  const finalization = parseFinalization(markdown);
-  if (finalization === undefined) {
+  const integration = parseIntegration(markdown, input.ticket);
+  if (integration === undefined) {
     throw landingError(
-      "landing.finalization_missing",
-      "No serialized finalization exists for the no-change gate rerun.",
-      "Synchronize the ticket and record its failed gate before recovery.",
+      "landing.integration_missing",
+      "No ticket integration exists for the no-change gate rerun.",
+      "Run landing.rebase.check and record the failed gate before recovery.",
     );
   }
   const decision = `- ${input.completedAt.slice(0, 10)} ticket ${input.ticket} user-authorized no-change rerun of gate ${input.name}: ${input.diagnostic}; prior ${input.previousEvidencePath}; passing ${input.evidencePath}`;
-  const commitShapeValid =
-    finalization.commit_policy.commits === "multiple"
-      ? input.commitCount > 0
-      : input.commitCount === 1;
   const alreadyRecovered =
-    finalization.ticket === input.ticket &&
-    finalization.phase === "gates" &&
-    finalization.ticket_sha === input.reviewedHead &&
-    finalization.base_sha === input.baseSha &&
-    finalization.previous_ticket_sha === null &&
-    finalization.review_range === `${input.baseSha}..${input.reviewedHead}` &&
-    finalization.commit_count === input.commitCount &&
-    finalization.completed_at === input.completedAt &&
+    integration.phase === "gates" &&
+    integration.ticket_sha === input.reviewedHead &&
+    integration.reviewed_commit_patch_ids === null &&
+    integration.completed_at === input.completedAt &&
     markdown.includes(decision);
   if (alreadyRecovered) return { markdown, recovered: true };
   if (
-    finalization.ticket !== input.ticket ||
-    (finalization.phase !== "fixing" && finalization.phase !== "synchronizing") ||
-    finalization.ticket_sha !== input.reviewedHead ||
-    finalization.previous_ticket_sha !== input.reviewedHead ||
-    finalization.base_sha !== input.baseSha ||
-    finalization.commit_policy.fixes !== "append" ||
-    !commitShapeValid
+    integration.phase !== "fixing" ||
+    integration.ticket_sha !== input.reviewedHead ||
+    input.fixes !== "append" ||
+    integration.commit_count <= 0
   ) {
     throw landingError(
       "landing.gate_rerun_state_invalid",
-      "No-change gate recovery does not match the append-only serialized finalization binding.",
+      "No-change gate recovery does not match the append-only fixing integration binding.",
       "Preserve the failed gate, ticket tip, base, and append policy before recording the passing rerun.",
     );
   }
-  const record: FinalizationRecord = {
-    ...finalization,
-    phase: "gates",
-    review_range: `${input.baseSha}..${input.reviewedHead}`,
-    commit_count: input.commitCount,
-    previous_ticket_sha: null,
-    standards_evidence_path: null,
-    spec_evidence_path: null,
-    self_review_path: null,
-    completed_at: input.completedAt,
-  };
-  const withFinalization = updateActivePhase(
-    upsertFinalization(markdown, record),
+  const updated = writeIntegration(
+    markdown,
     input.ticket,
+    {
+      ...integration,
+      phase: "gates",
+      passed_gates: [input.name],
+      reviewed_commit_patch_ids: null,
+      completed_at: input.completedAt,
+    },
     "gates after authorized no-change rerun",
   );
-  return {
-    markdown: appendSectionLine(withFinalization, "Decisions", decision),
-    recovered: false,
-  };
+  return { markdown: appendSectionLine(updated, "Decisions", decision), recovered: false };
 };
 
 /**
- * Advances an owned serialized finalization record from external review to fixing or landing.
+ * Advances a ticket's integration record from external review to fixing or landing.
  *
- * Runs with the caller's existing state lock. State without a finalization record is preserved
- * for compatibility with review-only workflows that have not entered ticket finalization.
+ * Runs with the caller's existing state lock. State without an integration record is preserved
+ * for compatibility with review-only workflows that have not bound an integration.
  *
  * @param markdown - Latest locked run-state Markdown.
  * @param input - Final verdict, reviewed tip, and immutable evidence paths.
- * @returns Updated Markdown with durable review provenance in the finalization record.
+ * @returns Updated Markdown with durable review provenance in the integration record.
+ * @throws LandingError when the review does not cover the integrated tip in the gates phase.
  */
 export const applyFinalReviewOutcome = (
   markdown: string,
@@ -1089,50 +795,44 @@ export const applyFinalReviewOutcome = (
     completedAt: string;
   },
 ): string => {
-  const finalization = parseFinalization(markdown);
-  if (finalization === undefined) return markdown;
-  if (finalization.ticket !== input.ticket) {
-    throw landingError(
-      "landing.serialized",
-      `Ticket \`${finalization.ticket}\` owns serialized finalization, not \`${input.ticket}\`.`,
-      "Finalize review only for the ticket holding the serialized slot.",
-    );
-  }
-  if (finalization.phase !== "gates") {
+  const integration = parseIntegration(markdown, input.ticket);
+  if (integration === undefined) return markdown;
+  if (integration.phase !== "gates") {
     throw landingError(
       "landing.review_phase_invalid",
-      "Final review requires serialized finalization to remain in the gates phase.",
-      "Rerun every configured gate and both review axes against the current synchronized ticket tip.",
+      "Final review requires the ticket integration to remain in the gates phase.",
+      "Rerun every configured gate and both review axes against the current integrated ticket tip.",
     );
   }
-  if (finalization.ticket_sha !== input.reviewedHead) {
+  if (integration.ticket_sha !== input.reviewedHead) {
     throw landingError(
       "landing.review_stale",
-      "Final review evidence does not match the synchronized ticket tip.",
+      "Final review evidence does not match the integrated ticket tip.",
       "Rerun gates and both review axes against the complete recorded review range.",
     );
   }
-  const passed = input.verdict === "PASS";
-  if (!passed) {
-    return applyFinalizationFix(markdown, {
+  if (input.verdict === "FAIL") {
+    return applyIntegrationFix(markdown, {
       ticket: input.ticket,
       reviewedHead: input.reviewedHead,
       completedAt: input.completedAt,
       phase: "review fixes required",
     });
   }
-  const record: FinalizationRecord = {
-    ...finalization,
-    phase: "ready-to-land",
-    previous_ticket_sha: null,
-    standards_evidence_path: input.standardsEvidencePath,
-    spec_evidence_path: input.specEvidencePath,
-    self_review_path: input.selfReviewPath,
-    completed_at: input.completedAt,
-  };
-  return updateActivePhase(
-    upsertFinalization(markdown, record),
+  return writeIntegration(
+    markdown,
     input.ticket,
+    {
+      ...integration,
+      phase: "ready-to-land",
+      reviewed_head: integration.ticket_sha,
+      reviewed_patch_id: integration.patch_id,
+      reviewed_commit_patch_ids: integration.commit_patch_ids,
+      standards_evidence_path: input.standardsEvidencePath,
+      spec_evidence_path: input.specEvidencePath,
+      self_review_path: input.selfReviewPath,
+      completed_at: input.completedAt,
+    },
     "review passed; ready to land",
   );
 };
@@ -1142,20 +842,12 @@ export const applyFinalReviewOutcome = (
  *
  * @param markdown - Latest locked run-state Markdown after recording the failed review.
  * @param input - Ticket, completed round, and decision timestamp.
- * @returns Updated legacy state that preserves the runtime while independent tickets continue.
+ * @returns Updated state that preserves the runtime but releases its integration record.
  */
 export const applyEscalationBlock = (
   markdown: string,
   input: { ticket: string; round: number; completedAt: string },
 ): string => {
-  const finalization = parseFinalization(markdown);
-  if (finalization !== undefined && finalization.ticket !== input.ticket) {
-    throw landingError(
-      "landing.escalation_state_invalid",
-      `Ticket \`${input.ticket}\` does not own serialized finalization for escalation.`,
-      "Restore the third failed review finalization before recording escalation.",
-    );
-  }
   const section = ticketTableSection(markdown);
   const lines = section.text.split(/\r?\n/u);
   const headerIndex = lines.findIndex((line) => line.trimStart().startsWith("| NN"));
@@ -1179,7 +871,7 @@ export const applyEscalationBlock = (
     throw landingError(
       "landing.ticket_table_malformed",
       "Ticket table is missing rounds, esc, or status columns for escalation.",
-      "Repair the schema-1 ticket table before recording escalation.",
+      "Repair the schema-2 ticket table before recording escalation.",
     );
   }
   const cells = lines[rowIndex]!.split("|")
@@ -1190,12 +882,16 @@ export const applyEscalationBlock = (
   cells[statusIndex] = "blocked";
   lines[rowIndex] = `| ${cells.join(" | ")} |`;
   const withTicket = `${markdown.slice(0, section.start)}${lines.join("\n")}${markdown.slice(section.end)}`;
-  const withoutFinalization = withTicket.replace(finalizationPattern, "");
-  const withPhase = updateActivePhase(
-    withoutFinalization,
-    input.ticket,
-    "blocked, awaiting escalation role",
-  );
+  const pattern = activeRuntimeBlockPattern(input.ticket);
+  const released = removeIntegration(withTicket, input.ticket);
+  const block = released.match(pattern)?.[0];
+  const withPhase =
+    block === undefined
+      ? released
+      : released.replace(
+          pattern,
+          block.replace(/^Phase:.*$/mu, "Phase: blocked, awaiting escalation role"),
+        );
   return appendSectionLine(
     withPhase,
     "Decisions",
@@ -1203,63 +899,83 @@ export const applyEscalationBlock = (
   );
 };
 
-const recordRefusedFastForward = (
-  input: LandingCompleteInput,
-  finalization: FinalizationRecord,
-  baseSha: string,
-  ticketSha: string,
-): Effect.Effect<
-  {
-    ticket: string;
-    action: "resynchronize";
-    phase: "resynchronize";
-    base_sha: string;
-    ticket_sha: string;
-    cycle: number;
-  },
-  LandingError
-> =>
+/**
+ * Outcome of the locked fast-forward step.
+ */
+export type LandTicketOutcome = "landed" | "rebase_required" | "dirty" | "timeout";
+
+/**
+ * Fast-forwards the base checkout to one ticket tip while holding the shared `land-local.lock`.
+ *
+ * Runs `flock -w <seconds> <git-common-dir>/land-local.lock bun land-locked.ts` so every
+ * coordinator and every `/land-local` caller serializes on the same lock. A tip that is already
+ * an ancestor of the base is reported as landed without taking the lock.
+ *
+ * @param input - Base checkout, base branch, reviewed ticket tip, and lock wait seconds.
+ * @returns The landing outcome and the lock script output.
+ */
+export const landTicket = (input: {
+  repositoryPath: string;
+  baseBranch: string;
+  ticketSha: string;
+  waitSeconds: number;
+}): Effect.Effect<{ outcome: LandTicketOutcome; output: string }, LandingError> =>
   Effect.gen(function* () {
-    yield* updateFinalization(
-      input.statePath,
-      input.ticket,
-      {
-        ...finalization,
-        phase: "resynchronize",
-        base_sha: baseSha,
-        standards_evidence_path: null,
-        spec_evidence_path: null,
-        self_review_path: null,
-        completed_at: input.completedAt,
-      },
-      "fast-forward refused; resynchronize and re-review",
-    );
-    return {
-      ticket: input.ticket,
-      action: "resynchronize" as const,
-      phase: "resynchronize" as const,
-      base_sha: baseSha,
-      ticket_sha: ticketSha,
-      cycle: finalization.cycle,
-    };
+    const landed = spawnGit(["merge-base", "--is-ancestor", input.ticketSha, input.baseBranch], {
+      cwd: input.repositoryPath,
+    });
+    if (landed.exitCode > 1) return yield* gitFailure("Landed ancestry check", landed.stderr);
+    if (landed.exitCode === 0) return { outcome: "landed" as const, output: "" };
+    const commonDir = spawnGit(["rev-parse", "--path-format=absolute", "--git-common-dir"], {
+      cwd: input.repositoryPath,
+    });
+    if (commonDir.exitCode !== 0) return yield* gitFailure("Git common dir", commonDir.stderr);
+    const argv = [
+      "flock",
+      "-w",
+      String(input.waitSeconds),
+      join(commonDir.stdout.trim(), "land-local.lock"),
+      process.execPath,
+      join(import.meta.dir, "..", "land-locked.ts"),
+      input.repositoryPath,
+      input.baseBranch,
+      input.ticketSha,
+    ];
+    const child = yield* Effect.sync(() => {
+      try {
+        const result = Bun.spawnSync(argv, {
+          cwd: input.repositoryPath,
+          env: cleanGitEnv(),
+          stdout: "pipe",
+          stderr: "pipe",
+        });
+        return {
+          exitCode: result.exitCode,
+          output: `${result.stdout.toString()}${result.stderr.toString()}`.trim(),
+        };
+      } catch (error) {
+        return { exitCode: 127, output: (error as Error).message };
+      }
+    });
+    if (child.exitCode === 0) return { outcome: "landed" as const, output: child.output };
+    if (child.exitCode === 1) return { outcome: "timeout" as const, output: child.output };
+    if (child.exitCode === 4) return { outcome: "dirty" as const, output: child.output };
+    if (child.exitCode === 5) return { outcome: "rebase_required" as const, output: child.output };
+    return yield* gitFailure(`Locked fast-forward (exit ${child.exitCode})`, child.output);
   });
 
 /**
- * Fast-forwards the integration branch, cleans the worktree, and records landed evidence.
- *
- * @param input - Landing checkout, worktree, evidence, and cleanup policy command.
- * @returns Durable landing and cleanup provenance.
+ * Result of `landing.complete`.
  */
-export const completeLanding = (
-  input: LandingCompleteInput,
-): Effect.Effect<
+export type LandingCompleteResult =
   | {
       ticket: string;
-      action: "resynchronize";
-      phase: "resynchronize";
+      action: "rebase";
+      phase: "rebase-required";
       base_sha: string;
       ticket_sha: string;
       cycle: number;
+      prompt: string;
     }
   | {
       ticket: string;
@@ -1287,29 +1003,35 @@ export const completeLanding = (
         branch_retained: true;
       };
       evidence_path: string;
-    },
-  LandingError
-> =>
+    };
+
+type ReadyLanding = {
+  policy: PersistedRepositoryPolicy;
+  baseBranch: string;
+  integration: IntegrationRecord;
+  runtime: { worktree: string; branch: string; pane: string };
+  reviewEvidence: { standards: string; spec: string; self_review: string };
+};
+
+const validateReadyLanding = (
+  input: LandingCompleteInput,
+): Effect.Effect<ReadyLanding, LandingError> =>
   Effect.gen(function* () {
-    const markdown = yield* Effect.tryPromise({
-      try: () => readFile(input.statePath, "utf8"),
-      catch: (error) =>
-        landingError(
-          "landing.state_read_failed",
-          `Could not read run state: ${(error as Error).message}`,
-          "Verify RESUME.md is readable before landing.",
-        ),
-    });
-    const policy = parseRepositoryPolicy(markdown);
-    const finalization = parseFinalization(markdown);
+    const markdown = yield* readState(input.statePath);
+    yield* validateStateText(input.statePath, markdown).pipe(
+      Effect.mapError((error) => new LandingError({ issue: error.issue })),
+    );
+    const policy = yield* attempt(() => parseRepositoryPolicy(markdown));
+    const baseBranch = yield* attempt(() => parseBaseBranch(markdown));
+    const integration = yield* attempt(() => parseIntegration(markdown, input.ticket));
     if (
-      finalization === undefined ||
-      finalization.ticket !== input.ticket ||
-      finalization.phase !== "ready-to-land" ||
-      finalization.ticket_sha === null ||
-      finalization.standards_evidence_path === null ||
-      finalization.spec_evidence_path === null ||
-      finalization.self_review_path === null
+      integration === undefined ||
+      integration.phase !== "ready-to-land" ||
+      integration.reviewed_head === null ||
+      integration.reviewed_patch_id !== integration.patch_id ||
+      integration.standards_evidence_path === null ||
+      integration.spec_evidence_path === null ||
+      integration.self_review_path === null
     ) {
       return yield* landingError(
         "landing.review_incomplete",
@@ -1344,7 +1066,7 @@ export const completeLanding = (
               "Verify the run directory and evidence parent are readable.",
             ),
     });
-    const runtime = parseActiveTicket(markdown, input.ticket);
+    const runtime = yield* attempt(() => parseActiveTicket(markdown, input.ticket));
     if (resolve(runtime.worktree) !== resolve(input.worktreePath)) {
       return yield* landingError(
         "landing.runtime_mismatch",
@@ -1362,7 +1084,7 @@ export const completeLanding = (
       return yield* gitFailure("Integration checkout validation", repositoryRoot.stderr);
     if (
       realpathSync(repositoryRoot.stdout.trim()) !== realpathSync(input.repositoryPath) ||
-      repositoryBranch.stdout.trim() !== finalization.base_branch
+      repositoryBranch.stdout.trim() !== baseBranch
     ) {
       return yield* landingError(
         "landing.base_checkout_mismatch",
@@ -1370,35 +1092,21 @@ export const completeLanding = (
         "Use the persisted Base checkout and retry without assuming a remote.",
       );
     }
-    const baseStatus = spawnGit(["status", "--porcelain=v1", "--untracked-files=all"], {
-      cwd: input.repositoryPath,
-    });
-    if (baseStatus.exitCode !== 0)
-      return yield* gitFailure("Integration checkout status", baseStatus.stderr);
-    if (baseStatus.stdout !== "") {
-      return yield* landingError(
-        "landing.base_dirty",
-        "Local integration checkout must be clean before fast-forward landing.",
-        "Finish or remove unrelated local changes, then retry the same landing.",
-      );
-    }
     const branchTip = spawnGit(["rev-parse", `refs/heads/${runtime.branch}`], {
       cwd: input.repositoryPath,
     });
     if (branchTip.exitCode !== 0)
       return yield* gitFailure("Ticket branch lookup", branchTip.stderr);
-    const ticketSha = branchTip.stdout.trim();
-    if (ticketSha !== finalization.ticket_sha) {
+    if (branchTip.stdout.trim() !== integration.ticket_sha) {
       return yield* landingError(
         "landing.review_stale",
-        "Ticket branch moved after its accepted final review.",
-        "Synchronize again, rerun all gates, and repeat both review axes for the new tip.",
+        "Ticket branch moved after its integration was bound.",
+        "Run landing.rebase.check, rerun all gates, and repeat both review axes for the new tip.",
       );
     }
-
     for (const [axis, path] of [
-      ["standards", finalization.standards_evidence_path],
-      ["spec", finalization.spec_evidence_path],
+      ["standards", integration.standards_evidence_path],
+      ["spec", integration.spec_evidence_path],
     ] as const) {
       const evidence = yield* Effect.tryPromise({
         try: async () => JSON.parse(await readFile(path, "utf8")) as Record<string, unknown>,
@@ -1415,17 +1123,17 @@ export const completeLanding = (
         evidence.axis !== axis ||
         evidence.status !== "accepted" ||
         evidence.verdict !== "PASS" ||
-        evidence.head_before !== ticketSha
+        evidence.head_before !== integration.reviewed_head
       ) {
         return yield* landingError(
           "landing.review_evidence_invalid",
-          `${axis} review evidence is stale, failed, or belongs to another ticket tip.`,
+          `${axis} review evidence is stale, failed, or belongs to another reviewed tip.`,
           "Repeat the axis against the current complete integration-base-to-ticket-tip range.",
         );
       }
     }
     yield* Effect.tryPromise({
-      try: () => readFile(finalization.self_review_path!, "utf8"),
+      try: () => readFile(integration.self_review_path!, "utf8"),
       catch: (error) =>
         landingError(
           "landing.self_review_missing",
@@ -1433,69 +1141,75 @@ export const completeLanding = (
           "Restore the final round self-review before landing.",
         ),
     });
+    return {
+      policy,
+      baseBranch,
+      integration,
+      runtime,
+      reviewEvidence: {
+        standards: integration.standards_evidence_path,
+        spec: integration.spec_evidence_path,
+        self_review: integration.self_review_path,
+      },
+    };
+  });
 
-    const currentBase = spawnGit(["rev-parse", finalization.base_branch], {
-      cwd: input.repositoryPath,
-    });
-    if (currentBase.exitCode !== 0)
-      return yield* gitFailure("Base HEAD lookup", currentBase.stderr);
-    const landedCheck = spawnGit(
-      ["merge-base", "--is-ancestor", ticketSha, finalization.base_branch],
-      { cwd: input.repositoryPath },
-    );
-    if (landedCheck.exitCode > 1)
-      return yield* gitFailure("Landed ancestry check", landedCheck.stderr);
-    const fastForwardCheck = spawnGit(
-      ["merge-base", "--is-ancestor", finalization.base_branch, ticketSha],
-      { cwd: input.repositoryPath },
-    );
-    if (fastForwardCheck.exitCode > 1)
-      return yield* gitFailure("Fast-forward ancestry check", fastForwardCheck.stderr);
-    const alreadyLanded = landedCheck.exitCode === 0;
-    const canFastForward = fastForwardCheck.exitCode === 0;
-    if (!alreadyLanded && !canFastForward) {
-      return yield* recordRefusedFastForward(
-        input,
-        finalization,
-        currentBase.stdout.trim(),
-        ticketSha,
-      );
-    }
-    if (!alreadyLanded) {
-      const merged = spawnGit(["merge", "--ff-only", runtime.branch], {
-        cwd: input.repositoryPath,
-      });
-      if (merged.exitCode !== 0) {
-        const baseAfterRefusal = spawnGit(["rev-parse", finalization.base_branch], {
-          cwd: input.repositoryPath,
-        });
-        const stillFastForwardable = spawnGit(
-          ["merge-base", "--is-ancestor", finalization.base_branch, ticketSha],
-          { cwd: input.repositoryPath },
+const recordRebaseRequired = (
+  input: LandingCompleteInput,
+  ready: ReadyLanding,
+): Effect.Effect<LandingCompleteResult, LandingError> =>
+  mutateStateFile(input.statePath, (markdown) =>
+    Effect.gen(function* () {
+      const current = yield* attempt(() => parseIntegration(markdown, input.ticket));
+      if (current?.ticket_sha !== ready.integration.ticket_sha) {
+        return yield* landingError(
+          "landing.integration_changed",
+          `Ticket \`${input.ticket}\` integration changed while landing.`,
+          "Reload RESUME.md and run landing.rebase.check for the current ticket tip.",
         );
-        if (baseAfterRefusal.exitCode === 0 && stillFastForwardable.exitCode === 1) {
-          return yield* recordRefusedFastForward(
-            input,
-            finalization,
-            baseAfterRefusal.stdout.trim(),
-            ticketSha,
-          );
-        }
-        return yield* gitFailure("Fast-forward landing", merged.stderr);
       }
-    }
-    const landedBase = spawnGit(["rev-parse", finalization.base_branch], {
+      const baseSha = spawnGit(["rev-parse", ready.baseBranch], { cwd: input.repositoryPath });
+      if (baseSha.exitCode !== 0) return yield* gitFailure("Base HEAD lookup", baseSha.stderr);
+      const record: IntegrationRecord = {
+        ...current,
+        phase: "rebase-required",
+        base_sha: baseSha.stdout.trim(),
+        review_range: `${baseSha.stdout.trim()}..${current.ticket_sha}`,
+        passed_gates: [],
+        completed_at: input.completedAt,
+      };
+      return {
+        markdown: writeIntegration(markdown, input.ticket, record, phaseLabels["rebase-required"]),
+        result: {
+          ticket: input.ticket,
+          action: "rebase" as const,
+          phase: "rebase-required" as const,
+          base_sha: record.base_sha,
+          ticket_sha: record.ticket_sha,
+          cycle: record.cycle,
+          prompt: rebasePrompt({
+            ticket: input.ticket,
+            baseBranch: ready.baseBranch,
+            baseSha: record.base_sha,
+            worktreePath: ready.runtime.worktree,
+          }),
+        },
+      };
+    }),
+  ).pipe(Effect.mapError(fromMutationError));
+
+const recordLanding = (
+  input: LandingCompleteInput,
+  ready: ReadyLanding,
+): Effect.Effect<LandingCompleteResult, LandingError> =>
+  Effect.gen(function* () {
+    const { policy, runtime, reviewEvidence } = ready;
+    const ticketSha = ready.integration.ticket_sha;
+    const landedBase = spawnGit(["rev-parse", ready.baseBranch], {
       cwd: input.repositoryPath,
     });
     if (landedBase.exitCode !== 0)
       return yield* gitFailure("Landed base lookup", landedBase.stderr);
-    if (landedBase.stdout.trim() !== ticketSha) {
-      return yield* landingError(
-        "landing.tip_mismatch",
-        "Local integration branch does not end at the reviewed ticket tip after landing.",
-        "Stop cleanup and inspect the integration checkout before retrying.",
-      );
-    }
     const runtimeClosure = yield* inspectRuntimeClose(runtime.pane).pipe(
       Effect.mapError((error) => new LandingError({ issue: error.issue })),
     );
@@ -1506,7 +1220,7 @@ export const completeLanding = (
         phase: "ready-to-land" as const,
         base_sha: landedBase.stdout.trim(),
         ticket_sha: ticketSha,
-        cycle: finalization.cycle,
+        cycle: ready.integration.cycle,
         runtime_closed: false as const,
         pane_id: runtimeClosure.pane_id,
         close: runtimeClosure.close,
@@ -1528,10 +1242,9 @@ export const completeLanding = (
         );
       }
     }
-    const landedAncestor = spawnGit(
-      ["merge-base", "--is-ancestor", ticketSha, finalization.base_branch],
-      { cwd: input.repositoryPath },
-    );
+    const landedAncestor = spawnGit(["merge-base", "--is-ancestor", ticketSha, ready.baseBranch], {
+      cwd: input.repositoryPath,
+    });
     if (landedAncestor.exitCode !== 0) {
       return yield* landingError(
         "landing.cleanup_unlanded",
@@ -1604,17 +1317,13 @@ export const completeLanding = (
       worktree_removed: true as const,
       branch_retained: true as const,
     };
-    const reviewEvidence = {
-      standards: finalization.standards_evidence_path,
-      spec: finalization.spec_evidence_path,
-      self_review: finalization.self_review_path,
-    };
     const evidenceBody = `${JSON.stringify(
       {
         schema_version: 1,
         ticket: input.ticket,
         landed_tip: ticketSha,
-        base_sha: landedBase.stdout.trim(),
+        base_sha: ticketSha,
+        integration_cycle: ready.integration.cycle,
         branch: runtime.branch,
         review_evidence: reviewEvidence,
         cleanup,
@@ -1643,15 +1352,15 @@ export const completeLanding = (
 
     yield* mutateStateFile(input.statePath, (state) =>
       Effect.gen(function* () {
-        const current = parseFinalization(state);
-        if (current?.ticket !== input.ticket) {
+        const current = yield* attempt(() => parseIntegration(state, input.ticket));
+        if (current?.ticket_sha !== ticketSha) {
           return yield* landingError(
-            "landing.serialization_lost",
-            `Ticket \`${input.ticket}\` no longer owns serialized finalization.`,
+            "landing.integration_changed",
+            `Ticket \`${input.ticket}\` integration changed before landing was recorded.`,
             "Reload RESUME.md before recording landed state.",
           );
         }
-        let updated = updateTicketAsLanded(state, input.ticket, ticketSha);
+        let updated = yield* attempt(() => updateTicketAsLanded(state, input.ticket, ticketSha));
         updated = updated.replace(activeRuntimeBlockPattern(input.ticket), "");
         updated = appendLandedEvidence(
           updated,
@@ -1661,7 +1370,10 @@ export const completeLanding = (
           runtime.branch,
           policy.cleanup,
         );
-        updated = updated.replace(/^Base sha:\s*.*$/mu, `Base sha:        ${ticketSha}`);
+        updated = updated.replace(
+          /^Base sha:\s*.*$/mu,
+          `Base sha:        ${landedBase.stdout.trim()}`,
+        );
         updated = appendRetainedBranch(updated, runtime.branch, ticketSha);
         return { markdown: updated, result: undefined };
       }),
@@ -1676,4 +1388,45 @@ export const completeLanding = (
       cleanup,
       evidence_path: input.evidencePath,
     };
+  });
+
+/**
+ * Lands a ready ticket through the shared land lock, then closes, cleans, and records it.
+ *
+ * The lock step fast-forwards the base checkout only when the base is still an ancestor of the
+ * reviewed tip; otherwise the ticket bounces to its implementor with `action: "rebase"`. The
+ * record step inspects the exact Herdr pane, removes the worktree without force, writes immutable
+ * landed evidence, and marks the ticket landed. Repeating the call after a landed lock step skips
+ * the merge and resumes the record step.
+ *
+ * @param input - Landing checkout, worktree, evidence, cleanup policy command, and lock wait.
+ * @returns The rebase bounce, the runtime close handshake, or durable landed provenance.
+ */
+export const completeLanding = (
+  input: LandingCompleteInput,
+): Effect.Effect<LandingCompleteResult, LandingError> =>
+  Effect.gen(function* () {
+    const ready = yield* validateReadyLanding(input);
+    const landed = yield* landTicket({
+      repositoryPath: input.repositoryPath,
+      baseBranch: ready.baseBranch,
+      ticketSha: ready.integration.ticket_sha,
+      waitSeconds: input.lockWaitSeconds ?? LAND_LOCK_WAIT_SECONDS,
+    });
+    if (landed.outcome === "rebase_required") return yield* recordRebaseRequired(input, ready);
+    if (landed.outcome === "dirty") {
+      return yield* landingError(
+        "landing.base_dirty",
+        `Local integration checkout must be clean before fast-forward landing: ${landed.output}`,
+        "Finish or remove unrelated local changes in the base checkout, then retry the same landing.",
+      );
+    }
+    if (landed.outcome === "timeout") {
+      return yield* landingError(
+        "landing.lock_timeout",
+        "Timed out waiting for the shared land-local.lock; another landing appears wedged.",
+        "Investigate the process holding the lock before retrying the same landing.",
+      );
+    }
+    return yield* recordLanding(input, ready);
   });

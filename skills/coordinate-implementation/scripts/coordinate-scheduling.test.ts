@@ -104,7 +104,7 @@ const retryState = (
   completedRetries: number,
 ): string => `# sample implementation run
 
-Schema version: 1
+Schema version: 2
 
 ## Tickets
 

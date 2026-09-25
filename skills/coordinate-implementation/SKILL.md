@@ -122,8 +122,8 @@ launch pass, call `scheduler.plan` with the persisted mode, parallel cap,
 ticket states, and active runtimes. Launch its deterministic `launch_tickets`
 order. Only runtimes whose role is `implementor` and state is `active` consume
 capacity; temporary reviewers do not. Do not serialize parallel mode merely
-because two tickets might touch nearby code. Their branches synchronize
-against the latest `<base>` before review and landing.
+because two tickets might touch nearby code. Each implementor rebases its own
+branch onto the latest `<base>` before review and landing.
 
 ## Preferences
 
@@ -204,7 +204,7 @@ Before the first iteration, complete the read-only helper preflight described
 in [helper-cli.md](references/helper-cli.md). Only after it succeeds, resolve
 `<run>/briefs/common.md` from [common-brief.md](references/common-brief.md),
 repository instructions, and CI. No placeholder may remain when a worker
-launches. Create the schema-1 run state, persist exact gate argv arrays and
+launches. Create the schema-2 run state, persist exact gate argv arrays and
 resolved safety constraints with `review.policy.prepare`, then accept the
 normalized snapshot. Review policy preparation must precede every worker
 launch; never infer a command from the detected toolchain.
@@ -252,22 +252,21 @@ remaining blocked ticket:
 3. **Review** when wait-any returns an idle or done implementor whose worktree
    is clean and branch has at least one ticket commit beyond the current base.
    Any non-review-ready settled worker goes through the stall lifecycle instead. Invoke `snapshot.check` first and do not begin review or landing
-   against a changed revision. If several tickets become ready together, process them one at a
-   time in dependency order. Sync
-   the chosen branch to the latest `<base>` before its final gates and review,
-   then require the recorded repository commit policy, green recorded gates,
+   against a changed revision. Tickets integrate independently, so several
+   ready tickets may run gates and reviews in parallel. Call
+   `landing.rebase.check` for each ticket before its gates; when it returns
+   `rebase`, send its prompt to the same implementor, which rebases its own
+   branch in its own worktree, then call `landing.rebase.record`. Then
+   require the recorded repository commit policy, green recorded gates,
    the harness-appropriate implementor self-review, and fresh independent Herdr
-   sessions for Standards and Spec. If the user explicitly prioritizes another
-   ready ticket while one owns the slot, synchronize the current clean tip and
-   call `landing.yield` with its full SHA. Finalize the prioritized ticket,
-   then synchronize the suspended ticket and rerun all gates and both reviews.
-   Never clear the slot by editing RESUME.md. If an explicitly authorized
+   sessions for Standards and Spec. Never edit a ticket's `Integration` record
+   in RESUME.md. If an explicitly authorized
    recovery finds an interrupted Claude reviewer attempt, supersede only after Herdr confirms
    its exact pane is absent, then rerun every configured gate before preparing
    fresh Pi review attempts. See `review.attempt.supersede` in
-   [helper-cli.md](references/helper-cli.md). Claim the serialized finalization slot and
-   perform policy-driven synchronization with `landing.synchronize`; use its
-   returned full-SHA `review_range` for gates and both review axes. Capture and
+   [helper-cli.md](references/helper-cli.md). Use the full-SHA `review_range`
+   returned by `landing.rebase.check` or `landing.rebase.record` for gates and
+   both review axes. Capture and
    persist each complete report with `review.launch.record`. When it returns
    `close-runtime`, execute only its exact Herdr close argv and repeat the
    byte-identical record call. Do not act on `after_close_action` until the
@@ -283,23 +282,21 @@ remaining blocked ticket:
    then print `FIXES DONE NN`. Include that runtime in the next wait-any call.
    A terminal result from the blocking remediation prompt is itself the wake signal;
    do not summarize, end the turn, or wait for another event. Immediately call
-   `landing.synchronize` to validate the clean appended tip, then restart the
+   `landing.rebase.check` to validate the clean appended tip, then restart the
    pipeline from every recorded gate. The same rule applies when terminal status
    arrives through `herdr.wait_any`. Every fix round receives new self-review and
    fresh Standards and Spec sessions. If a failed gate passes on
    an unchanged rerun, never create an empty fix commit. Obtain explicit user
    authority and call `gate.rerun.record` with the failed evidence and fresh
    passing output. It fails closed unless the gate, clean worktree, HEAD, and
-   append-only finalization binding are unchanged.
-5. **Land.** After `review.round.finalize` advances the ticket to
-   `ready-to-land`, call `landing.complete` from the recorded local base
-   checkout. If it returns `resynchronize`, call `landing.synchronize`, rerun
-   every gate, and repeat both fresh review axes with attention to newly landed
-   interactions before retrying. Resolve textual conflicts yourself with the
-   `resolving-merge-conflicts` skill, then classify the result through
-   `landing.conflict.record`. Substantive adaptations return to the same
-   implementor as a fix round. Scope choices wait for user authority and are
-   recorded before gates continue. When it returns `close-runtime`, execute
+   append-only integration binding are unchanged.
+5. **Land.** After the ticket's integration reaches `ready-to-land`, call
+   `landing.complete` from the recorded local base checkout. It fast-forwards
+   under the shared `land-local.lock`. If it returns `rebase`, send its prompt
+   to the same implementor, call `landing.rebase.record` after the rebase, and
+   rerun every gate. Both reviews rerun only when the rebase changed the
+   ticket's patch id. Scope choices wait for user authority and are recorded
+   before gates continue. When it returns `close-runtime`, execute
    only its exact Herdr pane-close argv and repeat the same `landing.complete`
    call. Cleanup remains blocked until the helper observes that exact pane is
    absent; callers cannot assert closure.
@@ -307,7 +304,7 @@ remaining blocked ticket:
    ticket landed. It verifies a clean landed worktree, removes the native
    fallback without force or runs the exact repository cleanup argv, retains
    the branch, writes immutable landed evidence, updates `Base sha:`, removes
-   the active runtime and serialized slot, and returns `schedule`. Immediately
+   the active runtime and its integration, and returns `schedule`. Immediately
    pass the new landed state to `scheduler.plan`
    so every newly unblocked ticket can start.
 7. **Evaluate terminal state.** When `scheduler.plan` returns no launch and no
@@ -405,13 +402,14 @@ normal crash restart or role-selection shortcut. Call
 `user_authorized: true`; it fails if Herdr still sees the old pane, preserves the
 launch artifact and worktree, and does not alter ticket implementation. A dirty
 `working` worktree is retained in place. A `gates`-phase migration requires a
-clean synchronized tip and preserves its serialized finalization byte-for-byte. Its
+clean integrated tip and preserves its `Integration` record in the evidence. Its
 immutable evidence binds the original HEAD, status, changed-file contents, worktree,
 and branch; replacement launch must match that baseline exactly. For a `gates`-
 phase migration, call `implementor.runtime.migration.recover` with explicit user
-authority and the evidence SHA-256. It moves finalization to `resynchronize`;
-prepare the replacement in the same worktree and branch, then complete
-`landing.synchronize` before recording any gates or launching reviewers.
+authority and the evidence SHA-256. Prepare the replacement in the same
+worktree and branch, which carries the record as `rebase-required`, then
+complete `landing.rebase.check` before recording any gates or launching
+reviewers.
 
 ## Manual role replacement
 
@@ -442,10 +440,10 @@ records bind the current monotonic supersession generation under that same lock.
 Legacy gates without a generation are accepted only as SHA-256-bound generation-0
 baselines during supersession, never as new gate evidence. A pending axis commit
 blocks the next axis until its exact retry commits. Caller timestamps are
-metadata, not freshness proof. Finalization cycle is
+metadata, not freshness proof. The integration cycle is
 independent of review round, so interrupted attempts stay bound to their
-reviewed HEAD, base SHA, and range. Gate evidence binds the current serialized
-finalization cycle whenever one exists, including after migration recovery.
+reviewed HEAD, base SHA, and range. Gate evidence binds the ticket's current
+integration cycle whenever one exists, including after migration recovery.
 Migration and supersession consumers fail closed until immutable evidence, state
 references, and commit markers agree. Do
 not supersede a live pane or an attempt that already has a report.
@@ -549,7 +547,8 @@ When invoked as `resume .scratch/<slug>` for a restart or replacement:
   writes remain forbidden.
 - Enforce every project-specific safety constraint recorded in the shared
   brief. Do not invent restrictions that the repository does not require.
-- Textual rebase conflicts are yours, never the implementor's. If the rebased
-  result needs a substantive behavioral adaptation, send that work back to the
-  same implementor as a fix round and review it again.
+- Rebase conflicts belong to the implementor, never the coordinator. The
+  implementor rebases its own branch in its own worktree and resolves
+  conflicts there; never rebase, merge, or edit a ticket branch or the base
+  checkout yourself.
 - Report outcomes faithfully: a red gate is reported as red with its output.

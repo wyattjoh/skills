@@ -98,7 +98,7 @@ const initializeRepository = (root: string): string => {
 
 const state = (): string => `# sample implementation run
 
-Schema version: 1
+Schema version: 2
 
 Implementor:
   harness: pi
@@ -788,7 +788,7 @@ describe("safe implementor launch", () => {
       {
         code: "state.ticket_table_malformed",
         message: "Ticket `04` does not match the ticket table columns.",
-        remediation: "Repair the schema-1 ticket row before launching an implementor.",
+        remediation: "Repair the schema-2 ticket row before launching an implementor.",
       },
     ]);
     expect(readFileSync(fixture.statePath, "utf8")).toBe(malformed);

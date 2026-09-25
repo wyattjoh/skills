@@ -45,6 +45,7 @@ export type PreflightReport = {
   capabilities: {
     git: CommandCapability;
     bun: CommandCapability;
+    flock: CommandCapability;
     herdr: HerdrCapability;
   };
   harnesses: HarnessCapability[];
@@ -161,8 +162,8 @@ const resolveSkill = (name: string, roots: string[]): string | undefined => {
 };
 
 const dependencyIssue = (
-  name: "git" | "bun" | "herdr",
-  displayName: "Git" | "Bun" | "Herdr",
+  name: "git" | "bun" | "flock" | "herdr",
+  displayName: "Git" | "Bun" | "flock" | "Herdr",
 ): CliIssue => ({
   code: `dependency.${name}_missing`,
   message: `${displayName} is unavailable or \`${name} --version\` failed.`,
@@ -192,6 +193,7 @@ export const runPreflight = (input: PreflightInput): Effect.Effect<PreflightOutc
 
     const git = probeCommand("git", ["--version"]);
     const bun = probeCommand("bun", ["--version"]);
+    const flock = probeCommand("flock", ["--version"]);
     const herdrVersion = probeCommand("herdr", ["--version"]);
     const herdrSchema = herdrVersion.available ? readHerdrSchema() : undefined;
     const machineApi = herdrVersion.available && exposesMachineApi(herdrSchema);
@@ -204,6 +206,7 @@ export const runPreflight = (input: PreflightInput): Effect.Effect<PreflightOutc
 
     if (!git.available) errors.push(dependencyIssue("git", "Git"));
     if (!bun.available) errors.push(dependencyIssue("bun", "Bun"));
+    if (!flock.available) errors.push(dependencyIssue("flock", "flock"));
     if (!herdr.available) {
       errors.push(dependencyIssue("herdr", "Herdr"));
     } else if (!machineApi) {
@@ -258,7 +261,7 @@ export const runPreflight = (input: PreflightInput): Effect.Effect<PreflightOutc
     return {
       report: {
         platform,
-        capabilities: { git, bun, herdr },
+        capabilities: { git, bun, flock, herdr },
         harnesses,
         skills,
         state,
