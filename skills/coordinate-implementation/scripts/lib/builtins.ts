@@ -7,9 +7,8 @@ import type { CliIssue, RoleRecord } from "./contract.ts";
 import { leaseFence, type EngineContext } from "./engine.ts";
 import {
   awaitAnswer,
-  escalationDir,
-  escalationId,
   openEscalation,
+  pendingOrNextEscalationId,
   type EscalationKind,
 } from "./escalations.ts";
 import { runGateProcess } from "./gate-runner.ts";
@@ -17,6 +16,7 @@ import { spawnGit } from "./git.ts";
 import { herdrPromptTarget } from "./harness-launch.ts";
 import { makeHerdrActuator, type HerdrActuator } from "./herdr-actuator.ts";
 import { makeHerdrHub, statusFromSnapshot, type HerdrHub, type PaneStatus } from "./herdr-hub.ts";
+import { agentsNamed } from "./herdr-protocol.ts";
 import { prepareImplementorLaunch, recordImplementorLaunch } from "./implementor.ts";
 import { checkIntegration, operationInProgress } from "./integration.ts";
 import { checkLandingRebase, completeLanding, type LandingRebaseResult } from "./landing.ts";
@@ -235,19 +235,9 @@ export const builtinTicketOps = (
       detail: string,
     ): Effect.Effect<string, WorkflowError> =>
       Effect.gen(function* () {
-        const names = yield* Effect.promise(() =>
-          readdir(escalationDir(runPath)).catch(() => [] as string[]),
+        const id = yield* pendingOrNextEscalationId(runPath, ticket.number, kind, cycle).pipe(
+          Effect.mapError(toWorkflowError),
         );
-        const prefix = `${ticket.number}-${kind}-${cycle}-`;
-        const opened = names.filter(
-          (name) =>
-            name.startsWith(prefix) && name.endsWith(".json") && !name.endsWith(".answer.json"),
-        );
-        const answered = new Set(
-          names.filter((name) => name.endsWith(".answer.json")).map((name) => name.slice(0, -12)),
-        );
-        const pending = opened.map((name) => name.slice(0, -5)).find((id) => !answered.has(id));
-        const id = pending ?? escalationId(ticket.number, kind, cycle, opened.length + 1);
         const { created } = yield* openEscalation(runPath, {
           id,
           kind,
@@ -397,12 +387,7 @@ export const builtinTicketOps = (
     const resumeLaunch = (ticket: TicketInfo, runtime: ActiveTicket, cfg: RunConfig) =>
       Effect.gen(function* () {
         const snapshot = yield* hub.snapshot().pipe(Effect.mapError(toWorkflowError));
-        const live = snapshot.agents.some(
-          (agent) =>
-            agent.name === runtime.session ||
-            agent.displayAgent === runtime.session ||
-            agent.title === runtime.session,
-        );
+        const live = agentsNamed(snapshot, runtime.session).length > 0;
         if (!live) {
           yield* launch(ticket, runtime.attempt, cfg, runtime.implementor);
           return;

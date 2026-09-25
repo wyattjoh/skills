@@ -1,5 +1,6 @@
 import { Effect, Scope } from "effect";
 import {
+  agentsNamed,
   HerdrWaitError,
   herdrError,
   openSubscription,
@@ -77,12 +78,7 @@ const sleep = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve,
  * @returns The target's status and current pane id.
  */
 export const statusFromSnapshot = (target: WatchTarget, snapshot: RawSnapshot): WatchResult => {
-  const named = snapshot.agents.filter(
-    (agent) =>
-      agent.name === target.session ||
-      agent.displayAgent === target.session ||
-      agent.title === target.session,
-  );
+  const named = agentsNamed(snapshot, target.session);
   if (named.length > 1) {
     throw herdrError(
       "herdr.worker_ambiguous",

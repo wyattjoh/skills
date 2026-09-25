@@ -66,6 +66,27 @@ export const escalationId = (
   sequence: number,
 ): string => `${ticket ?? "run"}-${kind}-${cycle}-${sequence}`;
 
+const escalationFiles = async (
+  runPath: string,
+): Promise<{ opened: string[]; answered: Set<string> }> => {
+  let names: string[];
+  try {
+    names = await readdir(escalationDir(runPath));
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "ENOENT")
+      return { opened: [], answered: new Set() };
+    throw error;
+  }
+  return {
+    opened: names
+      .filter((name) => name.endsWith(".json") && !name.endsWith(".answer.json"))
+      .map((name) => name.slice(0, -5)),
+    answered: new Set(
+      names.filter((name) => name.endsWith(".answer.json")).map((name) => name.slice(0, -12)),
+    ),
+  };
+};
+
 const writeOnce = async (path: string, value: unknown): Promise<boolean> => {
   const temporary = `${path}.${process.pid}.${crypto.randomUUID()}.tmp`;
   const handle = await open(temporary, "wx");
@@ -224,23 +245,38 @@ export const listOpenEscalations = (
   runPath: string,
 ): Effect.Effect<Escalation[], EscalationError> =>
   io("list escalations", async () => {
-    let names: string[];
-    try {
-      names = await readdir(escalationDir(runPath));
-    } catch (error) {
-      if ((error as NodeJS.ErrnoException).code === "ENOENT") return [];
-      throw error;
-    }
-    const answered = new Set(
-      names.filter((name) => name.endsWith(".answer.json")).map((name) => name.slice(0, -12)),
-    );
+    const { opened, answered } = await escalationFiles(runPath);
     const pending: Escalation[] = [];
-    for (const name of names) {
-      if (!name.endsWith(".json") || name.endsWith(".answer.json")) continue;
-      const id = name.slice(0, -5);
+    for (const id of opened) {
       if (answered.has(id)) continue;
-      const record = await readJson<Escalation>(join(escalationDir(runPath), name));
+      const record = await readJson<Escalation>(join(escalationDir(runPath), `${id}.json`));
       if (record !== null) pending.push(record);
     }
     return pending.toSorted((left, right) => left.opened_at.localeCompare(right.opened_at));
+  });
+
+/**
+ * Chooses the escalation id for one ticket, kind, and cycle: the id still awaiting an answer
+ * when one exists, so a replayed engine re-parks on it, otherwise the next unused sequence.
+ *
+ * @param runPath - Run folder.
+ * @param ticket - Ticket number.
+ * @param kind - Escalation kind.
+ * @param cycle - Integration cycle or other monotonic ticket counter.
+ * @returns An Effect containing the id to open or re-park on.
+ */
+export const pendingOrNextEscalationId = (
+  runPath: string,
+  ticket: string,
+  kind: EscalationKind,
+  cycle: number,
+): Effect.Effect<string, EscalationError> =>
+  io("scan escalations", async () => {
+    const { opened, answered } = await escalationFiles(runPath);
+    const prefix = `${ticket}-${kind}-${cycle}-`;
+    const matching = opened.filter((id) => id.startsWith(prefix));
+    return (
+      matching.find((id) => !answered.has(id)) ??
+      escalationId(ticket, kind, cycle, matching.length + 1)
+    );
   });
