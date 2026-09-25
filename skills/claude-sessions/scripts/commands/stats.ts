@@ -26,7 +26,7 @@ import {
   type RenderOptions,
 } from "../lib/output.ts";
 import type { Command, CommandOption } from "./index.ts";
-export type { Command, CommandOption } from "./index.ts";
+export type { Command } from "./index.ts";
 
 /** The dimensions supported by the stats command. */
 export type StatsBy = "project" | "model" | "version" | "day" | "session";

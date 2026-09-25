@@ -1,0 +1,17 @@
+{
+  "$schema": "./node_modules/knip/schema.json",
+  "ignore": ["skills/dialkit/references/DialKitPersistence.tsx"],
+  "ignoreBinaries": ["du", "pgrep"],
+  "workspaces": {
+    ".": {},
+    "skills/*": {
+      "entry": ["scripts/*.ts"],
+      "project": ["scripts/**/*.ts"]
+    },
+    "skills/claude-sessions": {
+      "entry": ["scripts/*.ts", "references/types.ts"],
+      "project": ["scripts/**/*.ts"]
+    }
+  },
+  "ignoreExportsUsedInFile": true
+}

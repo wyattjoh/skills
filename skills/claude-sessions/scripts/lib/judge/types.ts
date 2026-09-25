@@ -188,21 +188,3 @@ export interface JudgeRowsOptions {
    */
   now: Date | undefined;
 }
-
-/**
- * Default values for judgeRows options.
- */
-export const DEFAULT_JUDGE_OPTIONS: Readonly<
-  Omit<JudgeRowsOptions, "db" | "client" | "fetch" | "apiKey">
-> = {
-  model: undefined,
-  maxRows: 500,
-  noCache: false,
-  minConfidence: 0.5,
-  query: undefined,
-  judgeFile: undefined,
-  diagnostic: undefined,
-  timeoutMs: undefined,
-  retry: undefined,
-  now: undefined,
-};

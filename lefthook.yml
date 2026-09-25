@@ -7,6 +7,11 @@ pre-commit:
     oxlint:
       glob: "*.{js,jsx,ts,tsx,mjs,mts,cjs,cts,vue,astro,svelte}"
       run: bun run lint {staged_files}
+    # Knip needs the whole module graph, so it checks the project rather than
+    # just the staged files. It only runs when a staged file can change that graph.
+    knip:
+      glob: "{*.{js,jsx,ts,tsx,mjs,mts,cjs,cts},**/package.json,package.json,knip.json}"
+      run: bun run knip
 
 pre-push:
   parallel: true

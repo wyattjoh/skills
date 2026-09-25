@@ -20,7 +20,7 @@ import {
   type RenderOptions,
 } from "../lib/output.ts";
 import type { Command, CommandOption } from "./index.ts";
-export type { Command, CommandOption } from "./index.ts";
+export type { Command } from "./index.ts";
 
 const options: CommandOption[] = [
   {
