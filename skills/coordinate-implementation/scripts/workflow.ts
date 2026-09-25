@@ -1,4 +1,5 @@
 import { Effect } from "effect";
+import type { BuiltinOptions } from "./lib/builtins.ts";
 import type { EngineContext } from "./lib/engine.ts";
 import type { WorkflowModule } from "./lib/runtime-cli.ts";
 import {
@@ -17,14 +18,22 @@ export type {
   ReviewAxis,
   RoundOutcome,
   Run,
+  SyncOutcome,
   Ticket,
   TicketInfo,
 } from "./lib/workflow-runtime.ts";
 
 /**
- * Builds engine ticket operations for a run.
+ * Builds engine ticket operations for a run; tests inject fakes.
  */
 export type TicketOpsFactory = (context: EngineContext) => TicketOps;
+
+/**
+ * Engine settings for a run script.
+ */
+export type WorkflowOptions = Partial<BuiltinOptions> & {
+  ops?: TicketOpsFactory;
+};
 
 /**
  * Declares a run script. The default export of `<run>/run.ts` must be the result.
@@ -34,28 +43,39 @@ export type TicketOpsFactory = (context: EngineContext) => TicketOps;
  * memoized custom step returns its recorded outcome instead of repeating work.
  *
  * @param body - Async orchestration over the run handle.
- * @param options - Optional ticket operations override, used by tests.
+ * @param options - Engine settings (`repository`, `implementSkill`, ...) or test operations.
  * @returns The workflow module the engine loads.
  */
 export const workflow = (
   body: (run: Run) => Promise<void>,
-  options: { ops?: TicketOpsFactory } = {},
+  options: WorkflowOptions = {},
 ): WorkflowModule => ({
   kind: "coordinate-workflow",
   run: (context) =>
-    Effect.tryPromise({
-      try: async (signal) => {
-        const factory = options.ops ?? (await import("./lib/builtins.ts")).builtinTicketOps;
-        const run = await createRun({
-          context,
-          ops: factory(context),
-          tickets: await readTicketGraph(context.runPath),
-          signal,
+    Effect.scoped(
+      Effect.gen(function* () {
+        const { ops: factory, ...engine } = options;
+        const ops =
+          factory === undefined
+            ? yield* Effect.flatMap(
+                Effect.promise(() => import("./lib/builtins.ts")),
+                (module) => module.builtinTicketOps(context, engine),
+              )
+            : factory(context);
+        yield* Effect.tryPromise({
+          try: async (signal) => {
+            const run = await createRun({
+              context,
+              ops,
+              tickets: await readTicketGraph(context.runPath),
+              signal,
+            });
+            await body(run);
+          },
+          catch: (error) => error,
         });
-        await body(run);
-      },
-      catch: (error) => error,
-    }),
+      }),
+    ),
 });
 
 /**
@@ -68,10 +88,17 @@ export const workflow = (
 export const standardTicket = async (ticket: Ticket): Promise<void> => {
   await ticket.implement();
   while (true) {
-    await ticket.rebase();
+    if ((await ticket.rebase()) === "ready_to_land") {
+      if ((await ticket.land()) === "landed") return;
+      continue;
+    }
     const gates = await ticket.gates();
     if (!gates.passed) {
       await ticket.fix({ kind: "gates", failed: gates.failed });
+      continue;
+    }
+    if (gates.readyToLand) {
+      if ((await ticket.land()) === "landed") return;
       continue;
     }
     await ticket.selfReview();

@@ -20,11 +20,13 @@ export type TicketInfo = {
 export type ReviewAxis = "standards" | "spec";
 
 /**
- * Result of running every configured gate on the current ticket tip.
+ * Result of running every configured gate on the current ticket tip. When a
+ * rebase kept both reviews, passing gates make the ticket ready to land.
  */
 export type GateOutcome = {
   passed: boolean;
   failed: string[];
+  readyToLand: boolean;
 };
 
 /**
@@ -34,6 +36,12 @@ export type RoundOutcome = {
   action: "land" | "fix";
   fixRequestPath: string | null;
 };
+
+/**
+ * Result of bringing a ticket up to date with the base: rebased or already
+ * current and ready for gates, or already reviewed and ready to land.
+ */
+export type SyncOutcome = "up_to_date" | "rebased" | "ready_to_land";
 
 /**
  * Result of a landing attempt under the shared land lock.
@@ -46,13 +54,14 @@ export type LandOutcome = "landed" | "rebase_required";
  */
 export type TicketOps = {
   implement: (ticket: TicketInfo) => Effect.Effect<void, WorkflowError>;
-  rebase: (ticket: TicketInfo) => Effect.Effect<"up_to_date" | "rebased", WorkflowError>;
+  rebase: (ticket: TicketInfo) => Effect.Effect<SyncOutcome, WorkflowError>;
   gates: (ticket: TicketInfo) => Effect.Effect<GateOutcome, WorkflowError>;
   selfReview: (ticket: TicketInfo) => Effect.Effect<void, WorkflowError>;
   review: (ticket: TicketInfo, axis: ReviewAxis) => Effect.Effect<void, WorkflowError>;
   finalizeRound: (ticket: TicketInfo) => Effect.Effect<RoundOutcome, WorkflowError>;
   fix: (ticket: TicketInfo, request: FixRequest) => Effect.Effect<void, WorkflowError>;
   land: (ticket: TicketInfo) => Effect.Effect<LandOutcome, WorkflowError>;
+  beforeLaunch: () => Effect.Effect<void, WorkflowError>;
 };
 
 /**
@@ -78,7 +87,7 @@ export class WorkflowError extends Error {
  */
 export type Ticket = TicketInfo & {
   implement: () => Promise<void>;
-  rebase: () => Promise<"up_to_date" | "rebased">;
+  rebase: () => Promise<SyncOutcome>;
   gates: () => Promise<GateOutcome>;
   selfReview: () => Promise<void>;
   review: (axis: ReviewAxis) => Promise<void>;
@@ -307,6 +316,7 @@ export const createRun = async (options: RunOptions): Promise<Run> => {
             })),
           }).pipe(Effect.mapError((error) => new WorkflowError(error.issue)));
 
+          if (plan.launch_tickets.length > 0) yield* ops.beforeLaunch();
           for (const number of plan.launch_tickets) {
             const ticket = tickets.find((candidate) => candidate.number === number)!;
             yield* context.emit("ticket.scheduled", number, {});

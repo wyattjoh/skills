@@ -91,7 +91,14 @@ const fromMutationError = (error: unknown): ReviewError => {
   );
 };
 
-const parseRoleBlock = (markdown: string, name: "Implementor" | "Reviewer"): RoleRecord => {
+/**
+ * Parses the run-wide Implementor or Reviewer role block from RESUME.md.
+ *
+ * @param markdown - Run-state Markdown.
+ * @param name - Role block heading.
+ * @returns The persisted role record.
+ */
+export const parseRoleBlock = (markdown: string, name: "Implementor" | "Reviewer"): RoleRecord => {
   const expression = new RegExp(`^${name}:\\r?\\n((?:  [^\\r\\n]*(?:\\r?\\n|$))+)`, "gmu");
   const matches = [...markdown.matchAll(expression)];
   if (matches.length !== 1) {
@@ -296,7 +303,13 @@ const parsePrefix = (markdown: string): string => {
   return matches[0]![1]!;
 };
 
-const parsePolicy = (markdown: string): ReviewPolicy => {
+/**
+ * Parses the single persisted review policy from RESUME.md.
+ *
+ * @param markdown - Run-state Markdown.
+ * @returns The persisted review policy.
+ */
+export const parsePolicy = (markdown: string): ReviewPolicy => {
   const matches = [
     ...markdown.matchAll(/^## Review policy\s*\r?\n\r?\n```json\r?\n([\s\S]*?)\r?\n```\s*$/gmu),
   ];
@@ -488,6 +501,14 @@ const worktreeHead = (worktreePath: string): string => {
   return head;
 };
 
+/**
+ * File a reviewer writes its complete report to before the engine records it.
+ *
+ * @param reportPath - Immutable report path chosen for the attempt.
+ * @returns The draft path the reviewer writes.
+ */
+export const reviewDraftPath = (reportPath: string): string => `${reportPath}.draft.md`;
+
 const reviewPrompt = (input: ReviewLaunchPrepareInput): string => {
   const focus =
     input.axis === "standards"
@@ -510,6 +531,7 @@ const reviewPrompt = (input: ReviewLaunchPrepareInput): string => {
     "Suggested fix: one concrete line",
     "Every actionable finding requires FAIL. With no findings, use PASS.",
     "The final non-empty line must be exactly PASS or FAIL.",
+    `Before you finish, write your complete report to ${reviewDraftPath(input.reportPath)}. That file is outside the worktree; the terminal transcript is not collected.`,
   ].join("\n");
 };
 

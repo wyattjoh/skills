@@ -89,7 +89,11 @@ const fakeOps = (
       }),
     rebase: (ticket) => record(ticket, "rebase", next(ticket, "rebase", "up_to_date")) as never,
     gates: (ticket) =>
-      record(ticket, "gates", next(ticket, "gates", { passed: true, failed: [] })) as never,
+      record(
+        ticket,
+        "gates",
+        next(ticket, "gates", { passed: true, failed: [], readyToLand: false }),
+      ) as never,
     selfReview: (ticket) => record(ticket, "selfReview", undefined) as never,
     review: (ticket, axis) => record(ticket, `review` as const, axis).pipe(Effect.asVoid),
     finalizeRound: (ticket) =>
@@ -99,6 +103,7 @@ const fakeOps = (
         next(ticket, "finalizeRound", { action: "land", fixRequestPath: null }),
       ) as never,
     fix: (ticket, request) => record(ticket, "fix", request).pipe(Effect.asVoid),
+    beforeLaunch: () => Effect.void,
     land: (ticket) =>
       Effect.gen(function* () {
         const outcome = (yield* record(ticket, "land", next(ticket, "land", "landed"))) as string;
@@ -195,7 +200,7 @@ describe("workflow frontier", () => {
       runPath,
       fakeOps(runPath, trace, {
         "01": {
-          gates: [{ passed: false, failed: ["test"] }],
+          gates: [{ passed: false, failed: ["test"], readyToLand: false }],
           finalizeRound: [{ action: "fix", fixRequestPath: "briefs/fixes-01-round-1.md" }],
           land: ["rebase_required"],
         },
