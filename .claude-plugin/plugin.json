@@ -1,0 +1,13 @@
+{
+  "name": "wyattjoh",
+  "displayName": "Wyatt's Skills",
+  "description": "Reusable Claude Code skills and agents for software development workflows",
+  "author": {
+    "name": "Wyatt Johnson",
+    "url": "https://github.com/wyattjoh"
+  },
+  "homepage": "https://github.com/wyattjoh/skills",
+  "repository": "https://github.com/wyattjoh/skills",
+  "license": "MIT",
+  "keywords": ["skills", "agents", "code-review", "pull-requests", "ios", "effect-ts"]
+}
