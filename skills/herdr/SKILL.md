@@ -106,7 +106,7 @@ Both installations must support machine API forwarding, and the remote server mu
 
 ## Start and coordinate an agent
 
-Default to a sibling pane in the current tab and the current working directory. Do not create a workspace, tab, worktree, or different cwd unless the user explicitly requests that topology or location.
+For a short-lived helper, default to a sibling pane in the current tab and the current working directory. An agent delegated a task or ticket gets its own new tab instead (see [Safety and coordination rules](#safety-and-coordination-rules)). Do not create a workspace, worktree, or different cwd unless the user explicitly requests that topology or location.
 
 Honor a direction requested by the user. Otherwise inspect the caller pane:
 
@@ -168,6 +168,8 @@ herdr agent get reviewer
 herdr agent read reviewer --source recent-unwrapped --lines 120
 ```
 
+When the result is more than a short answer (a review, report, or ticket outcome), tell the agent in the prompt to write its final report to a file path you choose, such as `/tmp/<agent-name>-report.md`, and read that file once the wait settles. Rendered pane text wraps and truncates, so `agent read` is for checking state, not for collecting results.
+
 If a wait fails or returns `blocked`, inspect `agent get` and `agent read` before deciding what input to send. A timeout or stalled response does not prove the prompt was never delivered; do not blindly submit it again. Use the pane surface only when raw terminal control is intentional.
 
 ## Run an ordinary command in another pane
@@ -206,6 +208,9 @@ If a larger recent read still does not reveal the completed response, ask the ag
 - Use `--no-focus` for background work unless the user asked to switch context.
 - Use `--current`, an explicit pane ID, or a unique agent name. Do not rely on another client's focused pane.
 - Parse IDs from JSON responses. Do not derive them from sidebar order or examples.
+- Start an agent delegated a task or ticket in a new tab, one tab per task, never in the caller's own tab.
+- Close every pane you created once you have collected its results and its agent will receive no further prompts. Close its tab once the tab is empty.
+- When a calling workflow, such as `coordinate-implementation`, prescribes its own tab layout or pane lifecycle, follow the workflow instead of the two rules above.
 - Do not close workspaces, tabs, panes, or sessions you did not create unless the user explicitly asked. `workspace close --group` closes the primary workspace and its linked worktree workspaces; never add it merely to bypass `workspace_group_close_required`.
 - Use `--trust-repository` only after the user has verified the repository. It grants per-request Git trust; it is not a routine retry for a failed worktree command.
 - Client and server versions can differ after an update. Check `herdr status` before relying on new server features. A missing method is not permission to stop or upgrade a server.

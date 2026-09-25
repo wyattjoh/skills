@@ -1,15 +1,15 @@
 import { describe, expect, it } from "bun:test";
-import {
-  chmodSync,
-  existsSync,
-  mkdirSync,
-  mkdtempSync,
-  readFileSync,
-  writeFileSync,
-} from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { GIT_ENV_KEYS, spawnGit } from "./lib/git.ts";
+import {
+  commitPatchIds,
+  type IntegrationRecord,
+  parseIntegration,
+  rebasePrompt,
+  ticketPatchId,
+} from "./lib/integration.ts";
 import { runCliInProcess } from "./test-cli.ts";
 import { createFakeHerdrEnv } from "./test-herdr.ts";
 
@@ -60,7 +60,7 @@ const stateText = (
   env: Record<string, string | undefined> = process.env,
 ): string => `# landing run
 
-Schema version: 1
+Schema version: 2
 
 Prefix:          landing
 Base:            main
@@ -184,53 +184,148 @@ const makeFixture = (env: Record<string, string | undefined> = process.env): Lan
   return { root, repositoryPath, worktreePath, statePath, branch };
 };
 
-const markReadyToLand = async (
+const integrationOf = (fixture: LandingFixture, ticket = "07"): IntegrationRecord | undefined =>
+  parseIntegration(readFileSync(fixture.statePath, "utf8"), ticket);
+
+type TicketBinding = { ticket: string; worktreePath: string; branch: string };
+
+const primary = (fixture: LandingFixture): TicketBinding => ({
+  ticket: "07",
+  worktreePath: fixture.worktreePath,
+  branch: fixture.branch,
+});
+
+const addTicket = (fixture: LandingFixture, ticket: string): TicketBinding => {
+  const branch = `ticket-${ticket}`;
+  const worktreePath = join(fixture.root, "worktrees", branch);
+  expect(
+    spawnGit(["worktree", "add", "-q", "-b", branch, worktreePath, "main"], {
+      cwd: fixture.repositoryPath,
+    }).exitCode,
+  ).toBe(0);
+  writeFileSync(
+    fixture.statePath,
+    readFileSync(fixture.statePath, "utf8").replace(
+      "## Review evidence",
+      `### ${ticket}
+
+Worktree: ${worktreePath}
+Branch: ${branch}
+Implementor: {"harness":"pi","model":"openai/test","effort":"high"}
+Implement skill: /implement
+Session: landing-${ticket}
+Tab: implement landing ${ticket}
+Pane: work:p${Number(ticket)}
+Artifact: ${join(fixture.root, "run", "briefs", `launch-${ticket}.json`)}
+Attempt: 1
+Retry: 0 of 3
+Phase: committed, awaiting review
+Last diagnostic: none
+
+## Review evidence`,
+    ),
+  );
+  return { ticket, worktreePath, branch };
+};
+
+const rebaseCheck = (
   fixture: LandingFixture,
-  cycle = 0,
-): Promise<{
-  standards: string;
-  spec: string;
-  selfReview: string;
-}> => {
-  const reviews = join(fixture.root, "run", "reviews");
-  mkdirSync(reviews, { recursive: true });
-  const gateEvidence = join(reviews, `07-cycle-${cycle}-test-gate.json`);
-  const gate = await runCli("gate.record", {
+  binding: TicketBinding = primary(fixture),
+  completedAt = "2026-09-19T02:00:00Z",
+): Promise<CliResult> =>
+  runCli("landing.rebase.check", {
     state_path: fixture.statePath,
-    evidence_path: gateEvidence,
-    worktree_path: fixture.worktreePath,
-    ticket: "07",
-    round: cycle,
+    repository_path: fixture.repositoryPath,
+    worktree_path: binding.worktreePath,
+    ticket: binding.ticket,
+    completed_at: completedAt,
+  });
+
+const rebaseRecord = (
+  fixture: LandingFixture,
+  binding: TicketBinding = primary(fixture),
+  completedAt = "2026-09-19T02:30:00Z",
+): Promise<CliResult> =>
+  runCli("landing.rebase.record", {
+    state_path: fixture.statePath,
+    repository_path: fixture.repositoryPath,
+    worktree_path: binding.worktreePath,
+    ticket: binding.ticket,
+    completed_at: completedAt,
+  });
+
+const landingInput = (
+  fixture: LandingFixture,
+  binding: TicketBinding = primary(fixture),
+  overrides: Record<string, unknown> = {},
+): Record<string, unknown> => ({
+  state_path: fixture.statePath,
+  repository_path: fixture.repositoryPath,
+  worktree_path: binding.worktreePath,
+  evidence_path: join(fixture.root, "run", "reviews", `${binding.ticket}-landed.json`),
+  ticket: binding.ticket,
+  cleanup_argv: null,
+  completed_at: "2026-09-19T02:40:00Z",
+  ...overrides,
+});
+
+const recordGate = (
+  fixture: LandingFixture,
+  binding: TicketBinding,
+  round: number,
+  status: "passed" | "failed",
+  suffix: string,
+): Promise<CliResult> =>
+  runCli("gate.record", {
+    state_path: fixture.statePath,
+    evidence_path: join(
+      fixture.root,
+      "run",
+      "reviews",
+      `${binding.ticket}-round-${round}-test-gate-${suffix}.json`,
+    ),
+    worktree_path: binding.worktreePath,
+    ticket: binding.ticket,
+    round,
     name: "test",
     attempt: 1,
-    status: "passed",
-    exit_code: 0,
-    stdout: "test passed\n",
+    status,
+    exit_code: status === "passed" ? 0 : 1,
+    stdout: `test ${status}\n`,
     stderr: "",
-    completed_at: `2026-09-19T02:${String(10 + cycle).padStart(2, "0")}:00Z`,
+    completed_at: "2026-09-19T02:10:00Z",
   });
+
+const markReadyToLand = async (
+  fixture: LandingFixture,
+  binding: TicketBinding = primary(fixture),
+  round = 0,
+): Promise<{ standards: string; spec: string; selfReview: string }> => {
+  const reviews = join(fixture.root, "run", "reviews");
+  mkdirSync(reviews, { recursive: true });
+  const gate = await recordGate(fixture, binding, round, "passed", "ready");
   expect(gate.exitCode).toBe(0);
-  const baseSha = spawnGit(["rev-parse", "main"], { cwd: fixture.repositoryPath }).stdout.trim();
+  const baseSha = integrationOf(fixture, binding.ticket)!.base_sha;
   const evidence: Partial<Record<"standards" | "spec", string>> = {};
   for (const axis of ["standards", "spec"] as const) {
-    const artifactPath = join(reviews, `07-cycle-${cycle}-${axis}-attempt-1.json`);
-    const reportPath = join(reviews, `07-cycle-${cycle}-${axis}-attempt-1.md`);
+    const artifactPath = join(reviews, `${binding.ticket}-round-${round}-${axis}-attempt-1.json`);
+    const reportPath = join(reviews, `${binding.ticket}-round-${round}-${axis}-attempt-1.md`);
     const launched = await runCli("review.launch.prepare", {
       state_path: fixture.statePath,
       previous_artifact_path: null,
       artifact_path: artifactPath,
       report_path: reportPath,
-      ticket: "07",
-      round: cycle,
+      ticket: binding.ticket,
+      round,
       axis,
-      worktree_path: fixture.worktreePath,
-      branch: fixture.branch,
+      worktree_path: binding.worktreePath,
+      branch: binding.branch,
       base_ref: baseSha,
-      pane: `workspace:${axis === "standards" ? "p1" : "p2"}`,
+      pane: `workspace:p${Number(binding.ticket) * 10 + (axis === "standards" ? 1 : 2)}`,
       role: { harness: "claude", model: "sonnet", effort: "medium" },
-      context_paths: axis === "standards" ? ["CLAUDE.md"] : ["spec.md", "ticket-07.md"],
+      context_paths: axis === "standards" ? ["CLAUDE.md"] : ["spec.md", "ticket.md"],
       landed_tickets: [],
-      gate_evidence_paths: [gateEvidence],
+      gate_evidence_paths: [join(reviews, `${binding.ticket}-round-${round}-test-gate-ready.json`)],
       attempt: 1,
     });
     expect(launched.exitCode).toBe(0);
@@ -240,54 +335,130 @@ const markReadyToLand = async (
       status: "completed",
       report: `# ${axis}\n\nPASS\n`,
       diagnostic: null,
-      completed_at: `2026-09-19T02:${String(15 + cycle).padStart(2, "0")}:00Z`,
+      completed_at: "2026-09-19T02:15:00Z",
     });
     expect(recorded.exitCode).toBe(0);
     evidence[axis] = `${reportPath}.json`;
   }
-  const standards = evidence.standards!;
-  const spec = evidence.spec!;
-  const selfReview = join(reviews, `07-cycle-${cycle}-self-review.md`);
+  const selfReview = join(reviews, `${binding.ticket}-round-${round}-self-review.md`);
   const finalized = await runCli("review.round.finalize", {
     state_path: fixture.statePath,
-    ticket: "07",
-    round: cycle,
-    standards_evidence_path: standards,
-    spec_evidence_path: spec,
+    ticket: binding.ticket,
+    round,
+    standards_evidence_path: evidence.standards!,
+    spec_evidence_path: evidence.spec!,
     self_review_path: selfReview,
     self_review_method: "standards-spec-single-session",
     self_review_report: "## Standards\n\nPASS\n\n## Spec\n\nPASS\n",
-    fix_request_path: join(fixture.root, "run", "briefs", `fixes-07-cycle-${cycle}.md`),
-    completed_at: `2026-09-19T02:${String(20 + cycle).padStart(2, "0")}:00Z`,
+    fix_request_path: join(
+      fixture.root,
+      "run",
+      "briefs",
+      `fixes-${binding.ticket}-round-${round}.md`,
+    ),
+    completed_at: "2026-09-19T02:20:00Z",
   });
   expect(finalized.exitCode).toBe(0);
   expect((finalized.stdout.result as { action: string }).action).toBe("land");
-  return { standards, spec, selfReview };
+  expect(integrationOf(fixture, binding.ticket)?.phase).toBe("ready-to-land");
+  return { standards: evidence.standards!, spec: evidence.spec!, selfReview };
 };
 
-describe("portable synchronization and landing", () => {
-  it("documents the landed helper interfaces and serialized state", async () => {
-    const skill = readFileSync(join(import.meta.dir, "..", "SKILL.md"), "utf8");
-    const helper = readFileSync(join(import.meta.dir, "..", "references", "helper-cli.md"), "utf8");
-    const procedure = readFileSync(
-      join(import.meta.dir, "..", "references", "review-and-land.md"),
-      "utf8",
-    );
-    const resume = readFileSync(
-      join(import.meta.dir, "..", "references", "resume-format.md"),
-      "utf8",
-    );
+const gitCommonLock = (fixture: LandingFixture): string =>
+  join(
+    spawnGit(["rev-parse", "--path-format=absolute", "--git-common-dir"], {
+      cwd: fixture.repositoryPath,
+    }).stdout.trim(),
+    "land-local.lock",
+  );
 
-    expect(skill).toContain("`landing.synchronize`");
-    expect(skill).toContain("`landing.conflict.record`");
+const holdLandLock = async (lockPath: string): Promise<Bun.Subprocess> => {
+  const holder = Bun.spawn(
+    ["flock", lockPath, process.execPath, "-e", "setTimeout(() => {}, 20000)"],
+    { env: process.env, stdout: "ignore", stderr: "ignore" },
+  );
+  const deadline = Date.now() + 5_000;
+  while (Date.now() < deadline) {
+    const probe = Bun.spawnSync(["flock", "-n", lockPath, "true"], { env: process.env });
+    if (probe.exitCode === 1) return holder;
+    await Bun.sleep(25);
+  }
+  holder.kill();
+  throw new Error("Timed out waiting for the external land lock holder.");
+};
+
+const spawnCli = async (
+  operation: string,
+  input: Record<string, unknown>,
+): Promise<{ exitCode: number; stdout: Record<string, unknown> }> => {
+  const child = Bun.spawn([process.execPath, join(import.meta.dir, "coordinate.ts")], {
+    env: HERDR_ENV,
+    stdin: Buffer.from(JSON.stringify({ schema_version: 1, operation, input })),
+    stdout: "pipe",
+    stderr: "pipe",
+  });
+  const [stdout, exitCode] = await Promise.all([new Response(child.stdout).text(), child.exited]);
+  return { exitCode, stdout: JSON.parse(stdout.trim()) as Record<string, unknown> };
+};
+
+const conflictingBaseAndTicket = (fixture: LandingFixture): void => {
+  commit(fixture.worktreePath, "base.txt", "ticket\n", "ticket edits base");
+};
+
+const resolveRebase = (worktreePath: string, contents: string): void => {
+  writeFileSync(join(worktreePath, "base.txt"), contents);
+  expect(spawnGit(["add", "base.txt"], { cwd: worktreePath }).exitCode).toBe(0);
+  expect(
+    spawnGit(["-c", "core.editor=true", "rebase", "--continue"], { cwd: worktreePath }).exitCode,
+  ).toBe(0);
+};
+
+const readSkillFile = (...path: string[]): string =>
+  readFileSync(join(import.meta.dir, "..", ...path), "utf8");
+
+const runLocked = (
+  checkout: string,
+  base: string,
+  branch: string,
+): { exitCode: number; stdout: string } => {
+  const child = Bun.spawnSync(
+    [process.execPath, join(import.meta.dir, "land-locked.ts"), checkout, base, branch],
+    { env: process.env, stdout: "pipe", stderr: "pipe" },
+  );
+  return { exitCode: child.exitCode, stdout: child.stdout.toString() };
+};
+
+describe("per-ticket integration and landing", () => {
+  it("documents the rebase, integration, and flock landing interfaces", () => {
+    const skill = readSkillFile("SKILL.md");
+    const helper = readSkillFile("references", "helper-cli.md");
+    const procedure = readSkillFile("references", "review-and-land.md");
+    const resume = readSkillFile("references", "resume-format.md");
+    const brief = readSkillFile("references", "common-brief.md");
+
+    expect(skill).toContain("`landing.rebase.check`");
+    expect(skill).toContain("`landing.rebase.record`");
     expect(skill).toContain("`landing.complete`");
-    expect(helper).toContain("## `landing.synchronize`");
-    expect(helper).toContain("## `landing.conflict.record`");
+    expect(skill).toContain("Rebase conflicts belong to the implementor, never the coordinator.");
+    expect(helper).toContain("## `landing.rebase.check`");
+    expect(helper).toContain("## `landing.rebase.record`");
     expect(helper).toContain("## `landing.complete`");
+    expect(helper).toContain("<git-common-dir>/land-local.lock");
     expect(procedure).toContain("latest local integration branch");
     expect(procedure).toContain("`--force`");
-    expect(resume).toContain("## Serialized finalization");
+    expect(resume).toContain("### `Integration` field");
+    expect(resume).toContain("Schema version: 2");
     expect(resume).toContain("## Landed evidence");
+    expect(brief).toContain("REBASE DONE <ticket-number>");
+    expect(brief).toContain("Never check out, edit,\n  reset, or merge in the base checkout.");
+  });
+
+  it("rejects removed serialized finalization operations as unknown", async () => {
+    for (const operation of ["landing.synchronize", "landing.yield", "landing.conflict.record"]) {
+      const result = await runCli(operation, {});
+      expect(result.exitCode).toBe(2);
+      expect(result.stdout).toMatchObject({ ok: false, errors: [{ code: "request.invalid" }] });
+    }
   });
 
   it("rejects caller-asserted runtime closure", async () => {
@@ -303,118 +474,388 @@ describe("portable synchronization and landing", () => {
     });
 
     expect(result.exitCode).toBe(2);
-    expect(result.stdout).toMatchObject({
-      ok: false,
-      errors: [{ code: "request.invalid" }],
-    });
+    expect(result.stdout).toMatchObject({ ok: false, errors: [{ code: "request.invalid" }] });
   });
 
-  it("synchronizes multiple commits against the local integration branch without a remote", async () => {
+  it("binds multiple commits against the local integration branch without a remote", async () => {
     const fixture = makeFixture();
     commit(fixture.worktreePath, "one.txt", "one\n", "one");
     const ticketTip = commit(fixture.worktreePath, "two.txt", "two\n", "two");
 
-    const result = await runCli("landing.synchronize", {
-      state_path: fixture.statePath,
-      repository_path: fixture.repositoryPath,
-      worktree_path: fixture.worktreePath,
-      ticket: "07",
-      remote_sync_argv: null,
-      completed_at: "2026-09-19T02:00:00Z",
-    });
+    const result = await rebaseCheck(fixture);
 
     const base = spawnGit(["rev-parse", "main"], { cwd: fixture.repositoryPath }).stdout.trim();
+    const patchId = ticketPatchId(fixture.worktreePath, "main");
     expect(result.exitCode).toBe(0);
     expect(result.stderr).toBe("");
     expect(result.stdout.result).toEqual({
       ticket: "07",
       action: "run-gates",
       phase: "gates",
+      cycle: 0,
       base_branch: "main",
       base_sha: base,
       ticket_sha: ticketTip,
       review_range: `${base}..${ticketTip}`,
       commit_count: 2,
       commit_policy: { commits: "multiple", fixes: "append" },
-      remote_sync_argv: null,
-      conflicts: [],
+      patch_id: patchId,
+      reviews_kept: false,
+      remote_synchronized: false,
+      prompt: null,
+    });
+    expect(integrationOf(fixture)).toEqual({
       cycle: 0,
+      phase: "gates",
+      base_sha: base,
+      ticket_sha: ticketTip,
+      review_range: `${base}..${ticketTip}`,
+      commit_count: 2,
+      patch_id: patchId,
+      commit_patch_ids: commitPatchIds(fixture.worktreePath, "main"),
+      passed_gates: [],
+      reviewed_head: null,
+      reviewed_patch_id: null,
+      reviewed_commit_patch_ids: null,
+      standards_evidence_path: null,
+      spec_evidence_path: null,
+      self_review_path: null,
+      completed_at: "2026-09-19T02:00:00Z",
     });
     expect(spawnGit(["remote"], { cwd: fixture.repositoryPath }).stdout).toBe("");
-    expect(readFileSync(fixture.statePath, "utf8")).toContain("## Serialized finalization");
-    expect(existsSync(fixture.worktreePath)).toBe(true);
+
+    const before = readFileSync(fixture.statePath, "utf8");
+    const repeated = await rebaseCheck(fixture, primary(fixture), "2026-09-19T02:05:00Z");
+    expect(repeated.exitCode).toBe(0);
+    expect(readFileSync(fixture.statePath, "utf8")).toBe(before);
   });
 
-  it("serializes finalization while other implementors remain active", async () => {
+  it("integrates tickets independently while another ticket is gated", async () => {
+    const fixture = makeFixture();
+    const other = addTicket(fixture, "08");
+    commit(fixture.worktreePath, "seven.txt", "seven\n", "seven");
+    commit(other.worktreePath, "eight.txt", "eight\n", "eight");
+
+    expect((await rebaseCheck(fixture)).exitCode).toBe(0);
+    expect((await rebaseCheck(fixture, other)).exitCode).toBe(0);
+    expect((await recordGate(fixture, primary(fixture), 0, "passed", "a")).exitCode).toBe(0);
+    expect((await recordGate(fixture, other, 0, "passed", "a")).exitCode).toBe(0);
+
+    expect(integrationOf(fixture, "07")).toMatchObject({ phase: "gates", passed_gates: ["test"] });
+    expect(integrationOf(fixture, "08")).toMatchObject({ phase: "gates", passed_gates: ["test"] });
+  });
+
+  it("returns an implementor rebase prompt instead of rebasing a ticket behind the base", async () => {
+    const fixture = makeFixture();
+    const ticketTip = commit(fixture.worktreePath, "ticket.txt", "ticket\n", "ticket");
+    const newBase = commit(fixture.repositoryPath, "landed.txt", "landed\n", "landed");
+
+    const result = await rebaseCheck(fixture);
+
+    expect(result.exitCode).toBe(0);
+    expect(result.stdout.result).toMatchObject({
+      action: "rebase",
+      phase: "rebase-required",
+      base_sha: newBase,
+      ticket_sha: ticketTip,
+      cycle: 0,
+    });
+    expect((result.stdout.result as { prompt: string }).prompt).toBe(
+      rebasePrompt({
+        ticket: "07",
+        baseBranch: "main",
+        baseSha: newBase,
+        worktreePath: fixture.worktreePath,
+      }),
+    );
+    expect(spawnGit(["rev-parse", "HEAD"], { cwd: fixture.worktreePath }).stdout.trim()).toBe(
+      ticketTip,
+    );
+    expect(readFileSync(fixture.statePath, "utf8")).toContain("Phase: rebase required");
+
+    const incomplete = await rebaseRecord(fixture);
+    expect(incomplete.exitCode).toBe(1);
+    expect(incomplete.stdout).toMatchObject({ errors: [{ code: "landing.rebase_incomplete" }] });
+
+    expect(spawnGit(["rebase", "main"], { cwd: fixture.worktreePath }).exitCode).toBe(0);
+    const recorded = await rebaseRecord(fixture);
+    const rebasedTip = spawnGit(["rev-parse", "HEAD"], { cwd: fixture.worktreePath }).stdout.trim();
+    expect(recorded.exitCode).toBe(0);
+    expect(recorded.stdout.result).toMatchObject({
+      action: "run-gates",
+      phase: "gates",
+      cycle: 1,
+      base_sha: newBase,
+      ticket_sha: rebasedTip,
+      review_range: `${newBase}..${rebasedTip}`,
+      reviews_kept: false,
+      prompt: null,
+    });
+
+    const notPending = await rebaseRecord(fixture);
+    expect(notPending.exitCode).toBe(1);
+    expect(notPending.stdout).toMatchObject({ errors: [{ code: "landing.rebase_not_required" }] });
+  });
+
+  it("refuses a dirty worktree or an unfinished rebase without changing state", async () => {
+    const fixture = makeFixture();
+    conflictingBaseAndTicket(fixture);
+    commit(fixture.repositoryPath, "base.txt", "landed\n", "landed edits base");
+    expect((await rebaseCheck(fixture)).exitCode).toBe(0);
+    const before = readFileSync(fixture.statePath, "utf8");
+
+    expect(spawnGit(["rebase", "main"], { cwd: fixture.worktreePath }).exitCode).toBe(1);
+    const unfinished = await rebaseRecord(fixture);
+    expect(unfinished.exitCode).toBe(1);
+    expect(unfinished.stdout).toMatchObject({
+      errors: [{ code: "landing.operation_in_progress" }],
+    });
+    expect(readFileSync(fixture.statePath, "utf8")).toBe(before);
+
+    resolveRebase(fixture.worktreePath, "landed\nticket\n");
+    writeFileSync(join(fixture.worktreePath, "scratch.txt"), "dirty\n");
+    const dirty = await rebaseRecord(fixture);
+    expect(dirty.exitCode).toBe(1);
+    expect(dirty.stdout).toMatchObject({ errors: [{ code: "landing.worktree_dirty" }] });
+    expect(readFileSync(fixture.statePath, "utf8")).toBe(before);
+  });
+
+  it("keeps both reviews and requires gates after a rebase with an identical patch id", async () => {
     const fixture = makeFixture();
     commit(fixture.worktreePath, "ticket.txt", "ticket\n", "ticket");
-    const markdown = readFileSync(fixture.statePath, "utf8");
+    expect((await rebaseCheck(fixture)).exitCode).toBe(0);
+    const reviews = await markReadyToLand(fixture);
+    const reviewed = integrationOf(fixture)!;
+    const newBase = commit(fixture.repositoryPath, "landed.txt", "landed\n", "landed");
+
+    const bounced = await runCli("landing.complete", landingInput(fixture));
+    expect(bounced.exitCode).toBe(0);
+    expect(bounced.stdout.result).toMatchObject({
+      ticket: "07",
+      action: "rebase",
+      phase: "rebase-required",
+      base_sha: newBase,
+      ticket_sha: reviewed.ticket_sha,
+      cycle: 0,
+    });
+    expect(spawnGit(["rev-parse", "main"], { cwd: fixture.repositoryPath }).stdout.trim()).toBe(
+      newBase,
+    );
+
+    expect(spawnGit(["rebase", "main"], { cwd: fixture.worktreePath }).exitCode).toBe(0);
+    const recorded = await rebaseRecord(fixture);
+    expect(recorded.exitCode).toBe(0);
+    expect(recorded.stdout.result).toMatchObject({
+      action: "run-gates",
+      phase: "gates",
+      cycle: 1,
+      patch_id: reviewed.patch_id,
+      reviews_kept: true,
+    });
+    expect(integrationOf(fixture)).toMatchObject({
+      phase: "gates",
+      passed_gates: [],
+      reviewed_head: reviewed.ticket_sha,
+      reviewed_patch_id: reviewed.patch_id,
+      standards_evidence_path: reviews.standards,
+      spec_evidence_path: reviews.spec,
+      self_review_path: reviews.selfReview,
+    });
+
+    const gatesPending = await runCli("landing.complete", landingInput(fixture));
+    expect(gatesPending.exitCode).toBe(1);
+    expect(gatesPending.stdout).toMatchObject({ errors: [{ code: "landing.review_incomplete" }] });
+
+    expect((await recordGate(fixture, primary(fixture), 0, "passed", "cycle-1")).exitCode).toBe(0);
+    expect(integrationOf(fixture)?.phase).toBe("ready-to-land");
+    const landed = await runCli("landing.complete", landingInput(fixture));
+    const rebasedTip = spawnGit(["rev-parse", fixture.branch], {
+      cwd: fixture.repositoryPath,
+    }).stdout.trim();
+    expect(landed.exitCode).toBe(0);
+    expect(landed.stdout.result).toMatchObject({
+      action: "schedule",
+      landed_tip: rebasedTip,
+      base_sha: rebasedTip,
+      review_evidence: {
+        standards: reviews.standards,
+        spec: reviews.spec,
+        self_review: reviews.selfReview,
+      },
+    });
+  }, 20_000);
+
+  it("requires both reviews again when a rebase changes the patch id", async () => {
+    const fixture = makeFixture();
+    conflictingBaseAndTicket(fixture);
+    expect((await rebaseCheck(fixture)).exitCode).toBe(0);
+    const reviewed = integrationOf(fixture)!;
+    await markReadyToLand(fixture);
+    commit(fixture.repositoryPath, "base.txt", "landed\n", "landed edits base");
+
+    const bounced = await runCli("landing.complete", landingInput(fixture));
+    expect((bounced.stdout.result as { action: string }).action).toBe("rebase");
+    expect(spawnGit(["rebase", "main"], { cwd: fixture.worktreePath }).exitCode).toBe(1);
+    resolveRebase(fixture.worktreePath, "landed\nticket\n");
+
+    const recorded = await rebaseRecord(fixture);
+    expect(recorded.exitCode).toBe(0);
+    expect(recorded.stdout.result).toMatchObject({
+      action: "run-gates",
+      cycle: 1,
+      reviews_kept: false,
+    });
+    const rebased = integrationOf(fixture)!;
+    expect(rebased.patch_id === reviewed.patch_id).toBe(false);
+    expect(rebased).toMatchObject({
+      phase: "gates",
+      reviewed_head: null,
+      reviewed_patch_id: null,
+      standards_evidence_path: null,
+      spec_evidence_path: null,
+      self_review_path: null,
+    });
+    expect((await recordGate(fixture, primary(fixture), 1, "passed", "cycle-1")).exitCode).toBe(0);
+    expect(integrationOf(fixture)?.phase).toBe("gates");
+    const refused = await runCli("landing.complete", landingInput(fixture));
+    expect(refused.exitCode).toBe(1);
+    expect(refused.stdout).toMatchObject({ errors: [{ code: "landing.review_incomplete" }] });
+  }, 20_000);
+
+  it("accepts appended fix commits and refuses rewritten ones under the append policy", async () => {
+    const appended = makeFixture();
+    commit(appended.worktreePath, "ticket.txt", "ticket\n", "ticket");
+    expect((await rebaseCheck(appended)).exitCode).toBe(0);
+    expect((await recordGate(appended, primary(appended), 0, "failed", "red")).exitCode).toBe(0);
+    const baseline = integrationOf(appended)!;
+    expect(baseline).toMatchObject({
+      phase: "fixing",
+      reviewed_commit_patch_ids: baseline.commit_patch_ids,
+    });
+    commit(appended.worktreePath, "fix.txt", "fix\n", "append fix");
+    const appendResult = await rebaseCheck(appended, primary(appended), "2026-09-19T02:13:00Z");
+    expect(appendResult.exitCode).toBe(0);
+    expect(appendResult.stdout.result).toMatchObject({ action: "run-gates", commit_count: 2 });
+    expect(integrationOf(appended)?.commit_patch_ids.slice(0, 1)).toEqual(
+      baseline.commit_patch_ids,
+    );
+
+    const rewritten = makeFixture();
+    commit(rewritten.worktreePath, "ticket.txt", "ticket\n", "ticket");
+    expect((await rebaseCheck(rewritten)).exitCode).toBe(0);
+    expect((await recordGate(rewritten, primary(rewritten), 0, "failed", "red")).exitCode).toBe(0);
+    writeFileSync(join(rewritten.worktreePath, "ticket.txt"), "amended\n");
+    expect(spawnGit(["add", "ticket.txt"], { cwd: rewritten.worktreePath }).exitCode).toBe(0);
+    expect(
+      spawnGit(["commit", "-q", "--amend", "--no-edit"], { cwd: rewritten.worktreePath }).exitCode,
+    ).toBe(0);
+    commit(rewritten.worktreePath, "fix.txt", "fix\n", "append after rewrite");
+    const before = readFileSync(rewritten.statePath, "utf8");
+    const amendResult = await rebaseCheck(rewritten, primary(rewritten), "2026-09-19T02:15:00Z");
+    expect(amendResult.exitCode).toBe(1);
+    expect(amendResult.stdout.errors).toEqual([
+      {
+        code: "landing.fix_policy_violated",
+        message: "The fix round did not append commits to the commits recorded at the last review.",
+        remediation:
+          "Return the ticket to its bound implementor and apply the persisted append fix policy.",
+      },
+    ]);
+    expect(readFileSync(rewritten.statePath, "utf8")).toBe(before);
+    expect(integrationOf(rewritten)?.phase).toBe("fixing");
+  });
+
+  it("accepts explicit amend and squash fix policy overrides", async () => {
+    const amended = makeFixture();
+    writeFileSync(
+      amended.statePath,
+      readFileSync(amended.statePath, "utf8").replace('"fixes": "append"', '"fixes": "amend"'),
+    );
+    commit(amended.worktreePath, "ticket.txt", "ticket\n", "ticket");
+    expect((await rebaseCheck(amended)).exitCode).toBe(0);
+    expect((await recordGate(amended, primary(amended), 0, "failed", "red")).exitCode).toBe(0);
+    writeFileSync(join(amended.worktreePath, "ticket.txt"), "amended\n");
+    expect(spawnGit(["add", "ticket.txt"], { cwd: amended.worktreePath }).exitCode).toBe(0);
+    expect(
+      spawnGit(["commit", "-q", "--amend", "--no-edit"], { cwd: amended.worktreePath }).exitCode,
+    ).toBe(0);
+    const amendResult = await rebaseCheck(amended, primary(amended), "2026-09-19T02:17:00Z");
+    expect(amendResult.exitCode).toBe(0);
+    expect(amendResult.stdout.result).toMatchObject({
+      action: "run-gates",
+      commit_count: 1,
+      commit_policy: { commits: "multiple", fixes: "amend" },
+    });
+
+    const squashed = makeFixture();
+    writeFileSync(
+      squashed.statePath,
+      readFileSync(squashed.statePath, "utf8")
+        .replace('"commits": "multiple"', '"commits": "single"')
+        .replace('"fixes": "append"', '"fixes": "squash"'),
+    );
+    commit(squashed.worktreePath, "one.txt", "one\n", "one");
+    commit(squashed.worktreePath, "two.txt", "two\n", "two");
+    const shapeFix = await rebaseCheck(squashed);
+    expect(shapeFix.exitCode).toBe(0);
+    expect((shapeFix.stdout.result as { action: string }).action).toBe("fix-commits");
+    expect(spawnGit(["reset", "--soft", "main"], { cwd: squashed.worktreePath }).exitCode).toBe(0);
+    expect(
+      spawnGit(["commit", "-q", "-m", "squashed fix"], { cwd: squashed.worktreePath }).exitCode,
+    ).toBe(0);
+    const squashResult = await rebaseCheck(squashed, primary(squashed), "2026-09-19T02:19:00Z");
+    expect(squashResult.exitCode).toBe(0);
+    expect(squashResult.stdout.result).toMatchObject({
+      action: "run-gates",
+      commit_count: 1,
+      commit_policy: { commits: "single", fixes: "squash" },
+    });
+  });
+
+  it("returns a fix action when repository commit shape requires one commit", async () => {
+    const fixture = makeFixture();
+    commit(fixture.worktreePath, "one.txt", "one\n", "one");
+    const ticketTip = commit(fixture.worktreePath, "two.txt", "two\n", "two");
     writeFileSync(
       fixture.statePath,
-      markdown.replace(
-        "## Review evidence",
-        `## Serialized finalization
-
-\`\`\`json
-${JSON.stringify(
-  {
-    ticket: "08",
-    cycle: 0,
-    phase: "gates",
-    base_branch: "main",
-    base_sha: null,
-    ticket_sha: null,
-    review_range: null,
-    commit_count: null,
-    commit_policy: { commits: "multiple", fixes: "append" },
-    remote_sync_argv: null,
-    conflicts: [],
-    previous_ticket_sha: null,
-    standards_evidence_path: null,
-    spec_evidence_path: null,
-    self_review_path: null,
-    completed_at: "2026-09-19T02:00:00Z",
-  },
-  null,
-  2,
-)}
-\`\`\`
-
-## Review evidence`,
+      readFileSync(fixture.statePath, "utf8").replace(
+        '"commits": "multiple"',
+        '"commits": "single"',
       ),
     );
 
-    const result = await runCli("landing.synchronize", {
-      state_path: fixture.statePath,
-      repository_path: fixture.repositoryPath,
-      worktree_path: fixture.worktreePath,
-      ticket: "07",
-      remote_sync_argv: null,
-      completed_at: "2026-09-19T02:01:00Z",
-    });
+    const result = await rebaseCheck(fixture);
 
-    expect(result.exitCode).toBe(1);
-    expect(result.stdout.errors).toEqual([
-      {
-        code: "landing.serialized",
-        message: "Ticket `08` already owns serialized finalization in phase `gates`.",
-        remediation:
-          "Keep other implementors running, but wait for that ticket to leave synchronization, gates, review, and landing.",
-      },
-    ]);
-    expect(spawnGit(["rev-parse", "HEAD"], { cwd: fixture.worktreePath }).exitCode).toBe(0);
+    const base = spawnGit(["rev-parse", "main"], { cwd: fixture.repositoryPath }).stdout.trim();
+    expect(result.exitCode).toBe(0);
+    expect(result.stdout.result).toEqual({
+      ticket: "07",
+      action: "fix-commits",
+      phase: "fixing",
+      cycle: 0,
+      base_branch: "main",
+      base_sha: base,
+      ticket_sha: ticketTip,
+      review_range: `${base}..${ticketTip}`,
+      commit_count: 2,
+      commit_policy: { commits: "single", fixes: "append" },
+      patch_id: ticketPatchId(fixture.worktreePath, "main"),
+      reviews_kept: false,
+      remote_synchronized: false,
+      prompt: null,
+    });
+    expect(readFileSync(fixture.statePath, "utf8")).toContain("Phase: commit policy fix required");
   });
 
   it("rejects repository and worktree paths that do not match the active runtime", async () => {
     const fixture = makeFixture();
     commit(fixture.worktreePath, "ticket.txt", "ticket\n", "ticket");
 
-    const result = await runCli("landing.synchronize", {
+    const result = await runCli("landing.rebase.check", {
       state_path: fixture.statePath,
       repository_path: fixture.repositoryPath,
       worktree_path: fixture.repositoryPath,
       ticket: "07",
-      remote_sync_argv: null,
       completed_at: "2026-09-19T02:01:00Z",
     });
 
@@ -428,8 +869,9 @@ ${JSON.stringify(
     ]);
   });
 
-  it("fails closed when serialized state is locked by a live caller", async () => {
+  it("fails closed when run state is locked by a live caller", async () => {
     const fixture = makeFixture();
+    commit(fixture.worktreePath, "ticket.txt", "ticket\n", "ticket");
     writeFileSync(
       `${fixture.statePath}.state-lock`,
       `${JSON.stringify({
@@ -439,21 +881,14 @@ ${JSON.stringify(
       })}\n`,
     );
 
-    const result = await runCli("landing.synchronize", {
-      state_path: fixture.statePath,
-      repository_path: fixture.repositoryPath,
-      worktree_path: fixture.worktreePath,
-      ticket: "07",
-      remote_sync_argv: null,
-      completed_at: "2026-09-19T02:01:00Z",
-    });
+    const result = await rebaseCheck(fixture);
 
     expect(result.exitCode).toBe(1);
     expect(result.stdout.errors).toEqual([
       {
         code: "landing.state_busy",
         message:
-          "Could not update serialized finalization state: Run state is being updated by another process.",
+          "Could not update ticket integration state: Run state is being updated by another process.",
         remediation: "Verify RESUME.md is writable, then retry the same operation.",
       },
     ]);
@@ -491,13 +926,12 @@ ${JSON.stringify(
     const fixture = makeFixture(contaminated);
     commit(fixture.worktreePath, "ticket.txt", "ticket\n", "ticket", contaminated);
     const result = await runCli(
-      "landing.synchronize",
+      "landing.rebase.check",
       {
         state_path: fixture.statePath,
         repository_path: fixture.repositoryPath,
         worktree_path: fixture.worktreePath,
         ticket: "07",
-        remote_sync_argv: null,
         completed_at: "2026-09-19T02:02:00Z",
       },
       contaminated,
@@ -515,7 +949,7 @@ ${JSON.stringify(
     );
   });
 
-  it("runs only the remote synchronization command required by repository policy", async () => {
+  it("runs the persisted repository synchronization command before the ancestor check", async () => {
     const fixture = makeFixture();
     commit(fixture.worktreePath, "ticket.txt", "ticket\n", "ticket");
     const marker = join(fixture.root, "remote-command-ran");
@@ -532,341 +966,107 @@ ${JSON.stringify(
       ),
     );
 
-    const missing = await runCli("landing.synchronize", {
-      state_path: fixture.statePath,
-      repository_path: fixture.repositoryPath,
-      worktree_path: fixture.worktreePath,
-      ticket: "07",
-      remote_sync_argv: null,
-      completed_at: "2026-09-19T02:02:00Z",
-    });
-    expect(missing.exitCode).toBe(1);
-    expect(missing.stdout.errors).toEqual([
-      {
-        code: "landing.remote_policy_mismatch",
-        message: "Repository synchronization policy requires an exact remote command.",
-        remediation:
-          "Pass the argument array authorized by repository instructions or explicit run policy.",
-      },
-    ]);
+    const result = await rebaseCheck(fixture);
 
-    const arbitrary = await runCli("landing.synchronize", {
-      state_path: fixture.statePath,
-      repository_path: fixture.repositoryPath,
-      worktree_path: fixture.worktreePath,
-      ticket: "07",
-      remote_sync_argv: [process.execPath, "-e", "process.exit(0)"],
-      completed_at: "2026-09-19T02:03:00Z",
-    });
-    expect(arbitrary.exitCode).toBe(1);
-    expect(arbitrary.stdout.errors).toEqual([
-      {
-        code: "landing.remote_policy_mismatch",
-        message: "Remote synchronization command does not match persisted repository policy.",
-        remediation: "Pass the exact remote_sync_argv persisted in Repository policy.",
-      },
-    ]);
-    expect(existsSync(marker)).toBe(false);
-
-    const synchronized = await runCli("landing.synchronize", {
-      state_path: fixture.statePath,
-      repository_path: fixture.repositoryPath,
-      worktree_path: fixture.worktreePath,
-      ticket: "07",
-      remote_sync_argv: authorizedCommand,
-      completed_at: "2026-09-19T02:04:00Z",
-    });
-    expect(synchronized.exitCode).toBe(0);
+    expect(result.exitCode).toBe(0);
     expect(readFileSync(marker, "utf8")).toBe("ok");
-    expect((synchronized.stdout.result as { remote_sync_argv: string[] }).remote_sync_argv).toEqual(
-      authorizedCommand,
-    );
-  });
-
-  it("records textual conflict resolution as coordinator work", async () => {
-    const fixture = makeFixture();
-    commit(fixture.worktreePath, "base.txt", "ticket change\n", "ticket change");
-    commit(fixture.repositoryPath, "base.txt", "base change\n", "base change");
-
-    const synchronized = await runCli("landing.synchronize", {
-      state_path: fixture.statePath,
-      repository_path: fixture.repositoryPath,
-      worktree_path: fixture.worktreePath,
-      ticket: "07",
-      remote_sync_argv: null,
-      completed_at: "2026-09-19T02:04:00Z",
-    });
-    expect((synchronized.stdout.result as { action: string }).action).toBe("resolve-conflicts");
-    expect((synchronized.stdout.result as { conflicts: string[] }).conflicts).toEqual(["base.txt"]);
-
-    writeFileSync(join(fixture.worktreePath, "base.txt"), "base and ticket\n");
-    expect(spawnGit(["add", "base.txt"], { cwd: fixture.worktreePath }).exitCode).toBe(0);
-    expect(
-      spawnGit(["-c", "core.editor=true", "rebase", "--continue"], {
-        cwd: fixture.worktreePath,
-      }).exitCode,
-    ).toBe(0);
-
-    const recorded = await runCli("landing.conflict.record", {
-      state_path: fixture.statePath,
-      ticket: "07",
-      classification: "textual",
-      decision: null,
-      user_authorized: false,
-      completed_at: "2026-09-19T02:05:00Z",
-    });
-    const base = spawnGit(["rev-parse", "main"], { cwd: fixture.repositoryPath }).stdout.trim();
-    const tip = spawnGit(["rev-parse", "HEAD"], { cwd: fixture.worktreePath }).stdout.trim();
-    expect(recorded.exitCode).toBe(0);
-    expect(recorded.stdout.result).toEqual({
-      ticket: "07",
-      classification: "textual",
+    expect(result.stdout.result).toMatchObject({
       action: "run-gates",
-      phase: "gates",
-      base_sha: base,
-      ticket_sha: tip,
-      review_range: `${base}..${tip}`,
-      commit_count: 1,
-      decision: null,
-      user_authorized: false,
+      remote_synchronized: true,
     });
-    const settledState = readFileSync(fixture.statePath, "utf8");
-    expect(settledState).toContain("Phase: gates");
+  });
 
-    const stale = await runCli("landing.conflict.record", {
-      state_path: fixture.statePath,
-      ticket: "07",
-      classification: "substantive",
-      decision: null,
-      user_authorized: false,
-      completed_at: "2026-09-19T02:06:00Z",
-    });
-    expect(stale.exitCode).toBe(1);
-    expect(stale.stdout.errors).toEqual([
-      {
-        code: "landing.conflict_not_pending",
-        message: "Ticket `07` has no pending serialized conflict to classify.",
-        remediation:
-          "Synchronize the ticket and resolve its recorded conflict before classifying it.",
-      },
+  it("lands one of two concurrent ready tickets and bounces the other to a rebase", async () => {
+    const fixture = makeFixture();
+    const other = addTicket(fixture, "08");
+    commit(fixture.worktreePath, "seven.txt", "seven\n", "seven");
+    commit(other.worktreePath, "eight.txt", "eight\n", "eight");
+    expect((await rebaseCheck(fixture)).exitCode).toBe(0);
+    expect((await rebaseCheck(fixture, other)).exitCode).toBe(0);
+    await markReadyToLand(fixture);
+    await markReadyToLand(fixture, other);
+
+    const outcomes = await Promise.all([
+      spawnCli("landing.complete", landingInput(fixture)),
+      spawnCli("landing.complete", landingInput(fixture, other)),
     ]);
-    expect(readFileSync(fixture.statePath, "utf8")).toBe(settledState);
-  });
 
-  it("does not classify a resolved conflict while another caller owns the state lock", async () => {
-    const fixture = makeFixture();
-    commit(fixture.worktreePath, "base.txt", "ticket change\n", "ticket change");
-    commit(fixture.repositoryPath, "base.txt", "base change\n", "base change");
-    expect(
-      (
-        await runCli("landing.synchronize", {
-          state_path: fixture.statePath,
-          repository_path: fixture.repositoryPath,
-          worktree_path: fixture.worktreePath,
-          ticket: "07",
-          remote_sync_argv: null,
-          completed_at: "2026-09-19T02:05:00Z",
-        })
-      ).exitCode,
-    ).toBe(0);
-    writeFileSync(join(fixture.worktreePath, "base.txt"), "resolved\n");
-    expect(spawnGit(["add", "base.txt"], { cwd: fixture.worktreePath }).exitCode).toBe(0);
-    expect(
-      spawnGit(["-c", "core.editor=true", "rebase", "--continue"], {
-        cwd: fixture.worktreePath,
-      }).exitCode,
-    ).toBe(0);
-    const stateBefore = readFileSync(fixture.statePath, "utf8");
-    writeFileSync(
-      `${fixture.statePath}.state-lock`,
-      `${JSON.stringify({
-        pid: process.pid,
-        token: "conflict-owner",
-        created_at: "2026-09-19T02:05:00Z",
-      })}\n`,
+    expect(outcomes.map((outcome) => outcome.exitCode)).toEqual([0, 0]);
+    const actions = outcomes
+      .map((outcome) => (outcome.stdout.result as { action: string }).action)
+      .toSorted();
+    expect(actions).toEqual(["rebase", "schedule"]);
+    const landedIndex = outcomes.findIndex(
+      (outcome) => (outcome.stdout.result as { action: string }).action === "schedule",
     );
-
-    const result = await runCli("landing.conflict.record", {
-      state_path: fixture.statePath,
-      ticket: "07",
-      classification: "textual",
-      decision: null,
-      user_authorized: false,
-      completed_at: "2026-09-19T02:06:00Z",
+    const bounced = landedIndex === 0 ? "08" : "07";
+    const landed = landedIndex === 0 ? "07" : "08";
+    const landedTip = (outcomes[landedIndex]!.stdout.result as { landed_tip: string }).landed_tip;
+    expect(spawnGit(["rev-parse", "main"], { cwd: fixture.repositoryPath }).stdout.trim()).toBe(
+      landedTip,
+    );
+    expect(integrationOf(fixture, bounced)).toMatchObject({
+      phase: "rebase-required",
+      base_sha: landedTip,
     });
-
-    expect(result.exitCode).toBe(1);
-    expect(result.stdout.errors).toEqual([
-      {
-        code: "landing.state_busy",
-        message:
-          "Could not update serialized finalization state: Run state is being updated by another process.",
-        remediation: "Verify RESUME.md is writable, then retry the same operation.",
-      },
-    ]);
-    expect(readFileSync(fixture.statePath, "utf8")).toBe(stateBefore);
-  });
-
-  it("waits for and records user authority on scope decisions", async () => {
-    const fixture = makeFixture();
-    commit(fixture.worktreePath, "base.txt", "ticket change\n", "ticket change");
-    commit(fixture.repositoryPath, "base.txt", "base change\n", "base change");
-    expect(
-      (
-        await runCli("landing.synchronize", {
-          state_path: fixture.statePath,
-          repository_path: fixture.repositoryPath,
-          worktree_path: fixture.worktreePath,
-          ticket: "07",
-          remote_sync_argv: null,
-          completed_at: "2026-09-19T02:05:00Z",
-        })
-      ).exitCode,
-    ).toBe(0);
-    writeFileSync(join(fixture.worktreePath, "base.txt"), "authorized scope\n");
-    expect(spawnGit(["add", "base.txt"], { cwd: fixture.worktreePath }).exitCode).toBe(0);
-    expect(
-      spawnGit(["-c", "core.editor=true", "rebase", "--continue"], {
-        cwd: fixture.worktreePath,
-      }).exitCode,
-    ).toBe(0);
-
-    const waiting = await runCli("landing.conflict.record", {
-      state_path: fixture.statePath,
-      ticket: "07",
-      classification: "scope",
-      decision: null,
-      user_authorized: false,
-      completed_at: "2026-09-19T02:06:00Z",
-    });
-    expect(waiting.exitCode).toBe(0);
-    expect((waiting.stdout.result as { action: string }).action).toBe("await-user");
-    expect(
-      readFileSync(fixture.statePath, "utf8").includes("scope decision (user authorized)"),
-    ).toBe(false);
-
-    const authorized = await runCli("landing.conflict.record", {
-      state_path: fixture.statePath,
-      ticket: "07",
-      classification: "scope",
-      decision: "Keep the combined behavior and narrow ticket 08 to verification.",
-      user_authorized: true,
-      completed_at: "2026-09-19T02:07:00Z",
-    });
-    expect(authorized.exitCode).toBe(0);
-    expect((authorized.stdout.result as { action: string }).action).toBe("run-gates");
+    expect(integrationOf(fixture, landed)).toBe(undefined);
     expect(readFileSync(fixture.statePath, "utf8")).toContain(
-      "ticket 07 scope decision (user authorized): Keep the combined behavior and narrow ticket 08 to verification.",
+      `| ${landed} | pi | openai/test | high | 0 | - | landed | ${landedTip} |`,
     );
-  });
+  }, 30_000);
 
-  it("returns substantive conflict adaptation to the bound implementor", async () => {
-    const fixture = makeFixture();
-    commit(fixture.worktreePath, "base.txt", "ticket change\n", "ticket change");
-    commit(fixture.repositoryPath, "base.txt", "base change\n", "base change");
-    expect(
-      (
-        await runCli("landing.synchronize", {
-          state_path: fixture.statePath,
-          repository_path: fixture.repositoryPath,
-          worktree_path: fixture.worktreePath,
-          ticket: "07",
-          remote_sync_argv: null,
-          completed_at: "2026-09-19T02:06:00Z",
-        })
-      ).exitCode,
-    ).toBe(0);
-    writeFileSync(join(fixture.worktreePath, "base.txt"), "adapted behavior\n");
-    expect(spawnGit(["add", "base.txt"], { cwd: fixture.worktreePath }).exitCode).toBe(0);
-    expect(
-      spawnGit(["-c", "core.editor=true", "rebase", "--continue"], {
-        cwd: fixture.worktreePath,
-      }).exitCode,
-    ).toBe(0);
-
-    const recorded = await runCli("landing.conflict.record", {
-      state_path: fixture.statePath,
-      ticket: "07",
-      classification: "substantive",
-      decision: null,
-      user_authorized: false,
-      completed_at: "2026-09-19T02:07:00Z",
-    });
-
-    expect(recorded.exitCode).toBe(0);
-    expect((recorded.stdout.result as { action: string }).action).toBe("fix");
-    expect((recorded.stdout.result as { phase: string }).phase).toBe("fixing");
-    expect(readFileSync(fixture.statePath, "utf8")).toContain(
-      "Phase: substantive conflict adaptation requires implementor fix",
-    );
-  });
-
-  it("recovers a refused fast-forward through synchronization, re-review, and safe cleanup", async () => {
+  it("times out while another process holds the shared land lock", async () => {
     const fixture = makeFixture();
     commit(fixture.worktreePath, "ticket.txt", "ticket\n", "ticket");
-    expect(
-      (
-        await runCli("landing.synchronize", {
-          state_path: fixture.statePath,
-          repository_path: fixture.repositoryPath,
-          worktree_path: fixture.worktreePath,
-          ticket: "07",
-          remote_sync_argv: null,
-          completed_at: "2026-09-19T02:08:00Z",
-        })
-      ).exitCode,
-    ).toBe(0);
+    expect((await rebaseCheck(fixture)).exitCode).toBe(0);
     await markReadyToLand(fixture);
-    commit(fixture.repositoryPath, "concurrent.txt", "concurrent\n", "concurrent landing");
+    const baseBefore = spawnGit(["rev-parse", "main"], {
+      cwd: fixture.repositoryPath,
+    }).stdout.trim();
+    const holder = await holdLandLock(gitCommonLock(fixture));
+    try {
+      const result = await runCli(
+        "landing.complete",
+        landingInput(fixture, primary(fixture), { lock_wait_seconds: 1 }),
+      );
 
-    const refused = await runCli("landing.complete", {
-      state_path: fixture.statePath,
-      repository_path: fixture.repositoryPath,
-      worktree_path: fixture.worktreePath,
-      evidence_path: join(fixture.root, "run", "reviews", "07-landed.json"),
-      ticket: "07",
-      cleanup_argv: null,
-      completed_at: "2026-09-19T02:09:00Z",
-    });
-    expect(refused.exitCode).toBe(0);
-    expect((refused.stdout.result as { action: string }).action).toBe("resynchronize");
-    expect(existsSync(fixture.worktreePath)).toBe(true);
-    expect(readFileSync(fixture.statePath, "utf8")).toContain('"phase": "resynchronize"');
-
-    const synchronized = await runCli("landing.synchronize", {
-      state_path: fixture.statePath,
-      repository_path: fixture.repositoryPath,
-      worktree_path: fixture.worktreePath,
-      ticket: "07",
-      remote_sync_argv: null,
-      completed_at: "2026-09-19T02:10:00Z",
-    });
-    expect(synchronized.exitCode).toBe(0);
-    expect((synchronized.stdout.result as { cycle: number }).cycle).toBe(1);
-    const reviews = await markReadyToLand(fixture, 1);
-    const landedTip = spawnGit(["rev-parse", "HEAD"], { cwd: fixture.worktreePath }).stdout.trim();
-
-    const closeRuntime = await runCli(
-      "landing.complete",
-      {
-        state_path: fixture.statePath,
-        repository_path: fixture.repositoryPath,
-        worktree_path: fixture.worktreePath,
-        evidence_path: join(fixture.root, "run", "reviews", "07-landed.json"),
-        ticket: "07",
-        cleanup_argv: null,
-        completed_at: "2026-09-19T02:11:00Z",
-      },
-      { ...HERDR_ENV, HERDR_TEST_LIVE_PANES: JSON.stringify(["work:p7"]) },
+      expect(result.exitCode).toBe(1);
+      expect(result.stdout.errors).toEqual([
+        {
+          code: "landing.lock_timeout",
+          message:
+            "Timed out waiting for the shared land-local.lock; another landing appears wedged.",
+          remediation: "Investigate the process holding the lock before retrying the same landing.",
+        },
+      ]);
+    } finally {
+      holder.kill();
+      await holder.exited;
+    }
+    expect(spawnGit(["rev-parse", "main"], { cwd: fixture.repositoryPath }).stdout.trim()).toBe(
+      baseBefore,
     );
+    expect(integrationOf(fixture)?.phase).toBe("ready-to-land");
+  }, 20_000);
+
+  it("resumes an already-landed ticket without taking the land lock", async () => {
+    const fixture = makeFixture();
+    const ticketTip = commit(fixture.worktreePath, "ticket.txt", "ticket\n", "ticket");
+    expect((await rebaseCheck(fixture)).exitCode).toBe(0);
+    const reviews = await markReadyToLand(fixture);
+
+    const closeRuntime = await runCli("landing.complete", landingInput(fixture), {
+      ...HERDR_ENV,
+      HERDR_TEST_LIVE_PANES: JSON.stringify(["work:p7"]),
+    });
     expect(closeRuntime.exitCode).toBe(0);
     expect(closeRuntime.stdout.result).toEqual({
       ticket: "07",
       action: "close-runtime",
       phase: "ready-to-land",
-      base_sha: landedTip,
-      ticket_sha: landedTip,
-      cycle: 1,
+      base_sha: ticketTip,
+      ticket_sha: ticketTip,
+      cycle: 0,
       runtime_closed: false,
       pane_id: "work:p7",
       close: { command: "herdr", args: ["pane", "close", "work:p7"] },
@@ -874,23 +1074,25 @@ ${JSON.stringify(
     expect(existsSync(fixture.worktreePath)).toBe(true);
     expect(existsSync(join(fixture.root, "run", "reviews", "07-landed.json"))).toBe(false);
 
-    const landed = await runCli("landing.complete", {
-      state_path: fixture.statePath,
-      repository_path: fixture.repositoryPath,
-      worktree_path: fixture.worktreePath,
-      evidence_path: join(fixture.root, "run", "reviews", "07-landed.json"),
-      ticket: "07",
-      cleanup_argv: null,
-      completed_at: "2026-09-19T02:12:00Z",
-    });
+    const holder = await holdLandLock(gitCommonLock(fixture));
+    let landed: CliResult;
+    try {
+      landed = await runCli(
+        "landing.complete",
+        landingInput(fixture, primary(fixture), { lock_wait_seconds: 0 }),
+      );
+    } finally {
+      holder.kill();
+      await holder.exited;
+    }
 
     expect(landed.exitCode).toBe(0);
     expect(landed.stdout.result).toEqual({
       ticket: "07",
       action: "schedule",
       phase: "landed",
-      landed_tip: landedTip,
-      base_sha: landedTip,
+      landed_tip: ticketTip,
+      base_sha: ticketTip,
       review_evidence: {
         standards: reviews.standards,
         spec: reviews.spec,
@@ -912,17 +1114,18 @@ ${JSON.stringify(
       }).exitCode,
     ).toBe(0);
     const state = readFileSync(fixture.statePath, "utf8");
-    expect(state).toContain(`| 07 | pi | openai/test | high | 0 | - | landed | ${landedTip} |`);
-    expect(state).toContain(`- ${fixture.branch} (${landedTip})`);
-    expect(state.includes("## Serialized finalization")).toBe(false);
+    expect(state).toContain(`| 07 | pi | openai/test | high | 0 | - | landed | ${ticketTip} |`);
+    expect(state).toContain(`- ${fixture.branch} (${ticketTip})`);
+    expect(state).toContain(`Base sha:        ${ticketTip}`);
     expect(state.includes("### 07")).toBe(false);
     expect(
       JSON.parse(readFileSync(join(fixture.root, "run", "reviews", "07-landed.json"), "utf8")),
     ).toEqual({
       schema_version: 1,
       ticket: "07",
-      landed_tip: landedTip,
-      base_sha: landedTip,
+      landed_tip: ticketTip,
+      base_sha: ticketTip,
+      integration_cycle: 0,
       branch: fixture.branch,
       review_evidence: {
         standards: reviews.standards,
@@ -936,105 +1139,36 @@ ${JSON.stringify(
         worktree_removed: true,
         branch_retained: true,
       },
-      completed_at: "2026-09-19T02:12:00Z",
+      completed_at: "2026-09-19T02:40:00Z",
     });
-  }, 15_000);
+  }, 20_000);
 
-  it("recovers when the base advances between the ancestry check and fast-forward", async () => {
+  it("refuses to land into a dirty base checkout", async () => {
     const fixture = makeFixture();
     commit(fixture.worktreePath, "ticket.txt", "ticket\n", "ticket");
-    expect(
-      (
-        await runCli("landing.synchronize", {
-          state_path: fixture.statePath,
-          repository_path: fixture.repositoryPath,
-          worktree_path: fixture.worktreePath,
-          ticket: "07",
-          remote_sync_argv: null,
-          completed_at: "2026-09-19T02:11:00Z",
-        })
-      ).exitCode,
-    ).toBe(0);
+    expect((await rebaseCheck(fixture)).exitCode).toBe(0);
     await markReadyToLand(fixture);
+    writeFileSync(join(fixture.repositoryPath, "local.txt"), "local\n");
 
-    const bin = join(fixture.root, "race-bin");
-    const marker = join(fixture.root, "race-injected");
-    const realGit = Bun.which("git");
-    expect(typeof realGit).toBe("string");
-    mkdirSync(bin);
-    const wrapper = join(bin, "git");
-    writeFileSync(
-      wrapper,
-      `#!${process.execPath}
-const { spawnSync } = require("node:child_process");
-const { existsSync, writeFileSync } = require("node:fs");
-const args = process.argv.slice(2);
-const gitArgs = args[0] === "-c" && args[1] === "commit.gpgsign=false" ? args.slice(2) : args;
-const env = { ...process.env };
-for (const key of ${JSON.stringify(GIT_ENV_KEYS)}) delete env[key];
-if (gitArgs[0] === "merge" && gitArgs[1] === "--ff-only" && !existsSync(env.RACE_MARKER)) {
-  writeFileSync(env.RACE_MARKER, "injected\\n");
-  writeFileSync("race.txt", "race\\n");
-  spawnSync(env.REAL_GIT, ["-c", "commit.gpgsign=false", "add", "race.txt"], { env, stdio: "inherit" });
-  spawnSync(env.REAL_GIT, ["-c", "commit.gpgsign=false", "commit", "-q", "-m", "race landing"], { env, stdio: "inherit" });
-}
-const result = spawnSync(env.REAL_GIT, args, { env, stdio: "inherit" });
-process.exit(result.status ?? 1);
-`,
-    );
-    chmodSync(wrapper, 0o755);
+    const result = await runCli("landing.complete", landingInput(fixture));
 
-    const result = await runCli(
-      "landing.complete",
-      {
-        state_path: fixture.statePath,
-        repository_path: fixture.repositoryPath,
-        worktree_path: fixture.worktreePath,
-        evidence_path: join(fixture.root, "run", "reviews", "07-landed.json"),
-        ticket: "07",
-        cleanup_argv: null,
-        completed_at: "2026-09-19T02:12:00Z",
-      },
-      {
-        ...process.env,
-        PATH: `${bin}:${process.env.PATH ?? ""}`,
-        REAL_GIT: realGit!,
-        RACE_MARKER: marker,
-      },
-    );
-
-    expect(result.exitCode).toBe(0);
-    expect((result.stdout.result as { action: string }).action).toBe("resynchronize");
-    expect(existsSync(fixture.worktreePath)).toBe(true);
-    expect(readFileSync(fixture.statePath, "utf8")).toContain('"phase": "resynchronize"');
+    expect(result.exitCode).toBe(1);
+    expect(result.stdout).toMatchObject({ errors: [{ code: "landing.base_dirty" }] });
+    expect(integrationOf(fixture)?.phase).toBe("ready-to-land");
   });
 
   it("rejects landed evidence paths outside the run directory", async () => {
     const fixture = makeFixture();
     commit(fixture.worktreePath, "ticket.txt", "ticket\n", "ticket");
-    expect(
-      (
-        await runCli("landing.synchronize", {
-          state_path: fixture.statePath,
-          repository_path: fixture.repositoryPath,
-          worktree_path: fixture.worktreePath,
-          ticket: "07",
-          remote_sync_argv: null,
-          completed_at: "2026-09-19T02:12:00Z",
-        })
-      ).exitCode,
-    ).toBe(0);
+    expect((await rebaseCheck(fixture)).exitCode).toBe(0);
     await markReadyToLand(fixture);
 
-    const result = await runCli("landing.complete", {
-      state_path: fixture.statePath,
-      repository_path: fixture.repositoryPath,
-      worktree_path: fixture.worktreePath,
-      evidence_path: join(fixture.root, "outside-landed.json"),
-      ticket: "07",
-      cleanup_argv: null,
-      completed_at: "2026-09-19T02:13:00Z",
-    });
+    const result = await runCli(
+      "landing.complete",
+      landingInput(fixture, primary(fixture), {
+        evidence_path: join(fixture.root, "outside-landed.json"),
+      }),
+    );
 
     expect(result.exitCode).toBe(1);
     expect(result.stdout.errors).toEqual([
@@ -1050,47 +1184,19 @@ process.exit(result.status ?? 1);
   it("refuses cleanup while the landed worktree is dirty", async () => {
     const fixture = makeFixture();
     commit(fixture.worktreePath, "ticket.txt", "ticket\n", "ticket");
-    expect(
-      (
-        await runCli("landing.synchronize", {
-          state_path: fixture.statePath,
-          repository_path: fixture.repositoryPath,
-          worktree_path: fixture.worktreePath,
-          ticket: "07",
-          remote_sync_argv: null,
-          completed_at: "2026-09-19T02:12:00Z",
-        })
-      ).exitCode,
-    ).toBe(0);
+    expect((await rebaseCheck(fixture)).exitCode).toBe(0);
     await markReadyToLand(fixture);
     expect(
       (
-        await runCli(
-          "landing.complete",
-          {
-            state_path: fixture.statePath,
-            repository_path: fixture.repositoryPath,
-            worktree_path: fixture.worktreePath,
-            evidence_path: join(fixture.root, "run", "reviews", "07-landed.json"),
-            ticket: "07",
-            cleanup_argv: null,
-            completed_at: "2026-09-19T02:13:00Z",
-          },
-          { ...HERDR_ENV, HERDR_TEST_LIVE_PANES: JSON.stringify(["work:p7"]) },
-        )
+        await runCli("landing.complete", landingInput(fixture), {
+          ...HERDR_ENV,
+          HERDR_TEST_LIVE_PANES: JSON.stringify(["work:p7"]),
+        })
       ).exitCode,
     ).toBe(0);
     writeFileSync(join(fixture.worktreePath, "dirty.txt"), "dirty\n");
 
-    const result = await runCli("landing.complete", {
-      state_path: fixture.statePath,
-      repository_path: fixture.repositoryPath,
-      worktree_path: fixture.worktreePath,
-      evidence_path: join(fixture.root, "run", "reviews", "07-landed.json"),
-      ticket: "07",
-      cleanup_argv: null,
-      completed_at: "2026-09-19T02:14:00Z",
-    });
+    const result = await runCli("landing.complete", landingInput(fixture));
 
     expect(result.exitCode).toBe(1);
     expect(result.stdout.errors).toEqual([
@@ -1113,44 +1219,18 @@ process.exit(result.status ?? 1);
         '"cleanup": "repository"',
       ),
     );
-    expect(
-      (
-        await runCli("landing.synchronize", {
-          state_path: fixture.statePath,
-          repository_path: fixture.repositoryPath,
-          worktree_path: fixture.worktreePath,
-          ticket: "07",
-          remote_sync_argv: null,
-          completed_at: "2026-09-19T02:12:00Z",
-        })
-      ).exitCode,
-    ).toBe(0);
+    expect((await rebaseCheck(fixture)).exitCode).toBe(0);
     await markReadyToLand(fixture);
 
-    const result = await runCli("landing.complete", {
-      state_path: fixture.statePath,
-      repository_path: fixture.repositoryPath,
-      worktree_path: fixture.worktreePath,
-      evidence_path: join(fixture.root, "run", "reviews", "07-landed.json"),
-      ticket: "07",
-      cleanup_argv: ["git", "worktree", "remove", fixture.worktreePath],
-      completed_at: "2026-09-19T02:13:00Z",
-    });
+    const result = await runCli(
+      "landing.complete",
+      landingInput(fixture, primary(fixture), {
+        cleanup_argv: ["git", "worktree", "remove", fixture.worktreePath],
+      }),
+    );
 
     expect(result.exitCode).toBe(0);
-    expect(
-      (
-        result.stdout.result as {
-          cleanup: {
-            kind: string;
-            argv: string[];
-            runtime_closed: boolean;
-            worktree_removed: boolean;
-            branch_retained: boolean;
-          };
-        }
-      ).cleanup,
-    ).toEqual({
+    expect((result.stdout.result as { cleanup: Record<string, unknown> }).cleanup).toEqual({
       kind: "repository",
       argv: ["git", "worktree", "remove", fixture.worktreePath],
       runtime_closed: true,
@@ -1164,210 +1244,30 @@ process.exit(result.status ?? 1);
       }).exitCode,
     ).toBe(0);
   });
+});
 
-  it("enforces append-only fix commits when repository policy is silent", async () => {
-    const appended = makeFixture();
-    const reviewedTip = commit(appended.worktreePath, "ticket.txt", "ticket\n", "ticket");
-    expect(
-      (
-        await runCli("landing.synchronize", {
-          state_path: appended.statePath,
-          repository_path: appended.repositoryPath,
-          worktree_path: appended.worktreePath,
-          ticket: "07",
-          remote_sync_argv: null,
-          completed_at: "2026-09-19T02:12:00Z",
-        })
-      ).exitCode,
-    ).toBe(0);
-    writeFileSync(
-      appended.statePath,
-      readFileSync(appended.statePath, "utf8")
-        .replace('"phase": "gates"', '"phase": "fixing"')
-        .replace('"previous_ticket_sha": null', `"previous_ticket_sha": "${reviewedTip}"`),
-    );
-    commit(appended.worktreePath, "fix.txt", "fix\n", "append fix");
-    const appendResult = await runCli("landing.synchronize", {
-      state_path: appended.statePath,
-      repository_path: appended.repositoryPath,
-      worktree_path: appended.worktreePath,
-      ticket: "07",
-      remote_sync_argv: null,
-      completed_at: "2026-09-19T02:13:00Z",
-    });
-    expect(appendResult.exitCode).toBe(0);
-    expect((appendResult.stdout.result as { commit_count: number }).commit_count).toBe(2);
-
-    const amended = makeFixture();
-    const originalTip = commit(amended.worktreePath, "ticket.txt", "ticket\n", "ticket");
-    expect(
-      (
-        await runCli("landing.synchronize", {
-          state_path: amended.statePath,
-          repository_path: amended.repositoryPath,
-          worktree_path: amended.worktreePath,
-          ticket: "07",
-          remote_sync_argv: null,
-          completed_at: "2026-09-19T02:14:00Z",
-        })
-      ).exitCode,
-    ).toBe(0);
-    writeFileSync(
-      amended.statePath,
-      readFileSync(amended.statePath, "utf8")
-        .replace('"phase": "gates"', '"phase": "fixing"')
-        .replace('"previous_ticket_sha": null', `"previous_ticket_sha": "${originalTip}"`),
-    );
-    writeFileSync(join(amended.worktreePath, "ticket.txt"), "amended\n");
-    expect(spawnGit(["add", "ticket.txt"], { cwd: amended.worktreePath }).exitCode).toBe(0);
-    expect(
-      spawnGit(["commit", "-q", "--amend", "--no-edit"], {
-        cwd: amended.worktreePath,
-      }).exitCode,
-    ).toBe(0);
-    const amendResult = await runCli("landing.synchronize", {
-      state_path: amended.statePath,
-      repository_path: amended.repositoryPath,
-      worktree_path: amended.worktreePath,
-      ticket: "07",
-      remote_sync_argv: null,
-      completed_at: "2026-09-19T02:15:00Z",
-    });
-    expect(amendResult.exitCode).toBe(1);
-    expect(amendResult.stdout.errors).toEqual([
-      {
-        code: "landing.fix_policy_violated",
-        message: "The fix round did not append a commit to the previously reviewed ticket tip.",
-        remediation:
-          "Return the ticket to its bound implementor and apply the persisted append fix policy.",
-      },
-    ]);
-    const rejectedState = readFileSync(amended.statePath, "utf8");
-    expect(rejectedState.includes('"phase": "fixing"')).toBe(true);
-    expect(rejectedState.includes("Phase: commit policy fix required")).toBe(true);
-  });
-
-  it("accepts explicit amend and squash fix policy overrides", async () => {
-    const amended = makeFixture();
-    writeFileSync(
-      amended.statePath,
-      readFileSync(amended.statePath, "utf8").replace('"fixes": "append"', '"fixes": "amend"'),
-    );
-    const reviewedTip = commit(amended.worktreePath, "ticket.txt", "ticket\n", "ticket");
-    expect(
-      (
-        await runCli("landing.synchronize", {
-          state_path: amended.statePath,
-          repository_path: amended.repositoryPath,
-          worktree_path: amended.worktreePath,
-          ticket: "07",
-          remote_sync_argv: null,
-          completed_at: "2026-09-19T02:16:00Z",
-        })
-      ).exitCode,
-    ).toBe(0);
-    writeFileSync(
-      amended.statePath,
-      readFileSync(amended.statePath, "utf8")
-        .replace('"phase": "gates"', '"phase": "fixing"')
-        .replace('"previous_ticket_sha": null', `"previous_ticket_sha": "${reviewedTip}"`),
-    );
-    writeFileSync(join(amended.worktreePath, "ticket.txt"), "amended\n");
-    expect(spawnGit(["add", "ticket.txt"], { cwd: amended.worktreePath }).exitCode).toBe(0);
-    expect(
-      spawnGit(["commit", "-q", "--amend", "--no-edit"], { cwd: amended.worktreePath }).exitCode,
-    ).toBe(0);
-    const amendResult = await runCli("landing.synchronize", {
-      state_path: amended.statePath,
-      repository_path: amended.repositoryPath,
-      worktree_path: amended.worktreePath,
-      ticket: "07",
-      remote_sync_argv: null,
-      completed_at: "2026-09-19T02:17:00Z",
-    });
-    expect(amendResult.exitCode).toBe(0);
-    expect(amendResult.stdout.result).toMatchObject({
-      action: "run-gates",
-      commit_count: 1,
-      commit_policy: { commits: "multiple", fixes: "amend" },
-    });
-
-    const squashed = makeFixture();
-    writeFileSync(
-      squashed.statePath,
-      readFileSync(squashed.statePath, "utf8")
-        .replace('"commits": "multiple"', '"commits": "single"')
-        .replace('"fixes": "append"', '"fixes": "squash"'),
-    );
-    commit(squashed.worktreePath, "one.txt", "one\n", "one");
-    commit(squashed.worktreePath, "two.txt", "two\n", "two");
-    const shapeFix = await runCli("landing.synchronize", {
-      state_path: squashed.statePath,
-      repository_path: squashed.repositoryPath,
-      worktree_path: squashed.worktreePath,
-      ticket: "07",
-      remote_sync_argv: null,
-      completed_at: "2026-09-19T02:18:00Z",
-    });
-    expect(shapeFix.exitCode).toBe(0);
-    expect((shapeFix.stdout.result as { action: string }).action).toBe("fix-commits");
-    expect(spawnGit(["reset", "--soft", "main"], { cwd: squashed.worktreePath }).exitCode).toBe(0);
-    expect(
-      spawnGit(["commit", "-q", "-m", "squashed fix"], { cwd: squashed.worktreePath }).exitCode,
-    ).toBe(0);
-    const squashResult = await runCli("landing.synchronize", {
-      state_path: squashed.statePath,
-      repository_path: squashed.repositoryPath,
-      worktree_path: squashed.worktreePath,
-      ticket: "07",
-      remote_sync_argv: null,
-      completed_at: "2026-09-19T02:19:00Z",
-    });
-    expect(squashResult.exitCode).toBe(0);
-    expect(squashResult.stdout.result).toMatchObject({
-      action: "run-gates",
-      commit_count: 1,
-      commit_policy: { commits: "single", fixes: "squash" },
-    });
-  });
-
-  it("returns a fix action when repository commit shape requires one commit", async () => {
+describe("land-locked critical section", () => {
+  it("lands, rejects a dirty base, and reports a required rebase with land-local exit codes", () => {
     const fixture = makeFixture();
-    commit(fixture.worktreePath, "one.txt", "one\n", "one");
-    const ticketTip = commit(fixture.worktreePath, "two.txt", "two\n", "two");
-    writeFileSync(
-      fixture.statePath,
-      readFileSync(fixture.statePath, "utf8").replace(
-        '"commits": "multiple"',
-        '"commits": "single"',
-      ),
+    const ticketTip = commit(fixture.worktreePath, "ticket.txt", "ticket\n", "ticket");
+
+    writeFileSync(join(fixture.repositoryPath, "local.txt"), "local\n");
+    const dirty = runLocked(fixture.repositoryPath, "main", ticketTip);
+    expect(dirty.exitCode).toBe(4);
+    expect(dirty.stdout.split(/\s/u)[0]).toBe("REJECTED:");
+    rmSync(join(fixture.repositoryPath, "local.txt"));
+
+    const landed = runLocked(fixture.repositoryPath, "main", ticketTip);
+    expect(landed.exitCode).toBe(0);
+    expect(landed.stdout.split(/\s/u)[0]).toBe("LANDED:");
+    expect(spawnGit(["rev-parse", "main"], { cwd: fixture.repositoryPath }).stdout.trim()).toBe(
+      ticketTip,
     );
 
-    const result = await runCli("landing.synchronize", {
-      state_path: fixture.statePath,
-      repository_path: fixture.repositoryPath,
-      worktree_path: fixture.worktreePath,
-      ticket: "07",
-      remote_sync_argv: null,
-      completed_at: "2026-09-19T02:04:00Z",
-    });
-
-    const base = spawnGit(["rev-parse", "main"], { cwd: fixture.repositoryPath }).stdout.trim();
-    expect(result.exitCode).toBe(0);
-    expect(result.stdout.result).toEqual({
-      ticket: "07",
-      action: "fix-commits",
-      phase: "fixing",
-      base_branch: "main",
-      base_sha: base,
-      ticket_sha: ticketTip,
-      review_range: `${base}..${ticketTip}`,
-      commit_count: 2,
-      commit_policy: { commits: "single", fixes: "append" },
-      remote_sync_argv: null,
-      conflicts: [],
-      cycle: 0,
-    });
-    expect(readFileSync(fixture.statePath, "utf8")).toContain("Phase: commit policy fix required");
+    commit(fixture.repositoryPath, "landed.txt", "landed\n", "landed");
+    const stale = commit(fixture.worktreePath, "later.txt", "later\n", "later");
+    const behind = runLocked(fixture.repositoryPath, "main", stale);
+    expect(behind.exitCode).toBe(5);
+    expect(behind.stdout.split(/\s/u)[0]).toBe("REBASE_REQUIRED:");
   });
 });

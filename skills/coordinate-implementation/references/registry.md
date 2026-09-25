@@ -20,7 +20,7 @@ Existing copies are left untouched for the user to delete.
 
 ## Run identity
 
-`<run-id>` is the UUID recorded as `Run id:` directly after `Schema version: 1`
+`<run-id>` is the UUID recorded as `Run id:` directly after `Schema version: 2`
 in RESUME.md. New runs record it at creation. A run without one receives a
 fresh UUID on its first locked helper mutation or heartbeat; that backfill is
 the only mutation that adds the line.

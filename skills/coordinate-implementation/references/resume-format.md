@@ -4,7 +4,9 @@
 coordinator or its workers depend on lives here, so a successor session can
 reconstruct any launch line without the conversation that produced it.
 
-The current format is schema version 1. The helper's `state.validate` operation
+The current format is schema version 2. Schema 1, which used a run-wide
+serialized finalization slot, is refused with `state.schema_unsupported`:
+finish such a run with the previous skill version or start a new run. The helper's `state.validate` operation
 validates only the explicit version marker. Snapshot operations additionally
 validate their managed `## Snapshot` JSON record before the coordinator
 interprets the remaining fields. Missing, malformed, duplicate, and unsupported
@@ -12,6 +14,12 @@ versions fail without automatic migration. After that mechanical check, the
 coordinator validates the remaining fields against this template. Fix any
 mismatch by hand. See [helper-cli.md](helper-cli.md#statevalidate) for the JSON
 operation contract.
+
+When you create RESUME.md, omit every helper-managed section: `## Repository
+policy`, `## Review policy`, `## Snapshot`, `## Engine lease`, `## Run outcome`,
+and `Integration:` lines. The owning operation creates each one, and an empty
+heading is rejected as malformed (for example, `snapshot.accept` fails with
+`snapshot.state_invalid`). The template shows them as they look once written.
 
 ## Template
 
@@ -21,7 +29,7 @@ indentation alone. The indentation is part of the format.
 ````text
 # <slug> implementation run
 
-Schema version: 1
+Schema version: 2
 Run id: 3f0c9a52-5d1e-4b8a-9c7e-2a4b6c8d0e1f
 
 Prefix:          dcs
@@ -143,8 +151,9 @@ Pane: <herdr-pane-id-03>
 Artifact: <absolute-run-path>/briefs/launch-03.json
 Attempt: 1
 Retry: 0 of 3
-Phase: committed, awaiting review
+Phase: gates
 Last diagnostic: none
+Integration: {"cycle":0,"phase":"gates","base_sha":"0123456789abcdef0123456789abcdef01234567","ticket_sha":"89abcdef0123456789abcdef0123456789abcdef","review_range":"0123456789abcdef0123456789abcdef01234567..89abcdef0123456789abcdef0123456789abcdef","commit_count":2,"patch_id":"fedcba9876543210fedcba9876543210fedcba98","commit_patch_ids":["1111111111111111111111111111111111111111","2222222222222222222222222222222222222222"],"passed_gates":[],"reviewed_head":null,"reviewed_patch_id":null,"reviewed_commit_patch_ids":null,"standards_evidence_path":null,"spec_evidence_path":null,"self_review_path":null,"completed_at":"2026-09-11T15:00:00Z"}
 
 ## Snapshot
 
@@ -166,29 +175,6 @@ Last diagnostic: none
       "sha256": "abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789"
     }
   ]
-}
-```
-
-## Serialized finalization
-
-```json
-{
-  "ticket": "03",
-  "cycle": 0,
-  "phase": "gates",
-  "base_branch": "main",
-  "base_sha": "0123456789abcdef0123456789abcdef01234567",
-  "ticket_sha": "89abcdef0123456789abcdef0123456789abcdef",
-  "review_range": "0123456789abcdef0123456789abcdef01234567..89abcdef0123456789abcdef0123456789abcdef",
-  "commit_count": 2,
-  "commit_policy": { "commits": "multiple", "fixes": "append" },
-  "remote_sync_argv": null,
-  "conflicts": [],
-  "previous_ticket_sha": null,
-  "standards_evidence_path": null,
-  "spec_evidence_path": null,
-  "self_review_path": null,
-  "completed_at": "2026-09-11T15:00:00Z"
 }
 ```
 
@@ -250,7 +236,7 @@ Last diagnostic: none
 | `Mode`            | `parallel` or `serial`. Controls only which queued tickets start; it does not terminate active workers                                                               |
 | `Parallel cap`    | Positive maximum active implementors; exactly `1` in serial mode                                                                                                     |
 | `Run id`          | Lowercase UUID naming the run's global state file. Generate it when creating the file; the helper backfills a missing one on its first locked write. Never change it |
-| `Stall interval`  | `<N>m` with integer `N` from 2 to 60; `10m` by default. The `herdr.wait_any` timeout, and therefore the stall-check cadence, for the core loop                       |
+| `Stall interval`  | `<N>m` with integer `N` from 2 to 60; `10m` by default. The period of the Engine's per-ticket stall timer                                                            |
 | `Branch template` | Branch pattern resolved from repository instructions, or `<prefix>-NN-<slug>` when the repository is silent                                                          |
 
 `Base` is the one field where the file beats the flag. `Implementor` and `Mode`
@@ -265,7 +251,7 @@ serial records cap 1 but never kills existing parallel workers: stop launching,
 drain the active set, then continue one at a time. Raising a parallel cap fills
 new capacity at the next `scheduler.plan` pass.
 
-`Run id` and `Stall interval` are optional schema-1 fields, so older runs
+`Run id` and `Stall interval` are optional schema-2 fields, so older runs
 resume without migration: a missing run id is backfilled by the helper and a
 missing interval means `10m`. `--stall-interval <minutes>` on a first run or
 resume, or a stated preference mid-run, writes the field and appends a
@@ -409,6 +395,7 @@ fields:
 | `Retry`           | Completed retries and fixed maximum, always `0 of 3` through `3 of 3`          |
 | `Phase`           | `launch prepared`, `working`, `launch failed`, or the later workflow phase     |
 | `Last diagnostic` | `none` or the exact failing stage, exit code, and normalized stderr            |
+| `Integration`     | Optional one-line JSON integration record; see below                           |
 
 An operator-authorized compatibility recovery adds these fields without
 rewriting the attempt, retry count, or last failure diagnostic:
@@ -445,20 +432,34 @@ forbids remote writes overrides `final` and `live`. See
 [normalized-snapshot.md](normalized-snapshot.md) for the manifest, acceptance,
 and revision rules.
 
-### `## Serialized finalization`
+### `Integration` field
 
-A transient helper-owned JSON record exists from `landing.synchronize` until
-`landing.complete` durably records success. It is the single slot that
-serializes synchronization, final gates, review, and landing while other
-implementors continue. The record binds the ticket, local base and ticket tips,
-full review range, commit policy, optional authorized remote command, conflict
-paths, recovery cycle, and final review evidence.
+Each ticket integrates independently; there is no run-wide finalization slot.
+`landing.rebase.check` adds a helper-owned one-line JSON `Integration:` field
+to the ticket's active block when its clean branch is first checked, and
+`landing.complete` removes it with the block. Never edit it by hand.
 
-`review.round.finalize` advances a passing record to `ready-to-land`. A failed
-review records `fixing` and the prior tip used to enforce append-only fixes. A
-refused fast-forward records `resynchronize` and clears stale final-review
-paths. Scope conflicts may remain `awaiting-user`. Never clear or transfer this
-record by hand merely to admit another ticket.
+| Key                                                                 | Meaning                                                                                                    |
+| ------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------- |
+| `cycle`                                                             | Integration cycle; every recorded rebase increments it, and gate evidence binds it as `integration_cycle`  |
+| `phase`                                                             | `gates`, `fixing`, `rebase-required`, or `ready-to-land`                                                   |
+| `base_sha`, `ticket_sha`, `review_range`                            | Local base tip, ticket tip, and the full-SHA range every gate and review uses                              |
+| `commit_count`                                                      | Commits in the range, checked against the persisted commit shape                                           |
+| `patch_id`                                                          | `git patch-id --stable` of the whole ticket diff from its merge base                                       |
+| `commit_patch_ids`                                                  | Stable patch id of each ticket commit, oldest first                                                        |
+| `passed_gates`                                                      | Gate names passed in this cycle at `ticket_sha`                                                            |
+| `reviewed_head`, `reviewed_patch_id`                                | Tip and patch id both accepted reviews covered, or null                                                    |
+| `reviewed_commit_patch_ids`                                         | Commit patch ids recorded at the last failed gate or review; an append-only fix must keep them as a prefix |
+| `standards_evidence_path`, `spec_evidence_path`, `self_review_path` | Accepted review evidence, kept across a rebase only while `reviewed_patch_id` equals `patch_id`            |
+| `completed_at`                                                      | Time of the last transition                                                                                |
+
+`review.round.finalize` advances a passing record to `ready-to-land` and a
+failing one to `fixing`. A failed gate also records `fixing`. When the base has
+moved, `landing.rebase.check` and a refused `landing.complete` record
+`rebase-required`; the implementor rebases in its own worktree and
+`landing.rebase.record` starts the next cycle. Gates always rerun after a
+rebase. Both reviews are kept only when the patch id is unchanged, in which
+case the last passing gate returns the ticket to `ready-to-land`.
 
 ### `## Review evidence`
 

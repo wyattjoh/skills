@@ -3,11 +3,46 @@ import { mkdirSync, mkdtempSync, readFileSync, symlinkSync, writeFileSync } from
 import { tmpdir } from "node:os";
 import { join, relative } from "node:path";
 import { spawnGit } from "./lib/git.ts";
+import { parseIntegration, writeIntegration, type IntegrationRecord } from "./lib/integration.ts";
 import { applyEscalationBlock } from "./lib/landing.ts";
 import { runCliInProcess } from "./test-cli.ts";
 import { createFakeHerdrEnv } from "./test-herdr.ts";
 
 const CLI = join(import.meta.dir, "coordinate.ts");
+
+const integrationRecord = (
+  base: string,
+  head: string,
+  overrides: Partial<IntegrationRecord> = {},
+): IntegrationRecord => ({
+  cycle: 0,
+  phase: "gates",
+  base_sha: base,
+  ticket_sha: head,
+  review_range: `${base}..${head}`,
+  commit_count: 1,
+  patch_id: "a".repeat(40),
+  commit_patch_ids: ["b".repeat(40)],
+  passed_gates: [],
+  reviewed_head: null,
+  reviewed_patch_id: null,
+  reviewed_commit_patch_ids: null,
+  standards_evidence_path: null,
+  spec_evidence_path: null,
+  self_review_path: null,
+  completed_at: "2026-09-19T00:59:00Z",
+  ...overrides,
+});
+
+const injectIntegration = (statePath: string, record: IntegrationRecord): void => {
+  writeFileSync(
+    statePath,
+    writeIntegration(readFileSync(statePath, "utf8"), "06", record, undefined),
+  );
+};
+
+const readIntegration = (statePath: string): IntegrationRecord | undefined =>
+  parseIntegration(readFileSync(statePath, "utf8"), "06");
 const HERDR_ENV = createFakeHerdrEnv();
 
 type CliResult = {
@@ -59,7 +94,7 @@ const runCliProcess = async (
 
 const stateText = (implementor: "claude" | "pi", active: boolean): string => `# review run
 
-Schema version: 1
+Schema version: 2
 
 Prefix: review
 
@@ -284,9 +319,7 @@ describe("review documentation contract", () => {
     expect(procedure).toContain(
       "Never reset, stash, commit, or discard reviewer changes automatically",
     );
-    expect(skill).toContain(
-      "A terminal result from the blocking remediation prompt is itself the wake signal",
-    );
+    expect(skill).toContain("Review fixes are\n  pre-authorized regardless of round");
     expect(procedure).toContain("terminal remediation result");
     expect(procedure).toContain("result returned directly by the blocking Herdr prompt");
     expect(procedure).toContain("do not summarize, end the turn, or wait for another");
@@ -526,45 +559,12 @@ describe("review launches and reports", () => {
     });
   });
 
-  it("requires the synchronized full-SHA base while finalization is serialized", async () => {
+  it("requires the integrated full-SHA base and current integration cycle", async () => {
     const fixture = makeFixture("pi");
     await preparePolicy(fixture);
     await activateFixture(fixture, "pi");
     const head = spawnGit(["rev-parse", "HEAD"], { cwd: fixture.worktreePath }).stdout.trim();
-    writeFileSync(
-      fixture.statePath,
-      readFileSync(fixture.statePath, "utf8").replace(
-        "## Decisions",
-        `## Serialized finalization
-
-\`\`\`json
-${JSON.stringify(
-  {
-    ticket: "06",
-    cycle: 1,
-    phase: "gates",
-    base_branch: "main",
-    base_sha: head,
-    ticket_sha: head,
-    review_range: `${head}..${head}`,
-    commit_count: 1,
-    commit_policy: { commits: "multiple", fixes: "append" },
-    remote_sync_argv: null,
-    conflicts: [],
-    previous_ticket_sha: null,
-    standards_evidence_path: null,
-    spec_evidence_path: null,
-    self_review_path: null,
-    completed_at: "2026-09-19T00:59:00Z",
-  },
-  null,
-  2,
-)}
-\`\`\`
-
-## Decisions`,
-      ),
-    );
+    injectIntegration(fixture.statePath, integrationRecord(head, head, { cycle: 1 }));
     const cycleOneGates = await recordPassingGates(fixture, 0, 2, "-cycle-one");
     const wrongBase = reviewLaunchRequest(fixture, "standards");
     const rejected = await runCli(wrongBase);
@@ -588,9 +588,7 @@ ${JSON.stringify(
     const accepted = await runCli(exactBase);
     expect(accepted.exitCode).toBe(0);
     expect((accepted.stdout.result as { reviewed_head: string }).reviewed_head).toBe(head);
-    expect(readFileSync(exactBase.input.artifact_path, "utf8")).toContain(
-      "refused-fast-forward recovery review",
-    );
+    expect(JSON.parse(readFileSync(cycleOneGates[0]!, "utf8")).integration_cycle).toBe(1);
   }, 15_000);
 
   it("refuses external review until every configured gate has passed", async () => {
@@ -1071,31 +1069,7 @@ const failedGateFixture = async (): Promise<{
     ).exitCode,
   ).toBe(0);
   const head = spawnGit(["rev-parse", "HEAD"], { cwd: fixture.worktreePath }).stdout.trim();
-  const finalization = {
-    ticket: "06",
-    cycle: 0,
-    phase: "gates",
-    base_branch: "main",
-    base_sha: base,
-    ticket_sha: head,
-    review_range: `${base}..${head}`,
-    commit_count: 1,
-    commit_policy: { commits: "multiple", fixes: "append" },
-    remote_sync_argv: null,
-    conflicts: [],
-    previous_ticket_sha: null,
-    standards_evidence_path: null,
-    spec_evidence_path: null,
-    self_review_path: null,
-    completed_at: "2026-09-19T00:58:00Z",
-  };
-  writeFileSync(
-    fixture.statePath,
-    readFileSync(fixture.statePath, "utf8").replace(
-      "## Decisions",
-      `## Serialized finalization\n\n\`\`\`json\n${JSON.stringify(finalization, null, 2)}\n\`\`\`\n\n## Decisions`,
-    ),
-  );
+  injectIntegration(fixture.statePath, integrationRecord(base, head));
   const failed = await runCli(gateRecordRequest(fixture, "failed"));
   expect(failed.exitCode).toBe(0);
   return {
@@ -1254,13 +1228,10 @@ describe("gates and review rounds", () => {
 
   it("records an authorized passing same-HEAD rerun without fabricating a fix commit", async () => {
     const { fixture, base, head, previousEvidencePath } = await failedGateFixture();
-    writeFileSync(
-      fixture.statePath,
-      readFileSync(fixture.statePath, "utf8").replace(
-        '"phase": "fixing"',
-        '"phase": "synchronizing"',
-      ),
-    );
+    expect(readIntegration(fixture.statePath)).toMatchObject({
+      phase: "fixing",
+      reviewed_commit_patch_ids: ["b".repeat(40)],
+    });
     const before = readFileSync(fixture.statePath, "utf8");
     const unauthorized = await runCli(
       gateRerunRequest(fixture, previousEvidencePath, { user_authorized: false }),
@@ -1305,10 +1276,13 @@ describe("gates and review rounds", () => {
       recovery_diagnostic: "unrelated full-suite timeout passed on unchanged rerun",
     });
     const state = readFileSync(fixture.statePath, "utf8");
-    expect(state.includes('"phase": "gates"')).toBe(true);
-    expect(state.includes(`"review_range": "${base}..${head}"`)).toBe(true);
-    expect(state.includes('"commit_count": 1')).toBe(true);
-    expect(state.includes('"previous_ticket_sha": null')).toBe(true);
+    expect(readIntegration(fixture.statePath)).toMatchObject({
+      phase: "gates",
+      review_range: `${base}..${head}`,
+      commit_count: 1,
+      passed_gates: ["test"],
+      reviewed_commit_patch_ids: null,
+    });
     expect(state.includes("Phase: gates after authorized no-change rerun")).toBe(true);
     expect(state.includes("user-authorized no-change rerun of gate test")).toBe(true);
 
@@ -1489,41 +1463,19 @@ describe("gates and review rounds", () => {
     expect(readFileSync(spec.input.report_path, "utf8")).toContain("PASS");
   });
 
-  it("rejects accepted review evidence after a failed gate changes finalization phase", async () => {
+  it("rejects accepted review evidence after a failed gate changes the integration phase", async () => {
     const fixture = makeFixture("pi");
     await preparePolicy(fixture);
     await activateFixture(fixture, "pi");
     const head = spawnGit(["rev-parse", "HEAD"], { cwd: fixture.worktreePath }).stdout.trim();
-    const finalization = {
-      ticket: "06",
-      cycle: 0,
-      phase: "gates",
-      base_branch: "main",
-      base_sha: "main",
-      ticket_sha: head,
-      review_range: `main..${head}`,
-      commit_count: 1,
-      commit_policy: { commits: "multiple", fixes: "append" },
-      remote_sync_argv: null,
-      conflicts: [],
-      previous_ticket_sha: null,
-      standards_evidence_path: null,
-      spec_evidence_path: null,
-      self_review_path: null,
-      completed_at: "2026-09-19T00:59:00Z",
-    };
-    writeFileSync(
-      fixture.statePath,
-      readFileSync(fixture.statePath, "utf8").replace(
-        "## Decisions",
-        `## Serialized finalization\n\n\`\`\`json\n${JSON.stringify(finalization, null, 2)}\n\`\`\`\n\n## Decisions`,
-      ),
-    );
+    injectIntegration(fixture.statePath, integrationRecord(head, head));
     const cycleZeroGates = await recordPassingGates(fixture, 0, 2, "-cycle-zero");
     const standards = reviewLaunchRequest(fixture, "standards");
     standards.input.gate_evidence_paths = cycleZeroGates;
+    standards.input.base_ref = head;
     const spec = reviewLaunchRequest(fixture, "spec");
     spec.input.gate_evidence_paths = cycleZeroGates;
+    spec.input.base_ref = head;
     expect((await runCli(standards)).exitCode).toBe(0);
     expect((await runCli(spec)).exitCode).toBe(0);
     expect((await recordReview(fixture, standards, passingReport("Standards"))).exitCode).toBe(0);
@@ -1551,12 +1503,12 @@ describe("gates and review rounds", () => {
     expect(result.stdout.errors).toEqual([
       {
         code: "landing.review_phase_invalid",
-        message: "Final review requires serialized finalization to remain in the gates phase.",
+        message: "Final review requires the ticket integration to remain in the gates phase.",
         remediation:
-          "Rerun every configured gate and both review axes against the current synchronized ticket tip.",
+          "Rerun every configured gate and both review axes against the current integrated ticket tip.",
       },
     ]);
-    expect(readFileSync(fixture.statePath, "utf8")).toContain('"phase": "fixing"');
+    expect(readIntegration(fixture.statePath)?.phase).toBe("fixing");
   });
 
   it("keeps remediation authorized after the third failed fix round", async () => {

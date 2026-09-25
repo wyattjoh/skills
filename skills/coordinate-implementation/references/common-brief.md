@@ -45,6 +45,14 @@ Verification:
 - If the repository defines no executable gate, replace this list with:
   > No executable repository gate is defined by the listed instructions or CI;
   > verify the ticket manually against its acceptance criteria.
+- Other workers share this machine. Run every other heavy command (<commands
+  the repository instructions classify as heavy>) by prefixing it with
+  `<lock wrapper argv, e.g. flock /path/to/lock>`. The final gates above
+  already include this wrapper; run them exactly and never wrap them again,
+  because a nested lock on the same file waits forever. Another worker may
+  hold the lock; wait for it and never delete the lock file.
+- If the repository instructions define no shared lock, delete the previous
+  bullet and this one.
 - A Claude implementor completes Matt's `implement` self-review before handing
   off. A Pi implementor completes `## Standards` and `## Spec` in this same
   session; do not require a subagent extension.
@@ -75,4 +83,11 @@ Git and completion:
   actionable Standards and Spec finding. Apply the recorded fix-commit policy,
   rerun all required gates and this harness's self-review, then print
   `FIXES DONE <ticket-number>`.
+- The coordinator may send a `REBASE REQUIRED` request when <base branch>
+  advanced. Rebase your own branch onto <base branch> in this worktree with
+  `git rebase <base branch>`, and resolve any conflicts here, preserving the
+  intent of both the landed change and this ticket. Never check out, edit,
+  reset, or merge in the base checkout. Do not squash or reword existing
+  commits beyond what conflict resolution requires. When the rebase is complete
+  and the worktree is clean, print `REBASE DONE <ticket-number>`.
 ```

@@ -98,7 +98,7 @@ const initializeRepository = (root: string): string => {
 
 const state = (): string => `# sample implementation run
 
-Schema version: 1
+Schema version: 2
 
 Implementor:
   harness: pi
@@ -447,6 +447,17 @@ process.exit(result.exitCode);
       required_tool: { name: "repo-worktrees", available: true },
     });
 
+    const persisted = await runCli(
+      request("worktree.preflight", { policy, state_path: fixture.statePath }),
+      fixture.env,
+    );
+    expect(persisted.exitCode).toBe(0);
+    expect(
+      readFileSync(fixture.statePath, "utf8").includes(
+        '"remote_sync_argv": [\n    "git",\n    "fetch",\n    "upstream"\n  ]',
+      ),
+    ).toBe(true);
+
     const created = await runCli(
       request("worktree.prepare", {
         state_path: fixture.statePath,
@@ -788,7 +799,7 @@ describe("safe implementor launch", () => {
       {
         code: "state.ticket_table_malformed",
         message: "Ticket `04` does not match the ticket table columns.",
-        remediation: "Repair the schema-1 ticket row before launching an implementor.",
+        remediation: "Repair the schema-2 ticket row before launching an implementor.",
       },
     ]);
     expect(readFileSync(fixture.statePath, "utf8")).toBe(malformed);

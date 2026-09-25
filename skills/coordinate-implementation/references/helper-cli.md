@@ -1,7 +1,16 @@
 # Coordinate helper CLI
 
-The bundled Bun helper is the public mechanical boundary for the coordinator.
-It reads exactly one JSON request from stdin, writes exactly one JSON result to
+> The detached Engine now calls most of these operations itself. The
+> coordinator calls only the setup operations (`preflight`, `roles.discover`,
+> `role.validate`, `worktree.preflight`, `review.policy.prepare`,
+> `snapshot.accept`, `snapshot.check`), the coordinator ownership operations,
+> and `run.finalize`. Treat every other operation as an Engine internal and a
+> recovery tool: invoke one by hand only with explicit user authority and only
+> after `runtime.ts stop` confirms no Engine holds the run's lease. The
+> coordinator's own contract is [runtime-cli.md](runtime-cli.md).
+
+The bundled Bun helper is the mechanical boundary for the coordinator and the
+Engine. It reads exactly one JSON request from stdin, writes exactly one JSON result to
 stdout, and writes no human-oriented text around that result.
 
 Run it as:
@@ -108,15 +117,17 @@ This operation does not validate the document's later semantic fields:
 }
 ```
 
-A schema-1 state contains exactly one integer marker:
+A schema-2 state contains exactly one integer marker:
 
 ```text
-Schema version: 1
+Schema version: 2
 ```
 
 A missing, malformed, duplicate, or unsupported marker fails without changing
 the file. Recovery is manual or requires a helper that explicitly supports the
-recorded version.
+recorded version. A schema-1 run, which used the removed serialized
+finalization slot, fails with `state.schema_unsupported`: finish it with the
+previous skill version or start a new run. The helper never migrates it.
 
 ## `snapshot.check`
 
@@ -277,6 +288,11 @@ with `worktree.tool_unavailable`; native Git is never selected as a substitute.
 This policy-aware check is separate from the generic baseline `preflight`,
 which remains unchanged and runs before initial setup.
 
+Pass an optional `state_path` once RESUME.md exists. After the checks pass,
+the helper then persists the serialized policy as RESUME.md's
+`## Repository policy` record, the same record `worktree.prepare` writes. The
+Engine requires that record before its first launch.
+
 ## `worktree.prepare`
 
 Resolve and persist repository policy before creating one ticket worktree. The
@@ -416,25 +432,26 @@ old pane; a live pane, ambiguous machine response, stale role, or mismatched
 artifact fails without changing state. Success archives the runtime block under
 `## Closed ticket runtimes`, records the explicit decision, and writes immutable
 run-local evidence at `briefs/implementor-runtime-migration-NN.json` containing
-the old artifact hash, Herdr pane-closure observation, original finalization,
-and a snapshot of HEAD, Git status, and changed-file contents. After the atomic
+the old artifact hash, Herdr pane-closure observation, the ticket's
+`Integration` record and cycle, and a snapshot of HEAD, Git status, and changed-file contents. After the atomic
 RESUME update, the helper writes
 `briefs/implementor-runtime-migration-NN.json.commit.json`, binding the exact
 evidence hash and both state references. Launch consumers fail closed unless the
 commit marker and both references match; retry the identical authorized request
 to reconcile a pending transaction. The migration preserves the old launch
-artifact, branch, worktree, dirty files, and serialized finalization. Dirty
-`working` worktrees are retained as-is; `gates`-phase migration requires a
-clean worktree and a valid untouched serialized finalization, which remains
-byte-for-byte unchanged. The result says `action: prepare-replacement`. A
-replacement launch must use the exact preserved worktree and branch and must
-match the captured snapshot before the first launch.
+artifact, branch, worktree, dirty files, and the `Integration` record in its
+evidence. Dirty `working` worktrees are retained as-is; `gates`-phase migration
+requires a clean worktree and an untouched gates-phase `Integration` record for
+the current tip. The result says `action: prepare-replacement` and reports
+`integration_preserved`. A replacement launch must use the exact preserved
+worktree and branch, must match the captured snapshot before the first launch,
+and carries the preserved `Integration` record into its new active block.
 
 ## `implementor.runtime.migration.recover`
 
 A gates-phase migration cannot proceed directly to gates or review. After
-`implementor.runtime.migrate`, authorize an explicit transition to
-`resynchronize` using the exact migration evidence hash:
+`implementor.runtime.migrate`, authorize an explicit transition to a new
+integration cycle using the exact migration evidence hash:
 
 ```json
 {
@@ -450,13 +467,15 @@ A gates-phase migration cannot proceed directly to gates or review. After
 }
 ```
 
-Recovery revalidates the exact committed migration, original finalization block,
-clean worktree, HEAD, and changed-file snapshot. It records the user-authorized
-`gates -> resynchronize` decision without changing ticket files. Prepare a
-replacement launch in the preserved worktree and branch, then call
-`landing.synchronize`; only its fresh synchronized gate phase permits new gate
-records or reviewer launches. Each gate record binds that finalization cycle,
-so old gate artifacts cannot pass review after resynchronization. Repeating
+Recovery revalidates the exact committed migration, clean worktree, HEAD, and
+changed-file snapshot, and requires that no replacement runtime is active yet.
+It records the user-authorized decision without changing ticket files and
+returns `action: prepare-and-check-rebase`. Prepare a replacement launch in the
+preserved worktree and branch; its active block carries the preserved
+`Integration` record as `rebase-required`. Then call `landing.rebase.check`,
+which records the next integration cycle; only that fresh gates phase permits
+new gate records or reviewer launches. Each gate record binds the integration
+cycle, so old gate artifacts cannot pass review after recovery. Repeating
 recovery is idempotent. Working-phase migrations do not need this operation.
 
 ## `implementor.launch.recover`
@@ -606,7 +625,7 @@ control socket:
 }
 ```
 
-`timeout_ms` is an integer from 1 to 3600000. In the core loop it is the run's
+`timeout_ms` is an integer from 1 to 3600000. For a stall-cadence wait it is the run's
 `Stall interval:` in milliseconds (the example is the 10 minute default).
 The optional `state_path` names the run's RESUME.md. When present, the helper
 refreshes that run's global heartbeat under the state lock after the wait
@@ -810,7 +829,12 @@ A normal red gate returns `action: fix`; it is not an infrastructure retry. An
 `infrastructure_failed` attempt returns the next attempt and bounded delay until
 attempt four, which returns `blocked`. The helper resolves the supplied
 worktree canonically and requires it to equal the active ticket runtime before
-running any gate-recording logic. The evidence preserves that canonical
+running any gate-recording logic. When the ticket has an `Integration` record,
+it must be in `gates` at the current HEAD, and the evidence binds its cycle as
+`integration_cycle`. A pass adds the gate to `passed_gates`; when both reviews
+were kept across a rebase and every configured gate has passed in the cycle,
+the record returns to `ready-to-land`. A red gate records `fixing` and the
+append-only baseline. The evidence preserves that canonical
 `worktree_path`, the policy argv, worktree HEAD, exit code, stdout, stderr, and
 completion time. Evidence files are immutable: byte-identical recovery
 succeeds, while different content at the same path fails.
@@ -847,10 +871,10 @@ not permit an empty fix commit or bypass a still-red gate.
 The operation requires the immediately preceding immutable evidence to be a
 normal `failed` gate with `action: fix`. Ticket, round, configured argv,
 canonical worktree, and HEAD must match, the worktree must remain clean, and
-the current append-only finalization must still bind that same tip. Success
-writes separate immutable passing evidence, preserves the failed evidence,
-clears only the pending append-fix sentinel, reconstructs the exact review
-range and commit count, returns finalization to `gates`, and records the user
+the ticket's `fixing` integration under the `append` fix policy must still
+bind that same tip. Success writes separate immutable passing evidence,
+preserves the failed evidence, clears only the pending append-fix baseline,
+returns the integration to `gates` with this gate passed, and records the user
 authorization in `## Decisions`. A changed HEAD, dirty worktree, different gate,
 stale evidence, missing authority, or nonzero rerun fails without changing
 state. Repeating the byte-identical operation is idempotent.
@@ -899,8 +923,8 @@ a review report, verdict, or accepted axis.
 
 The binding and artifact hash must match exactly. The operation requires the
 persisted Reviewer default to be Pi, the exact ticket worktree and branch to be
-clean at the reviewed HEAD, a gates-phase or authorized migration-resynchronize
-finalization with no review artifacts, complete passing evidence for every
+clean at the reviewed HEAD, a gates-phase `Integration` record at that HEAD and
+base with no review evidence, complete passing evidence for every
 configured gate, and no report at the old attempt's report path. Herdr must
 return `pane_not_found` for the persisted pane. Success writes
 `status: superseded`, `action: retry`, and `next_attempt` to the immutable JSON
@@ -928,11 +952,11 @@ Reviewer attempt identity is indexed for the active ticket and keyed by round,
 axis, and attempt. The index canonicalizes `state_path`, ignores artifacts for
 historical tickets, and serializes its scan through artifact creation under the
 run-state lock. The caller cannot reuse an attempt with another path or skip its
-exact immediately preceding artifact. A finalization synchronization cycle is
-independent of the review round: interrupted attempts remain bound to their
-reviewed HEAD, base SHA, and range. When serialized finalization exists, gate
-evidence binds its current cycle, including after migration recovery; timestamps
-do not substitute for that binding. Ordinary malformed-report or infrastructure
+exact immediately preceding artifact. An integration cycle is independent of
+the review round: interrupted attempts remain bound to their reviewed HEAD,
+base SHA, and range. When the ticket has an `Integration` record, gate evidence
+binds its current cycle, including after migration recovery; timestamps do not
+substitute for that binding. Ordinary malformed-report or infrastructure
 retries continue to require the same reviewer role and the same gate evidence.
 
 ## `review.launch.prepare`
@@ -1110,76 +1134,73 @@ old artifact, worktree, branch, role, session, tab, and pane are preserved in
 review state fail instead of inferring authority or silently restarting a
 worker.
 
-## `landing.synchronize`
+## `landing.rebase.check`
 
-Claim the single serialized finalization slot and synchronize a clean ticket
-branch against the current local integration branch:
+Check whether a clean ticket branch already contains the local integration
+branch, and bind its per-ticket integration. Call it whenever an implementor
+reports its work or its fixes are done:
 
 ```json
 {
   "schema_version": 1,
-  "operation": "landing.synchronize",
+  "operation": "landing.rebase.check",
   "input": {
     "state_path": ".scratch/example/RESUME.md",
     "repository_path": "/repo",
     "worktree_path": "/worktrees/example/ticket-04",
     "ticket": "04",
-    "remote_sync_argv": null,
     "completed_at": "2026-09-19T01:12:00Z"
   }
 }
 ```
 
-`local-only` policy persists and requires null, then never fetches. `repository`
-policy persists one exact non-empty argv array authorized by repository
-instructions or explicit run policy. The caller must match it byte for byte;
-an arbitrary command cannot replace the required synchronization. The command
-executes without shell interpolation before
-the helper rebases onto the persisted local `Base` branch.
+When the persisted `repository` remote policy has a `remote_sync_argv`, the
+helper runs that exact argv first, without shell interpolation, from the base
+checkout. `local-only` policy never fetches. The helper then runs
+`git merge-base --is-ancestor <base> HEAD` in the ticket worktree. It never
+rebases, checks out, or edits anything itself.
 
-Only one ticket may own `## Serialized finalization`. Other implementors remain
-active, but another ticket cannot enter synchronization, final gates, review,
-or landing until the slot clears. Success returns the full-SHA `review_range`,
-commit count, resolved commit and fix policy, and `run-gates`. Multiple commits
-are accepted by default. `single` and `squash` policy require one commit. A fix
-under default `append` policy must preserve the previous reviewed tip as an
-ancestor and add a new commit.
+Every ticket integrates independently; there is no run-wide slot, so many
+tickets may run gates and reviews in parallel. Results carry `action`, `phase`,
+the integration `cycle`, full-SHA `review_range`, `commit_count`, commit policy,
+`patch_id`, `reviews_kept`, and `prompt`:
 
-A textual conflict returns `resolve-conflicts`, the sorted conflict paths, and
-leaves the rebase plus serialized slot in place. A non-conflict Git failure is
-an operation error.
+- `run-gates`: the tip contains the base. Run every gate against the returned
+  range. A repeated check at an unchanged tip and base is idempotent.
+- `fix-commits`: the commit shape violates `single` or `squash` policy. Return
+  it to the bound implementor.
+- `rebase`: the base advanced. The helper records `rebase-required`; send the
+  returned `prompt` to the bound implementor, which rebases its own branch in
+  its own worktree, resolves conflicts there, and prints `REBASE DONE NN`.
+  Then call `landing.rebase.record`.
+- `land`: the integration is already `ready-to-land`.
 
-## `landing.conflict.record`
+Multiple commits are accepted by default. `single` and `squash` policy require
+one commit. A fix under the default `append` policy must keep every commit
+patch id recorded when the gate or review failed as a prefix and add at least
+one commit; otherwise the check fails with `landing.fix_policy_violated`. A
+dirty worktree or an in-progress rebase, merge, or cherry-pick fails without
+changing state.
 
-After completing the conflicted rebase, record its coordinator classification:
+## `landing.rebase.record`
 
-```json
-{
-  "schema_version": 1,
-  "operation": "landing.conflict.record",
-  "input": {
-    "state_path": ".scratch/example/RESUME.md",
-    "ticket": "04",
-    "classification": "textual",
-    "decision": null,
-    "user_authorized": false,
-    "completed_at": "2026-09-19T01:15:00Z"
-  }
-}
-```
+After the implementor finishes a requested rebase, validate its clean rebased
+tip and record the next integration cycle. The input matches
+`landing.rebase.check`.
 
-The helper requires a clean worktree, no unmerged paths, and policy-compliant
-commit shape. `textual` returns `run-gates`. `substantive` returns `fix` to the
-same bound implementor and records the current tip for fix-policy enforcement.
-A `scope` classification with `user_authorized: false` returns `await-user` and
-does not record a decision. Repeat it only after the user authorizes the exact
-non-empty decision; that call appends durable authority and returns
-`run-gates`.
+The helper requires the `rebase-required` phase, a clean worktree with no
+operation in progress, and a tip that contains the local base; otherwise it
+fails with `landing.rebase_not_required`, `landing.rebase_incomplete`, or a
+worktree error. Success increments `cycle` and clears `passed_gates`, so every
+gate reruns. Both accepted reviews are kept only when the ticket `patch_id` is
+unchanged from the reviewed patch id (`reviews_kept: true`); the last passing
+gate of the cycle then returns the ticket to `ready-to-land`. A changed patch
+id clears both reviews, and Standards and Spec rerun against the new range.
 
 ## `landing.complete`
 
-After `review.round.finalize` accepts both axes and advances the serialized
-record to `ready-to-land`, complete the fast-forward and cleanup:
+After the ticket's `Integration` record reaches `ready-to-land`, complete the
+fast-forward and cleanup:
 
 ```json
 {
@@ -1192,28 +1213,45 @@ record to `ready-to-land`, complete the fast-forward and cleanup:
     "evidence_path": ".scratch/example/reviews/04-landed.json",
     "ticket": "04",
     "cleanup_argv": null,
+    "lock_wait_seconds": 110,
     "completed_at": "2026-09-19T01:20:00Z"
   }
 }
 ```
 
 The helper verifies immutable Standards, Spec, and implementor self-review
-evidence against the current ticket tip. If the local base moved and refuses a
-fast-forward, the operation returns `resynchronize`, clears stale review
-bindings, and retains the serialized ticket. Rerun synchronization, every gate,
-and both fresh review axes before retrying.
+evidence against the reviewed tip, and requires the ticket branch to equal the
+integrated tip. `lock_wait_seconds` is optional (0 to 110, default 110).
+
+The lock step lands through the same lock as the `land-local` skill:
+
+```text
+flock -w 110 <git-common-dir>/land-local.lock bun $SKILL_DIR/scripts/land-locked.ts <base-checkout> <base> <branch>
+```
+
+Inside the lock, `land-locked.ts` requires the base checkout to be clean
+(exit 4), requires `git merge-base --is-ancestor <base> <branch>` (exit 5,
+`REBASE_REQUIRED`), and runs `git merge --ff-only <branch>` (exit 6 on
+failure). `flock` exits 1 on timeout. The helper passes the reviewed full tip
+SHA as `<branch>`, so a branch moved after review cannot land. A tip that is
+already an ancestor of the base skips the lock, so a repeated call resumes
+cleanup. A dirty base checkout fails with `landing.base_dirty` and a timeout
+with `landing.lock_timeout`; neither changes state. When the base advanced,
+the operation returns `action: rebase` with the implementor `prompt` and
+records `rebase-required`, keeping the accepted reviews for the patch-id check
+in `landing.rebase.record`.
 
 A successful fast-forward inspects the exact pane persisted in the active
 runtime. A live pane returns `close-runtime` with
 `runtime_closed: false`, the pane ID, and the exact shell-free
 `herdr pane close <persisted-pane-id>` argv without cleaning the worktree or
-releasing serialized state. Execute only that argv and repeat the same call.
+changing ticket state. Execute only that argv and repeat the same call.
 Only Herdr's `pane_not_found` result permits native cleanup to check that the
 worktree is clean and landed, run `git worktree remove <path>` without force,
 and verify the branch remains. Repository cleanup instead requires its exact
 `cleanup_argv` and receives the same postconditions. Success writes immutable
 landed JSON evidence with machine-observed `runtime_closed: true`, updates the
-ticket and `Base sha:`, removes the active runtime and serialized slot, appends
+ticket and `Base sha:`, removes the active runtime and its integration, appends
 landed and retained-branch provenance, and returns `schedule`. Call
 `scheduler.plan` only after that durable result.
 

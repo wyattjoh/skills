@@ -17,8 +17,11 @@ default, then use the non-local no-writeback case below.
 3. Start from a clean Herdr workspace. Record Herdr, Bun, Git, Pi, and Claude
    versions plus the exact role triples used.
 4. Run helper `preflight`, `roles.discover`, three `role.validate` requests,
-   `snapshot.accept` with `writeback: none`, and `review.policy.prepare`.
-5. For every scenario, retain RESUME.md, SUMMARY.md when produced, launch
+   `worktree.preflight`, `review.policy.prepare`, and `snapshot.accept` with
+   `writeback: none`. Write `run.ts` from `run-template.ts`, then drive every
+   scenario through `runtime.ts start` and the `runtime.ts wait` loop.
+5. For every scenario, retain RESUME.md, SUMMARY.md when produced, `events.ndjson`,
+   `escalations/`, launch
    artifacts, gate evidence, both review reports, landed evidence, and relevant
    machine-readable Herdr snapshots. Reset the fixture between scenarios.
 
@@ -65,17 +68,20 @@ reviewer provenance without inferring harnesses from model names.
 
 Use the two independent tickets with `--parallel 2`. Confirm `scheduler.plan`
 returns both in numeric order, both implementors remain active concurrently,
-and temporary reviewers consume no implementor capacity. Land one ticket and
-confirm the dependent ticket refills the free slot immediately while review and
-landing remain serialized.
+and temporary reviewers consume no implementor capacity. Confirm both tickets run
+gates and reviews concurrently, and that each landing holds
+`land-local.lock` only for its ancestor check and fast-forward. Land one ticket
+and confirm the dependent ticket refills the free slot immediately.
 
 ## Conflict adaptation
 
-Make both parallel branches change the same line. Land the first, synchronize
-the second, and resolve the textual conflict as coordinator work. First verify
-a purely textual resolution proceeds through gates. Repeat with a resolution
-that changes behavior, classify it `substantive`, and confirm work returns to
-the same implementor as a fix round before fresh gates and reviews.
+Make both parallel branches change the same line. Land the first and confirm
+the second's `landing.rebase.check` or `landing.complete` returns `rebase`. The
+Engine prompts the same implementor, which rebases its own branch in its own
+worktree and resolves the conflict there. Confirm the coordinator and Engine
+never touch the ticket branch or base checkout, `landing.rebase.record` starts
+a new integration cycle, every gate reruns, and both reviews rerun only when
+the ticket's patch identity changed.
 
 ## Reviewer failure
 
@@ -95,6 +101,30 @@ ids still arrive through the event-driven path. Confirm RESUME.md records
 `handoff: disabled` and `threshold: unavailable`, and that
 `coordinator.handoff.prepare` fails with `coordinator.handoff_disabled` before
 writing an artifact.
+
+## Engine supervision
+
+Use the two independent tickets and one dependent ticket with `--parallel 2`.
+
+1. Run `runtime.ts start`. Confirm tab `engine <prefix>` appears, `status`
+   reports `liveness: alive`, and a second `start` returns `running` without
+   opening another tab.
+2. While both implementors work, close the Engine pane. Confirm the next
+   `wait` returns `reason: "engine"` with `liveness: stale` and both
+   implementor panes stay alive.
+3. Run `start` again with the same script. Confirm a new lease generation
+   starts, the event log records it, no implementor is relaunched, no second
+   worker tab appears, and every launch artifact keeps its attempt number.
+4. Edit `run.ts` and confirm `start` fails with `engine.script_changed` until
+   `--accept-script <sha256>` names the new script.
+5. Instruct one implementor, through its ticket text, to stop with
+   `TICKET BLOCKED NN: <question>`. Confirm `wait` returns a `question`
+   escalation for only that ticket while the other ticket keeps progressing.
+   Answer it with `runtime.ts answer`, confirm the answer file is write-once
+   (a second answer fails), and confirm the Engine delivers the answer to the
+   same implementor pane and the ticket resumes to landing.
+6. Confirm `engine.completed` arrives after the last landing, then
+   `run.finalize` returns `completed` and writes SUMMARY.md.
 
 ## Completion and waiting checks
 

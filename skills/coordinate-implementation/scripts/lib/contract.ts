@@ -43,8 +43,8 @@ export type CoordinateOperation =
   | "gate.rerun.record"
   | "review.round.finalize"
   | "review.escalation.authorize"
-  | "landing.synchronize"
-  | "landing.conflict.record"
+  | "landing.rebase.check"
+  | "landing.rebase.record"
   | "landing.complete"
   | "run.finalize"
   | "agreements.update";
@@ -226,6 +226,7 @@ export type RepositoryPolicy = {
  */
 export type WorktreePreflightInput = {
   policy: RepositoryPolicy;
+  statePath: string | undefined;
 };
 
 /**
@@ -617,33 +618,20 @@ export type ReviewEscalationAuthorizeInput = {
 };
 
 /**
- * Input for claiming the serialized finalization slot and synchronizing one ticket.
+ * Input for checking whether a clean ticket branch contains the local base and binding its integration.
  */
-export type LandingSynchronizeInput = {
+export type LandingRebaseCheckInput = {
   statePath: string;
   repositoryPath: string;
   worktreePath: string;
   ticket: string;
-  remoteSyncArgv: string[] | undefined;
   completedAt: string;
 };
 
 /**
- * Coordinator classification recorded after a conflicted synchronization is resolved.
+ * Input for validating an implementor's rebased tip and recording its next integration cycle.
  */
-export type ConflictClassification = "textual" | "substantive" | "scope";
-
-/**
- * Input for recording how a resolved synchronization conflict should continue.
- */
-export type LandingConflictRecordInput = {
-  statePath: string;
-  ticket: string;
-  classification: ConflictClassification;
-  decision: string | undefined;
-  userAuthorized: boolean;
-  completedAt: string;
-};
+export type LandingRebaseRecordInput = LandingRebaseCheckInput;
 
 /**
  * Input for fast-forward landing, cleanup, and durable completion evidence.
@@ -655,6 +643,7 @@ export type LandingCompleteInput = {
   evidencePath: string;
   ticket: string;
   cleanupArgv: string[] | undefined;
+  lockWaitSeconds: number | undefined;
   completedAt: string;
 };
 
@@ -866,13 +855,13 @@ export type CoordinateRequest =
     }
   | {
       schemaVersion: typeof CONTRACT_SCHEMA_VERSION;
-      operation: "landing.synchronize";
-      input: LandingSynchronizeInput;
+      operation: "landing.rebase.check";
+      input: LandingRebaseCheckInput;
     }
   | {
       schemaVersion: typeof CONTRACT_SCHEMA_VERSION;
-      operation: "landing.conflict.record";
-      input: LandingConflictRecordInput;
+      operation: "landing.rebase.record";
+      input: LandingRebaseRecordInput;
     }
   | {
       schemaVersion: typeof CONTRACT_SCHEMA_VERSION;
@@ -1339,8 +1328,8 @@ export const parseRequest = (raw: string): Effect.Effect<CoordinateRequest, Requ
       "gate.rerun.record",
       "review.round.finalize",
       "review.escalation.authorize",
-      "landing.synchronize",
-      "landing.conflict.record",
+      "landing.rebase.check",
+      "landing.rebase.record",
       "landing.complete",
       "run.finalize",
       "agreements.update",
@@ -1733,10 +1722,21 @@ export const parseRequest = (raw: string): Effect.Effect<CoordinateRequest, Requ
           operation,
         );
       }
+      const statePathValue = parsed.input.state_path;
+      const statePath =
+        statePathValue === undefined || statePathValue === null
+          ? undefined
+          : nonEmptyString(statePathValue);
+      if (statePathValue !== undefined && statePathValue !== null && statePath === undefined) {
+        return yield* invalidRequest(
+          "`worktree.preflight` `state_path` must be a non-empty path when present.",
+          operation,
+        );
+      }
       return {
         schemaVersion: CONTRACT_SCHEMA_VERSION,
         operation,
-        input: { policy },
+        input: { policy, statePath },
       };
     }
 
@@ -1781,12 +1781,11 @@ export const parseRequest = (raw: string): Effect.Effect<CoordinateRequest, Requ
       };
     }
 
-    if (operation === "landing.synchronize") {
+    if (operation === "landing.rebase.check" || operation === "landing.rebase.record") {
       const statePath = nonEmptyString(parsed.input.state_path);
       const repositoryPath = nonEmptyString(parsed.input.repository_path);
       const worktreePath = nonEmptyString(parsed.input.worktree_path);
       const ticket = singleLineString(parsed.input.ticket);
-      const remoteSyncArgv = stringArray(parsed.input.remote_sync_argv);
       const completedAt = parsed.input.completed_at;
       if (
         statePath === undefined ||
@@ -1794,58 +1793,17 @@ export const parseRequest = (raw: string): Effect.Effect<CoordinateRequest, Requ
         worktreePath === undefined ||
         ticket === undefined ||
         !/^\d{2}$/u.test(ticket) ||
-        (parsed.input.remote_sync_argv !== null && remoteSyncArgv === undefined) ||
         !isUtcIsoTimestamp(completedAt)
       ) {
         return yield* invalidRequest(
-          "`landing.synchronize` requires state_path, repository_path, worktree_path, a two-digit ticket, remote_sync_argv as an argument array or null, and completed_at.",
+          `\`${operation}\` requires state_path, repository_path, worktree_path, a two-digit ticket, and completed_at.`,
           operation,
         );
       }
       return {
         schemaVersion: CONTRACT_SCHEMA_VERSION,
         operation,
-        input: {
-          statePath,
-          repositoryPath,
-          worktreePath,
-          ticket,
-          remoteSyncArgv,
-          completedAt,
-        },
-      };
-    }
-
-    if (operation === "landing.conflict.record") {
-      const statePath = nonEmptyString(parsed.input.state_path);
-      const ticket = singleLineString(parsed.input.ticket);
-      const classification = parsed.input.classification;
-      const decision = singleLineString(parsed.input.decision);
-      const userAuthorized = parsed.input.user_authorized;
-      const completedAt = parsed.input.completed_at;
-      if (
-        statePath === undefined ||
-        ticket === undefined ||
-        !/^\d{2}$/u.test(ticket) ||
-        (classification !== "textual" &&
-          classification !== "substantive" &&
-          classification !== "scope") ||
-        typeof userAuthorized !== "boolean" ||
-        (classification === "scope" && userAuthorized && decision === undefined) ||
-        (classification === "scope" && !userAuthorized && parsed.input.decision !== null) ||
-        (classification !== "scope" && userAuthorized) ||
-        (classification !== "scope" && parsed.input.decision !== null) ||
-        !isUtcIsoTimestamp(completedAt)
-      ) {
-        return yield* invalidRequest(
-          "`landing.conflict.record` requires state_path, a two-digit ticket, classification, explicit user_authorized, decision only for an authorized scope choice, and completed_at.",
-          operation,
-        );
-      }
-      return {
-        schemaVersion: CONTRACT_SCHEMA_VERSION,
-        operation,
-        input: { statePath, ticket, classification, decision, userAuthorized, completedAt },
+        input: { statePath, repositoryPath, worktreePath, ticket, completedAt },
       };
     }
 
@@ -1856,6 +1814,8 @@ export const parseRequest = (raw: string): Effect.Effect<CoordinateRequest, Requ
       const evidencePath = nonEmptyString(parsed.input.evidence_path);
       const ticket = singleLineString(parsed.input.ticket);
       const cleanupArgv = stringArray(parsed.input.cleanup_argv);
+      const lockWait = parsed.input.lock_wait_seconds;
+      const lockWaitSeconds = nonNegativeInteger(lockWait);
       const completedAt = parsed.input.completed_at;
       if (
         statePath === undefined ||
@@ -1865,11 +1825,12 @@ export const parseRequest = (raw: string): Effect.Effect<CoordinateRequest, Requ
         ticket === undefined ||
         !/^\d{2}$/u.test(ticket) ||
         (parsed.input.cleanup_argv !== null && cleanupArgv === undefined) ||
+        (lockWait !== undefined && (lockWaitSeconds === undefined || lockWaitSeconds > 110)) ||
         parsed.input.runtime_closed !== undefined ||
         !isUtcIsoTimestamp(completedAt)
       ) {
         return yield* invalidRequest(
-          "`landing.complete` requires state_path, repository_path, worktree_path, evidence_path, a two-digit ticket, cleanup_argv as an argument array or null, and completed_at; runtime closure is observed from Herdr and cannot be asserted by the caller.",
+          "`landing.complete` requires state_path, repository_path, worktree_path, evidence_path, a two-digit ticket, cleanup_argv as an argument array or null, completed_at, and an optional lock_wait_seconds from 0 to 110; runtime closure is observed from Herdr and cannot be asserted by the caller.",
           operation,
         );
       }
@@ -1883,6 +1844,7 @@ export const parseRequest = (raw: string): Effect.Effect<CoordinateRequest, Requ
           evidencePath,
           ticket,
           cleanupArgv,
+          lockWaitSeconds,
           completedAt,
         },
       };

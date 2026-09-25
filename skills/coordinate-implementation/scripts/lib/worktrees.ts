@@ -137,7 +137,7 @@ const persistPolicy = (
         return yield* worktreeError(
           "state.tickets_missing",
           "RESUME.md has no `## Tickets` section where repository policy can be persisted.",
-          "Repair the schema-1 state template before preparing a worktree.",
+          "Repair the schema-2 state template before preparing a worktree.",
         );
       }
       const source =
@@ -299,8 +299,10 @@ export const preflightWorktreePolicy = (
         );
       }
     }
+    const policy = serializePolicy(input.policy);
+    if (input.statePath !== undefined) yield* persistPolicy(input.statePath, policy);
     return {
-      policy: serializePolicy(input.policy),
+      policy,
       required_tool: { name: tool, available: true },
     };
   });
@@ -315,7 +317,10 @@ export const prepareWorktree = (
   input: WorktreePrepareInput,
 ): Effect.Effect<WorktreePrepareResult, WorktreeError> =>
   Effect.gen(function* () {
-    const preflight = yield* preflightWorktreePolicy({ policy: input.policy });
+    const preflight = yield* preflightWorktreePolicy({
+      policy: input.policy,
+      statePath: undefined,
+    });
     const serialized = preflight.policy;
 
     yield* validateRepository(input.repositoryPath);

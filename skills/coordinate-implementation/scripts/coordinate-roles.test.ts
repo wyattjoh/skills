@@ -103,7 +103,7 @@ const roleState = (
   ownershipHarness: "claude" | "pi" = "pi",
 ): string => `# sample implementation run
 
-Schema version: 1
+Schema version: 2
 
 Coordinator:
   harness: pi

@@ -31,6 +31,7 @@ import type {
   RoleRecord,
 } from "./contract.ts";
 import { spawnGit } from "./git.ts";
+import { IntegrationError, parseIntegration, type IntegrationRecord } from "./integration.ts";
 import { validateRole } from "./roles.ts";
 import { inspectRuntimeClose } from "./runtime-close.ts";
 import { mutateStateFile, StateMutationError } from "./state-mutation.ts";
@@ -124,7 +125,7 @@ const parsePersistedImplementor = (markdown: string): RoleRecord => {
     throw implementorError(
       "state.implementor_role_malformed",
       "RESUME.md must contain exactly one complete `Implementor:` role block.",
-      "Repair the schema-1 Implementor harness, model, and effort before launching.",
+      "Repair the schema-2 Implementor harness, model, and effort before launching.",
     );
   }
   const fields: Record<string, string> = {};
@@ -135,7 +136,7 @@ const parsePersistedImplementor = (markdown: string): RoleRecord => {
       throw implementorError(
         "state.implementor_role_malformed",
         "RESUME.md has malformed or duplicate fields in its `Implementor:` role block.",
-        "Repair the schema-1 Implementor harness, model, and effort before launching.",
+        "Repair the schema-2 Implementor harness, model, and effort before launching.",
       );
     }
     fields[field[1]!] = field[2]!;
@@ -147,7 +148,7 @@ const parsePersistedImplementor = (markdown: string): RoleRecord => {
     throw implementorError(
       "state.implementor_role_malformed",
       "RESUME.md has an incomplete or malformed `Implementor:` role block.",
-      "Repair the schema-1 Implementor harness, model, and effort before launching.",
+      "Repair the schema-2 Implementor harness, model, and effort before launching.",
     );
   }
   return { harness, model, effort };
@@ -168,7 +169,7 @@ const tableSection = (markdown: string): { start: number; end: number; text: str
     throw implementorError(
       "state.tickets_missing",
       "RESUME.md has no `## Tickets` section.",
-      "Repair the schema-1 ticket table before launching an implementor.",
+      "Repair the schema-2 ticket table before launching an implementor.",
     );
   }
   const start = heading.index + heading[0].length;
@@ -190,7 +191,7 @@ const updateTicketRow = (
     throw implementorError(
       "state.ticket_table_malformed",
       "RESUME.md ticket table has no `NN` header row.",
-      "Repair the schema-1 ticket table before launching an implementor.",
+      "Repair the schema-2 ticket table before launching an implementor.",
     );
   }
   const columns = lines[headerIndex]!.split("|")
@@ -214,7 +215,7 @@ const updateTicketRow = (
     throw implementorError(
       "state.ticket_table_malformed",
       `Ticket \`${ticket}\` does not match the ticket table columns.`,
-      "Repair the schema-1 ticket row before launching an implementor.",
+      "Repair the schema-2 ticket row before launching an implementor.",
     );
   }
   for (const [column, value] of Object.entries(updates)) {
@@ -223,7 +224,7 @@ const updateTicketRow = (
       throw implementorError(
         "state.ticket_table_malformed",
         `Ticket table is missing required \`${column}\` column.`,
-        "Repair the schema-1 ticket table before launching an implementor.",
+        "Repair the schema-2 ticket table before launching an implementor.",
       );
     }
     cells[index] = value;
@@ -243,7 +244,7 @@ const ticketField = (markdown: string, ticket: string, column: string): string =
     throw implementorError(
       "state.ticket_table_malformed",
       `Ticket \`${ticket}\` is missing from the ticket table.`,
-      "Repair the schema-1 ticket table before recovering an implementor.",
+      "Repair the schema-2 ticket table before recovering an implementor.",
     );
   }
   const columns = header
@@ -259,7 +260,7 @@ const ticketField = (markdown: string, ticket: string, column: string): string =
     throw implementorError(
       "state.ticket_table_malformed",
       `Ticket \`${ticket}\` does not have a valid \`${column}\` field.`,
-      "Repair the schema-1 ticket table before recovering an implementor.",
+      "Repair the schema-2 ticket table before recovering an implementor.",
     );
   }
   return cells[index]!;
@@ -332,7 +333,7 @@ const upsertActiveBlock = (
     throw implementorError(
       "state.active_tickets_missing",
       "RESUME.md has no `## Active tickets` section.",
-      "Repair the schema-1 state template before launching an implementor.",
+      "Repair the schema-2 state template before launching an implementor.",
     );
   }
   const insertion = heading.index + heading[0].length;
@@ -597,30 +598,11 @@ export const prepareImplementorLaunch = (
             const recoveryRecorded = markdown
               .split(/\r?\n/u)
               .some((line) => line.includes(recoveryReference));
-            const finalizationMatch = markdown.match(
-              /^## Serialized finalization\s*\r?\n\r?\n```json\r?\n([\s\S]*?)\r?\n```/mu,
-            );
-            let finalization: Record<string, unknown> | undefined;
-            try {
-              finalization = JSON.parse(finalizationMatch?.[1] ?? "") as Record<string, unknown>;
-            } catch {
-              finalization = undefined;
-            }
-            if (
-              !recoveryRecorded ||
-              finalization?.ticket !== input.ticket ||
-              !Number.isInteger(finalization.cycle) ||
-              !Number.isInteger(migration.old_finalization_cycle) ||
-              (finalization.phase !== "resynchronize" && finalization.phase !== "gates") ||
-              (finalization.phase === "resynchronize" &&
-                finalization.cycle !== migration.old_finalization_cycle) ||
-              (finalization.phase === "gates" &&
-                (finalization.cycle as number) <= migration.old_finalization_cycle!)
-            ) {
+            if (!recoveryRecorded) {
               return yield* implementorError(
                 "implementor.migration_recovery_required",
-                "Gates-phase migration requires its explicit recovery transition and fresh synchronization before replacement launch or further gates.",
-                "Call implementor.runtime.migration.recover, prepare the same bound runtime, then complete landing.synchronize before gates or reviews.",
+                "Gates-phase migration requires its explicit recovery transition before replacement launch or further gates.",
+                "Call implementor.runtime.migration.recover, prepare the same bound runtime, then complete landing.rebase.check before gates or reviews.",
               );
             }
           }
@@ -666,7 +648,11 @@ export const prepareImplementorLaunch = (
               effort: input.role.effort,
               status: "working",
             });
-            const rendered = renderActiveBlock(input, "launch prepared", "none");
+            const carried = migration === null ? null : carriedIntegration(migration);
+            const rendered =
+              carried === null
+                ? renderActiveBlock(input, "launch prepared", "none")
+                : `${renderActiveBlock(input, "launch prepared", "none").trimEnd()}\nIntegration: ${JSON.stringify(carried)}\n`;
             const updated = upsertActiveBlock(withRow, input.ticket, rendered);
             return { markdown: updated.markdown, result: updated.recovered };
           },
@@ -1081,13 +1067,13 @@ export type ImplementorRuntimeMigrateResult = {
   replacement_role: RoleRecord;
   evidence_path: string;
   dirty_worktree_preserved: boolean;
-  serialized_finalization_preserved: boolean;
+  integration_preserved: boolean;
 };
 
 export type ImplementorRuntimeMigrationRecoverResult = {
   ticket: string;
-  action: "prepare-and-synchronize";
-  phase: "resynchronize" | "gates";
+  action: "prepare-and-check-rebase";
+  phase: "rebase-required";
   recovered: boolean;
   head: string;
   evidence_path: string;
@@ -1100,7 +1086,7 @@ type MigrationWorktreeSnapshot = {
 };
 
 type ImplementorMigrationEvidence = {
-  schema_version: 2;
+  schema_version: 3;
   kind: "coordinate-implementor-runtime-migration";
   transaction_state: "pending";
   state_path: string;
@@ -1111,8 +1097,8 @@ type ImplementorMigrationEvidence = {
   replacement_role: RoleRecord;
   old_runtime_block: string;
   old_artifact_sha256: string;
-  old_finalization_block: string | null;
-  old_finalization_cycle: number | null;
+  old_integration: IntegrationRecord | null;
+  old_integration_cycle: number | null;
   worktree_snapshot: MigrationWorktreeSnapshot;
   state_references: { closed_runtime: string; decision: string };
   pane_closure: { pane_id: string; observed: "pane_not_found" };
@@ -1143,55 +1129,60 @@ const appendSectionEntry = (markdown: string, headingText: string, entry: string
   return `${markdown.slice(0, sectionEnd).trimEnd()}\n${entry}\n\n${markdown.slice(sectionEnd).trimStart()}`;
 };
 
-const serializedFinalizationBlock = (markdown: string): string | undefined =>
-  markdown.match(/^## Serialized finalization\s*\r?\n\r?\n```json\r?\n[\s\S]*?\r?\n```/mu)?.[0];
+/**
+ * Integration record the replacement runtime inherits from its migrated predecessor. A
+ * gates-phase migration must re-establish integration, so its record carries forward as
+ * `rebase-required` and the next check starts a new cycle with fresh gates.
+ */
+const carriedIntegration = (evidence: ImplementorMigrationEvidence): IntegrationRecord | null => {
+  if (evidence.old_integration === null) return null;
+  if (evidence.old_binding.phase !== "gates") return evidence.old_integration;
+  return { ...evidence.old_integration, phase: "rebase-required", passed_gates: [] };
+};
 
-const validateMigrationFinalization = (
-  markdown: string,
+const readBlockIntegration = (
+  block: string,
+  ticket: string,
+): Effect.Effect<IntegrationRecord | undefined, ImplementorError> =>
+  Effect.try({
+    try: () => parseIntegration(block, ticket),
+    catch: (error) =>
+      error instanceof IntegrationError
+        ? new ImplementorError({ issue: error.issue })
+        : implementorError(
+            "implementor.migration_integration_malformed",
+            `Ticket integration could not be read: ${(error as Error).message}`,
+            "Repair the Integration record from gate and review evidence before migrating.",
+          ),
+  });
+
+const validateMigrationIntegration = (
+  integration: IntegrationRecord | undefined,
   ticket: string,
   head: string,
-): Effect.Effect<{ block: string; cycle: number }, ImplementorError> =>
+): Effect.Effect<IntegrationRecord, ImplementorError> =>
   Effect.gen(function* () {
-    const block = serializedFinalizationBlock(markdown);
-    const match = markdown.match(
-      /^## Serialized finalization\s*\r?\n\r?\n```json\r?\n([\s\S]*?)\r?\n```/mu,
-    );
-    if (match === null || block === undefined) {
+    if (integration === undefined) {
       return yield* implementorError(
-        "implementor.migration_finalization_missing",
-        `Ticket \`${ticket}\` is in gates without serialized finalization state.`,
-        "Restore the exact landing.synchronize record before migrating the runtime.",
-      );
-    }
-    let value: Record<string, unknown>;
-    try {
-      value = JSON.parse(match[1]!) as Record<string, unknown>;
-    } catch {
-      return yield* implementorError(
-        "implementor.migration_finalization_malformed",
-        "Serialized finalization state is not valid JSON.",
-        "Repair it from the immutable synchronization evidence before migrating.",
+        "implementor.migration_integration_missing",
+        `Ticket \`${ticket}\` is in gates without an Integration record.`,
+        "Run landing.rebase.check for the ticket before migrating the runtime.",
       );
     }
     if (
-      value.ticket !== ticket ||
-      value.phase !== "gates" ||
-      !Number.isInteger(value.cycle) ||
-      (value.cycle as number) < 0 ||
-      value.ticket_sha !== head ||
-      typeof value.base_sha !== "string" ||
-      value.review_range !== `${value.base_sha}..${head}` ||
-      value.standards_evidence_path !== null ||
-      value.spec_evidence_path !== null ||
-      value.self_review_path !== null
+      integration.phase !== "gates" ||
+      integration.ticket_sha !== head ||
+      integration.standards_evidence_path !== null ||
+      integration.spec_evidence_path !== null ||
+      integration.self_review_path !== null
     ) {
       return yield* implementorError(
-        "implementor.migration_finalization_stale",
-        "Ticket finalization is not an untouched gate-phase binding for the current tip.",
-        "Do not migrate through active review or landed state; repair or finish that finalization first.",
+        "implementor.migration_integration_stale",
+        "Ticket integration is not an untouched gate-phase binding for the current tip.",
+        "Do not migrate through active review or landed state; repair or finish that integration first.",
       );
     }
-    return { block, cycle: value.cycle as number };
+    return integration;
   });
 
 const persistMigrationEvidence = (
@@ -1346,7 +1337,7 @@ const readCommittedMigrationEvidence = (
         typeof parsed !== "object" ||
         parsed === null ||
         Array.isArray(parsed) ||
-        (parsed as Record<string, unknown>).schema_version !== 2 ||
+        (parsed as Record<string, unknown>).schema_version !== 3 ||
         (parsed as Record<string, unknown>).kind !== "coordinate-implementor-runtime-migration"
       ) {
         throw implementorError(
@@ -1416,7 +1407,8 @@ const readCommittedMigrationEvidence = (
 /**
  * Archives one exact closed Claude implementor binding and adopts only the run's persisted Pi default.
  *
- * The operation leaves the worktree, branch, launch artifact, and serialized finalization intact.
+ * The operation leaves the worktree, branch, and launch artifact intact and preserves the ticket's
+ * Integration record in the migration evidence for the replacement runtime.
  * The coordinator uses the returned binding with `implementor.launch.prepare` afterward.
  *
  * @param input - Exact prior binding, expected persisted Pi role, and explicit user authority.
@@ -1510,7 +1502,7 @@ export const migrateClosedImplementorRuntime = (
           }
           if (
             priorEvidence.kind !== "coordinate-implementor-runtime-migration" ||
-            priorEvidence.schema_version !== 2 ||
+            priorEvidence.schema_version !== 3 ||
             priorEvidence.transaction_state !== "pending" ||
             priorEvidence.state_path !== input.statePath ||
             priorEvidence.ticket !== input.ticket ||
@@ -1672,30 +1664,23 @@ export const migrateClosedImplementorRuntime = (
           actualBinding.worktreePath,
         );
         const dirtyWorktree = worktreeSnapshot.status.trim().length > 0;
-        let oldFinalizationBlock: string | null = null;
-        let oldFinalizationCycle: number | null = null;
+        const oldIntegration = yield* readBlockIntegration(originalBlock, input.ticket);
         if (actualBinding.phase === "gates") {
           if (dirtyWorktree) {
             return yield* implementorError(
               "implementor.migration_worktree_dirty",
-              "A gates-phase implementor migration requires the synchronized worktree to remain clean.",
-              "Preserve the work and restore the reviewed tip before migrating this finalization state.",
+              "A gates-phase implementor migration requires the integrated worktree to remain clean.",
+              "Preserve the work and restore the reviewed tip before migrating this integration.",
             );
           }
-          const finalization = yield* validateMigrationFinalization(
-            markdown,
-            input.ticket,
-            worktreeSnapshot.head,
-          );
-          oldFinalizationBlock = finalization.block;
-          oldFinalizationCycle = finalization.cycle;
+          yield* validateMigrationIntegration(oldIntegration, input.ticket, worktreeSnapshot.head);
         }
 
         const relativeEvidencePath = relative(dirname(input.statePath), evidencePath);
         const decisionLine = `- ${input.completedAt} user-authorized ticket ${input.ticket} implementor migration; old binding ${JSON.stringify(actualBinding)}; persisted Pi default ${JSON.stringify(persistedDefault)}; Herdr observed pane_not_found for ${actualBinding.pane}`;
         const closedEntry = `- ${input.completedAt} ticket ${input.ticket} closed Claude implementor runtime superseded; binding ${JSON.stringify(actualBinding)}; evidence ${relativeEvidencePath}`;
         const evidence: ImplementorMigrationEvidence = {
-          schema_version: 2,
+          schema_version: 3,
           kind: "coordinate-implementor-runtime-migration",
           transaction_state: "pending",
           state_path: input.statePath,
@@ -1706,8 +1691,8 @@ export const migrateClosedImplementorRuntime = (
           replacement_role: persistedDefault,
           old_runtime_block: originalBlock,
           old_artifact_sha256: createHash("sha256").update(artifactRaw).digest("hex"),
-          old_finalization_block: oldFinalizationBlock,
-          old_finalization_cycle: oldFinalizationCycle,
+          old_integration: oldIntegration ?? null,
+          old_integration_cycle: oldIntegration?.cycle ?? null,
           worktree_snapshot: worktreeSnapshot,
           state_references: { closed_runtime: closedEntry, decision: decisionLine },
           pane_closure: { pane_id: actualBinding.pane, observed: "pane_not_found" },
@@ -1759,13 +1744,6 @@ export const migrateClosedImplementorRuntime = (
         }
         updated = appendSectionEntry(updated, "## Closed ticket runtimes", closedEntry);
         updated = appendSectionEntry(updated, "## Decisions", decisionLine);
-        if (serializedFinalizationBlock(updated) !== serializedFinalizationBlock(markdown)) {
-          return yield* implementorError(
-            "implementor.migration_finalization_changed",
-            "Runtime migration unexpectedly changed serialized finalization state.",
-            "Do not proceed; restore the original finalization block from synchronization evidence.",
-          );
-        }
         return {
           markdown: updated,
           result: {
@@ -1780,7 +1758,7 @@ export const migrateClosedImplementorRuntime = (
             replacement_role: persistedDefault,
             evidence_path: evidencePath,
             dirty_worktree_preserved: dirtyWorktree,
-            serialized_finalization_preserved: true,
+            integration_preserved: oldIntegration !== undefined,
           },
         };
       }),
@@ -1801,7 +1779,10 @@ export const migrateClosedImplementorRuntime = (
   });
 
 /**
- * Opens a gates-phase migration for explicit resynchronization without changing the worktree.
+ * Opens a gates-phase migration for an explicit new integration cycle without changing the worktree.
+ *
+ * @param input - Ticket, exact migration evidence hash, explicit authority, and timestamp.
+ * @returns The action to prepare the replacement runtime and then run landing.rebase.check.
  */
 export const recoverImplementorRuntimeMigration = (
   input: ImplementorRuntimeMigrationRecoverInput,
@@ -1835,7 +1816,7 @@ export const recoverImplementorRuntimeMigration = (
             "Run implementor.runtime.migrate first and retain its evidence artifact.",
           );
         }
-        if (evidence.old_binding.phase !== "gates" || evidence.old_finalization_cycle === null) {
+        if (evidence.old_binding.phase !== "gates" || evidence.old_integration_cycle === null) {
           return yield* implementorError(
             "implementor.migration_recovery_not_required",
             "Explicit revalidation is available only for a gates-phase implementor migration.",
@@ -1860,87 +1841,24 @@ export const recoverImplementorRuntimeMigration = (
             "Use the SHA-256 of the immutable migration evidence artifact without editing or replacing it.",
           );
         }
-        const finalizationMatch = markdown.match(
-          /^## Serialized finalization\s*\r?\n\r?\n```json\r?\n([\s\S]*?)\r?\n```/mu,
-        );
-        const currentBlock = serializedFinalizationBlock(markdown);
-        if (finalizationMatch === null || currentBlock === undefined) {
-          return yield* implementorError(
-            "implementor.migration_recovery_finalization_missing",
-            "Serialized finalization is missing during migration recovery.",
-            "Restore the original finalization block from the migration evidence and synchronized run state.",
-          );
-        }
-        let finalization: Record<string, unknown>;
-        try {
-          finalization = JSON.parse(finalizationMatch[1]!) as Record<string, unknown>;
-        } catch {
-          return yield* implementorError(
-            "implementor.migration_recovery_finalization_malformed",
-            "Serialized finalization is malformed during migration recovery.",
-            "Repair the exact prior synchronized record before retrying recovery.",
-          );
-        }
         const relativeEvidencePath = relative(dirname(input.statePath), evidencePath);
         const recoveryReference = `ticket ${input.ticket} implementor migration recovery; evidence ${relativeEvidencePath}`;
-        const priorRecovery = markdown
-          .split(/\r?\n/u)
-          .find((line) => line.includes(recoveryReference));
-        if (priorRecovery !== undefined) {
-          if (
-            finalization.ticket === input.ticket &&
-            finalization.cycle === evidence.old_finalization_cycle &&
-            (finalization.phase === "resynchronize" ||
-              (finalization.phase === "gates" &&
-                finalizationMatch[1] !== undefined &&
-                Number(finalization.cycle) > evidence.old_finalization_cycle))
-          ) {
-            return {
-              markdown,
-              result: {
-                ticket: input.ticket,
-                action: "prepare-and-synchronize" as const,
-                phase: finalization.phase as "resynchronize" | "gates",
-                recovered: true,
-                head: evidence.worktree_snapshot.head,
-                evidence_path: evidencePath,
-              },
-            };
-          }
-          if (
-            finalization.ticket === input.ticket &&
-            finalization.phase === "gates" &&
-            Number(finalization.cycle) > evidence.old_finalization_cycle
-          ) {
-            return {
-              markdown,
-              result: {
-                ticket: input.ticket,
-                action: "prepare-and-synchronize" as const,
-                phase: "gates" as const,
-                recovered: true,
-                head: evidence.worktree_snapshot.head,
-                evidence_path: evidencePath,
-              },
-            };
-          }
+        const result = (recovered: boolean) => ({
+          ticket: input.ticket,
+          action: "prepare-and-check-rebase" as const,
+          phase: "rebase-required" as const,
+          recovered,
+          head: evidence.worktree_snapshot.head,
+          evidence_path: evidencePath,
+        });
+        if (markdown.split(/\r?\n/u).some((line) => line.includes(recoveryReference))) {
+          return { markdown, result: result(true) };
+        }
+        if (activeRuntimeBlockPattern(input.ticket).test(markdown)) {
           return yield* implementorError(
             "implementor.migration_recovery_state_conflict",
-            "Migration recovery decision and serialized finalization disagree.",
-            "Preserve the current state and reconcile its recovery decision against landing.synchronize evidence.",
-          );
-        }
-        if (
-          currentBlock !== evidence.old_finalization_block ||
-          finalization.ticket !== input.ticket ||
-          finalization.phase !== "gates" ||
-          finalization.cycle !== evidence.old_finalization_cycle ||
-          finalization.ticket_sha !== evidence.worktree_snapshot.head
-        ) {
-          return yield* implementorError(
-            "implementor.migration_recovery_finalization_stale",
-            "Gates-phase finalization no longer matches the exact pre-migration synchronized record.",
-            "Do not overwrite newer gate or review state; reconcile from the latest synchronization evidence.",
+            "A replacement runtime is already active without a recorded migration recovery.",
+            "Preserve the current state and reconcile the replacement runtime against the migration evidence.",
           );
         }
         yield* verifyWorktree(evidence.old_binding.worktreePath, evidence.old_binding.branch);
@@ -1951,29 +1869,14 @@ export const recoverImplementorRuntimeMigration = (
         ) {
           return yield* implementorError(
             "implementor.migration_recovery_worktree_changed",
-            "Gates-phase recovery requires the original clean synchronized worktree snapshot.",
+            "Gates-phase recovery requires the original clean integrated worktree snapshot.",
             "Preserve and reconcile the worktree manually; recovery will not discard or rewrite ticket files.",
           );
         }
-        finalization.phase = "resynchronize";
-        finalization.completed_at = input.completedAt;
-        const replacementBlock = `## Serialized finalization\n\n\`\`\`json\n${JSON.stringify(finalization, null, 2)}\n\`\`\``;
-        const decision = `- ${input.completedAt} user-authorized ${recoveryReference}; evidence_sha256 ${input.migrationEvidenceSha256}; transition gates -> resynchronize at ${snapshot.head}`;
-        const updated = appendSectionEntry(
-          markdown.replace(currentBlock, replacementBlock),
-          "## Decisions",
-          decision,
-        );
+        const decision = `- ${input.completedAt} user-authorized ${recoveryReference}; evidence_sha256 ${input.migrationEvidenceSha256}; integration cycle ${evidence.old_integration_cycle} released as rebase-required at ${snapshot.head}`;
         return {
-          markdown: updated,
-          result: {
-            ticket: input.ticket,
-            action: "prepare-and-synchronize" as const,
-            phase: "resynchronize" as const,
-            recovered: false,
-            head: snapshot.head,
-            evidence_path: evidencePath,
-          },
+          markdown: appendSectionEntry(markdown, "## Decisions", decision),
+          result: result(false),
         };
       }),
     ).pipe(Effect.mapError(fromMutationError));

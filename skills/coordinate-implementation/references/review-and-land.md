@@ -1,5 +1,10 @@
 # Review, gate, fix, and landing pipeline
 
+The coordinator resolves the pipeline below before starting the Engine. Every
+later section describes what the Engine's built-in steps execute for each
+ticket; the coordinator uses them to read evidence, answer escalations, and
+perform explicitly authorized recovery after `runtime.ts stop`.
+
 ## Resolve the pipeline before workers launch
 
 Read every repository instruction file and the CI configuration before creating
@@ -8,6 +13,11 @@ constraints into `review.policy.prepare`. A command is authoritative only when
 an instruction, CI job, or repository task referenced by one of those sources
 names it. Never infer a command from a language, manifest, lockfile, or tool
 installed on the machine.
+
+When repository instructions require a wrapper for heavy commands, such as a
+shared `flock` lock that serializes builds, lints, and tests across worktrees,
+include that wrapper in each gate's argv. Coordinator gate runs then contend
+for the same lock as worker runs instead of overlapping them.
 
 Pass an explicit empty `ci_files` array when the repository has no CI. If no
 executable gate exists, pass an empty `gates` array and
@@ -28,37 +38,34 @@ modes, and harness-appropriate self-review:
 - Pi implementors complete Standards and Spec in the same existing session. Do
   not require a subagent extension.
 
-## Synchronize before gates
+## Integrate before gates
 
 Parallel workers branch from the landed base that existed when they started.
-Once a worker is idle with policy-compliant commits, call
-`landing.synchronize`. It atomically claims `## Serialized finalization`, then
-rebases that clean ticket branch onto the latest local integration branch. Pass
-`remote_sync_argv: null` for `local-only` policy. A `repository` remote policy
-persists the exact argument array authorized by repository instructions or an
-explicit run policy, then rejects any caller-selected substitute. The helper
-never assumes a remote name or fetch command.
+Each ticket integrates independently; there is no run-wide finalization slot,
+so several tickets may run gates, reviews, and landing in parallel. Once a
+worker is idle with policy-compliant commits, call `landing.rebase.check`. When
+the persisted `repository` remote policy has an exact `remote_sync_argv`, the
+helper runs it first; `local-only` policy never fetches. The helper never
+assumes a remote name or fetch command.
 
-Only one ticket may own synchronization, final gates, review, and landing at a
-time. Other implementors continue working and do not consume this serialized
-slot. Process ready tickets in dependency order. Use the returned full-SHA
-`review_range`, not a worker-start base, for every gate and review. This keeps
-each review diff limited to that ticket instead of making later base commits
-appear as reversals.
+The check runs `git merge-base --is-ancestor <base> HEAD` in the ticket
+worktree against the latest local integration branch. When the tip already
+contains the base, it binds the ticket's `Integration` record and returns
+`run-gates` with a full-SHA `review_range`. Use that range, not a worker-start
+base, for every gate and review. This keeps each review diff limited to that
+ticket instead of making later base commits appear as reversals.
 
-A `resolve-conflicts` result leaves the serialized slot and Git conflict in
-place. Resolve textual conflicts yourself with the `resolving-merge-conflicts`
-skill, never by asking the implementor to operate the rebase. Preserve the
-intent of both the landed change and the ticket. After the rebase completes,
-call `landing.conflict.record`.
-
-Classify a clean textual resolution as `textual`; the helper verifies the clean
-range and advances to gates. Classify a substantive behavioral adaptation as
-`substantive`; it returns the same ticket to the bound implementor as a fix
-round and preserves the reviewed tip needed to enforce append-only fixes. If a
-scope decision is required, first record `scope` with `user_authorized: false`,
-stop, and ask the user. Only a later call with `user_authorized: true` and the
-exact decision records authority and advances to gates.
+When the base advanced, the check returns `rebase` and a `prompt`. Send the
+prompt to the same bound implementor. The implementor, never the coordinator,
+rebases its own branch onto the local base in its own worktree and resolves
+any conflicts there, preserving the intent of both the landed change and the
+ticket. Never rebase a ticket branch or touch the base checkout yourself. After
+the implementor prints `REBASE DONE NN`, call `landing.rebase.record`. It
+validates the clean rebased tip, starts the next integration cycle, and always
+requires every gate to rerun. Both accepted reviews are kept only when the
+ticket's stable patch id is unchanged; otherwise Standards and Spec rerun
+against the new range. If a conflict needs a scope decision, the implementor
+reports `TICKET BLOCKED`; that decision waits for the user.
 
 ## Run and record gates
 
@@ -174,7 +181,7 @@ all gates, repeat its harness-appropriate self-review, and print `FIXES DONE
 NN`.
 
 Include the implementor in the next wait-any call. Immediately call
-`landing.synchronize` after any terminal remediation result, including a terminal
+`landing.rebase.check` after any terminal remediation result, including a terminal
 result returned directly by the blocking Herdr prompt. That terminal result is
 already the wake signal: do not summarize, end the turn, or wait for another
 event first. Use the helper to validate the clean appended tip, then restart the
@@ -185,7 +192,7 @@ Do not manufacture an empty commit when a failed gate passes on an unchanged
 rerun. Stop and obtain explicit user authority. Then call `gate.rerun.record`
 with the immediately preceding failed evidence and fresh passing output. The
 helper requires the same clean worktree, HEAD, configured gate, and append-only
-finalization binding, preserves both evidence files, records the authorization,
+integration binding, preserves both evidence files, records the authorization,
 and returns the ticket to `gates`. Any real source change still requires the
 persisted fix-commit policy and a new commit.
 
@@ -211,29 +218,39 @@ authorization calls idempotent.
 
 ## Landing
 
-After a finalized clean round advances serialized state to `ready-to-land`,
-call `landing.complete` with a run-local immutable evidence path. The helper
+After a finalized clean round, or the last passing gate of a rebase that kept
+both reviews, advances the ticket's integration to `ready-to-land`, call
+`landing.complete` with a run-local immutable evidence path. The helper
 validates that both accepted PASS axes and the implementor self-review cover
-the synchronized ticket tip, then attempts the fast-forward from the recorded
-local base checkout.
+the reviewed patch, and that the ticket branch still equals the integrated tip.
 
-A refused fast-forward returns `resynchronize` instead of guessing success. The
-helper clears the stale final-review binding but retains the serialized ticket.
-Call `landing.synchronize` again, resolve conflicts as above, rerun every gate,
-and run both fresh review axes focused on newly landed interactions and
-conflict-resolution hunks. Only a new `ready-to-land` result may be retried.
+The lock step shares the `land-local` skill's lock. From the recorded local
+base checkout it runs `flock -w 110 <git-common-dir>/land-local.lock` around
+`scripts/land-locked.ts`, which checks the base checkout is clean, checks the
+base is still an ancestor of the reviewed tip, and runs `git merge --ff-only`.
+The lock is held only for those Git commands, never for gates or reviews. A
+tip already contained in the base skips the lock, so a repeated call is
+idempotent.
+
+When another ticket landed first, the lock step reports `REBASE_REQUIRED` and
+the operation returns `action: rebase` with the implementor prompt. Send it to
+the same implementor, call `landing.rebase.record` after the rebase, and rerun
+every gate. Losing the race costs one rebase and one gate run; the reviews
+rerun only when the rebase changed the ticket's patch id. A dirty base checkout
+returns `landing.base_dirty` and a lock timeout returns `landing.lock_timeout`;
+investigate before retrying either.
 
 Once the tip is landed, the helper inspects the exact persisted Herdr pane. A
 live pane returns `close-runtime` plus the only permitted shell-free
-`herdr pane close` argv without cleaning the worktree or releasing serialized
-state. Execute that argv and repeat the same `landing.complete` call. Only a
+`herdr pane close` argv without cleaning the worktree or changing ticket state.
+Execute that argv and repeat the same `landing.complete` call. Only a
 machine-observed `pane_not_found` result permits cleanup. The helper then
 verifies the ticket tip remains landed and the worktree is clean. Native
 cleanup runs `git worktree remove <path>` without `--force` and verifies the
 branch still exists. Repository cleanup requires the exact authorized
 `cleanup_argv`, then receives the same removal and branch retention checks. The
 helper writes immutable JSON evidence, marks the ticket landed at its full tip,
-removes its active block and serialized slot, updates `Base sha:`, and appends
+removes its active block and integration, updates `Base sha:`, and appends
 retained-branch and landed-evidence records before it returns `schedule`.
 
 After that success, the helper has already published the landed state to the

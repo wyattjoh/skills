@@ -3,9 +3,14 @@
 All paths below: `<repo>` is the repository root, `<run>` is the run folder,
 `<base>` is the local integration branch, and `NN` is the zero-padded ticket.
 
-The coordinator performs every mechanical step through the versioned helper
-contract in [helper-cli.md](helper-cli.md). It never assembles a shell command
-for a harness process.
+The coordinator performs only step 1, resolving and persisting repository
+policy, before it starts the Engine. The Engine executes steps 2 through 4 for
+every launch and retry through the versioned helper contract in
+[helper-cli.md](helper-cli.md), and it never assembles a shell command for a
+harness process. Steps 2 through 5 stay documented here as reference for
+reading launch artifacts and for explicitly authorized recovery after
+`runtime.ts stop`. Never launch an implementor by hand while an Engine holds
+the run's lease.
 
 ## 1. Resolve repository policy
 
@@ -44,9 +49,12 @@ again during review.
 After resolving this policy, invoke `worktree.preflight` with the complete
 `policy` object. It is read-only and must succeed before RESUME.md or any
 worktree is created. A missing repository-required tool stops here without
-native fallback.
+native fallback. Once RESUME.md exists, repeat `worktree.preflight` with
+`state_path` so the helper persists the resolved policy as RESUME.md's
+`## Repository policy` record before the Engine starts; the Engine reads it
+before each launch.
 
-Then invoke `worktree.prepare`:
+For each ticket, the Engine then invokes `worktree.prepare`:
 
 ```json
 {
@@ -78,8 +86,8 @@ Then invoke `worktree.prepare`:
 ```
 
 Use `remote_sync_argv: null` for local-only policy. Repository remote policy
-must persist the exact non-empty argv array later accepted by
-`landing.synchronize`; callers cannot substitute another command.
+must persist the exact non-empty argv array that `landing.rebase.check` runs
+before its ancestor check; callers cannot substitute another command.
 
 For repository tooling, also pass `expected_worktree_path`. The helper validates
 that the prescribed command produced the requested branch at that exact path.
@@ -87,19 +95,20 @@ On retry, an already matching worktree is recovered rather than recreated.
 
 ## 2. Create the Herdr tab
 
-Create the worker tab at the prepared worktree so the harness starts in the
+The Engine creates the worker tab at the prepared worktree so the harness starts in the
 correct project:
 
 ```text
 herdr tab create --workspace <workspace> --cwd <worktree> --label "implement <prefix> NN <slug>" --no-focus
 ```
 
-Use the machine-readable result to capture the actual tab and root pane ids.
-Do not guess compact Herdr ids.
+It uses the machine-readable result to capture the actual tab and root pane
+ids, and adopts an existing tab with the same label after a restart. It never
+guesses compact Herdr ids.
 
 ## 3. Prepare a shell-free launch
 
-Call `implementor.launch.prepare` with the actual worktree, branch, session,
+The Engine calls `implementor.launch.prepare` with the actual worktree, branch, session,
 tab, and pane. The operation:
 
 1. validates the requested role against the installed harness and, while
@@ -150,14 +159,14 @@ not an arbitrary run preference.
 }
 ```
 
-The result contains two command objects, each with `command` and `args`. Execute
-them as process argument arrays in order: `launch.start`, then `launch.prompt`.
+The result contains two command objects, each with `command` and `args`. The
+Engine executes them as process argument arrays in order: `launch.start`, then `launch.prompt`.
 Do not join, quote, interpolate, or pass them through `sh -c`. Paths, Unicode,
 apostrophes, leading dashes, and prompt text remain single arguments.
 
 ## 4. Record the observed outcome
 
-After executing the two arrays, call `implementor.launch.record`.
+After executing the two arrays, the Engine calls `implementor.launch.record`.
 
 For success:
 
@@ -182,16 +191,19 @@ returns either the next bounded delay and exact persisted binding, or
 `action: block` after three retries are exhausted. It never changes harness,
 model, effort, required skill, worktree, or branch.
 
-For `action: retry`, wait the returned delay and call
+For `action: retry`, the Engine waits the returned delay and calls
 `implementor.launch.prepare` with the next attempt number, a new attempt-specific
 artifact path, and the exact returned binding. The schema-1 `max_attempts` field
 is retained for compatibility and must be `3`, meaning three retries after the
 initial launch. Attempts therefore run from 1 through 4. A retry is not
-permission to substitute a model or tool.
+permission to substitute a model or tool. For `action: block`, the Engine parks
+the ticket with a `retry_exhausted` escalation.
 
 ## 5. Recover a partial launch
 
-Recovery is state-first:
+After a restart the Engine reconciles a partial launch from RESUME.md and the
+launch artifact without starting a second process. The same state-first
+procedure applies to explicitly authorized manual recovery:
 
 1. Read the ticket row and active runtime block.
 2. Verify the recorded worktree and branch.

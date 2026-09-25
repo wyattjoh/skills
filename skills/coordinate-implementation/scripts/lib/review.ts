@@ -18,9 +18,11 @@ import type {
 } from "./contract.ts";
 import { activeRuntimeBlockPattern, parseActiveRuntimeFields } from "./active-runtime.ts";
 import { spawnGit } from "./git.ts";
+import { IntegrationError, parseIntegration } from "./integration.ts";
 import {
-  applyFinalizationFix,
   applyFinalReviewOutcome,
+  applyGatePass,
+  applyIntegrationFix,
   applyNoChangeGateRerun,
   LandingError,
 } from "./landing.ts";
@@ -89,14 +91,21 @@ const fromMutationError = (error: unknown): ReviewError => {
   );
 };
 
-const parseRoleBlock = (markdown: string, name: "Implementor" | "Reviewer"): RoleRecord => {
+/**
+ * Parses the run-wide Implementor or Reviewer role block from RESUME.md.
+ *
+ * @param markdown - Run-state Markdown.
+ * @param name - Role block heading.
+ * @returns The persisted role record.
+ */
+export const parseRoleBlock = (markdown: string, name: "Implementor" | "Reviewer"): RoleRecord => {
   const expression = new RegExp(`^${name}:\\r?\\n((?:  [^\\r\\n]*(?:\\r?\\n|$))+)`, "gmu");
   const matches = [...markdown.matchAll(expression)];
   if (matches.length !== 1) {
     throw reviewError(
       `state.${name.toLowerCase()}_role_malformed`,
       `RESUME.md must contain exactly one complete \`${name}:\` role block.`,
-      `Repair the schema-1 ${name} harness, model, and effort before preparing review policy.`,
+      `Repair the schema-2 ${name} harness, model, and effort before preparing review policy.`,
     );
   }
   const fields: Record<string, string> = {};
@@ -114,7 +123,7 @@ const parseRoleBlock = (markdown: string, name: "Implementor" | "Reviewer"): Rol
     throw reviewError(
       `state.${name.toLowerCase()}_role_malformed`,
       `RESUME.md has an incomplete or malformed \`${name}:\` role block.`,
-      `Repair the schema-1 ${name} harness, model, and effort before preparing review policy.`,
+      `Repair the schema-2 ${name} harness, model, and effort before preparing review policy.`,
     );
   }
   return { harness, model, effort };
@@ -288,13 +297,19 @@ const parsePrefix = (markdown: string): string => {
     throw reviewError(
       "state.prefix_malformed",
       "RESUME.md must contain exactly one non-empty `Prefix:` field.",
-      "Repair the schema-1 run prefix before preparing a reviewer launch.",
+      "Repair the schema-2 run prefix before preparing a reviewer launch.",
     );
   }
   return matches[0]![1]!;
 };
 
-const parsePolicy = (markdown: string): ReviewPolicy => {
+/**
+ * Parses the single persisted review policy from RESUME.md.
+ *
+ * @param markdown - Run-state Markdown.
+ * @returns The persisted review policy.
+ */
+export const parsePolicy = (markdown: string): ReviewPolicy => {
   const matches = [
     ...markdown.matchAll(/^## Review policy\s*\r?\n\r?\n```json\r?\n([\s\S]*?)\r?\n```\s*$/gmu),
   ];
@@ -420,135 +435,57 @@ const worktreeStatus = (worktreePath: string): string => {
   return result.stdout.trimEnd();
 };
 
-const validateSerializedFinalization = (
+const readIntegration = (markdown: string, ticket: string) => {
+  try {
+    return parseIntegration(markdown, ticket);
+  } catch (error) {
+    if (error instanceof IntegrationError) throw new ReviewError({ issue: error.issue });
+    throw error;
+  }
+};
+
+const validateIntegration = (
   markdown: string,
   ticket: string,
   head: string,
   baseRef: string | undefined,
-): { cycle: number; completedAt: string | null } | undefined => {
-  const match = markdown.match(
-    /^## Serialized finalization\s*\r?\n\r?\n```json\r?\n([\s\S]*?)\r?\n```\s*$/mu,
-  );
-  if (match === null) return undefined;
-  let value: Record<string, unknown>;
-  try {
-    value = JSON.parse(match[1]!) as Record<string, unknown>;
-  } catch {
+): { cycle: number } | undefined => {
+  const integration = readIntegration(markdown, ticket);
+  if (integration === undefined) return undefined;
+  if (integration.phase !== "gates" || integration.ticket_sha !== head) {
     throw reviewError(
-      "review.finalization_malformed",
-      "Serialized finalization state is malformed.",
-      "Repair it from synchronization evidence before gates or review.",
+      "review.integration_stale",
+      "Gate or review input does not match the integrated ticket tip and phase.",
+      "Run landing.rebase.check, then rerun every gate against its returned tip.",
     );
   }
-  if (value.ticket !== ticket) {
-    throw reviewError(
-      "review.finalization_serialized",
-      `Ticket \`${String(value.ticket)}\` owns serialized finalization.`,
-      "Keep other implementors running, but gate and review only the serialized ticket.",
-    );
-  }
-  if (!Number.isInteger(value.cycle) || (value.cycle as number) < 0) {
-    throw reviewError(
-      "review.finalization_malformed",
-      "Serialized finalization has no valid nonnegative synchronization cycle.",
-      "Repair it from authoritative landing.synchronize evidence before gates or review.",
-    );
-  }
-  if (value.phase !== "gates" || value.ticket_sha !== head) {
-    throw reviewError(
-      "review.finalization_stale",
-      "Gate or review input does not match the synchronized ticket tip and phase.",
-      "Run landing.synchronize, then rerun every gate against its returned tip.",
-    );
-  }
-  if (baseRef !== undefined && value.base_sha !== baseRef) {
+  if (baseRef !== undefined && integration.base_sha !== baseRef) {
     throw reviewError(
       "review.range_mismatch",
-      "Reviewer base_ref does not equal the synchronized full-SHA review base.",
-      "Use the exact review_range returned by landing.synchronize.",
+      "Reviewer base_ref does not equal the integrated full-SHA review base.",
+      "Use the exact review_range returned by landing.rebase.check or landing.rebase.record.",
     );
   }
-  return {
-    cycle: value.cycle as number,
-    completedAt: typeof value.completed_at === "string" ? value.completed_at : null,
-  };
+  return { cycle: integration.cycle };
 };
 
-const readSerializedFinalizationCycle = (markdown: string, ticket: string): number => {
-  const match = markdown.match(
-    /^## Serialized finalization\s*\r?\n\r?\n```json\r?\n([\s\S]*?)\r?\n```/mu,
-  );
-  if (match === null) {
+const noChangeIntegration = (
+  markdown: string,
+  ticket: string,
+  head: string,
+): { baseSha: string; cycle: number } => {
+  const integration = readIntegration(markdown, ticket);
+  const initial = integration?.phase === "fixing" && integration.reviewed_commit_patch_ids !== null;
+  const recovered =
+    integration?.phase === "gates" && integration.reviewed_commit_patch_ids === null;
+  if (integration === undefined || integration.ticket_sha !== head || (!initial && !recovered)) {
     throw reviewError(
       "gate.rerun_state_invalid",
-      "No serialized finalization exists for the gate rerun ordering proof.",
-      "Synchronize the ticket and record its failed gate before recovery.",
-    );
-  }
-  let value: Record<string, unknown>;
-  try {
-    value = JSON.parse(match[1]!) as Record<string, unknown>;
-  } catch {
-    throw reviewError(
-      "gate.rerun_state_invalid",
-      "Serialized finalization is malformed for the gate rerun ordering proof.",
-      "Repair finalization state from durable synchronization evidence.",
-    );
-  }
-  if (value.ticket !== ticket || !Number.isInteger(value.cycle) || (value.cycle as number) < 0) {
-    throw reviewError(
-      "gate.rerun_state_invalid",
-      "Serialized finalization has no cycle bound to the requested ticket.",
-      "Repair finalization state from durable synchronization evidence.",
-    );
-  }
-  return value.cycle as number;
-};
-
-const noChangeFinalizationBase = (markdown: string, ticket: string, head: string): string => {
-  const match = markdown.match(
-    /^## Serialized finalization\s*\r?\n\r?\n```json\r?\n([\s\S]*?)\r?\n```\s*$/mu,
-  );
-  if (match === null) {
-    throw reviewError(
-      "gate.rerun_state_invalid",
-      "No serialized finalization exists for the no-change gate rerun.",
-      "Synchronize the ticket and record its failed gate before recovery.",
-    );
-  }
-  let value: Record<string, unknown>;
-  try {
-    value = JSON.parse(match[1]!) as Record<string, unknown>;
-  } catch {
-    throw reviewError(
-      "gate.rerun_state_invalid",
-      "Serialized finalization is malformed for the no-change gate rerun.",
-      "Repair finalization state from durable synchronization evidence.",
-    );
-  }
-  const policy = value.commit_policy;
-  const phase = value.phase;
-  const previousTicketSha = value.previous_ticket_sha;
-  const initial = (phase === "fixing" || phase === "synchronizing") && previousTicketSha === head;
-  const recovered = phase === "gates" && previousTicketSha === null;
-  if (
-    value.ticket !== ticket ||
-    value.ticket_sha !== head ||
-    (!initial && !recovered) ||
-    typeof value.base_sha !== "string" ||
-    !/^[0-9a-f]{40,64}$/u.test(value.base_sha) ||
-    typeof policy !== "object" ||
-    policy === null ||
-    Array.isArray(policy) ||
-    (policy as Record<string, unknown>).fixes !== "append"
-  ) {
-    throw reviewError(
-      "gate.rerun_state_invalid",
-      "No-change gate rerun does not match the append-only serialized finalization binding.",
+      "No-change gate rerun does not match the append-only fixing integration binding.",
       "Preserve the failed gate, ticket tip, base, and append policy before recording the rerun.",
     );
   }
-  return value.base_sha;
+  return { baseSha: integration.base_sha, cycle: integration.cycle };
 };
 
 const worktreeHead = (worktreePath: string): string => {
@@ -564,7 +501,15 @@ const worktreeHead = (worktreePath: string): string => {
   return head;
 };
 
-const reviewPrompt = (input: ReviewLaunchPrepareInput, finalizationCycle: number): string => {
+/**
+ * File a reviewer writes its complete report to before the engine records it.
+ *
+ * @param reportPath - Immutable report path chosen for the attempt.
+ * @returns The draft path the reviewer writes.
+ */
+export const reviewDraftPath = (reportPath: string): string => `${reportPath}.draft.md`;
+
+const reviewPrompt = (input: ReviewLaunchPrepareInput): string => {
   const focus =
     input.axis === "standards"
       ? "Review only against the listed repository instruction, architecture, domain, and contract sources."
@@ -575,11 +520,6 @@ const reviewPrompt = (input: ReviewLaunchPrepareInput, finalizationCycle: number
     `Diff range: ${input.baseRef}..${input.branch}`,
     `Sources: ${input.contextPaths.join(", ")}`,
     `Already landed tickets: ${input.landedTickets.length === 0 ? "none" : input.landedTickets.join(", ")}`,
-    ...(finalizationCycle > 0
-      ? [
-          "This is a refused-fast-forward recovery review. Focus on newly landed interactions and synchronization conflict-resolution hunks.",
-        ]
-      : []),
     focus,
     "Do not modify the worktree, index, commits, or any repository file.",
     "Report only actionable defects, not observations or personal style preferences.",
@@ -591,6 +531,7 @@ const reviewPrompt = (input: ReviewLaunchPrepareInput, finalizationCycle: number
     "Suggested fix: one concrete line",
     "Every actionable finding requires FAIL. With no findings, use PASS.",
     "The final non-empty line must be exactly PASS or FAIL.",
+    `Before you finish, write your complete report to ${reviewDraftPath(input.reportPath)}. That file is outside the worktree; the terminal transcript is not collected.`,
   ].join("\n");
 };
 
@@ -694,7 +635,12 @@ const discoverReviewAttempts = async (
   let visited = 0;
   while (directories.length > 0) {
     const directory = directories.pop()!;
-    const entries = await readdir(directory, { withFileTypes: true });
+    // Concurrent run-state writers create and remove transient lock and
+    // temporary entries under the run folder while this scan walks it.
+    const entries = await readdir(directory, { withFileTypes: true }).catch((error: unknown) => {
+      if (error instanceof Error && "code" in error && error.code === "ENOENT") return [];
+      throw error;
+    });
     for (const entry of entries) {
       if (entry.isSymbolicLink()) continue;
       const path = resolve(directory, entry.name);
@@ -711,7 +657,11 @@ const discoverReviewAttempts = async (
           "Keep prior attempt artifacts in the reviews directory or reconcile the run before launching.",
         );
       }
-      const raw = await readFile(path, "utf8");
+      const raw = await readFile(path, "utf8").catch((error: unknown) => {
+        if (error instanceof Error && "code" in error && error.code === "ENOENT") return null;
+        throw error;
+      });
+      if (raw === null) continue;
       let parsed: unknown;
       try {
         parsed = JSON.parse(raw) as unknown;
@@ -876,7 +826,7 @@ type SupersededGateEvidence = {
  *
  * The old launch artifact and gate evidence are only read and hashed. The supersession sidecar is
  * immutable, the exact pane must be absent according to Herdr, and the ticket's clean gates-phase
- * finalization is left unchanged. A later reviewer retry must use fresh gate attempts.
+ * integration is left unchanged. A later reviewer retry must use fresh gate attempts.
  *
  * @param input - Exact prior attempt binding, explicit authority, and interruption reason.
  * @returns Durable supersession provenance and the next reviewer attempt number.
@@ -1073,38 +1023,28 @@ export const supersedeInterruptedReviewerAttempt = (
           return yield* reviewError(
             "review.supersession_worktree_dirty",
             "Interrupted review can only be superseded while its reviewed worktree remains clean.",
-            "Preserve any worktree changes and resolve them before restarting finalization.",
+            "Preserve any worktree changes and resolve them before restarting integration.",
           );
         }
-        const finalizationMatch = markdown.match(
-          /^## Serialized finalization\s*\r?\n\r?\n```json\r?\n([\s\S]*?)\r?\n```/mu,
-        );
-        let finalization: Record<string, unknown>;
+        let integration: ReturnType<typeof parseIntegration>;
         try {
-          finalization = JSON.parse(finalizationMatch?.[1] ?? "") as Record<string, unknown>;
-        } catch {
-          return yield* reviewError(
-            "review.supersession_finalization_malformed",
-            "Ticket finalization state is missing or malformed.",
-            "Restore its immutable landing.synchronize binding before superseding reviewers.",
-          );
+          integration = readIntegration(markdown, artifact.ticket);
+        } catch (error) {
+          return yield* error as ReviewError;
         }
         if (
-          finalization.ticket !== artifact.ticket ||
-          (finalization.phase !== "gates" && finalization.phase !== "resynchronize") ||
-          finalization.ticket_sha !== head ||
-          finalization.base_sha !== artifact.base_ref ||
-          finalization.review_range !== `${artifact.base_ref}..${head}` ||
-          finalization.standards_evidence_path !== null ||
-          finalization.spec_evidence_path !== null ||
-          finalization.self_review_path !== null ||
-          (finalization.phase === "resynchronize" &&
-            !markdown.includes(`ticket ${artifact.ticket} implementor migration recovery;`))
+          integration === undefined ||
+          integration.phase !== "gates" ||
+          integration.ticket_sha !== head ||
+          integration.base_sha !== artifact.base_ref ||
+          integration.standards_evidence_path !== null ||
+          integration.spec_evidence_path !== null ||
+          integration.self_review_path !== null
         ) {
           return yield* reviewError(
-            "review.supersession_finalization_stale",
-            "Ticket is no longer at an untouched serialized gates-phase review boundary.",
-            "Do not supersede attempts after review evidence or finalization has advanced.",
+            "review.supersession_integration_stale",
+            "Ticket is no longer at an untouched gates-phase integration boundary.",
+            "Do not supersede attempts after review evidence or integration has advanced.",
           );
         }
 
@@ -1426,17 +1366,10 @@ export const prepareReviewerLaunch = (
           );
         }
         const reviewedHead = worktreeHead(requestedWorktree);
-        let finalizationCycle = 0;
-        let hasFinalization = false;
+        let integrationCycle: number | null = null;
         try {
-          const finalization = validateSerializedFinalization(
-            markdown,
-            input.ticket,
-            reviewedHead,
-            input.baseRef,
-          );
-          finalizationCycle = finalization?.cycle ?? 0;
-          hasFinalization = finalization !== undefined;
+          integrationCycle =
+            validateIntegration(markdown, input.ticket, reviewedHead, input.baseRef)?.cycle ?? null;
         } catch (error) {
           return yield* error as ReviewError;
         }
@@ -1457,7 +1390,7 @@ export const prepareReviewerLaunch = (
             attempt: number;
             path: string;
             supersessionGeneration: number | null;
-            finalizationCycle: number | null;
+            integrationCycle: number | null;
           }
         >();
         for (const path of input.gateEvidencePaths) {
@@ -1479,23 +1412,23 @@ export const prepareReviewerLaunch = (
                 worktree_path: unknown | undefined;
                 completed_at: unknown | undefined;
                 supersession_generation: unknown | undefined;
-                finalization_cycle: unknown | undefined;
+                integration_cycle: unknown | undefined;
               },
             "review.gate_evidence_read_failed",
             `Could not read gate evidence at ${path}`,
           );
           const configured = policy.gates.find((gate) => gate.name === evidence.gate?.name);
           if (
-            (migrationRecoveryRecorded && !hasFinalization) ||
-            (hasFinalization && evidence.finalization_cycle !== finalizationCycle)
+            (migrationRecoveryRecorded && integrationCycle === null) ||
+            (integrationCycle !== null && evidence.integration_cycle !== integrationCycle)
           ) {
             const code = migrationRecoveryRecorded
               ? "review.migration_gates_stale"
               : "review.gates_cycle_stale";
             return yield* reviewError(
               code,
-              "Gate evidence does not bind the current synchronized finalization cycle.",
-              "Rerun and record every configured gate after landing.synchronize before preparing reviewers.",
+              "Gate evidence does not bind the ticket's current integration cycle.",
+              "Rerun and record every configured gate after landing.rebase.check before preparing reviewers.",
             );
           }
           if (
@@ -1525,8 +1458,8 @@ export const prepareReviewerLaunch = (
             supersessionGeneration: Number.isInteger(evidence.supersession_generation)
               ? (evidence.supersession_generation as number)
               : null,
-            finalizationCycle: Number.isInteger(evidence.finalization_cycle)
-              ? (evidence.finalization_cycle as number)
+            integrationCycle: Number.isInteger(evidence.integration_cycle)
+              ? (evidence.integration_cycle as number)
               : null,
           });
         }
@@ -2057,7 +1990,7 @@ export const prepareReviewerLaunch = (
         const prefix = parsePrefix(markdown);
         const session = `${prefix}-review-${input.ticket}-r${input.round}-${input.axis}-a${input.attempt}`;
         const tab = `review ${prefix} ${input.ticket} r${input.round} ${input.axis} a${input.attempt}`;
-        const prompt = reviewPrompt(input, finalizationCycle);
+        const prompt = reviewPrompt(input);
         const statusBefore = worktreeStatus(requestedWorktree);
         if (statusBefore.length > 0) {
           return yield* reviewError(
@@ -2246,7 +2179,7 @@ export const recordReviewerLaunch = (
     ) {
       return yield* reviewError(
         "review.artifact_mismatch",
-        "Reviewer launch artifact does not belong to this schema-1 run state or supplied path.",
+        "Reviewer launch artifact does not belong to this schema-2 run state or supplied path.",
         "Use the artifact recorded for this active ticket and attempt.",
       );
     }
@@ -2448,25 +2381,20 @@ export const recordGate = (input: GateRecordInput): Effect.Effect<GateRecordResu
         const policy = parsePolicy(markdown);
         const runtime = parseActiveTicket(markdown, input.ticket);
         const currentHead = worktreeHead(runtime.worktree);
-        let finalization: ReturnType<typeof validateSerializedFinalization>;
+        let integration: ReturnType<typeof validateIntegration>;
         try {
-          finalization = validateSerializedFinalization(
-            markdown,
-            input.ticket,
-            currentHead,
-            undefined,
-          );
+          integration = validateIntegration(markdown, input.ticket, currentHead, undefined);
         } catch (error) {
           return yield* error as ReviewError;
         }
         const migrationRecoveryRecorded = markdown.includes(
           `ticket ${input.ticket} implementor migration recovery;`,
         );
-        if (migrationRecoveryRecorded && finalization === undefined) {
+        if (migrationRecoveryRecorded && integration === undefined) {
           return yield* reviewError(
-            "gate.migration_synchronization_stale",
-            "Recovered migration has no synchronized finalization cycle to bind gate evidence to.",
-            "Complete landing.synchronize before executing or recording gates.",
+            "gate.migration_integration_stale",
+            "Recovered migration has no integration cycle to bind gate evidence to.",
+            "Complete landing.rebase.check before executing or recording gates.",
           );
         }
         const activeWorktree = yield* reviewIo(
@@ -2510,26 +2438,32 @@ export const recordGate = (input: GateRecordInput): Effect.Effect<GateRecordResu
           nextAttempt = input.attempt + 1;
           retryDelay = REVIEW_RETRY_DELAYS_SECONDS[input.attempt - 1]!;
         } else action = "blocked";
-        let updatedMarkdown = markdown;
-        if (action === "fix") {
-          updatedMarkdown = yield* Effect.try({
-            try: () =>
-              applyFinalizationFix(markdown, {
-                ticket: input.ticket,
-                reviewedHead: head,
-                completedAt: input.completedAt,
-                phase: "gate fix required",
-              }),
-            catch: (error) =>
-              error instanceof LandingError
-                ? new ReviewError({ issue: error.issue })
-                : reviewError(
-                    "gate.finalization_failed",
-                    `Could not advance serialized finalization: ${(error as Error).message}`,
-                    "Repair finalization state and retry the immutable gate evidence.",
-                  ),
-          });
-        }
+        const updatedMarkdown = yield* Effect.try({
+          try: () =>
+            action === "fix"
+              ? applyIntegrationFix(markdown, {
+                  ticket: input.ticket,
+                  reviewedHead: head,
+                  completedAt: input.completedAt,
+                  phase: "gate fix required",
+                })
+              : action === "continue"
+                ? applyGatePass(markdown, {
+                    ticket: input.ticket,
+                    name: input.name,
+                    head,
+                    gateNames: policy.gates.map((candidate) => candidate.name),
+                  })
+                : markdown,
+          catch: (error) =>
+            error instanceof LandingError || error instanceof IntegrationError
+              ? new ReviewError({ issue: error.issue })
+              : reviewError(
+                  "gate.integration_failed",
+                  `Could not advance ticket integration: ${(error as Error).message}`,
+                  "Repair the Integration record and retry the immutable gate evidence.",
+                ),
+        });
         yield* reviewIo(
           () =>
             writeImmutable(
@@ -2550,7 +2484,7 @@ export const recordGate = (input: GateRecordInput): Effect.Effect<GateRecordResu
                   stderr: input.stderr,
                   completed_at: input.completedAt,
                   supersession_generation: supersessionGeneration,
-                  finalization_cycle: finalization?.cycle ?? null,
+                  integration_cycle: integration?.cycle ?? null,
                 },
                 null,
                 2,
@@ -2599,7 +2533,7 @@ export type GateRerunRecordResult = {
 };
 
 /**
- * Records a passing same-HEAD rerun and restores serialized gate review without a fake commit.
+ * Records a passing same-HEAD rerun and restores gate review without a fake commit.
  *
  * @param input - Prior failed evidence, fresh output, explicit authority, and unchanged worktree.
  * @returns The durable passing evidence and restored gate action.
@@ -2653,26 +2587,23 @@ export const recordGateRerun = (
         "Commit a real fix under the persisted policy or restore the clean reviewed tip before rerunning.",
       );
     }
-    const baseSha = yield* Effect.try({
-      try: () => noChangeFinalizationBase(markdown, input.ticket, head),
+    const noChange = yield* Effect.try({
+      try: () => noChangeIntegration(markdown, input.ticket, head),
       catch: (error) =>
         error instanceof ReviewError
           ? error
           : reviewError(
               "gate.rerun_state_invalid",
-              `Could not validate no-change finalization: ${(error as Error).message}`,
-              "Repair finalization state from durable gate evidence.",
+              `Could not validate the no-change integration: ${(error as Error).message}`,
+              "Repair the Integration record from durable gate evidence.",
             ),
     });
+    const baseSha = noChange.baseSha;
+    const integrationCycle = noChange.cycle;
     const supersessionGeneration = yield* reviewIo(
       async () => readSupersessionGeneration(markdown, input.ticket, input.round),
       "gate.rerun_supersession_generation_invalid",
       "Could not read durable reviewer supersession ordering",
-    );
-    const finalizationCycle = yield* reviewIo(
-      async () => readSerializedFinalizationCycle(markdown, input.ticket),
-      "gate.rerun_finalization_cycle_invalid",
-      "Could not read the serialized finalization cycle",
     );
     const gate = policy.gates.find((candidate) => candidate.name === input.name);
     if (gate === undefined) {
@@ -2711,7 +2642,7 @@ export const recordGateRerun = (
       prior.status !== "failed" ||
       prior.action !== "fix" ||
       prior.supersession_generation !== supersessionGeneration ||
-      prior.finalization_cycle !== finalizationCycle ||
+      prior.integration_cycle !== integrationCycle ||
       typeof prior.exit_code !== "number" ||
       prior.exit_code === 0 ||
       typeof prior.stdout !== "string" ||
@@ -2731,8 +2662,8 @@ export const recordGateRerun = (
     if (count.exitCode !== 0 || !Number.isSafeInteger(commitCount) || commitCount <= 0) {
       return yield* reviewError(
         "gate.rerun_range_invalid",
-        "Could not reconstruct a non-empty synchronized ticket range for the gate rerun.",
-        "Restore the serialized base and ticket commits before recovery.",
+        "Could not reconstruct a non-empty integrated ticket range for the gate rerun.",
+        "Restore the integrated base and ticket commits before recovery.",
       );
     }
     const evidence = `${JSON.stringify(
@@ -2751,7 +2682,7 @@ export const recordGateRerun = (
         stderr: input.stderr,
         completed_at: input.completedAt,
         supersession_generation: supersessionGeneration,
-        finalization_cycle: finalizationCycle,
+        integration_cycle: integrationCycle,
         rerun_of: input.previousEvidencePath,
         user_authorized: input.userAuthorized,
         recovery_diagnostic: input.diagnostic,
@@ -2785,24 +2716,23 @@ export const recordGateRerun = (
             ticket: input.ticket,
             name: input.name,
             reviewedHead: head,
-            baseSha,
-            commitCount,
             previousEvidencePath: input.previousEvidencePath,
             evidencePath: input.evidencePath,
             diagnostic: input.diagnostic,
             completedAt: input.completedAt,
+            fixes: parseFixCommitPolicy(state),
           });
           return { markdown: update.markdown, result: update.recovered };
         },
         catch: (error) =>
           error instanceof ReviewError
             ? error
-            : error instanceof LandingError
+            : error instanceof LandingError || error instanceof IntegrationError
               ? new ReviewError({ issue: error.issue })
               : reviewError(
-                  "gate.rerun_finalization_failed",
-                  `Could not restore serialized gate review: ${(error as Error).message}`,
-                  "Repair finalization state from immutable gate evidence.",
+                  "gate.rerun_integration_failed",
+                  `Could not restore gate review: ${(error as Error).message}`,
+                  "Repair the Integration record from immutable gate evidence.",
                 ),
       }),
     ).pipe(Effect.mapError(fromMutationError));
@@ -2897,7 +2827,7 @@ const parseEscalationTicketRow = (markdown: string, ticket: string): EscalationT
     throw reviewError(
       "review.escalation_ticket_table_malformed",
       "RESUME.md has no ticket table for escalation authorization.",
-      "Repair the schema-1 ticket table before retrying.",
+      "Repair the schema-2 ticket table before retrying.",
     );
   }
   const sectionStart = heading.index + heading[0].length;
@@ -2911,7 +2841,7 @@ const parseEscalationTicketRow = (markdown: string, ticket: string): EscalationT
     throw reviewError(
       "review.escalation_ticket_table_malformed",
       `Ticket \`${ticket}\` is missing from the escalation ticket table.`,
-      "Repair the schema-1 ticket table before retrying.",
+      "Repair the schema-2 ticket table before retrying.",
     );
   }
   const columns = lines[headerIndex]!.split("|")
@@ -2924,7 +2854,7 @@ const parseEscalationTicketRow = (markdown: string, ticket: string): EscalationT
     throw reviewError(
       "review.escalation_ticket_table_malformed",
       `Ticket \`${ticket}\` does not match the ticket table columns.`,
-      "Repair the schema-1 ticket row before retrying.",
+      "Repair the schema-2 ticket row before retrying.",
     );
   }
   for (const column of ["harness", "model", "effort", "rounds", "esc", "status"]) {
@@ -2932,7 +2862,7 @@ const parseEscalationTicketRow = (markdown: string, ticket: string): EscalationT
       throw reviewError(
         "review.escalation_ticket_table_malformed",
         `Ticket table is missing required \`${column}\` escalation state.`,
-        "Repair the schema-1 ticket table before retrying.",
+        "Repair the schema-2 ticket table before retrying.",
       );
     }
   }
@@ -2977,7 +2907,7 @@ const appendEscalationDecision = (markdown: string, line: string): string => {
     throw reviewError(
       "review.escalation_decisions_missing",
       "RESUME.md has no Decisions section for escalation provenance.",
-      "Repair the schema-1 Decisions section before retrying.",
+      "Repair the schema-2 Decisions section before retrying.",
     );
   }
   const sectionStart = heading.index + heading[0].length;
@@ -3094,10 +3024,14 @@ export const authorizeReviewEscalation = (
           yield* validateStateText(input.statePath, markdown).pipe(
             Effect.mapError((error) => new ReviewError({ issue: error.issue })),
           );
-          if (/^## Serialized finalization\s*\r?\n\r?\n```json/mu.test(markdown)) {
+          if (
+            /^Integration:/mu.test(
+              markdown.match(activeRuntimeBlockPattern(input.ticket))?.[0] ?? "",
+            )
+          ) {
             return yield* reviewError(
-              "review.escalation_finalization_present",
-              "Escalation authorization requires the exhausted review to release serialized finalization.",
+              "review.escalation_integration_present",
+              "Escalation authorization requires the exhausted review to release the ticket integration.",
               "Restore the escalation block transition before authorizing another fix round.",
             );
           }
@@ -3530,7 +3464,7 @@ export const finalizeReviewRound = (
     yield* mutateStateFile(input.statePath, (state) =>
       Effect.try({
         try: () => {
-          const withFinalization = applyFinalReviewOutcome(state, {
+          const withIntegration = applyFinalReviewOutcome(state, {
             ticket: input.ticket,
             verdict,
             reviewedHead: standards.head_before,
@@ -3541,19 +3475,19 @@ export const finalizeReviewRound = (
           });
           return {
             markdown: appendEvidenceLine(
-              withFinalization,
+              withIntegration,
               `- Ticket ${input.ticket} round ${input.round} finalized: ${verdict}; self-review ${input.selfReviewPath}; Standards ${standards.report_path}; Spec ${spec.report_path}${findings.length > 0 ? `; fixes ${input.fixRequestPath}` : ""}`,
             ),
             result: undefined,
           };
         },
         catch: (error) =>
-          error instanceof LandingError
+          error instanceof LandingError || error instanceof IntegrationError
             ? new ReviewError({ issue: error.issue })
             : reviewError(
-                "review.finalization_failed",
-                `Could not advance serialized finalization: ${(error as Error).message}`,
-                "Repair finalization state and retry the same immutable review evidence.",
+                "review.integration_failed",
+                `Could not advance ticket integration: ${(error as Error).message}`,
+                "Repair the Integration record and retry the same immutable review evidence.",
               ),
       }),
     ).pipe(Effect.mapError(fromMutationError));

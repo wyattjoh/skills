@@ -104,7 +104,7 @@ const retryState = (
   completedRetries: number,
 ): string => `# sample implementation run
 
-Schema version: 1
+Schema version: 2
 
 ## Tickets
 
@@ -352,7 +352,7 @@ describe("wait-any request validation", () => {
 });
 
 describe("event-driven scheduling documentation", () => {
-  it("documents the bounded cap and helper cycle without legacy wake mechanisms", async () => {
+  it("documents the bounded cap and engine wait loop without legacy wake mechanisms", async () => {
     const skill = readFileSync(join(import.meta.dir, "..", "SKILL.md"), "utf8");
     const helper = readFileSync(join(import.meta.dir, "..", "references", "helper-cli.md"), "utf8");
     const resume = readFileSync(
@@ -360,8 +360,20 @@ describe("event-driven scheduling documentation", () => {
       "utf8",
     );
     const stall = readFileSync(join(import.meta.dir, "..", "references", "stall-check.md"), "utf8");
+    const runtimeCli = readFileSync(
+      join(import.meta.dir, "..", "references", "runtime-cli.md"),
+      "utf8",
+    );
 
     expect(skill.includes("--parallel <N>")).toBe(true);
+    expect(skill.includes("`wait` is the only wait.")).toBe(true);
+    expect(
+      skill.includes("Loop on `runtime.ts wait --run .scratch/<slug>` until the run finishes."),
+    ).toBe(true);
+    expect(skill.includes("herdr.wait_any")).toBe(false);
+    expect(runtimeCli.includes("`wait` is the only wait.")).toBe(true);
+    expect(stall.includes("The Engine runs this check on its own per-ticket timer.")).toBe(true);
+    expect(stall.includes("open a\n  `stall_pause` escalation for that ticket.")).toBe(true);
     expect(resume.includes("Parallel cap:")).toBe(true);
     expect(helper.includes("## `scheduler.plan`")).toBe(true);
     expect(helper.includes("## `herdr.wait_any`")).toBe(true);
