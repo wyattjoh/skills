@@ -24,6 +24,7 @@ import {
   applyNoChangeGateRerun,
   LandingError,
 } from "./landing.ts";
+import { appendSectionLine, readRoleBlock, sameRole } from "./resume-sections.ts";
 import { inspectRuntimeClose } from "./runtime-close.ts";
 import { mutateStateFile, StateMutationError, withStateLock } from "./state-mutation.ts";
 import { validateStateText } from "./state.ts";
@@ -96,34 +97,15 @@ const fromMutationError = (error: unknown): ReviewError => {
  * @returns The persisted role record.
  */
 export const parseRoleBlock = (markdown: string, name: "Implementor" | "Reviewer"): RoleRecord => {
-  const expression = new RegExp(`^${name}:\\r?\\n((?:  [^\\r\\n]*(?:\\r?\\n|$))+)`, "gmu");
-  const matches = [...markdown.matchAll(expression)];
-  if (matches.length !== 1) {
-    throw reviewError(
-      `state.${name.toLowerCase()}_role_malformed`,
-      `RESUME.md must contain exactly one complete \`${name}:\` role block.`,
-      `Repair the schema-2 ${name} harness, model, and effort before preparing review policy.`,
-    );
-  }
-  const fields: Record<string, string> = {};
-  for (const line of matches[0]![1]!.split(/\r?\n/u)) {
-    if (line.length === 0) continue;
-    const field = line.match(/^  ([a-z]+):\s*(.*)$/u);
-    if (field !== null && field[2]!.length > 0 && fields[field[1]!] === undefined) {
-      fields[field[1]!] = field[2]!;
-    }
-  }
-  const harness = fields.harness;
-  const model = fields.model;
-  const effort = fields.effort;
-  if ((harness !== "claude" && harness !== "pi") || model === undefined || effort === undefined) {
-    throw reviewError(
-      `state.${name.toLowerCase()}_role_malformed`,
-      `RESUME.md has an incomplete or malformed \`${name}:\` role block.`,
-      `Repair the schema-2 ${name} harness, model, and effort before preparing review policy.`,
-    );
-  }
-  return { harness, model, effort };
+  const role = readRoleBlock(markdown, name);
+  if (typeof role !== "string") return role;
+  throw reviewError(
+    `state.${name.toLowerCase()}_role_malformed`,
+    role === "block_count"
+      ? `RESUME.md must contain exactly one complete \`${name}:\` role block.`
+      : `RESUME.md has an incomplete or malformed \`${name}:\` role block.`,
+    `Repair the schema-2 ${name} harness, model, and effort before preparing review policy.`,
+  );
 };
 
 const renderPolicy = (policy: ReviewPolicy): string =>
@@ -281,9 +263,6 @@ const isRoleRecord = (value: unknown): value is RoleRecord =>
   (value.harness === "claude" || value.harness === "pi") &&
   typeof value.model === "string" &&
   typeof value.effort === "string";
-
-const sameRole = (left: RoleRecord, right: RoleRecord): boolean =>
-  left.harness === right.harness && left.model === right.model && left.effort === right.effort;
 
 const sameStrings = (left: string[], right: string[]): boolean =>
   JSON.stringify(left) === JSON.stringify(right);
@@ -2104,20 +2083,8 @@ const parseReviewReport = (
   return { verdict, findings };
 };
 
-const appendEvidenceLine = (markdown: string, line: string): string => {
-  if (markdown.split(/\r?\n/u).includes(line)) return markdown;
-  const heading = /^## Review evidence\s*$/mu.exec(markdown);
-  if (heading === null) {
-    const decisions = /^## Decisions\s*$/mu.exec(markdown);
-    const insertion = decisions?.index ?? markdown.length;
-    return `${markdown.slice(0, insertion).trimEnd()}\n\n## Review evidence\n\n${line}\n\n${markdown.slice(insertion).trimStart()}`;
-  }
-  const sectionStart = heading.index + heading[0].length;
-  const next = /^## /gmu;
-  next.lastIndex = sectionStart;
-  const sectionEnd = next.exec(markdown)?.index ?? markdown.length;
-  return `${markdown.slice(0, sectionEnd).trimEnd()}\n${line}\n\n${markdown.slice(sectionEnd).trimStart()}`;
-};
+const appendEvidenceLine = (markdown: string, line: string): string =>
+  appendSectionLine(markdown, "Review evidence", line, { spacing: "tight", before: "Decisions" });
 
 const appendEvidence = (
   markdown: string,

@@ -5,6 +5,7 @@ import { dirname, isAbsolute, join, resolve } from "node:path";
 import { activeRuntimeBlockPattern, parseActiveRuntimeFields } from "./active-runtime.ts";
 import type { CliIssue } from "./contract.ts";
 import { spawnGit } from "./git.ts";
+import { sectionText, ticketRows } from "./resume-sections.ts";
 
 /**
  * Schema version of `runs/<run-id>.json`. Bump only when an existing field is
@@ -212,49 +213,26 @@ export const parseStallInterval = (markdown: string): number | null => {
     : null;
 };
 
-const section = (markdown: string, name: string): string | null => {
-  const heading = new RegExp(`^## ${name}[ \\t]*$`, "mu").exec(markdown);
-  if (heading === null) return null;
-  const rest = markdown.slice(heading.index + heading[0].length);
-  const next = /^## /mu.exec(rest);
-  return next === null ? rest : rest.slice(0, next.index);
-};
-
-const tableCells = (line: string): string[] =>
-  line
-    .split("|")
-    .slice(1, -1)
-    .map((cell) => cell.trim());
-
 const dashToNull = (value: string | undefined): string | null =>
   value === undefined || value === "" || value === "-" ? null : value;
 
-const parseTickets = (markdown: string): GlobalTicket[] => {
-  const lines = (section(markdown, "Tickets") ?? "").split(/\r?\n/u);
-  const headerIndex = lines.findIndex((line) => line.trimStart().startsWith("| NN"));
-  if (headerIndex < 0) return [];
-  const headers = tableCells(lines[headerIndex]!);
-  const column = (name: string): number => headers.indexOf(name);
-  return lines.slice(headerIndex + 2).flatMap((line) => {
-    if (!line.trimStart().startsWith("|")) return [];
-    const cells = tableCells(line);
-    const number = cells[column("NN")];
-    const status = cells[column("status")];
-    if (number === undefined || !/^\d+$/u.test(number) || status === undefined) return [];
-    return [
-      {
-        number,
-        status,
-        harness: dashToNull(cells[column("harness")]),
-        model: dashToNull(cells[column("model")]),
-        effort: dashToNull(cells[column("effort")]),
-      },
-    ];
-  });
-};
+const parseTickets = (markdown: string): GlobalTicket[] =>
+  ticketRows(markdown).flatMap((row) =>
+    row.status === undefined
+      ? []
+      : [
+          {
+            number: row.NN,
+            status: row.status,
+            harness: dashToNull(row.harness),
+            model: dashToNull(row.model),
+            effort: dashToNull(row.effort),
+          },
+        ],
+  );
 
 const parseRuntimes = (markdown: string): GlobalRuntime[] => {
-  const active = section(markdown, "Active tickets") ?? "";
+  const active = sectionText(markdown, "Active tickets") ?? "";
   return [...active.matchAll(/^### (\d+)[ \t]*$/gmu)].flatMap((heading) => {
     const block = activeRuntimeBlockPattern(heading[1]!).exec(active)?.[0];
     if (block === undefined) return [];
@@ -287,7 +265,7 @@ const parseOwnership = (markdown: string): GlobalRunFile["coordinator"] => {
 
 const parsePauses = (markdown: string): GlobalPause[] =>
   [
-    ...(section(markdown, "Stall evidence") ?? "").matchAll(
+    ...(sectionText(markdown, "Stall evidence") ?? "").matchAll(
       /^- Ticket (\d+) [^:\r\n]*: pause\/([^;\r\n]+)(?:;[^\r\n]*?evidence ([^;\s]+))?/gmu,
     ),
   ].map((match) => ({
@@ -299,7 +277,7 @@ const parsePauses = (markdown: string): GlobalPause[] =>
 const parseOutcome = (
   markdown: string,
 ): { status: GlobalRunFile["run_status"]; summaryPath: string | null } => {
-  const json = /```json\s*\n([\s\S]*?)\n```/u.exec(section(markdown, "Run outcome") ?? "")?.[1];
+  const json = /```json\s*\n([\s\S]*?)\n```/u.exec(sectionText(markdown, "Run outcome") ?? "")?.[1];
   if (json === undefined) return { status: "active", summaryPath: null };
   try {
     const value = JSON.parse(json) as { status?: unknown; summary_path?: unknown };

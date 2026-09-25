@@ -9,6 +9,7 @@ import type {
   WorktreePrepareInput,
 } from "./contract.ts";
 import { cleanGitEnv, spawnGit } from "./git.ts";
+import { appendSectionLine } from "./resume-sections.ts";
 import { mutateStateFile, StateMutationError } from "./state-mutation.ts";
 import { validateStateText } from "./state.ts";
 
@@ -102,20 +103,8 @@ const repositoryPolicyPattern =
 const renderPolicy = (policy: SerializedRepositoryPolicy): string =>
   `## Repository policy\n\n\`\`\`json\n${JSON.stringify(policy, null, 2)}\n\`\`\`\n`;
 
-const appendDecision = (markdown: string, decision: string): string => {
-  const heading = /^## Decisions\s*$/mu;
-  const match = heading.exec(markdown);
-  if (match === null) {
-    return `${markdown.trimEnd()}\n\n## Decisions\n\n- ${decision}\n`;
-  }
-  const sectionStart = match.index + match[0].length;
-  const nextHeading = /^## /gmu;
-  nextHeading.lastIndex = sectionStart;
-  const next = nextHeading.exec(markdown);
-  const sectionEnd = next?.index ?? markdown.length;
-  const section = markdown.slice(sectionStart, sectionEnd).trimEnd();
-  return `${markdown.slice(0, sectionStart)}${section}\n\n- ${decision}\n${markdown.slice(sectionEnd)}`;
-};
+const appendDecision = (markdown: string, decision: string): string =>
+  appendSectionLine(markdown, "Decisions", `- ${decision}`, { spacing: "blank" });
 
 const persistPolicy = (
   statePath: string,

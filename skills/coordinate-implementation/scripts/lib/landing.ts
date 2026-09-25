@@ -24,6 +24,7 @@ import {
   recordRebase,
   writeIntegration,
 } from "./integration.ts";
+import { appendSectionLine, updateTicketCells } from "./resume-sections.ts";
 import { inspectRuntimeClose } from "./runtime-close.ts";
 import { mutateStateFile, StateMutationError } from "./state-mutation.ts";
 import { validateStateText } from "./state.ts";
@@ -490,73 +491,37 @@ export const checkLandingRebase = (
     ).pipe(Effect.mapError(fromMutationError));
   });
 
-const ticketTableSection = (markdown: string): { start: number; end: number; text: string } => {
-  const heading = /^## Tickets\s*$/mu.exec(markdown);
-  if (heading === null) {
-    throw landingError(
-      "landing.tickets_missing",
-      "RESUME.md has no Tickets section.",
-      "Repair the schema-2 ticket table before recording landing.",
-    );
-  }
-  const start = heading.index + heading[0].length;
-  const next = /^## /gmu;
-  next.lastIndex = start;
-  const end = next.exec(markdown)?.index ?? markdown.length;
-  return { start, end, text: markdown.slice(start, end) };
-};
-
 const updateTicketAsLanded = (markdown: string, ticket: string, sha: string): string => {
-  const section = ticketTableSection(markdown);
-  const lines = section.text.split(/\r?\n/u);
-  const headerIndex = lines.findIndex((line) => line.trimStart().startsWith("| NN"));
-  const columns =
-    headerIndex < 0
-      ? []
-      : lines[headerIndex]!.split("|")
-          .slice(1, -1)
-          .map((cell) => cell.trim());
-  const rowIndex = lines.findIndex((line) => line.split("|")[1]?.trim() === ticket);
-  if (headerIndex < 0 || rowIndex < 0) {
-    throw landingError(
-      "landing.ticket_missing",
-      `Ticket \`${ticket}\` is absent from the state table.`,
-      "Restore the normalized ticket row before recording landing.",
-    );
+  const updated = updateTicketCells(markdown, ticket, { status: "landed", sha });
+  if (typeof updated === "string") return updated;
+  switch (updated.kind) {
+    case "section_missing":
+      throw landingError(
+        "landing.tickets_missing",
+        "RESUME.md has no Tickets section.",
+        "Repair the schema-2 ticket table before recording landing.",
+      );
+    case "header_missing":
+    case "row_missing":
+      throw landingError(
+        "landing.ticket_missing",
+        `Ticket \`${ticket}\` is absent from the state table.`,
+        "Restore the normalized ticket row before recording landing.",
+      );
+    case "row_malformed":
+    case "column_missing":
+      throw landingError(
+        "landing.ticket_table_malformed",
+        "Ticket table is missing status or sha columns.",
+        "Repair the schema-2 ticket table before recording landing.",
+      );
   }
-  const cells = lines[rowIndex]!.split("|")
-    .slice(1, -1)
-    .map((cell) => cell.trim());
-  const statusIndex = columns.indexOf("status");
-  const shaIndex = columns.indexOf("sha");
-  if (cells.length !== columns.length || statusIndex < 0 || shaIndex < 0) {
-    throw landingError(
-      "landing.ticket_table_malformed",
-      "Ticket table is missing status or sha columns.",
-      "Repair the schema-2 ticket table before recording landing.",
-    );
-  }
-  cells[statusIndex] = "landed";
-  cells[shaIndex] = sha;
-  lines[rowIndex] = `| ${cells.join(" | ")} |`;
-  return `${markdown.slice(0, section.start)}${lines.join("\n")}${markdown.slice(section.end)}`;
-};
-
-const appendSectionLine = (markdown: string, heading: string, line: string): string => {
-  const expression = new RegExp(`^## ${heading}\\s*$`, "mu");
-  const match = expression.exec(markdown);
-  if (match === null) return `${markdown.trimEnd()}\n\n## ${heading}\n\n${line}\n`;
-  const start = match.index + match[0].length;
-  const next = /^## /gmu;
-  next.lastIndex = start;
-  const end = next.exec(markdown)?.index ?? markdown.length;
-  const section = markdown.slice(start, end).trimEnd();
-  if (section.split(/\r?\n/u).includes(line)) return markdown;
-  return `${markdown.slice(0, start)}${section}\n\n${line}\n${markdown.slice(end)}`;
 };
 
 const appendRetainedBranch = (markdown: string, branch: string, sha: string): string =>
-  appendSectionLine(markdown, "Retained landed branches", `- ${branch} (${sha})`);
+  appendSectionLine(markdown, "Retained landed branches", `- ${branch} (${sha})`, {
+    spacing: "blank",
+  });
 
 const appendLandedEvidence = (
   markdown: string,
@@ -570,6 +535,7 @@ const appendLandedEvidence = (
     markdown,
     "Landed evidence",
     `- Ticket ${ticket}: ${evidencePath}; tip ${ticketSha}; branch ${branch}; cleanup ${cleanup}`,
+    { spacing: "blank" },
   );
 
 /**
@@ -711,7 +677,10 @@ export const applyNoChangeGateRerun = (
     },
     "gates after authorized no-change rerun",
   );
-  return { markdown: appendSectionLine(updated, "Decisions", decision), recovered: false };
+  return {
+    markdown: appendSectionLine(updated, "Decisions", decision, { spacing: "blank" }),
+    recovered: false,
+  };
 };
 
 /**

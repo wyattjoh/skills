@@ -35,6 +35,15 @@ import { IntegrationError, parseIntegration, type IntegrationRecord } from "./in
 import { validateRole } from "./roles.ts";
 import { inspectRuntimeClose } from "./runtime-close.ts";
 import { mutateStateFile, StateMutationError } from "./state-mutation.ts";
+import {
+  appendSectionLine,
+  isTicketTableProblem,
+  readRoleBlock,
+  readTicketRow,
+  sameRole,
+  type TicketTableProblem,
+  updateTicketCells,
+} from "./resume-sections.ts";
 import { validateStateText } from "./state.ts";
 
 /**
@@ -116,42 +125,20 @@ const isRoleRecord = (value: unknown): value is RoleRecord =>
   typeof (value as Record<string, unknown>).model === "string" &&
   typeof (value as Record<string, unknown>).effort === "string";
 
-const sameRole = (left: RoleRecord, right: RoleRecord): boolean =>
-  left.harness === right.harness && left.model === right.model && left.effort === right.effort;
-
 const parsePersistedImplementor = (markdown: string): RoleRecord => {
-  const matches = [...markdown.matchAll(/^Implementor:\r?\n((?:  [^\r\n]*(?:\r?\n|$))+)/gmu)];
-  if (matches.length !== 1) {
-    throw implementorError(
-      "state.implementor_role_malformed",
-      "RESUME.md must contain exactly one complete `Implementor:` role block.",
-      "Repair the schema-2 Implementor harness, model, and effort before launching.",
-    );
-  }
-  const fields: Record<string, string> = {};
-  for (const line of matches[0]![1]!.split(/\r?\n/u)) {
-    if (line.length === 0) continue;
-    const field = line.match(/^  ([a-z]+):\s*(.*)$/u);
-    if (field === null || field[2]!.length === 0 || fields[field[1]!] !== undefined) {
-      throw implementorError(
-        "state.implementor_role_malformed",
-        "RESUME.md has malformed or duplicate fields in its `Implementor:` role block.",
-        "Repair the schema-2 Implementor harness, model, and effort before launching.",
-      );
-    }
-    fields[field[1]!] = field[2]!;
-  }
-  const harness = fields.harness;
-  const model = fields.model;
-  const effort = fields.effort;
-  if ((harness !== "claude" && harness !== "pi") || model === undefined || effort === undefined) {
-    throw implementorError(
-      "state.implementor_role_malformed",
-      "RESUME.md has an incomplete or malformed `Implementor:` role block.",
-      "Repair the schema-2 Implementor harness, model, and effort before launching.",
-    );
-  }
-  return { harness, model, effort };
+  const role = readRoleBlock(markdown, "Implementor");
+  if (typeof role !== "string") return role;
+  const messages = {
+    block_count: "RESUME.md must contain exactly one complete `Implementor:` role block.",
+    fields_malformed:
+      "RESUME.md has malformed or duplicate fields in its `Implementor:` role block.",
+    role_incomplete: "RESUME.md has an incomplete or malformed `Implementor:` role block.",
+  };
+  throw implementorError(
+    "state.implementor_role_malformed",
+    messages[role],
+    "Repair the schema-2 Implementor harness, model, and effort before launching.",
+  );
 };
 
 const validatePersistedState = (
@@ -163,20 +150,43 @@ const validatePersistedState = (
     Effect.asVoid,
   );
 
-const tableSection = (markdown: string): { start: number; end: number; text: string } => {
-  const heading = /^## Tickets\s*$/mu.exec(markdown);
-  if (heading === null) {
-    throw implementorError(
-      "state.tickets_missing",
-      "RESUME.md has no `## Tickets` section.",
-      "Repair the schema-2 ticket table before launching an implementor.",
-    );
+const ticketTableError = (
+  problem: TicketTableProblem,
+  ticket: string,
+  repair: string,
+): ImplementorError => {
+  switch (problem.kind) {
+    case "section_missing":
+      return implementorError(
+        "state.tickets_missing",
+        "RESUME.md has no `## Tickets` section.",
+        repair,
+      );
+    case "header_missing":
+      return implementorError(
+        "state.ticket_table_malformed",
+        "RESUME.md ticket table has no `NN` header row.",
+        repair,
+      );
+    case "row_missing":
+      return implementorError(
+        "state.ticket_missing",
+        `RESUME.md has no ticket row for \`${ticket}\`.`,
+        "Add the normalized ticket to state before preparing its launch.",
+      );
+    case "row_malformed":
+      return implementorError(
+        "state.ticket_table_malformed",
+        `Ticket \`${ticket}\` does not match the ticket table columns.`,
+        repair.replace("ticket table", "ticket row"),
+      );
+    case "column_missing":
+      return implementorError(
+        "state.ticket_table_malformed",
+        `Ticket table is missing required \`${problem.column}\` column.`,
+        repair,
+      );
   }
-  const start = heading.index + heading[0].length;
-  const next = /^## /gmu;
-  next.lastIndex = start;
-  const end = next.exec(markdown)?.index ?? markdown.length;
-  return { start, end, text: markdown.slice(start, end) };
 };
 
 const updateTicketRow = (
@@ -184,86 +194,25 @@ const updateTicketRow = (
   ticket: string,
   updates: Record<string, string>,
 ): string => {
-  const section = tableSection(markdown);
-  const lines = section.text.split(/\r?\n/u);
-  const headerIndex = lines.findIndex((line) => line.trimStart().startsWith("| NN"));
-  if (headerIndex < 0) {
-    throw implementorError(
-      "state.ticket_table_malformed",
-      "RESUME.md ticket table has no `NN` header row.",
-      "Repair the schema-2 ticket table before launching an implementor.",
-    );
-  }
-  const columns = lines[headerIndex]!.split("|")
-    .slice(1, -1)
-    .map((cell) => cell.trim());
-  const rowIndex = lines.findIndex((line) => {
-    const first = line.split("|")[1]?.trim();
-    return first === ticket;
+  const repair = "Repair the schema-2 ticket table before launching an implementor.";
+  const row = readTicketRow(markdown, ticket);
+  if (isTicketTableProblem(row)) throw ticketTableError(row, ticket, repair);
+  const updated = updateTicketCells(markdown, ticket, {
+    ...updates,
+    ...(row.skills === undefined ? {} : { skills: "implement" }),
   });
-  if (rowIndex < 0) {
-    throw implementorError(
-      "state.ticket_missing",
-      `RESUME.md has no ticket row for \`${ticket}\`.`,
-      "Add the normalized ticket to state before preparing its launch.",
-    );
-  }
-  const cells = lines[rowIndex]!.split("|")
-    .slice(1, -1)
-    .map((cell) => cell.trim());
-  if (cells.length !== columns.length) {
-    throw implementorError(
-      "state.ticket_table_malformed",
-      `Ticket \`${ticket}\` does not match the ticket table columns.`,
-      "Repair the schema-2 ticket row before launching an implementor.",
-    );
-  }
-  for (const [column, value] of Object.entries(updates)) {
-    const index = columns.indexOf(column);
-    if (index < 0) {
-      throw implementorError(
-        "state.ticket_table_malformed",
-        `Ticket table is missing required \`${column}\` column.`,
-        "Repair the schema-2 ticket table before launching an implementor.",
-      );
-    }
-    cells[index] = value;
-  }
-  const skillsIndex = columns.indexOf("skills");
-  if (skillsIndex >= 0) cells[skillsIndex] = "implement";
-  lines[rowIndex] = `| ${cells.join(" | ")} |`;
-  return `${markdown.slice(0, section.start)}${lines.join("\n")}${markdown.slice(section.end)}`;
+  if (typeof updated !== "string") throw ticketTableError(updated, ticket, repair);
+  return updated;
 };
 
 const ticketField = (markdown: string, ticket: string, column: string): string => {
-  const section = tableSection(markdown);
-  const lines = section.text.split(/\r?\n/u);
-  const header = lines.find((line) => line.trimStart().startsWith("| NN"));
-  const row = lines.find((line) => line.split("|")[1]?.trim() === ticket);
-  if (header === undefined || row === undefined) {
-    throw implementorError(
-      "state.ticket_table_malformed",
-      `Ticket \`${ticket}\` is missing from the ticket table.`,
-      "Repair the schema-2 ticket table before recovering an implementor.",
-    );
-  }
-  const columns = header
-    .split("|")
-    .slice(1, -1)
-    .map((cell) => cell.trim());
-  const cells = row
-    .split("|")
-    .slice(1, -1)
-    .map((cell) => cell.trim());
-  const index = columns.indexOf(column);
-  if (index < 0 || cells.length !== columns.length) {
-    throw implementorError(
-      "state.ticket_table_malformed",
-      `Ticket \`${ticket}\` does not have a valid \`${column}\` field.`,
-      "Repair the schema-2 ticket table before recovering an implementor.",
-    );
-  }
-  return cells[index]!;
+  const repair = "Repair the schema-2 ticket table before recovering an implementor.";
+  const row = readTicketRow(markdown, ticket);
+  if (isTicketTableProblem(row)) throw ticketTableError(row, ticket, repair);
+  const value = row[column];
+  if (value === undefined)
+    throw ticketTableError({ kind: "column_missing", column }, ticket, repair);
+  return value;
 };
 
 const parseTicketRole = (markdown: string, ticket: string): RoleRecord | null => {
@@ -1114,21 +1063,6 @@ type ImplementorMigrationCommit = {
   committed_at: string;
 };
 
-const appendSectionEntry = (markdown: string, headingText: string, entry: string): string => {
-  if (markdown.split(/\r?\n/u).includes(entry)) return markdown;
-  const heading = [...markdown.matchAll(/^## [^\r\n]+\s*$/gmu)].find(
-    (match) => match[0].trim() === headingText,
-  );
-  if (heading === undefined) {
-    return `${markdown.trimEnd()}\n\n${headingText}\n\n${entry}\n`;
-  }
-  const sectionStart = heading.index! + heading[0].length;
-  const next = /^## /gmu;
-  next.lastIndex = sectionStart;
-  const sectionEnd = next.exec(markdown)?.index ?? markdown.length;
-  return `${markdown.slice(0, sectionEnd).trimEnd()}\n${entry}\n\n${markdown.slice(sectionEnd).trimStart()}`;
-};
-
 /**
  * Integration record the replacement runtime inherits from its migrated predecessor. A
  * gates-phase migration must re-establish integration, so its record carries forward as
@@ -1742,8 +1676,10 @@ export const migrateClosedImplementorRuntime = (
             );
           }
         }
-        updated = appendSectionEntry(updated, "## Closed ticket runtimes", closedEntry);
-        updated = appendSectionEntry(updated, "## Decisions", decisionLine);
+        updated = appendSectionLine(updated, "Closed ticket runtimes", closedEntry, {
+          spacing: "tight",
+        });
+        updated = appendSectionLine(updated, "Decisions", decisionLine, { spacing: "tight" });
         return {
           markdown: updated,
           result: {
@@ -1875,7 +1811,7 @@ export const recoverImplementorRuntimeMigration = (
         }
         const decision = `- ${input.completedAt} user-authorized ${recoveryReference}; evidence_sha256 ${input.migrationEvidenceSha256}; integration cycle ${evidence.old_integration_cycle} released as rebase-required at ${snapshot.head}`;
         return {
-          markdown: appendSectionEntry(markdown, "## Decisions", decision),
+          markdown: appendSectionLine(markdown, "Decisions", decision, { spacing: "tight" }),
           result: result(false),
         };
       }),

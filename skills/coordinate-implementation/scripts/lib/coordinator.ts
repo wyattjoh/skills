@@ -8,6 +8,7 @@ import type {
   HarnessName,
   RoleRecord,
 } from "./contract.ts";
+import { fieldBlockPattern, readFieldBlock, roleFromFields, sameRole } from "./resume-sections.ts";
 import {
   mutateStateFile,
   StateMutationError,
@@ -44,47 +45,26 @@ export class CoordinatorError extends Data.TaggedError("CoordinatorError")<{
 const coordinatorError = (code: string, message: string, remediation: string): CoordinatorError =>
   new CoordinatorError({ issue: { code, message, remediation } });
 
-const blockPattern = (label: string): RegExp =>
-  new RegExp(`^${label}:\\r?\\n((?:  [^\\r\\n]*(?:\\r?\\n|$))+)`, "gmu");
-
 const parseFields = (markdown: string, label: string): Record<string, string> => {
-  const matches = [...markdown.matchAll(blockPattern(label))];
-  if (matches.length !== 1) {
-    throw coordinatorError(
-      "state.coordinator_fields_malformed",
-      `RESUME.md must contain exactly one \`${label}:\` block.`,
-      "Repair the schema-2 role and ownership blocks manually, then retry.",
-    );
-  }
-  const fields: Record<string, string> = {};
-  for (const line of matches[0]![1]!.split(/\r?\n/u)) {
-    if (line.length === 0) continue;
-    const field = line.match(/^  ([a-z][a-z ]*):\s*(.*)$/u);
-    if (field === null || field[2]!.length === 0 || fields[field[1]!] !== undefined) {
-      throw coordinatorError(
-        "state.coordinator_fields_malformed",
-        `RESUME.md has malformed or duplicate fields in \`${label}:\`.`,
-        "Repair the schema-2 role and ownership blocks manually, then retry.",
-      );
-    }
-    fields[field[1]!] = field[2]!;
-  }
-  return fields;
+  const fields = readFieldBlock(markdown, label);
+  if (typeof fields !== "string") return fields;
+  throw coordinatorError(
+    "state.coordinator_fields_malformed",
+    fields === "block_count"
+      ? `RESUME.md must contain exactly one \`${label}:\` block.`
+      : `RESUME.md has malformed or duplicate fields in \`${label}:\`.`,
+    "Repair the schema-2 role and ownership blocks manually, then retry.",
+  );
 };
 
 const parseCoordinatorRole = (markdown: string): RoleRecord => {
-  const fields = parseFields(markdown, "Coordinator");
-  const harness = fields.harness;
-  const model = fields.model;
-  const effort = fields.effort;
-  if ((harness !== "claude" && harness !== "pi") || model === undefined || effort === undefined) {
-    throw coordinatorError(
-      "state.coordinator_role_malformed",
-      "RESUME.md has an incomplete or malformed Coordinator role record.",
-      "Persist harness, model, and effort under `Coordinator:` before takeover.",
-    );
-  }
-  return { harness, model, effort };
+  const role = roleFromFields(parseFields(markdown, "Coordinator"));
+  if (role !== null) return role;
+  throw coordinatorError(
+    "state.coordinator_role_malformed",
+    "RESUME.md has an incomplete or malformed Coordinator role record.",
+    "Persist harness, model, and effort under `Coordinator:` before takeover.",
+  );
 };
 
 const parseOwnership = (markdown: string): CoordinatorOwnership => {
@@ -133,10 +113,7 @@ const renderOwnership = (ownership: CoordinatorOwnership): string =>
   ].join("\n");
 
 const replaceOwnership = (markdown: string, ownership: CoordinatorOwnership): string =>
-  markdown.replace(blockPattern("Coordinator ownership"), renderOwnership(ownership));
-
-const sameRole = (left: RoleRecord, right: RoleRecord): boolean =>
-  left.harness === right.harness && left.model === right.model && left.effort === right.effort;
+  markdown.replace(fieldBlockPattern("Coordinator ownership"), renderOwnership(ownership));
 
 const fromUnknown = (error: unknown): CoordinatorError => {
   if (error instanceof CoordinatorError) return error;

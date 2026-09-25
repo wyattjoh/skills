@@ -1,6 +1,7 @@
 import { activeRuntimeBlockPattern, parseActiveRuntimeFields } from "./active-runtime.ts";
 import type { RepositoryPolicy, RoleRecord } from "./contract.ts";
 import { parseIntegration, type IntegrationRecord } from "./integration.ts";
+import { ticketRows } from "./resume-sections.ts";
 import { parsePolicy, parseRoleBlock, type ReviewPolicy } from "./review.ts";
 import type { SerializedRepositoryPolicy } from "./worktrees.ts";
 import { WorkflowError } from "./workflow-runtime.ts";
@@ -149,13 +150,8 @@ export const readActiveTicket = (markdown: string, ticket: string): ActiveTicket
  * @param ticket - Ticket number.
  * @returns The recorded status, or `queued` when the row is absent.
  */
-export const readTicketStatus = (markdown: string, ticket: string): string => {
-  for (const line of markdown.split("\n")) {
-    const cells = line.split("|").map((cell) => cell.trim());
-    if (cells.length >= 9 && cells[1] === ticket) return cells[7]!;
-  }
-  return "queued";
-};
+export const readTicketStatus = (markdown: string, ticket: string): string =>
+  ticketRows(markdown).find((row) => row.NN === ticket)?.status ?? "queued";
 
 /**
  * Next review round: one past the number of rounds already finalized for the ticket.

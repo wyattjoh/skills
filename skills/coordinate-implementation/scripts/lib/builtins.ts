@@ -19,6 +19,7 @@ import { makeHerdrHub, statusFromSnapshot, type HerdrHub, type PaneStatus } from
 import { prepareImplementorLaunch, recordImplementorLaunch } from "./implementor.ts";
 import { checkIntegration, operationInProgress } from "./integration.ts";
 import { checkLandingRebase, completeLanding, type LandingRebaseResult } from "./landing.ts";
+import { ticketRows } from "./resume-sections.ts";
 import { recordInfrastructureRetry } from "./retry.ts";
 import { finalizeRun } from "./run.ts";
 import {
@@ -802,9 +803,9 @@ export const builtinTicketOps = (
                 axis === "standards"
                   ? landed.map((file) => join(options.repository, file))
                   : [join(runPath, "spec.md"), join(runPath, ticket.path)],
-              landedTickets: [
-                ...text.matchAll(/^\|\s*(\d+)\s*\|.*\|\s*landed\s*\|[^|]*\|\s*$/gmu),
-              ].map((match) => match[1]!),
+              landedTickets: ticketRows(text)
+                .filter((row) => row.status === "landed")
+                .map((row) => row.NN),
               gateEvidencePaths: gateEvidence,
               attempt,
             }),
