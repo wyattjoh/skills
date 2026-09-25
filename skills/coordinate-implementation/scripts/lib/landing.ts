@@ -284,7 +284,7 @@ const phaseActions = {
 } as const;
 
 /**
- * Integration binding returned by `landing.rebase.check` and `landing.rebase.record`.
+ * Integration binding returned by `landing.rebase.check`.
  */
 export type LandingRebaseResult = {
   ticket: string;

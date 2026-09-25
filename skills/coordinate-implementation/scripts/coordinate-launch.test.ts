@@ -680,7 +680,7 @@ describe("safe implementor launch", () => {
         message:
           "Requested implementor role does not match the ticket-bound or run-default Implementor role.",
         remediation:
-          "Launch an already bound ticket with its exact row role. Only a helper-recorded review escalation may replace that per-ticket binding.",
+          "Launch an already bound ticket with its exact row role. Only an authorized implementor.runtime.migrate may replace that per-ticket binding.",
       },
     ]);
     expect(readFileSync(fixture.statePath, "utf8")).toBe(before);
@@ -875,7 +875,7 @@ describe("safe implementor launch", () => {
         message:
           "Requested implementor role does not match the ticket-bound or run-default Implementor role.",
         remediation:
-          "Launch an already bound ticket with its exact row role. Only a helper-recorded review escalation may replace that per-ticket binding.",
+          "Launch an already bound ticket with its exact row role. Only an authorized implementor.runtime.migrate may replace that per-ticket binding.",
       },
     ]);
     expect(readFileSync(fixture.statePath, "utf8")).toBe(persisted);

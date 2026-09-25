@@ -1,6 +1,7 @@
 import { describe, expect, it } from "bun:test";
 import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
+import { COORDINATE_OPERATIONS } from "./lib/contract.ts";
 
 const skillDir = resolve(import.meta.dir, "..");
 const read = (...path: string[]): string => readFileSync(join(skillDir, ...path), "utf8");
@@ -21,6 +22,30 @@ describe("coordinator documentation", () => {
         .map((target) => `${file} -> ${target}`),
     );
     expect(broken).toEqual([]);
+  });
+
+  it("documents exactly the operations the helper CLI accepts", () => {
+    const documented = ["helper-cli.md", "engine-operations.md"]
+      .flatMap((file) => [...read("references", file).matchAll(/^#{2,3} `([a-z._]+)`$/gmu)])
+      .map((match) => match[1]!)
+      .toSorted();
+    expect(documented).toEqual([...COORDINATE_OPERATIONS].toSorted());
+  });
+
+  it("names no retired coordination mechanism", () => {
+    const retired = [
+      "CronCreate",
+      "/loop 10m",
+      "herdr.wait_any",
+      "coordinator.handoff.",
+      "landing.rebase.record",
+      "review.escalation.authorize",
+      "handoff.md",
+    ];
+    const found = markdownFiles.flatMap((file) =>
+      retired.filter((term) => read(file).includes(term)).map((term) => `${file}: ${term}`),
+    );
+    expect(found).toEqual([]);
   });
 
   it("keeps the published package portable", () => {

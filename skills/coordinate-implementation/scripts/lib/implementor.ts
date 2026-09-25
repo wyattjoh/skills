@@ -282,7 +282,7 @@ const parseTicketRole = (markdown: string, ticket: string): RoleRecord | null =>
     throw implementorError(
       "state.ticket_role_malformed",
       `Ticket \`${ticket}\` has an incomplete bound Implementor role.`,
-      "Repair the ticket row from its immutable launch or escalation evidence before launching.",
+      "Repair the ticket row from its immutable launch or migration evidence before launching.",
     );
   }
   return { harness, model, effort };
@@ -557,7 +557,7 @@ export const prepareImplementorLaunch = (
           return yield* implementorError(
             "implementor.role_mismatch",
             "Requested implementor role does not match the ticket-bound or run-default Implementor role.",
-            "Launch an already bound ticket with its exact row role. Only a helper-recorded review escalation may replace that per-ticket binding.",
+            "Launch an already bound ticket with its exact row role. Only an authorized implementor.runtime.migrate may replace that per-ticket binding.",
           );
         }
         const migration = yield* readCommittedMigrationEvidence(

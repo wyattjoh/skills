@@ -66,8 +66,8 @@ reviewer provenance without inferring harnesses from model names.
 
 ## Parallel frontier
 
-Use the two independent tickets with `--parallel 2`. Confirm `scheduler.plan`
-returns both in numeric order, both implementors remain active concurrently,
+Use the two independent tickets with `--parallel 2`. Confirm the Engine
+launches both in numeric order, both implementors remain active concurrently,
 and temporary reviewers consume no implementor capacity. Confirm both tickets run
 gates and reviews concurrently, and that each landing holds
 `land-local.lock` only for its ancestor check and fast-forward. Land one ticket
@@ -79,8 +79,8 @@ Make both parallel branches change the same line. Land the first and confirm
 the second's `landing.rebase.check` or `landing.complete` returns `rebase`. The
 Engine prompts the same implementor, which rebases its own branch in its own
 worktree and resolves the conflict there. Confirm the coordinator and Engine
-never touch the ticket branch or base checkout, `landing.rebase.record` starts
-a new integration cycle, every gate reruns, and both reviews rerun only when
+never touch the ticket branch or base checkout, the next `landing.rebase.check`
+starts a new integration cycle, every gate reruns, and both reviews rerun only when
 the ticket's patch identity changed.
 
 ## Reviewer failure
@@ -95,12 +95,11 @@ contaminated report is rejected without automatic cleanup.
 ## Herdr 0.9.1 coordinator continuity
 
 Run preflight against Herdr 0.9.1 and confirm it succeeds with
-`machine_api: true` and `normalized_context: false`. Start one worker, call
-`herdr.wait_any` with `coordinator: null`, and confirm status and refreshed pane
-ids still arrive through the event-driven path. Confirm RESUME.md records
-`handoff: disabled` and `threshold: unavailable`, and that
-`coordinator.handoff.prepare` fails with `coordinator.handoff_disabled` before
-writing an artifact.
+`machine_api: true` and `normalized_context: false`. With the Engine running,
+let the coordinator compact, then exit it. Confirm tickets keep progressing,
+then start a replacement with `resume .scratch/<slug>` and confirm it claims
+the next coordinator generation, attaches to the live Engine, and its first
+`wait` resumes from the persisted Event Cursor.
 
 ## Engine supervision
 

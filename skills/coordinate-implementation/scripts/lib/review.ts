@@ -460,7 +460,7 @@ const validateIntegration = (
     throw reviewError(
       "review.range_mismatch",
       "Reviewer base_ref does not equal the integrated full-SHA review base.",
-      "Use the exact review_range returned by landing.rebase.check or landing.rebase.record.",
+      "Use the exact review_range returned by landing.rebase.check.",
     );
   }
   return { cycle: integration.cycle };

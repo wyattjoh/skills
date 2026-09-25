@@ -44,9 +44,6 @@ Coordinator:
   harness:    claude
   model:      fable
   effort:     low
-  handoff:    disabled
-  threshold:  unavailable
-  unattended: block
 
 Implementor:
   harness: claude
@@ -249,7 +246,7 @@ scheduling flag is present. An explicit flag updates both fields and appends a
 decision before more tickets start. Reject both flags together. Switching to
 serial records cap 1 but never kills existing parallel workers: stop launching,
 drain the active set, then continue one at a time. Raising a parallel cap fills
-new capacity at the next `scheduler.plan` pass.
+new capacity at the Engine's next scheduling pass.
 
 `Run id` and `Stall interval` are optional schema-2 fields, so older runs
 resume without migration: a missing run id is backfilled by the helper and a
@@ -296,20 +293,18 @@ Written before any role launches. With Herdr 0.9.1, a change to harness, model,
 or effort requires the prior coordinator to end and a replacement invocation
 to start with the selected record. It is never a state-only rewrite.
 
-| Field        | Values                | Notes                                                      |
-| ------------ | --------------------- | ---------------------------------------------------------- |
-| `harness`    | `claude` \| `pi`      | Selected from installed harness discovery                  |
-| `model`      | model id              | Validated against the selected harness                     |
-| `effort`     | discovered vocabulary | Validated against installed harness help                   |
-| `handoff`    | `disabled`            | Herdr 0.9.1 has no normalized context metrics              |
-| `threshold`  | `unavailable`         | Prevents rendered terminal text from becoming a trigger    |
-| `unattended` | `block` \| `escalate` | Legacy compatibility field; never gates review remediation |
+| Field     | Values                | Notes                                     |
+| --------- | --------------------- | ----------------------------------------- |
+| `harness` | `claude` \| `pi`      | Selected from installed harness discovery |
+| `model`   | model id              | Validated against the selected harness    |
+| `effort`  | discovered vocabulary | Validated against installed harness help  |
 
-Every failed review round is pre-authorized to continue with the ticket-bound
-implementor, regardless of this field or round count. Existing values remain
-valid so old run state can resume without migration. `TICKET BLOCKED` questions,
-scope decisions, and invalid-record prompts still wait for the user because
-they require information outside the review/fix contract.
+Older runs may also carry `handoff`, `threshold`, or `unattended` fields here.
+Nothing reads them; leave them in place. Every failed review round is
+pre-authorized to continue with the ticket-bound implementor regardless of
+round count. `TICKET BLOCKED` questions, scope decisions, and invalid-record
+prompts still wait for the user because they require information outside the
+review/fix contract.
 
 ### `Implementor:` and `Reviewer:`
 
@@ -328,11 +323,10 @@ Inside each `## Active tickets` runtime block, `Implementor:` is compact JSON
 with exactly `harness`, `model`, and `effort` fields. This representation is the
 ticket-bound role used for recovery. The helper parses it structurally and
 preserves the model string byte-for-byte, including spaces. It never reconstructs
-a role by splitting display text. A replacement escalation first closes and
-removes the superseded active runtime, appends its complete provenance to
-`## Decisions`, and changes the ticket-row binding. The replacement launch then
-creates a new active block through `implementor.launch.prepare`; the run-wide
-default remains unchanged.
+a role by splitting display text. Only an explicitly authorized
+`implementor.runtime.migrate` replaces a ticket's bound role; it archives the
+superseded runtime under `## Closed ticket runtimes`, and the run-wide default
+remains unchanged.
 
 The `implement` skill is a fixed workflow requirement, not a configurable role
 field. Its actual Pi path is recorded in each launch artifact.
@@ -342,22 +336,20 @@ field. Its actual Pi path is recorded in each launch artifact.
 Ownership is separate from the selected Coordinator role. The role says what
 must run; ownership says which Herdr pane currently coordinates the run.
 
-| Field                   | Meaning                                                                     |
-| ----------------------- | --------------------------------------------------------------------------- |
-| `generation`            | Monotonically increasing compare-and-swap generation                        |
-| `pane`                  | Current coordinator Herdr pane id                                           |
-| `harness`               | Harness bound to the owner, updated from the claimed successor role         |
-| `model`                 | Model bound to the current owner                                            |
-| `effort`                | Effort bound to the current owner                                           |
-| `readiness`             | `claiming` until the successor has resumed and armed its wait, then `ready` |
-| `marker`                | Generation-specific marker the predecessor must observe in that pane        |
-| `predecessor pane`      | Legacy automatic handoff predecessor authorized for close verification      |
-| `handoff artifact hash` | SHA-256 binding to an exact legacy automatic handoff artifact               |
+| Field        | Meaning                                                             |
+| ------------ | ------------------------------------------------------------------- |
+| `generation` | Monotonically increasing compare-and-swap generation                |
+| `pane`       | Current coordinator Herdr pane id                                   |
+| `harness`    | Harness bound to the owner, updated from the claimed successor role |
+| `model`      | Model bound to the current owner                                    |
+| `effort`     | Effort bound to the current owner                                   |
+| `readiness`  | `claiming` until the successor has resumed, then `ready`            |
+| `marker`     | Generation-specific readiness marker                                |
 
-Initial role mismatch or process-replacement takeover uses `coordinator.claim`
-followed by `coordinator.ready`. New Herdr 0.9.1 runs do not create automatic
-handoff artifacts or write the two legacy predecessor fields. Existing legacy
-state that already contains them remains structurally valid for recovery.
+A replacement coordinator takes over with `coordinator.claim` followed by
+`coordinator.ready`. Legacy `predecessor pane` and `handoff artifact hash`
+fields from the retired automatic handoff are ignored and dropped on the next
+ownership write.
 
 ### Ticket table
 
@@ -369,9 +361,9 @@ reasoning about when the run-wide record last changed.
 | Column                     | Meaning                                                                            |
 | -------------------------- | ---------------------------------------------------------------------------------- |
 | `NN`                       | Ticket number                                                                      |
-| `harness` `model` `effort` | Current ticket-bound role; changed only by `review.escalation.authorize`           |
+| `harness` `model` `effort` | Current ticket-bound role; changed only by `implementor.runtime.migrate`           |
 | `rounds`                   | Fix rounds completed                                                               |
-| `esc`                      | `yes` once this ticket escalated past its initially bound model                    |
+| `esc`                      | Legacy column kept for table shape; new runs leave it `-`                          |
 | `status`                   | `queued` \| `working` \| `review` \| `fixing` \| `blocked` \| `landed` \| `closed` |
 | `sha`                      | Landed sha, or `-` for non-landed terminal work                                    |
 
@@ -456,8 +448,8 @@ to the ticket's active block when its clean branch is first checked, and
 `review.round.finalize` advances a passing record to `ready-to-land` and a
 failing one to `fixing`. A failed gate also records `fixing`. When the base has
 moved, `landing.rebase.check` and a refused `landing.complete` record
-`rebase-required`; the implementor rebases in its own worktree and
-`landing.rebase.record` starts the next cycle. Gates always rerun after a
+`rebase-required`; the implementor rebases in its own worktree and the next
+`landing.rebase.check` starts the next cycle. Gates always rerun after a
 rebase. Both reviews are kept only when the patch id is unchanged, in which
 case the last passing gate returns the ticket to `ready-to-land`.
 
@@ -595,8 +587,6 @@ cannot launch:
 - `model` lacks a `<provider>/` prefix while `harness` is `pi`, or carries one
   while `harness` is `claude`.
 - a `:<level>` suffix disagrees with the record's own `effort:` field.
-- `Coordinator.handoff` and `Coordinator.threshold` are not the exact
-  `disabled` and `unavailable` pair for a new Herdr 0.9.1 run.
 - `Coordinator ownership` is missing, malformed, lacks its bound role record,
   or names the invoking pane as a successor claim.
 - repository policy is absent before worktree creation.

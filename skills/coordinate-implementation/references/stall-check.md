@@ -1,98 +1,46 @@
 # Stall check
 
-The Engine runs this check on its own per-ticket timer. The period is the
-persisted `Stall interval:` (10 minutes by default), so every working worker is
-checked at that cadence from its launch until the ticket lands or parks. The
-coordinator never runs it: it sees only the resulting `stall_pause`
-escalations through `runtime.ts wait`. Never add a separate timer, cron, or
-scheduled prompt for it.
+The Engine runs this check on its own per-ticket timer, every persisted
+`Stall interval:` (10 minutes by default), from a worker's launch until its
+ticket lands or parks. It also checks a worker that settles `idle` or `done`
+without being review-ready (a clean worktree with at least one ticket commit
+beyond the base). The coordinator never runs the check and never adds a timer,
+cron, or scheduled prompt for it; it sees only the resulting `stall_pause`
+escalations through `runtime.ts wait`.
 
-The Engine checks a worker when its timer fires while the worker is `working`,
-and when the worker settles `idle` or `done` without being deterministically
-ready for review. A settled worker is review-ready only when its worktree is
-clean and its branch contains at least one ticket commit beyond the current
-base. Normalize Herdr `done` to `worker.status: idle` in `StallState`; Herdr uses those
-two labels for seen and unseen settled sessions, not different worker intent.
-
-TypeSafe has semantic authority only inside this bounded seam. It estimates five
-probabilities from supplied evidence. Versioned code chooses the disposition,
-and existing runtime invariants still govern prompting, retries, state changes,
-and scheduling.
-
-## Collect bounded state
-
-For every selected `working` or non-review-ready settled worker, collect:
-
-- ticket number, title, and accepted criteria;
-- bound session, harness, model, effort, status, and current phase;
-- the current UTC observation time;
-- at most 40 recent pane lines;
-- full current `HEAD`;
-- `git status --short`;
-- `git log --oneline <base>..HEAD`, bounded to the recent entries needed to
-  compare progress;
-- the preceding observation for this worker, or `null` on its first check.
-
-Do not include secrets, environment variables, credentials, unrestricted logs,
-or repository content outside those fields. Write one schema-1 `StallState`
-JSON artifact under `<run>/assessments/stall/`. Give each new observation a
-unique assessment id containing the ticket and check sequence. The previous
-observation is evidence, not a provider retry: a new observation always begins
-at attempt 1.
-
-## Prepare, evaluate, and apply
-
-The Engine invokes the helper's operations in order:
-
-1. `stall.assessment.prepare` writes an immutable request containing the exact
-   state, question definitions, model id, policy version, and hashes.
-2. `stall.assessment.evaluate` submits that request to pinned TypeSafe model
-   `jev-1.13.0` and writes immutable evidence.
-3. Re-collect the same bounded fields into a new apply-state artifact, then
-   call `stall.assessment.apply`. It verifies the complete request/evidence
-   binding, rejects changed state as stale, and returns the deterministic
-   action.
-
-Use distinct request and evidence paths for every attempt. Never edit or reuse
-an existing artifact. Full request examples and linked-retry rules are in
-[helper-cli.md](helper-cli.md#typesafe-stall-assessment-operations).
+TypeSafe has semantic authority only inside this bounded seam. Pinned model
+`jev-1.13.0` estimates five probabilities from a bounded `StallState` (ticket
+criteria, the bound role and status, at most 40 recent pane lines, `HEAD`,
+`git status --short`, recent `git log <base>..HEAD`, and the preceding
+observation). Versioned code chooses the disposition. The Engine writes an
+immutable request and evidence chain under `<run>/assessments/stall/` through
+`stall.assessment.prepare`, `evaluate`, and `apply` (see
+[engine-operations.md](engine-operations.md#typesafe-stall-assessment-operations)),
+and appends each result to `## Stall evidence` before acting on it.
 
 The TypeSafe credential is read only from Bun secrets using service
 `com.wyattjoh.coordinate-implementation` and name `typesafe-api-key`. Never put
 it in RESUME.md, JSON input, a prompt, a process argument, an artifact, or a
 log.
 
-After `apply` succeeds, the Engine appends its ticket, check sequence, attempt,
-disposition/reason, request path, and evidence path to `## Stall evidence` in
-RESUME.md before executing the action. That durable line identifies the prior
-observation after an Engine restart.
+## Dispositions
 
-## Enforce the returned action
+- `wait`: no worker change.
+- `reprompt`: the Engine sends a code-owned prompt; TypeSafe never writes it.
+- `retry-worker`: the Engine relaunches from the exact persisted binding
+  through `infrastructure.retry.record`; exhaustion parks only that ticket.
+- `pause`: the worker is left unchanged and the Engine opens a `stall_pause`
+  escalation for that ticket.
 
-The Engine executes the returned action itself:
+A provider, credential, network, rate-limit, malformed-output, stale-evidence,
+path, or binding failure also pauses: the Engine records the failed attempt
+and opens a `stall_pause` escalation. It never normalizes invalid
+probabilities, retries a provider automatically, or falls back to anyone's own
+semantic judgment.
 
-- `wait`: make no worker change. Preserve the current observation for the next
-  check.
-- `reprompt`: execute only the returned `prompt_argv`. The prompt text is
-  code-owned, not generated by TypeSafe.
-- `retry-worker`: call `infrastructure.retry.record`, wait its returned delay
-  when retrying, and relaunch from the exact persisted binding. Never
-  substitute a harness, model, effort, skill, worktree, or branch. An exhausted
-  retry parks only that ticket with a `retry_exhausted` escalation while
-  independent work continues.
-- `pause`: leave the worker unchanged, persist the evidence path, and open a
-  `stall_pause` escalation for that ticket. Do not turn an uncertain or
-  human-decision result into a prompt.
+## Answer a `stall_pause`
 
-The coordinator answers a `stall_pause` escalation after reading the named
-pane and evidence, or asks the user when the evidence does not settle it. The
-answer is delivered to the parked implementor; it never replaces the
-assessment's disposition.
-
-A TypeSafe, credential, network, rate-limit, malformed-output, stale-evidence,
-path, or binding failure pauses the seam immediately. Failed evaluation still
-writes evidence when possible; append that failed attempt and evidence path to
-`## Stall evidence` before opening the `stall_pause` escalation. Do not normalize invalid probabilities, retry
-a provider automatically, or fall back to the coordinator's own semantic
-judgment. An explicit retry of the exact unchanged failed request uses a new
-immutable request linked to the prior failed evidence.
+Read the named pane and the evidence, then answer with the exact prompt the
+Engine should deliver to the implementor, or ask the user when the evidence
+does not settle it. The answer is delivered to the parked implementor; it
+never rewrites the assessment's disposition.
