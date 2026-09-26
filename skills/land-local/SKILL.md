@@ -1,6 +1,6 @@
 ---
 name: land-local
-description: Lands the current worktree branch into the local main branch atomically. Captures the source worktree, leaves Claude Code worktree isolation when needed, commits outstanding work, rebases onto local main, resolves conflicts in the worktree, runs the repo's pre-push gates, then takes an exclusive flock and fast-forwards main. Pi stays in place and uses the Git CLI directly. If main advanced meanwhile the fast-forward is refused and the whole cycle restarts, so main is never left conflicted or half merged and many worktrees can land in parallel. Local only, it never fetches, pushes, or opens a PR. Triggers on "/land-local", "land this branch locally", "land it into main", "merge my worktree into local main", "ff-only merge into main", "land without pushing", "integrate this branch locally".
+description: Lands the current worktree branch into the local main branch atomically. Captures the source worktree, leaves Claude Code worktree isolation when needed, commits outstanding work, rebases onto local main, resolves conflicts in the worktree, runs the repo's pre-push gates, then takes an exclusive flock and fast-forwards main, then removes the source worktree when it is a linked (non-main) worktree. Pi stays in place and uses the Git CLI directly. If main advanced meanwhile the fast-forward is refused and the whole cycle restarts, so main is never left conflicted or half merged and many worktrees can land in parallel. Local only, it never fetches, pushes, or opens a PR. Triggers on "/land-local", "land this branch locally", "land it into main", "merge my worktree into local main", "ff-only merge into main", "land without pushing", "integrate this branch locally".
 effort: high
 ---
 
@@ -16,16 +16,18 @@ or dirty. Every expensive or failure-prone step (commit, rebase, conflict
 resolution, gates) happens in your own worktree, where it blocks nobody.
 
 Local only. This skill never runs `git fetch`, `git push`, `gh`, `pando
-remove`, `git worktree remove`, or `git branch -d`. Landing is the last thing
-it does.
+remove`, or `git branch -d`. The only cleanup is Phase 6: once `main` shows
+`LANDED`, a linked source worktree is removed with a plain `git worktree
+remove`. The branch is always kept.
 
 **Arguments**: $ARGUMENTS
 
-| Argument       | Effect                                                                                                                          |
-| -------------- | ------------------------------------------------------------------------------------------------------------------------------- |
-| `<branch>`     | Land that branch instead of the current one; it overrides the `BRANCH` Phase 0a captured and must be checked out in `$WORKTREE` |
-| `--no-gates`   | Skip Phase 3. Only when the caller already verified the tree                                                                    |
-| `--attempts N` | Bound on rebase/land cycles, default 3                                                                                          |
+| Argument          | Effect                                                                                                                          |
+| ----------------- | ------------------------------------------------------------------------------------------------------------------------------- |
+| `<branch>`        | Land that branch instead of the current one; it overrides the `BRANCH` Phase 0a captured and must be checked out in `$WORKTREE` |
+| `--no-gates`      | Skip Phase 3. Only when the caller already verified the tree                                                                    |
+| `--attempts N`    | Bound on rebase/land cycles, default 3                                                                                          |
+| `--keep-worktree` | Skip Phase 6 and leave the source worktree in place after landing                                                               |
 
 Track the phases in your task list; a land that loops twice is easy to lose
 your place in.
@@ -39,7 +41,8 @@ Phase 1  commit the worktree       once
   Phase 2  rebase onto main   |
   Phase 3  gates              | repeat until landed or attempts exhausted
   Phase 4  locked ff-only land|
-Phase 5  report
+Phase 5  loop or finish
+Phase 6  remove the source worktree, then report
 ```
 
 Phase 4 returning `REBASE_REQUIRED` is the normal outcome under contention,
@@ -59,11 +62,13 @@ Then follow the current harness:
 
 - **Claude Code:** if this session entered the source worktree with
   `EnterWorktree`, call `ExitWorktree` with `action: "keep"`. Never
-  `"remove"`; this skill does not delete the user's worktree or branch. If no
+  `"remove"`: nothing is landed yet, and the tool can take the branch with it.
+  Phase 6 removes the worktree with Git only after `LANDED`. If no
   native worktree session is active, do not require the tool, continue from
   the current directory. If a pinned Claude Code session cannot exit, complete
   Phases 0 through 3, then stop at Phase 4 and give the user its filled-in
-  locked block to run with `!`.
+  locked block to run with `!`, followed by the filled-in Phase 6 block to run
+  only if the first printed `LANDED:`.
 - **Pi:** do not call `ExitWorktree` and do not use Pando. Stay in the current
   directory and use the Git CLI directly. Git can address both the source and
   trunk worktrees through their explicit paths.
@@ -313,7 +318,51 @@ without seeing `LANDED:` at exit 0. Full table in
 
 Any other non-zero exit stops the land. Report the message verbatim.
 
-On `LANDED`, report:
+On `LANDED` (exit 0), go to Phase 6.
+
+## Phase 6: Remove the source worktree
+
+Skip this phase with `--keep-worktree`. Otherwise, once `main` is landed, the
+source worktree has served its purpose: remove it when it is a linked worktree,
+and keep it when it is the repository's main worktree (the first entry of
+`git worktree list`, the checkout that holds `.git` itself). Phase 0 already
+refused a source that is the trunk worktree.
+
+Run from `MAINWT` with the same literal paths as Phase 4, never from inside
+the worktree being removed:
+
+```bash
+set -euo pipefail
+
+WORKTREE=<from Phase 0a>
+MAINWT=<from Phase 0>
+
+cd "$MAINWT"
+PRIMARY="$(git worktree list --porcelain | awk '/^worktree /{print substr($0,10); exit}')"
+[ "$WORKTREE" = "$PRIMARY" ] && { echo "KEPT: $WORKTREE is the main worktree"; exit 0; }
+DIRT="$(git -C "$WORKTREE" status --porcelain)"
+[ -z "$DIRT" ] || { echo "KEPT: $WORKTREE has uncommitted changes:"; echo "$DIRT"; exit 0; }
+if git worktree remove "$WORKTREE"; then
+  echo "REMOVED: $WORKTREE"
+else
+  echo "KEPT: git worktree remove refused $WORKTREE"
+fi
+```
+
+- **No `--force`, ever.** A plain `git worktree remove` refuses a worktree with
+  modified or untracked files, or one that is locked. After a clean land there
+  should be neither, so a refusal means something appeared that the user may
+  want; report it verbatim instead of forcing. Ignored files (`node_modules`,
+  build output) are deleted with the worktree.
+- **The branch stays.** It now points at a commit on `main`; deleting it is the
+  user's call.
+- **A `KEPT` result does not undo the land.** `main` is landed either way; the
+  report says why the worktree remains.
+- **Pi** is still sitting in the removed directory afterwards. Start every
+  later command with `cd "$MAINWT"`. Claude Code already left the worktree in
+  Phase 0a.
+
+Then report:
 
 ```
 land-local
@@ -324,10 +373,11 @@ Cycles:   <k> (rebase restarts: <k-1>)
 Commits:  <created in Phase 1 / Phase 3, or "none">
 Conflicts:<files resolved, with one line each on how, or "none">
 Gates:    <command> PASSED | skipped (--no-gates) | none detected
+Worktree: removed <path> | kept (<reason>)
 ```
 
-State plainly that the branch is landed locally, that nothing was pushed, and
-that the worktree and branch still exist.
+State plainly that the branch is landed locally, that nothing was pushed, that
+the branch still exists, and whether the worktree was removed.
 
 ## Boundaries
 
@@ -336,9 +386,10 @@ that the worktree and branch still exist.
 - Never fetch, push, or run `gh`. Landing is local.
 - Never clean or stash the `main` worktree. A dirty `main` is a human's
   problem; report it verbatim and stop.
-- Never delete the branch or its worktree. The user decides when that happens.
-  On Claude Code, `ExitWorktree` is `action: "keep"` when it is needed. Pi does
-  not call it.
+- Never delete the branch. The user decides when that happens.
+- Never remove the worktree before `LANDED`, never remove the main worktree,
+  and never pass `--force` to `git worktree remove`. On Claude Code,
+  `ExitWorktree` is `action: "keep"` when it is needed. Pi does not call it.
 - Never `--no-verify`. Gates exist to be passed.
 - Never work around Claude Code's worktree isolation guard by moving a refused
   command into a script file and running that. If Phase 0a could not lift
