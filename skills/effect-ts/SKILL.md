@@ -1,80 +1,231 @@
 ---
 name: effect-ts
-description: This skill should be used when the user asks about Effect-TS patterns, services, layers, error handling, service composition, or writing/refactoring code that imports from 'effect'. Covers stable Effect v3 (3.22.x), the current npm "latest" line. For projects on effect@4.x, including "Effect v4", "Effect beta", or "migrate to Effect v4", use the effect-ts-beta skill instead.
+description: Expert guidance for Effect v4 (4.0.0-rc.117, the npm "rc" dist-tag). Use when writing, reviewing, or refactoring code that imports from 'effect', when a project depends on effect@4.x, or when the user mentions "Effect", "Effect-TS", "Effect v4", "effect 4.0", "Context.Service", "Schema.TaggedError", "effect/unstable", "Yieldable", "forkChild", "Effect.catch", or asks to migrate an Effect v3 codebase to v4. Covers services, layers, error handling, streams, schema, and testing in the v4 API, plus a v3 to v4 migration map.
 ---
 
-# Effect-TS Expert
+# Effect v4 Expert
 
-Expert guidance for functional programming with the Effect library, covering error handling, dependency injection,
-composability, and testing patterns.
+Expert guidance for Effect v4, currently a release candidate at `4.0.0-rc.117` (npm `rc` dist-tag). v4 keeps the core programming model of v3
+(`Effect`, `Layer`, `Schema`, `Stream`) but renames a large amount of the API surface, consolidates most of the
+ecosystem into the `effect` package, and removes Effect subtyping.
 
-This skill documents **Effect v3** (`3.22.2`), the current npm `latest`. If the project depends on `effect@4.x`, stop
-and use the `effect-ts-beta` skill: v4 renames a large part of the API surface and removes Effect subtyping, so the
-patterns here will not compile. Check with:
+**This is a prerelease.** APIs can still change between release candidates. Verify anything non-obvious against the pinned source rather
+than recalling it.
+
+## Prerequisites Check
+
+Before starting any v4 work, verify the Effect v4 source exists at `$SKILL_DIR/.source/`.
+
+If it is missing, clone it before proceeding and tell the user you did:
+
+```bash
+git clone --depth=1 --branch effect@4.0.0-rc.117 https://github.com/Effect-TS/effect.git "$SKILL_DIR/.source"
+```
+
+Pin the clone to the release tag this skill documents. If the project installs a different 4.x version, clone that
+version's `effect@<version>` tag instead, so the source matches what the project runs. Cloning `main` unpinned
+produces guidance that does not match any published version.
+
+## Version Gate
+
+Confirm which major the project is actually on before applying anything here:
 
 ```bash
 node -p "require('./package.json').dependencies?.effect ?? require('./package.json').devDependencies?.effect"
 ```
 
-## Prerequisites Check
+- Resolves to `4.x` (including `-beta` / `-rc`): use this skill.
+- Resolves to `3.x`: the v3 and v4 APIs are not interchangeable, so do not apply the v4 patterns here to v3 code.
+  Follow the project's existing v3 code and the v3 source at the matching `effect@3.x` tag. If the user wants to
+  upgrade, use [references/migration-from-v3.md](./references/migration-from-v3.md).
+- All ecosystem packages share one version in v4. If `effect` is `4.0.0-rc.117`, then `@effect/platform-node`,
+  `@effect/sql-pg`, and `@effect/vitest` must also be `4.0.0-rc.117`. Mismatched versions are a common source of
+  confusing type errors.
 
-Before starting any Effect-related work, verify the Effect-TS source code exists at `$SKILL_DIR/.source/`.
+## Canonical Upstream Documentation
 
-If it is missing, clone it before proceeding and tell the user you did:
+The v4 repository ships authoritative docs that the v3 repository did not. **Read these before searching the source
+tree**, they are the maintainers' own guidance and outrank any recalled pattern:
+
+| Path in `$SKILL_DIR/.source/` | Contents                                                                  |
+| ----------------------------- | ------------------------------------------------------------------------- |
+| `LLMS.md`                     | Official "how to write Effect v4" guide written for coding agents         |
+| `MIGRATION.md`                | v3 to v4 overview: versioning, package consolidation, unstable modules    |
+| `migration/v3-to-v4.md`       | Generated import and API rename map (very large, grep it, do not read it) |
+| `migration/services.md`       | `Context.Tag` to `Context.Service`                                        |
+| `migration/error-handling.md` | `catch*` renamings                                                        |
+| `migration/cause.md`          | Flattened `Cause` structure                                               |
+| `migration/yieldable.md`      | Effect subtyping removal (stale on `Option`/`Result`, see below)          |
+| `migration/forking.md`        | `fork` to `forkChild`, `forkDaemon` to `forkDetach`                       |
+| `migration/fiberref.md`       | `FiberRef` to `Context.Reference`                                         |
+| `migration/schema.md`         | Schema v4 migration                                                       |
+| `ai-docs/src/`                | Runnable, type-checked examples grouped by topic                          |
+| `ai-docs/src/06_schedule/`    | Schedule recipes                                                          |
+
+Grep the rename map rather than reading it:
 
 ```bash
-git clone --depth=1 --branch effect@3.22.2 https://github.com/Effect-TS/effect.git "$SKILL_DIR/.source"
+grep -n 'Effect.catchAll\|Stream.acquireRelease' "$SKILL_DIR/.source/migration/v3-to-v4.md"
 ```
-
-The `main` branch tracks Effect v4, which has breaking API changes relative to
-the v3 patterns documented in this skill.
-Service definition alone moved from `Context.Tag` to `Context.Service`, with the
-identifier and type parameters in the opposite order. Pin the clone to a v3 tag,
-matching the `effect@3.22.2` reference submodule pinned in the root `CLAUDE.md`,
-rather than cloning `main` unpinned.
 
 ## Research Strategy
 
-Effect-TS has many ways to accomplish the same task. When the project already uses
-Effect, follow its existing patterns for services, errors, and tests. For complex type
-errors, unclear behavior, or implementation details, read the Effect source at
-`$SKILL_DIR/.source/packages/effect/src/`. Prefer the canonical, idiomatic solution over a
-clever one.
+1. **Codebase patterns first.** If the project already has v4 code, follow it. Check that it is v4 and not
+   half-migrated v3.
+2. **Upstream docs.** `LLMS.md` and `migration/*.md` as listed above.
+3. **Source.** `$SKILL_DIR/.source/packages/effect/src/` for exact signatures. Unstable modules live under
+   `src/unstable/`, test utilities under `src/testing/`.
 
-## Effect Principles
+Because v4 is a prerelease and pretrained knowledge of it is unreliable, verify a symbol exists before recommending it:
 
-- Model expected failures as typed errors with `Effect.fail`, and handle them with
-  `Effect.catchTag` and `Effect.catchAll` instead of throwing. See
-  `./references/critical-rules.md` for forbidden patterns.
-- Define services with `Context.Tag` or `Effect.Service`, compose layers with `Layer.merge`
-  and `Layer.provide`, and inject them with `Effect.provide`.
-- Build effects with the constructors (`Effect.succeed`, `Effect.fail`, `Effect.tryPromise`,
-  `Effect.try`), and manage resources with scoped effects.
-- Write sequential code with `Effect.gen`, and prefer `Effect.fn()` for named functions
-  (automatic tracing spans and better stack traces).
+```bash
+grep -rn "^export const someApi" "$SKILL_DIR/.source/packages/effect/src/Effect.ts"
+```
+
+## Core v4 Idioms
+
+These are the maintainers' stated preferences from `LLMS.md`. Follow them by default.
+
+### Write with `Effect.gen` and `Effect.fn`
+
+Use `Effect.gen` for imperative-style composition, and attach behaviour with `.pipe`.
+
+```typescript
+import { Effect, Schema } from "effect";
+
+Effect.gen(function* () {
+  yield* Effect.log("Starting the file processing...");
+  // Always `return yield*` when raising, so TypeScript knows execution stops here.
+  return yield* new FileProcessingError({ message: "Failed to read the file" });
+}).pipe(
+  Effect.catch((error) => Effect.logError(`An error occurred: ${error}`)),
+  Effect.withSpan("fileProcessing"),
+);
+
+export class FileProcessingError extends Schema.TaggedError<FileProcessingError>()(
+  "FileProcessingError",
+  {
+    message: Schema.String,
+  },
+) {}
+```
+
+**Avoid functions that return `Effect.gen(...)`.** Use `Effect.fn` instead, which names the span and captures call
+sites. Pass extra combinators as additional arguments; **do not `.pipe` an `Effect.fn`**.
+
+```typescript
+export const effectFunction = Effect.fn("effectFunction")(
+  function* (n: number): Effect.fn.Return<string, SomeError> {
+    yield* Effect.logInfo("Received number:", n);
+    return yield* new SomeError({ message: "boom" });
+  },
+  // Additional behaviour goes here, not in a .pipe on the result.
+  Effect.catch((error) => Effect.logError(`An error occurred: ${error}`)),
+  Effect.annotateLogs({ method: "effectFunction" }),
+);
+```
+
+`Effect.fnUntraced` is available when the tracing span is unwanted.
+
+### Define errors with `Schema.TaggedError`
+
+v4 prefers `Schema.TaggedError` over `Data.TaggedError` (which still exists). Schema errors are serializable, usable
+in RPC and cluster boundaries, and validate their own payloads. Use `Schema.Defect()` for a field holding an unknown
+cause.
+
+```typescript
+export class DatabaseError extends Schema.TaggedError<DatabaseError>()("DatabaseError", {
+  cause: Schema.Defect(),
+}) {}
+```
+
+### Model all validation with `Schema`
+
+Do not hand-roll parsing or validation predicates. Decode untrusted input with `Schema`. For runtime type guards on
+already-typed values, use the `Predicate` module (`Predicate.isObject`, `Predicate.isNumber`, composed with
+`Predicate.and` / `or` / `not`) rather than writing `isRecord`-style helpers.
+
+### Structure code as services
+
+See [references/services-and-layers.md](./references/services-and-layers.md). The short version:
+
+```typescript
+export class Database extends Context.Service<
+  Database,
+  {
+    query(sql: string): Effect.Effect<Array<unknown>, DatabaseError>;
+  }
+>()("myapp/db/Database") {
+  static readonly layer = Layer.effect(
+    Database,
+    Effect.gen(function* () {
+      const query = Effect.fn("Database.query")(function* (sql: string) {
+        return [] as Array<unknown>;
+      });
+      return Database.of({ query });
+    }),
+  );
+}
+```
+
+Identifier strings include the package name and path (`"myapp/db/Database"`). Layers are named `layer`, not
+`Default` or `Live`. There is no auto-generated layer in v4.
 
 ## Critical Rules
 
-Read and internalize `./references/critical-rules.md` before writing any Effect code. Key guidelines:
+Read [references/critical-rules.md](./references/critical-rules.md) before writing any v4 code. Key guidelines:
 
-- **INEFFECTIVE:** try-catch in Effect.gen (Effect failures aren't thrown)
-- **AVOID:** Type assertions (as never/any/unknown)
-- **RECOMMENDED:** `return yield*` pattern for errors (makes termination explicit)
+- **INEFFECTIVE:** try-catch in `Effect.gen` (Effect failures are not thrown)
+- **BROKEN IN V4:** `yield*` or Effect combinators on `Ref`, `Deferred`, `Fiber`, `Option`, or `Result`. They are
+  no longer Effects. See the Effect subtyping section below.
+- **AVOID:** type assertions (`as never` / `any` / `unknown`)
+- **RECOMMENDED:** `return yield*` for errors, and `Effect.fn` over functions returning `Effect.gen`
+
+## Effect Subtyping Removed
+
+The single largest behavioural change from v3. In v3 many types _were_ Effects. In v4 only `Config` values,
+`Context.Service` / `Context.Reference` tags, and yieldable errors (`Schema.TaggedError`, `Data.TaggedError`) still
+are, so `yield*` and combinators work on them directly. Everything else needs an explicit conversion.
+
+```typescript
+const program = Effect.gen(function* () {
+  // Option and Result are plain data, not Effects: convert before yielding.
+  const value = yield* Effect.fromOption(Option.some(42)); // fails with NoSuchElementError on None
+  const n = yield* Effect.fromResult(Result.succeed(1));
+  return value + n;
+});
+```
+
+| v3 (yield the value directly) | v4                                 |
+| ----------------------------- | ---------------------------------- |
+| `yield* ref`                  | `yield* Ref.get(ref)`              |
+| `yield* deferred`             | `yield* Deferred.await(deferred)`  |
+| `yield* fiber`                | `yield* Fiber.join(fiber)`         |
+| `yield* option`               | `yield* Effect.fromOption(option)` |
+| `yield* either`               | `yield* Effect.fromResult(result)` |
+
+`Option.gen` and `Result.gen` give generator syntax over those types without entering Effect. Upstream
+`migration/yieldable.md` still shows `yield* Option.some(42)` inside `Effect.gen` and an `.asEffect()` method. Neither
+matches the `4.0.0-rc.117` source: `Option` and `Result` have no `asEffect`, and yielding one in `Effect.gen` is a
+type error.
 
 ## Common Failure Modes
 
-Quick links to patterns that frequently cause issues:
+Migrating v3 muscle memory is where most v4 errors come from:
 
-- **SubscriptionRef version mismatch**: `unsafeMake is not a function` → [Quick Reference](#subscriptionref-reactive-references)
-- **Cancellation vs Failure**: Interrupts aren't errors → [Error Taxonomy](#error-taxonomy)
-- **Option vs null**: Use Option internally, null at boundaries → [option-null.md](./references/option-null.md)
-- **Stream backpressure**: Infinite streams hang → [streams.md](./references/streams.md)
-
-## Explaining Solutions
-
-When providing solutions, explain the Effect-TS concepts being used and why they're appropriate for the specific use
-case. If encountering patterns not covered in the documentation, suggest improvements while maintaining consistency with
-existing codebase patterns (when they exist).
+- **`Effect.catchAll` is not a function**: renamed to `Effect.catch`. See
+  [references/migration-from-v3.md](./references/migration-from-v3.md).
+- **`Effect.fork` is not a function**: renamed to `Effect.forkChild`.
+- **`unsafeMake` is not a function**: v4 moved the `unsafe` prefix to a `Unsafe` suffix on the constructors that kept
+  one (`Equal.byReferenceUnsafe`, `Duration.fromInputUnsafe`). `SubscriptionRef` has no unsafe/sync constructor at
+  all in v4. `SubscriptionRef.make` only returns an `Effect`; use `yield* SubscriptionRef.make(initial)`.
+- **`Either` not exported**: renamed to `Result`.
+- **Type error passing a `Ref` or `Option` to `Effect.map`**: not an Effect in v4. Use `Ref.get` or
+  `Effect.fromOption`.
+- **`Effect.Service` not found**: replaced by `Context.Service` with a `make` option, and no auto-generated `.Default`.
+- **`@effect/platform` not resolving**: `FileSystem`, `Path`, `Terminal`, and `PlatformError` moved into core `effect`.
+- **Layer built twice**: v4 memoizes layers across `Effect.provide` calls. If you _wanted_ two instances, use
+  `Layer.fresh` or `Effect.provide(layer, { local: true })`.
 
 ## Quick Reference
 
@@ -83,352 +234,222 @@ existing codebase patterns (when they exist).
 ```typescript
 Effect.succeed(value); // Wrap success value
 Effect.fail(error); // Create failed effect
-Effect.tryPromise(fn); // Wrap promise-returning function
-Effect.try(fn); // Wrap synchronous throwing function
 Effect.sync(fn); // Wrap synchronous non-throwing function
+Effect.try(fn); // Wrap synchronous throwing function
+Effect.promise(fn); // Wrap non-failing promise
+Effect.tryPromise(fn); // Wrap promise-returning function
 ```
 
 ### Composing Effects
 
 ```typescript
-Effect.flatMap(effect, fn); // Chain effects
-Effect.map(effect, fn); // Transform success value
-Effect.tap(effect, fn); // Side effect without changing value
-Effect.all([...effects]); // Run effects (concurrency configurable)
-Effect.forEach(items, fn); // Map over items with effects
+Effect.flatMap(effect, fn);
+Effect.map(effect, fn);
+Effect.tap(effect, fn);
+Effect.all([...effects], { concurrency: "unbounded" });
+Effect.forEach(items, fn, { concurrency: 5 });
 
-// Collect ALL errors (not just first)
-Effect.all([e1, e2, e3], { mode: "validate" }); // Returns all failures
+// Collect every result instead of short-circuiting (v3 used mode: "validate").
+Effect.all([e1, e2, e3], { mode: "result" });
 
-// Partial success handling
-Effect.partition(items, (item) => process(item)); // Returns [failures, successes]
+// Returns [failures, successes].
+Effect.partition(items, (item) => process(item));
 ```
 
 ### Error Handling
 
 ```typescript
-// Define typed errors with Data.TaggedError (preferred)
-class UserNotFoundError extends Data.TaggedError("UserNotFoundError")<{
-  userId: string;
-}> {}
+Effect.catch(effect, fn); // v3: catchAll
+Effect.catchCause(effect, fn); // v3: catchAllCause
+Effect.catchDefect(effect, fn); // v3: catchAllDefect
+Effect.catchTag(effect, "MyError", fn); // unchanged
+Effect.catchTag(effect, ["AError", "BError"], fn); // multiple tags in one call
+Effect.catchTags(effect, { AError: fn, BError: fn }); // unchanged
+Effect.catchFilter(Filter.fromPredicate(pred), fn); // v3: catchSome
+Effect.result(effect); // Effect<Result<A, E>>
+Effect.exit(effect); // Effect<Exit<A, E>>
+Effect.option(effect); // Effect<Option<A>>
+Effect.orElseSucceed(effect, fn); // v3 Effect.orElse is gone, use Effect.catch
 
-// Direct yield of errors (no Effect.fail wrapper needed)
-Effect.gen(function* () {
-  if (!user) {
-    return yield* new UserNotFoundError({ userId });
-  }
-});
-
-Effect.catchTag(effect, tag, fn); // Handle specific error tag
-Effect.catchAll(effect, fn); // Handle all errors
-Effect.exit(effect); // Convert to Exit value
-Effect.orElse(effect, alt); // Fallback effect
+// New in v4: handle a tagged `reason` without removing the parent error.
+Effect.catchReason(effect, "AiError", "RateLimitError", fn);
+Effect.catchReasons(effect, "AiError", { RateLimitError: fn });
 ```
 
 ### Error Taxonomy
 
-Categorize errors for appropriate handling:
+| Category                | Examples                   | Handling                   |
+| ----------------------- | -------------------------- | -------------------------- |
+| **Expected Rejections** | User cancel, deny          | Graceful exit, no retry    |
+| **Domain Errors**       | Validation, business rules | Show to user, don't retry  |
+| **Defects**             | Bugs, assertions           | Log and alert, investigate |
+| **Interruptions**       | Fiber cancel, timeout      | Cleanup, may retry         |
+| **Unknown/Foreign**     | Thrown exceptions          | Normalize at boundary      |
 
-| Category                | Examples                   | Handling                  |
-| ----------------------- | -------------------------- | ------------------------- |
-| **Expected Rejections** | User cancel, deny          | Graceful exit, no retry   |
-| **Domain Errors**       | Validation, business rules | Show to user, don't retry |
-| **Defects**             | Bugs, assertions           | Log + alert, investigate  |
-| **Interruptions**       | Fiber cancel, timeout      | Cleanup, may retry        |
-| **Unknown/Foreign**     | Thrown exceptions          | Normalize at boundary     |
+`Cause` is flat in v4: `{ reasons: ReadonlyArray<Fail | Die | Interrupt> }`. There is no `Empty`, `Sequential`, or
+`Parallel`. Use `Cause.hasFails`, `Cause.hasDies`, `Cause.hasInterrupts`, and iterate `cause.reasons`. All
+`*Exception` classes are now `*Error` (`Cause.NoSuchElementError`, `Cause.TimeoutError`, `Cause.UnknownError`).
 
-```typescript
-// Pattern: Normalize unknown errors at boundary
-const safeBoundary = Effect.catchAllDefect(effect, (defect) =>
-  Effect.fail(new UnknownError({ cause: defect })),
-);
-
-// Pattern: Catch user-initiated cancellations separately
-Effect.catchTag(effect, "UserCancelledError", () => Effect.succeed(null));
-
-// Pattern: Handle interruptions differently from failures
-Effect.onInterrupt(effect, () => Effect.log("Operation cancelled"));
-```
-
-### Pattern Matching (Match Module)
-
-**Default branching tool for tagged unions and complex conditionals.**
+### Pattern Matching
 
 ```typescript
 import { Match } from "effect";
 
-// Type-safe exhaustive matching on tagged errors
 const handleError = Match.type<AppError>().pipe(
-  Match.tag("UserCancelledError", () => null), // Expected rejection
-  Match.tag("ValidationError", (e) => e.message), // Domain error
-  Match.tag("NetworkError", () => "Connection failed"), // Retryable
-  Match.exhaustive, // Compile error if case missing
+  Match.tag("UserCancelledError", () => null),
+  Match.tag("ValidationError", (e) => e.message),
+  Match.exhaustive,
 );
 
-// Replace nested catchTag chains
-// BEFORE: effect.pipe(catchTag("A", ...), catchTag("B", ...), catchTag("C", ...))
-// AFTER:
-Effect.catchAll(effect, (error) =>
-  Match.value(error).pipe(
-    Match.tag("A", handleA),
-    Match.tag("B", handleB),
-    Match.tag("C", handleC),
-    Match.exhaustive,
-  ),
-);
-
-// Match on values (cleaner than if/else)
-const describe = Match.value(status).pipe(
+Match.value(status).pipe(
   Match.when("pending", () => "Loading..."),
-  Match.when("success", () => "Done!"),
   Match.orElse(() => "Unknown"),
 );
 ```
 
+`Match.tagsExhaustive` and `Match.discriminatorsExhaustive` handle whole objects of cases at once. `Match.either` is
+gone; the non-exhaustive finishers are `Match.option` and `Match.result`.
+
 ### Services and Layers
 
 ```typescript
-// Pattern 1: Context.Tag (implementation provided separately via Layer)
-class MyService extends Context.Tag("MyService")<MyService, { ... }>() {}
-const MyServiceLive = Layer.succeed(MyService, { ... })
-Effect.provide(effect, MyServiceLive)
+// Function syntax
+const Database = Context.Service<Database>("myapp/Database");
 
-// Pattern 2: Effect.Service (default implementation bundled)
-class UserRepo extends Effect.Service<UserRepo>()("UserRepo", {
-  effect: Effect.gen(function* () {
-    const db = yield* Database
-    return { findAll: db.query("SELECT * FROM users") }
-  }),
-  dependencies: [Database.Default],  // Optional service dependencies
-  accessors: true                     // Auto-generate method accessors
-}) {}
-Effect.provide(effect, UserRepo.Default)  // .Default layer auto-generated
-// Use UserRepo.DefaultWithoutDependencies when deps provided separately
-
-// Effect.Service with parameters (3.16.0+)
-class ConfiguredApi extends Effect.Service<ConfiguredApi>()("ConfiguredApi", {
-  effect: (config: { baseUrl: string }) =>
-    Effect.succeed({ fetch: (path: string) => `${config.baseUrl}/${path}` })
-}) {}
-
-// Pattern 3: Context.Reference (defaultable tags - 3.11.0+)
-class SpecialNumber extends Context.Reference<SpecialNumber>()(
-  "SpecialNumber",
-  { defaultValue: () => 2048 }
+// Class syntax: type params first, identifier second.
+class Database extends Context.Service<Database, { query(sql: string): Effect.Effect<void> }>()(
+  "myapp/Database",
 ) {}
-// No Layer required if default value suffices
 
-// Pattern 4: Context.ReadonlyTag (covariant - 3.18.0+)
-// Use for functions that consume services without modifying the type
-function effectHandler<I, A, E, R>(service: Context.ReadonlyTag<I, Effect.Effect<A, E, R>>) {
-  // Handler can use service in a covariant position
+// Service with a constructor effect stored on the class.
+class Logger extends Context.Service<Logger>()("myapp/Logger", { make: makeLogger }) {
+  static readonly layer = Layer.effect(this, this.make).pipe(Layer.provide(Config.layer));
 }
+
+// Defaultable service, no layer needed.
+const FeatureFlag = Context.Reference<boolean>("myapp/FeatureFlag", { defaultValue: () => false });
+
+Layer.provide(inner, outer); // expose only inner's services
+Layer.provideMerge(inner, outer); // expose both
+Effect.provide(effect, Logger.layer);
+Effect.provide(effect, Logger.layer, { local: true }); // opt out of shared memoization
 ```
+
+Access a service with `yield*` in a generator. `Service.use` / `Service.useSync` exist but hide the dependency at the
+call site, so prefer `yield*`.
 
 ### Generator Pattern
 
 ```typescript
 Effect.gen(function* () {
   const a = yield* effectA;
-  const b = yield* effectB;
-  if (error) {
-    return yield* Effect.fail(new MyError());
+  if (bad) {
+    return yield* new MyError({ message: "bad" });
   }
-  return result;
+  return a;
 });
 
-// Effect.fn - automatic tracing and telemetry (preferred for named functions)
-const fetchUser = Effect.fn("fetchUser")(function* (id: string) {
-  const db = yield* Database;
-  return yield* db.query(id);
-});
-// Creates spans, captures call sites, provides better stack traces
+// Passing `this` requires an options object in v4.
+Effect.gen({ self: this }, function* () {});
 ```
 
 ### Resource Management
 
 ```typescript
-Effect.acquireUseRelease(acquire, use, release); // Bracket pattern
-Effect.scoped(effect); // Scope lifetime to effect
-Effect.addFinalizer(cleanup); // Register cleanup action
+Effect.acquireRelease(acquire, release); // Scoped resource
+Effect.acquireUseRelease(acquire, use, release); // Bracket
+Effect.scoped(effect);
+Effect.addFinalizer(cleanup);
+Scope.provide(scope)(effect); // v3: Scope.extend
 ```
 
-### Duration
-
-Effect accepts human-readable duration strings anywhere a `DurationInput` is expected:
+### Duration and Scheduling
 
 ```typescript
-// String syntax (preferred) - singular or plural forms work
-Duration.toMillis("5 minutes"); // 300000
-Duration.toMillis("1 minute"); // 60000
-Duration.toMillis("30 seconds"); // 30000
-Duration.toMillis("100 millis"); // 100
-
-// Verbose syntax (avoid)
-Duration.toMillis(Duration.minutes(5)); // Same result, more verbose
-
-// Common units: millis, seconds, minutes, hours, days, weeks
-// Also: nanos, micros
+Duration.toMillis("5 minutes"); // String inputs still accepted anywhere a Duration.Input is expected
+Effect.retry(effect, Schedule.exponential("100 millis"));
+Effect.repeat(effect, Schedule.spaced("1 second"));
+Schedule.recurs(3);
+Schedule.jittered(schedule);
 ```
 
-### Scheduling
+### State and Concurrency
 
 ```typescript
-Effect.retry(effect, Schedule.exponential("100 millis")); // Retry with backoff
-Effect.repeat(effect, Schedule.fixed("1 second")); // Repeat on schedule
-Schedule.compose(s1, s2); // Combine schedules
+Ref.make(initial); // then Ref.get / Ref.set / Ref.update
+Deferred.make<A, E>(); // then Deferred.await / Deferred.succeed
+SubscriptionRef.make(initial); // then SubscriptionRef.get / .set / .changes
+Semaphore.make(permits); // now its own module
+
+Effect.forkChild(effect); // v3: fork
+Effect.forkDetach(effect); // v3: forkDaemon
+Effect.forkScoped(effect);
+Effect.forkChild(effect, { startImmediately: true, uninterruptible: "inherit" });
+Fiber.join(fiber);
+Effect.race(a, b);
 ```
 
-### State Management
+### Fiber-Local State
+
+`FiberRef` is gone. Built-in fiber-local values are `Context.Reference`s on the `References` module, read with
+`yield*` and set with `Effect.provideService`.
 
 ```typescript
-Ref.make(initialValue); // Mutable reference
-Ref.get(ref); // Read value
-Ref.set(ref, value); // Write value
-Deferred.make<E, A>(); // One-time async value
-```
-
-### SubscriptionRef (Reactive References)
-
-```typescript
-// WARNING: Never use unsafeMake - it may not exist in your Effect version.
-// If you see "unsafeMake is not a function", use the safe API below.
-
-SubscriptionRef.make(initial); // Create reactive reference (safe)
-SubscriptionRef.get(ref); // Read current value
-SubscriptionRef.set(ref, value); // Update value (notifies subscribers)
-SubscriptionRef.changes(ref); // Stream of value changes
-
-// React integration (effect-atom pattern)
 Effect.gen(function* () {
-  const ref = yield* SubscriptionRef.make<User | null>(null);
-  // Hook reads: useSubscriptionRef(ref), which returns the current value or null
-  // Handle null explicitly in components
+  const level = yield* References.CurrentLogLevel;
 });
+Effect.provideService(effect, References.CurrentLogLevel, "Debug"); // v3: Effect.locally
 ```
 
-### Concurrency
+### Configuration
 
 ```typescript
-Effect.fork(effect); // Run in background fiber
-Fiber.join(fiber); // Wait for fiber result
-Effect.race(effect1, effect2); // First to complete wins
-Effect.all([...effects], { concurrency: "unbounded" });
+import { Config, ConfigProvider, Effect, Redacted } from "effect";
+
+// Constructors are PascalCase in v4 (v3: Config.string, Config.number, Config.redacted).
+Config.String("HOST").pipe(Config.withDefault("localhost"));
+Config.Number("PORT");
+Config.Redacted("API_KEY"); // Redacted<string>, unwrap with Redacted.value
+Config.all({ host: Config.String("HOST"), port: Config.Number("PORT") }).pipe(
+  Config.nested("DATABASE"),
+);
+Config.schema(MySchema, "KEY"); // validate with Schema (v3 used Config.validate)
+Config.mapEffect(config, fn); // v3: Config.mapOrFail
 ```
 
-### Configuration & Environment Variables
+### Running Programs
 
 ```typescript
-import { Config, ConfigProvider, Effect, Layer, Redacted } from "effect";
-
-// Basic config values
-const port = Config.number("PORT"); // Required number
-const host = Config.string("HOST").pipe(
-  // Optional with default
-  Config.withDefault("localhost"),
-);
-
-// Sensitive values (masked in logs)
-const apiKey = Config.redacted("API_KEY"); // Returns Redacted<string>
-Effect.gen(function* () {
-  const secret = Redacted.value(yield* apiKey); // Unwrap when needed
-});
-
-// Nested configuration with prefix
-const dbConfig = Config.all({
-  host: Config.string("HOST"),
-  port: Config.number("PORT"),
-  name: Config.string("NAME"),
-}).pipe(Config.nested("DATABASE")); // DATABASE_HOST, DATABASE_PORT, etc.
-
-// Using config in effects
-const program = Effect.gen(function* () {
-  const p = yield* Config.number("PORT");
-  const key = yield* Config.redacted("API_KEY");
-  return { port: p, apiKey: Redacted.value(key) };
-});
-
-// Custom config provider (e.g., from object instead of env)
-const customProvider = ConfigProvider.fromMap(
-  new Map([
-    ["PORT", "3000"],
-    ["API_KEY", "secret"],
-  ]),
-);
-const withCustomConfig = Effect.provide(program, Layer.setConfigProvider(customProvider));
-
-// Config validation and transformation
-const validPort = Config.number("PORT").pipe(
-  Config.validate({
-    message: "Port must be between 1 and 65535",
-    validation: (n) => n >= 1 && n <= 65535,
-  }),
-);
+Effect.runPromise(effect);
+Effect.runSync(effect);
+Effect.runFork(effect);
+Effect.runForkWith(services)(effect); // v3: Runtime.runFork(runtime)
 ```
 
-### Array Operations
+`Runtime<R>` no longer exists; use `Context<R>` via `Effect.context<R>()`. The core runtime now keeps the process
+alive on its own, but `runMain` from a platform package is still recommended for signal handling, exit codes, and
+error reporting.
 
-```typescript
-import { Array as Arr, Order } from "effect";
+### Equality
 
-// Sorting with built-in orderings (accepts any Iterable)
-Arr.sort([3, 1, 2], Order.number); // [1, 2, 3]
-Arr.sort(["b", "a", "c"], Order.string); // ["a", "b", "c"]
-Arr.sort(new Set([3n, 1n, 2n]), Order.bigint); // [1n, 2n, 3n]
-
-// Sort by derived value
-Arr.sortWith(users, (u) => u.age, Order.number);
-
-// Sort by multiple criteria
-Arr.sortBy(
-  users,
-  Order.mapInput(Order.number, (u: User) => u.age),
-  Order.mapInput(Order.string, (u: User) => u.name),
-);
-
-// Built-in orderings: Order.string, Order.number, Order.bigint, Order.boolean, Order.Date
-// Reverse ordering: Order.reverse(Order.number)
-```
-
-### Utility Functions
-
-```typescript
-import { constVoid as noop } from "effect/Function";
-
-// constVoid returns undefined, useful as a no-operation callback
-noop(); // undefined
-
-// Common use cases:
-Effect.tap(effect, noop); // Ignore value, just run effect
-Promise.catch(noop); // Swallow errors
-eventEmitter.on("event", noop); // Register empty handler
-```
-
-### Deprecations
-
-- **`BigDecimal.fromNumber`**: Use `BigDecimal.unsafeFromNumber` instead (3.11.0+)
-- **`Schema.annotations()`**: Now removes previously set identifier annotations; identifiers are tied to the schema's
-  `ast` reference only (3.17.10)
+`Equal.equals` is **structural by default** in v4 for plain objects, arrays, `Map`, `Set`, `Date`, and `RegExp`.
+`Equal.equals(NaN, NaN)` is now `true`. Opt out with `Equal.byReference`. `Equal.equivalence` is now
+`Equal.asEquivalence`.
 
 ## Additional Resources
 
 ### Local Effect Resources
 
-- **`$SKILL_DIR/.source/packages/effect/src/`**: Core Effect modules and implementation
-
-### External Resources
-
-- **Effect-Atom**: https://github.com/tim-smart/effect-atom (open in browser for reactive state management patterns)
-
-### Related Skills
-
-- **`effect-ts-beta`**: Effect v4 beta (`4.0.0-beta.107`). Use it when the project is on `effect@4.x`, or when
-  migrating a v3 codebase to v4. Its `references/migration-from-v3.md` holds the v3 to v4 rename tables.
+- **`$SKILL_DIR/.source/LLMS.md`** and **`$SKILL_DIR/.source/migration/`**: read these first
+- **`$SKILL_DIR/.source/packages/effect/src/`**: core modules, with `unstable/` and `testing/` subtrees
+- **`$SKILL_DIR/.source/ai-docs/src/`**: runnable examples by topic
 
 ### Reference Files
 
-- **`./references/critical-rules.md`**: Forbidden patterns and mandatory conventions
-- **`./references/effect-atom.md`**: Effect-Atom reactive state management for React
-- **`./references/option-null.md`**: Option vs null boundary patterns
-- **`./references/streams.md`**: Stream patterns and backpressure gotchas
-- **`./references/testing.md`**: Vitest deterministic testing patterns
+- **[references/critical-rules.md](./references/critical-rules.md)**: forbidden patterns and mandatory conventions
+- **[references/migration-from-v3.md](./references/migration-from-v3.md)**: condensed v3 to v4 rename tables
+- **[references/services-and-layers.md](./references/services-and-layers.md)**: `Context.Service` and layer composition
+- **[references/option-result.md](./references/option-result.md)**: Option, Result, UndefinedOr, and null boundaries
+- **[references/streams.md](./references/streams.md)**: v4 Stream patterns and backpressure gotchas
+- **[references/testing.md](./references/testing.md)**: `@effect/vitest` v4 deterministic testing
+- **[references/effect-atom.md](./references/effect-atom.md)**: Atom reactive state for React

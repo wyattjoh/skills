@@ -15,31 +15,32 @@ Four changes affect whole files rather than single call sites. Handle them befor
    level.
 3. **Unstable namespace.** `effect/unstable/*` modules may break in minor releases. Modules outside it follow strict
    semver.
-4. **Effect subtyping removed.** See the Yieldable section in `critical-rules.md`. This is the change most likely to
+4. **Effect subtyping removed.** See the former-Effect-subtypes section in `critical-rules.md`. This is the change most likely to
    produce a wall of type errors.
 
 ## Module Moves
 
-| v3 import                     | v4 import                          |
-| ----------------------------- | ---------------------------------- |
-| `effect/Either`               | `effect/Result`                    |
-| `effect/JSONSchema`           | `effect/JsonSchema`                |
-| `effect/FiberRef`             | `effect/References`                |
-| `effect/TestClock`            | `effect/testing/TestClock`         |
-| `effect/FastCheck`            | `effect/testing/FastCheck`         |
-| `@effect/platform/FileSystem` | `effect/FileSystem`                |
-| `@effect/platform/Path`       | `effect/Path`                      |
-| `@effect/platform/Terminal`   | `effect/Terminal`                  |
-| `@effect/platform/Error`      | `effect/PlatformError`             |
-| `@effect/platform/HttpClient` | `effect/unstable/http/HttpClient`  |
-| `@effect/platform/MsgPack`    | `effect/unstable/encoding/Msgpack` |
-| `@effect/platform/Ndjson`     | `effect/unstable/encoding/Ndjson`  |
-| `@effect/cli/Args`            | `effect/unstable/cli/Argument`     |
-| `@effect/cli/Options`         | `effect/unstable/cli/Flag`         |
-| `@effect/ai/*`                | `effect/unstable/ai/*`             |
-| `@effect/cluster/*`           | `effect/unstable/cluster/*`        |
-| `@effect/rpc/*`               | `effect/unstable/rpc/*`            |
-| `@effect/sql/*`               | `effect/unstable/sql/*`            |
+| v3 import                     | v4 import                                                     |
+| ----------------------------- | ------------------------------------------------------------- |
+| `effect/Either`               | `effect/Result`                                               |
+| `effect/JSONSchema`           | `effect/JsonSchema`                                           |
+| `effect/FiberRef`             | `effect/References`                                           |
+| `effect/TestClock`            | `effect/testing/TestClock`                                    |
+| `effect/FastCheck`            | `fast-check` (not re-exported)                                |
+| `effect/Arbitrary`            | `effect/unstable/arbitrary`                                   |
+| `@effect/platform/FileSystem` | `effect/FileSystem`                                           |
+| `@effect/platform/Path`       | `effect/Path`                                                 |
+| `@effect/platform/Terminal`   | `effect/Terminal`                                             |
+| `@effect/platform/Error`      | `effect/PlatformError`                                        |
+| `@effect/platform/HttpClient` | `effect/unstable/http/HttpClient`                             |
+| `@effect/platform/MsgPack`    | `effect/unstable/encoding/SchemaBinary` (MessagePack removed) |
+| `@effect/platform/Ndjson`     | `effect/unstable/encoding/Ndjson`                             |
+| `@effect/cli/Args`            | `effect/unstable/cli/Argument`                                |
+| `@effect/cli/Options`         | `effect/unstable/cli/Flag`                                    |
+| `@effect/ai/*`                | `effect/unstable/ai/*`                                        |
+| `@effect/cluster/*`           | `effect/unstable/cluster/*`                                   |
+| `@effect/rpc/*`               | `effect/unstable/rpc/*`                                       |
+| `@effect/sql/*`               | `effect/unstable/sql/*`                                       |
 
 The STM family was renamed to `Tx*`: `TRef` to `TxRef`, `TMap` to `TxHashMap`, `TSet` to `TxHashSet`, `TQueue` to
 `TxQueue`, `TPubSub` to `TxPubSub`, `TDeferred` to `TxDeferred`, `TSemaphore` to `TxSemaphore`,
@@ -48,11 +49,12 @@ The STM family was renamed to `Tx*`: `TRef` to `TxRef`, `TMap` to `TxHashMap`, `
 
 Removed with no direct replacement: `Micro`, `List`, `RedBlackTree`, `SortedMap`, `SortedSet`, `MutableQueue`,
 `Reloadable`, `RateLimiter`, `KeyedPool`, `Supervisor`, `Secret` (use `Redacted`), `Mailbox` (use `Queue`),
-`ParseResult`, `Pretty`, `Arbitrary`, `GlobalValue`, `RuntimeFlags`, and the `Test*` service modules.
+`ParseResult`, `Pretty`, `GlobalValue`, `RuntimeFlags`, and the `Test*` service modules.
 
 New in v4: `Filter`, `Result`, `UndefinedOr`, `Optic`, `Newtype`, `Latch`, `Semaphore`, `Pull`, `LayerRef`,
 `JsonPatch`, `JsonPointer`, `Combiner`, `Reducer`, `Redactable`, `ErrorReporter`, `Stdio`, and the `Schema*` family
-(`SchemaError`, `SchemaGetter`, `SchemaIssue`, `SchemaParser`, `SchemaRepresentation`, `SchemaTransformation`).
+(`SchemaGetter`, `SchemaIssue`, `SchemaParser`, `SchemaRepresentation`, `SchemaTransformation`). The schema error
+type is `Schema.SchemaError`; there is no standalone `SchemaError` module.
 
 ## Services
 
@@ -103,19 +105,19 @@ parent error from the error channel. `Effect.catchEager` evaluates synchronous r
 `Cause<E>` is now `{ reasons: ReadonlyArray<Fail<E> | Die | Interrupt> }`. The `Empty`, `Sequential`, and `Parallel`
 variants are gone; an empty cause is an empty array, and composition concatenates.
 
-| v3                              | v4                                     |
-| ------------------------------- | -------------------------------------- |
-| `Cause.isFailure(c)`            | `Cause.hasFails(c)`                    |
-| `Cause.isDie(c)`                | `Cause.hasDies(c)`                     |
-| `Cause.isInterrupted(c)`        | `Cause.hasInterrupts(c)`               |
-| `Cause.isInterruptedOnly(c)`    | `Cause.hasInterruptsOnly(c)`           |
-| `Cause.isEmptyType(c)`          | `c.reasons.length === 0`               |
-| `Cause.isFailType(c)`           | `Cause.isFailReason(reason)`           |
-| `Cause.failureOption(c)`        | `Cause.findErrorOption(c)`             |
-| `Cause.failureOrCause(c)`       | `Cause.findError(c)`                   |
-| `Cause.dieOption(c)`            | `Cause.findDefect(c)`                  |
-| `Cause.failures(c)`             | `c.reasons.filter(Cause.isFailReason)` |
-| `Cause.sequential` / `parallel` | `Cause.combine`                        |
+| v3                              | v4                                                         |
+| ------------------------------- | ---------------------------------------------------------- |
+| `Cause.isFailure(c)`            | `Cause.hasFails(c)`                                        |
+| `Cause.isDie(c)`                | `Cause.hasDies(c)`                                         |
+| `Cause.isInterrupted(c)`        | `Cause.hasInterrupts(c)`                                   |
+| `Cause.isInterruptedOnly(c)`    | `Cause.hasInterruptsOnly(c)`                               |
+| `Cause.isEmptyType(c)`          | `c.reasons.length === 0`                                   |
+| `Cause.isFailType(c)`           | `Cause.isFailReason(reason)`                               |
+| `Cause.failureOption(c)`        | `Cause.findErrorOption(c)`                                 |
+| `Cause.failureOrCause(c)`       | `Cause.findError(c)`                                       |
+| `Cause.dieOption(c)`            | `Cause.findDefect(c)`                                      |
+| `Cause.failures(c)`             | `c.reasons.filter(Cause.isFailReason).map((r) => r.error)` |
+| `Cause.sequential` / `parallel` | `Cause.combine`                                            |
 
 `findError` and `findDefect` return `Result`, not `Option`. Use `findErrorOption` for the `Option` variant.
 
@@ -139,7 +141,7 @@ All fork variants now take `{ startImmediately?: boolean, uninterruptible?: bool
 
 ## Fiber-Local State
 
-`FiberRef`, `FiberRefs`, `FiberRefsPatch`, and `Differ` are gone. Fiber-local values are `Context.Reference`s.
+`FiberRef`, `FiberRefs`, and `FiberRefsPatch` are gone. Fiber-local values are `Context.Reference`s.
 
 | v3 FiberRef                         | v4 Reference                       |
 | ----------------------------------- | ---------------------------------- |
@@ -173,24 +175,28 @@ Effect.gen(function* () {
 });
 ```
 
-The `Runtime` module now holds only `Teardown`, `defaultTeardown`, and `makeRunMain`.
+The `Runtime` module now holds only run-main plumbing: `Teardown`, `defaultTeardown`, `makeRunMain`, and the
+`errorExitCode` / `errorReported` helpers.
 
 The core runtime keeps the process alive across suspensions on its own, so `runMain` is no longer required merely to
 stop early exit. It is still recommended for signal handling, exit codes, and error reporting.
 
 ## Other Renames
 
-| v3                                    | v4                                    |
-| ------------------------------------- | ------------------------------------- |
-| `Scope.extend`                        | `Scope.provide`                       |
-| `Equal.equivalence`                   | `Equal.asEquivalence`                 |
-| `Effect.all(_, { mode: "validate" })` | `Effect.all(_, { mode: "result" })`   |
-| `Effect.either`                       | `Effect.result`                       |
-| `Config.validate`                     | `Config.schema` or `Config.mapOrFail` |
-| `Stream.catchAll`                     | `Stream.catch`                        |
-| `Stream.repeatEffect`                 | `Stream.fromEffectRepeat`             |
-| `Effect.gen(this, fn)`                | `Effect.gen({ self: this }, fn)`      |
-| `unsafeX(...)`                        | `xUnsafe(...)`                        |
+| v3                                    | v4                                  |
+| ------------------------------------- | ----------------------------------- |
+| `Scope.extend`                        | `Scope.provide`                     |
+| `Equal.equivalence`                   | `Equal.asEquivalence`               |
+| `Effect.all(_, { mode: "validate" })` | `Effect.all(_, { mode: "result" })` |
+| `Effect.either`                       | `Effect.result`                     |
+| `Effect.orElse`                       | `Effect.catch`                      |
+| `Config.validate`                     | `Config.schema` with a Schema check |
+| `Config.mapOrFail`                    | `Config.mapEffect`                  |
+| `Config.string` / `number` / ...      | `Config.String` / `Number` / ...    |
+| `Stream.catchAll`                     | `Stream.catch`                      |
+| `Stream.repeatEffect`                 | `Stream.fromEffectRepeat`           |
+| `Effect.gen(this, fn)`                | `Effect.gen({ self: this }, fn)`    |
+| `unsafeX(...)`                        | `xUnsafe(...)`                      |
 
 `Effect.partition` now requires a mapping function: `Effect.partition(items, (item) => effect)`.
 
@@ -208,7 +214,7 @@ opt out with `Equal.byReference` or `Equal.byReferenceUnsafe` where needed.
 2. Fix imports: moved modules, `Either` to `Result`, platform modules into core.
 3. Convert services: `Context.Tag` / `Effect.Service` to `Context.Service`, build layers explicitly.
 4. Rename `catch*` and `fork*` call sites.
-5. Fix Yieldable errors: `Ref`, `Deferred`, and `Fiber` accesses.
+5. Fix former Effect subtypes: `Ref`, `Deferred`, `Fiber`, `Option`, and `Result` accesses.
 6. Replace `FiberRef` with `References` and `Effect.locally` with `Effect.provideService`.
 7. Update `Cause` inspection to the flat `reasons` array.
 8. Audit `Equal.equals` usage for the structural-by-default change.

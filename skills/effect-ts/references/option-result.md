@@ -9,14 +9,14 @@ v4 adds two things that change how this plays out: `Either` was renamed to `Resu
 
 ## v3 to v4 Cheatsheet
 
-| v3                          | v4                                                            |
-| --------------------------- | ------------------------------------------------------------- |
-| `Option.fromNullable(x)`    | `Option.fromNullishOr(x)`                                     |
-| `Either`                    | `Result`                                                      |
-| `Either.right` / `left`     | `Result.succeed` / `Result.fail`                              |
-| `Either.isRight` / `isLeft` | `Result.isSuccess` / `Result.isFailure`                       |
-| `Effect.either(effect)`     | `Effect.result(effect)`                                       |
-| `Option` usable as Effect   | `Option` is `Yieldable`, needs `.asEffect()` outside `yield*` |
+| v3                          | v4                                      |
+| --------------------------- | --------------------------------------- |
+| `Option.fromNullable(x)`    | `Option.fromNullishOr(x)`               |
+| `Either`                    | `Result`                                |
+| `Either.right` / `left`     | `Result.succeed` / `Result.fail`        |
+| `Either.isRight` / `isLeft` | `Result.isSuccess` / `Result.isFailure` |
+| `Effect.either(effect)`     | `Effect.result(effect)`                 |
+| `Option` usable as Effect   | `Effect.fromOption(option)`             |
 
 `Option.fromNullable` does not exist in v4. The replacements are explicit about which nullish value they accept:
 
@@ -75,30 +75,31 @@ Option.match(maybeValue, {
 });
 ```
 
-## Option Is Yieldable, Not an Effect
+## Option Is Not an Effect
 
-In a generator, `yield*` on an `Option` produces the value or fails with `Cause.NoSuchElementError`:
+`Option` is plain data in v4. Neither `yield*` inside `Effect.gen` nor Effect combinators accept it directly. Convert
+with `Effect.fromOption`, which fails with `Cause.NoSuchElementError` on `None` (or with the error from an optional
+`onNone` thunk):
 
 ```typescript
 const program = Effect.gen(function* () {
-  const value = yield* Option.some(42); // Effect<number, NoSuchElementError>
+  const value = yield* Effect.fromOption(Option.some(42)); // Effect<number, NoSuchElementError>
   return value;
 });
-```
 
-Anywhere else, convert explicitly:
-
-```typescript
 // Type error in v4: Option is not an Effect.
 Effect.map(Option.some(42), (n) => n + 1);
 
 // Correct.
-Effect.map(Option.some(42).asEffect(), (n) => n + 1);
+Effect.map(Effect.fromOption(Option.some(42)), (n) => n + 1);
 ```
+
+`Option.gen` offers generator syntax over `Option` values without entering Effect.
 
 ## Result Replaces Either
 
-`Result<A, E>` carries a success or a failure. It is also `Yieldable`.
+`Result<A, E>` carries a success or a failure. Like `Option` it is plain data: convert with `Effect.fromResult`,
+or use `Result.gen` for generator syntax.
 
 ```typescript
 import { Result } from "effect";
@@ -147,7 +148,8 @@ Keep it at boundaries. `Option` remains the domain representation.
 
 ## Filter Replaces Option-Returning Predicates
 
-Several v4 combinators that took a function returning `Option` now take a `Filter`:
+Several v4 combinators that took a function returning `Option` now take a `Filter`, a function returning a `Result`
+(success passes the value through, failure rejects it):
 
 ```typescript
 import { Filter } from "effect";
@@ -159,7 +161,7 @@ Effect.catchFilter(
 ```
 
 `Filter` also builds from tags and types (`Filter.tagged`, `Filter.instanceOf`, `Filter.string`, `Filter.number`),
-composes (`Filter.and`, `Filter.or`, `Filter.compose`), and converts with `Filter.toOption` and `Filter.toResult`.
+composes (`Filter.andLeft`, `Filter.andRight`, `Filter.or`, `Filter.compose`), and converts with `Filter.toOption` and `Filter.toResult`.
 
 ## Avoid Option\<Option\<T>> Creep
 
@@ -183,8 +185,8 @@ const User = Schema.Struct({
   name: Schema.String,
   // Optional property key; absent decodes to a missing key.
   nickname: Schema.optionalKey(Schema.String),
-  // Decodes into Option<string>.
-  avatar: Schema.Option(Schema.String),
+  // Missing key decodes to None, present value to Some.
+  avatar: Schema.OptionFromOptionalKey(Schema.String),
 });
 
 const ApiUser = Schema.Struct({
@@ -195,11 +197,13 @@ const ApiUser = Schema.Struct({
 ```
 
 `Schema.optional`, `Schema.optionalKey`, `Schema.NullOr`, `Schema.UndefinedOr`, and `Schema.NullishOr` cover the
-combinations. v3's `Schema.optionalWith(..., { as: "Option" })` is replaced by wrapping with `Schema.Option`.
+combinations. v3's `Schema.optionalWith(..., { as: "Option" })` is replaced by `Schema.OptionFromOptionalKey` (or
+`Schema.OptionFromOptional` to also map `undefined` to `None`). `Schema.Option` is a schema for `Option` values
+themselves, not for an optional key.
 
 ## Atom Integration
 
-Effectful atoms surface an `AsyncResult` (from `effect/unstable/reactivity`), not `Result` — it adds the `Initial`
+Effectful atoms surface an `AsyncResult` (from `effect/unstable/reactivity`), not `Result`. It adds the `Initial`
 state an atom is in before the effect resolves. React components pattern match on it rather than on `Option`:
 
 ```typescript
