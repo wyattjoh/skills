@@ -1,6 +1,6 @@
 <!-- source: https://alchemy.run/cloudflare/tutorial/part-2
      upstream: website/src/content/docs/cloudflare/tutorial/part-2.mdx
-     alchemy 2.0.0-beta.79 @ 4453c9b -->
+     alchemy 2.0.0-beta.79 @ 0811092 -->
 
 # Part 2: Add a Worker
 

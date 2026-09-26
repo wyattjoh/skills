@@ -1,6 +1,6 @@
 <!-- source: https://alchemy.run/cloudflare/apis/effect-rpc
      upstream: website/src/content/docs/cloudflare/apis/effect-rpc.mdx
-     alchemy 2.0.0-beta.79 @ 4453c9b -->
+     alchemy 2.0.0-beta.79 @ 0811092 -->
 
 # Effect RPC
 

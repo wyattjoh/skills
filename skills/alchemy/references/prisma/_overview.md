@@ -1,6 +1,6 @@
 <!-- source: https://alchemy.run/prisma
      upstream: website/src/content/docs/prisma/index.mdx
-     alchemy 2.0.0-beta.79 @ 4453c9b -->
+     alchemy 2.0.0-beta.79 @ 0811092 -->
 
 # Prisma
 
@@ -100,7 +100,8 @@ deployment and fails closed if recovery cannot converge. See
 
 Inside a Compute app, Lambda function, or Cloudflare Worker,
 `Prisma.Connect` turns a Connection into a typed runtime client
-whose `databaseUrl` feeds straight into `SQL.Postgres` or Drizzle:
+whose `databaseUrl` feeds straight into
+[Prisma ORM v8](/sql/prisma/postgres), `SQL.Postgres`, or Drizzle:
 
 ```typescript
 Effect.gen(function* () {
@@ -123,7 +124,8 @@ Postgres providers:
 
 1. [Hyperdrive](/cloudflare/data/hyperdrive) pools the connection's
    direct `origin` at the edge
-2. [Drizzle](/cloudflare/data/drizzle) or
+2. [Prisma ORM v8](/sql/prisma/postgres),
+   [Drizzle](/cloudflare/data/drizzle), or
    [`SQL.Postgres`](/sql/effect-sql/postgres) gives the Worker a
    typed query layer over that connection
 3. [Connect from Workers](/prisma/guides/cloudflare-workers) walks

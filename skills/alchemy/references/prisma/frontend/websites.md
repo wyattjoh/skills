@@ -1,6 +1,6 @@
 <!-- source: https://alchemy.run/prisma/frontend/websites
      upstream: website/src/content/docs/prisma/frontend/websites.mdx
-     alchemy 2.0.0-beta.79 @ 4453c9b -->
+     alchemy 2.0.0-beta.79 @ 0811092 -->
 
 # Websites
 
@@ -31,6 +31,7 @@ domain in that mode.
 | SolidStart | `SolidStart` | [SolidStart](/prisma/frontend/solidstart) |
 | Astro SSR & static | `Astro` | [Astro](/prisma/frontend/astro) |
 | Next.js | `Nextjs` | [Next.js](/prisma/frontend/nextjs) |
+| vinext | `Vinext` | [vinext](/prisma/frontend/vinext) |
 | Nuxt | `Nuxt` | [Nuxt](/prisma/frontend/nuxt) |
 | SvelteKit | `SvelteKit` | [SvelteKit](/prisma/frontend/sveltekit) |
 | Waku | `Waku` | [Waku](/prisma/frontend/waku) |

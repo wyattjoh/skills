@@ -1,6 +1,6 @@
 <!-- source: https://alchemy.run/cloudflare/compute/workers-for-platforms
      upstream: website/src/content/docs/cloudflare/compute/workers-for-platforms.mdx
-     alchemy 2.0.0-beta.79 @ 4453c9b -->
+     alchemy 2.0.0-beta.79 @ 0811092 -->
 
 # Workers for Platforms
 

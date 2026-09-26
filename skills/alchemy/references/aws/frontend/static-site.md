@@ -1,6 +1,6 @@
 <!-- source: https://alchemy.run/aws/frontend/static-site
      upstream: website/src/content/docs/aws/frontend/static-site.mdx
-     alchemy 2.0.0-beta.79 @ 4453c9b -->
+     alchemy 2.0.0-beta.79 @ 0811092 -->
 
 # Static sites
 

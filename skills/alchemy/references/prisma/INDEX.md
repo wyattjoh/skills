@@ -1,6 +1,6 @@
 # prisma index
 
-27 pages. Prisma Postgres and Prisma Compute — projects, databases, connections, and deployed apps as Stack resources, with a zero-config local database in dev.
+29 pages. Prisma Postgres and Prisma Compute — projects, databases, connections, and deployed apps as Stack resources, with a zero-config local database in dev.
 
 | Page | File | Covers |
 | --- | --- | --- |
@@ -21,6 +21,7 @@
 | Branches | `data/branches.md` | Prisma branches group databases under git-style names — preview branches per stage, default-branch promotion, and database attachment. |
 | Buckets | `data/buckets.md` | Prisma Buckets provision S3-compatible object storage inside a project, and Bucket access keys mint the S3 credentials — access key, one-time secret, endpoint, and the provider-side bucket name. |
 | Connections | `data/connections.md` | Prisma Connections materialize database credentials — a conventional databaseUrl, direct and pooled connection strings, parsed origins for Hyperdrive, and the Connect runtime binding. |
+| Drizzle Postgres on Prisma Compute | `data/drizzle-postgres.md` | Use Alchemy's Prisma hosting provider to run a Drizzle API against Prisma Postgres. |
 | Postgres | `data/postgres.md` | Prisma Postgres as Stack resources — projects, databases, branch attachment, and a zero-config local database under alchemy dev. |
 
 ## frontend/
@@ -37,6 +38,7 @@
 | Static sites | `frontend/static-site.md` | Deploy any static build to Prisma Compute with Prisma.Website.StaticSite — a shell command, output directory, and Bun static-file server. |
 | SvelteKit | `frontend/sveltekit.md` | Deploy SvelteKit to Prisma Compute with Prisma.Website.SvelteKit — SSR and prerendered assets on Bun, with native Vite dev locally. |
 | TanStack Start | `frontend/tanstack-start.md` | Deploy TanStack Start to Prisma Compute with Prisma.Website.TanStackStart — React or Solid SSR on Bun, with native Vite dev locally. |
+| Vinext | `frontend/vinext.md` | Deploy vinext to Prisma Compute with the shared Website API, native local development, and traced runtime dependencies. |
 | Vite | `frontend/vite.md` | Deploy a Vite SPA to Prisma Compute with Prisma.Website.Vite — static files served on Bun and Vite's native dev server locally. |
 | Vocs | `frontend/vocs.md` | Deploy Vocs documentation to Prisma Compute with Prisma.Website.Vocs — static assets and Waku RSC on Bun, with Vocs dev locally. |
 | Waku | `frontend/waku.md` | Deploy Waku to Prisma Compute with Prisma.Website.Waku — React Server Components and static pages on Bun, with Waku's native dev server locally. |

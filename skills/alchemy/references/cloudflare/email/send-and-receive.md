@@ -1,6 +1,6 @@
 <!-- source: https://alchemy.run/cloudflare/email/send-and-receive
      upstream: website/src/content/docs/cloudflare/email/send-and-receive.mdx
-     alchemy 2.0.0-beta.79 @ 4453c9b -->
+     alchemy 2.0.0-beta.79 @ 0811092 -->
 
 # Send & receive email
 

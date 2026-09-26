@@ -1,10 +1,10 @@
 <!-- source: https://alchemy.run/aws/frontend/websites
      upstream: website/src/content/docs/aws/frontend/websites.mdx
-     alchemy 2.0.0-beta.79 @ 4453c9b -->
+     alchemy 2.0.0-beta.79 @ 0811092 -->
 
 # Websites
 
-> Deploy Vite, Astro, Next.js, Nuxt, React Router, SvelteKit, TanStack Start, Waku, Octane, or any static build to AWS with first-class Website resources.
+> Deploy Vite, Astro, Next.js, vinext, Nuxt, React Router, SvelteKit, TanStack Start, Waku, Octane, or any static build to AWS with first-class Website resources.
 
 Alchemy deploys frontends to AWS with a family of `AWS.Website`
 resources. Each one builds your project programmatically and deploys
@@ -28,6 +28,8 @@ integration on top.
   OpenNext (`@opennextjs/aws`) pipeline, with streaming SSR, image
   optimization, and ISR wiring; your `next.config.*` is honored
   as-is.
+- [`Vinext`](/aws/frontend/vinext) — vinext (Next.js API on Vite)
+  apps on a streaming Lambda; your `vite.config.ts` loads natively.
 - [`Nuxt`](/aws/frontend/nuxt) — Nuxt apps built through nitro's
   `aws-lambda` preset; your `nuxt.config.ts` loads natively.
 - [`ReactRouter`](/aws/frontend/react-router) — React Router v7 in
@@ -68,6 +70,7 @@ the full live deployment.
 | React Router | `ReactRouter` | [React Router](/aws/frontend/react-router) |
 | Astro | `Astro` | [Astro](/aws/frontend/astro) |
 | Next.js | `Nextjs` | [Next.js](/aws/frontend/nextjs) |
+| vinext | `Vinext` | [vinext](/aws/frontend/vinext) |
 | Nuxt | `Nuxt` | [Nuxt](/aws/frontend/nuxt) |
 | SvelteKit | `SvelteKit` | [SvelteKit](/aws/frontend/sveltekit) |
 | Waku | `Waku` | [Waku](/aws/frontend/waku) |

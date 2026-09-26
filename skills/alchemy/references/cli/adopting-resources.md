@@ -1,6 +1,6 @@
 <!-- source: https://alchemy.run/cli/adopting-resources
      upstream: website/src/content/docs/cli/adopting-resources.mdx
-     alchemy 2.0.0-beta.79 @ 4453c9b -->
+     alchemy 2.0.0-beta.79 @ 0811092 -->
 
 # Adopting Resources
 
@@ -39,6 +39,9 @@ Re-importing owned resources into a fresh state store needs **no** flag — reco
 # store — no flag needed for these. Ones with foreign ownership tags
 # will surface as `OwnedBySomeoneElse` errors.
 alchemy deploy
+
+# Preview the takeover without applying it.
+alchemy plan --adopt
 
 # Force takeover of any conflicting resource regardless of tags.
 alchemy deploy --adopt

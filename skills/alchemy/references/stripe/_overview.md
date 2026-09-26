@@ -1,6 +1,6 @@
 <!-- source: https://alchemy.run/stripe
      upstream: website/src/content/docs/stripe/index.mdx
-     alchemy 2.0.0-beta.79 @ 4453c9b -->
+     alchemy 2.0.0-beta.79 @ 0811092 -->
 
 # Stripe
 

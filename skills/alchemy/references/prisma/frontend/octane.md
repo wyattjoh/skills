@@ -1,6 +1,6 @@
 <!-- source: https://alchemy.run/prisma/frontend/octane
      upstream: website/src/content/docs/prisma/frontend/octane.mdx
-     alchemy 2.0.0-beta.79 @ 4453c9b -->
+     alchemy 2.0.0-beta.79 @ 0811092 -->
 
 # Octane
 
@@ -24,24 +24,23 @@ Install the build-time integration; the resource loads `/octane` and
 
 ## Configure Octane
 
-Choose the shared Node marker adapter in `octane.config.ts`, not
-`aws()` or `cloudflare()`:
+Keep native compiler and route settings in `octane.config.ts`, without
+an adapter:
 
 ```typescript
 // octane.config.ts
-import { node } from "@alchemy.run/frontend-frameworks/octane/node-adapter";
 import { defineConfig, RenderRoute } from "@octanejs/vite-plugin";
 
 export default defineConfig({
-  adapter: node(),
   router: {
     routes: [new RenderRoute({ path: "/", entry: ["App", "/src/App.tsx"] })],
   },
 });
 ```
 
-A missing or foreign adapter fails the build. The adapter selects the
-output format; Bun is still the deployed runtime.
+`Prisma.Website.Octane` selects hosting and automatically wraps Octane's
+default native Node output as an HTTP server running on Bun in Compute.
+The legacy Node marker adapter remains optional for existing projects.
 
 ## Configure Vite
 

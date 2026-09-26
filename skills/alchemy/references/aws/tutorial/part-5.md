@@ -1,6 +1,6 @@
 <!-- source: https://alchemy.run/aws/tutorial/part-5
      upstream: website/src/content/docs/aws/tutorial/part-5.mdx
-     alchemy 2.0.0-beta.79 @ 4453c9b -->
+     alchemy 2.0.0-beta.79 @ 0811092 -->
 
 # Part 5: CI/CD
 

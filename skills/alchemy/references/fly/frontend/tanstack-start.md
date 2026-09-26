@@ -1,6 +1,6 @@
 <!-- source: https://alchemy.run/fly/frontend/tanstack-start
      upstream: website/src/content/docs/fly/frontend/tanstack-start.mdx
-     alchemy 2.0.0-beta.79 @ 4453c9b -->
+     alchemy 2.0.0-beta.79 @ 0811092 -->
 
 # TanStack Start
 

@@ -1,6 +1,6 @@
 # aws index
 
-51 pages. Build AWS applications with Alchemy — a runtime (usually Lambda) plus typed resources, wired together by bindings that mint least-privilege IAM policies.
+54 pages. Build AWS applications with Alchemy — a runtime (usually Lambda) plus typed resources, wired together by bindings that mint least-privilege IAM policies.
 
 | Page | File | Covers |
 | --- | --- | --- |
@@ -39,6 +39,8 @@
 
 | Page | File | Covers |
 | --- | --- | --- |
+| Drizzle + Aurora PostgreSQL | `data/drizzle-aurora.md` | Drizzle on Lambda with private Aurora PostgreSQL, IAM authentication, verified TLS, and reviewed SQL migrations. |
+| Drizzle + Aurora DSQL | `data/drizzle-dsql.md` | Drizzle on Lambda with Aurora DSQL, a non-admin database role, verified TLS, and an explicit DSQL migration boundary. |
 | DynamoDB | `data/dynamodb.md` | Add a DynamoDB Table, bind GetItem and PutItem to your Lambda, and serve a typed key/value HTTP API backed by DynamoDB. |
 | RDS & Aurora | `data/rds.md` | Stand up an Aurora cluster in one call with the Aurora helper, connect from Lambda over the Connect binding with pg, or skip connections entirely with the Data API. |
 | S3 | `data/s3.md` | Add an S3 Bucket to your Stack, bind PutObject and GetObject as runtime capabilities, and let Alchemy mint the IAM policy for you. |
@@ -65,11 +67,12 @@
 | Static sites | `frontend/static-site.md` | Ship a static site to S3 + CloudFront with AWS.Website.StaticSite — build-step support, Router composition, and cache invalidation on deploy. |
 | SvelteKit | `frontend/sveltekit.md` | Deploy a SvelteKit app to AWS with AWS.Website.SvelteKit — SSR on a streaming Lambda Function URL, assets and prerendered pages on S3 + CloudFront, and Kit's own dev server under alchemy dev. |
 | TanStack Start | `frontend/tanstack-start.md` | Deploy TanStack Start (React or Solid) to AWS with AWS.Website.TanStackStart — SSR on a streaming Lambda Function URL, client assets on S3 + CloudFront, and TanStack Start's own Vite dev server under alchemy dev. |
+| Vinext | `frontend/vinext.md` | Deploy vinext to AWS with the shared Website API, native local development, and a platform-specific data cache. |
 | React SPA | `frontend/vite-spa.md` | Deploy a React single-page app to AWS with AWS.Website.Vite — the Vite build on S3 + CloudFront, deep links answered by index.html out of the box, and Vite's own dev server under alchemy dev. |
 | Vite | `frontend/vite.md` | Deploy a plain Vite app to AWS with AWS.Website.Vite — the vite build output on S3 behind CloudFront, SPA fallback at the edge, and Vite's own dev server under alchemy dev. |
 | Vue | `frontend/vue.md` | Deploy a Vue single-page app to AWS with AWS.Website.Vite — S3 + CloudFront, deep links that work by default, and Vue's own Vite dev server under alchemy dev. |
 | Waku | `frontend/waku.md` | Deploy a Waku app to AWS with AWS.Website.Waku — RSC server on a streaming Lambda Function URL, SSG pages and assets on S3 + CloudFront, and Waku's own dev server under alchemy dev. |
-| Websites | `frontend/websites.md` | Deploy Vite, Astro, Next.js, Nuxt, React Router, SvelteKit, TanStack Start, Waku, Octane, or any static build to AWS with first-class Website resources. |
+| Websites | `frontend/websites.md` | Deploy Vite, Astro, Next.js, vinext, Nuxt, React Router, SvelteKit, TanStack Start, Waku, Octane, or any static build to AWS with first-class Website resources. |
 
 ## messaging/
 

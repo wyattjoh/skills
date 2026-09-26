@@ -1,6 +1,6 @@
 <!-- source: https://alchemy.run/axiom/guides/dashboards
      upstream: website/src/content/docs/axiom/guides/dashboards.mdx
-     alchemy 2.0.0-beta.79 @ 4453c9b -->
+     alchemy 2.0.0-beta.79 @ 0811092 -->
 
 # Dashboards as code
 

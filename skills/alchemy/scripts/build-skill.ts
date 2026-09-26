@@ -32,6 +32,7 @@
 import { existsSync } from "node:fs";
 import { mkdir, readdir, readFile, rm, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
+import { parse as parseYaml } from "yaml";
 import { convertMdx, splitFrontmatter } from "./lib/mdx.ts";
 
 const SKILL = new URL("..", import.meta.url).pathname.replace(/\/$/, "");
@@ -43,6 +44,9 @@ const REPO = "https://github.com/alchemy-run/alchemy.git";
 const DOCS_PREFIX = "website/src/content/docs";
 const VERSIONS_FILE = "website/src/versions.ts";
 const PKG_FILE = "packages/alchemy/package.json";
+/** The repo-wide `overrides.effect` here is the exact Effect release alchemy is
+ *  built and tested against; `versions.ts` only carries the `rc` dist-tag. */
+const WORKSPACE_FILE = "pnpm-workspace.yaml";
 const SITE = "https://alchemy.run";
 
 /** Upstream directories excluded from the corpus. Release notes are 445 KB of
@@ -124,8 +128,16 @@ function git(args: string[], cwd?: string): string {
 function syncCheckout(): string {
   if (!existsSync(join(CHECKOUT, ".git"))) {
     git(["clone", "--filter=blob:none", "--no-checkout", "--depth", "1", REPO, CHECKOUT]);
-    git(["sparse-checkout", "set", "--no-cone", DOCS_PREFIX, VERSIONS_FILE, PKG_FILE], CHECKOUT);
+    git(
+      ["sparse-checkout", "set", "--no-cone", DOCS_PREFIX, VERSIONS_FILE, PKG_FILE, WORKSPACE_FILE],
+      CHECKOUT,
+    );
   }
+  // Existing checkouts predate WORKSPACE_FILE in the sparse set; re-applying is idempotent.
+  git(
+    ["sparse-checkout", "set", "--no-cone", DOCS_PREFIX, VERSIONS_FILE, PKG_FILE, WORKSPACE_FILE],
+    CHECKOUT,
+  );
   git(["fetch", "--depth", "1", "origin", REF], CHECKOUT);
   git(["checkout", "--detach", "--force", "FETCH_HEAD"], CHECKOUT);
   return CHECKOUT;
@@ -162,6 +174,19 @@ const presetVars = new Map<string, string>();
   }
 }
 const alchemyVersion = presetVars.get("alchemyVersion") ?? "unknown";
+
+/** The effect-ts skill must document this exact version; see
+ *  `effect-version.test.ts`, which fails when the two drift. */
+const effectPin = await (async () => {
+  const wf = join(root, WORKSPACE_FILE);
+  if (!existsSync(wf)) die(`no ${WORKSPACE_FILE} at ${wf}`);
+  const ws = parseYaml(await readFile(wf, "utf8")) as { overrides?: Record<string, unknown> };
+  const v = ws.overrides?.effect;
+  if (typeof v !== "string" || !/^\d+\.\d+\.\d+(-[\w.]+)?$/.test(v)) {
+    die(`${WORKSPACE_FILE}: overrides.effect is not an exact version (${String(v)})`);
+  }
+  return v;
+})();
 
 /* --------------------------------------------------------------------- walk */
 
@@ -289,7 +314,7 @@ function wrap(items: string[], width = 88): string[] {
 function regionStats(): string {
   return [
     `Indexed from \`alchemy-run/alchemy\` @ \`${sourceRev.sha}\` (${sourceRev.date}), ` +
-      `alchemy \`${alchemyVersion}\`: **${entries.length} topic files** across ` +
+      `alchemy \`${alchemyVersion}\` on \`effect@${effectPin}\`: **${entries.length} topic files** across ` +
       `${areas.length} areas.`,
     "",
     "Reference paths mirror site URLs exactly, so a path is derivable without",
@@ -366,7 +391,7 @@ function injectRegions(skill: string): string {
 /* -------------------------------------------------------------------- write */
 
 const manifest = {
-  source: { repo: REPO, ref: REF, ...sourceRev, alchemyVersion },
+  source: { repo: REPO, ref: REF, ...sourceRev, alchemyVersion, effectVersion: effectPin },
   generated: entries.length,
   pages: entries.map(({ body: _b, ...m }) => m),
 };

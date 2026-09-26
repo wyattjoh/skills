@@ -1,6 +1,6 @@
 # hetzner index
 
-25 pages. Build applications on Hetzner Cloud with Alchemy — Servers running your Effect programs as Services, plus volumes, networks, firewalls, load balancers, and DNS, all in one typed program.
+27 pages. Build applications on Hetzner Cloud with Alchemy — Servers running your Effect programs as Services, plus volumes, networks, firewalls, load balancers, and DNS, all in one typed program.
 
 | Page | File | Covers |
 | --- | --- | --- |
@@ -18,6 +18,7 @@
 
 | Page | File | Covers |
 | --- | --- | --- |
+| Drizzle Postgres on Hetzner | `data/drizzle-postgres.md` | Run a Drizzle API on a Hetzner Server with external Neon Postgres and reviewed SQL migrations. |
 | Volumes | `data/volumes.md` | Durable network block storage for Hetzner Servers — attach with props or VolumeAttachment, mount into Services with the MountVolume binding. |
 
 ## frontend/
@@ -34,10 +35,11 @@
 | Static sites | `frontend/static-site.md` | Deploy a static site to Hetzner with Hetzner.Website.StaticSite — a build command, a systemd unit on a Server, and http://{ipv4}:3000 (or your hostname) on deploy. |
 | SvelteKit | `frontend/sveltekit.md` | Deploy a SvelteKit app to Hetzner with Hetzner.Website.SvelteKit — kit SSR as a systemd unit on port 3000, prerendered assets baked into the unit, and Kit's own dev server under alchemy dev. |
 | TanStack Start | `frontend/tanstack-start.md` | Deploy TanStack Start (React or Solid) to Hetzner with Hetzner.Website.TanStackStart — SSR as a systemd unit on port 3000, client assets baked into the unit, and TanStack Start's own Vite dev server under alchemy dev. |
+| Vinext | `frontend/vinext.md` | Deploy vinext to Hetzner with the shared Website API, native local development, and a platform-specific data cache. |
 | Vite | `frontend/vite.md` | Deploy a Vite SPA to Hetzner with Hetzner.Website.Vite — static assets as a systemd unit on a Server, http://{ipv4}:3000, and Vite's own dev server under alchemy dev. |
 | Vocs | `frontend/vocs.md` | Deploy a Vocs docs site to Hetzner with Hetzner.Website.Vocs — prerendered HTML on a systemd unit, extensionless routes, and Vocs' own dev server under alchemy dev. |
 | Waku | `frontend/waku.md` | Deploy a Waku app to Hetzner with Hetzner.Website.Waku — RSC server as a systemd unit on port 3000, SSG pages baked into the unit, and Waku's own dev server under alchemy dev. |
-| Websites | `frontend/websites.md` | Deploy Vite, Astro, Next.js, Nuxt, React Router, SolidStart, SvelteKit, TanStack Start, Waku, Octane, Foldkit, Vocs, or any static build to Hetzner with first-class Website resources. |
+| Websites | `frontend/websites.md` | Deploy Vite, Astro, Next.js, vinext, Nuxt, React Router, SolidStart, SvelteKit, TanStack Start, Waku, Octane, Foldkit, Vocs, or any static build to Hetzner with first-class Website resources. |
 
 ## networking/
 

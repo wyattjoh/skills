@@ -1,6 +1,6 @@
 <!-- source: https://alchemy.run/acme/certificate-authorities
      upstream: website/src/content/docs/acme/certificate-authorities.mdx
-     alchemy 2.0.0-beta.79 @ 4453c9b -->
+     alchemy 2.0.0-beta.79 @ 0811092 -->
 
 # Certificate authorities
 

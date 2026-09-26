@@ -1,6 +1,6 @@
 <!-- source: https://alchemy.run/cloudflare/messaging/github-events
      upstream: website/src/content/docs/cloudflare/messaging/github-events.mdx
-     alchemy 2.0.0-beta.79 @ 4453c9b -->
+     alchemy 2.0.0-beta.79 @ 0811092 -->
 
 # React to GitHub events from a Worker
 

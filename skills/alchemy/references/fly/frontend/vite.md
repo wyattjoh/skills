@@ -1,6 +1,6 @@
 <!-- source: https://alchemy.run/fly/frontend/vite
      upstream: website/src/content/docs/fly/frontend/vite.mdx
-     alchemy 2.0.0-beta.79 @ 4453c9b -->
+     alchemy 2.0.0-beta.79 @ 0811092 -->
 
 # Vite
 

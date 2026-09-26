@@ -1,6 +1,6 @@
 # fly index
 
-31 pages. Deploy Effect programs to Fly.io as Apps, Machines, Services, and Sprites.
+34 pages. Deploy Effect programs to Fly.io as Apps, Machines, Services, and Sprites.
 
 | Page | File | Covers |
 | --- | --- | --- |
@@ -13,6 +13,7 @@
 | Page | File | Covers |
 | --- | --- | --- |
 | Apps | `compute/apps.md` | A global namespace containing Machines, Services, Secrets, IPs, and certificates. |
+| Blue/green deployments | `compute/deployments.md` | Deploy a new version, check it before serving traffic, and give the old version time to finish work. |
 | Machines | `compute/machines.md` | A Firecracker VM running a container image. |
 | Regions | `compute/regions.md` | Where Fly Machines, Volumes, Postgres, and Redis live. Alchemy defaults to iad. |
 | Services | `compute/services.md` | An Effect program running in a Fly Machine. Scale it with count. |
@@ -22,6 +23,7 @@
 
 | Page | File | Covers |
 | --- | --- | --- |
+| Drizzle Postgres on Fly | `data/drizzle-postgres.md` | Connect a Fly Service to Managed Postgres and deploy reviewed Drizzle migrations. |
 | Postgres | `data/postgres.md` | A billed Managed Postgres cluster. Bind Fly.ConnectPostgres and query with Drizzle or SQL. |
 | Redis | `data/redis.md` | Managed Upstash Redis. Bind Fly.ReadRedis / WriteRedis / ReadWriteRedis on a Service. |
 | Secrets | `data/secrets.md` | Config.Redacted on a Service, Fly.Secret when Fly should own the value, and KMS keys. |
@@ -42,10 +44,11 @@
 | Static sites | `frontend/static-site.md` | Deploy a static site to Fly with Fly.Website.StaticSite — a build command, a Node static-file server on a Machine, and https://{app}.fly.dev (or your hostname) on deploy. |
 | SvelteKit | `frontend/sveltekit.md` | Deploy a SvelteKit app to Fly with Fly.Website.SvelteKit — kit SSR on a Machine, prerendered assets baked into the image, and Kit's own dev server under alchemy dev. |
 | TanStack Start | `frontend/tanstack-start.md` | Deploy TanStack Start (React or Solid) to Fly with Fly.Website.TanStackStart — SSR on a Machine, client assets baked into the image, and TanStack Start's own Vite dev server under alchemy dev. |
+| Vinext | `frontend/vinext.md` | Deploy vinext to Fly with the shared Website API, native local development, and a platform-specific data cache. |
 | Vite | `frontend/vite.md` | Deploy a Vite SPA to Fly with Fly.Website.Vite — static assets on a Node Machine, fly.dev (or your domain) over HTTPS, and Vite's own dev server under alchemy dev. |
 | Vocs | `frontend/vocs.md` | Deploy a Vocs docs site to Fly with Fly.Website.Vocs — prerendered HTML on a Node static-file server, extensionless routes, and Vocs' own dev server under alchemy dev. |
 | Waku | `frontend/waku.md` | Deploy a Waku app to Fly with Fly.Website.Waku — RSC server on a Machine, SSG pages baked into the image, and Waku's own dev server under alchemy dev. |
-| Websites | `frontend/websites.md` | Deploy Vite, Astro, Next.js, Nuxt, React Router, SolidStart, SvelteKit, TanStack Start, Waku, Octane, Foldkit, Vocs, or any static build to Fly with first-class Website resources. |
+| Websites | `frontend/websites.md` | Deploy Vite, Astro, Next.js, vinext, Nuxt, React Router, SolidStart, SvelteKit, TanStack Start, Waku, Octane, Foldkit, Vocs, or any static build to Fly with first-class Website resources. |
 
 ## tutorial/
 

@@ -1,6 +1,6 @@
 <!-- source: https://alchemy.run/git/recipes/your-own-store
      upstream: website/src/content/docs/git/recipes/your-own-store.mdx
-     alchemy 2.0.0-beta.79 @ 4453c9b -->
+     alchemy 2.0.0-beta.79 @ 0811092 -->
 
 # Bring your own store
 

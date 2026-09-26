@@ -1,6 +1,6 @@
 # cloudflare index
 
-75 pages. Build and deploy full applications on Cloudflare with Alchemy — one Worker runtime plus resources like Durable Objects, D1, R2, Queues, and Hyperdrive, wired together by typed bindings.
+78 pages. Build and deploy full applications on Cloudflare with Alchemy — one Worker runtime plus resources like Durable Objects, D1, R2, Queues, and Hyperdrive, wired together by typed bindings.
 
 | Page | File | Covers |
 | --- | --- | --- |
@@ -54,11 +54,13 @@
 | --- | --- | --- |
 | Store Git Repos with Artifacts | `data/artifacts.md` | Use Cloudflare Artifacts to create Git repos at runtime and hand out clone tokens, all from a tiny Worker. |
 | Branch from a shared database | `data/branch-from-shared-database.md` | Have ephemeral PR-preview stages reference a long-lived Neon or PlanetScale database from a staging stage instead of provisioning their own — fast previews, cheap branches, no extra clusters. |
-| Drizzle on D1 | `data/d1-drizzle.md` | Manage your Drizzle schema as a resource, apply migrations to D1 on every deploy, and query from a Worker with the effect-d1 driver or the raw @effect/sql-d1 client. |
+| Drizzle on D1 | `data/d1-drizzle.md` | Deploy committed SQLite migrations to D1 and query the database from a Worker with Drizzle. |
 | D1 | `data/d1.md` | Cloudflare D1 is serverless SQLite — create a database, apply migrations on deploy, and query it from a Worker through a typed binding. |
-| Add Drizzle ORM | `data/drizzle.md` | Replace raw pg with Drizzle's effect-postgres integration, manage your schema as a resource, and have alchemy generate and apply migrations on every deploy — on Neon or PlanetScale. |
+| Add Drizzle ORM | `data/drizzle.md` | Deploy a Cloudflare Worker with Drizzle queries, Hyperdrive connections, and reviewed, committed migrations on Neon or PlanetScale. |
 | Hyperdrive | `data/hyperdrive.md` | Cloudflare Hyperdrive pools connections to your external Postgres or MySQL database at the edge — provision a database (Neon or PlanetScale), front it with Hyperdrive, and bind the connection into your Worker. |
 | KV | `data/kv.md` | Cloudflare Workers KV is edge key-value storage — create a namespace, bind it into a Worker with read/write-scoped bindings, and get/put values with metadata. |
+| Prisma ORM with Postgres | `data/prisma.md` | Deploy Prisma ORM v8 on Cloudflare Workers with Neon Postgres, Hyperdrive, controlled migrations, and Effect-native queries. |
+| R2 presigned URLs | `data/r2-presigned-urls.md` | Mint presigned R2 URLs so browsers upload and download objects directly, with the same code in alchemy dev and in production, from Effect-native or async Workers. |
 | R2 | `data/r2.md` | Cloudflare R2 is object storage — create a bucket, bind it into a Worker with read/write-scoped bindings, and stream objects in and out. |
 | Shared database across stages | `data/shared-database.md` | Have ephemeral PR-preview stages reference a long-lived Neon or PlanetScale database from a staging stage instead of provisioning their own — fast previews, copy-on-write branches, no extra clusters. |
 
@@ -76,16 +78,17 @@
 | --- | --- | --- |
 | Astro | `frontend/astro.md` | Deploy an Astro site to Cloudflare Workers with Cloudflare.Website.Astro — SSR in the Worker, prerendered pages as static assets, sessions backed by an auto-provisioned KV namespace. |
 | Foldkit | `frontend/foldkit.md` | Deploy a Foldkit app to Cloudflare with the Foldkit resource — one declaration, no Wrangler config. |
-| Frontend frameworks | `frontend/frontends.md` | Deploy Vite, Astro, Next.js, Nuxt, SvelteKit, Waku, or any static build to Cloudflare Workers with first-class Website resources. |
+| Frontend frameworks | `frontend/frontends.md` | Deploy Vite, Astro, Next.js, vinext, Nuxt, SvelteKit, Waku, or any static build to Cloudflare Workers with first-class Website resources. |
 | Full-stack TanStack Start + RPC + Drizzle | `frontend/full-stack-tanstack-rpc-drizzle.md` | Build a reactive full-stack app on Cloudflare — a TanStack Start UI that drives an Effect RPC backend over Drizzle and Neon Postgres, with browser state wired through Effect 4's native atom RPC. |
 | Next.js | `frontend/nextjs.md` | Deploy a Next.js app to Cloudflare Workers with Cloudflare.Website.Nextjs — the OpenNext pipeline, writable ISR, and wrangler-free local dev. |
 | Nuxt | `frontend/nuxt.md` | Deploy a Nuxt app to Cloudflare Workers with Cloudflare.Website.Nuxt — nitro's cloudflare_module preset, native nuxt.config.ts loading, and wrangler-free local dev. |
-| Octane | `frontend/octane.md` | Deploy an OctaneJS fullstack app to Cloudflare Workers with Cloudflare.Website.Octane — your own vite build, Octane's Cloudflare adapter, wrangler-free. |
+| Octane | `frontend/octane.md` | Deploy an OctaneJS fullstack app to Cloudflare Workers with Cloudflare.Website.Octane — native Octane and Vite configuration, no hosting adapter or Wrangler file required. |
 | React Router | `frontend/react-router.md` | Deploy React Router v7 — including React Server Components — to Cloudflare with Cloudflare.Website.Vite and viteEnvironments. |
 | SolidStart | `frontend/solidstart.md` | Deploy SolidStart to Cloudflare with Cloudflare.Website.Vite — plus the hand-rolled SolidJS SSR variant for full control over the server entry. |
 | Static sites | `frontend/static-site.md` | Deploy any build command's output directory as Cloudflare Worker static assets with Cloudflare.Website.StaticSite — custom edge Workers, framework-native local dev, and memoized rebuilds. |
 | SvelteKit | `frontend/sveltekit.md` | Deploy a SvelteKit app to Cloudflare Workers with Cloudflare.Website.SvelteKit — a wrangler-free in-memory adapter, real bindings on platform.env, and full-HMR local dev. |
 | TanStack Start | `frontend/tanstack-start.md` | Deploy TanStack Start (React or Solid) to Cloudflare with Cloudflare.Website.Vite — SSR, typed Worker bindings, and HMR dev with real cloud resources. |
+| Vinext | `frontend/vinext.md` | Deploy vinext to Cloudflare Workers with the shared Website API, native local development, and KV-backed caching. |
 | Add a React SPA | `frontend/vite-spa.md` | Ship a React single-page app from the same Stack as your Worker — built with Vite and deployed to Cloudflare in one command. |
 | Vite | `frontend/vite.md` | Deploy any pure-Vite app to Cloudflare Workers with a single resource. |
 | Vue | `frontend/vue.md` | Deploy a Vue single-page app to Cloudflare with the Vite resource — one declaration, no Wrangler config. |
