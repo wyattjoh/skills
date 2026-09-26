@@ -12,7 +12,7 @@ this skill's directory.
 
 <!-- BEGIN GENERATED: corpus-stats -->
 
-Indexed from `alchemy-run/alchemy` @ `0811092` (2026-09-25), alchemy `2.0.0-beta.79`: **458 topic files** across 26 areas.
+Indexed from `alchemy-run/alchemy` @ `0811092` (2026-09-25), alchemy `2.0.0-beta.79` on `effect@4.0.0-rc.117`: **458 topic files** across 26 areas.
 
 Reference paths mirror site URLs exactly, so a path is derivable without
 searching: `https://alchemy.run/cloudflare/compute/workers` ->
@@ -484,10 +484,12 @@ from the conceptual pages.
 
 ## Version notes
 
-Alchemy v2 is **pre-release** and moving fast. It targets Effect 4 release
-candidates (peer range `>=4.0.0-rc.117 || >=4.0.0`, installed as `effect@rc`),
-so module paths such as `effect/unstable/http/HttpServerResponse` are current but
-will move when Effect 4 stabilizes. Drizzle is pinned to an exact prerelease
+Alchemy v2 is **pre-release** and moving fast. It pins the exact Effect 4
+release candidate named in the corpus stats above (peer range
+`>=4.0.0-rc.117 || >=4.0.0`, installed as `effect@rc`); the `effect-ts` skill
+documents that same version, so use it for Effect APIs. Module paths such as
+`effect/unstable/http/HttpServerResponse` are current but will move when Effect 4
+stabilizes. Drizzle is pinned to an exact prerelease
 build (`drizzle-orm@1.0.0-rc.5-ab785fc`); do not suggest `drizzle-orm@latest`.
 Prisma ORM v8 is also a release candidate (`prisma@8.0.0-rc.*`). Better Auth is
 on the 1.7 line. Node floor is 22+ (the upstream repo develops on Node 24), Bun

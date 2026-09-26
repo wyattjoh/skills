@@ -4,7 +4,8 @@
     "ref": "main",
     "sha": "0811092",
     "date": "2026-09-25",
-    "alchemyVersion": "2.0.0-beta.79"
+    "alchemyVersion": "2.0.0-beta.79",
+    "effectVersion": "4.0.0-rc.117"
   },
   "generated": 458,
   "pages": [

@@ -93,10 +93,18 @@ They are for read-only reference only; do not edit files inside these paths.
 | Effect v4               | `effect@4.0.0-rc.117` | `.claude/references/effect-v4`                     | https://github.com/Effect-TS/effect.git                          | `14a3f140095fdebbff9162944fe7d4ea83e054e6` |
 | Varlock                 | `varlock@1.10.0`      | `.claude/references/varlock`                       | https://github.com/dmno-dev/varlock.git                          | `dd7863b4f319fcf333dfe1c29cb834f8e15313ad` |
 
-The Effect repository is vendored twice because the `effect-ts` and `effect-ts-beta` skills document two
-incompatible major versions. `effect` tracks the npm `latest` line (v3); `effect-v4` tracks the exact v4
-prerelease used by this repository. The v4 checkout also carries upstream `MIGRATION.md`, `migration/`,
-`LLMS.md`, and `ai-docs/` directories that the v3 checkout does not.
+The Effect repository is vendored twice because this repository uses two incompatible major versions.
+`effect` tracks the npm `latest` line (v3), still used by the `workspaces`, `herd`, `clean-storage`, and
+`mermaid` helper scripts; `effect-v4` tracks the exact v4 release candidate that the `effect-ts` skill
+documents and `coordinate-implementation` depends on. The v4 checkout also carries upstream `MIGRATION.md`,
+`migration/`, `LLMS.md`, and `ai-docs/` directories that the v3 checkout does not.
+
+The `alchemy` and `effect-ts` skills must always target the same Effect release. The source of truth is
+upstream alchemy's exact pin (`overrides.effect` in its `pnpm-workspace.yaml`), which
+`skills/alchemy/scripts/build-skill.ts` records as `source.effectVersion` in
+`skills/alchemy/references/manifest.json`. `skills/alchemy/scripts/effect-version.test.ts` fails unless every
+Effect v4 version in `skills/effect-ts/` and the `effect-v4` submodule tag match it, so after regenerating
+the alchemy corpus, bump the `effect-ts` skill and the `effect-v4` submodule together in the same change.
 
 To populate locally after a fresh clone:
 
