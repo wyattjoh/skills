@@ -1,6 +1,6 @@
 <!-- source: https://alchemy.run/git/clone-and-push
      upstream: website/src/content/docs/git/clone-and-push.mdx
-     alchemy 2.0.0-beta.79 @ 4453c9b -->
+     alchemy 2.0.0-beta.79 @ 0811092 -->
 
 # Cloning & pushing
 

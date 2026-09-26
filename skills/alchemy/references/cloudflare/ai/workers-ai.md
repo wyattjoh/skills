@@ -1,6 +1,6 @@
 <!-- source: https://alchemy.run/cloudflare/ai/workers-ai
      upstream: website/src/content/docs/cloudflare/ai/workers-ai.mdx
-     alchemy 2.0.0-beta.79 @ 4453c9b -->
+     alchemy 2.0.0-beta.79 @ 0811092 -->
 
 # Run Workers AI models
 

@@ -1,6 +1,6 @@
 <!-- source: https://alchemy.run/cloudflare/compute/worker-loader
      upstream: website/src/content/docs/cloudflare/compute/worker-loader.mdx
-     alchemy 2.0.0-beta.79 @ 4453c9b -->
+     alchemy 2.0.0-beta.79 @ 0811092 -->
 
 # Worker Loader
 

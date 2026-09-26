@@ -1,6 +1,6 @@
 <!-- source: https://alchemy.run/hetzner/frontend/nextjs
      upstream: website/src/content/docs/hetzner/frontend/nextjs.mdx
-     alchemy 2.0.0-beta.79 @ 4453c9b -->
+     alchemy 2.0.0-beta.79 @ 0811092 -->
 
 # Next.js
 

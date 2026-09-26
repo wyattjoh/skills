@@ -1,6 +1,6 @@
 <!-- source: https://alchemy.run/git/recipes/cloudflare
      upstream: website/src/content/docs/git/recipes/cloudflare.mdx
-     alchemy 2.0.0-beta.79 @ 4453c9b -->
+     alchemy 2.0.0-beta.79 @ 0811092 -->
 
 # All on Cloudflare
 

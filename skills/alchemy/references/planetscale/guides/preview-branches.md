@@ -1,6 +1,6 @@
 <!-- source: https://alchemy.run/planetscale/guides/preview-branches
      upstream: website/src/content/docs/planetscale/guides/preview-branches.mdx
-     alchemy 2.0.0-beta.79 @ 4453c9b -->
+     alchemy 2.0.0-beta.79 @ 0811092 -->
 
 # Preview branches per PR
 

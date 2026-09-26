@@ -1,6 +1,6 @@
 <!-- source: https://alchemy.run/aws/apis/api-gateway
      upstream: website/src/content/docs/aws/apis/api-gateway.mdx
-     alchemy 2.0.0-beta.79 @ 4453c9b -->
+     alchemy 2.0.0-beta.79 @ 0811092 -->
 
 # REST API (API Gateway v1)
 

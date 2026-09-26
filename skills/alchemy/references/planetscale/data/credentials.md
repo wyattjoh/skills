@@ -1,6 +1,6 @@
 <!-- source: https://alchemy.run/planetscale/data/credentials
      upstream: website/src/content/docs/planetscale/data/credentials.mdx
-     alchemy 2.0.0-beta.79 @ 4453c9b -->
+     alchemy 2.0.0-beta.79 @ 0811092 -->
 
 # Credentials
 
@@ -31,8 +31,20 @@ const reader = yield* Planetscale.PostgresRole("reader", {
 
 Only `name` and `successor` (the role that inherits ownership when
 this one is dropped) update in place — changing `ttl`,
-`inheritedRoles`, `database`, or `branch` replaces the role with a
-new id, name, and password.
+`inheritedRoles`, `withReplication`, `database`, or `branch` replaces
+the role with a new id, name, and password.
+
+A logical-replication consumer (Electric, Debezium, a CDC pipeline)
+needs the `REPLICATION` attribute, which Postgres never grants through
+role membership. PlanetScale issues it only alongside `postgres`:
+
+```typescript
+const replicator = yield* Planetscale.PostgresRole("replicator", {
+  database,
+  inheritedRoles: ["postgres"],
+  withReplication: true,
+});
+```
 
 ## The default role
 

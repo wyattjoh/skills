@@ -2,11 +2,11 @@
   "source": {
     "repo": "https://github.com/alchemy-run/alchemy.git",
     "ref": "main",
-    "sha": "4453c9b",
-    "date": "2026-09-19",
+    "sha": "0811092",
+    "date": "2026-09-25",
     "alchemyVersion": "2.0.0-beta.79"
   },
-  "generated": 386,
+  "generated": 458,
   "pages": [
     {
       "title": "Certificate authorities",
@@ -281,8 +281,8 @@
       "path": "references/aws/compute/lambda.md",
       "upstream": "website/src/content/docs/aws/compute/lambda.mdx",
       "url": "https://alchemy.run/aws/compute/lambda",
-      "lines": 339,
-      "bytes": 11066
+      "lines": 344,
+      "bytes": 11381
     },
     {
       "title": "Lambda MicroVMs",
@@ -295,6 +295,30 @@
       "url": "https://alchemy.run/aws/compute/microvms",
       "lines": 247,
       "bytes": 9715
+    },
+    {
+      "title": "Drizzle + Aurora PostgreSQL",
+      "description": "Drizzle on Lambda with private Aurora PostgreSQL, IAM authentication, verified TLS, and reviewed SQL migrations.",
+      "area": "aws",
+      "group": "data",
+      "slug": "aws/data/drizzle-aurora",
+      "path": "references/aws/data/drizzle-aurora.md",
+      "upstream": "website/src/content/docs/aws/data/drizzle-aurora.mdx",
+      "url": "https://alchemy.run/aws/data/drizzle-aurora",
+      "lines": 219,
+      "bytes": 7792
+    },
+    {
+      "title": "Drizzle + Aurora DSQL",
+      "description": "Drizzle on Lambda with Aurora DSQL, a non-admin database role, verified TLS, and an explicit DSQL migration boundary.",
+      "area": "aws",
+      "group": "data",
+      "slug": "aws/data/drizzle-dsql",
+      "path": "references/aws/data/drizzle-dsql.md",
+      "upstream": "website/src/content/docs/aws/data/drizzle-dsql.mdx",
+      "url": "https://alchemy.run/aws/data/drizzle-dsql",
+      "lines": 204,
+      "bytes": 8687
     },
     {
       "title": "DynamoDB",
@@ -317,8 +341,8 @@
       "path": "references/aws/data/rds.md",
       "upstream": "website/src/content/docs/aws/data/rds.mdx",
       "url": "https://alchemy.run/aws/data/rds",
-      "lines": 331,
-      "bytes": 10522
+      "lines": 338,
+      "bytes": 10956
     },
     {
       "title": "S3",
@@ -389,8 +413,8 @@
       "path": "references/aws/frontend/full-stack-tanstack-rpc-drizzle.md",
       "upstream": "website/src/content/docs/aws/frontend/full-stack-tanstack-rpc-drizzle.mdx",
       "url": "https://alchemy.run/aws/frontend/full-stack-tanstack-rpc-drizzle",
-      "lines": 559,
-      "bytes": 18563
+      "lines": 402,
+      "bytes": 12008
     },
     {
       "title": "Next.js",
@@ -425,8 +449,8 @@
       "path": "references/aws/frontend/octane.md",
       "upstream": "website/src/content/docs/aws/frontend/octane.mdx",
       "url": "https://alchemy.run/aws/frontend/octane",
-      "lines": 148,
-      "bytes": 4151
+      "lines": 147,
+      "bytes": 4139
     },
     {
       "title": "React Router",
@@ -489,6 +513,18 @@
       "bytes": 8536
     },
     {
+      "title": "Vinext",
+      "description": "Deploy vinext to AWS with the shared Website API, native local development, and a platform-specific data cache.",
+      "area": "aws",
+      "group": "frontend",
+      "slug": "aws/frontend/vinext",
+      "path": "references/aws/frontend/vinext.md",
+      "upstream": "website/src/content/docs/aws/frontend/vinext.mdx",
+      "url": "https://alchemy.run/aws/frontend/vinext",
+      "lines": 137,
+      "bytes": 4581
+    },
+    {
       "title": "React SPA",
       "description": "Deploy a React single-page app to AWS with AWS.Website.Vite — the Vite build on S3 + CloudFront, deep links answered by index.html out of the box, and Vite's own dev server under alchemy dev.",
       "area": "aws",
@@ -538,15 +574,15 @@
     },
     {
       "title": "Websites",
-      "description": "Deploy Vite, Astro, Next.js, Nuxt, React Router, SvelteKit, TanStack Start, Waku, Octane, or any static build to AWS with first-class Website resources.",
+      "description": "Deploy Vite, Astro, Next.js, vinext, Nuxt, React Router, SvelteKit, TanStack Start, Waku, Octane, or any static build to AWS with first-class Website resources.",
       "area": "aws",
       "group": "frontend",
       "slug": "aws/frontend/websites",
       "path": "references/aws/frontend/websites.md",
       "upstream": "website/src/content/docs/aws/frontend/websites.mdx",
       "url": "https://alchemy.run/aws/frontend/websites",
-      "lines": 125,
-      "bytes": 6019
+      "lines": 128,
+      "bytes": 6218
     },
     {
       "title": "AWS",
@@ -737,8 +773,8 @@
       "path": "references/aws/tutorial/part-3.md",
       "upstream": "website/src/content/docs/aws/tutorial/part-3.mdx",
       "url": "https://alchemy.run/aws/tutorial/part-3",
-      "lines": 213,
-      "bytes": 6209
+      "lines": 241,
+      "bytes": 7297
     },
     {
       "title": "Part 4: Stages",
@@ -837,40 +873,340 @@
       "bytes": 975
     },
     {
-      "title": "Database layers",
-      "description": "One Layer per environment → database pair — HTTP and serverless drivers where they exist, TCP drivers as the fallback, all routed through alchemy's binding system.",
+      "title": "Aurora Data API",
+      "description": "Deploy a Better Auth Lambda with Aurora PostgreSQL over HTTPS and automatic IAM bindings.",
       "area": "better-auth",
-      "group": "",
-      "slug": "better-auth/database-layers",
-      "path": "references/better-auth/database-layers.md",
-      "upstream": "website/src/content/docs/better-auth/database-layers.mdx",
-      "url": "https://alchemy.run/better-auth/database-layers",
-      "lines": 82,
-      "bytes": 3932
+      "group": "databases",
+      "slug": "better-auth/databases/aurora-data-api",
+      "path": "references/better-auth/databases/aurora-data-api.md",
+      "upstream": "website/src/content/docs/better-auth/databases/aurora-data-api.mdx",
+      "url": "https://alchemy.run/better-auth/databases/aurora-data-api",
+      "lines": 121,
+      "bytes": 4553
+    },
+    {
+      "title": "Cloudflare D1",
+      "description": "Deploy a Better Auth Worker with a native D1 database and automatic schema migrations.",
+      "area": "better-auth",
+      "group": "databases",
+      "slug": "better-auth/databases/cloudflare-d1",
+      "path": "references/better-auth/databases/cloudflare-d1.md",
+      "upstream": "website/src/content/docs/better-auth/databases/cloudflare-d1.mdx",
+      "url": "https://alchemy.run/better-auth/databases/cloudflare-d1",
+      "lines": 97,
+      "bytes": 3514
+    },
+    {
+      "title": "Cloudflare Hyperdrive",
+      "description": "Deploy a Better Auth Worker with an uncached Hyperdrive connection to a Neon Postgres origin.",
+      "area": "better-auth",
+      "group": "databases",
+      "slug": "better-auth/databases/cloudflare-hyperdrive",
+      "path": "references/better-auth/databases/cloudflare-hyperdrive.md",
+      "upstream": "website/src/content/docs/better-auth/databases/cloudflare-hyperdrive.mdx",
+      "url": "https://alchemy.run/better-auth/databases/cloudflare-hyperdrive",
+      "lines": 122,
+      "bytes": 4703
+    },
+    {
+      "title": "Drizzle",
+      "description": "Generate a Relations v2 auth schema and deploy a Better Auth Lambda with a request-scoped raw Drizzle database.",
+      "area": "better-auth",
+      "group": "databases",
+      "slug": "better-auth/databases/drizzle",
+      "path": "references/better-auth/databases/drizzle.md",
+      "upstream": "website/src/content/docs/better-auth/databases/drizzle.mdx",
+      "url": "https://alchemy.run/better-auth/databases/drizzle",
+      "lines": 194,
+      "bytes": 6923
+    },
+    {
+      "title": "Choose a database",
+      "description": "Choose a Better Auth database layer with a complete, standalone integration example.",
+      "area": "better-auth",
+      "group": "databases",
+      "slug": "better-auth/databases",
+      "path": "references/better-auth/databases/_overview.md",
+      "upstream": "website/src/content/docs/better-auth/databases/index.mdx",
+      "url": "https://alchemy.run/better-auth/databases",
+      "lines": 50,
+      "bytes": 3551
+    },
+    {
+      "title": "Memory",
+      "description": "Run a disposable Better Auth Worker with an isolate-local memory store.",
+      "area": "better-auth",
+      "group": "databases",
+      "slug": "better-auth/databases/memory",
+      "path": "references/better-auth/databases/memory.md",
+      "upstream": "website/src/content/docs/better-auth/databases/memory.mdx",
+      "url": "https://alchemy.run/better-auth/databases/memory",
+      "lines": 112,
+      "bytes": 3792
+    },
+    {
+      "title": "MySQL",
+      "description": "Deploy Better Auth on Lambda with an existing MySQL database and a request-scoped mysql2 pool.",
+      "area": "better-auth",
+      "group": "databases",
+      "slug": "better-auth/databases/mysql",
+      "path": "references/better-auth/databases/mysql.md",
+      "upstream": "website/src/content/docs/better-auth/databases/mysql.mdx",
+      "url": "https://alchemy.run/better-auth/databases/mysql",
+      "lines": 135,
+      "bytes": 4896
+    },
+    {
+      "title": "Neon",
+      "description": "Deploy a Better Auth Worker with a Neon project and the serverless database driver.",
+      "area": "better-auth",
+      "group": "databases",
+      "slug": "better-auth/databases/neon",
+      "path": "references/better-auth/databases/neon.md",
+      "upstream": "website/src/content/docs/better-auth/databases/neon.mdx",
+      "url": "https://alchemy.run/better-auth/databases/neon",
+      "lines": 126,
+      "bytes": 4748
+    },
+    {
+      "title": "Postgres",
+      "description": "Deploy Better Auth on Lambda with an existing PostgreSQL database and a request-scoped pg pool.",
+      "area": "better-auth",
+      "group": "databases",
+      "slug": "better-auth/databases/postgres",
+      "path": "references/better-auth/databases/postgres.md",
+      "upstream": "website/src/content/docs/better-auth/databases/postgres.mdx",
+      "url": "https://alchemy.run/better-auth/databases/postgres",
+      "lines": 132,
+      "bytes": 5126
+    },
+    {
+      "title": "SQLite",
+      "description": "Run Better Auth in a local Bun server with a persistent SQLite file.",
+      "area": "better-auth",
+      "group": "databases",
+      "slug": "better-auth/databases/sqlite",
+      "path": "references/better-auth/databases/sqlite.md",
+      "upstream": "website/src/content/docs/better-auth/databases/sqlite.mdx",
+      "url": "https://alchemy.run/better-auth/databases/sqlite",
+      "lines": 130,
+      "bytes": 5474
+    },
+    {
+      "title": "Config and secrets",
+      "description": "Bind Effect Config into an Alchemy host, compose database layers, and preserve generated signing secrets.",
+      "area": "better-auth",
+      "group": "guides",
+      "slug": "better-auth/guides/configuration",
+      "path": "references/better-auth/guides/configuration.md",
+      "upstream": "website/src/content/docs/better-auth/guides/configuration.mdx",
+      "url": "https://alchemy.run/better-auth/guides/configuration",
+      "lines": 124,
+      "bytes": 4969
+    },
+    {
+      "title": "HTTP API middleware",
+      "description": "Authenticate each request and provide a typed current user to Effect HTTP API handlers.",
+      "area": "better-auth",
+      "group": "guides",
+      "slug": "better-auth/guides/http-api-middleware",
+      "path": "references/better-auth/guides/http-api-middleware.md",
+      "upstream": "website/src/content/docs/better-auth/guides/http-api-middleware.mdx",
+      "url": "https://alchemy.run/better-auth/guides/http-api-middleware",
+      "lines": 187,
+      "bytes": 7540
+    },
+    {
+      "title": "Migrations",
+      "description": "Apply Better Auth schema changes at deploy, or manage the schema yourself.",
+      "area": "better-auth",
+      "group": "guides",
+      "slug": "better-auth/guides/migrations",
+      "path": "references/better-auth/guides/migrations.md",
+      "upstream": "website/src/content/docs/better-auth/guides/migrations.mdx",
+      "url": "https://alchemy.run/better-auth/guides/migrations",
+      "lines": 126,
+      "bytes": 5264
+    },
+    {
+      "title": "Secondary storage",
+      "description": "Supply a strongly consistent session and rate-limit store through an Effect layer.",
+      "area": "better-auth",
+      "group": "guides",
+      "slug": "better-auth/guides/secondary-storage",
+      "path": "references/better-auth/guides/secondary-storage.md",
+      "upstream": "website/src/content/docs/better-auth/guides/secondary-storage.mdx",
+      "url": "https://alchemy.run/better-auth/guides/secondary-storage",
+      "lines": 166,
+      "bytes": 7844
     },
     {
       "title": "Better Auth",
-      "description": "Typed authentication as an Effect — one BetterAuth() call, a database Layer per platform, and schema migrations that run themselves at deploy.",
+      "description": "Build authentication with an Effect service, automatic database bindings, and deploy-time migrations.",
       "area": "better-auth",
       "group": "",
       "slug": "better-auth",
       "path": "references/better-auth/_overview.md",
       "upstream": "website/src/content/docs/better-auth/index.mdx",
       "url": "https://alchemy.run/better-auth",
-      "lines": 125,
-      "bytes": 4518
+      "lines": 50,
+      "bytes": 2791
     },
     {
-      "title": "Migrations",
-      "description": "Better Auth's schema is applied automatically at deploy by an internal alchemy Action — input-hash diffed, dead-code-eliminated from runtime bundles, opt-out with migrate false.",
+      "title": "Custom OAuth and OIDC",
+      "description": "Add Keycloak OIDC sign-in to an Alchemy Worker with D1, one small step at a time.",
       "area": "better-auth",
-      "group": "",
-      "slug": "better-auth/migrations",
-      "path": "references/better-auth/migrations.md",
-      "upstream": "website/src/content/docs/better-auth/migrations.mdx",
-      "url": "https://alchemy.run/better-auth/migrations",
-      "lines": 68,
-      "bytes": 2801
+      "group": "sign-in-providers",
+      "slug": "better-auth/sign-in-providers/custom-oauth",
+      "path": "references/better-auth/sign-in-providers/custom-oauth.md",
+      "upstream": "website/src/content/docs/better-auth/sign-in-providers/custom-oauth.mdx",
+      "url": "https://alchemy.run/better-auth/sign-in-providers/custom-oauth",
+      "lines": 362,
+      "bytes": 15144
+    },
+    {
+      "title": "Email and password",
+      "description": "Add D1-backed registration, real email verification, and password recovery to an Alchemy project.",
+      "area": "better-auth",
+      "group": "sign-in-providers",
+      "slug": "better-auth/sign-in-providers/email-password",
+      "path": "references/better-auth/sign-in-providers/email-password.md",
+      "upstream": "website/src/content/docs/better-auth/sign-in-providers/email-password.mdx",
+      "url": "https://alchemy.run/better-auth/sign-in-providers/email-password",
+      "lines": 550,
+      "bytes": 20321
+    },
+    {
+      "title": "GitHub",
+      "description": "Add GitHub sign-in to a D1-backed Alchemy Worker, one step at a time.",
+      "area": "better-auth",
+      "group": "sign-in-providers",
+      "slug": "better-auth/sign-in-providers/github",
+      "path": "references/better-auth/sign-in-providers/github.md",
+      "upstream": "website/src/content/docs/better-auth/sign-in-providers/github.mdx",
+      "url": "https://alchemy.run/better-auth/sign-in-providers/github",
+      "lines": 345,
+      "bytes": 11974
+    },
+    {
+      "title": "Google",
+      "description": "Add Google sign-in to a D1-backed Alchemy Worker, one step at a time.",
+      "area": "better-auth",
+      "group": "sign-in-providers",
+      "slug": "better-auth/sign-in-providers/google",
+      "path": "references/better-auth/sign-in-providers/google.md",
+      "upstream": "website/src/content/docs/better-auth/sign-in-providers/google.mdx",
+      "url": "https://alchemy.run/better-auth/sign-in-providers/google",
+      "lines": 361,
+      "bytes": 13403
+    },
+    {
+      "title": "Sign-in providers",
+      "description": "Choose a standalone sign-in walkthrough for your existing Alchemy project.",
+      "area": "better-auth",
+      "group": "sign-in-providers",
+      "slug": "better-auth/sign-in-providers",
+      "path": "references/better-auth/sign-in-providers/_overview.md",
+      "upstream": "website/src/content/docs/better-auth/sign-in-providers/index.mdx",
+      "url": "https://alchemy.run/better-auth/sign-in-providers",
+      "lines": 48,
+      "bytes": 3876
+    },
+    {
+      "title": "Microsoft",
+      "description": "Add Microsoft sign-in to an Alchemy Worker with D1, one small step at a time.",
+      "area": "better-auth",
+      "group": "sign-in-providers",
+      "slug": "better-auth/sign-in-providers/microsoft",
+      "path": "references/better-auth/sign-in-providers/microsoft.md",
+      "upstream": "website/src/content/docs/better-auth/sign-in-providers/microsoft.mdx",
+      "url": "https://alchemy.run/better-auth/sign-in-providers/microsoft",
+      "lines": 345,
+      "bytes": 13719
+    },
+    {
+      "title": "Part 1: Create an Auth service",
+      "description": "Install Better Auth, provide a D1 database layer, and create an Effect service.",
+      "area": "better-auth",
+      "group": "tutorial",
+      "slug": "better-auth/tutorial/part-1",
+      "path": "references/better-auth/tutorial/part-1.md",
+      "upstream": "website/src/content/docs/better-auth/tutorial/part-1.mdx",
+      "url": "https://alchemy.run/better-auth/tutorial/part-1",
+      "lines": 154,
+      "bytes": 4424
+    },
+    {
+      "title": "Part 2: Mount the HTTP API",
+      "description": "Serve Better Auth routes and an Effect HTTP API from the same Worker.",
+      "area": "better-auth",
+      "group": "tutorial",
+      "slug": "better-auth/tutorial/part-2",
+      "path": "references/better-auth/tutorial/part-2.md",
+      "upstream": "website/src/content/docs/better-auth/tutorial/part-2.mdx",
+      "url": "https://alchemy.run/better-auth/tutorial/part-2",
+      "lines": 117,
+      "bytes": 3347
+    },
+    {
+      "title": "Part 3: Build sign-in",
+      "description": "Add a same-origin browser client with sign-up, sign-in, session lookup, and sign-out.",
+      "area": "better-auth",
+      "group": "tutorial",
+      "slug": "better-auth/tutorial/part-3",
+      "path": "references/better-auth/tutorial/part-3.md",
+      "upstream": "website/src/content/docs/better-auth/tutorial/part-3.mdx",
+      "url": "https://alchemy.run/better-auth/tutorial/part-3",
+      "lines": 169,
+      "bytes": 5349
+    },
+    {
+      "title": "Part 4: Protect API endpoints",
+      "description": "Resolve the session in Effect HTTP API middleware and provide a typed CurrentUser service.",
+      "area": "better-auth",
+      "group": "tutorial",
+      "slug": "better-auth/tutorial/part-4",
+      "path": "references/better-auth/tutorial/part-4.md",
+      "upstream": "website/src/content/docs/better-auth/tutorial/part-4.mdx",
+      "url": "https://alchemy.run/better-auth/tutorial/part-4",
+      "lines": 214,
+      "bytes": 6219
+    },
+    {
+      "title": "Part 5: Add GitHub sign-in",
+      "description": "Register a GitHub OAuth app, bind its credentials through Effect Config, and sign in from the browser.",
+      "area": "better-auth",
+      "group": "tutorial",
+      "slug": "better-auth/tutorial/part-5",
+      "path": "references/better-auth/tutorial/part-5.md",
+      "upstream": "website/src/content/docs/better-auth/tutorial/part-5.mdx",
+      "url": "https://alchemy.run/better-auth/tutorial/part-5",
+      "lines": 147,
+      "bytes": 4642
+    },
+    {
+      "title": "Part 6: Deploy and verify",
+      "description": "Deploy the authenticated API, configure production OAuth callbacks, and verify session boundaries.",
+      "area": "better-auth",
+      "group": "tutorial",
+      "slug": "better-auth/tutorial/part-6",
+      "path": "references/better-auth/tutorial/part-6.md",
+      "upstream": "website/src/content/docs/better-auth/tutorial/part-6.mdx",
+      "url": "https://alchemy.run/better-auth/tutorial/part-6",
+      "lines": 122,
+      "bytes": 4626
+    },
+    {
+      "title": "Upgrading from 1.6 to 1.7.5 or newer",
+      "description": "Upgrade Better Auth directly from 1.6, preserve existing users, and update your schema and application APIs.",
+      "area": "better-auth",
+      "group": "upgrades",
+      "slug": "better-auth/upgrades/from-1-6-to-1-7",
+      "path": "references/better-auth/upgrades/from-1-6-to-1-7.md",
+      "upstream": "website/src/content/docs/better-auth/upgrades/from-1-6-to-1-7.mdx",
+      "url": "https://alchemy.run/better-auth/upgrades/from-1-6-to-1-7",
+      "lines": 155,
+      "bytes": 5274
     },
     {
       "title": "Adopting Resources",
@@ -881,8 +1217,8 @@
       "path": "references/cli/adopting-resources.md",
       "upstream": "website/src/content/docs/cli/adopting-resources.mdx",
       "url": "https://alchemy.run/cli/adopting-resources",
-      "lines": 94,
-      "bytes": 4805
+      "lines": 97,
+      "bytes": 4871
     },
     {
       "title": "aws",
@@ -1013,8 +1349,8 @@
       "path": "references/cli/plan.md",
       "upstream": "website/src/content/docs/cli/plan.mdx",
       "url": "https://alchemy.run/cli/plan",
-      "lines": 74,
-      "bytes": 2212
+      "lines": 75,
+      "bytes": 2385
     },
     {
       "title": "profile",
@@ -1217,8 +1553,8 @@
       "path": "references/cloudflare/compute/durable-objects.md",
       "upstream": "website/src/content/docs/cloudflare/compute/durable-objects.mdx",
       "url": "https://alchemy.run/cloudflare/compute/durable-objects",
-      "lines": 678,
-      "bytes": 24223
+      "lines": 700,
+      "bytes": 24964
     },
     {
       "title": "Gradual deployments",
@@ -1241,8 +1577,8 @@
       "path": "references/cloudflare/compute/hibernatable-websockets.md",
       "upstream": "website/src/content/docs/cloudflare/compute/hibernatable-websockets.mdx",
       "url": "https://alchemy.run/cloudflare/compute/hibernatable-websockets",
-      "lines": 597,
-      "bytes": 19132
+      "lines": 684,
+      "bytes": 21888
     },
     {
       "title": "Worker Previews",
@@ -1337,8 +1673,8 @@
       "path": "references/cloudflare/compute/workflows.md",
       "upstream": "website/src/content/docs/cloudflare/compute/workflows.mdx",
       "url": "https://alchemy.run/cloudflare/compute/workflows",
-      "lines": 378,
-      "bytes": 12705
+      "lines": 431,
+      "bytes": 15447
     },
     {
       "title": "Store Git Repos with Artifacts",
@@ -1366,15 +1702,15 @@
     },
     {
       "title": "Drizzle on D1",
-      "description": "Manage your Drizzle schema as a resource, apply migrations to D1 on every deploy, and query from a Worker with the effect-d1 driver or the raw @effect/sql-d1 client.",
+      "description": "Deploy committed SQLite migrations to D1 and query the database from a Worker with Drizzle.",
       "area": "cloudflare",
       "group": "data",
       "slug": "cloudflare/data/d1-drizzle",
       "path": "references/cloudflare/data/d1-drizzle.md",
       "upstream": "website/src/content/docs/cloudflare/data/d1-drizzle.mdx",
       "url": "https://alchemy.run/cloudflare/data/d1-drizzle",
-      "lines": 250,
-      "bytes": 8383
+      "lines": 142,
+      "bytes": 3848
     },
     {
       "title": "D1",
@@ -1390,15 +1726,15 @@
     },
     {
       "title": "Add Drizzle ORM",
-      "description": "Replace raw pg with Drizzle's effect-postgres integration, manage your schema as a resource, and have alchemy generate and apply migrations on every deploy — on Neon or PlanetScale.",
+      "description": "Deploy a Cloudflare Worker with Drizzle queries, Hyperdrive connections, and reviewed, committed migrations on Neon or PlanetScale.",
       "area": "cloudflare",
       "group": "data",
       "slug": "cloudflare/data/drizzle",
       "path": "references/cloudflare/data/drizzle.md",
       "upstream": "website/src/content/docs/cloudflare/data/drizzle.mdx",
       "url": "https://alchemy.run/cloudflare/data/drizzle",
-      "lines": 439,
-      "bytes": 13627
+      "lines": 292,
+      "bytes": 9588
     },
     {
       "title": "Hyperdrive",
@@ -1409,8 +1745,8 @@
       "path": "references/cloudflare/data/hyperdrive.md",
       "upstream": "website/src/content/docs/cloudflare/data/hyperdrive.mdx",
       "url": "https://alchemy.run/cloudflare/data/hyperdrive",
-      "lines": 587,
-      "bytes": 18328
+      "lines": 640,
+      "bytes": 20422
     },
     {
       "title": "KV",
@@ -1425,6 +1761,30 @@
       "bytes": 6068
     },
     {
+      "title": "Prisma ORM with Postgres",
+      "description": "Deploy Prisma ORM v8 on Cloudflare Workers with Neon Postgres, Hyperdrive, controlled migrations, and Effect-native queries.",
+      "area": "cloudflare",
+      "group": "data",
+      "slug": "cloudflare/data/prisma",
+      "path": "references/cloudflare/data/prisma.md",
+      "upstream": "website/src/content/docs/cloudflare/data/prisma.mdx",
+      "url": "https://alchemy.run/cloudflare/data/prisma",
+      "lines": 182,
+      "bytes": 4949
+    },
+    {
+      "title": "R2 presigned URLs",
+      "description": "Mint presigned R2 URLs so browsers upload and download objects directly, with the same code in alchemy dev and in production, from Effect-native or async Workers.",
+      "area": "cloudflare",
+      "group": "data",
+      "slug": "cloudflare/data/r2-presigned-urls",
+      "path": "references/cloudflare/data/r2-presigned-urls.md",
+      "upstream": "website/src/content/docs/cloudflare/data/r2-presigned-urls.mdx",
+      "url": "https://alchemy.run/cloudflare/data/r2-presigned-urls",
+      "lines": 206,
+      "bytes": 6635
+    },
+    {
       "title": "R2",
       "description": "Cloudflare R2 is object storage — create a bucket, bind it into a Worker with read/write-scoped bindings, and stream objects in and out.",
       "area": "cloudflare",
@@ -1433,8 +1793,8 @@
       "path": "references/cloudflare/data/r2.md",
       "upstream": "website/src/content/docs/cloudflare/data/r2.mdx",
       "url": "https://alchemy.run/cloudflare/data/r2",
-      "lines": 190,
-      "bytes": 5787
+      "lines": 201,
+      "bytes": 6290
     },
     {
       "title": "Shared database across stages",
@@ -1510,15 +1870,15 @@
     },
     {
       "title": "Frontend frameworks",
-      "description": "Deploy Vite, Astro, Next.js, Nuxt, SvelteKit, Waku, or any static build to Cloudflare Workers with first-class Website resources.",
+      "description": "Deploy Vite, Astro, Next.js, vinext, Nuxt, SvelteKit, Waku, or any static build to Cloudflare Workers with first-class Website resources.",
       "area": "cloudflare",
       "group": "frontend",
       "slug": "cloudflare/frontend/frontends",
       "path": "references/cloudflare/frontend/frontends.md",
       "upstream": "website/src/content/docs/cloudflare/frontend/frontends.mdx",
       "url": "https://alchemy.run/cloudflare/frontend/frontends",
-      "lines": 105,
-      "bytes": 5077
+      "lines": 110,
+      "bytes": 5384
     },
     {
       "title": "Full-stack TanStack Start + RPC + Drizzle",
@@ -1541,8 +1901,8 @@
       "path": "references/cloudflare/frontend/nextjs.md",
       "upstream": "website/src/content/docs/cloudflare/frontend/nextjs.mdx",
       "url": "https://alchemy.run/cloudflare/frontend/nextjs",
-      "lines": 242,
-      "bytes": 7652
+      "lines": 271,
+      "bytes": 9153
     },
     {
       "title": "Nuxt",
@@ -1558,15 +1918,15 @@
     },
     {
       "title": "Octane",
-      "description": "Deploy an OctaneJS fullstack app to Cloudflare Workers with Cloudflare.Website.Octane — your own vite build, Octane's Cloudflare adapter, wrangler-free.",
+      "description": "Deploy an OctaneJS fullstack app to Cloudflare Workers with Cloudflare.Website.Octane — native Octane and Vite configuration, no hosting adapter or Wrangler file required.",
       "area": "cloudflare",
       "group": "frontend",
       "slug": "cloudflare/frontend/octane",
       "path": "references/cloudflare/frontend/octane.md",
       "upstream": "website/src/content/docs/cloudflare/frontend/octane.mdx",
       "url": "https://alchemy.run/cloudflare/frontend/octane",
-      "lines": 198,
-      "bytes": 6231
+      "lines": 220,
+      "bytes": 7040
     },
     {
       "title": "React Router",
@@ -1627,6 +1987,18 @@
       "url": "https://alchemy.run/cloudflare/frontend/tanstack-start",
       "lines": 208,
       "bytes": 6370
+    },
+    {
+      "title": "Vinext",
+      "description": "Deploy vinext to Cloudflare Workers with the shared Website API, native local development, and KV-backed caching.",
+      "area": "cloudflare",
+      "group": "frontend",
+      "slug": "cloudflare/frontend/vinext",
+      "path": "references/cloudflare/frontend/vinext.md",
+      "upstream": "website/src/content/docs/cloudflare/frontend/vinext.mdx",
+      "url": "https://alchemy.run/cloudflare/frontend/vinext",
+      "lines": 138,
+      "bytes": 4512
     },
     {
       "title": "Add a React SPA",
@@ -1698,7 +2070,7 @@
       "upstream": "website/src/content/docs/cloudflare/local-development.mdx",
       "url": "https://alchemy.run/cloudflare/local-development",
       "lines": 228,
-      "bytes": 8685
+      "bytes": 8705
     },
     {
       "title": "Scheduled jobs with Cron Triggers",
@@ -1733,8 +2105,8 @@
       "path": "references/cloudflare/messaging/queues.md",
       "upstream": "website/src/content/docs/cloudflare/messaging/queues.mdx",
       "url": "https://alchemy.run/cloudflare/messaging/queues",
-      "lines": 316,
-      "bytes": 10868
+      "lines": 432,
+      "bytes": 16315
     },
     {
       "title": "Custom domains & routes",
@@ -1901,8 +2273,8 @@
       "path": "references/cloudflare/tutorial/part-3.md",
       "upstream": "website/src/content/docs/cloudflare/tutorial/part-3.mdx",
       "url": "https://alchemy.run/cloudflare/tutorial/part-3",
-      "lines": 215,
-      "bytes": 6268
+      "lines": 242,
+      "bytes": 7286
     },
     {
       "title": "Part 4: Local Dev",
@@ -2073,6 +2445,30 @@
       "bytes": 9253
     },
     {
+      "title": "Doppler",
+      "description": "Load a Doppler config into your Stack — log in with the browser on your machine, use a service token in CI.",
+      "area": "environments",
+      "group": "",
+      "slug": "environments/doppler",
+      "path": "references/environments/doppler.md",
+      "upstream": "website/src/content/docs/environments/doppler.mdx",
+      "url": "https://alchemy.run/environments/doppler",
+      "lines": 105,
+      "bytes": 3997
+    },
+    {
+      "title": "Infisical",
+      "description": "Load an Infisical environment into your Stack — a machine identity on your machine, the platform's own OIDC token in CI.",
+      "area": "environments",
+      "group": "",
+      "slug": "environments/infisical",
+      "path": "references/environments/infisical.md",
+      "upstream": "website/src/content/docs/environments/infisical.mdx",
+      "url": "https://alchemy.run/environments/infisical",
+      "lines": 86,
+      "bytes": 3260
+    },
+    {
       "title": "Local development",
       "description": "How alchemy dev provides hot reloading, local execution, and local emulation with per-resource opt-in to real cloud services.",
       "area": "environments",
@@ -2093,8 +2489,20 @@
       "path": "references/environments/profiles.md",
       "upstream": "website/src/content/docs/environments/profiles.mdx",
       "url": "https://alchemy.run/environments/profiles",
-      "lines": 213,
-      "bytes": 7964
+      "lines": 221,
+      "bytes": 8771
+    },
+    {
+      "title": "Secret providers",
+      "description": "Configure a stack with dotenv files, environment variables, Doppler, or Infisical.",
+      "area": "environments",
+      "group": "",
+      "slug": "environments/secret-providers",
+      "path": "references/environments/secret-providers.md",
+      "upstream": "website/src/content/docs/environments/secret-providers.mdx",
+      "url": "https://alchemy.run/environments/secret-providers",
+      "lines": 140,
+      "bytes": 4996
     },
     {
       "title": "Secrets & Config",
@@ -2105,8 +2513,8 @@
       "path": "references/environments/secrets.md",
       "upstream": "website/src/content/docs/environments/secrets.mdx",
       "url": "https://alchemy.run/environments/secrets",
-      "lines": 183,
-      "bytes": 6043
+      "lines": 191,
+      "bytes": 6513
     },
     {
       "title": "Stages",
@@ -2133,6 +2541,18 @@
       "bytes": 2648
     },
     {
+      "title": "Blue/green deployments",
+      "description": "Deploy a new version, check it before serving traffic, and give the old version time to finish work.",
+      "area": "fly",
+      "group": "compute",
+      "slug": "fly/compute/deployments",
+      "path": "references/fly/compute/deployments.md",
+      "upstream": "website/src/content/docs/fly/compute/deployments.mdx",
+      "url": "https://alchemy.run/fly/compute/deployments",
+      "lines": 424,
+      "bytes": 16621
+    },
+    {
       "title": "Machines",
       "description": "A Firecracker VM running a container image.",
       "area": "fly",
@@ -2141,8 +2561,8 @@
       "path": "references/fly/compute/machines.md",
       "upstream": "website/src/content/docs/fly/compute/machines.mdx",
       "url": "https://alchemy.run/fly/compute/machines",
-      "lines": 188,
-      "bytes": 5259
+      "lines": 248,
+      "bytes": 9472
     },
     {
       "title": "Regions",
@@ -2165,8 +2585,8 @@
       "path": "references/fly/compute/services.md",
       "upstream": "website/src/content/docs/fly/compute/services.mdx",
       "url": "https://alchemy.run/fly/compute/services",
-      "lines": 297,
-      "bytes": 8920
+      "lines": 323,
+      "bytes": 11226
     },
     {
       "title": "Sprites",
@@ -2179,6 +2599,18 @@
       "url": "https://alchemy.run/fly/compute/sprites",
       "lines": 190,
       "bytes": 4941
+    },
+    {
+      "title": "Drizzle Postgres on Fly",
+      "description": "Connect a Fly Service to Managed Postgres and deploy reviewed Drizzle migrations.",
+      "area": "fly",
+      "group": "data",
+      "slug": "fly/data/drizzle-postgres",
+      "path": "references/fly/data/drizzle-postgres.md",
+      "upstream": "website/src/content/docs/fly/data/drizzle-postgres.mdx",
+      "url": "https://alchemy.run/fly/data/drizzle-postgres",
+      "lines": 156,
+      "bytes": 5036
     },
     {
       "title": "Postgres",
@@ -2297,8 +2729,8 @@
       "path": "references/fly/frontend/octane.md",
       "upstream": "website/src/content/docs/fly/frontend/octane.mdx",
       "url": "https://alchemy.run/fly/frontend/octane",
-      "lines": 190,
-      "bytes": 5348
+      "lines": 188,
+      "bytes": 5290
     },
     {
       "title": "React Router",
@@ -2361,6 +2793,18 @@
       "bytes": 7517
     },
     {
+      "title": "Vinext",
+      "description": "Deploy vinext to Fly with the shared Website API, native local development, and a platform-specific data cache.",
+      "area": "fly",
+      "group": "frontend",
+      "slug": "fly/frontend/vinext",
+      "path": "references/fly/frontend/vinext.md",
+      "upstream": "website/src/content/docs/fly/frontend/vinext.mdx",
+      "url": "https://alchemy.run/fly/frontend/vinext",
+      "lines": 137,
+      "bytes": 4410
+    },
+    {
       "title": "Vite",
       "description": "Deploy a Vite SPA to Fly with Fly.Website.Vite — static assets on a Node Machine, fly.dev (or your domain) over HTTPS, and Vite's own dev server under alchemy dev.",
       "area": "fly",
@@ -2398,15 +2842,15 @@
     },
     {
       "title": "Websites",
-      "description": "Deploy Vite, Astro, Next.js, Nuxt, React Router, SolidStart, SvelteKit, TanStack Start, Waku, Octane, Foldkit, Vocs, or any static build to Fly with first-class Website resources.",
+      "description": "Deploy Vite, Astro, Next.js, vinext, Nuxt, React Router, SolidStart, SvelteKit, TanStack Start, Waku, Octane, Foldkit, Vocs, or any static build to Fly with first-class Website resources.",
       "area": "fly",
       "group": "frontend",
       "slug": "fly/frontend/websites",
       "path": "references/fly/frontend/websites.md",
       "upstream": "website/src/content/docs/fly/frontend/websites.mdx",
       "url": "https://alchemy.run/fly/frontend/websites",
-      "lines": 167,
-      "bytes": 7137
+      "lines": 170,
+      "bytes": 7362
     },
     {
       "title": "Fly",
@@ -2429,8 +2873,8 @@
       "path": "references/fly/networking.md",
       "upstream": "website/src/content/docs/fly/networking.mdx",
       "url": "https://alchemy.run/fly/networking",
-      "lines": 183,
-      "bytes": 5627
+      "lines": 234,
+      "bytes": 7293
     },
     {
       "title": "Setup",
@@ -2889,6 +3333,18 @@
       "bytes": 6480
     },
     {
+      "title": "Drizzle Postgres on Hetzner",
+      "description": "Run a Drizzle API on a Hetzner Server with external Neon Postgres and reviewed SQL migrations.",
+      "area": "hetzner",
+      "group": "data",
+      "slug": "hetzner/data/drizzle-postgres",
+      "path": "references/hetzner/data/drizzle-postgres.md",
+      "upstream": "website/src/content/docs/hetzner/data/drizzle-postgres.mdx",
+      "url": "https://alchemy.run/hetzner/data/drizzle-postgres",
+      "lines": 172,
+      "bytes": 5347
+    },
+    {
       "title": "Volumes",
       "description": "Durable network block storage for Hetzner Servers — attach with props or VolumeAttachment, mount into Services with the MountVolume binding.",
       "area": "hetzner",
@@ -2957,8 +3413,8 @@
       "path": "references/hetzner/frontend/octane.md",
       "upstream": "website/src/content/docs/hetzner/frontend/octane.mdx",
       "url": "https://alchemy.run/hetzner/frontend/octane",
-      "lines": 204,
-      "bytes": 5720
+      "lines": 202,
+      "bytes": 5666
     },
     {
       "title": "React Router",
@@ -3021,6 +3477,18 @@
       "bytes": 7869
     },
     {
+      "title": "Vinext",
+      "description": "Deploy vinext to Hetzner with the shared Website API, native local development, and a platform-specific data cache.",
+      "area": "hetzner",
+      "group": "frontend",
+      "slug": "hetzner/frontend/vinext",
+      "path": "references/hetzner/frontend/vinext.md",
+      "upstream": "website/src/content/docs/hetzner/frontend/vinext.mdx",
+      "url": "https://alchemy.run/hetzner/frontend/vinext",
+      "lines": 135,
+      "bytes": 4469
+    },
+    {
       "title": "Vite",
       "description": "Deploy a Vite SPA to Hetzner with Hetzner.Website.Vite — static assets as a systemd unit on a Server, http://{ipv4}:3000, and Vite's own dev server under alchemy dev.",
       "area": "hetzner",
@@ -3058,15 +3526,15 @@
     },
     {
       "title": "Websites",
-      "description": "Deploy Vite, Astro, Next.js, Nuxt, React Router, SolidStart, SvelteKit, TanStack Start, Waku, Octane, Foldkit, Vocs, or any static build to Hetzner with first-class Website resources.",
+      "description": "Deploy Vite, Astro, Next.js, vinext, Nuxt, React Router, SolidStart, SvelteKit, TanStack Start, Waku, Octane, Foldkit, Vocs, or any static build to Hetzner with first-class Website resources.",
       "area": "hetzner",
       "group": "frontend",
       "slug": "hetzner/frontend/websites",
       "path": "references/hetzner/frontend/websites.md",
       "upstream": "website/src/content/docs/hetzner/frontend/websites.mdx",
       "url": "https://alchemy.run/hetzner/frontend/websites",
-      "lines": 179,
-      "bytes": 7433
+      "lines": 182,
+      "bytes": 7666
     },
     {
       "title": "Hetzner",
@@ -3138,7 +3606,7 @@
       "upstream": "website/src/content/docs/hetzner/tutorial/part-2.mdx",
       "url": "https://alchemy.run/hetzner/tutorial/part-2",
       "lines": 297,
-      "bytes": 8412
+      "bytes": 8419
     },
     {
       "title": "Part 3: Persist Data with a Volume",
@@ -3441,16 +3909,208 @@
       "bytes": 4013
     },
     {
+      "title": "Astro",
+      "description": "Package Astro SSR or prerendered pages for Neon Functions, with native Astro development.",
+      "area": "neon",
+      "group": "frontend",
+      "slug": "neon/frontend/astro",
+      "path": "references/neon/frontend/astro.md",
+      "upstream": "website/src/content/docs/neon/frontend/astro.mdx",
+      "url": "https://alchemy.run/neon/frontend/astro",
+      "lines": 98,
+      "bytes": 3529
+    },
+    {
+      "title": "Foldkit",
+      "description": "Package a client-only Foldkit Vite app for Neon Functions with SPA routing.",
+      "area": "neon",
+      "group": "frontend",
+      "slug": "neon/frontend/foldkit",
+      "path": "references/neon/frontend/foldkit.md",
+      "upstream": "website/src/content/docs/neon/frontend/foldkit.mdx",
+      "url": "https://alchemy.run/neon/frontend/foldkit",
+      "lines": 87,
+      "bytes": 3206
+    },
+    {
+      "title": "Next.js",
+      "description": "Build Next.js for a Neon Function Fetch entry and use next dev locally.",
+      "area": "neon",
+      "group": "frontend",
+      "slug": "neon/frontend/nextjs",
+      "path": "references/neon/frontend/nextjs.md",
+      "upstream": "website/src/content/docs/neon/frontend/nextjs.mdx",
+      "url": "https://alchemy.run/neon/frontend/nextjs",
+      "lines": 94,
+      "bytes": 3889
+    },
+    {
+      "title": "Nuxt",
+      "description": "Package Nuxt SSR and public assets for Neon Functions, with native Nuxt development.",
+      "area": "neon",
+      "group": "frontend",
+      "slug": "neon/frontend/nuxt",
+      "path": "references/neon/frontend/nuxt.md",
+      "upstream": "website/src/content/docs/neon/frontend/nuxt.mdx",
+      "url": "https://alchemy.run/neon/frontend/nuxt",
+      "lines": 87,
+      "bytes": 3256
+    },
+    {
+      "title": "Octane",
+      "description": "Package Octane rendering and server routes as a Neon Function Fetch artifact.",
+      "area": "neon",
+      "group": "frontend",
+      "slug": "neon/frontend/octane",
+      "path": "references/neon/frontend/octane.md",
+      "upstream": "website/src/content/docs/neon/frontend/octane.mdx",
+      "url": "https://alchemy.run/neon/frontend/octane",
+      "lines": 98,
+      "bytes": 3260
+    },
+    {
+      "title": "React Router",
+      "description": "Package React Router framework-mode SSR and browser assets for Neon Functions.",
+      "area": "neon",
+      "group": "frontend",
+      "slug": "neon/frontend/react-router",
+      "path": "references/neon/frontend/react-router.md",
+      "upstream": "website/src/content/docs/neon/frontend/react-router.mdx",
+      "url": "https://alchemy.run/neon/frontend/react-router",
+      "lines": 85,
+      "bytes": 3150
+    },
+    {
+      "title": "SolidStart",
+      "description": "Package SolidStart SSR and prerendered assets for a Neon Function Fetch entry.",
+      "area": "neon",
+      "group": "frontend",
+      "slug": "neon/frontend/solidstart",
+      "path": "references/neon/frontend/solidstart.md",
+      "upstream": "website/src/content/docs/neon/frontend/solidstart.mdx",
+      "url": "https://alchemy.run/neon/frontend/solidstart",
+      "lines": 83,
+      "bytes": 3067
+    },
+    {
+      "title": "Static Site",
+      "description": "Run a static-site build command and package its output for a Neon Function.",
+      "area": "neon",
+      "group": "frontend",
+      "slug": "neon/frontend/static-site",
+      "path": "references/neon/frontend/static-site.md",
+      "upstream": "website/src/content/docs/neon/frontend/static-site.mdx",
+      "url": "https://alchemy.run/neon/frontend/static-site",
+      "lines": 102,
+      "bytes": 3797
+    },
+    {
+      "title": "SvelteKit",
+      "description": "Package SvelteKit SSR and prerendered assets as a Neon Function Fetch artifact.",
+      "area": "neon",
+      "group": "frontend",
+      "slug": "neon/frontend/sveltekit",
+      "path": "references/neon/frontend/sveltekit.md",
+      "upstream": "website/src/content/docs/neon/frontend/sveltekit.mdx",
+      "url": "https://alchemy.run/neon/frontend/sveltekit",
+      "lines": 86,
+      "bytes": 3256
+    },
+    {
+      "title": "TanStack Start",
+      "description": "Package TanStack Start SSR and client assets for Neon Functions, with native Vite development.",
+      "area": "neon",
+      "group": "frontend",
+      "slug": "neon/frontend/tanstack-start",
+      "path": "references/neon/frontend/tanstack-start.md",
+      "upstream": "website/src/content/docs/neon/frontend/tanstack-start.mdx",
+      "url": "https://alchemy.run/neon/frontend/tanstack-start",
+      "lines": 83,
+      "bytes": 3147
+    },
+    {
+      "title": "Vite",
+      "description": "Package a Vite client build as a Neon Function, with native Vite development.",
+      "area": "neon",
+      "group": "frontend",
+      "slug": "neon/frontend/vite",
+      "path": "references/neon/frontend/vite.md",
+      "upstream": "website/src/content/docs/neon/frontend/vite.mdx",
+      "url": "https://alchemy.run/neon/frontend/vite",
+      "lines": 156,
+      "bytes": 5777
+    },
+    {
+      "title": "Vocs",
+      "description": "Package Vocs documentation and its Waku RSC handler for Neon Functions.",
+      "area": "neon",
+      "group": "frontend",
+      "slug": "neon/frontend/vocs",
+      "path": "references/neon/frontend/vocs.md",
+      "upstream": "website/src/content/docs/neon/frontend/vocs.mdx",
+      "url": "https://alchemy.run/neon/frontend/vocs",
+      "lines": 94,
+      "bytes": 3736
+    },
+    {
+      "title": "Waku",
+      "description": "Package Waku RSC and static pages for Neon Functions, with native Waku development.",
+      "area": "neon",
+      "group": "frontend",
+      "slug": "neon/frontend/waku",
+      "path": "references/neon/frontend/waku.md",
+      "upstream": "website/src/content/docs/neon/frontend/waku.mdx",
+      "url": "https://alchemy.run/neon/frontend/waku",
+      "lines": 85,
+      "bytes": 3086
+    },
+    {
+      "title": "Organization governance",
+      "description": "Manage existing Neon organization access, billing alerts, and private-network associations with explicit ownership and restoration.",
+      "area": "neon",
+      "group": "",
+      "slug": "neon/governance",
+      "path": "references/neon/governance.md",
+      "upstream": "website/src/content/docs/neon/governance.mdx",
+      "url": "https://alchemy.run/neon/governance",
+      "lines": 233,
+      "bytes": 11042
+    },
+    {
+      "title": "AI Gateway setup",
+      "description": "Buy Neon AI Gateway credits and use a model from an Effect Function.",
+      "area": "neon",
+      "group": "guides",
+      "slug": "neon/guides/ai-gateway",
+      "path": "references/neon/guides/ai-gateway.md",
+      "upstream": "website/src/content/docs/neon/guides/ai-gateway.mdx",
+      "url": "https://alchemy.run/neon/guides/ai-gateway",
+      "lines": 108,
+      "bytes": 4852
+    },
+    {
+      "title": "Custom domains",
+      "description": "Register a Function hostname, configure DNS and CAA, verify HTTPS, and retire the domain safely.",
+      "area": "neon",
+      "group": "guides",
+      "slug": "neon/guides/custom-domains",
+      "path": "references/neon/guides/custom-domains.md",
+      "upstream": "website/src/content/docs/neon/guides/custom-domains.mdx",
+      "url": "https://alchemy.run/neon/guides/custom-domains",
+      "lines": 152,
+      "bytes": 6083
+    },
+    {
       "title": "Drizzle ORM with Neon",
-      "description": "Manage your Drizzle schema as a resource — alchemy regenerates migration SQL on deploy and Neon applies it transactionally on the project or branch.",
+      "description": "Configure Neon projects, branches, committed Drizzle migrations, and direct or pooled connections.",
       "area": "neon",
       "group": "guides",
       "slug": "neon/guides/drizzle",
       "path": "references/neon/guides/drizzle.md",
       "upstream": "website/src/content/docs/neon/guides/drizzle.mdx",
       "url": "https://alchemy.run/neon/guides/drizzle",
-      "lines": 139,
-      "bytes": 4633
+      "lines": 87,
+      "bytes": 3270
     },
     {
       "title": "Preview branches per PR",
@@ -3465,28 +4125,124 @@
       "bytes": 5403
     },
     {
+      "title": "Private networking",
+      "description": "Prepare AWS PrivateLink endpoints, register them with Neon, enable private DNS, and verify database access.",
+      "area": "neon",
+      "group": "guides",
+      "slug": "neon/guides/private-networking",
+      "path": "references/neon/guides/private-networking.md",
+      "upstream": "website/src/content/docs/neon/guides/private-networking.mdx",
+      "url": "https://alchemy.run/neon/guides/private-networking",
+      "lines": 152,
+      "bytes": 7187
+    },
+    {
+      "title": "Production Auth",
+      "description": "Configure trusted origins, SMTP, OAuth callbacks, and verification before launching Managed Better Auth.",
+      "area": "neon",
+      "group": "guides",
+      "slug": "neon/guides/production-auth",
+      "path": "references/neon/guides/production-auth.md",
+      "upstream": "website/src/content/docs/neon/guides/production-auth.mdx",
+      "url": "https://alchemy.run/neon/guides/production-auth",
+      "lines": 198,
+      "bytes": 7886
+    },
+    {
+      "title": "State and recovery",
+      "description": "Preserve Neon ownership and reveal-once secrets, recover interrupted deployments, and clean up without discarding state.",
+      "area": "neon",
+      "group": "guides",
+      "slug": "neon/guides/state-recovery",
+      "path": "references/neon/guides/state-recovery.md",
+      "upstream": "website/src/content/docs/neon/guides/state-recovery.mdx",
+      "url": "https://alchemy.run/neon/guides/state-recovery",
+      "lines": 152,
+      "bytes": 7746
+    },
+    {
       "title": "Neon",
-      "description": "Serverless Postgres with copy-on-write branching — projects and branches as Stack resources, with built-in SQL migrations.",
+      "description": "Declare Neon Postgres, Functions, storage, Auth, AI Gateway and websites together in an Alchemy Stack.",
       "area": "neon",
       "group": "",
       "slug": "neon",
       "path": "references/neon/_overview.md",
       "upstream": "website/src/content/docs/neon/index.mdx",
       "url": "https://alchemy.run/neon",
-      "lines": 87,
-      "bytes": 2876
+      "lines": 198,
+      "bytes": 7624
     },
     {
       "title": "Setup",
-      "description": "Connect alchemy to Neon — account, credentials, and profiles.",
+      "description": "Prepare Neon credentials, service access, regions, and external dependencies before deploying with Alchemy.",
       "area": "neon",
       "group": "",
       "slug": "neon/setup",
       "path": "references/neon/setup.md",
       "upstream": "website/src/content/docs/neon/setup.mdx",
       "url": "https://alchemy.run/neon/setup",
-      "lines": 32,
-      "bytes": 946
+      "lines": 148,
+      "bytes": 7441
+    },
+    {
+      "title": "Create the upload backend",
+      "description": "Add a Neon project, a migrated branch, private storage, and managed authentication.",
+      "area": "neon",
+      "group": "tutorial",
+      "slug": "neon/tutorial/backend",
+      "path": "references/neon/tutorial/backend.md",
+      "upstream": "website/src/content/docs/neon/tutorial/backend.mdx",
+      "url": "https://alchemy.run/neon/tutorial/backend",
+      "lines": 140,
+      "bytes": 5075
+    },
+    {
+      "title": "Connect the browser",
+      "description": "Use managed signup and sessions to upload and download private files from Vite.",
+      "area": "neon",
+      "group": "tutorial",
+      "slug": "neon/tutorial/frontend",
+      "path": "references/neon/tutorial/frontend.md",
+      "upstream": "website/src/content/docs/neon/tutorial/frontend.mdx",
+      "url": "https://alchemy.run/neon/tutorial/frontend",
+      "lines": 156,
+      "bytes": 6721
+    },
+    {
+      "title": "Protect and process uploads",
+      "description": "Verify JWTs, sign private uploads, and record real bucket events in Postgres.",
+      "area": "neon",
+      "group": "tutorial",
+      "slug": "neon/tutorial/functions",
+      "path": "references/neon/tutorial/functions.md",
+      "upstream": "website/src/content/docs/neon/tutorial/functions.mdx",
+      "url": "https://alchemy.run/neon/tutorial/functions",
+      "lines": 195,
+      "bytes": 7827
+    },
+    {
+      "title": "Build an upload journal",
+      "description": "Sign in, upload private files, process real storage events, and view Postgres-backed status with Neon and Alchemy.",
+      "area": "neon",
+      "group": "tutorial",
+      "slug": "neon/tutorial",
+      "path": "references/neon/tutorial/_overview.md",
+      "upstream": "website/src/content/docs/neon/tutorial/index.mdx",
+      "url": "https://alchemy.run/neon/tutorial",
+      "lines": 67,
+      "bytes": 4602
+    },
+    {
+      "title": "Fork a preview and clean up",
+      "description": "Keep preview writes isolated from the parent, verify inheritance, and destroy only owned resources.",
+      "area": "neon",
+      "group": "tutorial",
+      "slug": "neon/tutorial/previews",
+      "path": "references/neon/tutorial/previews.md",
+      "upstream": "website/src/content/docs/neon/tutorial/previews.mdx",
+      "url": "https://alchemy.run/neon/tutorial/previews",
+      "lines": 141,
+      "bytes": 6232
     },
     {
       "title": "Backups & restores",
@@ -3509,8 +4265,8 @@
       "path": "references/planetscale/data/credentials.md",
       "upstream": "website/src/content/docs/planetscale/data/credentials.mdx",
       "url": "https://alchemy.run/planetscale/data/credentials",
-      "lines": 127,
-      "bytes": 4449
+      "lines": 139,
+      "bytes": 4833
     },
     {
       "title": "Migrations",
@@ -3550,15 +4306,15 @@
     },
     {
       "title": "Drizzle ORM with PlanetScale",
-      "description": "Manage your PlanetScale schema in TypeScript with Drizzle — migrations generated on deploy (Postgres) or checked in (MySQL), applied through the branch's migrations prop, connected via role and password origins.",
+      "description": "Configure PlanetScale Postgres or MySQL branches, committed Drizzle migrations, and role or password connections.",
       "area": "planetscale",
       "group": "guides",
       "slug": "planetscale/guides/drizzle",
       "path": "references/planetscale/guides/drizzle.md",
       "upstream": "website/src/content/docs/planetscale/guides/drizzle.mdx",
       "url": "https://alchemy.run/planetscale/guides/drizzle",
-      "lines": 195,
-      "bytes": 6502
+      "lines": 136,
+      "bytes": 5155
     },
     {
       "title": "Preview branches per PR",
@@ -3657,6 +4413,18 @@
       "bytes": 4815
     },
     {
+      "title": "Drizzle Postgres on Prisma Compute",
+      "description": "Use Alchemy's Prisma hosting provider to run a Drizzle API against Prisma Postgres.",
+      "area": "prisma",
+      "group": "data",
+      "slug": "prisma/data/drizzle-postgres",
+      "path": "references/prisma/data/drizzle-postgres.md",
+      "upstream": "website/src/content/docs/prisma/data/drizzle-postgres.mdx",
+      "url": "https://alchemy.run/prisma/data/drizzle-postgres",
+      "lines": 159,
+      "bytes": 5314
+    },
+    {
       "title": "Postgres",
       "description": "Prisma Postgres as Stack resources — projects, databases, branch attachment, and a zero-config local database under alchemy dev.",
       "area": "prisma",
@@ -3725,8 +4493,8 @@
       "path": "references/prisma/frontend/octane.md",
       "upstream": "website/src/content/docs/prisma/frontend/octane.mdx",
       "url": "https://alchemy.run/prisma/frontend/octane",
-      "lines": 151,
-      "bytes": 4500
+      "lines": 150,
+      "bytes": 4491
     },
     {
       "title": "React Router",
@@ -3789,6 +4557,18 @@
       "bytes": 5405
     },
     {
+      "title": "Vinext",
+      "description": "Deploy vinext to Prisma Compute with the shared Website API, native local development, and traced runtime dependencies.",
+      "area": "prisma",
+      "group": "frontend",
+      "slug": "prisma/frontend/vinext",
+      "path": "references/prisma/frontend/vinext.md",
+      "upstream": "website/src/content/docs/prisma/frontend/vinext.mdx",
+      "url": "https://alchemy.run/prisma/frontend/vinext",
+      "lines": 144,
+      "bytes": 4877
+    },
+    {
       "title": "Vite",
       "description": "Deploy a Vite SPA to Prisma Compute with Prisma.Website.Vite — static files served on Bun and Vite's native dev server locally.",
       "area": "prisma",
@@ -3833,8 +4613,8 @@
       "path": "references/prisma/frontend/websites.md",
       "upstream": "website/src/content/docs/prisma/frontend/websites.mdx",
       "url": "https://alchemy.run/prisma/frontend/websites",
-      "lines": 208,
-      "bytes": 8164
+      "lines": 209,
+      "bytes": 8222
     },
     {
       "title": "Connect from Cloudflare Workers",
@@ -3857,8 +4637,8 @@
       "path": "references/prisma/_overview.md",
       "upstream": "website/src/content/docs/prisma/index.mdx",
       "url": "https://alchemy.run/prisma",
-      "lines": 140,
-      "bytes": 4769
+      "lines": 142,
+      "bytes": 4852
     },
     {
       "title": "Setup",
@@ -4041,6 +4821,30 @@
       "bytes": 3146
     },
     {
+      "title": "Drizzle MySQL on Railway",
+      "description": "Connect an Effect-native Railway Service to MySQL and deploy committed Drizzle migrations.",
+      "area": "railway",
+      "group": "data",
+      "slug": "railway/data/drizzle-mysql",
+      "path": "references/railway/data/drizzle-mysql.md",
+      "upstream": "website/src/content/docs/railway/data/drizzle-mysql.mdx",
+      "url": "https://alchemy.run/railway/data/drizzle-mysql",
+      "lines": 152,
+      "bytes": 4648
+    },
+    {
+      "title": "Drizzle Postgres on Railway",
+      "description": "Query Railway Postgres from an Effect-native Service and apply reviewed Drizzle migrations separately.",
+      "area": "railway",
+      "group": "data",
+      "slug": "railway/data/drizzle-postgres",
+      "path": "references/railway/data/drizzle-postgres.md",
+      "upstream": "website/src/content/docs/railway/data/drizzle-postgres.mdx",
+      "url": "https://alchemy.run/railway/data/drizzle-postgres",
+      "lines": 156,
+      "bytes": 5080
+    },
+    {
       "title": "Mongo",
       "description": "Official MongoDB in a Project. Bind Railway.ConnectMongo and ping with the MongoDB driver.",
       "area": "railway",
@@ -4169,8 +4973,8 @@
       "path": "references/railway/frontend/octane.md",
       "upstream": "website/src/content/docs/railway/frontend/octane.mdx",
       "url": "https://alchemy.run/railway/frontend/octane",
-      "lines": 191,
-      "bytes": 5404
+      "lines": 189,
+      "bytes": 5350
     },
     {
       "title": "React Router",
@@ -4233,6 +5037,18 @@
       "bytes": 7574
     },
     {
+      "title": "Vinext",
+      "description": "Deploy vinext to Railway with the shared Website API, native local development, and a platform-specific data cache.",
+      "area": "railway",
+      "group": "frontend",
+      "slug": "railway/frontend/vinext",
+      "path": "references/railway/frontend/vinext.md",
+      "upstream": "website/src/content/docs/railway/frontend/vinext.mdx",
+      "url": "https://alchemy.run/railway/frontend/vinext",
+      "lines": 138,
+      "bytes": 4569
+    },
+    {
       "title": "Vite",
       "description": "Deploy a Vite SPA to Railway with Railway.Website.Vite — static assets on a container Service, a *.up.railway.app URL (or your domain), and Vite's own dev server under alchemy dev.",
       "area": "railway",
@@ -4270,15 +5086,15 @@
     },
     {
       "title": "Websites",
-      "description": "Deploy Vite, Astro, Next.js, Nuxt, React Router, SolidStart, SvelteKit, TanStack Start, Waku, Octane, Foldkit, Vocs, or any static build to Railway with first-class Website resources.",
+      "description": "Deploy Vite, Astro, Next.js, vinext, Nuxt, React Router, SolidStart, SvelteKit, TanStack Start, Waku, Octane, Foldkit, Vocs, or any static build to Railway with first-class Website resources.",
       "area": "railway",
       "group": "frontend",
       "slug": "railway/frontend/websites",
       "path": "references/railway/frontend/websites.md",
       "upstream": "website/src/content/docs/railway/frontend/websites.mdx",
       "url": "https://alchemy.run/railway/frontend/websites",
-      "lines": 178,
-      "bytes": 7479
+      "lines": 181,
+      "bytes": 7712
     },
     {
       "title": "Railway",
@@ -4365,52 +5181,64 @@
       "bytes": 4524
     },
     {
+      "title": "Databases",
+      "description": "Compare database engines, connection paths, and deployment guides across Alchemy's SQL providers.",
+      "area": "sql",
+      "group": "",
+      "slug": "sql/databases",
+      "path": "references/sql/databases.md",
+      "upstream": "website/src/content/docs/sql/databases.mdx",
+      "url": "https://alchemy.run/sql/databases",
+      "lines": 52,
+      "bytes": 3525
+    },
+    {
       "title": "D1",
-      "description": "Drizzle on Cloudflare D1 — declare the schema, generate and apply migrations on deploy, and query from a Worker with Drizzle.D1.",
+      "description": "SQLite schemas and Effect-native Drizzle queries over a Cloudflare D1 binding.",
       "area": "sql",
       "group": "drizzle",
       "slug": "sql/drizzle/d1",
       "path": "references/sql/drizzle/d1.md",
       "upstream": "website/src/content/docs/sql/drizzle/d1.mdx",
       "url": "https://alchemy.run/sql/drizzle/d1",
-      "lines": 165,
-      "bytes": 5032
+      "lines": 160,
+      "bytes": 5198
     },
     {
       "title": "Migrations",
-      "description": "Drizzle.Schema runs drizzle-kit generate as part of deploy — unambiguous schema changes regenerate automatically, ambiguous ones stop and ask you.",
+      "description": "Generate migrations when your schema changes, review and commit the SQL and snapshots, then deploy from Git.",
       "area": "sql",
       "group": "drizzle",
       "slug": "sql/drizzle/migrations",
       "path": "references/sql/drizzle/migrations.md",
       "upstream": "website/src/content/docs/sql/drizzle/migrations.mdx",
       "url": "https://alchemy.run/sql/drizzle/migrations",
-      "lines": 205,
-      "bytes": 7551
+      "lines": 238,
+      "bytes": 7228
     },
     {
       "title": "MySQL",
-      "description": "Drizzle on MySQL — declare the schema, generate and apply migrations on deploy, and query from a Worker with Drizzle.MySQL over Hyperdrive.",
+      "description": "Provider-neutral MySQL schemas, Effect-native Drizzle queries, and connection configuration.",
       "area": "sql",
       "group": "drizzle",
       "slug": "sql/drizzle/mysql",
       "path": "references/sql/drizzle/mysql.md",
       "upstream": "website/src/content/docs/sql/drizzle/mysql.mdx",
       "url": "https://alchemy.run/sql/drizzle/mysql",
-      "lines": 197,
-      "bytes": 6079
+      "lines": 141,
+      "bytes": 4817
     },
     {
       "title": "Postgres",
-      "description": "Drizzle on Postgres — declare the schema, generate and apply migrations on deploy, and query with Drizzle.Postgres.",
+      "description": "Provider-neutral Postgres schemas, Effect-native Drizzle queries, and connections for Workers, Lambda, and servers.",
       "area": "sql",
       "group": "drizzle",
       "slug": "sql/drizzle/postgres",
       "path": "references/sql/drizzle/postgres.md",
       "upstream": "website/src/content/docs/sql/drizzle/postgres.mdx",
       "url": "https://alchemy.run/sql/drizzle/postgres",
-      "lines": 205,
-      "bytes": 6304
+      "lines": 133,
+      "bytes": 4393
     },
     {
       "title": "D1",
@@ -4421,44 +5249,44 @@
       "path": "references/sql/effect-sql/d1.md",
       "upstream": "website/src/content/docs/sql/effect-sql/d1.mdx",
       "url": "https://alchemy.run/sql/effect-sql/d1",
-      "lines": 148,
-      "bytes": 4523
+      "lines": 135,
+      "bytes": 4336
     },
     {
       "title": "Connection lifecycle",
-      "description": "SQL clients build lazily on first query, memoize per execution, and tear down when the event settles — why, and what that means on workerd and Lambda.",
+      "description": "SQL and Drizzle clients build lazily, reuse a client within the current execution scope, and release resources when that scope closes.",
       "area": "sql",
       "group": "effect-sql",
       "slug": "sql/effect-sql/lifecycle",
       "path": "references/sql/effect-sql/lifecycle.md",
       "upstream": "website/src/content/docs/sql/effect-sql/lifecycle.mdx",
       "url": "https://alchemy.run/sql/effect-sql/lifecycle",
-      "lines": 107,
-      "bytes": 4008
+      "lines": 82,
+      "bytes": 3607
     },
     {
       "title": "Migrations",
-      "description": "Commit a directory of ordered .sql files and point a database resource's migrations prop at it — pending files apply as part of every deploy, tracked in one Alchemy-owned table.",
+      "description": "Commit ordered SQL files and apply them on database deploy or Durable Object activation, tracked in one Alchemy-owned table.",
       "area": "sql",
       "group": "effect-sql",
       "slug": "sql/effect-sql/migrations",
       "path": "references/sql/effect-sql/migrations.md",
       "upstream": "website/src/content/docs/sql/effect-sql/migrations.mdx",
       "url": "https://alchemy.run/sql/effect-sql/migrations",
-      "lines": 140,
-      "bytes": 5018
+      "lines": 241,
+      "bytes": 8255
     },
     {
       "title": "MySQL",
-      "description": "SQL.MySQL turns a connection string into an @effect/sql-mysql2 client — tagged-template queries with typed errors, one pool per execution, Workers-safe defaults for Hyperdrive.",
+      "description": "SQL.MySQL turns a connection string into an @effect/sql-mysql2 client — portable tagged-template queries with typed errors and one pool per execution.",
       "area": "sql",
       "group": "effect-sql",
       "slug": "sql/effect-sql/mysql",
       "path": "references/sql/effect-sql/mysql.md",
       "upstream": "website/src/content/docs/sql/effect-sql/mysql.mdx",
       "url": "https://alchemy.run/sql/effect-sql/mysql",
-      "lines": 176,
-      "bytes": 5908
+      "lines": 137,
+      "bytes": 4619
     },
     {
       "title": "Postgres",
@@ -4469,20 +5297,56 @@
       "path": "references/sql/effect-sql/postgres.md",
       "upstream": "website/src/content/docs/sql/effect-sql/postgres.mdx",
       "url": "https://alchemy.run/sql/effect-sql/postgres",
-      "lines": 145,
-      "bytes": 4613
+      "lines": 111,
+      "bytes": 3769
     },
     {
       "title": "SQL",
-      "description": "One home for SQL in alchemy — low-level effect-sql clients, Drizzle ORM, schema migrations in the deploy graph, and the per-execution connection lifecycle.",
+      "description": "Choose a database, connect with Effect SQL, Drizzle, or Prisma ORM, and deploy committed migrations.",
       "area": "sql",
       "group": "",
       "slug": "sql",
       "path": "references/sql/_overview.md",
       "upstream": "website/src/content/docs/sql/index.mdx",
       "url": "https://alchemy.run/sql",
-      "lines": 91,
-      "bytes": 3922
+      "lines": 75,
+      "bytes": 3248
+    },
+    {
+      "title": "Contracts",
+      "description": "Author Prisma ORM v8 contracts in Prisma Schema Language or TypeScript, generate optional Effect bindings and row schemas, and connect them to migrations.",
+      "area": "sql",
+      "group": "prisma",
+      "slug": "sql/prisma/contracts",
+      "path": "references/sql/prisma/contracts.md",
+      "upstream": "website/src/content/docs/sql/prisma/contracts.mdx",
+      "url": "https://alchemy.run/sql/prisma/contracts",
+      "lines": 344,
+      "bytes": 12708
+    },
+    {
+      "title": "Migrations",
+      "description": "How Prisma.Contract and Prisma.Migrate run Prisma's contract emission, migration planning, and graph-ordered apply inside alchemy deploy.",
+      "area": "sql",
+      "group": "prisma",
+      "slug": "sql/prisma/migrations",
+      "path": "references/sql/prisma/migrations.md",
+      "upstream": "website/src/content/docs/sql/prisma/migrations.mdx",
+      "url": "https://alchemy.run/sql/prisma/migrations",
+      "lines": 155,
+      "bytes": 6813
+    },
+    {
+      "title": "Postgres",
+      "description": "Connect Prisma ORM v8 to Postgres and run Effect-native queries, streams, prepared statements, and transactions independently of your cloud provider.",
+      "area": "sql",
+      "group": "prisma",
+      "slug": "sql/prisma/postgres",
+      "path": "references/sql/prisma/postgres.md",
+      "upstream": "website/src/content/docs/sql/prisma/postgres.mdx",
+      "url": "https://alchemy.run/sql/prisma/postgres",
+      "lines": 204,
+      "bytes": 7897
     },
     {
       "title": "Custom State Store",
@@ -4638,7 +5502,7 @@
       "upstream": "website/src/content/docs/what-is-alchemy.mdx",
       "url": "https://alchemy.run/what-is-alchemy",
       "lines": 318,
-      "bytes": 10214
+      "bytes": 10208
     }
   ]
 }

@@ -1,6 +1,6 @@
 <!-- source: https://alchemy.run/aws/data/rds
      upstream: website/src/content/docs/aws/data/rds.mdx
-     alchemy 2.0.0-beta.79 @ 4453c9b -->
+     alchemy 2.0.0-beta.79 @ 0811092 -->
 
 # RDS & Aurora
 
@@ -310,6 +310,13 @@ Transactions and batches follow the same shape:
 and `RollbackTransaction`, each with a matching `*Http` layer.
 
 ## Where next
+
+- [Drizzle + Aurora PostgreSQL](/aws/data/drizzle-aurora) — a standalone Lambda
+  application with IAM database authentication, verified TLS, and controlled schema setup.
+- [Drizzle + Aurora DSQL](/aws/data/drizzle-dsql) — a different database with a
+  public IAM-authenticated endpoint, no Aurora PostgreSQL cluster or VPC required.
+
+- [SQL databases](/sql/databases) — database engines, connection paths, and client choices.
 
 - [VPC & networking](/aws/networking) — the `Network` helper and
   the primitives underneath it.

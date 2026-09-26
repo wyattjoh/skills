@@ -1,6 +1,6 @@
 <!-- source: https://alchemy.run/cloudflare/local-development
      upstream: website/src/content/docs/cloudflare/local-development.mdx
-     alchemy 2.0.0-beta.79 @ 4453c9b -->
+     alchemy 2.0.0-beta.79 @ 0811092 -->
 
 # Local development
 
@@ -113,7 +113,7 @@ dev:
 | Workers                  | workerd, with hot reload and a `http://localhost:<port>` URL                       |
 | Durable Objects          | run inside the local workerd, including SQLite storage                             |
 | KV Namespaces            | local simulator; Node-side capability clients hit the same store                   |
-| R2 Buckets               | local simulator                                                                    |
+| R2 Buckets               | local simulator; an S3-compatible endpoint serves [presigned URLs](/cloudflare/data/r2-presigned-urls) |
 | D1 Databases             | local simulator; `migrations` and `importFiles` apply on every reconcile           |
 | Queues + consumers       | local broker with batching, retry, and dead-letter semantics                       |
 | Hyperdrive               | connects directly to your database                                                 |

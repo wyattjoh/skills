@@ -1,6 +1,6 @@
 <!-- source: https://alchemy.run/infrastructure-as-code/action
      upstream: website/src/content/docs/infrastructure-as-code/action.mdx
-     alchemy 2.0.0-beta.79 @ 4453c9b -->
+     alchemy 2.0.0-beta.79 @ 0811092 -->
 
 # Actions
 

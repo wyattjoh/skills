@@ -1,6 +1,6 @@
 <!-- source: https://alchemy.run/cloudflare/compute/durable-objects
      upstream: website/src/content/docs/cloudflare/compute/durable-objects.mdx
-     alchemy 2.0.0-beta.79 @ 4453c9b -->
+     alchemy 2.0.0-beta.79 @ 0811092 -->
 
 # Durable Objects
 
@@ -84,6 +84,28 @@ but its methods — like `storage.get` — are
 so you can only *use* them in the inner (runtime) Effect. That's why
 `state` is yielded above but `state.storage.get(...)` lives below.
 :::
+
+## SQL migrations
+
+For objects that use SQL tables, generate and commit migration files with your
+schema changes before deploying. Load them in the outer Effect and apply them
+in the inner Effect:
+
+```typescript
+Effect.gen(function* () {
+  const migrations = yield* Cloudflare.SqlMigrations("./drizzle");
+
+  return Effect.gen(function* () {
+    yield* migrations.apply().pipe(Effect.orDie);
+    return {};
+  });
+});
+```
+
+Pending SQL runs when each object activates, before its public methods are
+available. See [SQL migrations](/sql/effect-sql/migrations#durable-object-migrations)
+for the full setup, or pass the same `migrations` to
+[`Drizzle.DurableObject({ migrations, relations })`](/sql/drizzle/migrations#durable-object-migrations).
 
 ## Add `increment` and `get`
 

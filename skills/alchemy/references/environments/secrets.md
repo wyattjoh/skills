@@ -1,6 +1,6 @@
 <!-- source: https://alchemy.run/environments/secrets
      upstream: website/src/content/docs/environments/secrets.mdx
-     alchemy 2.0.0-beta.79 @ 4453c9b -->
+     alchemy 2.0.0-beta.79 @ 0811092 -->
 
 # Secrets & Config
 
@@ -10,6 +10,13 @@ Alchemy integrates with [effect/Config](https://effect.website/docs/configuratio
 to automatically bind env vars to your Worker or Lambda environment ([Runtime](/infrastructure-as-effects/runtime)).
 Bound values come from the env of whoever runs the deploy, so they naturally
 vary per [stage](/environments/stages) and [profile](/environments/profiles).
+
+Where those values come from is the stack's business. By default
+that is `.env` plus the shell; a stack can instead read them from
+[Doppler](/environments/doppler) or [Infisical](/environments/infisical),
+and layer several sources in a chosen order.
+See [Secret providers](/environments/secret-providers). This page is
+about what happens after a value is read.
 
 ## Bind a secret to your Worker
 
@@ -177,6 +184,7 @@ see [Secrets & env on Cloudflare](/cloudflare/security/secrets-env) or
 
 ## Where next
 
+- [Secret providers](/environments/secret-providers) — where `Config` values come from and in what order.
 - [Local development](/environments/local-development) — `alchemy dev`: local code, real cloud resources.
 - [Secrets & env on Cloudflare](/cloudflare/security/secrets-env) — wire a real key from `.env` into a Worker.
 - [Secrets & env on AWS](/aws/security/secrets-env) — the same walk for Lambda.

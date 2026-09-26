@@ -1,6 +1,6 @@
 <!-- source: https://alchemy.run/cli/plan
      upstream: website/src/content/docs/cli/plan.mdx
-     alchemy 2.0.0-beta.79 @ 4453c9b -->
+     alchemy 2.0.0-beta.79 @ 0811092 -->
 
 # plan
 
@@ -64,6 +64,7 @@ redacted. Deletes stay compact.
 | `--stage <name>`    | Stage to plan against (defaults to `$ALCHEMY_STAGE` or `live_$USER`) |
 | `--profile <name>`  | Auth profile to use (defaults to `$ALCHEMY_PROFILE` or `default`) |
 | `--env-file <path>` | Load environment variables from a file                            |
+| `--adopt`           | Plan adoption of pre-existing cloud resources that conflict with this stack instead of failing (see [Adopting Resources](/cli/adopting-resources)) |
 | `--detailed`        | Show declared resource properties as YAML                        |
 
 ## Where next

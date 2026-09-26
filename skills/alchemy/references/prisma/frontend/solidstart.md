@@ -1,6 +1,6 @@
 <!-- source: https://alchemy.run/prisma/frontend/solidstart
      upstream: website/src/content/docs/prisma/frontend/solidstart.mdx
-     alchemy 2.0.0-beta.79 @ 4453c9b -->
+     alchemy 2.0.0-beta.79 @ 0811092 -->
 
 # SolidStart
 

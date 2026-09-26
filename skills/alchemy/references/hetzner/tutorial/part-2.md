@@ -1,6 +1,6 @@
 <!-- source: https://alchemy.run/hetzner/tutorial/part-2
      upstream: website/src/content/docs/hetzner/tutorial/part-2.mdx
-     alchemy 2.0.0-beta.79 @ 4453c9b -->
+     alchemy 2.0.0-beta.79 @ 0811092 -->
 
 # Part 2: Deploy a Service
 
@@ -178,7 +178,7 @@ journal in the output) if it never does. Add the route:
 +        const request = yield* HttpServerRequest;
 +        const url = new URL(request.url, "http://service");
 +        if (url.pathname === "/health") {
-+          return HttpServerResponse.json({ ok: true });
++          return yield* HttpServerResponse.json({ ok: true });
 +        }
 +        return HttpServerResponse.text("Hello from Hetzner!");
 +      }),

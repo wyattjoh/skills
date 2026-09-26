@@ -21,5 +21,5 @@
 
 | Page | File | Covers |
 | --- | --- | --- |
-| Drizzle ORM with PlanetScale | `guides/drizzle.md` | Manage your PlanetScale schema in TypeScript with Drizzle — migrations generated on deploy (Postgres) or checked in (MySQL), applied through the branch's migrations prop, connected via role and password origins. |
+| Drizzle ORM with PlanetScale | `guides/drizzle.md` | Configure PlanetScale Postgres or MySQL branches, committed Drizzle migrations, and role or password connections. |
 | Preview branches per PR | `guides/preview-branches.md` | Give every pull request its own PlanetScale branch — a long-lived database owned by a staging stage, referenced by ephemeral PR stages that fork, migrate, and tear down a branch each. |

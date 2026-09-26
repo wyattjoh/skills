@@ -1,6 +1,6 @@
 <!-- source: https://alchemy.run/aws/frontend/octane
      upstream: website/src/content/docs/aws/frontend/octane.mdx
-     alchemy 2.0.0-beta.79 @ 4453c9b -->
+     alchemy 2.0.0-beta.79 @ 0811092 -->
 
 # Octane
 
@@ -28,24 +28,23 @@ bun add -d @alchemy.run/frontend-frameworks
 
 ## Configure Octane
 
-Your `octane.config.ts` picks the deploy target, exactly as in
-Octane's own deployment story — select the AWS marker adapter:
+Keep native compiler and route settings in `octane.config.ts`, without
+an adapter:
 
 ```typescript
 // octane.config.ts
-import { aws } from "@alchemy.run/frontend-frameworks/octane/aws-adapter";
 import { defineConfig, RenderRoute } from "@octanejs/vite-plugin";
 
 export default defineConfig({
-  adapter: aws(),
   router: {
     routes: [new RenderRoute({ path: "/", entry: ["App", "/src/App.tsx"] })],
   },
 });
 ```
 
-A missing or foreign adapter fails the deploy with an actionable
-error.
+`AWS.Website.Octane` selects hosting and automatically wraps Octane's
+default native Node output as a streaming Lambda handler. The legacy AWS
+marker adapter remains optional for existing projects.
 
 ## Declare the Website
 

@@ -1,6 +1,6 @@
 <!-- source: https://alchemy.run/docker/local-services
      upstream: website/src/content/docs/docker/local-services.mdx
-     alchemy 2.0.0-beta.79 @ 4453c9b -->
+     alchemy 2.0.0-beta.79 @ 0811092 -->
 
 # Local services: Postgres with containers, networks, and volumes
 

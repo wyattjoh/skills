@@ -1,6 +1,6 @@
 # railway index
 
-33 pages. Deploy Effect programs to Railway as Projects, Services, databases, Volumes, and Buckets.
+36 pages. Deploy Effect programs to Railway as Projects, Services, databases, Volumes, and Buckets.
 
 | Page | File | Covers |
 | --- | --- | --- |
@@ -23,6 +23,8 @@
 | Page | File | Covers |
 | --- | --- | --- |
 | Buckets | `data/buckets.md` | S3-compatible object storage in a Project. Bind Railway.PutObject / Railway.GetObject. |
+| Drizzle MySQL on Railway | `data/drizzle-mysql.md` | Connect an Effect-native Railway Service to MySQL and deploy committed Drizzle migrations. |
+| Drizzle Postgres on Railway | `data/drizzle-postgres.md` | Query Railway Postgres from an Effect-native Service and apply reviewed Drizzle migrations separately. |
 | Mongo | `data/mongo.md` | Official MongoDB in a Project. Bind Railway.ConnectMongo and ping with the MongoDB driver. |
 | MySQL | `data/mysql.md` | Official MySQL in a Project. Bind Railway.ConnectMySQL and query with Drizzle or SQL. |
 | Postgres | `data/postgres.md` | Official SSL Postgres in a Project. Bind Railway.ConnectPostgres and query with Drizzle or SQL. |
@@ -44,10 +46,11 @@
 | Static sites | `frontend/static-site.md` | Deploy a static site to Railway with Railway.Website.StaticSite — a build command, a container Service. |
 | SvelteKit | `frontend/sveltekit.md` | Deploy a SvelteKit app to Railway with Railway.Website.SvelteKit — kit SSR plus prerendered assets on one Service, and Kit's own dev server under alchemy dev. |
 | TanStack Start | `frontend/tanstack-start.md` | Deploy TanStack Start (React or Solid) to Railway with Railway.Website.TanStackStart — SSR on a container Service, client assets in the image, and TanStack Start's own Vite dev server under alchemy dev. |
+| Vinext | `frontend/vinext.md` | Deploy vinext to Railway with the shared Website API, native local development, and a platform-specific data cache. |
 | Vite | `frontend/vite.md` | Deploy a Vite SPA to Railway with Railway.Website.Vite — static assets on a container Service, a *.up.railway.app URL (or your domain), and Vite's own dev server under alchemy dev. |
 | Vocs | `frontend/vocs.md` | Deploy a Vocs docs site to Railway with Railway.Website.Vocs — prerendered HTML on a Railway Service, extensionless routes, and Vocs' own dev server under alchemy dev. |
 | Waku | `frontend/waku.md` | Deploy a Waku app to Railway with Railway.Website.Waku — RSC server on a container Service, SSG pages in the image, and Waku's own dev server under alchemy dev. |
-| Websites | `frontend/websites.md` | Deploy Vite, Astro, Next.js, Nuxt, React Router, SolidStart, SvelteKit, TanStack Start, Waku, Octane, Foldkit, Vocs, or any static build to Railway with first-class Website resources. |
+| Websites | `frontend/websites.md` | Deploy Vite, Astro, Next.js, vinext, Nuxt, React Router, SolidStart, SvelteKit, TanStack Start, Waku, Octane, Foldkit, Vocs, or any static build to Railway with first-class Website resources. |
 
 ## tutorial/
 

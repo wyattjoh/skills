@@ -1,6 +1,6 @@
 <!-- source: https://alchemy.run/what-is-alchemy
      upstream: website/src/content/docs/what-is-alchemy.mdx
-     alchemy 2.0.0-beta.79 @ 4453c9b -->
+     alchemy 2.0.0-beta.79 @ 0811092 -->
 
 # What is Alchemy?
 
@@ -52,7 +52,7 @@ Infrastructure as Effects adds on top.
 The core of Alchemy is Infrastructure as Code, in the same family as
 Terraform, Pulumi, CloudFormation, and the CDK.
 
-#### Stack
+### Stack
 
 A **Stack** is the unit you deploy, an Effect that yields resources
 and returns the outputs you want printed:
@@ -99,7 +99,7 @@ Stack with a Bucket, a KV Namespace, and a Worker bound to both:
 deploy only touches what changed — the `state` option above picks
 where it's stored.
 
-#### Resource
+### Resource
 
 A **Resource** is a cloud entity in a Stack managed by Alchemy: a
 bucket, a database, a queue, a Worker, a DNS record. Yield it in the
@@ -124,7 +124,7 @@ yield* Cloudflare.Worker("Api", {
 });
 ```
 
-#### Provider
+### Provider
 
 A **Provider** teaches Alchemy how to read, diff, create, update, and
 delete one resource type. Each cloud ships its providers as an Effect
@@ -195,7 +195,7 @@ dependency graph, which most IaC tools reject. See
 Infrastructure as Effects adds two new concepts to Infrastructure as
 Code: Runtimes and Bindings.
 
-#### Runtime
+### Runtime
 
 A **Runtime** is a Resource that carries the code it runs: a Worker,
 Lambda Function, Container, or Server. That code is always written
@@ -217,7 +217,7 @@ returns runs per request. A Worker returns `fetch`, a Durable Object
 returns its RPC methods, a Workflow returns its run function, and
 every Runtime in Alchemy is a variation on that one shape.
 
-#### Binding
+### Binding
 
 A **Binding** connects a Resource to the Runtime that uses it:
 
@@ -240,7 +240,7 @@ const getItem = yield* AWS.DynamoDB.GetItem(Jobs);
 There is no `env.Uploads` to reach for and no hand-written policy. The
 binding is the SDK.
 
-#### Layers
+### Layers
 
 Every Binding is a contract paired with a **Layer** that fulfills it:
 the handler is written against the contract, and the Layer decides

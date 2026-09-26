@@ -1,6 +1,6 @@
 <!-- source: https://alchemy.run/stripe/guides/webhooks
      upstream: website/src/content/docs/stripe/guides/webhooks.mdx
-     alchemy 2.0.0-beta.79 @ 4453c9b -->
+     alchemy 2.0.0-beta.79 @ 0811092 -->
 
 # React to Stripe events
 

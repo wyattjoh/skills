@@ -1,6 +1,6 @@
 <!-- source: https://alchemy.run/planetscale/data/mysql
      upstream: website/src/content/docs/planetscale/data/mysql.mdx
-     alchemy 2.0.0-beta.79 @ 4453c9b -->
+     alchemy 2.0.0-beta.79 @ 0811092 -->
 
 # MySQL
 

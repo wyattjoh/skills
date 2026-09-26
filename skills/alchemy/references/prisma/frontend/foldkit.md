@@ -1,6 +1,6 @@
 <!-- source: https://alchemy.run/prisma/frontend/foldkit
      upstream: website/src/content/docs/prisma/frontend/foldkit.mdx
-     alchemy 2.0.0-beta.79 @ 4453c9b -->
+     alchemy 2.0.0-beta.79 @ 0811092 -->
 
 # Foldkit
 

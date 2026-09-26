@@ -1,6 +1,6 @@
 <!-- source: https://alchemy.run/aws/compute/lambda
      upstream: website/src/content/docs/aws/compute/lambda.mdx
-     alchemy 2.0.0-beta.79 @ 4453c9b -->
+     alchemy 2.0.0-beta.79 @ 0811092 -->
 
 # Lambda
 
@@ -323,6 +323,11 @@ invocation. See
 for the model across all runtimes.
 
 ## Where next
+
+- [Drizzle + Aurora PostgreSQL](/aws/data/drizzle-aurora) — private database access,
+  IAM authentication, verified TLS, and deployment-time schema setup.
+- [Drizzle + Aurora DSQL](/aws/data/drizzle-dsql) — the separate serverless database,
+  with an IAM-authenticated endpoint and non-admin application role.
 
 - [S3](/aws/data/s3) — add a bucket and bind read/write operations
   into this function; IAM policies generated from the call
