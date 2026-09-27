@@ -111,6 +111,7 @@ Restart Claude Code after adding or changing an agent definition.
 | effect-ts                     | Effect v4 patterns: services, layers, error handling, plus the v3 to v4 migration   |
 | executing-workflows-manually  | Run Claude Code workflow scripts in harnesses without the Workflow tool             |
 | herd                          | Run tickets in parallel as real agent sessions in sibling herdr tabs                |
+| harness-handoff               | Transfer a live conversation to Pi or Claude Code in a neighboring Herdr pane       |
 | herdr                         | Control herdr from inside a pane over its unix socket                               |
 | icon-gen                      | Generate app icons with OpenRouter Gemini and varlock-managed configuration         |
 | json-inspect                  | Generate JSON Schema from JSON files with genson                                    |
