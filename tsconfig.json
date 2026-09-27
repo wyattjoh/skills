@@ -10,6 +10,6 @@
     "allowImportingTsExtensions": true,
     "types": ["bun", "node"]
   },
-  "include": ["skills/**/*"],
+  "include": ["skills/**/*", "scripts/**/*", "tests/**/*"],
   "exclude": ["skills/*/references/**"]
 }

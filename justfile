@@ -38,3 +38,7 @@ unlink:
             echo "Removed: $target"
         fi
     done
+
+# Synchronize repo-local skill and agent links without installing them globally.
+sync-local:
+    bun run scripts/sync-local-links.ts

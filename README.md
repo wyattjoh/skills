@@ -83,6 +83,11 @@ just link
 `just link` skips any target that already exists, so it never clobbers an agent you wrote
 yourself. `just unlink` removes only the symlinks that still point at this checkout.
 
+This repository also keeps project-local discovery links in `.claude/skills/` and
+`.claude/agents/`, with `.agents/skills` pointing to the Claude skills directory. Run
+`just sync-local` after adding or removing a skill or agent. The test suite checks that the
+links match the contents of `skills/` and `agents/`.
+
 To install a single agent instead, symlink it directly:
 
 ```bash
