@@ -23,8 +23,7 @@ That cost is **recurring, not one-time**. Once a skill is invoked, its rendered
 content stays in the conversation across later turns and is re-attached after
 compaction within a bounded budget. State what to do rather than narrating how
 or why, and write standing instructions rather than one-time steps, since Claude
-Code never re-reads the file. See the Skill Content Lifecycle section of
-[../SKILL.md](../SKILL.md) for the compaction budget.
+Code never re-reads the file. See [Claude Code's skill content lifecycle](https://code.claude.com/docs/en/skills.md#skill-content-lifecycle) for re-invocation and compaction details.
 
 ### Set Appropriate Degrees of Freedom
 
