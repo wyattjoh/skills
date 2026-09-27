@@ -16,6 +16,7 @@
     ".pi/**",
     ".scratch/**",
     "**/testdata/**",
+    ".agents/**",
     ".claude/agents/**",
     ".claude/skills/**",
     ".claude/references/**",
