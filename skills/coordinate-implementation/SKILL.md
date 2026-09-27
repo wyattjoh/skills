@@ -21,6 +21,12 @@ Communicate through **context pointers**, not duplicated briefs. Keep decisions,
 worker identities, results, and next actions in a concise `RESUME.md` using
 [resume.md](references/resume.md).
 
+While tickets remain, supervise workers through bounded Herdr waits. On state
+changes or timeouts, reconcile unfinished tickets with worker results and Git
+state. Idle is not complete: inspect what remains, prompt the worker to continue,
+or surface its blocker. Keep independent work moving, and finish only when every
+ticket is accounted for.
+
 ## Workflow
 
 1. Read the spec and tickets. Agree on the integration branch/worktree, ticket
