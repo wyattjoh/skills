@@ -132,6 +132,7 @@ Restart Claude Code after adding or changing an agent definition.
 | screenshots                   | Capture app windows atomically without disrupting the user's desktop              |
 | setup-pre-commit-hooks        | Set up polyglot Git hooks for Rust and TypeScript/Bun checks                      |
 | setup-project-memory          | Capture a session learning into .claude/memory, indexed and wired into CLAUDE.md  |
+| simplify-skill                | Simplify skills around goals through an interview and approved rewrite            |
 | skill-audit                   | Audit skill execution for permission denials, tool errors, and corrections        |
 | swift-composable-architecture | Adoption index for The Composable Architecture (TCA 1.26.2), mapped by topic      |
 | swift-sql                     | Type-safe Swift SQL with swift-structured-queries                                 |
