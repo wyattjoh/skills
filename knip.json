@@ -1,6 +1,12 @@
 {
   "$schema": "./node_modules/knip/schema.json",
-  "ignore": ["skills/dialkit/references/DialKitPersistence.tsx"],
+  "ignore": [
+    ".scratch/**",
+    ".claude/references/**",
+    ".remember/**",
+    "skills/effect-ts/.source/**",
+    "skills/dialkit/references/DialKitPersistence.tsx"
+  ],
   "ignoreBinaries": ["du", "pgrep"],
   "workspaces": {
     ".": {},
