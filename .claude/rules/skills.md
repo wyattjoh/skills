@@ -13,7 +13,7 @@ Each skill lives at `skills/<name>/SKILL.md` with YAML frontmatter:
 
 - `name`: Skill identifier
 - `description`: Trigger phrases and conditions for auto-activation
-- `allowed-tools`: Optional tool restrictions
+- `allowed-tools`: Optional prompt-free permission grants for the invocation turn, not tool restrictions; use `disallowed-tools` to remove tools from the pool
 
 Skills can have a `references/` subdirectory for supporting documentation.
 
