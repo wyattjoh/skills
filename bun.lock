@@ -39,14 +39,6 @@
       "name": "@wyattjoh/code-walkthrough-skill",
       "version": "1.0.0",
     },
-    "skills/coordinate-implementation": {
-      "name": "@wyattjoh/coordinate-implementation-skill",
-      "version": "1.0.0",
-      "dependencies": {
-        "@effect/ai-typesafe": "4.0.0-rc.117",
-        "effect": "4.0.0-rc.117",
-      },
-    },
     "skills/devenv": {
       "name": "@wyattjoh/devenv-skill",
       "version": "1.0.0",
@@ -113,8 +105,6 @@
     "@chevrotain/types": ["@chevrotain/types@11.1.2", "", {}, "sha512-U+HFai5+zmJCkK86QsaJtoITlboZHBqrVketcO2ROv865xfCMSFpELQoz1GkX5GzME8pTa+3kbKrZHQtI0gdbw=="],
 
     "@chevrotain/utils": ["@chevrotain/utils@11.1.2", "", {}, "sha512-4mudFAQ6H+MqBTfqLmU7G1ZwRzCLfJEooL/fsF6rCX5eePMbGhoy5n4g+G4vlh2muDcsCTJtL+uKbOzWxs5LHA=="],
-
-    "@effect/ai-typesafe": ["@effect/ai-typesafe@4.0.0-rc.117", "", { "peerDependencies": { "effect": "^4.0.0-rc.117" } }, "sha512-/cjCfCXEXS+vGDL8TUiYdPRwCDtyJyRiLe5+Z4IAOJgSnMebfSR4eHOhNstpZpW19wksM+BdFiZV3VNZI6g3pA=="],
 
     "@emnapi/core": ["@emnapi/core@1.11.2", "", { "dependencies": { "@emnapi/wasi-threads": "1.2.2", "tslib": "^2.4.0" } }, "sha512-TC8MkTuZUtcTSiFeuC0ksCh9QIJ5+F21MvZ4Wn4ORfYaFJ/0dsiudv5tVkejgwZlwQ39jL9WWDe2lz8x0WglOA=="],
 
@@ -416,8 +406,6 @@
 
     "@wyattjoh/code-walkthrough-skill": ["@wyattjoh/code-walkthrough-skill@workspace:skills/code-walkthrough"],
 
-    "@wyattjoh/coordinate-implementation-skill": ["@wyattjoh/coordinate-implementation-skill@workspace:skills/coordinate-implementation"],
-
     "@wyattjoh/devenv-skill": ["@wyattjoh/devenv-skill@workspace:skills/devenv"],
 
     "@wyattjoh/driving-ios-simulator-skill": ["@wyattjoh/driving-ios-simulator-skill@workspace:skills/driving-ios-simulator"],
@@ -654,11 +642,7 @@
 
     "zod": ["zod@4.6.5", "", {}, "sha512-v5l/aFXZQeai4awLbOpSoHecE9UiMrnfx75tEXLjNonXVARxQ5mOeipTjROUchszUNCqnE+hqAMujRsRHsut2Q=="],
 
-    "@effect/ai-typesafe/effect": ["effect@4.0.0-rc.117", "", {}, "sha512-UUyi9QiOW4nySFIBM3KnYbNMd9EZliOdKfBcyLD0mPMPheO2fkuXS5y0opjWc9oqzlJxPQICEGm8gGw3kh9j/w=="],
-
     "@types/ws/@types/node": ["@types/node@26.1.1", "", { "dependencies": { "undici-types": "~8.3.0" } }, "sha512-nxAkRSVkN1Y0JC1W8ky/fTfkGsMmcrRsbx+3XoZE+rMOX71kLYTV7fLXpqud1GpbpP5TuffXFqfX7fH2GgZREw=="],
-
-    "@wyattjoh/coordinate-implementation-skill/effect": ["effect@4.0.0-rc.117", "", {}, "sha512-UUyi9QiOW4nySFIBM3KnYbNMd9EZliOdKfBcyLD0mPMPheO2fkuXS5y0opjWc9oqzlJxPQICEGm8gGw3kh9j/w=="],
 
     "buffer-image-size/@types/node": ["@types/node@26.1.1", "", { "dependencies": { "undici-types": "~8.3.0" } }, "sha512-nxAkRSVkN1Y0JC1W8ky/fTfkGsMmcrRsbx+3XoZE+rMOX71kLYTV7fLXpqud1GpbpP5TuffXFqfX7fH2GgZREw=="],
 

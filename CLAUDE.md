@@ -96,7 +96,7 @@ They are for read-only reference only; do not edit files inside these paths.
 The Effect repository is vendored twice because this repository uses two incompatible major versions.
 `effect` tracks the npm `latest` line (v3), still used by the `workspaces`, `herd`, `clean-storage`, and
 `mermaid` helper scripts; `effect-v4` tracks the exact v4 release candidate that the `effect-ts` skill
-documents and `coordinate-implementation` depends on. The v4 checkout also carries upstream `MIGRATION.md`,
+documents. The v4 checkout also carries upstream `MIGRATION.md`,
 `migration/`, `LLMS.md`, and `ai-docs/` directories that the v3 checkout does not.
 
 The `alchemy` and `effect-ts` skills must always target the same Effect release. The source of truth is

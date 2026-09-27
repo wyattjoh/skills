@@ -94,53 +94,52 @@ Restart Claude Code after adding or changing an agent definition.
 
 ## Skills
 
-| Skill                         | Description                                                                         |
-| ----------------------------- | ----------------------------------------------------------------------------------- |
-| alchemy                       | Answer Alchemy (alchemy.run) questions from an indexed local copy of the docs       |
-| catppuccin-interfaces         | Apply Catppuccin colors with semantic, accessible interface tokens                  |
-| claude-sessions               | Query indexed Claude Code conversation history with a Bun CLI                       |
-| claude-skills                 | Guidance for authoring Claude Code skills                                           |
-| clean-storage                 | Reclaim disk space from verified build artifacts and tool caches                    |
-| code-walkthrough              | Build an annotated walkthrough page with pinned source and scrolling notes          |
-| conductor                     | Navigate Conductor worktree environments for parallel agents                        |
-| coordinate-implementation     | Orchestrate portable Pi or Claude multi-ticket runs through local completion safely |
-| core-coordinator              | Coordinate concurrent runs while preserving run-owned state and global run files    |
-| devenv                        | Answer devenv.sh questions from an indexed local copy of the full documentation     |
-| dialkit                       | Live parameter tweaking and design exploration in React via dialkit                 |
-| driving-ios-simulator         | Drive a booted iOS Simulator: tap, swipe, type, read elements, screenshot           |
-| effect-ts                     | Effect v4 patterns: services, layers, error handling, plus the v3 to v4 migration   |
-| executing-workflows-manually  | Run Claude Code workflow scripts in harnesses without the Workflow tool             |
-| herd                          | Run tickets in parallel as real agent sessions in sibling herdr tabs                |
-| harness-handoff               | Transfer a live conversation to Pi or Claude Code in a neighboring Herdr pane       |
-| herdr                         | Control herdr from inside a pane over its unix socket                               |
-| icon-gen                      | Generate app icons with OpenRouter Gemini and varlock-managed configuration         |
-| json-inspect                  | Generate JSON Schema from JSON files with genson                                    |
-| just                          | Kickstart the just command runner and author justfiles                              |
-| land-local                    | Rebase, verify, and fast-forward a worktree branch into local main atomically       |
-| macos-notifications           | Send local macOS Notification Center alerts from task context                       |
-| mermaid                       | Validate, create, and render Mermaid diagrams                                       |
-| name-gen                      | Brainstorm project names, check domains, research conflicts                         |
-| new-cli-skill                 | Generate a CLI-usage skill from a name or URL                                       |
-| npm-info                      | Fetch npm package metadata from the registry                                        |
-| pr-create                     | Create a PR from the current branch with a template or generated description        |
-| pr-fix                        | Triage PR review comments and failing CI, then implement agreed fixes               |
-| pr-rebase                     | Rebase onto the latest base, resolve conflicts, force-push with lease               |
-| pr-review                     | Comprehensive code review with repository health diagnostics                        |
-| raycast-dev                   | Build, maintain, and publish Raycast extensions                                     |
-| reference-submodules          | Manage context repos as pinned shallow git submodules under `.claude/references/`   |
-| release-please                | Configure, operate, and debug release-please                                        |
-| resticprofile                 | Operate the resticprofile CLI for restic backups                                    |
-| screenshots                   | Capture app windows atomically without disrupting the user's desktop                |
-| setup-pre-commit-hooks        | Set up polyglot Git hooks for Rust and TypeScript/Bun checks                        |
-| setup-project-memory          | Capture a session learning into .claude/memory, indexed and wired into CLAUDE.md    |
-| skill-audit                   | Audit skill execution for permission denials, tool errors, and corrections          |
-| swift-composable-architecture | Adoption index for The Composable Architecture (TCA 1.26.2), mapped by topic        |
-| swift-sql                     | Type-safe Swift SQL with swift-structured-queries                                   |
-| tidy                          | Interactive code simplification with batched approval                               |
-| varlock                       | Kickstart varlock, the encrypted schema-driven dotenv replacement                   |
-| vhs                           | Interview-driven terminal screencasts rendered to GIF/MP4/WebM                      |
-| whats-next                    | Emit the copy-ready prompt for the next agent session on a wayfinder map            |
-| workspaces                    | Create, operate, and compact multi-repo workspace hubs with enforced memory         |
+| Skill                         | Description                                                                       |
+| ----------------------------- | --------------------------------------------------------------------------------- |
+| alchemy                       | Answer Alchemy (alchemy.run) questions from an indexed local copy of the docs     |
+| catppuccin-interfaces         | Apply Catppuccin colors with semantic, accessible interface tokens                |
+| claude-sessions               | Query indexed Claude Code conversation history with a Bun CLI                     |
+| claude-skills                 | Guidance for authoring Claude Code skills                                         |
+| clean-storage                 | Reclaim disk space from verified build artifacts and tool caches                  |
+| code-walkthrough              | Build an annotated walkthrough page with pinned source and scrolling notes        |
+| conductor                     | Navigate Conductor worktree environments for parallel agents                      |
+| coordinate-implementation     | Coordinate Pi or Claude tickets in Herdr onto a dedicated local run branch        |
+| devenv                        | Answer devenv.sh questions from an indexed local copy of the full documentation   |
+| dialkit                       | Live parameter tweaking and design exploration in React via dialkit               |
+| driving-ios-simulator         | Drive a booted iOS Simulator: tap, swipe, type, read elements, screenshot         |
+| effect-ts                     | Effect v4 patterns: services, layers, error handling, plus the v3 to v4 migration |
+| executing-workflows-manually  | Run Claude Code workflow scripts in harnesses without the Workflow tool           |
+| herd                          | Run tickets in parallel as real agent sessions in sibling herdr tabs              |
+| harness-handoff               | Transfer a live conversation to Pi or Claude Code in a neighboring Herdr pane     |
+| herdr                         | Control herdr from inside a pane over its unix socket                             |
+| icon-gen                      | Generate app icons with OpenRouter Gemini and varlock-managed configuration       |
+| json-inspect                  | Generate JSON Schema from JSON files with genson                                  |
+| just                          | Kickstart the just command runner and author justfiles                            |
+| land-local                    | Rebase, verify, and fast-forward a worktree branch into local main atomically     |
+| macos-notifications           | Send local macOS Notification Center alerts from task context                     |
+| mermaid                       | Validate, create, and render Mermaid diagrams                                     |
+| name-gen                      | Brainstorm project names, check domains, research conflicts                       |
+| new-cli-skill                 | Generate a CLI-usage skill from a name or URL                                     |
+| npm-info                      | Fetch npm package metadata from the registry                                      |
+| pr-create                     | Create a PR from the current branch with a template or generated description      |
+| pr-fix                        | Triage PR review comments and failing CI, then implement agreed fixes             |
+| pr-rebase                     | Rebase onto the latest base, resolve conflicts, force-push with lease             |
+| pr-review                     | Comprehensive code review with repository health diagnostics                      |
+| raycast-dev                   | Build, maintain, and publish Raycast extensions                                   |
+| reference-submodules          | Manage context repos as pinned shallow git submodules under `.claude/references/` |
+| release-please                | Configure, operate, and debug release-please                                      |
+| resticprofile                 | Operate the resticprofile CLI for restic backups                                  |
+| screenshots                   | Capture app windows atomically without disrupting the user's desktop              |
+| setup-pre-commit-hooks        | Set up polyglot Git hooks for Rust and TypeScript/Bun checks                      |
+| setup-project-memory          | Capture a session learning into .claude/memory, indexed and wired into CLAUDE.md  |
+| skill-audit                   | Audit skill execution for permission denials, tool errors, and corrections        |
+| swift-composable-architecture | Adoption index for The Composable Architecture (TCA 1.26.2), mapped by topic      |
+| swift-sql                     | Type-safe Swift SQL with swift-structured-queries                                 |
+| tidy                          | Interactive code simplification with batched approval                             |
+| varlock                       | Kickstart varlock, the encrypted schema-driven dotenv replacement                 |
+| vhs                           | Interview-driven terminal screencasts rendered to GIF/MP4/WebM                    |
+| whats-next                    | Emit the copy-ready prompt for the next agent session on a wayfinder map          |
+| workspaces                    | Create, operate, and compact multi-repo workspace hubs with enforced memory       |
 
 ## Claude Code agents
 

@@ -1,3 +1,7 @@
 # Bound semantic authority with deterministic policy
 
+**Status: superseded.** The prose coordinator uses direct inspection and user
+escalation, not a semantic provider or Authority Policy. This record describes
+the removed runtime, not the current skill.
+
 Semantic providers return probabilities, while a versioned Authority Policy and code-owned invariants select the Disposition. Disposable fixtures may exercise direct wait, deterministic re-prompt, criterion-specific fix, or review routing, but malformed output, provider failure, blocked interfaces, stale evidence, and policy uncertainty pause the seam. Synthetic success never promotes authority implicitly. Stall diagnosis earned its initial gate with a 6-of-6 isolated suite and one safe end-to-end flow, then the operator explicitly selected enforced safe actions for production integration. Acceptance assessment missed its gate, so its experimental harness was removed from the skill and survives only in git history. Provider failures, malformed output, and uncertainty still pause rather than fall back.

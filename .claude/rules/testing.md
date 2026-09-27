@@ -39,12 +39,11 @@ key list rather than importing across skill directories (see
 
 # Spawned helpers must receive an explicit environment
 
-`coordinate-implementation`'s test preload points `XDG_STATE_HOME` at a
-temporary directory so global run files never reach the developer's real
-`~/.local/state`. Bun's `spawn` and `spawnSync` ignore runtime changes to
-`process.env` when `env` is omitted; children inherit the environment the test
-process started with. Always pass `env` (at minimum `env: process.env`) when a
-test spawns the helper CLI.
+Bun's `spawn` and `spawnSync` ignore runtime changes to `process.env` when
+`env` is omitted; children inherit the environment the test process started
+with. Always pass `env` (at minimum `env: process.env`) when a test spawns a
+helper CLI. In particular, explicitly pass sandbox paths such as
+`XDG_STATE_HOME` so spawned helpers cannot write to real user state.
 
 # Positive test expectations
 
