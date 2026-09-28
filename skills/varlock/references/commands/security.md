@@ -1,7 +1,7 @@
 # Security commands: scan, audit
 
 Guardrails that compare your resolved config and code against the schema.
-Verified against `varlock 1.10.0` `--help`.
+Verified against `varlock 1.21.0` `--help`.
 
 ## `scan`
 
@@ -47,8 +47,18 @@ varlock audit [OPTIONS] [<targets> ...]
 | Arg / Flag       | Short | Purpose                                                                       |
 | ---------------- | ----- | ----------------------------------------------------------------------------- |
 | `targets`        |       | Directories to scan for env-var references (defaults to the current project). |
-| `--path <path>`  | `-p`  | A specific `.env` file or directory as the schema entry point.                |
+| `--path <path>`  | `-p`  | A specific `.env` file or directory as the schema entry point (single path).  |
 | `--ignore <dir>` | `-i`  | Directory to exclude from code scanning. Repeatable.                          |
+
+Since 1.19.0, `--ignore` (and `@auditIgnorePaths()`) accept either a bare
+directory name (matches everywhere) or a path starting with `./`, `../`, `~/`, or
+`/` (matches that one directory). Tune the scanner from the schema with
+`@auditIgnoreKeys(KEY, PREFIX_*)` (1.21.0: never report these keys as missing,
+for false positives) and `@auditExtraPatterns(regex(...), fileTypes=[...])`
+(1.19.0: extra access idioms; first capture group is the key). Since 1.21.0 the
+scanner no longer lexes string literals, so references inside strings are
+reported too. Source: [audit decorators](https://varlock.dev/reference/root-decorators/#audit);
+[changelog](https://github.com/dmno-dev/varlock/blob/varlock%401.21.0/packages/varlock/CHANGELOG.md).
 
 `EXAMPLES:` (verbatim from `varlock audit --help`):
 

@@ -21,10 +21,11 @@ it safe to hand to an AI agent.
 ## Local setup
 
 - Binary: `/opt/homebrew/bin/varlock` (on `PATH` as `varlock`; installed via `brew install dmno-dev/tap/varlock`).
-- **Pinned version explored: `varlock 1.10.0`.** Every command and flag below is
-  verified against that binary's `--help`. Docs were read at the same 1.10.0.
+- **Pinned version explored: `varlock 1.21.0`.** Every command and flag below is
+  verified against that binary's `--help`. Docs were read at the same 1.21.0
+  ([changelog](https://github.com/dmno-dev/varlock/blob/varlock%401.21.0/packages/varlock/CHANGELOG.md)).
 - Config files read:
-  - **`.env.schema`** — the committed source-of-truth schema (see [`references/env-schema.md`](references/env-schema.md)).
+  - **`.env.schema`**: the committed source-of-truth schema (see [`references/env-schema.md`](references/env-schema.md)).
   - Value files layered over it, lowest to highest precedence: `.env` -> `.env.local`
     -> `.env.[env]` -> `.env.[env].local`. `.local` files are gitignored.
 - Alternate installs (no brew): `npx varlock init` (adds it as a project dep),
@@ -34,17 +35,35 @@ it safe to hand to an AI agent.
 ## Common resolution flags
 
 varlock's only true global flags are `-h, --help` and `-v, --version`. The
-value-resolving commands don't all share the same flag set — each flag below
+value-resolving commands don't all share the same flag set, so each flag below
 is scoped to the commands that actually accept it (verified against each
 command's own `--help`; see the per-command reference files for the full
 tables):
 
-| Flag                           | Short | Commands                                                                           | Purpose                                                                                                  |
-| ------------------------------ | ----- | ---------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------- |
-| `--path <path>`                | `-p`  | all 8 (`load`, `run`, `printenv`, `explain`, `reveal`, `scan`, `audit`, `codegen`) | Use a specific `.env` file or directory as the entry point. Repeatable; later paths take precedence.     |
-| `--env <env>`                  |       | `load`, `explain`, `reveal`                                                        | Resolve as a named environment (e.g. `production`). **Ignored when `@currentEnv` is set** in the schema. |
-| `--clear-cache`/`--skip-cache` |       | `load`, `run`, `printenv`                                                          | Clear the cache and re-resolve, or bypass the cache entirely, for this run.                              |
-| `--agent`                      |       | `init`, `load`                                                                     | Non-interactive / redacted mode for AI agents and CI.                                                    |
+| Flag                           | Short | Commands                                                                                                             | Purpose                                                                                                                 |
+| ------------------------------ | ----- | -------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------- |
+| `--path <path>`                | `-p`  | `load`, `run`, `printenv`, `explain`, `reveal`, `scan`, `audit`, `codegen`, and `proxy run`/`start`/`rules`/`reload` | Use a specific `.env` file or directory as the entry point. Repeatable (later paths win), except on `audit` (one path). |
+| `--env <env>`                  |       | `load`, `explain`, `reveal`                                                                                          | Resolve as a named environment (e.g. `production`). **Ignored when `@currentEnv` is set** in the schema.                |
+| `--clear-cache`/`--skip-cache` |       | `load`, `run`, `printenv`                                                                                            | Clear the cache and re-resolve, or bypass the cache entirely, for this run.                                             |
+| `--agent`                      |       | `init`, `load`                                                                                                       | Non-interactive / redacted mode for AI agents and CI.                                                                   |
+| `--filter <filter>`            |       | `load`, `run`                                                                                                        | Select which items are shown (`load`) or injected (`run`). Also settable via `_VARLOCK_FILTER` (the flag wins).         |
+
+`--filter` (added in 1.11.0) takes a comma-separated list of selectors:
+
+- a key name or glob: `STRIPE_*` (`*` and `?`)
+- `#tagname`: items tagged with the `@tag(tagname)` item decorator
+- `@sensitive` / `@required` / `@dynamic`: select by decorator state
+- `!selector`: negate any of the above (`!STRIPE_DEBUG_KEY`, `!@dynamic` = static items)
+
+Non-negated selectors are OR'd into one inclusion set, then everything matching a
+negated selector is subtracted; a filter with only negations starts from "everything".
+There is no intersection ("`STRIPE_*` AND `@sensitive`"). On `run`, filtered-out keys
+are also stripped from the child env and the `__VARLOCK_ENV` blob. Decorator
+selectors also scope resolution and validation (1.14.0), so a build-time
+`--filter='!@dynamic'` skips runtime-only items and their `@required` checks. The same
+selector language is used by `pick`/`omit` on `@import()` (minus the `@decorator`
+selectors), `filter=` on `@generate*` decorators, and `varlock.filter` in
+`package.json`. Source: [filtering items](https://varlock.dev/reference/cli-commands/#filtering-items).
 
 ## Anatomy
 
@@ -52,14 +71,14 @@ tables):
 varlock <command> [options] [-- <child command and args>]
 ```
 
-- Only `run` uses the `--` separator, to fence varlock's options off from the
-  command it executes.
+- Only `run` and `proxy run` use the `--` separator, to fence varlock's options
+  off from the command they execute.
 - Several commands are interactive by default (`init`, `encrypt`, `reveal`, `cache`)
   but expose a non-interactive path (`--agent`, stdin piping, `--copy`, `cache status`).
 
 ## Commands
 
-18 top-level commands, grouped below. Full per-command flag tables and verbatim
+20 top-level commands, grouped below. Full per-command flag tables and verbatim
 `EXAMPLES:` blocks live in the linked reference files.
 
 | Command          | Purpose                                                             | Reference                                   |
@@ -69,7 +88,8 @@ varlock <command> [options] [-- <child command and args>]
 | `printenv`       | Print one resolved variable's value.                                | [core](references/commands/core.md)         |
 | `explain`        | Show how a single item's value was resolved (debug).                | [core](references/commands/core.md)         |
 | `init`           | Interactive onboarding: scaffold `.env.schema`, add the dep.        | [project](references/commands/project.md)   |
-| `codegen`        | Generate typed env accessors (ts/py/rust/go/php).                   | [project](references/commands/project.md)   |
+| `codegen`        | Generate typed env accessors (ts/py/rust/go/php/java/c#).           | [project](references/commands/project.md)   |
+| `flatten`        | Copy `@import`ed env files into one self-contained dir (monorepos). | [project](references/commands/project.md)   |
 | `install-plugin` | Pre-download a plugin from npm for the standalone binary.           | [project](references/commands/project.md)   |
 | `complete`       | Emit a shell completion script.                                     | [project](references/commands/project.md)   |
 | `telemetry`      | Opt in/out of anonymous usage analytics.                            | [project](references/commands/project.md)   |
@@ -82,11 +102,12 @@ varlock <command> [options] [-- <child command and args>]
 | `cache`          | Manage the encrypted value cache. Has subcommands.                  | [secrets](references/commands/secrets.md)   |
 | `scan`           | Detect plaintext secrets in files; install as a git hook.           | [security](references/commands/security.md) |
 | `audit`          | Compare code env-var references against the schema.                 | [security](references/commands/security.md) |
+| `proxy`          | Credential proxy for agents (preview). Has subcommands.             | [proxy](references/commands/proxy.md)       |
 
 The **`.env.schema` format** (decorators, types, functions, environments, plugins)
 is documented in full in [`references/env-schema.md`](references/env-schema.md).
 Read [`references/patterns.md`](references/patterns.md) before authoring or
-debugging a real schema — it covers the semantics the decorator list does not imply
+debugging a real schema. It covers the semantics the decorator list does not imply
 (`@optional` governs validation, not resolution; absent vs empty; unsetting a var in
 an overlay).
 
@@ -100,7 +121,7 @@ varlock init --agent    # non-interactive (AI agent / CI)
 ```
 
 Run it in a directory that already has `.env` or `.env.*` files.
-Source: `varlock init --help` (v1.10.0); [installation](https://varlock.dev/getting-started/installation/).
+Source: `varlock init --help` (v1.21.0); [installation](https://varlock.dev/getting-started/installation/).
 
 ### Load and validate (the debug loop)
 
@@ -110,9 +131,10 @@ varlock load --show-all         # when validation fails, show passing items too
 varlock load --format json      # machine-readable
 varlock load --agent            # agent-safe JSON, sensitive values redacted
 varlock load --env production    # validate a named environment (unless @currentEnv is set)
+varlock load --filter="#billing"  # only items tagged @tag(billing)
 ```
 
-Source: `varlock load --help` (v1.10.0).
+Source: `varlock load --help` (v1.21.0).
 
 ### Run a command with the env injected
 
@@ -125,7 +147,7 @@ varlock run --inject vars -- node app.js      # inject individual vars only, no 
 
 Use `--` to separate varlock's flags from the child command. Output is redacted
 automatically when piped/redirected (e.g. CI logs); interactive terminals get raw
-pass-through. Source: `varlock run --help` (v1.10.0).
+pass-through. Source: `varlock run --help` (v1.21.0).
 
 ### Auto-load env in a Node.js / TypeScript app
 
@@ -136,7 +158,15 @@ import { ENV } from "varlock/env";
 const key = ENV.MY_CONFIG_ITEM; // typed accessor (recommended)
 ```
 
-Recommended for Node v22+. Source: [usage](https://varlock.dev/getting-started/usage/).
+Recommended for Node v22+. Import `ENV` from `varlock/env`; since 1.14.0 it is no
+longer exported from the `varlock` package root. Since 1.18.0, items that resolve
+to `undefined` are left out of `process.env` instead of being injected as `""`, so
+`process.env.MY_VAR ?? "fallback"` works (add `# @injectUndefinedAsEmpty` to the
+schema header to restore the old behavior).
+Source: [usage](https://varlock.dev/getting-started/usage/);
+[JavaScript integration](https://varlock.dev/integrations/javascript/);
+[`@injectUndefinedAsEmpty`](https://varlock.dev/reference/root-decorators/#injectundefinedasempty);
+[changelog](https://github.com/dmno-dev/varlock/blob/varlock%401.21.0/packages/varlock/CHANGELOG.md).
 
 ### Export the resolved env into your shell (direnv / eval)
 
@@ -144,18 +174,22 @@ Recommended for Node v22+. Source: [usage](https://varlock.dev/getting-started/u
 eval "$(varlock load --format shell)"
 ```
 
-Source: `varlock load --help` (v1.10.0) — `--format shell` emits `export` statements.
+`--format shell` emits `export` statements with raw values, and skips items that
+resolve to `undefined` (1.18.0). Source: `varlock load --help` (v1.21.0);
+[output formats](https://varlock.dev/reference/cli/load-and-run/#load).
 
 ### Read a single value inline
 
 ```bash
 sh -c 'do-something --token $(varlock printenv MY_TOKEN)'
+varlock printenv --template '{"Authorization": "Bearer {{MY_TOKEN}}"}' --escape json
 varlock explain DATABASE_URL          # debug why a value is not what you expect
 ```
 
 Unlike `varlock run -- echo $MY_VAR`, `printenv` works inline because shell
-expansion happens after varlock prints. Source: `varlock printenv --help`,
-`varlock explain --help` (v1.10.0).
+expansion happens after varlock prints. `--template` (1.17.0) renders several
+`{{KEY}}` placeholders at once. Source: `varlock printenv --help`,
+`varlock explain --help` (v1.21.0).
 
 ### Multi-environment with `@currentEnv`
 
@@ -164,8 +198,11 @@ expansion happens after varlock prints. Source: `varlock printenv --help`,
 # @defaultSensitive=false @defaultRequired=infer
 # ---
 # @type=enum(development, preview, production)
-APP_ENV=remap($CI_BRANCH, "main", production, /.*/, preview, undefined, development)
+APP_ENV=remap($CI_BRANCH, "main", production, regex(".*"), preview, undefined, development)
 ```
+
+Write regex match values as `regex("pattern", "flags")`; bare `/pattern/` strings
+are deprecated since 1.20.0 and warn.
 
 `.env.development`, `.env.preview`, `.env.production` then auto-load based on the
 resolved `APP_ENV`. `--env` is ignored once `@currentEnv` is set.
@@ -179,7 +216,7 @@ varlock scan --staged         # only staged files (pre-commit)
 varlock scan --install-hook   # install as a git pre-commit hook
 ```
 
-Source: `varlock scan --help` (v1.10.0).
+Source: `varlock scan --help` (v1.21.0).
 
 ### Pull secrets from an external manager (plugin, e.g. 1Password)
 
@@ -201,20 +238,23 @@ Source: [secrets guide](https://varlock.dev/guides/secrets/); [plugins](https://
 ### Generate typed accessors
 
 ```env-spec
-# @generateTypes(lang=ts, path=./env.d.ts)
+# @generateTsTypes(path=./env.d.ts)
 ```
 
 ```bash
 varlock codegen                 # deterministic; run when @generate*=auto=false
 ```
 
-Source: `varlock codegen --help` (v1.10.0); [item decorators](https://varlock.dev/reference/item-decorators/).
+`@generateTypes(lang=ts, ...)` still works but is a deprecated alias for
+`@generateTsTypes`. Source: `varlock codegen --help` (v1.21.0);
+[code generation decorators](https://varlock.dev/reference/root-decorators/#code-generation).
 
 ## References
 
-- [`references/commands/core.md`](references/commands/core.md) — `load`, `run`, `printenv`, `explain` (the daily resolution commands).
-- [`references/commands/secrets.md`](references/commands/secrets.md) — `encrypt`, `reveal`, `lock`, `generate-key`, `keychain`, `cache`.
-- [`references/commands/security.md`](references/commands/security.md) — `scan`, `audit`.
-- [`references/commands/project.md`](references/commands/project.md) — `init`, `codegen`, `install-plugin`, `complete`, `telemetry`, `help`.
-- [`references/env-schema.md`](references/env-schema.md) — the `.env.schema` / `@env-spec` format: decorators, types, functions, environments, file layering, plugins.
-- [`references/patterns.md`](references/patterns.md) — schema patterns and gotchas: optional secret refs (`allowMissing` + `fallback`), unsetting vars per environment with `undefined`, operator-scoped overlays, absent vs empty, plugin pinning and app auth.
+- [`references/commands/core.md`](references/commands/core.md): `load`, `run`, `printenv`, `explain` (the daily resolution commands).
+- [`references/commands/secrets.md`](references/commands/secrets.md): `encrypt`, `reveal`, `lock`, `generate-key`, `keychain`, `cache`.
+- [`references/commands/security.md`](references/commands/security.md): `scan`, `audit`.
+- [`references/commands/project.md`](references/commands/project.md): `init`, `codegen`, `flatten`, `install-plugin`, `complete`, `telemetry`, `help`.
+- [`references/commands/proxy.md`](references/commands/proxy.md): `proxy` and its subcommands (credential proxy, preview).
+- [`references/env-schema.md`](references/env-schema.md): the `.env.schema` / `@env-spec` format: decorators, types, functions, environments, file layering, plugins.
+- [`references/patterns.md`](references/patterns.md): schema patterns and gotchas: optional secret refs (`allowMissing` + `fallback`), unsetting vars per environment with `undefined`, operator-scoped overlays, absent vs empty, plugin pinning and app auth.

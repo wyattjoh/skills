@@ -2,7 +2,7 @@
 
 Commands for handling `@sensitive` values: device-local encryption, secure
 viewing, the encryption daemon, deployment keys, macOS Keychain, and the value
-cache. Verified against `varlock 1.10.0` `--help`.
+cache. Verified against `varlock 1.21.0` `--help`.
 
 ## `encrypt`
 
@@ -60,11 +60,22 @@ varlock lock
 
 ## `generate-key`
 
-Generate an encryption key for encrypting the env blob in deployments. No flags
-beyond `-h/--help`, `-v/--version`.
+Generate a random 256-bit hex key for `_VARLOCK_ENV_KEY`, which encrypts the
+injected env blob in deployments.
 
 ```
-varlock generate-key
+varlock generate-key [OPTIONS]
+```
+
+| Flag      | Purpose                                                               |
+| --------- | --------------------------------------------------------------------- |
+| `--plain` | Print only the key, for piping into other commands (added in 1.13.0). |
+
+`EXAMPLES:` (verbatim from `varlock generate-key --help`):
+
+```
+varlock generate-key              # Human-readable output
+varlock generate-key --plain      # Key only, for piping
 ```
 
 ## `keychain`
@@ -75,15 +86,15 @@ Manage macOS Keychain items used by the `keychain()` function.
 varlock keychain <SUBCOMMAND> [OPTIONS]
 ```
 
-| Subcommand   | Purpose                                                        | Key flags (from parent `EXAMPLES:`)     |
-| ------------ | -------------------------------------------------------------- | --------------------------------------- |
-| `list`       | List matching Keychain items (metadata only).                  |                                         |
-| `set`        | Store a secret and optionally write a `keychain()` ref.        | `--profile <name>`, `--write-to <file>` |
-| `import`     | Migrate `@sensitive` plaintext from an env file into Keychain. | `--profile <name>`, `--write-to <file>` |
-| `fix-access` | Grant varlock's helper access to existing `keychain()` items.  | `--account <name>`, `--path <file>`     |
+| Subcommand      | Purpose                                                        | Flags (from `varlock keychain <sub> --help`)                                                  |
+| --------------- | -------------------------------------------------------------- | --------------------------------------------------------------------------------------------- |
+| `list [query]`  | List matching Keychain items (metadata only).                  | `--keychain <name>` (e.g. Login, System)                                                      |
+| `set <key>`     | Store a secret and optionally write a `keychain()` ref.        | `--service`, `--account`, `--profile` (default `local`), `--project`, `--write-to`, `--force` |
+| `import <file>` | Migrate `@sensitive` plaintext from an env file into Keychain. | `--write-to`, `--service`, `--profile`, `--project`, `--force`                                |
+| `fix-access`    | Grant varlock's helper access to existing `keychain()` items.  | `--service`, `--account`, `--keychain`, `--path <env file>`                                   |
 
-Subcommand flag lists are `not fully expanded (depth-2 limit)` — run
-`varlock keychain <sub> --help` on the machine to confirm exact spellings.
+`--service` defaults to `varlock`; `--account` defaults to `<project>:<profile>:<KEY>`,
+where `--project` defaults to the current directory name.
 
 `EXAMPLES:` (verbatim from `varlock keychain --help`):
 
@@ -106,12 +117,10 @@ when non-TTY).
 varlock cache [SUBCOMMAND] [OPTIONS]
 ```
 
-| Subcommand | Purpose                                         | Key flags (from parent `EXAMPLES:`) |
-| ---------- | ----------------------------------------------- | ----------------------------------- |
-| `status`   | Print a cache status summary (non-interactive). |                                     |
-| `clear`    | Clear cache entries.                            | `--yes`, `--plugin <name>`          |
-
-Subcommand flag lists are `not fully expanded (depth-2 limit)`.
+| Subcommand | Purpose                                         | Flags (from `varlock cache <sub> --help`)                       |
+| ---------- | ----------------------------------------------- | --------------------------------------------------------------- |
+| `status`   | Print a cache status summary (non-interactive). | None.                                                           |
+| `clear`    | Clear cache entries (and, since 1.14.0, locks). | `--plugin <plugin>`, `-y/--yes` (required when non-interactive) |
 
 `EXAMPLES:` (verbatim from `varlock cache --help`):
 
