@@ -93,37 +93,43 @@ Two things to verify when you set this up:
   `APP_ENV=production varlock run -- <cmd>`), which is easy to set and easy to
   forget.
 
-## 4. Absent and empty are different; a commented-out item is how you get absent
+## 4. Absent and empty are different; `FOO=` is absent, `FOO=""` is empty
 
-**Semantics:** an item declared in the schema is _injected_. `FOO=` injects an
-empty string — the variable is present in `process.env` with a falsy value. An item
-that is not declared at all is _absent_, and the application's own default applies.
+**Semantics:** an item with no value (`FOO=`) resolves to `undefined`. Since
+1.18.0 such items are **left out of `process.env`** by auto-load, `varlock run`,
+and `varlock load --format shell`, so the application's own default applies.
+An explicit `FOO=""` is an empty string and _is_ injected: the variable is
+present with a falsy value. (Before 1.18.0, auto-load injected undefined items
+as `""`; the `@injectUndefinedAsEmpty` root decorator restores that, and then
+`FOO=` becomes present-but-empty too.) Source:
+[`@injectUndefinedAsEmpty`](https://varlock.dev/reference/root-decorators/#injectundefinedasempty);
+[changelog](https://github.com/dmno-dev/varlock/blob/varlock%401.21.0/packages/varlock/CHANGELOG.md).
 
 These diverge whenever the consuming code parses rather than merely tests. A config
 layer that reads an integer sees `""` as **present but malformed** and throws,
 where absent would have cleanly selected the default.
 
-**Pattern:** when the intended off state is "let the application default win", leave
-the item commented out, and say why:
+**Pattern:** when the intended off state is "let the application default win",
+declare the item with no value and mark it optional, and say why:
 
 ```env-spec
-# # Optional tuning knob. Left commented so varlock does NOT inject it: an empty
-# # string parses as present-but-malformed, so absent-and-defaulted is the off
-# # state. Uncomment with a real value to override.
-# # @type=number @optional
-# TUNING_KNOB_MS=5000
+# Optional tuning knob. No value, so varlock does NOT inject it and the app
+# default applies: an empty string would parse as present-but-malformed.
+# @type=number @optional
+TUNING_KNOB_MS=
 ```
 
-The doubled `# #` keeps the decorator comments commented out along with the item;
-a single `#` on the `@type` line would leave a decorator attached to whatever item
-follows it.
+Empty values skip type validation, so `@type=number` does not reject the unset
+item. If the schema sets `@injectUndefinedAsEmpty`, this no longer yields absent;
+comment the item out entirely instead (use a doubled `# #` on its decorator lines
+so no decorator attaches to whatever item follows).
 
 Choose per variable, and let the consuming code decide:
 
-| Consuming code                             | Off state    | Shape                           |
-| ------------------------------------------ | ------------ | ------------------------------- |
-| Tests emptiness, has a `""` default        | empty string | pattern 1's `fallback(..., "")` |
-| Parses/coerces the value (number, enum, …) | absent       | commented-out item              |
+| Consuming code                               | Off state    | Shape                           |
+| -------------------------------------------- | ------------ | ------------------------------- |
+| Tests emptiness, has a `""` default          | empty string | pattern 1's `fallback(..., "")` |
+| Parses/coerces the value (number, enum, ...) | absent       | `FOO=` with `@optional`         |
 
 ## 5. Pin the plugin version; prefer desktop-app auth over a token on disk
 
@@ -166,7 +172,7 @@ Worth recording per item, when non-obvious:
   decorator can express).
 - Why it is `@optional` rather than `@required`, or why its requirement is
   conditional.
-- Why it is wrapped in `fallback(...)` / left commented out — patterns 1 and 4 both
+- Why it is wrapped in `fallback(...)` / left without a value: patterns 1 and 4 both
   look like clutter to a reader who does not know the failure they prevent, and get
   "cleaned up" without one.
 - For a `@sensitive` item, where the value comes from and who can provision it.
