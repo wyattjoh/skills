@@ -1,6 +1,6 @@
 ---
-name: coordinate-implementation
-description: Coordinates local spec and ticket implementation through Pi or Claude Code workers in Herdr, with parallel implementation, per-ticket review, and serial integration onto a dedicated run branch. Use for "/coordinate-implementation", "implement the tickets in", "orchestrate the run", or "resume the implementation run".
+name: to-code
+description: Coordinates local spec and ticket implementation through Pi or Claude Code workers in Herdr, with parallel implementation, per-ticket review, and serial integration onto a dedicated run branch. Use for "/to-code", "implement the tickets in", "orchestrate the run", or "resume the implementation run".
 argument-hint: "[.scratch/<slug> | resume .scratch/<slug>]"
 compatibility: Requires Git, a Herdr-managed pane, the herdr skill, and the chosen worker harnesses (Pi or Claude Code).
 disable-model-invocation: true

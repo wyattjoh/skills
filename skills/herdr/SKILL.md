@@ -210,7 +210,7 @@ If a larger recent read still does not reveal the completed response, ask the ag
 - Parse IDs from JSON responses. Do not derive them from sidebar order or examples.
 - Start an agent delegated a task or ticket in a new tab, one tab per task, never in the caller's own tab.
 - Close every pane you created once you have collected its results and its agent will receive no further prompts. Close its tab once the tab is empty.
-- When a calling workflow, such as `coordinate-implementation`, prescribes its own tab layout or pane lifecycle, follow the workflow instead of the two rules above.
+- When a calling workflow, such as `to-code`, prescribes its own tab layout or pane lifecycle, follow the workflow instead of the two rules above.
 - Do not close workspaces, tabs, panes, or sessions you did not create unless the user explicitly asked. `workspace close --group` closes the primary workspace and its linked worktree workspaces; never add it merely to bypass `workspace_group_close_required`.
 - Use `--trust-repository` only after the user has verified the repository. It grants per-request Git trust; it is not a routine retry for a failed worktree command.
 - Client and server versions can differ after an update. Check `herdr status` before relying on new server features. A missing method is not permission to stop or upgrade a server.

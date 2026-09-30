@@ -2,7 +2,7 @@
 
 ## Contexts
 
-- [Implementation Coordination](./skills/coordinate-implementation/CONTEXT.md): assigns, observes, reviews, and lands bounded implementation work
+- [Implementation Coordination](./skills/to-code/CONTEXT.md): assigns, observes, reviews, and lands bounded implementation work
 
 ## Relationships
 
