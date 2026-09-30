@@ -12,7 +12,7 @@
  */
 import { describe, expect, test } from "bun:test";
 import { readdir, readFile } from "node:fs/promises";
-import { join } from "node:path";
+import { join, sep } from "node:path";
 
 const ALCHEMY = new URL("..", import.meta.url).pathname;
 const REPO = join(ALCHEMY, "..", "..");
@@ -26,9 +26,15 @@ const pin = manifest.source.effectVersion;
 /** Prerelease v4 versions as the effect-ts skill writes them (`4.0.0-rc.117`). */
 const V4_VERSION = /\b4\.\d+\.\d+-(?:alpha|beta|rc)\.\d+\b/g;
 
+/**
+ * Hidden paths are local-only (the gitignored `.source/` upstream checkout)
+ * and carry every historical Effect version, so they are not part of the skill.
+ */
+const isHidden = (rel: string) => rel.split(sep).some((segment) => segment.startsWith("."));
+
 async function effectSkillVersions(): Promise<Array<string>> {
   const files = (await readdir(EFFECT_SKILL, { recursive: true }))
-    .filter((p) => p.endsWith(".md"))
+    .filter((p) => p.endsWith(".md") && !isHidden(p))
     .toSorted();
   const found = new Set<string>();
   for (const rel of files) {
