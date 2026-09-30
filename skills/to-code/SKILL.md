@@ -52,5 +52,4 @@ ticket is accounted for.
 For `resume <folder>`, reconcile the handoff with Git and living workers.
 Either harness can replace a dead coordinator without its chat history.
 **Always ask once before migrating affected workers** to another harness,
-model, or effort. For old Engine-era runs, follow
-[legacy migration](references/legacy-migration.md).
+model, or effort.

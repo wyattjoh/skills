@@ -90,7 +90,3 @@ the downstream scope rather than treating it as landed.
 6. Record your coordinator identity, reconciled evidence, and next actions. Count
    all existing in-flight tickets against the cap before launching more. Report
    the state briefly, then continue scheduling and supervision.
-
-An old `Schema:`, Engine Lease, `run.ts`, registry, or assessment section signals
-a legacy run. Follow the legacy migration instructions linked from SKILL.md
-before replacing that state. They are not required fields for new runs.
