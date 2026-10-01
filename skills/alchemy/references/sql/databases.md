@@ -1,6 +1,6 @@
 <!-- source: https://alchemy.run/sql/databases
      upstream: website/src/content/docs/sql/databases.mdx
-     alchemy 2.0.0-beta.79 @ 0811092 -->
+     alchemy 2.0.0-beta.79 @ e354a45 -->
 
 # Databases
 

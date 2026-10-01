@@ -1,6 +1,6 @@
 <!-- source: https://alchemy.run/fly/frontend/solidstart
      upstream: website/src/content/docs/fly/frontend/solidstart.mdx
-     alchemy 2.0.0-beta.79 @ 0811092 -->
+     alchemy 2.0.0-beta.79 @ e354a45 -->
 
 # SolidStart
 

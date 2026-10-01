@@ -1,6 +1,6 @@
 <!-- source: https://alchemy.run/infrastructure-as-effects/telemetry
      upstream: website/src/content/docs/infrastructure-as-effects/telemetry.mdx
-     alchemy 2.0.0-beta.79 @ 0811092 -->
+     alchemy 2.0.0-beta.79 @ e354a45 -->
 
 # Telemetry
 
@@ -172,7 +172,7 @@ const object = yield* bucket
 
 `Alchemy.Telemetry.layer` installs any Layer that provides a
 `Tracer`, loggers, or metric exporters — Effect's
-`effect/unstable/observability` modules (`OtlpTracer`, `OtlpLogger`,
+`effect/observability` modules (`OtlpTracer`, `OtlpLogger`,
 `OtlpMetrics`, protobuf serialization) compose here directly. The
 Layer is built per event into the event's request scope, so a custom
 exporter gets the same flush-on-close behavior as the built-in one.

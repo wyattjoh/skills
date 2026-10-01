@@ -1,6 +1,6 @@
 <!-- source: https://alchemy.run/aws/networking/custom-domains
      upstream: website/src/content/docs/aws/networking/custom-domains.mdx
-     alchemy 2.0.0-beta.79 @ 0811092 -->
+     alchemy 2.0.0-beta.79 @ e354a45 -->
 
 # Custom domains with Route53 + ACM
 

@@ -1,6 +1,6 @@
 <!-- source: https://alchemy.run/git/recipes/cloudflare-aws
      upstream: website/src/content/docs/git/recipes/cloudflare-aws.mdx
-     alchemy 2.0.0-beta.79 @ 0811092 -->
+     alchemy 2.0.0-beta.79 @ e354a45 -->
 
 # Bytes in S3, hashing on Lambda
 
@@ -21,7 +21,7 @@ import * as Git from "alchemy/Git";
 import * as GitHasher from "alchemy/Git/Hasher";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
-import * as HttpRouter from "effect/unstable/http/HttpRouter";
+import * as HttpRouter from "effect/http/HttpRouter";
 import * as Http from "alchemy/Http";
 
 const GitObjects = AWS.S3.Bucket("GitObjects");

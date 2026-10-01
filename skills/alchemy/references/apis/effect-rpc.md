@@ -1,6 +1,6 @@
 <!-- source: https://alchemy.run/apis/effect-rpc
      upstream: website/src/content/docs/apis/effect-rpc.mdx
-     alchemy 2.0.0-beta.79 @ 0811092 -->
+     alchemy 2.0.0-beta.79 @ e354a45 -->
 
 # Effect RPC
 
@@ -70,7 +70,7 @@ into the single value the server and the client will share:
 ```typescript
 // src/ApiSchema.ts
 import * as Schema from "effect/Schema";
-import { Rpc, RpcGroup } from "effect/unstable/rpc";
+import { Rpc, RpcGroup } from "effect/rpc";
 import { CreateTaskFailed, Task, TaskNotFound } from "./Task.ts";
 
 const getTask = Rpc.make("getTask", {
@@ -129,7 +129,7 @@ a serialization:
 ```typescript
 // src/ApiHandlers.ts (continued)
 import * as Layer from "effect/Layer";
-import { RpcSerialization, RpcServer } from "effect/unstable/rpc";
+import { RpcSerialization, RpcServer } from "effect/rpc";
 
 export const ApiHttpEffect = RpcServer.toHttpEffect(TaskRpcs).pipe(
   Effect.provide(Layer.mergeAll(TaskRpcsLive, RpcSerialization.layerJson)),
@@ -156,8 +156,8 @@ the same account (see the Workers page). Here is the URL form:
 // src/ApiClient.ts
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
-import * as FetchHttpClient from "effect/unstable/http/FetchHttpClient";
-import { RpcClient, RpcSerialization } from "effect/unstable/rpc";
+import * as FetchHttpClient from "effect/http/FetchHttpClient";
+import { RpcClient, RpcSerialization } from "effect/rpc";
 import { TaskRpcs } from "./ApiSchema.ts";
 
 const program = Effect.gen(function* () {

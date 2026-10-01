@@ -2,12 +2,12 @@
   "source": {
     "repo": "https://github.com/alchemy-run/alchemy.git",
     "ref": "main",
-    "sha": "0811092",
-    "date": "2026-09-25",
+    "sha": "e354a45",
+    "date": "2026-09-30",
     "alchemyVersion": "2.0.0-beta.79",
-    "effectVersion": "4.0.0-rc.117"
+    "effectVersion": "4.0.0-rc.118"
   },
-  "generated": 458,
+  "generated": 484,
   "pages": [
     {
       "title": "Certificate authorities",
@@ -79,7 +79,7 @@
       "upstream": "website/src/content/docs/acme/runtime.mdx",
       "url": "https://alchemy.run/acme/runtime",
       "lines": 317,
-      "bytes": 11658
+      "bytes": 11640
     },
     {
       "title": "Troubleshooting",
@@ -115,7 +115,7 @@
       "upstream": "website/src/content/docs/apis/effect-http.mdx",
       "url": "https://alchemy.run/apis/effect-http",
       "lines": 246,
-      "bytes": 8748
+      "bytes": 8691
     },
     {
       "title": "Effect RPC",
@@ -127,7 +127,7 @@
       "upstream": "website/src/content/docs/apis/effect-rpc.mdx",
       "url": "https://alchemy.run/apis/effect-rpc",
       "lines": 201,
-      "bytes": 6899
+      "bytes": 6863
     },
     {
       "title": "APIs",
@@ -139,7 +139,7 @@
       "upstream": "website/src/content/docs/apis/index.mdx",
       "url": "https://alchemy.run/apis",
       "lines": 88,
-      "bytes": 5662
+      "bytes": 5653
     },
     {
       "title": "Schemaless RPC",
@@ -163,7 +163,7 @@
       "upstream": "website/src/content/docs/aws/ai/bedrock.mdx",
       "url": "https://alchemy.run/aws/ai/bedrock",
       "lines": 218,
-      "bytes": 7863
+      "bytes": 7836
     },
     {
       "title": "REST API (API Gateway v1)",
@@ -187,7 +187,7 @@
       "upstream": "website/src/content/docs/aws/apis/effect-http-api.mdx",
       "url": "https://alchemy.run/aws/apis/effect-http-api",
       "lines": 486,
-      "bytes": 15607
+      "bytes": 15540
     },
     {
       "title": "Effect RPC on Lambda",
@@ -199,7 +199,7 @@
       "upstream": "website/src/content/docs/aws/apis/effect-rpc.mdx",
       "url": "https://alchemy.run/aws/apis/effect-rpc",
       "lines": 427,
-      "bytes": 13373
+      "bytes": 13337
     },
     {
       "title": "Schemaless RPC",
@@ -211,7 +211,7 @@
       "upstream": "website/src/content/docs/aws/apis/schemaless-rpc.mdx",
       "url": "https://alchemy.run/aws/apis/schemaless-rpc",
       "lines": 140,
-      "bytes": 5242
+      "bytes": 5233
     },
     {
       "title": "Choosing a runtime",
@@ -235,7 +235,7 @@
       "upstream": "website/src/content/docs/aws/compute/ec2.mdx",
       "url": "https://alchemy.run/aws/compute/ec2",
       "lines": 173,
-      "bytes": 6038
+      "bytes": 6020
     },
     {
       "title": "ECS",
@@ -258,8 +258,8 @@
       "path": "references/aws/compute/eks.md",
       "upstream": "website/src/content/docs/aws/compute/eks.mdx",
       "url": "https://alchemy.run/aws/compute/eks",
-      "lines": 350,
-      "bytes": 12227
+      "lines": 447,
+      "bytes": 15804
     },
     {
       "title": "HyperPod",
@@ -283,7 +283,7 @@
       "upstream": "website/src/content/docs/aws/compute/lambda.mdx",
       "url": "https://alchemy.run/aws/compute/lambda",
       "lines": 344,
-      "bytes": 11381
+      "bytes": 11345
     },
     {
       "title": "Lambda MicroVMs",
@@ -295,7 +295,7 @@
       "upstream": "website/src/content/docs/aws/compute/microvms.mdx",
       "url": "https://alchemy.run/aws/compute/microvms",
       "lines": 247,
-      "bytes": 9715
+      "bytes": 9679
     },
     {
       "title": "Drizzle + Aurora PostgreSQL",
@@ -343,7 +343,7 @@
       "upstream": "website/src/content/docs/aws/data/rds.mdx",
       "url": "https://alchemy.run/aws/data/rds",
       "lines": 338,
-      "bytes": 10956
+      "bytes": 10947
     },
     {
       "title": "S3",
@@ -355,7 +355,7 @@
       "upstream": "website/src/content/docs/aws/data/s3.mdx",
       "url": "https://alchemy.run/aws/data/s3",
       "lines": 312,
-      "bytes": 9901
+      "bytes": 9865
     },
     {
       "title": "Email receiving",
@@ -379,7 +379,7 @@
       "upstream": "website/src/content/docs/aws/email/sending.mdx",
       "url": "https://alchemy.run/aws/email/sending",
       "lines": 411,
-      "bytes": 13656
+      "bytes": 13647
     },
     {
       "title": "Astro",
@@ -415,7 +415,7 @@
       "upstream": "website/src/content/docs/aws/frontend/full-stack-tanstack-rpc-drizzle.mdx",
       "url": "https://alchemy.run/aws/frontend/full-stack-tanstack-rpc-drizzle",
       "lines": 402,
-      "bytes": 12008
+      "bytes": 11954
     },
     {
       "title": "Next.js",
@@ -631,7 +631,7 @@
       "upstream": "website/src/content/docs/aws/messaging/eventbridge.mdx",
       "url": "https://alchemy.run/aws/messaging/eventbridge",
       "lines": 310,
-      "bytes": 10704
+      "bytes": 10695
     },
     {
       "title": "Kinesis",
@@ -667,7 +667,7 @@
       "upstream": "website/src/content/docs/aws/messaging/sns.mdx",
       "url": "https://alchemy.run/aws/messaging/sns",
       "lines": 311,
-      "bytes": 9231
+      "bytes": 9222
     },
     {
       "title": "SQS",
@@ -727,7 +727,7 @@
       "upstream": "website/src/content/docs/aws/security/secrets-env.mdx",
       "url": "https://alchemy.run/aws/security/secrets-env",
       "lines": 221,
-      "bytes": 7373
+      "bytes": 7355
     },
     {
       "title": "Setup",
@@ -739,7 +739,7 @@
       "upstream": "website/src/content/docs/aws/setup.mdx",
       "url": "https://alchemy.run/aws/setup",
       "lines": 105,
-      "bytes": 3161
+      "bytes": 3147
     },
     {
       "title": "Part 1: Your First Stack",
@@ -750,8 +750,8 @@
       "path": "references/aws/tutorial/part-1.md",
       "upstream": "website/src/content/docs/aws/tutorial/part-1.mdx",
       "url": "https://alchemy.run/aws/tutorial/part-1",
-      "lines": 225,
-      "bytes": 6079
+      "lines": 220,
+      "bytes": 5976
     },
     {
       "title": "Part 2: Add a Lambda",
@@ -763,7 +763,7 @@
       "upstream": "website/src/content/docs/aws/tutorial/part-2.mdx",
       "url": "https://alchemy.run/aws/tutorial/part-2",
       "lines": 407,
-      "bytes": 12670
+      "bytes": 12625
     },
     {
       "title": "Part 3: Testing",
@@ -775,7 +775,7 @@
       "upstream": "website/src/content/docs/aws/tutorial/part-3.mdx",
       "url": "https://alchemy.run/aws/tutorial/part-3",
       "lines": 241,
-      "bytes": 7297
+      "bytes": 7279
     },
     {
       "title": "Part 4: Stages",
@@ -991,7 +991,7 @@
       "upstream": "website/src/content/docs/better-auth/databases/sqlite.mdx",
       "url": "https://alchemy.run/better-auth/databases/sqlite",
       "lines": 130,
-      "bytes": 5474
+      "bytes": 5465
     },
     {
       "title": "Config and secrets",
@@ -1003,7 +1003,7 @@
       "upstream": "website/src/content/docs/better-auth/guides/configuration.mdx",
       "url": "https://alchemy.run/better-auth/guides/configuration",
       "lines": 124,
-      "bytes": 4969
+      "bytes": 4951
     },
     {
       "title": "HTTP API middleware",
@@ -1015,7 +1015,7 @@
       "upstream": "website/src/content/docs/better-auth/guides/http-api-middleware.mdx",
       "url": "https://alchemy.run/better-auth/guides/http-api-middleware",
       "lines": 187,
-      "bytes": 7540
+      "bytes": 7482
     },
     {
       "title": "Migrations",
@@ -1075,7 +1075,7 @@
       "upstream": "website/src/content/docs/better-auth/sign-in-providers/email-password.mdx",
       "url": "https://alchemy.run/better-auth/sign-in-providers/email-password",
       "lines": 550,
-      "bytes": 20321
+      "bytes": 20267
     },
     {
       "title": "GitHub",
@@ -1135,7 +1135,7 @@
       "upstream": "website/src/content/docs/better-auth/tutorial/part-1.mdx",
       "url": "https://alchemy.run/better-auth/tutorial/part-1",
       "lines": 154,
-      "bytes": 4424
+      "bytes": 4415
     },
     {
       "title": "Part 2: Mount the HTTP API",
@@ -1147,7 +1147,7 @@
       "upstream": "website/src/content/docs/better-auth/tutorial/part-2.mdx",
       "url": "https://alchemy.run/better-auth/tutorial/part-2",
       "lines": 117,
-      "bytes": 3347
+      "bytes": 3297
     },
     {
       "title": "Part 3: Build sign-in",
@@ -1171,7 +1171,7 @@
       "upstream": "website/src/content/docs/better-auth/tutorial/part-4.mdx",
       "url": "https://alchemy.run/better-auth/tutorial/part-4",
       "lines": 214,
-      "bytes": 6219
+      "bytes": 6211
     },
     {
       "title": "Part 5: Add GitHub sign-in",
@@ -1387,7 +1387,7 @@
       "upstream": "website/src/content/docs/cloudflare/ai/ai-gateway.mdx",
       "url": "https://alchemy.run/cloudflare/ai/ai-gateway",
       "lines": 283,
-      "bytes": 9870
+      "bytes": 9834
     },
     {
       "title": "Add AI Search (AutoRAG)",
@@ -1399,7 +1399,7 @@
       "upstream": "website/src/content/docs/cloudflare/ai/ai-search.mdx",
       "url": "https://alchemy.run/cloudflare/ai/ai-search",
       "lines": 324,
-      "bytes": 11128
+      "bytes": 11110
     },
     {
       "title": "Effect AI",
@@ -1411,7 +1411,7 @@
       "upstream": "website/src/content/docs/cloudflare/ai/effect-ai.mdx",
       "url": "https://alchemy.run/cloudflare/ai/effect-ai",
       "lines": 275,
-      "bytes": 10508
+      "bytes": 10463
     },
     {
       "title": "Build a release-automation agent",
@@ -1435,7 +1435,7 @@
       "upstream": "website/src/content/docs/cloudflare/ai/vectorize.mdx",
       "url": "https://alchemy.run/cloudflare/ai/vectorize",
       "lines": 201,
-      "bytes": 6327
+      "bytes": 6309
     },
     {
       "title": "Run Workers AI models",
@@ -1447,7 +1447,7 @@
       "upstream": "website/src/content/docs/cloudflare/ai/workers-ai.mdx",
       "url": "https://alchemy.run/cloudflare/ai/workers-ai",
       "lines": 212,
-      "bytes": 7617
+      "bytes": 7581
     },
     {
       "title": "Effect HTTP API",
@@ -1459,7 +1459,7 @@
       "upstream": "website/src/content/docs/cloudflare/apis/effect-http-api.mdx",
       "url": "https://alchemy.run/cloudflare/apis/effect-http-api",
       "lines": 630,
-      "bytes": 20972
+      "bytes": 20862
     },
     {
       "title": "Effect RPC",
@@ -1471,7 +1471,7 @@
       "upstream": "website/src/content/docs/cloudflare/apis/effect-rpc.mdx",
       "url": "https://alchemy.run/cloudflare/apis/effect-rpc",
       "lines": 928,
-      "bytes": 31721
+      "bytes": 31586
     },
     {
       "title": "Schemaless RPC",
@@ -1483,7 +1483,7 @@
       "upstream": "website/src/content/docs/cloudflare/apis/schemaless-rpc.mdx",
       "url": "https://alchemy.run/cloudflare/apis/schemaless-rpc",
       "lines": 312,
-      "bytes": 12119
+      "bytes": 12056
     },
     {
       "title": "Add a Workflow",
@@ -1495,7 +1495,7 @@
       "upstream": "website/src/content/docs/cloudflare/compute/add-a-workflow.mdx",
       "url": "https://alchemy.run/cloudflare/compute/add-a-workflow",
       "lines": 483,
-      "bytes": 15553
+      "bytes": 15508
     },
     {
       "title": "Browser rendering",
@@ -1507,7 +1507,7 @@
       "upstream": "website/src/content/docs/cloudflare/compute/browser-rendering.mdx",
       "url": "https://alchemy.run/cloudflare/compute/browser-rendering",
       "lines": 143,
-      "bytes": 4649
+      "bytes": 4640
     },
     {
       "title": "Workers Cache",
@@ -1519,7 +1519,7 @@
       "upstream": "website/src/content/docs/cloudflare/compute/cache.mdx",
       "url": "https://alchemy.run/cloudflare/compute/cache",
       "lines": 116,
-      "bytes": 3669
+      "bytes": 3651
     },
     {
       "title": "Containers",
@@ -1531,7 +1531,7 @@
       "upstream": "website/src/content/docs/cloudflare/compute/containers.mdx",
       "url": "https://alchemy.run/cloudflare/compute/containers",
       "lines": 621,
-      "bytes": 22418
+      "bytes": 22400
     },
     {
       "title": "Bind to another Worker's Durable Object",
@@ -1543,7 +1543,7 @@
       "upstream": "website/src/content/docs/cloudflare/compute/cross-worker-durable-object.mdx",
       "url": "https://alchemy.run/cloudflare/compute/cross-worker-durable-object",
       "lines": 502,
-      "bytes": 16890
+      "bytes": 16827
     },
     {
       "title": "Durable Objects",
@@ -1555,7 +1555,7 @@
       "upstream": "website/src/content/docs/cloudflare/compute/durable-objects.mdx",
       "url": "https://alchemy.run/cloudflare/compute/durable-objects",
       "lines": 700,
-      "bytes": 24964
+      "bytes": 24901
     },
     {
       "title": "Gradual deployments",
@@ -1567,7 +1567,7 @@
       "upstream": "website/src/content/docs/cloudflare/compute/gradual-deployments.mdx",
       "url": "https://alchemy.run/cloudflare/compute/gradual-deployments",
       "lines": 366,
-      "bytes": 12809
+      "bytes": 12800
     },
     {
       "title": "Accept WebSockets",
@@ -1579,7 +1579,7 @@
       "upstream": "website/src/content/docs/cloudflare/compute/hibernatable-websockets.mdx",
       "url": "https://alchemy.run/cloudflare/compute/hibernatable-websockets",
       "lines": 684,
-      "bytes": 21888
+      "bytes": 21861
     },
     {
       "title": "Worker Previews",
@@ -1615,7 +1615,7 @@
       "upstream": "website/src/content/docs/cloudflare/compute/rate-limiting.mdx",
       "url": "https://alchemy.run/cloudflare/compute/rate-limiting",
       "lines": 139,
-      "bytes": 4729
+      "bytes": 4711
     },
     {
       "title": "Run a Container",
@@ -1627,7 +1627,7 @@
       "upstream": "website/src/content/docs/cloudflare/compute/run-a-container.mdx",
       "url": "https://alchemy.run/cloudflare/compute/run-a-container",
       "lines": 488,
-      "bytes": 15511
+      "bytes": 15421
     },
     {
       "title": "Worker Loader",
@@ -1639,7 +1639,7 @@
       "upstream": "website/src/content/docs/cloudflare/compute/worker-loader.mdx",
       "url": "https://alchemy.run/cloudflare/compute/worker-loader",
       "lines": 174,
-      "bytes": 5556
+      "bytes": 5547
     },
     {
       "title": "Workers for Platforms",
@@ -1651,7 +1651,7 @@
       "upstream": "website/src/content/docs/cloudflare/compute/workers-for-platforms.mdx",
       "url": "https://alchemy.run/cloudflare/compute/workers-for-platforms",
       "lines": 158,
-      "bytes": 5706
+      "bytes": 5688
     },
     {
       "title": "Workers",
@@ -1663,7 +1663,7 @@
       "upstream": "website/src/content/docs/cloudflare/compute/workers.mdx",
       "url": "https://alchemy.run/cloudflare/compute/workers",
       "lines": 654,
-      "bytes": 21408
+      "bytes": 21381
     },
     {
       "title": "Workflows",
@@ -1675,7 +1675,7 @@
       "upstream": "website/src/content/docs/cloudflare/compute/workflows.mdx",
       "url": "https://alchemy.run/cloudflare/compute/workflows",
       "lines": 431,
-      "bytes": 15447
+      "bytes": 15429
     },
     {
       "title": "Store Git Repos with Artifacts",
@@ -1687,7 +1687,7 @@
       "upstream": "website/src/content/docs/cloudflare/data/artifacts.mdx",
       "url": "https://alchemy.run/cloudflare/data/artifacts",
       "lines": 157,
-      "bytes": 5006
+      "bytes": 4979
     },
     {
       "title": "Branch from a shared database",
@@ -1711,7 +1711,7 @@
       "upstream": "website/src/content/docs/cloudflare/data/d1-drizzle.mdx",
       "url": "https://alchemy.run/cloudflare/data/d1-drizzle",
       "lines": 142,
-      "bytes": 3848
+      "bytes": 3839
     },
     {
       "title": "D1",
@@ -1723,7 +1723,7 @@
       "upstream": "website/src/content/docs/cloudflare/data/d1.mdx",
       "url": "https://alchemy.run/cloudflare/data/d1",
       "lines": 193,
-      "bytes": 6458
+      "bytes": 6440
     },
     {
       "title": "Add Drizzle ORM",
@@ -1735,7 +1735,7 @@
       "upstream": "website/src/content/docs/cloudflare/data/drizzle.mdx",
       "url": "https://alchemy.run/cloudflare/data/drizzle",
       "lines": 292,
-      "bytes": 9588
+      "bytes": 9579
     },
     {
       "title": "Hyperdrive",
@@ -1747,7 +1747,7 @@
       "upstream": "website/src/content/docs/cloudflare/data/hyperdrive.mdx",
       "url": "https://alchemy.run/cloudflare/data/hyperdrive",
       "lines": 640,
-      "bytes": 20422
+      "bytes": 20386
     },
     {
       "title": "KV",
@@ -1759,7 +1759,7 @@
       "upstream": "website/src/content/docs/cloudflare/data/kv.mdx",
       "url": "https://alchemy.run/cloudflare/data/kv",
       "lines": 204,
-      "bytes": 6068
+      "bytes": 6050
     },
     {
       "title": "Prisma ORM with Postgres",
@@ -1771,7 +1771,7 @@
       "upstream": "website/src/content/docs/cloudflare/data/prisma.mdx",
       "url": "https://alchemy.run/cloudflare/data/prisma",
       "lines": 182,
-      "bytes": 4949
+      "bytes": 4940
     },
     {
       "title": "R2 presigned URLs",
@@ -1783,7 +1783,7 @@
       "upstream": "website/src/content/docs/cloudflare/data/r2-presigned-urls.mdx",
       "url": "https://alchemy.run/cloudflare/data/r2-presigned-urls",
       "lines": 206,
-      "bytes": 6635
+      "bytes": 6617
     },
     {
       "title": "R2",
@@ -1795,7 +1795,7 @@
       "upstream": "website/src/content/docs/cloudflare/data/r2.mdx",
       "url": "https://alchemy.run/cloudflare/data/r2",
       "lines": 201,
-      "bytes": 6290
+      "bytes": 6272
     },
     {
       "title": "Shared database across stages",
@@ -1831,7 +1831,7 @@
       "upstream": "website/src/content/docs/cloudflare/email/index.mdx",
       "url": "https://alchemy.run/cloudflare/email",
       "lines": 238,
-      "bytes": 7722
+      "bytes": 7713
     },
     {
       "title": "Send & receive email",
@@ -1843,7 +1843,7 @@
       "upstream": "website/src/content/docs/cloudflare/email/send-and-receive.mdx",
       "url": "https://alchemy.run/cloudflare/email/send-and-receive",
       "lines": 263,
-      "bytes": 8934
+      "bytes": 8925
     },
     {
       "title": "Astro",
@@ -1891,7 +1891,7 @@
       "upstream": "website/src/content/docs/cloudflare/frontend/full-stack-tanstack-rpc-drizzle.mdx",
       "url": "https://alchemy.run/cloudflare/frontend/full-stack-tanstack-rpc-drizzle",
       "lines": 552,
-      "bytes": 18818
+      "bytes": 18746
     },
     {
       "title": "Next.js",
@@ -2011,7 +2011,7 @@
       "upstream": "website/src/content/docs/cloudflare/frontend/vite-spa.mdx",
       "url": "https://alchemy.run/cloudflare/frontend/vite-spa",
       "lines": 667,
-      "bytes": 20016
+      "bytes": 19989
     },
     {
       "title": "Vite",
@@ -2083,7 +2083,7 @@
       "upstream": "website/src/content/docs/cloudflare/messaging/cron.mdx",
       "url": "https://alchemy.run/cloudflare/messaging/cron",
       "lines": 290,
-      "bytes": 9528
+      "bytes": 9492
     },
     {
       "title": "React to GitHub events from a Worker",
@@ -2095,7 +2095,7 @@
       "upstream": "website/src/content/docs/cloudflare/messaging/github-events.mdx",
       "url": "https://alchemy.run/cloudflare/messaging/github-events",
       "lines": 261,
-      "bytes": 8657
+      "bytes": 8648
     },
     {
       "title": "Queues",
@@ -2155,7 +2155,7 @@
       "upstream": "website/src/content/docs/cloudflare/observability/analytics-engine.mdx",
       "url": "https://alchemy.run/cloudflare/observability/analytics-engine",
       "lines": 139,
-      "bytes": 4529
+      "bytes": 4511
     },
     {
       "title": "Ship Worker telemetry to Axiom",
@@ -2191,7 +2191,7 @@
       "upstream": "website/src/content/docs/cloudflare/security/access.mdx",
       "url": "https://alchemy.run/cloudflare/security/access",
       "lines": 232,
-      "bytes": 7486
+      "bytes": 7477
     },
     {
       "title": "Secrets & env",
@@ -2215,7 +2215,7 @@
       "upstream": "website/src/content/docs/cloudflare/security/secrets-store.mdx",
       "url": "https://alchemy.run/cloudflare/security/secrets-store",
       "lines": 246,
-      "bytes": 7993
+      "bytes": 7975
     },
     {
       "title": "Turnstile CAPTCHA",
@@ -2238,8 +2238,8 @@
       "path": "references/cloudflare/setup.md",
       "upstream": "website/src/content/docs/cloudflare/setup.mdx",
       "url": "https://alchemy.run/cloudflare/setup",
-      "lines": 108,
-      "bytes": 3305
+      "lines": 105,
+      "bytes": 3249
     },
     {
       "title": "Part 1: Your First Stack",
@@ -2250,8 +2250,8 @@
       "path": "references/cloudflare/tutorial/part-1.md",
       "upstream": "website/src/content/docs/cloudflare/tutorial/part-1.mdx",
       "url": "https://alchemy.run/cloudflare/tutorial/part-1",
-      "lines": 274,
-      "bytes": 7666
+      "lines": 269,
+      "bytes": 7563
     },
     {
       "title": "Part 2: Add a Worker",
@@ -2263,7 +2263,7 @@
       "upstream": "website/src/content/docs/cloudflare/tutorial/part-2.mdx",
       "url": "https://alchemy.run/cloudflare/tutorial/part-2",
       "lines": 387,
-      "bytes": 11384
+      "bytes": 11303
     },
     {
       "title": "Part 3: Testing",
@@ -2275,7 +2275,7 @@
       "upstream": "website/src/content/docs/cloudflare/tutorial/part-3.mdx",
       "url": "https://alchemy.run/cloudflare/tutorial/part-3",
       "lines": 242,
-      "bytes": 7286
+      "bytes": 7250
     },
     {
       "title": "Part 4: Local Dev",
@@ -2311,7 +2311,7 @@
       "upstream": "website/src/content/docs/cloudflare/tutorial/part-6.mdx",
       "url": "https://alchemy.run/cloudflare/tutorial/part-6",
       "lines": 280,
-      "bytes": 9420
+      "bytes": 9402
     },
     {
       "title": "Dev servers",
@@ -2358,8 +2358,8 @@
       "path": "references/docker/build-and-push.md",
       "upstream": "website/src/content/docs/docker/build-and-push.mdx",
       "url": "https://alchemy.run/docker/build-and-push",
-      "lines": 140,
-      "bytes": 5072
+      "lines": 142,
+      "bytes": 5190
     },
     {
       "title": "Docker",
@@ -2407,7 +2407,7 @@
       "upstream": "website/src/content/docs/docker/swarm.mdx",
       "url": "https://alchemy.run/docker/swarm",
       "lines": 260,
-      "bytes": 7451
+      "bytes": 7442
     },
     {
       "title": "Auth Providers",
@@ -2538,8 +2538,20 @@
       "path": "references/fly/compute/apps.md",
       "upstream": "website/src/content/docs/fly/compute/apps.mdx",
       "url": "https://alchemy.run/fly/compute/apps",
-      "lines": 118,
-      "bytes": 2648
+      "lines": 132,
+      "bytes": 3362
+    },
+    {
+      "title": "Connect Services",
+      "description": "Build several Fly Services that call each other's methods over a private network, behind one public entry point.",
+      "area": "fly",
+      "group": "compute",
+      "slug": "fly/compute/connecting-services",
+      "path": "references/fly/compute/connecting-services.md",
+      "upstream": "website/src/content/docs/fly/compute/connecting-services.mdx",
+      "url": "https://alchemy.run/fly/compute/connecting-services",
+      "lines": 507,
+      "bytes": 16186
     },
     {
       "title": "Blue/green deployments",
@@ -2550,8 +2562,8 @@
       "path": "references/fly/compute/deployments.md",
       "upstream": "website/src/content/docs/fly/compute/deployments.mdx",
       "url": "https://alchemy.run/fly/compute/deployments",
-      "lines": 424,
-      "bytes": 16621
+      "lines": 422,
+      "bytes": 16569
     },
     {
       "title": "Machines",
@@ -2562,8 +2574,8 @@
       "path": "references/fly/compute/machines.md",
       "upstream": "website/src/content/docs/fly/compute/machines.mdx",
       "url": "https://alchemy.run/fly/compute/machines",
-      "lines": 248,
-      "bytes": 9472
+      "lines": 257,
+      "bytes": 9761
     },
     {
       "title": "Regions",
@@ -2574,20 +2586,20 @@
       "path": "references/fly/compute/regions.md",
       "upstream": "website/src/content/docs/fly/compute/regions.mdx",
       "url": "https://alchemy.run/fly/compute/regions",
-      "lines": 183,
-      "bytes": 4835
+      "lines": 173,
+      "bytes": 4842
     },
     {
       "title": "Services",
-      "description": "An Effect program running in a Fly Machine. Scale it with count.",
+      "description": "An Effect program running in Fly Machines in its own Fly App. Scale it with count.",
       "area": "fly",
       "group": "compute",
       "slug": "fly/compute/services",
       "path": "references/fly/compute/services.md",
       "upstream": "website/src/content/docs/fly/compute/services.mdx",
       "url": "https://alchemy.run/fly/compute/services",
-      "lines": 323,
-      "bytes": 11226
+      "lines": 536,
+      "bytes": 18888
     },
     {
       "title": "Sprites",
@@ -2599,7 +2611,7 @@
       "upstream": "website/src/content/docs/fly/compute/sprites.mdx",
       "url": "https://alchemy.run/fly/compute/sprites",
       "lines": 190,
-      "bytes": 4941
+      "bytes": 4932
     },
     {
       "title": "Drizzle Postgres on Fly",
@@ -2610,8 +2622,8 @@
       "path": "references/fly/data/drizzle-postgres.md",
       "upstream": "website/src/content/docs/fly/data/drizzle-postgres.mdx",
       "url": "https://alchemy.run/fly/data/drizzle-postgres",
-      "lines": 156,
-      "bytes": 5036
+      "lines": 155,
+      "bytes": 5008
     },
     {
       "title": "Postgres",
@@ -2623,7 +2635,7 @@
       "upstream": "website/src/content/docs/fly/data/postgres.mdx",
       "url": "https://alchemy.run/fly/data/postgres",
       "lines": 162,
-      "bytes": 4218
+      "bytes": 4198
     },
     {
       "title": "Redis",
@@ -2635,7 +2647,7 @@
       "upstream": "website/src/content/docs/fly/data/redis.mdx",
       "url": "https://alchemy.run/fly/data/redis",
       "lines": 123,
-      "bytes": 3163
+      "bytes": 3143
     },
     {
       "title": "Secrets",
@@ -2646,8 +2658,8 @@
       "path": "references/fly/data/secrets.md",
       "upstream": "website/src/content/docs/fly/data/secrets.mdx",
       "url": "https://alchemy.run/fly/data/secrets",
-      "lines": 193,
-      "bytes": 5700
+      "lines": 200,
+      "bytes": 6120
     },
     {
       "title": "Tigris",
@@ -2659,7 +2671,7 @@
       "upstream": "website/src/content/docs/fly/data/tigris.mdx",
       "url": "https://alchemy.run/fly/data/tigris",
       "lines": 113,
-      "bytes": 2830
+      "bytes": 2810
     },
     {
       "title": "Volumes",
@@ -2671,7 +2683,7 @@
       "upstream": "website/src/content/docs/fly/data/volumes.mdx",
       "url": "https://alchemy.run/fly/data/volumes",
       "lines": 106,
-      "bytes": 3182
+      "bytes": 3171
     },
     {
       "title": "Astro",
@@ -2862,20 +2874,20 @@
       "path": "references/fly/_overview.md",
       "upstream": "website/src/content/docs/fly/index.mdx",
       "url": "https://alchemy.run/fly",
-      "lines": 116,
-      "bytes": 6105
+      "lines": 125,
+      "bytes": 6717
     },
     {
       "title": "IPs & certificates",
-      "description": "Reach a Fly Service over fly.dev and on your own hostname.",
+      "description": "Public and private Fly Services, App addresses, and certificates for your own hostname.",
       "area": "fly",
       "group": "",
       "slug": "fly/networking",
       "path": "references/fly/networking.md",
       "upstream": "website/src/content/docs/fly/networking.mdx",
       "url": "https://alchemy.run/fly/networking",
-      "lines": 234,
-      "bytes": 7293
+      "lines": 282,
+      "bytes": 9662
     },
     {
       "title": "Setup",
@@ -2886,32 +2898,32 @@
       "path": "references/fly/setup.md",
       "upstream": "website/src/content/docs/fly/setup.mdx",
       "url": "https://alchemy.run/fly/setup",
-      "lines": 119,
-      "bytes": 3945
+      "lines": 120,
+      "bytes": 3973
     },
     {
-      "title": "Part 1: Your First App",
-      "description": "Install Alchemy, create a Stack with a Fly App, and deploy it.",
+      "title": "Part 1: Your First Service",
+      "description": "Install Alchemy, create a Stack, and deploy an Effect HTTP Service to Fly on its own fly.dev hostname.",
       "area": "fly",
       "group": "tutorial",
       "slug": "fly/tutorial/part-1",
       "path": "references/fly/tutorial/part-1.md",
       "upstream": "website/src/content/docs/fly/tutorial/part-1.mdx",
       "url": "https://alchemy.run/fly/tutorial/part-1",
-      "lines": 241,
-      "bytes": 6322
+      "lines": 316,
+      "bytes": 8698
     },
     {
-      "title": "Part 2: Deploy a Service",
-      "description": "Bundle an Effect HTTP server, deploy it to Fly as a Machine, and serve requests on fly.dev.",
+      "title": "Part 2: Configure the Service",
+      "description": "Pin the Service's region and port, add a health route, and ship a code change.",
       "area": "fly",
       "group": "tutorial",
       "slug": "fly/tutorial/part-2",
       "path": "references/fly/tutorial/part-2.md",
       "upstream": "website/src/content/docs/fly/tutorial/part-2.mdx",
       "url": "https://alchemy.run/fly/tutorial/part-2",
-      "lines": 323,
-      "bytes": 8543
+      "lines": 129,
+      "bytes": 3313
     },
     {
       "title": "Part 3: Persist Data with a Volume",
@@ -2922,20 +2934,92 @@
       "path": "references/fly/tutorial/part-3.md",
       "upstream": "website/src/content/docs/fly/tutorial/part-3.mdx",
       "url": "https://alchemy.run/fly/tutorial/part-3",
-      "lines": 178,
-      "bytes": 4836
+      "lines": 177,
+      "bytes": 4758
     },
     {
       "title": "Part 4: Secrets and Cleanup",
-      "description": "Store an App secret, read it from the Service at runtime, and destroy the stack.",
+      "description": "Read a secret from .env in the Service with Config.Redacted, guard a route with it, and destroy the stack.",
       "area": "fly",
       "group": "tutorial",
       "slug": "fly/tutorial/part-4",
       "path": "references/fly/tutorial/part-4.md",
       "upstream": "website/src/content/docs/fly/tutorial/part-4.mdx",
       "url": "https://alchemy.run/fly/tutorial/part-4",
-      "lines": 179,
-      "bytes": 4848
+      "lines": 145,
+      "bytes": 4117
+    },
+    {
+      "title": "How bindings grant IAM",
+      "description": "What a yield* of a GCP binding actually does — the per-host service account, the role it grants, and how removing a binding revokes it.",
+      "area": "gcp",
+      "group": "guides",
+      "slug": "gcp/guides/bindings",
+      "path": "references/gcp/guides/bindings.md",
+      "upstream": "website/src/content/docs/gcp/guides/bindings.mdx",
+      "url": "https://alchemy.run/gcp/guides/bindings",
+      "lines": 266,
+      "bytes": 12520
+    },
+    {
+      "title": "Serve an API on Cloud Run",
+      "description": "A link shortener on one Cloud Run service — Firestore for state, Secret Manager for the API key, and IAM granted by the bindings themselves.",
+      "area": "gcp",
+      "group": "guides",
+      "slug": "gcp/guides/cloud-run-api",
+      "path": "references/gcp/guides/cloud-run-api.md",
+      "upstream": "website/src/content/docs/gcp/guides/cloud-run-api.mdx",
+      "url": "https://alchemy.run/gcp/guides/cloud-run-api",
+      "lines": 573,
+      "bytes": 18540
+    },
+    {
+      "title": "Ingest events into BigQuery",
+      "description": "A Cloud Run service publishes to Pub/Sub, a Cloud Run Job drains the subscription into BigQuery, and one host triggers the other.",
+      "area": "gcp",
+      "group": "guides",
+      "slug": "gcp/guides/event-pipeline",
+      "path": "references/gcp/guides/event-pipeline.md",
+      "upstream": "website/src/content/docs/gcp/guides/event-pipeline.mdx",
+      "url": "https://alchemy.run/gcp/guides/event-pipeline",
+      "lines": 305,
+      "bytes": 10313
+    },
+    {
+      "title": "Cache with Memorystore",
+      "description": "Bind a Memorystore Redis instance to a Cloud Run service over Direct VPC egress, and what to expect from create and destroy times.",
+      "area": "gcp",
+      "group": "guides",
+      "slug": "gcp/guides/memorystore",
+      "path": "references/gcp/guides/memorystore.md",
+      "upstream": "website/src/content/docs/gcp/guides/memorystore.mdx",
+      "url": "https://alchemy.run/gcp/guides/memorystore",
+      "lines": 92,
+      "bytes": 3576
+    },
+    {
+      "title": "GCP",
+      "description": "Google Cloud in one Effect program — Cloud Run services and jobs, Firestore, Pub/Sub, BigQuery, Secret Manager, and Memorystore, with IAM granted by the bindings themselves.",
+      "area": "gcp",
+      "group": "",
+      "slug": "gcp",
+      "path": "references/gcp/_overview.md",
+      "upstream": "website/src/content/docs/gcp/index.mdx",
+      "url": "https://alchemy.run/gcp",
+      "lines": 153,
+      "bytes": 6927
+    },
+    {
+      "title": "Setup",
+      "description": "Connect alchemy to Google Cloud — project, service-account key, the APIs to enable, and Docker.",
+      "area": "gcp",
+      "group": "",
+      "slug": "gcp/setup",
+      "path": "references/gcp/setup.md",
+      "upstream": "website/src/content/docs/gcp/setup.mdx",
+      "url": "https://alchemy.run/gcp/setup",
+      "lines": 121,
+      "bytes": 4017
     },
     {
       "title": "Getting started",
@@ -2947,7 +3031,7 @@
       "upstream": "website/src/content/docs/getting-started.mdx",
       "url": "https://alchemy.run/getting-started",
       "lines": 141,
-      "bytes": 3933
+      "bytes": 3919
     },
     {
       "title": "Authentication and authorization",
@@ -2983,7 +3067,7 @@
       "upstream": "website/src/content/docs/git/blocks/engine.mdx",
       "url": "https://alchemy.run/git/blocks/engine",
       "lines": 192,
-      "bytes": 8296
+      "bytes": 8280
     },
     {
       "title": "Hasher",
@@ -3031,7 +3115,7 @@
       "upstream": "website/src/content/docs/git/blocks/repositories.mdx",
       "url": "https://alchemy.run/git/blocks/repositories",
       "lines": 202,
-      "bytes": 8276
+      "bytes": 8244
     },
     {
       "title": "HTTP routes",
@@ -3043,7 +3127,7 @@
       "upstream": "website/src/content/docs/git/blocks/server.mdx",
       "url": "https://alchemy.run/git/blocks/server",
       "lines": 189,
-      "bytes": 6818
+      "bytes": 6769
     },
     {
       "title": "Cloning & pushing",
@@ -3067,7 +3151,7 @@
       "upstream": "website/src/content/docs/git/getting-started.mdx",
       "url": "https://alchemy.run/git/getting-started",
       "lines": 187,
-      "bytes": 6248
+      "bytes": 6214
     },
     {
       "title": "GitHub API compatibility",
@@ -3091,7 +3175,7 @@
       "upstream": "website/src/content/docs/git/index.mdx",
       "url": "https://alchemy.run/git",
       "lines": 125,
-      "bytes": 5347
+      "bytes": 5338
     },
     {
       "title": "Pull requests",
@@ -3115,7 +3199,7 @@
       "upstream": "website/src/content/docs/git/recipes/cloudflare-aws.mdx",
       "url": "https://alchemy.run/git/recipes/cloudflare-aws",
       "lines": 124,
-      "bytes": 4214
+      "bytes": 4205
     },
     {
       "title": "All on Cloudflare",
@@ -3127,7 +3211,7 @@
       "upstream": "website/src/content/docs/git/recipes/cloudflare.mdx",
       "url": "https://alchemy.run/git/recipes/cloudflare",
       "lines": 116,
-      "bytes": 3760
+      "bytes": 3751
     },
     {
       "title": "Overview",
@@ -3175,7 +3259,7 @@
       "upstream": "website/src/content/docs/git/repositories.mdx",
       "url": "https://alchemy.run/git/repositories",
       "lines": 114,
-      "bytes": 3345
+      "bytes": 3337
     },
     {
       "title": "Part 1: Push your first repository",
@@ -3187,7 +3271,7 @@
       "upstream": "website/src/content/docs/git/tutorial/part-1.mdx",
       "url": "https://alchemy.run/git/tutorial/part-1",
       "lines": 242,
-      "bytes": 6710
+      "bytes": 6701
     },
     {
       "title": "Part 2: Control access",
@@ -3199,7 +3283,7 @@
       "upstream": "website/src/content/docs/git/tutorial/part-2.mdx",
       "url": "https://alchemy.run/git/tutorial/part-2",
       "lines": 175,
-      "bytes": 5284
+      "bytes": 5250
     },
     {
       "title": "Part 3: Publish a repository",
@@ -3211,7 +3295,7 @@
       "upstream": "website/src/content/docs/git/tutorial/part-3.mdx",
       "url": "https://alchemy.run/git/tutorial/part-3",
       "lines": 144,
-      "bytes": 4352
+      "bytes": 4334
     },
     {
       "title": "Part 4: Give users their own credentials",
@@ -3223,7 +3307,7 @@
       "upstream": "website/src/content/docs/git/tutorial/part-4.mdx",
       "url": "https://alchemy.run/git/tutorial/part-4",
       "lines": 374,
-      "bytes": 11304
+      "bytes": 11252
     },
     {
       "title": "Part 5: Add your application's API",
@@ -3235,7 +3319,7 @@
       "upstream": "website/src/content/docs/git/tutorial/part-5.mdx",
       "url": "https://alchemy.run/git/tutorial/part-5",
       "lines": 156,
-      "bytes": 3876
+      "bytes": 3844
     },
     {
       "title": "Part 6: Protect a branch",
@@ -3247,7 +3331,7 @@
       "upstream": "website/src/content/docs/git/tutorial/part-6.mdx",
       "url": "https://alchemy.run/git/tutorial/part-6",
       "lines": 231,
-      "bytes": 9310
+      "bytes": 9286
     },
     {
       "title": "Actions secrets & variables",
@@ -3331,7 +3415,7 @@
       "upstream": "website/src/content/docs/hetzner/compute/services.mdx",
       "url": "https://alchemy.run/hetzner/compute/services",
       "lines": 205,
-      "bytes": 6480
+      "bytes": 6471
     },
     {
       "title": "Drizzle Postgres on Hetzner",
@@ -3583,7 +3667,7 @@
       "upstream": "website/src/content/docs/hetzner/setup.mdx",
       "url": "https://alchemy.run/hetzner/setup",
       "lines": 114,
-      "bytes": 3647
+      "bytes": 3633
     },
     {
       "title": "Part 1: Your First Server",
@@ -3595,7 +3679,7 @@
       "upstream": "website/src/content/docs/hetzner/tutorial/part-1.mdx",
       "url": "https://alchemy.run/hetzner/tutorial/part-1",
       "lines": 291,
-      "bytes": 7692
+      "bytes": 7678
     },
     {
       "title": "Part 2: Deploy a Service",
@@ -3607,7 +3691,7 @@
       "upstream": "website/src/content/docs/hetzner/tutorial/part-2.mdx",
       "url": "https://alchemy.run/hetzner/tutorial/part-2",
       "lines": 297,
-      "bytes": 8419
+      "bytes": 8392
     },
     {
       "title": "Part 3: Persist Data with a Volume",
@@ -3619,7 +3703,7 @@
       "upstream": "website/src/content/docs/hetzner/tutorial/part-3.mdx",
       "url": "https://alchemy.run/hetzner/tutorial/part-3",
       "lines": 197,
-      "bytes": 5624
+      "bytes": 5606
     },
     {
       "title": "Part 4: Networking & Load Balancing",
@@ -3763,7 +3847,7 @@
       "upstream": "website/src/content/docs/infrastructure-as-effects/binding.mdx",
       "url": "https://alchemy.run/infrastructure-as-effects/binding",
       "lines": 304,
-      "bytes": 9632
+      "bytes": 9623
     },
     {
       "title": "Circular Bindings",
@@ -3775,7 +3859,7 @@
       "upstream": "website/src/content/docs/infrastructure-as-effects/circular-bindings.mdx",
       "url": "https://alchemy.run/infrastructure-as-effects/circular-bindings",
       "lines": 237,
-      "bytes": 8208
+      "bytes": 8190
     },
     {
       "title": "Custom Runtime",
@@ -3799,7 +3883,7 @@
       "upstream": "website/src/content/docs/infrastructure-as-effects/event-sources.mdx",
       "url": "https://alchemy.run/infrastructure-as-effects/event-sources",
       "lines": 256,
-      "bytes": 8397
+      "bytes": 8388
     },
     {
       "title": "Layers",
@@ -3835,7 +3919,7 @@
       "upstream": "website/src/content/docs/infrastructure-as-effects/runtime.mdx",
       "url": "https://alchemy.run/infrastructure-as-effects/runtime",
       "lines": 399,
-      "bytes": 12329
+      "bytes": 12302
     },
     {
       "title": "Sinks",
@@ -3847,7 +3931,7 @@
       "upstream": "website/src/content/docs/infrastructure-as-effects/sinks.mdx",
       "url": "https://alchemy.run/infrastructure-as-effects/sinks",
       "lines": 190,
-      "bytes": 7207
+      "bytes": 7189
     },
     {
       "title": "Telemetry",
@@ -3859,7 +3943,235 @@
       "upstream": "website/src/content/docs/infrastructure-as-effects/telemetry.mdx",
       "url": "https://alchemy.run/infrastructure-as-effects/telemetry",
       "lines": 214,
-      "bytes": 8091
+      "bytes": 8082
+    },
+    {
+      "title": "Cluster adapters",
+      "description": "The extension point between Alchemy's cluster-agnostic Kubernetes resources and the platform a cluster runs on. Covers authentication, image registries, workload identity, load balancer defaults, and how to write your own.",
+      "area": "kubernetes",
+      "group": "clusters",
+      "slug": "kubernetes/clusters/cluster-adapters",
+      "path": "references/kubernetes/clusters/cluster-adapters.md",
+      "upstream": "website/src/content/docs/kubernetes/clusters/cluster-adapters.mdx",
+      "url": "https://alchemy.run/kubernetes/clusters/cluster-adapters",
+      "lines": 179,
+      "bytes": 6506
+    },
+    {
+      "title": "Connecting to clusters",
+      "description": "Point Kubernetes resources at any cluster with Kubernetes.KubeConfig, a raw Kubernetes.Connection (bearer token, client certificate, or exec plugin), or a cluster resource such as Kubernetes.LocalCluster.",
+      "area": "kubernetes",
+      "group": "clusters",
+      "slug": "kubernetes/clusters/connecting",
+      "path": "references/kubernetes/clusters/connecting.md",
+      "upstream": "website/src/content/docs/kubernetes/clusters/connecting.mdx",
+      "url": "https://alchemy.run/kubernetes/clusters/connecting",
+      "lines": 235,
+      "bytes": 8615
+    },
+    {
+      "title": "Amazon EKS",
+      "description": "Run Alchemy's Kubernetes resources on Amazon EKS. Find the guide for creating clusters, ECR images, Pod Identity, and load balancers.",
+      "area": "kubernetes",
+      "group": "clusters",
+      "slug": "kubernetes/clusters/eks",
+      "path": "references/kubernetes/clusters/eks.md",
+      "upstream": "website/src/content/docs/kubernetes/clusters/eks.mdx",
+      "url": "https://alchemy.run/kubernetes/clusters/eks",
+      "lines": 39,
+      "bytes": 1597
+    },
+    {
+      "title": "Local clusters",
+      "description": "Run a Kubernetes cluster on your machine with Kubernetes.LocalCluster. It is a kind cluster in Docker with an image registry wired into its nodes, so Effect programs and Dockerfiles deploy the same way they do on a hosted cluster.",
+      "area": "kubernetes",
+      "group": "clusters",
+      "slug": "kubernetes/clusters/local",
+      "path": "references/kubernetes/clusters/local.md",
+      "upstream": "website/src/content/docs/kubernetes/clusters/local.mdx",
+      "url": "https://alchemy.run/kubernetes/clusters/local",
+      "lines": 242,
+      "bytes": 7430
+    },
+    {
+      "title": "Container registries",
+      "description": "Give a Kubernetes connection a registry so Deployments and Jobs built from Effect programs or Dockerfiles are pushed where the cluster's nodes can pull them, such as GHCR, Docker Hub, Artifact Registry, ACR, or a registry of your own.",
+      "area": "kubernetes",
+      "group": "clusters",
+      "slug": "kubernetes/clusters/registries",
+      "path": "references/kubernetes/clusters/registries.md",
+      "upstream": "website/src/content/docs/kubernetes/clusters/registries.mdx",
+      "url": "https://alchemy.run/kubernetes/clusters/registries",
+      "lines": 151,
+      "bytes": 4663
+    },
+    {
+      "title": "Kubernetes",
+      "description": "Run containers and Effect programs on any Kubernetes cluster with Alchemy. Declare Deployments, Jobs, raw manifests, and Helm charts in the same typed program as the rest of your infrastructure. No YAML, no kubectl apply.",
+      "area": "kubernetes",
+      "group": "",
+      "slug": "kubernetes",
+      "path": "references/kubernetes/_overview.md",
+      "upstream": "website/src/content/docs/kubernetes/index.mdx",
+      "url": "https://alchemy.run/kubernetes",
+      "lines": 131,
+      "bytes": 5283
+    },
+    {
+      "title": "Helm charts",
+      "description": "Install Helm charts with Kubernetes.HelmChart. Covers repository, OCI, and local charts, values, release names, namespaces, CRDs, hooks, and how Alchemy owns the rendered objects instead of a Helm release.",
+      "area": "kubernetes",
+      "group": "objects",
+      "slug": "kubernetes/objects/helm-charts",
+      "path": "references/kubernetes/objects/helm-charts.md",
+      "upstream": "website/src/content/docs/kubernetes/objects/helm-charts.mdx",
+      "url": "https://alchemy.run/kubernetes/objects/helm-charts",
+      "lines": 148,
+      "bytes": 5396
+    },
+    {
+      "title": "Manifests",
+      "description": "Apply any single Kubernetes object with Kubernetes.Manifest, including Namespaces, ConfigMaps, Secrets, StatefulSets, Ingresses, CRDs and custom resources, and order objects with Output references.",
+      "area": "kubernetes",
+      "group": "objects",
+      "slug": "kubernetes/objects/manifests",
+      "path": "references/kubernetes/objects/manifests.md",
+      "upstream": "website/src/content/docs/kubernetes/objects/manifests.mdx",
+      "url": "https://alchemy.run/kubernetes/objects/manifests",
+      "lines": 221,
+      "bytes": 7011
+    },
+    {
+      "title": "Setup",
+      "description": "Install Alchemy and connect it to a Kubernetes cluster, whether a local cluster on your machine, any cluster in your kubeconfig, or an explicit connection for CI. Then add a registry for images built from your code.",
+      "area": "kubernetes",
+      "group": "",
+      "slug": "kubernetes/setup",
+      "path": "references/kubernetes/setup.md",
+      "upstream": "website/src/content/docs/kubernetes/setup.mdx",
+      "url": "https://alchemy.run/kubernetes/setup",
+      "lines": 315,
+      "bytes": 10530
+    },
+    {
+      "title": "Part 1: Your First Deployment",
+      "description": "Create a Stack, start a Kubernetes cluster on your machine with Kubernetes.LocalCluster, deploy a replicated HTTP service with Kubernetes.Deployment, and reach it with kubectl.",
+      "area": "kubernetes",
+      "group": "tutorial",
+      "slug": "kubernetes/tutorial/part-1",
+      "path": "references/kubernetes/tutorial/part-1.md",
+      "upstream": "website/src/content/docs/kubernetes/tutorial/part-1.mdx",
+      "url": "https://alchemy.run/kubernetes/tutorial/part-1",
+      "lines": 243,
+      "bytes": 6657
+    },
+    {
+      "title": "Part 2: Namespaces & Configuration",
+      "description": "Create a Namespace with Kubernetes.Manifest, move the Deployment into it, and configure the app with environment variables and resource limits.",
+      "area": "kubernetes",
+      "group": "tutorial",
+      "slug": "kubernetes/tutorial/part-2",
+      "path": "references/kubernetes/tutorial/part-2.md",
+      "upstream": "website/src/content/docs/kubernetes/tutorial/part-2.mdx",
+      "url": "https://alchemy.run/kubernetes/tutorial/part-2",
+      "lines": 175,
+      "bytes": 4586
+    },
+    {
+      "title": "Part 3: Effect Jobs",
+      "description": "Write a smoke test as an Effect program, run it as a Kubernetes Job that Alchemy builds and pushes for you, watch it re-run when the program changes, and schedule it as a CronJob.",
+      "area": "kubernetes",
+      "group": "tutorial",
+      "slug": "kubernetes/tutorial/part-3",
+      "path": "references/kubernetes/tutorial/part-3.md",
+      "upstream": "website/src/content/docs/kubernetes/tutorial/part-3.mdx",
+      "url": "https://alchemy.run/kubernetes/tutorial/part-3",
+      "lines": 410,
+      "bytes": 11250
+    },
+    {
+      "title": "Part 4: Install a Helm Chart",
+      "description": "Install metrics-server from its Helm chart with Kubernetes.HelmChart, pass chart values, and check pod metrics with kubectl top.",
+      "area": "kubernetes",
+      "group": "tutorial",
+      "slug": "kubernetes/tutorial/part-4",
+      "path": "references/kubernetes/tutorial/part-4.md",
+      "upstream": "website/src/content/docs/kubernetes/tutorial/part-4.mdx",
+      "url": "https://alchemy.run/kubernetes/tutorial/part-4",
+      "lines": 143,
+      "bytes": 4160
+    },
+    {
+      "title": "Part 5: Deploy to Your Own Cluster",
+      "description": "Point the tutorial stack at a hosted Kubernetes cluster such as GKE, AKS, EKS, k3s, or anything in your kubeconfig. Keep the local cluster for development with stages, and clean up.",
+      "area": "kubernetes",
+      "group": "tutorial",
+      "slug": "kubernetes/tutorial/part-5",
+      "path": "references/kubernetes/tutorial/part-5.md",
+      "upstream": "website/src/content/docs/kubernetes/tutorial/part-5.mdx",
+      "url": "https://alchemy.run/kubernetes/tutorial/part-5",
+      "lines": 221,
+      "bytes": 6883
+    },
+    {
+      "title": "Configuration & bindings",
+      "description": "Pass configuration into Kubernetes workloads with env and Outputs, understand the variables Alchemy sets, keep secrets out of plain text, and use bindings.",
+      "area": "kubernetes",
+      "group": "workloads",
+      "slug": "kubernetes/workloads/bindings",
+      "path": "references/kubernetes/workloads/bindings.md",
+      "upstream": "website/src/content/docs/kubernetes/workloads/bindings.mdx",
+      "url": "https://alchemy.run/kubernetes/workloads/bindings",
+      "lines": 141,
+      "bytes": 4963
+    },
+    {
+      "title": "Deployments",
+      "description": "Run a replicated server on any Kubernetes cluster with Kubernetes.Deployment. Covers names, namespaces, Service types and URLs, replicas, resources, labels, the pod template escape hatch, and Effect servers.",
+      "area": "kubernetes",
+      "group": "workloads",
+      "slug": "kubernetes/workloads/deployments",
+      "path": "references/kubernetes/workloads/deployments.md",
+      "upstream": "website/src/content/docs/kubernetes/workloads/deployments.mdx",
+      "url": "https://alchemy.run/kubernetes/workloads/deployments",
+      "lines": 293,
+      "bytes": 10166
+    },
+    {
+      "title": "Container images",
+      "description": "Choose where a Deployment or Job's container image comes from and where built images are pushed. Sources are a registry reference, your own Dockerfile, or a bundled Effect program.",
+      "area": "kubernetes",
+      "group": "workloads",
+      "slug": "kubernetes/workloads/images",
+      "path": "references/kubernetes/workloads/images.md",
+      "upstream": "website/src/content/docs/kubernetes/workloads/images.mdx",
+      "url": "https://alchemy.run/kubernetes/workloads/images",
+      "lines": 202,
+      "bytes": 6606
+    },
+    {
+      "title": "Jobs & CronJobs",
+      "description": "Run work to completion with Kubernetes.Job, as a container image or as an Effect program, and on a schedule as a CronJob. Covers how Job names, re-runs, retries, and cleanup work.",
+      "area": "kubernetes",
+      "group": "workloads",
+      "slug": "kubernetes/workloads/jobs",
+      "path": "references/kubernetes/workloads/jobs.md",
+      "upstream": "website/src/content/docs/kubernetes/workloads/jobs.mdx",
+      "url": "https://alchemy.run/kubernetes/workloads/jobs",
+      "lines": 258,
+      "bytes": 8849
+    },
+    {
+      "title": "How objects are managed",
+      "description": "How Alchemy applies, orders, prunes, and deletes Kubernetes objects, including server-side apply and field ownership, drift, replacement, unreachable clusters, and adoption.",
+      "area": "kubernetes",
+      "group": "workloads",
+      "slug": "kubernetes/workloads/object-lifecycle",
+      "path": "references/kubernetes/workloads/object-lifecycle.md",
+      "upstream": "website/src/content/docs/kubernetes/workloads/object-lifecycle.mdx",
+      "url": "https://alchemy.run/kubernetes/workloads/object-lifecycle",
+      "lines": 166,
+      "bytes": 7223
     },
     {
       "title": "Migrating from v1",
@@ -3871,7 +4183,7 @@
       "upstream": "website/src/content/docs/migrating-from-v1.mdx",
       "url": "https://alchemy.run/migrating-from-v1",
       "lines": 295,
-      "bytes": 9953
+      "bytes": 9935
     },
     {
       "title": "Branching",
@@ -4087,7 +4399,7 @@
       "upstream": "website/src/content/docs/neon/guides/ai-gateway.mdx",
       "url": "https://alchemy.run/neon/guides/ai-gateway",
       "lines": 108,
-      "bytes": 4852
+      "bytes": 4843
     },
     {
       "title": "Custom domains",
@@ -4171,7 +4483,7 @@
       "upstream": "website/src/content/docs/neon/index.mdx",
       "url": "https://alchemy.run/neon",
       "lines": 198,
-      "bytes": 7624
+      "bytes": 7615
     },
     {
       "title": "Setup",
@@ -4627,7 +4939,7 @@
       "upstream": "website/src/content/docs/prisma/guides/cloudflare-workers.mdx",
       "url": "https://alchemy.run/prisma/guides/cloudflare-workers",
       "lines": 100,
-      "bytes": 3304
+      "bytes": 3295
     },
     {
       "title": "Prisma",
@@ -4675,7 +4987,7 @@
       "upstream": "website/src/content/docs/prisma/tutorial/part-2.mdx",
       "url": "https://alchemy.run/prisma/tutorial/part-2",
       "lines": 146,
-      "bytes": 4327
+      "bytes": 4309
     },
     {
       "title": "Part 3: Query Postgres",
@@ -4735,7 +5047,7 @@
       "upstream": "website/src/content/docs/project-structure/monorepo-single-stack.mdx",
       "url": "https://alchemy.run/project-structure/monorepo-single-stack",
       "lines": 211,
-      "bytes": 7009
+      "bytes": 7000
     },
     {
       "title": "Monorepo",
@@ -4771,7 +5083,7 @@
       "upstream": "website/src/content/docs/railway/compute/functions.mdx",
       "url": "https://alchemy.run/railway/compute/functions",
       "lines": 191,
-      "bytes": 5310
+      "bytes": 5301
     },
     {
       "title": "Projects",
@@ -4807,7 +5119,7 @@
       "upstream": "website/src/content/docs/railway/compute/services.mdx",
       "url": "https://alchemy.run/railway/compute/services",
       "lines": 367,
-      "bytes": 10239
+      "bytes": 10230
     },
     {
       "title": "Buckets",
@@ -4819,7 +5131,7 @@
       "upstream": "website/src/content/docs/railway/data/buckets.mdx",
       "url": "https://alchemy.run/railway/data/buckets",
       "lines": 113,
-      "bytes": 3146
+      "bytes": 3137
     },
     {
       "title": "Drizzle MySQL on Railway",
@@ -4855,7 +5167,7 @@
       "upstream": "website/src/content/docs/railway/data/mongo.mdx",
       "url": "https://alchemy.run/railway/data/mongo",
       "lines": 91,
-      "bytes": 2758
+      "bytes": 2749
     },
     {
       "title": "MySQL",
@@ -4867,7 +5179,7 @@
       "upstream": "website/src/content/docs/railway/data/mysql.mdx",
       "url": "https://alchemy.run/railway/data/mysql",
       "lines": 93,
-      "bytes": 2853
+      "bytes": 2844
     },
     {
       "title": "Postgres",
@@ -4879,7 +5191,7 @@
       "upstream": "website/src/content/docs/railway/data/postgres.mdx",
       "url": "https://alchemy.run/railway/data/postgres",
       "lines": 152,
-      "bytes": 4538
+      "bytes": 4529
     },
     {
       "title": "Redis",
@@ -4891,7 +5203,7 @@
       "upstream": "website/src/content/docs/railway/data/redis.mdx",
       "url": "https://alchemy.run/railway/data/redis",
       "lines": 116,
-      "bytes": 3184
+      "bytes": 3175
     },
     {
       "title": "Variables",
@@ -5131,7 +5443,7 @@
       "upstream": "website/src/content/docs/railway/setup.mdx",
       "url": "https://alchemy.run/railway/setup",
       "lines": 126,
-      "bytes": 4165
+      "bytes": 4151
     },
     {
       "title": "Part 1: Your First Project",
@@ -5143,7 +5455,7 @@
       "upstream": "website/src/content/docs/railway/tutorial/part-1.mdx",
       "url": "https://alchemy.run/railway/tutorial/part-1",
       "lines": 250,
-      "bytes": 6849
+      "bytes": 6835
     },
     {
       "title": "Part 2: Deploy a Service",
@@ -5155,7 +5467,7 @@
       "upstream": "website/src/content/docs/railway/tutorial/part-2.mdx",
       "url": "https://alchemy.run/railway/tutorial/part-2",
       "lines": 289,
-      "bytes": 7674
+      "bytes": 7647
     },
     {
       "title": "Part 3: Persist Data with a Volume",
@@ -5167,7 +5479,7 @@
       "upstream": "website/src/content/docs/railway/tutorial/part-3.mdx",
       "url": "https://alchemy.run/railway/tutorial/part-3",
       "lines": 213,
-      "bytes": 5477
+      "bytes": 5459
     },
     {
       "title": "Part 4: Variables and Cleanup",
@@ -5203,7 +5515,7 @@
       "upstream": "website/src/content/docs/sql/drizzle/d1.mdx",
       "url": "https://alchemy.run/sql/drizzle/d1",
       "lines": 160,
-      "bytes": 5198
+      "bytes": 5189
     },
     {
       "title": "Migrations",
@@ -5251,7 +5563,7 @@
       "upstream": "website/src/content/docs/sql/effect-sql/d1.mdx",
       "url": "https://alchemy.run/sql/effect-sql/d1",
       "lines": 135,
-      "bytes": 4336
+      "bytes": 4318
     },
     {
       "title": "Connection lifecycle",
@@ -5287,7 +5599,7 @@
       "upstream": "website/src/content/docs/sql/effect-sql/mysql.mdx",
       "url": "https://alchemy.run/sql/effect-sql/mysql",
       "lines": 137,
-      "bytes": 4619
+      "bytes": 4601
     },
     {
       "title": "Postgres",
@@ -5299,7 +5611,7 @@
       "upstream": "website/src/content/docs/sql/effect-sql/postgres.mdx",
       "url": "https://alchemy.run/sql/effect-sql/postgres",
       "lines": 111,
-      "bytes": 3769
+      "bytes": 3751
     },
     {
       "title": "SQL",
@@ -5383,7 +5695,7 @@
       "upstream": "website/src/content/docs/stripe/guides/connect.mdx",
       "url": "https://alchemy.run/stripe/guides/connect",
       "lines": 494,
-      "bytes": 15652
+      "bytes": 15634
     },
     {
       "title": "Sell a subscription",
@@ -5395,7 +5707,7 @@
       "upstream": "website/src/content/docs/stripe/guides/subscriptions.mdx",
       "url": "https://alchemy.run/stripe/guides/subscriptions",
       "lines": 556,
-      "bytes": 18518
+      "bytes": 18500
     },
     {
       "title": "React to Stripe events",
@@ -5407,7 +5719,7 @@
       "upstream": "website/src/content/docs/stripe/guides/webhooks.mdx",
       "url": "https://alchemy.run/stripe/guides/webhooks",
       "lines": 136,
-      "bytes": 5149
+      "bytes": 5140
     },
     {
       "title": "Stripe",
@@ -5467,7 +5779,7 @@
       "upstream": "website/src/content/docs/testing/test-harness.mdx",
       "url": "https://alchemy.run/testing/test-harness",
       "lines": 316,
-      "bytes": 10232
+      "bytes": 10214
     },
     {
       "title": "Testing a Stack",
@@ -5479,7 +5791,7 @@
       "upstream": "website/src/content/docs/testing/testing-a-stack.mdx",
       "url": "https://alchemy.run/testing/testing-a-stack",
       "lines": 220,
-      "bytes": 8281
+      "bytes": 8263
     },
     {
       "title": "Testing Providers",
@@ -5503,7 +5815,7 @@
       "upstream": "website/src/content/docs/what-is-alchemy.mdx",
       "url": "https://alchemy.run/what-is-alchemy",
       "lines": 318,
-      "bytes": 10208
+      "bytes": 10199
     }
   ]
 }

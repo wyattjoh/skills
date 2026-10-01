@@ -1,6 +1,6 @@
 <!-- source: https://alchemy.run/fly/compute/machines
      upstream: website/src/content/docs/fly/compute/machines.mdx
-     alchemy 2.0.0-beta.79 @ 0811092 -->
+     alchemy 2.0.0-beta.79 @ e354a45 -->
 
 # Machines
 
@@ -11,8 +11,14 @@ running a container image. Use it when you already have an image.
 
 ## Launch a Machine
 
-The parent is an App. Pin a [region](/fly/compute/regions), an
-image, and a guest:
+A Machine runs in a [`Fly.App`](/fly/compute/apps) you declare:
+
+```typescript
+// src/app.ts
+export const Site = Fly.App("Site");
+```
+
+Pin a [region](/fly/compute/regions), an image, and a guest:
 
 ```typescript
 const web = yield* Fly.Machine("Web", {
@@ -39,8 +45,10 @@ defaults to shared-cpu 1× / 256 MB. Port 443 with `tls` is what
 makes `https://{app}.fly.dev` answer. Omit `services` (or pass
 `[]`) for a worker that should not be reachable from the internet.
 
-`{app}.fly.dev` over IPv4 still needs an
-[`IpAssignment`](/fly/networking) on the parent App.
+The App needs an
+[`IpAssignment`](/fly/networking#addresses-for-a-shared-app) before
+`{app}.fly.dev` answers over IPv4. For a public endpoint without
+managing Apps and addresses, use a [Service](/fly/compute/services).
 
 ## Run named containers
 
@@ -219,14 +227,15 @@ than silently switching to rolling. Stop and suspend are supported through the
 
 Prefer a [`Service`](/fly/compute/services) when the program is
 Effect. A Service is effectful, supports bindings, and scales with
-`count`. Alchemy builds and pushes the image. Prefer a
+`count`. It owns its App and addresses, and `api.url` is its public
+endpoint. Alchemy builds and pushes the image. Prefer a
 [`Sprite`](/fly/compute/sprites) when the sandbox can hibernate —
-no parent App, no Docker image.
+no App, no Docker image.
 
 ```typescript
 export default class Api extends Fly.Service<Api>()(
   "Api",
-  { app: Site, main: import.meta.url, region: "iad", count: 3, port: 3000 },
+  { main: import.meta.url, region: "iad", count: 3, port: 3000 },
   Effect.gen(function* () {
     return {
       fetch: Effect.succeed(HttpServerResponse.text("hello")),

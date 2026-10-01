@@ -1,6 +1,6 @@
 <!-- source: https://alchemy.run/cloudflare/ai/workers-ai
      upstream: website/src/content/docs/cloudflare/ai/workers-ai.mdx
-     alchemy 2.0.0-beta.79 @ 0811092 -->
+     alchemy 2.0.0-beta.79 @ e354a45 -->
 
 # Run Workers AI models
 
@@ -31,8 +31,8 @@ the constructor's layer chain, the same way every other Worker binding works:
 // src/AiWorker.ts
 import * as Cloudflare from "alchemy/Cloudflare";
 import * as Effect from "effect/Effect";
-import { HttpServerRequest } from "effect/unstable/http/HttpServerRequest";
-import * as HttpServerResponse from "effect/unstable/http/HttpServerResponse";
+import { HttpServerRequest } from "effect/http/HttpServerRequest";
+import * as HttpServerResponse from "effect/http/HttpServerResponse";
 
 const MODEL = "@cf/meta/llama-3.3-70b-instruct-fp8-fast";
 
@@ -91,7 +91,7 @@ Gateway's `QueryGateway` uses, minus the gateway routing, so no API
 key and no HTTP client layer are involved:
 
 ```typescript
-import { LanguageModel } from "effect/unstable/ai";
+import { LanguageModel } from "effect/ai";
 
 Effect.gen(function* () {
   const ai = yield* Cloudflare.Workers.AI();
@@ -126,7 +126,7 @@ the stream:
 
 ```typescript
 import * as Stream from "effect/Stream";
-import * as Sse from "effect/unstable/encoding/Sse";
+import * as Sse from "effect/encoding/Sse";
 
 const stream = LanguageModel.streamText({ prompt }).pipe(
   Stream.provide(languageModel),

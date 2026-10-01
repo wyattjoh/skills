@@ -1,6 +1,6 @@
 <!-- source: https://alchemy.run/cloudflare/frontend/waku
      upstream: website/src/content/docs/cloudflare/frontend/waku.mdx
-     alchemy 2.0.0-beta.79 @ 0811092 -->
+     alchemy 2.0.0-beta.79 @ e354a45 -->
 
 # Waku
 

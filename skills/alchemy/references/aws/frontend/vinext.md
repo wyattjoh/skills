@@ -1,6 +1,6 @@
 <!-- source: https://alchemy.run/aws/frontend/vinext
      upstream: website/src/content/docs/aws/frontend/vinext.mdx
-     alchemy 2.0.0-beta.79 @ 0811092 -->
+     alchemy 2.0.0-beta.79 @ e354a45 -->
 
 # Vinext
 

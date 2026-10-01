@@ -1,6 +1,6 @@
 <!-- source: https://alchemy.run/axiom/guides/annotations
      upstream: website/src/content/docs/axiom/guides/annotations.mdx
-     alchemy 2.0.0-beta.79 @ 0811092 -->
+     alchemy 2.0.0-beta.79 @ e354a45 -->
 
 # Deploy markers & annotations
 

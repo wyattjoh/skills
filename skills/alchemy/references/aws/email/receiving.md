@@ -1,6 +1,6 @@
 <!-- source: https://alchemy.run/aws/email/receiving
      upstream: website/src/content/docs/aws/email/receiving.mdx
-     alchemy 2.0.0-beta.79 @ 0811092 -->
+     alchemy 2.0.0-beta.79 @ e354a45 -->
 
 # Email receiving
 

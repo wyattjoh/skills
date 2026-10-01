@@ -1,6 +1,6 @@
 <!-- source: https://alchemy.run/cloudflare/compute/gradual-deployments
      upstream: website/src/content/docs/cloudflare/compute/gradual-deployments.mdx
-     alchemy 2.0.0-beta.79 @ 0811092 -->
+     alchemy 2.0.0-beta.79 @ e354a45 -->
 
 # Gradual deployments
 
@@ -269,7 +269,7 @@ a deploy:
 // src/worker.ts
 import * as Cloudflare from "alchemy/Cloudflare";
 import * as Effect from "effect/Effect";
-import * as HttpServerResponse from "effect/unstable/http/HttpServerResponse";
+import * as HttpServerResponse from "effect/http/HttpServerResponse";
 
 export default Cloudflare.Worker(
   "Api",

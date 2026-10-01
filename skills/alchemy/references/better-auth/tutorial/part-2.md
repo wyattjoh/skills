@@ -1,6 +1,6 @@
 <!-- source: https://alchemy.run/better-auth/tutorial/part-2
      upstream: website/src/content/docs/better-auth/tutorial/part-2.mdx
-     alchemy 2.0.0-beta.79 @ 0811092 -->
+     alchemy 2.0.0-beta.79 @ e354a45 -->
 
 # Part 2: Mount the HTTP API
 
@@ -13,9 +13,9 @@ Continue from [Part 1](/better-auth/tutorial/part-1). Keep Better Auth's routes 
 ```typescript
 // src/api.ts
 import * as Schema from "effect/Schema";
-import * as HttpApi from "effect/unstable/httpapi/HttpApi";
-import * as HttpApiEndpoint from "effect/unstable/httpapi/HttpApiEndpoint";
-import * as HttpApiGroup from "effect/unstable/httpapi/HttpApiGroup";
+import * as HttpApi from "effect/http-api/HttpApi";
+import * as HttpApiEndpoint from "effect/http-api/HttpApiEndpoint";
+import * as HttpApiGroup from "effect/http-api/HttpApiGroup";
 
 export class PublicApi extends HttpApiGroup.make("public").add(
   HttpApiEndpoint.get("health", "/api/health", {
@@ -35,7 +35,7 @@ The schema declares the response shape. No authentication is required for this e
 import * as Http from "alchemy/Http";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
-import * as HttpApiBuilder from "effect/unstable/httpapi/HttpApiBuilder";
+import * as HttpApiBuilder from "effect/http-api/HttpApiBuilder";
 import { AppApi } from "./api.ts";
 
 const PublicLive = HttpApiBuilder.group(AppApi, "public", (handlers) =>
@@ -54,7 +54,7 @@ The handler supplies the declared response. Alchemy's HTTP platform layer provid
 
 ```diff lang="typescript"
  // src/worker.ts
-+import * as HttpRouter from "effect/unstable/http/HttpRouter";
++import * as HttpRouter from "effect/http/HttpRouter";
 +import { HttpLive } from "./http.ts";
 
    Effect.gen(function* () {
@@ -70,7 +70,7 @@ Build the router once during Worker construction. Remove the now-unused `HttpSer
 
 ```diff lang="typescript"
  // src/worker.ts
-+import { HttpServerRequest } from "effect/unstable/http/HttpServerRequest";
++import { HttpServerRequest } from "effect/http/HttpServerRequest";
 
    Effect.gen(function* () {
 -    yield* Auth;

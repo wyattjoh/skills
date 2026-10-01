@@ -1,6 +1,6 @@
 <!-- source: https://alchemy.run/cloudflare/compute/workers-for-platforms
      upstream: website/src/content/docs/cloudflare/compute/workers-for-platforms.mdx
-     alchemy 2.0.0-beta.79 @ 0811092 -->
+     alchemy 2.0.0-beta.79 @ e354a45 -->
 
 # Workers for Platforms
 
@@ -86,8 +86,8 @@ looks up a user Worker by script name and returns a `Fetcher`:
 // src/platform.ts
 import * as Cloudflare from "alchemy/Cloudflare";
 import * as Effect from "effect/Effect";
-import { HttpServerRequest } from "effect/unstable/http/HttpServerRequest";
-import * as HttpServerResponse from "effect/unstable/http/HttpServerResponse";
+import { HttpServerRequest } from "effect/http/HttpServerRequest";
+import * as HttpServerResponse from "effect/http/HttpServerResponse";
 import { Customers } from "./namespace.ts";
 
 export default class PlatformWorker extends Cloudflare.Worker<PlatformWorker>()(

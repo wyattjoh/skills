@@ -1,6 +1,6 @@
 <!-- source: https://alchemy.run/cloudflare/data/d1-drizzle
      upstream: website/src/content/docs/cloudflare/data/d1-drizzle.mdx
-     alchemy 2.0.0-beta.79 @ 0811092 -->
+     alchemy 2.0.0-beta.79 @ e354a45 -->
 
 # Drizzle on D1
 
@@ -73,7 +73,7 @@ D1 applies pending SQL during deployment. [D1 migrations](/cloudflare/data/d1#mi
 import * as Cloudflare from "alchemy/Cloudflare";
 import * as Drizzle from "alchemy/Drizzle";
 import * as Effect from "effect/Effect";
-import * as HttpServerResponse from "effect/unstable/http/HttpServerResponse";
+import * as HttpServerResponse from "effect/http/HttpServerResponse";
 import { Database } from "./Db.ts";
 import { users } from "./schema.ts";
 

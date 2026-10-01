@@ -1,6 +1,6 @@
 <!-- source: https://alchemy.run/infrastructure-as-effects/runtime
      upstream: website/src/content/docs/infrastructure-as-effects/runtime.mdx
-     alchemy 2.0.0-beta.79 @ 0811092 -->
+     alchemy 2.0.0-beta.79 @ e354a45 -->
 
 # Runtime
 
@@ -15,7 +15,7 @@ The Effect is the code. Here is the running example from
 ```typescript
 import * as Cloudflare from "alchemy/Cloudflare";
 import * as Effect from "effect/Effect";
-import * as HttpServerResponse from "effect/unstable/http/HttpServerResponse";
+import * as HttpServerResponse from "effect/http/HttpServerResponse";
 
 export const Uploads = Cloudflare.R2.Bucket("Uploads");
 
@@ -84,8 +84,8 @@ once and every Runtime in Alchemy is a variation on it.
 
 ```typescript
 import * as Effect from "effect/Effect";
-import { HttpServerRequest } from "effect/unstable/http/HttpServerRequest";
-import * as HttpServerResponse from "effect/unstable/http/HttpServerResponse";
+import { HttpServerRequest } from "effect/http/HttpServerRequest";
+import * as HttpServerResponse from "effect/http/HttpServerResponse";
 
 Effect.gen(function* () {
   return {

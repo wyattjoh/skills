@@ -1,6 +1,6 @@
 <!-- source: https://alchemy.run/better-auth/sign-in-providers/email-password
      upstream: website/src/content/docs/better-auth/sign-in-providers/email-password.mdx
-     alchemy 2.0.0-beta.79 @ 0811092 -->
+     alchemy 2.0.0-beta.79 @ e354a45 -->
 
 # Email and password
 
@@ -47,9 +47,9 @@ Create `src/mail.ts`:
 ```typescript
 import * as Config from "effect/Config";
 import * as Effect from "effect/Effect";
-import * as HttpClient from "effect/unstable/http/HttpClient";
-import * as HttpClientRequest from "effect/unstable/http/HttpClientRequest";
-import * as HttpClientResponse from "effect/unstable/http/HttpClientResponse";
+import * as HttpClient from "effect/http/HttpClient";
+import * as HttpClientRequest from "effect/http/HttpClientRequest";
+import * as HttpClientResponse from "effect/http/HttpClientResponse";
 
 const mailConfig = Effect.gen(function* () {
   const from = yield* Config.String("AUTH_EMAIL_FROM");
@@ -171,8 +171,8 @@ Create `src/handler.ts`:
 
 ```typescript
 import * as Effect from "effect/Effect";
-import { HttpServerRequest } from "effect/unstable/http/HttpServerRequest";
-import * as HttpServerResponse from "effect/unstable/http/HttpServerResponse";
+import { HttpServerRequest } from "effect/http/HttpServerRequest";
+import * as HttpServerResponse from "effect/http/HttpServerResponse";
 import { Auth } from "./auth.ts";
 
 export const handlers = Effect.gen(function* () {
@@ -201,7 +201,7 @@ import { CloudflareD1 } from "@alchemy.run/better-auth/CloudflareD1";
 import * as Cloudflare from "alchemy/Cloudflare";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
-import * as FetchHttpClient from "effect/unstable/http/FetchHttpClient";
+import * as FetchHttpClient from "effect/http/FetchHttpClient";
 import { Auth } from "./auth.ts";
 import { AuthDb } from "./database.ts";
 import { handlers } from "./handler.ts";

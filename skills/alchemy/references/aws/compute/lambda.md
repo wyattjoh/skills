@@ -1,6 +1,6 @@
 <!-- source: https://alchemy.run/aws/compute/lambda
      upstream: website/src/content/docs/aws/compute/lambda.mdx
-     alchemy 2.0.0-beta.79 @ 0811092 -->
+     alchemy 2.0.0-beta.79 @ e354a45 -->
 
 # Lambda
 
@@ -113,7 +113,7 @@ is wired up to handle incoming HTTP requests:
 // src/api.ts
 import * as AWS from "alchemy/AWS";
 import * as Effect from "effect/Effect";
-+import * as HttpServerResponse from "effect/unstable/http/HttpServerResponse";
++import * as HttpServerResponse from "effect/http/HttpServerResponse";
 
 export default class Api extends AWS.Lambda.Function<Api>()(
   "Api",
@@ -127,7 +127,7 @@ export default class Api extends AWS.Lambda.Function<Api>()(
 ) {}
 ```
 
-`HttpServerResponse.text(...)` is the same `effect/unstable/http`
+`HttpServerResponse.text(...)` is the same `effect/http`
 API used everywhere else — Alchemy adapts it to the Lambda event
 envelope under the hood, so your handler never sees the raw
 `APIGatewayProxyEvent` shape.
@@ -167,7 +167,7 @@ value in the surrounding Effect context:
 import * as AWS from "alchemy/AWS";
 +import { Stack } from "alchemy/Stack";
 import * as Effect from "effect/Effect";
-import * as HttpServerResponse from "effect/unstable/http/HttpServerResponse";
+import * as HttpServerResponse from "effect/http/HttpServerResponse";
 
 export default class Api extends AWS.Lambda.Function<Api>()(
   "Api",
@@ -244,7 +244,7 @@ import * as AWS from "alchemy/AWS";
 import * as Test from "alchemy/Test/Bun";
 import { expect } from "bun:test";
 import * as Effect from "effect/Effect";
-import * as HttpClient from "effect/unstable/http/HttpClient";
+import * as HttpClient from "effect/http/HttpClient";
 import Stack from "../alchemy.run.ts";
 
 const { test, beforeAll, deploy } = Test.make({

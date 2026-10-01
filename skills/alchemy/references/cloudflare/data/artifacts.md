@@ -1,6 +1,6 @@
 <!-- source: https://alchemy.run/cloudflare/data/artifacts
      upstream: website/src/content/docs/cloudflare/data/artifacts.mdx
-     alchemy 2.0.0-beta.79 @ 0811092 -->
+     alchemy 2.0.0-beta.79 @ e354a45 -->
 
 # Store Git Repos with Artifacts
 
@@ -34,8 +34,8 @@ Bind the namespace in the Worker's Construction phase, then call
 // src/Worker.ts
 import * as Cloudflare from "alchemy/Cloudflare";
 import * as Effect from "effect/Effect";
-import { HttpServerRequest } from "effect/unstable/http/HttpServerRequest";
-import * as HttpServerResponse from "effect/unstable/http/HttpServerResponse";
+import { HttpServerRequest } from "effect/http/HttpServerRequest";
+import * as HttpServerResponse from "effect/http/HttpServerResponse";
 import { Repos } from "./Repos.ts";
 
 export default class Worker extends Cloudflare.Worker<Worker>()(
@@ -108,7 +108,7 @@ import * as Cloudflare from "alchemy/Cloudflare";
 import * as Test from "alchemy/Test/Bun";
 import { expect } from "bun:test";
 import * as Effect from "effect/Effect";
-import * as HttpClient from "effect/unstable/http/HttpClient";
+import * as HttpClient from "effect/http/HttpClient";
 import Stack from "../alchemy.run.ts";
 
 const { test, beforeAll, afterAll, deploy, destroy } = Test.make({

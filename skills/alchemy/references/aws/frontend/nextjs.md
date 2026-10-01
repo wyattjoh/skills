@@ -1,6 +1,6 @@
 <!-- source: https://alchemy.run/aws/frontend/nextjs
      upstream: website/src/content/docs/aws/frontend/nextjs.mdx
-     alchemy 2.0.0-beta.79 @ 0811092 -->
+     alchemy 2.0.0-beta.79 @ e354a45 -->
 
 # Next.js
 

@@ -1,6 +1,6 @@
 <!-- source: https://alchemy.run/docker/swarm
      upstream: website/src/content/docs/docker/swarm.mdx
-     alchemy 2.0.0-beta.79 @ 0811092 -->
+     alchemy 2.0.0-beta.79 @ e354a45 -->
 
 # Docker Swarm
 
@@ -101,7 +101,7 @@ database as `postgres`.
 
 ```typescript
 import * as Effect from "effect/Effect";
-import * as HttpServerResponse from "effect/unstable/http/HttpServerResponse";
+import * as HttpServerResponse from "effect/http/HttpServerResponse";
 
 const api = yield* Docker.Service(
   "api",

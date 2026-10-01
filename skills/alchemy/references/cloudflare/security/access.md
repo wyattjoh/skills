@@ -1,6 +1,6 @@
 <!-- source: https://alchemy.run/cloudflare/security/access
      upstream: website/src/content/docs/cloudflare/security/access.mdx
-     alchemy 2.0.0-beta.79 @ 0811092 -->
+     alchemy 2.0.0-beta.79 @ e354a45 -->
 
 # Protect a Worker with Access
 
@@ -27,7 +27,7 @@ namespaced under it as `Api/Access`):
 ```typescript
 import * as Cloudflare from "alchemy/Cloudflare";
 import * as Effect from "effect/Effect";
-import * as HttpServerResponse from "effect/unstable/http/HttpServerResponse";
+import * as HttpServerResponse from "effect/http/HttpServerResponse";
 
 export default Cloudflare.Worker(
   "Api",

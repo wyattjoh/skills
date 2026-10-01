@@ -1,6 +1,6 @@
 <!-- source: https://alchemy.run/cloudflare/ai/ai-search
      upstream: website/src/content/docs/cloudflare/ai/ai-search.mdx
-     alchemy 2.0.0-beta.79 @ 0811092 -->
+     alchemy 2.0.0-beta.79 @ e354a45 -->
 
 # Add AI Search (AutoRAG)
 
@@ -227,8 +227,8 @@ retrieve the relevant chunks, then answer with the configured generation
 model. It returns an Effect, so call it like any other.
 
 ```diff lang="typescript"
-+import { HttpServerRequest } from "effect/unstable/http/HttpServerRequest";
-+import * as HttpServerResponse from "effect/unstable/http/HttpServerResponse";
++import { HttpServerRequest } from "effect/http/HttpServerRequest";
++import * as HttpServerResponse from "effect/http/HttpServerResponse";
 
    return {
      fetch: Effect.gen(function* () {

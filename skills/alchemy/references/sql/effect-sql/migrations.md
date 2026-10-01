@@ -1,6 +1,6 @@
 <!-- source: https://alchemy.run/sql/effect-sql/migrations
      upstream: website/src/content/docs/sql/effect-sql/migrations.mdx
-     alchemy 2.0.0-beta.79 @ 0811092 -->
+     alchemy 2.0.0-beta.79 @ e354a45 -->
 
 # Migrations
 

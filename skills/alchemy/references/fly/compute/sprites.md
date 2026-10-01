@@ -1,6 +1,6 @@
 <!-- source: https://alchemy.run/fly/compute/sprites
      upstream: website/src/content/docs/fly/compute/sprites.mdx
-     alchemy 2.0.0-beta.79 @ 0811092 -->
+     alchemy 2.0.0-beta.79 @ e354a45 -->
 
 # Sprites
 
@@ -49,7 +49,7 @@ Sprite URL proxies to `port`.
 ```diff lang="typescript"
 import * as Fly from "alchemy/Fly";
 import * as Effect from "effect/Effect";
-+import * as HttpServerResponse from "effect/unstable/http/HttpServerResponse";
++import * as HttpServerResponse from "effect/http/HttpServerResponse";
 
 export default class Box extends Fly.Sprite<Box>()(
   "Box",

@@ -1,6 +1,6 @@
 <!-- source: https://alchemy.run/railway/data/redis
      upstream: website/src/content/docs/railway/data/redis.mdx
-     alchemy 2.0.0-beta.79 @ 0811092 -->
+     alchemy 2.0.0-beta.79 @ e354a45 -->
 
 # Redis
 
@@ -59,7 +59,7 @@ the Service's constructor. Provide the matching `*Http` layer. Runtime commands
 use `REDIS_URL` (`{name}.railway.internal`).
 
 ```typescript
-import * as HttpServerResponse from "effect/unstable/http/HttpServerResponse";
+import * as HttpServerResponse from "effect/http/HttpServerResponse";
 
 const Cache = Railway.Redis("Cache", { project: Site });
 

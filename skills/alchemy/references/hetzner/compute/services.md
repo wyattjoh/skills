@@ -1,6 +1,6 @@
 <!-- source: https://alchemy.run/hetzner/compute/services
      upstream: website/src/content/docs/hetzner/compute/services.mdx
-     alchemy 2.0.0-beta.79 @ 0811092 -->
+     alchemy 2.0.0-beta.79 @ e354a45 -->
 
 # Services
 
@@ -21,7 +21,7 @@ implementation:
 // src/api.ts
 import * as Hetzner from "alchemy/Hetzner";
 import * as Effect from "effect/Effect";
-import * as HttpServerResponse from "effect/unstable/http/HttpServerResponse";
+import * as HttpServerResponse from "effect/http/HttpServerResponse";
 import { Box } from "./server.ts";
 
 export default class Api extends Hetzner.Service<Api>()(

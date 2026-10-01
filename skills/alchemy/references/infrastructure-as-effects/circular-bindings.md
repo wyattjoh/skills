@@ -1,6 +1,6 @@
 <!-- source: https://alchemy.run/infrastructure-as-effects/circular-bindings
      upstream: website/src/content/docs/infrastructure-as-effects/circular-bindings.mdx
-     alchemy 2.0.0-beta.79 @ 0811092 -->
+     alchemy 2.0.0-beta.79 @ e354a45 -->
 
 # Circular Bindings
 
@@ -85,7 +85,7 @@ own `work` RPC method so B can call back into it.
   // src/A.ts
   import * as Cloudflare from "alchemy/Cloudflare";
   import * as Effect from "effect/Effect";
-+ import * as HttpServerResponse from "effect/unstable/http/HttpServerResponse";
++ import * as HttpServerResponse from "effect/http/HttpServerResponse";
 + import { B } from "./B.ts";
 
   export class A extends Cloudflare.Worker<A, { work: () => Effect.Effect<string> }>()("A") {}
@@ -119,7 +119,7 @@ binds it.
   // src/B.ts
   import * as Cloudflare from "alchemy/Cloudflare";
   import * as Effect from "effect/Effect";
-+ import * as HttpServerResponse from "effect/unstable/http/HttpServerResponse";
++ import * as HttpServerResponse from "effect/http/HttpServerResponse";
 + import { A } from "./A.ts";
 
   export class B extends Cloudflare.Worker<B, { work: () => Effect.Effect<string> }>()("B") {}

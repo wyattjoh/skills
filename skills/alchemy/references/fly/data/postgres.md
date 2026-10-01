@@ -1,6 +1,6 @@
 <!-- source: https://alchemy.run/fly/data/postgres
      upstream: website/src/content/docs/fly/data/postgres.mdx
-     alchemy 2.0.0-beta.79 @ 0811092 -->
+     alchemy 2.0.0-beta.79 @ e354a45 -->
 
 # Postgres
 
@@ -47,11 +47,11 @@ SQL.
 
 ```typescript
 import * as Drizzle from "alchemy/Drizzle/Postgres";
-import * as HttpServerResponse from "effect/unstable/http/HttpServerResponse";
+import * as HttpServerResponse from "effect/http/HttpServerResponse";
 
 export default class Api extends Fly.Service<Api>()(
   "Api",
-  { app: Site, main: import.meta.url, port: 3000 },
+  { main: import.meta.url, port: 3000 },
   Effect.gen(function* () {
     const conn = yield* Fly.ConnectPostgres(Db);
     const db = yield* Drizzle.Postgres(conn.connectionString);

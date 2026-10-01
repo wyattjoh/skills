@@ -32,7 +32,7 @@ Effect.gen(function* () {
 ```
 
 `Option` and `Result` convert with `Effect.fromOption` and `Effect.fromResult`. There is no `.asEffect()` method on
-them in `4.0.0-rc.117`, despite what upstream `migration/yieldable.md` still shows:
+them in `4.0.0-rc.118`, despite what upstream `migration/yieldable.md` still shows:
 
 ```typescript
 Effect.map(Effect.fromOption(Option.some(42)), (n) => n + 1);
@@ -225,8 +225,9 @@ substitute for an explicit dependency graph.
 
 ## Prerelease Stability
 
-`4.0.0-rc.117` is a prerelease and APIs can still move between release candidates. Two consequences:
+`4.0.0-rc.118` is a prerelease and APIs can still move between release candidates. Two consequences:
 
 - Verify a symbol against the pinned source before recommending it, rather than recalling it.
-- Modules under `effect/unstable/*` may break in minor releases even after v4 is stable. Treat them as provisional
-  and expect to update imports when they graduate to the top-level namespace.
+- Modules marked `@stability unstable` (for example `effect/http`, `effect/cli`, `effect/ai`, `effect/reactivity`)
+  may break in minor releases even after v4 is stable. `4.0.0-rc.118` moved them from `effect/unstable/*` to
+  `effect/*` with no compatibility exports, so rewrite any `effect/unstable/...` import by dropping that segment.

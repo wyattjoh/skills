@@ -1,6 +1,6 @@
 <!-- source: https://alchemy.run/cloudflare/data/prisma
      upstream: website/src/content/docs/cloudflare/data/prisma.mdx
-     alchemy 2.0.0-beta.79 @ 0811092 -->
+     alchemy 2.0.0-beta.79 @ e354a45 -->
 
 # Prisma ORM with Postgres
 
@@ -93,7 +93,7 @@ Caching is disabled so reads immediately reflect writes. [Hyperdrive guide](/clo
 import * as Cloudflare from "alchemy/Cloudflare";
 import * as PrismaPostgres from "alchemy/Prisma/ORM/Postgres";
 import * as Effect from "effect/Effect";
-import * as HttpServerResponse from "effect/unstable/http/HttpServerResponse";
+import * as HttpServerResponse from "effect/http/HttpServerResponse";
 import { contract } from "./prisma/contract.ts";
 import { Hyperdrive } from "./db.ts";
 

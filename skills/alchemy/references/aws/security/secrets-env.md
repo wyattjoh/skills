@@ -1,6 +1,6 @@
 <!-- source: https://alchemy.run/aws/security/secrets-env
      upstream: website/src/content/docs/aws/security/secrets-env.mdx
-     alchemy 2.0.0-beta.79 @ 0811092 -->
+     alchemy 2.0.0-beta.79 @ e354a45 -->
 
 # Secrets & env
 
@@ -25,7 +25,7 @@ environment variable:
 import * as AWS from "alchemy/AWS";
 import * as Config from "effect/Config";
 import * as Effect from "effect/Effect";
-import * as HttpServerResponse from "effect/unstable/http/HttpServerResponse";
+import * as HttpServerResponse from "effect/http/HttpServerResponse";
 
 export default class Api extends AWS.Lambda.Function<Api>()(
   "Api",
@@ -161,7 +161,7 @@ deploy time, call it at runtime for a fresh read:
 // src/api.ts
 import * as AWS from "alchemy/AWS";
 import * as Effect from "effect/Effect";
-import * as HttpServerResponse from "effect/unstable/http/HttpServerResponse";
+import * as HttpServerResponse from "effect/http/HttpServerResponse";
 import * as Redacted from "effect/Redacted";
 
 export default class Api extends AWS.Lambda.Function<Api>()(

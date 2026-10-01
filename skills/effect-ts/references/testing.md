@@ -1,7 +1,7 @@
 # Testing Effect v4 with @effect/vitest
 
 A pragmatic guide for writing _deterministic_ tests against Effect v4. `@effect/vitest` shares the single ecosystem
-version, so it must be `4.0.0-rc.117` when `effect` is.
+version, so it must be `4.0.0-rc.118` when `effect` is.
 
 ## v3 to v4 Changes
 
@@ -13,8 +13,8 @@ version, so it must be `4.0.0-rc.117` when `effect` is.
 | `TestContext` / `TestServices` modules | Removed                                              |
 | `it.scoped` / `it.scopedLive`          | `it.effect` / `it.live` (already scoped)             |
 
-`effect/testing` also adds `TestConsole` and `TestSchema`. Schema-derived arbitraries live in
-`effect/unstable/arbitrary`.
+`effect/testing` also adds `TestConsole` and `TestSchema`. Schema-derived arbitraries live in the top-level
+`Arbitrary` module (`import { Arbitrary } from "effect"`); `effect/unstable/arbitrary` was removed in `4.0.0-rc.118`.
 
 ## The #1 gotcha: `it.effect` uses `TestClock`
 

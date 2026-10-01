@@ -1,6 +1,6 @@
 <!-- source: https://alchemy.run/railway/data/mongo
      upstream: website/src/content/docs/railway/data/mongo.mdx
-     alchemy 2.0.0-beta.79 @ 0811092 -->
+     alchemy 2.0.0-beta.79 @ e354a45 -->
 
 # Mongo
 
@@ -39,7 +39,7 @@ Pass `conn.connectionString` to the MongoDB driver (or
 `Railway.pingMongo`).
 
 ```typescript
-import * as HttpServerResponse from "effect/unstable/http/HttpServerResponse";
+import * as HttpServerResponse from "effect/http/HttpServerResponse";
 import * as Redacted from "effect/Redacted";
 
 export default class Api extends Railway.Service<Api>()(

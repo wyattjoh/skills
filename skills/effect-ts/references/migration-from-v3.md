@@ -11,36 +11,38 @@ Four changes affect whole files rather than single call sites. Handle them befor
 1. **Single version across the ecosystem.** `effect`, `@effect/platform-*`, `@effect/sql-*`, `@effect/ai-*`,
    `@effect/vitest`, `@effect/opentelemetry`, and `@effect/atom-*` all share one version number. Bump them together.
 2. **Package consolidation.** `@effect/platform`, `@effect/rpc`, `@effect/cluster`, `@effect/cli`, `@effect/ai`, and
-   `@effect/experimental` were merged into `effect`. Most land under `effect/unstable/*`; a few graduated to the top
-   level.
-3. **Unstable namespace.** `effect/unstable/*` modules may break in minor releases. Modules outside it follow strict
-   semver.
+   `@effect/experimental` were merged into `effect`, under subpaths such as `effect/http`, `effect/cli`, and
+   `effect/ai`. Earlier release candidates used `effect/unstable/*`; `4.0.0-rc.118` dropped the `unstable` segment
+   with no compatibility exports.
+3. **Unstable modules.** Modules whose API docs carry `@stability unstable` (`ai`, `cli`, `cluster`, `http`,
+   `http-api`, `reactivity`, `rpc`, `sql`, and others listed in upstream `MIGRATION.md`) may break in minor
+   releases. APIs without a stability tag follow strict semver.
 4. **Effect subtyping removed.** See the former-Effect-subtypes section in `critical-rules.md`. This is the change most likely to
    produce a wall of type errors.
 
 ## Module Moves
 
-| v3 import                     | v4 import                                                     |
-| ----------------------------- | ------------------------------------------------------------- |
-| `effect/Either`               | `effect/Result`                                               |
-| `effect/JSONSchema`           | `effect/JsonSchema`                                           |
-| `effect/FiberRef`             | `effect/References`                                           |
-| `effect/TestClock`            | `effect/testing/TestClock`                                    |
-| `effect/FastCheck`            | `fast-check` (not re-exported)                                |
-| `effect/Arbitrary`            | `effect/unstable/arbitrary`                                   |
-| `@effect/platform/FileSystem` | `effect/FileSystem`                                           |
-| `@effect/platform/Path`       | `effect/Path`                                                 |
-| `@effect/platform/Terminal`   | `effect/Terminal`                                             |
-| `@effect/platform/Error`      | `effect/PlatformError`                                        |
-| `@effect/platform/HttpClient` | `effect/unstable/http/HttpClient`                             |
-| `@effect/platform/MsgPack`    | `effect/unstable/encoding/SchemaBinary` (MessagePack removed) |
-| `@effect/platform/Ndjson`     | `effect/unstable/encoding/Ndjson`                             |
-| `@effect/cli/Args`            | `effect/unstable/cli/Argument`                                |
-| `@effect/cli/Options`         | `effect/unstable/cli/Flag`                                    |
-| `@effect/ai/*`                | `effect/unstable/ai/*`                                        |
-| `@effect/cluster/*`           | `effect/unstable/cluster/*`                                   |
-| `@effect/rpc/*`               | `effect/unstable/rpc/*`                                       |
-| `@effect/sql/*`               | `effect/unstable/sql/*`                                       |
+| v3 import                     | v4 import                                            |
+| ----------------------------- | ---------------------------------------------------- |
+| `effect/Either`               | `effect/Result`                                      |
+| `effect/JSONSchema`           | `effect/JsonSchema`                                  |
+| `effect/FiberRef`             | `effect/References`                                  |
+| `effect/TestClock`            | `effect/testing/TestClock`                           |
+| `effect/FastCheck`            | `fast-check` (not re-exported)                       |
+| `effect/Arbitrary`            | `effect/Arbitrary`                                   |
+| `@effect/platform/FileSystem` | `effect/FileSystem`                                  |
+| `@effect/platform/Path`       | `effect/Path`                                        |
+| `@effect/platform/Terminal`   | `effect/Terminal`                                    |
+| `@effect/platform/Error`      | `effect/PlatformError`                               |
+| `@effect/platform/HttpClient` | `effect/http/HttpClient`                             |
+| `@effect/platform/MsgPack`    | `effect/encoding/SchemaBinary` (MessagePack removed) |
+| `@effect/platform/Ndjson`     | `effect/encoding/Ndjson`                             |
+| `@effect/cli/Args`            | `effect/cli/Argument`                                |
+| `@effect/cli/Options`         | `effect/cli/Flag`                                    |
+| `@effect/ai/*`                | `effect/ai/*`                                        |
+| `@effect/cluster/*`           | `effect/cluster/*`                                   |
+| `@effect/rpc/*`               | `effect/rpc/*`                                       |
+| `@effect/sql/*`               | `effect/sql/*`                                       |
 
 The STM family was renamed to `Tx*`: `TRef` to `TxRef`, `TMap` to `TxHashMap`, `TSet` to `TxHashSet`, `TQueue` to
 `TxQueue`, `TPubSub` to `TxPubSub`, `TDeferred` to `TxDeferred`, `TSemaphore` to `TxSemaphore`,

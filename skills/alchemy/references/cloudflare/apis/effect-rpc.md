@@ -1,6 +1,6 @@
 <!-- source: https://alchemy.run/cloudflare/apis/effect-rpc
      upstream: website/src/content/docs/cloudflare/apis/effect-rpc.mdx
-     alchemy 2.0.0-beta.79 @ 0811092 -->
+     alchemy 2.0.0-beta.79 @ e354a45 -->
 
 # Effect RPC
 
@@ -70,7 +70,7 @@ into a single value that both the server and the client will share.
 ```typescript
 // src/rpcs.ts
 import * as Schema from "effect/Schema";
-import { Rpc, RpcGroup } from "effect/unstable/rpc";
+import { Rpc, RpcGroup } from "effect/rpc";
 import { Task, TaskNotFound, CreateTaskFailed } from "./task.ts";
 
 const getTask = Rpc.make("getTask", {
@@ -230,7 +230,7 @@ import * as Cloudflare from "alchemy/Cloudflare";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Schema from "effect/Schema";
-import { RpcSerialization, RpcServer } from "effect/unstable/rpc";
+import { RpcSerialization, RpcServer } from "effect/rpc";
 import { Tasks } from "./bucket.ts";
 import { CreateTaskFailed, Task, TaskNotFound } from "./task.ts";
 import { TaskRpcs } from "./rpcs.ts";
@@ -314,8 +314,8 @@ typed client — no codegen. `client.createTask` accepts
 // scripts/client.ts
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
-import * as FetchHttpClient from "effect/unstable/http/FetchHttpClient";
-import { RpcClient, RpcSerialization } from "effect/unstable/rpc";
+import * as FetchHttpClient from "effect/http/FetchHttpClient";
+import { RpcClient, RpcSerialization } from "effect/rpc";
 import { TaskRpcs } from "../src/rpcs.ts";
 
 const program = Effect.gen(function* () {
@@ -362,7 +362,7 @@ The wire format is one frame per item — exactly what the
 
 ```typescript
 // src/rpcs.ts
-import * as RpcSchema from "effect/unstable/rpc/RpcSchema";
+import * as RpcSchema from "effect/rpc/RpcSchema";
 
 const countTasks = Rpc.make("countTasks", {
   payload: { upto: Schema.Number },
@@ -414,7 +414,7 @@ wrapper:
 import * as Cloudflare from "alchemy/Cloudflare";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
-import { RpcSerialization, RpcServer } from "effect/unstable/rpc";
+import { RpcSerialization, RpcServer } from "effect/rpc";
 import { TaskRpcs } from "./rpcs.ts";
 
 export default class Worker extends Cloudflare.RpcWorker<Worker>()(
@@ -489,7 +489,7 @@ Alchemy supplies the server and serialization. This example uses a shared
 ```typescript
 // rpcs.ts
 import * as Schema from "effect/Schema";
-import { Rpc, RpcGroup } from "effect/unstable/rpc";
+import { Rpc, RpcGroup } from "effect/rpc";
 
 export class CounterRpcs extends RpcGroup.make(
   Rpc.make("setTitle", {
@@ -597,8 +597,8 @@ forwards `/counters/alice` to `"alice"` and `/counters/bob` to `"bob"`:
 // worker.ts
 import * as Cloudflare from "alchemy/Cloudflare";
 import * as Effect from "effect/Effect";
-import { HttpServerRequest } from "effect/unstable/http/HttpServerRequest";
-import * as HttpServerResponse from "effect/unstable/http/HttpServerResponse";
+import { HttpServerRequest } from "effect/http/HttpServerRequest";
+import * as HttpServerResponse from "effect/http/HttpServerResponse";
 import Counter from "./counter.ts";
 
 export default class CounterWorker extends Cloudflare.Worker<CounterWorker>()(
@@ -644,9 +644,9 @@ import * as RpcWebSocketClient from "alchemy/Cloudflare/RpcWebSocketClient";
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
-import * as RpcClient from "effect/unstable/rpc/RpcClient";
-import type { RpcClientError } from "effect/unstable/rpc/RpcClientError";
-import * as Socket from "effect/unstable/socket/Socket";
+import * as RpcClient from "effect/rpc/RpcClient";
+import type { RpcClientError } from "effect/rpc/RpcClientError";
+import * as Socket from "effect/socket/Socket";
 import { CounterRpcs } from "./rpcs.ts";
 
 class CounterClient extends Context.Service<
@@ -725,7 +725,7 @@ The convenience wrapper is equivalent to this composition, using the same
 `CounterClient` service and RPC group:
 
 ```typescript
-import * as RpcSerialization from "effect/unstable/rpc/RpcSerialization";
+import * as RpcSerialization from "effect/rpc/RpcSerialization";
 
 const CounterClientLive = Layer.effect(
   CounterClient,
@@ -807,8 +807,8 @@ import * as Cloudflare from "alchemy/Cloudflare";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Stream from "effect/Stream";
-import * as RpcSerialization from "effect/unstable/rpc/RpcSerialization";
-import * as RpcServer from "effect/unstable/rpc/RpcServer";
+import * as RpcSerialization from "effect/rpc/RpcSerialization";
+import * as RpcServer from "effect/rpc/RpcServer";
 import { InnerRpcs } from "./rpcs.ts";
 import { Task, TaskNotFound } from "./task.ts";
 

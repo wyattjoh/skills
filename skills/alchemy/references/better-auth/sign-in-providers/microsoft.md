@@ -1,6 +1,6 @@
 <!-- source: https://alchemy.run/better-auth/sign-in-providers/microsoft
      upstream: website/src/content/docs/better-auth/sign-in-providers/microsoft.mdx
-     alchemy 2.0.0-beta.79 @ 0811092 -->
+     alchemy 2.0.0-beta.79 @ e354a45 -->
 
 # Microsoft
 

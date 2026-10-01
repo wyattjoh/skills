@@ -174,7 +174,7 @@ Stream.onExit(stream, (exit) => Effect.log(`finished: ${exit._tag}`));
 ## Encoding and Decoding
 
 ```typescript
-import { Ndjson } from "effect/unstable/encoding";
+import { Ndjson } from "effect/encoding";
 
 Stream.decodeText(byteStream);
 Stream.encodeText(textStream);

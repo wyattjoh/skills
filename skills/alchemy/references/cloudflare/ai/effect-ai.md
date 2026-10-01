@@ -1,6 +1,6 @@
 <!-- source: https://alchemy.run/cloudflare/ai/effect-ai
      upstream: website/src/content/docs/cloudflare/ai/effect-ai.mdx
-     alchemy 2.0.0-beta.79 @ 0811092 -->
+     alchemy 2.0.0-beta.79 @ e354a45 -->
 
 # Effect AI
 
@@ -101,9 +101,9 @@ import * as Cloudflare from "alchemy/Cloudflare";
 import * as Config from "effect/Config";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
-import { LanguageModel } from "effect/unstable/ai";
-import * as FetchHttpClient from "effect/unstable/http/FetchHttpClient";
-import * as HttpServerResponse from "effect/unstable/http/HttpServerResponse";
+import { LanguageModel } from "effect/ai";
+import * as FetchHttpClient from "effect/http/FetchHttpClient";
+import * as HttpServerResponse from "effect/http/HttpServerResponse";
 import { OpenAiClient, OpenAiLanguageModel } from "@effect/ai-openai";
 
 export default Cloudflare.Worker(
@@ -140,8 +140,8 @@ surface. `Chat.layerPersisted` wraps it with a
 Layer underneath:
 
 ```typescript
-import { Chat } from "effect/unstable/ai";
-import * as Persistence from "effect/unstable/persistence/Persistence";
+import { Chat } from "effect/ai";
+import * as Persistence from "effect/persistence/Persistence";
 
 // inside your handler:
 const chat = yield* (yield* Chat.Persistence).getOrCreate("session-id");

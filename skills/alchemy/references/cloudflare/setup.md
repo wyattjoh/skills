@@ -1,6 +1,6 @@
 <!-- source: https://alchemy.run/cloudflare/setup
      upstream: website/src/content/docs/cloudflare/setup.mdx
-     alchemy 2.0.0-beta.79 @ 0811092 -->
+     alchemy 2.0.0-beta.79 @ e354a45 -->
 
 # Setup
 
@@ -18,10 +18,7 @@ in your project:
 bun add "alchemy@latest" "effect@rc" "@effect/platform-bun@rc" "@effect/platform-node@rc"
 ```
 
-:::tip
-We recommend [Bun](https://bun.sh) for the best development
-experience, but Node.js 22+ works too.
-:::
+Alchemy runs on [Bun](https://bun.sh) or Node.js 22+.
 
 ## Create a Cloudflare account
 

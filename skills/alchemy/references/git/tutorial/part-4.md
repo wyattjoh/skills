@@ -1,6 +1,6 @@
 <!-- source: https://alchemy.run/git/tutorial/part-4
      upstream: website/src/content/docs/git/tutorial/part-4.mdx
-     alchemy 2.0.0-beta.79 @ 0811092 -->
+     alchemy 2.0.0-beta.79 @ e354a45 -->
 
 # Part 4: Give users their own credentials
 
@@ -126,8 +126,8 @@ Add the HTTP Basic decoder imports:
 // src/credentials.ts
 import * as Effect from "effect/Effect";
 +import * as Redacted from "effect/Redacted";
-+import * as HttpApiBuilder from "effect/unstable/httpapi/HttpApiBuilder";
-+import * as HttpApiSecurity from "effect/unstable/httpapi/HttpApiSecurity";
++import * as HttpApiBuilder from "effect/http-api/HttpApiBuilder";
++import * as HttpApiSecurity from "effect/http-api/HttpApiSecurity";
 ```
 
 Check for an API key before looking for a session cookie:
@@ -162,8 +162,8 @@ Replace `src/middleware.ts` with:
 // src/middleware.ts
 import { RuntimeContext } from "alchemy";
 import * as Effect from "effect/Effect";
-import * as HttpRouter from "effect/unstable/http/HttpRouter";
-import * as HttpServerResponse from "effect/unstable/http/HttpServerResponse";
+import * as HttpRouter from "effect/http/HttpRouter";
+import * as HttpServerResponse from "effect/http/HttpServerResponse";
 import { ResolveUser } from "./credentials.ts";
 import { PublicRead } from "./public-read.ts";
 import { Session } from "./session.ts";
@@ -201,8 +201,8 @@ Add the auth imports to `src/host.ts`:
 
 ```diff lang="typescript"
 // src/host.ts
-import * as HttpRouter from "effect/unstable/http/HttpRouter";
-+import { HttpServerRequest } from "effect/unstable/http/HttpServerRequest";
+import * as HttpRouter from "effect/http/HttpRouter";
++import { HttpServerRequest } from "effect/http/HttpServerRequest";
 +import { CloudflareD1 } from "@alchemy.run/better-auth/CloudflareD1";
 +import { Auth, AuthDb } from "./auth.ts";
 ```

@@ -1,6 +1,6 @@
 <!-- source: https://alchemy.run/getting-started
      upstream: website/src/content/docs/getting-started.mdx
-     alchemy 2.0.0-beta.79 @ 0811092 -->
+     alchemy 2.0.0-beta.79 @ e354a45 -->
 
 # Getting started
 
@@ -14,7 +14,7 @@ next page.
 
 ## Prerequisites
 
-- [Bun](https://bun.sh) (recommended) or Node.js 22+
+- [Bun](https://bun.sh) or Node.js 22+
 - A [Cloudflare](https://dash.cloudflare.com/sign-up) account
 
 ## Create a project

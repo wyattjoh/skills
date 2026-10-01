@@ -1,6 +1,6 @@
 <!-- source: https://alchemy.run/better-auth/databases/mysql
      upstream: website/src/content/docs/better-auth/databases/mysql.mdx
-     alchemy 2.0.0-beta.79 @ 0811092 -->
+     alchemy 2.0.0-beta.79 @ e354a45 -->
 
 # MySQL
 

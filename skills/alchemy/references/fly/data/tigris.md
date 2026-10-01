@@ -1,6 +1,6 @@
 <!-- source: https://alchemy.run/fly/data/tigris
      upstream: website/src/content/docs/fly/data/tigris.mdx
-     alchemy 2.0.0-beta.79 @ 0811092 -->
+     alchemy 2.0.0-beta.79 @ e354a45 -->
 
 # Tigris
 
@@ -44,11 +44,11 @@ Bind `PutObject` / `GetObject` in the Service's constructor. Provide the matchin
 `*Http` layers.
 
 ```typescript
-import * as HttpServerResponse from "effect/unstable/http/HttpServerResponse";
+import * as HttpServerResponse from "effect/http/HttpServerResponse";
 
 export default class Api extends Fly.Service<Api>()(
   "Api",
-  { app: Site, main: import.meta.url, port: 3000 },
+  { main: import.meta.url, port: 3000 },
   Effect.gen(function* () {
     const putObject = yield* Fly.PutObject(Data);
     const getObject = yield* Fly.GetObject(Data);

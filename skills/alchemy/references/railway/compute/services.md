@@ -1,6 +1,6 @@
 <!-- source: https://alchemy.run/railway/compute/services
      upstream: website/src/content/docs/railway/compute/services.mdx
-     alchemy 2.0.0-beta.79 @ 0811092 -->
+     alchemy 2.0.0-beta.79 @ e354a45 -->
 
 # Services
 
@@ -67,7 +67,7 @@ Return `fetch` from the constructor Effect to boot an HTTP server.
 ```diff lang="typescript"
 import * as Railway from "alchemy/Railway";
 import * as Effect from "effect/Effect";
-+import * as HttpServerResponse from "effect/unstable/http/HttpServerResponse";
++import * as HttpServerResponse from "effect/http/HttpServerResponse";
 import { Site } from "./project.ts";
 
 export default class Api extends Railway.Service<Api>()(

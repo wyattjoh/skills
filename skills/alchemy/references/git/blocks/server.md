@@ -1,6 +1,6 @@
 <!-- source: https://alchemy.run/git/blocks/server
      upstream: website/src/content/docs/git/blocks/server.mdx
-     alchemy 2.0.0-beta.79 @ 0811092 -->
+     alchemy 2.0.0-beta.79 @ e354a45 -->
 
 # HTTP routes
 
@@ -18,8 +18,8 @@ Build groups against the API that actually serves them:
 import * as Git from "alchemy/Git";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
-import * as HttpApi from "effect/unstable/httpapi/HttpApi";
-import * as HttpApiBuilder from "effect/unstable/httpapi/HttpApiBuilder";
+import * as HttpApi from "effect/http-api/HttpApi";
+import * as HttpApiBuilder from "effect/http-api/HttpApiBuilder";
 import { Authentication, CurrentUser } from "./authentication.ts";
 import { AppRoutes } from "./app-routes.ts";
 import { receivePack } from "./receive-pack.ts";
@@ -79,9 +79,9 @@ against `Git.Api`; adding middleware to a different API does not modify them.
 
 ```typescript
 import * as Effect from "effect/Effect";
-import * as HttpApi from "effect/unstable/httpapi/HttpApi";
-import * as HttpApiEndpoint from "effect/unstable/httpapi/HttpApiEndpoint";
-import * as HttpApiGroup from "effect/unstable/httpapi/HttpApiGroup";
+import * as HttpApi from "effect/http-api/HttpApi";
+import * as HttpApiEndpoint from "effect/http-api/HttpApiEndpoint";
+import * as HttpApiGroup from "effect/http-api/HttpApiGroup";
 
 class AppRoutes extends HttpApiGroup.make("app").add(
   HttpApiEndpoint.get("me", "/api/v1/me", {
@@ -114,7 +114,7 @@ route layers. Build the groups against `CombinedApi` to use its middleware and p
 
 ```typescript
 import * as Http from "alchemy/Http";
-import * as HttpRouter from "effect/unstable/http/HttpRouter";
+import * as HttpRouter from "effect/http/HttpRouter";
 
 const HttpLive = Layer.mergeAll(PublicRoutes, Git.InternalApiLive).pipe(
   Layer.provide(Git.ApiHandlersLive),

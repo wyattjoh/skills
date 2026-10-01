@@ -1,11 +1,11 @@
 # fly index
 
-34 pages. Deploy Effect programs to Fly.io as Apps, Machines, Services, and Sprites.
+35 pages. Deploy Effect programs to Fly.io as Apps, Machines, Services, and Sprites.
 
 | Page | File | Covers |
 | --- | --- | --- |
 | Fly | `_overview.md` | Deploy Effect programs to Fly.io as Apps, Machines, Services, and Sprites. |
-| IPs & certificates | `networking.md` | Reach a Fly Service over fly.dev and on your own hostname. |
+| IPs & certificates | `networking.md` | Public and private Fly Services, App addresses, and certificates for your own hostname. |
 | Setup | `setup.md` | Create a Fly org, generate an API token, and store it in a profile. |
 
 ## compute/
@@ -13,10 +13,11 @@
 | Page | File | Covers |
 | --- | --- | --- |
 | Apps | `compute/apps.md` | A global namespace containing Machines, Services, Secrets, IPs, and certificates. |
+| Connect Services | `compute/connecting-services.md` | Build several Fly Services that call each other's methods over a private network, behind one public entry point. |
 | Blue/green deployments | `compute/deployments.md` | Deploy a new version, check it before serving traffic, and give the old version time to finish work. |
 | Machines | `compute/machines.md` | A Firecracker VM running a container image. |
 | Regions | `compute/regions.md` | Where Fly Machines, Volumes, Postgres, and Redis live. Alchemy defaults to iad. |
-| Services | `compute/services.md` | An Effect program running in a Fly Machine. Scale it with count. |
+| Services | `compute/services.md` | An Effect program running in Fly Machines in its own Fly App. Scale it with count. |
 | Sprites | `compute/sprites.md` | An Effect program running in a Fly.io Sprite. It hibernates when idle. |
 
 ## data/
@@ -54,7 +55,7 @@
 
 | Page | File | Covers |
 | --- | --- | --- |
-| Part 1: Your First App | `tutorial/part-1.md` | Install Alchemy, create a Stack with a Fly App, and deploy it. |
-| Part 2: Deploy a Service | `tutorial/part-2.md` | Bundle an Effect HTTP server, deploy it to Fly as a Machine, and serve requests on fly.dev. |
+| Part 1: Your First Service | `tutorial/part-1.md` | Install Alchemy, create a Stack, and deploy an Effect HTTP Service to Fly on its own fly.dev hostname. |
+| Part 2: Configure the Service | `tutorial/part-2.md` | Pin the Service's region and port, add a health route, and ship a code change. |
 | Part 3: Persist Data with a Volume | `tutorial/part-3.md` | Mount a Fly disk into your Service with MountVolume and store files that survive deploys. |
-| Part 4: Secrets and Cleanup | `tutorial/part-4.md` | Store an App secret, read it from the Service at runtime, and destroy the stack. |
+| Part 4: Secrets and Cleanup | `tutorial/part-4.md` | Read a secret from .env in the Service with Config.Redacted, guard a route with it, and destroy the stack. |

@@ -1,6 +1,6 @@
 <!-- source: https://alchemy.run/cloudflare/ai/vectorize
      upstream: website/src/content/docs/cloudflare/ai/vectorize.mdx
-     alchemy 2.0.0-beta.79 @ 0811092 -->
+     alchemy 2.0.0-beta.79 @ e354a45 -->
 
 # Vector search with Vectorize
 
@@ -70,8 +70,8 @@ to an Effect-native client at runtime:
 // src/worker.ts
 import * as Cloudflare from "alchemy/Cloudflare";
 import * as Effect from "effect/Effect";
-import { HttpServerRequest } from "effect/unstable/http/HttpServerRequest";
-import * as HttpServerResponse from "effect/unstable/http/HttpServerResponse";
+import { HttpServerRequest } from "effect/http/HttpServerRequest";
+import * as HttpServerResponse from "effect/http/HttpServerResponse";
 import { Embeddings } from "./embeddings.ts";
 
 export default Cloudflare.Worker(

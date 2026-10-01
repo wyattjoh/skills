@@ -1,6 +1,6 @@
 <!-- source: https://alchemy.run/aws/apis/effect-rpc
      upstream: website/src/content/docs/aws/apis/effect-rpc.mdx
-     alchemy 2.0.0-beta.79 @ 0811092 -->
+     alchemy 2.0.0-beta.79 @ e354a45 -->
 
 # Effect RPC on Lambda
 
@@ -82,7 +82,7 @@ into a single value that both the server and the client will share.
 ```typescript
 // src/JobRpcs.ts
 import * as Schema from "effect/Schema";
-import { Rpc, RpcGroup } from "effect/unstable/rpc";
+import { Rpc, RpcGroup } from "effect/rpc";
 import { Job, JobId, JobNotFound, PutJobFailed } from "./Job.ts";
 
 const getJob = Rpc.make("getJob", {
@@ -249,7 +249,7 @@ DynamoDB's HTTP API, signed with the Lambda's execution role.
 import * as AWS from "alchemy/AWS";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
-import { RpcSerialization, RpcServer } from "effect/unstable/rpc";
+import { RpcSerialization, RpcServer } from "effect/rpc";
 import { Job, JobNotFound, PutJobFailed } from "./Job.ts";
 import { JobRpcs } from "./JobRpcs.ts";
 
@@ -354,8 +354,8 @@ typed client — no codegen. `client.createJob` accepts
 // scripts/client.ts
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
-import * as FetchHttpClient from "effect/unstable/http/FetchHttpClient";
-import { RpcClient, RpcSerialization } from "effect/unstable/rpc";
+import * as FetchHttpClient from "effect/http/FetchHttpClient";
+import { RpcClient, RpcSerialization } from "effect/rpc";
 import { JobRpcs } from "../src/JobRpcs.ts";
 
 const program = Effect.gen(function* () {

@@ -1,6 +1,6 @@
 <!-- source: https://alchemy.run/aws/data/rds
      upstream: website/src/content/docs/aws/data/rds.mdx
-     alchemy 2.0.0-beta.79 @ 0811092 -->
+     alchemy 2.0.0-beta.79 @ e354a45 -->
 
 # RDS & Aurora
 
@@ -224,7 +224,7 @@ HTTP:
 import * as AWS from "alchemy/AWS";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
-import * as HttpServerResponse from "effect/unstable/http/HttpServerResponse";
+import * as HttpServerResponse from "effect/http/HttpServerResponse";
 import { Database, DatabaseAurora } from "./database.ts";
 import { NetworkLive } from "./network.ts";
 

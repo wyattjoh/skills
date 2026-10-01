@@ -1,6 +1,6 @@
 <!-- source: https://alchemy.run/fly/data/volumes
      upstream: website/src/content/docs/fly/data/volumes.mdx
-     alchemy 2.0.0-beta.79 @ 0811092 -->
+     alchemy 2.0.0-beta.79 @ e354a45 -->
 
 # Volumes
 
@@ -26,7 +26,7 @@ from the parent Service:
 ```typescript
 export default class Api extends Fly.Service<Api>()(
   "Api",
-  { app: Site, main: import.meta.url, region: "iad", count: 3, port: 3000 },
+  { main: import.meta.url, region: "iad", count: 3, port: 3000 },
   Effect.gen(function* () {
     const disk = yield* Fly.MountVolume({ path: "/data", sizeGb: 1 });
     const fs = yield* FileSystem.FileSystem;

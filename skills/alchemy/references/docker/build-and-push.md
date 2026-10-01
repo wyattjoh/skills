@@ -1,6 +1,6 @@
 <!-- source: https://alchemy.run/docker/build-and-push
      upstream: website/src/content/docs/docker/build-and-push.mdx
-     alchemy 2.0.0-beta.79 @ 0811092 -->
+     alchemy 2.0.0-beta.79 @ e354a45 -->
 
 # Build & push images
 
@@ -117,7 +117,9 @@ Pass `image.imageRef` (or `repoDigest`, for an immutable pin) to
 whatever runs the container:
 [Cloudflare Containers](/cloudflare/compute/containers) accept it as
 a bring-your-own image, and an [ECS task definition](/aws/compute/ecs)
-takes it as the container image. The registry reference is the
+takes it as the container image, and a
+[Kubernetes Deployment or Job](/kubernetes/workloads/images#build-images-with-dockerimage)
+takes it as `image`. The registry reference is the
 boundary — Cloudflare and AWS pull from the registry; no further
 Docker wiring is involved. A reference already in Cloudflare's
 managed registry (`registry.cloudflare.com/...`) is deployed as-is —

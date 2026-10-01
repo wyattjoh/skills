@@ -1,6 +1,6 @@
 <!-- source: https://alchemy.run/acme/runtime
      upstream: website/src/content/docs/acme/runtime.mdx
-     alchemy 2.0.0-beta.79 @ 0811092 -->
+     alchemy 2.0.0-beta.79 @ e354a45 -->
 
 # Runtime issuance
 
@@ -148,8 +148,8 @@ import * as Config from "effect/Config";
 import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
 import * as Redacted from "effect/Redacted";
-import { HttpServerRequest } from "effect/unstable/http/HttpServerRequest";
-import * as HttpServerResponse from "effect/unstable/http/HttpServerResponse";
+import { HttpServerRequest } from "effect/http/HttpServerRequest";
+import * as HttpServerResponse from "effect/http/HttpServerResponse";
 import { Issuer, Zone } from "./resources.ts";
 
 export default class IssuerWorker extends Cloudflare.Worker<IssuerWorker>()(

@@ -1,6 +1,6 @@
 <!-- source: https://alchemy.run/aws/tutorial/part-1
      upstream: website/src/content/docs/aws/tutorial/part-1.mdx
-     alchemy 2.0.0-beta.79 @ 0811092 -->
+     alchemy 2.0.0-beta.79 @ e354a45 -->
 
 # Part 1: Your First Stack
 
@@ -11,7 +11,7 @@ with an AWS S3 Bucket, and deploy it — all in under five minutes.
 
 ## Prerequisites
 
-- [Bun](https://bun.sh) (recommended) or Node.js 22+
+- [Bun](https://bun.sh) or Node.js 22+
 - An AWS account and an IAM identity with permission to create the
   resources you plan to deploy
 
@@ -30,11 +30,6 @@ Install <code>alchemy@latest</code> and <code>effect@{effectVersion}</code>:
 ```sh
 bun add "alchemy@latest" "effect@rc" "@effect/platform-bun@rc" "@effect/platform-node@rc"
 ```
-
-:::tip
-We recommend Bun for the best development experience, but Node.js
-works too.
-:::
 
 ## Create the Stack
 

@@ -1,6 +1,6 @@
 <!-- source: https://alchemy.run/git/tutorial/part-1
      upstream: website/src/content/docs/git/tutorial/part-1.mdx
-     alchemy 2.0.0-beta.79 @ 0811092 -->
+     alchemy 2.0.0-beta.79 @ e354a45 -->
 
 # Part 1: Push your first repository
 
@@ -128,7 +128,7 @@ import * as Git from "alchemy/Git";
 import * as Http from "alchemy/Http";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
-import * as HttpRouter from "effect/unstable/http/HttpRouter";
+import * as HttpRouter from "effect/http/HttpRouter";
 import { GitLive } from "./git.ts";
 
 export default class GitHost extends Cloudflare.Worker<GitHost>()(

@@ -1,6 +1,6 @@
 <!-- source: https://alchemy.run/aws/email/sending
      upstream: website/src/content/docs/aws/email/sending.mdx
-     alchemy 2.0.0-beta.79 @ 0811092 -->
+     alchemy 2.0.0-beta.79 @ e354a45 -->
 
 # Sending & managing email
 
@@ -98,7 +98,7 @@ returns a callable. Provide its implementation with
 import * as AWS from "alchemy/AWS";
 import * as SES from "alchemy/AWS/SES";
 import * as Effect from "effect/Effect";
-import * as HttpServerResponse from "effect/unstable/http/HttpServerResponse";
+import * as HttpServerResponse from "effect/http/HttpServerResponse";
 
 export default class Mailer extends AWS.Lambda.Function<Mailer>()(
   "Mailer",

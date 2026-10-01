@@ -12,7 +12,7 @@ this skill's directory.
 
 <!-- BEGIN GENERATED: corpus-stats -->
 
-Indexed from `alchemy-run/alchemy` @ `0811092` (2026-09-25), alchemy `2.0.0-beta.79` on `effect@4.0.0-rc.117`: **458 topic files** across 26 areas.
+Indexed from `alchemy-run/alchemy` @ `e354a45` (2026-09-30), alchemy `2.0.0-beta.79` on `effect@4.0.0-rc.118`: **484 topic files** across 28 areas.
 
 Reference paths mirror site URLs exactly, so a path is derivable without
 searching: `https://alchemy.run/cloudflare/compute/workers` ->
@@ -206,12 +206,14 @@ yourself.
 - `references/command/` (3) -- Alchemy's cloud-agnostic primitives for local processes in the deploy graph — memoized builds, one-off commands, and dev servers.
 - `references/docker/` (5) -- Images, containers, networks, and volumes as Stack resources, driven through your active Docker CLI context.
 - `references/environments/` (10) -- Stages, per-environment config, secrets, local dev, and CI.
-- `references/fly/` (34) -- Deploy Effect programs to Fly.io as Apps, Machines, Services, and Sprites.
+- `references/fly/` (35) -- Deploy Effect programs to Fly.io as Apps, Machines, Services, and Sprites.
+- `references/gcp/` (6) -- Google Cloud in one Effect program — Cloud Run services and jobs, Firestore, Pub/Sub, BigQuery, Secret Manager, and Memorystore, with IAM granted by the bindings themselves.
 - `references/git/` (25) -- A pluggable, embeddable, self-hostable git server on Cloudflare Workers, Durable Objects, and R2. Smart HTTP for any client, a typed REST plane with pull requests, and a GitHub-compatible API.
 - `references/github/` (5) -- Repositories, Actions secrets and variables, webhooks, and repository event sources as Stack resources — the glue for CI/CD.
 - `references/hetzner/` (27) -- Build applications on Hetzner Cloud with Alchemy — Servers running your Effect programs as Services, plus volumes, networks, firewalls, load balancers, and DNS, all in one typed program.
 - `references/infrastructure-as-code/` (10) -- The noun graph: Stacks, Resources, Actions, Outputs, references, lifecycle, providers.
 - `references/infrastructure-as-effects/` (9) -- One Effect program models runtime code and infrastructure: Runtimes carry code, Bindings wire resources into them, Phases split deploy from runtime, and Layers package it behind typed services.
+- `references/kubernetes/` (19) -- Run containers and Effect programs on any Kubernetes cluster with Alchemy. Declare Deployments, Jobs, raw manifests, and Helm charts in the same typed program as the rest of your infrastructure. No YAML, no kubectl apply.
 - `references/neon/` (31) -- Declare Neon Postgres, Functions, storage, Auth, AI Gateway and websites together in an Alchemy Stack.
 - `references/planetscale/` (9) -- Serverless MySQL (Vitess) and Postgres with database branching — databases, branches, and credentials as Stack resources.
 - `references/prisma/` (29) -- Prisma Postgres and Prisma Compute — projects, databases, connections, and deployed apps as Stack resources, with a zero-config local database in dev.
@@ -302,17 +304,19 @@ command/                   _overview dev-servers memoization
 docker/                    _overview build-and-push local-services setup swarm
 environments/              auth-providers ci custom-auth-provider doppler infisical
                            local-development profiles secret-providers secrets stages
-fly/                       _overview compute/apps compute/deployments compute/machines
-                           compute/regions compute/services compute/sprites
-                           data/drizzle-postgres data/postgres data/redis data/secrets
-                           data/tigris data/volumes frontend/astro frontend/foldkit
-                           frontend/nextjs frontend/nuxt frontend/octane
-                           frontend/react-router frontend/solidstart
-                           frontend/static-site frontend/sveltekit
+fly/                       _overview compute/apps compute/connecting-services
+                           compute/deployments compute/machines compute/regions
+                           compute/services compute/sprites data/drizzle-postgres
+                           data/postgres data/redis data/secrets data/tigris
+                           data/volumes frontend/astro frontend/foldkit frontend/nextjs
+                           frontend/nuxt frontend/octane frontend/react-router
+                           frontend/solidstart frontend/static-site frontend/sveltekit
                            frontend/tanstack-start frontend/vinext frontend/vite
                            frontend/vocs frontend/waku frontend/websites networking
                            setup tutorial/part-1 tutorial/part-2 tutorial/part-3
                            tutorial/part-4
+gcp/                       _overview guides/bindings guides/cloud-run-api
+                           guides/event-pipeline guides/memorystore setup
 git/                       _overview blocks/_overview blocks/auth blocks/blob-store
                            blocks/engine blocks/hasher blocks/registry
                            blocks/repositories blocks/server clone-and-push
@@ -335,6 +339,12 @@ infrastructure-as-code/    action custom-provider local-provider outputs provide
                            references renaming resource-lifecycle resource stack
 infrastructure-as-effects/ binding circular-bindings custom-runtime event-sources layers
                            phases runtime sinks telemetry
+kubernetes/                _overview clusters/cluster-adapters clusters/connecting
+                           clusters/eks clusters/local clusters/registries
+                           objects/helm-charts objects/manifests setup tutorial/part-1
+                           tutorial/part-2 tutorial/part-3 tutorial/part-4
+                           tutorial/part-5 workloads/bindings workloads/deployments
+                           workloads/images workloads/jobs workloads/object-lifecycle
 neon/                      _overview data/branching data/connections data/migrations
                            frontend/astro frontend/foldkit frontend/nextjs frontend/nuxt
                            frontend/octane frontend/react-router frontend/solidstart
@@ -486,10 +496,11 @@ from the conceptual pages.
 
 Alchemy v2 is **pre-release** and moving fast. It pins the exact Effect 4
 release candidate named in the corpus stats above (peer range
-`>=4.0.0-rc.117 || >=4.0.0`, installed as `effect@rc`); the `effect-ts` skill
-documents that same version, so use it for Effect APIs. Module paths such as
-`effect/unstable/http/HttpServerResponse` are current but will move when Effect 4
-stabilizes. Drizzle is pinned to an exact prerelease
+`>=4.0.0-rc.118 || >=4.0.0`, installed as `effect@rc`); the `effect-ts` skill
+documents that same version, so use it for Effect APIs. Since `4.0.0-rc.118`,
+unstable modules import without an `unstable` segment (for example
+`effect/http/HttpServerResponse` and `effect/http-api/HttpApi`); rewrite any
+older `effect/unstable/...` or `effect/httpapi/...` import. Drizzle is pinned to an exact prerelease
 build (`drizzle-orm@1.0.0-rc.5-ab785fc`); do not suggest `drizzle-orm@latest`.
 Prisma ORM v8 is also a release candidate (`prisma@8.0.0-rc.*`). Better Auth is
 on the 1.7 line. Node floor is 22+ (the upstream repo develops on Node 24), Bun

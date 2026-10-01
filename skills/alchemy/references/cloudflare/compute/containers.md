@@ -1,6 +1,6 @@
 <!-- source: https://alchemy.run/cloudflare/compute/containers
      upstream: website/src/content/docs/cloudflare/compute/containers.mdx
-     alchemy 2.0.0-beta.79 @ 0811092 -->
+     alchemy 2.0.0-beta.79 @ e354a45 -->
 
 # Containers
 
@@ -52,7 +52,7 @@ implementation second:
 ```typescript
 // src/Sandbox.runtime.ts
 import * as Effect from "effect/Effect";
-import * as HttpServerResponse from "effect/unstable/http/HttpServerResponse";
+import * as HttpServerResponse from "effect/http/HttpServerResponse";
 import { Sandbox } from "./Sandbox.ts";
 
 export default Sandbox.make(
@@ -364,7 +364,7 @@ export const Connection = Effect.gen(function* () {
 import * as Prisma from "alchemy/Prisma";
 import * as SQL from "alchemy/SQL/Postgres";
 import * as Effect from "effect/Effect";
-import * as HttpServerResponse from "effect/unstable/http/HttpServerResponse";
+import * as HttpServerResponse from "effect/http/HttpServerResponse";
 import { Api } from "./Api.ts";
 import { Connection } from "./Db.ts";
 

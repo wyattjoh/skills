@@ -1,6 +1,6 @@
 <!-- source: https://alchemy.run/aws/tutorial/part-2
      upstream: website/src/content/docs/aws/tutorial/part-2.mdx
-     alchemy 2.0.0-beta.79 @ 0811092 -->
+     alchemy 2.0.0-beta.79 @ e354a45 -->
 
 # Part 2: Add a Lambda
 
@@ -49,7 +49,7 @@ wired up to handle incoming HTTP requests:
 // src/api.ts
 import * as AWS from "alchemy/AWS";
 import * as Effect from "effect/Effect";
-+import * as HttpServerResponse from "effect/unstable/http/HttpServerResponse";
++import * as HttpServerResponse from "effect/http/HttpServerResponse";
 
 export default class Api extends AWS.Lambda.Function<Api>()(
   "Api",
@@ -63,7 +63,7 @@ export default class Api extends AWS.Lambda.Function<Api>()(
 ) {}
 ```
 
-`HttpServerResponse.text(...)` is the same `effect/unstable/http` API
+`HttpServerResponse.text(...)` is the same `effect/http` API
 used everywhere else in Effect — Alchemy adapts it to the Lambda
 event envelope under the hood, so your handler never sees the raw
 `APIGatewayProxyEvent` shape.
@@ -109,7 +109,7 @@ everything about the function in one file. Add it to the constructor:
 import * as AWS from "alchemy/AWS";
 +import * as S3 from "alchemy/AWS/S3";
 import * as Effect from "effect/Effect";
-import * as HttpServerResponse from "effect/unstable/http/HttpServerResponse";
+import * as HttpServerResponse from "effect/http/HttpServerResponse";
 
 export default class Api extends AWS.Lambda.Function<Api>()(
   "Api",
@@ -166,8 +166,8 @@ object key and writes the request body to the bucket:
 import * as AWS from "alchemy/AWS";
 import * as S3 from "alchemy/AWS/S3";
 import * as Effect from "effect/Effect";
-+import { HttpServerRequest } from "effect/unstable/http/HttpServerRequest";
-import * as HttpServerResponse from "effect/unstable/http/HttpServerResponse";
++import { HttpServerRequest } from "effect/http/HttpServerRequest";
+import * as HttpServerResponse from "effect/http/HttpServerResponse";
 
 // ...
     return {

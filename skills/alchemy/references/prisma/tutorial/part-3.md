@@ -1,6 +1,6 @@
 <!-- source: https://alchemy.run/prisma/tutorial/part-3
      upstream: website/src/content/docs/prisma/tutorial/part-3.mdx
-     alchemy 2.0.0-beta.79 @ 0811092 -->
+     alchemy 2.0.0-beta.79 @ e354a45 -->
 
 # Part 3: Query Postgres
 

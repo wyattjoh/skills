@@ -1,6 +1,6 @@
 <!-- source: https://alchemy.run/hetzner/setup
      upstream: website/src/content/docs/hetzner/setup.mdx
-     alchemy 2.0.0-beta.79 @ 0811092 -->
+     alchemy 2.0.0-beta.79 @ e354a45 -->
 
 # Setup
 
@@ -11,7 +11,7 @@ package, a Hetzner project, and an API token stored in a profile.
 
 ## Prerequisites
 
-- [Bun](https://bun.sh) (recommended) or Node.js 22+
+- [Bun](https://bun.sh) or Node.js 22+
 - A [Hetzner Cloud](https://console.hetzner.com) account
 
 ## Create a Hetzner project
