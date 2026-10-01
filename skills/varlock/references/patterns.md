@@ -103,7 +103,7 @@ present with a falsy value. (Before 1.18.0, auto-load injected undefined items
 as `""`; the `@injectUndefinedAsEmpty` root decorator restores that, and then
 `FOO=` becomes present-but-empty too.) Source:
 [`@injectUndefinedAsEmpty`](https://varlock.dev/reference/root-decorators/#injectundefinedasempty);
-[changelog](https://github.com/dmno-dev/varlock/blob/varlock%401.21.0/packages/varlock/CHANGELOG.md).
+[changelog](https://github.com/dmno-dev/varlock/blob/varlock%401.21.1/packages/varlock/CHANGELOG.md).
 
 These diverge whenever the consuming code parses rather than merely tests. A config
 layer that reads an integer sees `""` as **present but malformed** and throws,
