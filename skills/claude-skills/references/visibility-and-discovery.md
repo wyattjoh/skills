@@ -293,8 +293,11 @@ which disables every bundled skill except `/doctor`.
   plain built-in command, not a bundled skill). Can still be hidden via
   `DISABLE_DOCTOR_COMMAND` or a `skillOverrides` entry of `"doctor": "off"`.
 
-**As of v2.1.215**, `/code-review` and `/verify` only run when you invoke
-them directly — Claude used to be able to trigger them automatically.
+**As of v2.1.215**, `/verify` only runs when you invoke it directly. Claude
+can start `/code-review` on its own (before v2.1.246, only where a feature
+flag enabled it); set `skillOverrides` to `"code-review":
+"user-invocable-only"` to prevent that. Source:
+[Code Review docs](https://code.claude.com/docs/en/code-review#let-claude-start-the-review).
 
 ## Types of Skill Content
 
