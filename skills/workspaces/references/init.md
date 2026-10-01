@@ -96,9 +96,12 @@ user rather than using `--yes`):
 
 ```toml
 # ~/.config/worktrunk/config.toml
-[projects."github.com/<org>/<member>".hooks]
+[projects."github.com/<org>/<member>"]
 post-start = "ln -sfn <hub-path> {{ worktree_path }}/.workspace"
 ```
+
+Hook keys sit directly in the project table; a nested `.hooks` table is not
+read. Source: [worktrunk config docs](https://github.com/max-sixty/worktrunk/blob/main/docs/src/content/docs/config.md).
 
 ## 7. Freeze and commit
 
