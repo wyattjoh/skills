@@ -179,9 +179,11 @@ property), `title`, and `description`:
         },
         "expected": [
           {
-            "callsTool": "add-todo",
-            "arguments": {
-              "title": "Buy milk"
+            "callsTool": {
+              "name": "add-todo",
+              "arguments": {
+                "title": "Buy milk"
+              }
             }
           }
         ],
@@ -298,7 +300,7 @@ export default async function markComplete(input: { todoId: string }) {
 For destructive actions, add confirmation:
 
 ```typescript
-import { Tool } from "@raycast/api";
+import { Action, Tool } from "@raycast/api";
 
 type Input = {
   todoId: string;
@@ -309,10 +311,10 @@ export const confirmation: Tool.Confirmation<Input> = async (input) => {
 
   return {
     message: `Delete "${todo.title}"? This cannot be undone.`,
-    // Optional: Customize button text
-    primaryActionTitle: "Delete",
-    // Optional: Make it red/destructive
-    primaryActionStyle: "destructive",
+    // Optional: render the confirm button as destructive (red)
+    style: Action.Style.Destructive,
+    // Optional: name/value pairs describing the side effects
+    info: [{ name: "Todo", value: todo.title }],
   };
 };
 
@@ -334,8 +336,10 @@ export default async function deleteTodo(input: Input) {
   },
   "expected": [
     {
-      "callsTool": "tool-name",
-      "arguments": { "param": "value" }
+      "callsTool": {
+        "name": "tool-name",
+        "arguments": { "param": "value" }
+      }
     }
   ],
   "usedAsExample": true
@@ -390,9 +394,11 @@ Expected AI behavior:
 {
   "expected": [
     {
-      "callsTool": "add-todo",
-      "arguments": {
-        "title": "Buy milk"
+      "callsTool": {
+        "name": "add-todo",
+        "arguments": {
+          "title": "Buy milk"
+        }
       }
     }
   ]
@@ -405,9 +411,11 @@ Expected AI behavior:
 {
   "expected": [
     {
-      "callsTool": "update-user",
-      "arguments": {
-        "user.email": "new@example.com"
+      "callsTool": {
+        "name": "update-user",
+        "arguments": {
+          "user.email": "new@example.com"
+        }
       }
     }
   ]
@@ -420,19 +428,20 @@ Expected AI behavior:
 {
   "expected": [
     { "callsTool": "get-todos" },
-    { "callsTool": "mark-complete", "arguments": { "todoId": "1" } }
+    { "callsTool": { "name": "mark-complete", "arguments": { "todoId": "1" } } }
   ]
 }
 ```
 
 #### usedAsExample
 
-Set to `true` to show this eval as an example prompt to users:
+Evals are shown to users as suggested prompts by default (`usedAsExample` defaults to `true`). Set it to
+`false` for edge cases or internal tests that should not appear as suggestions; the eval still runs:
 
 ```json
 {
-  "input": "@todo-list Add 'Buy milk'",
-  "usedAsExample": true
+  "input": "@todo-list Mark todo 999 as complete",
+  "usedAsExample": false
 }
 ```
 
@@ -448,8 +457,10 @@ Set to `true` to show this eval as an example prompt to users:
   },
   "expected": [
     {
-      "callsTool": "mark-complete",
-      "arguments": { "todoId": "999" }
+      "callsTool": {
+        "name": "mark-complete",
+        "arguments": { "todoId": "999" }
+      }
     }
   ]
 }
@@ -470,8 +481,10 @@ Set to `true` to show this eval as an example prompt to users:
   "expected": [
     { "callsTool": "get-todos" },
     {
-      "callsTool": "mark-complete",
-      "arguments": { "todoId": "1" }
+      "callsTool": {
+        "name": "mark-complete",
+        "arguments": { "todoId": "1" }
+      }
     }
   ]
 }
@@ -518,7 +531,8 @@ instructions: "Use add-todo to add a todo. It takes a title parameter."
 Evaluate your AI extension:
 
 ```bash
-npm run evals
+npx ray evals
+npx ray evals --only 0,2   # run selected evals by zero-based index
 ```
 
 This will:
@@ -574,7 +588,7 @@ View logs in the Raycast developer console.
 
 1. **Cover common use cases** - Test typical user queries
 2. **Test edge cases** - Handle ambiguous or invalid inputs
-3. **Mark examples** - Set `usedAsExample: true` for good prompts
+3. **Curate examples** - Evals are suggested prompts by default; set `usedAsExample: false` on edge cases
 4. **Keep mocks realistic** - Use data that matches your real system
 
 ### Project Structure
@@ -666,7 +680,7 @@ export default async function updateItem(input: Input) {
 ### Deleting Items (with confirmation)
 
 ```typescript
-import { Tool } from "@raycast/api";
+import { Action, Tool } from "@raycast/api";
 
 type Input = {
   itemId: string;
@@ -676,8 +690,7 @@ export const confirmation: Tool.Confirmation<Input> = async (input) => {
   const item = await findItem(input.itemId);
   return {
     message: `Delete "${item.title}"?`,
-    primaryActionTitle: "Delete",
-    primaryActionStyle: "destructive",
+    style: Action.Style.Destructive,
   };
 };
 

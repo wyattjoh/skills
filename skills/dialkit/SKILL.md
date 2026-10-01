@@ -201,15 +201,17 @@ can A/B/C immediately rather than dialing from scratch.
 1. User switches between seeded presets to find the closest baseline, then
    refines via the controls (auto-saves to the active preset).
 2. When satisfied, user clicks **Copy** in the panel toolbar.
-3. User pastes the JSON in chat.
+3. User pastes the copied text in chat.
 
 ### Phase 5: Capture final values
 
-When the user pastes JSON:
+When the user pastes the Copy output (an "Update the useDialKit configuration
+for "<panel>" with these values:" instruction wrapping a JSON block):
 
-1. **Validate the shape** matches the dialkit config you authored in Phase 3
-   (same keys, same nesting). If it doesn't (e.g. partial selection), ask
-   them to Copy again from the panel.
+1. **Validate the keys** in the JSON block. Copy emits a flat object keyed by
+   dot paths (`"shadow.blur": 24`), not nested objects. Every path should map
+   to a control you authored in Phase 3. If paths are missing (e.g. partial
+   selection), ask them to Copy again from the panel.
 2. **Echo the values back** so the user can confirm: "Final values:
    padding=16, shadowBlur=24, ... apply?"
 
@@ -590,10 +592,10 @@ the safety net that prevents accidentally shipping the panel.
 7. Phase 5: user pastes:
 
    ```json
-   { "shadow": { "blur": 24, "offsetY": 8, "opacity": 0.18 } }
+   { "shadow.blur": 24, "shadow.offsetY": 8, "shadow.opacity": 0.18 }
    ```
 
-   Validate shape, confirm.
+   Validate keys, confirm.
 
 8. Phase 6:
    - Replace `p.shadow.blur` → `24`, `p.shadow.offsetY` → `8`,

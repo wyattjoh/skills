@@ -501,5 +501,5 @@ npm run fix-lint
 npm run publish
 
 # Run AI extension evals
-npm run evals
+npx ray evals
 ```
