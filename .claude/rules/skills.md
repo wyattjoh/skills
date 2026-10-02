@@ -5,7 +5,7 @@ paths:
 alwaysApply: false
 ---
 
-When creating, modifying, or reviewing any files in `skills/*/`, invoke the `claude-skills` skill first. It carries the current authoring conventions and fetches upstream docs so the frontmatter and structure match what Claude Code loads.
+When creating, modifying, or reviewing any files in `skills/*/`, invoke the `writing-skills` skill first. It carries the goal-first writing style and the harness references (Claude Code and Codex) that keep frontmatter and structure matching what each harness loads.
 
 ## SKILL.md frontmatter
 
@@ -16,6 +16,8 @@ Each skill lives at `skills/<name>/SKILL.md` with YAML frontmatter:
 - `allowed-tools`: Optional prompt-free permission grants for the invocation turn, not tool restrictions; use `disallowed-tools` to remove tools from the pool
 
 Skills can have a `references/` subdirectory for supporting documentation.
+
+When you create or edit a user-invoked skill (`disable-model-invocation: true`), give it `agents/openai.yaml` with `policy.allow_implicit_invocation: false`, so Codex (which reads this collection through `.agents/skills`) treats it as user-invoked too.
 
 ## Directory structure
 

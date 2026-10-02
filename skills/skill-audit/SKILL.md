@@ -117,7 +117,7 @@ After presenting findings, if there are actionable recommendations:
 
 1. Ask the user if they want to fix the skill now using `AskUserQuestion`
 2. If yes, invoke `EnterPlanMode` to plan the fixes
-3. In the plan, reference `/claude-skills` for current skill authoring best practices
+3. In the plan, reference `/writing-skills` for current skill authoring best practices
 4. The plan should address each recommendation from Phase 4
 
 If the user declines, suggest they can run `/skill-audit $ARGUMENTS` again after making manual changes to verify the fixes.

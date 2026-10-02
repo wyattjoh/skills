@@ -18,7 +18,7 @@ For how Claude Code auto-loads skills, agents, rules, and memory, see
 skills/              # one directory per published skill, each with a SKILL.md (plus optional scripts/ and references/)
 agents/              # one Markdown file per agent
 .claude-plugin/      # plugin.json and marketplace.json, so the repo installs as a Claude Code plugin
-.claude/skills/      # skills internal to this repo, not published (e.g. claude-skills-update)
+.claude/skills/      # skills internal to this repo, not published (e.g. writing-skills-update)
 .claude/references/  # shared reference docs for authoring in this repo, plus pinned dependency submodules
 .claude/rules/       # path-scoped authoring conventions for this repo
 package.json         # Bun workspace root (workspaces: ["skills/*"]) for skill helper scripts
@@ -42,7 +42,7 @@ Claude edits matching files:
 
 ## Authoring skills
 
-- Invoke the `claude-skills` skill before creating or editing a skill.
+- Invoke the `writing-skills` skill before creating or editing a skill.
 - One directory per skill under `skills/`, containing a `SKILL.md`. Co-locate `scripts/`
   and `references/` inside the skill directory as needed.
 - Frontmatter requires `name` and a `description` with trigger phrases so the skill

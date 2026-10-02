@@ -10,7 +10,7 @@ user-invocable: true
 
 Simplify the skill directory in `$ARGUMENTS`. Preserve its goals and essential
 policies while replacing unnecessary machinery with clear responsibilities and
-outcomes. Use `claude-skills` for authoring guidance.
+outcomes. Use `writing-skills` for authoring guidance.
 
 The goal is a skill an agent can reason from, not a smaller procedure to obey.
 Prefer a goal, essential boundaries, and a short workflow. Do not translate code

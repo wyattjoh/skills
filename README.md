@@ -104,7 +104,6 @@ Restart Claude Code after adding or changing an agent definition.
 | alchemy                       | Answer Alchemy (alchemy.run) questions from an indexed local copy of the docs     |
 | catppuccin-interfaces         | Apply Catppuccin colors with semantic, accessible interface tokens                |
 | claude-sessions               | Query indexed Claude Code conversation history with a Bun CLI                     |
-| claude-skills                 | Guidance for authoring Claude Code skills                                         |
 | clean-storage                 | Reclaim disk space from verified build artifacts and tool caches                  |
 | code-walkthrough              | Build an annotated walkthrough page with pinned source and scrolling notes        |
 | conductor                     | Navigate Conductor worktree environments for parallel agents                      |
@@ -146,6 +145,7 @@ Restart Claude Code after adding or changing an agent definition.
 | vhs                           | Interview-driven terminal screencasts rendered to GIF/MP4/WebM                    |
 | whats-next                    | Emit the copy-ready prompt for the next agent session on a wayfinder map          |
 | workspaces                    | Create, operate, and compact multi-repo workspace hubs with enforced memory       |
+| writing-skills                | Write goal-first agent skills for Claude Code, Codex, and other harnesses         |
 
 ## Claude Code agents
 

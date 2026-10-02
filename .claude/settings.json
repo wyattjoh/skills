@@ -1,7 +1,7 @@
 {
   "skillOverrides": {
-    "claude-skills": "on",
-    "claude-skills-update": "user-invocable-only"
+    "writing-skills": "on",
+    "writing-skills-update": "user-invocable-only"
   },
   "enabledPlugins": {
     "typescript-lsp@claude-plugins-official": true,

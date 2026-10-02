@@ -1,4 +1,4 @@
-# Hooks, Dynamic Injection, and Advanced Patterns
+# Claude Code: hooks, dynamic injection, and advanced patterns
 
 ## Skill-Scoped Hooks
 
@@ -25,7 +25,7 @@ could run untrusted).
 
 ### Supported Events (Skill-Scoped)
 
-**All hook events are supported** in skill and agent frontmatter — not just
+**All hook events are supported** in skill and agent frontmatter, not just
 the core tool-lifecycle ones. This includes `PreToolUse`, `PostToolUse`,
 `Stop`, `SessionStart`, `InstructionsLoaded`, `CwdChanged`, `FileChanged`,
 `PreCompact`/`PostCompact`, the `Permission*` family, and any other event in
@@ -272,7 +272,7 @@ completes. Set `background: false` in the frontmatter to block the turn
 instead. A backgrounded fork also gets the narrower tool set that applies to
 background subagents, so set `background: false` if a step needs a tool
 outside that set. Edits from a background fork bypass the session's
-checkpoints (`/rewind` won't undo them — use git instead).
+checkpoints (`/rewind` won't undo them; use git instead).
 
 ### When to Use Forked Context
 
@@ -287,7 +287,7 @@ environment:
 
 - `Explore`: Fast, read-only agent for codebase exploration. Model inherits
   from the main conversation (capped at Opus on the Claude API), not a fixed
-  Haiku model — define a custom `Explore` subagent with `model: haiku` to pin
+  Haiku model. Define a custom `Explore` subagent with `model: haiku` to pin
   it to a cheaper model.
 - `Plan`: Software architect for planning (read-only tools, inherited model)
 - `general-purpose`: Default multi-purpose agent (all tools, inherited model)
@@ -376,5 +376,5 @@ yesterday"`, Claude receives `Summarize $ARGUMENTS from yesterday`.
 ## Reasoning depth
 
 Control reasoning depth with the `effort` frontmatter field (see
-[frontmatter-reference.md](frontmatter-reference.md)). On models where thinking
+[claude-code-frontmatter.md](claude-code-frontmatter.md)). On models where thinking
 is always on, effort is the only depth control.

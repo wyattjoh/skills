@@ -1,4 +1,4 @@
-# Frontmatter Field Reference
+# Claude Code: frontmatter field reference
 
 All frontmatter fields are optional. Only `description` is strongly recommended.
 
@@ -21,7 +21,7 @@ hyphens only. Maximum 64 characters. Cannot contain XML tags or reserved words
 ("anthropic", "claude") in published/marketplace skills.
 
 For a personal or project skill, `name` does **not** change the invoked
-`/name` command — that always comes from the directory name. Only in a plugin
+`/name` command; that always comes from the directory name. Only in a plugin
 skill does `name` become the last segment of the command (the plugin prefix
 stays in place, e.g. `name: fancy` in `my-plugin/skills/review/SKILL.md`
 becomes `/my-plugin:fancy`). The bare `/fancy` also invokes it unless another
@@ -80,7 +80,7 @@ when_to_use: Also trigger on "OCR a scanned document" or "extract tables from PD
 
 Grants the listed tools without a permission prompt during the turn that
 invokes this skill; the grant clears when you send your next message. It does
-**not** restrict which tools are available — every tool remains callable, and
+**not** restrict which tools are available: every tool remains callable, and
 your permission settings still govern tools not listed. Supports Bash command
 patterns with glob syntax (e.g., `Bash(git:*)` allows any git command). To
 actually remove tools from the pool while the skill is active, use
@@ -111,7 +111,7 @@ allowed-tools:
 `${CLAUDE_PLUGIN_ROOT}`/`${CLAUDE_PLUGIN_DATA}` are substituted inside Bash
 rules here, not just in the body. Using the same variable in both places lets a
 skill run a bundled script with no permission prompt (see
-[hooks-and-advanced.md](hooks-and-advanced.md#pre-approving-a-bundled-script)).
+[claude-code-advanced.md](claude-code-advanced.md#pre-approving-a-bundled-script)).
 
 **Security:** workspace trust does not gate this field. Claude Code applies a
 project skill's `allowed-tools` whenever the skill is invoked, including in a
@@ -329,7 +329,7 @@ well; set `once: true` on a hook to have Claude Code remove it after its first
 successful run. (Subagent frontmatter hooks are the ones removed on completion.)
 All hook events are supported in skill frontmatter (not just
 `PreToolUse`/`PostToolUse`/`Stop`).
-See [hooks-and-advanced.md](hooks-and-advanced.md) for the full event list and
+See [claude-code-advanced.md](claude-code-advanced.md) for the full event list and
 handler types (`command`, `http`, `mcp_tool`, `prompt`, `agent`). Each event
 contains an array of matcher/hook pairs.
 
@@ -446,9 +446,9 @@ compatibility: Requires Node.js 20+ and the GitHub CLI.
 
 ## Fields outside Claude Code
 
-Claude Code accepts every field on this page. Outside Claude Code — claude.ai
+Claude Code accepts every field on this page. Outside Claude Code (claude.ai
 skill uploads, the Skills API, and `package_skill.py` from
-[anthropics/skills](https://github.com/anthropics/skills) — only the six
+[anthropics/skills](https://github.com/anthropics/skills)), only the six
 fields in the [Agent Skills](https://agentskills.io) spec are allowed: `name`,
 `description`, `license`, `compatibility`, `metadata`, `allowed-tools`. Any
 other field (e.g. `argument-hint`) causes a hard validation error on those

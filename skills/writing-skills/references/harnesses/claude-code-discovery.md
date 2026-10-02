@@ -1,4 +1,4 @@
-# Skill Visibility, Permissions, and Discovery
+# Claude Code: visibility, permissions, and discovery
 
 ## Controlling Skill Visibility
 
@@ -129,7 +129,7 @@ runs before `SessionStart` hooks finish.
 ### Override Skill Visibility From Settings
 
 The `skillOverrides` setting controls a skill's visibility from `settings.json`
-instead of its own frontmatter — useful for skills checked into a shared repo
+instead of its own frontmatter, useful for skills checked into a shared repo
 you don't want to edit. The `/skills` menu writes it for you (highlight a
 skill, press `Space` or `Enter` to cycle states, `Esc` to save to
 `.claude/settings.local.json`). Each key is a skill name; each value is one of:
@@ -168,7 +168,7 @@ available: the nested one gets a directory-qualified name (e.g.
 project-root skill, which gets a list of the directory-qualified variants
 appended with an instruction to also invoke any variant whose directory holds
 the files Claude is working on (requires Claude Code v2.1.203+). Skills in a
-nested directory aren't available at session start — they load the first time
+nested directory aren't available at session start; they load the first time
 Claude touches a file in that subdirectory, and stay available for the rest of
 the session.
 
@@ -219,8 +219,8 @@ Authoring implications:
 ## Description Character Budget
 
 Skill descriptions share a character budget (1% of the context window,
-adjustable via `skillListingBudgetFraction`). Each entry — the combined
-`description` + `when_to_use` text — is truncated at **1,536 characters** in
+adjustable via `skillListingBudgetFraction`). Each entry (the combined
+`description` + `when_to_use` text) is truncated at **1,536 characters** in
 the skill listing (configurable via `skillListingMaxDescChars`), so
 front-load the key use case. The listing always contains every skill **name**;
 when it overflows, Claude Code drops **descriptions**, starting with the skills
