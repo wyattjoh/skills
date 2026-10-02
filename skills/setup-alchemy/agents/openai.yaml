@@ -1,0 +1,6 @@
+interface:
+  display_name: "Setup Alchemy"
+  short_description: "Bootstrap Alchemy Cloudflare deploys from CI"
+
+policy:
+  allow_implicit_invocation: false
