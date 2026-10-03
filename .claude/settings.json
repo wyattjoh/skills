@@ -5,7 +5,6 @@
   },
   "enabledPlugins": {
     "typescript-lsp@claude-plugins-official": true,
-    "deno-lsp@wyattjoh-marketplace": false,
     "opentui-testing@wyattjoh-marketplace": true
   }
 }
