@@ -45,6 +45,11 @@ with. Always pass `env` (at minimum `env: process.env`) when a test spawns a
 helper CLI. In particular, explicitly pass sandbox paths such as
 `XDG_STATE_HOME` so spawned helpers cannot write to real user state.
 
+When the parent has a TTY, `bun test --parallel` sets `FORCE_COLOR=1` in its
+workers, and a spawned Bun CLI then wraps `console.error` output in ANSI codes.
+The root `test-setup.ts` preload (wired in `bunfig.toml`) deletes it, so exact
+stderr assertions hold in both interactive and piped runs. Keep that preload.
+
 # Positive test expectations
 
 Do not use Bun's negation modifier in expectation chains.

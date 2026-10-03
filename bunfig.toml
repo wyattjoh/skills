@@ -8,3 +8,4 @@ linker = "hoisted"
 [test]
 # Claude Code mod tests run under `claude plugin test`, not bun.
 pathIgnorePatterns = ["plugins/*/tests/**"]
+preload = ["./test-setup.ts"]
