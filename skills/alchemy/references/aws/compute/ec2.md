@@ -1,6 +1,6 @@
 <!-- source: https://alchemy.run/aws/compute/ec2
      upstream: website/src/content/docs/aws/compute/ec2.mdx
-     alchemy 2.0.0-beta.79 @ 0811092 -->
+     alchemy 2.0.0-beta.79 @ e354a45 -->
 
 # EC2
 
@@ -57,8 +57,8 @@ helper returns an `Output` that only resolves at deploy time:
 // src/server.ts
 import * as AWS from "alchemy/AWS";
 import * as Effect from "effect/Effect";
-import { HttpServerRequest } from "effect/unstable/http/HttpServerRequest";
-import * as HttpServerResponse from "effect/unstable/http/HttpServerResponse";
+import { HttpServerRequest } from "effect/http/HttpServerRequest";
+import * as HttpServerResponse from "effect/http/HttpServerResponse";
 
 export default class Server extends AWS.EC2.Instance<Server>()(
   "Server",

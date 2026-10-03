@@ -1,6 +1,6 @@
 <!-- source: https://alchemy.run/aws/apis/schemaless-rpc
      upstream: website/src/content/docs/aws/apis/schemaless-rpc.mdx
-     alchemy 2.0.0-beta.79 @ 0811092 -->
+     alchemy 2.0.0-beta.79 @ e354a45 -->
 
 # Schemaless RPC
 
@@ -18,7 +18,7 @@ riding the generic fetch transport — each call is a
 // sandbox.ts — the MicroVM image
 import * as AWS from "alchemy/AWS";
 import * as Effect from "effect/Effect";
-import * as HttpServerResponse from "effect/unstable/http/HttpServerResponse";
+import * as HttpServerResponse from "effect/http/HttpServerResponse";
 
 export class Sandbox extends AWS.Lambda.MicrovmImage<
   Sandbox,

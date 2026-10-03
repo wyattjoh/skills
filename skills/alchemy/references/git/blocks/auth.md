@@ -1,6 +1,6 @@
 <!-- source: https://alchemy.run/git/blocks/auth
      upstream: website/src/content/docs/git/blocks/auth.mdx
-     alchemy 2.0.0-beta.79 @ 0811092 -->
+     alchemy 2.0.0-beta.79 @ e354a45 -->
 
 # Authentication and authorization
 

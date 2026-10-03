@@ -1,6 +1,6 @@
 <!-- source: https://alchemy.run/railway/tutorial/part-1
      upstream: website/src/content/docs/railway/tutorial/part-1.mdx
-     alchemy 2.0.0-beta.79 @ 0811092 -->
+     alchemy 2.0.0-beta.79 @ e354a45 -->
 
 # Part 1: Your First Project
 
@@ -12,7 +12,7 @@ Variables, and disks.
 
 ## Prerequisites
 
-- [Bun](https://bun.sh) (recommended) or Node.js 22+
+- [Bun](https://bun.sh) or Node.js 22+
 - A Railway workspace and an account API token — see
   [Setup](/railway/setup) if you haven't created those yet
 

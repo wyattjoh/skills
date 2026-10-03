@@ -1,6 +1,6 @@
 <!-- source: https://alchemy.run/project-structure/monorepo-single-stack
      upstream: website/src/content/docs/project-structure/monorepo-single-stack.mdx
-     alchemy 2.0.0-beta.79 @ 0811092 -->
+     alchemy 2.0.0-beta.79 @ e354a45 -->
 
 # Single Stack
 
@@ -92,7 +92,7 @@ Each app declares its own Worker in its own package:
 // backend/src/Service.ts
 import * as Cloudflare from "alchemy/Cloudflare";
 import * as Effect from "effect/Effect";
-import * as HttpServerResponse from "effect/unstable/http/HttpServerResponse";
+import * as HttpServerResponse from "effect/http/HttpServerResponse";
 
 export default class Service extends Cloudflare.Worker<Service>()(
   "Service",

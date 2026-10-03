@@ -1,6 +1,6 @@
 <!-- source: https://alchemy.run/better-auth/upgrades/from-1-6-to-1-7
      upstream: website/src/content/docs/better-auth/upgrades/from-1-6-to-1-7.mdx
-     alchemy 2.0.0-beta.79 @ 0811092 -->
+     alchemy 2.0.0-beta.79 @ e354a45 -->
 
 # Upgrading from 1.6 to 1.7.5 or newer
 

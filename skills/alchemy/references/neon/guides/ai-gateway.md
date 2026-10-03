@@ -1,6 +1,6 @@
 <!-- source: https://alchemy.run/neon/guides/ai-gateway
      upstream: website/src/content/docs/neon/guides/ai-gateway.mdx
-     alchemy 2.0.0-beta.79 @ 0811092 -->
+     alchemy 2.0.0-beta.79 @ e354a45 -->
 
 # AI Gateway setup
 
@@ -57,7 +57,7 @@ configured string:
 
 ```typescript
 import * as Effect from "effect/Effect";
-import { LanguageModel } from "effect/unstable/ai";
+import { LanguageModel } from "effect/ai";
 
 const reply = yield* LanguageModel.generateText({
   prompt: "Reply with hello.",

@@ -1,6 +1,6 @@
 <!-- source: https://alchemy.run/cloudflare/data/hyperdrive
      upstream: website/src/content/docs/cloudflare/data/hyperdrive.mdx
-     alchemy 2.0.0-beta.79 @ 0811092 -->
+     alchemy 2.0.0-beta.79 @ e354a45 -->
 
 # Hyperdrive
 
@@ -391,7 +391,7 @@ underlying `Hyperdrive` object:
 import * as Cloudflare from "alchemy/Cloudflare";
 import * as Effect from "effect/Effect";
 +import * as Redacted from "effect/Redacted";
-import * as HttpServerResponse from "effect/unstable/http/HttpServerResponse";
+import * as HttpServerResponse from "effect/http/HttpServerResponse";
 +import { Client } from "pg";
 +import { Hyperdrive } from "./Db.ts";
 
@@ -436,7 +436,7 @@ export default class Api extends Cloudflare.Worker<Api>()(
 import * as Cloudflare from "alchemy/Cloudflare";
 import * as Effect from "effect/Effect";
 +import * as Redacted from "effect/Redacted";
-import * as HttpServerResponse from "effect/unstable/http/HttpServerResponse";
+import * as HttpServerResponse from "effect/http/HttpServerResponse";
 +import { Client } from "pg";
 +import { Hyperdrive } from "./Db.ts";
 
@@ -481,7 +481,7 @@ export default class Api extends Cloudflare.Worker<Api>()(
 import * as Cloudflare from "alchemy/Cloudflare";
 import * as Effect from "effect/Effect";
 +import * as Redacted from "effect/Redacted";
-import * as HttpServerResponse from "effect/unstable/http/HttpServerResponse";
+import * as HttpServerResponse from "effect/http/HttpServerResponse";
 +import { createConnection } from "mysql2/promise";
 +import { Hyperdrive } from "./Db.ts";
 
@@ -576,7 +576,7 @@ Hyperdrive.
 import * as Cloudflare from "alchemy/Cloudflare";
 import * as SQL from "alchemy/SQL/Postgres";
 import * as Effect from "effect/Effect";
-import * as HttpServerResponse from "effect/unstable/http/HttpServerResponse";
+import * as HttpServerResponse from "effect/http/HttpServerResponse";
 import { Hyperdrive } from "./Db.ts";
 
 export default class Api extends Cloudflare.Worker<Api>()(

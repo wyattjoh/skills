@@ -1,6 +1,6 @@
 <!-- source: https://alchemy.run/aws/data/drizzle-dsql
      upstream: website/src/content/docs/aws/data/drizzle-dsql.mdx
-     alchemy 2.0.0-beta.79 @ 0811092 -->
+     alchemy 2.0.0-beta.79 @ e354a45 -->
 
 # Drizzle + Aurora DSQL
 

@@ -1,6 +1,6 @@
 <!-- source: https://alchemy.run/git/tutorial/part-3
      upstream: website/src/content/docs/git/tutorial/part-3.mdx
-     alchemy 2.0.0-beta.79 @ 0811092 -->
+     alchemy 2.0.0-beta.79 @ e354a45 -->
 
 # Part 3: Publish a repository
 
@@ -29,8 +29,8 @@ Create `src/public-read.ts`:
 // src/public-read.ts
 import * as Git from "alchemy/Git";
 import * as Effect from "effect/Effect";
-import * as HttpRouter from "effect/unstable/http/HttpRouter";
-import { HttpServerRequest } from "effect/unstable/http/HttpServerRequest";
+import * as HttpRouter from "effect/http/HttpRouter";
+import { HttpServerRequest } from "effect/http/HttpServerRequest";
 
 export const PublicRead = Effect.gen(function* () {
   const registry = yield* Git.RegistryStore;

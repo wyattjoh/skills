@@ -1,6 +1,6 @@
 <!-- source: https://alchemy.run/railway/setup
      upstream: website/src/content/docs/railway/setup.mdx
-     alchemy 2.0.0-beta.79 @ 0811092 -->
+     alchemy 2.0.0-beta.79 @ e354a45 -->
 
 # Setup
 
@@ -11,7 +11,7 @@ a Railway workspace, and an account API token stored in a profile.
 
 ## Prerequisites
 
-- [Bun](https://bun.sh) (recommended) or Node.js 22+
+- [Bun](https://bun.sh) or Node.js 22+
 - A [Railway](https://railway.com) account
 - [Docker](https://docs.docker.com/get-docker/) for Effect-native
   [Services](/railway/compute/services) (Alchemy builds and pushes an

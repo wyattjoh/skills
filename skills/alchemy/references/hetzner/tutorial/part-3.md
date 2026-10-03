@@ -1,6 +1,6 @@
 <!-- source: https://alchemy.run/hetzner/tutorial/part-3
      upstream: website/src/content/docs/hetzner/tutorial/part-3.mdx
-     alchemy 2.0.0-beta.79 @ 0811092 -->
+     alchemy 2.0.0-beta.79 @ e354a45 -->
 
 # Part 3: Persist Data with a Volume
 
@@ -50,8 +50,8 @@ required:
 // src/api.ts
 import * as Hetzner from "alchemy/Hetzner";
 import * as Effect from "effect/Effect";
-import { HttpServerRequest } from "effect/unstable/http/HttpServerRequest";
-import * as HttpServerResponse from "effect/unstable/http/HttpServerResponse";
+import { HttpServerRequest } from "effect/http/HttpServerRequest";
+import * as HttpServerResponse from "effect/http/HttpServerResponse";
 -import { Box } from "./server.ts";
 +import { Box, Data } from "./server.ts";
 

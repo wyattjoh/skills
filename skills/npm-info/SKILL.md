@@ -39,8 +39,8 @@ Example output:
   "readme": "# Express\n\nFast, unopinionated...",
   "deprecated": false,
   "engines": { "node": ">= 18" },
-  "dependencies": { "accepts": "~2.0.0" },
-  "distTags": { "latest": "5.2.1", "latest-4": "4.22.2" }
+  "dependencies": { "accepts": "^2.0.0" },
+  "distTags": { "latest": "5.2.1", "latest-4": "4.22.3" }
 }
 ```
 

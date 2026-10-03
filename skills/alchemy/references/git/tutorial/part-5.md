@@ -1,6 +1,6 @@
 <!-- source: https://alchemy.run/git/tutorial/part-5
      upstream: website/src/content/docs/git/tutorial/part-5.mdx
-     alchemy 2.0.0-beta.79 @ 0811092 -->
+     alchemy 2.0.0-beta.79 @ e354a45 -->
 
 # Part 5: Add your application's API
 
@@ -37,9 +37,9 @@ Add the API imports:
 ```diff lang="typescript"
 // src/api.ts
 import * as Schema from "effect/Schema";
-+import * as HttpApi from "effect/unstable/httpapi/HttpApi";
-+import * as HttpApiEndpoint from "effect/unstable/httpapi/HttpApiEndpoint";
-+import * as HttpApiGroup from "effect/unstable/httpapi/HttpApiGroup";
++import * as HttpApi from "effect/http-api/HttpApi";
++import * as HttpApiEndpoint from "effect/http-api/HttpApiEndpoint";
++import * as HttpApiGroup from "effect/http-api/HttpApiGroup";
 ```
 
 Append the endpoint and its group:
@@ -67,7 +67,7 @@ Add these imports:
 import * as Schema from "effect/Schema";
 +import * as Effect from "effect/Effect";
 +import * as Layer from "effect/Layer";
-+import * as HttpApiBuilder from "effect/unstable/httpapi/HttpApiBuilder";
++import * as HttpApiBuilder from "effect/http-api/HttpApiBuilder";
 +import { Session } from "./session.ts";
 ```
 

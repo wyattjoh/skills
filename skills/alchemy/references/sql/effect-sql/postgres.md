@@ -1,6 +1,6 @@
 <!-- source: https://alchemy.run/sql/effect-sql/postgres
      upstream: website/src/content/docs/sql/effect-sql/postgres.mdx
-     alchemy 2.0.0-beta.79 @ 0811092 -->
+     alchemy 2.0.0-beta.79 @ e354a45 -->
 
 # Postgres
 
@@ -51,7 +51,7 @@ const rows = yield* sql`
 ```
 
 Rows are plain objects; supply a row type with `sql<Row>`. The
-[`effect/unstable/sql/Statement`](https://effect.website) API also provides
+[`effect/sql/Statement`](https://effect.website) API also provides
 fragments, `sql.csv`, `sql.and`, and identifier escaping.
 
 ## Errors
@@ -85,7 +85,7 @@ yield* sql.withTransaction(
 Depend on the generic `SqlClient` tag, then provide the database layer:
 
 ```typescript
-import * as SqlClient from "effect/unstable/sql/SqlClient";
+import * as SqlClient from "effect/sql/SqlClient";
 
 const makeUsers = Effect.gen(function* () {
   const sql = yield* SqlClient.SqlClient;

@@ -1,6 +1,6 @@
 <!-- source: https://alchemy.run/aws/messaging/sns
      upstream: website/src/content/docs/aws/messaging/sns.mdx
-     alchemy 2.0.0-beta.79 @ 0811092 -->
+     alchemy 2.0.0-beta.79 @ e354a45 -->
 
 # SNS
 
@@ -63,7 +63,7 @@ execution role:
 import * as AWS from "alchemy/AWS";
 import * as SNS from "alchemy/AWS/SNS";
 import * as Effect from "effect/Effect";
-import * as HttpServerResponse from "effect/unstable/http/HttpServerResponse";
+import * as HttpServerResponse from "effect/http/HttpServerResponse";
 import { Orders } from "./topic.ts";
 
 export default class Api extends AWS.Lambda.Function<Api>()(

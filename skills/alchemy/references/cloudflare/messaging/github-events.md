@@ -1,6 +1,6 @@
 <!-- source: https://alchemy.run/cloudflare/messaging/github-events
      upstream: website/src/content/docs/cloudflare/messaging/github-events.mdx
-     alchemy 2.0.0-beta.79 @ 0811092 -->
+     alchemy 2.0.0-beta.79 @ e354a45 -->
 
 # React to GitHub events from a Worker
 
@@ -26,7 +26,7 @@ delivery:
 import * as Cloudflare from "alchemy/Cloudflare";
 import * as GitHub from "alchemy/GitHub";
 import * as Effect from "effect/Effect";
-import * as HttpServerResponse from "effect/unstable/http/HttpServerResponse";
+import * as HttpServerResponse from "effect/http/HttpServerResponse";
 
 export default Cloudflare.Worker(
   "Worker",

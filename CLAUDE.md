@@ -90,8 +90,8 @@ They are for read-only reference only; do not edit files inside these paths.
 | Catppuccin              | `v0.2.0`              | `.claude/references/catppuccin`                    | https://github.com/catppuccin/catppuccin.git                     | `9de299f8f1702fe4fb4e439adfd04b5623e7b77f` |
 | Composable Architecture | `1.26.2`              | `.claude/references/swift-composable-architecture` | https://github.com/pointfreeco/swift-composable-architecture.git | `377da4061db10d26337a71bb279c506bb951f50f` |
 | Effect                  | `effect@3.22.2`       | `.claude/references/effect`                        | https://github.com/Effect-TS/effect.git                          | `6985be0cf461f0997f28f6798f469d01a2b46ca3` |
-| Effect v4               | `effect@4.0.0-rc.117` | `.claude/references/effect-v4`                     | https://github.com/Effect-TS/effect.git                          | `14a3f140095fdebbff9162944fe7d4ea83e054e6` |
-| Varlock                 | `varlock@1.21.0`      | `.claude/references/varlock`                       | https://github.com/dmno-dev/varlock.git                          | `5b56066b6a33258522a6d21997bf28ce8d67206c` |
+| Effect v4               | `effect@4.0.0-rc.118` | `.claude/references/effect-v4`                     | https://github.com/Effect-TS/effect.git                          | `ad61db80efd52637e2901c5ee56b9e0fb4e8ac48` |
+| Varlock                 | `varlock@1.21.1`      | `.claude/references/varlock`                       | https://github.com/dmno-dev/varlock.git                          | `fd51d60905b372ab10ae6407300346e67695aec0` |
 
 The Effect repository is vendored twice because this repository uses two incompatible major versions.
 `effect` tracks the npm `latest` line (v3), still used by the `workspaces`, `herd`, `clean-storage`, and

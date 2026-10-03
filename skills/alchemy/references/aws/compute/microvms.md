@@ -1,6 +1,6 @@
 <!-- source: https://alchemy.run/aws/compute/microvms
      upstream: website/src/content/docs/aws/compute/microvms.mdx
-     alchemy 2.0.0-beta.79 @ 0811092 -->
+     alchemy 2.0.0-beta.79 @ e354a45 -->
 
 # Lambda MicroVMs
 
@@ -44,8 +44,8 @@ contract every Function and Server returns:
 // sandbox.ts
 import * as AWS from "alchemy/AWS";
 import * as Effect from "effect/Effect";
-import { HttpServerRequest } from "effect/unstable/http/HttpServerRequest";
-import * as HttpServerResponse from "effect/unstable/http/HttpServerResponse";
+import { HttpServerRequest } from "effect/http/HttpServerRequest";
+import * as HttpServerResponse from "effect/http/HttpServerResponse";
 
 export const BuildRole = AWS.IAM.Role("MicrovmBuildRole");
 
@@ -94,8 +94,8 @@ import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Schedule from "effect/Schedule";
-import * as FetchHttpClient from "effect/unstable/http/FetchHttpClient";
-import * as HttpServerResponse from "effect/unstable/http/HttpServerResponse";
+import * as FetchHttpClient from "effect/http/FetchHttpClient";
+import * as HttpServerResponse from "effect/http/HttpServerResponse";
 import { Sandbox } from "./sandbox.ts";
 
 export default class Api extends AWS.Lambda.Function<Api>()(

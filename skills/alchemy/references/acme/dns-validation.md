@@ -1,6 +1,6 @@
 <!-- source: https://alchemy.run/acme/dns-validation
      upstream: website/src/content/docs/acme/dns-validation.mdx
-     alchemy 2.0.0-beta.79 @ 0811092 -->
+     alchemy 2.0.0-beta.79 @ e354a45 -->
 
 # DNS validation
 

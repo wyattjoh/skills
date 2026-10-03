@@ -1,6 +1,6 @@
 <!-- source: https://alchemy.run/aws/compute/choosing-a-runtime
      upstream: website/src/content/docs/aws/compute/choosing-a-runtime.mdx
-     alchemy 2.0.0-beta.79 @ 0811092 -->
+     alchemy 2.0.0-beta.79 @ e354a45 -->
 
 # Choosing a runtime
 

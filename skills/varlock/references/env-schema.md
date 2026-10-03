@@ -7,13 +7,13 @@ variable _names, types, and descriptions_ but not secret _values_, which is what
 makes it safe to share with AI agents.
 
 Decorator, type, and function lists below are drawn from the vendored docs at
-`.claude/references/varlock/` (varlock 1.21.0):
+`.claude/references/varlock/` (varlock 1.21.1):
 [item-decorators](https://varlock.dev/reference/item-decorators/),
 [root-decorators](https://varlock.dev/reference/root-decorators/),
 [data-types](https://varlock.dev/reference/data-types/),
 [functions](https://varlock.dev/reference/functions/). Behavior changes since
 1.10.0 are cited from the
-[changelog](https://github.com/dmno-dev/varlock/blob/varlock%401.21.0/packages/varlock/CHANGELOG.md).
+[changelog](https://github.com/dmno-dev/varlock/blob/varlock%401.21.1/packages/varlock/CHANGELOG.md).
 
 ## File shape
 
@@ -180,7 +180,12 @@ lines
 """
 ```
 
-Source: [env-spec reference](https://varlock.dev/env-spec/reference/).
+Since 1.21.1, an unquoted value that looks like a function call but cannot be
+parsed as one (for example an unquoted argument containing a space) is an error
+instead of silently resolving to the literal text. Quote such values.
+
+Source: [env-spec reference](https://varlock.dev/env-spec/reference/);
+[1.21.1 changelog](https://github.com/dmno-dev/varlock/blob/varlock%401.21.1/packages/varlock/CHANGELOG.md).
 
 ## Functions
 

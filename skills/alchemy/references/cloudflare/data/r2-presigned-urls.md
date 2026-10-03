@@ -1,6 +1,6 @@
 <!-- source: https://alchemy.run/cloudflare/data/r2-presigned-urls
      upstream: website/src/content/docs/cloudflare/data/r2-presigned-urls.mdx
-     alchemy 2.0.0-beta.79 @ 0811092 -->
+     alchemy 2.0.0-beta.79 @ e354a45 -->
 
 # R2 presigned URLs
 
@@ -21,8 +21,8 @@ provide their `*Token` layers:
 import * as Cloudflare from "alchemy/Cloudflare";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
-import { HttpServerRequest } from "effect/unstable/http/HttpServerRequest";
-import * as HttpServerResponse from "effect/unstable/http/HttpServerResponse";
+import { HttpServerRequest } from "effect/http/HttpServerRequest";
+import * as HttpServerResponse from "effect/http/HttpServerResponse";
 import { Uploads } from "./uploads.ts";
 
 export default Cloudflare.Worker(

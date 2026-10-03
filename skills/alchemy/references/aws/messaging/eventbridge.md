@@ -1,6 +1,6 @@
 <!-- source: https://alchemy.run/aws/messaging/eventbridge
      upstream: website/src/content/docs/aws/messaging/eventbridge.mdx
-     alchemy 2.0.0-beta.79 @ 0811092 -->
+     alchemy 2.0.0-beta.79 @ e354a45 -->
 
 # EventBridge & Scheduler
 
@@ -50,7 +50,7 @@ attaches an `events:PutEvents` policy statement scoped to the bus ARN
 // src/api.ts
 import * as AWS from "alchemy/AWS";
 import * as Effect from "effect/Effect";
-import * as HttpServerResponse from "effect/unstable/http/HttpServerResponse";
+import * as HttpServerResponse from "effect/http/HttpServerResponse";
 import { Events } from "./bus.ts";
 
 export default class Api extends AWS.Lambda.Function<Api>()(

@@ -1,6 +1,6 @@
 <!-- source: https://alchemy.run/aws/messaging/s3-events
      upstream: website/src/content/docs/aws/messaging/s3-events.mdx
-     alchemy 2.0.0-beta.79 @ 0811092 -->
+     alchemy 2.0.0-beta.79 @ e354a45 -->
 
 # React to S3 Events
 

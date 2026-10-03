@@ -1,6 +1,6 @@
 <!-- source: https://alchemy.run/neon/data/branching
      upstream: website/src/content/docs/neon/data/branching.mdx
-     alchemy 2.0.0-beta.79 @ 0811092 -->
+     alchemy 2.0.0-beta.79 @ e354a45 -->
 
 # Branching
 

@@ -1,6 +1,6 @@
 <!-- source: https://alchemy.run/cloudflare/data/shared-database
      upstream: website/src/content/docs/cloudflare/data/shared-database.mdx
-     alchemy 2.0.0-beta.79 @ 0811092 -->
+     alchemy 2.0.0-beta.79 @ e354a45 -->
 
 # Shared database across stages
 

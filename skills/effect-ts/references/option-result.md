@@ -203,11 +203,11 @@ themselves, not for an optional key.
 
 ## Atom Integration
 
-Effectful atoms surface an `AsyncResult` (from `effect/unstable/reactivity`), not `Result`. It adds the `Initial`
+Effectful atoms surface an `AsyncResult` (from `effect/reactivity`), not `Result`. It adds the `Initial`
 state an atom is in before the effect resolves. React components pattern match on it rather than on `Option`:
 
 ```typescript
-import { AsyncResult } from "effect/unstable/reactivity";
+import { AsyncResult } from "effect/reactivity";
 
 const userResult = useAtomValue(userAtom); // AsyncResult<User, FetchError>
 

@@ -1,6 +1,6 @@
 <!-- source: https://alchemy.run/railway/data/buckets
      upstream: website/src/content/docs/railway/data/buckets.mdx
-     alchemy 2.0.0-beta.79 @ 0811092 -->
+     alchemy 2.0.0-beta.79 @ e354a45 -->
 
 # Buckets
 
@@ -47,7 +47,7 @@ Bind `PutObject` / `GetObject` in the Service's constructor. Provide the matchin
 `*Http` layers.
 
 ```typescript
-import * as HttpServerResponse from "effect/unstable/http/HttpServerResponse";
+import * as HttpServerResponse from "effect/http/HttpServerResponse";
 
 export default class Api extends Railway.Service<Api>()(
   "Api",

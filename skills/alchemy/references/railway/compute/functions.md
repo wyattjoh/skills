@@ -1,6 +1,6 @@
 <!-- source: https://alchemy.run/railway/compute/functions
      upstream: website/src/content/docs/railway/compute/functions.mdx
-     alchemy 2.0.0-beta.79 @ 0811092 -->
+     alchemy 2.0.0-beta.79 @ e354a45 -->
 
 # Functions, templates & VMs
 
@@ -26,7 +26,7 @@ is the program that runs in it.
 // src/ping.ts
 import * as Railway from "alchemy/Railway";
 import * as Effect from "effect/Effect";
-import * as HttpServerResponse from "effect/unstable/http/HttpServerResponse";
+import * as HttpServerResponse from "effect/http/HttpServerResponse";
 import { Site } from "./project.ts";
 
 export default class Ping extends Railway.Function<Ping>()(

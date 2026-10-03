@@ -1,6 +1,6 @@
 <!-- source: https://alchemy.run/railway/tutorial/part-2
      upstream: website/src/content/docs/railway/tutorial/part-2.mdx
-     alchemy 2.0.0-beta.79 @ 0811092 -->
+     alchemy 2.0.0-beta.79 @ e354a45 -->
 
 # Part 2: Deploy a Service
 
@@ -104,7 +104,7 @@ wired to an HTTP server listening on the Service's port:
 // src/api.ts
 import * as Railway from "alchemy/Railway";
 import * as Effect from "effect/Effect";
-+import * as HttpServerResponse from "effect/unstable/http/HttpServerResponse";
++import * as HttpServerResponse from "effect/http/HttpServerResponse";
 import { Site } from "./project.ts";
 
 export default class Api extends Railway.Service<Api>()(
@@ -122,7 +122,7 @@ export default class Api extends Railway.Service<Api>()(
 ) {}
 ```
 
-`HttpServerResponse` is the same `effect/unstable/http` API used on
+`HttpServerResponse` is the same `effect/http` API used on
 every other Alchemy runtime — the handler you write here would run
 unchanged on Cloudflare Workers or AWS Lambda.
 
@@ -170,7 +170,7 @@ Add `/health` so you can probe the process:
 
 ```diff lang="typescript"
 // src/api.ts
-+import { HttpServerRequest } from "effect/unstable/http/HttpServerRequest";
++import { HttpServerRequest } from "effect/http/HttpServerRequest";
 // ...
     return {
 -      fetch: Effect.succeed(HttpServerResponse.text("Hello from Railway!")),

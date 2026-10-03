@@ -1,6 +1,6 @@
 <!-- source: https://alchemy.run/cloudflare/compute/run-a-container
      upstream: website/src/content/docs/cloudflare/compute/run-a-container.mdx
-     alchemy 2.0.0-beta.79 @ 0811092 -->
+     alchemy 2.0.0-beta.79 @ e354a45 -->
 
 # Run a Container
 
@@ -131,8 +131,8 @@ method. Implement it now:
 // src/Sandbox.runtime.ts
 import * as Effect from "effect/Effect";
 +import * as Stream from "effect/Stream";
-+import * as ChildProcess from "effect/unstable/process/ChildProcess";
-+import { ChildProcessSpawner } from "effect/unstable/process/ChildProcessSpawner";
++import * as ChildProcess from "effect/process/ChildProcess";
++import { ChildProcessSpawner } from "effect/process/ChildProcessSpawner";
 import { Sandbox } from "./Sandbox.ts";
 
 export const SandboxLive = Sandbox.make(
@@ -187,9 +187,9 @@ HTTP server you'd normally run inside Docker just works:
 // src/Sandbox.runtime.ts
 import * as Effect from "effect/Effect";
 import * as Stream from "effect/Stream";
-+import * as HttpServerResponse from "effect/unstable/http/HttpServerResponse";
-import * as ChildProcess from "effect/unstable/process/ChildProcess";
-import { ChildProcessSpawner } from "effect/unstable/process/ChildProcessSpawner";
++import * as HttpServerResponse from "effect/http/HttpServerResponse";
+import * as ChildProcess from "effect/process/ChildProcess";
+import { ChildProcessSpawner } from "effect/process/ChildProcessSpawner";
 import { Sandbox } from "./Sandbox.ts";
 
 export const SandboxLive = Sandbox.make(
@@ -334,8 +334,8 @@ The Worker binds `Agent` and exposes the `/sandbox/exec` route:
 // src/worker.ts
 import * as Cloudflare from "alchemy/Cloudflare";
 import * as Effect from "effect/Effect";
-+import { HttpServerRequest } from "effect/unstable/http/HttpServerRequest";
-import * as HttpServerResponse from "effect/unstable/http/HttpServerResponse";
++import { HttpServerRequest } from "effect/http/HttpServerRequest";
+import * as HttpServerResponse from "effect/http/HttpServerResponse";
 +import Agent from "./Agent.ts";
 
 export default Cloudflare.Worker(
@@ -388,8 +388,8 @@ import * as Cloudflare from "alchemy/Cloudflare";
 import * as Test from "alchemy/Test/Bun";
 import { expect } from "bun:test";
 import * as Effect from "effect/Effect";
-+import * as HttpBody from "effect/unstable/http/HttpBody";
-import * as HttpClient from "effect/unstable/http/HttpClient";
++import * as HttpBody from "effect/http/HttpBody";
+import * as HttpClient from "effect/http/HttpClient";
 import Stack from "../alchemy.run.ts";
 
 const { test, beforeAll, deploy } = Test.make({
@@ -432,7 +432,7 @@ to `Agent.ts` that proxies to it via `getTcpPort`:
 // src/Agent.ts
 import * as Cloudflare from "alchemy/Cloudflare";
 import * as Effect from "effect/Effect";
-+import * as HttpClientRequest from "effect/unstable/http/HttpClientRequest";
++import * as HttpClientRequest from "effect/http/HttpClientRequest";
 import { Sandbox } from "./Sandbox.ts";
 
 export default class Agent extends Cloudflare.DurableObject<Agent>()(

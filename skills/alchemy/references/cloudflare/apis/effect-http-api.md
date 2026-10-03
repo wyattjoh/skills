@@ -1,6 +1,6 @@
 <!-- source: https://alchemy.run/cloudflare/apis/effect-http-api
      upstream: website/src/content/docs/cloudflare/apis/effect-http-api.mdx
-     alchemy 2.0.0-beta.79 @ 0811092 -->
+     alchemy 2.0.0-beta.79 @ e354a45 -->
 
 # Effect HTTP API
 
@@ -76,9 +76,9 @@ server *and* a typed client.
 ```typescript
 // src/api.ts
 import * as Schema from "effect/Schema";
-import * as HttpApi from "effect/unstable/httpapi/HttpApi";
-import * as HttpApiEndpoint from "effect/unstable/httpapi/HttpApiEndpoint";
-import * as HttpApiGroup from "effect/unstable/httpapi/HttpApiGroup";
+import * as HttpApi from "effect/http-api/HttpApi";
+import * as HttpApiEndpoint from "effect/http-api/HttpApiEndpoint";
+import * as HttpApiGroup from "effect/http-api/HttpApiGroup";
 import { Task, TaskNotFound } from "./task.ts";
 
 export const decodeTask = Schema.decodeUnknownEffect(Task);
@@ -304,10 +304,10 @@ import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Path from "effect/Path";
 import * as Schema from "effect/Schema";
-import * as Etag from "effect/unstable/http/Etag";
-import * as HttpPlatform from "effect/unstable/http/HttpPlatform";
-import * as HttpRouter from "effect/unstable/http/HttpRouter";
-import * as HttpApiBuilder from "effect/unstable/httpapi/HttpApiBuilder";
+import * as Etag from "effect/http/Etag";
+import * as HttpPlatform from "effect/http/HttpPlatform";
+import * as HttpRouter from "effect/http/HttpRouter";
+import * as HttpApiBuilder from "effect/http-api/HttpApiBuilder";
 import { TaskApi } from "./api.ts";
 import { Tasks } from "./bucket.ts";
 import { Task, TaskNotFound } from "./task.ts";
@@ -419,7 +419,7 @@ the endpoint schemas.
 ```typescript
 // scripts/client.ts
 import * as Effect from "effect/Effect";
-import * as HttpApiClient from "effect/unstable/httpapi/HttpApiClient";
+import * as HttpApiClient from "effect/http-api/HttpApiClient";
 import { TaskApi } from "../src/api.ts";
 
 const program = Effect.gen(function* () {
@@ -504,10 +504,10 @@ import * as Cloudflare from "alchemy/Cloudflare";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Path from "effect/Path";
-import * as Etag from "effect/unstable/http/Etag";
-import * as HttpPlatform from "effect/unstable/http/HttpPlatform";
-import * as HttpRouter from "effect/unstable/http/HttpRouter";
-import * as HttpApiBuilder from "effect/unstable/httpapi/HttpApiBuilder";
+import * as Etag from "effect/http/Etag";
+import * as HttpPlatform from "effect/http/HttpPlatform";
+import * as HttpRouter from "effect/http/HttpRouter";
+import * as HttpApiBuilder from "effect/http-api/HttpApiBuilder";
 import { TaskDOApi, decodeTask, encodeTask } from "./api.ts";
 import { Task } from "./task.ts";
 
@@ -561,7 +561,7 @@ and you get a fully typed client whose every call is a DO `fetch`
 under the hood:
 
 ```diff lang="typescript"
-+import * as HttpApiClient from "effect/unstable/httpapi/HttpApiClient";
++import * as HttpApiClient from "effect/http-api/HttpApiClient";
 +import TasksObject, { TaskDOApi } from "./object.ts";
 
  Effect.gen(function* () {

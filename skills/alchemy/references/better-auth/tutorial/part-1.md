@@ -1,6 +1,6 @@
 <!-- source: https://alchemy.run/better-auth/tutorial/part-1
      upstream: website/src/content/docs/better-auth/tutorial/part-1.mdx
-     alchemy 2.0.0-beta.79 @ 0811092 -->
+     alchemy 2.0.0-beta.79 @ e354a45 -->
 
 # Part 1: Create an Auth service
 
@@ -73,7 +73,7 @@ Handlers and middleware can now request the same typed service with `yield* Auth
 // src/worker.ts
 import * as Cloudflare from "alchemy/Cloudflare";
 import * as Effect from "effect/Effect";
-import * as HttpServerResponse from "effect/unstable/http/HttpServerResponse";
+import * as HttpServerResponse from "effect/http/HttpServerResponse";
 
 export default class AuthApi extends Cloudflare.Worker<AuthApi>()(
   "AuthApi",

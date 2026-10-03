@@ -1,6 +1,6 @@
 <!-- source: https://alchemy.run/cloudflare/data/drizzle
      upstream: website/src/content/docs/cloudflare/data/drizzle.mdx
-     alchemy 2.0.0-beta.79 @ 0811092 -->
+     alchemy 2.0.0-beta.79 @ e354a45 -->
 
 # Add Drizzle ORM
 
@@ -104,7 +104,7 @@ Hyperdrive pools the direct Neon origin; local development uses the pooled origi
 import * as Cloudflare from "alchemy/Cloudflare";
 import * as Drizzle from "alchemy/Drizzle/Postgres";
 import * as Effect from "effect/Effect";
-import * as HttpServerResponse from "effect/unstable/http/HttpServerResponse";
+import * as HttpServerResponse from "effect/http/HttpServerResponse";
 import { Hyperdrive } from "./Hyperdrive.ts";
 import { Users } from "./schema.ts";
 

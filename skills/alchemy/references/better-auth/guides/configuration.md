@@ -1,6 +1,6 @@
 <!-- source: https://alchemy.run/better-auth/guides/configuration
      upstream: website/src/content/docs/better-auth/guides/configuration.mdx
-     alchemy 2.0.0-beta.79 @ 0811092 -->
+     alchemy 2.0.0-beta.79 @ e354a45 -->
 
 # Config and secrets
 
@@ -46,8 +46,8 @@ import { CloudflareD1 } from "@alchemy.run/better-auth/CloudflareD1";
 import * as Cloudflare from "alchemy/Cloudflare";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
-import { HttpServerRequest } from "effect/unstable/http/HttpServerRequest";
-import * as HttpServerResponse from "effect/unstable/http/HttpServerResponse";
+import { HttpServerRequest } from "effect/http/HttpServerRequest";
+import * as HttpServerResponse from "effect/http/HttpServerResponse";
 import { Auth } from "./auth.ts";
 
 const AuthDb = Cloudflare.D1.Database("AuthDb");

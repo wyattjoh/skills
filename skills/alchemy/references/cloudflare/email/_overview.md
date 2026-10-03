@@ -1,6 +1,6 @@
 <!-- source: https://alchemy.run/cloudflare/email
      upstream: website/src/content/docs/cloudflare/email/index.mdx
-     alchemy 2.0.0-beta.79 @ 0811092 -->
+     alchemy 2.0.0-beta.79 @ e354a45 -->
 
 # Email
 
@@ -129,7 +129,7 @@ provide `Email.SendBinding` as the implementation layer:
 // src/notifier.ts
 import * as Cloudflare from "alchemy/Cloudflare";
 import * as Effect from "effect/Effect";
-import * as HttpServerResponse from "effect/unstable/http/HttpServerResponse";
+import * as HttpServerResponse from "effect/http/HttpServerResponse";
 import { Email } from "./email.ts";
 
 export default Cloudflare.Worker(

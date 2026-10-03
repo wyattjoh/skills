@@ -1,6 +1,6 @@
 <!-- source: https://alchemy.run/neon
      upstream: website/src/content/docs/neon/index.mdx
-     alchemy 2.0.0-beta.79 @ 0811092 -->
+     alchemy 2.0.0-beta.79 @ e354a45 -->
 
 # Neon
 
@@ -149,7 +149,7 @@ const reply = yield* LanguageModel.generateText({ prompt: "Say hello." }).pipe(
 );
 ```
 
-Import `LanguageModel` from `effect/unstable/ai` and provide
+Import `LanguageModel` from `effect/ai` and provide
 `Neon.QueryAIGatewayHttp` on the application. It selects injected or managed
 credentials automatically and exposes the model layer backed by Neon's
 OpenAI-compatible Chat Completions API. Model access and prepaid credits are separate account requirements; declaring

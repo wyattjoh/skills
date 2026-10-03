@@ -1,6 +1,6 @@
 <!-- source: https://alchemy.run/infrastructure-as-effects/event-sources
      upstream: website/src/content/docs/infrastructure-as-effects/event-sources.mdx
-     alchemy 2.0.0-beta.79 @ 0811092 -->
+     alchemy 2.0.0-beta.79 @ e354a45 -->
 
 # Event Sources
 
@@ -107,7 +107,7 @@ the call, and the handler receives a `Stream` of typed messages:
 import * as Cloudflare from "alchemy/Cloudflare";
 import * as Effect from "effect/Effect";
 import * as Stream from "effect/Stream";
-import * as HttpServerResponse from "effect/unstable/http/HttpServerResponse";
+import * as HttpServerResponse from "effect/http/HttpServerResponse";
 
 export const Orders = Cloudflare.Queues.Queue("Orders");
 

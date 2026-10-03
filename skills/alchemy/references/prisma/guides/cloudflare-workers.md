@@ -1,6 +1,6 @@
 <!-- source: https://alchemy.run/prisma/guides/cloudflare-workers
      upstream: website/src/content/docs/prisma/guides/cloudflare-workers.mdx
-     alchemy 2.0.0-beta.79 @ 0811092 -->
+     alchemy 2.0.0-beta.79 @ e354a45 -->
 
 # Connect from Cloudflare Workers
 
@@ -15,7 +15,7 @@ import * as Drizzle from "alchemy/Drizzle/Postgres";
 import * as Prisma from "alchemy/Prisma";
 import * as SQL from "alchemy/SQL/Postgres";
 import * as Effect from "effect/Effect";
-import * as HttpServerResponse from "effect/unstable/http/HttpServerResponse";
+import * as HttpServerResponse from "effect/http/HttpServerResponse";
 
 const project = yield* Prisma.Project("app", { createDatabase: false });
 const postgres = yield* Prisma.Postgres("db", { project });

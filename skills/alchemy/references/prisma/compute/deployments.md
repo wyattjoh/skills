@@ -1,6 +1,6 @@
 <!-- source: https://alchemy.run/prisma/compute/deployments
      upstream: website/src/content/docs/prisma/compute/deployments.mdx
-     alchemy 2.0.0-beta.79 @ 0811092 -->
+     alchemy 2.0.0-beta.79 @ e354a45 -->
 
 # Deployments
 

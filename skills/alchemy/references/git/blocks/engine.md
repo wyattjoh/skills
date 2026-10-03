@@ -1,6 +1,6 @@
 <!-- source: https://alchemy.run/git/blocks/engine
      upstream: website/src/content/docs/git/blocks/engine.mdx
-     alchemy 2.0.0-beta.79 @ 0811092 -->
+     alchemy 2.0.0-beta.79 @ e354a45 -->
 
 # Engine operations
 
@@ -15,8 +15,8 @@ chooses middleware, and decides when an operation may commit.
 import * as Git from "alchemy/Git";
 import * as GitHttp from "alchemy/Git/Http";
 import * as Effect from "effect/Effect";
-import * as HttpApi from "effect/unstable/httpapi/HttpApi";
-import * as HttpApiBuilder from "effect/unstable/httpapi/HttpApiBuilder";
+import * as HttpApi from "effect/http-api/HttpApi";
+import * as HttpApiBuilder from "effect/http-api/HttpApiBuilder";
 import { Authentication } from "./authentication.ts";
 import { receivePack } from "./receive-pack.ts";
 

@@ -1,6 +1,6 @@
 <!-- source: https://alchemy.run/cloudflare/observability/axiom-observability
      upstream: website/src/content/docs/cloudflare/observability/axiom-observability.mdx
-     alchemy 2.0.0-beta.79 @ 0811092 -->
+     alchemy 2.0.0-beta.79 @ e354a45 -->
 
 # Ship Worker telemetry to Axiom
 

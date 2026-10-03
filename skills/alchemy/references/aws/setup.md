@@ -1,6 +1,6 @@
 <!-- source: https://alchemy.run/aws/setup
      upstream: website/src/content/docs/aws/setup.mdx
-     alchemy 2.0.0-beta.79 @ 0811092 -->
+     alchemy 2.0.0-beta.79 @ e354a45 -->
 
 # Setup
 
@@ -8,7 +8,7 @@
 
 ## Prerequisites
 
-- [Bun](https://bun.sh) (recommended) or Node.js 22+
+- [Bun](https://bun.sh) or Node.js 22+
 - An AWS account and an IAM identity with permission to create
   the resources you plan to deploy
 

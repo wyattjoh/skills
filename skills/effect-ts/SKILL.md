@@ -1,11 +1,11 @@
 ---
 name: effect-ts
-description: Expert guidance for Effect v4 (4.0.0-rc.117, the npm "rc" dist-tag). Use when writing, reviewing, or refactoring code that imports from 'effect', when a project depends on effect@4.x, or when the user mentions "Effect", "Effect-TS", "Effect v4", "effect 4.0", "Context.Service", "Schema.TaggedError", "effect/unstable", "Yieldable", "forkChild", "Effect.catch", or asks to migrate an Effect v3 codebase to v4. Covers services, layers, error handling, streams, schema, and testing in the v4 API, plus a v3 to v4 migration map.
+description: Expert guidance for Effect v4 (4.0.0-rc.118, the npm "rc" dist-tag). Use when writing, reviewing, or refactoring code that imports from 'effect', when a project depends on effect@4.x, or when the user mentions "Effect", "Effect-TS", "Effect v4", "effect 4.0", "Context.Service", "Schema.TaggedError", "effect/unstable", "Yieldable", "forkChild", "Effect.catch", or asks to migrate an Effect v3 codebase to v4. Covers services, layers, error handling, streams, schema, and testing in the v4 API, plus a v3 to v4 migration map.
 ---
 
 # Effect v4 Expert
 
-Expert guidance for Effect v4, currently a release candidate at `4.0.0-rc.117` (npm `rc` dist-tag). v4 keeps the core programming model of v3
+Expert guidance for Effect v4, currently a release candidate at `4.0.0-rc.118` (npm `rc` dist-tag). v4 keeps the core programming model of v3
 (`Effect`, `Layer`, `Schema`, `Stream`) but renames a large amount of the API surface, consolidates most of the
 ecosystem into the `effect` package, and removes Effect subtyping.
 
@@ -19,7 +19,7 @@ Before starting any v4 work, verify the Effect v4 source exists at `$SKILL_DIR/.
 If it is missing, clone it before proceeding and tell the user you did:
 
 ```bash
-git clone --depth=1 --branch effect@4.0.0-rc.117 https://github.com/Effect-TS/effect.git "$SKILL_DIR/.source"
+git clone --depth=1 --branch effect@4.0.0-rc.118 https://github.com/Effect-TS/effect.git "$SKILL_DIR/.source"
 ```
 
 Pin the clone to the release tag this skill documents. If the project installs a different 4.x version, clone that
@@ -38,8 +38,8 @@ node -p "require('./package.json').dependencies?.effect ?? require('./package.js
 - Resolves to `3.x`: the v3 and v4 APIs are not interchangeable, so do not apply the v4 patterns here to v3 code.
   Follow the project's existing v3 code and the v3 source at the matching `effect@3.x` tag. If the user wants to
   upgrade, use [references/migration-from-v3.md](./references/migration-from-v3.md).
-- All ecosystem packages share one version in v4. If `effect` is `4.0.0-rc.117`, then `@effect/platform-node`,
-  `@effect/sql-pg`, and `@effect/vitest` must also be `4.0.0-rc.117`. Mismatched versions are a common source of
+- All ecosystem packages share one version in v4. If `effect` is `4.0.0-rc.118`, then `@effect/platform-node`,
+  `@effect/sql-pg`, and `@effect/vitest` must also be `4.0.0-rc.118`. Mismatched versions are a common source of
   confusing type errors.
 
 ## Canonical Upstream Documentation
@@ -73,8 +73,8 @@ grep -n 'Effect.catchAll\|Stream.acquireRelease' "$SKILL_DIR/.source/migration/v
 1. **Codebase patterns first.** If the project already has v4 code, follow it. Check that it is v4 and not
    half-migrated v3.
 2. **Upstream docs.** `LLMS.md` and `migration/*.md` as listed above.
-3. **Source.** `$SKILL_DIR/.source/packages/effect/src/` for exact signatures. Unstable modules live under
-   `src/unstable/`, test utilities under `src/testing/`.
+3. **Source.** `$SKILL_DIR/.source/packages/effect/src/` for exact signatures. Unstable modules (`@stability unstable`) live
+   in subdirectories such as `src/http/` and `src/cli/`, test utilities under `src/testing/`.
 
 Because v4 is a prerelease and pretrained knowledge of it is unreliable, verify a symbol exists before recommending it:
 
@@ -206,7 +206,7 @@ const program = Effect.gen(function* () {
 
 `Option.gen` and `Result.gen` give generator syntax over those types without entering Effect. Upstream
 `migration/yieldable.md` still shows `yield* Option.some(42)` inside `Effect.gen` and an `.asEffect()` method. Neither
-matches the `4.0.0-rc.117` source: `Option` and `Result` have no `asEffect`, and yielding one in `Effect.gen` is a
+matches the `4.0.0-rc.118` source: `Option` and `Result` have no `asEffect`, and yielding one in `Effect.gen` is a
 type error.
 
 ## Common Failure Modes
@@ -441,7 +441,7 @@ error reporting.
 ### Local Effect Resources
 
 - **`$SKILL_DIR/.source/LLMS.md`** and **`$SKILL_DIR/.source/migration/`**: read these first
-- **`$SKILL_DIR/.source/packages/effect/src/`**: core modules, with `unstable/` and `testing/` subtrees
+- **`$SKILL_DIR/.source/packages/effect/src/`**: core modules, with unstable subdirectories (`http/`, `cli/`, `ai/`, ...) and a `testing/` subtree
 - **`$SKILL_DIR/.source/ai-docs/src/`**: runnable examples by topic
 
 ### Reference Files

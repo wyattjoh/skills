@@ -1,6 +1,6 @@
 <!-- source: https://alchemy.run/git/recipes/cloudflare
      upstream: website/src/content/docs/git/recipes/cloudflare.mdx
-     alchemy 2.0.0-beta.79 @ 0811092 -->
+     alchemy 2.0.0-beta.79 @ e354a45 -->
 
 # All on Cloudflare
 
@@ -19,7 +19,7 @@ import * as Git from "alchemy/Git";
 import * as GitHasher from "alchemy/Git/Hasher";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
-import * as HttpRouter from "effect/unstable/http/HttpRouter";
+import * as HttpRouter from "effect/http/HttpRouter";
 import * as Http from "alchemy/Http";
 
 export const GitObjects = Cloudflare.R2.Bucket("GitObjects");

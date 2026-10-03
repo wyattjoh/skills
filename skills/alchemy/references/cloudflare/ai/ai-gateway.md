@@ -1,6 +1,6 @@
 <!-- source: https://alchemy.run/cloudflare/ai/ai-gateway
      upstream: website/src/content/docs/cloudflare/ai/ai-gateway.mdx
-     alchemy 2.0.0-beta.79 @ 0811092 -->
+     alchemy 2.0.0-beta.79 @ e354a45 -->
 
 # Add an AI Gateway
 
@@ -139,9 +139,9 @@ the `languageModel` layer to the handler and call it like any other
 Effect.
 
 ```diff lang="typescript"
-+import { LanguageModel } from "effect/unstable/ai";
- import { HttpServerRequest } from "effect/unstable/http/HttpServerRequest";
- import * as HttpServerResponse from "effect/unstable/http/HttpServerResponse";
++import { LanguageModel } from "effect/ai";
+ import { HttpServerRequest } from "effect/http/HttpServerRequest";
+ import * as HttpServerResponse from "effect/http/HttpServerResponse";
 
    return {
      fetch: Effect.gen(function* () {
@@ -203,7 +203,7 @@ flushes through the Worker → edge → client without buffering.
 
 ```diff lang="typescript"
 +import * as Stream from "effect/Stream";
-+import * as Sse from "effect/unstable/encoding/Sse";
++import * as Sse from "effect/encoding/Sse";
 
 +      if (url.pathname === "/stream" && request.method === "POST") {
 +        const body = (yield* request.json) as { prompt?: string };

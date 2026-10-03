@@ -1,6 +1,6 @@
 <!-- source: https://alchemy.run/testing/testing-a-stack
      upstream: website/src/content/docs/testing/testing-a-stack.mdx
-     alchemy 2.0.0-beta.79 @ 0811092 -->
+     alchemy 2.0.0-beta.79 @ e354a45 -->
 
 # Testing a Stack
 
@@ -90,8 +90,8 @@ Every assertion below works unchanged against the local stack. To keep one file 
 `HttpClient` is already in scope in every test Effect:
 
 ```typescript
-import * as HttpBody from "effect/unstable/http/HttpBody";
-import * as HttpClient from "effect/unstable/http/HttpClient";
+import * as HttpBody from "effect/http/HttpBody";
+import * as HttpClient from "effect/http/HttpClient";
 
 test(
   "PUT and GET round-trip an object",

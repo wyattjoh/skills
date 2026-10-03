@@ -1,12 +1,12 @@
 <!-- source: https://alchemy.run/apis/effect-http
      upstream: website/src/content/docs/apis/effect-http.mdx
-     alchemy 2.0.0-beta.79 @ 0811092 -->
+     alchemy 2.0.0-beta.79 @ e354a45 -->
 
 # Effect HTTP
 
 > Schema-validated REST endpoints with an rpc-like typed interface — for trust boundaries where consumers want a plain HTTP client.
 
-Effect HTTP (`effect/unstable/httpapi`) is the same idea as
+Effect HTTP (`effect/http-api`) is the same idea as
 [Effect RPC](/apis/effect-rpc): define a Schema, construct handler
 Layers, return an `HttpEffect` from `fetch`, call it through an
 rpc-like typed interface. The difference is what goes on the wire —
@@ -76,9 +76,9 @@ the API value:
 ```typescript
 // src/ApiSchema.ts
 import * as Schema from "effect/Schema";
-import * as HttpApi from "effect/unstable/httpapi/HttpApi";
-import * as HttpApiEndpoint from "effect/unstable/httpapi/HttpApiEndpoint";
-import * as HttpApiGroup from "effect/unstable/httpapi/HttpApiGroup";
+import * as HttpApi from "effect/http-api/HttpApi";
+import * as HttpApiEndpoint from "effect/http-api/HttpApiEndpoint";
+import * as HttpApiGroup from "effect/http-api/HttpApiGroup";
 import { Task, TaskNotFound } from "./Task.ts";
 
 export const getTask = HttpApiEndpoint.get("getTask", "/:id", {
@@ -115,7 +115,7 @@ runtime code across.
 ```typescript
 // src/ApiService.ts — inside the host's Construction phase (a Cloudflare Worker or Lambda Function)
 import * as Effect from "effect/Effect";
-import * as HttpApiBuilder from "effect/unstable/httpapi/HttpApiBuilder";
+import * as HttpApiBuilder from "effect/http-api/HttpApiBuilder";
 import { TaskApi } from "./ApiSchema.ts";
 import { Task, TaskNotFound } from "./Task.ts";
 
@@ -154,7 +154,7 @@ Assemble the API Layer and convert it into the `HttpEffect` that
 ```typescript
 // src/ApiService.ts — end of the Construction phase
 import * as Layer from "effect/Layer";
-import * as HttpRouter from "effect/unstable/http/HttpRouter";
+import * as HttpRouter from "effect/http/HttpRouter";
 
 // platform = the host's platform service Layers — differs per host
 return {
@@ -204,7 +204,7 @@ drives a fully typed client — no codegen, no string URLs:
 ```typescript
 // src/ApiClient.ts
 import * as Effect from "effect/Effect";
-import * as HttpApiClient from "effect/unstable/httpapi/HttpApiClient";
+import * as HttpApiClient from "effect/http-api/HttpApiClient";
 import { TaskApi } from "./ApiSchema.ts";
 
 const program = Effect.gen(function* () {

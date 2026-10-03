@@ -1,6 +1,6 @@
 <!-- source: https://alchemy.run/hetzner/data/volumes
      upstream: website/src/content/docs/hetzner/data/volumes.mdx
-     alchemy 2.0.0-beta.79 @ 0811092 -->
+     alchemy 2.0.0-beta.79 @ e354a45 -->
 
 # Volumes
 

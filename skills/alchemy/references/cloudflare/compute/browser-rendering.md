@@ -1,6 +1,6 @@
 <!-- source: https://alchemy.run/cloudflare/compute/browser-rendering
      upstream: website/src/content/docs/cloudflare/compute/browser-rendering.mdx
-     alchemy 2.0.0-beta.79 @ 0811092 -->
+     alchemy 2.0.0-beta.79 @ e354a45 -->
 
 # Browser rendering
 
@@ -23,7 +23,7 @@ streams, and the raw binding is one accessor away for
 // src/worker.ts
 import * as Cloudflare from "alchemy/Cloudflare";
 import * as Effect from "effect/Effect";
-import * as HttpServerResponse from "effect/unstable/http/HttpServerResponse";
+import * as HttpServerResponse from "effect/http/HttpServerResponse";
 
 export default Cloudflare.Worker(
   "BrowserWorker",

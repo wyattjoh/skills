@@ -126,7 +126,7 @@ resticprofile schedule backup    # only the backup schedule
 resticprofile status --all       # see every scheduled job
 ```
 
-After editing `schedule:` entries in `profiles.yaml`, rerun `resticprofile schedule --all` so launchd sees the change. The plist files land in `~/Library/LaunchAgents/local.resticprofile.<profile>.<command>.plist`.
+After editing `schedule:` entries in `profiles.yaml`, rerun `resticprofile schedule --all` so launchd sees the change. User-level plist files land in `~/Library/LaunchAgents/local.resticprofile.<profile>.<command>.agent.plist`, with the profile name lowercased (system-level jobs go to `/Library/LaunchDaemons/` with a plain `.plist` suffix; see [`schedule/handler_darwin.go`](https://github.com/creativeprojects/resticprofile/blob/master/schedule/handler_darwin.go)).
 
 If launchd disagrees with `resticprofile status` (e.g., a stale job after renaming a profile), inspect with `launchctl list | grep resticprofile` and clean up by running `unschedule` first, then `schedule`.
 

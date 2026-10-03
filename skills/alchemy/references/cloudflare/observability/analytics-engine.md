@@ -1,6 +1,6 @@
 <!-- source: https://alchemy.run/cloudflare/observability/analytics-engine
      upstream: website/src/content/docs/cloudflare/observability/analytics-engine.mdx
-     alchemy 2.0.0-beta.79 @ 0811092 -->
+     alchemy 2.0.0-beta.79 @ e354a45 -->
 
 # Analytics Engine
 
@@ -38,8 +38,8 @@ provide `WriteDatasetBinding` as a layer:
 // src/worker.ts
 import * as Cloudflare from "alchemy/Cloudflare";
 import * as Effect from "effect/Effect";
-import { HttpServerRequest } from "effect/unstable/http/HttpServerRequest";
-import * as HttpServerResponse from "effect/unstable/http/HttpServerResponse";
+import { HttpServerRequest } from "effect/http/HttpServerRequest";
+import * as HttpServerResponse from "effect/http/HttpServerResponse";
 import { Events } from "./dataset.ts";
 
 export default Cloudflare.Worker(

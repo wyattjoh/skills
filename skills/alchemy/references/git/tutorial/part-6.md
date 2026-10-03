@@ -1,6 +1,6 @@
 <!-- source: https://alchemy.run/git/tutorial/part-6
      upstream: website/src/content/docs/git/tutorial/part-6.mdx
-     alchemy 2.0.0-beta.79 @ 0811092 -->
+     alchemy 2.0.0-beta.79 @ e354a45 -->
 
 # Part 6: Protect a branch
 
@@ -52,7 +52,7 @@ Create `src/protocol.ts`:
 import * as Git from "alchemy/Git";
 import * as GitHttp from "alchemy/Git/Http";
 import * as Effect from "effect/Effect";
-import * as HttpApiBuilder from "effect/unstable/httpapi/HttpApiBuilder";
+import * as HttpApiBuilder from "effect/http-api/HttpApiBuilder";
 import { checkRefChanges } from "./branch-policy.ts";
 
 export const ProtocolLive = HttpApiBuilder.group(Git.Api, "protocol", (h) => Effect.gen(function* () {
@@ -98,7 +98,7 @@ same function so it cannot bypass the push policy. Create `src/ref-writes.ts`:
 // src/ref-writes.ts
 import * as Git from "alchemy/Git";
 import * as Effect from "effect/Effect";
-import * as HttpApiBuilder from "effect/unstable/httpapi/HttpApiBuilder";
+import * as HttpApiBuilder from "effect/http-api/HttpApiBuilder";
 import { checkRefChanges } from "./branch-policy.ts";
 
 export const RefsLive = HttpApiBuilder.group(Git.Api, "refs", (h) => Effect.gen(function* () {
@@ -138,7 +138,7 @@ Add these imports to `src/git.ts`:
 
 ```typescript
 // src/git.ts (additional imports)
-import * as HttpApiBuilder from "effect/unstable/httpapi/HttpApiBuilder";
+import * as HttpApiBuilder from "effect/http-api/HttpApiBuilder";
 import { ProtocolLive } from "./protocol.ts";
 import { RefsLive } from "./ref-writes.ts";
 ```

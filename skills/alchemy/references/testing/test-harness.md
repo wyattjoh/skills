@@ -1,6 +1,6 @@
 <!-- source: https://alchemy.run/testing/test-harness
      upstream: website/src/content/docs/testing/test-harness.mdx
-     alchemy 2.0.0-beta.79 @ 0811092 -->
+     alchemy 2.0.0-beta.79 @ e354a45 -->
 
 # Test harness
 
@@ -264,7 +264,7 @@ On Vitest, `test.only` is supported but `test.todo` is a stub
 it directly:
 
 ```typescript
-import * as HttpClient from "effect/unstable/http/HttpClient";
+import * as HttpClient from "effect/http/HttpClient";
 
 test(
   "health check",
@@ -277,7 +277,7 @@ test(
 ```
 
 The implementation comes from
-`effect/unstable/http/FetchHttpClient` — same client the CLI
+`effect/http/FetchHttpClient` — same client the CLI
 uses. For a full PUT/GET round-trip against a deployed stack,
 see [Testing a Stack → Drive the live URL](/testing/testing-a-stack).
 

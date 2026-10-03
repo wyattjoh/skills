@@ -14,7 +14,7 @@
 [submodule ".claude/references/effect-v4"]
 	path = .claude/references/effect-v4
 	url = https://github.com/Effect-TS/effect.git
-	branch = effect@4.0.0-rc.117
+	branch = effect@4.0.0-rc.118
 	shallow = true
 [submodule ".claude/references/swift-composable-architecture"]
 	path = .claude/references/swift-composable-architecture

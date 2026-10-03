@@ -7,21 +7,21 @@ Reactive state containers that integrate with Effect and React.
 In v3 this was a third-party package (`@effect-atom/atom-react`, from https://github.com/tim-smart/effect-atom). In
 v4 the core moved into the Effect monorepo:
 
-| v3                                | v4                                |
-| --------------------------------- | --------------------------------- |
-| `@effect-atom/atom` (`Atom`)      | `effect/unstable/reactivity/Atom` |
-| `@effect-atom/atom-react` (hooks) | `@effect/atom-react`              |
+| v3                                | v4                       |
+| --------------------------------- | ------------------------ |
+| `@effect-atom/atom` (`Atom`)      | `effect/reactivity/Atom` |
+| `@effect-atom/atom-react` (hooks) | `@effect/atom-react`     |
 
 `Atom` itself comes from core; `@effect/atom-react` provides only the React bindings (hooks, registry context,
 hydration). Solid and Vue bindings ship as `@effect/atom-solid` and `@effect/atom-vue`.
 
 Two constraints:
 
-- `Atom` lives under `effect/unstable/*`, so it may break in minor releases.
+- `Atom` is marked `@stability unstable` (it lives at `effect/reactivity`, outside the strict-semver surface), so it may break in minor releases.
 - `@effect/atom-react` requires React `>=19.0.0 <20`.
 
 ```typescript
-import { Atom } from "effect/unstable/reactivity";
+import { Atom } from "effect/reactivity";
 import { useAtom, useAtomValue, useAtomSet } from "@effect/atom-react";
 ```
 
@@ -120,12 +120,12 @@ prop.
 
 ## Result Handling
 
-Effectful atoms surface an `AsyncResult` (from `effect/unstable/reactivity`), not the plain `Result` that
+Effectful atoms surface an `AsyncResult` (from `effect/reactivity`), not the plain `Result` that
 `Effect.result` produces. `AsyncResult` adds the `Initial` state an atom is in before the effect has resolved, and
 `match` requires all three branches:
 
 ```typescript
-import { AsyncResult } from "effect/unstable/reactivity";
+import { AsyncResult } from "effect/reactivity";
 
 function UserProfile() {
   const userResult = useAtomValue(userAtom);
@@ -174,7 +174,7 @@ const settingsAtom = Atom.kvs({
 });
 ```
 
-`Atom.serializable`, the `Hydration` module from `effect/unstable/reactivity`, and `HydrationBoundary` from
+`Atom.serializable`, the `Hydration` module from `effect/reactivity`, and `HydrationBoundary` from
 `@effect/atom-react` cover server-rendered hydration.
 
 ## Scoped Resources and Self-Update
@@ -225,11 +225,11 @@ Atom.toStream(atom); // observe an atom as a Stream
 
 ## RPC and HTTP API Integration
 
-The client integrations live under the same unstable namespace:
+The client integrations live in the same `effect/reactivity` module:
 
 ```typescript
-import { AtomRpc } from "effect/unstable/reactivity";
-import { AtomHttpApi } from "effect/unstable/reactivity";
+import { AtomRpc } from "effect/reactivity";
+import { AtomHttpApi } from "effect/reactivity";
 ```
 
 ## Best Practices
@@ -240,5 +240,4 @@ import { AtomHttpApi } from "effect/unstable/reactivity";
 4. **Register finalizers for anything with a lifecycle.** Atoms rebuild and unmount.
 5. **Use `mode: "promiseExit"` for mutations.** Gives typed success and failure handling.
 6. **Prefer derived atoms over component state.** Keeps state logic centralized.
-7. **Pin the version.** `Atom` is unstable in v4; expect import paths to move when reactivity graduates to the
-   top-level namespace.
+7. **Pin the version.** `Atom` is `@stability unstable` in v4; expect API changes in minor releases.

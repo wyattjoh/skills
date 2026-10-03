@@ -1,6 +1,6 @@
 <!-- source: https://alchemy.run/what-is-alchemy
      upstream: website/src/content/docs/what-is-alchemy.mdx
-     alchemy 2.0.0-beta.79 @ 0811092 -->
+     alchemy 2.0.0-beta.79 @ e354a45 -->
 
 # What is Alchemy?
 
@@ -20,7 +20,7 @@ serves files from it:
 // src/api.ts
 import * as Cloudflare from "alchemy/Cloudflare";
 import * as Effect from "effect/Effect";
-import * as HttpServerResponse from "effect/unstable/http/HttpServerResponse";
+import * as HttpServerResponse from "effect/http/HttpServerResponse";
 
 export const Uploads = Cloudflare.R2.Bucket("Uploads");
 

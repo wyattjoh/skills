@@ -1,6 +1,6 @@
 <!-- source: https://alchemy.run/neon/frontend/vocs
      upstream: website/src/content/docs/neon/frontend/vocs.mdx
-     alchemy 2.0.0-beta.79 @ 0811092 -->
+     alchemy 2.0.0-beta.79 @ e354a45 -->
 
 # Vocs
 

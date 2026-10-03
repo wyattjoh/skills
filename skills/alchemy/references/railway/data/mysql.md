@@ -1,6 +1,6 @@
 <!-- source: https://alchemy.run/railway/data/mysql
      upstream: website/src/content/docs/railway/data/mysql.mdx
-     alchemy 2.0.0-beta.79 @ 0811092 -->
+     alchemy 2.0.0-beta.79 @ e354a45 -->
 
 # MySQL
 
@@ -38,7 +38,7 @@ Yield `ConnectMySQL` in the Service's constructor. Provide
 
 ```typescript
 import * as Drizzle from "alchemy/Drizzle/MySQL";
-import * as HttpServerResponse from "effect/unstable/http/HttpServerResponse";
+import * as HttpServerResponse from "effect/http/HttpServerResponse";
 
 export default class Api extends Railway.Service<Api>()(
   "Api",

@@ -211,11 +211,15 @@ codes of 2 or higher fail even for those. **Append `|| true` to any other
 command you expect to exit non-zero**, such as a check script that exits 1 when
 it finds problems.
 
-Injected commands never prompt for permission. If a command's permission check
-returns anything other than allow, including a rule that would normally ask, the
-invocation aborts with `Shell command permission check failed for pattern
-"..."`. Pre-approve the command with `allowed-tools`; a matching ask or deny
-rule still aborts regardless.
+Injected commands never prompt for permission. A command a deny rule matches
+aborts the invocation with `Shell command permission check failed for pattern
+"..."`. Outside auto mode, any result other than allow, including a rule that
+would normally ask, aborts the same way. Pre-approve the command with
+`allowed-tools`; a matching ask or deny rule still overrides it. In auto mode,
+a command that would otherwise need approval does not abort: the skill loads
+with an instruction for Claude to run the command first, through auto mode's
+usual checks. It still aborts in a forked skill that sets `agent`. Source:
+[skills docs](https://code.claude.com/docs/en/skills).
 
 ### Pre-approving a Bundled Script
 

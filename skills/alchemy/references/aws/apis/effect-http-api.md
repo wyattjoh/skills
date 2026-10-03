@@ -1,6 +1,6 @@
 <!-- source: https://alchemy.run/aws/apis/effect-http-api
      upstream: website/src/content/docs/aws/apis/effect-http-api.mdx
-     alchemy 2.0.0-beta.79 @ 0811092 -->
+     alchemy 2.0.0-beta.79 @ e354a45 -->
 
 # Effect HTTP API on Lambda
 
@@ -87,9 +87,9 @@ server *and* a typed client.
 ```typescript
 // src/JobApi.ts
 import * as Schema from "effect/Schema";
-import * as HttpApi from "effect/unstable/httpapi/HttpApi";
-import * as HttpApiEndpoint from "effect/unstable/httpapi/HttpApiEndpoint";
-import * as HttpApiGroup from "effect/unstable/httpapi/HttpApiGroup";
+import * as HttpApi from "effect/http-api/HttpApi";
+import * as HttpApiEndpoint from "effect/http-api/HttpApiEndpoint";
+import * as HttpApiGroup from "effect/http-api/HttpApiGroup";
 import { Job, JobId, JobNotFound } from "./Job.ts";
 
 export const getJob = HttpApiEndpoint.get("getJob", "/", {
@@ -283,10 +283,10 @@ Here's the complete `src/JobFunction.ts`:
 import * as AWS from "alchemy/AWS";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
-import * as Etag from "effect/unstable/http/Etag";
-import * as HttpPlatform from "effect/unstable/http/HttpPlatform";
-import * as HttpRouter from "effect/unstable/http/HttpRouter";
-import * as HttpApiBuilder from "effect/unstable/httpapi/HttpApiBuilder";
+import * as Etag from "effect/http/Etag";
+import * as HttpPlatform from "effect/http/HttpPlatform";
+import * as HttpRouter from "effect/http/HttpRouter";
+import * as HttpApiBuilder from "effect/http-api/HttpApiBuilder";
 import { Job, JobNotFound } from "./Job.ts";
 import { JobApi } from "./JobApi.ts";
 
@@ -413,7 +413,7 @@ import * as Test from "alchemy/Test/Bun";
 import { expect } from "bun:test";
 import * as Effect from "effect/Effect";
 import * as Schedule from "effect/Schedule";
-import * as HttpApiClient from "effect/unstable/httpapi/HttpApiClient";
+import * as HttpApiClient from "effect/http-api/HttpApiClient";
 import Stack from "../alchemy.run.ts";
 import { JobApi } from "../src/JobApi.ts";
 

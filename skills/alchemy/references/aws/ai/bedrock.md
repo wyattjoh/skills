@@ -1,6 +1,6 @@
 <!-- source: https://alchemy.run/aws/ai/bedrock
      upstream: website/src/content/docs/aws/ai/bedrock.mdx
-     alchemy 2.0.0-beta.79 @ 0811092 -->
+     alchemy 2.0.0-beta.79 @ e354a45 -->
 
 # Bedrock & Effect AI
 
@@ -31,8 +31,8 @@ scoped to exactly that model:
 // src/Api.ts
 import * as AWS from "alchemy/AWS";
 import * as Effect from "effect/Effect";
-import { LanguageModel } from "effect/unstable/ai";
-import * as HttpServerResponse from "effect/unstable/http/HttpServerResponse";
+import { LanguageModel } from "effect/ai";
+import * as HttpServerResponse from "effect/http/HttpServerResponse";
 
 export default class Api extends AWS.Lambda.Function<Api>()(
   "Api",
@@ -104,7 +104,7 @@ decoded back into typed tool calls and results:
 
 ```typescript
 import * as Schema from "effect/Schema";
-import { Tool, Toolkit } from "effect/unstable/ai";
+import { Tool, Toolkit } from "effect/ai";
 
 const GetWeather = Tool.make("get_weather", {
   description: "Get the current weather for a city.",

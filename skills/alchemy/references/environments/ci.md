@@ -1,6 +1,6 @@
 <!-- source: https://alchemy.run/environments/ci
      upstream: website/src/content/docs/environments/ci.mdx
-     alchemy 2.0.0-beta.79 @ 0811092 -->
+     alchemy 2.0.0-beta.79 @ e354a45 -->
 
 # CI
 

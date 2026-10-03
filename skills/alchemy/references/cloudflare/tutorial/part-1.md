@@ -1,6 +1,6 @@
 <!-- source: https://alchemy.run/cloudflare/tutorial/part-1
      upstream: website/src/content/docs/cloudflare/tutorial/part-1.mdx
-     alchemy 2.0.0-beta.79 @ 0811092 -->
+     alchemy 2.0.0-beta.79 @ e354a45 -->
 
 # Part 1: Your First Stack
 
@@ -16,7 +16,7 @@ That was this part. Skip to [Part 2](/cloudflare/tutorial/part-2).
 
 ## Prerequisites
 
-- [Bun](https://bun.sh) (recommended) or Node.js 22+
+- [Bun](https://bun.sh) or Node.js 22+
 - A [Cloudflare](https://dash.cloudflare.com/sign-up) account
 
 ## Create a project
@@ -34,11 +34,6 @@ Install <code>alchemy@latest</code> and <code>effect@{effectVersion}</code>:
 ```sh
 bun add "alchemy@latest" "effect@rc" "@effect/platform-bun@rc" "@effect/platform-node@rc"
 ```
-
-:::tip
-We recommend Bun for the best development experience, but Node.js
-works too.
-:::
 
 ## Create the Stack
 

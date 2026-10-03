@@ -1,6 +1,6 @@
 <!-- source: https://alchemy.run/git/tutorial/part-2
      upstream: website/src/content/docs/git/tutorial/part-2.mdx
-     alchemy 2.0.0-beta.79 @ 0811092 -->
+     alchemy 2.0.0-beta.79 @ e354a45 -->
 
 # Part 2: Control access
 
@@ -37,10 +37,10 @@ Create `src/middleware.ts`:
 import { RuntimeContext } from "alchemy";
 import * as Effect from "effect/Effect";
 import * as Redacted from "effect/Redacted";
-import * as HttpRouter from "effect/unstable/http/HttpRouter";
-import * as HttpServerResponse from "effect/unstable/http/HttpServerResponse";
-import * as HttpApiBuilder from "effect/unstable/httpapi/HttpApiBuilder";
-import * as HttpApiSecurity from "effect/unstable/httpapi/HttpApiSecurity";
+import * as HttpRouter from "effect/http/HttpRouter";
+import * as HttpServerResponse from "effect/http/HttpServerResponse";
+import * as HttpApiBuilder from "effect/http-api/HttpApiBuilder";
+import * as HttpApiSecurity from "effect/http-api/HttpApiSecurity";
 import { GitSecret } from "./secret.ts";
 
 export const Authentication = HttpRouter.middleware(

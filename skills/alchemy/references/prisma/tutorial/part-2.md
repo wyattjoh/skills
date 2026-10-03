@@ -1,6 +1,6 @@
 <!-- source: https://alchemy.run/prisma/tutorial/part-2
      upstream: website/src/content/docs/prisma/tutorial/part-2.mdx
-     alchemy 2.0.0-beta.79 @ 0811092 -->
+     alchemy 2.0.0-beta.79 @ e354a45 -->
 
 # Part 2: An HTTP API
 
@@ -17,7 +17,7 @@ Create `src/Api.ts`:
 ```typescript
 import * as Prisma from "alchemy/Prisma";
 import * as Effect from "effect/Effect";
-import * as HttpServerResponse from "effect/unstable/http/HttpServerResponse";
+import * as HttpServerResponse from "effect/http/HttpServerResponse";
 import { Project } from "./Database.ts";
 
 export default class Api extends Prisma.Compute<Api>()(
@@ -64,7 +64,7 @@ still creates only one Project in this Stack.
 
 ```diff lang="typescript"
 // src/Api.ts
-+import { HttpServerRequest } from "effect/unstable/http/HttpServerRequest";
++import { HttpServerRequest } from "effect/http/HttpServerRequest";
 
   Effect.gen(function* () {
 -    return { fetch: Effect.succeed(HttpServerResponse.text("Hello from Prisma")) };

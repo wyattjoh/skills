@@ -1,6 +1,6 @@
 <!-- source: https://alchemy.run/cli/adopting-resources
      upstream: website/src/content/docs/cli/adopting-resources.mdx
-     alchemy 2.0.0-beta.79 @ 0811092 -->
+     alchemy 2.0.0-beta.79 @ e354a45 -->
 
 # Adopting Resources
 

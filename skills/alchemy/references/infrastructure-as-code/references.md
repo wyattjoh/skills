@@ -1,6 +1,6 @@
 <!-- source: https://alchemy.run/infrastructure-as-code/references
      upstream: website/src/content/docs/infrastructure-as-code/references.mdx
-     alchemy 2.0.0-beta.79 @ 0811092 -->
+     alchemy 2.0.0-beta.79 @ e354a45 -->
 
 # References
 

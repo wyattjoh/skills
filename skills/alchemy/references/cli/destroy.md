@@ -1,6 +1,6 @@
 <!-- source: https://alchemy.run/cli/destroy
      upstream: website/src/content/docs/cli/destroy.mdx
-     alchemy 2.0.0-beta.79 @ 0811092 -->
+     alchemy 2.0.0-beta.79 @ e354a45 -->
 
 # destroy
 

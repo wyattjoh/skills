@@ -1,6 +1,6 @@
 <!-- source: https://alchemy.run/sql/effect-sql/lifecycle
      upstream: website/src/content/docs/sql/effect-sql/lifecycle.mdx
-     alchemy 2.0.0-beta.79 @ 0811092 -->
+     alchemy 2.0.0-beta.79 @ e354a45 -->
 
 # Connection lifecycle
 

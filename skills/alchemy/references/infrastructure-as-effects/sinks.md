@@ -1,6 +1,6 @@
 <!-- source: https://alchemy.run/infrastructure-as-effects/sinks
      upstream: website/src/content/docs/infrastructure-as-effects/sinks.mdx
-     alchemy 2.0.0-beta.79 @ 0811092 -->
+     alchemy 2.0.0-beta.79 @ e354a45 -->
 
 # Sinks
 
@@ -26,8 +26,8 @@ import * as AWS from "alchemy/AWS";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Stream from "effect/Stream";
-import { HttpServerRequest } from "effect/unstable/http/HttpServerRequest";
-import * as HttpServerResponse from "effect/unstable/http/HttpServerResponse";
+import { HttpServerRequest } from "effect/http/HttpServerRequest";
+import * as HttpServerResponse from "effect/http/HttpServerResponse";
 import { OutboundQueue } from "./queue.ts";
 
 export default class Publisher extends AWS.Lambda.Function<Publisher>()(

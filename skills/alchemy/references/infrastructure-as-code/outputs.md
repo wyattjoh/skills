@@ -1,6 +1,6 @@
 <!-- source: https://alchemy.run/infrastructure-as-code/outputs
      upstream: website/src/content/docs/infrastructure-as-code/outputs.mdx
-     alchemy 2.0.0-beta.79 @ 0811092 -->
+     alchemy 2.0.0-beta.79 @ e354a45 -->
 
 # Inputs & Outputs
 

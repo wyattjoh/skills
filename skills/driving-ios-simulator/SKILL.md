@@ -118,7 +118,7 @@ These apply to most apps and are worth checking for the one you're driving:
 | `describe-all` works but taps do nothing           | Same as above — queries don't need SimulatorKit, HID does. Bootstrap.                             |
 | `Failed to describe CompanionInfo ... removing it` | Stale `/tmp/idb/*.sock`. `idb-bootstrap.ts` clears them.                                          |
 | Tap lands in the wrong place                       | Used screenshot **pixels**. idb uses **points** (≈ pixels ÷ scale). Use `describe-ui.ts` centers. |
-| `idb ui tap: invalid int value: '43 385'`          | x and y are **separate args**: `tap 43 385`, not `tap "43 385"`.                                  |
+| `idb ui tap "43 385"` finds no element             | One quoted arg is an accessibility **marker** lookup. Pass x and y separately: `tap 43 385`.      |
 | Typed text vanished                                | No field focused. Tap the field first, then `idb ui text`.                                        |
 | Element listed but tap misses                      | It's `(offscreen)`. Swipe to reveal, then re-describe for current coords.                         |
 

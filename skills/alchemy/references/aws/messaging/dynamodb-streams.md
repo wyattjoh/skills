@@ -1,6 +1,6 @@
 <!-- source: https://alchemy.run/aws/messaging/dynamodb-streams
      upstream: website/src/content/docs/aws/messaging/dynamodb-streams.mdx
-     alchemy 2.0.0-beta.79 @ 0811092 -->
+     alchemy 2.0.0-beta.79 @ e354a45 -->
 
 # Process DynamoDB Streams
 

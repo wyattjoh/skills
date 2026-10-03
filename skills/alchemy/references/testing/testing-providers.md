@@ -1,6 +1,6 @@
 <!-- source: https://alchemy.run/testing/testing-providers
      upstream: website/src/content/docs/testing/testing-providers.mdx
-     alchemy 2.0.0-beta.79 @ 0811092 -->
+     alchemy 2.0.0-beta.79 @ e354a45 -->
 
 # Testing Providers
 

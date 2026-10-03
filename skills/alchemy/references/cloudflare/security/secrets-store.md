@@ -1,6 +1,6 @@
 <!-- source: https://alchemy.run/cloudflare/security/secrets-store
      upstream: website/src/content/docs/cloudflare/security/secrets-store.mdx
-     alchemy 2.0.0-beta.79 @ 0811092 -->
+     alchemy 2.0.0-beta.79 @ e354a45 -->
 
 # Secrets Store & auth tokens
 
@@ -75,8 +75,8 @@ check the `Authorization` header in `fetch`:
 import * as Cloudflare from "alchemy/Cloudflare";
 import * as Effect from "effect/Effect";
 import * as Redacted from "effect/Redacted";
-import { HttpServerRequest } from "effect/unstable/http/HttpServerRequest";
-import * as HttpServerResponse from "effect/unstable/http/HttpServerResponse";
+import { HttpServerRequest } from "effect/http/HttpServerRequest";
+import * as HttpServerResponse from "effect/http/HttpServerResponse";
 import { AuthToken } from "./auth.ts";
 
 export default class Api extends Cloudflare.Worker<Api>()(
