@@ -44,7 +44,7 @@ Claude edits matching files:
 
 ## Authoring skills
 
-- Invoke the `writing-skills` skill before creating or editing a skill.
+- Invoke the `skills-skill` skill before creating or editing a skill.
 - One directory per skill under `skills/`, containing a `SKILL.md`. Co-locate `scripts/`
   and `references/` inside the skill directory as needed.
 - Frontmatter requires `name` and a `description` with trigger phrases so the skill

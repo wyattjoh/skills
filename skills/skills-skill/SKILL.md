@@ -1,5 +1,5 @@
 ---
-name: writing-skills
+name: skills-skill
 description: Writes and edits agent skills (SKILL.md plus its references and scripts) in a goal-first style that works across Claude Code, Codex, and other harnesses. Use when creating or editing a skill, tightening a skill's description or triggers, choosing frontmatter or invocation settings, or pruning a skill that has grown into a procedure.
 argument-hint: "[skill-name]"
 ---

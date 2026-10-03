@@ -5,7 +5,7 @@ paths:
 alwaysApply: false
 ---
 
-When creating, modifying, or reviewing any files in `skills/*/`, invoke the `writing-skills` skill first. It carries the goal-first writing style and the harness references (Claude Code and Codex) that keep frontmatter and structure matching what each harness loads.
+When creating, modifying, or reviewing any files in `skills/*/`, invoke the `skills-skill` skill first. It carries the goal-first writing style and the harness references (Claude Code and Codex) that keep frontmatter and structure matching what each harness loads.
 
 ## SKILL.md frontmatter
 

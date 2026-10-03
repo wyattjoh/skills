@@ -105,7 +105,7 @@ Full detail: `references/workspace-layout.md`. Binding rules:
 
 `grill-with-docs` (scoping), `domain-modeling` (CONTEXT.md + ADRs),
 `stacked-prs` (stack naming/metadata), `worktrunk` (interactive worktrees),
-`writing-skills` (seeded-skill standards).
+`skills-skill` (seeded-skill standards).
 
 ## Development
 

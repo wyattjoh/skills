@@ -16,7 +16,7 @@ order), and auditable (generated views drift-checked by script).
 This skill composes existing skills rather than replacing them:
 `grill-with-docs` scopes, `domain-modeling` owns CONTEXT.md and ADRs,
 `stacked-prs` binds branches to the workspace by naming,
-`worktrunk` materializes interactive worktrees, and `writing-skills` standards
+`worktrunk` materializes interactive worktrees, and `skills-skill` standards
 govern the seeded project-local skills.
 
 ## Routing
@@ -38,7 +38,7 @@ binding rules, then read the hub's workspace memory (`.claude/memory/MEMORY.md`
 and the entries it indexes that touch your task) — memory is the always-read
 working-knowledge layer, and starting work without it repeats settled
 mistakes. When creating or editing the seeded skills, follow the
-`writing-skills` skill.
+`skills-skill` skill.
 
 ## Scripts
 

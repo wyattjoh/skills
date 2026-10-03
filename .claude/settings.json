@@ -1,6 +1,6 @@
 {
   "skillOverrides": {
-    "writing-skills": "on",
+    "skills-skill": "on",
     "writing-skills-update": "user-invocable-only"
   },
   "enabledPlugins": {

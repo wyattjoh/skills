@@ -43,7 +43,7 @@ the hub (create the directory first if the grilling session needs a target):
    justfile's directory, so it breaks in every hub worktree, silently.
 3. Seed the three skills from `templates/skill-*.md` into
    `skills/<slug>-context/SKILL.md`, `skills/<slug>-domain/SKILL.md`,
-   `skills/<slug>-conventions/SKILL.md`. Follow the `writing-skills` skill's
+   `skills/<slug>-conventions/SKILL.md`. Follow the `skills-skill` skill's
    authoring standards when filling them in (third-person descriptions with
    concrete trigger phrases).
 4. Seed the workspace memory: copy `templates/memory-index.md` to

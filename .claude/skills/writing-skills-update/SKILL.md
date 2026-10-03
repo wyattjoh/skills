@@ -1,21 +1,21 @@
 ---
 name: writing-skills-update
-description: Checks upstream Claude Code and Codex skill documentation and release notes for changes, then proposes updates to the writing-skills skill's harness references.
+description: Checks upstream Claude Code and Codex skill documentation and release notes for changes, then proposes updates to the skills-skill skill's harness references.
 disable-model-invocation: true
 user-invocable: true
 effort: high
 allowed-tools: WebFetch, WebSearch, Read, Edit, Glob, Grep, Bash(ls:*), AskUserQuestion
 ---
 
-# Update writing-skills
+# Update skills-skill
 
-Bring the harness facts in the `writing-skills` skill back in line with upstream. The writing style in `references/writing-style.md` is this collection's own guidance; change it only when upstream documents a contradicting fact (a loading or budget behaviour, for example), not to match upstream prose.
+Bring the harness facts in the `skills-skill` skill back in line with upstream. The writing style in `references/writing-style.md` is this collection's own guidance; change it only when upstream documents a contradicting fact (a loading or budget behaviour, for example), not to match upstream prose.
 
 Done when every upstream change since the last sync is classified, every proposed edit has been approved or declined by the user, and the changelog has a new entry.
 
 ## Current state
 
-Read `skills/writing-skills/SKILL.md`, every file under `skills/writing-skills/references/`, and `${CLAUDE_SKILL_DIR}/references/changelog.md`. The changelog's newest entry is the last sync date; with no entry, treat everything as new.
+Read `skills/skills-skill/SKILL.md`, every file under `skills/skills-skill/references/`, and `${CLAUDE_SKILL_DIR}/references/changelog.md`. The changelog's newest entry is the last sync date; with no entry, treat everything as new.
 
 ## Upstream sources
 
