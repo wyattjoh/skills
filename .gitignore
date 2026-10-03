@@ -21,3 +21,6 @@ package-lock.json
 yarn.lock
 pnpm-lock.yaml
 skills/alchemy/.cache/
+
+# Types Claude Code lays beside a loaded mod
+plugins/*/.claude-plugin/types/

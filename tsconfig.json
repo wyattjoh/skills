@@ -10,6 +10,12 @@
     "allowImportingTsExtensions": true,
     "types": ["bun", "node"]
   },
-  "include": ["skills/**/*", "scripts/**/*", "tests/**/*"],
-  "exclude": ["skills/*/references/**"]
+  "include": ["skills/**/*", "plugins/**/*", "scripts/**/*", "tests/**/*"],
+  "exclude": [
+    "skills/*/references/**",
+    "plugins/*/hooks/register.ts",
+    "plugins/*/tests/**",
+    "plugins/*/types/**",
+    "plugins/*/.claude-plugin/**"
+  ]
 }

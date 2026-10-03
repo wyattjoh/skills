@@ -10,6 +10,11 @@
       "name": "wyattjoh",
       "source": "./",
       "description": "Reusable Claude Code skills and agents for software development workflows"
+    },
+    {
+      "name": "to-code",
+      "source": "./plugins/to-code",
+      "description": "Optional herdr fleet tools for the to-code skill: model-callable fleet status, wait, read, send, and watch, with wake-on-settle and a dispatch stop gate"
     }
   ]
 }

@@ -5,7 +5,8 @@
     ".claude/references/**",
     ".remember/**",
     "skills/effect-ts/.source/**",
-    "skills/dialkit/references/DialKitPersistence.tsx"
+    "skills/dialkit/references/DialKitPersistence.tsx",
+    "plugins/*/tests/**"
   ],
   "ignoreBinaries": ["du", "pgrep"],
   "workspaces": {
@@ -17,6 +18,10 @@
     "skills/claude-sessions": {
       "entry": ["scripts/*.ts", "references/types.ts"],
       "project": ["scripts/**/*.ts"]
+    },
+    "plugins/*": {
+      "entry": ["pi/index.ts", "hooks/core/*.spec.ts", "pi/*.spec.ts"],
+      "project": ["hooks/core/**/*.ts", "pi/**/*.ts"]
     }
   },
   "ignoreExportsUsedInFile": true

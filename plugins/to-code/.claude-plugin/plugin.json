@@ -1,0 +1,26 @@
+{
+  "name": "to-code",
+  "description": "Optional herdr fleet tools for the to-code skill: status, wait, read, send, and watch agent panes, wake the session when watched panes settle, and catch dispatches left without a wake path.",
+  "author": {
+    "name": "Wyatt Johnson",
+    "url": "https://github.com/wyattjoh"
+  },
+  "homepage": "https://github.com/wyattjoh/skills",
+  "repository": "https://github.com/wyattjoh/skills",
+  "license": "MIT",
+  "types": "./types/index.d.ts",
+  "userConfig": {
+    "watchIntervalMs": {
+      "type": "number",
+      "title": "Watch interval (ms)",
+      "description": "How often the watcher polls herdr for watched panes",
+      "default": 3000
+    },
+    "stopGate": {
+      "type": "boolean",
+      "title": "Stop gate",
+      "description": "Keep a turn going once when it dispatched herdr work with no wake path",
+      "default": true
+    }
+  }
+}

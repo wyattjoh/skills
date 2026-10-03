@@ -17,11 +17,12 @@ For how Claude Code auto-loads skills, agents, rules, and memory, see
 ```
 skills/              # one directory per published skill, each with a SKILL.md (plus optional scripts/ and references/)
 agents/              # one Markdown file per agent
+plugins/             # optional plugins beside the root one (e.g. to-code: a Claude Code mod plus a pi extension)
 .claude-plugin/      # plugin.json and marketplace.json, so the repo installs as a Claude Code plugin
 .claude/skills/      # skills internal to this repo, not published (e.g. writing-skills-update)
 .claude/references/  # shared reference docs for authoring in this repo, plus pinned dependency submodules
 .claude/rules/       # path-scoped authoring conventions for this repo
-package.json         # Bun workspace root (workspaces: ["skills/*"]) for skill helper scripts
+package.json         # Bun workspace root (workspaces: ["skills/*", "plugins/*"])
 justfile             # symlink management for installing agents/ into ~/.claude/agents/
 ```
 
@@ -38,6 +39,7 @@ Claude edits matching files:
 | ---------------------------------------- | ---------------- | ------------------------------------------------------------ |
 | [`skills.md`](.claude/rules/skills.md)   | `skills/**`      | SKILL.md format, Bun/TypeScript scripts, directory structure |
 | [`agents.md`](.claude/rules/agents.md)   | `agents/**/*.md` | Agent frontmatter fields, reload behavior, validation        |
+| [`plugins.md`](.claude/rules/plugins.md) | `plugins/**`     | Shared mod/pi core, adapters, the two test runners           |
 | [`testing.md`](.claude/rules/testing.md) | All files        | Positive, exact test expectations instead of negated chains  |
 
 ## Authoring skills
@@ -56,8 +58,9 @@ Claude edits matching files:
 
 ## Plugin packaging
 
-The repository root is a Claude Code plugin (`wyattjoh`) and a single-plugin marketplace
-(`wyattjoh-skills`), defined in `.claude-plugin/`. The plugin relies on the default
+The repository root is a Claude Code plugin (`wyattjoh`) and the marketplace
+(`wyattjoh-skills`), defined in `.claude-plugin/`. The marketplace also lists each optional
+plugin under `plugins/`, so installing `wyattjoh` never pulls them in. The root plugin relies on the default
 `skills/` and `agents/` directories, so new skills and agents ship without manifest
 edits. `version` is intentionally omitted so installs track the commit SHA. Run
 `claude plugin validate .` after touching either manifest.

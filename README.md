@@ -31,6 +31,21 @@ agents such as `researcher` that start in plan mode when linked with `just link`
 the session's mode when loaded from the plugin. The manifests live in
 [`.claude-plugin/`](.claude-plugin/).
 
+### Optional `to-code` plugin (Claude Code and pi)
+
+[`plugins/to-code/`](plugins/to-code/) gives the agent model-callable herdr fleet tools for
+the `to-code` skill: `fleet_status`, `fleet_wait`, `fleet_read`, `fleet_send`, and
+`fleet_watch`. A watched pane wakes the session when it settles, and a turn that dispatched
+herdr work with nothing watching it is kept going once. It does nothing outside herdr, and
+the skill works without it.
+
+```bash
+claude plugin install to-code@wyattjoh-skills        # Claude Code (a function-hooks mod)
+pi install /path/to/skills/plugins/to-code            # pi extension
+```
+
+In Claude Code, `watchIntervalMs` and `stopGate` are settable from `/config`.
+
 ## Install skills
 
 Use the open source [Skills CLI](https://github.com/vercel-labs/skills) to browse and
@@ -167,6 +182,7 @@ Restart Claude Code after adding or changing an agent definition.
 ```text
 skills/              # One directory per published skill, with SKILL.md and optional supporting files
 agents/              # Claude Code subagent definitions
+plugins/             # Optional plugins that ship beside the skills (Claude Code mods, pi extensions)
 .claude-plugin/      # Claude Code plugin and marketplace manifests
 .claude/skills/      # Skills internal to this repository, not published
 .claude/references/  # Shared authoring documentation and pinned dependency submodules

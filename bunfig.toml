@@ -4,3 +4,7 @@ minimumReleaseAge = 432000
 # Use flat hoisting (not the isolated .bun store) so the workspace member
 # resolves transitive deps the app imports directly, matching the pre-monorepo layout.
 linker = "hoisted"
+
+[test]
+# Claude Code mod tests run under `claude plugin test`, not bun.
+pathIgnorePatterns = ["plugins/*/tests/**"]
