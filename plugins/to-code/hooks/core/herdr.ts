@@ -77,13 +77,29 @@ const STATUSES: readonly FleetStatus[] = ["idle", "working", "blocked", "done", 
 const asString = (value: unknown, fallback: string): string =>
   typeof value === "string" ? value : fallback;
 
+/**
+ * Reduces a herdr-reported label to a short, single-line, plain token.
+ * Pane names and titles are set by whoever runs in the pane, and they reach
+ * the session inside wake prompts, so they must not carry instructions.
+ *
+ * @param value the raw label
+ * @param max the longest label kept
+ * @returns the label with anything outside letters, digits, and `._:/-` turned into spaces
+ */
+export const label = (value: string, max = 48): string =>
+  value
+    .replace(/[^A-Za-z0-9 ._:/-]+/g, " ")
+    .replace(/\s+/g, " ")
+    .trim()
+    .slice(0, max);
+
 const toAgent = (raw: RawAgent): FleetAgent => {
   const status = asString(raw.agent_status, "unknown") as FleetStatus;
 
   return {
-    pane: asString(raw.pane_id, ""),
-    name: asString(raw.display_agent, asString(raw.title, "")),
-    harness: asString(raw.agent, "unknown"),
+    pane: label(asString(raw.pane_id, ""), 32),
+    name: label(asString(raw.display_agent, asString(raw.title, ""))),
+    harness: label(asString(raw.agent, "unknown"), 16),
     status: STATUSES.includes(status) ? status : "unknown",
     cwd: asString(raw.cwd, ""),
     seq: typeof raw.state_change_seq === "number" ? raw.state_change_seq : 0,
