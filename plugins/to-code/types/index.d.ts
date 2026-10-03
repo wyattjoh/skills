@@ -1,5 +1,6 @@
 export type ToCodeMemory = {
   watched: Record<string, number>;
+  baselines: Record<string, number>;
   dispatched: string[];
   nudged: boolean;
 };

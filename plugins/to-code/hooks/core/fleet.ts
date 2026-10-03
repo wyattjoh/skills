@@ -21,11 +21,14 @@ export const MAX_WAIT_MS = 570_000;
  * What both adapters remember for one session.
  *
  * `watched` maps a pane to the `state_change_seq` it had when the watch
- * began: the pane fires once it settles at a later seq. `dispatched` and
- * `nudged` drive the stop gate for the current prompt.
+ * began: the pane fires once it settles at a later seq. `baselines` holds the
+ * seq a pane had when unwatched work was sent to it, so a later watch still
+ * sees that work finish. `dispatched` and `nudged` drive the stop gate for the
+ * current prompt.
  */
 export type FleetMemory = {
   watched: Record<string, number>;
+  baselines: Record<string, number>;
   dispatched: string[];
   nudged: boolean;
 };
@@ -33,7 +36,12 @@ export type FleetMemory = {
 /**
  * A fresh session's memory.
  */
-export const EMPTY_MEMORY: FleetMemory = { watched: {}, dispatched: [], nudged: false };
+export const EMPTY_MEMORY: FleetMemory = {
+  watched: {},
+  baselines: {},
+  dispatched: [],
+  nudged: false,
+};
 
 /**
  * Read-modify-write access to the session's memory, backed by `$.state` in
@@ -89,6 +97,21 @@ export const others = (agents: readonly FleetAgent[], selfPane: string | undefin
   agents.filter((agent) => agent.pane !== selfPane);
 
 /**
+ * Lists the other agent panes.
+ *
+ * @param runner the harness's process runner
+ * @param selfPane the caller's pane id
+ * @param signal aborts the listing
+ * @returns every agent pane but the caller's
+ */
+export const listFleet = async (
+  runner: Runner,
+  selfPane: string | undefined,
+  signal: AbortSignal | undefined,
+): Promise<FleetAgent[]> =>
+  others(parseAgentList(await runner(listArgv(), 10_000, signal)), selfPane);
+
+/**
  * Finds the watched panes that settled since their watch began.
  *
  * @param agents the current listing
@@ -109,6 +132,9 @@ export const settledEvents = (
     return [{ pane, name: agent.name, status: agent.status }];
   });
 
+const omit = (record: Readonly<Record<string, number>>, keys: readonly string[]) =>
+  Object.fromEntries(Object.entries(record).filter(([key]) => !keys.includes(key)));
+
 /**
  * Removes panes from the watch set.
  *
@@ -118,9 +144,22 @@ export const settledEvents = (
  */
 export const unwatch = (memory: FleetMemory, panes: readonly string[]): FleetMemory => ({
   ...memory,
-  watched: Object.fromEntries(
-    Object.entries(memory.watched).filter(([pane]) => !panes.includes(pane)),
-  ),
+  watched: omit(memory.watched, panes),
+});
+
+/**
+ * Forgets panes whose work has been reported settled: their watches, their
+ * dispatch baselines, and their entries in the stop gate's dispatch record.
+ *
+ * @param memory the session's memory
+ * @param panes the panes that settled
+ * @returns the updated memory
+ */
+export const forget = (memory: FleetMemory, panes: readonly string[]): FleetMemory => ({
+  ...memory,
+  watched: omit(memory.watched, panes),
+  baselines: omit(memory.baselines, panes),
+  dispatched: memory.dispatched.filter((entry) => !panes.includes(entry)),
 });
 
 /**
@@ -139,12 +178,12 @@ export const tick = async (
   awaiting: ReadonlySet<string>,
   selfPane: string | undefined,
 ): Promise<TickResult> => {
-  const agents = others(parseAgentList(await runner(listArgv(), 10_000, undefined)), selfPane);
+  const agents = await listFleet(runner, selfPane, undefined);
   const memory = await store.read();
   const events = settledEvents(agents, memory.watched, awaiting);
   if (events.length > 0) {
     await store.update((current) =>
-      unwatch(
+      forget(
         current,
         events.map((event) => event.pane),
       ),
@@ -200,6 +239,7 @@ export const formatWake = (events: readonly WakeEvent[]): string => {
 export type WaitOutcome =
   | { kind: "settled"; agent: FleetAgent }
   | { kind: "timeout" }
+  | { kind: "aborted" }
   | { kind: "failed"; error: string };
 
 /**
@@ -212,7 +252,7 @@ export type WaitOutcome =
  * @param until the states to match
  * @param timeoutMs how long to wait, capped at MAX_WAIT_MS
  * @param signal aborts the whole wait
- * @returns the first pane to match, a timeout, or a failure
+ * @returns the first pane to match, a timeout, an abort, or a failure
  */
 export const waitAny = async (
   runner: Runner,
@@ -246,6 +286,8 @@ export const waitAny = async (
       ),
     ).catch(async () => {
       const all = await Promise.all(attempts);
+      // An aborted child exits like a failed one; report the abort instead.
+      if (signal?.aborted) return { kind: "aborted" } as const;
       return all.find((outcome) => outcome.kind === "failed") ?? ({ kind: "timeout" } as const);
     });
     return first;

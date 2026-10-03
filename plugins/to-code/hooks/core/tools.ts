@@ -1,11 +1,9 @@
 import { recordDispatch } from "./dispatch.ts";
-import { type FleetStore, MAX_WAIT_MS, others, unwatch, waitAny } from "./fleet.ts";
+import { type FleetStore, forget, listFleet, MAX_WAIT_MS, unwatch, waitAny } from "./fleet.ts";
 import {
   assertOk,
   type FleetStatus,
   HerdrFailure,
-  listArgv,
-  parseAgentList,
   promptArgv,
   readArgv,
   type Runner,
@@ -123,7 +121,7 @@ export const FLEET_TOOLS: readonly FleetToolSpec[] = [
     name: "fleet_watch",
     label: "Fleet watch",
     description:
-      "Wake this session once each given pane next settles (idle, done, or blocked), then forget it. Use after dispatching work any other way, so you can end the turn instead of polling. With unwatch true, stop watching the panes.",
+      "Wake this session once each given pane next settles (idle, done, or blocked), then forget it. Use after dispatching work any other way, so you can end the turn instead of polling. Work this session sent with fleet_send (watch false) or `herdr agent prompt`/`herdr pane run` in the shell counts from when it was sent, so a pane that already finished it fires on the next check. With unwatch true, stop watching the panes.",
     inputSchema: {
       type: "object",
       properties: {
@@ -148,14 +146,8 @@ const strings = (value: unknown): string[] =>
     ? value.filter((item): item is string => typeof item === "string" && item !== "")
     : [];
 
-const listFleet = async (context: ToolContext) =>
-  others(
-    parseAgentList(await context.runner(listArgv(), 10_000, context.signal)),
-    context.selfPane,
-  );
-
 const status = async (context: ToolContext): Promise<ToolOutcome> => {
-  const agents = await listFleet(context);
+  const agents = await listFleet(context.runner, context.selfPane, context.signal);
   const memory = await context.store.read();
   return ok(agents.map((agent) => ({ ...agent, watched: agent.pane in memory.watched })));
 };
@@ -176,8 +168,9 @@ const wait = async (input: Record<string, unknown>, context: ToolContext): Promi
       context.signal,
     );
     if (outcome.kind === "failed") return fail(outcome.error);
+    if (outcome.kind === "aborted") return fail("fleet_wait was interrupted");
     if (outcome.kind === "timeout") return ok({ timedOut: true, panes });
-    await context.store.update((memory) => unwatch(memory, [outcome.agent.pane]));
+    await context.store.update((memory) => forget(memory, [outcome.agent.pane]));
     return ok({ timedOut: false, settled: outcome.agent });
   } finally {
     for (const pane of panes) context.awaiting.delete(pane);
@@ -197,7 +190,9 @@ const send = async (input: Record<string, unknown>, context: ToolContext): Promi
   const pane = typeof input.pane === "string" ? input.pane : "";
   const text = typeof input.text === "string" ? input.text : "";
   if (pane === "" || text === "") return fail("pane and text are required");
-  const before = (await listFleet(context)).find((agent) => agent.pane === pane);
+  const before = (await listFleet(context.runner, context.selfPane, context.signal)).find(
+    (agent) => agent.pane === pane,
+  );
   if (before === undefined)
     return fail(`${pane} is not an agent pane; call fleet_status for the current list`);
 
@@ -207,7 +202,7 @@ const send = async (input: Record<string, unknown>, context: ToolContext): Promi
     const dispatched = recordDispatch(memory, pane);
     return watch
       ? { ...dispatched, watched: { ...dispatched.watched, [pane]: before.seq } }
-      : dispatched;
+      : { ...dispatched, baselines: { ...dispatched.baselines, [pane]: before.seq } };
   });
   return ok({ sent: true, pane, watched: watch });
 };
@@ -223,7 +218,7 @@ const watchPanes = async (
     return ok({ unwatched: panes });
   }
 
-  const agents = await listFleet(context);
+  const agents = await listFleet(context.runner, context.selfPane, context.signal);
   const missing = panes.filter((pane) => !agents.some((agent) => agent.pane === pane));
   if (missing.length > 0)
     return fail(`not agent panes: ${missing.join(", ")}; call fleet_status for the current list`);
@@ -234,16 +229,22 @@ const watchPanes = async (
       ...Object.fromEntries(
         panes.map((pane) => [
           pane,
-          memory.watched[pane] ?? agents.find((agent) => agent.pane === pane)?.seq ?? 0,
+          memory.watched[pane] ??
+            memory.baselines[pane] ??
+            agents.find((agent) => agent.pane === pane)?.seq ??
+            0,
         ]),
       ),
     },
+    baselines: Object.fromEntries(
+      Object.entries(memory.baselines).filter(([pane]) => !panes.includes(pane)),
+    ),
   }));
   return ok({
     watching: agents
       .filter((agent) => panes.includes(agent.pane))
       .map((agent) => ({ pane: agent.pane, name: agent.name, status: agent.status })),
-    note: "A pane already idle or done fires only after its next state change; use fleet_wait or fleet_read if it may have finished already.",
+    note: "A pane that already finished work this session sent it fires on the next check. Any other idle or done pane fires only after its next state change.",
   });
 };
 

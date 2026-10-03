@@ -5,11 +5,11 @@ import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-a
 
 import {
   isHerdrDispatch,
-  recordDispatch,
+  recordBashDispatch,
   resetPrompt,
   stopReason,
 } from "../hooks/core/dispatch.ts";
-import { formatWake, memoryStore, summarize, tick } from "../hooks/core/fleet.ts";
+import { formatWake, listFleet, memoryStore, summarize, tick } from "../hooks/core/fleet.ts";
 import type { Runner } from "../hooks/core/herdr.ts";
 import { executeFleetTool, FLEET_TOOLS } from "../hooks/core/tools.ts";
 
@@ -121,15 +121,17 @@ export const createFleetExtension =
       timer = undefined;
     });
 
-    pi.on("input", async (event) => {
-      if (event.source !== "extension") await store.update(resetPrompt);
+    // Each agent run, a typed prompt or a wake, gets its own stop-gate record.
+    pi.on("agent_start", async () => {
+      await store.update(resetPrompt);
     });
 
     pi.on("tool_call", async (event) => {
       const command =
         event.toolName === "bash" ? (event.input as { command?: unknown }).command : undefined;
       if (typeof command === "string" && isHerdrDispatch(command)) {
-        await store.update((memory) => recordDispatch(memory, "herdr via bash"));
+        const agents = await listFleet(options.runner, selfPane, undefined).catch(() => []);
+        await store.update((memory) => recordBashDispatch(memory, command, agents));
       }
     });
 

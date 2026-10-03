@@ -104,7 +104,7 @@ describe("pi fleet extension", () => {
 
   test("nudges once after a bash herdr dispatch with nothing watched", async () => {
     const fake = load(async () => list("working", 3));
-    await fake.handlers.get("input")?.({ text: "go", source: "interactive" }, ctx);
+    await fake.handlers.get("agent_start")?.({}, ctx);
     await fake.handlers.get("tool_call")?.(
       { toolName: "bash", input: { command: "herdr agent prompt w1:p2 go" } },
       ctx,
@@ -113,6 +113,30 @@ describe("pi fleet extension", () => {
     await fake.handlers.get("agent_end")?.({}, ctx);
     expect(fake.messages.length).toBe(1);
     expect(fake.messages[0]?.options).toEqual({ triggerTurn: true, deliverAs: "followUp" });
+  });
+
+  test("records a bash prompt by its pane, so the nudge names it", async () => {
+    const fake = load(async () => list("working", 3));
+    await fake.handlers.get("agent_start")?.({}, ctx);
+    await fake.handlers.get("tool_call")?.(
+      { toolName: "bash", input: { command: "herdr agent prompt impl go" } },
+      ctx,
+    );
+    await fake.handlers.get("agent_end")?.({}, ctx);
+    expect(
+      fake.messages[0]?.content.startsWith("[to-code fleet] This turn dispatched work (w1:p2) but"),
+    ).toBe(true);
+  });
+
+  test("a new run starts with a clean stop-gate record", async () => {
+    const fake = load(async () => list("working", 3));
+    await fake.handlers.get("tool_call")?.(
+      { toolName: "bash", input: { command: "herdr agent prompt w1:p2 go" } },
+      ctx,
+    );
+    await fake.handlers.get("agent_start")?.({}, ctx);
+    await fake.handlers.get("agent_end")?.({}, ctx);
+    expect(fake.messages).toEqual([]);
   });
 
   test("stays quiet when the dispatch went through fleet_send", async () => {

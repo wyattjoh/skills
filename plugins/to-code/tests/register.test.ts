@@ -130,7 +130,7 @@ test("the watcher wakes an idle session when a watched pane settles", async ($, 
   const prompts: string[] = [];
   on("prompt.submit", async (_$, e) => {
     prompts.push(e.text);
-    return {} as never;
+    return { text: e.text } as never;
   });
   let status = "working";
   let seq = 4;
@@ -149,4 +149,72 @@ test("the watcher wakes an idle session when a watched pane settles", async ($, 
 
   await clock.advance(3_000);
   expect(prompts.length).toBe(1);
+});
+
+test("a wake turn leaves the stop gate quiet once its pane settled", async ($, on) => {
+  mock.env(on, { HERDR_ENV: "1", HERDR_PANE_ID: "self" });
+  const clock = mock.clock(on);
+  on("tool.register", async (_$, e) => ({ value: { tool: `mcp__to-code__${e.name}` } }));
+  on("session.start", async () => ({ cwd: "/repo" }));
+  on("ui.status", async () => undefined as never);
+  on("ui.toast", async () => undefined as never);
+  on("classic.Stop", async () => ({}));
+  const prompts: string[] = [];
+  on("prompt.submit", async (_$, e) => {
+    prompts.push(e.text);
+    return { text: e.text } as never;
+  });
+  let seq = 4;
+  herdr(on, () => [agentRow("w1:p2", "idle", seq)]);
+  await start($);
+
+  await $.tool.call({ tool: "mcp__to-code__fleet_send", pane: "w1:p2", text: "go" } as never);
+  seq = 6;
+  await clock.advance(3_000);
+  expect(prompts.length).toBe(1);
+
+  const stop = await $.classic.Stop({
+    stop_hook_active: false,
+    background_tasks: [],
+    session_crons: [],
+  });
+  expect(stop.block).toBe(undefined);
+});
+
+test("a pane that settles mid-turn wakes the session after the turn", async ($, on) => {
+  mock.env(on, { HERDR_ENV: "1", HERDR_PANE_ID: "self" });
+  const clock = mock.clock(on);
+  on("tool.register", async (_$, e) => ({ value: { tool: `mcp__to-code__${e.name}` } }));
+  on("session.start", async () => ({ cwd: "/repo" }));
+  on("ui.status", async () => undefined as never);
+  on("ui.toast", async () => undefined as never);
+  on("turn.start", async (_$, e) => ({ turnId: e.turnId }));
+  on("turn.complete", async () => ({ text: "" }));
+  const prompts: string[] = [];
+  on("prompt.submit", async (_$, e) => {
+    prompts.push(e.text);
+    return { text: e.text } as never;
+  });
+  let status = "working";
+  let seq = 4;
+  herdr(on, () => [agentRow("w1:p2", status, seq)]);
+  await start($);
+
+  await $.tool.call({ tool: "mcp__to-code__fleet_watch", panes: ["w1:p2"] } as never);
+  await $.turn.start({ text: "", turnId: "t1" });
+  status = "idle";
+  seq = 6;
+  await clock.advance(3_000);
+  expect(prompts).toEqual([]);
+
+  await $.turn.complete({
+    turnId: "t1",
+    reason: "answer",
+    answer: "",
+    durationMs: 1,
+    isAborted: false,
+  });
+  await clock.advance(0);
+  expect(prompts.length).toBe(1);
+  expect(prompts[0]?.split("\n")[1]).toBe("- w1:p2 (worker-w1:p2): idle");
 });

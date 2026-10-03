@@ -1,6 +1,14 @@
 import { describe, expect, test } from "bun:test";
 
-import { isHerdrDispatch, recordDispatch, resetPrompt, stopReason } from "./dispatch.ts";
+import {
+  BASH_DISPATCH,
+  dispatchTargets,
+  isHerdrDispatch,
+  recordBashDispatch,
+  recordDispatch,
+  resetPrompt,
+  stopReason,
+} from "./dispatch.ts";
 import {
   EMPTY_MEMORY,
   formatWake,
@@ -76,6 +84,15 @@ describe("herdr parsing", () => {
     );
   });
 
+  test("prefers herdr's agent name, then the display name, then the title", () => {
+    const named = { ...raw("w1:p2", "idle", 1), name: "impl-01" };
+    const untitled = { ...raw("w1:p3", "idle", 1), display_agent: "", title: "" };
+    expect(parseAgentList(listOutput(named, untitled)).map((one) => one.name)).toEqual([
+      "impl-01",
+      "",
+    ]);
+  });
+
   test("raises herdr error documents", () => {
     const output = {
       exitCode: 1,
@@ -131,6 +148,20 @@ describe("watching", () => {
       { pane: "self", name: "self", status: "gone" },
     ]);
     expect((await store.read()).watched).toEqual({});
+  });
+
+  test("tick drops a settled pane from the stop gate's dispatch record", async () => {
+    const { runner } = scripted(async () => listOutput(raw("a", "done", 4)));
+    const store = memoryStore({
+      ...EMPTY_MEMORY,
+      watched: { a: 2 },
+      dispatched: ["a", BASH_DISPATCH],
+    });
+    await tick(runner, store, new Set(), "self");
+    expect(await store.read()).toEqual({
+      ...EMPTY_MEMORY,
+      dispatched: [BASH_DISPATCH],
+    });
   });
 
   test("summarizes counts and watches", () => {
@@ -202,6 +233,20 @@ describe("waitAny", () => {
     expect(calls[0]?.argv.at(-1)).toBe("570000");
     expect(calls[0]?.timeoutMs).toBe(585_000);
   });
+
+  test("reports an abort rather than the aborted child's failure", async () => {
+    const controller = new AbortController();
+    const { runner } = scripted(
+      (_argv, signal) =>
+        new Promise((resolve) => {
+          signal?.addEventListener("abort", () => resolve({ exitCode: 1, stdout: "", stderr: "" }));
+          controller.abort();
+        }),
+    );
+    expect(await waitAny(runner, ["a"], ["idle"], 1000, controller.signal)).toEqual({
+      kind: "aborted",
+    });
+  });
 });
 
 describe("tools", () => {
@@ -218,7 +263,33 @@ describe("tools", () => {
       "herdr agent list",
       "herdr agent prompt",
     ]);
-    expect(await ctx.store.read()).toEqual({ watched: { a: 4 }, dispatched: ["a"], nudged: false });
+    expect(await ctx.store.read()).toEqual({
+      ...EMPTY_MEMORY,
+      watched: { a: 4 },
+      dispatched: ["a"],
+    });
+  });
+
+  test("fleet_watch starts from the seq work was sent at, so finished work still fires", async () => {
+    let seq = 4;
+    const { runner } = scripted(async (argv) =>
+      argv[2] === "list"
+        ? listOutput(raw("a", seq === 4 ? "idle" : "done", seq))
+        : { exitCode: 0, stdout: "{}", stderr: "" },
+    );
+    const ctx = context(runner);
+    await executeFleetTool("fleet_send", { pane: "a", text: "go", watch: false }, ctx);
+    expect((await ctx.store.read()).baselines).toEqual({ a: 4 });
+
+    seq = 6;
+    await executeFleetTool("fleet_watch", { panes: ["a"] }, ctx);
+    expect(await ctx.store.read()).toEqual({
+      ...EMPTY_MEMORY,
+      watched: { a: 4 },
+      dispatched: ["a"],
+    });
+    const result = await tick(runner, ctx.store, ctx.awaiting, "self");
+    expect(result.events).toEqual([{ pane: "a", name: "worker-a", status: "done" }]);
   });
 
   test("fleet_send explains a blocked agent", async () => {
@@ -269,6 +340,34 @@ describe("stop gate", () => {
         isHerdrDispatch,
       ),
     ).toEqual([true, true, false]);
+  });
+
+  test("reads the targets of prompt and run calls", () => {
+    expect(
+      dispatchTargets(
+        `herdr agent prompt impl-01 "go" && herdr pane run 'w1:p3' "ls"; herdr agent start x --pane w1:p4`,
+      ),
+    ).toEqual(["impl-01", "w1:p3"]);
+  });
+
+  test("records a shell dispatch by pane with its prior seq", () => {
+    const agents = [{ ...agent("w1:p2", "idle", 7), name: "impl-01" }];
+    expect(recordBashDispatch(EMPTY_MEMORY, "herdr agent prompt impl-01 'go'", agents)).toEqual({
+      ...EMPTY_MEMORY,
+      baselines: { "w1:p2": 7 },
+      dispatched: ["w1:p2"],
+    });
+  });
+
+  test("records an unnamed or starting shell dispatch under the generic label", () => {
+    const agents = [agent("w1:p2", "idle", 7)];
+    expect(recordBashDispatch(EMPTY_MEMORY, 'herdr agent prompt "$pane" go', agents)).toEqual({
+      ...EMPTY_MEMORY,
+      dispatched: [BASH_DISPATCH],
+    });
+    expect(
+      recordBashDispatch(EMPTY_MEMORY, "herdr agent start w --kind pi --pane w1:p9", agents),
+    ).toEqual({ ...EMPTY_MEMORY, dispatched: [BASH_DISPATCH] });
   });
 
   test("nudges once when dispatched work has no wake path", () => {

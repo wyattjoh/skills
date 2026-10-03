@@ -1,8 +1,15 @@
 import { atom, read, update } from "claude-code";
 import type { EngineInterface, Register } from "claude-code";
 
-import { isHerdrDispatch, recordDispatch, resetPrompt, stopReason } from "./core/dispatch.ts";
-import { EMPTY_MEMORY, type FleetStore, formatWake, summarize, tick } from "./core/fleet.ts";
+import { isHerdrDispatch, recordBashDispatch, resetPrompt, stopReason } from "./core/dispatch.ts";
+import {
+  EMPTY_MEMORY,
+  type FleetStore,
+  formatWake,
+  listFleet,
+  summarize,
+  tick,
+} from "./core/fleet.ts";
 import type { Runner } from "./core/herdr.ts";
 import { executeFleetTool, FLEET_TOOLS, type FleetToolName } from "./core/tools.ts";
 
@@ -20,20 +27,19 @@ const processRunner =
     return { exitCode: ran.exitCode ?? 1, stdout: ran.stdout, stderr: ran.stderr };
   };
 
+// Memory written by an earlier version of this module survives a reload, so
+// fields added since are filled from the defaults.
 const stateStore = ($: EngineInterface): FleetStore => ({
-  read: () => read($, memory),
+  read: async () => ({ ...EMPTY_MEMORY, ...(await read($, memory)) }),
   update: async (fn) => {
-    await update($, memory, fn);
+    await update($, memory, (current) => fn({ ...EMPTY_MEMORY, ...current }));
   },
 });
 
-// Mid-turn, a user-role row reaches the running loop at its next request;
-// otherwise a queued prompt starts a turn of its own.
-const deliver = async ($: EngineInterface, text: string, isBusy: boolean) => {
-  if (isBusy) {
-    await $.session.append({ message: { type: "user", content: [{ type: "text", text }] } });
-    return;
-  }
+// A wake starts a turn of its own. The plugin's own prompt.submit hook is
+// skipped for a prompt it submits, so the stop gate's record resets here.
+const wake = async ($: EngineInterface, text: string) => {
+  await stateStore($).update(resetPrompt);
   await $.prompt.submit({ text });
 };
 
@@ -46,6 +52,9 @@ export const register: Register = (on, options) => {
   let selfPane: string | undefined;
   let isActive = false;
   let isBusy = false;
+  // Wakes that arrived mid-turn, held for turn.complete: a row appended into a
+  // running turn is lost when the final request has already gone out.
+  let pending: string[] = [];
 
   on("session.start", async ($, e, next) => {
     isActive = (await $.env.get("HERDR_ENV")) === "1";
@@ -71,7 +80,11 @@ export const register: Register = (on, options) => {
           $.ui.status(summarize(agents, await store.read()));
           if (events.length === 0) return;
           $.ui.toast(events.map((event) => `${event.name}: ${event.status}`).join(", "));
-          await deliver($, formatWake(events), isBusy);
+          if (isBusy) {
+            pending = [...pending, formatWake(events)];
+            return;
+          }
+          await wake($, formatWake(events));
         })
         .catch(() => $.ui.status(undefined))
         .finally(() => {
@@ -102,13 +115,14 @@ export const register: Register = (on, options) => {
 
   on("tool.call", { tool: "Bash" }, async ($, e, next) => {
     if (isActive && e.agentId === undefined && isHerdrDispatch(e.command)) {
-      await update($, memory, (current) => recordDispatch(current, "herdr via Bash"));
+      const agents = await listFleet(processRunner($), selfPane, undefined).catch(() => []);
+      await stateStore($).update((current) => recordBashDispatch(current, e.command, agents));
     }
     return next(e);
   });
 
   on("prompt.submit", async ($, e, next) => {
-    await update($, memory, resetPrompt);
+    await stateStore($).update(resetPrompt);
     return next(e);
   });
 
@@ -118,20 +132,28 @@ export const register: Register = (on, options) => {
   });
 
   on("turn.complete", async ($, e, next) => {
-    if (e.agentId === undefined) isBusy = false;
-    return next(e);
+    const result = await next(e);
+    if (e.agentId !== undefined) return result;
+    isBusy = false;
+    if (pending.length > 0) {
+      const text = pending.join("\n\n");
+      pending = [];
+      // Not awaited: the wake's turn starts once this one has finished.
+      void wake($, text).catch(() => $.ui.toast("to-code: a fleet wake could not be delivered"));
+    }
+    return result;
   });
 
   on("classic.Stop", async ($, e, next) => {
     const result = await next(e);
     if (!isActive || !isStopGateOn || result.block !== undefined) return result;
-    const current = await read($, memory);
+    const current = await stateStore($).read();
     const reason = stopReason({
       memory: current,
       pendingBackground: (e.background_tasks?.length ?? 0) + (e.session_crons?.length ?? 0),
     });
     if (reason === undefined) return result;
-    await update($, memory, (value) => ({ ...value, nudged: true }));
+    await stateStore($).update((value) => ({ ...value, nudged: true }));
     return { ...result, block: reason };
   });
 };

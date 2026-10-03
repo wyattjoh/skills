@@ -64,6 +64,7 @@ export class HerdrFailure extends Error {
 
 type RawAgent = {
   pane_id?: unknown;
+  name?: unknown;
   display_agent?: unknown;
   title?: unknown;
   agent?: unknown;
@@ -76,6 +77,9 @@ const STATUSES: readonly FleetStatus[] = ["idle", "working", "blocked", "done", 
 
 const asString = (value: unknown, fallback: string): string =>
   typeof value === "string" ? value : fallback;
+
+const firstText = (...values: unknown[]): string =>
+  values.find((value): value is string => typeof value === "string" && value !== "") ?? "";
 
 /**
  * Reduces a herdr-reported label to a short, single-line, plain token.
@@ -98,7 +102,9 @@ const toAgent = (raw: RawAgent): FleetAgent => {
 
   return {
     pane: label(asString(raw.pane_id, ""), 32),
-    name: label(asString(raw.display_agent, asString(raw.title, ""))),
+    // herdr's own agent name is set at `agent start`; the display name and
+    // title come later from the agent and drift with its session.
+    name: label(firstText(raw.name, raw.display_agent, raw.title)),
     harness: label(asString(raw.agent, "unknown"), 16),
     status: STATUSES.includes(status) ? status : "unknown",
     cwd: asString(raw.cwd, ""),
