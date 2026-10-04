@@ -7,6 +7,7 @@ const agentRow = (pane: string, status: string, seq: number) => ({
   cwd: "/repo",
   display_agent: `worker-${pane}`,
   pane_id: pane,
+  workspace_id: pane.split(":")[0],
   state_change_seq: seq,
 });
 
@@ -55,12 +56,40 @@ test("registers the fleet tools inside herdr", async ($, on) => {
   on("session.start", async () => ({ cwd: "/repo" }));
   await start($);
   expect(registered).toEqual([
+    "fleet_setup",
     "fleet_status",
     "fleet_wait",
     "fleet_read",
     "fleet_send",
     "fleet_watch",
   ]);
+});
+
+test("setup scopes status and rejects outside targets through the mod adapter", async ($, on) => {
+  mock.env(on, { HERDR_ENV: "1", HERDR_PANE_ID: "self" });
+  mock.clock(on);
+  on("tool.register", async (_$, e) => ({ value: { tool: `mcp__to-code__${e.name}` } }));
+  on("session.start", async () => ({ cwd: "/repo" }));
+  const rows = [agentRow("w1:p2", "idle", 1), agentRow("w2:p3", "working", 2)];
+  const argvs = herdr(on, () => rows);
+  await start($);
+  const setup = await $.tool.call({ tool: "mcp__to-code__fleet_setup", panes: ["w1:p2"] } as never);
+  expect(setup.isError).toBe(undefined);
+  const { fleetId } = JSON.parse(String(setup.result));
+  expect(fleetId).toBe("fleet-1");
+  rows.push(agentRow("w1:p4", "working", 3));
+  const status = await $.tool.call({ tool: "mcp__to-code__fleet_status", fleetId } as never);
+  expect(JSON.parse(String(status.result)).map((agent: { pane: string }) => agent.pane)).toEqual([
+    "w1:p2",
+    "w1:p4",
+  ]);
+  const read = await $.tool.call({
+    tool: "mcp__to-code__fleet_read",
+    fleetId,
+    pane: "w2:p3",
+  } as never);
+  expect(read.isError).toBe(true);
+  expect(argvs.every((argv) => argv[2] === "list")).toBe(true);
 });
 
 test("fleet_send prompts the pane and watches it, so the stop gate stays quiet", async ($, on) => {

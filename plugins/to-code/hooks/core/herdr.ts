@@ -17,6 +17,7 @@ export type FleetAgent = {
   harness: string;
   status: FleetStatus;
   cwd: string;
+  workspace: string | undefined;
   seq: number;
 };
 
@@ -64,6 +65,7 @@ export class HerdrFailure extends Error {
 
 type RawAgent = {
   pane_id?: unknown;
+  workspace_id?: unknown;
   name?: unknown;
   display_agent?: unknown;
   title?: unknown;
@@ -108,6 +110,10 @@ const toAgent = (raw: RawAgent): FleetAgent => {
     harness: label(asString(raw.agent, "unknown"), 16),
     status: STATUSES.includes(status) ? status : "unknown",
     cwd: asString(raw.cwd, ""),
+    workspace:
+      typeof raw.workspace_id === "string" && raw.workspace_id !== ""
+        ? raw.workspace_id
+        : undefined,
     seq: typeof raw.state_change_seq === "number" ? raw.state_change_seq : 0,
   };
 };

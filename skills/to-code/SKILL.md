@@ -27,11 +27,15 @@ state. Idle is not complete: inspect what remains, prompt the worker to continue
 or surface its blocker. Keep independent work moving, and finish only when every
 ticket is accounted for.
 
-When the optional `fleet_*` tools are present (the `to-code` plugin), use them for
-supervision: `fleet_send` to prompt workers (it watches the pane), `fleet_watch` for
-panes you dispatched otherwise, and `fleet_wait`/`fleet_status` to reconcile. A
-watched pane wakes this session when it settles, so end the turn instead of
-polling. Without them, use bounded `herdr agent wait` calls.
+When the optional `fleet_*` tools are present (the `to-code` plugin), call
+`fleet_setup` with this run's worker pane IDs and pass the returned `fleetId` to
+subsequent tools. The fleet follows all agents in those panes' Herdr workspaces,
+including new workers; keep unrelated work in separate workspaces. Use `fleet_send`
+to prompt workers (it watches the pane), `fleet_watch` for panes dispatched
+otherwise, and `fleet_wait`/`fleet_status` to reconcile. A watched pane wakes this
+session when it settles, so end the turn instead of polling. Recreate the fleet
+and watches after a coordinator handoff or an unknown-ID error. Without the tools,
+use bounded `herdr agent wait` calls.
 
 ## Workflow
 

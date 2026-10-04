@@ -44,8 +44,18 @@ export type StopContext = {
  */
 export const stopReason = (context: StopContext): string | undefined => {
   const { memory, pendingBackground } = context;
-  if (memory.nudged || memory.dispatched.length === 0) return undefined;
-  if (Object.keys(memory.watched).length > 0 || pendingBackground > 0) return undefined;
+  if (memory.nudged || pendingBackground > 0) return undefined;
+  const scoped = Object.entries(memory.fleets).flatMap(([fleetId, fleet]) => {
+    const reason = stopReason({ memory: { ...memory, ...fleet, fleets: {} }, pendingBackground });
+    return reason === undefined ? [] : [`${reason} Use fleetId: ${fleetId}.`];
+  });
+  if (scoped.length > 0) return scoped.join("\n");
+  if (memory.dispatched.length === 0) return undefined;
+  if (
+    Object.keys(memory.watched).length > 0 ||
+    Object.values(memory.fleets).some((fleet) => Object.keys(fleet.watched).length > 0)
+  )
+    return undefined;
 
   return [
     `[to-code fleet] This turn dispatched work (${memory.dispatched.join(", ")}) but nothing will wake this session when it finishes.`,
@@ -99,7 +109,40 @@ export const recordBashDispatch = (
     }),
     memory,
   );
-  return isNamedOnly ? recorded : recordDispatch(recorded, BASH_DISPATCH);
+  const result = isNamedOnly ? recorded : recordDispatch(recorded, BASH_DISPATCH);
+  const scopedPanes = new Set(
+    resolved
+      .filter((agent) => {
+        const workspace = agent.workspace;
+        return (
+          workspace !== undefined &&
+          Object.values(memory.fleets).some((fleet) => fleet.workspaces.includes(workspace))
+        );
+      })
+      .map((agent) => agent.pane),
+  );
+  return {
+    ...result,
+    dispatched: result.dispatched.filter((pane) => !scopedPanes.has(pane)),
+    fleets: Object.fromEntries(
+      Object.entries(memory.fleets).map(([fleetId, fleet]) => {
+        const matching = resolved.filter(
+          (agent) => agent.workspace !== undefined && fleet.workspaces.includes(agent.workspace),
+        );
+        return [
+          fleetId,
+          {
+            ...fleet,
+            baselines: {
+              ...fleet.baselines,
+              ...Object.fromEntries(matching.map((agent) => [agent.pane, agent.seq])),
+            },
+            dispatched: [...new Set([...fleet.dispatched, ...matching.map((agent) => agent.pane)])],
+          },
+        ];
+      }),
+    ),
+  };
 };
 
 /**
@@ -113,4 +156,10 @@ export const resetPrompt = (memory: FleetMemory): FleetMemory => ({
   ...memory,
   dispatched: [],
   nudged: false,
+  fleets: Object.fromEntries(
+    Object.entries(memory.fleets).map(([fleetId, fleet]) => [
+      fleetId,
+      { ...fleet, dispatched: [], nudged: false },
+    ]),
+  ),
 });

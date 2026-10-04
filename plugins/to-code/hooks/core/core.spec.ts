@@ -43,6 +43,7 @@ const agent = (pane: string, status: FleetAgent["status"], seq: number): FleetAg
   harness: "pi",
   status,
   cwd: "/repo",
+  workspace: undefined,
   seq,
 });
 
@@ -128,8 +129,8 @@ describe("watching", () => {
     ];
     const events = settledEvents(agents, { a: 3, b: 3, c: 1, e: 0 }, new Set());
     expect(events).toEqual([
-      { pane: "a", name: "worker-a", status: "idle" },
-      { pane: "e", name: "e", status: "gone" },
+      { fleetId: undefined, pane: "a", name: "worker-a", status: "idle" },
+      { fleetId: undefined, pane: "e", name: "e", status: "gone" },
     ]);
   });
 
@@ -144,8 +145,8 @@ describe("watching", () => {
     const store = memoryStore({ ...EMPTY_MEMORY, watched: { a: 2, self: 0 } });
     const result = await tick(runner, store, new Set(), "self");
     expect(result.events).toEqual([
-      { pane: "a", name: "worker-a", status: "done" },
-      { pane: "self", name: "self", status: "gone" },
+      { fleetId: undefined, pane: "a", name: "worker-a", status: "done" },
+      { fleetId: undefined, pane: "self", name: "self", status: "gone" },
     ]);
     expect((await store.read()).watched).toEqual({});
   });
@@ -176,9 +177,11 @@ describe("watching", () => {
   });
 
   test("formats the wake message", () => {
-    expect(formatWake([{ pane: "a", name: "worker-a", status: "blocked" }]).split("\n")[1]).toBe(
-      "- a (worker-a): blocked",
-    );
+    expect(
+      formatWake([{ fleetId: undefined, pane: "a", name: "worker-a", status: "blocked" }]).split(
+        "\n",
+      )[1],
+    ).toBe("- a (worker-a): blocked");
   });
 });
 
@@ -289,7 +292,9 @@ describe("tools", () => {
       dispatched: ["a"],
     });
     const result = await tick(runner, ctx.store, ctx.awaiting, "self");
-    expect(result.events).toEqual([{ pane: "a", name: "worker-a", status: "done" }]);
+    expect(result.events).toEqual([
+      { fleetId: undefined, pane: "a", name: "worker-a", status: "done" },
+    ]);
   });
 
   test("fleet_send explains a blocked agent", async () => {

@@ -34,10 +34,18 @@ the session's mode when loaded from the plugin. The manifests live in
 ### Optional `to-code` plugin (Claude Code and pi)
 
 [`plugins/to-code/`](plugins/to-code/) gives the agent model-callable herdr fleet tools for
-the `to-code` skill: `fleet_status`, `fleet_wait`, `fleet_read`, `fleet_send`, and
-`fleet_watch`. A watched pane wakes the session when it settles, and a turn that dispatched
-herdr work with nothing watching it is kept going once. It does nothing outside herdr, and
-the skill works without it.
+the `to-code` skill: `fleet_setup`, `fleet_status`, `fleet_wait`, `fleet_read`,
+`fleet_send`, and `fleet_watch`. Call `fleet_setup({ panes: ["w1:p2"] })` to get a
+session-local `fleetId`, then pass it to other fleet tools to scope results and targets.
+A fleet includes all agents in the selected panes' Herdr workspaces, including new workers,
+and excludes the coordinator. Keep unrelated workers in separate workspaces. Omitting
+`fleetId` preserves global calls; watches and dispatch baselines are independent per fleet.
+
+A watched pane wakes the session when it settles, with its fleet ID in the wake.
+A turn that dispatched herdr work with nothing watching it is kept going once.
+It does nothing outside herdr, and the skill works without it. IDs belong to the current
+coordinator's memory: recreate fleets and watches after a Pi extension reload or coordinator
+handoff, and recreate unknown IDs rather than falling back to global calls.
 
 ```bash
 claude plugin install to-code@wyattjoh-skills        # Claude Code (a function-hooks mod)

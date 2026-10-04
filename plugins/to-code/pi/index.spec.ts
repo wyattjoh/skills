@@ -33,6 +33,7 @@ const list = (status: string, seq: number): RunOutput => ({
       agents: [
         {
           pane_id: "w1:p2",
+          workspace_id: "w1",
           agent: "claude",
           agent_status: status,
           display_agent: "impl",
@@ -68,9 +69,10 @@ describe("pi fleet extension", () => {
     expect(fake.handlers.size).toBe(0);
   });
 
-  test("registers the five fleet tools", () => {
+  test("registers the fleet tools", () => {
     const fake = load(async () => list("idle", 1));
     expect(fake.tools.map((one) => one.name)).toEqual([
+      "fleet_setup",
       "fleet_status",
       "fleet_wait",
       "fleet_read",
@@ -96,10 +98,26 @@ describe("pi fleet extension", () => {
         harness: "claude",
         status: "working",
         cwd: "",
+        workspace: "w1",
         seq: 3,
         watched: false,
       },
     ]);
+  });
+
+  test("setup and scoped status work through the pi tool adapter", async () => {
+    const fake = load(async () => list("working", 3));
+    const setup = await tool(fake, "fleet_setup").execute("setup", { panes: ["w1:p2"] });
+    expect(setup.isError).toBe(false);
+    const { fleetId } = JSON.parse(setup.content[0]?.text ?? "");
+    expect(fleetId).toBe("fleet-1");
+    const status = await tool(fake, "fleet_status").execute("status", { fleetId });
+    expect(status.isError).toBe(false);
+    expect(
+      JSON.parse(status.content[0]?.text ?? "").map((agent: { pane: string }) => agent.pane),
+    ).toEqual(["w1:p2"]);
+    const rejected = await tool(fake, "fleet_read").execute("read", { fleetId, pane: "w2:p9" });
+    expect(rejected.isError).toBe(true);
   });
 
   test("nudges once after a bash herdr dispatch with nothing watched", async () => {
