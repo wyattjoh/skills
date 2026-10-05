@@ -15,6 +15,8 @@ const createFakePi = () => {
   const messages: { content: string; options: unknown }[] = [];
   return {
     pi: {
+      registerFlag: () => undefined,
+      getFlag: () => undefined,
       registerTool: (tool: Tool) => tools.push(tool),
       on: (event: string, handler: Handler) => handlers.set(event, handler),
       sendMessage: (message: { content: string }, options: unknown) =>
@@ -72,6 +74,11 @@ describe("pi fleet extension", () => {
   test("registers the fleet tools", () => {
     const fake = load(async () => list("idle", 1));
     expect(fake.tools.map((one) => one.name)).toEqual([
+      "fleet_start_ticket",
+      "fleet_start_review",
+      "fleet_finish_ticket",
+      "fleet_resume",
+      "fleet_restart_worker",
       "fleet_setup",
       "fleet_status",
       "fleet_wait",

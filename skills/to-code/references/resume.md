@@ -63,7 +63,15 @@ its worker is stopped or waiting; reserve a slot before unblocking it. An
 abandoned prerequisite does not satisfy a dependency. Ask the user to resolve
 the downstream scope rather than treating it as landed.
 
-## Take over from either harness
+## Async Pi runs
+
+Record the canonical async run directory and `fleetId` beside the handoff. Resume
+with `fleet_resume` in a supported Pi coordinator and apply
+[pi-async.md](pi-async.md). Its persisted snapshots/outbox own protocol progress;
+this Markdown owns human decisions and context pointers. Switching to legacy
+supervision needs an explicit migration decision, not silently bypassed guards.
+
+## Legacy takeover from either harness
 
 1. Read this handoff, the spec, tickets, decisions, and linked results. Missing
    or stale fields are questions to resolve, not grounds to require the old

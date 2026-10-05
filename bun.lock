@@ -20,6 +20,10 @@
     "plugins/to-code": {
       "name": "@wyattjoh/to-code-plugin",
       "version": "0.1.0",
+      "dependencies": {
+        "@typeonce/effect-machine": "0.40.0",
+        "effect": "4.0.0",
+      },
       "devDependencies": {
         "@earendil-works/pi-ai": "1.0.2",
         "@earendil-works/pi-coding-agent": "1.0.2",
@@ -489,6 +493,8 @@
     "@standard-schema/spec": ["@standard-schema/spec@1.1.0", "", {}, "sha512-l2aFy5jALhniG5HgqrD6jXLi/rUWrKvqN/qJx6yoJsgKhblVd+iqqU4RCXavm/jPityDo5TCvKMnpjKnOriy0w=="],
 
     "@tybys/wasm-util": ["@tybys/wasm-util@0.10.4", "", { "dependencies": { "tslib": "^2.4.0" } }, "sha512-W3c4gRigFS0T/Ma4qIYF3GDAc5AQdHb1yL5znJT1Zv1YaD9Kitx656wBjvr19qbiosmZT8lWDM5BEMynUqX65A=="],
+
+    "@typeonce/effect-machine": ["@typeonce/effect-machine@0.40.0", "", { "peerDependencies": { "effect": "^4.0.0" } }, "sha512-BaTY12ylWy+MPxEJtcD/9+PqQtLXzmiXbbdfIk46L+QXpo6eAtKl0NoS2/sGLOXTE25gXFFNRTU669Rz8PmTtQ=="],
 
     "@types/bun": ["@types/bun@1.4.2", "", { "dependencies": { "bun-types": "1.4.2" } }, "sha512-GimotNn7+ZV0uVArItBbriZsR1oNf0+WTzPkdcFrzShI7k2norL0uzEaJT8T33dWr7O/c9ZDuAFQrctKCi72oQ=="],
 

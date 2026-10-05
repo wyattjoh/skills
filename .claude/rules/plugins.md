@@ -11,12 +11,26 @@ A plugin may ship as a Claude Code function-hooks mod and a pi extension from on
 Load the `plugin-authoring` skill before changing a mod: it lays the API types for the
 running build.
 
-## One dependency-free core, two thin adapters
+## Shared legacy core and Pi async fleets
 
-Put behaviour in `hooks/core/*.ts`. A mod imports only its own plugin's files, and its
-runtime has no Node, DOM, or npm packages, so the core stays plain TypeScript with no
-imports outside `hooks/core/`. Effect is not used here; `.claude/rules/skills.md`'s Effect
-preference covers `skills/**` only.
+Keep mod-compatible behaviour in `hooks/core/*.ts`. A mod imports only its own plugin's
+files, and its runtime has no Node, DOM, or npm packages, so that core stays plain
+TypeScript with no imports outside `hooks/core/`.
+
+For `to-code` async fleets, put the browser-safe Effect Machine definition and report
+validation in `fleet/`, Node/Herdr/storage operations in `pi/`, and the simulator in
+`demo/`. Pi tools and the browser must import the same `fleet/` definition, never copy
+its transitions into a separate reducer. The Claude mod retains the dependency-free
+legacy tools and does not import `fleet/`.
+
+```ts
+// Pi and the browser share this model; only Pi imports Node-backed operations.
+import { ticketMachine } from "../fleet/model.ts";
+```
+
+Record accepted reports and pending callbacks durably before releasing a worker's
+assignment stop gate. Rearm that gate on every correlated follow-up assignment. Machine
+snapshots alone do not provide cross-process persistence or reliable callback delivery.
 
 The adapters inject what differs per harness, the process runner and the session store:
 
@@ -40,10 +54,10 @@ Mod constraints that `claude plugin validate` enforces:
 
 ## Two test runners
 
-| Files                                  | Runner                              | Imports               |
-| -------------------------------------- | ----------------------------------- | --------------------- |
-| `hooks/core/*.spec.ts`, `pi/*.spec.ts` | `bun test`                          | `bun:test`            |
-| `tests/*.test.ts`                      | `claude plugin test plugins/<name>` | `claude-code/testing` |
+| Files                                                                       | Runner                              | Imports               |
+| --------------------------------------------------------------------------- | ----------------------------------- | --------------------- |
+| `hooks/core/*.spec.ts`, `fleet/*.spec.ts`, `pi/*.spec.ts`, `demo/*.spec.ts` | `bun test`                          | `bun:test`            |
+| `tests/*.test.ts`                                                           | `claude plugin test plugins/<name>` | `claude-code/testing` |
 
 `claude plugin test` runs every `*.test.ts` under the plugin, so bun tests use the
 `.spec.ts` suffix. `bunfig.toml` ignores `plugins/*/tests/**` so `bun test` skips the mod

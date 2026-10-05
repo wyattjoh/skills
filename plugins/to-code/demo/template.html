@@ -1,0 +1,316 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <title>Async fleet · production Machine simulator</title>
+    <style>
+      :root {
+        color-scheme: dark;
+        --base: #1e1e2e;
+        --mantle: #181825;
+        --surface: #313244;
+        --text: #cdd6f4;
+        --muted: #a6adc8;
+        --blue: #89b4fa;
+        --green: #a6e3a1;
+        --red: #f38ba8;
+        --mauve: #cba6f7;
+      }
+      * {
+        box-sizing: border-box;
+      }
+      body {
+        background: var(--base);
+        color: var(--text);
+        font:
+          15px/1.55 system-ui,
+          sans-serif;
+        margin: 0;
+      }
+      main {
+        max-width: 1500px;
+        margin: auto;
+        padding: 28px;
+        display: grid;
+        gap: 22px;
+      }
+      h1,
+      h2,
+      p,
+      pre {
+        margin: 0;
+      }
+      h1 {
+        font-size: 29px;
+        letter-spacing: -0.04em;
+      }
+      h2 {
+        font-size: 16px;
+        color: var(--mauve);
+      }
+      .eyebrow {
+        font:
+          12px ui-monospace,
+          monospace;
+        color: var(--blue);
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+      }
+      .header,
+      .card {
+        display: grid;
+        gap: 12px;
+      }
+      .card {
+        padding: 18px;
+        background: var(--mantle);
+        border: 1px solid var(--surface);
+        border-radius: 12px;
+        min-width: 0;
+      }
+      .row {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 10px;
+        align-items: center;
+      }
+      .columns {
+        display: grid;
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+        gap: 16px;
+      }
+      .two {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 16px;
+      }
+      .muted {
+        color: var(--muted);
+      }
+      button,
+      select,
+      input,
+      textarea {
+        font: inherit;
+        color: var(--text);
+        background: var(--surface);
+        border: 1px solid #45475a;
+        border-radius: 7px;
+        padding: 8px 11px;
+      }
+      button {
+        cursor: pointer;
+      }
+      button:hover {
+        border-color: var(--blue);
+      }
+      button:disabled {
+        opacity: 0.45;
+        cursor: default;
+      }
+      .primary {
+        background: var(--blue);
+        color: var(--base);
+        font-weight: 650;
+      }
+      .notice {
+        border: 1px solid var(--blue);
+        background: #89b4fa14;
+        color: var(--blue);
+        padding: 14px;
+        border-radius: 8px;
+      }
+      .notice[data-tone="error"] {
+        border-color: var(--red);
+        color: var(--red);
+        background: #f38ba814;
+      }
+      pre {
+        font:
+          12px/1.7 ui-monospace,
+          SFMono-Regular,
+          monospace;
+        white-space: pre-wrap;
+        overflow-wrap: anywhere;
+        max-height: 320px;
+        overflow: auto;
+      }
+      textarea {
+        width: 100%;
+        min-height: 305px;
+        resize: vertical;
+        font:
+          12px/1.6 ui-monospace,
+          monospace;
+      }
+      input[type="text"] {
+        width: 100%;
+        font:
+          12px ui-monospace,
+          monospace;
+      }
+      label {
+        display: flex;
+        gap: 7px;
+        align-items: center;
+        font-size: 13px;
+      }
+      input[type="checkbox"] {
+        accent-color: var(--blue);
+      }
+      details {
+        display: grid;
+        gap: 12px;
+      }
+      summary {
+        cursor: pointer;
+        color: var(--muted);
+      }
+      .pill {
+        padding: 5px 10px;
+        border: 1px solid var(--surface);
+        border-radius: 30px;
+        font:
+          12px ui-monospace,
+          monospace;
+        color: var(--green);
+      }
+      @media (max-width: 950px) {
+        .columns {
+          grid-template-columns: 1fr;
+        }
+        .two {
+          grid-template-columns: 1fr;
+        }
+      }
+      @media (max-width: 550px) {
+        main {
+          padding: 14px;
+        }
+        h1 {
+          font-size: 24px;
+        }
+        button,
+        select {
+          max-width: 100%;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <main>
+      <header class="header">
+        <div class="eyebrow">Pi first · callback driven · offline simulator</div>
+        <h1>Async fleets, with accountable stops</h1>
+        <p class="muted">
+          The same production @typeonce/effect-machine definitions and Markdown validator as the
+          real tools. Git, checks, transport and panes below are simulated.
+        </p>
+        <div class="row">
+          <span class="pill">Coordinator → implementor → retained reviewer</span
+          ><span class="pill">Validated artifact → implementor → coordinator</span>
+        </div>
+      </header>
+      <section class="card">
+        <h2>Guided flows</h2>
+        <div class="row">
+          <select id="scenario" aria-label="Guided scenario"></select
+          ><button id="next" class="primary">Next event</button
+          ><button id="reset">Reset flow</button>
+        </div>
+        <p id="description" class="muted"></p>
+        <p id="step"></p>
+        <div id="notice" class="notice" data-tone="info" role="status"></div>
+      </section>
+      <section class="columns">
+        <article class="card">
+          <h2>Coordinator / ticket</h2>
+          <div id="ticket"></div>
+          <p class="muted">
+            Scheduling and serial landing remain caller-owned. Idle is not completion.
+          </p>
+        </article>
+        <article class="card">
+          <h2>Implementor</h2>
+          <pre id="implementor"></pre>
+          <span class="pill">--fleet-implementor i-1</span>
+        </article>
+        <article class="card">
+          <h2>Retained reviewer</h2>
+          <pre id="reviewer"></pre>
+          <span class="pill">--fleet-reviewer r-1</span>
+        </article>
+      </section>
+      <section class="card">
+        <h2>Free play</h2>
+        <div class="row">
+          <label
+            >Acting worker
+            <select id="role">
+              <option value="implementor">Implementor</option>
+              <option value="reviewer">Reviewer</option>
+            </select></label
+          ><button data-action="start">Start ticket</button
+          ><button data-action="stop">Attempt yield</button
+          ><button data-action="complete">Report implementation</button
+          ><button data-action="review">Dispatch review</button
+          ><button data-action="question">Ask coordinator</button
+          ><button data-action="answer">Correlated answer</button
+          ><button data-action="rereview">Request re-review</button
+          ><button data-action="forward">Forward approval</button
+          ><button data-action="land">Verify landing / cleanup</button
+          ><button data-action="head">Commit / move HEAD</button
+          ><button data-action="refresh">Supersede stale work</button
+          ><button data-action="fault">Observed native fault</button
+          ><button data-action="save">Persist snapshots</button
+          ><button data-action="restore">Restart / restore</button
+          ><button data-action="recover">Reconnect / replay</button>
+        </div>
+        <div class="row">
+          <label><input id="extension" type="checkbox" checked />Extension stop hook on</label
+          ><label><input id="online" type="checkbox" checked />Coordinator online</label
+          ><label><input id="checksPass" type="checkbox" checked />Checks pass</label
+          ><label><input id="merged" type="checkbox" />Caller merged approved head</label
+          ><label><input id="foreignPane" type="checkbox" />Foreign cleanup occupant</label>
+        </div>
+      </section>
+      <section class="two">
+        <article class="card">
+          <h2>Assigned review artifact</h2>
+          <div class="row">
+            <label
+              >Verdict
+              <select id="verdict">
+                <option value="approved">approved</option>
+                <option value="changes_requested">changes_requested</option>
+              </select></label
+            ><button data-action="submit" class="primary">Validate and submit review</button>
+          </div>
+          <input id="filename" type="text" aria-label="Assigned scratch filename" /><textarea
+            id="report"
+            aria-label="Editable review Markdown"
+            spellcheck="false"
+          ></textarea>
+        </article>
+        <article class="card">
+          <h2>Durable fake ledger</h2>
+          <pre id="ledger"></pre>
+          <h2>Callback outbox</h2>
+          <pre id="outbox"></pre>
+        </article>
+      </section>
+      <section class="card">
+        <h2>Event trace</h2>
+        <pre id="log"></pre>
+        <details>
+          <summary>Actual production Machine snapshots</summary>
+          <pre id="snapshot"></pre>
+        </details>
+      </section>
+    </main>
+    <script>
+      /* FLEET_BUNDLE */
+    </script>
+  </body>
+</html>

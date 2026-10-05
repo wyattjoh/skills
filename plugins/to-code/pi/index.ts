@@ -12,6 +12,8 @@ import {
 import { formatWake, listFleet, memoryStore, summarize, tick } from "../hooks/core/fleet.ts";
 import type { Runner } from "../hooks/core/herdr.ts";
 import { executeFleetTool, FLEET_TOOLS } from "../hooks/core/tools.ts";
+import { createAsyncFleetAdapter, registerFleetFlags } from "./async.ts";
+import { assertFleetHost } from "./host.ts";
 
 const STATUS_KEY = "to-code";
 const MESSAGE_TYPE = "to-code-fleet";
@@ -27,7 +29,7 @@ export const nodeRunner: Runner = (argv, timeoutMs, signal) =>
     execFile(
       file,
       args,
-      { timeout: timeoutMs, signal, maxBuffer: 4 * 1024 * 1024 },
+      { timeout: timeoutMs, signal, env: process.env, maxBuffer: 4 * 1024 * 1024 },
       (error, stdout, stderr) => {
         const code = error && typeof error.code === "number" ? error.code : error ? 1 : 0;
         resolve({ exitCode: code, stdout: String(stdout), stderr: String(stderr) });
@@ -55,8 +57,34 @@ export type FleetExtensionOptions = {
 export const createFleetExtension =
   (options: FleetExtensionOptions) =>
   (pi: ExtensionAPI): void => {
-    if (options.env.HERDR_ENV !== "1") return;
+    registerFleetFlags(pi);
+    if (options.env.HERDR_ENV !== "1") {
+      if (
+        pi.getFlag("fleet-implementor") !== undefined ||
+        pi.getFlag("fleet-reviewer") !== undefined
+      )
+        throw new Error("Async fleet workers must launch inside Herdr");
+      return;
+    }
     const selfPane = options.env.HERDR_PANE_ID;
+    const asyncFleet = createAsyncFleetAdapter(pi, {
+      runner: options.runner,
+      env: options.env,
+      platform: undefined,
+      assertHost: assertFleetHost,
+    });
+    if (asyncFleet.worker) {
+      pi.on("session_start", async (_event, ctx) => {
+        await asyncFleet.start(ctx);
+      });
+      pi.on("session_before_switch", async () => {
+        await asyncFleet.shutdown();
+      });
+      pi.on("session_shutdown", async () => {
+        await asyncFleet.shutdown();
+      });
+      return;
+    }
     const store = memoryStore();
     const awaiting = new Set<string>();
     let timer: ReturnType<typeof setInterval> | undefined;
@@ -72,7 +100,7 @@ export const createFleetExtension =
       );
 
     const poll = async (ctx: ExtensionContext) => {
-      if (isTicking) return;
+      if (isTicking || asyncFleet.managed()) return;
       isTicking = true;
       try {
         const { agents, events } = await tick(options.runner, store, awaiting, selfPane);
@@ -93,8 +121,37 @@ export const createFleetExtension =
         name: tool.name,
         label: tool.label,
         description: tool.description,
-        parameters: Type.Unsafe<Record<string, unknown>>(tool.inputSchema),
-        async execute(_toolCallId, params, signal) {
+        parameters: Type.Unsafe<Record<string, unknown>>(
+          asyncFleet.inputSchema(tool.name, tool.inputSchema),
+        ),
+        async execute(_toolCallId, params, signal, _update, ctx) {
+          if (tool.name === "fleet_setup" && "workspace" in params) {
+            const memory = await store.read();
+            const scopes = [memory, ...Object.values(memory.fleets)];
+            if (
+              awaiting.size > 0 ||
+              scopes.some(
+                (scope) => Object.keys(scope.watched).length > 0 || scope.dispatched.length > 0,
+              )
+            ) {
+              return {
+                content: [
+                  {
+                    type: "text",
+                    text: "Finish/account for legacy watches and dispatches before switching to a callback-driven fleet.",
+                  },
+                ],
+                details: undefined,
+                isError: true,
+              };
+            }
+          }
+          const managed = await asyncFleet.execute(tool.name, params, ctx, signal);
+          if (asyncFleet.managed() && timer !== undefined) {
+            clearInterval(timer);
+            timer = undefined;
+          }
+          if (managed !== undefined) return managed;
           const outcome = await executeFleetTool(tool.name, params, {
             runner: options.runner,
             store,
@@ -111,12 +168,20 @@ export const createFleetExtension =
       });
     }
 
-    pi.on("session_start", (_event, ctx) => {
+    pi.on("session_start", async (_event, ctx) => {
+      await asyncFleet.start(ctx);
       if (timer !== undefined) clearInterval(timer);
-      timer = setInterval(() => void poll(ctx), options.intervalMs);
+      if (!asyncFleet.managed()) timer = setInterval(() => void poll(ctx), options.intervalMs);
     });
 
-    pi.on("session_shutdown", () => {
+    pi.on("session_before_switch", async () => {
+      if (timer !== undefined) clearInterval(timer);
+      timer = undefined;
+      await asyncFleet.shutdown();
+    });
+
+    pi.on("session_shutdown", async () => {
+      await asyncFleet.shutdown();
       if (timer !== undefined) clearInterval(timer);
       timer = undefined;
     });
@@ -127,6 +192,7 @@ export const createFleetExtension =
     });
 
     pi.on("tool_call", async (event) => {
+      if (asyncFleet.managed()) return;
       const command =
         event.toolName === "bash" ? (event.input as { command?: unknown }).command : undefined;
       if (typeof command === "string" && isHerdrDispatch(command)) {
@@ -137,6 +203,7 @@ export const createFleetExtension =
 
     // pi cannot hold a turn open, so the stop gate becomes one follow-up turn.
     pi.on("agent_end", async () => {
+      if (asyncFleet.managed()) return;
       const reason = stopReason({ memory: await store.read(), pendingBackground: 0 });
       if (reason === undefined) return;
       await store.update((memory) => ({ ...memory, nudged: true }));

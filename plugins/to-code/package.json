@@ -10,7 +10,12 @@
   "type": "module",
   "scripts": {
     "test": "bun test",
-    "test:mod": "claude plugin test ."
+    "test:mod": "claude plugin test .",
+    "demo": "bun demo/build.ts"
+  },
+  "dependencies": {
+    "@typeonce/effect-machine": "0.40.0",
+    "effect": "4.0.0"
   },
   "devDependencies": {
     "@earendil-works/pi-ai": "1.0.2",
