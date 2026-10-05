@@ -8,7 +8,9 @@ import { createServices, DEFAULT_POLICY, RetrievalError, retrieve } from "./retr
 const HELP = `Usage: bun scripts/search.ts <https://site/docs/llms.txt> "question" [options]
        bun scripts/search.ts <https://site/docs/llms.txt> --inspect-index
 
-Jev search requires TYPESAFE_API_KEY. Only selected public pages are fetched.
+Jev search requires TYPESAFE_API_KEY validated and injected by varlock.
+Run through varlock run --path <skill-dir>/ --inject vars -- bun <script> ...
+Only selected public pages are fetched.
 --cache <dir>       Public-doc cache (default: .scratch/linked-docs-cache)
 --refresh           Bypass the 24-hour document cache
 --model <id>        TypeSafe model (default: jev-1.13.0)
@@ -55,7 +57,7 @@ const main = Effect.gen(function* () {
     return yield* Effect.fail(
       new RetrievalError({
         message:
-          "Set TYPESAFE_API_KEY in the environment, never in arguments. Use --inspect-index to test parsing without a key.",
+          "TYPESAFE_API_KEY is required; run this script through varlock with the skill's .env.schema. Use --inspect-index to test parsing without a key.",
       }),
     );
   }

@@ -55,4 +55,4 @@ Current HTTP contract and model limits were checked against the official [API](h
 
 The Bun tests use injected document and model services, plus mocked HTTP responses. They exercise retained alternatives, opening evidence, exact excerpts, absent answers, partial fetch failures, malformed probabilities, cache reuse/refresh, redirects, and budget guards without spending API credits.
 
-A live index smoke test establishes that a site's Markdown format parses. It does not measure Jev relevance quality. A live model evaluation needs `TYPESAFE_API_KEY` and representative answerable, ambiguous, and absent-answer questions, with expected source excerpts checked independently.
+A live index smoke test establishes that a site's Markdown format parses. It does not measure Jev relevance quality. A live model evaluation needs `TYPESAFE_API_KEY` resolved and injected through the skill's varlock configuration, plus representative answerable, ambiguous, and absent-answer questions with expected source excerpts checked independently.

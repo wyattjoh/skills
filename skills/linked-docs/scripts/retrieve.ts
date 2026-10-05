@@ -374,7 +374,9 @@ export function createServices(
     cancellation: AbortSignal,
   ): Promise<unknown> {
     if (!options.apiKey)
-      throw new Error("Set TYPESAFE_API_KEY to run Jev search; --inspect-index needs no key");
+      throw new Error(
+        "TYPESAFE_API_KEY is required; run the CLI through varlock; --inspect-index needs no key",
+      );
     const body = JSON.stringify({ model: options.model, state, questions: { result: question } });
     // UTF-8 bytes are a conservative upper bound for this model's byte-level tokenization.
     // Budget the whole JSON request at 24KB, leaving room below the 32k per-question limit.
