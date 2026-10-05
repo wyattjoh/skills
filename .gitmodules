@@ -21,3 +21,6 @@
 	url = https://github.com/pointfreeco/swift-composable-architecture.git
 	branch = 1.26.2
 	shallow = true
+[submodule ".claude/references/jev-doc-search"]
+	path = .claude/references/jev-doc-search
+	url = https://github.com/VectifyAI/jev-doc-search.git
