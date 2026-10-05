@@ -109,9 +109,12 @@ pre-commit:
   `pre-commit` runs hide unstaged and partially staged hunks before the hook and
   restore them afterward, `stage_fixed: true` stages only the fixer's edits to
   already-staged content, and the hook fails when staging the fixed files errors.
+  Before 2.1.16, a fixer edit that conflicts with an unstaged hunk can also drop
+  unstaged changes in other files
+  ([lefthook#1483](https://github.com/evilmartians/lefthook/pull/1483)).
   Earlier versions, and runs with `--no-stage-fixed`, lack all or part of that
   protection, so an autofixer can pull unstaged work into the commit. Pin
-  `min_version: 2.1.12` in `lefthook.yml` if a command in this config writes files
+  `min_version: 2.1.16` in `lefthook.yml` if a command in this config writes files
   or uses `stage_fixed`.
 - Keep pre-commit fast. Move whole-project analysis that cannot be scoped to staged
   files, such as type checking and test suites, to `pre-push` or CI.
