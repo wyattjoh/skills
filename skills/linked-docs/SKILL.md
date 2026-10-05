@@ -43,7 +43,7 @@ varlock run --path "$SKILL_DIR/" --inject vars -- \
 
 Varlock resolves and validates the key, then injects it into the child process. The search sends the question, index metadata, and candidate excerpts to TypeSafe and incurs API usage. Use public documentation; get permission before transmitting private material.
 
-Split compound requests into focused questions and reuse the cache. Read `--help` for limits and overrides. Inspect a site's index without credentials:
+Split compound requests into focused questions and reuse the cache. Normal searches persist validated Jev answers for identical inputs across processes, reporting fresh spend separately from logical workload. `--refresh` refreshes public documents, not unchanged model inputs. Read `--help` for limits and overrides. Inspect a site's index without credentials:
 
 ```bash
 bun "$SKILL_DIR/scripts/search.ts" https://zed.dev/docs/llms.txt --inspect-index

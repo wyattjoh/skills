@@ -170,6 +170,66 @@ export function menu(nodes: DocNode[]): Record<string, string> {
   return Object.fromEntries(nodes.map((node) => [node.id, description(node)]));
 }
 
+const queryHint = (question: string, text: string): string => {
+  const stop = new Set([
+    "how",
+    "the",
+    "and",
+    "for",
+    "can",
+    "with",
+    "without",
+    "configure",
+    "configuration",
+    "language",
+    "server",
+    "settings",
+  ]);
+  const terms = [...new Set(question.toLowerCase().match(/[\p{L}\p{N}_]+/gu) ?? [])]
+    .filter((term) => term.length >= 3 && !stop.has(term))
+    .slice(0, 64);
+  const lower = text.toLowerCase();
+  let best = 0;
+  let score = 0;
+  for (const term of terms) {
+    let offset = lower.indexOf(term);
+    for (let hit = 0; offset >= 0 && hit < 8; hit++) {
+      const start = Math.max(0, offset - 100);
+      const window = lower.slice(start, start + 380);
+      const matched = terms.filter((candidate) => window.includes(candidate)).length;
+      if (matched > score) {
+        score = matched;
+        best = start;
+      }
+      offset = lower.indexOf(term, offset + term.length);
+    }
+  }
+  return preview(text.slice(best), 380);
+};
+
+/**
+ * Build a bounded metadata hierarchy rather than model-ranking every full-text window.
+ * Query-focused hints help route to facts late in a section without changing evidence.
+ * Leaf IDs address original passages; grouping nodes contain at most 32 siblings.
+ */
+export function passageTree(chunks: Passage[], question: string): DocNode {
+  let sequence = 0;
+  const root: DocNode = {
+    id: "sections",
+    title: "Sections",
+    description: "",
+    url: undefined,
+    children: chunks.map((chunk) => ({
+      id: chunk.id,
+      title: preview(chunk.heading.split(" > ").at(-1)!, 150),
+      description: `${preview(chunk.heading, 180)}\n${queryHint(question, chunk.text)}`,
+      url: undefined,
+      children: [],
+    })),
+  };
+  return balance(root, () => `s${sequence++}`);
+}
+
 /**
  * Split Markdown by real headings and bounded byte windows, preserving opening
  * prose and oversized lines. Every byte of source text belongs to one passage.

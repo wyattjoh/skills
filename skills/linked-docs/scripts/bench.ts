@@ -5,8 +5,8 @@ import { dirname, isAbsolute, join, relative, resolve } from "node:path";
 import { parseArgs } from "node:util";
 import { Console, Effect, Either } from "effect";
 import { EVALS, PROFILES, grade, type EvalCase, type Grade } from "./evals.ts";
-import { createModelCache, modelUsage } from "./model-cache.ts";
-import { createServices, RetrievalError, retrieve, type Policy } from "./retrieve.ts";
+import { createCachedServices, modelUsage } from "./model-cache.ts";
+import { RetrievalError, retrieve, type Policy } from "./retrieve.ts";
 
 /**
  * Request counts measured at the HTTP boundary, including failed attempts.
@@ -224,8 +224,7 @@ export function runBench(
           }
           // Exhausted spend budgets still allow entirely cached evaluations to finish.
           const meter = meteredFetch(budget, fetcher, profileBudgets.get(profile.name));
-          const modelCache = createModelCache(join(options.cache, "jev"), meter.fetcher);
-          const { services } = createServices(
+          const { services, modelCache } = createCachedServices(
             {
               indexUrl: test.index,
               cache: options.cache,
@@ -235,7 +234,7 @@ export function runBench(
               // Also bound logical work per attempt, including cached evaluations.
               maxCalls: options.maxCallsPerProfile,
             },
-            modelCache.fetcher,
+            meter.fetcher,
           );
           const document = services.document;
           services.document = (url) =>

@@ -1,4 +1,4 @@
-import { DEFAULT_POLICY, type Policy } from "./retrieve.ts";
+import { type Policy } from "./retrieve.ts";
 
 /**
  * A human-reviewed source/span expectation, not an AI-generated answer grade.
@@ -15,7 +15,7 @@ export type EvalCase = {
  * Comparable routing budgets with the same evidence threshold and algorithm.
  */
 export const PROFILES: Record<string, Policy> = {
-  baseline: { ...DEFAULT_POLICY },
+  baseline: { beam: 3, pages: 6, threshold: 0.6 },
   balanced: { beam: 2, pages: 3, threshold: 0.6 },
   narrow: { beam: 1, pages: 1, threshold: 0.6 },
 };

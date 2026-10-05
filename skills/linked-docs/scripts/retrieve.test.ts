@@ -114,6 +114,72 @@ describe("bounded retrieval", () => {
     ).toContain("beam 1-8");
   });
 
+  test("a high-scoring distractor page cannot crowd out the answer on another page", async () => {
+    const reference = "https://docs.example.com/docs/reference.md";
+    const guide = "https://docs.example.com/docs/guide.md";
+    const pages: Record<string, string> = {
+      [index]: "# Docs\n- [Reference](reference.md)\n- [Guide](guide.md)",
+      [reference]: Array.from({ length: 80 }, (_, i) => `# Setting ${i}\nUnrelated setting.`).join(
+        "\n\n",
+      ),
+      [guide]: "# Executable override\nbinary path arguments",
+    };
+    const services: Services = {
+      document: (url) => Effect.succeed({ url, text: pages[url] }),
+      choice: (question, options) => {
+        const keys = Object.keys(options);
+        const best =
+          keys.find((key) => /Reference|binary path arguments/.test(options[key])) ?? keys[0];
+        return Effect.succeed(
+          Object.fromEntries(
+            keys.map((key) => [key, key === best ? 0.9 : 0.1 / (keys.length - 1)]),
+          ),
+        );
+      },
+      verify: (question, passage) =>
+        Effect.succeed(passage.text.includes("binary path arguments") ? 0.99 : 0.01),
+    };
+    const result = await Effect.runPromise(
+      retrieve(index, "Executable path and arguments?", services, {
+        beam: 2,
+        pages: 2,
+        threshold: 0.6,
+      }),
+    );
+    expect(result.status).toBe("evidence");
+    expect(result.passages.map((passage) => passage.url)).toEqual([guide]);
+  });
+  test("large-page ranking is bounded by metadata routing rather than every passage window", async () => {
+    let calls = 0;
+    const services: Services = {
+      document: (url) =>
+        Effect.succeed({
+          url,
+          text:
+            url === index
+              ? "# Docs\n- [Settings](settings.md)"
+              : Array.from({ length: 301 }, (_, i) => `# Setting ${i}\nUnrelated.`).join("\n\n"),
+        }),
+      choice: (question, options) => {
+        calls++;
+        const keys = Object.keys(options);
+        return Effect.succeed(Object.fromEntries(keys.map((key) => [key, 1 / keys.length])));
+      },
+      verify: () => Effect.succeed(0.01),
+    };
+    const result = await Effect.runPromise(retrieve(index, "A missing answer", services));
+    expect(result.status).toBe("insufficient_evidence");
+    expect(calls).toBe(2);
+    expect(result.counts.candidates).toBe(2);
+  });
+  test("inclusive distribution tolerance survives floating-point roundoff", () => {
+    expect(
+      choiceProbabilities({ type: "choice", probabilities: { a: 0.99, b: 0 } }, ["a", "b"]),
+    ).toEqual({ a: 0.99, b: 0 });
+    expect(() =>
+      choiceProbabilities({ type: "choice", probabilities: { a: 0.98, b: 0 } }, ["a", "b"]),
+    ).toThrow("Invalid Choice distribution");
+  });
   test("malformed Choice output fails instead of fabricating scores", () => {
     expect(
       choiceProbabilities({ type: "choice", probabilities: { a: 0.4, b: 0.6 } }, ["a", "b"]),

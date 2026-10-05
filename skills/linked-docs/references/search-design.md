@@ -21,24 +21,24 @@ The index is a routing tree over a site's link graph. Fetches stay on its origin
 
 Routing uses only metadata. A Choice distribution compares its options and always assigns a winner; it does not establish that any option answers the question. Keeping multiple branches reduces early-pruning risk, but finite beam width still limits recall.
 
-Path scores are geometric means, avoiding systematic preference for shallow heading trees. They are routing heuristics, not calibrated probabilities of correctness. Excerpt windows use local Choice probabilities multiplied by their page's route score. Scores from separate windows need not be comparable; independent Noul checks supply the final cross-candidate ordering. Only 16 shortlisted excerpts are checked, so a shortlist can still miss an answer.
+Path scores are geometric means, avoiding systematic preference for shallow heading trees. They are routing heuristics, not calibrated probabilities of correctness. Selected pages get a balanced, 32-option section-metadata tree. Heading paths and query-focused source hints route down one grouping branch, then retain its two best original passages. Hints are routing metadata, never substitute evidence. Choice scores from unrelated menus are not globally comparable: each page's best candidate gets a verification slot before any page's second candidate. Independent Noul checks supply the final cross-candidate ordering, bounded to 16 checks. Early grouping choices and split facts can still limit recall.
 
 The 0.6 evidence threshold is a conservative starting policy, not an evaluated accuracy guarantee. Validate it against representative questions before treating it as an application gate. No-match candidates remain labeled unverified, even when they are the best available. Check caveats and context before using accepted snippets.
 
 ## Budgets and reuse
 
-Defaults retain three open branches, fetch up to six selected pages, and return up to three accepted excerpts (or two unverified fallback excerpts). Four 3500-byte excerpts form each page-level Choice window. Routing descriptions are shortened; evidence is split into exact slices, never silently truncated.
+Defaults retain two open branches, fetch up to three selected pages, and return up to three accepted excerpts (or two unverified fallback excerpts). Section routing sends bounded metadata rather than ranking every full-text window. Evidence is split into exact, at-most-3500-byte slices, never silently truncated. A 301-passage page needs two metadata Choices rather than 75 window Choices.
 
 Application limits deliberately sit below the documented TypeSafe limits:
 
 - Up to 32 menu options, compared with the API's maximum of 255 per Choice.
 - Whole serialized request at most 24,000 UTF-8 bytes, a conservative token-budget guard with room below the documented 32k limit for state plus longest question. Metadata escaping can still exceed it; such a request fails explicitly.
-- At most 64 model calls and 13 document fetches per run, including the index.
+- At most 64 logical model evaluations and 13 document fetches per run, including the index. Cached judgments count toward logical work, not fresh API usage.
 - At most 16 routing levels, three simultaneous jobs, and three redirects per document.
 - At most 2,000,000 downloaded bytes per document and 100,000 per API response.
 - A 20-second request/body deadline and 180-second run deadline. A service failure or exhausted model-call budget fails the search rather than manufacturing results.
 
-Public documents are cached by URL for 24 hours; `--refresh` bypasses reuse. The cache holds source bodies and fetch timestamps, not API keys or question judgments. Model decisions run again for each question. Cached content is not proof of current documentation when the user's requested version or an observed behavior conflicts with it.
+Public documents are cached by URL for 24 hours; `--refresh` bypasses document reuse. Both normal searches and benchmarks persist validated Jev answers in `<cache>/jev/`. Exact endpoint and serialized input hashes include model, question, state, instructions, criteria, and question IDs, not headers or credentials. Identical inputs reuse answers across processes; changed inputs miss naturally. Invalid answers and HTTP errors are never persisted. Model entries do not expire: use a different cache directory for an explicitly approved fresh-inference run. Cache I/O failures fail closed. Normal-search metrics distinguish fresh calls/input tokens from logical workload and model-cache hits. Cached content is not proof of current documentation when the user's requested version or an observed behavior conflicts with it.
 
 ## Diagnosis
 

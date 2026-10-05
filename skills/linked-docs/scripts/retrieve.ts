@@ -1,7 +1,15 @@
 import { Data, Effect, Schema } from "effect";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
-import { docUrl, menu, parseIndex, passages, type DocNode, type Passage } from "./documents.ts";
+import {
+  docUrl,
+  menu,
+  parseIndex,
+  passages,
+  passageTree,
+  type DocNode,
+  type Passage,
+} from "./documents.ts";
 
 /**
  * Expected retrieval failure, safe to report without credentials or response bodies.
@@ -32,10 +40,10 @@ export type Policy = {
 };
 
 /**
- * Conservative defaults: retain three branches, fetch six pages, verify 16
- * candidate passages, and return at most three excerpts. All stages are bounded.
+ * Evaluated development default: retain two branches, fetch three pages,
+ * verify at most two passages per page, and return up to three excerpts.
  */
-export const DEFAULT_POLICY: Policy = { beam: 3, pages: 6, threshold: 0.6 };
+export const DEFAULT_POLICY: Policy = { beam: 2, pages: 3, threshold: 0.6 };
 
 /**
  * Search one documentation index, then selected pages, then independently check
@@ -128,39 +136,41 @@ export function retrieve(
             return [];
           }
           const chunks = passages(result.document.text, result.document.url);
-          const hits: { passage: Passage; routeScore: number }[] = [];
-          // Four <=3500-byte excerpts plus question fit the conservative request budget.
-          for (let i = 0; i < chunks.length; i += 4) {
-            const window = chunks.slice(i, i + 4);
-            const options = Object.fromEntries(
-              window.map((passage) => [passage.id, `${passage.heading}\n${passage.text}`]),
-            );
+          let node = passageTree(chunks, question);
+          for (let depth = 0; node.children.length; depth++) {
+            if (depth === 16)
+              return yield* Effect.fail(
+                new RetrievalError({ message: "Page exceeds the 16-level section routing budget" }),
+              );
+            const children = node.children;
             const probabilities =
-              window.length === 1
-                ? { [window[0].id]: 1 }
-                : yield* services.choice(question, options);
-            hits.push(
-              ...window
-                .map((passage) => ({ passage, routeScore: path.score * probabilities[passage.id] }))
-                .toSorted((a, b) => b.routeScore - a.routeScore)
-                .slice(0, 2),
-            );
+              children.length === 1
+                ? { [children[0].id]: 1 }
+                : yield* services.choice(question, menu(children));
+            const ranked = children.toSorted((a, b) => probabilities[b.id] - probabilities[a.id]);
+            if (ranked[0].children.length) {
+              node = ranked[0];
+              continue;
+            }
+            const byId = new Map(chunks.map((chunk) => [chunk.id, chunk]));
+            return ranked.slice(0, 2).map((child) => byId.get(child.id)!);
           }
-          return hits;
+          return [];
         }),
       { concurrency: 3 },
     );
-    const candidates = pageResults
-      .flat()
-      .toSorted((a, b) => b.routeScore - a.routeScore)
+    // Relative Choice scores from unrelated menus are not globally comparable.
+    // Reserve each page's best candidate before considering its second candidate.
+    const candidates = [0, 1]
+      .flatMap((rank) => pageResults.flatMap((page) => (page[rank] ? [page[rank]] : [])))
       .slice(0, 16);
     const checked = yield* Effect.forEach(
       candidates,
       (candidate) =>
         Effect.gen(function* () {
-          const probability = yield* services.verify(question, candidate.passage);
+          const probability = yield* services.verify(question, candidate);
           return {
-            ...candidate.passage,
+            ...candidate,
             relevance: probability,
             verified: probability >= policy.threshold,
           };
@@ -225,7 +235,7 @@ export function choiceProbabilities(value: unknown, keys: string[]): Record<stri
   if (
     JSON.stringify(received) !== JSON.stringify([...keys].toSorted()) ||
     Object.values(probabilities).some((p) => !Number.isFinite(p) || p < 0 || p > 1) ||
-    Math.abs(Object.values(probabilities).reduce((a, b) => a + b, 0) - 1) > 0.01
+    Math.abs(Object.values(probabilities).reduce((a, b) => a + b, 0) - 1) > 0.01 + 1e-12
   ) {
     throw new Error("Invalid Choice distribution");
   }

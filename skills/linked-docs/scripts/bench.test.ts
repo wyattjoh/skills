@@ -5,6 +5,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { meteredFetch, parseBenchArgs, runBench, summarize, type BenchOptions } from "./bench.ts";
 import { EVALS, PROFILES, grade, type EvalCase, type EvidenceResult } from "./evals.ts";
+import { DEFAULT_POLICY } from "./retrieve.ts";
 
 const source = "https://docs.example.com/settings.md";
 const expected: EvalCase["expected"] = {
@@ -16,6 +17,12 @@ const result = (text = "binary arguments", url = source, verified = true): Evide
   status: "evidence",
   warnings: [],
   passages: [{ url, text, verified }],
+});
+
+test("the evaluated default is balanced while the historical baseline stays fixed", () => {
+  expect(DEFAULT_POLICY).toEqual({ beam: 2, pages: 3, threshold: 0.6 });
+  expect(PROFILES.balanced).toEqual(DEFAULT_POLICY);
+  expect(PROFILES.baseline).toEqual({ beam: 3, pages: 6, threshold: 0.6 });
 });
 
 describe("gold labels", () => {

@@ -3,7 +3,8 @@ import { parseArgs } from "node:util";
 import { resolve } from "node:path";
 import { Console, Effect } from "effect";
 import { docUrl, parseIndex } from "./documents.ts";
-import { createServices, DEFAULT_POLICY, RetrievalError, retrieve } from "./retrieve.ts";
+import { DEFAULT_POLICY, RetrievalError, retrieve } from "./retrieve.ts";
+import { createCachedServices } from "./model-cache.ts";
 
 const HELP = `Usage: bun scripts/search.ts <https://site/docs/llms.txt> "question" [options]
        bun scripts/search.ts <https://site/docs/llms.txt> --inspect-index
@@ -11,18 +12,19 @@ const HELP = `Usage: bun scripts/search.ts <https://site/docs/llms.txt> "questio
 Jev search requires TYPESAFE_API_KEY validated and injected by varlock.
 Run through varlock run --path <skill-dir>/ --inject vars -- bun <script> ...
 Only selected public pages are fetched.
---cache <dir>       Public-doc cache (default: .scratch/linked-docs-cache)
+--cache <dir>       Public docs and persistent Jev answers (default: .scratch/linked-docs-cache)
 --refresh           Bypass the 24-hour document cache
 --model <id>        TypeSafe model (default: jev-1.13.0)
---beam <1-8>        Open routing branches (default: 3)
---pages <1-12>      Maximum selected pages (default: 6)
+--beam <1-8>        Open routing branches (default: 2)
+--pages <1-12>      Maximum selected pages (default: 3)
 --threshold <0-1>   Independent evidence threshold (default: 0.6)
 --inspect-index     Parse live index and print counts without model calls
 --help              Show this help
 
 JSON output contains exact excerpts, URLs, offsets, routing trace, and usage.
 Exit codes: 0 evidence (or inspection), 1 failure, 2 insufficient evidence.
-Limits: 64 model calls, 20s/request, 180s/run, 2MB/document, 16 checks.
+Identical Jev inputs reuse cached answers; usage separates logical and fresh calls.
+Limits: 64 logical model evaluations, 20s/request, 180s/run, 2MB/document, 16 checks.
 `;
 
 const main = Effect.gen(function* () {
@@ -61,7 +63,7 @@ const main = Effect.gen(function* () {
       }),
     );
   }
-  const { services, metrics } = createServices({
+  const { services, metrics, modelCache } = createCachedServices({
     indexUrl,
     cache: resolve(args.values.cache ?? ".scratch/linked-docs-cache"),
     refresh: args.values.refresh ?? false,
@@ -95,8 +97,16 @@ const main = Effect.gen(function* () {
     beam: Number(args.values.beam ?? DEFAULT_POLICY.beam),
     pages: Number(args.values.pages ?? DEFAULT_POLICY.pages),
     threshold: Number(args.values.threshold ?? DEFAULT_POLICY.threshold),
-  });
-  yield* Console.log(JSON.stringify({ ...result, metrics }, null, 2));
+  }).pipe(Effect.ensuring(Effect.promise(() => modelCache.drain())));
+  const usage = {
+    ...metrics,
+    calls: modelCache.metrics.requests - modelCache.metrics.hits,
+    logicalCalls: modelCache.metrics.requests,
+    modelCacheHits: modelCache.metrics.hits,
+    inputTokens: metrics.inputTokens - modelCache.metrics.inputTokens,
+    logicalInputTokens: metrics.inputTokens,
+  };
+  yield* Console.log(JSON.stringify({ ...result, metrics: usage }, null, 2));
   if (result.status === "insufficient_evidence") process.exitCode = 2;
 });
 

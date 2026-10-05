@@ -1,9 +1,41 @@
 import { describe, expect, test } from "bun:test";
-import { docUrl, menu, parseIndex, passages, preview, type DocNode } from "./documents.ts";
+import {
+  docUrl,
+  menu,
+  parseIndex,
+  passages,
+  passageTree,
+  preview,
+  type DocNode,
+} from "./documents.ts";
 
 const base = "https://docs.example.com/docs/llms.txt";
 const leaves = (node: DocNode): DocNode[] => (node.url ? [node] : node.children.flatMap(leaves));
 const sizes = (node: DocNode): number[] => [node.children.length, ...node.children.flatMap(sizes)];
+const ids = (node: DocNode): string[] =>
+  node.children.length ? node.children.flatMap(ids) : [node.id];
+
+describe("section metadata", () => {
+  test("preserves every passage ID in bounded menus", () => {
+    const chunks = passages(
+      Array.from({ length: 301 }, (_, i) => `# Setting ${i}\nDetail`).join("\n\n"),
+      base,
+    );
+    const root = passageTree(chunks, "A question");
+    expect(ids(root)).toEqual(chunks.map((chunk) => chunk.id));
+    expect(Math.max(...sizes(root))).toBe(32);
+    expect(
+      Math.max(...Object.values(menu(root.children)).map((text) => Buffer.byteLength(text))),
+    ).toBeLessThanOrEqual(600);
+  });
+  test("late facts appear in metadata while evidence keeps its exact source", () => {
+    const text = `# Options\n${"Introductory prose. ".repeat(100)}\nbinary path arguments`;
+    const chunks = passages(text, base);
+    const root = passageTree(chunks, "Binary path and arguments?");
+    expect(root.children[0].description.includes("binary path arguments")).toBe(true);
+    expect(chunks[0].text).toBe(text);
+  });
+});
 
 describe("index parsing", () => {
   test("preserves headings, opening links, relative URLs, and reference links", () => {

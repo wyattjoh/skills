@@ -38,8 +38,8 @@ varlock run --path "$SKILL_DIR/" --inject vars -- \
 
 The three profiles use the same 0.6 threshold:
 
-- `baseline`: current defaults, beam 3 and up to 6 pages.
-- `balanced`: beam 2 and up to 3 pages.
+- `baseline`: fixed original policy, beam 3 and up to 6 pages, independent of later default changes.
+- `balanced`: selected default, beam 2 and up to 3 pages.
 - `narrow`: beam 1 and up to 1 page.
 
 Use `--case` and `--profiles` to focus experiments. `--repeat 2` rotates profile order and replays the same cached judgments, useful for verifying cache reuse and measuring replay latency. These are deterministic replays, not independent model-quality samples.
@@ -69,11 +69,25 @@ Usage totals cover responses that supplied valid usage fields; a missing usage r
 
 Bodies are pinned in memory on first access during a run, backed by the existing 24-hour disk cache. Document hashes help spot corpus drift across runs; preserve the public-doc cache if you need to replay its content. The runner does not copy the whole docs site.
 
-The **benchmark** persists validated Jev Choice and Noul answers under `<cache>/jev/`, with atomic writes and in-flight deduplication. SHA-256 keys cover the endpoint and exact serialized request, including model, state, instructions, criteria, and question IDs. Identical inputs reuse the same judgment across profiles, repetitions, and later processes. Changed inputs miss naturally. Model entries do not expire; use a different `--cache` directory for an explicitly approved fresh-inference experiment. The pinned model is important for reproducibility.
+Both normal searches and the benchmark persist validated Jev Choice and Noul answers under `<cache>/jev/`, with atomic writes and in-flight deduplication. SHA-256 keys cover the endpoint and exact serialized request, including model, state, instructions, criteria, and question IDs. Identical inputs reuse the same judgment across profiles, repetitions, and later processes. Changed inputs miss naturally. Model entries do not expire; use a different `--cache` directory for an explicitly approved fresh-inference experiment. The pinned model is important for reproducibility.
 
-Only validated answers and usage are stored, not credentials, request headers, or plaintext inputs. Corrupt entries are misses; invalid model responses and HTTP errors are not persisted. Unreadable caches or failed writes stop the affected attempt rather than silently spending without caching. Normal `search.ts` remains unchanged and caches public docs only.
+Only validated answers and usage are stored, not credentials, request headers, or plaintext inputs. Corrupt entries are misses; invalid model responses and HTTP errors are not persisted. Unreadable caches or failed writes stop the affected attempt rather than silently spending without caching. Normal `search.ts` uses the same cached service boundary and reports fresh versus logical calls/input tokens and model-cache hits.
 
 Cold document fetches, live inference, and warm model-cache reads have different latency profiles. Compare logical workload and quality to select a policy; fresh-call counts instead measure actual incremental spend. Single-run timings and tiny samples do not establish stable quality or speed improvements.
+
+## Evaluated default
+
+On the six-case Zed development suite, with `jev-1.13.0` and the section-routing/page-diverse retriever:
+
+| Profile        | Positive hits | Correct abstentions | Errors | Logical calls | Nominal input tokens |
+| -------------- | ------------- | ------------------- | ------ | ------------- | -------------------- |
+| baseline (3/6) | 4/4           | 2/2                 | 0      | 153           | 157,710              |
+| balanced (2/3) | 4/4           | 2/2                 | 0      | 88            | 97,520               |
+| narrow (1/1)   | 2/4           | 2/2                 | 0      | 35            | 39,829               |
+
+Balanced is the default: it retained all four gold spans and both abstentions with 42% fewer logical calls and 38% fewer nominal input tokens than the original-width baseline. Narrow missed executable overrides and Python indentation, so its lower cost did not justify promotion. Accepted excerpts were reviewed, including useful alternative configuration paths that do not count as exact gold-source matches. The original binary-query baseline needed 126 logical calls and missed the guide; section routing and page diversity now find it in 27.
+
+The final variant's full matrix used 35 fresh requests and 241 reuses, with no operational errors. Optimization runs spent 173 fresh requests in total; subsequent full-matrix and production-CLI replays used none. Fresh counts reflect balanced-first cache sharing, not intrinsic policy cost. Timing is not a cold-speed ranking. This small development suite supports the default tradeoff, not a general accuracy guarantee or independently sampled repetitions.
 
 ## Optimization loop
 

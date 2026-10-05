@@ -2,7 +2,13 @@ import { createHash, randomUUID } from "node:crypto";
 import { mkdir, readFile, rename, stat, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { Schema } from "effect";
-import { choiceProbabilities, noulProbability, readBody } from "./retrieve.ts";
+import {
+  choiceProbabilities,
+  createServices,
+  noulProbability,
+  readBody,
+  type NetworkOptions,
+} from "./retrieve.ts";
 
 const endpoint = "https://api.typesafe.ai/v1/systemone";
 const entrySchema = Schema.Struct({
@@ -172,4 +178,17 @@ export function createModelCache(
     }
   };
   return { fetcher, metrics, drain: () => Promise.allSettled(pending.values()) };
+}
+
+/**
+ * Construct the shared cached retrieval boundary for CLI searches and evaluations.
+ * Public documents and validated model answers share the caller's cache directory.
+ * The injected fetch implementation can enforce fresh-call budgets before dispatch.
+ */
+export function createCachedServices(
+  options: NetworkOptions,
+  implementation: (url: string, init: RequestInit) => Promise<Response> = fetch,
+) {
+  const modelCache = createModelCache(join(options.cache, "jev"), implementation);
+  return { ...createServices(options, modelCache.fetcher), modelCache };
 }
