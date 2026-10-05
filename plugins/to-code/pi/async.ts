@@ -381,7 +381,10 @@ export const createAsyncFleetAdapter = (
       name,
       label: name,
       description,
-      parameters: Type.Unsafe<Record<string, unknown>>(Schema.toJsonSchemaDocument(schema).schema),
+      parameters:
+        name === "fleet_status"
+          ? Type.Object({})
+          : Type.Unsafe<Record<string, unknown>>(Schema.toJsonSchemaDocument(schema).schema),
       async execute(_id, params, signal, _update, ctx) {
         try {
           return result(await execute(decode(params), ctx, signal));

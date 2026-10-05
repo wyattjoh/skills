@@ -12,6 +12,7 @@ import { fleetStorage } from "./storage.ts";
 type Handler = (event: unknown, ctx: unknown) => Promise<unknown> | unknown;
 type Tool = {
   name: string;
+  parameters: Record<string, unknown>;
   execute: (...args: unknown[]) => Promise<{ content: { text: string }[]; isError: boolean }>;
 };
 type Message = { customType: string; content: string; details: unknown };
@@ -141,6 +142,17 @@ const fixture = async () => {
   if (worker === undefined || workerAdapter === undefined) throw new Error("Worker not started");
   const run = await fleetStorage(directory).read();
   const record = run.workers[0]!;
+  expect(worker.tools.map((entry) => entry.name)).toEqual([
+    "fleet_question",
+    "fleet_report",
+    "fleet_request_review",
+    "fleet_status",
+  ]);
+  for (const entry of worker.tools) expect(entry.parameters.type).toBe("object");
+  expect(worker.tools.find((entry) => entry.name === "fleet_status")?.parameters).toMatchObject({
+    properties: {},
+    type: "object",
+  });
   return {
     repository,
     coordinator,
