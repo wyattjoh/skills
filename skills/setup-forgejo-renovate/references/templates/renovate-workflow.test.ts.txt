@@ -1,0 +1,201 @@
+import { expect, test } from "bun:test";
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
+import { runInNewContext } from "node:vm";
+import { spawnSync } from "node:child_process";
+
+const workflow = Bun.YAML.parse(
+  readFileSync(
+    join(import.meta.dir, "..", ".forgejo/workflows/renovate.yml"),
+    "utf8",
+  ),
+) as {
+  on: Record<string, unknown>;
+  permissions: Record<string, never>;
+  concurrency: { group: string; "cancel-in-progress": boolean };
+  jobs: {
+    renovate: {
+      if: string | undefined;
+      steps: { uses: string | undefined; run: string | undefined }[];
+    };
+  };
+};
+
+const fixture = (eventName: string, actor = "__AUTHORIZED_ACTOR__") => ({
+  event_name: eventName,
+  actor,
+  event: {
+    action: "edited",
+    issue: {
+      title: "Dependency Dashboard",
+      state: "open",
+      user: { login: "__BOT_LOGIN__" },
+      body: "- [x] Retry this update",
+    },
+    pull_request: {
+      state: "open",
+      user: { login: "__BOT_LOGIN__" },
+      base: { ref: "__DEFAULT_BRANCH__" },
+      body: "- [x] Rebase this PR",
+    },
+  },
+});
+
+// Evaluate the boolean/string-contains subset used by this trusted workflow
+// directly, rather than duplicating its guard. Actionlint checks expression
+// syntax separately; this is not a general Forgejo expression interpreter.
+function runs(context: ReturnType<typeof fixture>): boolean {
+  if (!Object.hasOwn(workflow.on, context.event_name)) return false;
+  const trigger = workflow.on[context.event_name] as {
+    types: string[] | undefined;
+  } | null;
+  if (trigger?.types && !trigger.types.includes(context.event.action))
+    return false;
+  if (!workflow.jobs.renovate.if) return true;
+  const expression = workflow.jobs.renovate.if
+    .trim()
+    .replace(/^\$\{\{\s*/, "")
+    .replace(/\s*\}\}$/, "");
+  return Boolean(
+    runInNewContext(
+      expression,
+      {
+        github: context,
+        contains: (value: string, substring: string) =>
+          value.toLowerCase().includes(substring.toLowerCase()),
+      },
+      { timeout: 100 },
+    ),
+  );
+}
+
+test("owner checkbox edits trigger dashboard and Renovate PR processing", () => {
+  expect(runs(fixture("issues"))).toBe(true);
+  expect(runs(fixture("pull_request_target"))).toBe(true);
+  const uppercase = fixture("issues");
+  uppercase.event.issue.body = "- [X] Retry this update";
+  expect(runs(uppercase)).toBe(true);
+});
+
+test("bot and other users cannot trigger edit-driven runs", () => {
+  for (const event of ["issues", "pull_request_target"]) {
+    for (const actor of ["__BOT_LOGIN__", "__AUTHORIZED_ACTOR__-other"]) {
+      expect(runs(fixture(event, actor))).toBe(false);
+    }
+  }
+});
+
+test("unrelated issues, PRs, unchecked bodies, and other actions are ignored", () => {
+  const changes: [string, (context: ReturnType<typeof fixture>) => void][] = [
+    [
+      "issues",
+      (c) => {
+        c.event.issue.title = "Unrelated issue";
+      },
+    ],
+    [
+      "issues",
+      (c) => {
+        c.event.issue.user.login = "__AUTHORIZED_ACTOR__";
+      },
+    ],
+    [
+      "issues",
+      (c) => {
+        c.event.issue.state = "closed";
+      },
+    ],
+    [
+      "issues",
+      (c) => {
+        c.event.issue.body = "- [ ] Retry this update";
+      },
+    ],
+    [
+      "pull_request_target",
+      (c) => {
+        c.event.pull_request.user.login = "__AUTHORIZED_ACTOR__";
+      },
+    ],
+    [
+      "pull_request_target",
+      (c) => {
+        c.event.pull_request.base.ref = "__DEFAULT_BRANCH__-other";
+      },
+    ],
+    [
+      "pull_request_target",
+      (c) => {
+        c.event.pull_request.state = "closed";
+      },
+    ],
+    [
+      "pull_request_target",
+      (c) => {
+        c.event.pull_request.body = "- [ ] Rebase this PR";
+      },
+    ],
+    [
+      "issues",
+      (c) => {
+        c.event.action = "opened";
+      },
+    ],
+    [
+      "pull_request_target",
+      (c) => {
+        c.event.action = "synchronize";
+      },
+    ],
+  ];
+  for (const [event, change] of changes) {
+    const context = fixture(event);
+    change(context);
+    expect(runs(context)).toBe(false);
+  }
+});
+
+test("manual and scheduled runs stay available and are serialized", () => {
+  expect(runs(fixture("workflow_dispatch"))).toBe(true);
+  expect(runs(fixture("schedule", "__BOT_LOGIN__"))).toBe(true);
+  expect(workflow.concurrency).toEqual({
+    group: "renovate",
+    "cancel-in-progress": false,
+  });
+});
+
+test("PR edit runs cannot check out or execute PR-controlled code", () => {
+  expect(workflow.permissions).toEqual({});
+  expect(workflow.on.pull_request_target).toEqual({
+    types: ["edited"],
+    branches: ["__DEFAULT_BRANCH__"],
+  });
+  expect(Object.hasOwn(workflow.on, "pull_request")).toBe(false);
+  for (const step of workflow.jobs.renovate.steps) {
+    expect(step.uses).toBeUndefined();
+    expect(step.run?.includes("forgejo.event")).toBe(false);
+    expect(step.run?.includes("github.event")).toBe(false);
+    expect(step.run?.includes("checkout")).toBe(false);
+  }
+});
+
+test("missing secrets fail before any tools are provisioned", () => {
+  const script = workflow.jobs.renovate.steps[0].run;
+  expect(typeof script).toBe("string");
+  for (const [forgejoToken, githubToken, message] of [
+    ["", "", "Set the RENOVATE_TOKEN Actions secret"],
+    ["fixture-not-a-token", "", "Set the RENOVATE_GITHUB_COM_TOKEN Actions secret"],
+  ]) {
+    const result = spawnSync("sh", ["-eu", "-c", script!], {
+      encoding: "utf8",
+      timeout: 5000,
+      env: {
+        ...process.env,
+        RENOVATE_TOKEN: forgejoToken,
+        RENOVATE_GITHUB_COM_TOKEN: githubToken,
+      },
+    });
+    expect(result.status).toBe(1);
+    expect(result.stderr.includes(message)).toBe(true);
+  }
+});

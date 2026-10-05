@@ -158,6 +158,7 @@ Restart Claude Code after adding or changing an agent definition.
 | resticprofile                 | Operate the resticprofile CLI for restic backups                                   |
 | screenshots                   | Capture app windows atomically without disrupting the user's desktop               |
 | setup-alchemy                 | Bootstrap Alchemy Cloudflare deploys from Forgejo or GitHub CI                     |
+| setup-forgejo-renovate        | Set up Cargo and Forgejo Actions updates with guarded checkbox triggers            |
 | setup-pre-commit-hooks        | Set up polyglot Git hooks for Rust and TypeScript/Bun checks                       |
 | setup-project-memory          | Capture a session learning into .claude/memory, indexed and wired into CLAUDE.md   |
 | simplify-skill                | Simplify skills around goals through an interview and approved rewrite             |

@@ -1,0 +1,80 @@
+name: Renovate
+
+on:
+  schedule:
+    - cron: "__WEEKLY_CRON__"
+      timezone: "__TIMEZONE__"
+  workflow_dispatch:
+  issues:
+    types: [edited]
+  # Use the trusted base-branch workflow and secrets; never execute PR code.
+  pull_request_target:
+    types: [edited]
+    branches: ["__DEFAULT_BRANCH__"]
+
+permissions: {}
+
+concurrency:
+  group: renovate
+  cancel-in-progress: false
+
+jobs:
+  renovate:
+    # Only the owner can request immediate work. Bot-authored edits must not
+    # retrigger Renovate, and unrelated issues/PRs must not consume a runner.
+    if: >-
+      github.event_name == 'schedule' ||
+      github.event_name == 'workflow_dispatch' ||
+      (github.actor == '__AUTHORIZED_ACTOR__' && github.event.action == 'edited' &&
+        ((github.event_name == 'issues' &&
+          github.event.issue.user.login == '__BOT_LOGIN__' &&
+          github.event.issue.title == 'Dependency Dashboard' &&
+          github.event.issue.state == 'open' &&
+          contains(github.event.issue.body, '[x]')) ||
+         (github.event_name == 'pull_request_target' &&
+          github.event.pull_request.user.login == '__BOT_LOGIN__' &&
+          github.event.pull_request.base.ref == '__DEFAULT_BRANCH__' &&
+          github.event.pull_request.state == 'open' &&
+          contains(github.event.pull_request.body, '[x]'))))
+    runs-on: "__RUNNER_LABEL__"
+    timeout-minutes: 60
+    # Characterized Nix image and Renovate package; update their pins together.
+    # nixos/nix:2.35.1, pinned as a multi-architecture image index.
+    container:
+      image: docker.io/nixos/nix@sha256:377d4887aca98f0dfa12971c1ea6d6a625a435d8b610d4c95a436843da6fbfd1
+    env:
+      NIX_CONFIG: experimental-features = nix-command flakes
+      TOOL_NIXPKGS: github:NixOS/nixpkgs/e554fab72f81915600f3f449b786fd9af40439a5
+      RENOVATE_PLATFORM: forgejo
+      RENOVATE_REPOSITORY: "__REPOSITORY__"
+      RENOVATE_ENDPOINT: "__FORGEJO_ORIGIN__/api/v1"
+      # The synthetic forgejo-actions identity cannot be Renovate's PR author.
+      RENOVATE_TOKEN: ${{ secrets.RENOVATE_TOKEN }}
+      # GitHub-hosted Actions and changelogs need public-repository API access.
+      RENOVATE_GITHUB_COM_TOKEN: ${{ secrets.RENOVATE_GITHUB_COM_TOKEN }}
+      RENOVATE_ONBOARDING: "false"
+      RENOVATE_REQUIRE_CONFIG: required
+      RENOVATE_VERSION: "44.79.2"
+      RENOVATE_BINARY_SOURCE: global
+      LOG_LEVEL: info
+    steps:
+      - name: Update this repository
+        # rustup supplies Cargo using the cloned repo's rust-toolchain.toml;
+        # lock-file updates do not build the application or cr-sqlite.
+        run: |
+          if [ -z "$RENOVATE_TOKEN" ]; then
+            echo "Set the RENOVATE_TOKEN Actions secret for the renovate bot." >&2
+            exit 1
+          fi
+          if [ -z "$RENOVATE_GITHUB_COM_TOKEN" ]; then
+            echo "Set the RENOVATE_GITHUB_COM_TOKEN Actions secret for public GitHub lookups." >&2
+            exit 1
+          fi
+          # Expand the version check inside the provisioned Nix shell, not here.
+          # shellcheck disable=SC2016
+          nix shell \
+            "${TOOL_NIXPKGS}#renovate" \
+            "${TOOL_NIXPKGS}#nodejs_24" \
+            "${TOOL_NIXPKGS}#rustup" \
+            "${TOOL_NIXPKGS}#git" \
+            -c sh -ceu 'test "$(renovate --version)" = "$RENOVATE_VERSION"; exec renovate "$RENOVATE_REPOSITORY"'

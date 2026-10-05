@@ -141,6 +141,10 @@
         "effect": "4.0.0",
       },
     },
+    "skills/setup-forgejo-renovate": {
+      "name": "@wyattjoh/setup-forgejo-renovate-skill",
+      "version": "1.0.0",
+    },
     "skills/workspaces": {
       "name": "@wyattjoh/workspaces-skill",
       "version": "1.0.0",
@@ -635,6 +639,8 @@
     "@wyattjoh/reference-submodules-skill": ["@wyattjoh/reference-submodules-skill@workspace:skills/reference-submodules"],
 
     "@wyattjoh/setup-alchemy-skill": ["@wyattjoh/setup-alchemy-skill@workspace:skills/setup-alchemy"],
+
+    "@wyattjoh/setup-forgejo-renovate-skill": ["@wyattjoh/setup-forgejo-renovate-skill@workspace:skills/setup-forgejo-renovate"],
 
     "@wyattjoh/to-code-plugin": ["@wyattjoh/to-code-plugin@workspace:plugins/to-code"],
 
