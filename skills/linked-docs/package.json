@@ -1,0 +1,14 @@
+{
+  "name": "@wyattjoh/linked-docs-skill",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "bun test",
+    "search": "bun scripts/search.ts"
+  },
+  "dependencies": {
+    "effect": "^3.22.2",
+    "marked": "^16.4.2"
+  }
+}
