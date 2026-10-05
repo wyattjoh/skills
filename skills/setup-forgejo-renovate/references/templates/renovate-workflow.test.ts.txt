@@ -179,7 +179,7 @@ test("PR edit runs cannot check out or execute PR-controlled code", () => {
   }
 });
 
-test("missing secrets fail before any tools are provisioned", () => {
+test("missing secrets fail before Renovate starts", () => {
   const script = workflow.jobs.renovate.steps[0].run;
   expect(typeof script).toBe("string");
   for (const [forgejoToken, githubToken, message] of [

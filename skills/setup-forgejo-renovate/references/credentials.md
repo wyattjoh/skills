@@ -21,6 +21,8 @@ Classify each secret referenced by the workflow as repository-scoped, inherited 
 
 Use `forgejo` CLI agent mode with explicit host and repository for supported operations, and follow its approval grant flow for mutations. Confirm collaborator permission separately from token scope: neither substitutes for the other.
 
+Inspect the target's registry requirements separately. Add private-registry host rules and credential references only when its dependencies need them, with operator approval.
+
 Done when the job has both credentials at an available scope and authenticates as the confirmed bot. The workflow's empty-secret errors prove only that values were not injected, not that populated tokens have correct permissions.
 
 Primary references: [Renovate Forgejo permissions](https://docs.renovatebot.com/modules/platform/forgejo/), [GitHub lookup token](https://docs.renovatebot.com/getting-started/running/#githubcom-token-for-changelogs-and-tools), [Forgejo token creation](https://forgejo.org/docs/latest/user/api-usage/).

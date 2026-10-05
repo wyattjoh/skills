@@ -1,6 +1,6 @@
 # Template adaptation
 
-This bundle targets Rust/Cargo and Forgejo Actions. For another ecosystem, expand the design with the operator rather than silently adding managers or replacing an existing setup.
+This bundle supplies a generic, review-only policy and a Forgejo runner. Adapt dependency coverage to the target repository's manifests and existing exclusions, not the repository this template originated from.
 
 ## Bindings
 
@@ -13,7 +13,7 @@ Replace these markers consistently in the workflow, dependency policy, and copie
 | `__DEFAULT_BRANCH__`   | Actual default branch, also the only allowed PR target         |
 | `__AUTHORIZED_ACTOR__` | Approved human maintainer login, not the bot                   |
 | `__BOT_LOGIN__`        | Real Forgejo Renovate account login                            |
-| `__RUNNER_LABEL__`     | A registered label that supports job-level containers          |
+| `__RUNNER_LABEL__`     | A registered label that supports Linux job-level containers    |
 | `__TIMEZONE__`         | Confirmed IANA timezone, such as `Etc/UTC`                     |
 | `__WEEKLY_CRON__`      | Confirmed five-field weekly cron expression                    |
 
@@ -21,28 +21,21 @@ Keep replacements as YAML/JSON/string data with correct escaping. Reject multili
 
 ## Runner and tools
 
-The workflow uses the Nix image index and immutable nixpkgs/Renovate pins characterized by the working setup. These are a reproducible baseline, not automatically current versions. Verify the resolved binary matches `RENOVATE_VERSION`; move its package source and expected version together when updating.
+The workflow uses Renovate's official default container, pinned by version and multi-architecture image digest. The pin is a reproducible baseline, not automatically the latest release. Verify the image provenance and reported binary version; update the image's version and digest together.
 
-The job provisions Node, Git, and rustup, and uses `RENOVATE_BINARY_SOURCE=global`. rustup follows the cloned repository's checked-in `rust-toolchain.toml`. If the target has no toolchain pin, confirm either adding one or provisioning compatible Cargo/Rust directly from nixpkgs after checking the MSRV. Lock updates do not compile the application.
+`RENOVATE_BINARY_SOURCE=install` lets Renovate install tools on demand for managers that find dependencies in this repository. Keep the runtime generic instead of preinstalling another repository's language toolchain. Verify required registry/download access and any runtime constraints during artifact updates. If a target requires tools the default image cannot provision, confirm a repository-specific adjustment before adding it.
 
 An otherwise valid job can remain queued forever on an unregistered label. Check DNS, TLS trust, and forge connectivity from inside the job container, not only from the laptop or runner daemon. Private/tailnet forges may need a runner hosts entry and a narrow egress allowance.
 
 ## Dependency policy
 
-The template enables only `cargo` and `github-actions`; the latter also scans `.forgejo/workflows/` and local action definitions. It groups compatible updates, ages Cargo releases, and bounds PR creation. The workflow owns run cadence, so manual and checkbox requests are not blocked by a second repository schedule.
+The template leaves `enabledManagers` unset: Renovate's default-enabled managers detect matching files, so absent ecosystems do not produce dependency updates. The `github-actions` manager also scans `.forgejo/workflows/` and local action definitions. Check the pinned version's manager support before enabling an opt-in manager or defining custom extraction; require matching repository files and operator approval.
 
-Inventory manual/source-reference coupling before applying it. Add an explicit disabled Cargo package rule for the target's coupled crates, for example:
+Inventory manifests, lockfiles, CI actions/container references, generated/vendor/example files, and manual/source-reference coupling. Preserve the target's ignore paths and disabled rules; add exclusions only for paths and dependencies actually present. If the operator requests narrower coverage, derive an `enabledManagers` allowlist from this inventory rather than copying one from an example repository.
 
-```json
-{
-  "description": "Keep source-reference-coupled crates manual",
-  "matchManagers": ["cargo"],
-  "matchPackageNames": ["gpui-kit", "gpui-pre*", "toml_edit"],
-  "enabled": false
-}
-```
+Add grouping, release-age, range, toolchain, or manual-dependency rules only for discovered ecosystems. For example, a Cargo repository may need MSRV-aware rules and coupled-crate exclusions; a JavaScript repository may need its package-manager/runtime constraints preserved. Neither policy belongs in every copied config. Whole-lock maintenance stays disabled because it can advance transitive snapshots outside individually approved updates.
 
-Those names are examples, not universal exclusions. Add the target's actual crates or omit the rule when none apply. Whole-lock maintenance stays disabled because it can advance transitive snapshots outside individually approved updates. Keep reference submodules, devenv inputs, toolchain pins, and agent/model catalogs on their existing update paths.
+The workflow owns run cadence, so manual and checkbox requests are not blocked by a second repository schedule.
 
 ## Edit events
 
@@ -54,4 +47,4 @@ Runs share one concurrency group. A fresh checkbox request can queue behind an e
 
 The copied tests evaluate the exact workflow guard's boolean/string-contains subset and exercise both missing-secret paths. Keep their target-specific constants aligned with the workflow. The subset evaluator is not a replacement for post-merge Forgejo event verification.
 
-Primary references: [Forgejo workflow events](https://forgejo.org/docs/latest/user/actions/reference/), [Cargo manager](https://docs.renovatebot.com/modules/manager/cargo/), [Actions manager](https://docs.renovatebot.com/modules/manager/github-actions/).
+Primary references: [Forgejo workflow events](https://forgejo.org/docs/latest/user/actions/reference/), [Renovate distributions](https://docs.renovatebot.com/getting-started/running/#docker-images), [Manager detection](https://docs.renovatebot.com/modules/manager/), [Actions manager](https://docs.renovatebot.com/modules/manager/github-actions/), [On-demand tools](https://docs.renovatebot.com/self-hosted-configuration/#binarysource).

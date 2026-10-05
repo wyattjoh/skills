@@ -1,6 +1,6 @@
 interface:
   display_name: "Setup Forgejo Renovate"
-  short_description: "Set up Cargo and Actions updates with checkbox triggers"
+  short_description: "Set up repository-aware updates with checkbox triggers"
 
 policy:
   allow_implicit_invocation: false

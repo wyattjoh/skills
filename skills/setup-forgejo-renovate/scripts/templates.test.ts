@@ -10,7 +10,7 @@ const templateRoot = join(skillRoot, "references", "templates");
 const temporaryRoots: string[] = [];
 const bindings: Record<string, string> = {
   FORGEJO_ORIGIN: "https://forgejo.example",
-  REPOSITORY: "team/rust-project",
+  REPOSITORY: "team/example-project",
   DEFAULT_BRANCH: "develop",
   AUTHORIZED_ACTOR: "maintainer",
   BOT_LOGIN: "dependency-bot",
@@ -76,6 +76,7 @@ test("workflow bindings reach endpoint, identity, branch, schedule, and runner d
         if: string;
         "runs-on": string;
         env: Record<string, string>;
+        container: { image: string };
         steps: { run: string }[];
       };
     };
@@ -91,6 +92,21 @@ test("workflow bindings reach endpoint, identity, branch, schedule, and runner d
   expect(workflow.jobs.renovate["runs-on"]).toBe(bindings.RUNNER_LABEL);
   expect(workflow.jobs.renovate.env.RENOVATE_ENDPOINT).toBe("https://forgejo.example/api/v1");
   expect(workflow.jobs.renovate.env.RENOVATE_REPOSITORY).toBe(bindings.REPOSITORY);
+  expect(workflow.jobs.renovate.container.image).toMatch(
+    /^ghcr\.io\/renovatebot\/renovate:\d+\.\d+\.\d+@sha256:[a-f0-9]{64}$/,
+  );
+  expect(workflow.jobs.renovate.env.RENOVATE_BINARY_SOURCE).toBe("install");
+  expect(Object.keys(workflow.jobs.renovate.env).toSorted()).toEqual([
+    "LOG_LEVEL",
+    "RENOVATE_BINARY_SOURCE",
+    "RENOVATE_ENDPOINT",
+    "RENOVATE_GITHUB_COM_TOKEN",
+    "RENOVATE_ONBOARDING",
+    "RENOVATE_PLATFORM",
+    "RENOVATE_REPOSITORY",
+    "RENOVATE_REQUIRE_CONFIG",
+    "RENOVATE_TOKEN",
+  ]);
   expect(workflow.jobs.renovate.env.RENOVATE_TOKEN).toBe("${{ secrets.RENOVATE_TOKEN }}");
   expect(workflow.jobs.renovate.env.RENOVATE_GITHUB_COM_TOKEN).toBe(
     "${{ secrets.RENOVATE_GITHUB_COM_TOKEN }}",
@@ -102,27 +118,22 @@ test("workflow bindings reach endpoint, identity, branch, schedule, and runner d
   );
 });
 
-test("dependency policy stays review-only and limits managers without universal crate exclusions", () => {
+test("dependency policy stays review-only and leaves manifest detection ecosystem-neutral", () => {
   const source = render("renovate.json5");
   // Evaluate only our trusted static template, not an external repository's config.
   const config = JSON.parse(
     JSON.stringify(runInNewContext(`(${source})`, {}, { timeout: 100 })),
-  ) as {
-    enabledManagers: string[];
-    automerge: boolean;
-    timezone: string;
-    lockFileMaintenance: { enabled: boolean };
-    packageRules: { matchManagers: string[] }[];
-  };
-  expect(config.enabledManagers).toEqual(["cargo", "github-actions"]);
-  expect(config.automerge).toBe(false);
-  expect(config.lockFileMaintenance.enabled).toBe(false);
-  expect(config.timezone).toBe(bindings.TIMEZONE);
-  expect(config.packageRules.map((rule) => rule.matchManagers)).toEqual([
-    ["cargo"],
-    ["cargo"],
-    ["github-actions"],
-  ]);
+  ) as Record<string, unknown>;
+  expect(config).toEqual({
+    $schema: "https://docs.renovatebot.com/renovate-schema.json",
+    extends: ["config:recommended"],
+    timezone: bindings.TIMEZONE,
+    dependencyDashboard: true,
+    automerge: false,
+    prConcurrentLimit: 3,
+    prHourlyLimit: 2,
+    lockFileMaintenance: { enabled: false },
+  });
 });
 
 test("copyable regression tests pass for a differently named forge, bot, maintainer, and default branch", () => {

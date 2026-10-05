@@ -2,35 +2,12 @@
   $schema: "https://docs.renovatebot.com/renovate-schema.json",
   extends: ["config:recommended"],
   timezone: "__TIMEZONE__",
-  enabledManagers: ["cargo", "github-actions"],
-  ignorePaths: [".claude/references/**", ".agents/skills/**"],
   dependencyDashboard: true,
   automerge: false,
   prConcurrentLimit: 3,
   prHourlyLimit: 2,
-  // Add disabled rules for the target's source-reference-coupled crates.
-  // Whole-lock refreshes can advance coupled transitive snapshots.
+  // Keep whole-lock refreshes separate from individually reviewed updates.
   lockFileMaintenance: {
     enabled: false,
   },
-  packageRules: [
-    {
-      description: "Age and bump Cargo dependency ranges",
-      matchManagers: ["cargo"],
-      rangeStrategy: "bump",
-      minimumReleaseAge: "3 days",
-    },
-    {
-      description: "Group compatible Cargo updates to share the CI build",
-      matchManagers: ["cargo"],
-      matchUpdateTypes: ["minor", "patch"],
-      groupName: "Cargo dependencies",
-    },
-    {
-      description: "Group compatible Forgejo Actions updates",
-      matchManagers: ["github-actions"],
-      matchUpdateTypes: ["minor", "patch", "pin", "digest"],
-      groupName: "Forgejo Actions dependencies",
-    },
-  ],
 }

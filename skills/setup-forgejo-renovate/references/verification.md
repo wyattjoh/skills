@@ -6,7 +6,7 @@ Bound local/remote probes with explicit timeouts and report timeouts as pending 
 
 Run the copied trigger tests and the target's relevant formatter, lint, and typecheck commands. Confirm a registered runner label, no unresolved `__MARKERS__`, and no PR checkout or event-body interpolation in any secret-bearing shell step.
 
-Use the workflow's exact nixpkgs source and tools for these commands:
+Run the Renovate commands in the workflow's exact pinned image against a disposable Git fixture or read-only target mount. Override the container entrypoint for the validator. Run workflow lint and copied tests with the target's existing tools:
 
 ```sh
 renovate --version
@@ -18,7 +18,7 @@ bun test ./scripts/renovate-workflow.test.ts
 
 Local extraction discovers files through Git, so add newly created config/workflow files to the index before running it. An exit-zero extraction that says no Renovate config was found does not validate your proposed manager policy.
 
-Check the extraction statistics for Cargo and Actions, inspect exclusions, and distinguish a missing GitHub-token warning in an unauthenticated local run from a successful authenticated run. This dry run proves extraction, not registry lookup, Cargo lock generation, PR publication, or secrets.
+Compare extracted files/managers with the target's dependency inventory and inspect exclusions. A repository without Cargo should not gain Cargo policy or tooling requirements. Distinguish a missing GitHub-token warning in an unauthenticated local run from a successful authenticated run. This dry run proves extraction, not registry lookup, tool installation, lockfile generation, PR publication, or secrets.
 
 Actionlint understands the compatibility `github` context. When linting existing Forgejo workflows with URL-form actions, distinguish pre-existing GitHub-only diagnostics from new failures by comparing the baseline. Preserve unrelated failures as evidence rather than weakening checks.
 
@@ -41,6 +41,6 @@ The actual event check is the acceptance test. The local guard fixtures cannot p
 | Job remains waiting                 | Registered label, available runner slots, and existing concurrency-group run                                                                 |
 | Missing-secret message              | Repository/inherited scope and exact secret name, without reading values                                                                     |
 | Authentication/author failure       | Real bot identity, token scopes, repository write access, and forge endpoint                                                                 |
-| Lockfile update failure             | Provisioned Cargo/rustup, toolchain pin/MSRV, registry access, and artifact-update logs                                                      |
+| Lockfile update failure             | Detected manager's tool installation, manifest runtime constraints, registry access, and artifact-update logs                                |
 
 Report the changed files, prepared versus operational status, check results, and any operator steps still required. Preserve a blocked activation as pending, not a successful setup.
