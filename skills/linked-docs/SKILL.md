@@ -49,6 +49,10 @@ Split compound requests into focused questions and reuse the cache. Read `--help
 bun "$SKILL_DIR/scripts/search.ts" https://zed.dev/docs/llms.txt --inspect-index
 ```
 
+## Benchmarking
+
+To compare retrieval quality against API calls, tokens, and latency, read [the eval bench](references/benchmark.md). Preview its six cases with `bun "$SKILL_DIR/scripts/bench.ts"`; live comparisons require explicit `--run` through varlock and carry a hard total request cap. Treat absent-answer controls and operational errors as part of the quality bar, not just successful hits.
+
 ## Evidence and recovery
 
 - **Evidence:** JSON excerpts preserve source text, URL, heading, inclusive line range, and UTF-16 `[start, end)` offsets in the fetched text. Cite the URL and relevant heading. A `verified: true` Noul judgment is a relevance filter, not a truth guarantee; check the excerpt yourself before stating the fact.

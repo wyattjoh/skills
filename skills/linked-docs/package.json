@@ -5,7 +5,8 @@
   "type": "module",
   "scripts": {
     "test": "bun test",
-    "search": "bun scripts/search.ts"
+    "search": "bun scripts/search.ts",
+    "bench": "bun scripts/bench.ts"
   },
   "dependencies": {
     "effect": "^3.22.2",
