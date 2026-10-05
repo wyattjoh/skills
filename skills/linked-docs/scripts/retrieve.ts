@@ -232,6 +232,16 @@ export function choiceProbabilities(value: unknown, keys: string[]): Record<stri
   return probabilities;
 }
 
+/**
+ * Validate an independent Noul judgment without accepting malformed probabilities.
+ */
+export function noulProbability(value: unknown): number {
+  const probability = Schema.decodeUnknownSync(noulSchema)(value).noul;
+  if (!Number.isFinite(probability) || probability < 0 || probability > 1)
+    throw new Error("Invalid Noul probability");
+  return probability;
+}
+
 const attempt = <A>(message: string, run: (signal: AbortSignal) => Promise<A>) =>
   Effect.tryPromise({
     try: run,
@@ -240,7 +250,10 @@ const attempt = <A>(message: string, run: (signal: AbortSignal) => Promise<A>) =
         message: `${message}: ${error instanceof Error ? error.message : "request failed"}`,
       }),
   });
-const readBody = async (response: Response, limit: number) => {
+/**
+ * Consume a response within a UTF-8 byte limit, releasing its reader afterward.
+ */
+export const readBody = async (response: Response, limit: number) => {
   if (!response.body) return "";
   const reader = response.body.getReader();
   const chunks: Uint8Array[] = [];
@@ -362,10 +375,7 @@ export function createServices(
           },
           cancellation,
         );
-        const probability = Schema.decodeUnknownSync(noulSchema)(result).noul;
-        if (!Number.isFinite(probability) || probability < 0 || probability > 1)
-          throw new Error("Invalid Noul probability");
-        return probability;
+        return noulProbability(result);
       }),
   };
   async function evaluate(

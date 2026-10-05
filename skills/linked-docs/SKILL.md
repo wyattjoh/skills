@@ -51,7 +51,7 @@ bun "$SKILL_DIR/scripts/search.ts" https://zed.dev/docs/llms.txt --inspect-index
 
 ## Benchmarking
 
-To compare retrieval quality against API calls, tokens, and latency, read [the eval bench](references/benchmark.md). Preview its six cases with `bun "$SKILL_DIR/scripts/bench.ts"`; live comparisons require explicit `--run` through varlock and carry a hard total request cap. Treat absent-answer controls and operational errors as part of the quality bar, not just successful hits.
+To compare retrieval quality against API calls, tokens, and latency, read [the eval bench](references/benchmark.md). Preview its six cases with `bun "$SKILL_DIR/scripts/bench.ts"`; live comparisons require explicit `--run` through varlock and carry hard total and per-profile spend caps. The bench persistently caches identical Jev inputs and reports logical workload separately from fresh API spend. Treat absent-answer controls and operational errors as part of the quality bar, not just successful hits.
 
 ## Evidence and recovery
 

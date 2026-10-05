@@ -1,10 +1,11 @@
 #!/usr/bin/env bun
 import { createHash } from "node:crypto";
 import { mkdir, writeFile } from "node:fs/promises";
-import { dirname, isAbsolute, relative, resolve } from "node:path";
+import { dirname, isAbsolute, join, relative, resolve } from "node:path";
 import { parseArgs } from "node:util";
 import { Console, Effect, Either } from "effect";
 import { EVALS, PROFILES, grade, type EvalCase, type Grade } from "./evals.ts";
+import { createModelCache, modelUsage } from "./model-cache.ts";
 import { createServices, RetrievalError, retrieve, type Policy } from "./retrieve.ts";
 
 /**
@@ -29,11 +30,12 @@ export type RequestBudget = { used: number; limit: number };
 
 /**
  * Meter requests without storing headers, credentials, states, or response bodies.
- * A synchronous pre-dispatch guard prevents parallel calls exceeding the cap.
+ * Synchronous guards enforce both total and optional per-profile spend caps.
  */
 export function meteredFetch(
   budget: RequestBudget,
   implementation: (url: string, init: RequestInit) => Promise<Response> = fetch,
+  profileBudget: RequestBudget | undefined = undefined,
 ) {
   const metrics: Measurements = {
     calls: 0,
@@ -54,7 +56,10 @@ export function meteredFetch(
     }
     if (budget.used >= budget.limit)
       throw new Error("Benchmark total API request budget exhausted");
+    if (profileBudget && profileBudget.used >= profileBudget.limit)
+      throw new Error("Benchmark per-profile API request budget exhausted");
     budget.used++;
+    if (profileBudget) profileBudget.used++;
     metrics.calls++;
     const body = String(init.body);
     metrics.requestBytes += Buffer.byteLength(body);
@@ -65,13 +70,8 @@ export function meteredFetch(
     if (types.includes("noul")) metrics.verifyCalls++;
     const response = await implementation(url, init);
     try {
-      const usage = (await response.clone().json()).usage;
-      if (
-        Number.isFinite(usage?.input_tokens) &&
-        usage.input_tokens >= 0 &&
-        Number.isFinite(usage?.output_tokens) &&
-        usage.output_tokens >= 0
-      ) {
+      const usage = modelUsage((await response.clone().json()).usage);
+      if (usage) {
         metrics.inputTokens += usage.input_tokens;
         metrics.outputTokens += usage.output_tokens;
         metrics.usageResponses++;
@@ -101,6 +101,7 @@ export type BenchOptions = {
   profiles: { name: string; policy: Policy }[];
   repeat: number;
   maxCalls: number;
+  maxCallsPerProfile: number;
   caseTimeoutMs: number;
   suiteTimeoutMs: number;
   cache: string;
@@ -120,7 +121,15 @@ export type BenchRow = {
   grade: Grade | undefined;
   error: string | undefined;
   elapsedMs: number;
-  metrics: Measurements;
+  metrics: Measurements & {
+    modelCacheHits: number;
+    logicalCalls: number;
+    logicalChoiceCalls: number;
+    logicalVerifyCalls: number;
+    logicalInputTokens: number;
+    logicalOutputTokens: number;
+    logicalUsageResponses: number;
+  };
   evidence: {
     url: string;
     heading: string;
@@ -157,6 +166,10 @@ export function summarize(rows: BenchRow[]) {
       negativeCases: negatives.length,
       acceptedSpanPrecision: accepted ? matched / accepted : null,
       meanCalls: mean((row) => row.metrics.calls),
+      meanLogicalCalls: mean((row) => row.metrics.logicalCalls),
+      modelCacheHits: attempted.reduce((sum, row) => sum + row.metrics.modelCacheHits, 0),
+      logicalInputTokens: attempted.reduce((sum, row) => sum + row.metrics.logicalInputTokens, 0),
+      logicalOutputTokens: attempted.reduce((sum, row) => sum + row.metrics.logicalOutputTokens, 0),
       meanElapsedMs: mean((row) => row.elapsedMs),
       inputTokens: attempted.reduce((sum, row) => sum + row.metrics.inputTokens, 0),
       outputTokens: attempted.reduce((sum, row) => sum + row.metrics.outputTokens, 0),
@@ -167,7 +180,8 @@ export function summarize(rows: BenchRow[]) {
 /**
  * Run the unchanged production retriever against every selected case/profile.
  * Keep document bodies fixed in memory across comparisons and fingerprint them.
- * Rotate profile order across repetitions to reduce warm-cache/order bias.
+ * Reuse identical model inputs across profiles and replay repetitions.
+ * Logical workload and fresh API spend are reported separately.
  */
 export function runBench(
   options: BenchOptions,
@@ -186,6 +200,12 @@ export function runBench(
     });
     const retrieverSha256 = createHash("sha256").update(source.join("\n")).digest("hex");
     const budget: RequestBudget = { used: 0, limit: options.maxCalls };
+    const profileBudgets = new Map(
+      options.profiles.map((profile) => [
+        profile.name,
+        { used: 0, limit: options.maxCallsPerProfile },
+      ]),
+    );
     const corpus = new Map<string, { url: string; text: string }>();
     const rows: BenchRow[] = [];
     const started = Date.now();
@@ -198,14 +218,13 @@ export function runBench(
         .concat(options.profiles.slice(0, repetition % options.profiles.length));
       for (const test of options.cases)
         for (const profile of order) {
-          if (budget.used >= budget.limit || Date.now() >= deadline) {
-            stopReason =
-              budget.used >= budget.limit
-                ? "total request budget exhausted"
-                : "suite deadline exceeded";
+          if (Date.now() >= deadline) {
+            stopReason = "suite deadline exceeded";
             break run;
           }
-          const meter = meteredFetch(budget, fetcher);
+          // Exhausted spend budgets still allow entirely cached evaluations to finish.
+          const meter = meteredFetch(budget, fetcher, profileBudgets.get(profile.name));
+          const modelCache = createModelCache(join(options.cache, "jev"), meter.fetcher);
           const { services } = createServices(
             {
               indexUrl: test.index,
@@ -213,9 +232,10 @@ export function runBench(
               refresh: false,
               apiKey: options.apiKey,
               model: options.model,
-              maxCalls: 64,
+              // Also bound logical work per attempt, including cached evaluations.
+              maxCalls: options.maxCallsPerProfile,
             },
-            meter.fetcher,
+            modelCache.fetcher,
           );
           const document = services.document;
           services.document = (url) =>
@@ -237,6 +257,7 @@ export function runBench(
             ),
           );
           // Include in-flight response usage even if a sibling request or validator failed.
+          yield* Effect.promise(() => modelCache.drain());
           yield* Effect.promise(() => meter.drain());
           const result = Either.isRight(outcome) ? outcome.right : undefined;
           const row: BenchRow = {
@@ -248,7 +269,17 @@ export function runBench(
             grade: result ? grade(result, test.expected) : undefined,
             error: Either.isLeft(outcome) ? outcome.left.message : undefined,
             elapsedMs: Math.round(performance.now() - before),
-            metrics: { ...meter.metrics },
+            metrics: {
+              ...meter.metrics,
+              modelCacheHits: modelCache.metrics.hits,
+              logicalCalls: modelCache.metrics.requests,
+              logicalChoiceCalls: modelCache.metrics.choiceRequests,
+              logicalVerifyCalls: modelCache.metrics.verifyRequests,
+              logicalInputTokens: meter.metrics.inputTokens + modelCache.metrics.inputTokens,
+              logicalOutputTokens: meter.metrics.outputTokens + modelCache.metrics.outputTokens,
+              logicalUsageResponses:
+                meter.metrics.usageResponses + modelCache.metrics.usageResponses,
+            },
             evidence: result?.passages ?? [],
           };
           rows.push(row);
@@ -256,7 +287,7 @@ export function runBench(
         }
     }
     return {
-      version: 1,
+      version: 2,
       startedAt: new Date(started).toISOString(),
       model: options.model,
       retrieverSha256,
@@ -266,6 +297,11 @@ export function runBench(
       stopReason,
       totalCalls: budget.used,
       maxCalls: budget.limit,
+      maxCallsPerProfile: options.maxCallsPerProfile,
+      profileCalls: Object.fromEntries(
+        [...profileBudgets].map(([name, value]) => [name, value.used]),
+      ),
+      modelCache: join(options.cache, "jev"),
       caseTimeoutMs: options.caseTimeoutMs,
       suiteTimeoutMs: options.suiteTimeoutMs,
       cases: options.cases,
@@ -288,14 +324,17 @@ Without --run: print the eval plan, no network or credentials required.
 Live runs use TYPESAFE_API_KEY injected by varlock, like search.ts.
 --case <ids>          Comma-separated cases (default: all six)
 --profiles <names>    baseline,balanced,narrow (default: all three)
---repeat <1-5>        Repetitions; profile order rotates (default: 1)
---max-calls <1-2000>  HARD total TypeSafe HTTP-attempt cap (default: 200)
+--repeat <1-5>        Replays cached judgments; profile order rotates (default: 1)
+--max-calls <1-2000>  HARD total fresh TypeSafe HTTP-attempt cap (default: 200)
+--max-calls-per-profile <1-2000>  Fresh cap across cases/repeats (default: 64)
+                      Also bounds logical evaluations per individual attempt
 --case-timeout <ms>   Per-case deadline (default: 180000)
---cache <dir>        Document cache (default: .scratch/linked-docs-cache)
+--cache <dir>        Documents and persistent Jev cache (default: .scratch/linked-docs-cache)
 --output <file>      JSON report under .scratch/ (default: .scratch/linked-docs-bench.json)
 --model <id>         Default: jev-1.13.0
 --help               Show help
-The suite deadline is 10 minutes. A cap/deadline may leave the matrix incomplete.
+Spend caps block uncached work as error rows; cached work remains available.
+The suite deadline is 10 minutes and may leave the matrix incomplete.
 Exit 0: all selected evals pass; 2: misses/errors/incomplete; 1: invalid setup.
 `;
 
@@ -329,6 +368,7 @@ export function parseBenchArgs(argv: string[]) {
       profiles: { type: "string" },
       repeat: { type: "string" },
       "max-calls": { type: "string" },
+      "max-calls-per-profile": { type: "string" },
       "case-timeout": { type: "string" },
       cache: { type: "string" },
       output: { type: "string" },
@@ -352,6 +392,7 @@ export function parseBenchArgs(argv: string[]) {
     profiles: names.map((name) => ({ name, policy: PROFILES[name] })),
     repeat: integer(values.repeat, 1, 5),
     maxCalls: integer(values["max-calls"], 200, 2000),
+    maxCallsPerProfile: integer(values["max-calls-per-profile"], 64, 2000),
     caseTimeoutMs: integer(values["case-timeout"], 180_000, 180_000),
     suiteTimeoutMs: 600_000,
     cache: resolve(values.cache ?? ".scratch/linked-docs-cache"),
@@ -378,6 +419,7 @@ const main = Effect.gen(function* () {
           repeat: args.repeat,
           planned: args.cases.length * args.profiles.length * args.repeat,
           maxCalls: args.maxCalls,
+          maxCallsPerProfile: args.maxCallsPerProfile,
           message:
             "Plan only. Add --run through varlock to spend API requests. Partial matrices are explicitly reported.",
         },
@@ -396,7 +438,7 @@ const main = Effect.gen(function* () {
     );
   const report = yield* runBench({ ...args, apiKey }, fetch, (row) => {
     console.log(
-      `${row.case}\t${row.profile}\t${row.grade?.pass ? "PASS" : "FAIL"}\t${row.metrics.calls} calls (${row.metrics.choiceCalls} Choice/${row.metrics.verifyCalls} Noul)\t${row.metrics.inputTokens} in/${row.metrics.outputTokens} out\t${row.elapsedMs}ms${row.error ? `\t${row.error}` : ""}`,
+      `${row.case}\t${row.profile}\t${row.grade?.pass ? "PASS" : "FAIL"}\t${row.metrics.logicalCalls} logical (${row.metrics.logicalChoiceCalls} Choice/${row.metrics.logicalVerifyCalls} Noul), ${row.metrics.calls} fresh, ${row.metrics.modelCacheHits} reused\t${row.metrics.inputTokens} in/${row.metrics.outputTokens} out\t${row.elapsedMs}ms${row.error ? `\t${row.error}` : ""}`,
     );
   });
   yield* Effect.tryPromise({
@@ -411,6 +453,7 @@ const main = Effect.gen(function* () {
       {
         complete: report.complete,
         totalCalls: report.totalCalls,
+        profileCalls: report.profileCalls,
         stopReason: report.stopReason,
         summaries: report.summaries,
         report: args.output,

@@ -110,6 +110,24 @@ describe("HTTP metering", () => {
     expect(fake).toHaveBeenCalledTimes(1);
     expect(meter.metrics.calls).toBe(1);
   });
+  test("parallel requests obey independent profile quotas as well as the shared cap", async () => {
+    const fake = mock(async () => Response.json({ usage: { input_tokens: 1, output_tokens: 1 } }));
+    const budget = { used: 0, limit: 10 };
+    const profile = { used: 0, limit: 1 };
+    const meter = meteredFetch(budget, fake, profile);
+    const outcomes = await Promise.allSettled([
+      meter.fetcher(endpoint, request()),
+      meter.fetcher(endpoint, request()),
+    ]);
+    expect(outcomes.map((item) => item.status)).toEqual(["fulfilled", "rejected"]);
+    expect(profile.used).toBe(1);
+    expect(budget.used).toBe(1);
+    const next = { used: 0, limit: 1 };
+    await meteredFetch(budget, fake, next).fetcher(endpoint, request());
+    expect(next.used).toBe(1);
+    expect(budget.used).toBe(2);
+    expect(fake).toHaveBeenCalledTimes(2);
+  });
   test("HTTP failures consume attempts but unavailable usage stays identifiable", async () => {
     const fake = mock(async () => new Response("denied", { status: 401 }));
     const meter = meteredFetch({ used: 0, limit: 2 }, fake);
@@ -138,6 +156,7 @@ const options = async (): Promise<BenchOptions> => {
     profiles: Object.entries(PROFILES).map(([name, policy]) => ({ name, policy })),
     repeat: 1,
     maxCalls: 30,
+    maxCallsPerProfile: 64,
     caseTimeoutMs: 5000,
     suiteTimeoutMs: 10000,
     cache,
@@ -177,7 +196,11 @@ describe("comparison runner", () => {
     const report = await Effect.runPromise(runBench(await options(), fakeFetch));
     expect(report.complete).toBe(true);
     expect(report.rows.map((row) => row.grade?.pass)).toEqual([true, true, true]);
-    expect(report.totalCalls).toBe(9);
+    expect(report.totalCalls).toBe(3);
+    expect(report.rows.map((row) => row.metrics.logicalCalls)).toEqual([3, 3, 3]);
+    expect(report.rows.map((row) => row.metrics.modelCacheHits)).toEqual([0, 3, 3]);
+    expect(report.rows.map((row) => row.metrics.logicalInputTokens)).toEqual([30, 30, 30]);
+    expect(report.rows.map((row) => row.metrics.inputTokens)).toEqual([30, 0, 0]);
     expect(report.rows.map((row) => row.metrics.documentRequests)).toEqual([2, 0, 0]);
     expect(report.documents).toHaveLength(2);
     expect(report.documents.every((doc) => /^[a-f0-9]{64}$/.test(doc.sha256))).toBe(true);
@@ -186,27 +209,55 @@ describe("comparison runner", () => {
     );
     expect(summarize(report.rows).map((summary) => summary.positiveHits)).toEqual([1, 1, 1]);
   });
-  test("budget exhaustion is partial, never a complete or successful smaller sample", async () => {
+  test("exhausted spend limits still allow identical cached evaluations to complete", async () => {
     const config = await options();
     config.maxCalls = 3;
     const report = await Effect.runPromise(runBench(config, fakeFetch));
-    expect(report.complete).toBe(false);
+    expect(report.complete).toBe(true);
     expect(report.totalCalls).toBe(3);
-    expect(report.planned).toBe(3);
-    expect(report.completed).toBe(1);
-    expect(report.stopReason).toBe("total request budget exhausted");
+    expect(report.completed).toBe(3);
+    expect(report.rows.map((row) => row.grade?.pass)).toEqual([true, true, true]);
   });
   test("mid-case cap stops at actual dispatched requests and retains an error row", async () => {
     const config = await options();
     config.maxCalls = 2;
     const report = await Effect.runPromise(runBench(config, fakeFetch));
-    expect(report.complete).toBe(false);
+    expect(report.complete).toBe(true);
     expect(report.totalCalls).toBe(2);
-    expect(report.rows).toHaveLength(1);
+    expect(report.rows).toHaveLength(3);
+    expect(report.rows.map((row) => row.status)).toEqual(["error", "error", "error"]);
     expect(report.rows[0].metrics.calls).toBe(2);
     expect(report.rows[0].status).toBe("error");
     expect(report.rows[0].grade).toBeUndefined();
     expect(report.rows[0].error).toContain("budget exhausted");
+  });
+  test("profile spend quotas persist across cases and repeats", async () => {
+    const config = await options();
+    config.profiles = config.profiles.slice(0, 1);
+    config.maxCallsPerProfile = 3;
+    config.repeat = 2;
+    config.cases = [testCase, { ...testCase, id: "another", question: "A different question?" }];
+    const report = await Effect.runPromise(runBench(config, fakeFetch));
+    expect(report.profileCalls).toEqual({ baseline: 3 });
+    expect(report.totalCalls).toBe(3);
+    expect(report.rows.filter((row) => row.case === "test").map((row) => row.grade?.pass)).toEqual([
+      true,
+      true,
+    ]);
+    expect(
+      report.rows
+        .filter((row) => row.case === "another")
+        .map((row) => row.error?.includes("per-profile")),
+    ).toEqual([true, true]);
+  });
+  test("a new runner reuses persisted model answers with no additional HTTP calls", async () => {
+    const config = await options();
+    await Effect.runPromise(runBench(config, fakeFetch));
+    const replay = await Effect.runPromise(runBench(config, fakeFetch));
+    expect(replay.complete).toBe(true);
+    expect(replay.totalCalls).toBe(0);
+    expect(replay.rows.map((row) => row.metrics.modelCacheHits)).toEqual([3, 3, 3]);
+    expect(replay.rows.map((row) => row.grade?.pass)).toEqual([true, true, true]);
   });
   test("expired suite deadlines return an explicit empty partial report", async () => {
     const config = await options();
@@ -248,6 +299,7 @@ describe("CLI safety", () => {
     const args = parseBenchArgs(["--run", "--case", "lsp-binary", "--max-calls", "100"]);
     expect(args.cases.map((item) => item.id)).toEqual(["lsp-binary"]);
     expect(args.maxCalls).toBe(100);
+    expect(parseBenchArgs(["--max-calls-per-profile", "300"]).maxCallsPerProfile).toBe(300);
   });
   test("rejects ambiguous IDs, invalid budgets, and report paths outside scratch", () => {
     expect(() => parseBenchArgs(["--profiles", "missing"])).toThrow("Choose distinct IDs");
@@ -256,6 +308,7 @@ describe("CLI safety", () => {
     );
     expect(() => parseBenchArgs(["--max-calls", "0"])).toThrow("Expected an integer");
     expect(() => parseBenchArgs(["--repeat", "6"])).toThrow("Expected an integer");
+    expect(() => parseBenchArgs(["--max-calls-per-profile", "0"])).toThrow("Expected an integer");
     expect(() => parseBenchArgs(["--output", "bench.json"])).toThrow(".scratch/");
   });
 });

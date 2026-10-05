@@ -32,7 +32,8 @@ Run a small live comparison through the skill's existing varlock configuration:
 ```bash
 varlock run --path "$SKILL_DIR/" --inject vars -- \
   bun "$SKILL_DIR/scripts/bench.ts" --run --case lsp-binary \
-  --max-calls 100 --output .scratch/linked-docs-bench-smoke.json
+  --max-calls 900 --max-calls-per-profile 300 \
+  --output .scratch/linked-docs-bench-smoke.json
 ```
 
 The three profiles use the same 0.6 threshold:
@@ -41,28 +42,38 @@ The three profiles use the same 0.6 threshold:
 - `balanced`: beam 2 and up to 3 pages.
 - `narrow`: beam 1 and up to 1 page.
 
-Use `--case` and `--profiles` to focus experiments. `--repeat 3` rotates profile order and gives more than one sample per case. Each repetition spends fresh model calls, while public document bodies are reused.
+Use `--case` and `--profiles` to focus experiments. `--repeat 2` rotates profile order and replays the same cached judgments, useful for verifying cache reuse and measuring replay latency. These are deterministic replays, not independent model-quality samples.
 
 ```bash
 varlock run --path "$SKILL_DIR/" --inject vars -- \
-  bun "$SKILL_DIR/scripts/bench.ts" --run --repeat 3 \
-  --max-calls 600 --output .scratch/linked-docs-bench.json
+  bun "$SKILL_DIR/scripts/bench.ts" --run --repeat 2 \
+  --max-calls 900 --max-calls-per-profile 300 \
+  --output .scratch/linked-docs-bench.json
 ```
 
-Read `--help` for all options. The default total request cap is **200**, not a promise that all 18 default case/profile combinations fit. The global cap is enforced before dispatch, including parallel attempts; caps and deadlines produce explicitly incomplete reports. Each attempt retains the production 64-call limit, a configurable deadline up to 180 seconds, and the suite has a ten-minute deadline. There are no automatic retries. Exit 0 means the selected matrix completed and every eval passed; exit 2 means a miss, error, or incomplete matrix; exit 1 means invalid setup or inability to write the report.
+Read `--help` for all options. The default total fresh-request cap is **200**, not a promise that all 18 default case/profile combinations fit. `--max-calls-per-profile` defaults to 64 and caps fresh HTTP attempts across **all cases and repetitions** of each profile. It also bounds logical evaluations within each individual attempt, including cached work; raise it explicitly when testing large pages. The example permits at most 300 fresh requests per profile and 900 overall.
+
+Both spend guards run before HTTP dispatch, including parallel attempts. Cache hits consume neither spend budget and remain available after the budget is exhausted. Uncached work blocked by a spend guard is recorded as an error row; later cached cases may still complete. A configurable per-attempt deadline up to 180 seconds and a ten-minute suite deadline bound runtime. A suite deadline may leave rows unattempted. `complete` means all planned rows were attempted, not that they passed. There are no automatic retries. Exit 0 means the selected matrix completed and every eval passed; exit 2 means a miss, error, or incomplete matrix; exit 1 means invalid setup or inability to write the report.
 
 ## Measurements and reproducibility
 
 Reports are local JSON files under the current repository's `.scratch/`. They contain:
 
-- Actual TypeSafe HTTP attempts, split into requests containing Choice or Noul questions. Blocked over-budget attempts are excluded; attempted requests that fail still count.
-- API-reported input/output tokens, number of responses supplying complete usage, serialized request bytes, document HTTP requests, and wall-clock elapsed time.
+- Actual fresh TypeSafe HTTP attempts, split into requests containing Choice or Noul questions, and spend by profile. Blocked attempts are excluded; dispatched requests that fail still count.
+- Logical model evaluations, split into Choice/Noul, and model-cache/in-flight reuse counts. Logical counts expose policy cost without mistaking a warm-cache profile for a cheaper algorithm.
+- API-reported fresh input/output tokens, number of responses supplying complete usage, serialized fresh request bytes, document HTTP requests, and wall-clock elapsed time. Logical token totals add the original usage of reused responses; they are nominal workload estimates, not new charges.
 - Per-case grades, source excerpts and offsets, errors, implementation SHA-256, corpus URL/body hashes, model ID, policies, budgets, and deadlines.
 - Positive hit rate counts, correct-abstention counts, accepted-span precision, operational errors, and mean calls/latency per profile. Failed attempts remain in the quality denominators.
 
 Usage totals cover responses that supplied valid usage fields; a missing usage response is not evidence of zero cost. Budget-blocked requests and API errors are not semantic abstentions. Reports never store request headers, credentials, or private configuration.
 
-Bodies are pinned in memory on first access during a run, backed by the existing 24-hour disk cache. The runner does not copy the whole docs site or cache model judgments. Document hashes help spot corpus drift across runs; preserve the public-doc cache if you need to replay its content. Cold document requests may affect latency, and rotating profile order only mitigates that bias. Single-run timings and tiny samples do not establish stable quality or speed improvements.
+Bodies are pinned in memory on first access during a run, backed by the existing 24-hour disk cache. Document hashes help spot corpus drift across runs; preserve the public-doc cache if you need to replay its content. The runner does not copy the whole docs site.
+
+The **benchmark** persists validated Jev Choice and Noul answers under `<cache>/jev/`, with atomic writes and in-flight deduplication. SHA-256 keys cover the endpoint and exact serialized request, including model, state, instructions, criteria, and question IDs. Identical inputs reuse the same judgment across profiles, repetitions, and later processes. Changed inputs miss naturally. Model entries do not expire; use a different `--cache` directory for an explicitly approved fresh-inference experiment. The pinned model is important for reproducibility.
+
+Only validated answers and usage are stored, not credentials, request headers, or plaintext inputs. Corrupt entries are misses; invalid model responses and HTTP errors are not persisted. Unreadable caches or failed writes stop the affected attempt rather than silently spending without caching. Normal `search.ts` remains unchanged and caches public docs only.
+
+Cold document fetches, live inference, and warm model-cache reads have different latency profiles. Compare logical workload and quality to select a policy; fresh-call counts instead measure actual incremental spend. Single-run timings and tiny samples do not establish stable quality or speed improvements.
 
 ## Optimization loop
 
@@ -71,4 +82,4 @@ Bodies are pinned in memory on first access during a run, backed by the existing
 3. Make one algorithm change, such as batching independent checks, and rerun the same cases/model/corpus. Transport-level counts continue to measure actual requests even if multiple questions share one request.
 4. Re-review difficult cases and add a regression case before promoting a new default. Keep this small development set separate from a larger holdout set to avoid tuning only for these six questions.
 
-Unit tests use fake HTTP responses and the real retrieval pipeline to check grading, budget enforcement, partial reports, corpus reuse, operational failures, CLI safety, and request/usage accounting. They spend no TypeSafe credits.
+Unit tests use fake HTTP responses and the real retrieval pipeline to check grading, global/profile quotas, deadline reports, corpus reuse, persistent and concurrent model-cache reuse, invalid responses, operational failures, CLI safety, and fresh/logical accounting. They spend no TypeSafe credits.
