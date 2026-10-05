@@ -137,7 +137,7 @@ export const createFleetExtension =
         pi.registerTool({
           name: tool.name,
           label: tool.label,
-          description: tool.description,
+          description: adapter.description(tool.name, tool.description),
           parameters: Type.Unsafe<Record<string, unknown>>(
             adapter.inputSchema(tool.name, tool.inputSchema),
           ),

@@ -1,18 +1,20 @@
 import { afterEach, expect, test } from "bun:test";
-import { mkdtemp, realpath, rm } from "node:fs/promises";
+import { mkdtemp, readdir, realpath, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 import { currentAssignment } from "../fleet/model.ts";
+import { reviewTemplate } from "../fleet/reports.ts";
 import { createAsyncFleetAdapter } from "./async.ts";
 import { notifyCallback } from "./callbacks.ts";
-import type { FleetPlatform } from "./platform.ts";
+import { digest, type FleetPlatform } from "./platform.ts";
 import { reviewFilename } from "./runtime.ts";
 import { fleetStorage } from "./storage.ts";
 
 type Handler = (event: unknown, ctx: unknown) => Promise<unknown> | unknown;
 type Tool = {
   name: string;
+  description: string;
   parameters: Record<string, unknown>;
   execute: (...args: unknown[]) => Promise<{ content: { text: string }[]; isError: boolean }>;
 };
@@ -193,6 +195,76 @@ const fixture = async () => {
   };
 };
 
+test("callback-only implementor context includes literal identity, role-specific report IDs and timeout units", async () => {
+  const f = await fixture();
+  const message = f.worker.messages[0]?.content;
+  if (message === undefined) throw new Error("Assignment callback missing");
+  expect(message).toContain(
+    `Worker ${f.workerId} (implementor); assignmentId: \`${f.assignmentId}\``,
+  );
+  for (const operation of ["question", "completed", "failed", "approval", "request-review"]) {
+    expect(message).toContain(`${operation}: \`${f.workerId}-${f.assignmentId}-${operation}\``);
+  }
+  expect(message).toContain("Bash timeout is in SECONDS");
+  expect(message).toContain("small, reachable test fixtures");
+  const binding = (await f.worker.emit("before_agent_start", {}))[0];
+  expect(binding).toHaveProperty("message.content", message.split("\n\n").slice(1).join("\n\n"));
+  expect(f.worker.tools.find((entry) => entry.name === "fleet_report")?.description).toContain(
+    "Only identical payload retries reuse an ID",
+  );
+});
+
+test("managed setup validates finite integer millisecond budgets before allocating runs", async () => {
+  const f = await fixture();
+  const runs = join(f.repository, ".scratch", "to-code");
+  const before = await readdir(runs);
+  for (const commandTimeoutMs of [0, -1, 570001, 1.5, NaN, Infinity, -Infinity, "180000"]) {
+    const rejected = await f.adapter.execute(
+      "fleet_setup",
+      {
+        workspace: "w1",
+        integrationBranch: "main",
+        checks: ["test"],
+        commandTimeoutMs,
+      },
+      f.coordinator.ctx as never,
+    );
+    expect(rejected?.isError).toBe(true);
+    expect(await readdir(runs)).toEqual(before);
+  }
+  for (const commandTimeoutMs of [1, 570000, undefined]) {
+    const accepted = await f.adapter.execute(
+      "fleet_setup",
+      {
+        workspace: "w1",
+        integrationBranch: "main",
+        checks: ["test"],
+        ...(commandTimeoutMs === undefined ? {} : { commandTimeoutMs }),
+      },
+      f.coordinator.ctx as never,
+    );
+    expect(accepted?.isError).toBe(false);
+    const { directory } = JSON.parse(accepted?.content[0]?.text ?? "{}");
+    expect((await fleetStorage(directory).read()).commandTimeoutMs).toBe(
+      commandTimeoutMs ?? 120000,
+    );
+  }
+});
+
+test("managed watch/wait reject both scoped and unscoped worker targets", async () => {
+  const f = await fixture();
+  for (const name of ["fleet_watch", "fleet_wait"]) {
+    for (const params of [
+      { fleetId: f.fleetId, panes: ["w1:p2"], timeoutMs: 1000 },
+      { panes: ["w1:p2"], timeoutMs: 1000 },
+    ]) {
+      expect((await f.adapter.execute(name, params, f.coordinator.ctx as never))?.isError).toBe(
+        true,
+      );
+    }
+  }
+});
+
 test("real callback transport queues a single wake and acknowledges only the persisted Pi message", async () => {
   const f = await fixture();
   expect(f.worker.messages.length).toBe(1);
@@ -317,9 +389,35 @@ test("callback-delivered reviewer assignment includes current canonical review b
   expect(message).toContain(`reviewer: ${reviewer.id}`);
   expect(message).toContain("## Findings");
   expect(message).toContain("fleet_question");
+  expect(message).toContain("Review Standards, Spec, and check evidence");
+  expect(message).toContain("actual test assertions");
+  expect(message).toContain("not semantic review completeness");
 
   const question = reviewerPane.tools.find((entry) => entry.name === "fleet_question")!;
   const assignmentId = currentAssignment(reviewer.snapshot)!.id;
+  expect(message).toContain(`review: \`${reviewer.id}-${assignmentId}-review\``);
+  expect(message).toContain(`question: \`${reviewer.id}-${assignmentId}-question\``);
+  const report = reviewerPane.tools.find((entry) => entry.name === "fleet_report")!;
+  const beforeRejection = await fleetStorage(f.directory).read();
+  const rejected = await report.execute(
+    "invalid-review",
+    {
+      reportId: `${reviewer.id}-${assignmentId}-review`,
+      assignmentId,
+      outcome: "review",
+      summary: "Invalid review",
+      filename: join(f.repository, filename),
+    },
+    undefined,
+    undefined,
+    reviewerPane.ctx,
+  );
+  expect(rejected.isError).toBe(true);
+  expect(rejected.content[0]?.text).toContain(`pass the exact relative filename \`${filename}\``);
+  expect(rejected.content[0]?.text).toContain(
+    `question: \`${reviewer.id}-${assignmentId}-question\``,
+  );
+  expect(await fleetStorage(f.directory).read()).toEqual(beforeRejection);
   expect(
     (
       await question.execute(
@@ -349,8 +447,59 @@ test("callback-delivered reviewer assignment includes current canonical review b
   expect(reviewerPane.messages[1]?.content).toContain("# Review");
   const answeredRun = await fleetStorage(f.directory).read();
   const answeredReviewer = answeredRun.workers.find((entry) => entry.id === reviewer.id)!;
+  const answeredAssignment = currentAssignment(answeredReviewer.snapshot)!.id;
+  expect(reviewerPane.messages[1]?.content).toContain(`assignment: ${answeredAssignment}`);
   expect(reviewerPane.messages[1]?.content).toContain(
-    `assignment: ${currentAssignment(answeredReviewer.snapshot)!.id}`,
+    `review: \`${reviewer.id}-${answeredAssignment}-review\``,
+  );
+  expect(reviewerPane.messages[1]?.content).toContain(
+    `question: \`${reviewer.id}-${answeredAssignment}-question\``,
+  );
+  expect(
+    reviewerPane.messages[1]?.content.includes(`review: \`${reviewer.id}-${assignmentId}-review\``),
+  ).toBe(false);
+  const refreshedFilename = reviewFilename(answeredRun, answeredReviewer);
+  const text = reviewTemplate(
+    {
+      ticketId: "T1",
+      reviewerId: reviewer.id,
+      assignmentId: answeredAssignment,
+      base: "b000001",
+      head: "c000001",
+      currentBase: "b000001",
+      currentHead: "c000001",
+      filename: refreshedFilename,
+    },
+    "approved",
+  );
+  f.platform.reviewFile = async (_run, requested) => {
+    expect(requested).toBe(refreshedFilename);
+    return { text, hash: digest(text) };
+  };
+  expect(
+    (
+      await report.execute(
+        "valid-review",
+        {
+          reportId: `${reviewer.id}-${answeredAssignment}-review`,
+          assignmentId: answeredAssignment,
+          outcome: "review",
+          summary: "Reviewed current binding",
+          filename: refreshedFilename,
+        },
+        undefined,
+        undefined,
+        reviewerPane.ctx,
+      )
+    ).isError,
+  ).toBe(false);
+  const approved = await fleetStorage(f.directory).read();
+  expect(approved.tickets[0]?.snapshot.state.path).toBe("Approved");
+  const forwarding = approved.workers.find((entry) => entry.id === f.workerId);
+  if (forwarding === undefined) throw new Error("Implementor missing");
+  const forwardingAssignment = currentAssignment(forwarding.snapshot)?.id;
+  expect(f.worker.messages.at(-1)?.content).toContain(
+    `approval: \`${f.workerId}-${forwardingAssignment}-approval\``,
   );
 });
 

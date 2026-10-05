@@ -6,6 +6,8 @@ import { createFleetExtension } from "./index.ts";
 type Handler = (event: unknown, ctx: unknown) => unknown;
 type Tool = {
   name: string;
+  description: string;
+  parameters: Record<string, unknown>;
   execute: (...args: unknown[]) => Promise<{ content: { text: string }[]; isError: boolean }>;
 };
 
@@ -170,6 +172,42 @@ describe("pi fleet extension", () => {
       "fleet_send",
       "fleet_watch",
     ]);
+  });
+
+  test("registered Pi tools describe both modes and expose managed timeout bounds", async () => {
+    const fake = await load(async () => list("idle", 1));
+    for (const registered of fake.tools) expect(registered.parameters.type).toBe("object");
+    const setup = tool(fake, "fleet_setup");
+    expect(setup.description).toContain("managed Pi takes workspace, integrationBranch, checks");
+    expect(setup.description).toContain("legacy takes panes");
+    expect(setup.description).toContain("MILLISECONDS");
+    expect(setup.parameters).toMatchObject({
+      anyOf: [
+        { type: "object", required: ["panes"] },
+        {
+          type: "object",
+          required: ["workspace", "integrationBranch", "checks"],
+          properties: {
+            commandTimeoutMs: {
+              type: "integer",
+              minimum: 1,
+              maximum: 570000,
+              description:
+                "Per-verification-command timeout in MILLISECONDS (1..570000, default 120000). Worker Bash timeout is a separate value in SECONDS; this does not enforce worker Bash budgets.",
+            },
+          },
+        },
+      ],
+    });
+    expect(tool(fake, "fleet_send").parameters).toHaveProperty("anyOf");
+    expect(tool(fake, "fleet_send").description).toContain("exact questionId");
+    expect(tool(fake, "fleet_status").description).toContain("durable ticket/worker snapshots");
+    expect(tool(fake, "fleet_read").description).toContain("diagnosis only");
+    for (const name of ["fleet_wait", "fleet_watch"]) {
+      expect(tool(fake, name).description).toContain("Legacy-only supervision");
+      expect(tool(fake, name).description).toContain(`Managed async workers reject ${name}`);
+    }
+    await fake.handlers.get("session_shutdown")?.({}, ctx);
   });
 
   test("fleet_status returns the listing as text", async () => {

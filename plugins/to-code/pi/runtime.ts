@@ -143,6 +143,33 @@ const saveReport = (
   };
 };
 
+type ReportOperation =
+  | "question"
+  | "completed"
+  | "failed"
+  | "review"
+  | "approval"
+  | "request-review";
+
+const suggestedReportId = (
+  run: FleetRun,
+  worker: WorkerRecord,
+  assignmentId: string,
+  operation: ReportOperation,
+): string => {
+  const literal = `${worker.id}-${assignmentId}-${operation}`;
+  const base = /^[A-Za-z0-9._:-]{1,140}$/.test(literal)
+    ? literal
+    : `report-${digest(JSON.stringify([worker.id, assignmentId])).slice(0, 40)}-${operation}`;
+  const used = new Set(
+    run.reports.filter((report) => report.workerId === worker.id).map((report) => report.id),
+  );
+  let candidate = base;
+  let suffix = 2;
+  while (used.has(candidate)) candidate = `${base}-${suffix++}`;
+  return candidate;
+};
+
 /**
  * A transaction owns the outcome, follow-up assignment, and outbox atomically. Platform
  * verification precedes that transaction, then assignment/Git evidence is checked again.
@@ -204,10 +231,6 @@ export const createFleetRuntime = (options: {
     const assignment = currentAssignment(worker.snapshot);
     if (assignment === undefined) throw new Error("Cannot dispatch a retired worker");
     const ticket = ticketOf(run, worker.ticketId);
-    const ending =
-      worker.snapshot.value.role === "reviewer"
-        ? `Write the assigned Markdown file ${run.repository}/${reviewFilename(run, worker)}, then call fleet_report with outcome review and that relative filename. Ask fleet_question if blocked. Never return bare approval or failure.`
-        : `Use fleet_report for completed/failed outcomes or forwarding approval. Use fleet_request_review after fixes. Ask fleet_question if blocked. Do not yield without a recorded outcome.`;
     return emit(run, {
       target: worker.id,
       kind: "assignment",
@@ -215,7 +238,7 @@ export const createFleetRuntime = (options: {
       workerId: worker.id,
       assignmentId: assignment.id,
       reportId: null,
-      text: `[async fleet ${run.id}] Assignment ${assignment.id}\nTicket ${ticket.id}: ${ticket.snapshot.value.goal}\n${assignment.goal}\n${ending}\nAll questions go to the coordinator; never prompt the user or other workers directly.`,
+      text: `[async fleet ${run.id}] Assignment ${assignment.id}\nTicket ${ticket.id}: ${ticket.snapshot.value.goal}\n${assignment.goal}`,
     });
   };
   const notify = async (): Promise<void> => {
@@ -228,7 +251,12 @@ export const createFleetRuntime = (options: {
       ].map((target) => options.notify(run.directory, target)),
     );
   };
-  const checkReplay = (run: FleetRun, reportId: string, hash: string): boolean => {
+  const checkReplay = (
+    run: FleetRun,
+    reportId: string,
+    hash: string,
+    operation: ReportOperation,
+  ): boolean => {
     if (!/^[A-Za-z0-9._:-]{1,160}$/.test(reportId))
       throw new Error("Report ID must be a bounded plain token");
     const worker = self(run);
@@ -236,8 +264,16 @@ export const createFleetRuntime = (options: {
       (report) => report.id === reportId && report.workerId === worker.id,
     );
     if (previous === undefined) return false;
-    if (previous.workerId !== worker.id || previous.requestHash !== hash)
-      throw new Error("Report ID reused with different content or identity");
+    if (previous.requestHash !== hash) {
+      const assignment = currentAssignment(worker.snapshot);
+      const recovery =
+        assignment === undefined
+          ? "This worker is retired; no new submission is allowed."
+          : `Current assignmentId: ${assignment.id}. For a distinct ${operation} submission on this assignment, use reportId ${suggestedReportId(run, worker, assignment.id, operation)}. Reuse the original ID only for an identical retry; stale assignments remain rejected.`;
+      throw new Error(
+        `Report ID ${reportId} reused with different content or identity. It already records ${previous.kind} for assignment ${previous.assignmentId}. ${recovery}`,
+      );
+    }
     return true;
   };
   const unchangedReview = async (run: FleetRun, filename: string): Promise<void> => {
@@ -390,13 +426,14 @@ export const createFleetRuntime = (options: {
     });
   };
 
-  const getReviewContext = async (): Promise<{
+  const reviewContextFor = async (
+    run: FleetRun,
+    worker: WorkerRecord,
+  ): Promise<{
     assignmentId: string;
     filename: string;
     template: string;
   }> => {
-    const run = await storage.read();
-    const worker = self(run);
     const assignment = currentAssignment(worker.snapshot);
     if (assignment === undefined) throw new Error("Reviewer assignment is no longer active");
     const binding = reviewBinding(run, worker, await factsFor(run, ticketOf(run, worker.ticketId)));
@@ -405,6 +442,30 @@ export const createFleetRuntime = (options: {
       filename: binding.filename,
       template: reviewTemplate(binding, "approved"),
     };
+  };
+  const getReviewContext = async () => {
+    const run = await storage.read();
+    return reviewContextFor(run, self(run));
+  };
+  const getAssignmentContext = async (): Promise<{ assignmentId: string; content: string }> => {
+    const run = await storage.read();
+    const worker = activeSelf(run);
+    const assignment = currentAssignment(worker.snapshot);
+    if (assignment === undefined) throw new Error("Worker has no current assignment");
+    const ticket = ticketOf(run, worker.ticketId);
+    const reviewer = worker.snapshot.value.role === "reviewer";
+    const operations: ReportOperation[] = reviewer
+      ? ["question", "review"]
+      : ["question", "completed", "failed", "approval", "request-review"];
+    let content = `Worker ${worker.id} (${worker.snapshot.value.role}); assignmentId: \`${assignment.id}\`\nTicket ${ticket.id}: ${ticket.snapshot.value.goal}\n${assignment.goal}\nSuggested reportIds (unique per worker, assignment, and operation):\n${operations.map((operation) => `${operation}: \`${suggestedReportId(run, worker, assignment.id, operation)}\``).join("\n")}\nIdentical retries reuse the same reportId and payload. For changed submissions choose a fresh ID (append a suffix if needed); never reuse a bare worker ID. Use only this assignmentId. All questions go to the coordinator through fleet_question, never to the user or other workers. Do not orchestrate agents, land code, or grant native permissions.\nFleet verification commands have a ${run.commandTimeoutMs} millisecond timeout. Bash timeout is in SECONDS: timeout 180 means 180 seconds, not 180000. Give shell commands finite timeouts and use small, reachable test fixtures. This guidance does not enforce worker Bash budgets.`;
+    if (reviewer) {
+      const review = await reviewContextFor(run, worker);
+      content += `\nReview Standards, Spec, and check evidence. Read repository AGENTS.md/CLAUDE.md, CLAUDE.local.md if present, applicable rules, and the spec/ticket referenced above. Map acceptance requirements to actual test assertions; identify missing coverage instead of trusting test names or passing checks. A valid artifact proves binding and structure, not semantic review completeness.\nRequired review template (preserve bound metadata; choose approved or changes_requested and fill Findings):\n${review.template}\nWrite this file using the absolute path ${run.repository}/${review.filename}, then pass the exact relative filename \`${review.filename}\` to fleet_report with outcome review. Never return bare approval/failure. If a rejected submission cannot be corrected, use fleet_question with its distinct suggested question reportId. Preserve strict validation.`;
+    } else {
+      content +=
+        "\nUse fleet_report for completed/failed outcomes. Forward outcome approval only for a live unchanged approved review. After fixing validated findings, commit/check and use fleet_request_review to rearm the retained reviewer. Do not yield without a recorded outcome or question.";
+    }
+    return { assignmentId: assignment.id, content };
   };
   return {
     read: storage.read,
@@ -623,7 +684,7 @@ export const createFleetRuntime = (options: {
     question: async (reportId: string, assignmentId: string, question: string): Promise<void> => {
       const hash = digest(JSON.stringify({ kind: "question", assignmentId, question }));
       await storage.change(async (run) => {
-        if (checkReplay(run, reportId, hash)) return { run, value: undefined };
+        if (checkReplay(run, reportId, hash, "question")) return { run, value: undefined };
         const worker = activeSelf(run);
         const assignment = currentAssignment(worker.snapshot)!;
         if (assignment.id !== assignmentId)
@@ -671,7 +732,7 @@ export const createFleetRuntime = (options: {
         }),
       );
       const initial = await storage.read();
-      if (checkReplay(initial, input.reportId, hash)) {
+      if (checkReplay(initial, input.reportId, hash, input.outcome)) {
         await notify();
         return;
       }
@@ -708,7 +769,7 @@ export const createFleetRuntime = (options: {
             )
           : undefined;
       await storage.change(async (run) => {
-        if (checkReplay(run, input.reportId, hash)) return { run, value: undefined };
+        if (checkReplay(run, input.reportId, hash, input.outcome)) return { run, value: undefined };
         const worker = activeSelf(run);
         const assignment = currentAssignment(worker.snapshot)!;
         const ticket = ticketOf(run, worker.ticketId);
@@ -843,7 +904,7 @@ export const createFleetRuntime = (options: {
     ): Promise<void> => {
       const hash = digest(JSON.stringify({ kind: "re-review", assignmentId, summary }));
       const initial = await storage.read();
-      if (checkReplay(initial, reportId, hash)) {
+      if (checkReplay(initial, reportId, hash, "request-review")) {
         await notify();
         return;
       }
@@ -867,7 +928,7 @@ export const createFleetRuntime = (options: {
         initial.commandTimeoutMs,
       );
       await storage.change(async (run) => {
-        if (checkReplay(run, reportId, hash)) return { run, value: undefined };
+        if (checkReplay(run, reportId, hash, "request-review")) return { run, value: undefined };
         const worker = activeSelf(run);
         const currentTicket = ticketOf(run, worker.ticketId);
         if (
@@ -952,6 +1013,7 @@ export const createFleetRuntime = (options: {
       if (reason === undefined) await notify();
       return reason;
     },
+    assignmentContext: getAssignmentContext,
     reviewContext: getReviewContext,
     reviewTemplate: async (): Promise<string> => (await getReviewContext()).template,
     acknowledge: async (callbackId: string): Promise<void> =>

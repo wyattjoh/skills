@@ -31,7 +31,12 @@ const Setup = Schema.Struct({
   workspace: Text,
   integrationBranch: Text,
   checks: Schema.Array(Text),
-  commandTimeoutMs: Schema.optionalKey(Schema.Number),
+  commandTimeoutMs: Schema.optionalKey(
+    Schema.Int.check(Schema.isBetween({ minimum: 1, maximum: 570_000 })).annotate({
+      description:
+        "Per-verification-command timeout in MILLISECONDS (1..570000, default 120000). Worker Bash timeout is a separate value in SECONDS; this does not enforce worker Bash budgets.",
+    }),
+  ),
 });
 const StartTicket = Schema.Struct({
   ...FleetId,
@@ -225,13 +230,13 @@ export const createAsyncFleetAdapter = (
             }
             if (inFlight.has(callback.id)) continue;
             let content = callback.text;
-            if (callback.kind === "assignment" && worker?.snapshot.value.role === "reviewer") {
-              const review = await rt.reviewContext();
-              if (review.assignmentId !== callback.assignmentId) {
+            if (callback.kind === "assignment") {
+              const binding = await rt.assignmentContext();
+              if (binding.assignmentId !== callback.assignmentId) {
                 await rt.obsolete(callback.id);
                 continue;
               }
-              content += `\n\nRequired review template (copy it exactly, filling in findings):\n${review.template}\nWrite this file using the absolute path ${join(current.repository, review.filename)}, then pass the exact relative filename \`${review.filename}\` to fleet_report with outcome review. If submission is rejected and you cannot resolve the assigned filename/schema issue, ask the coordinator with fleet_question. Do not weaken or bypass review validation.`;
+              content = `[async fleet ${current.id}] Assignment ${binding.assignmentId}\n\n${binding.content}`;
             }
             inFlight.add(callback.id);
             pi.sendMessage(
@@ -398,6 +403,24 @@ export const createAsyncFleetAdapter = (
         try {
           return result(await execute(decode(params), ctx, signal));
         } catch (error) {
+          if (
+            role === "reviewer" &&
+            workerId !== undefined &&
+            typeof runFlag === "string" &&
+            name === "fleet_report"
+          ) {
+            let recovery =
+              "Read fleet_status for your current assignment. Ask the coordinator through fleet_question with a fresh reportId if unresolved; preserve strict review validation.";
+            try {
+              recovery = (await runtime(runFlag, ctx, signal).assignmentContext()).content;
+            } catch {
+              // Preserve the original rejection when current binding cannot be read safely.
+            }
+            return result(
+              `${String(error)}\n\nReview submission rejected. Current recovery context:\n${recovery}`,
+              true,
+            );
+          }
           return result(String(error), true);
         }
       },
@@ -466,7 +489,7 @@ export const createAsyncFleetAdapter = (
     };
     register(
       "fleet_question",
-      "Durably ask the coordinator about the current assignment. This accounts for waiting; identify its reportId in the coordinator answer. Never ask the user directly.",
+      "Durably ask the coordinator about the current assignment. Use its suggested question reportId, unique per worker/assignment/operation; identical payload retries are idempotent, conflicting reuse is rejected. This accounts for waiting. Answers require this exact question ID. Never ask the user directly.",
       Question,
       Schema.decodeUnknownSync(Question),
       async (input, ctx, signal) => {
@@ -476,7 +499,7 @@ export const createAsyncFleetAdapter = (
     );
     register(
       "fleet_report",
-      "Persist the current assignment's explicit outcome before yielding. Implementors report completed/failed or forward approval; reviewers MUST return the exact assigned validated scratch Markdown filename, never bare approval/failure. Duplicate report IDs are idempotent; conflicting reuse fails.",
+      "Persist the current assignment's explicit outcome before yielding. Use the suggested per-worker/assignment/outcome reportId, not a bare worker ID. Only identical payload retries reuse an ID; changed submissions need fresh IDs. Implementors report completed/failed or forward live approval; reviewers return the exact assigned validated relative Markdown filename, never bare approval/failure. Structure/binding validation does not prove semantic review completeness.",
       Report,
       Schema.decodeUnknownSync(Report),
       async (input, ctx, signal) => {
@@ -486,7 +509,7 @@ export const createAsyncFleetAdapter = (
     );
     register(
       "fleet_request_review",
-      "Implementor-only: after fixing medium-or-higher findings, commit and verify fixes, then rearm the retained reviewer. Records your outcome and the new review assignment atomically.",
+      "Implementor-only: after fixing medium-or-higher findings, commit and verify fixes, then rearm the retained reviewer. Use the current assignment's suggested request-review reportId; only identical payload retries reuse an ID. Records your outcome and the new review assignment atomically.",
       ReReview,
       Schema.decodeUnknownSync(ReReview),
       async (input, ctx, signal) => {
@@ -506,9 +529,10 @@ export const createAsyncFleetAdapter = (
       const run = await rt.read();
       const worker = run.workers.find((entry) => entry.id === workerId);
       if (worker === undefined) throw new Error("Worker binding missing");
-      let content = `[async fleet] You are ${role} ${workerId}. State: ${worker.snapshot.state.path}. Current assignment: ${JSON.stringify(currentAssignment(worker.snapshot))}. When not Active, wait for a fresh assignment and never repeat already-accounted work. Use its exact assignmentId in every report/question. All questions route through fleet_question. Do not orchestrate other agents, land code, or answer native approval dialogs yourself.`;
-      if (role === "reviewer" && worker.snapshot.state.path === "Active")
-        content += `\nRequired review template:\n${await rt.reviewTemplate()}`;
+      const content =
+        worker.snapshot.state.path === "Active"
+          ? (await rt.assignmentContext()).content
+          : `[async fleet] You are ${role} ${workerId}. State: ${worker.snapshot.state.path}. Wait for a fresh assignment and never repeat already-accounted work. All questions route through fleet_question. Do not orchestrate other agents, land code, or grant native permissions.`;
       return {
         message: {
           customType: "to-code-async-binding",
@@ -585,11 +609,28 @@ export const createAsyncFleetAdapter = (
   return {
     worker: workerId !== undefined,
     managed: () => managed,
+    description: (name: string, legacy: string): string => {
+      switch (name) {
+        case "fleet_setup":
+          return "Set up one of two modes: managed Pi takes workspace, integrationBranch, checks, optional commandTimeoutMs (integer MILLISECONDS, 1..570000, default 120000); legacy takes panes. Managed mode persists assignment-correlated work and uses durable callbacks, never fleet_wait/fleet_watch completion polling. Legacy mode scopes Herdr panes and permits bounded wait/watch supervision. Finish/account for legacy dispatches before switching.";
+        case "fleet_status":
+          return "With a managed async fleetId, read durable ticket/worker snapshots, assignments, launch/transport state and pending callbacks. Otherwise list legacy Herdr pane status/watches. Diagnostic only: native idle is not a managed outcome.";
+        case "fleet_send":
+          return "Managed mode requires async fleetId plus owned workerId or pane and text; a question answer requires its exact questionId. Records a fresh correlated assignment and rearms the stop gate, then delivers through durable callbacks, not watches. Legacy mode prompts a pane and watches by default. Never resend an uncertain dispatch blindly; inspect state.";
+        case "fleet_read":
+          return "Read an owned managed worker or legacy pane's recent terminal output for diagnosis only. Managed outcomes come from durable reports and exact validated artifacts, not terminal output or idle status.";
+        case "fleet_wait":
+        case "fleet_watch":
+          return `Legacy-only supervision. Managed async workers reject ${name}: yield for their durable callbacks instead of completion polling. ${legacy}`;
+        default:
+          return legacy;
+      }
+    },
     inputSchema: (name: string, legacy: Record<string, unknown>): Record<string, unknown> =>
       name === "fleet_setup"
-        ? { anyOf: [legacy, Schema.toJsonSchemaDocument(Setup).schema] }
+        ? { type: "object", anyOf: [legacy, Schema.toJsonSchemaDocument(Setup).schema] }
         : name === "fleet_send"
-          ? { anyOf: [legacy, Schema.toJsonSchemaDocument(Send).schema] }
+          ? { type: "object", anyOf: [legacy, Schema.toJsonSchemaDocument(Send).schema] }
           : legacy,
     start: async (ctx: ExtensionContext): Promise<void> => {
       references.clear();
@@ -624,14 +665,8 @@ export const createAsyncFleetAdapter = (
           const facts = await commandPlatform.facts(repository, input.integrationBranch);
           if (facts.branch !== input.integrationBranch)
             throw new Error("Coordinator cwd must be the chosen integration worktree/branch");
-          if (
-            input.checks.length === 0 ||
-            (input.commandTimeoutMs !== undefined &&
-              (input.commandTimeoutMs < 1 || input.commandTimeoutMs > 570_000))
-          )
-            throw new Error(
-              "Provide verification commands and a bounded command timeout (1..570000 ms)",
-            );
+          if (input.checks.length === 0)
+            throw new Error("Provide at least one verification command");
           if (!(await commandPlatform.scratchIgnored(repository)))
             throw new Error(".scratch/ must be Git-ignored before fleet setup");
           const fleetId = `async-${randomUUID()}`;

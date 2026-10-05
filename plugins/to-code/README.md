@@ -6,6 +6,8 @@ Pi's async coordinator and workers share the production statecharts in `fleet/mo
 
 Use the @earendil-works Pi CLI 1.0.2 or newer inside Herdr. Async startup checks the actual host package, not the plugin's dev dependency. Unknown embedded hosts fail closed. Install this package's pinned dependencies before loading `pi/index.ts`. Do not load multiple copies of the extension.
 
+Resolve the installed skill and extension independently before a run, and record their real paths/revisions plus the actual Pi host version in the run evidence. `pi list` shows configured package sources; a local package loads directly from that path. A skill manager may instead cache a remote Git checkout. Updating that source follows its configured remote/ref, not unpushed local commits. Use the manager's supported local-source/provider selection for approved local development, or wait for publication; preserve its cache and load only one extension copy. Restart/reload after approved installation changes and check the newly loaded skill's managed/legacy routing.
+
 The coordinator owns scheduling, questions, and serial integration. Workers receive an existing ticket worktree, explicit model/thinking configuration, and one assignment ID. Startup uses a new background tab (`--no-focus`) in the coordinator-selected existing workspace, without creating a branch or worktree:
 
 ```text
@@ -19,7 +21,7 @@ A reviewer uses `--fleet-reviewer` instead. Only one role flag is allowed. Launc
 
 | Tool                   | Required input and meaning                                                                                                                                                                                                           |
 | ---------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `fleet_setup`          | `workspace`, `integrationBranch`, `checks`, optional `commandTimeoutMs` (1..570000). Cwd must be the integration worktree; `.scratch/` must be Git-ignored.                                                                          |
+| `fleet_setup`          | `workspace`, `integrationBranch`, `checks`, optional `commandTimeoutMs` (integer milliseconds, 1..570000, default 120000). Cwd must be the integration worktree; `.scratch/` must be Git-ignored.                                    |
 | `fleet_start_ticket`   | `fleetId`, `ticketId`, `worktree`, `goal`, `model`, `thinking`. The supplied worktree must be clean, separate, already created, and share the Git common directory. Ticket IDs are plain tokens.                                     |
 | `fleet_start_review`   | `fleetId`, `ticketId`, `model`, `thinking`. Requires verified implementation evidence. Reuses the retained reviewer on a refreshed implementation, keeping its recorded configuration.                                               |
 | `fleet_send`           | `fleetId`, `workerId` (or owned `pane`), `text`, optional `questionId`. Answers require the exact pending question ID. Dispatch rearms the stop gate with a new assignment.                                                          |
@@ -39,9 +41,15 @@ If Git changes during review or approval, `fleet_send` explicitly supersedes sta
 | `fleet_report`         | `reportId`, `assignmentId`, `outcome`, `summary`, optional `filename`. Implementor outcomes: `completed`, `failed`, `approval`. Reviewer outcome: `review` with the assigned file. |
 | `fleet_request_review` | `reportId`, `assignmentId`, `summary`. After fixing validated findings, checks the changed implementation and rearms the retained reviewer.                                        |
 
-Report IDs are unique per worker across assignments. Identical retries are idempotent; changed payloads or stale assignment IDs are rejected. No final chat message, bare approval, or Herdr terminal state substitutes for these tools. Every active assignment remains stop-guarded at `agent_before_settle`; accounted questions, reports, supersession, and recorded control faults may wait. A recorded `Lost` fault is not ticket completion.
+Every delivered assignment supplies literal worker/role/assignment identity and suggested IDs such as `<worker>-<assignment>-question`, `-completed`, `-failed`, `-review`, `-approval`, and `-request-review` for the role's supported operations. Callback turns receive this context without relying on lifecycle hooks. A new assignment, including a question answer or retained re-review, supplies fresh suggestions and review binding.
+
+Report IDs are unique per worker across assignments and operations. Identical retries reuse the original ID and payload and are idempotent, including after newer work is assigned, without clearing its stop gate. Changed payloads require fresh IDs; stale new submissions are rejected. Collision errors identify the prior operation/assignment and suggest an unused current-assignment ID (with a suffix if needed). A rejected review leaves its gate armed and returns the current literal filename/template plus a distinct question ID for coordinator recovery. Use that context, not a bare worker ID. No final chat message, bare approval, or Herdr terminal state substitutes for these tools. Every active assignment remains stop-guarded at `agent_before_settle`; accounted questions, reports, supersession, and recorded control faults may wait. A recorded `Lost` fault is not ticket completion.
 
 All worker questions route to the coordinator. Native UI questions are surfaced there, but answers do not grant native permissions or resolve human confirmation dialogs. Abort/error/no-continuation paths preserve a control-fault callback without fabricating a reviewer result. Hard crashes outside lifecycle hooks need coordinator inspection/recovery.
+
+### Execution budgets
+
+`commandTimeoutMs` bounds each configured fleet verification command in milliseconds. Worker Bash's `timeout` is in **seconds**: `180` seconds corresponds to `180000` milliseconds. Assignment context states these units and asks for finite shell timeouts and small, reachable fixtures. Fleet command bounds and process-group cleanup are enforced by the extension; worker Bash budgets are guidance only. This is not a resource sandbox.
 
 ### Review contract
 
@@ -64,7 +72,7 @@ None.
 
 Use `changes_requested` with `- [medium|high|critical] <actionable finding and location>` when blocking fixes are needed. Low suggestions may accompany approval. Exactly one metadata value and Findings section are required. Assignment, reviewer, ticket, filename, base, and head must match the live binding. Canonical file reads reject traversal, symlinks, nonregular/outside files, and files over 1 MiB.
 
-Findings go directly to the implementor. The implementor fixes them and requests re-review; the same reviewer remains assigned. Approval goes to the implementor, who forwards `outcome: approval` to the coordinator. Accepted file digests are rechecked for re-review, forwarding, and landing. Validation proves structure and evidence binding, not the semantic quality of a review.
+Findings go directly to the implementor. The implementor fixes them and requests re-review; the same reviewer remains assigned. Approval goes to the implementor, who forwards `outcome: approval` to the coordinator. Accepted file digests are rechecked for re-review, forwarding, and landing. Validation proves structure and evidence binding, not the semantic quality of a review. Reviewers read the referenced spec/ticket and applicable repository standards, then map acceptance requirements to actual test assertions and flag missing coverage. Passing checks or suggestive test names do not establish that coverage. The template's `approved` value is a placeholder, not a preselected verdict. The coordinator independently inspects and verifies the final integrated branch and delegates any corrections.
 
 ## Durability and recovery
 

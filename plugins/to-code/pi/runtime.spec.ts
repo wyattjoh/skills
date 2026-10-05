@@ -30,7 +30,7 @@ const rejected = async (operation: Promise<unknown>): Promise<string> => {
 };
 const config = { model: "test/model", thinking: "high" as const };
 
-const fixture = async () => {
+const fixture = async (newId: (() => string) | undefined = undefined) => {
   const repository = await mkdtemp(join(tmpdir(), "to-code-runtime-"));
   directories.push(repository);
   const directory = join(repository, ".scratch", "to-code", "async-test");
@@ -120,7 +120,8 @@ const fixture = async () => {
       storage,
       platform,
       actor,
-      newId: () => `${(++count).toString(16).padStart(8, "0")}-0000-4000-8000-000000000000`,
+      newId:
+        newId ?? (() => `${(++count).toString(16).padStart(8, "0")}-0000-4000-8000-000000000000`),
       notify: async (_directory, target) => {
         const persisted = await storage.read();
         expect(persisted.outbox.some((entry) => entry.target === target)).toBe(true);
@@ -307,6 +308,63 @@ describe("durable real-runtime interface", () => {
     ).toContain("reused");
   });
 
+  test("collision recovery suggests a fresh current-assignment ID without weakening replay or stop gates", async () => {
+    const f = await fixture();
+    const id = await f.implementation();
+    const worker = await f.worker(id);
+    const old = await f.assignmentId(id);
+    await f.coordinator.send(id, "Reverify", null);
+    const current = await f.assignmentId(id);
+    const before = await f.storage.read();
+    const error = await rejected(worker.question("implementation-1", current, "Choose behavior?"));
+    expect(error).toContain(`already records implementation for assignment ${old}`);
+    expect(error).toContain(`Current assignmentId: ${current}`);
+    expect(error).toContain(`use reportId ${id}-${current}-question`);
+    expect(await f.storage.read()).toEqual(before);
+    const checks = f.checks();
+    await worker.report({
+      reportId: "implementation-1",
+      assignmentId: old,
+      outcome: "completed",
+      summary: "Implemented and committed",
+      filename: null,
+    });
+    expect(f.checks()).toBe(checks);
+    expect(await f.storage.read()).toEqual(before);
+    expect(await worker.stop()).toContain(`Assignment ${current} is still open`);
+    await worker.question(`${id}-${current}-question`, current, "Choose behavior?");
+    const answered = await f.storage.read();
+    const reports = answered.reports.length;
+    const callbacks = answered.outbox.length;
+    await worker.question(`${id}-${current}-question`, current, "Choose behavior?");
+    expect((await f.storage.read()).reports.length).toBe(reports);
+    expect((await f.storage.read()).outbox.length).toBe(callbacks);
+    expect(
+      await rejected(worker.question(`${id}-${current}-question`, current, "Changed question")),
+    ).toContain(`use reportId ${id}-${current}-question-2`);
+  });
+
+  test("suggested IDs remain bounded and distinct for unusually long assignments", async () => {
+    let count = 0;
+    const f = await fixture(() => `${++count}-${"x".repeat(220)}`);
+    const id = await f.coordinator.startTicket({
+      ticketId: "T1",
+      worktree: "/ticket",
+      goal: "Implement",
+      config,
+    });
+    const context = await (await f.worker(id)).assignmentContext();
+    const ids = Array.from(
+      context.content.matchAll(
+        /^(?:question|completed|failed|approval|request-review): `([^`]+)`$/gm,
+      ),
+      (match) => match[1],
+    );
+    expect(ids).toHaveLength(5);
+    expect(new Set(ids).size).toBe(5);
+    for (const suggested of ids) expect(suggested).toMatch(/^[A-Za-z0-9._:-]{1,160}$/);
+  });
+
   test("question waiting and stale replies are correlated; repeated stops remain armed after answer", async () => {
     const f = await fixture();
     const id = await f.coordinator.startTicket({
@@ -423,6 +481,7 @@ describe("durable real-runtime interface", () => {
   test("findings go directly to implementor; fixes rearm the retained reviewer", async () => {
     const f = await fixture();
     const reviewer = await f.review();
+    const originalReviewAssignment = await f.assignmentId(reviewer);
     const filename = await f.writeReview(reviewer, "changes_requested");
     await (
       await f.worker(reviewer)
@@ -449,6 +508,14 @@ describe("durable real-runtime interface", () => {
     expect(run.workers.find((entry) => entry.id === reviewer)?.snapshot.state.path).toBe("Active");
     expect(run.outbox.at(-1)?.target).toBe(reviewer);
     expect(f.events.filter((event) => event === "tab").length).toBe(2);
+    const currentReviewAssignment = await f.assignmentId(reviewer);
+    const context = await (await f.worker(reviewer)).assignmentContext();
+    expect(context.assignmentId).toBe(currentReviewAssignment);
+    expect(context.content).toContain(`review: \`${reviewer}-${currentReviewAssignment}-review\``);
+    expect(
+      context.content.includes(`review: \`${reviewer}-${originalReviewAssignment}-review\``),
+    ).toBe(false);
+    expect(context.content).toContain("head: c000002");
   });
 
   test("approval must pass through implementor, then landing verifies fresh checks and ancestry before cleanup", async () => {
