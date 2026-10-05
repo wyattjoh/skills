@@ -93,6 +93,13 @@
       "name": "@wyattjoh/pr-review-skill",
       "version": "1.0.0",
     },
+    "skills/reference-submodules": {
+      "name": "@wyattjoh/reference-submodules-skill",
+      "version": "1.0.0",
+      "dependencies": {
+        "effect": "^3.22.2",
+      },
+    },
     "skills/setup-alchemy": {
       "name": "@wyattjoh/setup-alchemy-skill",
       "version": "1.0.0",
@@ -585,6 +592,8 @@
     "@wyattjoh/npm-info-skill": ["@wyattjoh/npm-info-skill@workspace:skills/npm-info"],
 
     "@wyattjoh/pr-review-skill": ["@wyattjoh/pr-review-skill@workspace:skills/pr-review"],
+
+    "@wyattjoh/reference-submodules-skill": ["@wyattjoh/reference-submodules-skill@workspace:skills/reference-submodules"],
 
     "@wyattjoh/setup-alchemy-skill": ["@wyattjoh/setup-alchemy-skill@workspace:skills/setup-alchemy"],
 

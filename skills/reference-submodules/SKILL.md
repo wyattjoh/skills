@@ -11,7 +11,7 @@ description: >-
   ".claude/references" submodules.
 argument-hint: "[add|upgrade|remove|sync|help] [repo-url]"
 allowed-tools: >-
-  Bash(git *), Bash(gh *), Read, Grep, Glob, Edit
+  Bash(git *), Bash(gh *), Bash(bun *), Read, Grep, Glob, Edit
 effort: high
 ---
 
@@ -23,7 +23,7 @@ the project's `CLAUDE.md` "Dependency References" table stays accurate.
 
 **Arguments provided**: $ARGUMENTS
 
-**Requires:** git 2.23+ (the workflow uses `git submodule set-branch`, added in 2.22, and `git restore`, added in 2.23). `gh` is optional (used for tag listing on private repos).
+**Requires:** git 2.23+ and Bun for the addition script. Install the script's dependencies with `bun install` in `$SKILL_DIR` (or the collection root). `gh` is optional (used for tag listing on private repos).
 
 This skill manages references. _Consuming_ them (preferring local reference
 source over web docs) is an always-on rule in global `CLAUDE.md`, not this skill.
@@ -83,35 +83,38 @@ before mutating `.gitmodules`**.
 
 ### `add <repo-url>`
 
-1. Run the **Preconditions** checks. If the path already exists in `.gitmodules`,
-   switch to `upgrade`.
-2. Run **Version resolution**, then confirm.
-3. Add the submodule. **Never use `git submodule add -b <tag>`** — `-b` names a
-   branch, and a shallow clone has no history to synthesize a branch from a tag,
-   so it always fails with `fatal: '<tag>' is not a commit`. Clone first, then
-   fetch and check out the tag explicitly:
-   - With a tag:
-     ```bash
-     git submodule add --depth 1 <repo-url> .claude/references/<dir>
-     cd .claude/references/<dir>
-     git fetch --depth 1 origin tag <tag>
-     git checkout <tag>
-     cd -
-     git submodule set-branch --branch <tag> -- .claude/references/<dir>
-     git add .gitmodules .claude/references/<dir>
-     ```
-   - No-tag fallback (default branch): add as-is, then record the commit:
-     ```bash
-     git submodule add --depth 1 <repo-url> .claude/references/<dir>
-     ```
-4. Verify the add landed as a submodule, not a flattened directory tree: run
-   `git ls-files -s .claude/references/<dir>` and confirm it shows exactly one
-   `160000` gitlink entry. Many regular-file (`100644`) entries means the index
-   got corrupted during a retry (see Edge cases) — reset and redo the add before
-   continuing.
-5. Update the **CLAUDE.md table** (see below).
-6. Report the path, pinned ref, and that `.gitmodules` + the gitlink are staged.
-   Remind the user to commit.
+Resolve the dependency, directory, and version using **Version resolution**, then
+use the addition script from the host project directory:
+
+```bash
+bun $SKILL_DIR/scripts/add.ts <repo-url> --tag <exact-tag> --name <dir> --dependency <package-name>
+```
+
+For a repository without tags, use `--default-branch` instead of `--tag`.
+The script accepts explicit pins; dependency detection and latest-tag selection
+remain the agent's responsibility. Run `--help` for manual-use options, including
+`--repo <host-directory>`, `--version <table-version>`, and `--dry-run`.
+
+The script shows the resolved commit and asks for confirmation. For agent use,
+show the `--dry-run` plan, obtain confirmation, then run the same arguments with
+`--yes --expected-commit <confirmed-sha>`. The commit guard stops if the remote
+ref moved between invocations. The agent's confirmation gate still applies when
+using `--yes`.
+
+Done when the script reports a verified `160000` gitlink at the confirmed commit,
+a shallow detached checkout, and the updated **CLAUDE.md table**. It stages
+`.gitmodules`, the gitlink, and the documentation (following an in-repo
+`CLAUDE.md` symlink to its target). It preserves extra table columns, populating
+Repository and Pin columns when present. Report the path and pin; the script
+never commits or pushes.
+
+Existing registrations, occupied paths, stored modules from failed adds, and
+dirty host metadata stop the script before mutation. After a Git failure,
+inspect the partial state before retrying; the script retains it and performs
+no destructive cleanup.
+
+Tag pins use detached HEAD, not `.gitmodules`' `branch` setting. That setting is
+for actual remote branches; recording a tag there breaks `update --remote`.
 
 ### `upgrade <name> [version]`
 
@@ -121,15 +124,17 @@ Bump an existing reference to a new tag (or the matching installed version).
    absent, suggest `add`.
 2. Resolve the new ref via **Version resolution**. If `version` was given, use it
    verbatim after confirming the tag exists. Confirm.
-3. Fetch and check out the new ref, then update the tracked branch:
+3. Fetch and check out the new tag in detached HEAD:
    ```bash
    cd .claude/references/<name>
    git fetch --depth 1 origin tag <new-tag>
-   git checkout <new-tag>
+   git checkout --detach <new-tag>
    cd -
-   git submodule set-branch --branch <new-tag> -- .claude/references/<name>
-   git add .gitmodules .claude/references/<name>
+   git add .claude/references/<name>
    ```
+   If an older add recorded a tag in `submodule.<path>.branch`, remove that
+   setting from `.gitmodules` and stage the file. Keep actual branch settings
+   only for references intentionally tracking remote branches.
 4. Update the version cell in the **CLAUDE.md table**.
 5. Report old -> new ref. Remind the user to commit.
 
