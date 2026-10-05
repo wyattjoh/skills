@@ -11,12 +11,13 @@ type Tool = {
 
 const createFakePi = () => {
   const tools: Tool[] = [];
+  const flags: Record<string, string> = {};
   const handlers = new Map<string, Handler>();
   const messages: { content: string; options: unknown }[] = [];
   return {
     pi: {
       registerFlag: () => undefined,
-      getFlag: () => undefined,
+      getFlag: (name: string) => flags[name],
       registerTool: (tool: Tool) => tools.push(tool),
       on: (event: string, handler: Handler) => handlers.set(event, handler),
       sendMessage: (message: { content: string }, options: unknown) =>
@@ -25,6 +26,7 @@ const createFakePi = () => {
     tools,
     handlers,
     messages,
+    flags,
   };
 };
 
@@ -47,14 +49,20 @@ const list = (status: string, seq: number): RunOutput => ({
   stderr: "",
 });
 
-const ctx = { hasUI: false, ui: {} };
+const ctx = {
+  hasUI: false,
+  ui: {},
+  cwd: "/tmp",
+  sessionManager: { getSessionId: () => "session", getBranch: () => [] },
+};
 
-const load = (
+const load = async (
   runner: Runner,
   env: Record<string, string | undefined> = { HERDR_ENV: "1", HERDR_PANE_ID: "self" },
 ) => {
   const fake = createFakePi();
   createFleetExtension({ runner, env, intervalMs: 60_000 })(fake.pi as never);
+  await fake.handlers.get("session_start")?.({}, ctx);
   return fake;
 };
 
@@ -65,14 +73,57 @@ const tool = (fake: ReturnType<typeof createFakePi>, name: string) => {
 };
 
 describe("pi fleet extension", () => {
-  test("does nothing outside herdr", () => {
-    const fake = load(async () => list("idle", 1), {});
+  test("does nothing outside herdr", async () => {
+    const fake = await load(async () => list("idle", 1), {});
     expect(fake.tools.length).toBe(0);
-    expect(fake.handlers.size).toBe(0);
+    expect([...fake.handlers.keys()]).toEqual([
+      "session_start",
+      "session_before_switch",
+      "session_shutdown",
+    ]);
   });
 
-  test("registers the fleet tools", () => {
-    const fake = load(async () => list("idle", 1));
+  test("binds delayed role flags before registering worker tools", async () => {
+    const fake = createFakePi();
+    createFleetExtension({
+      runner: async () => list("idle", 1),
+      env: { HERDR_ENV: "1", HERDR_PANE_ID: "self" },
+      intervalMs: 60_000,
+      assertHost: () => undefined,
+    })(fake.pi as never);
+    expect(fake.tools).toEqual([]);
+    fake.flags["fleet-run"] = "/tmp/missing-fleet-run";
+    fake.flags["fleet-implementor"] = "worker-1";
+    await expect(fake.handlers.get("session_start")?.({}, ctx)).rejects.toThrow();
+    expect(fake.tools.map((entry) => entry.name)).toEqual([
+      "fleet_question",
+      "fleet_report",
+      "fleet_request_review",
+      "fleet_status",
+    ]);
+  });
+
+  test("rejects delayed worker flags outside Herdr", async () => {
+    const fake = createFakePi();
+    createFleetExtension({ runner: async () => list("idle", 1), env: {}, intervalMs: 60_000 })(
+      fake.pi as never,
+    );
+    fake.flags["fleet-implementor"] = "worker-1";
+    await expect(fake.handlers.get("session_start")?.({}, ctx)).rejects.toThrow(
+      "Async fleet workers must launch inside Herdr",
+    );
+    expect(fake.tools).toEqual([]);
+  });
+
+  test("session changes reuse registrations without duplicating tools", async () => {
+    const fake = await load(async () => list("idle", 1));
+    const registered = fake.tools.map((entry) => entry.name);
+    await fake.handlers.get("session_start")?.({}, ctx);
+    expect(fake.tools.map((entry) => entry.name)).toEqual(registered);
+  });
+
+  test("registers the fleet tools", async () => {
+    const fake = await load(async () => list("idle", 1));
     expect(fake.tools.map((one) => one.name)).toEqual([
       "fleet_start_ticket",
       "fleet_start_review",
@@ -89,7 +140,7 @@ describe("pi fleet extension", () => {
   });
 
   test("fleet_status returns the listing as text", async () => {
-    const fake = load(async () => list("working", 3));
+    const fake = await load(async () => list("working", 3));
     const result = await tool(fake, "fleet_status").execute(
       "call-1",
       {},
@@ -113,7 +164,7 @@ describe("pi fleet extension", () => {
   });
 
   test("setup and scoped status work through the pi tool adapter", async () => {
-    const fake = load(async () => list("working", 3));
+    const fake = await load(async () => list("working", 3));
     const setup = await tool(fake, "fleet_setup").execute("setup", { panes: ["w1:p2"] });
     expect(setup.isError).toBe(false);
     const { fleetId } = JSON.parse(setup.content[0]?.text ?? "");
@@ -128,7 +179,7 @@ describe("pi fleet extension", () => {
   });
 
   test("nudges once after a bash herdr dispatch with nothing watched", async () => {
-    const fake = load(async () => list("working", 3));
+    const fake = await load(async () => list("working", 3));
     await fake.handlers.get("agent_start")?.({}, ctx);
     await fake.handlers.get("tool_call")?.(
       { toolName: "bash", input: { command: "herdr agent prompt w1:p2 go" } },
@@ -141,7 +192,7 @@ describe("pi fleet extension", () => {
   });
 
   test("records a bash prompt by its pane, so the nudge names it", async () => {
-    const fake = load(async () => list("working", 3));
+    const fake = await load(async () => list("working", 3));
     await fake.handlers.get("agent_start")?.({}, ctx);
     await fake.handlers.get("tool_call")?.(
       { toolName: "bash", input: { command: "herdr agent prompt impl go" } },
@@ -154,7 +205,7 @@ describe("pi fleet extension", () => {
   });
 
   test("a new run starts with a clean stop-gate record", async () => {
-    const fake = load(async () => list("working", 3));
+    const fake = await load(async () => list("working", 3));
     await fake.handlers.get("tool_call")?.(
       { toolName: "bash", input: { command: "herdr agent prompt w1:p2 go" } },
       ctx,
@@ -165,7 +216,7 @@ describe("pi fleet extension", () => {
   });
 
   test("stays quiet when the dispatch went through fleet_send", async () => {
-    const fake = load(async (argv) =>
+    const fake = await load(async (argv) =>
       argv[2] === "list" ? list("idle", 3) : { exitCode: 0, stdout: "{}", stderr: "" },
     );
     await tool(fake, "fleet_send").execute(
