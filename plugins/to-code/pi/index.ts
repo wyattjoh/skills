@@ -65,18 +65,16 @@ export const createFleetExtension =
     let startLegacy: ((ctx: ExtensionContext) => void) | undefined;
     let initialized = false;
     pi.on("session_start", async (_event, ctx) => {
+      if (
+        options.env.HERDR_ENV !== "1" &&
+        (pi.getFlag("fleet-implementor") !== undefined ||
+          pi.getFlag("fleet-reviewer") !== undefined)
+      )
+        throw new Error("Async fleet workers must launch inside Herdr");
+      if (options.env.HERDR_ENV !== "1") return;
       if (!initialized) {
-        initialized = true;
-        if (
-          options.env.HERDR_ENV !== "1" &&
-          (pi.getFlag("fleet-implementor") !== undefined ||
-            pi.getFlag("fleet-reviewer") !== undefined)
-        )
-          throw new Error("Async fleet workers must launch inside Herdr");
-        if (options.env.HERDR_ENV !== "1") return;
         await initialize?.(ctx);
-        await asyncFleet?.start(ctx);
-        return;
+        initialized = true;
       }
       await asyncFleet?.start(ctx);
       startLegacy?.(ctx);

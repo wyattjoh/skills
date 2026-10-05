@@ -13,18 +13,23 @@ const createFakePi = () => {
   const tools: Tool[] = [];
   const flags: Record<string, string> = {};
   const handlers = new Map<string, Handler>();
+  const registrations: string[] = [];
   const messages: { content: string; options: unknown }[] = [];
   return {
     pi: {
       registerFlag: () => undefined,
       getFlag: (name: string) => flags[name],
       registerTool: (tool: Tool) => tools.push(tool),
-      on: (event: string, handler: Handler) => handlers.set(event, handler),
+      on: (event: string, handler: Handler) => {
+        registrations.push(event);
+        handlers.set(event, handler);
+      },
       sendMessage: (message: { content: string }, options: unknown) =>
         messages.push({ content: message.content, options }),
     },
     tools,
     handlers,
+    registrations,
     messages,
     flags,
   };
@@ -95,12 +100,17 @@ describe("pi fleet extension", () => {
     fake.flags["fleet-run"] = "/tmp/missing-fleet-run";
     fake.flags["fleet-implementor"] = "worker-1";
     await expect(fake.handlers.get("session_start")?.({}, ctx)).rejects.toThrow();
-    expect(fake.tools.map((entry) => entry.name)).toEqual([
+    const workerTools = fake.tools.map((entry) => entry.name);
+    expect(workerTools).toEqual([
       "fleet_question",
       "fleet_report",
       "fleet_request_review",
       "fleet_status",
     ]);
+    const registrations = [...fake.registrations];
+    await expect(fake.handlers.get("session_start")?.({}, ctx)).rejects.toThrow();
+    expect(fake.tools.map((entry) => entry.name)).toEqual(workerTools);
+    expect(fake.registrations).toEqual(registrations);
   });
 
   test("rejects delayed worker flags outside Herdr", async () => {
@@ -112,7 +122,30 @@ describe("pi fleet extension", () => {
     await expect(fake.handlers.get("session_start")?.({}, ctx)).rejects.toThrow(
       "Async fleet workers must launch inside Herdr",
     );
+    await expect(fake.handlers.get("session_start")?.({}, ctx)).rejects.toThrow(
+      "Async fleet workers must launch inside Herdr",
+    );
     expect(fake.tools).toEqual([]);
+  });
+
+  test("retries failed adapter construction without duplicating tools or hooks", async () => {
+    const env: Record<string, string | undefined> = { HERDR_ENV: "1" };
+    const fake = createFakePi();
+    createFleetExtension({ runner: async () => list("idle", 1), env, intervalMs: 60_000 })(
+      fake.pi as never,
+    );
+    await expect(fake.handlers.get("session_start")?.({}, ctx)).rejects.toThrow(
+      "Async fleet requires HERDR_PANE_ID",
+    );
+    expect(fake.tools).toEqual([]);
+    env.HERDR_PANE_ID = "self";
+    await fake.handlers.get("session_start")?.({}, ctx);
+    const registeredTools = fake.tools.map((entry) => entry.name);
+    const registeredHooks = [...fake.registrations];
+    expect(registeredTools).toHaveLength(11);
+    await fake.handlers.get("session_start")?.({}, ctx);
+    expect(fake.tools.map((entry) => entry.name)).toEqual(registeredTools);
+    expect(fake.registrations).toEqual(registeredHooks);
   });
 
   test("session changes reuse registrations without duplicating tools", async () => {
