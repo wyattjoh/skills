@@ -47,16 +47,23 @@ export const notifyCallback = (
   new Promise((resolve) => {
     const socket = createConnection(callbackAddress(directory, target));
     let settled = false;
+    let response = "";
     const done = (delivered: boolean) => {
       if (settled) return;
       settled = true;
+      clearTimeout(deadline);
       socket.destroy();
       resolve(delivered);
     };
-    socket.setTimeout(timeoutMs, () => done(false));
+    const deadline = setTimeout(() => done(false), timeoutMs);
     socket.on("error", () => done(false));
-    socket.on("connect", () => socket.end("notify\n"));
-    socket.on("data", (data: Buffer) => done(data.toString("utf8").startsWith("accepted")));
+    // Keep the response channel open until the durable drain acknowledges the frame.
+    socket.on("connect", () => socket.write("notify\n"));
+    socket.on("data", (data: Buffer) => {
+      response += data.toString("utf8");
+      if (response.length > 64) return done(false);
+      if (response.includes("\n")) done(response === "accepted\n");
+    });
     socket.on("close", () => done(false));
   });
 
@@ -82,14 +89,22 @@ export const listenCallbacks = async (
   const server: Server = createServer({ allowHalfOpen: true }, (socket) => {
     socket.setTimeout(2_000, () => socket.destroy());
     socket.on("error", () => socket.destroy());
-    // Multiple/coalesced notifications are harmless; the outbox owns delivery identities.
-    socket.on("end", () => {
+    let request = "";
+    let notified = false;
+    // Frame the request explicitly: Bun 1.3 can close a half-ended Unix socket before
+    // an asynchronous drain responds. The outbox still owns delivery identities.
+    socket.on("data", (data: Buffer) => {
+      if (notified) return;
+      request += data.toString("utf8");
+      if (request.length > 64) return socket.destroy();
+      if (!request.includes("\n")) return;
+      notified = true;
+      if (request !== "notify\n") return socket.end("retry\n");
       void drain().then(
         () => socket.end("accepted\n"),
         () => socket.end("retry\n"),
       );
     });
-    socket.resume();
   });
   await new Promise<void>((resolve, reject) => {
     server.once("error", reject);
