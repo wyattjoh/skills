@@ -390,6 +390,22 @@ export const createFleetRuntime = (options: {
     });
   };
 
+  const getReviewContext = async (): Promise<{
+    assignmentId: string;
+    filename: string;
+    template: string;
+  }> => {
+    const run = await storage.read();
+    const worker = self(run);
+    const assignment = currentAssignment(worker.snapshot);
+    if (assignment === undefined) throw new Error("Reviewer assignment is no longer active");
+    const binding = reviewBinding(run, worker, await factsFor(run, ticketOf(run, worker.ticketId)));
+    return {
+      assignmentId: assignment.id,
+      filename: binding.filename,
+      template: reviewTemplate(binding, "approved"),
+    };
+  };
   return {
     read: storage.read,
     notify,
@@ -936,14 +952,8 @@ export const createFleetRuntime = (options: {
       if (reason === undefined) await notify();
       return reason;
     },
-    reviewTemplate: async (): Promise<string> => {
-      const run = await storage.read();
-      const worker = self(run);
-      return reviewTemplate(
-        reviewBinding(run, worker, await factsFor(run, ticketOf(run, worker.ticketId))),
-        "approved",
-      );
-    },
+    reviewContext: getReviewContext,
+    reviewTemplate: async (): Promise<string> => (await getReviewContext()).template,
     acknowledge: async (callbackId: string): Promise<void> =>
       storage.change(async (run) => {
         const target = actor.kind === "coordinator" ? "coordinator" : self(run).id;

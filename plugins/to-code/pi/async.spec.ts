@@ -7,6 +7,7 @@ import { currentAssignment } from "../fleet/model.ts";
 import { createAsyncFleetAdapter } from "./async.ts";
 import { notifyCallback } from "./callbacks.ts";
 import type { FleetPlatform } from "./platform.ts";
+import { reviewFilename } from "./runtime.ts";
 import { fleetStorage } from "./storage.ts";
 
 type Handler = (event: unknown, ctx: unknown) => Promise<unknown> | unknown;
@@ -70,6 +71,9 @@ const fixture = async () => {
   const coordinator = fakePi({}, repository, "coordinator");
   let worker: ReturnType<typeof fakePi> | undefined;
   let workerAdapter: ReturnType<typeof createAsyncFleetAdapter> | undefined;
+  let reviewer: ReturnType<typeof fakePi> | undefined;
+  let reviewerAdapter: ReturnType<typeof createAsyncFleetAdapter> | undefined;
+  let tabNumber = 1;
   const runner = async (): Promise<never> => {
     throw new Error("Unexpected Herdr completion poll");
   };
@@ -87,20 +91,40 @@ const fixture = async () => {
     checks: async () => ["test: passed"],
     landed: async () => "c000001",
     agents: async () => [],
-    createTab: async () => ({ pane: "w1:p2", tab: "w1:t2" }),
+    createTab: async () => {
+      tabNumber += 1;
+      return { pane: `w1:p${tabNumber}`, tab: `w1:t${tabNumber}` };
+    },
     closeOwned: async () => undefined,
     reviewFile: async () => {
       throw new Error("No review file in this fixture");
     },
     start: async (run, record) => {
-      worker = fakePi(
-        { "fleet-run": run.directory, "fleet-implementor": record.id },
+      const isReviewer = record.snapshot.value.role === "reviewer";
+      const launched = fakePi(
+        {
+          "fleet-run": run.directory,
+          [isReviewer ? "fleet-reviewer" : "fleet-implementor"]: record.id,
+        },
         "/ticket",
-        "worker",
+        record.id,
       );
+      if (isReviewer) {
+        reviewer = launched;
+        reviewerAdapter = createAsyncFleetAdapter(reviewer.pi as never, {
+          runner,
+          env: { HERDR_PANE_ID: record.pane! },
+          platform,
+          assertHost: undefined,
+        });
+        cleanups.push(() => reviewerAdapter!.shutdown());
+        await reviewerAdapter.start(reviewer.ctx as never);
+        return;
+      }
+      worker = launched;
       workerAdapter = createAsyncFleetAdapter(worker.pi as never, {
         runner,
-        env: { HERDR_PANE_ID: "w1:p2" },
+        env: { HERDR_PANE_ID: record.pane! },
         platform,
         assertHost: undefined,
       });
@@ -157,6 +181,7 @@ const fixture = async () => {
     repository,
     coordinator,
     worker,
+    getReviewer: () => reviewer,
     adapter,
     workerAdapter,
     platform,
@@ -240,6 +265,93 @@ test("real callback transport queues a single wake and acknowledges only the per
       )
     )?.isError,
   ).toBe(true);
+});
+
+test("callback-delivered reviewer assignment includes current canonical review binding without lifecycle hook", async () => {
+  const f = await fixture();
+  const implementationReport = f.worker.tools.find((entry) => entry.name === "fleet_report")!;
+  expect(
+    (
+      await implementationReport.execute(
+        "implementation",
+        {
+          reportId: "implementation-done",
+          assignmentId: f.assignmentId,
+          outcome: "completed",
+          summary: "Implementation committed and verified.",
+        },
+        undefined,
+        undefined,
+        f.worker.ctx,
+      )
+    ).isError,
+  ).toBe(false);
+  const startReview = f.coordinator.tools.find((entry) => entry.name === "fleet_start_review")!;
+  expect(
+    (
+      await startReview.execute(
+        "review",
+        { fleetId: f.fleetId, ticketId: "T1", model: "test/model", thinking: "high" },
+        undefined,
+        undefined,
+        f.coordinator.ctx,
+      )
+    ).isError,
+  ).toBe(false);
+  const reviewerPane = f.getReviewer();
+  if (reviewerPane === undefined) throw new Error("Reviewer was not started");
+  expect(reviewerPane.messages).toHaveLength(1);
+  const message = reviewerPane.messages[0]!.content;
+  const run = await fleetStorage(f.directory).read();
+  const reviewer = run.workers.find((entry) => entry.snapshot.value.role === "reviewer")!;
+  const filename = reviewFilename(run, reviewer);
+  expect(message).toContain(`Ticket T1:`);
+  expect(message).toContain(`assignment: ${currentAssignment(reviewer.snapshot)!.id}`);
+  expect(message).toContain(`base: b000001`);
+  expect(message).toContain(`head: c000001`);
+  expect(message).toContain(
+    `Write this file using the absolute path ${join(f.repository, filename)}`,
+  );
+  expect(message).toContain(`pass the exact relative filename \`${filename}\` to fleet_report`);
+  expect(message).toContain("# Review");
+  expect(message).toContain(`reviewer: ${reviewer.id}`);
+  expect(message).toContain("## Findings");
+  expect(message).toContain("fleet_question");
+
+  const question = reviewerPane.tools.find((entry) => entry.name === "fleet_question")!;
+  const assignmentId = currentAssignment(reviewer.snapshot)!.id;
+  expect(
+    (
+      await question.execute(
+        "review-question",
+        { reportId: "review-question", assignmentId, question: "Which path should I inspect?" },
+        undefined,
+        undefined,
+        reviewerPane.ctx,
+      )
+    ).isError,
+  ).toBe(false);
+  expect(
+    (
+      await f.adapter.execute(
+        "fleet_send",
+        {
+          fleetId: f.fleetId,
+          workerId: reviewer.id,
+          text: "Inspect the changed parser.",
+          questionId: "review-question",
+        },
+        f.coordinator.ctx as never,
+      )
+    )?.isError,
+  ).toBe(false);
+  expect(reviewerPane.messages).toHaveLength(2);
+  expect(reviewerPane.messages[1]?.content).toContain("# Review");
+  const answeredRun = await fleetStorage(f.directory).read();
+  const answeredReviewer = answeredRun.workers.find((entry) => entry.id === reviewer.id)!;
+  expect(reviewerPane.messages[1]?.content).toContain(
+    `assignment: ${currentAssignment(answeredReviewer.snapshot)!.id}`,
+  );
 });
 
 test("offline coordinator gets the persisted question after resume, without completion polling", async () => {

@@ -224,11 +224,20 @@ export const createAsyncFleetAdapter = (
               continue;
             }
             if (inFlight.has(callback.id)) continue;
+            let content = callback.text;
+            if (callback.kind === "assignment" && worker?.snapshot.value.role === "reviewer") {
+              const review = await rt.reviewContext();
+              if (review.assignmentId !== callback.assignmentId) {
+                await rt.obsolete(callback.id);
+                continue;
+              }
+              content += `\n\nRequired review template (copy it exactly, filling in findings):\n${review.template}\nWrite this file using the absolute path ${join(current.repository, review.filename)}, then pass the exact relative filename \`${review.filename}\` to fleet_report with outcome review. If submission is rejected and you cannot resolve the assigned filename/schema issue, ask the coordinator with fleet_question. Do not weaken or bypass review validation.`;
+            }
             inFlight.add(callback.id);
             pi.sendMessage(
               {
                 customType: MESSAGE,
-                content: callback.text,
+                content,
                 display: true,
                 details: { fleetId: current.id, directory, commandId: callback.id, target },
               },
