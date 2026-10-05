@@ -15,9 +15,11 @@
  *   --table                 Print a human-readable table instead of JSON
  */
 
+import { Effect } from "effect";
 import { booleanFlagNames, flagBoolean, flagString, flagStrings, parseArgv } from "../lib/args.ts";
-import { openDb } from "../lib/db.ts";
-import { sync, type SyncSummary } from "../lib/ingest.ts";
+import { withDbEffect } from "../lib/effect.ts";
+import { runEffectPromise, tryIO } from "../lib/io.ts";
+import { syncEffect, type SyncSummary } from "../lib/ingest.ts";
 import {
   buildDocument,
   OUTPUT_OPTIONS,
@@ -74,30 +76,32 @@ function toOutputRow(summary: SyncSummary): Record<string, number> {
   };
 }
 
-async function run(argv: string[]): Promise<void> {
-  const opts = parseSyncArgs(argv);
-  const db = openDb();
+const runEffect = Effect.fn("sync.run")(function* (argv: string[]) {
+  const opts = yield* tryIO("parse sync arguments", () => parseSyncArgs(argv));
+  return yield* withDbEffect((db) =>
+    Effect.gen(function* () {
+      const summary = yield* syncEffect({
+        root: opts.root,
+        db,
+        projects: opts.projects,
+        progressEvery: 100,
+        onProgress: opts.quiet
+          ? undefined
+          : (info) => {
+              console.error(`sync: ${info.filesProcessed}/${info.totalFiles} files`);
+            },
+      });
+      if (opts.vacuum) yield* tryIO("vacuum index", () => db.exec("VACUUM"));
+      yield* tryIO("write sync output", () => {
+        const document = buildDocument("sync", [toOutputRow(summary)]);
+        console.log(renderOutput(document, opts.output));
+      });
+    }),
+  );
+});
 
-  try {
-    const summary = await sync({
-      root: opts.root,
-      db,
-      projects: opts.projects,
-      progressEvery: 100,
-      onProgress: opts.quiet
-        ? undefined
-        : (info) => {
-            console.error(`sync: ${info.filesProcessed}/${info.totalFiles} files`);
-          },
-    });
-
-    if (opts.vacuum) db.exec("VACUUM");
-
-    const document = buildDocument("sync", [toOutputRow(summary)]);
-    console.log(renderOutput(document, opts.output));
-  } finally {
-    db.close();
-  }
+function run(argv: string[]): Promise<void> {
+  return runEffectPromise(runEffect(argv));
 }
 
 export const command: Command = {
@@ -105,10 +109,11 @@ export const command: Command = {
   description: "Incrementally index the conversation corpus into the sqlite index database.",
   options,
   run,
+  runEffect,
 };
 
 if (import.meta.main) {
-  command.run(process.argv.slice(2)).catch((err) => {
+  runEffectPromise(command.runEffect(process.argv.slice(2))).catch((err) => {
     console.error("Error:", err instanceof Error ? err.message : err);
     process.exit(1);
   });

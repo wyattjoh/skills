@@ -1,3 +1,5 @@
+import { Effect } from "effect";
+import { runEffectSync, tryIO } from "./io.ts";
 import { realpathSync } from "node:fs";
 import { dirname } from "node:path";
 
@@ -27,23 +29,34 @@ function gitEnvironment(): Record<string, string | undefined> {
  * @returns Canonical primary repository root, or null when it cannot be proven.
  */
 export function resolveProjectIdentity(cwd: string | null): string | null {
-  if (cwd === null) return null;
+  return runEffectSync(resolveProjectIdentityEffect(cwd));
+}
 
-  try {
-    const checkout = realpathSync(cwd);
-    const result = Bun.spawnSync(
-      ["git", "-C", checkout, "rev-parse", "--path-format=absolute", "--git-common-dir"],
-      { env: gitEnvironment(), stderr: "ignore", stdout: "pipe" },
+/**
+ * Compose canonical-path and read-only Git inspection boundaries.
+ * @param cwd - Recorded checkout path.
+ * @returns Its primary repository root, or null for any unavailable identity.
+ */
+export const resolveProjectIdentityEffect = Effect.fn("project.resolveIdentity")(
+  function* (cwd: string | null) {
+    if (cwd === null) return null;
+    const checkout = yield* tryIO("resolve checkout path", () => realpathSync(cwd));
+    const result = yield* tryIO("inspect Git common directory", () =>
+      Bun.spawnSync(["git", "rev-parse", "--path-format=absolute", "--git-common-dir"], {
+        cwd: checkout,
+        env: gitEnvironment(),
+        stderr: "ignore",
+        stdout: "pipe",
+        timeout: 10_000,
+      }),
     );
     if (result.exitCode !== 0) return null;
-
     const commonDir = result.stdout.toString().trim();
     if (commonDir.length === 0) return null;
-    return realpathSync(dirname(commonDir));
-  } catch {
-    return null;
-  }
-}
+    return yield* tryIO("resolve primary repository root", () => realpathSync(dirname(commonDir)));
+  },
+  (program) => program.pipe(Effect.catch(() => Effect.succeed(null))),
+);
 
 function globPattern(raw: string): RegExp {
   let pattern = "^";

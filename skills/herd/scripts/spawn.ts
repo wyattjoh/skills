@@ -1,6 +1,6 @@
 #!/usr/bin/env bun
 import { Command } from "commander";
-import { Data, Duration, Effect, Schedule } from "effect";
+import { Duration, Effect, Schedule, Schema } from "effect";
 import { readFileSync } from "node:fs";
 
 // Launches one worker: a herdr tab in the coordinator's workspace, an agent CLI
@@ -18,23 +18,23 @@ import { readFileSync } from "node:fs";
 
 export type AgentKind = "claude" | "pi";
 
-export class TabCreateFailed extends Data.TaggedError("TabCreateFailed")<{
-  readonly detail: string;
-}> {}
+export class TabCreateFailed extends Schema.TaggedError<TabCreateFailed>()("TabCreateFailed", {
+  detail: Schema.String,
+}) {}
 
-export class AgentStartFailed extends Data.TaggedError("AgentStartFailed")<{
-  readonly peerName: string;
-  readonly detail: string;
-}> {}
+export class AgentStartFailed extends Schema.TaggedError<AgentStartFailed>()("AgentStartFailed", {
+  peerName: Schema.String,
+  detail: Schema.String,
+}) {}
 
-export class PromptFailed extends Data.TaggedError("PromptFailed")<{
-  readonly peerName: string;
-  readonly detail: string;
-}> {}
+export class PromptFailed extends Schema.TaggedError<PromptFailed>()("PromptFailed", {
+  peerName: Schema.String,
+  detail: Schema.String,
+}) {}
 
-export class InvalidRequest extends Data.TaggedError("InvalidRequest")<{
-  readonly detail: string;
-}> {}
+export class InvalidRequest extends Schema.TaggedError<InvalidRequest>()("InvalidRequest", {
+  detail: Schema.String,
+}) {}
 
 export interface SpawnRequest {
   workspaceId: string;
@@ -237,9 +237,10 @@ const attemptStart = (request: SpawnRequest, paneId: string) =>
 const startAgent = (request: SpawnRequest, paneId: string) =>
   Effect.retry(attemptStart(request, paneId), {
     while: isPaneNotReady,
-    schedule: Schedule.spaced("300 millis").pipe(
-      Schedule.intersect(Schedule.recurUpTo(Duration.millis(request.startTimeoutMs))),
-    ),
+    schedule: Schedule.max([
+      Schedule.spaced("300 millis"),
+      Schedule.during(Duration.millis(request.startTimeoutMs)),
+    ]),
   });
 
 // An agent CLI reports `interactive_ready` before its TUI will actually accept a
@@ -308,9 +309,10 @@ const attemptPrompt = (request: SpawnRequest) =>
 const submitBrief = (request: SpawnRequest) =>
   Effect.retry(attemptPrompt(request), {
     while: isPromptStalled,
-    schedule: Schedule.spaced("1 seconds").pipe(
-      Schedule.intersect(Schedule.recurUpTo(Duration.millis(request.promptTimeoutMs))),
-    ),
+    schedule: Schedule.max([
+      Schedule.spaced("1 seconds"),
+      Schedule.during(Duration.millis(request.promptTimeoutMs)),
+    ]),
   });
 
 export const spawnWorker = (
@@ -392,7 +394,7 @@ if (import.meta.main) {
       }),
       // Spreading the tagged error carries its `_tag` and payload through, so
       // the caller sees which step failed and why without this reaching in.
-      Effect.catchAll((error) => {
+      Effect.catch((error) => {
         console.error(JSON.stringify({ ok: false, ...error }, null, 2));
         return Effect.succeed(1);
       }),

@@ -19,7 +19,7 @@ function build(def: unknown, src: Record<string, string>, args: string[] = []) {
   for (const [name, body] of Object.entries(src)) writeFileSync(join(dir, name), body);
   const defPath = join(dir, "wt.json");
   writeFileSync(defPath, JSON.stringify(def));
-  const r = spawnSync("bun", [BUILD, defPath, ...args], { encoding: "utf8" });
+  const r = spawnSync("bun", [BUILD, defPath, ...args], { encoding: "utf8", env: process.env });
   const outPath = join(dir, "wt.html");
   return {
     ...r,

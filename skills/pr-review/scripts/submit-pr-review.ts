@@ -470,6 +470,11 @@ export function buildPayload(
 }
 
 import { parseArgs } from "node:util";
+import { Effect, Schema } from "effect";
+
+class ReviewIoError extends Schema.TaggedError<ReviewIoError>()("ReviewIoError", {
+  message: Schema.String,
+}) {}
 
 interface CliFlags {
   pr: string;
@@ -525,37 +530,61 @@ function parseCli(args: string[]): CliFlags {
  * fail outright) depending on where it happened to be invoked from, even though
  * --owner and --repo were supplied.
  */
-async function fetchPrDiff(pr: string, repo: string): Promise<string> {
+const runGhProcess = Effect.fn("runGhProcess")(function* (args: string[], stdin?: string) {
   const gh = process.env.GH_PATH ?? "gh";
+  const proc = yield* Effect.try({
+    try: () =>
+      Bun.spawn([gh, ...args], {
+        stdin: stdin === undefined ? "ignore" : "pipe",
+        stdout: "pipe",
+        stderr: "pipe",
+      }),
+    catch: () => new ReviewIoError({ message: `gh ${args.join(" ")} failed to start` }),
+  });
+  const processInput = proc.stdin;
+  if (stdin !== undefined && processInput) {
+    yield* Effect.try({
+      try: () => {
+        processInput.write(stdin);
+        processInput.end();
+      },
+      catch: () => new ReviewIoError({ message: `gh ${args.join(" ")} failed to accept input` }),
+    });
+  }
+  const [stdout, stderr, code] = yield* Effect.tryPromise({
+    try: () =>
+      Promise.all([
+        new Response(proc.stdout).text(),
+        new Response(proc.stderr).text(),
+        proc.exited,
+      ]),
+    catch: () => new ReviewIoError({ message: `gh ${args.join(" ")} failed while running` }),
+  });
+  return { stdout, stderr, code };
+});
+
+const fetchPrDiff = Effect.fn("fetchPrDiff")(function* (pr: string, repo: string) {
   // Plain `gh pr diff`, never `--patch`. `--patch` emits format-patch output:
   // one diff per commit, each numbered against that commit's parent. On a
   // multi-commit PR a line touched by an early commit and re-touched later
   // resolves to an intermediate line number, so anchors computed from it miss
   // the PR's final right-hand side and GitHub silently drops the comment.
-  const proc = Bun.spawn([gh, "pr", "diff", pr, "--repo", repo], {
-    stdout: "pipe",
-    stderr: "pipe",
-  });
-  const [stdout, stderr, code] = await Promise.all([
-    new Response(proc.stdout).text(),
-    new Response(proc.stderr).text(),
-    proc.exited,
-  ]);
-  if (code !== 0) {
-    throw new Error(`gh pr diff ${pr} failed (exit ${code}): ${stderr}`);
+  const result = yield* runGhProcess(["pr", "diff", pr, "--repo", repo]);
+  if (result.code !== 0) {
+    return yield* new ReviewIoError({
+      message: `gh pr diff ${pr} failed (exit ${result.code}): ${result.stderr}`,
+    });
   }
-  return stdout;
-}
+  return result.stdout;
+});
 
 /**
  * The script fetches its own diff, so the revision it anchors against can drift
  * from the one the review was written against. Reporting the head makes that
  * drift visible, and --expect-head turns it into a hard stop.
  */
-async function fetchPrHeadSha(pr: string, repo: string): Promise<string> {
-  const gh = process.env.GH_PATH ?? "gh";
-  const args = [
-    gh,
+const fetchPrHeadSha = Effect.fn("fetchPrHeadSha")(function* (pr: string, repo: string) {
+  const result = yield* runGhProcess([
     "pr",
     "view",
     pr,
@@ -565,21 +594,14 @@ async function fetchPrHeadSha(pr: string, repo: string): Promise<string> {
     "headRefOid",
     "--jq",
     ".headRefOid",
-  ];
-  const proc = Bun.spawn(args, {
-    stdout: "pipe",
-    stderr: "pipe",
-  });
-  const [stdout, stderr, code] = await Promise.all([
-    new Response(proc.stdout).text(),
-    new Response(proc.stderr).text(),
-    proc.exited,
   ]);
-  if (code !== 0) {
-    throw new Error(`gh pr view ${pr} failed (exit ${code}): ${stderr}`);
+  if (result.code !== 0) {
+    return yield* new ReviewIoError({
+      message: `gh pr view ${pr} failed (exit ${result.code}): ${result.stderr}`,
+    });
   }
-  return stdout.trim();
-}
+  return result.stdout.trim();
+});
 
 export interface DryRunOutput {
   payload: ReviewPayload;
@@ -593,9 +615,17 @@ export interface DryRunOutput {
   critical_dropped: Finding[];
 }
 
-async function main() {
-  const cli = parseCli(process.argv.slice(2));
-  const review = await loadReview(cli.findings);
+const main = Effect.fn("submitPrReview")(function* () {
+  const cli = yield* Effect.try({
+    try: () => parseCli(process.argv.slice(2)),
+    catch: (cause) =>
+      new ReviewIoError({ message: cause instanceof Error ? cause.message : String(cause) }),
+  });
+  const review = yield* Effect.tryPromise({
+    try: () => loadReview(cli.findings),
+    catch: (cause) =>
+      new ReviewIoError({ message: cause instanceof Error ? cause.message : String(cause) }),
+  });
 
   const methodologyLeaks = detectMethodologyLeaks(review.summary, review.findings);
   if (methodologyLeaks.length > 0) {
@@ -603,12 +633,12 @@ async function main() {
   }
 
   const repo = `${cli.owner}/${cli.repo}`;
-  const headSha = await fetchPrHeadSha(cli.pr, repo);
+  const headSha = yield* fetchPrHeadSha(cli.pr, repo);
   if (cli.expectHead !== null && cli.expectHead !== headSha) {
     throw new Error(formatHeadMismatchAbort(cli.expectHead, headSha));
   }
 
-  const diff = await fetchPrDiff(cli.pr, repo);
+  const diff = yield* fetchPrDiff(cli.pr, repo);
   const hunks = parseHunks(diff);
   const { anchorable, dropped } = partitionFindings(review.findings, hunks);
   const criticalDropped = collectCriticalDrops(dropped);
@@ -656,7 +686,7 @@ async function main() {
   }
 
   if (cli.updateExisting) {
-    const existing = await fetchExistingComments(cli.owner, cli.repo, cli.pr);
+    const existing = yield* fetchExistingComments(cli.owner, cli.repo, cli.pr);
     const { matched, unmatched } = matchExistingComments(payload.comments, existing, {
       agentName: cli.agentName,
       humanName: cli.humanName,
@@ -668,7 +698,7 @@ async function main() {
           "different --agent-name/--human-name than the footer it carries.",
       );
     }
-    await updateExistingComments(cli.owner, cli.repo, matched);
+    yield* updateExistingComments(cli.owner, cli.repo, matched);
     if (unmatched.length > 0) {
       console.error(
         `\n${unmatched.length} finding(s) had no existing comment to update and were NOT ` +
@@ -680,7 +710,7 @@ async function main() {
     return;
   }
 
-  const url = await submitReview(cli.owner, cli.repo, cli.pr, payload);
+  const url = yield* submitReview(cli.owner, cli.repo, cli.pr, payload);
   if (cli.pending) {
     console.error(
       "Left as a PENDING review — visible only to you until you submit it from the " +
@@ -688,7 +718,7 @@ async function main() {
     );
   }
   console.log(url);
-}
+});
 
 export interface ExistingComment {
   id: number;
@@ -754,12 +784,12 @@ export function matchExistingComments(
   return { matched, unmatched };
 }
 
-async function fetchExistingComments(
+const fetchExistingComments = Effect.fn("fetchExistingComments")(function* (
   owner: string,
   repo: string,
   pr: string,
-): Promise<ExistingComment[]> {
-  const stdout = await runGh([
+) {
+  const stdout = yield* runGh([
     "api",
     "--paginate",
     `/repos/${owner}/${repo}/pulls/${pr}/comments`,
@@ -789,15 +819,15 @@ async function fetchExistingComments(
     });
   }
   return comments;
-}
+});
 
-async function updateExistingComments(
+const updateExistingComments = Effect.fn("updateExistingComments")(function* (
   owner: string,
   repo: string,
   matched: CommentMatch[],
-): Promise<void> {
+) {
   for (const { comment, existingId } of matched) {
-    await runGh(
+    yield* runGh(
       [
         "api",
         "-X",
@@ -812,40 +842,26 @@ async function updateExistingComments(
     );
     console.error(`updated ${comment.path}:${comment.line} (comment ${existingId})`);
   }
-}
+});
 
-async function runGh(args: string[], stdin?: string): Promise<string> {
-  const gh = process.env.GH_PATH ?? "gh";
-  const proc = Bun.spawn([gh, ...args], {
-    stdin: stdin === undefined ? "ignore" : "pipe",
-    stdout: "pipe",
-    stderr: "pipe",
-  });
-  if (stdin !== undefined && proc.stdin) {
-    proc.stdin.write(stdin);
-    proc.stdin.end();
-  }
-  const [stdout, stderr, code] = await Promise.all([
-    new Response(proc.stdout).text(),
-    new Response(proc.stderr).text(),
-    proc.exited,
-  ]);
+const runGh = Effect.fn("runGh")(function* (args: string[], stdin?: string) {
+  const { stdout, stderr, code } = yield* runGhProcess(args, stdin);
   if (code !== 0) {
-    throw new Error(`gh ${args.join(" ")} failed (exit ${code}): ${stderr || stdout}`);
+    return yield* new ReviewIoError({
+      message: `gh ${args.join(" ")} failed (exit ${code}): ${stderr || stdout}`,
+    });
   }
   return stdout;
-}
+});
 
-async function submitReview(
+const submitReview = Effect.fn("submitReview")(function* (
   owner: string,
   repo: string,
   pr: string,
   payload: ReviewPayload,
-): Promise<string> {
-  const gh = process.env.GH_PATH ?? "gh";
-  const proc = Bun.spawn(
+) {
+  const { stdout, stderr, code } = yield* runGhProcess(
     [
-      gh,
       "api",
       "-X",
       "POST",
@@ -855,26 +871,16 @@ async function submitReview(
       "--input",
       "-",
     ],
-    {
-      stdin: "pipe",
-      stdout: "pipe",
-      stderr: "pipe",
-    },
+    JSON.stringify(payload),
   );
-  proc.stdin.write(JSON.stringify(payload));
-  proc.stdin.end();
-  const [stdout, stderr, code] = await Promise.all([
-    new Response(proc.stdout).text(),
-    new Response(proc.stderr).text(),
-    proc.exited,
-  ]);
   if (code !== 0) {
     const body = stderr + stdout;
     const hint = payload.comments.map((c) => `${c.path}:${c.line}`).join(", ");
-    throw new Error(
-      `gh api POST review failed (exit ${code}). Response: ${body}\n` +
+    return yield* new ReviewIoError({
+      message:
+        `gh api POST review failed (exit ${code}). Response: ${body}\n` +
         `Attempted inline anchors: ${hint}`,
-    );
+    });
   }
   try {
     const response: unknown = JSON.parse(stdout);
@@ -889,11 +895,11 @@ async function submitReview(
     // fall through
   }
   return "(review submitted; no html_url in response)";
-}
+});
 
 if (import.meta.main) {
   try {
-    await main();
+    await Effect.runPromise(main());
   } catch (err) {
     console.error(err instanceof Error ? err.message : String(err));
     process.exit(1);

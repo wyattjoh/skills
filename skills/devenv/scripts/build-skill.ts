@@ -22,6 +22,7 @@
 import { existsSync } from "node:fs";
 import { mkdir, readdir, rm, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
+import { Effect, Schema } from "effect";
 
 const SKILL = new URL("..", import.meta.url).pathname.replace(/\/$/, "");
 const REFS = join(SKILL, "references");
@@ -35,6 +36,50 @@ const SITE = "https://devenv.sh";
 const argv = new Set(process.argv.slice(2));
 const CHECK = argv.has("--check");
 const OFFLINE = argv.has("--offline");
+
+/**
+ * An expected failure while loading upstream documentation or writing artifacts.
+ */
+export class BuildError extends Schema.TaggedError<BuildError>()("BuildError", {
+  operation: Schema.String,
+  cause: Schema.Defect(),
+}) {}
+
+const io = <A>(operation: string, run: (signal: AbortSignal) => Promise<A>) =>
+  Effect.tryPromise({
+    try: run,
+    catch: (cause) => new BuildError({ operation, cause }),
+  });
+
+const writeText = Effect.fn("devenv.writeText")(function* (file: string, text: string) {
+  yield* io(`write ${file}`, () => writeFile(file, text));
+});
+
+const makeDirectory = Effect.fn("devenv.makeDirectory")(function* (path: string) {
+  yield* io(`create directory ${path}`, () => mkdir(path, { recursive: true }));
+});
+
+const removeFile = Effect.fn("devenv.removeFile")(function* (path: string) {
+  yield* io(`remove ${path}`, () => rm(path));
+});
+
+/**
+ * Reads a source or cache text file lazily with a typed failure.
+ *
+ * @param file - File to read.
+ * @returns An Effect yielding the UTF-8 file contents.
+ */
+export const readText = Effect.fn("devenv.readText")(function* (file: string) {
+  return yield* io(`read ${file}`, () => Bun.file(file).text());
+});
+
+const readDirectory = Effect.fn("devenv.readDirectory")(function* (path: string) {
+  return yield* io(`read directory ${path}`, () => readdir(path));
+});
+
+const readDirectoryEntries = Effect.fn("devenv.readDirectoryEntries")(function* (path: string) {
+  return yield* io(`read directory ${path}`, () => readdir(path, { withFileTypes: true }));
+});
 
 /* ------------------------------------------------------------------ taxonomy */
 
@@ -105,25 +150,48 @@ const SUBHEADINGS = new Set(["Highlights", "Bug fixes"]);
 
 /* -------------------------------------------------------------------- source */
 
-async function fetchText(url: string, cacheFile: string): Promise<string> {
+/**
+ * Loads an upstream document, or reads its cache in offline mode.
+ *
+ * @param url - Upstream document URL.
+ * @param cacheFile - Relative cache filename for successful responses.
+ * @returns An Effect yielding the document text with cancelable, bounded I/O.
+ */
+export const fetchText = Effect.fn("devenv.fetchText")(function* (url: string, cacheFile: string) {
   const cached = join(CACHE, cacheFile);
   if (OFFLINE) {
-    if (!existsSync(cached)) die(`--offline but no cache at ${cached}`);
-    return Bun.file(cached).text();
+    if (!existsSync(cached)) {
+      return yield* new BuildError({
+        operation: "build",
+        cause: `--offline but no cache at ${cached}`,
+      });
+    }
+    return yield* readText(cached);
   }
-  const res = await fetch(url, {
-    headers: { "user-agent": "devenv-skill-builder" },
-  });
-  if (!res.ok) die(`GET ${url} -> ${res.status} ${res.statusText}`);
-  const text = await res.text();
-  await mkdir(CACHE, { recursive: true });
-  await writeFile(cached, text);
+  const controller = yield* Effect.acquireRelease(
+    Effect.sync(() => new AbortController()),
+    (request) => Effect.sync(() => request.abort()),
+  );
+  const res = yield* io(`GET ${url}`, (signal) =>
+    fetch(url, {
+      signal: AbortSignal.any([signal, controller.signal, AbortSignal.timeout(30_000)]),
+      headers: { "user-agent": "devenv-skill-builder" },
+    }),
+  );
+  if (!res.ok) {
+    return yield* new BuildError({
+      operation: "build",
+      cause: `GET ${url} -> ${res.status} ${res.statusText}`,
+    });
+  }
+  const text = yield* io(`read response ${url}`, () => res.text());
+  yield* makeDirectory(CACHE);
+  yield* writeText(cached, text);
   return text;
-}
+}, Effect.scoped);
 
 function die(msg: string): never {
-  console.error(`\n  ERROR  ${msg}\n`);
-  process.exit(1);
+  throw new BuildError({ operation: "build", cause: msg });
 }
 
 /** Ordered upstream doc paths. llms-full.txt emits them lexicographically by
@@ -247,223 +315,261 @@ function clean(body: string[]): string {
 
 /* --------------------------------------------------------------------- build */
 
-const src = await fetchText(LLMS_URL, "llms-full.txt");
-const treeJson = await fetchText(TREE_URL, "tree.json");
-
-const lines = src.split("\n");
-const docPaths = orderedDocPaths(treeJson);
-const sections = buildSections(lines, scanHeadings(lines));
-
-// --- validation: the two sources must describe the same set of pages --------
-if (sections.length !== docPaths.length) {
-  console.error(
-    `\n  ERROR  alignment failed: ${sections.length} parsed sections vs ` +
-      `${docPaths.length} upstream docs.\n` +
-      `  Upstream restructured, or a new heading quirk appeared.\n` +
-      `  First divergence:`,
-  );
-  const n = Math.min(sections.length, docPaths.length);
-  for (let i = 0; i < n; i++) {
-    const want = docPaths[i]
-      .replace(/\.mdx?$/, "")
-      .split("/")
-      .pop();
-    const got = sections[i].title.toLowerCase().replace(/[^a-z0-9]/g, "");
-    if (want!.replace(/[^a-z0-9]/g, "") !== got) {
-      console.error(`    #${i}  ${docPaths[i]}  <->  "${sections[i].title}"`);
-      break;
-    }
-  }
-  process.exit(1);
-}
-
 const norm = (s: string) => s.toLowerCase().replace(/[^a-z0-9]/g, "");
-const agree = docPaths.filter(
-  (p, i) =>
-    norm(
-      p
+
+const program = Effect.gen(function* () {
+  const src = yield* fetchText(LLMS_URL, "llms-full.txt");
+  const treeJson = yield* fetchText(TREE_URL, "tree.json");
+
+  const lines = src.split("\n");
+  const docPaths = yield* Effect.try({
+    try: () => orderedDocPaths(treeJson),
+    catch: (cause) =>
+      cause instanceof BuildError
+        ? cause
+        : new BuildError({ operation: "decode upstream tree", cause }),
+  });
+  const sections = buildSections(lines, scanHeadings(lines));
+
+  // --- validation: the two sources must describe the same set of pages --------
+  if (sections.length !== docPaths.length) {
+    console.error(
+      `\n  ERROR  alignment failed: ${sections.length} parsed sections vs ` +
+        `${docPaths.length} upstream docs.\n` +
+        `  Upstream restructured, or a new heading quirk appeared.\n` +
+        `  First divergence:`,
+    );
+    const n = Math.min(sections.length, docPaths.length);
+    for (let i = 0; i < n; i++) {
+      const want = docPaths[i]
         .replace(/\.mdx?$/, "")
         .split("/")
-        .pop()!,
-    ) === norm(sections[i].title),
-).length;
-const ratio = agree / docPaths.length;
-if (ratio < 0.85) {
-  die(
-    `slug agreement ${(ratio * 100).toFixed(1)}% (expected >=85%). ` +
-      `Ordering assumption likely broke; refusing to write a scrambled corpus.`,
-  );
-}
-
-// --- assemble ---------------------------------------------------------------
-type Entry = {
-  title: string;
-  area: string;
-  slug: string;
-  path: string;
-  upstream: string;
-  url: string;
-  srcLines: [number, number];
-  lines: number;
-  bytes: number;
-  body: string;
-};
-
-const entries: Entry[] = [];
-const newRootPages: string[] = [];
-const unknownDirs = new Set<string>();
-
-docPaths.forEach((p, i) => {
-  const s = sections[i];
-  const parts = p.replace(/\.mdx?$/, "").split("/");
-  const base = parts.pop()!;
-  const dir = parts[0];
-
-  let area: string;
-  if (!dir) {
-    area = ROOT_AREA[base] ?? "guides";
-    if (!(base in ROOT_AREA)) newRootPages.push(base);
-  } else if (dir in DIR_AREA) {
-    area = DIR_AREA[dir];
-  } else {
-    area = dir;
-    unknownDirs.add(dir);
+        .pop();
+      const got = sections[i].title.toLowerCase().replace(/[^a-z0-9]/g, "");
+      if (want!.replace(/[^a-z0-9]/g, "") !== got) {
+        console.error(`    #${i}  ${docPaths[i]}  <->  "${sections[i].title}"`);
+        break;
+      }
+    }
+    return yield* new BuildError({
+      operation: "alignment",
+      cause: "Upstream documentation alignment failed.",
+    });
   }
 
-  const slug = base === "index" ? "_overview" : (SLUG_ALIAS[base] ?? base);
-  const body = clean(lines.slice(s.start - 1, s.end));
-  const url = `${SITE}/${p.replace(/(^|\/)index\.mdx?$/, "$1").replace(/\.mdx?$/, "")}/`.replace(
-    /\/+$/,
-    "/",
-  );
+  const agree = docPaths.filter(
+    (p, i) =>
+      norm(
+        p
+          .replace(/\.mdx?$/, "")
+          .split("/")
+          .pop()!,
+      ) === norm(sections[i].title),
+  ).length;
+  const ratio = agree / docPaths.length;
+  if (ratio < 0.85) {
+    return yield* new BuildError({
+      operation: "build",
+      cause:
+        `slug agreement ${(ratio * 100).toFixed(1)}% (expected >=85%). ` +
+        `Ordering assumption likely broke; refusing to write a scrambled corpus.`,
+    });
+  }
 
-  entries.push({
-    title: s.title,
-    area,
-    slug,
-    path: `references/${area}/${slug}.md`,
-    upstream: DOCS_PREFIX + p,
-    url,
-    srcLines: [s.start, s.end],
-    lines: body.split("\n").length,
-    bytes: Buffer.byteLength(body),
-    body,
+  // --- assemble ---------------------------------------------------------------
+  type Entry = {
+    title: string;
+    area: string;
+    slug: string;
+    path: string;
+    upstream: string;
+    url: string;
+    srcLines: [number, number];
+    lines: number;
+    bytes: number;
+    body: string;
+  };
+
+  const entries: Entry[] = [];
+  const newRootPages: string[] = [];
+  const unknownDirs = new Set<string>();
+
+  docPaths.forEach((p, i) => {
+    const s = sections[i];
+    const parts = p.replace(/\.mdx?$/, "").split("/");
+    const base = parts.pop()!;
+    const dir = parts[0];
+
+    let area: string;
+    if (!dir) {
+      area = ROOT_AREA[base] ?? "guides";
+      if (!(base in ROOT_AREA)) newRootPages.push(base);
+    } else if (dir in DIR_AREA) {
+      area = DIR_AREA[dir];
+    } else {
+      area = dir;
+      unknownDirs.add(dir);
+    }
+
+    const slug = base === "index" ? "_overview" : (SLUG_ALIAS[base] ?? base);
+    const body = clean(lines.slice(s.start - 1, s.end));
+    const url = `${SITE}/${p.replace(/(^|\/)index\.mdx?$/, "$1").replace(/\.mdx?$/, "")}/`.replace(
+      /\/+$/,
+      "/",
+    );
+
+    entries.push({
+      title: s.title,
+      area,
+      slug,
+      path: `references/${area}/${slug}.md`,
+      upstream: DOCS_PREFIX + p,
+      url,
+      srcLines: [s.start, s.end],
+      lines: body.split("\n").length,
+      bytes: Buffer.byteLength(body),
+      body,
+    });
   });
+
+  const dupes = entries.map((e) => e.path).filter((p, i, a) => a.indexOf(p) !== i);
+  if (dupes.length) {
+    return yield* new BuildError({
+      operation: "build",
+      cause: `slug collision: ${[...new Set(dupes)].join(", ")}`,
+    });
+  }
+
+  // --- render -----------------------------------------------------------------
+  const render = (e: Entry) =>
+    `<!-- source: ${e.url}\n     upstream: ${e.upstream}\n` +
+    `     llms-full.txt lines ${e.srcLines[0]}-${e.srcLines[1]} -->\n\n${e.body}`;
+
+  const manifest = entries.map(({ body: _body, ...m }) => m);
+  const manifestText = JSON.stringify(manifest, null, 2) + "\n";
+
+  if (CHECK) {
+    const stale: string[] = [];
+    for (const e of entries) {
+      const f = join(SKILL, e.path);
+      if (!existsSync(f) || (yield* readText(f)) !== render(e)) {
+        stale.push(e.path);
+      }
+    }
+    const mf = join(REFS, "manifest.json");
+    if (!existsSync(mf) || (yield* readText(mf)) !== manifestText) {
+      stale.push("references/manifest.json");
+    }
+    if (stale.length) {
+      console.error(`stale (${stale.length}):\n  ${stale.slice(0, 40).join("\n  ")}`);
+      process.exit(1);
+    }
+    console.log(`up to date: ${entries.length} reference files`);
+    process.exit(0);
+  }
+
+  // Remove only generated files; INDEX.md and SKILL.md are hand-authored.
+  const keep = new Set(entries.map((e) => join(SKILL, e.path)));
+  if (existsSync(REFS)) {
+    for (const area of yield* readDirectoryEntries(REFS)) {
+      if (!area.isDirectory()) continue;
+      for (const f of yield* readDirectory(join(REFS, area.name))) {
+        const full = join(REFS, area.name, f);
+        if (f === "INDEX.md" || keep.has(full)) continue;
+        if (f.endsWith(".md")) yield* removeFile(full);
+      }
+    }
+  }
+
+  for (const e of entries) {
+    const out = join(SKILL, e.path);
+    yield* makeDirectory(dirname(out));
+    yield* writeText(out, render(e));
+  }
+  yield* writeText(join(REFS, "manifest.json"), manifestText);
+
+  /* -------------------------------------------------------------------- report */
+
+  const byArea = new Map<string, number>();
+  for (const e of entries) byArea.set(e.area, (byArea.get(e.area) ?? 0) + 1);
+
+  const srcKB = Buffer.byteLength(src) / 1024;
+  const outKB = entries.reduce((t, e) => t + e.bytes, 0) / 1024;
+
+  console.log(`\n${entries.length} reference files from ${srcKB.toFixed(0)} KB upstream`);
+  console.log(
+    `slug agreement ${(ratio * 100).toFixed(1)}%  |  noise removed ${((1 - outKB / srcKB) * 100).toFixed(1)}%\n`,
+  );
+  for (const [a, n] of [...byArea].toSorted((x, y) => y[1] - x[1])) {
+    console.log(`  ${a.padEnd(18)}${String(n).padStart(4)}`);
+  }
+
+  // Drift: SKILL.md references a file that no longer exists, or new topics
+  // exist that SKILL.md never mentions. Reported, never auto-fixed.
+  const skillPath = join(SKILL, "SKILL.md");
+  if (existsSync(skillPath)) {
+    const skill = yield* readText(skillPath);
+    const areas = [...byArea.keys()];
+    const broken = [...skill.matchAll(/`([a-z0-9][a-z0-9._-]*\.md)`/g)]
+      .map((m) => m[1])
+      .filter((f) => !areas.some((a) => existsSync(join(REFS, a, f))));
+    const unmentioned = entries.filter(
+      (e) => e.slug !== "_overview" && e.area !== "history" && !skill.includes(e.slug),
+    );
+    if (broken.length) {
+      console.log(`\n  SKILL.md references ${broken.length} missing file(s):`);
+      console.log(`    ${[...new Set(broken)].join(", ")}`);
+    }
+    if (unmentioned.length) {
+      console.log(`\n  ${unmentioned.length} topic(s) not mentioned in SKILL.md:`);
+      console.log(`    ${unmentioned.map((e) => `${e.area}/${e.slug}`).join(", ")}`);
+    }
+    if (!broken.length && !unmentioned.length) console.log("\n  SKILL.md in sync.");
+  }
+
+  // Hand-authored INDEX.md files link into the generated corpus by relative
+  // path; a renamed upstream slug silently breaks them. Check every link.
+  let indexBroken = 0;
+  for (const area of byArea.keys()) {
+    const idx = join(REFS, area, "INDEX.md");
+    if (!existsSync(idx)) continue;
+    const txt = yield* readText(idx);
+    const missing = [...txt.matchAll(/\[[^\]]+\]\((?!https?:|#)([^)#]+?)(?:#[^)]*)?\)/g)]
+      .map((m) => m[1])
+      .filter((rel) => !existsSync(join(REFS, area, rel)));
+    if (missing.length) {
+      indexBroken += missing.length;
+      console.log(`\n  ${area}/INDEX.md has ${missing.length} broken link(s):`);
+      console.log(`    ${[...new Set(missing)].slice(0, 12).join(", ")}`);
+    }
+  }
+  if (!indexBroken) console.log("  All INDEX.md links resolve.");
+  if (newRootPages.length) {
+    console.log(`\n  New upstream root pages (defaulted to guides/, add to ROOT_AREA):`);
+    console.log(`    ${newRootPages.join(", ")}`);
+  }
+  if (unknownDirs.size) {
+    console.log(`\n  New upstream directories (add to DIR_AREA):`);
+    console.log(`    ${[...unknownDirs].join(", ")}`);
+  }
+  console.log();
 });
 
-const dupes = entries.map((e) => e.path).filter((p, i, a) => a.indexOf(p) !== i);
-if (dupes.length) die(`slug collision: ${[...new Set(dupes)].join(", ")}`);
-
-// --- render -----------------------------------------------------------------
-const render = (e: Entry) =>
-  `<!-- source: ${e.url}\n     upstream: ${e.upstream}\n` +
-  `     llms-full.txt lines ${e.srcLines[0]}-${e.srcLines[1]} -->\n\n${e.body}`;
-
-const manifest = entries.map(({ body: _body, ...m }) => m);
-const manifestText = JSON.stringify(manifest, null, 2) + "\n";
-
-if (CHECK) {
-  const stale: string[] = [];
-  for (const e of entries) {
-    const f = join(SKILL, e.path);
-    if (!existsSync(f) || (await Bun.file(f).text()) !== render(e)) {
-      stale.push(e.path);
+if (import.meta.main) {
+  Effect.runPromise(program).catch((error) => {
+    if (error instanceof BuildError && error.operation === "alignment") {
+      process.exitCode = 1;
+      return;
     }
-  }
-  const mf = join(REFS, "manifest.json");
-  if (!existsSync(mf) || (await Bun.file(mf).text()) !== manifestText) {
-    stale.push("references/manifest.json");
-  }
-  if (stale.length) {
-    console.error(`stale (${stale.length}):\n  ${stale.slice(0, 40).join("\n  ")}`);
-    process.exit(1);
-  }
-  console.log(`up to date: ${entries.length} reference files`);
-  process.exit(0);
-}
-
-// Remove only generated files; INDEX.md and SKILL.md are hand-authored.
-const keep = new Set(entries.map((e) => join(SKILL, e.path)));
-if (existsSync(REFS)) {
-  for (const area of await readdir(REFS, { withFileTypes: true })) {
-    if (!area.isDirectory()) continue;
-    for (const f of await readdir(join(REFS, area.name))) {
-      const full = join(REFS, area.name, f);
-      if (f === "INDEX.md" || keep.has(full)) continue;
-      if (f.endsWith(".md")) await rm(full);
+    if (error instanceof BuildError) {
+      const message =
+        error.operation === "build"
+          ? String(error.cause)
+          : `${error.operation}: ${String(error.cause)}`;
+      console.error(`\n  ERROR  ${message}\n`);
+    } else {
+      console.error(error);
     }
-  }
+    process.exitCode = 1;
+  });
 }
-
-for (const e of entries) {
-  const out = join(SKILL, e.path);
-  await mkdir(dirname(out), { recursive: true });
-  await writeFile(out, render(e));
-}
-await writeFile(join(REFS, "manifest.json"), manifestText);
-
-/* -------------------------------------------------------------------- report */
-
-const byArea = new Map<string, number>();
-for (const e of entries) byArea.set(e.area, (byArea.get(e.area) ?? 0) + 1);
-
-const srcKB = Buffer.byteLength(src) / 1024;
-const outKB = entries.reduce((t, e) => t + e.bytes, 0) / 1024;
-
-console.log(`\n${entries.length} reference files from ${srcKB.toFixed(0)} KB upstream`);
-console.log(
-  `slug agreement ${(ratio * 100).toFixed(1)}%  |  noise removed ${((1 - outKB / srcKB) * 100).toFixed(1)}%\n`,
-);
-for (const [a, n] of [...byArea].toSorted((x, y) => y[1] - x[1])) {
-  console.log(`  ${a.padEnd(18)}${String(n).padStart(4)}`);
-}
-
-// Drift: SKILL.md references a file that no longer exists, or new topics
-// exist that SKILL.md never mentions. Reported, never auto-fixed.
-const skillPath = join(SKILL, "SKILL.md");
-if (existsSync(skillPath)) {
-  const skill = await Bun.file(skillPath).text();
-  const areas = [...byArea.keys()];
-  const broken = [...skill.matchAll(/`([a-z0-9][a-z0-9._-]*\.md)`/g)]
-    .map((m) => m[1])
-    .filter((f) => !areas.some((a) => existsSync(join(REFS, a, f))));
-  const unmentioned = entries.filter(
-    (e) => e.slug !== "_overview" && e.area !== "history" && !skill.includes(e.slug),
-  );
-  if (broken.length) {
-    console.log(`\n  SKILL.md references ${broken.length} missing file(s):`);
-    console.log(`    ${[...new Set(broken)].join(", ")}`);
-  }
-  if (unmentioned.length) {
-    console.log(`\n  ${unmentioned.length} topic(s) not mentioned in SKILL.md:`);
-    console.log(`    ${unmentioned.map((e) => `${e.area}/${e.slug}`).join(", ")}`);
-  }
-  if (!broken.length && !unmentioned.length) console.log("\n  SKILL.md in sync.");
-}
-
-// Hand-authored INDEX.md files link into the generated corpus by relative
-// path; a renamed upstream slug silently breaks them. Check every link.
-let indexBroken = 0;
-for (const area of byArea.keys()) {
-  const idx = join(REFS, area, "INDEX.md");
-  if (!existsSync(idx)) continue;
-  const txt = await Bun.file(idx).text();
-  const missing = [...txt.matchAll(/\[[^\]]+\]\((?!https?:|#)([^)#]+?)(?:#[^)]*)?\)/g)]
-    .map((m) => m[1])
-    .filter((rel) => !existsSync(join(REFS, area, rel)));
-  if (missing.length) {
-    indexBroken += missing.length;
-    console.log(`\n  ${area}/INDEX.md has ${missing.length} broken link(s):`);
-    console.log(`    ${[...new Set(missing)].slice(0, 12).join(", ")}`);
-  }
-}
-if (!indexBroken) console.log("  All INDEX.md links resolve.");
-if (newRootPages.length) {
-  console.log(`\n  New upstream root pages (defaulted to guides/, add to ROOT_AREA):`);
-  console.log(`    ${newRootPages.join(", ")}`);
-}
-if (unknownDirs.size) {
-  console.log(`\n  New upstream directories (add to DIR_AREA):`);
-  console.log(`    ${[...unknownDirs].join(", ")}`);
-}
-console.log();

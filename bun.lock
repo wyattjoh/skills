@@ -4,6 +4,9 @@
   "workspaces": {
     "": {
       "name": "agent-toolkit",
+      "dependencies": {
+        "effect": "4.0.0",
+      },
       "devDependencies": {
         "@types/bun": "1.4.2",
         "@types/node": "^26.6.3",
@@ -30,6 +33,7 @@
       "name": "@wyattjoh/alchemy-skill",
       "version": "1.0.0",
       "dependencies": {
+        "effect": "4.0.0",
         "yaml": "^2.9.1",
       },
     },
@@ -38,6 +42,7 @@
       "version": "1.0.0",
       "dependencies": {
         "@typesafe-ai/sdk": "^0.6.0",
+        "effect": "4.0.0",
       },
     },
     "skills/clean-storage": {
@@ -50,27 +55,39 @@
     "skills/code-walkthrough": {
       "name": "@wyattjoh/code-walkthrough-skill",
       "version": "1.0.0",
+      "dependencies": {
+        "effect": "4.0.0",
+      },
     },
     "skills/devenv": {
       "name": "@wyattjoh/devenv-skill",
       "version": "1.0.0",
+      "dependencies": {
+        "effect": "4.0.0",
+      },
     },
     "skills/driving-ios-simulator": {
       "name": "@wyattjoh/driving-ios-simulator-skill",
       "version": "1.0.0",
+      "dependencies": {
+        "effect": "4.0.0",
+      },
     },
     "skills/herd": {
       "name": "@wyattjoh/herd-skill",
       "version": "1.0.0",
       "dependencies": {
         "commander": "^15.0.0",
-        "effect": "^3.22.2",
+        "effect": "4.0.0",
         "yaml": "^2.9.1",
       },
     },
     "skills/icon-gen": {
       "name": "@wyattjoh/icon-gen-skill",
       "version": "1.0.0",
+      "dependencies": {
+        "effect": "4.0.0",
+      },
     },
     "skills/linked-docs": {
       "name": "@wyattjoh/linked-docs-skill",
@@ -92,14 +109,23 @@
     "skills/name-gen": {
       "name": "@wyattjoh/name-gen-skill",
       "version": "1.0.0",
+      "dependencies": {
+        "effect": "4.0.0",
+      },
     },
     "skills/npm-info": {
       "name": "@wyattjoh/npm-info-skill",
       "version": "1.0.0",
+      "dependencies": {
+        "effect": "4.0.0",
+      },
     },
     "skills/pr-review": {
       "name": "@wyattjoh/pr-review-skill",
       "version": "1.0.0",
+      "dependencies": {
+        "effect": "4.0.0",
+      },
     },
     "skills/reference-submodules": {
       "name": "@wyattjoh/reference-submodules-skill",
@@ -111,6 +137,9 @@
     "skills/setup-alchemy": {
       "name": "@wyattjoh/setup-alchemy-skill",
       "version": "1.0.0",
+      "dependencies": {
+        "effect": "4.0.0",
+      },
     },
     "skills/workspaces": {
       "name": "@wyattjoh/workspaces-skill",
@@ -725,7 +754,7 @@
 
     "ecdsa-sig-formatter": ["ecdsa-sig-formatter@1.0.11", "", { "dependencies": { "safe-buffer": "^5.0.1" } }, "sha512-nagl3RYrbNv6kQkeJIpt6NJZy8twLB/2vtz6yN9Z4vRKHN4/QZJIEbqohALSgwKdnksuY3k5Addp5lg8sVoVcQ=="],
 
-    "effect": ["effect@3.22.2", "", { "dependencies": { "@standard-schema/spec": "^1.0.0", "fast-check": "^3.23.1" } }, "sha512-fm1CQXCs7GTMwpadZxwU5rnAb2bN6mbQpknq/pXBGCzSKkosNYb9k0wsoL0TfB10rSa5xOEZJjo77u/KLXSANg=="],
+    "effect": ["effect@4.0.0", "", {}, "sha512-ooc1TG5t+FfzgYnFz2ff6BBKyZ7EwBRVXC7c4RhQUAD6/TZ2gTXXMeb4WX7a19ozQo4J73/QW+S00YAIresoMQ=="],
 
     "elkjs": ["elkjs@0.9.3", "", {}, "sha512-f/ZeWvW/BCXbhGEf1Ujp29EASo/lk1FDnETgNKwJrsVvGZhUWCZyg3xLJjAsxfOmt8KjswHmI5EwCQcPMpOYhQ=="],
 
@@ -958,6 +987,16 @@
     "@earendil-works/pi-tui/marked": ["marked@18.0.11", "", { "bin": { "marked": "bin/marked.js" } }, "sha512-HnslJfsZkRPBDJRHvVtAaWlZHEpSu7u8LgQuJCELjRKuWR+hpq4A7sLq3p8HaI9ypVoXDXxV34CsQJEe1+J5Aw=="],
 
     "@types/ws/@types/node": ["@types/node@26.1.1", "", { "dependencies": { "undici-types": "~8.3.0" } }, "sha512-nxAkRSVkN1Y0JC1W8ky/fTfkGsMmcrRsbx+3XoZE+rMOX71kLYTV7fLXpqud1GpbpP5TuffXFqfX7fH2GgZREw=="],
+
+    "@wyattjoh/clean-storage-skill/effect": ["effect@3.22.2", "", { "dependencies": { "@standard-schema/spec": "^1.0.0", "fast-check": "^3.23.1" } }, "sha512-fm1CQXCs7GTMwpadZxwU5rnAb2bN6mbQpknq/pXBGCzSKkosNYb9k0wsoL0TfB10rSa5xOEZJjo77u/KLXSANg=="],
+
+    "@wyattjoh/linked-docs-skill/effect": ["effect@3.22.2", "", { "dependencies": { "@standard-schema/spec": "^1.0.0", "fast-check": "^3.23.1" } }, "sha512-fm1CQXCs7GTMwpadZxwU5rnAb2bN6mbQpknq/pXBGCzSKkosNYb9k0wsoL0TfB10rSa5xOEZJjo77u/KLXSANg=="],
+
+    "@wyattjoh/mermaid-skill/effect": ["effect@3.22.2", "", { "dependencies": { "@standard-schema/spec": "^1.0.0", "fast-check": "^3.23.1" } }, "sha512-fm1CQXCs7GTMwpadZxwU5rnAb2bN6mbQpknq/pXBGCzSKkosNYb9k0wsoL0TfB10rSa5xOEZJjo77u/KLXSANg=="],
+
+    "@wyattjoh/reference-submodules-skill/effect": ["effect@3.22.2", "", { "dependencies": { "@standard-schema/spec": "^1.0.0", "fast-check": "^3.23.1" } }, "sha512-fm1CQXCs7GTMwpadZxwU5rnAb2bN6mbQpknq/pXBGCzSKkosNYb9k0wsoL0TfB10rSa5xOEZJjo77u/KLXSANg=="],
+
+    "@wyattjoh/workspaces-skill/effect": ["effect@3.22.2", "", { "dependencies": { "@standard-schema/spec": "^1.0.0", "fast-check": "^3.23.1" } }, "sha512-fm1CQXCs7GTMwpadZxwU5rnAb2bN6mbQpknq/pXBGCzSKkosNYb9k0wsoL0TfB10rSa5xOEZJjo77u/KLXSANg=="],
 
     "buffer-image-size/@types/node": ["@types/node@26.1.1", "", { "dependencies": { "undici-types": "~8.3.0" } }, "sha512-nxAkRSVkN1Y0JC1W8ky/fTfkGsMmcrRsbx+3XoZE+rMOX71kLYTV7fLXpqud1GpbpP5TuffXFqfX7fH2GgZREw=="],
 

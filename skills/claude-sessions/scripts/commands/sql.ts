@@ -9,6 +9,8 @@
  *   bun $SKILL_DIR/scripts/cli.ts sql --schema
  */
 
+import { Effect } from "effect";
+import { runEffectPromise, tryIO } from "../lib/io.ts";
 import { Database } from "bun:sqlite";
 import { booleanFlagNames, flagBoolean, flagString, parseArgv } from "../lib/args.ts";
 import { resolveDbPath } from "../lib/db.ts";
@@ -278,21 +280,31 @@ function parseSqlArgs(argv: string[]): {
   };
 }
 
-async function run(argv: string[]): Promise<void> {
-  const parsed = parseSqlArgs(argv);
+const runEffect = Effect.fn("sql.run")(function* (argv: string[]) {
+  const parsed = yield* Effect.try({ try: () => parseSqlArgs(argv), catch: (cause) => cause });
   if (!parsed.schema && !isSingleSelect(parsed.statement)) {
-    throw new Error("SQL must be a single SELECT statement");
+    return yield* Effect.fail(new Error("SQL must be a single SELECT statement"));
   }
+  return yield* Effect.scoped(
+    Effect.gen(function* () {
+      const db = yield* Effect.acquireRelease(
+        tryIO("execute sql command", () => new Database(resolveDbPath(), { readonly: true })),
+        (database) => Effect.sync(() => database.close()),
+      );
+      const rows = yield* tryIO("execute sql command", () =>
+        parsed.schema
+          ? schemaRows(db)
+          : db.query(withDefaultLimit(parsed.statement, parsed.limit)).all(),
+      );
+      yield* tryIO("execute sql command", () =>
+        console.log(renderOutput(buildDocument("sql", rows), parsed.output)),
+      );
+    }),
+  );
+});
 
-  const db = new Database(resolveDbPath(), { readonly: true });
-  try {
-    const rows = parsed.schema
-      ? schemaRows(db)
-      : db.query(withDefaultLimit(parsed.statement, parsed.limit)).all();
-    console.log(renderOutput(buildDocument("sql", rows), parsed.output));
-  } finally {
-    db.close();
-  }
+function run(argv: string[]): Promise<void> {
+  return runEffectPromise(runEffect(argv));
 }
 
 export const command: Command = {
@@ -301,10 +313,11 @@ export const command: Command = {
   options,
   usage: "sql <statement> [options]  |  sql --schema",
   run,
+  runEffect,
 };
 
 if (import.meta.main) {
-  command.run(process.argv.slice(2)).catch((err) => {
+  runEffectPromise(command.runEffect(process.argv.slice(2))).catch((err) => {
     console.error("Error:", err instanceof Error ? err.message : err);
     process.exit(1);
   });

@@ -1,11 +1,12 @@
 import { describe, expect, it } from "bun:test";
 import { Database } from "bun:sqlite";
 import type { TypeSafeClient } from "@typesafe-ai/sdk";
+import { Effect } from "effect";
 import { mkdir, mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { judgeRows } from "./judge/client.ts";
-import { CURRENT_SCHEMA_VERSION, openDb } from "./db.ts";
+import { CURRENT_SCHEMA_VERSION, openDb, openDbScoped } from "./db.ts";
 
 async function withDbPath(fn: (path: string) => Promise<void>): Promise<void> {
   const dir = await mkdtemp(join(tmpdir(), "db-test-"));
@@ -139,6 +140,21 @@ describe("openDb", () => {
       const db = openDb(path);
       expect(await Bun.file(path).exists()).toBe(true);
       db.close();
+    });
+  });
+
+  it("closes a scoped database after the effect completes", async () => {
+    await withDbPath(async (path) => {
+      let scoped: Database | undefined;
+      await Effect.runPromise(
+        Effect.scoped(
+          Effect.gen(function* () {
+            scoped = yield* openDbScoped(path);
+            yield* Effect.sync(() => scoped?.exec("SELECT 1"));
+          }),
+        ),
+      );
+      expect(() => scoped?.exec("SELECT 1")).toThrow();
     });
   });
 

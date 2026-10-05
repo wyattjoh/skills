@@ -3,6 +3,7 @@ import { Command } from "commander";
 import { readdirSync, readFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
+import { Effect } from "effect";
 
 // Resolves everything the coordinator needs before it spawns anything: which
 // herdr workspace it lives in, what name peers must address it by, and whether
@@ -89,34 +90,55 @@ export function workerPeerName(batch: string, ticketId: string): string {
   return name;
 }
 
-export function readSessionRegistry(dir: string): SessionEntry[] {
-  let files: string[];
-  try {
-    files = readdirSync(dir).filter((f) => f.endsWith(".json"));
-  } catch {
-    return [];
-  }
+function sessionEntry(raw: unknown): SessionEntry | undefined {
+  if (typeof raw !== "object" || raw === null) return undefined;
+  const obj = raw as Record<string, unknown>;
+  if (typeof obj.sessionId !== "string" || typeof obj.name !== "string") return undefined;
+  return {
+    pid: typeof obj.pid === "number" ? obj.pid : 0,
+    sessionId: obj.sessionId,
+    cwd: typeof obj.cwd === "string" ? obj.cwd : "",
+    name: obj.name,
+    status: typeof obj.status === "string" ? obj.status : undefined,
+    messagingSocketPath:
+      typeof obj.messagingSocketPath === "string" ? obj.messagingSocketPath : undefined,
+  };
+}
+
+const registryFiles = (dir: string) =>
+  Effect.try({
+    try: () => readdirSync(dir).filter((file) => file.endsWith(".json")),
+    catch: () => undefined,
+  }).pipe(
+    // The registry is absent before the first peer starts. Treat it as empty.
+    Effect.catch(() => Effect.succeed([])),
+  );
+
+const readRegistryEntry = (path: string) =>
+  Effect.try({
+    try: () => sessionEntry(JSON.parse(readFileSync(path, "utf8"))),
+    catch: () => undefined,
+  }).pipe(
+    // A session may be writing its registry document while it is inspected.
+    Effect.catch(() => Effect.succeed(undefined)),
+  );
+
+export const readSessionRegistryEffect = Effect.fn("preflight.readSessionRegistry")(function* (
+  dir: string,
+) {
   const entries: SessionEntry[] = [];
-  for (const file of files) {
-    try {
-      const raw: unknown = JSON.parse(readFileSync(join(dir, file), "utf8"));
-      if (typeof raw !== "object" || raw === null) continue;
-      const obj = raw as Record<string, unknown>;
-      if (typeof obj.sessionId !== "string" || typeof obj.name !== "string") continue;
-      entries.push({
-        pid: typeof obj.pid === "number" ? obj.pid : 0,
-        sessionId: obj.sessionId,
-        cwd: typeof obj.cwd === "string" ? obj.cwd : "",
-        name: obj.name,
-        status: typeof obj.status === "string" ? obj.status : undefined,
-        messagingSocketPath:
-          typeof obj.messagingSocketPath === "string" ? obj.messagingSocketPath : undefined,
-      });
-    } catch {
-      // A session mid-write leaves a truncated file; skipping it is correct.
-    }
+  for (const file of yield* registryFiles(dir)) {
+    const entry = yield* readRegistryEntry(join(dir, file));
+    if (entry) entries.push(entry);
   }
   return entries;
+});
+
+/**
+ * Synchronous compatibility bridge for existing callers.
+ */
+export function readSessionRegistry(dir: string): SessionEntry[] {
+  return Effect.runSync(readSessionRegistryEffect(dir));
 }
 
 // Git resolves its repository from these variables in preference to the
@@ -145,86 +167,115 @@ function cleanEnv(): Record<string, string> {
   );
 }
 
-function sh(command: string, args: string[]): { ok: boolean; out: string } {
-  const proc = Bun.spawnSync([command, ...args], { stderr: "pipe", env: cleanEnv() });
-  return { ok: proc.exitCode === 0, out: new TextDecoder().decode(proc.stdout).trim() };
+export interface CommandResult {
+  ok: boolean;
+  out: string;
 }
 
-function which(binary: string): string | null {
-  const result = sh("sh", ["-c", `command -v ${binary}`]);
+export const shEffect = Effect.fn("preflight.sh")(function* (command: string, args: string[]) {
+  return yield* Effect.try({
+    try: () => {
+      const proc = Bun.spawnSync([command, ...args], { stderr: "pipe", env: cleanEnv() });
+      return { ok: proc.exitCode === 0, out: new TextDecoder().decode(proc.stdout).trim() };
+    },
+    catch: () => undefined,
+  }).pipe(
+    // A missing optional tool is reported through the existing preflight
+    // diagnostics rather than crashing the command.
+    Effect.catch(() => Effect.succeed({ ok: false, out: "" })),
+  );
+});
+
+const whichEffect = Effect.fn("preflight.which")(function* (binary: string) {
+  const result = yield* shEffect("sh", ["-c", `command -v ${binary}`]);
   return result.ok && result.out ? result.out : null;
-}
+});
 
 // pando is installed as a zsh function wrapping a cargo binary, so `command -v
 // pando` fails inside a non-interactive subprocess. Resolve the binary directly
 // or the coordinator will wrongly conclude pando is unavailable.
-export function resolvePando(home: string): string | null {
+export const resolvePandoEffect = Effect.fn("preflight.resolvePando")(function* (home: string) {
   const cargo = join(home, ".cargo", "bin", "pando");
-  if (Bun.file(cargo).size >= 0) {
-    const probe = sh(cargo, ["--version"]);
-    if (probe.ok) return cargo;
-  }
-  return which("pando");
+  const cargoExists = yield* Effect.try({
+    try: () => Bun.file(cargo).size >= 0,
+    catch: () => undefined,
+  }).pipe(Effect.catch(() => Effect.succeed(false)));
+  if (cargoExists && (yield* shEffect(cargo, ["--version"])).ok) return cargo;
+  return yield* whichEffect("pando");
+});
+
+/**
+ * Synchronous compatibility bridge for existing callers.
+ */
+export function resolvePando(home: string): string | null {
+  return Effect.runSync(resolvePandoEffect(home));
 }
 
 if (import.meta.main) {
-  const program = new Command()
-    .name("preflight")
-    .description("Resolve herd run context and verify the environment is ready")
-    .requiredOption("--session-id <uuid>", "coordinator's own Claude Code session id")
-    .option("--sessions-dir <dir>", "session registry directory")
-    .parse();
+  const exit = Effect.runSync(
+    Effect.gen(function* () {
+      const program = new Command()
+        .name("preflight")
+        .description("Resolve herd run context and verify the environment is ready")
+        .requiredOption("--session-id <uuid>", "coordinator's own Claude Code session id")
+        .option("--sessions-dir <dir>", "session registry directory")
+        .parse();
 
-  const opts = program.opts<{ sessionId: string; sessionsDir?: string }>();
-  const home = homedir();
-  const sessionsDir = opts.sessionsDir ?? join(home, ".claude", "sessions");
-  const problems: string[] = [];
+      const opts = program.opts<{ sessionId: string; sessionsDir?: string }>();
+      const home = homedir();
+      const sessionsDir = opts.sessionsDir ?? join(home, ".claude", "sessions");
+      const problems: string[] = [];
 
-  if (process.env.HERDR_ENV !== "1") {
-    problems.push("HERDR_ENV is not 1 — this skill only runs inside a herdr pane");
-  }
+      if (process.env.HERDR_ENV !== "1") {
+        problems.push("HERDR_ENV is not 1 — this skill only runs inside a herdr pane");
+      }
 
-  const paneList = sh("herdr", ["pane", "list"]);
-  let pane: Pane | null = null;
-  if (!paneList.ok) {
-    problems.push("`herdr pane list` failed — the herdr server is not reachable");
-  } else {
-    try {
-      const parsed = JSON.parse(paneList.out) as { result?: { panes?: Pane[] } };
-      pane = paneForSession(parsed.result?.panes ?? [], opts.sessionId);
-    } catch (error) {
-      problems.push(`could not resolve this session's pane: ${(error as Error).message}`);
-    }
-  }
+      const paneList = yield* shEffect("herdr", ["pane", "list"]);
+      let pane: Pane | null = null;
+      if (!paneList.ok) {
+        problems.push("`herdr pane list` failed — the herdr server is not reachable");
+      } else {
+        try {
+          const parsed = JSON.parse(paneList.out) as { result?: { panes?: Pane[] } };
+          pane = paneForSession(parsed.result?.panes ?? [], opts.sessionId);
+        } catch (error) {
+          problems.push(`could not resolve this session's pane: ${(error as Error).message}`);
+        }
+      }
 
-  const entries = readSessionRegistry(sessionsDir);
-  let peerName: string | null = null;
-  try {
-    peerName = peerNameForSession(entries, opts.sessionId);
-  } catch (error) {
-    problems.push(`${(error as Error).message} — workers would have no address to report back to`);
-  }
+      const entries = yield* readSessionRegistryEffect(sessionsDir);
+      let peerName: string | null = null;
+      try {
+        peerName = peerNameForSession(entries, opts.sessionId);
+      } catch (error) {
+        problems.push(
+          `${(error as Error).message} — workers would have no address to report back to`,
+        );
+      }
 
-  const root = sh("git", ["rev-parse", "--show-toplevel"]);
-  const branch = sh("git", ["rev-parse", "--abbrev-ref", "HEAD"]);
-  const dirty = sh("git", ["status", "--porcelain"]);
-  if (!root.ok) problems.push("not inside a git repository");
+      const root = yield* shEffect("git", ["rev-parse", "--show-toplevel"]);
+      const branch = yield* shEffect("git", ["rev-parse", "--abbrev-ref", "HEAD"]);
+      const dirty = yield* shEffect("git", ["status", "--porcelain"]);
+      if (!root.ok) problems.push("not inside a git repository");
 
-  const pando = resolvePando(home);
-  if (!pando) problems.push("pando not found — worktree creation is unavailable");
+      const pando = yield* resolvePandoEffect(home);
+      if (!pando) problems.push("pando not found — worktree creation is unavailable");
 
-  const report = {
-    ok: problems.length === 0,
-    problems,
-    herdr: pane
-      ? { workspaceId: pane.workspace_id, tabId: pane.tab_id, paneId: pane.pane_id }
-      : null,
-    coordinator: { sessionId: opts.sessionId, peerName },
-    repo: root.ok ? { root: root.out, branch: branch.out, dirty: dirty.out.length > 0 } : null,
-    tools: { pando, claude: which("claude"), pi: which("pi") },
-    livePeers: entries.map((e) => ({ name: e.name, cwd: e.cwd, status: e.status ?? null })),
-  };
+      const report = {
+        ok: problems.length === 0,
+        problems,
+        herdr: pane
+          ? { workspaceId: pane.workspace_id, tabId: pane.tab_id, paneId: pane.pane_id }
+          : null,
+        coordinator: { sessionId: opts.sessionId, peerName },
+        repo: root.ok ? { root: root.out, branch: branch.out, dirty: dirty.out.length > 0 } : null,
+        tools: { pando, claude: yield* whichEffect("claude"), pi: yield* whichEffect("pi") },
+        livePeers: entries.map((e) => ({ name: e.name, cwd: e.cwd, status: e.status ?? null })),
+      };
 
-  console.log(JSON.stringify(report, null, 2));
-  process.exit(report.ok ? 0 : 1);
+      yield* Effect.sync(() => console.log(JSON.stringify(report, null, 2)));
+      return report.ok ? 0 : 1;
+    }),
+  );
+  process.exit(exit);
 }

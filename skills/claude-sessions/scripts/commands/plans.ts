@@ -7,6 +7,8 @@
  *   bun $SKILL_DIR/scripts/cli.ts plans --pattern=<text> [options]
  */
 
+import { Effect } from "effect";
+import { runEffectPromise, tryIO, tryPromiseIO } from "../lib/io.ts";
 import { readdir, stat } from "node:fs/promises";
 import { homedir } from "node:os";
 import { join } from "node:path";
@@ -111,66 +113,95 @@ export function extractSnippet(
  * @param filepath Plan file path.
  * @returns An ISO timestamp, or null when the file cannot be read.
  */
-export async function getFileCreatedTime(filepath: string): Promise<string | null> {
-  try {
-    const file = await stat(filepath);
-    return (file.birthtimeMs > 0 ? file.birthtime : file.mtime).toISOString();
-  } catch {
-    return null;
-  }
+export function getFileCreatedTime(filepath: string): Promise<string | null> {
+  return runEffectPromise(getFileCreatedTimeEffect(filepath));
 }
 
 /**
- * Search markdown files in a plans directory and sort the most frequent matches first.
- *
- * @param searchOptions Search pattern, root, result limit, and snippet context.
- * @returns Matching plan rows in relevance order.
+ * Inspect a plan timestamp lazily, tolerating files that disappear.
+ * @param filepath - Plan file path.
+ * @returns Creation time, falling back to modification time, or null.
  */
-export async function searchPlans(
+export const getFileCreatedTimeEffect = Effect.fn("plans.createdTime")(function* (
+  filepath: string,
+) {
+  return yield* tryPromiseIO(`stat ${filepath}`, () => stat(filepath)).pipe(
+    Effect.flatMap((file) =>
+      tryIO("format plan timestamp", () =>
+        (file.birthtimeMs > 0 ? file.birthtime : file.mtime).toISOString(),
+      ),
+    ),
+    Effect.catch(() => Effect.succeed(null)),
+  );
+});
+
+/**
+ * Preserve the public Promise interface for searching markdown plans.
+ * @param searchOptions - Pattern, root, result limit and context.
+ * @param dependencies - Optional timestamp inspection implementation.
+ * @returns Matching rows in relevance order.
+ */
+export function searchPlans(
   searchOptions: PlanSearchOptions,
   dependencies: PlanSearchDependencies = {},
 ): Promise<PlanMatch[]> {
-  if (searchOptions.pattern.length === 0) throw new Error("plans requires --pattern=<text>");
+  return runEffectPromise(searchPlansEffect(searchOptions, dependencies));
+}
 
-  let entries: import("node:fs").Dirent[];
-  try {
-    entries = await readdir(searchOptions.root, { withFileTypes: true });
-  } catch (error) {
-    const nodeError = error as NodeJS.ErrnoException;
-    if (nodeError.code === "ENOENT") return [];
-    throw error;
-  }
-
+/**
+ * Compose per-file reads and timestamp inspection with partial-failure tolerance.
+ * @param searchOptions - Pattern, root, result limit and context.
+ * @param dependencies - Optional foreign timestamp implementation.
+ * @returns Matching readable plans in relevance order.
+ */
+export const searchPlansEffect = Effect.fn("plans.search")(function* (
+  searchOptions: PlanSearchOptions,
+  dependencies: PlanSearchDependencies = {},
+) {
+  if (searchOptions.pattern.length === 0)
+    return yield* Effect.fail(new Error("plans requires --pattern=<text>"));
+  const entries = yield* tryPromiseIO("list plans", () =>
+    readdir(searchOptions.root, { withFileTypes: true }),
+  ).pipe(
+    Effect.catch((error) => {
+      const cause = error.cause as NodeJS.ErrnoException;
+      return cause.code === "ENOENT" ? Effect.succeed([]) : Effect.fail(error);
+    }),
+  );
   const matches: PlanMatch[] = [];
   for (const entry of entries) {
     if (!entry.isFile() || !entry.name.endsWith(".md")) continue;
     const filepath = join(searchOptions.root, entry.name);
-
-    try {
-      const content = await Bun.file(filepath).text();
-      const extracted = extractSnippet(content, searchOptions.pattern, searchOptions.context);
-      if (extracted.matchCount === 0) continue;
-      const timestamp = await (dependencies.getFileCreatedTime ?? getFileCreatedTime)(filepath);
-      if (timestamp === null) continue;
-      matches.push({
-        filename: entry.name,
-        filepath,
-        timestamp,
-        snippet: extracted.snippet,
-        match_count: extracted.matchCount,
-      });
-    } catch {
-      // A plan can disappear or become unreadable while the directory is being searched.
-    }
+    const content = yield* tryPromiseIO(`read ${filepath}`, () => Bun.file(filepath).text()).pipe(
+      Effect.catch(() => Effect.succeed(undefined)),
+    );
+    if (content === undefined) continue;
+    const extracted = yield* tryIO("match plan content", () =>
+      extractSnippet(content, searchOptions.pattern, searchOptions.context),
+    ).pipe(Effect.catch(() => Effect.succeed(undefined)));
+    if (extracted === undefined || extracted.matchCount === 0) continue;
+    const getTime = dependencies.getFileCreatedTime;
+    const timestamp = yield* getTime === undefined
+      ? getFileCreatedTimeEffect(filepath)
+      : tryPromiseIO("inspect injected timestamp", () => getTime(filepath)).pipe(
+          Effect.catch(() => Effect.succeed(null)),
+        );
+    if (timestamp === null) continue;
+    matches.push({
+      filename: entry.name,
+      filepath,
+      timestamp,
+      snippet: extracted.snippet,
+      match_count: extracted.matchCount,
+    });
   }
-
   return matches
     .toSorted((left, right) => {
       const countOrder = right.match_count - left.match_count;
       return countOrder === 0 ? left.filename.localeCompare(right.filename) : countOrder;
     })
     .slice(0, searchOptions.limit);
-}
+});
 
 function parseNonNegativeInteger(
   flags: Record<string, string | boolean | string[]>,
@@ -211,10 +242,16 @@ function parsePlansArgs(argv: string[]): {
   };
 }
 
-async function run(argv: string[]): Promise<void> {
-  const parsed = parsePlansArgs(argv);
-  const rows = await searchPlans(parsed.search);
-  console.log(renderOutput(buildDocument("plans", rows), parsed.output));
+const runEffect = Effect.fn("plans.run")(function* (argv: string[]) {
+  const parsed = yield* Effect.try({ try: () => parsePlansArgs(argv), catch: (cause) => cause });
+  const rows = yield* searchPlansEffect(parsed.search);
+  yield* tryIO("execute plans command", () =>
+    console.log(renderOutput(buildDocument("plans", rows), parsed.output)),
+  );
+});
+
+function run(argv: string[]): Promise<void> {
+  return runEffectPromise(runEffect(argv));
 }
 
 export const command: Command = {
@@ -223,10 +260,11 @@ export const command: Command = {
   options,
   usage: "plans --pattern=<text> [options]",
   run,
+  runEffect,
 };
 
 if (import.meta.main) {
-  command.run(process.argv.slice(2)).catch((err) => {
+  runEffectPromise(command.runEffect(process.argv.slice(2))).catch((err) => {
     console.error("Error:", err instanceof Error ? err.message : err);
     process.exit(1);
   });

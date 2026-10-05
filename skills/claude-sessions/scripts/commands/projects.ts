@@ -7,9 +7,11 @@
  *   bun $SKILL_DIR/scripts/cli.ts projects [options]
  */
 
+import { Effect } from "effect";
+import { runEffectPromise, tryIO } from "../lib/io.ts";
 import { booleanFlagNames, flagString, parseArgv } from "../lib/args.ts";
 import type { SQLQueryBindings } from "bun:sqlite";
-import { openDb } from "../lib/db.ts";
+import { withDbEffect } from "../lib/effect.ts";
 import {
   buildWhereFragments,
   parseFilters,
@@ -60,9 +62,12 @@ function toOutputRow(row: ProjectRow): ProjectOutputRow {
   };
 }
 
-async function run(argv: string[]): Promise<void> {
-  const { flags } = parseArgv(argv, booleanFlagNames(options));
-  const filters = parseFilters(flags);
+const runEffect = Effect.fn("projects.run")(function* (argv: string[]) {
+  const { flags } = yield* Effect.try({
+    try: () => parseArgv(argv, booleanFlagNames(options)),
+    catch: (cause) => cause,
+  });
+  const filters = yield* Effect.try({ try: () => parseFilters(flags), catch: (cause) => cause });
   const search = flagString(flags, "search");
   const filter = buildWhereFragments(filters, {
     project: "sessions.project_identity",
@@ -90,11 +95,14 @@ async function run(argv: string[]): Promise<void> {
     }
   }
 
-  const db = openDb();
-  try {
-    const rows = db
-      .query(
-        `SELECT
+  return yield* withDbEffect((db) =>
+    Effect.gen(function* () {
+      const rows = yield* tryIO(
+        "execute projects command",
+        () =>
+          db
+            .query(
+              `SELECT
            sessions.project_identity AS project_identity,
            json_group_array(DISTINCT sessions.project_dir) AS project_dirs,
            MAX(COALESCE(sessions.ended_at, sessions.started_at)) AS timestamp,
@@ -104,14 +112,23 @@ async function run(argv: string[]): Promise<void> {
          GROUP BY sessions.project_identity
          ORDER BY timestamp DESC, sessions.project_identity ASC
          LIMIT ?`,
-      )
-      .all(...([...params, filters.limit] as SQLQueryBindings[])) as ProjectRow[];
-    console.log(
-      renderOutput(buildDocument("projects", rows.map(toOutputRow)), renderOptionsFromFlags(flags)),
-    );
-  } finally {
-    db.close();
-  }
+            )
+            .all(...([...params, filters.limit] as SQLQueryBindings[])) as ProjectRow[],
+      );
+      yield* tryIO("execute projects command", () =>
+        console.log(
+          renderOutput(
+            buildDocument("projects", rows.map(toOutputRow)),
+            renderOptionsFromFlags(flags),
+          ),
+        ),
+      );
+    }),
+  );
+});
+
+function run(argv: string[]): Promise<void> {
+  return runEffectPromise(runEffect(argv));
 }
 
 export const command: Command = {
@@ -119,10 +136,11 @@ export const command: Command = {
   description: "List canonical repository roots with activity and session counts.",
   options,
   run,
+  runEffect,
 };
 
 if (import.meta.main) {
-  command.run(process.argv.slice(2)).catch((err) => {
+  runEffectPromise(command.runEffect(process.argv.slice(2))).catch((err) => {
     console.error("Error:", err instanceof Error ? err.message : err);
     process.exit(1);
   });

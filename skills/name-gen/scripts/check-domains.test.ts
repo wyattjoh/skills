@@ -1,4 +1,6 @@
-import { describe, expect, it } from "bun:test";
+import { afterEach, describe, expect, it, mock, spyOn } from "bun:test";
+import { Effect, Result } from "effect";
+import { checkBatchEffect, fetchBootstrapEffect } from "./check-domains.ts";
 import { type DomainCheckResult, formatJson, formatTable, parseCli } from "./check-domains.ts";
 
 // ── parseCli ─────────────────────────────────────────────────────────────────
@@ -116,5 +118,89 @@ describe("formatTable", () => {
     ];
     const table = formatTable(results);
     expect(table.includes("Unknown (No server)")).toBe(true);
+  });
+});
+
+afterEach(() => mock.restore());
+
+describe("scoped RDAP requests", () => {
+  it("aborts the request after a failed bootstrap body read", async () => {
+    let signal: AbortSignal | undefined;
+    const fakeFetch = Object.assign(
+      async (...[_input, init]: Parameters<typeof fetch>) => {
+        signal = init?.signal ?? undefined;
+        return {
+          ok: true,
+          json: async () => {
+            throw new Error("fixture JSON unreadable");
+          },
+        } as unknown as Response;
+      },
+      { preconnect: fetch.preconnect },
+    );
+    spyOn(globalThis, "fetch").mockImplementation(fakeFetch);
+    const result = await Effect.runPromise(Effect.result(fetchBootstrapEffect()));
+    expect(Result.isFailure(result)).toBe(true);
+    if (!Result.isFailure(result)) throw new Error("Expected bootstrap failure");
+    expect(result.failure.message).toBe("fixture JSON unreadable");
+    expect(signal?.aborted).toBe(true);
+  });
+
+  it("propagates cancellation while waiting for bootstrap JSON", async () => {
+    const body = Promise.withResolvers<unknown>();
+    let signal: AbortSignal | undefined;
+    const fakeFetch = Object.assign(
+      async (...[_input, init]: Parameters<typeof fetch>) => {
+        const active = init?.signal;
+        if (active === undefined || active === null) throw new Error("Expected abort signal");
+        signal = active;
+        active.addEventListener(
+          "abort",
+          () => body.reject(new DOMException("Canceled", "AbortError")),
+          { once: true },
+        );
+        return { ok: true, json: () => body.promise } as unknown as Response;
+      },
+      { preconnect: fetch.preconnect },
+    );
+    spyOn(globalThis, "fetch").mockImplementation(fakeFetch);
+    const result = await Effect.runPromise(
+      Effect.result(fetchBootstrapEffect().pipe(Effect.timeout(100))),
+    );
+    expect(Result.isFailure(result)).toBe(true);
+    expect(signal?.aborted).toBe(true);
+  });
+
+  it("preserves five concurrent requests per batch and ordered results", async () => {
+    let active = 0;
+    let maximum = 0;
+    const releases: Array<() => void> = [];
+    const fakeFetch = Object.assign(
+      async (...[input]: Parameters<typeof fetch>) => {
+        if (String(input).includes("data.iana.org")) {
+          return Response.json({ services: [[["fixture"], ["https://rdap.example.invalid/"]]] });
+        }
+        active++;
+        maximum = Math.max(maximum, active);
+        return new Promise<Response>((resolve) => {
+          releases.push(() => {
+            active--;
+            resolve(new Response("", { status: 404 }));
+          });
+          if (releases.length === 5) for (const release of releases.splice(0)) release();
+        });
+      },
+      { preconnect: fetch.preconnect },
+    );
+    spyOn(globalThis, "fetch").mockImplementation(fakeFetch);
+    const names = Array.from({ length: 10 }, (_, index) => `fixture${index}`);
+    const results = await Effect.runPromise(
+      checkBatchEffect(names, ["fixture"]).pipe(Effect.timeout(2000)),
+    );
+    expect(maximum).toBe(5);
+    expect(active).toBe(0);
+    expect(results).toEqual(
+      names.map((name) => ({ domain: `${name}.fixture`, status: "available" as const })),
+    );
   });
 });

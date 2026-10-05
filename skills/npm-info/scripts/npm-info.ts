@@ -1,15 +1,9 @@
 #!/usr/bin/env bun
 
-/**
- * npm-info.ts - Fetch npm package metadata from the registry
- *
- * Outputs structured JSON with package info, README, maintainers, etc.
- * Handles errors gracefully - never throws, returns structured error info instead.
- */
+/** Fetches npm package metadata and writes structured JSON for CLI callers. */
+import { Effect, Schema } from "effect";
 
-const FETCH_TIMEOUT_MS = 10_000; // 10s - registries typically respond in <2s
-
-// Types
+const FETCH_TIMEOUT_MS = 10_000;
 
 interface NpmPackageInfo {
   name: string;
@@ -31,8 +25,6 @@ interface NpmError {
   error: string;
   package: string;
 }
-
-// Raw registry types (subset of what the API returns)
 
 interface RegistryMaintainer {
   name: string;
@@ -63,37 +55,38 @@ interface RegistryResponse {
   versions?: Record<string, RegistryVersionInfo>;
 }
 
-// Pure extraction functions (exported for testing)
+/** Represents a failed npm registry operation. */
+class RegistryRequestError extends Schema.TaggedError<RegistryRequestError>()(
+  "RegistryRequestError",
+  {
+    message: Schema.String,
+  },
+) {}
 
+/** Extracts a browser-friendly repository URL from registry metadata. */
 export function extractRepository(repo: string | RegistryRepository | undefined): string | null {
   if (!repo) return null;
-
   if (typeof repo === "string") return repo;
-
   if (!repo.url) return null;
-
-  // Normalize git+https://github.com/foo/bar.git -> https://github.com/foo/bar
   return repo.url.replace(/^git\+/, "").replace(/\.git$/, "");
 }
 
+/** Extracts the SPDX license string when registry metadata provides one. */
 export function extractLicense(license: string | { type?: string } | undefined): string | null {
   if (!license) return null;
-  if (typeof license === "string") return license;
-  return license.type ?? null;
+  return typeof license === "string" ? license : (license.type ?? null);
 }
 
+/** Extracts maintainer names from registry metadata. */
 export function extractMaintainers(maintainers: RegistryMaintainer[] | undefined): string[] {
-  if (!maintainers) return [];
-  return maintainers.map((m) => m.name);
+  return maintainers?.map((maintainer) => maintainer.name) ?? [];
 }
 
+/** Converts a registry response to the stable npm-info JSON shape. */
 export function parseRegistryResponse(data: RegistryResponse): NpmPackageInfo {
   const distTags = data["dist-tags"] ?? {};
-  const latestVersion = distTags["latest"];
-
-  // Get version-specific info from the latest version
+  const latestVersion = distTags.latest;
   const versionInfo = latestVersion ? data.versions?.[latestVersion] : undefined;
-
   return {
     name: data.name,
     description: data.description ?? "",
@@ -111,68 +104,76 @@ export function parseRegistryResponse(data: RegistryResponse): NpmPackageInfo {
   };
 }
 
-// Fetch logic
-
-async function fetchPackageInfo(packageName: string): Promise<NpmPackageInfo | NpmError> {
+/** Fetches package metadata, cancelling the request and timer when its scope closes. */
+export const fetchPackageInfoEffect = Effect.fn("fetchPackageInfo")(function* (
+  packageName: string,
+): Effect.fn.Return<NpmPackageInfo | NpmError> {
   const url = `https://registry.npmjs.org/${encodeURIComponent(packageName)}`;
-  const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
+  const result = yield* Effect.scoped(
+    Effect.gen(function* () {
+      const request = yield* Effect.acquireRelease(
+        Effect.sync(() => {
+          const controller = new AbortController();
+          const timeoutId = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
+          return { controller, timeoutId };
+        }),
+        ({ controller, timeoutId }) =>
+          Effect.sync(() => {
+            clearTimeout(timeoutId);
+            controller.abort();
+          }),
+      );
+      const response = yield* Effect.tryPromise({
+        try: () =>
+          fetch(url, {
+            signal: request.controller.signal,
+            headers: { Accept: "application/json" },
+          }),
+        catch: (cause) =>
+          new RegistryRequestError({
+            message: cause instanceof Error ? cause.message : String(cause),
+          }),
+      });
+      if (response.status === 404)
+        return { error: `Package "${packageName}" not found`, package: packageName };
+      if (!response.ok)
+        return { error: `Registry returned HTTP ${response.status}`, package: packageName };
+      const data = yield* Effect.tryPromise({
+        try: () => response.json() as Promise<RegistryResponse>,
+        catch: (cause) =>
+          new RegistryRequestError({
+            message: cause instanceof Error ? cause.message : String(cause),
+          }),
+      });
+      return parseRegistryResponse(data);
+    }),
+  ).pipe(
+    Effect.catchTag("RegistryRequestError", (error) =>
+      Effect.succeed({ error: `Failed to fetch: ${error.message}`, package: packageName }),
+    ),
+  );
+  return result;
+});
 
-  try {
-    const response = await fetch(url, {
-      signal: controller.signal,
-      headers: { Accept: "application/json" },
-    });
-
-    if (response.status === 404) {
-      return {
-        error: `Package "${packageName}" not found`,
-        package: packageName,
-      };
-    }
-
-    if (!response.ok) {
-      return {
-        error: `Registry returned HTTP ${response.status}`,
-        package: packageName,
-      };
-    }
-
-    const data: RegistryResponse = await response.json();
-    return parseRegistryResponse(data);
-  } catch (err) {
-    const message = err instanceof Error ? err.message : String(err);
-    return { error: `Failed to fetch: ${message}`, package: packageName };
-  } finally {
-    clearTimeout(timeoutId);
-  }
+/** Promise compatibility bridge for callers that do not run Effects directly. */
+export function fetchPackageInfo(packageName: string): Promise<NpmPackageInfo | NpmError> {
+  return Effect.runPromise(fetchPackageInfoEffect(packageName));
 }
 
-// Main
-
-async function main(): Promise<void> {
+const main = Effect.fn("npmInfo.main")(function* (): Effect.fn.Return<void> {
   const packageName = Bun.argv.slice(2)[0];
-
   if (!packageName) {
-    console.error(
-      JSON.stringify({
-        error: "Usage: npm-info.ts <package-name>",
-        package: "",
-      }),
-    );
-    process.exit(1);
+    console.error(JSON.stringify({ error: "Usage: npm-info.ts <package-name>", package: "" }));
+    process.exitCode = 1;
+    return;
   }
-
-  const result = await fetchPackageInfo(packageName);
-
+  const result = yield* fetchPackageInfoEffect(packageName);
   if ("error" in result) {
     console.error(JSON.stringify(result));
-    process.exit(1);
+    process.exitCode = 1;
+    return;
   }
-
   console.log(JSON.stringify(result, null, 2));
-}
+});
 
-if (import.meta.main) {
-  main();
-}
+if (import.meta.main) Effect.runPromise(main());

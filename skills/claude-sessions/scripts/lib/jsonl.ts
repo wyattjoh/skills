@@ -7,6 +7,9 @@
  * so callers can tail a growing file instead of re-reading it from the top.
  */
 
+import { Effect, Exit } from "effect";
+import { runEffectPromise, tryIO, tryPromiseIO } from "./io.ts";
+
 const NEWLINE = 0x0a;
 
 export interface JsonlLine {
@@ -43,10 +46,20 @@ export interface JsonlReadResult {
  * incomplete and is not parsed or counted; it is left for a future read once
  * the writer finishes it.
  */
-export async function readJsonl(
+export function readJsonl(path: string, options: ReadJsonlOptions = {}): Promise<JsonlReadResult> {
+  return runEffectPromise(readJsonlEffect(path, options));
+}
+
+/**
+ * Compose streaming reads with scoped reader cleanup on every exit.
+ * @param path - JSONL file to read.
+ * @param options - Leading complete lines to skip.
+ * @returns Parsed complete lines and malformed-line accounting.
+ */
+export const readJsonlEffect = Effect.fn("jsonl.read")(function* (
   path: string,
   options: ReadJsonlOptions = {},
-): Promise<JsonlReadResult> {
+) {
   const fromLine = options.fromLine ?? 0;
 
   const lines: JsonlLine[] = [];
@@ -55,9 +68,17 @@ export async function readJsonl(
   let lastLineEndOffset = 0;
   let byteOffset = 0;
 
-  const file = Bun.file(path);
-  const stream = file.stream();
-  const reader = stream.getReader();
+  const reader = yield* Effect.acquireRelease(
+    tryIO(`open ${path}`, () => Bun.file(path).stream().getReader()),
+    (acquired, exit) => {
+      const cancel = Exit.isSuccess(exit)
+        ? Effect.void
+        : tryPromiseIO(`cancel ${path}`, () => acquired.cancel()).pipe(
+            Effect.catch(() => Effect.void),
+          );
+      return cancel.pipe(Effect.ensuring(Effect.sync(() => acquired.releaseLock())));
+    },
+  );
   const decoder = new TextDecoder();
 
   let pending: Uint8Array = new Uint8Array(0);
@@ -84,30 +105,26 @@ export async function readJsonl(
     }
   };
 
-  try {
-    for (;;) {
-      const { done, value } = await reader.read();
-      if (done) break;
-      if (!value || value.length === 0) continue;
+  for (;;) {
+    const { done, value } = yield* tryPromiseIO(`read ${path}`, () => reader.read());
+    if (done) break;
+    if (!value || value.length === 0) continue;
 
-      const combined = new Uint8Array(pending.length + value.length);
-      combined.set(pending, 0);
-      combined.set(value, pending.length);
+    const combined = new Uint8Array(pending.length + value.length);
+    combined.set(pending, 0);
+    combined.set(value, pending.length);
 
-      let searchStart = 0;
-      let newlineIndex = combined.indexOf(NEWLINE, searchStart);
-      while (newlineIndex !== -1) {
-        const lineBytes = combined.subarray(searchStart, newlineIndex);
-        consumeLine(lineBytes, byteOffset + searchStart);
-        searchStart = newlineIndex + 1;
-        newlineIndex = combined.indexOf(NEWLINE, searchStart);
-      }
-
-      byteOffset += searchStart;
-      pending = combined.subarray(searchStart);
+    let searchStart = 0;
+    let newlineIndex = combined.indexOf(NEWLINE, searchStart);
+    while (newlineIndex !== -1) {
+      const lineBytes = combined.subarray(searchStart, newlineIndex);
+      consumeLine(lineBytes, byteOffset + searchStart);
+      searchStart = newlineIndex + 1;
+      newlineIndex = combined.indexOf(NEWLINE, searchStart);
     }
-  } finally {
-    reader.releaseLock();
+
+    byteOffset += searchStart;
+    pending = combined.subarray(searchStart);
   }
 
   return {
@@ -116,4 +133,4 @@ export async function readJsonl(
     lastLineNumber: lineNumber,
     lastLineEndOffset,
   };
-}
+}, Effect.scoped);

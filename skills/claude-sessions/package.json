@@ -8,6 +8,7 @@
     "fixtures": "bun scripts/fixtures/generate.ts"
   },
   "dependencies": {
-    "@typesafe-ai/sdk": "^0.6.0"
+    "@typesafe-ai/sdk": "^0.6.0",
+    "effect": "4.0.0"
   }
 }

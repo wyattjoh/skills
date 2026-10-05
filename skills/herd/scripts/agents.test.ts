@@ -2,10 +2,12 @@ import { describe, expect, it } from "bun:test";
 import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { Effect } from "effect";
 import {
   type AgentDefinition,
   AgentParseError,
   loadAgents,
+  loadAgentsEffect,
   parseAgentFile,
   resolveShadowing,
 } from "./agents.ts";
@@ -125,5 +127,48 @@ describe("loadAgents", () => {
     ]);
     expect(agents).toEqual([]);
     expect(errors).toEqual([]);
+  });
+
+  it("defers directory reads until the Effect is run", async () => {
+    const calls: string[] = [];
+    const effect = loadAgentsEffect([{ dir: "/agents", scope: "user" }], {
+      readDir: (dir) => {
+        calls.push(`readDir:${dir}`);
+        return ["worker.md"];
+      },
+      statIsDirectory: () => false,
+      readFile: (path) => {
+        calls.push(`readFile:${path}`);
+        return "---\nname: worker\n---";
+      },
+    });
+    expect(calls).toEqual([]);
+
+    const loaded = await Effect.runPromise(effect);
+    expect(calls).toEqual(["readDir:/agents", "readFile:/agents/worker.md"]);
+    expect(loaded.agents.map((definition) => definition.name)).toEqual(["worker"]);
+  });
+
+  it("recovers an unreadable directory and accumulates a broken file", async () => {
+    const absent = await Effect.runPromise(
+      loadAgentsEffect([{ dir: "/absent", scope: "user" }], {
+        readDir: () => {
+          throw new Error("missing");
+        },
+        statIsDirectory: () => false,
+        readFile: () => "",
+      }),
+    );
+    expect(absent).toEqual({ agents: [], errors: [] });
+
+    const broken = await Effect.runPromise(
+      loadAgentsEffect([{ dir: "/agents", scope: "project" }], {
+        readDir: () => ["broken.md"],
+        statIsDirectory: () => false,
+        readFile: () => "not frontmatter",
+      }),
+    );
+    expect(broken.agents).toEqual([]);
+    expect(broken.errors).toEqual(["/agents/broken.md: no YAML frontmatter"]);
   });
 });

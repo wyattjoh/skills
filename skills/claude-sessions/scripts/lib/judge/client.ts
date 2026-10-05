@@ -8,9 +8,11 @@ import {
   UnprocessableEntityError,
 } from "@typesafe-ai/sdk";
 import type { Questions, SystemOneResult } from "@typesafe-ai/sdk";
+import { Effect } from "effect";
 import { createHash } from "node:crypto";
 import type { Database } from "bun:sqlite";
-import { openDb } from "../db.ts";
+import { openDbScoped } from "../db.ts";
+import { runEffectPromise, tryIO } from "../io.ts";
 import { findPreset } from "./presets/index.ts";
 import { buildJudgeFileState, buildState, judgeFileAsPreset } from "./state.ts";
 import type {
@@ -279,57 +281,54 @@ function writeCachedJudgment(
   ).run(model, preset, questionHash, stateHash, JSON.stringify(judgment), createdAt);
 }
 
-async function requestOne(
+const requestOneEffect = Effect.fn("judge.requestOne")(function* (
   client: TypeSafeClient,
   item: PreparedRow<unknown>,
   questions: Questions,
   minConfidence: number,
   model: string,
   timeoutMs: number | undefined,
-): Promise<RequestResult> {
-  try {
-    const response: SystemOneResult<Questions> = await client.systemOne(
-      { state: item.state, questions, model },
-      timeoutMs === undefined ? undefined : { timeout: timeoutMs },
-    );
-    const answers = validateAnswers(questions, response, minConfidence);
-    if (answers === undefined) {
-      return { index: item.index, judgment: skipped("bad_answer"), answered: false };
-    }
-    return { index: item.index, judgment: successful(answers), answered: true };
-  } catch (error) {
-    const mapped = mappedError(error);
-    return {
-      index: item.index,
-      judgment: skipped(mapped.reason, mapped.errorClass),
-      answered: false,
-    };
-  }
-}
+) {
+  return yield* Effect.tryPromise({
+    try: (signal) =>
+      client.systemOne(
+        { state: item.state, questions, model },
+        { signal, ...(timeoutMs === undefined ? {} : { timeout: timeoutMs }) },
+      ),
+    catch: (cause) => cause,
+  }).pipe(
+    Effect.map((response: SystemOneResult<Questions>) => {
+      const answers = validateAnswers(questions, response, minConfidence);
+      return answers === undefined
+        ? { index: item.index, judgment: skipped("bad_answer"), answered: false }
+        : { index: item.index, judgment: successful(answers), answered: true };
+    }),
+    Effect.catch((error) => {
+      const mapped = mappedError(error);
+      return Effect.succeed({
+        index: item.index,
+        judgment: skipped(mapped.reason, mapped.errorClass),
+        answered: false,
+      });
+    }),
+  );
+});
 
-async function requestConcurrent(
+const requestConcurrent = Effect.fn("judge.requests")(function* (
   client: TypeSafeClient,
   items: PreparedRow<unknown>[],
   questions: Questions,
   minConfidence: number,
   model: string,
   timeoutMs: number | undefined,
-): Promise<RequestResult[]> {
-  const results: RequestResult[] = [];
-  let next = 0;
-  const worker = async (): Promise<void> => {
-    while (next < items.length) {
-      const index = next;
-      next += 1;
-      results.push(
-        await requestOne(client, items[index]!, questions, minConfidence, model, timeoutMs),
-      );
-    }
-  };
-  const workers = Math.min(MAX_CONCURRENCY, items.length);
-  await Promise.all(Array.from({ length: workers }, () => worker()));
+) {
+  const results: RequestResult[] = yield* Effect.forEach(
+    items,
+    (item) => requestOneEffect(client, item, questions, minConfidence, model, timeoutMs),
+    { concurrency: MAX_CONCURRENCY },
+  );
   return results.toSorted((a, b) => a.index - b.index);
-}
+});
 
 function summaryFor(
   rows: Array<{ judge: RowJudgment }>,
@@ -379,41 +378,65 @@ function summaryFor(
  * @param options API, cache, budget, and diagnostic options.
  * @returns Every input row with a row-level annotation and batch metadata.
  */
-export async function judgeRows<T extends object>(
+export function judgeRows<T extends object>(
   rows: T[],
   preset: JudgePresetName | string | JudgePreset,
   options: Partial<JudgeRowsOptions> = {},
 ): Promise<JudgeResult<T>> {
-  const { definition, fileDefinition } = resolvePreset(preset, options);
-  const maxRows = resolvedMaxRows(options);
-  const minConfidence = resolvedMinConfidence(options);
+  return runEffectPromise(judgeRowsEffect(rows, preset, options));
+}
+
+/**
+ * Compose bounded SDK requests and cache I/O in one cancelable scope.
+ * @param rows - Input rows in output order.
+ * @param preset - Built-in or custom judgment definition.
+ * @param options - Request, cache and diagnostic settings.
+ * @returns Row judgments, preserving partial-failure and cache semantics.
+ */
+export const judgeRowsEffect = Effect.fn("judge.rows")(function* <T extends object>(
+  rows: T[],
+  preset: JudgePresetName | string | JudgePreset,
+  options: Partial<JudgeRowsOptions> = {},
+) {
+  const { definition, fileDefinition } = yield* tryIO("resolve judge preset", () =>
+    resolvePreset(preset, options),
+  );
+  const maxRows = yield* tryIO("validate judge row budget", () => resolvedMaxRows(options));
+  const minConfidence = yield* tryIO("validate judge confidence", () =>
+    resolvedMinConfidence(options),
+  );
   const model = modelName(options);
   const diagnostic = diagnosticSink(options);
   const selectedRows = rows.slice(0, maxRows);
-  const prepared = selectedRows.map((row, index) => {
-    const context: JudgeStateContext = { query: options.query };
-    const state =
-      fileDefinition === undefined
-        ? buildState(definition, row, context)
-        : buildJudgeFileState(fileDefinition, row);
-    return {
-      index,
-      row,
-      state,
-      stateHash: hash(state),
-    } satisfies PreparedRow<T>;
-  });
+  const prepared = yield* tryIO("prepare judgment states", () =>
+    selectedRows.map((row, index) => {
+      const context: JudgeStateContext = { query: options.query };
+      const state =
+        fileDefinition === undefined
+          ? buildState(definition, row, context)
+          : buildJudgeFileState(fileDefinition, row);
+      return {
+        index,
+        row,
+        state,
+        stateHash: hash(state),
+      } satisfies PreparedRow<T>;
+    }),
+  );
   const estimatedInputTokens = prepared.reduce(
     (total, item) => total + Math.ceil(item.state.length / 4),
     0,
   );
 
-  if (rows.length > 0) diagnostic(`judge: estimated input tokens: ${estimatedInputTokens}`);
+  if (rows.length > 0)
+    yield* tryIO("report judgment estimate", () =>
+      diagnostic(`judge: estimated input tokens: ${estimatedInputTokens}`),
+    );
 
   const annotations: Array<RowJudgment | undefined> = Array.from({ length: rows.length });
   if (rows.length === 0) {
     return {
-      status: "ok",
+      status: "ok" as const,
       reason: null,
       error_class: null,
       rows_judged: 0,
@@ -427,7 +450,7 @@ export async function judgeRows<T extends object>(
     for (let index = 0; index < rows.length; index += 1) {
       annotations[index] = skipped("no_api_key");
     }
-    diagnostic("judge: skipped (no_api_key)");
+    yield* tryIO("report missing API key", () => diagnostic("judge: skipped (no_api_key)"));
     const judgedRows = rows.map((row, index) => ({
       ...row,
       judge: annotations[index]!,
@@ -442,12 +465,7 @@ export async function judgeRows<T extends object>(
     annotations[index] = skipped("max_rows");
   }
 
-  let cacheDb = options.db;
-  let ownsDb = false;
-  if (!options.noCache && cacheDb === undefined) {
-    cacheDb = openDb();
-    ownsDb = true;
-  }
+  const cacheDb = options.noCache ? options.db : (options.db ?? (yield* openDbScoped()));
 
   let rowsCached = 0;
   let rowsJudged = 0;
@@ -455,11 +473,11 @@ export async function judgeRows<T extends object>(
   const pending: PreparedRow<unknown>[] = [];
   const cachedWrites: Array<{ item: PreparedRow<unknown>; judgment: RowJudgment }> = [];
 
-  try {
-    for (const item of prepared) {
-      const cached =
-        !options.noCache && cacheDb !== undefined
-          ? readCachedJudgment(
+  for (const item of prepared) {
+    const cached =
+      !options.noCache && cacheDb !== undefined
+        ? yield* tryIO("read judgment cache", () =>
+            readCachedJudgment(
               cacheDb,
               model,
               definition.name,
@@ -467,57 +485,63 @@ export async function judgeRows<T extends object>(
               item.stateHash,
               definition.questions,
               minConfidence,
-            )
-          : undefined;
-      if (cached === undefined) {
-        pending.push(item as PreparedRow<unknown>);
-      } else {
-        annotations[item.index] = cached;
-        rowsCached += 1;
-      }
+            ),
+          )
+        : undefined;
+    if (cached === undefined) {
+      pending.push(item as PreparedRow<unknown>);
+    } else {
+      annotations[item.index] = cached;
+      rowsCached += 1;
     }
+  }
 
-    if (pending.length > 0) {
-      let client: TypeSafeClient | undefined;
-      try {
-        const apiKey = options.apiKey ?? process.env.TYPESAFE_API_KEY;
-        client =
-          options.client ??
-          new TypeSafeClient({
-            apiKey,
-            defaultModel: model,
-            fetch: options.fetch,
-            retry: options.retry,
-          });
-      } catch (error) {
-        const mapped = mappedError(error);
-        for (const item of pending)
-          annotations[item.index] = skipped(mapped.reason, mapped.errorClass);
-      }
+  if (pending.length > 0) {
+    const client = yield* Effect.try({
+      try: () =>
+        options.client ??
+        new TypeSafeClient({
+          apiKey: options.apiKey ?? process.env.TYPESAFE_API_KEY,
+          defaultModel: model,
+          fetch: options.fetch,
+          retry: options.retry,
+        }),
+      catch: (cause) => cause,
+    }).pipe(
+      Effect.catch((error) =>
+        Effect.sync(() => {
+          const mapped = mappedError(error);
+          for (const item of pending)
+            annotations[item.index] = skipped(mapped.reason, mapped.errorClass);
+          return undefined;
+        }),
+      ),
+    );
 
-      if (client !== undefined) {
-        const requestResults = await requestConcurrent(
-          client,
-          pending,
-          definition.questions,
-          minConfidence,
-          model,
-          options.timeoutMs,
-        );
-        for (const result of requestResults) {
-          annotations[result.index] = result.judgment;
-          if (result.answered) {
-            rowsJudged += 1;
-            const item = pending.find((candidate) => candidate.index === result.index);
-            if (item !== undefined) cachedWrites.push({ item, judgment: result.judgment });
-          }
+    if (client !== undefined) {
+      const requestResults = yield* requestConcurrent(
+        client,
+        pending,
+        definition.questions,
+        minConfidence,
+        model,
+        options.timeoutMs,
+      );
+      for (const result of requestResults) {
+        annotations[result.index] = result.judgment;
+        if (result.answered) {
+          rowsJudged += 1;
+          const item = pending.find((candidate) => candidate.index === result.index);
+          if (item !== undefined) cachedWrites.push({ item, judgment: result.judgment });
         }
       }
     }
+  }
 
-    if (!options.noCache && cacheDb !== undefined) {
-      const createdAt = options.now?.toISOString() ?? new Date().toISOString();
-      for (const cached of cachedWrites) {
+  if (!options.noCache && cacheDb !== undefined) {
+    const createdAt = options.now?.toISOString() ?? new Date().toISOString();
+    for (const cached of cachedWrites) {
+      yield* tryIO("write judgment cache", () =>
         writeCachedJudgment(
           cacheDb,
           model,
@@ -526,11 +550,9 @@ export async function judgeRows<T extends object>(
           cached.item.stateHash,
           cached.judgment,
           createdAt,
-        );
-      }
+        ),
+      );
     }
-  } finally {
-    if (ownsDb) cacheDb?.close();
   }
 
   const completedRows = rows.map((row, index) => ({
@@ -546,10 +568,14 @@ export async function judgeRows<T extends object>(
     ),
   ];
   if (summary.status === "partial") {
-    diagnostic(`judge: partial (${failureReasons.join(", ")})`);
+    yield* tryIO("report partial judgments", () =>
+      diagnostic(`judge: partial (${failureReasons.join(", ")})`),
+    );
   }
   if (summary.status === "skipped" && summary.reason !== "max_rows") {
-    diagnostic(`judge: skipped (${summary.reason ?? "bad_answer"})`);
+    yield* tryIO("report skipped judgments", () =>
+      diagnostic(`judge: skipped (${summary.reason ?? "bad_answer"})`),
+    );
   }
   return { ...summary, rows: completedRows };
-}
+}, Effect.scoped);

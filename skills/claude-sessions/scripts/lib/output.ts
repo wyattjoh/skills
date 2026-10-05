@@ -7,8 +7,10 @@
 
 import { flagBoolean, flagString, type FlagValue } from "./args.ts";
 import type { Database } from "bun:sqlite";
-import { judgeRows } from "./judge/client.ts";
-import { readJudgeFile } from "./judge/state.ts";
+import { Effect } from "effect";
+import { runEffectPromise, tryIO } from "./io.ts";
+import { judgeRowsEffect } from "./judge/client.ts";
+import { readJudgeFileEffect } from "./judge/state.ts";
 import type {
   JudgeFileDefinition,
   JudgePresetName,
@@ -107,39 +109,65 @@ function skippedBadAnswerDocument<T extends object>(
  * @param acceptedPresets Presets supported by this command.
  * @returns A standard output document, optionally annotated with judgments.
  */
-export async function buildDocumentWithJudge<T extends object>(
+export function buildDocumentWithJudge<T extends object>(
   command: string,
   rows: T[],
   flags: Record<string, FlagValue>,
   db: Database,
   acceptedPresets: readonly JudgePresetName[],
 ): Promise<OutputDocument<MaybeJudged<T>>> {
+  return runEffectPromise(buildDocumentWithJudgeEffect(command, rows, flags, db, acceptedPresets));
+}
+
+/**
+ * Compose judge-definition reads, validation and judgment without a nested runtime.
+ * @param command - Output envelope command name.
+ * @param rows - Raw command rows.
+ * @param flags - Parsed command flags.
+ * @param db - Caller-owned cache database.
+ * @param acceptedPresets - Supported built-in presets.
+ * @returns An optionally judged document.
+ */
+export const buildDocumentWithJudgeEffect = Effect.fn("output.judge")(function* <T extends object>(
+  command: string,
+  rows: T[],
+  flags: Record<string, FlagValue>,
+  db: Database,
+  acceptedPresets: readonly JudgePresetName[],
+) {
   const presetName = flagString(flags, "judge");
   const judgeFilePath = flagString(flags, "judge-file");
   if (presetName === undefined && judgeFilePath === undefined) {
     return buildDocument(command, rows) as OutputDocument<MaybeJudged<T>>;
   }
   if (presetName !== undefined && judgeFilePath !== undefined) {
-    return skippedBadAnswerDocument(command, rows);
+    return yield* tryIO("report conflicting judge flags", () =>
+      skippedBadAnswerDocument(command, rows),
+    );
   }
 
   let judgeFile: JudgeFileDefinition | undefined;
   if (judgeFilePath !== undefined) {
-    try {
-      judgeFile = await readJudgeFile(judgeFilePath);
-    } catch {
-      return skippedBadAnswerDocument(command, rows);
+    judgeFile = yield* readJudgeFileEffect(judgeFilePath).pipe(
+      Effect.catch(() => Effect.succeed(undefined)),
+    );
+    if (judgeFile === undefined) {
+      return yield* tryIO("report invalid judge definition", () =>
+        skippedBadAnswerDocument(command, rows),
+      );
     }
   }
 
   if (presetName !== undefined && !acceptedPresets.includes(presetName as JudgePresetName)) {
-    throw new Error(`Invalid --judge for ${command}: ${presetName}`);
+    return yield* Effect.fail(new Error(`Invalid --judge for ${command}: ${presetName}`));
   }
   if (presetName === "relevance" && !flagString(flags, "query")?.trim()) {
-    return skippedBadAnswerDocument(command, rows);
+    return yield* tryIO("report missing judge query", () =>
+      skippedBadAnswerDocument(command, rows),
+    );
   }
 
-  const result: JudgeResult<T> = await judgeRows(rows, presetName ?? "custom", {
+  const judgeOptions = yield* tryIO("parse judge options", () => ({
     db,
     judgeFile,
     model: undefined,
@@ -150,14 +178,15 @@ export async function buildDocumentWithJudge<T extends object>(
     noCache: !flagBoolean(flags, "cache", true),
     minConfidence: parseMinConfidence(flagString(flags, "min-confidence")),
     query: flagString(flags, "query"),
-    diagnostic: (message) => console.error(message),
+    diagnostic: (message: string) => console.error(message),
     timeoutMs: undefined,
     retry: undefined,
     now: undefined,
-  });
+  }));
+  const result: JudgeResult<T> = yield* judgeRowsEffect(rows, presetName ?? "custom", judgeOptions);
   const { rows: judgedRows, ...summary } = result;
   return buildDocument(command, judgedRows, summary);
-}
+});
 
 /**
  * Build and render a command document with optional TypeSafe judgments.
@@ -169,16 +198,39 @@ export async function buildDocumentWithJudge<T extends object>(
  * @param acceptedPresets Presets supported by this command.
  * @returns The rendered command output.
  */
-export async function renderDocumentWithJudge<T extends object>(
+export function renderDocumentWithJudge<T extends object>(
   command: string,
   rows: T[],
   flags: Record<string, FlagValue>,
   db: Database,
   acceptedPresets: readonly JudgePresetName[],
 ): Promise<string> {
-  const document = await buildDocumentWithJudge(command, rows, flags, db, acceptedPresets);
-  return renderOutput(document, renderOptionsFromFlags(flags));
+  return runEffectPromise(renderDocumentWithJudgeEffect(command, rows, flags, db, acceptedPresets));
 }
+
+/**
+ * Build and render judged output directly within the caller's Effect program.
+ * @param command - Output envelope command name.
+ * @param rows - Raw command rows.
+ * @param flags - Parsed command flags.
+ * @param db - Caller-owned database.
+ * @param acceptedPresets - Supported built-in presets.
+ * @returns Rendered output or the original validation failure.
+ */
+export const renderDocumentWithJudgeEffect = Effect.fn("output.renderJudged")(function* <
+  T extends object,
+>(
+  command: string,
+  rows: T[],
+  flags: Record<string, FlagValue>,
+  db: Database,
+  acceptedPresets: readonly JudgePresetName[],
+) {
+  const document = yield* buildDocumentWithJudgeEffect(command, rows, flags, db, acceptedPresets);
+  return yield* tryIO("render judged output", () =>
+    renderOutput(document, renderOptionsFromFlags(flags)),
+  );
+});
 
 /**
  * Parse a JSON-encoded scalar, object, or array for a row field.

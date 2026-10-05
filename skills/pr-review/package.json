@@ -6,5 +6,8 @@
   "scripts": {
     "test": "bun test",
     "submit": "bun scripts/submit-pr-review.ts"
+  },
+  "dependencies": {
+    "effect": "4.0.0"
   }
 }

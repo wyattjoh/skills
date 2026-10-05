@@ -2,6 +2,7 @@ import { describe, expect, it } from "bun:test";
 import { mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { Effect } from "effect";
 import {
   isNameTaken,
   type Pane,
@@ -9,6 +10,7 @@ import {
   peerNameForSession,
   PreflightError,
   readSessionRegistry,
+  readSessionRegistryEffect,
   type SessionEntry,
   workerPeerName,
 } from "./preflight.ts";
@@ -136,5 +138,27 @@ describe("readSessionRegistry", () => {
 
   it("returns an empty list when the directory is absent", () => {
     expect(readSessionRegistry(join(tmpdir(), "herd-missing-registry"))).toEqual([]);
+  });
+
+  it("defers registry I/O and recovers an absent directory", async () => {
+    const missing = join(tmpdir(), "herd-effect-missing-registry");
+    expect(await Effect.runPromise(readSessionRegistryEffect(missing))).toEqual([]);
+
+    const dir = mkdtempSync(join(tmpdir(), "herd-effect-registry-"));
+    const effect = readSessionRegistryEffect(dir);
+    writeFileSync(
+      join(dir, "late.json"),
+      JSON.stringify({ pid: 4, sessionId: "late", cwd: "/repo", name: "late-peer" }),
+    );
+    expect(await Effect.runPromise(effect)).toEqual([
+      {
+        pid: 4,
+        sessionId: "late",
+        cwd: "/repo",
+        name: "late-peer",
+        status: undefined,
+        messagingSocketPath: undefined,
+      },
+    ]);
   });
 });

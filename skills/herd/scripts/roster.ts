@@ -2,6 +2,7 @@
 import { Command } from "commander";
 import { mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
+import { Effect, Schema } from "effect";
 
 // The durable record of one herd run.
 //
@@ -62,6 +63,10 @@ export interface Roster {
 }
 
 export class RosterError extends Error {}
+
+export class RosterIoError extends Schema.TaggedError<RosterIoError>()("RosterIoError", {
+  detail: Schema.String,
+}) {}
 
 export interface TicketSeed {
   id: string;
@@ -232,21 +237,81 @@ export function updateTicket(
   return { ...roster, tickets };
 }
 
-export function readRoster(path: string): Roster {
-  const raw: unknown = JSON.parse(readFileSync(path, "utf8"));
+const readRosterFile = (path: string) =>
+  Effect.try({
+    try: () => readFileSync(path, "utf8"),
+    catch: (cause) => new RosterIoError({ detail: `${path}: ${String(cause)}` }),
+  });
+
+export const readRosterEffect = Effect.fn("roster.read")(function* (path: string) {
+  const text = yield* readRosterFile(path);
+  const raw = yield* Effect.try({
+    try: () => JSON.parse(text) as unknown,
+    catch: (cause) => new RosterIoError({ detail: `${path}: ${String(cause)}` }),
+  });
   if (typeof raw !== "object" || raw === null || !Array.isArray((raw as Roster).tickets)) {
-    throw new RosterError(`${path} is not a roster document`);
+    return yield* new RosterIoError({ detail: `${path} is not a roster document` });
   }
   return raw as Roster;
+});
+
+/**
+ * Synchronous compatibility bridge for callers that expect a roster value.
+ */
+export function readRoster(path: string): Roster {
+  return Effect.runSync(
+    readRosterEffect(path).pipe(
+      Effect.catch((error) =>
+        Effect.sync(() => {
+          throw new RosterError(error.detail);
+        }),
+      ),
+    ),
+  );
 }
 
 // Temp-file plus rename: the coordinator rewrites this on every transition, and
 // a partial write would leave the run unresumable.
-export function writeRoster(path: string, roster: Roster): void {
-  mkdirSync(dirname(path), { recursive: true });
+export const readTicketSeedsEffect = Effect.fn("roster.readTicketSeeds")(function* (path: string) {
+  const text = yield* readRosterFile(path);
+  return yield* Effect.try({
+    try: () => JSON.parse(text) as TicketSeed[],
+    catch: (cause) => new RosterIoError({ detail: `${path}: ${String(cause)}` }),
+  });
+});
+
+export const writeRosterEffect = Effect.fn("roster.write")(function* (
+  path: string,
+  roster: Roster,
+) {
   const temp = `${path}.tmp`;
-  writeFileSync(temp, `${JSON.stringify(roster, null, 2)}\n`);
-  renameSync(temp, path);
+  yield* Effect.try({
+    try: () => mkdirSync(dirname(path), { recursive: true }),
+    catch: (cause) => new RosterIoError({ detail: `${path}: ${String(cause)}` }),
+  });
+  yield* Effect.try({
+    try: () => writeFileSync(temp, `${JSON.stringify(roster, null, 2)}\n`),
+    catch: (cause) => new RosterIoError({ detail: `${temp}: ${String(cause)}` }),
+  });
+  yield* Effect.try({
+    try: () => renameSync(temp, path),
+    catch: (cause) => new RosterIoError({ detail: `${temp}: ${String(cause)}` }),
+  });
+});
+
+/**
+ * Synchronous compatibility bridge that retains atomic temp-file-plus-rename writes.
+ */
+export function writeRoster(path: string, roster: Roster): void {
+  Effect.runSync(
+    writeRosterEffect(path, roster).pipe(
+      Effect.catch((error) =>
+        Effect.sync(() => {
+          throw new RosterError(error.detail);
+        }),
+      ),
+    ),
+  );
 }
 
 export function summarize(roster: Roster): string {
@@ -282,24 +347,28 @@ if (import.meta.main) {
     .requiredOption("--workspace <id>")
     .requiredOption("--target <branch>")
     .option("--concurrency <n>", "maximum simultaneous workers", "3")
-    .action((opts: Record<string, string>) => {
-      const seeds = JSON.parse(readFileSync(opts.tickets!, "utf8")) as TicketSeed[];
-      const path = rosterPath(opts.repoRoot!, opts.batch!);
-      const roster = buildRoster(
-        seeds,
-        {
-          batch: opts.batch!,
-          coordinatorPeer: opts.coordinatorPeer!,
-          workspaceId: opts.workspace!,
-          repoRoot: opts.repoRoot!,
-          targetBranch: opts.target!,
-          concurrency: Number(opts.concurrency),
-        },
-        new Date().toISOString(),
-      );
-      writeRoster(path, roster);
-      console.log(path);
-    });
+    .action((opts: Record<string, string>) =>
+      Effect.runSync(
+        Effect.gen(function* () {
+          const seeds = yield* readTicketSeedsEffect(opts.tickets!);
+          const path = rosterPath(opts.repoRoot!, opts.batch!);
+          const roster = buildRoster(
+            seeds,
+            {
+              batch: opts.batch!,
+              coordinatorPeer: opts.coordinatorPeer!,
+              workspaceId: opts.workspace!,
+              repoRoot: opts.repoRoot!,
+              targetBranch: opts.target!,
+              concurrency: Number(opts.concurrency),
+            },
+            new Date().toISOString(),
+          );
+          yield* writeRosterEffect(path, roster);
+          yield* Effect.sync(() => console.log(path));
+        }),
+      ),
+    );
 
   program
     .command("set")
@@ -307,34 +376,47 @@ if (import.meta.main) {
     .requiredOption("--batch <name>")
     .requiredOption("--id <ticket>")
     .requiredOption("--patch <json>", "JSON object of ticket fields to update")
-    .action((opts: Record<string, string>) => {
-      const path = rosterPath(opts.repoRoot!, opts.batch!);
-      const now = new Date().toISOString();
-      const patch = JSON.parse(opts.patch!) as Partial<Ticket>;
-      const updated = propagateBlocks(updateTicket(readRoster(path), opts.id!, patch, now), now);
-      writeRoster(path, updated);
-      console.log(summarize(updated));
-    });
+    .action((opts: Record<string, string>) =>
+      Effect.runSync(
+        Effect.gen(function* () {
+          const path = rosterPath(opts.repoRoot!, opts.batch!);
+          const now = new Date().toISOString();
+          const patch = JSON.parse(opts.patch!) as Partial<Ticket>;
+          const roster = yield* readRosterEffect(path);
+          const updated = propagateBlocks(updateTicket(roster, opts.id!, patch, now), now);
+          yield* writeRosterEffect(path, updated);
+          yield* Effect.sync(() => console.log(summarize(updated)));
+        }),
+      ),
+    );
 
   program
     .command("summary")
     .requiredOption("--repo-root <dir>")
     .requiredOption("--batch <name>")
     .option("--json")
-    .action((opts: Record<string, string | boolean>) => {
-      const roster = readRoster(rosterPath(opts.repoRoot as string, opts.batch as string));
-      if (opts.json) {
-        console.log(
-          JSON.stringify(
-            { roster, ready: readyTickets(roster), slots: availableSlots(roster) },
-            null,
-            2,
-          ),
-        );
-      } else {
-        console.log(summarize(roster));
-      }
-    });
+    .action((opts: Record<string, string | boolean>) =>
+      Effect.runSync(
+        Effect.gen(function* () {
+          const roster = yield* readRosterEffect(
+            rosterPath(opts.repoRoot as string, opts.batch as string),
+          );
+          yield* Effect.sync(() => {
+            if (opts.json) {
+              console.log(
+                JSON.stringify(
+                  { roster, ready: readyTickets(roster), slots: availableSlots(roster) },
+                  null,
+                  2,
+                ),
+              );
+            } else {
+              console.log(summarize(roster));
+            }
+          });
+        }),
+      ),
+    );
 
   program.parse();
 }

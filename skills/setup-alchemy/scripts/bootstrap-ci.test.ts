@@ -318,6 +318,37 @@ describe("bootstrapCi", () => {
       "Cloudflare request failed or timed out; details withheld. No alternate credential used.",
     );
   });
+
+  it("bounds an unreadable JSON response and redacts its provider error", async () => {
+    const h = harness();
+    let requestSignal: AbortSignal | undefined;
+    h.deps.fetch = Object.assign(
+      async (_address: string | URL | Request, init: RequestInit = {}) => {
+        requestSignal = init.signal as AbortSignal;
+        return {
+          ok: true,
+          status: 200,
+          json: async () => {
+            throw new Error(key);
+          },
+        } as unknown as Response;
+      },
+      { preconnect: () => {} },
+    ) as typeof fetch;
+
+    let message = "";
+    try {
+      await bootstrapCi(config, { rotate: true, days: 90 }, h.deps);
+    } catch (error) {
+      message = (error as Error).message;
+    }
+
+    expect(requestSignal instanceof AbortSignal).toBe(true);
+    expect(requestSignal?.aborted).toBe(true);
+    expect(message).toBe("Cloudflare returned unreadable data; details withheld.");
+    expect(h.writes()).toBe(0);
+    expect(includes(message, key)).toBe(false);
+  });
 });
 
 const recorder = (

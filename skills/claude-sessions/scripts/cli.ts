@@ -16,9 +16,11 @@
  * itself fails.
  */
 
+import { Effect } from "effect";
 import { type Command, type CommandOption, commands, findCommand } from "./commands/index.ts";
-import { openDb } from "./lib/db.ts";
-import { sync } from "./lib/ingest.ts";
+import { withDbEffect } from "./lib/effect.ts";
+import { runEffectPromise, tryIO } from "./lib/io.ts";
+import { syncEffect } from "./lib/ingest.ts";
 
 function optionLabel(option: CommandOption): string {
   const name = option.negated === true ? `no-${option.name}` : option.name;
@@ -95,26 +97,39 @@ const SLOW_SYNC_NOTICE_MS = 5_000;
  * unreadable) is reported on stderr but does not abort the command: the
  * index may already hold useful data from a previous sync.
  */
-async function autoSync(): Promise<void> {
-  const db = openDb();
-  const slowNotice = setTimeout(() => {
-    console.error("sync: still syncing the conversation index, this can take a while...");
-  }, SLOW_SYNC_NOTICE_MS);
-  try {
-    const summary = await sync({ db });
-    const changed = summary.added + summary.updated + summary.removed;
-    if (changed > 0) {
-      console.error(
-        `sync: ${summary.added} added, ${summary.updated} updated, ${summary.removed} removed`,
-      );
-    }
-  } catch (err) {
-    console.error(`sync: skipped (${err instanceof Error ? err.message : String(err)})`);
-  } finally {
-    clearTimeout(slowNotice);
-    db.close();
-  }
-}
+const autoSync = Effect.fn("cli.autoSync")(function* () {
+  return yield* withDbEffect((db) =>
+    Effect.scoped(
+      Effect.gen(function* () {
+        yield* Effect.acquireRelease(
+          Effect.sync(() =>
+            setTimeout(() => {
+              console.error("sync: still syncing the conversation index, this can take a while...");
+            }, SLOW_SYNC_NOTICE_MS),
+          ),
+          (timer) => Effect.sync(() => clearTimeout(timer)),
+        );
+        yield* syncEffect({ db }).pipe(
+          Effect.tap((summary) => {
+            const changed = summary.added + summary.updated + summary.removed;
+            return changed > 0
+              ? Effect.sync(() =>
+                  console.error(
+                    `sync: ${summary.added} added, ${summary.updated} updated, ${summary.removed} removed`,
+                  ),
+                )
+              : Effect.void;
+          }),
+          Effect.catch((err) =>
+            Effect.sync(() =>
+              console.error(`sync: skipped (${err instanceof Error ? err.message : String(err)})`),
+            ),
+          ),
+        );
+      }),
+    ),
+  );
+});
 
 /**
  * True when `--help`/`-h` appears as a flag, not as a literal positional.
@@ -145,25 +160,27 @@ export function routeGlobalFlags(argv: string[]): {
   return { noSync, forwardedArgv };
 }
 
-async function main(): Promise<void> {
+const main = Effect.fn("cli.run")(function* () {
   const argv = process.argv.slice(2);
   const [name, ...rest] = argv;
 
   if (name === undefined || name === "--help" || name === "-h") {
-    printRootHelp();
+    yield* tryIO("write root help", printRootHelp);
     return;
   }
 
   const command = findCommand(name);
   if (command === undefined) {
-    console.error(`Unknown command: ${name}`);
-    console.error(`Run "bun scripts/cli.ts --help" to list commands.`);
-    process.exitCode = 1;
+    yield* tryIO("report unknown command", () => {
+      console.error(`Unknown command: ${name}`);
+      console.error(`Run "bun scripts/cli.ts --help" to list commands.`);
+      process.exitCode = 1;
+    });
     return;
   }
 
   if (hasHelpFlag(rest)) {
-    printCommandHelp(command);
+    yield* tryIO("write command help", () => printCommandHelp(command));
     return;
   }
 
@@ -174,14 +191,14 @@ async function main(): Promise<void> {
   const skipsAutoSync = command.name === "sync";
 
   if (!skipsAutoSync && !noSync) {
-    await autoSync();
+    yield* autoSync();
   }
 
-  await command.run(forwardedArgv);
-}
+  yield* command.runEffect(forwardedArgv);
+});
 
 if (import.meta.main) {
-  main().catch((err) => {
+  runEffectPromise(main()).catch((err) => {
     console.error("Error:", err instanceof Error ? err.message : String(err));
     process.exitCode = 1;
   });

@@ -3,6 +3,7 @@
 import { mkdir } from "node:fs/promises";
 import { parseArgs } from "node:util";
 import { join } from "node:path";
+import { Effect, Schema } from "effect";
 
 const OPENROUTER_IMAGES_URL = "https://openrouter.ai/api/v1/images";
 
@@ -95,41 +96,91 @@ export function parseImageResponse(value: unknown): { bytes: Uint8Array; extensi
  * @param options - API credentials, prompt, output settings, and fetch dependency.
  * @returns Absolute or relative paths to the generated image files.
  */
-export async function generateIcons(options: GenerateOptions): Promise<string[]> {
-  await mkdir(options.outputDirectory, { recursive: true });
+/** Represents a failed OpenRouter request or generated-image write. */
+class IconGenerationError extends Schema.TaggedError<IconGenerationError>()("IconGenerationError", {
+  message: Schema.String,
+}) {}
 
+/** Generates icons as a composable Effect, preserving sequential image writes. */
+export const generateIconsEffect = Effect.fn("generateIcons")(function* (
+  options: GenerateOptions,
+): Effect.fn.Return<string[], IconGenerationError> {
+  yield* Effect.tryPromise({
+    try: () => mkdir(options.outputDirectory, { recursive: true }),
+    catch: (cause) =>
+      new IconGenerationError({ message: cause instanceof Error ? cause.message : String(cause) }),
+  });
   const paths: string[] = [];
   for (let index = 0; index < options.count; index += 1) {
-    const response = await options.fetchImplementation(OPENROUTER_IMAGES_URL, {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${options.apiKey}`,
-        "Content-Type": "application/json",
-        "HTTP-Referer": "https://github.com/wyattjoh/skills",
-        "X-OpenRouter-Title": "icon-gen skill",
-      },
-      body: JSON.stringify({
-        model: options.model,
-        prompt: options.prompt,
-        n: 1,
-        resolution: "1K",
-        aspect_ratio: "1:1",
+    const generatedPath = yield* Effect.scoped(
+      Effect.gen(function* () {
+        const controller = yield* Effect.acquireRelease(
+          Effect.sync(() => new AbortController()),
+          (request) => Effect.sync(() => request.abort()),
+        );
+        const response = yield* Effect.tryPromise({
+          try: (signal) =>
+            options.fetchImplementation(OPENROUTER_IMAGES_URL, {
+              method: "POST",
+              signal: AbortSignal.any([signal, controller.signal, AbortSignal.timeout(120_000)]),
+              headers: {
+                Authorization: `Bearer ${options.apiKey}`,
+                "Content-Type": "application/json",
+                "HTTP-Referer": "https://github.com/wyattjoh/skills",
+                "X-OpenRouter-Title": "icon-gen skill",
+              },
+              body: JSON.stringify({
+                model: options.model,
+                prompt: options.prompt,
+                n: 1,
+                resolution: "1K",
+                aspect_ratio: "1:1",
+              }),
+            }),
+          catch: (cause) =>
+            new IconGenerationError({
+              message: cause instanceof Error ? cause.message : String(cause),
+            }),
+        });
+        if (!response.ok) {
+          const detail = yield* Effect.tryPromise({
+            try: () => readErrorDetail(response),
+            catch: (cause) =>
+              new IconGenerationError({
+                message: cause instanceof Error ? cause.message : String(cause),
+              }),
+          });
+          return yield* new IconGenerationError({
+            message: `OpenRouter image generation failed (${response.status}): ${detail}`,
+          });
+        }
+        const generated = yield* Effect.tryPromise({
+          try: async () => parseImageResponse(await response.json()),
+          catch: (cause) =>
+            new IconGenerationError({
+              message: cause instanceof Error ? cause.message : String(cause),
+            }),
+        });
+        const suffix = options.count === 1 ? "" : `-${index + 1}`;
+        const path = join(options.outputDirectory, `icon${suffix}.${generated.extension}`);
+        yield* Effect.tryPromise({
+          try: () => Bun.write(path, generated.bytes),
+          catch: (cause) =>
+            new IconGenerationError({
+              message: cause instanceof Error ? cause.message : String(cause),
+            }),
+        });
+        return path;
       }),
-    });
-
-    if (!response.ok) {
-      const detail = await readErrorDetail(response);
-      throw new Error(`OpenRouter image generation failed (${response.status}): ${detail}`);
-    }
-
-    const generated = parseImageResponse(await response.json());
-    const suffix = options.count === 1 ? "" : `-${index + 1}`;
-    const path = join(options.outputDirectory, `icon${suffix}.${generated.extension}`);
-    await Bun.write(path, generated.bytes);
-    paths.push(path);
+    );
+    paths.push(generatedPath);
   }
-
   return paths;
+});
+
+/** Promise compatibility bridge for callers that do not run Effects directly. */
+export function generateIcons(options: GenerateOptions): Promise<string[]> {
+  return Effect.runPromise(generateIconsEffect(options));
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -179,7 +230,7 @@ Environment (validated and injected by varlock):
   OPENROUTER_MODEL    Required OpenRouter image model
 `;
 
-async function main(): Promise<void> {
+const main = Effect.fn("iconGen.main")(function* (): Effect.fn.Return<void, IconGenerationError> {
   const options = parseCli(Bun.argv.slice(2));
   if (options.help) {
     console.log(HELP_TEXT.trim());
@@ -203,7 +254,7 @@ async function main(): Promise<void> {
     throw new Error("OPENROUTER_MODEL is required; run this script through varlock");
   }
 
-  const paths = await generateIcons({
+  const paths = yield* generateIconsEffect({
     apiKey,
     model,
     prompt: options.prompt,
@@ -215,10 +266,10 @@ async function main(): Promise<void> {
   for (const path of paths) {
     console.log(path);
   }
-}
+});
 
 if (import.meta.main) {
-  main().catch((error: unknown) => {
+  Effect.runPromise(main()).catch((error: unknown) => {
     const message = error instanceof Error ? error.message : String(error);
     console.error(`Error: ${message}`);
     process.exitCode = 1;

@@ -85,7 +85,7 @@ agents and skills tables match the actual contents of `agents/` and `skills/`.
 
 ## Dependency References
 
-Five upstream repositories are registered as pinned git submodules under `.claude/references/`.
+Upstream repositories are registered as pinned git submodules under `.claude/references/`.
 They are for read-only reference only; do not edit files inside these paths.
 
 | Dependency              | Version / Tag         | Path                                               | Repository                                                       | Pin (commit SHA)                           |
@@ -98,10 +98,13 @@ They are for read-only reference only; do not edit files inside these paths.
 | Varlock                 | `varlock@1.21.1`      | `.claude/references/varlock`                       | https://github.com/dmno-dev/varlock.git                          | `fd51d60905b372ab10ae6407300346e67695aec0` |
 
 The Effect repository is vendored twice because this repository uses two incompatible major versions.
-`effect` tracks the npm `latest` line (v3), still used by the `workspaces`, `herd`, `clean-storage`, and
-`mermaid` helper scripts; `effect-v4` tracks the exact v4 release candidate that the `effect-ts` skill
-documents. The v4 checkout also carries upstream `MIGRATION.md`,
-`migration/`, `LLMS.md`, and `ai-docs/` directories that the v3 checkout does not.
+The Effect references are documentation snapshots. `effect` supplies v3 source for the unchanged
+`workspaces`, `clean-storage`, `linked-docs`, `mermaid`, and `reference-submodules` scripts; `effect-v4` tracks the
+exact v4 release candidate documented by the `effect-ts` skill. Migrated runtime scripts target the
+current Alchemy-compatible stable release separately from that documentation corpus. For script API
+changes, use the skill's package manifest and matching installed Effect source. The v4 checkout also
+carries upstream `MIGRATION.md`, `migration/`, `LLMS.md`, and `ai-docs/` directories that the v3 checkout
+does not.
 
 The `alchemy` and `effect-ts` skills must always target the same Effect release. The source of truth is
 upstream alchemy's exact pin (`overrides.effect` in its `pnpm-workspace.yaml`), which

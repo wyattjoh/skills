@@ -15,6 +15,7 @@ import { command as sql } from "./sql.ts";
 import { command as stats } from "./stats.ts";
 import { command as sync } from "./sync.ts";
 import { command as tools } from "./tools.ts";
+import type { Effect } from "effect";
 import type { JudgePresetName } from "../lib/judge/types.ts";
 
 /**
@@ -46,6 +47,8 @@ export interface Command {
    */
   usage?: string;
   run: (argv: string[]) => Promise<void>;
+  /** Composed program for the router and standalone CLI runtime boundary. */
+  runEffect: (argv: string[]) => Effect.Effect<void, unknown>;
 }
 
 /**

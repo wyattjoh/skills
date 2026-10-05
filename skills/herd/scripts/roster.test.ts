@@ -1,5 +1,6 @@
 import { describe, expect, it } from "bun:test";
-import { mkdtempSync } from "node:fs";
+import { existsSync, mkdtempSync } from "node:fs";
+import { Effect } from "effect";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
@@ -8,14 +9,17 @@ import {
   findCycle,
   propagateBlocks,
   readRoster,
+  readRosterEffect,
   readyTickets,
   type Roster,
   RosterError,
+  RosterIoError,
   rosterPath,
   summarize,
   type TicketSeed,
   updateTicket,
   writeRoster,
+  writeRosterEffect,
 } from "./roster.ts";
 
 const NOW = "2026-08-07T00:00:00.000Z";
@@ -223,6 +227,30 @@ describe("writeRoster and readRoster", () => {
 
   it("places the roster under .herd/<batch>/", () => {
     expect(rosterPath("/repo", "defects")).toBe("/repo/.herd/defects/roster.json");
+  });
+
+  it("defers atomic writes until the Effect is run", async () => {
+    const root = mkdtempSync(join(tmpdir(), "herd-roster-effect-"));
+    const path = rosterPath(root, "deferred");
+    const roster = make([{ id: "01" }]);
+    const effect = writeRosterEffect(path, roster);
+    expect(existsSync(path)).toBe(false);
+
+    await Effect.runPromise(effect);
+    expect(await Effect.runPromise(readRosterEffect(path))).toEqual(roster);
+  });
+
+  it("reports a missing roster as a typed I/O failure", async () => {
+    const path = join(tmpdir(), "herd-missing-roster.json");
+    const outcome = await Effect.runPromise(
+      readRosterEffect(path).pipe(
+        Effect.match({
+          onFailure: (error) => error instanceof RosterIoError,
+          onSuccess: () => false,
+        }),
+      ),
+    );
+    expect(outcome).toBe(true);
   });
 });
 

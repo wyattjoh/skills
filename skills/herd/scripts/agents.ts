@@ -4,6 +4,7 @@ import { readdirSync, readFileSync, statSync } from "node:fs";
 import { homedir } from "node:os";
 import { join, relative } from "node:path";
 import { parse as parseYaml } from "yaml";
+import { Effect } from "effect";
 
 // Lists the agent definitions a worker session can be launched with, along with
 // the frontmatter that decides how it will reason.
@@ -82,47 +83,85 @@ export function parseAgentFile(
   };
 }
 
-function markdownFilesIn(dir: string): string[] {
-  const found: string[] = [];
-  const walk = (current: string) => {
-    let names: string[];
-    try {
-      names = readdirSync(current);
-    } catch {
-      return;
-    }
-    for (const entry of names) {
-      const full = join(current, entry);
-      let isDir = false;
-      try {
-        isDir = statSync(full).isDirectory();
-      } catch {
-        continue;
-      }
-      if (isDir) walk(full);
-      else if (entry.endsWith(".md")) found.push(full);
-    }
-  };
-  walk(dir);
-  return found.toSorted();
+export interface AgentFileSystem {
+  readDir(dir: string): string[];
+  statIsDirectory(path: string): boolean;
+  readFile(path: string): string;
 }
 
+const nodeFileSystem: AgentFileSystem = {
+  readDir: readdirSync,
+  statIsDirectory: (path) => statSync(path).isDirectory(),
+  readFile: (path) => readFileSync(path, "utf8"),
+};
+
+const readDirectory = (fileSystem: AgentFileSystem, dir: string) =>
+  Effect.try({
+    try: () => fileSystem.readDir(dir),
+    catch: () => undefined,
+  }).pipe(
+    // An absent user or project agents directory is expected and means it has
+    // no definitions, rather than making the entire discovery command fail.
+    Effect.catch(() => Effect.succeed([])),
+  );
+
+const isDirectory = (fileSystem: AgentFileSystem, path: string) =>
+  Effect.try({
+    try: () => fileSystem.statIsDirectory(path),
+    catch: () => undefined,
+  }).pipe(
+    // A file may disappear while walking a user-managed agents directory.
+    Effect.catch(() => Effect.succeed(false)),
+  );
+
+export const markdownFilesInEffect = Effect.fn("agents.markdownFilesIn")(function* (
+  dir: string,
+  fileSystem: AgentFileSystem = nodeFileSystem,
+) {
+  const found: string[] = [];
+  const walk = Effect.fnUntraced(function* (current: string): Effect.fn.Return<void> {
+    const names = yield* readDirectory(fileSystem, current);
+    for (const entry of names) {
+      const full = join(current, entry);
+      if (yield* isDirectory(fileSystem, full)) yield* walk(full);
+      else if (entry.endsWith(".md")) found.push(full);
+    }
+  });
+  yield* walk(dir);
+  return found.toSorted();
+});
+
+export const loadAgentsEffect = Effect.fn("agents.loadAgents")(function* (
+  dirs: readonly { dir: string; scope: "user" | "project" }[],
+  fileSystem: AgentFileSystem = nodeFileSystem,
+) {
+  const agents: AgentDefinition[] = [];
+  const errors: string[] = [];
+  for (const { dir, scope } of dirs) {
+    for (const file of yield* markdownFilesInEffect(dir, fileSystem)) {
+      const parsed = yield* Effect.try({
+        try: () => parseAgentFile(fileSystem.readFile(file), file, scope),
+        catch: (cause) => (cause instanceof Error ? cause.message : String(cause)),
+      }).pipe(
+        // Per-file reads and parsing are deliberately accumulated, so one
+        // broken definition cannot hide every usable worker agent.
+        Effect.catch((error) => Effect.succeed({ error })),
+      );
+      if ("error" in parsed) errors.push(parsed.error);
+      else agents.push(parsed);
+    }
+  }
+  return { agents, errors };
+});
+
+/**
+ * Synchronous compatibility bridge for callers that predate the Effect API.
+ */
 export function loadAgents(dirs: readonly { dir: string; scope: "user" | "project" }[]): {
   agents: AgentDefinition[];
   errors: string[];
 } {
-  const agents: AgentDefinition[] = [];
-  const errors: string[] = [];
-  for (const { dir, scope } of dirs) {
-    for (const file of markdownFilesIn(dir)) {
-      try {
-        agents.push(parseAgentFile(readFileSync(file, "utf8"), file, scope));
-      } catch (error) {
-        errors.push((error as Error).message);
-      }
-    }
-  }
-  return { agents, errors };
+  return Effect.runSync(loadAgentsEffect(dirs));
 }
 
 // A project agent shadows a user agent of the same name, matching how Claude
@@ -156,22 +195,27 @@ if (import.meta.main) {
     dirs.push({ dir: join(opts.projectRoot, ".claude", "agents"), scope: "project" });
   }
 
-  const { agents, errors } = loadAgents(dirs);
-  const resolved = resolveShadowing(agents);
-
-  if (opts.json) {
-    console.log(JSON.stringify({ agents: resolved, errors }, null, 2));
-  } else {
-    for (const agent of resolved) {
-      const model = agent.model ?? "inherit";
-      const effort = agent.effort ?? "inherit";
-      const memory = agent.memory ?? "none";
-      console.log(`${agent.name}  [model=${model} effort=${effort} memory=${memory}]`);
-      console.log(`  ${agent.description.replace(/\s+/g, " ").slice(0, 200)}`);
-      console.log(`  ${relative(process.cwd(), agent.source)}`);
-    }
-    for (const error of errors) console.error(`skipped: ${error}`);
-  }
-
-  process.exit(0);
+  const exit = Effect.runSync(
+    Effect.gen(function* () {
+      const { agents, errors } = yield* loadAgentsEffect(dirs);
+      const resolved = resolveShadowing(agents);
+      yield* Effect.sync(() => {
+        if (opts.json) {
+          console.log(JSON.stringify({ agents: resolved, errors }, null, 2));
+          return;
+        }
+        for (const agent of resolved) {
+          const model = agent.model ?? "inherit";
+          const effort = agent.effort ?? "inherit";
+          const memory = agent.memory ?? "none";
+          console.log(`${agent.name}  [model=${model} effort=${effort} memory=${memory}]`);
+          console.log(`  ${agent.description.replace(/\s+/g, " ").slice(0, 200)}`);
+          console.log(`  ${relative(process.cwd(), agent.source)}`);
+        }
+        for (const error of errors) console.error(`skipped: ${error}`);
+      });
+      return 0;
+    }),
+  );
+  process.exit(exit);
 }

@@ -17,6 +17,18 @@ import { spawnSync } from "node:child_process";
 import { createInterface } from "node:readline/promises";
 import { Writable } from "node:stream";
 import { parseArgs } from "node:util";
+import { Cause, Effect, Exit, Schema } from "effect";
+
+class BootstrapEffectError extends Schema.TaggedError<BootstrapEffectError>()(
+  "BootstrapEffectError",
+  {
+    message: Schema.String,
+  },
+) {}
+
+class ForgeCommandError extends Schema.TaggedError<ForgeCommandError>()("ForgeCommandError", {
+  message: Schema.String,
+}) {}
 
 const ACCOUNT_SCOPE = "com.cloudflare.api.account";
 const ZONE_SCOPE = "com.cloudflare.api.account.zone";
@@ -192,31 +204,58 @@ const normalizePolicies = (policies: unknown): string[] =>
  * Installs a verified, least-privilege CI token, or leaves a complete installation alone.
  * @returns A safe outcome containing no credentials.
  */
-export async function bootstrapCi(
+const bootstrapCiProgram = Effect.fn("bootstrapCi")(function* (
   config: BootstrapConfig,
   options: BootstrapOptions,
   dependencies: BootstrapDependencies,
-): Promise<BootstrapOutcome> {
+) {
   const { forge, log } = dependencies;
   if (!Number.isInteger(options.days) || options.days < 1 || options.days > 365)
     fail("Token lifetime must be between 1 and 365 days.");
 
   // Forge state is read before any Cloudflare credential is collected.
-  forge.ensureReady();
-  const names = forge.secretNames();
+  yield* Effect.try({
+    try: () => forge.ensureReady(),
+    catch: (cause) =>
+      new BootstrapEffectError({
+        message:
+          cause instanceof Error
+            ? cause.message
+            : "Forge authentication is not ready; nothing provisioned.",
+      }),
+  });
+  const names = yield* Effect.try({
+    try: () => forge.secretNames(),
+    catch: (cause) =>
+      new BootstrapEffectError({
+        message:
+          cause instanceof Error
+            ? cause.message
+            : "Forge secret metadata could not be read; stopped.",
+      }),
+  });
   const present = SECRET_NAMES.filter((name) => names.has(name));
   if (!options.rotate && present.length === SECRET_NAMES.length) {
     log(
       "Cloudflare CI secrets already exist; unchanged. Their values and scopes were not verified. Use --rotate to install current scopes.",
     );
-    return { kind: "unchanged" };
+    return { kind: "unchanged" as const };
   }
   if (!options.rotate && present.length > 0)
     fail(
       "Cloudflare CI secrets are partially configured. Inspect the installation, then explicitly use --rotate; no token minted.",
     );
 
-  const credentials = await dependencies.credentials();
+  const credentials = yield* Effect.tryPromise({
+    try: () => dependencies.credentials(),
+    catch: (cause) =>
+      new BootstrapEffectError({
+        message:
+          cause instanceof BootstrapFailure
+            ? cause.message
+            : "Cloudflare credentials could not be collected; details withheld.",
+      }),
+  });
   if (
     !credentials.email.includes("@") ||
     /[\r\n]/.test(credentials.email) ||
@@ -228,44 +267,62 @@ export async function bootstrapCi(
       "An explicit Cloudflare user email, Global API key, and account ID are required; no saved-profile fallback.",
     );
 
-  const call = async (path: string, body?: unknown, bearer?: string): Promise<unknown> => {
+  const call = Effect.fn("cloudflareRequest")(function* (
+    path: string,
+    body?: unknown,
+    bearer?: string,
+  ) {
     const method = body === undefined ? "GET" : "POST";
-    let response: Response;
-    try {
-      response = await dependencies.fetch(`https://api.cloudflare.com/client/v4${path}`, {
-        method,
-        headers: {
-          "Content-Type": "application/json",
-          ...(bearer === undefined
-            ? { "X-Auth-Email": credentials.email, "X-Auth-Key": credentials.key }
-            : { Authorization: `Bearer ${bearer}` }),
-        },
-        ...(body === undefined ? {} : { body: JSON.stringify(body) }),
-        redirect: "error",
-        // Cloudflare's API answers in well under a second; 20s covers a slow link.
-        signal: AbortSignal.timeout(20_000),
+    const controller = yield* Effect.acquireRelease(
+      Effect.sync(() => new AbortController()),
+      (request) => Effect.sync(() => request.abort()),
+    );
+    const response = yield* Effect.tryPromise({
+      try: (signal) =>
+        dependencies.fetch(`https://api.cloudflare.com/client/v4${path}`, {
+          method,
+          headers: {
+            "Content-Type": "application/json",
+            ...(bearer === undefined
+              ? { "X-Auth-Email": credentials.email, "X-Auth-Key": credentials.key }
+              : { Authorization: `Bearer ${bearer}` }),
+          },
+          ...(body === undefined ? {} : { body: JSON.stringify(body) }),
+          redirect: "error",
+          // Combine Effect interruption with the existing request deadline.
+          signal: AbortSignal.any([signal, controller.signal, AbortSignal.timeout(20_000)]),
+        }),
+      catch: () =>
+        new BootstrapEffectError({
+          message:
+            "Cloudflare request failed or timed out; details withheld. No alternate credential used.",
+        }),
+    });
+    const rawEnvelope = yield* Effect.tryPromise({
+      try: () => response.json(),
+      catch: () =>
+        new BootstrapEffectError({
+          message: "Cloudflare returned unreadable data; details withheld.",
+        }),
+    });
+    const envelope = yield* Effect.try({
+      try: () => object(rawEnvelope),
+      catch: () =>
+        new BootstrapEffectError({
+          message: "Cloudflare returned unreadable data; details withheld.",
+        }),
+    });
+    if (!response.ok || envelope.success !== true) {
+      return yield* new BootstrapEffectError({
+        message: `Cloudflare ${method} ${path.split("?")[0]} failed (HTTP ${response.status}); details withheld. No alternate credential used.`,
       });
-    } catch {
-      return fail(
-        "Cloudflare request failed or timed out; details withheld. No alternate credential used.",
-      );
     }
-    let envelope: Record<string, unknown>;
-    try {
-      envelope = object(await response.json());
-    } catch {
-      return fail("Cloudflare returned unreadable data; details withheld.");
-    }
-    if (!response.ok || envelope.success !== true)
-      fail(
-        `Cloudflare ${method} ${path.split("?")[0]} failed (HTTP ${response.status}); details withheld. No alternate credential used.`,
-      );
     return envelope.result;
-  };
+  }, Effect.scoped);
 
   const { accountId } = credentials;
   const accountPath = `/accounts/${accountId}`;
-  if (object(await call(accountPath)).id !== accountId)
+  if (object(yield* call(accountPath)).id !== accountId)
     fail("Cloudflare account does not match the explicit target.");
 
   let zoneId: string | undefined;
@@ -273,7 +330,7 @@ export async function bootstrapCi(
     ? `/zones?account.id=${accountId}&name=${encodeURIComponent(config.zone.hostname)}&per_page=50`
     : undefined;
   if (config.zone && zonePath) {
-    const zones = array(await call(zonePath), "Cloudflare zone list");
+    const zones = array(yield* call(zonePath), "Cloudflare zone list");
     const zone = zones.length === 1 ? object(zones[0]) : undefined;
     if (
       !zone ||
@@ -289,11 +346,11 @@ export async function bootstrapCi(
     zoneId = zone!.id as string;
   }
 
-  const catalog = parseCatalog(await call("/user/tokens/permission_groups"));
+  const catalog = parseCatalog(yield* call("/user/tokens/permission_groups"));
   const plan = tokenPlan(config, accountId, zoneId, catalog, options.days, dependencies.now());
 
   if (!options.rotate) {
-    const prior = array(await call("/user/tokens"), "Cloudflare token list").some((raw) => {
+    const prior = array(yield* call("/user/tokens"), "Cloudflare token list").some((raw) => {
       const token = object(raw);
       return (
         typeof token.name === "string" &&
@@ -313,14 +370,21 @@ export async function bootstrapCi(
     for (const name of config.zone.groups)
       log(`Zone grant: ${name} on ${config.zone.hostname} (${zoneId}) only.`);
   log(`Expires ${plan.expires_on}. Writes only ${SECRET_NAMES.join(" and ")}; revokes nothing.`);
-  const approved = await dependencies.confirm(
-    options.rotate
-      ? "Mint a NEW CI token and replace both forge secrets? Old tokens remain valid."
-      : "Mint a CI token and install both forge secrets?",
-  );
+  const approved = yield* Effect.tryPromise({
+    try: () =>
+      dependencies.confirm(
+        options.rotate
+          ? "Mint a NEW CI token and replace both forge secrets? Old tokens remain valid."
+          : "Mint a CI token and install both forge secrets?",
+      ),
+    catch: () =>
+      new BootstrapEffectError({
+        message: "Confirmation failed; no token minted or secrets changed.",
+      }),
+  });
   if (!approved) fail("Confirmation declined; no token minted or secrets changed.");
 
-  const minted = object(await call("/user/tokens", plan));
+  const minted = object(yield* call("/user/tokens", plan));
   const id = minted.id;
   const value = minted.value;
   if (
@@ -335,10 +399,10 @@ export async function bootstrapCi(
     `Created token ID ${id} (value withheld). If a later step fails, inspect this token before another explicit --rotate; it is not revoked automatically.`,
   );
 
-  const verified = object(await call("/user/tokens/verify", undefined, value));
+  const verified = object(yield* call("/user/tokens/verify", undefined, value));
   if (verified.id !== id || verified.status !== "active")
     fail("New token verification failed; no forge secret changed.");
-  const metadata = object(await call(`/user/tokens/${id}`));
+  const metadata = object(yield* call(`/user/tokens/${id}`));
   const expiresOn = typeof metadata.expires_on === "string" ? Date.parse(metadata.expires_on) : NaN;
   if (
     metadata.id !== id ||
@@ -352,10 +416,10 @@ export async function bootstrapCi(
     fail(
       "New token metadata does not match the exact requested policy and expiry; no forge secret changed.",
     );
-  if (object(await call(accountPath, undefined, value)).id !== accountId)
+  if (object(yield* call(accountPath, undefined, value)).id !== accountId)
     fail("New token cannot read the chosen account; no forge secret changed.");
   if (zonePath) {
-    const visible = array(await call(zonePath, undefined, value), "Cloudflare zone list");
+    const visible = array(yield* call(zonePath, undefined, value), "Cloudflare zone list");
     if (visible.length !== 1 || object(visible[0]).id !== zoneId)
       fail("New token cannot resolve the chosen zone; no forge secret changed.");
   }
@@ -365,14 +429,39 @@ export async function bootstrapCi(
     CLOUDFLARE_API_TOKEN: value,
   };
   for (const name of SECRET_NAMES) {
-    forge.installSecret(name, values[name]);
+    yield* Effect.try({
+      try: () => forge.installSecret(name, values[name]),
+      catch: (cause) =>
+        new BootstrapEffectError({
+          message:
+            cause instanceof Error
+              ? cause.message
+              : `Forge ${name} installation failed; setup may be partial.`,
+        }),
+    });
     log(`Installed forge secret ${name}.`);
   }
   log(
     `Verified scopes installed; expires ${plan.expires_on}. Old tokens remain valid. The next CI deploy is the live check.`,
   );
-  return { kind: "installed", tokenId: id, expiresOn: plan.expires_on };
-}
+  return { kind: "installed" as const, tokenId: id, expiresOn: plan.expires_on };
+});
+
+/** Preserves the public Promise API while running the setup program through Effect. */
+export const bootstrapCi = (
+  config: BootstrapConfig,
+  options: BootstrapOptions,
+  dependencies: BootstrapDependencies,
+): Promise<BootstrapOutcome> =>
+  Effect.runPromiseExit(bootstrapCiProgram(config, options, dependencies)).then((exit) => {
+    if (Exit.isSuccess(exit)) return exit.value;
+    const cause = Cause.squash(exit.cause);
+    throw cause instanceof BootstrapFailure
+      ? cause
+      : new BootstrapFailure(
+          cause instanceof Error ? cause.message : "CI bootstrap failed; details withheld.",
+        );
+  });
 
 /** Runs a forge CLI. Must throw `BootstrapFailure` when the process cannot run or times out. */
 export type RunCommand = (
@@ -506,23 +595,48 @@ export function githubForge(target: ForgeTarget, run: RunCommand): Forge {
 export const forgeFor = (target: ForgeTarget, run: RunCommand): Forge =>
   target.kind === "forgejo" ? forgejoForge(target, run) : githubForge(target, run);
 
-/** Spawns a forge CLI with Cloudflare and Alchemy credentials stripped from its environment. */
-export const runCommand: RunCommand = (command, args, input) => {
+/** Runs a forge CLI with credentials stripped, preserving its bounded synchronous contract. */
+const runCommandEffect = Effect.fn("runForgeCommand")(function* (
+  command: string,
+  args: readonly string[],
+  input?: string,
+) {
   const env = { ...process.env };
   for (const name of Object.keys(env))
     if (name.startsWith("CLOUDFLARE_") || name.startsWith("ALCHEMY_")) delete env[name];
-  const result = spawnSync(command, [...args], {
-    input,
-    env,
-    encoding: "utf8",
-    // Forge APIs answer in seconds; 30s bounds a hung CLI without cutting off a slow link.
-    timeout: 30_000,
-    maxBuffer: 2 * 1024 * 1024,
-    stdio: ["pipe", "pipe", "pipe"],
+  const result = yield* Effect.try({
+    try: () =>
+      spawnSync(command, [...args], {
+        input,
+        env,
+        encoding: "utf8",
+        // Forge APIs answer in seconds; 30s bounds a hung CLI without cutting off a slow link.
+        timeout: 30_000,
+        maxBuffer: 2 * 1024 * 1024,
+        stdio: ["pipe", "pipe", "pipe"],
+      }),
+    catch: () =>
+      new ForgeCommandError({ message: `${command} failed to run or timed out; output withheld.` }),
   });
-  if (result.error || result.signal)
-    fail(`${command} failed to run or timed out; output withheld.`);
+  if (result.error || result.signal) {
+    return yield* new ForgeCommandError({
+      message: `${command} failed to run or timed out; output withheld.`,
+    });
+  }
   return { exitCode: result.status ?? 1, stdout: result.stdout };
+});
+
+/** Spawns a forge CLI with Cloudflare and Alchemy credentials stripped from its environment. */
+export const runCommand: RunCommand = (command, args, input) => {
+  try {
+    return Effect.runSync(runCommandEffect(command, args, input));
+  } catch (error) {
+    return fail(
+      error instanceof Error
+        ? error.message
+        : `${command} failed to run or timed out; output withheld.`,
+    );
+  }
 };
 
 const question = async (label: string, hidden = false): Promise<string> => {

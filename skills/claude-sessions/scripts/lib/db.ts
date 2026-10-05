@@ -5,6 +5,8 @@
  */
 
 import { Database } from "bun:sqlite";
+import { Effect } from "effect";
+import { runEffectSync, tryIO } from "./io.ts";
 import { mkdirSync } from "node:fs";
 import { homedir } from "node:os";
 import { dirname, join } from "node:path";
@@ -313,19 +315,24 @@ const MIGRATIONS: Migration[] = [
   },
 ];
 
-function migrate(db: Database): void {
-  const current = (db.query("PRAGMA user_version").get() as { user_version: number }).user_version;
+const migrate = Effect.fn("index.migrate")(function* (db: Database) {
+  const current = yield* tryIO(
+    "read schema version",
+    () => (db.query("PRAGMA user_version").get() as { user_version: number }).user_version,
+  );
   const pending = MIGRATIONS.filter((m) => m.version > current).toSorted(
     (a, b) => a.version - b.version,
   );
 
   for (const migration of pending) {
-    db.transaction(() => {
-      migration.up(db);
-      db.exec(`PRAGMA user_version = ${migration.version}`);
-    })();
+    yield* tryIO(`migrate schema to ${migration.version}`, () =>
+      db.transaction(() => {
+        migration.up(db);
+        db.exec(`PRAGMA user_version = ${migration.version}`);
+      })(),
+    );
   }
-}
+});
 
 /**
  * Open, create, and migrate the index database.
@@ -334,17 +341,37 @@ function migrate(db: Database): void {
  * @returns An open SQLite database connection.
  */
 export function openDb(path: string = resolveDbPath()): Database {
+  return runEffectSync(openDbEffect(path));
+}
+
+/**
+ * Compose database creation and migrations without taking connection ownership.
+ * @param path - Database path, defaulting to the configured index path.
+ * @returns A connection whose caller is responsible for closing it.
+ */
+export const openDbEffect = Effect.fn("index.openDb")(function* (path: string = resolveDbPath()) {
   if (path !== ":memory:") {
-    mkdirSync(dirname(path), { recursive: true });
+    yield* tryIO("create index directory", () => mkdirSync(dirname(path), { recursive: true }));
   }
-  const db = new Database(path);
-  // Wait out brief locks from another connection (a concurrent sync or a
-  // closing writer) instead of failing with "database is locked".
-  db.exec("PRAGMA busy_timeout = 5000;");
-  db.exec("PRAGMA journal_mode = WAL;");
-  db.exec("PRAGMA foreign_keys = ON;");
-  migrate(db);
+  const db = yield* tryIO("open index", () => new Database(path));
+  yield* Effect.gen(function* () {
+    // Wait out brief locks from another connection instead of failing immediately.
+    yield* tryIO("configure busy timeout", () => db.exec("PRAGMA busy_timeout = 5000;"));
+    yield* tryIO("configure journal", () => db.exec("PRAGMA journal_mode = WAL;"));
+    yield* tryIO("configure foreign keys", () => db.exec("PRAGMA foreign_keys = ON;"));
+    yield* migrate(db);
+  }).pipe(Effect.onError(() => Effect.sync(() => db.close())));
   return db;
+});
+
+/**
+ * Acquire the index connection in an Effect scope and close it on every exit.
+ *
+ * @param path Database path, defaulting to the configured index path.
+ * @returns A scoped database resource.
+ */
+export function openDbScoped(path: string = resolveDbPath()) {
+  return Effect.acquireRelease(openDbEffect(path), (db) => Effect.sync(() => db.close()));
 }
 
 export const CURRENT_SCHEMA_VERSION = MIGRATIONS[MIGRATIONS.length - 1]!.version;

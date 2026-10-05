@@ -8,6 +8,8 @@
  */
 
 import type { Database } from "bun:sqlite";
+import { Effect } from "effect";
+import { runEffectPromise, tryIO } from "../lib/io.ts";
 import { booleanFlagNames, flagBoolean, flagString, parseArgv } from "../lib/args.ts";
 import {
   buildWhereFragments,
@@ -15,7 +17,7 @@ import {
   whereClause,
   SHARED_FILTER_OPTIONS,
 } from "../lib/filters.ts";
-import { openDb } from "../lib/db.ts";
+import { withDbEffect } from "../lib/effect.ts";
 import {
   assertRegexCandidateCount,
   boundedRegexText,
@@ -26,7 +28,7 @@ import {
 import {
   JUDGE_OPTIONS,
   OUTPUT_OPTIONS,
-  renderDocumentWithJudge,
+  renderDocumentWithJudgeEffect,
   toIsoTimestamp,
 } from "../lib/output.ts";
 import type { CommandOption, JudgeCommand } from "./index.ts";
@@ -317,55 +319,70 @@ function toolCandidates(
   return runCandidateQuery(db, sql, params, query, useFts, candidateLimit);
 }
 
-async function run(argv: string[]): Promise<void> {
-  const { positionals, flags } = parseArgv(argv, BOOLEAN_FLAGS);
+const runEffect = Effect.fn("search.run")(function* (argv: string[]) {
+  const { positionals, flags } = yield* Effect.try({
+    try: () => parseArgv(argv, BOOLEAN_FLAGS),
+    catch: (cause) => cause,
+  });
   const query = positionals.join(" ").trim();
   const regexSource = flagString(flags, "regex");
-  const regex = parseRegex(regexSource);
+  const regex = yield* Effect.try({ try: () => parseRegex(regexSource), catch: (cause) => cause });
   if (query.length === 0 && regex === undefined) {
-    throw new Error("A search query or --regex pattern is required.");
+    return yield* Effect.fail(new Error("A search query or --regex pattern is required."));
   }
 
-  const filters = parseFilters(flags);
-  const source = parseSource(flagString(flags, "in"));
-  const context = parseContext(flagString(flags, "context"));
-  const type = parseType(flagString(flags, "type"));
+  const filters = yield* Effect.try({ try: () => parseFilters(flags), catch: (cause) => cause });
+  const source = yield* Effect.try({
+    try: () => parseSource(flagString(flags, "in")),
+    catch: (cause) => cause,
+  });
+  const context = yield* Effect.try({
+    try: () => parseContext(flagString(flags, "context")),
+    catch: (cause) => cause,
+  });
+  const type = yield* Effect.try({
+    try: () => parseType(flagString(flags, "type")),
+    catch: (cause) => cause,
+  });
   const includeInjected = flagBoolean(flags, "include-injected");
   const useFts = query.length > 0;
   const candidateLimit = regexCandidateLimit(regex);
-  const db = openDb();
+  return yield* withDbEffect((db) =>
+    Effect.gen(function* () {
+      const candidates: CandidateRow[] = yield* tryIO("execute search command", () => {
+        const values: CandidateRow[] = [];
+        if (source === "messages" || source === "all")
+          values.push(
+            ...messageCandidates(db, filters, query, type, includeInjected, useFts, candidateLimit),
+          );
+        if (source === "tools" || source === "all")
+          values.push(
+            ...toolCandidates(db, filters, query, includeInjected, useFts, candidateLimit),
+          );
+        return values;
+      });
 
-  try {
-    const candidates: CandidateRow[] = [];
-    if (source === "messages" || source === "all") {
-      candidates.push(
-        ...messageCandidates(db, filters, query, type, includeInjected, useFts, candidateLimit),
-      );
-    }
-    if (source === "tools" || source === "all") {
-      candidates.push(
-        ...toolCandidates(db, filters, query, includeInjected, useFts, candidateLimit),
-      );
-    }
+      const rows = yield* Effect.try({
+        try: () =>
+          orderedRows(candidates, query, regex, context)
+            .toSorted((a, b) => {
+              const aTime = a.timestamp ?? "";
+              const bTime = b.timestamp ?? "";
+              return aTime.localeCompare(bTime) || a.uuid.localeCompare(b.uuid);
+            })
+            .slice(0, filters.limit),
+        catch: (cause) => cause,
+      });
+      const output = yield* renderDocumentWithJudgeEffect("search", rows, flags, db, ["relevance"]);
+      yield* tryIO("execute search command", () => console.log(output));
+    }),
+  );
+});
 
-    const rows = orderedRows(candidates, query, regex, context)
-      .toSorted((a, b) => {
-        const aTime = a.timestamp ?? "";
-        const bTime = b.timestamp ?? "";
-        return aTime.localeCompare(bTime) || a.uuid.localeCompare(b.uuid);
-      })
-      .slice(0, filters.limit);
-    console.log(
-      await renderDocumentWithJudge("search", rows, flags, db, command.judgePresets ?? []),
-    );
-  } finally {
-    db.close();
-  }
+function run(argv: string[]): Promise<void> {
+  return runEffectPromise(runEffect(argv));
 }
 
-/**
- * Search the indexed message and tool-call corpus.
- */
 export const command: JudgeCommand = {
   name: "search",
   description: "Full-text search over messages and tool calls, with context.",
@@ -373,10 +390,11 @@ export const command: JudgeCommand = {
   usage: "search <query> [options]  |  search --regex=<pattern> [options]",
   judgePresets: ["relevance"],
   run,
+  runEffect,
 };
 
 if (import.meta.main) {
-  command.run(process.argv.slice(2)).catch((err) => {
+  runEffectPromise(command.runEffect(process.argv.slice(2))).catch((err) => {
     console.error("Error:", err instanceof Error ? err.message : err);
     process.exit(1);
   });

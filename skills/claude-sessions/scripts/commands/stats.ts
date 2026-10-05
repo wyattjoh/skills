@@ -8,8 +8,10 @@
  */
 
 import type { Database } from "bun:sqlite";
+import { Effect } from "effect";
+import { runEffectPromise, tryIO } from "../lib/io.ts";
 import { booleanFlagNames, flagString, parseArgv } from "../lib/args.ts";
-import { openDb } from "../lib/db.ts";
+import { withDbEffect } from "../lib/effect.ts";
 import { parseJsonStringArray } from "../lib/json.ts";
 import {
   buildWhereFragments,
@@ -229,15 +231,22 @@ function parseStatsArgs(argv: string[]): {
   };
 }
 
-async function run(argv: string[]): Promise<void> {
-  const parsed = parseStatsArgs(argv);
-  const db = openDb();
-  try {
-    const rows = collectStats(db, parsed.filters, parsed.by);
-    console.log(renderOutput(buildDocument("stats", rows), parsed.output));
-  } finally {
-    db.close();
-  }
+const runEffect = Effect.fn("stats.run")(function* (argv: string[]) {
+  const parsed = yield* Effect.try({ try: () => parseStatsArgs(argv), catch: (cause) => cause });
+  return yield* withDbEffect((db) =>
+    Effect.gen(function* () {
+      const rows = yield* tryIO("execute stats command", () =>
+        collectStats(db, parsed.filters, parsed.by),
+      );
+      yield* tryIO("execute stats command", () =>
+        console.log(renderOutput(buildDocument("stats", rows), parsed.output)),
+      );
+    }),
+  );
+});
+
+function run(argv: string[]): Promise<void> {
+  return runEffectPromise(runEffect(argv));
 }
 
 export const command: Command = {
@@ -245,10 +254,11 @@ export const command: Command = {
   description: "Aggregate tokens, calls, errors, interruptions, and durations.",
   options,
   run,
+  runEffect,
 };
 
 if (import.meta.main) {
-  command.run(process.argv.slice(2)).catch((err) => {
+  runEffectPromise(command.runEffect(process.argv.slice(2))).catch((err) => {
     console.error("Error:", err instanceof Error ? err.message : err);
     process.exit(1);
   });

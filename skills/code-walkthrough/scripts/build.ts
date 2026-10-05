@@ -13,6 +13,7 @@
 
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, resolve, basename } from "node:path";
+import { Effect, Schema } from "effect";
 
 // ---------------------------------------------------------------- types
 
@@ -195,6 +196,39 @@ const EXT_LANG: Record<string, string> = {
 const esc = (s: string) => s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
 
 const unesc = (s: string) => s.replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&amp;/g, "&");
+
+/** Represents a file write or preview launch failure. */
+class BuildIoError extends Schema.TaggedError<BuildIoError>()("BuildIoError", {
+  message: Schema.String,
+}) {}
+
+/** Writes the rendered walkthrough page through Effect's typed error channel. */
+const writePageEffect = Effect.fn("writeWalkthroughPage")(function* (
+  path: string,
+  html: string,
+): Effect.fn.Return<void, BuildIoError> {
+  yield* Effect.try({
+    try: () => writeFileSync(path, html),
+    catch: (cause) =>
+      new BuildIoError({ message: cause instanceof Error ? cause.message : String(cause) }),
+  });
+});
+
+/** Opens a rendered page without inheriting an unchecked process failure. */
+const previewPageEffect = Effect.fn("previewWalkthroughPage")(function* (
+  opener: string,
+  path: string,
+): Effect.fn.Return<void, BuildIoError> {
+  yield* Effect.try({
+    try: () => {
+      const { spawnSync } = require("node:child_process") as typeof import("node:child_process");
+      const result = spawnSync(opener, [path], { stdio: "ignore" });
+      if (result.error) throw result.error;
+    },
+    catch: (cause) =>
+      new BuildIoError({ message: cause instanceof Error ? cause.message : String(cause) }),
+  });
+});
 
 function die(msg: string): never {
   console.error(`\x1b[31merror\x1b[0m  ${msg}`);
@@ -523,12 +557,23 @@ const outPath = resolve(
   base,
   outFlagIdx >= 0 ? argv[outFlagIdx + 1] : defPath.replace(/\.json$/, "") + ".html",
 );
-writeFileSync(outPath, html);
+Effect.runSync(
+  writePageEffect(outPath, html).pipe(
+    Effect.catchTag("BuildIoError", (error) =>
+      Effect.sync(() => die(`failed to write page: ${error.message}`)),
+    ),
+  ),
+);
 console.log(`\x1b[32mpage\x1b[0m   ${outPath}`);
 
 if (flags.has("--open")) {
-  const { spawnSync } = require("node:child_process") as typeof import("node:child_process");
   const opener =
     process.platform === "darwin" ? "open" : process.platform === "win32" ? "start" : "xdg-open";
-  spawnSync(opener, [outPath], { stdio: "ignore" });
+  Effect.runSync(
+    previewPageEffect(opener, outPath).pipe(
+      Effect.catchTag("BuildIoError", (error) =>
+        Effect.sync(() => die(`failed to open page: ${error.message}`)),
+      ),
+    ),
+  );
 }

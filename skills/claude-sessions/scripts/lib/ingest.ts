@@ -9,16 +9,18 @@
  */
 
 import type { Database } from "bun:sqlite";
+import { Effect } from "effect";
+import { runEffectPromise, tryIO, tryPromiseIO } from "./io.ts";
 import { relative } from "node:path";
 import {
-  discoverProjectDirs,
-  discoverProjectFiles,
+  discoverProjectDirsEffect,
+  discoverProjectFilesEffect,
   defaultCorpusRoot,
   type CorpusFileEntry,
 } from "./corpus.ts";
 import { decodeProjectDirLossy } from "./paths.ts";
 import { matchesProjectIdentity, resolveProjectIdentity } from "./project-identity.ts";
-import { readJsonl } from "./jsonl.ts";
+import { readJsonlEffect } from "./jsonl.ts";
 import {
   extractBlocks,
   extractRecordText,
@@ -31,7 +33,7 @@ import {
   type ExtractedBlock,
   type UserRecord,
 } from "./records.ts";
-import { openDb } from "./db.ts";
+import { openDbScoped } from "./db.ts";
 
 export interface SyncOptions {
   root?: string;
@@ -110,10 +112,14 @@ function projectDirForPath(path: string, root: string): string {
   return dir ?? "";
 }
 
-async function identityFromFiles(files: readonly CorpusFileEntry[]): Promise<string | null> {
+const identityFromFiles = Effect.fn("index.identityFromFiles")(function* (
+  files: readonly CorpusFileEntry[],
+) {
   const probeBytes = 1024 * 1024;
   for (const file of files) {
-    const probe = await Bun.file(file.path).slice(0, probeBytes).text();
+    const probe = yield* tryPromiseIO(`probe ${file.path}`, () =>
+      Bun.file(file.path).slice(0, probeBytes).text(),
+    );
     for (const line of probe.split("\n")) {
       if (line.trim().length === 0) continue;
       try {
@@ -127,7 +133,7 @@ async function identityFromFiles(files: readonly CorpusFileEntry[]): Promise<str
     }
   }
   return null;
-}
+});
 
 interface BatchAggregate {
   cwd: string | null;
@@ -419,15 +425,14 @@ function ingestLines(
   }
 }
 
-async function readAgentName(file: CorpusFileEntry): Promise<string | null> {
-  if (!file.metaPath) return null;
-  try {
-    const meta = (await Bun.file(file.metaPath).json()) as { agentType?: string };
-    return meta.agentType ?? null;
-  } catch {
-    return null;
-  }
-}
+const readAgentName = Effect.fn("index.readAgentName")(function* (file: CorpusFileEntry) {
+  const metaPath = file.metaPath;
+  if (!metaPath) return null;
+  return yield* tryPromiseIO(`read ${metaPath}`, () => Bun.file(metaPath).json()).pipe(
+    Effect.map((meta: { agentType?: string }) => meta.agentType ?? null),
+    Effect.catch(() => Effect.succeed(null)),
+  );
+});
 
 function mergeUniqueJsonArray(existingJson: string, additions: Set<string>): string {
   const existing = new Set<string>(JSON.parse(existingJson) as string[]);
@@ -567,14 +572,11 @@ function refreshProject(db: Database, projectDir: string): void {
   );
 }
 
-async function ingestFile(
+const ingestFile = Effect.fn("index.ingestFile")(function* (
   db: Database,
   file: CorpusFileEntry,
   existing: FilesRow | null,
-): Promise<{
-  outcome: "added" | "updated";
-  malformedLines: number;
-}> {
+) {
   const sessionId = sessionKey(file.projectDir, file.sessionId);
   const parentSessionId = file.parentSessionId
     ? sessionKey(file.projectDir, file.parentSessionId)
@@ -585,20 +587,22 @@ async function ingestFile(
   const fromLine = existing && !isFullReingest ? existing.last_line : 0;
 
   if (isFullReingest) {
-    clearSessionRows(db, sessionId);
+    yield* tryIO("clear rewritten session", () => clearSessionRows(db, sessionId));
   }
 
-  const { lines, malformedCount, lastLineNumber } = await readJsonl(file.path, { fromLine });
+  const { lines, malformedCount, lastLineNumber } = yield* readJsonlEffect(file.path, { fromLine });
 
   const agg = emptyBatchAggregate();
   if (file.parentSessionId) {
-    agg.agentName = await readAgentName(file);
+    agg.agentName = yield* readAgentName(file);
   }
-  ingestLines(db, file, lines, agg);
-  upsertSession(db, file, sessionId, agg);
+  yield* tryIO("index session lines", () => ingestLines(db, file, lines, agg));
+  yield* tryIO("update session aggregates", () => upsertSession(db, file, sessionId, agg));
 
-  db.query(
-    `INSERT INTO files (path, size, mtime, last_line, session_id, parent_session_id, ingested_at)
+  yield* tryIO("record indexed file", () =>
+    db
+      .query(
+        `INSERT INTO files (path, size, mtime, last_line, session_id, parent_session_id, ingested_at)
      VALUES (?, ?, ?, ?, ?, ?, ?)
      ON CONFLICT(path) DO UPDATE SET
        size = excluded.size,
@@ -607,18 +611,23 @@ async function ingestFile(
        session_id = excluded.session_id,
        parent_session_id = excluded.parent_session_id,
        ingested_at = excluded.ingested_at`,
-  ).run(
-    file.path,
-    file.size,
-    file.mtimeMs,
-    lastLineNumber,
-    sessionId,
-    parentSessionId,
-    new Date().toISOString(),
+      )
+      .run(
+        file.path,
+        file.size,
+        file.mtimeMs,
+        lastLineNumber,
+        sessionId,
+        parentSessionId,
+        new Date().toISOString(),
+      ),
   );
 
-  return { outcome: existing === null ? "added" : "updated", malformedLines: malformedCount };
-}
+  return {
+    outcome: existing === null ? ("added" as const) : ("updated" as const),
+    malformedLines: malformedCount,
+  };
+});
 
 function removeStaleFiles(
   db: Database,
@@ -656,27 +665,46 @@ function removeStaleFiles(
   return removed;
 }
 
-/** Incrementally sync the on-disk corpus into the index database. */
-export async function sync(options: SyncOptions = {}): Promise<SyncSummary> {
+/**
+ * Incrementally sync the corpus while retaining the public Promise API.
+ * @param options - Corpus, database, filter and progress settings.
+ * @returns Incremental changes and timing information.
+ */
+export function sync(options: SyncOptions = {}): Promise<SyncSummary> {
+  return runEffectPromise(syncEffect(options));
+}
+
+/**
+ * Compose traversal, streaming reads and indexing with scoped database ownership.
+ * @param options - A supplied database remains owned by its caller.
+ * @returns Incremental changes, preserving malformed-line and pruning behavior.
+ */
+export const syncEffect = Effect.fn("index.sync")(function* (options: SyncOptions) {
   const start = performance.now();
   const root = options.root ?? defaultCorpusRoot();
-  const db = options.db ?? openDb();
+  const db = options.db ?? (yield* openDbScoped());
   const progressEvery = options.progressEvery ?? 100;
 
-  const projectDirs = await discoverProjectDirs(root);
+  const projectDirs = yield* discoverProjectDirsEffect(root);
   if (projectDirs.length === 0) {
-    throw new Error(
-      `Corpus root has no project directories: ${root}. Refusing to prune the index; check --root.`,
+    return yield* Effect.fail(
+      new Error(
+        `Corpus root has no project directories: ${root}. Refusing to prune the index; check --root.`,
+      ),
     );
   }
 
   const files: CorpusFileEntry[] = [];
   for (const project of projectDirs) {
-    const projectFiles = await discoverProjectFiles(project.dir, project.path);
-    const stored = db
-      .query("SELECT project_identity FROM projects WHERE dir = ?")
-      .get(project.dir) as { project_identity: string | null } | null;
-    const identity = stored?.project_identity ?? (await identityFromFiles(projectFiles));
+    const projectFiles = yield* discoverProjectFilesEffect(project.dir, project.path);
+    const stored = yield* tryIO(
+      "read project identity",
+      () =>
+        db.query("SELECT project_identity FROM projects WHERE dir = ?").get(project.dir) as {
+          project_identity: string | null;
+        } | null,
+    );
+    const identity = stored?.project_identity ?? (yield* identityFromFiles(projectFiles));
     if (matchesProjectFilter(identity, options.projects)) files.push(...projectFiles);
   }
 
@@ -694,18 +722,23 @@ export async function sync(options: SyncOptions = {}): Promise<SyncSummary> {
   const touchedProjectDirs = new Set<string>();
   let processed = 0;
 
-  const getExisting = db.query("SELECT * FROM files WHERE path = ?");
+  const getExisting = yield* tryIO("prepare file lookup", () =>
+    db.query("SELECT * FROM files WHERE path = ?"),
+  );
 
   for (const file of files) {
     discoveredPaths.add(file.path);
-    const existingRow = getExisting.get(file.path) as FilesRow | null;
+    const existingRow = yield* tryIO(
+      "read indexed file",
+      () => getExisting.get(file.path) as FilesRow | null,
+    );
 
     const unchanged =
       existingRow !== null && existingRow.size === file.size && existingRow.mtime === file.mtimeMs;
     if (unchanged) {
       summary.unchanged += 1;
     } else {
-      const result = await ingestFile(db, file, existingRow);
+      const result = yield* ingestFile(db, file, existingRow);
       summary.malformedLines += result.malformedLines;
       if (result.outcome === "added") summary.added += 1;
       else summary.updated += 1;
@@ -714,18 +747,28 @@ export async function sync(options: SyncOptions = {}): Promise<SyncSummary> {
 
     processed += 1;
     if (options.onProgress && processed % progressEvery === 0) {
-      options.onProgress({ filesProcessed: processed, totalFiles: files.length });
+      const onProgress = options.onProgress;
+      yield* tryIO("report index progress", () =>
+        onProgress({ filesProcessed: processed, totalFiles: files.length }),
+      );
     }
   }
 
-  summary.removed = removeStaleFiles(db, root, discoveredPaths, options.projects);
+  summary.removed = yield* tryIO("prune stale files", () =>
+    removeStaleFiles(db, root, discoveredPaths, options.projects),
+  );
 
-  for (const dir of touchedProjectDirs) refreshProject(db, dir);
+  for (const dir of touchedProjectDirs) {
+    yield* tryIO("refresh project", () => refreshProject(db, dir));
+  }
 
   if (options.onProgress) {
-    options.onProgress({ filesProcessed: processed, totalFiles: files.length });
+    const onProgress = options.onProgress;
+    yield* tryIO("report index completion", () =>
+      onProgress({ filesProcessed: processed, totalFiles: files.length }),
+    );
   }
 
   summary.elapsedMs = performance.now() - start;
   return summary;
-}
+}, Effect.scoped);

@@ -16,6 +16,7 @@
  */
 
 import { homedir } from "node:os";
+import { Effect, Schema } from "effect";
 
 // ─── Types ───────────────────────────────────────────────────
 
@@ -32,6 +33,10 @@ export interface AXElement {
   type?: string;
   frame?: AXFrame;
 }
+
+export class DescribeUiError extends Schema.TaggedError<DescribeUiError>()("DescribeUiError", {
+  detail: Schema.String,
+}) {}
 
 // ─── Pure helpers (unit-tested) ──────────────────────────────
 
@@ -59,7 +64,7 @@ function repr(value: string): string {
 
 /**
  * Format the accessibility tree into one line per labeled element:
- *   (centerX,centerY) [Type] 'label' = 'value'   (offscreen - scroll to reach)
+ *   (centerX,centerY) [Type] 'label' = 'value'
  */
 export function formatElements(els: AXElement[]): string[] {
   const screenH = screenHeight(els);
@@ -88,49 +93,52 @@ export function formatElements(els: AXElement[]): string[] {
   return lines;
 }
 
-// ─── Shell helper ────────────────────────────────────────────
-
-async function run(cmd: string[]): Promise<{ stdout: string; code: number }> {
-  const proc = Bun.spawn(cmd, {
-    env: { ...process.env, PATH: `${homedir()}/.local/bin:${process.env.PATH ?? ""}` },
-    stdout: "pipe",
-    stderr: "ignore",
+const run = Effect.fn("describeUi.run")(function* (cmd: string[]) {
+  return yield* Effect.tryPromise({
+    try: async () => {
+      const proc = Bun.spawn(cmd, {
+        env: { ...process.env, PATH: `${homedir()}/.local/bin:${process.env.PATH ?? ""}` },
+        stdout: "pipe",
+        stderr: "ignore",
+      });
+      const stdout = await new Response(proc.stdout).text();
+      return { stdout, code: await proc.exited };
+    },
+    catch: (cause) => new DescribeUiError({ detail: String(cause) }),
   });
-  const stdout = await new Response(proc.stdout).text();
-  const code = await proc.exited;
-  return { stdout, code };
-}
+});
 
-// ─── Main ────────────────────────────────────────────────────
-
-async function main(): Promise<void> {
-  let udid = Bun.argv[2];
-
+export const describeUi = Effect.fn("describeUi")(function* (requestedUdid: string | undefined) {
+  let udid = requestedUdid;
   if (!udid) {
-    const booted = await run(["xcrun", "simctl", "list", "devices", "booted"]);
+    const booted = yield* run(["xcrun", "simctl", "list", "devices", "booted"]);
     udid = extractUdid(booted.stdout) ?? "";
   }
+  if (!udid) return yield* new DescribeUiError({ detail: "no booted simulator" });
 
-  if (!udid) {
-    console.error("no booted simulator");
-    process.exit(1);
-  }
-
-  const result = await run(["idb", "ui", "describe-all", "--udid", udid]);
-
-  let els: AXElement[];
-  try {
-    els = JSON.parse(result.stdout);
-  } catch {
-    console.error("failed to parse idb output (is idb_companion running? run idb-bootstrap.ts)");
-    process.exit(1);
-  }
-
-  for (const line of formatElements(els)) {
-    console.log(line);
-  }
-}
+  const result = yield* run(["idb", "ui", "describe-all", "--udid", udid]);
+  const elements = yield* Effect.try({
+    try: () => JSON.parse(result.stdout) as AXElement[],
+    catch: () =>
+      new DescribeUiError({
+        detail: "failed to parse idb output (is idb_companion running? run idb-bootstrap.ts)",
+      }),
+  });
+  return formatElements(elements);
+});
 
 if (import.meta.main) {
-  main();
+  const exit = await Effect.runPromise(
+    describeUi(Bun.argv[2]).pipe(
+      Effect.tap((lines) => Effect.sync(() => lines.forEach((line) => console.log(line)))),
+      Effect.as(0),
+      Effect.catchTag("DescribeUiError", (error) =>
+        Effect.sync(() => {
+          console.error(error.detail);
+          return 1;
+        }),
+      ),
+    ),
+  );
+  process.exit(exit);
 }

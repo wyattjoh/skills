@@ -8,9 +8,12 @@
  *   bun $SKILL_DIR/scripts/cli.ts errors [options]
  */
 
+import { Effect } from "effect";
+import { runEffectPromise, tryIO } from "../lib/io.ts";
 import { booleanFlagNames, flagString, flagStrings, parseArgv } from "../lib/args.ts";
 import type { SQLQueryBindings } from "bun:sqlite";
-import { openDb } from "../lib/db.ts";
+import type { openDb } from "../lib/db.ts";
+import { withDbEffect } from "../lib/effect.ts";
 import {
   buildWhereFragments,
   parseFilters,
@@ -27,7 +30,7 @@ import {
   JUDGE_OPTIONS,
   OUTPUT_OPTIONS,
   parseJsonValue,
-  renderDocumentWithJudge,
+  renderDocumentWithJudgeEffect,
   toIsoTimestamp,
 } from "../lib/output.ts";
 import type { CommandOption, JudgeCommand } from "./index.ts";
@@ -190,17 +193,24 @@ function queryRows(db: ReturnType<typeof openDb>, argv: string[]): ErrorOutputRo
   }));
 }
 
-async function run(argv: string[]): Promise<void> {
-  const db = openDb();
-  try {
-    const parsed = parseArgv(argv, booleanFlagNames(options));
-    const rows = queryRows(db, argv);
-    console.log(
-      await renderDocumentWithJudge("errors", rows, parsed.flags, db, command.judgePresets ?? []),
-    );
-  } finally {
-    db.close();
-  }
+const runEffect = Effect.fn("errors.run")(function* (argv: string[]) {
+  const parsed = yield* Effect.try({
+    try: () => parseArgv(argv, booleanFlagNames(options)),
+    catch: (cause) => cause,
+  });
+  return yield* withDbEffect((db) =>
+    Effect.gen(function* () {
+      const rows = yield* tryIO("execute errors command", () => queryRows(db, argv));
+      const output = yield* renderDocumentWithJudgeEffect("errors", rows, parsed.flags, db, [
+        "error-resolved",
+      ]);
+      yield* tryIO("execute errors command", () => console.log(output));
+    }),
+  );
+});
+
+function run(argv: string[]): Promise<void> {
+  return runEffectPromise(runEffect(argv));
 }
 
 export const command: JudgeCommand = {
@@ -209,10 +219,11 @@ export const command: JudgeCommand = {
   options,
   judgePresets: ["error-resolved"],
   run,
+  runEffect,
 };
 
 if (import.meta.main) {
-  command.run(process.argv.slice(2)).catch((err) => {
+  runEffectPromise(command.runEffect(process.argv.slice(2))).catch((err) => {
     console.error("Error:", err instanceof Error ? err.message : err);
     process.exit(1);
   });

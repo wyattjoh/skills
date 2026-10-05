@@ -1,8 +1,9 @@
 import { afterEach, describe, expect, it } from "bun:test";
+import { Effect, Fiber } from "effect";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { generateIcons, parseCli, parseImageResponse } from "./generate.ts";
+import { generateIcons, generateIconsEffect, parseCli, parseImageResponse } from "./generate.ts";
 
 const temporaryDirectories: string[] = [];
 
@@ -69,6 +70,51 @@ describe("parseImageResponse", () => {
 });
 
 describe("generateIcons", () => {
+  it("aborts a pending response body without writing an image", async () => {
+    const outputDirectory = await createTemporaryDirectory();
+    const body = Promise.withResolvers<unknown>();
+    const started = Promise.withResolvers<void>();
+    let signal: AbortSignal | undefined;
+    const fetchImplementation = async (
+      _input: string | URL | Request,
+      init: RequestInit | undefined,
+    ): Promise<Response> => {
+      const active = init?.signal;
+      if (active === undefined || active === null) throw new Error("Expected abort signal");
+      signal = active;
+      active.addEventListener(
+        "abort",
+        () => body.reject(new DOMException("Canceled", "AbortError")),
+        { once: true },
+      );
+      return {
+        ok: true,
+        json: () => {
+          started.resolve();
+          return body.promise;
+        },
+      } as unknown as Response;
+    };
+    await Effect.runPromise(
+      Effect.gen(function* () {
+        const fiber = yield* Effect.forkChild(
+          generateIconsEffect({
+            apiKey: "fixture-key",
+            model: "fixture/image-model",
+            prompt: "Fixture",
+            outputDirectory,
+            count: 1,
+            fetchImplementation,
+          }),
+        );
+        yield* Effect.tryPromise(() => started.promise);
+        yield* Fiber.interrupt(fiber);
+      }).pipe(Effect.timeout(5000)),
+    );
+    expect(signal?.aborted).toBe(true);
+    expect(await Bun.file(join(outputDirectory, "icon.png")).exists()).toBe(false);
+  });
+
   it("requests one image per variant and writes each response", async () => {
     const outputDirectory = await createTemporaryDirectory();
     const requestBodies: unknown[] = [];
@@ -142,6 +188,22 @@ describe("generateIcons", () => {
         count: 1,
         fetchImplementation: failedFetchImplementation,
       }),
+    ).rejects.toThrow("OpenRouter image generation failed (402): Insufficient credits");
+  });
+
+  it("exposes failed image requests through the Effect error channel", async () => {
+    const outputDirectory = await createTemporaryDirectory();
+    await expect(
+      Effect.runPromise(
+        generateIconsEffect({
+          apiKey: "test-key",
+          model: "test/image-model",
+          prompt: "A compass",
+          outputDirectory,
+          count: 1,
+          fetchImplementation: failedFetchImplementation,
+        }),
+      ),
     ).rejects.toThrow("OpenRouter image generation failed (402): Insufficient credits");
   });
 });

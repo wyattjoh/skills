@@ -7,6 +7,8 @@
  *   bun $SKILL_DIR/scripts/cli.ts sessions [options]
  */
 
+import { Effect } from "effect";
+import { runEffectPromise, tryIO } from "../lib/io.ts";
 import { booleanFlagNames, flagString, parseArgv } from "../lib/args.ts";
 import {
   buildWhereFragments,
@@ -14,12 +16,12 @@ import {
   SHARED_FILTER_OPTIONS,
   whereClause,
 } from "../lib/filters.ts";
-import { openDb } from "../lib/db.ts";
+import { withDbEffect } from "../lib/effect.ts";
 import { parseJsonStringArray } from "../lib/json.ts";
 import {
   JUDGE_OPTIONS,
   OUTPUT_OPTIONS,
-  renderDocumentWithJudge,
+  renderDocumentWithJudgeEffect,
   toIsoTimestamp,
 } from "../lib/output.ts";
 import type { CommandOption, JudgeCommand } from "./index.ts";
@@ -129,10 +131,16 @@ function toOutputRow(row: SessionRow): SessionOutputRow {
   };
 }
 
-async function run(argv: string[]): Promise<void> {
-  const { flags } = parseArgv(argv, booleanFlagNames(options));
-  const filters = parseFilters(flags);
-  const sort = parseSort(flagString(flags, "sort"));
+const runEffect = Effect.fn("sessions.run")(function* (argv: string[]) {
+  const { flags } = yield* Effect.try({
+    try: () => parseArgv(argv, booleanFlagNames(options)),
+    catch: (cause) => cause,
+  });
+  const filters = yield* Effect.try({ try: () => parseFilters(flags), catch: (cause) => cause });
+  const sort = yield* Effect.try({
+    try: () => parseSort(flagString(flags, "sort")),
+    catch: (cause) => cause,
+  });
   const firstPrompt = flagString(flags, "first-prompt");
   const where = buildWhereFragments(filters, {
     project: "sessions.project_identity",
@@ -152,11 +160,14 @@ async function run(argv: string[]): Promise<void> {
     where.params.push(filters.model);
   }
 
-  const db = openDb();
-  try {
-    const rows = db
-      .query(
-        `SELECT
+  return yield* withDbEffect((db) =>
+    Effect.gen(function* () {
+      const rows = yield* tryIO(
+        "execute sessions command",
+        () =>
+          db
+            .query(
+              `SELECT
            sessions.session_id,
            sessions.project_dir,
            sessions.project_identity,
@@ -185,20 +196,23 @@ async function run(argv: string[]): Promise<void> {
            COALESCE(sessions.ended_at, sessions.started_at) DESC,
            sessions.id ASC
          LIMIT ?`,
-      )
-      .all(...(where.params as Array<string | number | null>), filters.limit) as SessionRow[];
-    console.log(
-      await renderDocumentWithJudge(
+            )
+            .all(...(where.params as Array<string | number | null>), filters.limit) as SessionRow[],
+      );
+      const output = yield* renderDocumentWithJudgeEffect(
         "sessions",
         rows.map(toOutputRow),
         flags,
         db,
-        command.judgePresets ?? [],
-      ),
-    );
-  } finally {
-    db.close();
-  }
+        ["task-kind"],
+      );
+      yield* tryIO("execute sessions command", () => console.log(output));
+    }),
+  );
+});
+
+function run(argv: string[]): Promise<void> {
+  return runEffectPromise(runEffect(argv));
 }
 
 export const command: JudgeCommand = {
@@ -207,10 +221,11 @@ export const command: JudgeCommand = {
   options,
   judgePresets: ["task-kind"],
   run,
+  runEffect,
 };
 
 if (import.meta.main) {
-  command.run(process.argv.slice(2)).catch((err) => {
+  runEffectPromise(command.runEffect(process.argv.slice(2))).catch((err) => {
     console.error("Error:", err instanceof Error ? err.message : err);
     process.exit(1);
   });

@@ -8,6 +8,7 @@
  */
 
 import type { Database } from "bun:sqlite";
+import { Effect } from "effect";
 import { booleanFlagNames, flagBoolean, flagString, parseArgv } from "../lib/args.ts";
 import {
   buildWhereFragments,
@@ -15,8 +16,9 @@ import {
   whereClause,
   SHARED_FILTER_OPTIONS,
 } from "../lib/filters.ts";
-import { openDb } from "../lib/db.ts";
-import { readJsonl } from "../lib/jsonl.ts";
+import { openDbScoped } from "../lib/db.ts";
+import { runEffectPromise, tryIO } from "../lib/io.ts";
+import { readJsonlEffect } from "../lib/jsonl.ts";
 import {
   extractBlocks,
   parseRecord,
@@ -148,43 +150,48 @@ function renderMessageText(
     .join("\n\n");
 }
 
-async function loadRawRecords(db: Database, sessionKey: string): Promise<RawRecords> {
+const loadRawRecords = Effect.fn("messages.rawRecords")(function* (
+  db: Database,
+  sessionKey: string,
+) {
   const records: RawRecords = new Map();
-  const files = db
-    .query("SELECT path FROM files WHERE session_id = ? ORDER BY path")
-    .all(sessionKey) as Array<{
-    path: string;
-  }>;
+  const files = yield* tryIO(
+    "find source files",
+    () =>
+      db
+        .query("SELECT path FROM files WHERE session_id = ? ORDER BY path")
+        .all(sessionKey) as Array<{ path: string }>,
+  );
 
   for (const file of files) {
-    try {
-      const result = await readJsonl(file.path);
-      for (const line of result.lines) {
-        const record = parseRecord(line.value);
-        if (record === null) continue;
-        const uuid = record.uuid ?? `${sessionKey}:L${line.lineNumber}`;
-        records.set(uuid, record);
-      }
-    } catch {
-      // The indexed row remains usable if the source file was moved or pruned.
+    const result = yield* readJsonlEffect(file.path).pipe(
+      Effect.catch(() => Effect.succeed(undefined)),
+    );
+    // Indexed rows remain usable if a source file moved or was pruned.
+    if (result === undefined) continue;
+    for (const line of result.lines) {
+      const record = parseRecord(line.value);
+      if (record === null) continue;
+      const uuid = record.uuid ?? `${sessionKey}:L${line.lineNumber}`;
+      records.set(uuid, record);
     }
   }
   return records;
-}
+});
 
-async function renderTurns(
+const renderTurns = Effect.fn("messages.renderTurns")(function* (
   db: Database,
   rows: StoredMessage[],
   includeTools: boolean,
   includeThinking: boolean,
-): Promise<MessageTurn[]> {
+) {
   const rawBySession = new Map<string, RawRecords>();
   const turns: MessageTurn[] = [];
 
   for (const row of rows) {
     let raw = rawBySession.get(row.session_key);
     if (raw === undefined) {
-      raw = await loadRawRecords(db, row.session_key);
+      raw = yield* loadRawRecords(db, row.session_key);
       rawBySession.set(row.session_key, raw);
     }
 
@@ -210,7 +217,7 @@ async function renderTurns(
   }
 
   return turns;
-}
+});
 
 function parseAround(raw: string | undefined): { uuid: string; radius: number } | undefined {
   if (raw === undefined) return undefined;
@@ -231,22 +238,25 @@ function sortTurns(a: StoredMessage, b: StoredMessage): number {
   );
 }
 
-async function run(argv: string[]): Promise<void> {
-  const { flags } = parseArgv(argv, BOOLEAN_FLAGS);
-  const filters = parseFilters(flags);
+const runEffect = Effect.fn("messages.run")(function* (argv: string[]) {
+  const { flags } = yield* tryIO("parse message arguments", () => parseArgv(argv, BOOLEAN_FLAGS));
+  const filters = yield* tryIO("parse message filters", () => parseFilters(flags));
   const hasProjectLimit = filters.projects.length > 0 && flagString(flags, "limit") !== undefined;
   if (filters.sessions.length === 0 && !hasProjectLimit) {
-    throw new Error("messages requires --session or --project with --limit to select sessions.");
+    return yield* Effect.fail(
+      new Error("messages requires --session or --project with --limit to select sessions."),
+    );
   }
 
-  const around = parseAround(flagString(flags, "around"));
+  const around = yield* tryIO("parse message context", () =>
+    parseAround(flagString(flags, "around")),
+  );
   const includeTools = flagBoolean(flags, "include-tools");
   const includeThinking = flagBoolean(flags, "include-thinking");
   const filter = messageWhere(filters);
-  const db = openDb();
+  const db = yield* openDbScoped();
 
-  try {
-    const sql = `
+  const sql = `
       SELECT
         m.session_id AS session_key,
         s.session_id AS session_id,
@@ -268,55 +278,59 @@ async function run(argv: string[]): Promise<void> {
       ${filter.sql}
       ORDER BY m.ts ASC, m.session_id ASC, m.uuid ASC
       ${around === undefined ? "LIMIT ?" : ""}`;
-    const queryParams =
-      around === undefined ? [...filter.params, filters.limit * 4] : filter.params;
-    const stored = (db.query(sql).all(...queryParams) as StoredMessage[]).toSorted(sortTurns);
+  const queryParams = around === undefined ? [...filter.params, filters.limit * 4] : filter.params;
+  const stored = yield* tryIO("query session messages", () =>
+    (db.query(sql).all(...queryParams) as StoredMessage[]).toSorted(sortTurns),
+  );
 
-    let aroundSessionKey: string | undefined;
-    if (around !== undefined) {
-      const target = stored.find((row) => row.uuid === around.uuid);
-      if (target === undefined) throw new Error(`Message not found for --around: ${around.uuid}`);
-      aroundSessionKey = target.session_key;
-    }
-
-    const rowsToRender =
-      aroundSessionKey === undefined
-        ? stored
-        : stored.filter((row) => row.session_key === aroundSessionKey);
-    const turns = await renderTurns(db, rowsToRender, includeTools, includeThinking);
-
-    let selected = turns;
-    if (around !== undefined) {
-      const index = turns.findIndex((turn) => turn.uuid === around.uuid);
-      if (index === -1) throw new Error(`Message not found for --around: ${around.uuid}`);
-      selected = turns.slice(
-        Math.max(0, index - around.radius),
-        Math.min(turns.length, index + around.radius + 1),
-      );
-    } else {
-      selected = turns.slice(0, filters.limit);
-    }
-
-    const document = buildDocument("messages", selected);
-    console.log(renderOutput(document, renderOptionsFromFlags(flags)));
-  } finally {
-    db.close();
+  let aroundSessionKey: string | undefined;
+  if (around !== undefined) {
+    const target = stored.find((row) => row.uuid === around.uuid);
+    if (target === undefined)
+      return yield* Effect.fail(new Error(`Message not found for --around: ${around.uuid}`));
+    aroundSessionKey = target.session_key;
   }
+
+  const rowsToRender =
+    aroundSessionKey === undefined
+      ? stored
+      : stored.filter((row) => row.session_key === aroundSessionKey);
+  const turns = yield* renderTurns(db, rowsToRender, includeTools, includeThinking);
+
+  let selected = turns;
+  if (around !== undefined) {
+    const index = turns.findIndex((turn) => turn.uuid === around.uuid);
+    if (index === -1)
+      return yield* Effect.fail(new Error(`Message not found for --around: ${around.uuid}`));
+    selected = turns.slice(
+      Math.max(0, index - around.radius),
+      Math.min(turns.length, index + around.radius + 1),
+    );
+  } else {
+    selected = turns.slice(0, filters.limit);
+  }
+
+  const document = buildDocument("messages", selected);
+  yield* tryIO("write message output", () =>
+    console.log(renderOutput(document, renderOptionsFromFlags(flags))),
+  );
+}, Effect.scoped);
+
+function run(argv: string[]): Promise<void> {
+  return runEffectPromise(runEffect(argv));
 }
 
-/**
- * List the ordered turns stored in the conversation index.
- */
 export const command: Command = {
   name: "messages",
   description: "List the ordered turns of one or more sessions.",
   options,
   usage: undefined,
   run,
+  runEffect,
 };
 
 if (import.meta.main) {
-  command.run(process.argv.slice(2)).catch((err) => {
+  runEffectPromise(command.runEffect(process.argv.slice(2))).catch((err) => {
     console.error("Error:", err instanceof Error ? err.message : err);
     process.exit(1);
   });

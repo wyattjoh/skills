@@ -1,4 +1,6 @@
 import type { Questions } from "@typesafe-ai/sdk";
+import { Effect } from "effect";
+import { runEffectPromise, tryIO, tryPromiseIO } from "../io.ts";
 import { redactValue } from "../redact.ts";
 import type { JudgeFileDefinition, JudgePreset, JudgeStateContext } from "./types.ts";
 
@@ -96,10 +98,24 @@ export function validateJudgeFile(value: unknown): JudgeFileDefinition {
  * @param pathOrJson File path or inline JSON supplied by the caller.
  * @returns A validated ad hoc judge definition.
  */
-export async function readJudgeFile(pathOrJson: string): Promise<JudgeFileDefinition> {
+export const readJudgeFileEffect = Effect.fn("judge.readDefinition")(function* (
+  pathOrJson: string,
+) {
   const source = pathOrJson.trim();
-  if (source.startsWith("{")) return validateJudgeFile(JSON.parse(source) as unknown);
-  return validateJudgeFile(await Bun.file(pathOrJson).json());
+  const value = source.startsWith("{")
+    ? yield* tryIO("parse judge JSON", () => JSON.parse(source) as unknown)
+    : yield* tryPromiseIO(`read ${pathOrJson}`, () => Bun.file(pathOrJson).json());
+  return yield* tryIO("validate judge definition", () => validateJudgeFile(value));
+});
+
+/**
+ * Read a judge definition while retaining the Promise API used by callers.
+ *
+ * @param pathOrJson File path or inline JSON supplied by the caller.
+ * @returns A validated ad hoc judge definition.
+ */
+export function readJudgeFile(pathOrJson: string): Promise<JudgeFileDefinition> {
+  return runEffectPromise(readJudgeFileEffect(pathOrJson));
 }
 
 function fieldValue(row: unknown, path: string): unknown {

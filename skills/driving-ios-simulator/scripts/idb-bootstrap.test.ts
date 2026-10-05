@@ -1,6 +1,8 @@
 import { describe, expect, it } from "bun:test";
+import { Effect } from "effect";
 import {
   cleanupUdidResources,
+  cleanupUdidResourcesEffect,
   companionPidPath,
   companionSocketPath,
   extractUdid,
@@ -209,6 +211,18 @@ describe("cleanupUdidResources", () => {
     });
 
     expect(killed).toEqual([]);
+  });
+
+  it("defers cleanup side effects until the Effect is run", async () => {
+    const deleted: string[] = [];
+    const effect = cleanupUdidResourcesEffect(UDID_A, "/tmp/idb", {
+      readFile: () => null,
+      deleteFile: (path) => deleted.push(path),
+    });
+    expect(deleted).toEqual([]);
+
+    await Effect.runPromise(effect);
+    expect(deleted).toEqual([`/tmp/idb/${UDID_A}.pid`, `/tmp/idb/${UDID_A}_companion.sock`]);
   });
 
   it("cleans only UDID_A resources when two UDIDs coexist", () => {
