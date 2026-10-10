@@ -153,6 +153,7 @@ if git -C "$wt" rev-parse --is-inside-work-tree >/dev/null 2>&1; then
   section code:head git -C "$wt" rev-parse HEAD
   section code:branch git -C "$wt" symbolic-ref --short HEAD
   section probe:head_tree git -C "$wt" rev-parse "HEAD^{tree}"
+  section probe:manifest cat "$(git -C "$wt" rev-parse --absolute-git-dir)/beam-me-up-includes"
   if [ -n "$s" ]; then
     section code:worktree_tree git -C "$wt" rev-parse "$s^{tree}"
     section code:index_tree git -C "$wt" rev-parse "$s^2^{tree}"
@@ -220,6 +221,13 @@ git -C "$repo" update-ref -d refs/beam-me-up/stash 2>/dev/null || true`;
  */
 export const EXTRACT_SCRIPT = `mkdir -p "$1"
 tar -xf - -C "$1"`;
+
+/**
+ * Records the include checksums from stdin in the worktree's Git directory, so
+ * the next move can tell files edited on this machine from stale copies.
+ * Args: worktree
+ */
+export const WRITE_MANIFEST_SCRIPT = `cat >"$(git -C "$1" rev-parse --absolute-git-dir)/beam-me-up-includes"`;
 
 /**
  * Runs \`herdr\` with the given arguments.

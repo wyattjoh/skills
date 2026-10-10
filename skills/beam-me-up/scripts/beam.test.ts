@@ -161,6 +161,33 @@ describe("beam", () => {
     );
   });
 
+  it("re-copies an included file edited only on the source", async () => {
+    write(join(worktree, ".scratch", "notes.md"), "keep me\nedited here\n");
+    const result = await run();
+    expect(result).toMatchObject({ actions: { includeConflicts: [] } });
+    expect(readFileSync(join(dst(worktree), ".scratch", "notes.md"), "utf8")).toBe(
+      "keep me\nedited here\n",
+    );
+  });
+
+  it("refuses to clobber included files edited or created on the target unless forced", async () => {
+    write(join(dst(worktree), ".scratch", "notes.md"), "edited on target\n");
+    write(join(dst(worktree), ".scratch", "new.md"), "created on target\n");
+    await expect(run()).rejects.toThrow(
+      "changed on local since the last move: .scratch/new.md, .scratch/notes.md",
+    );
+
+    await run({ force: true });
+    expect(readFileSync(join(dst(worktree), ".scratch", "notes.md"), "utf8")).toBe(
+      "keep me\nedited here\n",
+    );
+    // Moves never delete; the target-only file stays and is now recorded.
+    expect(readFileSync(join(dst(worktree), ".scratch", "new.md"), "utf8")).toBe(
+      "created on target\n",
+    );
+    expect(await run()).toMatchObject({ actions: { includeConflicts: [] } });
+  });
+
   it("refuses a target worktree with different uncommitted changes", async () => {
     write(join(dst(worktree), "a.txt"), "diverged\n");
     await expect(run()).rejects.toThrow("has different uncommitted changes");

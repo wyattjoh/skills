@@ -3,9 +3,12 @@ import {
   agentNameFor,
   diffSections,
   encodeProjectDir,
+  formatManifest,
+  includeConflicts,
   launchDirFromCwds,
   mapToRemoteHome,
   parseLockPid,
+  parseManifest,
   parseSections,
   transcriptContext,
   transcriptRelation,
@@ -92,8 +95,8 @@ describe("agentNameFor", () => {
 
 describe("parseSections", () => {
   it("reads binary sections and marks failed ones undefined", () => {
-    const bytes = new TextEncoder().encode("a\n3\nx\ny\nmissing\n-1\n\nb\n0\n\n");
-    const sections = parseSections(bytes);
+    const input = new TextEncoder().encode("a\n3\nx\ny\nmissing\n-1\n\nb\n0\n\n");
+    const sections = parseSections(input);
     expect([...sections.keys()]).toEqual(["a", "missing", "b"]);
     expect(new TextDecoder().decode(sections.get("a"))).toBe("x\ny");
     expect(sections.get("missing")).toBeUndefined();
@@ -108,14 +111,52 @@ describe("parseSections", () => {
 });
 
 describe("diffSections", () => {
-  it("lists changed and one-sided sections under the given prefixes", () => {
+  it("lists source sections that differ or are missing on the target, ignoring target-only ones", () => {
     expect(
       diffSections(
-        { "code:head": "1", "session:x": "a", "probe:wt_dir": "1" },
+        { "code:head": "1", "session:x": "a", "session:z": "z", "probe:wt_dir": "1" },
         { "code:head": "1", "session:x": "b", "session:y": "c", "probe:wt_dir": "0" },
         ["code:", "session:"],
       ),
-    ).toEqual(["session:x", "session:y"]);
+    ).toEqual(["session:x", "session:z"]);
+  });
+});
+
+const hash = (c: string) => c.repeat(64);
+
+describe("include manifest", () => {
+  it("round-trips include checksums, including paths with spaces", () => {
+    const manifest = formatManifest({
+      "include:.scratch/a b.md": hash("a"),
+      "include:.pi/x": hash("b"),
+      "code:head": hash("c"),
+    });
+    expect(manifest).toBe(`${hash("a")} .scratch/a b.md\n${hash("b")} .pi/x\n`);
+    expect([...parseManifest(manifest)]).toEqual([
+      [".scratch/a b.md", hash("a")],
+      [".pi/x", hash("b")],
+    ]);
+  });
+
+  it("flags target files edited or created since the last move", () => {
+    const source = {
+      "include:same": hash("1"),
+      "include:stale": hash("2"),
+      "include:edited": hash("3"),
+    };
+    const target = {
+      "include:same": hash("1"),
+      "include:stale": hash("9"),
+      "include:edited": hash("8"),
+      "include:created": hash("7"),
+      "include:deleted-at-source": hash("6"),
+    };
+    const manifest = new Map([
+      ["stale", hash("9")],
+      ["edited", hash("5")],
+      ["deleted-at-source", hash("6")],
+    ]);
+    expect(includeConflicts(source, target, manifest)).toEqual(["created", "edited"]);
   });
 });
 

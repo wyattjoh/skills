@@ -35,6 +35,7 @@ Each refusal names its fix. These need the user's decision rather than a flag ad
 
 - **Session looks live** (lock PID or Herdr pane): ask the user to exit it. `--allow-live` copies a transcript that may still grow.
 - **Target transcript has turns the source lacks, or has diverged**: the session was resumed there. `--force` overwrites those turns, so confirm first. An older copy of the source's transcript on the target is replaced without `--force`.
+- **Included files changed on the target** since the last move (edited or created there): copy them back or drop that `--include`. `--force` overwrites them.
 - **Target worktree diverged** (other branch, commit, or uncommitted changes): the user resolves it on the target.
 - **SSH refused on a Mac target**: the user turns on System Settings → General → Sharing → Remote Login. Tailscale SSH only serves from the open-source `tailscaled` build, not the Mac apps.
 - **Tool missing on the target**: put its directory on PATH in the target's non-interactive shell startup (`~/.zshenv` for zsh).

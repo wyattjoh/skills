@@ -127,20 +127,61 @@ export const hashSections = (
   Object.fromEntries([...sections].map(([name, bytes]) => [name, bytes && sha256(bytes)]));
 
 /**
- * Names every section whose hash differs between the two sides, including
- * sections present on only one side, sorted for stable output.
+ * Names every source section under `prefixes` whose hash differs on the target
+ * (including ones the target lacks), sorted for stable output. Sections only the
+ * target has are ignored: a move adds and replaces files, it never deletes them.
  */
 export const diffSections = (
   source: Record<string, string | undefined>,
   target: Record<string, string | undefined>,
   prefixes: ReadonlyArray<string>,
-): Array<string> => {
-  const names = new Set([...Object.keys(source), ...Object.keys(target)]);
-  return [...names]
+): Array<string> =>
+  Object.keys(source)
     .filter((name) => prefixes.some((prefix) => name.startsWith(prefix)))
     .filter((name) => source[name] !== target[name])
     .toSorted();
-};
+
+/**
+ * Formats include checksums as the manifest stored on the target after a move:
+ * one `<sha256> <path>` line per file.
+ */
+export const formatManifest = (hashes: Record<string, string | undefined>): string =>
+  Object.entries(hashes)
+    .filter(([name, hash]) => name.startsWith("include:") && hash)
+    .map(([name, hash]) => `${hash} ${name.slice("include:".length)}\n`)
+    .toSorted()
+    .join("");
+
+/**
+ * Parses a manifest written by {@link formatManifest} into path → sha256.
+ */
+export const parseManifest = (text: string | undefined): Map<string, string> =>
+  new Map(
+    (text ?? "")
+      .split("\n")
+      .filter(Boolean)
+      .map((line) => [line.slice(65), line.slice(0, 64)] as const),
+  );
+
+/**
+ * Lists include files on the target that a move would clobber or leave
+ * inconsistent: ones edited or created there since the last move. A target file
+ * is safe when it already matches the source, or still matches the checksum the
+ * last move recorded in the manifest.
+ */
+export const includeConflicts = (
+  source: Record<string, string | undefined>,
+  target: Record<string, string | undefined>,
+  manifest: ReadonlyMap<string, string>,
+): Array<string> =>
+  Object.keys(target)
+    .filter((name) => name.startsWith("include:"))
+    .filter((name) => {
+      const hash = target[name];
+      return hash !== source[name] && hash !== manifest.get(name.slice("include:".length));
+    })
+    .map((name) => name.slice("include:".length))
+    .toSorted();
 
 /**
  * How the target's transcript relates to the source's. Transcripts are

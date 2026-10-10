@@ -8,7 +8,7 @@
 
 import { homedir } from "node:os";
 import { BunRuntime, BunServices } from "@effect/platform-bun";
-import { Console, Effect, FileSystem, Path, Schema } from "effect";
+import { Console, Effect, FileSystem, Path, Schema, Stream } from "effect";
 import { Argument, Command, Flag } from "effect/cli";
 import { ChildProcess, ChildProcessSpawner } from "effect/process";
 import { type ExecResult, runProcess, runProcessOk, stdoutText } from "./exec.ts";
@@ -20,6 +20,7 @@ import {
   RECEIVE_SCRIPT,
   Remote,
   STATE_SCRIPT,
+  WRITE_MANIFEST_SCRIPT,
   type Shell,
   makeLocalShell,
 } from "./remote.ts";
@@ -28,9 +29,12 @@ import {
   agentNameFor,
   diffSections,
   encodeProjectDir,
+  formatManifest,
   hashSections,
+  includeConflicts,
   inspectSession,
   mapToRemoteHome,
+  parseManifest,
   parseSections,
   transcriptRelation,
 } from "./session.ts";
@@ -455,6 +459,18 @@ export const beam = Effect.fn("beam")(function* (options: BeamOptions) {
   }
   const session = sessionDiff.length === 0 ? "in-sync" : "copy";
 
+  // Included files edited or created on the target since the last move would be clobbered.
+  const conflicts = includeConflicts(
+    source.hashes,
+    before.hashes,
+    parseManifest(text(before.sections, "probe:manifest")),
+  );
+  if (conflicts.length > 0 && !options.force) {
+    return yield* fail(
+      `These included files changed on ${remote.label} since the last move: ${conflicts.join(", ")}. Copy them back first, drop the --include, or pass --force to overwrite them.`,
+    );
+  }
+
   const plan = {
     sessionId,
     target: remote.label,
@@ -465,7 +481,7 @@ export const beam = Effect.fn("beam")(function* (options: BeamOptions) {
       projectsDir: info.projectsDir,
     },
     destination: target,
-    actions: { code, includes, session, transcript },
+    actions: { code, includes, session, transcript, includeConflicts: conflicts },
   };
   if (options.dryRun) return { dryRun: true, ...plan };
 
@@ -496,6 +512,16 @@ export const beam = Effect.fn("beam")(function* (options: BeamOptions) {
     );
   }
   const verified = Object.keys(source.hashes).filter((n) => !n.startsWith("probe:")).length;
+
+  const manifest = yield* remote.run(WRITE_MANIFEST_SCRIPT, [target.worktree], {
+    stdin: Stream.make(new TextEncoder().encode(formatManifest(after.hashes))),
+    timeout: "30 seconds",
+  });
+  if (manifest.exitCode !== 0) {
+    return yield* fail(
+      `Recording include checksums on ${remote.label} failed: ${manifest.stderr.trim()}`,
+    );
+  }
 
   const label = pane?.label ?? path.basename(info.worktree);
   const herdr = options.herdr
