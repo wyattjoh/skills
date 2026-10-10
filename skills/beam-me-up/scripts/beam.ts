@@ -140,19 +140,21 @@ const herdrResume = Effect.fn("herdrResume")(function* (
 ) {
   const herdr = shellHerdr(remote);
   const panes = (yield* herdrJson(herdr, HerdrPanes, ["pane", "list"])).result.panes;
-  const hosting = panes.find((p) => p.agent_session?.value === sessionId);
+  const workspaces = (yield* herdrJson(herdr, HerdrWorkspaces, ["workspace", "list"])).result
+    .workspaces;
+  const inOurWorkspace = (p: (typeof panes)[number]) =>
+    p.cwd === worktree &&
+    workspaces.some((w) => w.workspace_id === p.workspace_id && w.label === label);
+  // Claude reports its session ID only once past start-up prompts, so a Claude agent
+  // in our workspace and worktree also counts as an earlier run's resume.
+  const hosting = panes.find(
+    (p) => p.agent_session?.value === sessionId || (p.agent === "claude" && inOurWorkspace(p)),
+  );
   if (hosting) {
     return { workspaceId: hosting.workspace_id, paneId: hosting.pane_id, agent: "already-running" };
   }
 
-  const workspaces = (yield* herdrJson(herdr, HerdrWorkspaces, ["workspace", "list"])).result
-    .workspaces;
-  const free = panes.find(
-    (p) =>
-      p.cwd === worktree &&
-      !p.agent &&
-      workspaces.some((w) => w.workspace_id === p.workspace_id && w.label === label),
-  );
+  const free = panes.find((p) => !p.agent && inOurWorkspace(p));
   const target = free
     ? { workspaceId: free.workspace_id, paneId: free.pane_id }
     : yield* herdrJson(herdr, HerdrCreated, [

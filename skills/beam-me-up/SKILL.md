@@ -25,7 +25,7 @@ bun $SKILL_DIR/scripts/beam.ts beam <session-id> <ssh-target> [--include <path>]
 
 1. **Inspect.** `inspect` reports the session's worktree, branch, dirty state, untracked files, ignored entries with sizes, and whether it is still live. Choose `--include` paths from its `ignored` and `untracked` lists: the session's own working files (like `.scratch`), never dependency or build directories. Confirm the list with the user when it is not obvious.
 2. **Dry run.** `--dry-run` shows the planned `code`, `includes` and `session` actions without changing the target.
-3. **Beam.** The real run moves the branch history and uncommitted changes as a Git bundle, so nothing needs to be pushed. It copies the includes and transcript, then compares tree hashes and file checksums on both machines. Pass `--herdr` when the user wants the session resumed on the target. It opens a matching Herdr workspace there and starts `claude --resume` as a Herdr agent.
+3. **Beam.** The real run moves the branch history and uncommitted changes as a Git bundle, so nothing needs to be pushed. A target without a clone gets one from `origin`, or a full bundle of every local branch when the repository has no remote. It copies the includes and transcript, then compares tree hashes and file checksums on both machines. Pass `--herdr` when the user wants the session resumed on the target. It opens a matching Herdr workspace there and starts `claude --resume` as a Herdr agent.
 
 The script is idempotent: re-running it after a partial failure skips whatever already matches.
 
