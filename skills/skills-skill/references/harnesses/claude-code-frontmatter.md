@@ -20,10 +20,13 @@ Display name shown in skill listings. Must use lowercase letters, numbers, and
 hyphens only. Maximum 64 characters. Cannot contain XML tags or reserved words
 ("anthropic", "claude") in published/marketplace skills.
 
-For a personal or project skill, `name` does **not** change the invoked
-`/name` command; that always comes from the directory name. Only in a plugin
-skill does `name` become the last segment of the command (the plugin prefix
-stays in place, e.g. `name: fancy` in `my-plugin/skills/review/SKILL.md`
+For a personal or project skill directory, `name` sets the command the `/`
+menu shows and that you type, unless another command already uses that name;
+the directory name also still invokes it (`.claude/skills/deploy-staging/` with
+`name: deploy` gives `/deploy`). See
+[How a skill gets its command name](https://code.claude.com/docs/en/skills#how-a-skill-gets-its-command-name).
+In a plugin skill, `name` becomes the last segment of the command (the plugin
+prefix stays in place, e.g. `name: fancy` in `my-plugin/skills/review/SKILL.md`
 becomes `/my-plugin:fancy`). The bare `/fancy` also invokes it unless another
 command already uses that name. If the `name` you write already starts with the
 plugin's own prefix (`name: my-plugin:fancy`), Claude Code doesn't add the
@@ -339,7 +342,7 @@ hooks:
     - matcher: "Bash"
       hooks:
         - type: command
-          command: "./scripts/validate.sh $TOOL_INPUT"
+          command: "./scripts/validate.sh" # reads the hook input JSON on stdin
           once: true # Run only once per session
   PostToolUse:
     - matcher: "Write|Edit"

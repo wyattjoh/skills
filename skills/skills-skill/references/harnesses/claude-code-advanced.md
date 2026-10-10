@@ -48,7 +48,7 @@ hooks:
     - matcher: "Bash"
       hooks:
         - type: command
-          command: "./scripts/security-check.sh $TOOL_INPUT"
+          command: "./scripts/security-check.sh" # reads the hook input JSON on stdin
           once: true
   PostToolUse:
     - matcher: "Write|Edit"
@@ -89,7 +89,7 @@ command exits with code 2).
   server: "my-mcp-server"
   tool: "validate"
   input:
-    path: "$TOOL_INPUT"
+    file_path: "${tool_input.file_path}"
 ```
 
 **Prompt hooks** evaluate with an LLM:

@@ -92,7 +92,9 @@ When multiple skills exist across different scopes:
 conflict with personal or project skills.
 
 If a skill and a built-in command share the same name, the **skill takes
-precedence**. A skill at any level also overrides a **bundled** skill of the
+precedence** in a local terminal session, but not over the built-in's aliases
+(a project `usage` skill replaces `/usage`, while `/cost` still runs the
+built-in). A skill at any level also overrides a **bundled** skill of the
 same name, but never the bundled skill's aliases: a project `code-review` skill
 replaces `/code-review`, while `/review` still runs the bundled one. Skills at
 any local level, plus plugin skills and `.claude/commands/` files, all override
@@ -103,6 +105,10 @@ Other discovery details worth knowing when placing a skill:
 - The folder name `synced` is **reserved** in the enterprise, personal, and
   project skills locations, in any capitalization. Claude Code owns
   `~/.claude/skills/synced/` and skips a skill you author at that name.
+- Outside a plugin, a skill folder, frontmatter `name`, or `.claude/commands/`
+  file named `anthropic-skills` or starting with `anthropic-skills:` doesn't
+  load; that namespace is reserved for skills synced from claude.ai (see
+  [Names reserved for synced skills](https://code.claude.com/docs/en/skills#names-reserved-for-synced-skills)).
 - A `<skill-name>` entry can be a **symlink** to a directory elsewhere on disk.
   Claude Code follows it, and loads the skill once even if the same target is
   reachable from several locations.
@@ -131,7 +137,7 @@ runs before `SessionStart` hooks finish.
 The `skillOverrides` setting controls a skill's visibility from `settings.json`
 instead of its own frontmatter, useful for skills checked into a shared repo
 you don't want to edit. The `/skills` menu writes it for you (highlight a
-skill, press `Space` or `Enter` to cycle states, `Esc` to save to
+skill, press `Space` to cycle states, `Esc` to save to
 `.claude/settings.local.json`). Each key is a skill name; each value is one of:
 
 | Value                   | Listed to Claude     | In `/` menu |
@@ -208,6 +214,8 @@ Authoring implications:
   doesn't run `!` commands, doesn't attach `@` file references, and doesn't
   substitute `${CLAUDE_PROJECT_DIR}` or `${CLAUDE_SESSION_ID}`. All of those
   reach Claude as literal text. In a cloud session the body behaves normally.
+  In a Cowork session it also behaves normally, except every `!` command line
+  is replaced with the `disableSkillShellExecution` placeholder.
 - When a synced skill's short name collides with any other command (compared
   case-, spacing-, and Unicode-insensitively), `/<name>` runs the other command
   and the synced skill stays reachable as `/anthropic-skills:<name>` (v2.1.269+).
