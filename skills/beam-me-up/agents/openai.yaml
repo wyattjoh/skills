@@ -1,0 +1,6 @@
+interface:
+  display_name: "Beam Me Up"
+  short_description: "Move a Claude Code session to another machine over SSH"
+
+policy:
+  allow_implicit_invocation: false

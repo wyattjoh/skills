@@ -125,6 +125,7 @@ Restart Claude Code after adding or changing an agent definition.
 | Skill                         | Description                                                                        |
 | ----------------------------- | ---------------------------------------------------------------------------------- |
 | alchemy                       | Answer Alchemy (alchemy.run) questions from an indexed local copy of the docs      |
+| beam-me-up                    | Move a Claude Code session and its worktree to another machine over SSH            |
 | catppuccin-interfaces         | Apply Catppuccin colors with semantic, accessible interface tokens                 |
 | claude-sessions               | Query indexed Claude Code conversation history with a Bun CLI                      |
 | clean-storage                 | Reclaim disk space from verified build artifacts and tool caches                   |
