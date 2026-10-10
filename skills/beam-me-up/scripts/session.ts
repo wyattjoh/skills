@@ -146,43 +146,59 @@ export const diffSections = (
     .toSorted();
 
 /**
- * Formats include checksums as the manifest stored on the target after a move:
- * one `<sha256> <path>` line per file.
+ * One manifest entry: the file's checksum after the last move, and whether that
+ * move put it there (`sourced`) or found it already on the target.
  */
-export const formatManifest = (hashes: Record<string, string | undefined>): string =>
-  Object.entries(hashes)
+export interface ManifestEntry {
+  readonly hash: string;
+  readonly sourced: boolean;
+}
+
+/**
+ * Formats the target's include checksums after a move as the manifest stored
+ * there: `<sha256><mark><path>` per line, where the mark is a space for files
+ * the move copied and `*` for files only the target had.
+ */
+export const formatManifest = (
+  target: Record<string, string | undefined>,
+  source: Record<string, string | undefined>,
+): string =>
+  Object.entries(target)
     .filter(([name, hash]) => name.startsWith("include:") && hash)
-    .map(([name, hash]) => `${hash} ${name.slice("include:".length)}\n`)
+    .map(([name, hash]) => `${hash}${name in source ? " " : "*"}${name.slice("include:".length)}\n`)
     .toSorted()
     .join("");
 
 /**
- * Parses a manifest written by {@link formatManifest} into path → sha256.
+ * Parses a manifest written by {@link formatManifest} into path → entry.
  */
-export const parseManifest = (text: string | undefined): Map<string, string> =>
+export const parseManifest = (text: string | undefined): Map<string, ManifestEntry> =>
   new Map(
     (text ?? "")
       .split("\n")
-      .filter(Boolean)
-      .map((line) => [line.slice(65), line.slice(0, 64)] as const),
+      .filter((line) => line.length > 65)
+      .map((line) => [line.slice(65), { hash: line.slice(0, 64), sourced: line[64] === " " }]),
   );
 
 /**
- * Lists include files on the target that a move would clobber or leave
- * inconsistent: ones edited or created there since the last move. A target file
- * is safe when it already matches the source, or still matches the checksum the
- * last move recorded in the manifest.
+ * Lists include files on the target that a move would clobber: ones edited or
+ * created there since the last move. A target file is safe when it already
+ * matches the source, or still matches the last move's checksum and either that
+ * move put it there or the source has no file to overwrite it with.
  */
 export const includeConflicts = (
   source: Record<string, string | undefined>,
   target: Record<string, string | undefined>,
-  manifest: ReadonlyMap<string, string>,
+  manifest: ReadonlyMap<string, ManifestEntry>,
 ): Array<string> =>
   Object.keys(target)
     .filter((name) => name.startsWith("include:"))
     .filter((name) => {
       const hash = target[name];
-      return hash !== source[name] && hash !== manifest.get(name.slice("include:".length));
+      if (hash === source[name]) return false;
+      const entry = manifest.get(name.slice("include:".length));
+      const unchanged = entry !== undefined && entry.hash === hash;
+      return !(unchanged && (entry.sourced || source[name] === undefined));
     })
     .map((name) => name.slice("include:".length))
     .toSorted();

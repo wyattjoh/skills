@@ -126,16 +126,15 @@ describe("diffSections", () => {
 const hash = (c: string) => c.repeat(64);
 
 describe("include manifest", () => {
-  it("round-trips include checksums, including paths with spaces", () => {
-    const manifest = formatManifest({
-      "include:.scratch/a b.md": hash("a"),
-      "include:.pi/x": hash("b"),
-      "code:head": hash("c"),
-    });
-    expect(manifest).toBe(`${hash("a")} .scratch/a b.md\n${hash("b")} .pi/x\n`);
+  it("round-trips checksums and marks target-only files, including paths with spaces", () => {
+    const manifest = formatManifest(
+      { "include:.scratch/a b.md": hash("a"), "include:.pi/x": hash("b"), "code:head": hash("c") },
+      { "include:.scratch/a b.md": hash("a") },
+    );
+    expect(manifest).toBe(`${hash("a")} .scratch/a b.md\n${hash("b")}*.pi/x\n`);
     expect([...parseManifest(manifest)]).toEqual([
-      [".scratch/a b.md", hash("a")],
-      [".pi/x", hash("b")],
+      [".scratch/a b.md", { hash: hash("a"), sourced: true }],
+      [".pi/x", { hash: hash("b"), sourced: false }],
     ]);
   });
 
@@ -144,6 +143,7 @@ describe("include manifest", () => {
       "include:same": hash("1"),
       "include:stale": hash("2"),
       "include:edited": hash("3"),
+      "include:kept-then-sourced": hash("4"),
     };
     const target = {
       "include:same": hash("1"),
@@ -151,13 +151,22 @@ describe("include manifest", () => {
       "include:edited": hash("8"),
       "include:created": hash("7"),
       "include:deleted-at-source": hash("6"),
+      "include:kept-target-only": hash("5"),
+      "include:kept-then-sourced": hash("0"),
     };
     const manifest = new Map([
-      ["stale", hash("9")],
-      ["edited", hash("5")],
-      ["deleted-at-source", hash("6")],
+      ["stale", { hash: hash("9"), sourced: true }],
+      ["edited", { hash: hash("5"), sourced: true }],
+      ["deleted-at-source", { hash: hash("6"), sourced: true }],
+      ["kept-target-only", { hash: hash("5"), sourced: false }],
+      ["kept-then-sourced", { hash: hash("0"), sourced: false }],
     ]);
-    expect(includeConflicts(source, target, manifest)).toEqual(["created", "edited"]);
+    // A target-only file accepted earlier stays safe until the source would overwrite it.
+    expect(includeConflicts(source, target, manifest)).toEqual([
+      "created",
+      "edited",
+      "kept-then-sourced",
+    ]);
   });
 });
 

@@ -3,7 +3,7 @@
  * beam-me-up: move a Claude Code session to another machine over SSH.
  *
  *   bun beam.ts inspect <session-id>
- *   bun beam.ts beam <session-id> <ssh-target> [--include <path>]... [--dry-run] [--force] [--allow-live] [--herdr]
+ *   bun beam.ts beam <session-id> <ssh-target> [--include <path>]... [--dry-run] [--force-transcript] [--force-includes] [--allow-live] [--herdr]
  */
 
 import { homedir } from "node:os";
@@ -214,7 +214,8 @@ export interface BeamOptions {
   readonly sessionId: string;
   readonly includes: ReadonlyArray<string>;
   readonly dryRun: boolean;
-  readonly force: boolean;
+  readonly forceTranscript: boolean;
+  readonly forceIncludes: boolean;
   readonly allowLive: boolean;
   readonly herdr: boolean;
   readonly home: string;
@@ -337,31 +338,46 @@ const sendCode = Effect.fn("sendCode")(function* (
   const git = (...args: Array<string>) =>
     runProcessOk("git", args, { cwd: info.worktree, timeout: "5 minutes" });
   const stash = stdoutText(yield* git("stash", "create"));
+  // Per-run namespace: refs live in the shared common dir, so concurrent moves
+  // from two worktrees of one repository must not share names.
+  const ns = `refs/beam-me-up/${crypto.randomUUID()}`;
+  const receiveArgs = [
+    target.repo,
+    target.worktree,
+    info.branch,
+    info.head,
+    stash,
+    info.upstream ?? "",
+    ns,
+  ];
 
   const send = (prerequisites: ReadonlyArray<string>) =>
     Effect.scoped(
       Effect.gen(function* () {
         const bundle = yield* fs.makeTempFileScoped({ prefix: "beam-me-up-", suffix: ".bundle" });
-        const refs = ["refs/beam-me-up/head", ...(stash ? ["refs/beam-me-up/stash"] : [])];
+        const refs = [`${ns}/head`, ...(stash ? [`${ns}/stash`] : [])];
         yield* git("bundle", "create", "-q", bundle, ...refs, ...prerequisites);
-        return yield* remote.run(
-          RECEIVE_SCRIPT,
-          [target.repo, target.worktree, info.branch, info.head, stash, info.upstream ?? ""],
-          { stdin: fs.stream(bundle), timeout: "10 minutes" },
-        );
+        return yield* remote.run(RECEIVE_SCRIPT, receiveArgs, {
+          stdin: fs.stream(bundle),
+          timeout: "10 minutes",
+        });
       }),
     );
 
   const cleanup = Effect.all([
-    runProcess("git", ["update-ref", "-d", "refs/beam-me-up/head"], { cwd: info.worktree }),
-    runProcess("git", ["update-ref", "-d", "refs/beam-me-up/stash"], { cwd: info.worktree }),
+    runProcess("git", ["update-ref", "-d", `${ns}/head`], { cwd: info.worktree }),
+    runProcess("git", ["update-ref", "-d", `${ns}/stash`], { cwd: info.worktree }),
   ]).pipe(Effect.ignore);
 
   yield* Effect.gen(function* () {
-    yield* git("update-ref", "refs/beam-me-up/head", info.head);
-    if (stash) yield* git("update-ref", "refs/beam-me-up/stash", stash);
+    yield* git("update-ref", `${ns}/head`, info.head);
+    if (stash) yield* git("update-ref", `${ns}/stash`, stash);
     const incremental = hasBase && info.base ? [`^${info.base}`] : [];
-    let received = yield* send(incremental);
+    // Nothing to bundle: the target already has HEAD and there is no uncommitted work.
+    const nothingToSend = !stash && incremental.length > 0 && info.base === info.head;
+    let received = nothingToSend
+      ? yield* remote.run(RECEIVE_SCRIPT, receiveArgs, { timeout: "2 minutes" })
+      : yield* send(incremental);
     if (received.exitCode === 3 && incremental.length > 0) received = yield* send([]);
     if (received.exitCode !== 0) {
       return yield* fail(
@@ -477,13 +493,13 @@ export const beam = Effect.fn("beam")(function* (options: BeamOptions) {
   const sourceTranscript = source.sections.get(transcriptKey);
   if (!sourceTranscript) return yield* fail(`Could not read ${info.transcript.path}`);
   const transcript = transcriptRelation(sourceTranscript, before.sections.get(transcriptKey));
-  if ((transcript === "ahead" || transcript === "diverged") && !options.force) {
+  if ((transcript === "ahead" || transcript === "diverged") && !options.forceTranscript) {
     const why =
       transcript === "ahead"
         ? "has turns this machine does not (it was resumed there)"
         : "has diverged from this machine's copy";
     return yield* fail(
-      `${remote.label}'s transcript for ${sessionId} ${why}. Pass --force to overwrite it and lose those turns.`,
+      `${remote.label}'s transcript for ${sessionId} ${why}. Pass --force-transcript to overwrite it and lose those turns.`,
     );
   }
   const session = sessionDiff.length === 0 ? "in-sync" : "copy";
@@ -494,9 +510,9 @@ export const beam = Effect.fn("beam")(function* (options: BeamOptions) {
     before.hashes,
     parseManifest(text(before.sections, "probe:manifest")),
   );
-  if (conflicts.length > 0 && !options.force) {
+  if (conflicts.length > 0 && !options.forceIncludes) {
     return yield* fail(
-      `These included files changed on ${remote.label} since the last move: ${conflicts.join(", ")}. Copy them back first, drop the --include, or pass --force to overwrite them.`,
+      `These included files changed on ${remote.label} since the last move: ${conflicts.join(", ")}. Copy them back first, drop the --include, or pass --force-includes to overwrite them.`,
     );
   }
 
@@ -554,7 +570,7 @@ export const beam = Effect.fn("beam")(function* (options: BeamOptions) {
   const verified = Object.keys(source.hashes).filter((n) => !n.startsWith("probe:")).length;
 
   const manifest = yield* remote.run(WRITE_MANIFEST_SCRIPT, [target.worktree], {
-    stdin: Stream.make(new TextEncoder().encode(formatManifest(after.hashes))),
+    stdin: Stream.make(new TextEncoder().encode(formatManifest(after.hashes, source.hashes))),
     timeout: "30 seconds",
   });
   if (manifest.exitCode !== 0) {
@@ -627,8 +643,12 @@ const beamCommand = Command.make(
       Flag.withDescription("Print the plan without changing anything"),
       Flag.withDefault(false),
     ),
-    force: Flag.Boolean("force").pipe(
-      Flag.withDescription("Overwrite a different transcript already on the target"),
+    forceTranscript: Flag.Boolean("force-transcript").pipe(
+      Flag.withDescription("Overwrite a target transcript that has turns this machine lacks"),
+      Flag.withDefault(false),
+    ),
+    forceIncludes: Flag.Boolean("force-includes").pipe(
+      Flag.withDescription("Overwrite included files edited or created on the target"),
       Flag.withDefault(false),
     ),
     allowLive: Flag.Boolean("allow-live").pipe(

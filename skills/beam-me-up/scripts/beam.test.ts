@@ -34,7 +34,8 @@ const run = (overrides: Partial<BeamOptions> = {}) =>
     sessionId: SESSION,
     includes: [".scratch"],
     dryRun: false,
-    force: false,
+    forceTranscript: false,
+    forceIncludes: false,
     allowLive: false,
     herdr: false,
     home: srcHome,
@@ -160,7 +161,7 @@ describe("beam", () => {
     writeFileSync(transcript, `${readFileSync(transcript, "utf8")}{"cwd":"resumed"}\n`);
     await expect(run()).rejects.toThrow("has turns this machine does not");
 
-    const forced = await run({ force: true });
+    const forced = await run({ forceTranscript: true });
     expect(forced).toMatchObject({ actions: { session: "copy" } });
     expect(readFileSync(transcript, "utf8")).toBe(
       readFileSync(join(projects, `${SESSION}.jsonl`), "utf8"),
@@ -183,20 +184,60 @@ describe("beam", () => {
       "changed on local since the last move: .scratch/new.md, .scratch/notes.md",
     );
 
-    await run({ force: true });
+    await run({ forceIncludes: true });
     expect(readFileSync(join(dst(worktree), ".scratch", "notes.md"), "utf8")).toBe(
       "keep me\nedited here\n",
     );
-    // Moves never delete; the target-only file stays and is now recorded.
+    // Moves never delete; the target-only file stays and is recorded as target-only.
     expect(readFileSync(join(dst(worktree), ".scratch", "new.md"), "utf8")).toBe(
       "created on target\n",
     );
     expect(await run()).toMatchObject({ actions: { includeConflicts: [] } });
+
+    // It is still protected once the source would overwrite it.
+    write(join(worktree, ".scratch", "new.md"), "created on source\n");
+    await expect(run()).rejects.toThrow("since the last move: .scratch/new.md");
+    rmSync(join(worktree, ".scratch", "new.md"));
   });
 
   it("refuses a target worktree with different uncommitted changes", async () => {
     write(join(dst(worktree), "a.txt"), "diverged\n");
     await expect(run()).rejects.toThrow("has different uncommitted changes");
+  });
+});
+
+describe("beam from a main checkout on a clean branch at its base", () => {
+  const MAIN_SESSION = "2f0e0d0c-0b0a-4908-8706-050403020100";
+
+  it("clones, checks out the session branch, and sends no bundle", async () => {
+    const origin = join(root, "main-origin.git");
+    git(root, "init", "-q", "--bare", "-b", "main", origin);
+    const repo = join(srcHome, "Code", "main-checkout");
+    git(root, "clone", "-q", origin, repo);
+    write(join(repo, "readme.md"), "hi\n");
+    git(repo, "add", ".");
+    git(repo, "commit", "-q", "-m", "init");
+    git(repo, "push", "-q", "origin", "HEAD:main");
+    git(repo, "remote", "set-head", "origin", "main");
+    // The session's branch has no commits of its own: HEAD equals the bundle base.
+    git(repo, "checkout", "-q", "-b", "topic");
+    write(
+      join(srcHome, ".claude", "projects", encodeProjectDir(repo), `${MAIN_SESSION}.jsonl`),
+      `${JSON.stringify({ cwd: repo, gitBranch: "topic" })}\n`,
+    );
+
+    const result = await run({ sessionId: MAIN_SESSION, includes: [] });
+    expect(result).toMatchObject({
+      actions: { repo: "clone", code: "create" },
+      moved: { code: "branch" },
+    });
+    const target = dst(repo);
+    expect(git(target, "symbolic-ref", "--short", "HEAD")).toBe("topic");
+    expect(git(target, "rev-parse", "HEAD")).toBe(git(repo, "rev-parse", "HEAD"));
+    expect(git(target, "for-each-ref", "refs/beam-me-up")).toBe("");
+    expect(await run({ sessionId: MAIN_SESSION, includes: [] })).toMatchObject({
+      actions: { code: "in-sync", session: "in-sync" },
+    });
   });
 });
 

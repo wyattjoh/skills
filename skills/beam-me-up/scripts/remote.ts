@@ -206,17 +206,27 @@ git -C "$repo" symbolic-ref HEAD "refs/heads/$main"
 git -C "$repo" reset -q --hard`;
 
 /**
- * Reads a bundle on stdin, creates or reuses the worktree on the source branch at
- * the source HEAD, then reapplies uncommitted changes from the stash commit.
+ * Reads a bundle on stdin (empty when the target already has every commit
+ * needed), creates or reuses the worktree on the source branch at the source
+ * HEAD, then reapplies uncommitted changes from the stash commit. Bundle refs
+ * live under a per-run namespace so concurrent moves from one repository cannot
+ * collide, and are removed however the script exits.
  * Exits 3 when the bundle's prerequisites are missing.
- * Args: repo worktree branch head stash upstream
+ * Args: repo worktree branch head stash upstream ref-namespace
  */
-export const RECEIVE_SCRIPT = `repo=$1 wt=$2 branch=$3 head=$4 stash=$5 upstream=$6
+export const RECEIVE_SCRIPT = `repo=$1 wt=$2 branch=$3 head=$4 stash=$5 upstream=$6 ns=$7
 bundle=$(mktemp "\${TMPDIR:-/tmp}/beam-me-up.XXXXXX")
-trap 'rm -f "$bundle"' EXIT
+cleanup() {
+  rm -f "$bundle"
+  git -C "$repo" for-each-ref --format='%(refname)' "$ns/" 2>/dev/null |
+    while IFS= read -r ref; do git -C "$repo" update-ref -d "$ref"; done
+}
+trap cleanup EXIT
 cat >"$bundle"
-git -C "$repo" bundle verify -q "$bundle" >/dev/null 2>&1 || exit 3
-git -C "$repo" fetch -q "$bundle" "+refs/beam-me-up/*:refs/beam-me-up/*"
+if [ -s "$bundle" ]; then
+  git -C "$repo" bundle verify -q "$bundle" >/dev/null 2>&1 || exit 3
+  git -C "$repo" fetch -q "$bundle" "+$ns/*:$ns/*"
+fi
 if [ ! -d "$wt" ]; then
   mkdir -p "$(dirname "$wt")"
   if git -C "$repo" rev-parse -q --verify "refs/heads/$branch" >/dev/null; then
@@ -224,14 +234,17 @@ if [ ! -d "$wt" ]; then
   else
     git -C "$repo" worktree add -q -b "$branch" "$wt" "$head"
   fi
+elif [ "$wt" = "$repo" ] && { [ "$(git -C "$wt" rev-parse HEAD)" != "$head" ] ||
+  [ "$(git -C "$wt" symbolic-ref -q --short HEAD || true)" != "$branch" ]; }; then
+  # A session in the main checkout: the clone just made sits on the default branch.
+  # (An existing checkout on another branch was refused before anything was sent.)
+  git -C "$wt" checkout -q -B "$branch" "$head"
 fi
 [ "$(git -C "$wt" rev-parse HEAD)" = "$head" ] || { echo "$wt is not at $head" >&2; exit 4; }
 if [ -n "$upstream" ] && git -C "$repo" rev-parse -q --verify "refs/remotes/$upstream" >/dev/null; then
   git -C "$wt" branch -q --set-upstream-to="$upstream"
 fi
-if [ -n "$stash" ]; then git -C "$wt" stash apply -q --index "$stash" >/dev/null; fi
-git -C "$repo" update-ref -d refs/beam-me-up/head 2>/dev/null || true
-git -C "$repo" update-ref -d refs/beam-me-up/stash 2>/dev/null || true`;
+if [ -n "$stash" ]; then git -C "$wt" stash apply -q --index "$stash" >/dev/null; fi`;
 
 /**
  * Extracts a tar from stdin into a directory, creating it first.
