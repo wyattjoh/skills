@@ -32,6 +32,7 @@ import {
   inspectSession,
   mapToRemoteHome,
   parseSections,
+  transcriptRelation,
 } from "./session.ts";
 
 /**
@@ -440,10 +441,16 @@ export const beam = Effect.fn("beam")(function* (options: BeamOptions) {
   // Decide what the transcript needs.
   const transcriptKey = `session:${sessionId}.jsonl`;
   const sessionDiff = diffSections(source.hashes, before.hashes, ["session:"]);
-  const remoteTranscript = before.hashes[transcriptKey];
-  if (remoteTranscript && remoteTranscript !== source.hashes[transcriptKey] && !options.force) {
+  const sourceTranscript = source.sections.get(transcriptKey);
+  if (!sourceTranscript) return yield* fail(`Could not read ${info.transcript.path}`);
+  const transcript = transcriptRelation(sourceTranscript, before.sections.get(transcriptKey));
+  if ((transcript === "ahead" || transcript === "diverged") && !options.force) {
+    const why =
+      transcript === "ahead"
+        ? "has turns this machine does not (it was resumed there)"
+        : "has diverged from this machine's copy";
     return yield* fail(
-      `${remote.label} already has a different transcript for ${sessionId} (it may have been resumed there). Pass --force to overwrite it.`,
+      `${remote.label}'s transcript for ${sessionId} ${why}. Pass --force to overwrite it and lose those turns.`,
     );
   }
   const session = sessionDiff.length === 0 ? "in-sync" : "copy";
@@ -458,7 +465,7 @@ export const beam = Effect.fn("beam")(function* (options: BeamOptions) {
       projectsDir: info.projectsDir,
     },
     destination: target,
-    actions: { code, includes, session },
+    actions: { code, includes, session, transcript },
   };
   if (options.dryRun) return { dryRun: true, ...plan };
 

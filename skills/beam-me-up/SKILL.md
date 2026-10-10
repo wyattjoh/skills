@@ -34,7 +34,7 @@ The script is idempotent: re-running it after a partial failure skips whatever a
 Each refusal names its fix. These need the user's decision rather than a flag added on your own:
 
 - **Session looks live** (lock PID or Herdr pane): ask the user to exit it. `--allow-live` copies a transcript that may still grow.
-- **Different transcript on the target**: the session was probably resumed there. `--force` overwrites those turns, so confirm first.
+- **Target transcript has turns the source lacks, or has diverged**: the session was resumed there. `--force` overwrites those turns, so confirm first. An older copy of the source's transcript on the target is replaced without `--force`.
 - **Target worktree diverged** (other branch, commit, or uncommitted changes): the user resolves it on the target.
 - **SSH refused on a Mac target**: the user turns on System Settings → General → Sharing → Remote Login. Tailscale SSH only serves from the open-source `tailscaled` build, not the Mac apps.
 - **Tool missing on the target**: put its directory on PATH in the target's non-interactive shell startup (`~/.zshenv` for zsh).

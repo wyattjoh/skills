@@ -142,6 +142,32 @@ export const diffSections = (
     .toSorted();
 };
 
+/**
+ * How the target's transcript relates to the source's. Transcripts are
+ * append-only, so a target copy that is a byte prefix of the source is an
+ * earlier version (`behind`) and safe to replace; one the source is a prefix of
+ * gained turns on the target (`ahead`); anything else has `diverged`.
+ */
+export type TranscriptRelation = "missing" | "same" | "behind" | "ahead" | "diverged";
+
+const isPrefix = (prefix: Uint8Array, bytes: Uint8Array): boolean =>
+  prefix.length <= bytes.length &&
+  Buffer.from(bytes.buffer, bytes.byteOffset, prefix.length).equals(prefix);
+
+/**
+ * Classifies the target transcript against the source transcript.
+ */
+export const transcriptRelation = (
+  source: Uint8Array,
+  target: Uint8Array | undefined,
+): TranscriptRelation => {
+  if (target === undefined) return "missing";
+  if (source.length === target.length) return isPrefix(target, source) ? "same" : "diverged";
+  if (isPrefix(target, source)) return "behind";
+  if (isPrefix(source, target)) return "ahead";
+  return "diverged";
+};
+
 // ─── Transcript parsing ──────────────────────────────────────
 
 const TranscriptLine = Schema.Struct({

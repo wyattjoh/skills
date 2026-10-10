@@ -139,10 +139,20 @@ describe("beam", () => {
     });
   });
 
-  it("refuses to overwrite a transcript that changed on the target unless forced", async () => {
+  it("re-syncs a session that kept going on the source without --force", async () => {
+    const source = join(projects, `${SESSION}.jsonl`);
+    writeFileSync(source, `${readFileSync(source, "utf8")}{"cwd":"${worktree}","more":1}\n`);
+    const result = await run();
+    expect(result).toMatchObject({ actions: { session: "copy", transcript: "behind" } });
+    expect(readFileSync(join(dstProjects(), `${SESSION}.jsonl`), "utf8")).toBe(
+      readFileSync(source, "utf8"),
+    );
+  });
+
+  it("refuses to overwrite a transcript that gained turns on the target unless forced", async () => {
     const transcript = join(dstProjects(), `${SESSION}.jsonl`);
     writeFileSync(transcript, `${readFileSync(transcript, "utf8")}{"cwd":"resumed"}\n`);
-    await expect(run()).rejects.toThrow("Pass --force to overwrite it");
+    await expect(run()).rejects.toThrow("has turns this machine does not");
 
     const forced = await run({ force: true });
     expect(forced).toMatchObject({ actions: { session: "copy" } });

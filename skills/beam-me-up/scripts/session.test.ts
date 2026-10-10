@@ -8,7 +8,21 @@ import {
   parseLockPid,
   parseSections,
   transcriptContext,
+  transcriptRelation,
 } from "./session.ts";
+
+const bytes = (s: string) => new TextEncoder().encode(s);
+
+describe("transcriptRelation", () => {
+  it("classifies every relation between the two copies", () => {
+    expect(transcriptRelation(bytes("ab\n"), undefined)).toBe("missing");
+    expect(transcriptRelation(bytes("ab\n"), bytes("ab\n"))).toBe("same");
+    expect(transcriptRelation(bytes("ab\ncd\n"), bytes("ab\n"))).toBe("behind");
+    expect(transcriptRelation(bytes("ab\n"), bytes("ab\ncd\n"))).toBe("ahead");
+    expect(transcriptRelation(bytes("ab\ncd\n"), bytes("ab\nxy\n"))).toBe("diverged");
+    expect(transcriptRelation(bytes("ab\ncd\n"), bytes("xy\n"))).toBe("diverged");
+  });
+});
 
 describe("encodeProjectDir", () => {
   it("matches Claude Code's folder for a worktree with + and . in its path", () => {
