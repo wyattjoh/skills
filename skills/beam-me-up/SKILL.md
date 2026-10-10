@@ -1,8 +1,8 @@
 ---
 name: beam-me-up
 description: Moves a Claude Code session, by session ID, to another machine over SSH, recreating its worktree and transcript so it resumes there. Use only when the user explicitly invokes /beam-me-up.
-argument-hint: "<session-id> <ssh-target> [--herdr]"
-compatibility: Requires SSH access from this machine to the target, Git on both machines, and the session's code reachable through a shared Git remote. The optional Herdr step requires Herdr on the target.
+argument-hint: "<session-id> <ssh-target> [--include <path>]... [--herdr]"
+compatibility: Requires Bun and key-based SSH from this machine to the target, and POSIX sh, git and tar on the target (plus herdr and claude for --herdr). The target user's login shell must accept POSIX single-quoted arguments (sh, bash, zsh).
 disable-model-invocation: true
 ---
 
@@ -12,37 +12,31 @@ disable-model-invocation: true
 
 ## Goal
 
-The session resumes on the target with `claude --resume <session-id>` from a worktree identical to the source's: same branch and commit, same ignored local files, and the full transcript in the place Claude Code looks for it.
+The session resumes on the target from a worktree identical to the source's: same branch and commit, the same staged and unstaged changes, the ignored files the session relied on, and the full transcript where `claude --resume` looks for it.
 
-Done when:
+Done when `beam` exits 0 and its JSON summary reports every item verified, and the user has either the Herdr agent it started or the printed `resume` command.
 
-- The target worktree's `HEAD` matches the source commit and its branch tracks the same remote branch.
-- Every ignored, untracked file the session relied on (such as `.scratch/`) is in the target worktree.
-- The transcript `<id>.jsonl` has the same checksum on both machines, and its sidecar directory `<id>/` (subagent and tool-result files) is beside it on the target.
-- The user has the exact `cd` and `claude --resume` commands for the target, plus any caveats below that apply.
+## Run it
 
-## Locate the session
+```bash
+bun $SKILL_DIR/scripts/beam.ts inspect <session-id>
+bun $SKILL_DIR/scripts/beam.ts beam <session-id> <ssh-target> [--include <path>]... [--dry-run] [--herdr]
+```
 
-- Each transcript sits at `~/.claude/projects/<encoded-dir>/<id>.jsonl`. The encoded name is the directory `claude` was launched from, with every non-alphanumeric character replaced by `-`. A `+` or `.` in a worktree name also becomes `-`, so derive the real path from the transcript's `cwd` and `gitBranch` fields, not by decoding the folder name. Later `cwd` values can be subdirectories; the shortest one is the launch directory.
-- A worktree's `locked` file in its Git admin directory (`git rev-parse --git-dir`) can name the session's PID. A live PID means the session may still be writing, so ask the user to exit it before copying, or warn that turns added after the copy stay behind.
+1. **Inspect.** `inspect` reports the session's worktree, branch, dirty state, untracked files, ignored entries with sizes, and whether it is still live. Choose `--include` paths from its `ignored` and `untracked` lists: the session's own working files (like `.scratch`), never dependency or build directories. Confirm the list with the user when it is not obvious.
+2. **Dry run.** `--dry-run` shows the planned `code`, `includes` and `session` actions without changing the target.
+3. **Beam.** The real run moves the branch history and uncommitted changes as a Git bundle, so nothing needs to be pushed. It copies the includes and transcript, then compares tree hashes and file checksums on both machines. Pass `--herdr` when the user wants the session resumed on the target. It opens a matching Herdr workspace there and starts `claude --resume` as a Herdr agent.
 
-## Move the code
+The script is idempotent: re-running it after a partial failure skips whatever already matches.
 
-- Git moves tracked work. The branch is committed and pushed before the target fetches it; uncommitted changes need the user's go-ahead for a WIP commit.
-- On the target, reuse an existing clone at the same repository path, or clone there. Create the worktree at the same path relative to the repository root, on the same branch name, tracking the remote branch.
-- Copy ignored files that matter with `rsync`. Check `git status --ignored` on the source, and leave dependency and build directories to be rebuilt.
+## When it refuses
 
-## Move the transcript
+Each refusal names its fix. These need the user's decision rather than a flag added on your own:
 
-When the target's home path and repository path match the source, the encoded directory name is identical. Otherwise, encode the target's launch directory and use that name, because `--resume` looks up sessions by the current directory.
+- **Session looks live** (lock PID or Herdr pane): ask the user to exit it. `--allow-live` copies a transcript that may still grow.
+- **Different transcript on the target**: the session was probably resumed there. `--force` overwrites those turns, so confirm first.
+- **Target worktree diverged** (other branch, commit, or uncommitted changes): the user resolves it on the target.
+- **SSH refused on a Mac target**: the user turns on System Settings → General → Sharing → Remote Login. Tailscale SSH only serves from the open-source `tailscaled` build, not the Mac apps.
+- **Tool missing on the target**: put its directory on PATH in the target's non-interactive shell startup (`~/.zshenv` for zsh).
 
-## SSH gotchas
-
-- If SSH is refused on a macOS target, have the user turn on System Settings → General → Sharing → Remote Login. Tailscale SSH serves only from the open-source `tailscaled` build, not the macOS App Store or standalone apps, so Remote Login is the default.
-- macOS ships an old `rsync` without `--mkpath`. Create remote directories with `ssh <target> mkdir -p` first.
-- Non-interactive SSH shells skip the login profile, so tools installed through version managers (mise shims, `~/.local/bin`) can be missing from `PATH`. Prepend their directories in the remote command.
-- Remote `git fetch` can hang on an agent or host-key prompt. Run it with `GIT_SSH_COMMAND="ssh -o BatchMode=yes"` and a `timeout`, so it fails with an error you can read.
-
-## Herdr on the target (`--herdr`)
-
-Call the Skill tool with `herdr`. `herdr --machine` needs a saved profile; without one, run `herdr` over SSH on the target, where it talks to that machine's running server. Create a workspace with `--cwd` set to the new worktree, a label named after the branch, and `--no-focus`. Start `claude --resume` in it only when the user asks.
+If `--herdr` reports `status: "blocked"`, show the user the returned screen excerpt. Do not answer the prompt for them.

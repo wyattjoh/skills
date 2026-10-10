@@ -1,0 +1,13 @@
+{
+  "name": "@wyattjoh/beam-me-up-skill",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "bun test"
+  },
+  "dependencies": {
+    "@effect/platform-bun": "4.0.0",
+    "effect": "4.0.0"
+  }
+}
