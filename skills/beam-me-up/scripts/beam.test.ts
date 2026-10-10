@@ -80,9 +80,15 @@ beforeAll(() => {
   write(join(worktree, ".scratch", "notes.md"), "keep me\n");
 
   projects = join(srcHome, ".claude", "projects", encodeProjectDir(worktree));
+  // Stray files beside the project folders (macOS drops .DS_Store) must not break lookup;
+  // "!" sorts before "-" so readdir visits it first.
+  write(join(srcHome, ".claude", "projects", "!stray"), "");
+  write(join(srcHome, ".claude", "projects", ".DS_Store"), "");
   write(
     join(projects, `${SESSION}.jsonl`),
     [
+      // Like a real session that started in the repository and moved into the worktree.
+      JSON.stringify({ type: "user", cwd: repo, gitBranch: "main" }),
       JSON.stringify({ type: "user", cwd: worktree, gitBranch: "feat" }),
       JSON.stringify({ type: "assistant", cwd: join(worktree, ".scratch"), gitBranch: "feat" }),
     ].join("\n") + "\n",
@@ -191,5 +197,38 @@ describe("beam", () => {
   it("refuses a target worktree with different uncommitted changes", async () => {
     write(join(dst(worktree), "a.txt"), "diverged\n");
     await expect(run()).rejects.toThrow("has different uncommitted changes");
+  });
+});
+
+describe("beam from a repository with no remote", () => {
+  const LOCAL_SESSION = "1f0e0d0c-0b0a-4908-8706-050403020100";
+
+  it("seeds the target with every local branch and no remote", async () => {
+    const repo = join(srcHome, "Code", "local-only");
+    git(root, "init", "-q", "-b", "main", repo);
+    write(join(repo, "readme.md"), "local\n");
+    git(repo, "add", ".");
+    git(repo, "commit", "-q", "-m", "init");
+    git(repo, "branch", "side");
+    const wt = join(repo, ".claude", "worktrees", "feat");
+    git(repo, "worktree", "add", "-q", "-b", "wyattjoh/feat", wt);
+    write(join(wt, "feature.md"), "wip\n");
+    git(wt, "add", ".");
+    git(wt, "commit", "-q", "-m", "feature");
+    write(
+      join(srcHome, ".claude", "projects", encodeProjectDir(wt), `${LOCAL_SESSION}.jsonl`),
+      `${JSON.stringify({ cwd: wt, gitBranch: "wyattjoh/feat" })}\n`,
+    );
+
+    const result = await run({ sessionId: LOCAL_SESSION, includes: [] });
+    expect(result).toMatchObject({ actions: { repo: "seed", code: "create" } });
+
+    const target = dst(repo);
+    expect(git(target, "remote")).toBe("");
+    expect(git(target, "symbolic-ref", "--short", "HEAD")).toBe("main");
+    expect(readFileSync(join(target, "readme.md"), "utf8")).toBe("local\n");
+    expect(git(target, "branch", "--format=%(refname:short)")).toBe("main\nside\nwyattjoh/feat");
+    expect(git(dst(wt), "rev-parse", "HEAD")).toBe(git(wt, "rev-parse", "HEAD"));
+    expect(git(dst(wt), "status", "--porcelain")).toBe("");
   });
 });

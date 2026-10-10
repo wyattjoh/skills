@@ -18,6 +18,7 @@ import {
   HOME_SCRIPT,
   PREPARE_SCRIPT,
   RECEIVE_SCRIPT,
+  SEED_SCRIPT,
   Remote,
   STATE_SCRIPT,
   WRITE_MANIFEST_SCRIPT,
@@ -294,6 +295,32 @@ const sendTar = Effect.fn("sendTar")(function* (
 });
 
 /**
+ * Creates the repository on a target that has no clone and nothing to clone
+ * from, using a full bundle of every local branch.
+ */
+const sendSeed = Effect.fn("sendSeed")(function* (remote: Shell, info: SessionInfo, repo: string) {
+  const fs = yield* FileSystem.FileSystem;
+  const received = yield* Effect.scoped(
+    Effect.gen(function* () {
+      const bundle = yield* fs.makeTempFileScoped({ prefix: "beam-me-up-", suffix: ".bundle" });
+      yield* runProcessOk("git", ["bundle", "create", "-q", bundle, "--branches"], {
+        cwd: info.repo,
+        timeout: "5 minutes",
+      });
+      return yield* remote.run(SEED_SCRIPT, [repo, info.repoBranch ?? ""], {
+        stdin: fs.stream(bundle),
+        timeout: "10 minutes",
+      });
+    }),
+  );
+  if (received.exitCode !== 0) {
+    return yield* fail(
+      `Creating ${repo} on ${remote.label} failed (exit ${received.exitCode}): ${received.stderr.trim()}`,
+    );
+  }
+});
+
+/**
  * Bundles the branch HEAD and a stash commit of uncommitted work, then has the
  * target fetch it and rebuild the worktree. Falls back to a full bundle once
  * when the target lacks the incremental bundle's base.
@@ -471,6 +498,14 @@ export const beam = Effect.fn("beam")(function* (options: BeamOptions) {
     );
   }
 
+  const repoAction =
+    text(before.sections, "probe:repo") === "1" ? "present" : info.originUrl ? "clone" : "seed";
+  if (repoAction === "seed" && !info.repoBranch) {
+    return yield* fail(
+      `${info.repo} has no origin to clone from and a detached main checkout, so there is no branch to seed ${remote.label} with`,
+    );
+  }
+
   const plan = {
     sessionId,
     target: remote.label,
@@ -481,7 +516,7 @@ export const beam = Effect.fn("beam")(function* (options: BeamOptions) {
       projectsDir: info.projectsDir,
     },
     destination: target,
-    actions: { code, includes, session, transcript, includeConflicts: conflicts },
+    actions: { repo: repoAction, code, includes, session, transcript, includeConflicts: conflicts },
   };
   if (options.dryRun) return { dryRun: true, ...plan };
 
@@ -495,7 +530,10 @@ export const beam = Effect.fn("beam")(function* (options: BeamOptions) {
       `Preparing ${target.repo} on ${remote.label} failed: ${prepared.stderr.trim()}`,
     );
   }
-  const hasBase = stdoutText(prepared).endsWith("has-base");
+  const seeded = stdoutText(prepared).endsWith("needs-seed");
+  if (seeded) yield* sendSeed(remote, info, target.repo);
+  // A seed carries every local branch, so the base is there whenever one exists.
+  const hasBase = seeded || stdoutText(prepared).endsWith("has-base");
 
   const codeMoved = code === "in-sync" ? "nothing" : yield* sendCode(remote, info, target, hasBase);
   if (includes.length > 0) yield* sendTar(remote, info.worktree, includes, target.worktree);

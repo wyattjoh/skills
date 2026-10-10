@@ -5,7 +5,7 @@ import {
   encodeProjectDir,
   formatManifest,
   includeConflicts,
-  launchDirFromCwds,
+  launchDirFor,
   mapToRemoteHome,
   parseLockPid,
   parseManifest,
@@ -39,13 +39,14 @@ describe("encodeProjectDir", () => {
   });
 });
 
-describe("launchDirFromCwds", () => {
-  it("picks the shortest recorded cwd", () => {
-    expect(launchDirFromCwds(["/repo/wt/.scratch", "/repo/wt", "/repo/wt/sub"])).toBe("/repo/wt");
+describe("launchDirFor", () => {
+  it("picks the cwd matching the project folder when the session moved into a worktree", () => {
+    const cwds = ["/repo", "/repo/.claude/worktrees/x+y", "/repo/.claude/worktrees/x+y/sub"];
+    expect(launchDirFor(cwds, "-repo--claude-worktrees-x-y")).toBe("/repo/.claude/worktrees/x+y");
   });
 
-  it("returns undefined when no cwd was recorded", () => {
-    expect(launchDirFromCwds([])).toBeUndefined();
+  it("returns undefined when no cwd matches the folder", () => {
+    expect(launchDirFor(["/elsewhere"], "-repo")).toBeUndefined();
   });
 });
 

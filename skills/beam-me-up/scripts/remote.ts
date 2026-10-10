@@ -176,16 +176,34 @@ fi`;
  * Args: repo origin-url base projects-dir
  */
 export const PREPARE_SCRIPT = `repo=$1 url=$2 base=$3 pdir=$4
+mkdir -p "$pdir"
 if ! git -C "$repo" rev-parse --git-dir >/dev/null 2>&1; then
-  [ -n "$url" ] || { echo "no clone at $repo and the source has no origin URL" >&2; exit 2; }
+  [ -n "$url" ] || { echo needs-seed; exit 0; }
   mkdir -p "$(dirname "$repo")"
   git clone -q "$url" "$repo"
 fi
 if [ -n "$base" ] && ! git -C "$repo" cat-file -e "$base^{commit}" 2>/dev/null; then
   git -C "$repo" fetch -q origin || true
 fi
-mkdir -p "$pdir"
 if [ -n "$base" ] && git -C "$repo" cat-file -e "$base^{commit}" 2>/dev/null; then echo has-base; else echo no-base; fi`;
+
+/**
+ * Creates the repository from a full bundle on stdin when the source has no
+ * remote to clone from: every local branch, with the main checkout on the
+ * source's branch. No remote is added, matching the source.
+ * Args: repo main-branch
+ */
+export const SEED_SCRIPT = `repo=$1 main=$2
+[ ! -e "$repo" ] || { echo "$repo exists but is not a Git repository" >&2; exit 2; }
+bundle=$(mktemp "\${TMPDIR:-/tmp}/beam-me-up.XXXXXX")
+trap 'rm -f "$bundle"' EXIT
+cat >"$bundle"
+mkdir -p "$repo"
+git -C "$repo" init -q
+git -C "$repo" bundle verify -q "$bundle" >/dev/null 2>&1 || { echo "the seed bundle is incomplete" >&2; exit 3; }
+git -C "$repo" fetch -q --update-head-ok "$bundle" "+refs/heads/*:refs/heads/*"
+git -C "$repo" symbolic-ref HEAD "refs/heads/$main"
+git -C "$repo" reset -q --hard`;
 
 /**
  * Reads a bundle on stdin, creates or reuses the worktree on the source branch at

@@ -23,11 +23,15 @@ export class SessionError extends Schema.TaggedError<SessionError>()("SessionErr
 export const encodeProjectDir = (dir: string): string => dir.replace(/[^A-Za-z0-9]/g, "-");
 
 /**
- * Picks the directory `claude` was launched from out of every `cwd` recorded in a
- * transcript: later entries can be subdirectories, so the shortest path wins.
+ * Picks the directory a transcript is filed under out of every `cwd` it records:
+ * the one that encodes to its `~/.claude/projects/` folder name. Neither first
+ * nor shortest works, since a session can start in a repository and move into a
+ * worktree (Claude Code then refiles it), or `cd` into subdirectories.
  */
-export const launchDirFromCwds = (cwds: ReadonlyArray<string>): string | undefined =>
-  [...new Set(cwds)].toSorted((a, b) => a.length - b.length || a.localeCompare(b))[0];
+export const launchDirFor = (
+  cwds: ReadonlyArray<string>,
+  projectFolder: string,
+): string | undefined => cwds.find((cwd) => encodeProjectDir(cwd) === projectFolder);
 
 /**
  * Extracts the PID from a Git worktree `locked` file written by Claude Code,
@@ -253,6 +257,10 @@ export interface SessionInfo {
   readonly launchDir: string;
   readonly worktree: string;
   readonly repo: string;
+  /**
+   * Branch checked out in the repository's main worktree; seeds a target that has no clone.
+   */
+  readonly repoBranch: string | undefined;
   readonly isLinkedWorktree: boolean;
   readonly branch: string;
   readonly head: string;
@@ -338,7 +346,9 @@ export const inspectSession = Effect.fn("session.inspect")(function* (
   const projects = yield* fs.readDirectory(projectsRoot).pipe(mapFs);
   let projectsDir: string | undefined;
   for (const project of projects) {
-    if (yield* fs.exists(path.join(projectsRoot, project, `${sessionId}.jsonl`)).pipe(mapFs)) {
+    // Entries such as .DS_Store are files, and checking a path beneath one errors.
+    const candidate = path.join(projectsRoot, project, `${sessionId}.jsonl`);
+    if (yield* fs.exists(candidate).pipe(Effect.orElseSucceed(() => false))) {
       projectsDir = path.join(projectsRoot, project);
       break;
     }
@@ -348,11 +358,10 @@ export const inspectSession = Effect.fn("session.inspect")(function* (
   const transcriptPath = path.join(projectsDir, `${sessionId}.jsonl`);
   const jsonl = yield* fs.readFileString(transcriptPath).pipe(mapFs);
   const { cwds, branches } = transcriptContext(jsonl);
-  const launchDir = launchDirFromCwds(cwds);
-  if (!launchDir) return yield* fail(`${transcriptPath} records no cwd`);
-  if (encodeProjectDir(launchDir) !== path.basename(projectsDir)) {
+  const launchDir = launchDirFor(cwds, path.basename(projectsDir));
+  if (!launchDir) {
     return yield* fail(
-      `Launch directory ${launchDir} does not encode to ${path.basename(projectsDir)}`,
+      `None of the directories ${transcriptPath} records (${[...new Set(cwds)].join(", ") || "none"}) encodes to its folder name`,
     );
   }
   if (!(yield* fs.exists(launchDir).pipe(mapFs))) {
@@ -397,17 +406,19 @@ export const inspectSession = Effect.fn("session.inspect")(function* (
     unstaged: tracked.filter((l) => l[1] !== " ").length,
   };
 
-  const ignoredPaths = (yield* git(
-    "ls-files",
-    "--others",
-    "--ignored",
-    "--exclude-standard",
-    "--directory",
-    "-z",
+  // Run from the worktree root so paths are worktree-relative even when the
+  // session launched in a subdirectory.
+  const listed = (yield* command(
+    "git",
+    ["ls-files", "--others", "--ignored", "--exclude-standard", "--directory", "-z"],
+    worktree,
   ))
     .split("\0")
     .filter(Boolean)
     .map((p) => p.replace(/\/$/, ""));
+  // A nested .gitignore can list entries inside an already-listed directory.
+  const ignoredPaths = listed.filter((p) => !listed.some((q) => p.startsWith(`${q}/`)));
+  const repoBranch = yield* tryCommand("git", ["symbolic-ref", "-q", "--short", "HEAD"], repo);
   const ignored: Array<{ path: string; bytes: number }> = [];
   for (const p of ignoredPaths) {
     ignored.push({ path: p, bytes: yield* directoryBytes(path.join(worktree, p)).pipe(mapFs) });
@@ -427,6 +438,7 @@ export const inspectSession = Effect.fn("session.inspect")(function* (
     launchDir,
     worktree,
     repo,
+    repoBranch,
     isLinkedWorktree: gitDir !== commonDir,
     branch,
     head,
