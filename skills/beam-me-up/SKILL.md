@@ -1,8 +1,8 @@
 ---
 name: beam-me-up
 description: Moves a Claude Code session, by session ID, to another machine over SSH, recreating its worktree and transcript so it resumes there. Use only when the user explicitly invokes /beam-me-up.
-argument-hint: "<session-id> <ssh-target> [--include <path>]... [--herdr]"
-compatibility: Requires Bun and key-based SSH from this machine to the target, and POSIX sh, git and tar on the target (plus herdr and claude for --herdr). The target user's login shell must accept POSIX single-quoted arguments (sh, bash, zsh).
+argument-hint: "<session-id> <ssh-target> [--include <path>]... [--dry-run] [--allow-live] [--force-transcript] [--force-includes] [--herdr]"
+compatibility: Requires Bun and key-based SSH from this machine to the target, and POSIX sh, git, tar, find, wc, mktemp and cat on the target (plus herdr and claude for --herdr). The target user's login shell must accept POSIX single-quoted arguments (sh, bash, zsh).
 disable-model-invocation: true
 ---
 
@@ -33,7 +33,7 @@ The script is idempotent: re-running it after a partial failure skips whatever a
 
 Each refusal names its fix. These need the user's decision rather than a flag added on your own:
 
-- **Session looks live** (lock PID or Herdr pane): ask the user to exit it. `--allow-live` copies a transcript that may still grow.
+- **Session looks live** (lock PID or Herdr pane): ask the user to exit it and run the beam from a different session. Beaming the session you are running in needs `--allow-live`, and the copy then lacks the final turns, so a later beam reports it as diverged. Liveness is only detected for linked worktrees and Herdr panes.
 - **Target transcript has turns the source lacks, or has diverged**: the session was resumed there. `--force-transcript` overwrites those turns, so confirm first. An older copy of the source's transcript on the target is replaced without it.
 - **Included files changed on the target** since the last move (edited or created there): copy them back or drop that `--include`. `--force-includes` overwrites them, so confirm first.
 - **Target worktree diverged** (other branch, commit, or uncommitted changes): the user resolves it on the target.

@@ -148,18 +148,24 @@ section probe:wt_dir flag test -d "$wt"
 section probe:repo flag git -C "$repo" rev-parse --git-dir
 section probe:branch_sha git -C "$repo" rev-parse -q --verify "refs/heads/$branch"
 section probe:has_base flag git -C "$repo" cat-file -e "$base^{commit}"
-if git -C "$wt" rev-parse --is-inside-work-tree >/dev/null 2>&1; then
-  s=$(git -C "$wt" stash create 2>/dev/null || true)
+# Only a worktree rooted at $wt counts; a leftover directory inside another checkout does not.
+if [ -d "$wt" ] && [ "$(cd "$wt" && pwd -P)" = "$(git -C "$wt" rev-parse --show-toplevel 2>/dev/null)" ]; then
   section code:head git -C "$wt" rev-parse HEAD
   section code:branch git -C "$wt" symbolic-ref --short HEAD
   section probe:head_tree git -C "$wt" rev-parse "HEAD^{tree}"
   section probe:manifest cat "$(git -C "$wt" rev-parse --absolute-git-dir)/beam-me-up-includes"
-  if [ -n "$s" ]; then
-    section code:worktree_tree git -C "$wt" rev-parse "$s^{tree}"
-    section code:index_tree git -C "$wt" rev-parse "$s^2^{tree}"
+  # Empty output means a clean tree; a failure (say, a stale index.lock) must not.
+  if s=$(git -C "$wt" stash create 2>/dev/null); then
+    if [ -n "$s" ]; then
+      section code:worktree_tree git -C "$wt" rev-parse "$s^{tree}"
+      section code:index_tree git -C "$wt" rev-parse "$s^2^{tree}"
+    else
+      section code:worktree_tree git -C "$wt" rev-parse "HEAD^{tree}"
+      section code:index_tree git -C "$wt" rev-parse "HEAD^{tree}"
+    fi
   else
-    section code:worktree_tree git -C "$wt" rev-parse "HEAD^{tree}"
-    section code:index_tree git -C "$wt" rev-parse "HEAD^{tree}"
+    section code:worktree_tree false
+    section code:index_tree false
   fi
   for p in "$@"; do
     if [ -d "$wt/$p" ]; then (cd "$wt" && find "$p" -type f); elif [ -f "$wt/$p" ]; then printf '%s\\n' "$p"; fi
@@ -171,18 +177,20 @@ if [ -d "$pdir/$sid" ]; then
 fi`;
 
 /**
- * Clones the repository if it is missing, fetches origin if the bundle base is
- * missing, and creates the transcript directory. Prints \`has-base\` or \`no-base\`.
- * Args: repo origin-url base projects-dir
+ * Clones the repository if it is missing, fetches origin if the bundle base or
+ * the branch's upstream ref is missing, and creates the transcript directory.
+ * Prints \`has-base\`, \`no-base\` or \`needs-seed\`.
+ * Args: repo origin-url base projects-dir upstream
  */
-export const PREPARE_SCRIPT = `repo=$1 url=$2 base=$3 pdir=$4
+export const PREPARE_SCRIPT = `repo=$1 url=$2 base=$3 pdir=$4 upstream=$5
 mkdir -p "$pdir"
 if ! git -C "$repo" rev-parse --git-dir >/dev/null 2>&1; then
   [ -n "$url" ] || { echo needs-seed; exit 0; }
   mkdir -p "$(dirname "$repo")"
   git clone -q "$url" "$repo"
 fi
-if [ -n "$base" ] && ! git -C "$repo" cat-file -e "$base^{commit}" 2>/dev/null; then
+if { [ -n "$base" ] && ! git -C "$repo" cat-file -e "$base^{commit}" 2>/dev/null; } ||
+  { [ -n "$upstream" ] && ! git -C "$repo" rev-parse -q --verify "refs/remotes/$upstream" >/dev/null; }; then
   git -C "$repo" fetch -q origin || true
 fi
 if [ -n "$base" ] && git -C "$repo" cat-file -e "$base^{commit}" 2>/dev/null; then echo has-base; else echo no-base; fi`;
@@ -195,15 +203,19 @@ if [ -n "$base" ] && git -C "$repo" cat-file -e "$base^{commit}" 2>/dev/null; th
  */
 export const SEED_SCRIPT = `repo=$1 main=$2
 [ ! -e "$repo" ] || { echo "$repo exists but is not a Git repository" >&2; exit 2; }
+mkdir -p "$(dirname "$repo")"
+# Build beside the destination and rename into place, so a failure part-way
+# never leaves a half-made repository that a re-run would mistake for a clone.
+stage=$(mktemp -d "$repo.beam-me-up.XXXXXX")
 bundle=$(mktemp "\${TMPDIR:-/tmp}/beam-me-up.XXXXXX")
-trap 'rm -f "$bundle"' EXIT
+trap 'rm -rf "$stage" "$bundle"' EXIT
 cat >"$bundle"
-mkdir -p "$repo"
-git -C "$repo" init -q
-git -C "$repo" bundle verify -q "$bundle" >/dev/null 2>&1 || { echo "the seed bundle is incomplete" >&2; exit 3; }
-git -C "$repo" fetch -q --update-head-ok "$bundle" "+refs/heads/*:refs/heads/*"
-git -C "$repo" symbolic-ref HEAD "refs/heads/$main"
-git -C "$repo" reset -q --hard`;
+git -C "$stage" init -q
+git -C "$stage" bundle verify -q "$bundle" >/dev/null 2>&1 || { echo "the seed bundle is incomplete" >&2; exit 3; }
+git -C "$stage" fetch -q --update-head-ok "$bundle" "+refs/heads/*:refs/heads/*"
+git -C "$stage" symbolic-ref HEAD "refs/heads/$main"
+git -C "$stage" reset -q --hard
+mv "$stage" "$repo"`;
 
 /**
  * Reads a bundle on stdin (empty when the target already has every commit
@@ -228,6 +240,8 @@ if [ -s "$bundle" ]; then
   git -C "$repo" fetch -q "$bundle" "+$ns/*:$ns/*"
 fi
 if [ ! -d "$wt" ]; then
+  # Forget registrations of worktree directories deleted by hand, which block re-adding.
+  git -C "$repo" worktree prune
   mkdir -p "$(dirname "$wt")"
   if git -C "$repo" rev-parse -q --verify "refs/heads/$branch" >/dev/null; then
     git -C "$repo" worktree add -q "$wt" "$branch"

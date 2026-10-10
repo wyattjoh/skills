@@ -328,18 +328,16 @@ const isAlive = (pid: number): boolean => {
   }
 };
 
+/**
+ * Approximate size on disk via `du -sk`: fast on large ignored trees, never
+ * follows symlinks, and still prints a total when some entries are unreadable.
+ */
 const directoryBytes = Effect.fn("session.directoryBytes")(function* (dir: string) {
-  const fs = yield* FileSystem.FileSystem;
-  const path = yield* Path.Path;
-  const info = yield* fs.stat(dir);
-  if (info.type !== "Directory") return Number(info.size);
-  const entries = yield* fs.readDirectory(dir, { recursive: true });
-  let total = 0;
-  for (const entry of entries) {
-    const stat = yield* fs.stat(path.join(dir, entry));
-    if (stat.type === "File") total += Number(stat.size);
-  }
-  return total;
+  const result = yield* runProcess("du", ["-sk", dir], { timeout: "1 minute" }).pipe(
+    Effect.orElseSucceed(() => undefined),
+  );
+  const kilobytes = result ? Number.parseInt(stdoutText(result), 10) : Number.NaN;
+  return Number.isNaN(kilobytes) ? 0 : kilobytes * 1024;
 });
 
 /**
@@ -386,7 +384,7 @@ export const inspectSession = Effect.fn("session.inspect")(function* (
 
   const sidecarPath = path.join(projectsDir, sessionId);
   const sidecar = (yield* fs.exists(sidecarPath).pipe(mapFs))
-    ? { path: sidecarPath, bytes: yield* directoryBytes(sidecarPath).pipe(mapFs) }
+    ? { path: sidecarPath, bytes: yield* directoryBytes(sidecarPath) }
     : undefined;
 
   const git = (...args: Array<string>) => command("git", args, launchDir);
@@ -395,6 +393,15 @@ export const inspectSession = Effect.fn("session.inspect")(function* (
   const worktree = yield* git("rev-parse", "--show-toplevel");
   const commonDir = path.resolve(launchDir, yield* git("rev-parse", "--git-common-dir"));
   const gitDir = path.resolve(launchDir, yield* git("rev-parse", "--git-dir"));
+  // The repository root is the common dir's parent only for an ordinary clone.
+  if (yield* tryGit("rev-parse", "--show-superproject-working-tree")) {
+    return yield* fail(`${worktree} is a Git submodule; beam its superproject's session instead`);
+  }
+  if ((yield* tryCommand("git", ["rev-parse", "--is-bare-repository"], commonDir)) === "true") {
+    return yield* fail(
+      `${worktree} belongs to a bare repository, which beam-me-up does not support`,
+    );
+  }
   const repo = path.dirname(commonDir);
   const branch = yield* tryGit("symbolic-ref", "--short", "HEAD");
   if (!branch) {
@@ -437,7 +444,7 @@ export const inspectSession = Effect.fn("session.inspect")(function* (
   const repoBranch = yield* tryCommand("git", ["symbolic-ref", "-q", "--short", "HEAD"], repo);
   const ignored: Array<{ path: string; bytes: number }> = [];
   for (const p of ignoredPaths) {
-    ignored.push({ path: p, bytes: yield* directoryBytes(path.join(worktree, p)).pipe(mapFs) });
+    ignored.push({ path: p, bytes: yield* directoryBytes(path.join(worktree, p)) });
   }
 
   const lockText = yield* fs

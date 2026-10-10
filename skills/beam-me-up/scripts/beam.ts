@@ -146,9 +146,12 @@ const herdrResume = Effect.fn("herdrResume")(function* (
     p.cwd === worktree &&
     workspaces.some((w) => w.workspace_id === p.workspace_id && w.label === label);
   // Claude reports its session ID only once past start-up prompts, so a Claude agent
-  // in our workspace and worktree also counts as an earlier run's resume.
+  // with no session yet in our workspace and worktree counts as an earlier run's
+  // resume. One reporting another session is the user's own, not ours.
   const hosting = panes.find(
-    (p) => p.agent_session?.value === sessionId || (p.agent === "claude" && inOurWorkspace(p)),
+    (p) =>
+      p.agent_session?.value === sessionId ||
+      (p.agent === "claude" && !p.agent_session && inOurWorkspace(p)),
   );
   if (hosting) {
     return { workspaceId: hosting.workspace_id, paneId: hosting.pane_id, agent: "already-running" };
@@ -284,13 +287,20 @@ const sendTar = Effect.fn("sendTar")(function* (
         stdin: tar.stdout,
         timeout: "10 minutes",
       });
-      const tarExit = yield* tar.exitCode;
-      if (tarExit !== 0) return yield* fail(`Local tar of ${paths.join(", ")} exited ${tarExit}`);
+      // Check the receiver first: if it stopped reading, nothing drains tar's stdout,
+      // so awaiting tar would hang. Failing closes the scope, which kills tar.
       if (received.exitCode !== 0) {
         return yield* fail(
           `Extracting into ${destination} on ${remote.label} failed: ${received.stderr.trim()}`,
         );
       }
+      const tarExit = yield* tar.exitCode.pipe(
+        Effect.timeoutOrElse({
+          duration: "30 seconds",
+          orElse: () => fail(`Local tar of ${paths.join(", ")} did not exit`),
+        }),
+      );
+      if (tarExit !== 0) return yield* fail(`Local tar of ${paths.join(", ")} exited ${tarExit}`);
     }),
   ).pipe(
     Effect.catchTag("PlatformError", (error) => fail(`Could not run local tar: ${error.message}`)),
@@ -426,6 +436,11 @@ export const beam = Effect.fn("beam")(function* (options: BeamOptions) {
     );
   }
 
+  if (!remoteHome.startsWith("/") || remoteHome === "/") {
+    return yield* fail(
+      `${remote.label} reported HOME as ${JSON.stringify(remoteHome)}; expected an absolute home directory. Check that its shell startup prints nothing for non-interactive SSH.`,
+    );
+  }
   const toRemote = (p: string) => mapToRemoteHome(p, options.home, remoteHome);
   const mapped = {
     repo: toRemote(info.repo),
@@ -540,7 +555,7 @@ export const beam = Effect.fn("beam")(function* (options: BeamOptions) {
 
   const prepared = yield* remote.run(
     PREPARE_SCRIPT,
-    [target.repo, info.originUrl ?? "", info.base ?? "", target.projectsDir],
+    [target.repo, info.originUrl ?? "", info.base ?? "", target.projectsDir, info.upstream ?? ""],
     { timeout: "10 minutes" },
   );
   if (prepared.exitCode !== 0) {
