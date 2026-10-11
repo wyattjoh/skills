@@ -1,5 +1,13 @@
 import { afterAll, beforeAll, describe, expect, it } from "bun:test";
-import { mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
+import {
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  realpathSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { BunServices } from "@effect/platform-bun";
@@ -31,7 +39,7 @@ const write = (path: string, content: string) => {
 
 const run = (overrides: Partial<BeamOptions> = {}) =>
   beam({
-    sessionId: SESSION,
+    source: SESSION,
     includes: [".scratch"],
     dryRun: false,
     forceTranscript: false,
@@ -226,7 +234,7 @@ describe("beam from a main checkout on a clean branch at its base", () => {
       `${JSON.stringify({ cwd: repo, gitBranch: "topic" })}\n`,
     );
 
-    const result = await run({ sessionId: MAIN_SESSION, includes: [] });
+    const result = await run({ source: MAIN_SESSION, includes: [] });
     expect(result).toMatchObject({
       actions: { repo: "clone", code: "create" },
       moved: { code: "branch" },
@@ -235,7 +243,7 @@ describe("beam from a main checkout on a clean branch at its base", () => {
     expect(git(target, "symbolic-ref", "--short", "HEAD")).toBe("topic");
     expect(git(target, "rev-parse", "HEAD")).toBe(git(repo, "rev-parse", "HEAD"));
     expect(git(target, "for-each-ref", "refs/beam-me-up")).toBe("");
-    expect(await run({ sessionId: MAIN_SESSION, includes: [] })).toMatchObject({
+    expect(await run({ source: MAIN_SESSION, includes: [] })).toMatchObject({
       actions: { code: "in-sync", session: "in-sync" },
     });
   });
@@ -261,7 +269,7 @@ describe("beam from a repository with no remote", () => {
       `${JSON.stringify({ cwd: wt, gitBranch: "wyattjoh/feat" })}\n`,
     );
 
-    const result = await run({ sessionId: LOCAL_SESSION, includes: [] });
+    const result = await run({ source: LOCAL_SESSION, includes: [] });
     expect(result).toMatchObject({ actions: { repo: "seed", code: "create" } });
 
     const target = dst(repo);
@@ -271,5 +279,40 @@ describe("beam from a repository with no remote", () => {
     expect(git(target, "branch", "--format=%(refname:short)")).toBe("main\nside\nwyattjoh/feat");
     expect(git(dst(wt), "rev-parse", "HEAD")).toBe(git(wt, "rev-parse", "HEAD"));
     expect(git(dst(wt), "status", "--porcelain")).toBe("");
+  });
+});
+
+describe("beam a worktree without a session", () => {
+  it("moves a Pando worktree, its changes and includes, and no transcript", async () => {
+    const repo = join(srcHome, "Code", "repo");
+    // Pando nests slash-named branches under its worktree root.
+    const wt = join(repo, ".claude", "worktrees", "wyattjoh", "topic");
+    git(repo, "worktree", "add", "-q", "-b", "wyattjoh/topic", wt);
+    write(join(wt, "topic.md"), "wip\n");
+    git(wt, "add", "topic.md");
+    write(join(wt, ".scratch", "plan.md"), "plan\n");
+
+    // A subdirectory resolves to the worktree that contains it.
+    const result = await run({ source: join(wt, ".scratch") });
+    expect(result).toMatchObject({
+      destination: { worktree: dst(wt), projectsDir: "" },
+      actions: { repo: "present", code: "create", includes: [".scratch"], session: "none" },
+      moved: { code: "branch and uncommitted changes", session: "none" },
+    });
+    expect(result).toHaveProperty("resume", undefined);
+    expect(git(dst(wt), "symbolic-ref", "--short", "HEAD")).toBe("wyattjoh/topic");
+    expect(git(dst(wt), "status", "--porcelain", "--untracked-files=all")).toBe("A  topic.md");
+    expect(readFileSync(join(dst(wt), ".scratch", "plan.md"), "utf8")).toBe("plan\n");
+    expect(existsSync(join(dstHome, ".claude", "projects", encodeProjectDir(dst(wt))))).toBe(false);
+
+    expect(await run({ source: wt })).toMatchObject({
+      actions: { code: "in-sync", session: "none" },
+    });
+  });
+
+  it("refuses a path that is neither a session ID nor a directory", async () => {
+    await expect(run({ source: join(root, "nowhere") })).rejects.toThrow(
+      "is neither a session ID (UUID) nor an existing directory",
+    );
   });
 });

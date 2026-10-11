@@ -1,9 +1,9 @@
 #!/usr/bin/env bun
 /**
- * beam-me-up: move a Claude Code session to another machine over SSH.
+ * beam-me-up: move a Claude Code session, or a bare worktree, to another machine over SSH.
  *
- *   bun beam.ts inspect <session-id>
- *   bun beam.ts beam <session-id> <ssh-target> [--include <path>]... [--dry-run] [--force-transcript] [--force-includes] [--allow-live] [--herdr]
+ *   bun beam.ts inspect <session-id|path>
+ *   bun beam.ts beam <session-id|path> <ssh-target> [--include <path>]... [--dry-run] [--force-transcript] [--force-includes] [--allow-live] [--herdr]
  */
 
 import { homedir } from "node:os";
@@ -26,18 +26,19 @@ import {
   makeLocalShell,
 } from "./remote.ts";
 import {
-  type SessionInfo,
+  type SourceInfo,
   agentNameFor,
   diffSections,
   encodeProjectDir,
   formatManifest,
   hashSections,
   includeConflicts,
-  inspectSession,
+  inspectSource,
   mapToRemoteHome,
   parseManifest,
   parseSections,
   transcriptRelation,
+  type TranscriptRelation,
 } from "./session.ts";
 
 /**
@@ -129,14 +130,15 @@ const localHerdrPane = Effect.fn("localHerdrPane")(function* (sessionId: string)
 });
 
 /**
- * Opens (or reuses) a workspace on the target at the worktree and resumes the
- * session there as a Herdr-recognized Claude agent.
+ * Opens (or reuses) a workspace on the target at the worktree and, for a
+ * session, resumes it there as a Herdr-recognized Claude agent. A bare worktree
+ * gets the workspace alone.
  */
 const herdrResume = Effect.fn("herdrResume")(function* (
   remote: Shell,
   label: string,
   worktree: string,
-  sessionId: string,
+  sessionId: string | undefined,
 ) {
   const herdr = shellHerdr(remote);
   const panes = (yield* herdrJson(herdr, HerdrPanes, ["pane", "list"])).result.panes;
@@ -145,6 +147,29 @@ const herdrResume = Effect.fn("herdrResume")(function* (
   const inOurWorkspace = (p: (typeof panes)[number]) =>
     p.cwd === worktree &&
     workspaces.some((w) => w.workspace_id === p.workspace_id && w.label === label);
+  const createWorkspace = herdrJson(herdr, HerdrCreated, [
+    "workspace",
+    "create",
+    "--cwd",
+    worktree,
+    "--label",
+    label,
+    "--no-focus",
+  ]).pipe(
+    Effect.map((created) => ({
+      workspaceId: created.result.workspace.workspace_id,
+      paneId: created.result.root_pane.pane_id,
+    })),
+  );
+
+  if (!sessionId) {
+    const open = panes.find(inOurWorkspace);
+    if (open) {
+      return { workspaceId: open.workspace_id, paneId: open.pane_id, status: "already-open" };
+    }
+    return { ...(yield* createWorkspace), status: "opened" };
+  }
+
   // Claude reports its session ID only once past start-up prompts, so a Claude agent
   // with no session yet in our workspace and worktree counts as an earlier run's
   // resume. One reporting another session is the user's own, not ours.
@@ -160,20 +185,7 @@ const herdrResume = Effect.fn("herdrResume")(function* (
   const free = panes.find((p) => !p.agent && inOurWorkspace(p));
   const target = free
     ? { workspaceId: free.workspace_id, paneId: free.pane_id }
-    : yield* herdrJson(herdr, HerdrCreated, [
-        "workspace",
-        "create",
-        "--cwd",
-        worktree,
-        "--label",
-        label,
-        "--no-focus",
-      ]).pipe(
-        Effect.map((created) => ({
-          workspaceId: created.result.workspace.workspace_id,
-          paneId: created.result.root_pane.pane_id,
-        })),
-      );
+    : yield* createWorkspace;
 
   const agents = (yield* herdrJson(herdr, HerdrAgents, ["agent", "list"])).result.agents;
   const name = agentNameFor(label, new Set(agents.flatMap((a) => (a.name ? [a.name] : []))));
@@ -214,7 +226,10 @@ const herdrResume = Effect.fn("herdrResume")(function* (
  * Options accepted by {@link beam}.
  */
 export interface BeamOptions {
-  readonly sessionId: string;
+  /**
+   * A session ID, or a path inside a worktree to move without a session.
+   */
+  readonly source: string;
   readonly includes: ReadonlyArray<string>;
   readonly dryRun: boolean;
   readonly forceTranscript: boolean;
@@ -242,7 +257,7 @@ const readState = Effect.fn("readState")(function* (shell: Shell, args: Readonly
 });
 
 const validateIncludes = Effect.fn("validateIncludes")(function* (
-  info: SessionInfo,
+  info: SourceInfo,
   includes: ReadonlyArray<string>,
 ) {
   const fs = yield* FileSystem.FileSystem;
@@ -311,7 +326,7 @@ const sendTar = Effect.fn("sendTar")(function* (
  * Creates the repository on a target that has no clone and nothing to clone
  * from, using a full bundle of every local branch.
  */
-const sendSeed = Effect.fn("sendSeed")(function* (remote: Shell, info: SessionInfo, repo: string) {
+const sendSeed = Effect.fn("sendSeed")(function* (remote: Shell, info: SourceInfo, repo: string) {
   const fs = yield* FileSystem.FileSystem;
   const received = yield* Effect.scoped(
     Effect.gen(function* () {
@@ -340,7 +355,7 @@ const sendSeed = Effect.fn("sendSeed")(function* (remote: Shell, info: SessionIn
  */
 const sendCode = Effect.fn("sendCode")(function* (
   remote: Shell,
-  info: SessionInfo,
+  info: SourceInfo,
   target: { repo: string; worktree: string },
   hasBase: boolean,
 ) {
@@ -399,29 +414,32 @@ const sendCode = Effect.fn("sendCode")(function* (
 });
 
 /**
- * Moves a session to the {@link Remote} target: worktree, `--include` files and
- * transcript, then verifies both sides match and optionally resumes in Herdr.
+ * Moves a session or a bare worktree to the {@link Remote} target: worktree,
+ * `--include` files and any transcript, then verifies both sides match and
+ * optionally opens it in Herdr.
  */
 export const beam = Effect.fn("beam")(function* (options: BeamOptions) {
   const remote = yield* Remote;
   const path = yield* Path.Path;
   const local = yield* makeLocalShell(undefined);
-  const { sessionId } = options;
 
-  const info = yield* inspectSession(sessionId, options.home);
-  const pane = yield* localHerdrPane(sessionId);
+  const info = yield* inspectSource(options.source, options.home);
+  const sessionId = info.session?.sessionId;
+  const pane = sessionId ? yield* localHerdrPane(sessionId) : undefined;
   if ((info.lockPidAlive || pane) && !options.allowLive) {
     const where = [
       info.lockPidAlive ? `pid ${info.lockPid}` : undefined,
       pane ? `Herdr pane ${pane.paneId}` : undefined,
     ].filter(Boolean);
+    const subject = sessionId ? `Session ${sessionId}` : `A session in ${info.worktree}`;
     return yield* fail(
-      `Session ${sessionId} looks live (${where.join(", ")}). Exit it first so the copy is complete, or pass --allow-live.`,
+      `${subject} looks live (${where.join(", ")}). Exit it first so the copy is complete, or pass --allow-live.`,
     );
   }
   const includes = yield* validateIncludes(info, options.includes);
 
-  const tools = ["git", "tar", ...(options.herdr ? ["herdr", "claude"] : [])];
+  const herdrTools = sessionId ? ["herdr", "claude"] : ["herdr"];
+  const tools = ["git", "tar", ...(options.herdr ? herdrTools : [])];
   const probe = yield* remote.run(HOME_SCRIPT, tools, { timeout: "30 seconds" });
   if (probe.exitCode !== 0) {
     return yield* fail(
@@ -454,7 +472,9 @@ export const beam = Effect.fn("beam")(function* (options: BeamOptions) {
     repo: mapped.repo,
     worktree: mapped.worktree,
     launchDir: mapped.launchDir,
-    projectsDir: path.join(remoteHome, ".claude", "projects", encodeProjectDir(mapped.launchDir)),
+    projectsDir: sessionId
+      ? path.join(remoteHome, ".claude", "projects", encodeProjectDir(mapped.launchDir))
+      : "",
   };
 
   const stateArgs = (t: { worktree: string; repo: string; projectsDir: string }) => [
@@ -463,10 +483,13 @@ export const beam = Effect.fn("beam")(function* (options: BeamOptions) {
     info.branch,
     info.base ?? "",
     t.projectsDir,
-    sessionId,
+    sessionId ?? "",
     ...includes,
   ];
-  const source = yield* readState(local, stateArgs(info));
+  const source = yield* readState(
+    local,
+    stateArgs({ ...info, projectsDir: info.session?.projectsDir ?? "" }),
+  );
   const before = yield* readState(remote, stateArgs(target));
 
   // Decide what the code needs.
@@ -503,21 +526,25 @@ export const beam = Effect.fn("beam")(function* (options: BeamOptions) {
   }
 
   // Decide what the transcript needs.
-  const transcriptKey = `session:${sessionId}.jsonl`;
-  const sessionDiff = diffSections(source.hashes, before.hashes, ["session:"]);
-  const sourceTranscript = source.sections.get(transcriptKey);
-  if (!sourceTranscript) return yield* fail(`Could not read ${info.transcript.path}`);
-  const transcript = transcriptRelation(sourceTranscript, before.sections.get(transcriptKey));
-  if ((transcript === "ahead" || transcript === "diverged") && !options.forceTranscript) {
-    const why =
-      transcript === "ahead"
-        ? "has turns this machine does not (it was resumed there)"
-        : "has diverged from this machine's copy";
-    return yield* fail(
-      `${remote.label}'s transcript for ${sessionId} ${why}. Pass --force-transcript to overwrite it and lose those turns.`,
-    );
+  let session: "in-sync" | "copy" | "none" = "none";
+  let transcript: TranscriptRelation | undefined;
+  if (info.session) {
+    const transcriptKey = `session:${info.session.sessionId}.jsonl`;
+    const sourceTranscript = source.sections.get(transcriptKey);
+    if (!sourceTranscript) return yield* fail(`Could not read ${info.session.transcript.path}`);
+    transcript = transcriptRelation(sourceTranscript, before.sections.get(transcriptKey));
+    if ((transcript === "ahead" || transcript === "diverged") && !options.forceTranscript) {
+      const why =
+        transcript === "ahead"
+          ? "has turns this machine does not (it was resumed there)"
+          : "has diverged from this machine's copy";
+      return yield* fail(
+        `${remote.label}'s transcript for ${info.session.sessionId} ${why}. Pass --force-transcript to overwrite it and lose those turns.`,
+      );
+    }
+    const sessionDiff = diffSections(source.hashes, before.hashes, ["session:"]);
+    session = sessionDiff.length === 0 ? "in-sync" : "copy";
   }
-  const session = sessionDiff.length === 0 ? "in-sync" : "copy";
 
   // Included files edited or created on the target since the last move would be clobbered.
   const conflicts = includeConflicts(
@@ -546,7 +573,7 @@ export const beam = Effect.fn("beam")(function* (options: BeamOptions) {
       worktree: info.worktree,
       branch: info.branch,
       head: info.head,
-      projectsDir: info.projectsDir,
+      projectsDir: info.session?.projectsDir,
     },
     destination: target,
     actions: { repo: repoAction, code, includes, session, transcript, includeConflicts: conflicts },
@@ -570,9 +597,10 @@ export const beam = Effect.fn("beam")(function* (options: BeamOptions) {
 
   const codeMoved = code === "in-sync" ? "nothing" : yield* sendCode(remote, info, target, hasBase);
   if (includes.length > 0) yield* sendTar(remote, info.worktree, includes, target.worktree);
-  if (session === "copy") {
-    const entries = [`${sessionId}.jsonl`, ...(info.sidecar ? [sessionId] : [])];
-    yield* sendTar(remote, info.projectsDir, entries, target.projectsDir);
+  if (session === "copy" && info.session) {
+    const { sessionId: id, sidecar, projectsDir } = info.session;
+    const entries = [`${id}.jsonl`, ...(sidecar ? [id] : [])];
+    yield* sendTar(remote, projectsDir, entries, target.projectsDir);
   }
 
   const after = yield* readState(remote, stateArgs(target));
@@ -604,9 +632,10 @@ export const beam = Effect.fn("beam")(function* (options: BeamOptions) {
     moved: { code: codeMoved, includes, session },
     verified: `${verified} items match`,
     herdr,
-    resume: herdr
-      ? undefined
-      : `cd ${JSON.stringify(target.launchDir)} && claude --resume ${sessionId}`,
+    resume:
+      herdr || !sessionId
+        ? undefined
+        : `cd ${JSON.stringify(target.launchDir)} && claude --resume ${sessionId}`,
   };
 });
 
@@ -625,28 +654,32 @@ const reportFailure = <A, E extends { readonly message: string }, R>(
     ),
   );
 
-const sessionIdArgument = Argument.String("session-id").pipe(
-  Argument.withDescription("Claude Code session ID (UUID)"),
+const sourceArgument = Argument.String("session-id|path").pipe(
+  Argument.withDescription(
+    "Claude Code session ID (UUID), or a path inside a worktree to move alone",
+  ),
 );
 
 const inspect = Command.make(
   "inspect",
-  { sessionId: sessionIdArgument },
-  Effect.fn(function* ({ sessionId }) {
+  { source: sourceArgument },
+  Effect.fn(function* ({ source }) {
     yield* reportFailure(
       Effect.gen(function* () {
-        const info = yield* inspectSession(sessionId, homedir());
-        const herdrPane = yield* localHerdrPane(sessionId);
+        const info = yield* inspectSource(source, homedir());
+        const herdrPane = info.session ? yield* localHerdrPane(info.session.sessionId) : undefined;
         yield* printJson({ ...info, herdrPane });
       }),
     );
   }),
-).pipe(Command.withDescription("Report where a session lives and what would move with it"));
+).pipe(
+  Command.withDescription("Report where a session or worktree lives and what would move with it"),
+);
 
 const beamCommand = Command.make(
   "beam",
   {
-    sessionId: sessionIdArgument,
+    source: sourceArgument,
     target: Argument.String("ssh-target").pipe(
       Argument.withDescription("SSH destination, such as user@host"),
     ),
@@ -683,10 +716,14 @@ const beamCommand = Command.make(
       ),
     );
   }),
-).pipe(Command.withDescription("Move a session, its worktree and transcript to an SSH target"));
+).pipe(
+  Command.withDescription(
+    "Move a session (worktree and transcript) or a bare worktree to an SSH target",
+  ),
+);
 
 const cli = Command.make("beam-me-up").pipe(
-  Command.withDescription("Move a Claude Code session to another machine over SSH"),
+  Command.withDescription("Move a Claude Code session or a worktree to another machine over SSH"),
   Command.withSubcommands([inspect, beamCommand]),
 );
 

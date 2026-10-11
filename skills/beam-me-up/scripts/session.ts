@@ -1,7 +1,7 @@
 /**
- * Pure helpers and local inspection for a Claude Code session: where its
- * transcript lives, which worktree it ran in, and the Git state that has to
- * travel with it.
+ * Pure helpers and local inspection for what a move starts from: a Claude Code
+ * session (where its transcript lives and which worktree it ran in) or a bare
+ * worktree, and the Git state that has to travel with it.
  */
 
 import { Effect, FileSystem, Option, Path, Schema } from "effect";
@@ -259,17 +259,33 @@ export const transcriptContext = (
 
 // ─── Local inspection ────────────────────────────────────────
 
+/**
+ * Whether a move's source argument names a session (a UUID) rather than a path.
+ */
+export const isSessionId = (value: string): boolean => /^[0-9a-f-]{36}$/i.test(value);
+
 const fail = (message: string) => Effect.fail(new SessionError({ message }));
 
 /**
- * Everything known locally about a session before it moves.
+ * The transcript files that travel with a session.
  */
-export interface SessionInfo {
+export interface SessionDetails {
   readonly sessionId: string;
-  readonly home: string;
   readonly projectsDir: string;
   readonly transcript: { readonly path: string; readonly bytes: number };
   readonly sidecar: { readonly path: string; readonly bytes: number } | undefined;
+}
+
+/**
+ * Everything known locally about a worktree before it moves, plus its session
+ * when the move started from a session ID.
+ */
+export interface SourceInfo {
+  readonly session: SessionDetails | undefined;
+  readonly home: string;
+  /**
+   * The directory to resume or open in: the session's launch directory, or the path given.
+   */
   readonly launchDir: string;
   readonly worktree: string;
   readonly repo: string;
@@ -352,7 +368,7 @@ export const inspectSession = Effect.fn("session.inspect")(function* (
   const path = yield* Path.Path;
   const mapFs = Effect.mapError((cause: unknown) => new SessionError({ message: String(cause) }));
 
-  if (!/^[0-9a-f-]{36}$/i.test(sessionId)) {
+  if (!isSessionId(sessionId)) {
     return yield* fail(`"${sessionId}" is not a session ID (expected a UUID)`);
   }
 
@@ -387,6 +403,55 @@ export const inspectSession = Effect.fn("session.inspect")(function* (
     ? { path: sidecarPath, bytes: yield* directoryBytes(sidecarPath) }
     : undefined;
 
+  const worktree = yield* inspectWorktree(
+    launchDir,
+    home,
+    ` (transcript last saw ${branches.at(-1) ?? "no branch"})`,
+  );
+  return {
+    ...worktree,
+    session: {
+      sessionId,
+      projectsDir,
+      transcript: { path: transcriptPath, bytes: new TextEncoder().encode(jsonl).length },
+      sidecar,
+    },
+  } satisfies SourceInfo;
+});
+
+/**
+ * Inspects a worktree directory, such as one Pando created, that moves without
+ * a session. Read-only.
+ */
+export const inspectPath = Effect.fn("session.inspectPath")(function* (dir: string, home: string) {
+  const fs = yield* FileSystem.FileSystem;
+  const path = yield* Path.Path;
+  const launchDir = path.resolve(dir);
+  const stat = yield* fs.stat(launchDir).pipe(Effect.orElseSucceed(() => undefined));
+  if (stat?.type !== "Directory") {
+    return yield* fail(`"${dir}" is neither a session ID (UUID) nor an existing directory`);
+  }
+  const worktree = yield* inspectWorktree(launchDir, home, "");
+  return { ...worktree, session: undefined } satisfies SourceInfo;
+});
+
+/**
+ * Inspects what a move starts from: a session ID, or a worktree path.
+ */
+export const inspectSource = (source: string, home: string) =>
+  isSessionId(source) ? inspectSession(source, home) : inspectPath(source, home);
+
+/**
+ * Inspects the Git state of the worktree containing `launchDir`. `detachedHint`
+ * is appended to the detached-HEAD refusal.
+ */
+const inspectWorktree = Effect.fn("session.inspectWorktree")(function* (
+  launchDir: string,
+  home: string,
+  detachedHint: string,
+) {
+  const fs = yield* FileSystem.FileSystem;
+  const path = yield* Path.Path;
   const git = (...args: Array<string>) => command("git", args, launchDir);
   const tryGit = (...args: Array<string>) => tryCommand("git", args, launchDir);
 
@@ -395,7 +460,7 @@ export const inspectSession = Effect.fn("session.inspect")(function* (
   const gitDir = path.resolve(launchDir, yield* git("rev-parse", "--git-dir"));
   // The repository root is the common dir's parent only for an ordinary clone.
   if (yield* tryGit("rev-parse", "--show-superproject-working-tree")) {
-    return yield* fail(`${worktree} is a Git submodule; beam its superproject's session instead`);
+    return yield* fail(`${worktree} is a Git submodule; beam its superproject instead`);
   }
   if ((yield* tryCommand("git", ["rev-parse", "--is-bare-repository"], commonDir)) === "true") {
     return yield* fail(
@@ -405,9 +470,7 @@ export const inspectSession = Effect.fn("session.inspect")(function* (
   const repo = path.dirname(commonDir);
   const branch = yield* tryGit("symbolic-ref", "--short", "HEAD");
   if (!branch) {
-    return yield* fail(
-      `${worktree} has a detached HEAD (transcript last saw ${branches.at(-1) ?? "no branch"}); check out a branch first`,
-    );
+    return yield* fail(`${worktree} has a detached HEAD${detachedHint}; check out a branch first`);
   }
   const head = yield* git("rev-parse", "HEAD");
   const upstream = yield* tryGit("rev-parse", "--abbrev-ref", "--symbolic-full-name", "@{u}");
@@ -453,11 +516,7 @@ export const inspectSession = Effect.fn("session.inspect")(function* (
   const lockPid = parseLockPid(lockText);
 
   return {
-    sessionId,
     home,
-    projectsDir,
-    transcript: { path: transcriptPath, bytes: new TextEncoder().encode(jsonl).length },
-    sidecar,
     launchDir,
     worktree,
     repo,
@@ -475,5 +534,5 @@ export const inspectSession = Effect.fn("session.inspect")(function* (
     ignored,
     lockPid,
     lockPidAlive: lockPid !== undefined && isAlive(lockPid),
-  } satisfies SessionInfo;
+  } satisfies Omit<SourceInfo, "session">;
 });

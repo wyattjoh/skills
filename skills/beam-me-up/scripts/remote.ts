@@ -138,6 +138,7 @@ for t in "$@"; do command -v "$t" >/dev/null 2>&1 || printf 'missing %s\\n' "$t"
 /**
  * Prints the comparable state of one side as sections.
  * Args: worktree repo branch base projects-dir session-id include-path...
+ * (projects-dir and session-id are empty when no session moves)
  *
  * Code state is compared by tree hashes, not diffs: \`git stash create\` writes
  * the index and working tree as a commit without touching refs or files, and
@@ -171,19 +172,23 @@ if [ -d "$wt" ] && [ "$(cd "$wt" && pwd -P)" = "$(git -C "$wt" rev-parse --show-
     if [ -d "$wt/$p" ]; then (cd "$wt" && find "$p" -type f); elif [ -f "$wt/$p" ]; then printf '%s\\n' "$p"; fi
   done | while IFS= read -r f; do section "include:$f" cat "$wt/$f"; done
 fi
-section "session:$sid.jsonl" cat "$pdir/$sid.jsonl"
-if [ -d "$pdir/$sid" ]; then
-  (cd "$pdir" && find "$sid" -type f) | while IFS= read -r f; do section "session:$f" cat "$pdir/$f"; done
+# An empty session ID moves the worktree alone.
+if [ -n "$sid" ]; then
+  section "session:$sid.jsonl" cat "$pdir/$sid.jsonl"
+  if [ -d "$pdir/$sid" ]; then
+    (cd "$pdir" && find "$sid" -type f) | while IFS= read -r f; do section "session:$f" cat "$pdir/$f"; done
+  fi
 fi`;
 
 /**
  * Clones the repository if it is missing, fetches origin if the bundle base or
- * the branch's upstream ref is missing, and creates the transcript directory.
+ * the branch's upstream ref is missing, and creates the transcript directory
+ * when one is given.
  * Prints \`has-base\`, \`no-base\` or \`needs-seed\`.
  * Args: repo origin-url base projects-dir upstream
  */
 export const PREPARE_SCRIPT = `repo=$1 url=$2 base=$3 pdir=$4 upstream=$5
-mkdir -p "$pdir"
+[ -z "$pdir" ] || mkdir -p "$pdir"
 if ! git -C "$repo" rev-parse --git-dir >/dev/null 2>&1; then
   [ -n "$url" ] || { echo needs-seed; exit 0; }
   mkdir -p "$(dirname "$repo")"
