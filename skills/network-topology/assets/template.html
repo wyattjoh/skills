@@ -1,0 +1,1063 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <title>{{PAGETITLE}}</title>
+    <style>
+      :root {
+        --bg: #f6f6f8;
+        --dot: #cfcfd8;
+        --card: #ffffff;
+        --card2: #f7f7fa;
+        --text: #121215;
+        --muted: #6b6b78;
+        --line: rgba(18, 18, 21, 0.1);
+        --accent: #5016ff;
+        --allow: #16a34a;
+        --risk: #e5484d;
+        --partial: #d97706;
+        --block: #a1a1aa;
+        --shadow: 0 1px 2px rgba(0, 0, 0, 0.06), 0 4px 14px rgba(18, 18, 21, 0.07);
+        --font: Inter, ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+        --mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+      }
+      @media (prefers-color-scheme: dark) {
+        :root {
+          --bg: #0d0d11;
+          --dot: #2a2a34;
+          --card: #17171d;
+          --card2: #1e1e26;
+          --text: #ececf1;
+          --muted: #9a9aa8;
+          --line: rgba(255, 255, 255, 0.09);
+          --accent: #8b6bff;
+          --allow: #3dd68c;
+          --risk: #ff6369;
+          --partial: #f5a524;
+          --block: #5d5d69;
+          --shadow: 0 1px 2px rgba(0, 0, 0, 0.45), 0 6px 18px rgba(0, 0, 0, 0.35);
+        }
+      }
+      * {
+        box-sizing: border-box;
+      }
+      html,
+      body {
+        margin: 0;
+        height: 100%;
+        background: var(--bg);
+        color: var(--text);
+        font: 13px/1.4 var(--font);
+        overflow: hidden;
+        -webkit-font-smoothing: antialiased;
+      }
+      #canvas {
+        position: fixed;
+        inset: 0;
+        background-image: radial-gradient(var(--dot) 1.2px, transparent 1.4px);
+        background-size: 20px 20px;
+        cursor: grab;
+        touch-action: none;
+      }
+      #canvas.panning {
+        cursor: grabbing;
+      }
+      #world {
+        position: absolute;
+        left: 0;
+        top: 0;
+        transform-origin: 0 0;
+      }
+      #svg {
+        position: absolute;
+        left: 0;
+        top: 0;
+        width: 1px;
+        height: 1px;
+        overflow: visible;
+      }
+      #nodes {
+        position: absolute;
+        left: 0;
+        top: 0;
+      }
+
+      /* toolbar */
+      .bar {
+        position: fixed;
+        top: 12px;
+        left: 12px;
+        right: 12px;
+        display: flex;
+        flex-wrap: wrap;
+        align-items: center;
+        gap: 10px;
+        z-index: 6;
+        pointer-events: none;
+      }
+      .bar > * {
+        pointer-events: auto;
+      }
+      .card {
+        background: var(--card);
+        border: 1px solid var(--line);
+        border-radius: 10px;
+        box-shadow: var(--shadow);
+      }
+      .brand {
+        padding: 8px 12px;
+        font-weight: 600;
+        display: flex;
+        gap: 8px;
+        align-items: center;
+      }
+      .logo {
+        width: 20px;
+        height: 20px;
+        border-radius: 6px;
+        background: var(--accent);
+        display: grid;
+        place-items: center;
+        color: #fff;
+        font: 700 10px var(--font);
+      }
+      .stats {
+        margin-left: auto;
+        display: flex;
+        gap: 6px;
+      }
+      .pill {
+        padding: 5px 10px;
+        border-radius: 999px;
+        font-weight: 500;
+        display: flex;
+        gap: 6px;
+        align-items: center;
+        font-size: 12px;
+      }
+      .sw {
+        width: 8px;
+        height: 8px;
+        border-radius: 50%;
+        display: inline-block;
+        flex: none;
+      }
+      #about {
+        position: fixed;
+        top: 64px;
+        left: 12px;
+        max-width: 420px;
+        max-height: calc(100% - 120px);
+        overflow: auto;
+        padding: 9px 12px;
+        z-index: 5;
+        color: var(--muted);
+        font-size: 12.5px;
+      }
+      #about summary {
+        cursor: pointer;
+        font-weight: 600;
+        color: var(--muted);
+      }
+      #about[open] summary {
+        margin-bottom: 6px;
+      }
+      #about b {
+        color: var(--text);
+      }
+      #about p {
+        margin: 0 0 6px;
+      }
+
+      /* nodes */
+      .node {
+        position: absolute;
+        width: 236px;
+        background: var(--card);
+        border: 1px solid var(--line);
+        border-radius: 12px;
+        box-shadow: var(--shadow);
+        cursor: grab;
+        user-select: none;
+        transition:
+          box-shadow 0.15s,
+          opacity 0.45s ease,
+          border-color 0.15s;
+      }
+      .node:hover {
+        border-color: color-mix(in srgb, var(--rc) 50%, var(--line));
+      }
+      .node.sel {
+        border-color: var(--rc);
+        box-shadow:
+          0 0 0 3px color-mix(in srgb, var(--rc) 24%, transparent),
+          var(--shadow);
+      }
+      .node.dim {
+        opacity: 0.32;
+      }
+      .node.dragging {
+        cursor: grabbing;
+        box-shadow: 0 10px 30px rgba(0, 0, 0, 0.18);
+      }
+      .nh {
+        display: flex;
+        gap: 10px;
+        align-items: center;
+        padding: 10px 12px 8px;
+      }
+      .ic {
+        flex: none;
+        width: 30px;
+        height: 30px;
+        border-radius: 8px;
+        display: grid;
+        place-items: center;
+        font: 700 10px var(--font);
+        color: #fff;
+        background: var(--rc);
+        letter-spacing: 0.02em;
+      }
+      .nt {
+        font-weight: 600;
+        font-size: 13px;
+      }
+      .ns {
+        color: var(--muted);
+        font-size: 11.5px;
+      }
+      .nb {
+        padding: 0 12px 9px;
+        display: flex;
+        flex-direction: column;
+        gap: 4px;
+      }
+      .nb:empty {
+        display: none;
+      }
+      .row {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        gap: 8px;
+        font-size: 11.5px;
+      }
+      .row .k {
+        color: var(--muted);
+      }
+      .row code {
+        font: 10.5px var(--mono);
+        background: var(--card2);
+        border: 1px solid var(--line);
+        border-radius: 5px;
+        padding: 1px 5px;
+        white-space: nowrap;
+      }
+      .chips {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 4px;
+        margin-top: 3px;
+      }
+      .chip {
+        font-size: 10.5px;
+        padding: 2px 7px;
+        border-radius: 999px;
+        background: color-mix(in srgb, var(--rc) 12%, transparent);
+        color: color-mix(in srgb, var(--rc) 75%, var(--text));
+        border: 1px dashed color-mix(in srgb, var(--rc) 45%, transparent);
+      }
+      .nf {
+        border-top: 1px solid var(--line);
+        padding: 6px 12px;
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        font-size: 11px;
+        color: var(--muted);
+      }
+      .h {
+        position: absolute;
+        top: 50%;
+        width: 9px;
+        height: 9px;
+        margin-top: -4.5px;
+        border-radius: 50%;
+        background: var(--card);
+        border: 2px solid var(--rc);
+      }
+      .hl {
+        left: -5.5px;
+      }
+      .hr {
+        right: -5.5px;
+      }
+
+      /* groups and edges */
+      .grp {
+        animation: fade 0.45s ease;
+      }
+      .settled .grp,
+      .settled .edge {
+        animation: none;
+      }
+      .grp rect {
+        fill: var(--gc);
+        fill-opacity: 0.05;
+        stroke: var(--gc);
+        stroke-opacity: 0.5;
+        stroke-width: 1.3;
+        stroke-dasharray: 7 5;
+      }
+      .grp text {
+        fill: var(--gc);
+        font: 600 11.5px var(--font);
+        letter-spacing: 0.02em;
+      }
+      .edge {
+        animation: fade 0.35s ease;
+        transition: opacity 0.45s ease;
+      }
+      .edge .line {
+        fill: none;
+        stroke-width: 2;
+        stroke-linecap: round;
+      }
+      .edge .hit {
+        fill: none;
+        stroke: transparent;
+        stroke-width: 14;
+        pointer-events: stroke;
+        cursor: pointer;
+      }
+      .st-allow .line {
+        stroke: var(--allow);
+      }
+      .st-risk .line {
+        stroke: var(--risk);
+        stroke-dasharray: 7 6;
+        animation: dash 0.8s linear infinite;
+      }
+      .st-partial .line {
+        stroke: var(--partial);
+        stroke-dasharray: 3 5;
+        animation: dash 1.4s linear infinite;
+      }
+      .st-block .line {
+        stroke: var(--block);
+        stroke-dasharray: 2 6;
+      }
+      .st-allow .dot {
+        fill: var(--allow);
+      }
+      .st-risk .dot {
+        fill: var(--risk);
+      }
+      .st-partial .dot {
+        fill: var(--partial);
+      }
+      .edge:hover .line,
+      .edge.sel .line {
+        stroke-width: 3.4;
+      }
+      .edge.dim {
+        opacity: 0.1;
+      }
+      .xm circle {
+        fill: var(--card);
+        stroke: var(--block);
+        stroke-width: 1.5;
+      }
+      .xm path {
+        stroke: var(--block);
+        stroke-width: 1.8;
+        stroke-linecap: round;
+      }
+      .mk-allow {
+        fill: var(--allow);
+      }
+      .mk-risk {
+        fill: var(--risk);
+      }
+      .mk-partial {
+        fill: var(--partial);
+      }
+      .mk-block {
+        fill: var(--block);
+      }
+      @keyframes dash {
+        to {
+          stroke-dashoffset: -13;
+        }
+      }
+      @keyframes fade {
+        from {
+          opacity: 0;
+        }
+        to {
+          opacity: 1;
+        }
+      }
+      @media (prefers-reduced-motion: reduce) {
+        .st-risk .line,
+        .st-partial .line {
+          animation: none;
+        }
+        .grp,
+        .edge {
+          animation: none;
+        }
+      }
+
+      /* panel, legend, controls, minimap, tooltip */
+      #panel {
+        position: fixed;
+        top: 64px;
+        right: 12px;
+        width: 350px;
+        max-height: calc(100% - 250px);
+        overflow: auto;
+        z-index: 6;
+        padding: 14px 16px;
+        display: none;
+      }
+      #panel.open {
+        display: block;
+        animation: fade 0.2s;
+      }
+      #panel h3 {
+        margin: 0 0 2px;
+        font-size: 15px;
+      }
+      #panel .sub {
+        color: var(--muted);
+        margin-bottom: 10px;
+      }
+      #panel h4 {
+        margin: 12px 0 5px;
+        font-size: 11px;
+        text-transform: uppercase;
+        letter-spacing: 0.06em;
+        color: var(--muted);
+      }
+      #panel ul {
+        margin: 0;
+        padding-left: 16px;
+      }
+      #panel li {
+        margin: 3px 0;
+      }
+      #panel .x {
+        position: absolute;
+        top: 10px;
+        right: 10px;
+        border: 0;
+        background: transparent;
+        color: var(--muted);
+        font-size: 18px;
+        cursor: pointer;
+        line-height: 1;
+      }
+      .rolechip {
+        display: inline-flex;
+        gap: 6px;
+        align-items: center;
+        font-size: 11px;
+        padding: 2px 8px;
+        border-radius: 999px;
+        border: 1px solid var(--line);
+        margin-bottom: 8px;
+      }
+      .elist {
+        list-style: none;
+        padding: 0 !important;
+      }
+      .elist li {
+        display: flex;
+        gap: 8px;
+        align-items: flex-start;
+        padding: 5px 6px;
+        border-radius: 7px;
+        cursor: pointer;
+      }
+      .elist li:hover {
+        background: var(--card2);
+      }
+      .elist .sw {
+        margin-top: 5px;
+      }
+      .elist small {
+        color: var(--muted);
+        display: block;
+      }
+      .st {
+        display: inline-block;
+        font-weight: 600;
+        font-size: 11px;
+        padding: 1px 8px;
+        border-radius: 999px;
+        color: #fff;
+        text-align: center;
+      }
+      code {
+        font: 11.5px var(--mono);
+        background: var(--card2);
+        border: 1px solid var(--line);
+        border-radius: 4px;
+        padding: 0 4px;
+      }
+      #legend {
+        position: fixed;
+        left: 12px;
+        bottom: 12px;
+        z-index: 7;
+        padding: 8px 12px;
+        font-size: 11.5px;
+      }
+      #legend summary {
+        cursor: pointer;
+        font-weight: 600;
+        color: var(--muted);
+      }
+      #lg {
+        display: grid;
+        grid-template-columns: auto auto;
+        gap: 4px 18px;
+        margin-top: 6px;
+      }
+      #lg h5 {
+        grid-column: 1/-1;
+        margin: 2px 0 2px;
+        font-size: 10.5px;
+        text-transform: uppercase;
+        letter-spacing: 0.06em;
+        color: var(--muted);
+      }
+      #lg span {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        white-space: nowrap;
+      }
+      .ln {
+        width: 24px;
+        height: 0;
+        border-top: 2px solid;
+        display: inline-block;
+      }
+      .bx {
+        width: 14px;
+        height: 10px;
+        border-radius: 3px;
+        border: 1.3px dashed;
+        display: inline-block;
+      }
+      #ctrls {
+        position: fixed;
+        right: 12px;
+        bottom: 166px;
+        z-index: 5;
+        display: flex;
+        flex-direction: column;
+        padding: 3px;
+        gap: 2px;
+      }
+      #ctrls button {
+        width: 30px;
+        height: 28px;
+        border: 0;
+        background: transparent;
+        color: var(--text);
+        font: 600 15px var(--font);
+        border-radius: 6px;
+        cursor: pointer;
+      }
+      #ctrls button:hover {
+        background: var(--card2);
+      }
+      #mini {
+        position: fixed;
+        right: 12px;
+        bottom: 12px;
+        width: 220px;
+        height: 144px;
+        z-index: 5;
+        cursor: pointer;
+        overflow: hidden;
+      }
+      #mini .vp {
+        fill: var(--accent);
+        fill-opacity: 0.08;
+        stroke: var(--accent);
+        stroke-width: 1.2;
+      }
+      #hint {
+        position: fixed;
+        bottom: 14px;
+        left: 50%;
+        transform: translateX(-50%);
+        z-index: 4;
+        color: var(--muted);
+        font-size: 11.5px;
+        padding: 5px 10px;
+        white-space: nowrap;
+      }
+      #tip {
+        position: fixed;
+        z-index: 9;
+        pointer-events: none;
+        padding: 6px 9px;
+        font-size: 12px;
+        max-width: 320px;
+        display: none;
+      }
+      @media (max-width: 900px) {
+        #legend,
+        #hint,
+        #about {
+          display: none;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <div id="canvas">
+      <div id="world">
+        <svg id="svg" xmlns="http://www.w3.org/2000/svg">
+          <defs>
+            <marker
+              id="mk-allow"
+              viewBox="0 0 10 10"
+              refX="9"
+              refY="5"
+              markerUnits="userSpaceOnUse"
+              markerWidth="10"
+              markerHeight="10"
+              orient="auto"
+            >
+              <path class="mk-allow" d="M0,1 L9,5 L0,9 z" />
+            </marker>
+            <marker
+              id="mk-risk"
+              viewBox="0 0 10 10"
+              refX="9"
+              refY="5"
+              markerUnits="userSpaceOnUse"
+              markerWidth="10"
+              markerHeight="10"
+              orient="auto"
+            >
+              <path class="mk-risk" d="M0,1 L9,5 L0,9 z" />
+            </marker>
+            <marker
+              id="mk-partial"
+              viewBox="0 0 10 10"
+              refX="9"
+              refY="5"
+              markerUnits="userSpaceOnUse"
+              markerWidth="10"
+              markerHeight="10"
+              orient="auto"
+            >
+              <path class="mk-partial" d="M0,1 L9,5 L0,9 z" />
+            </marker>
+            <marker
+              id="mk-block"
+              viewBox="0 0 10 10"
+              refX="9"
+              refY="5"
+              markerUnits="userSpaceOnUse"
+              markerWidth="10"
+              markerHeight="10"
+              orient="auto"
+            >
+              <path class="mk-block" d="M0,1 L9,5 L0,9 z" />
+            </marker>
+          </defs>
+          <g id="groups"></g>
+          <g id="edges"></g>
+        </svg>
+        <div id="nodes"></div>
+      </div>
+    </div>
+
+    <div class="bar">
+      <div class="brand card"><span class="logo" id="logo"></span><span id="title"></span></div>
+      <div class="stats" id="stats"></div>
+    </div>
+    <details id="about" class="card" open hidden>
+      <summary>About this map</summary>
+      <div id="summary"></div>
+    </details>
+    <aside id="panel" class="card" aria-live="polite"></aside>
+    <details id="legend" class="card">
+      <summary>Legend</summary>
+      <div id="lg"></div>
+    </details>
+    <div id="ctrls" class="card">
+      <button id="zin" title="Zoom in">+</button><button id="zout" title="Zoom out">&minus;</button
+      ><button id="zfit" title="Fit (F)">&#9633;</button>
+    </div>
+    <svg id="mini" class="card" xmlns="http://www.w3.org/2000/svg"></svg>
+    <div id="hint" class="card">
+      Click a node or edge · drag nodes to rearrange · drag the canvas to pan · Ctrl/&#8984;+scroll
+      to zoom · F to fit
+    </div>
+    <div id="tip" class="card"></div>
+
+    <script>
+      (() => {
+      /* Injected by scripts/build.ts: the validated topology file, with every node's column and row resolved. */
+      const TOPO = {{TOPOLOGY}};
+
+      const NS = 'http://www.w3.org/2000/svg', XL = 'http://www.w3.org/1999/xlink';
+      const $ = s => document.querySelector(s);
+      const S = (tag, attrs = {}) => { const e = document.createElementNS(NS, tag); for (const k in attrs) e.setAttribute(k, attrs[k]); return e; };
+
+      const STATES = ['allow', 'risk', 'partial', 'block'];
+      const SLABEL = {allow:'Allowed', risk:'At risk', partial:'Partially limited', block:'Blocked'};
+      const ROLES = TOPO.roles;
+      const NODES = TOPO.nodes;
+      const EDGES = TOPO.edges.map(e => ({...e, st:e.state || 'allow'}));
+      const GROUPS = TOPO.groups || [];
+      const byId = Object.fromEntries(NODES.map(n => [n.id, n]));
+      const LAYOUT = {columnGap:180, rowGap:90, ...TOPO.layout};
+      /* Node width is fixed by .node; columns are this wide plus the gap. */
+      const NODE_W = 236, ORIGIN = 40;
+
+      /* Edges sharing a pair of nodes fan out around the straight line unless they set their own offset. */
+      const PARALLEL_STEP = 18;
+      {
+        const pairs = {};
+        for (const e of EDGES) if (e.offset === undefined) (pairs[[e.from, e.to].sort().join('\u0000')] ||= []).push(e);
+        for (const list of Object.values(pairs)) list.forEach((e, i) => { e.offset = (i - (list.length - 1) / 2) * PARALLEL_STEP; });
+      }
+
+      const canvas = $('#canvas'), world = $('#world'), svg = $('#svg'), gGroups = $('#groups'), gEdges = $('#edges'), layer = $('#nodes');
+      const panel = $('#panel'), tip = $('#tip'), mini = $('#mini');
+      const reduced = matchMedia('(prefers-reduced-motion: reduce)').matches;
+      let tx = 0, ty = 0, sc = .5, sel = null;
+
+      if (TOPO.accent) document.documentElement.style.setProperty('--accent', TOPO.accent);
+      $('#title').innerHTML = TOPO.title;
+      $('#logo').textContent = TOPO.logo || TOPO.title.replace(/<[^>]*>/g, '').trim().charAt(0).toLowerCase();
+      if (TOPO.summary) { $('#summary').innerHTML = TOPO.summary; $('#about').hidden = false; }
+
+      /* ---------- render ---------- */
+      function renderNodes() {
+        layer.innerHTML = '';
+        for (const n of NODES) {
+          const el = document.createElement('div');
+          el.className = 'node'; el.dataset.id = n.id;
+          el.style.setProperty('--rc', ROLES[n.role].color);
+          const rows = (n.rows || []).map(([k, v]) => `<div class="row"><span class="k">${k}</span><code>${v}</code></div>`).join('');
+          const chips = n.chips && n.chips.length ? `<div class="chips">${n.chips.map(c => `<span class="chip">${c}</span>`).join('')}</div>` : '';
+          el.innerHTML = `<span class="h hl"></span><span class="h hr"></span>
+            <div class="nh"><span class="ic">${n.icon || ''}</span><div><div class="nt">${n.title}</div>${n.sub ? `<div class="ns">${n.sub}</div>` : ''}</div></div>
+            <div class="nb">${rows}${chips}</div>
+            ${n.badge ? `<div class="nf"><span class="sw" style="background:${ROLES[n.role].color}"></span>${n.badge}</div>` : ''}`;
+          layer.appendChild(el);
+          n.el = el;
+        }
+        measure();
+        placeGrid();
+      }
+      function measure() { for (const n of NODES) { n.w = n.el.offsetWidth; n.h = n.el.offsetHeight; } }
+      function place(n) { n.el.style.left = n.x + 'px'; n.el.style.top = n.y + 'px'; }
+
+      /* Grid layout: every column is one node wide; every row is as tall as its tallest node, so rows line up across columns. */
+      function placeGrid() {
+        const rowH = [];
+        for (const n of NODES) rowH[n.row] = Math.max(rowH[n.row] || 0, n.h);
+        const rowY = [];
+        let y = ORIGIN;
+        for (let r = 0; r < rowH.length; r++) { rowY[r] = y; y += (rowH[r] || 0) + LAYOUT.rowGap; }
+        for (const n of NODES) {
+          n.x = ORIGIN + n.column * (NODE_W + LAYOUT.columnGap);
+          n.y = rowY[n.row];
+          place(n);
+        }
+      }
+
+      function buildGroups() {
+        gGroups.innerHTML = '';
+        for (const g of GROUPS) {
+          const el = S('g', {class:'grp', style:`--gc:${g.color}`});
+          const r = S('rect', {rx:16, ry:16}); const t = S('text');
+          t.textContent = g.label;
+          el.append(r, t); gGroups.appendChild(el);
+          g.r = r; g.t = t;
+        }
+        layoutGroups();
+      }
+      function layoutGroups() {
+        for (const g of GROUPS) {
+          const ms = g.members.map(id => byId[id]), pad = g.pad ?? 24;
+          const x0 = Math.min(...ms.map(n => n.x)) - pad, y0 = Math.min(...ms.map(n => n.y)) - pad;
+          const x1 = Math.max(...ms.map(n => n.x + n.w)) + pad, y1 = Math.max(...ms.map(n => n.y + n.h)) + pad;
+          const bl = g.labelPosition === 'bottom';
+          const y = bl ? y0 : y0 - 22, h = (y1 - y0) + 22;
+          g.r.setAttribute('x', x0); g.r.setAttribute('y', y); g.r.setAttribute('width', x1 - x0); g.r.setAttribute('height', h);
+          g.t.setAttribute('x', x0 + 14); g.t.setAttribute('y', bl ? y + h - 10 : y + 17);
+        }
+      }
+
+      function anchors(e) {
+        const a = byId[e.from], b = byId[e.to], o = e.offset || 0;
+        const A = {x:a.x, y:a.y, w:a.w, h:a.h, cx:a.x + a.w / 2, cy:a.y + a.h / 2};
+        const B = {x:b.x, y:b.y, w:b.w, h:b.h, cx:b.x + b.w / 2, cy:b.y + b.h / 2};
+        if (e.side) {
+          const s = e.side === 'right' ? 1 : -1;
+          const p0 = [s > 0 ? A.x + A.w : A.x, A.cy + o], p3 = [s > 0 ? B.x + B.w : B.x, B.cy + o];
+          const k = 60 + Math.abs(B.cy - A.cy) * .18;
+          return [p0, [p0[0] + s * k, p0[1]], [p3[0] + s * k, p3[1]], p3];
+        }
+        const dx = B.cx - A.cx, dy = B.cy - A.cy;
+        let p0, p3, d0, d3;
+        if (Math.abs(dx) >= Math.abs(dy) * .7) {
+          const s = Math.sign(dx) || 1;
+          p0 = [s > 0 ? A.x + A.w : A.x, A.cy + o]; p3 = [s > 0 ? B.x : B.x + B.w, B.cy + o]; d0 = [s, 0]; d3 = [-s, 0];
+        } else {
+          const s = Math.sign(dy) || 1;
+          p0 = [A.cx + o, s > 0 ? A.y + A.h : A.y]; p3 = [B.cx + o, s > 0 ? B.y : B.y + B.h]; d0 = [0, s]; d3 = [0, -s];
+        }
+        const k = Math.max(50, Math.hypot(p3[0] - p0[0], p3[1] - p0[1]) * .4);
+        return [p0, [p0[0] + d0[0] * k, p0[1] + d0[1] * k], [p3[0] + d3[0] * k, p3[1] + d3[1] * k], p3];
+      }
+
+      function buildEdges() {
+        gEdges.innerHTML = '';
+        for (const e of EDGES) {
+          const g = S('g', {class:`edge st-${e.st}`, 'data-id':e.id});
+          const hit = S('path', {class:'hit'});
+          const line = S('path', {class:'line', id:'p-' + e.id, 'marker-end':`url(#mk-${e.st})`});
+          g.append(hit, line);
+          e.hit = hit; e.line = line; e.xm = null;
+          if (e.st === 'block') {
+            const xm = S('g', {class:'xm'});
+            xm.append(S('circle', {r:8}), S('path', {d:'M-3.2,-3.2L3.2,3.2M3.2,-3.2L-3.2,3.2'}));
+            g.appendChild(xm); e.xm = xm;
+          } else {
+            const dot = S('circle', {r:3.6, class:'dot'});
+            const am = S('animateMotion', {dur:(e.st === 'allow' ? 2.8 : 1.8) + 's', repeatCount:'indefinite', begin:(-Math.random() * 2.5).toFixed(2) + 's'});
+            const mp = S('mpath'); mp.setAttribute('href', '#p-' + e.id); mp.setAttributeNS(XL, 'xlink:href', '#p-' + e.id);
+            am.appendChild(mp); dot.appendChild(am); g.appendChild(dot);
+          }
+          g.addEventListener('pointerenter', ev => showTip(ev, e));
+          g.addEventListener('pointermove', moveTip);
+          g.addEventListener('pointerleave', () => tip.style.display = 'none');
+          g.addEventListener('click', ev => { ev.stopPropagation(); select({kind:'edge', id:e.id}); });
+          gEdges.appendChild(g); e.el = g;
+        }
+        layoutEdges();
+        if (reduced) svg.pauseAnimations();
+      }
+      function layoutEdges() {
+        for (const e of EDGES) {
+          const [p0, p1, p2, p3] = anchors(e);
+          const d = `M${p0[0]},${p0[1]} C${p1[0]},${p1[1]} ${p2[0]},${p2[1]} ${p3[0]},${p3[1]}`;
+          e.line.setAttribute('d', d); e.hit.setAttribute('d', d);
+          const mx = (p0[0] + 3 * p1[0] + 3 * p2[0] + p3[0]) / 8, my = (p0[1] + 3 * p1[1] + 3 * p2[1] + p3[1]) / 8;
+          if (e.xm) e.xm.setAttribute('transform', `translate(${mx},${my})`);
+        }
+      }
+
+      /* ---------- tooltip ---------- */
+      function showTip(ev, e) {
+        tip.innerHTML = `<b>${e.label}</b><br><span style="color:var(--${e.st})">${SLABEL[e.st]}</span> · ${byId[e.from].title} → ${byId[e.to].title}`;
+        tip.style.display = 'block'; moveTip(ev);
+      }
+      function moveTip(ev) { tip.style.left = (ev.clientX + 14) + 'px'; tip.style.top = (ev.clientY + 14) + 'px'; }
+
+      /* ---------- selection + panel ---------- */
+      function select(s) {
+        sel = s;
+        for (const n of NODES) n.el.classList.remove('sel', 'dim');
+        for (const e of EDGES) e.el.classList.remove('sel', 'dim');
+        if (!s) { panel.classList.remove('open'); return; }
+        if (s.kind === 'node') {
+          const near = new Set([s.id]);
+          for (const e of EDGES) {
+            const on = e.from === s.id || e.to === s.id;
+            e.el.classList.toggle('dim', !on);
+            if (on) { near.add(e.from); near.add(e.to); }
+          }
+          for (const n of NODES) n.el.classList.toggle('dim', !near.has(n.id));
+          byId[s.id].el.classList.add('sel');
+          nodePanel(byId[s.id]);
+        } else {
+          const e = EDGES.find(x => x.id === s.id);
+          for (const x of EDGES) x.el.classList.toggle('dim', x !== e);
+          e.el.classList.add('sel');
+          for (const n of NODES) n.el.classList.toggle('dim', n.id !== e.from && n.id !== e.to);
+          edgePanel(e);
+        }
+        panel.classList.add('open');
+      }
+      const color = st => `var(--${st})`;
+      const section = d => `<h4>${d.heading}</h4>${d.html ? `<div>${d.html}</div>` : ''}${d.items && d.items.length ? `<ul>${d.items.map(i => `<li>${i}</li>`).join('')}</ul>` : ''}`;
+      function nodePanel(n) {
+        const rel = EDGES.filter(e => e.from === n.id || e.to === n.id);
+        panel.innerHTML = `<button class="x" aria-label="Close">×</button>
+          <h3>${n.title}</h3>${n.sub ? `<div class="sub">${n.sub}</div>` : ''}
+          <span class="rolechip"><span class="sw" style="background:${ROLES[n.role].color}"></span>${ROLES[n.role].label}</span>
+          ${(n.details || []).map(section).join('')}
+          ${rel.length ? `<h4>Talks to / reached by</h4>
+          <ul class="elist">${rel.map(e => {
+            const out = e.from === n.id, other = byId[out ? e.to : e.from];
+            return `<li data-e="${e.id}"><span class="sw" style="background:${color(e.st)}"></span><div>${out ? '→' : '←'} ${other.title}<small>${e.label} · ${SLABEL[e.st]}</small></div></li>`;
+          }).join('')}</ul>` : ''}`;
+        wirePanel();
+      }
+      function edgePanel(e) {
+        panel.innerHTML = `<button class="x" aria-label="Close">×</button>
+          <h3>${e.label}</h3><div class="sub">${byId[e.from].title} → ${byId[e.to].title}</div>
+          <span class="st" style="background:${color(e.st)}">${SLABEL[e.st]}</span>
+          ${e.note ? `<h4>Notes</h4><div>${e.note}</div>` : ''}`;
+        wirePanel();
+      }
+      function wirePanel() {
+        panel.querySelector('.x').onclick = () => select(null);
+        panel.querySelectorAll('[data-e]').forEach(li => li.onclick = () => select({kind:'edge', id:li.dataset.e}));
+      }
+
+      function stats() {
+        const c = {risk:0, partial:0, block:0, allow:0};
+        for (const e of EDGES) c[e.st]++;
+        $('#stats').innerHTML = ['risk', 'partial', 'block', 'allow'].filter(k => c[k]).map(k =>
+          `<span class="pill card"><span class="sw" style="background:${color(k)}"></span>${c[k]} ${SLABEL[k].toLowerCase()}</span>`).join('');
+      }
+
+      /* ---------- view: pan / zoom / fit ---------- */
+      function apply() {
+        world.style.transform = `translate(${tx}px,${ty}px) scale(${sc})`;
+        canvas.style.backgroundSize = `${20 * sc}px ${20 * sc}px`;
+        canvas.style.backgroundPosition = `${tx}px ${ty}px`;
+        drawMini();
+      }
+      const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
+      function zoomAt(f, cx, cy) {
+        const ns = clamp(sc * f, .15, 2.2), wx = (cx - tx) / sc, wy = (cy - ty) / sc;
+        sc = ns; tx = cx - wx * sc; ty = cy - wy * sc; apply();
+      }
+      function bounds(ns = NODES) {
+        const xs = ns.flatMap(n => [n.x, n.x + n.w]), ys = ns.flatMap(n => [n.y, n.y + n.h]);
+        const x = Math.min(...xs) - 90, y = Math.min(...ys) - 90;
+        return {x, y, w:Math.max(...xs) + 90 - x, h:Math.max(...ys) + 90 - y};
+      }
+      let camAnim = 0;
+      function fit(animate) {
+        const top = 64, W = innerWidth, H = innerHeight - top, b = bounds();
+        const s1 = clamp(Math.min(W / b.w, H / b.h), .15, 1.2);
+        const id = ++camAnim;
+        const cx = W / 2, cy = top + H / 2;
+        const c1 = [b.x + b.w / 2, b.y + b.h / 2];
+        if (!animate || reduced) { sc = s1; tx = cx - c1[0] * sc; ty = cy - c1[1] * sc; apply(); return; }
+        const s0 = sc, c0 = [(cx - tx) / sc, (cy - ty) / sc], t0 = performance.now(), D = 700;
+        const ease = t => t < .5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2;
+        const step = now => {
+          if (id !== camAnim) return;
+          const k = ease(Math.min(1, (now - t0) / D));
+          sc = Math.exp(Math.log(s0) + (Math.log(s1) - Math.log(s0)) * k);
+          tx = cx - (c0[0] + (c1[0] - c0[0]) * k) * sc; ty = cy - (c0[1] + (c1[1] - c0[1]) * k) * sc;
+          apply();
+          if (k < 1) requestAnimationFrame(step);
+        };
+        requestAnimationFrame(step);
+      }
+      let mm = null;
+      function drawMini() {
+        const b = bounds(), W = 220, H = 144, p = 8;
+        const k = Math.min((W - 2 * p) / b.w, (H - 2 * p) / b.h);
+        const ox = p + ((W - 2 * p) - b.w * k) / 2, oy = p + ((H - 2 * p) - b.h * k) / 2;
+        mm = {b, k, ox, oy};
+        let h = '';
+        for (const n of NODES) h += `<rect x="${ox + (n.x - b.x) * k}" y="${oy + (n.y - b.y) * k}" width="${n.w * k}" height="${n.h * k}" rx="2" fill="${ROLES[n.role].color}" fill-opacity=".75"/>`;
+        const vx = ox + (-tx / sc - b.x) * k, vy = oy + (-ty / sc - b.y) * k;
+        h += `<rect class="vp" x="${vx}" y="${vy}" width="${innerWidth / sc * k}" height="${innerHeight / sc * k}" rx="3"/>`;
+        mini.innerHTML = h;
+      }
+      function miniGo(ev) {
+        const r = mini.getBoundingClientRect();
+        const wx = (ev.clientX - r.left - mm.ox) / mm.k + mm.b.x, wy = (ev.clientY - r.top - mm.oy) / mm.k + mm.b.y;
+        tx = innerWidth / 2 - wx * sc; ty = innerHeight / 2 - wy * sc; apply();
+      }
+      let miniDown = false;
+      mini.addEventListener('pointerdown', ev => { miniDown = true; mini.setPointerCapture(ev.pointerId); miniGo(ev); });
+      mini.addEventListener('pointermove', ev => { if (miniDown) miniGo(ev); });
+      mini.addEventListener('pointerup', () => miniDown = false);
+
+      /* ---------- pointer interaction ---------- */
+      let drag = null;
+      canvas.addEventListener('pointerdown', ev => {
+        camAnim++;
+        if (ev.button !== 0) return;
+        const nodeEl = ev.target.closest('.node');
+        if (nodeEl) {
+          const n = byId[nodeEl.dataset.id];
+          drag = {kind:'node', n, x0:ev.clientX, y0:ev.clientY, nx:n.x, ny:n.y, moved:false};
+          nodeEl.classList.add('dragging');
+        } else if (ev.target.closest('.edge')) {
+          return;
+        } else {
+          drag = {kind:'pan', x0:ev.clientX, y0:ev.clientY, tx, ty, moved:false};
+          canvas.classList.add('panning');
+        }
+        canvas.setPointerCapture(ev.pointerId);
+      });
+      canvas.addEventListener('pointermove', ev => {
+        if (!drag) return;
+        const dx = ev.clientX - drag.x0, dy = ev.clientY - drag.y0;
+        if (Math.hypot(dx, dy) > 3) drag.moved = true;
+        if (drag.kind === 'node') {
+          drag.n.x = Math.round(drag.nx + dx / sc); drag.n.y = Math.round(drag.ny + dy / sc);
+          place(drag.n);
+          layoutGroups(); layoutEdges(); drawMini();
+        } else { tx = drag.tx + dx; ty = drag.ty + dy; apply(); }
+      });
+      canvas.addEventListener('pointerup', () => {
+        if (!drag) return;
+        if (drag.kind === 'node') {
+          drag.n.el.classList.remove('dragging');
+          if (!drag.moved) select({kind:'node', id:drag.n.id});
+        } else {
+          canvas.classList.remove('panning');
+          if (!drag.moved) select(null);
+        }
+        drag = null;
+      });
+      canvas.addEventListener('wheel', ev => {
+        ev.preventDefault(); camAnim++;
+        if (ev.ctrlKey || ev.metaKey) zoomAt(Math.exp(-ev.deltaY * .01), ev.clientX, ev.clientY);
+        else { tx -= ev.deltaX; ty -= ev.deltaY; apply(); }
+      }, {passive:false});
+      $('#zin').onclick = () => zoomAt(1.2, innerWidth / 2, innerHeight / 2);
+      $('#zout').onclick = () => zoomAt(1 / 1.2, innerWidth / 2, innerHeight / 2);
+      $('#zfit').onclick = () => fit(true);
+      addEventListener('resize', drawMini);
+      addEventListener('keydown', ev => {
+        if (ev.target.closest && ev.target.closest('input,textarea')) return;
+        if (ev.key === 'f' || ev.key === 'F') fit(true);
+        else if (ev.key === 'Escape') select(null);
+      });
+
+      /* ---------- legend ---------- */
+      const present = STATES.filter(k => EDGES.some(e => e.st === k));
+      const boundaries = [...new Map(GROUPS.filter(g => g.legend).map(g => [g.legend, g.color])).entries()];
+      $('#lg').innerHTML = '<h5>Roles</h5>' +
+        Object.values(ROLES).map(r => `<span><span class="sw" style="background:${r.color}"></span>${r.label}</span>`).join('') +
+        (present.length ? '<h5>Edges</h5>' : '') +
+        present.map(k => `<span><span class="ln" style="border-color:${color(k)};border-top-style:${k === 'allow' ? 'solid' : 'dashed'}"></span>${SLABEL[k]}</span>`).join('') +
+        (boundaries.length ? '<h5>Boundaries</h5>' : '') +
+        boundaries.map(([l, c]) => `<span><span class="bx" style="border-color:${c};background:color-mix(in srgb,${c} 10%,transparent)"></span>${l}</span>`).join('');
+
+      renderNodes(); buildGroups(); buildEdges(); stats(); drawMini();
+      fit();
+      /* Re-measure once webfonts settle, since node heights decide row heights. */
+      document.fonts && document.fonts.ready.then(() => { measure(); placeGrid(); layoutGroups(); layoutEdges(); fit(); });
+      requestAnimationFrame(() => setTimeout(() => document.body.classList.add("settled"), 500));
+      })();
+    </script>
+  </body>
+</html>

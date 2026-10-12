@@ -1,0 +1,133 @@
+{
+  "title": "homelab · edge exposure",
+  "logo": "h",
+  "summary": "<p><b>One host, two ways in.</b> Public traffic arrives through a Cloudflare Tunnel; private traffic through the tailnet. Every service binds to loopback, so the reverse proxy is the only front door.</p><p>Red paths are what a compromised service can reach today.</p>",
+  "roles": {
+    "ext": { "label": "Off-host / external", "color": "#8b8b99" },
+    "ingress": { "label": "Ingress (tunnel, proxy, tailnet)", "color": "#0d9488" },
+    "app": { "label": "Application service", "color": "#2563eb" },
+    "store": { "label": "Storage", "color": "#d97706" }
+  },
+  "nodes": [
+    {
+      "id": "inet",
+      "role": "ext",
+      "column": 0,
+      "icon": "WWW",
+      "title": "Public internet",
+      "sub": "anonymous clients",
+      "badge": "untrusted",
+      "details": [{ "heading": "Trust", "html": "Untrusted. Reaches the Cloudflare edge only." }]
+    },
+    {
+      "id": "peers",
+      "role": "ext",
+      "column": 0,
+      "icon": "PR",
+      "title": "Tailnet peers",
+      "sub": "laptops · phones",
+      "badge": "tailnet ACLs"
+    },
+    {
+      "id": "lan",
+      "role": "ext",
+      "column": 0,
+      "icon": "LAN",
+      "title": "LAN devices",
+      "sub": "router · NAS · printers",
+      "rows": [["subnet", "192.168.1.0/24"]]
+    },
+    {
+      "id": "cloudflared",
+      "role": "ingress",
+      "column": 1,
+      "icon": "cfd",
+      "title": "cloudflared",
+      "sub": "tunnel connector",
+      "rows": [["dials", "edge (outbound only)"]],
+      "badge": "own uid"
+    },
+    {
+      "id": "tailscaled",
+      "role": "ingress",
+      "column": 1,
+      "row": 1,
+      "icon": "tsd",
+      "title": "tailscaled",
+      "sub": "userspace netstack",
+      "rows": [["Serve", ":443 → app"]]
+    },
+    {
+      "id": "proxy",
+      "role": "ingress",
+      "column": 2,
+      "icon": "RP",
+      "title": "Reverse proxy",
+      "sub": "loopback",
+      "rows": [["listen", "127.0.0.1:8080"]],
+      "details": [
+        { "heading": "Listens on", "html": "<code>127.0.0.1:8080</code>" },
+        { "heading": "Risks", "items": ["Not a boundary: services dial each other directly"] }
+      ]
+    },
+    {
+      "id": "blog",
+      "role": "app",
+      "column": 3,
+      "icon": "B",
+      "title": "blog",
+      "rows": [["port", "127.0.0.1:3000"]],
+      "chips": ["public"]
+    },
+    {
+      "id": "wiki",
+      "role": "app",
+      "column": 3,
+      "icon": "W",
+      "title": "wiki",
+      "rows": [["port", "127.0.0.1:3001"]],
+      "chips": ["tailnet only"]
+    },
+    {
+      "id": "db",
+      "role": "store",
+      "column": 4,
+      "row": 1,
+      "icon": "PG",
+      "title": "Postgres",
+      "rows": [["listen", "127.0.0.1:5432"]]
+    }
+  ],
+  "edges": [
+    { "id": "e1", "from": "inet", "to": "cloudflared", "label": "HTTPS via the Cloudflare edge" },
+    { "id": "e2", "from": "cloudflared", "to": "proxy", "label": "Tunnel ingress → proxy" },
+    { "id": "e3", "from": "peers", "to": "tailscaled", "label": "WireGuard" },
+    { "id": "e4", "from": "tailscaled", "to": "wiki", "label": "Serve → :3001" },
+    { "id": "e5", "from": "proxy", "to": "blog", "label": "Host blog.example → :3000" },
+    { "id": "e6", "from": "blog", "to": "db", "label": "SQL (own database)" },
+    { "id": "e7", "from": "wiki", "to": "db", "label": "SQL (own database)" },
+    {
+      "id": "e8",
+      "from": "blog",
+      "to": "wiki",
+      "label": "Direct dial, skipping tailnet auth",
+      "state": "risk",
+      "note": "Both bind the shared loopback, so any local process can reach any port."
+    },
+    {
+      "id": "e9",
+      "from": "blog",
+      "to": "lan",
+      "label": "SSRF to LAN admin UIs",
+      "state": "partial",
+      "side": "left",
+      "note": "Firewall blocks 22 and 443 to the LAN, but other ports stay open."
+    },
+    { "id": "e10", "from": "inet", "to": "blog", "label": "Direct dial of a service port", "state": "block" }
+  ],
+  "groups": [
+    { "id": "g-host", "label": "Physical host", "members": ["cloudflared", "tailscaled", "proxy", "blog", "wiki", "db"], "pad": 56, "color": "#64748b", "legend": "Host" },
+    { "id": "g-lo", "label": "Loopback 127.0.0.1", "members": ["proxy", "blog", "wiki", "db"], "pad": 28, "color": "#7c3aed", "legend": "Loopback" },
+    { "id": "g-tail", "label": "Tailnet overlay", "members": ["peers", "tailscaled"], "pad": 20, "color": "#0ea5e9", "labelPosition": "bottom", "legend": "Tailnet overlay" }
+  ]
+}

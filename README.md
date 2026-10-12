@@ -147,6 +147,7 @@ Restart Claude Code after adding or changing an agent definition.
 | macos-notifications           | Send local macOS Notification Center alerts from task context                      |
 | mermaid                       | Validate, create, and render Mermaid diagrams                                      |
 | name-gen                      | Brainstorm project names, check domains, research conflicts                        |
+| network-topology              | Render a JSON model of nodes, edges, and boundaries as an interactive topology map |
 | new-cli-skill                 | Generate a CLI-usage skill from a name or URL                                      |
 | npm-info                      | Fetch npm package metadata from the registry                                       |
 | pr-create                     | Create a PR from the current branch with a template or generated description       |

@@ -125,6 +125,13 @@
         "effect": "4.0.0",
       },
     },
+    "skills/network-topology": {
+      "name": "@wyattjoh/network-topology-skill",
+      "version": "1.0.0",
+      "dependencies": {
+        "effect": "4.0.0",
+      },
+    },
     "skills/npm-info": {
       "name": "@wyattjoh/npm-info-skill",
       "version": "1.0.0",
@@ -651,6 +658,8 @@
     "@wyattjoh/mermaid-skill": ["@wyattjoh/mermaid-skill@workspace:skills/mermaid"],
 
     "@wyattjoh/name-gen-skill": ["@wyattjoh/name-gen-skill@workspace:skills/name-gen"],
+
+    "@wyattjoh/network-topology-skill": ["@wyattjoh/network-topology-skill@workspace:skills/network-topology"],
 
     "@wyattjoh/npm-info-skill": ["@wyattjoh/npm-info-skill@workspace:skills/npm-info"],
 
