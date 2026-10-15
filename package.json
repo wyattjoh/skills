@@ -23,7 +23,7 @@
     "@types/bun": "1.4.2",
     "@types/node": "^26.6.3",
     "knip": "^6.39.0",
-    "lefthook": "2.1.14",
+    "lefthook": "2.2.1",
     "oxfmt": "^0.72.0",
     "oxlint": "^1.85.0",
     "typescript": "^7.0.2"
