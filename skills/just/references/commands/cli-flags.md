@@ -138,7 +138,7 @@ concurrently, such as dependencies of a recipe with `[parallel]`.
 ## Notes
 
 - **No per-flag help pages.** `just` is a single clap command; `just --completions
---help` does not print sub-help (it errors that a `<SHELL>` value is required).
+  --help` does not print sub-help (it errors that a `<SHELL>` value is required).
 - **No `EXAMPLES:` block** is printed by `just --help`.
 - Almost every flag has a matching `JUST_*` environment variable (shown inline as
   `[env: ...]`), so behavior can be set via env instead of flags.
