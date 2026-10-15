@@ -50,7 +50,7 @@ On a `done` report:
    ticket's files is an escalation, not a merge.
 3. Run the verification gate yourself in the worktree.
 4. `cd <worktree> && pando merge` to integrate into the target branch. `pando
-merge` squashes and removes the worktree by default; pass `--no-squash` when
+   merge` squashes and removes the worktree by default; pass `--no-squash` when
    the ticket's individual commits are worth keeping.
 5. `herdr tab close <tabId>`, set `merged`, record `mergedSha`, re-evaluate the
    ready set.
