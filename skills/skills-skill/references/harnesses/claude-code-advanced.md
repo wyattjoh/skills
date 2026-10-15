@@ -366,7 +366,7 @@ Deploy version `$1` to `$0` environment.
   `arguments` with no matching argument expands to an empty string.
 - Argument values are inserted as literal text and never re-expanded. If a skill
   body contains `Summarize $0` and you run `/summarize "$ARGUMENTS from
-yesterday"`, Claude receives `Summarize $ARGUMENTS from yesterday`.
+  yesterday"`, Claude receives `Summarize $ARGUMENTS from yesterday`.
   `${CLAUDE_*}` variables are still substituted after arguments are inserted.
 - To write a literal `$` before a digit, `ARGUMENTS`, or a declared argument
   name, escape it with a backslash: `\$1.00`. A backslash before any other `$`
