@@ -125,8 +125,8 @@ The `pipeline` has 3 items and 2 stages. Execute depth-first: both stages for
 **Item 1: README.md**
 
 1. `audit:README.md` (Audit). Materialized prompt: `Read README.md and check
-every shell command and file path it mentions against the actual repo.
-Return findings for claims that appear wrong or outdated.` Perform it; the
+   every shell command and file path it mentions against the actual repo.
+   Return findings for claims that appear wrong or outdated.` Perform it; the
    result must validate against `FINDINGS_SCHEMA`. Suppose it returns
    `{ findings: [F1, F2] }`, each with `file`, `claim`, `why`. Journal it.
 2. Stage 2 receives `(audit, 'README.md', 0)`: the stage callback always gets
