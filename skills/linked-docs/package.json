@@ -10,6 +10,6 @@
   },
   "dependencies": {
     "effect": "^3.22.2",
-    "marked": "^18.1.0"
+    "marked": "^18.1.1"
   }
 }
