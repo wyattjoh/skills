@@ -4,7 +4,10 @@ All frontmatter fields are optional. Only `description` is strongly recommended.
 
 Claude Code reads the frontmatter only when the opening `---` is the file's
 **first line**. Otherwise it treats the whole file, `---` markers included, as
-skill content, so the skill loads with no metadata at all.
+skill content, so the skill loads with no metadata at all. YAML that doesn't
+parse also loads the skill with no fields set (`claude plugin validate
+.claude/skills` finds it), and a misspelled field name is ignored without an
+error, so match each name exactly, hyphens included.
 
 Boolean fields (`disable-model-invocation`, `user-invocable`, `background`)
 accept `yes`, `no`, `on`, `off`, `1`, and `0` in any letter case, in addition
@@ -121,6 +124,12 @@ project skill's `allowed-tools` whenever the skill is invoked, including in a
 `-p` run inside a folder you have never trusted. A skill checked into a
 repository can therefore grant itself broad tool access, so review the
 `allowed-tools` of repo skills before running Claude Code there.
+
+Two managed settings withhold the grant. With `allowManagedPermissionRulesOnly`
+(v2.1.282+), Claude Code ignores `allowed-tools` in project and personal
+skills. When `strictPluginOnlyCustomization` lists `hooks`, a personal or
+project skill that declares `hooks` loses its `allowed-tools` pre-approval.
+`/status` lists skills whose `allowed-tools` was ignored.
 
 ### Common Tool Sets
 
@@ -373,7 +382,9 @@ hooks:
 
 Glob patterns that limit when this skill auto-activates. When set, Claude loads
 the skill only when working with files matching the patterns. Uses the same
-format as path-specific rules.
+format as path-specific rules. Patterns are relative to Claude's current
+working directory, and files outside it (such as a sibling git worktree, even
+one added with `/add-dir`) never match.
 
 ```yaml
 # Comma-separated
