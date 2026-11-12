@@ -13,13 +13,19 @@ Skills can be invoked three ways:
 | Setting                          | You can invoke | Claude can invoke | When loaded into context                                     |
 | -------------------------------- | -------------- | ----------------- | ------------------------------------------------------------ |
 | Default                          | Yes            | Yes               | Description always in context; full skill loads when invoked |
-| `disable-model-invocation: true` | Yes            | No                | Description not in context; full skill loads when you invoke |
+| `disable-model-invocation: true` | Yes            | Not on its own    | Description not in context; full skill loads when you invoke |
 | `user-invocable: false`          | No             | Yes               | Description always in context; full skill loads when invoked |
 
 **Note:** In a regular session, skill descriptions are loaded into context so
 Claude knows what's available, but full skill content only loads when invoked.
 Subagents with preloaded skills work differently: the full skill content is
 injected at startup.
+
+A `/name` at the start of a message runs the skill. Written after plain text as
+a separate word (`go ahead and /deploy to staging`), it runs nothing directly
+but counts as your permission for that message, so Claude may invoke the skill
+while it responds, even with `disable-model-invocation: true`. Leave off the
+slash to mention a skill without permitting a run.
 
 ### Example: Model-Only Skill
 
@@ -119,8 +125,10 @@ Other discovery details worth knowing when placing a skill:
 
 ### Stacked Invocations
 
-Typing several skills in one prompt (`/skill-a /skill-b do XYZ`) loads **all**
-the leading skills (the first plus up to five more), not just the first.
+Typing several skills in one prompt (`/skill-a /skill-b do XYZ`) at the terminal
+prompt loads **all** the leading skills (the first plus up to five more), not
+just the first. Through `claude -p` or the Agent SDK only the first loads, with
+the rest of the line as its arguments.
 Expansion stops at the first token that isn't an inline user-invocable skill,
 so a forked skill such as `/code-review` ends the run.
 
@@ -191,7 +199,8 @@ removing a skill takes effect in the current session. Two limits: detection
 covers `SKILL.md` **text only** (for a skill folder that's also a plugin,
 changes to `hooks/`, `.mcp.json`, `agents/`, and `output-styles/` need
 `/reload-plugins`), and a top-level skills directory that didn't exist when the
-session started isn't watched until you restart.
+session started isn't watched: run `/reload-skills` to pick up its skills, and
+again after each later change there.
 
 ### Cowork, Cloud Sessions, and Synced Skills
 
@@ -206,8 +215,11 @@ way any local session does.
 Authoring implications:
 
 - To make a skill available in these sessions, either enable it for your
-  claude.ai account, or (cloud only) commit it to the repo's `.claude/skills/`
-  or ship it in a plugin declared in the repo's `.claude/settings.json`.
+  claude.ai account, or (cloud sessions other than project threads) commit it
+  to the repo's `.claude/skills/`. Plugins declared in the repo's
+  `.claude/settings.json`, or enabled only in your user settings, don't load in
+  cloud sessions, and cloud threads in a project don't load the repo's
+  `.claude/skills/` either.
 - Uploading a personal skill to claude.ai puts it on the Agent Skills spec path,
   so only the six spec fields are allowed. See the frontmatter reference.
 - Locally, a skill synced **from** claude.ai is degraded on purpose: its body
@@ -305,7 +317,7 @@ which disables every bundled skill except `/doctor`.
 can start `/code-review` on its own (before v2.1.246, only where a feature
 flag enabled it); set `skillOverrides` to `"code-review":
 "user-invocable-only"` to prevent that. Source:
-[Code Review docs](https://code.claude.com/docs/en/code-review#let-claude-start-the-review).
+[local code review docs](https://code.claude.com/docs/en/code-review-local#let-claude-start-the-review).
 
 ## Types of Skill Content
 

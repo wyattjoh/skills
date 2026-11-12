@@ -32,7 +32,7 @@ Effect.gen(function* () {
 ```
 
 `Option` and `Result` convert with `Effect.fromOption` and `Effect.fromResult`. There is no `.asEffect()` method on
-them in `4.0.0-rc.118`, despite what upstream `migration/yieldable.md` still shows:
+them, whatever older prerelease copies of upstream `migration/yieldable.md` showed:
 
 ```typescript
 Effect.map(Effect.fromOption(Option.some(42)), (n) => n + 1);
@@ -208,10 +208,12 @@ Effect.gen(function* () {
 });
 ```
 
-## Layer Memoization Is Now Shared
+## Layer Memoization Across `Effect.provide`
 
-v4 shares the memo map across `Effect.provide` calls, so a layer provided twice is built once. This fixes a v3
-footgun, but it also means tests that relied on a fresh build per `provide` now share state.
+In v4 a nested `Effect.provide` reuses any layer an enclosing `provide` (or runtime) already built, so the same layer
+provided at two nesting levels is built once. Each `provide` forks the ambient memo map without writing back to it,
+so sibling `provide` calls still build their own copies, as in v3. Code that relied on a fresh build in a nested
+`provide` now shares the outer instance.
 
 When independent instances are genuinely needed:
 
@@ -220,14 +222,20 @@ Effect.provide(effect, Layer.fresh(MyLayer));
 Effect.provide(effect, MyLayer, { local: true });
 ```
 
-Composing layers once and providing once is still the recommended structure. Auto-memoization is a safety net, not a
-substitute for an explicit dependency graph.
+Composing layers once and providing once is still the recommended structure. Reuse across nested provides is a
+safety net, not a substitute for an explicit dependency graph. See upstream `migration/layer-memoization.md`.
 
-## Prerelease Stability
+## Stability Tiers
 
-`4.0.0-rc.118` is a prerelease and APIs can still move between release candidates. Two consequences:
+v4 is stable, but not every module follows strict semver. Every module and directly importable export declares its
+stability in its API docs:
 
-- Verify a symbol against the pinned source before recommending it, rather than recalling it.
-- Modules marked `@stability unstable` (for example `effect/http`, `effect/cli`, `effect/ai`, `effect/reactivity`)
-  may break in minor releases even after v4 is stable. `4.0.0-rc.118` moved them from `effect/unstable/*` to
-  `effect/*` with no compatibility exports, so rewrite any `effect/unstable/...` import by dropping that segment.
+- `@stability stable` (and untagged APIs) follow strict semver.
+- `@stability unstable` (for example `effect/http`, `effect/cli`, `effect/ai`, `effect/reactivity`) may gain features
+  in patch releases and break in minor releases. Modules in packages other than `effect` (such as `@effect/vitest`
+  and `@effect/atom-react`) are currently all unstable.
+- `@stability experimental` may break across patch releases.
+
+Verify a symbol against the pinned source before recommending it, rather than recalling it. Prerelease builds
+imported these modules from `effect/unstable/*`; that segment is gone with no compatibility exports, so rewrite any
+`effect/unstable/...` import by dropping it.

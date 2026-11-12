@@ -8,7 +8,7 @@
   },
   "dependencies": {
     "@happy-dom/global-registrator": "^20.14.6",
-    "effect": "^3.22.2",
-    "mermaid": "^12.1.0"
+    "effect": "^3.22.4",
+    "mermaid": "^12.3.0"
   }
 }

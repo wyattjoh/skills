@@ -29,7 +29,7 @@ If no matching skill is found, report the error and list available skills so the
 
 Read the matched `SKILL.md` file and extract:
 
-- **`allowed-tools`**: What tools the skill is permitted to use (if unrestricted, note that)
+- **`allowed-tools`**: Which tools the skill pre-approves (runs without a permission prompt) during its invocation turn. It does not restrict the tool pool, so an unlisted tool is still callable under the session's permission settings; note "none" if the field is absent
 - **`description`**: Trigger phrases and purpose
 - **`context`**: Whether it runs forked or inline
 - **`disable-model-invocation`**: Whether it's manual-only
@@ -67,7 +67,7 @@ Spawn a `conversation-historian` agent via the `Agent` tool with the following p
 >    - **Retries/Struggles**: Tools called 3+ times with similar arguments
 >    - **Overall Assessment**: 1-2 sentence summary of how well the skill executed
 
-Replace `ALLOWED_TOOLS_PLACEHOLDER` with the actual `allowed-tools` value from Phase 2 (or "unrestricted" if none).
+Replace `ALLOWED_TOOLS_PLACEHOLDER` with the actual `allowed-tools` value from Phase 2 (or "none" if absent). Tools outside that list are not violations by themselves; they matter when they caused a permission prompt or denial.
 
 ## Phase 4: Present Findings
 

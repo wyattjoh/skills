@@ -3,7 +3,8 @@
 The daily-driver resolution commands. Each accepts a subset of the [common
 resolution flags](../../SKILL.md#common-resolution-flags) (`-p/--path`, `--env`,
 `--clear-cache`, `--skip-cache`, `--filter`); the per-command tables below list
-exactly which. Verified against `varlock 1.21.0` `--help`.
+exactly which. Verified against `varlock 1.21.0` `--help` and re-checked against
+the 1.24.0 command specs (only `load` and `run` gained flags).
 
 ## `load`
 
@@ -17,6 +18,8 @@ varlock load [OPTIONS]
 | Flag                    | Short | Purpose                                                                              |
 | ----------------------- | ----- | ------------------------------------------------------------------------------------ |
 | `--format [format]`     | `-f`  | Output format: `pretty` (default), `json`, `env`, `shell`, `json-full`.              |
+| `--frozen [path]`       |       | Show the values in a `varlock freeze` file (default `.varlock-frozen-env`). 1.22.0.  |
+| `--defer-boot-required` |       | Let required `@dynamic=boot` items be unset (for builds that freeze). 1.24.0.        |
 | `--agent`               |       | Agent-safe mode: redact sensitive values (defaults to JSON if `--format` unset).     |
 | `--compact`             |       | Compact output (json-full: no indentation; env/shell: skip undefined values).        |
 | `--show-all`            |       | When load is failing, show all items, not only failing ones.                         |
@@ -52,7 +55,11 @@ varlock load --filter="#billing"    # Only items tagged @tag(billing)
 `json-full` excluding `@internal` items by default is a 1.11.0 fix: framework
 integrations consume this output, so an internal secret-zero credential could
 leak into client/SSR code. `--format shell` skips items that resolve to
-`undefined` (1.18.0). Source: [load](https://varlock.dev/reference/cli/load-and-run/#load).
+`undefined` (1.18.0). `--frozen` reads no schema, and `--path`, `--filter`, and the
+cache flags are rejected alongside it. Since 1.24.0, when config is invalid the last
+line of output names the failing keys, and CLI error summaries are prefixed with
+`[varlock]`. Source: [load](https://varlock.dev/reference/cli/load-and-run/#load);
+[changelog](https://github.com/dmno-dev/varlock/blob/varlock%401.24.0/packages/varlock/CHANGELOG.md).
 
 ## `run`
 
@@ -68,6 +75,7 @@ varlock run [OPTIONS] -- <command> [args...]
 | `--redact-stdout`    |       | Force redaction of piped/redirected output. Also settable via `_VARLOCK_REDACT_STDOUT` (flag wins).          |
 | `--no-redact-stdout` |       | Disable redaction entirely.                                                                                  |
 | `--inject <mode>`    | `-i`  | What is injected: `all` (default), `vars` (individual vars only, no blob), or `blob` (`__VARLOCK_ENV` only). |
+| `--frozen [path]`    |       | Boot from a `varlock freeze` file (default `.varlock-frozen-env`); errors if missing or unusable. 1.22.0.    |
 | `--include-internal` |       | Pass `@internal` items through to the child (stripped by default).                                           |
 | `--filter <filter>`  |       | Filter injected items; excluded keys are also stripped from the blob and child env. Or `_VARLOCK_FILTER`.    |
 | `--path <path>`      | `-p`  | Entry-point `.env` file/dir. Repeatable.                                                                     |
@@ -76,6 +84,14 @@ varlock run [OPTIONS] -- <command> [args...]
 
 Redaction applies automatically when output is piped/redirected (e.g. CI logs);
 interactive terminals get raw TTY pass-through, so tools like `psql` just work.
+
+Since 1.22.0 the child's exit code is passed through silently (no "command failed"
+hint on stdout, including after a forwarded Ctrl+C); a command that cannot be
+started is reported on stderr with exit 127 (not found) or 126 (not executable).
+With `--frozen` (or `_VARLOCK_USE_FROZEN_ENV`), `--path`, `--filter`, the cache
+flags, and `--include-internal` are rejected. Source:
+[run](https://varlock.dev/reference/cli/load-and-run/#run);
+[changelog](https://github.com/dmno-dev/varlock/blob/varlock%401.24.0/packages/varlock/CHANGELOG.md).
 
 `EXAMPLES:` (verbatim from `varlock run --help`):
 

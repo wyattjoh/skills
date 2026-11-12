@@ -12,11 +12,12 @@ Four changes affect whole files rather than single call sites. Handle them befor
    `@effect/vitest`, `@effect/opentelemetry`, and `@effect/atom-*` all share one version number. Bump them together.
 2. **Package consolidation.** `@effect/platform`, `@effect/rpc`, `@effect/cluster`, `@effect/cli`, `@effect/ai`, and
    `@effect/experimental` were merged into `effect`, under subpaths such as `effect/http`, `effect/cli`, and
-   `effect/ai`. Earlier release candidates used `effect/unstable/*`; `4.0.0-rc.118` dropped the `unstable` segment
-   with no compatibility exports.
+   `effect/ai`. Prerelease builds used `effect/unstable/*`; the stable release dropped the `unstable` segment with no
+   compatibility exports.
 3. **Unstable modules.** Modules whose API docs carry `@stability unstable` (`ai`, `cli`, `cluster`, `http`,
    `http-api`, `reactivity`, `rpc`, `sql`, and others listed in upstream `MIGRATION.md`) may break in minor
-   releases. APIs without a stability tag follow strict semver.
+   releases, and `@stability experimental` ones across patches. `@stability stable` and untagged APIs follow strict
+   semver.
 4. **Effect subtyping removed.** See the former-Effect-subtypes section in `critical-rules.md`. This is the change most likely to
    produce a wall of type errors.
 
@@ -102,6 +103,11 @@ Effect.catchFilter(
 New: `Effect.catchReason` and `Effect.catchReasons` handle a tagged `reason` inside an error without removing the
 parent error from the error channel. `Effect.catchEager` evaluates synchronous recovery immediately.
 
+Behaviour change: in v3, `catchTag`, `catchTags`, `catchIf`, `catchSome`, and the `Stream` recovery operators ran
+their handler on a cause holding both a typed error and a defect, dropping the defect. In v4 every typed-error
+recovery operator skips such causes and propagates them as defects. Use `Effect.catchCause` or `Effect.catchDefect`
+to recover them.
+
 ## Cause
 
 `Cause<E>` is now `{ reasons: ReadonlyArray<Fail<E> | Die | Interrupt> }`. The `Empty`, `Sequential`, and `Parallel`
@@ -177,8 +183,8 @@ Effect.gen(function* () {
 });
 ```
 
-The `Runtime` module now holds only run-main plumbing: `Teardown`, `defaultTeardown`, `makeRunMain`, and the
-`errorExitCode` / `errorReported` helpers.
+The `Runtime` module now holds only run-main plumbing: `Teardown`, `defaultTeardown`, `InterruptExitCode`,
+`makeRunMain`, and the `errorExitCode` / `errorReported` helpers.
 
 The core runtime keeps the process alive across suspensions on its own, so `runMain` is no longer required merely to
 stop early exit. It is still recommended for signal handling, exit codes, and error reporting.
@@ -200,7 +206,9 @@ stop early exit. It is still recommended for signal handling, exit codes, and er
 | `Effect.gen(this, fn)`                | `Effect.gen({ self: this }, fn)`    |
 | `unsafeX(...)`                        | `xUnsafe(...)`                      |
 
-`Effect.partition` now requires a mapping function: `Effect.partition(items, (item) => effect)`.
+`Effect.partition` now requires a mapping function, `Effect.partition(items, (item) => effect)`, and returns
+`[successes, failures]`. The same successes-first order applies to `Array`, `Chunk`, and `Record` `partition`, their
+`separate` helpers, and `Option.partitionMap`; swap any destructuring carried over from v3.
 
 ## Equality Behaviour Change
 

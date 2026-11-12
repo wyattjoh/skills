@@ -181,22 +181,33 @@ Other useful constructors:
 
 ## Memoization Changed in v4
 
-In v3, each `Effect.provide` call had its own memo map, so providing the same layer twice built it twice. In v4 the
-memo map is shared across `provide` calls on a fiber, so it is built once.
+In v3, each `Effect.provide` call had its own memo map, so providing the same layer twice built it twice. In v4 each
+`provide` forks the ambient memo map: a nested `provide` reuses layers an enclosing `provide` (or runtime) already
+built, but nothing is written back, so sibling `provide` calls still build their own copies.
 
 ```typescript
 const main = program.pipe(Effect.provide(MyServiceLayer), Effect.provide(MyServiceLayer));
-// v3: builds twice. v4: builds once.
+// Nested. v3: builds twice. v4: builds once.
+
+const siblings = Effect.gen(function* () {
+  yield* program.pipe(Effect.provide(MyServiceLayer));
+  yield* program.pipe(Effect.provide(MyServiceLayer));
+});
+// Siblings. Builds twice in both v3 and v4.
 ```
 
-Compose layers and provide once anyway. The shared memo map is a safety net against the v3 footgun, not a substitute
-for an explicit dependency graph.
+Compose layers and provide once anyway. Reuse across nested provides is a safety net, not a substitute for an
+explicit dependency graph.
+
+Within one build, a composed layer referenced from several parents is also built once, and sharing it shares
+everything inside it, including dependencies wrapped in `Layer.fresh`. Wrap the composed layer itself in `Layer.fresh`
+to get a separate copy.
 
 Opt out when independent instances are genuinely wanted, such as isolated test resources or separate pools:
 
 ```typescript
-Effect.provide(effect, Layer.fresh(MyServiceLayer)); // bypass the shared cache
-Effect.provide(effect, MyServiceLayer, { local: true }); // build the subtree in a local memo map
+Effect.provide(effect, Layer.fresh(MyServiceLayer)); // bypass the memo map for this layer
+Effect.provide(effect, MyServiceLayer, { local: true }); // build the subtree in a new local memo map
 ```
 
 ## Providing Context Directly

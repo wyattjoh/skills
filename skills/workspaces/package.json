@@ -7,8 +7,8 @@
     "test": "bun test"
   },
   "dependencies": {
-    "commander": "^15.0.0",
-    "effect": "3.22.2",
+    "commander": "^15.1.0",
+    "effect": "3.22.4",
     "yaml": "^2.9.1"
   }
 }
