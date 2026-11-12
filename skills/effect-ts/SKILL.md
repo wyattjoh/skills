@@ -5,12 +5,14 @@ description: Expert guidance for Effect v4 (4.0.0-rc.118, the npm "rc" dist-tag)
 
 # Effect v4 Expert
 
-Expert guidance for Effect v4, currently a release candidate at `4.0.0-rc.118` (npm `rc` dist-tag). v4 keeps the core programming model of v3
+Expert guidance for Effect v4, documented against the release candidate `4.0.0-rc.118` (npm `rc` dist-tag). Stable
+4.x releases now ship on the npm `latest` dist-tag (`4.0.0` onward), but this skill and its pinned source still
+target `4.0.0-rc.118`. v4 keeps the core programming model of v3
 (`Effect`, `Layer`, `Schema`, `Stream`) but renames a large amount of the API surface, consolidates most of the
 ecosystem into the `effect` package, and removes Effect subtyping.
 
-**This is a prerelease.** APIs can still change between release candidates. Verify anything non-obvious against the pinned source rather
-than recalling it.
+**The documented version is a prerelease.** APIs changed between release candidates and may differ in stable 4.x. Verify anything
+non-obvious against the pinned source rather than recalling it.
 
 ## Prerequisites Check
 
@@ -76,7 +78,7 @@ grep -n 'Effect.catchAll\|Stream.acquireRelease' "$SKILL_DIR/.source/migration/v
 3. **Source.** `$SKILL_DIR/.source/packages/effect/src/` for exact signatures. Unstable modules (`@stability unstable`) live
    in subdirectories such as `src/http/` and `src/cli/`, test utilities under `src/testing/`.
 
-Because v4 is a prerelease and pretrained knowledge of it is unreliable, verify a symbol exists before recommending it:
+Because the pinned version is a prerelease and pretrained knowledge of v4 is unreliable, verify a symbol exists before recommending it:
 
 ```bash
 grep -rn "^export const someApi" "$SKILL_DIR/.source/packages/effect/src/Effect.ts"
