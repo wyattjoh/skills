@@ -92,10 +92,10 @@ They are for read-only reference only; do not edit files inside these paths.
 | ----------------------- | --------------------- | -------------------------------------------------- | ---------------------------------------------------------------- | ------------------------------------------ |
 | Catppuccin              | `v0.2.0`              | `.claude/references/catppuccin`                    | https://github.com/catppuccin/catppuccin.git                     | `9de299f8f1702fe4fb4e439adfd04b5623e7b77f` |
 | Composable Architecture | `1.26.2`              | `.claude/references/swift-composable-architecture` | https://github.com/pointfreeco/swift-composable-architecture.git | `377da4061db10d26337a71bb279c506bb951f50f` |
-| Effect                  | `effect@3.22.2`       | `.claude/references/effect`                        | https://github.com/Effect-TS/effect.git                          | `6985be0cf461f0997f28f6798f469d01a2b46ca3` |
+| Effect                  | `effect@3.22.4`       | `.claude/references/effect`                        | https://github.com/Effect-TS/effect.git                          | `5e8c4fe9e82fecdddb7812fa0090470b15a6fea0` |
 | Effect v4               | `effect@4.0.0-rc.118` | `.claude/references/effect-v4`                     | https://github.com/Effect-TS/effect.git                          | `ad61db80efd52637e2901c5ee56b9e0fb4e8ac48` |
 | jev-doc-search          | main@7b1008c          | `.claude/references/jev-doc-search`                | https://github.com/VectifyAI/jev-doc-search.git                  | `7b1008c437c8c9a88da8a427a76052fb0454977a` |
-| Varlock                 | `varlock@1.21.1`      | `.claude/references/varlock`                       | https://github.com/dmno-dev/varlock.git                          | `fd51d60905b372ab10ae6407300346e67695aec0` |
+| Varlock                 | `varlock@1.24.0`      | `.claude/references/varlock`                       | https://github.com/dmno-dev/varlock.git                          | `c4b3cc726cddd00c0fac312b9cd0a088f99b689d` |
 
 The Effect repository is vendored twice because this repository uses two incompatible major versions.
 The Effect references are documentation snapshots. `effect` supplies v3 source for the unchanged
