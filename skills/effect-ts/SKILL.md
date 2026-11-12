@@ -1,18 +1,18 @@
 ---
 name: effect-ts
-description: Expert guidance for Effect v4 (4.0.0-rc.118, the npm "rc" dist-tag). Use when writing, reviewing, or refactoring code that imports from 'effect', when a project depends on effect@4.x, or when the user mentions "Effect", "Effect-TS", "Effect v4", "effect 4.0", "Context.Service", "Schema.TaggedError", "effect/unstable", "Yieldable", "forkChild", "Effect.catch", or asks to migrate an Effect v3 codebase to v4. Covers services, layers, error handling, streams, schema, and testing in the v4 API, plus a v3 to v4 migration map.
+description: Expert guidance for Effect v4 (4.1.4, the npm "latest" dist-tag). Use when writing, reviewing, or refactoring code that imports from 'effect', when a project depends on effect@4.x, or when the user mentions "Effect", "Effect-TS", "Effect v4", "effect 4.0", "Context.Service", "Schema.TaggedError", "effect/unstable", "Yieldable", "forkChild", "Effect.catch", or asks to migrate an Effect v3 codebase to v4. Covers services, layers, error handling, streams, schema, and testing in the v4 API, plus a v3 to v4 migration map.
 ---
 
 # Effect v4 Expert
 
-Expert guidance for Effect v4, documented against the release candidate `4.0.0-rc.118` (npm `rc` dist-tag). Stable
-4.x releases now ship on the npm `latest` dist-tag (`4.0.0` onward), but this skill and its pinned source still
-target `4.0.0-rc.118`. v4 keeps the core programming model of v3
+Expert guidance for Effect v4, documented against the stable release `4.1.4` (npm `latest` dist-tag). v4 keeps the
+core programming model of v3
 (`Effect`, `Layer`, `Schema`, `Stream`) but renames a large amount of the API surface, consolidates most of the
 ecosystem into the `effect` package, and removes Effect subtyping.
 
-**The documented version is a prerelease.** APIs changed between release candidates and may differ in stable 4.x. Verify anything
-non-obvious against the pinned source rather than recalling it.
+**Pretrained knowledge of v4 is unreliable.** Much of the API moved during the prerelease series, and 4.x minor releases
+still add APIs and may break `@stability unstable` modules. Verify anything non-obvious against the pinned source rather
+than recalling it.
 
 ## Prerequisites Check
 
@@ -21,7 +21,7 @@ Before starting any v4 work, verify the Effect v4 source exists at `$SKILL_DIR/.
 If it is missing, clone it before proceeding and tell the user you did:
 
 ```bash
-git clone --depth=1 --branch effect@4.0.0-rc.118 https://github.com/Effect-TS/effect.git "$SKILL_DIR/.source"
+git clone --depth=1 --branch effect@4.1.4 https://github.com/Effect-TS/effect.git "$SKILL_DIR/.source"
 ```
 
 Pin the clone to the release tag this skill documents. If the project installs a different 4.x version, clone that
@@ -36,33 +36,36 @@ Confirm which major the project is actually on before applying anything here:
 node -p "require('./package.json').dependencies?.effect ?? require('./package.json').devDependencies?.effect"
 ```
 
-- Resolves to `4.x` (including `-beta` / `-rc`): use this skill.
+- Resolves to `4.x`: use this skill. A `-beta` / `-rc` prerelease predates the stable line and can differ from what is
+  documented here, so suggest upgrading, or clone that prerelease's own tag.
 - Resolves to `3.x`: the v3 and v4 APIs are not interchangeable, so do not apply the v4 patterns here to v3 code.
   Follow the project's existing v3 code and the v3 source at the matching `effect@3.x` tag. If the user wants to
   upgrade, use [references/migration-from-v3.md](./references/migration-from-v3.md).
-- All ecosystem packages share one version in v4. If `effect` is `4.0.0-rc.118`, then `@effect/platform-node`,
-  `@effect/sql-pg`, and `@effect/vitest` must also be `4.0.0-rc.118`. Mismatched versions are a common source of
-  confusing type errors.
+- All ecosystem packages share one version in v4. If `effect` is `4.1.4`, then `@effect/platform-node`,
+  `@effect/sql-pg`, and `@effect/vitest` must also be `4.1.4`. Mismatched versions are a common source of
+  confusing type errors. For a new project, install `effect@latest` and pin every `@effect/*` package to the same
+  version.
 
 ## Canonical Upstream Documentation
 
 The v4 repository ships authoritative docs that the v3 repository did not. **Read these before searching the source
 tree**, they are the maintainers' own guidance and outrank any recalled pattern:
 
-| Path in `$SKILL_DIR/.source/` | Contents                                                                  |
-| ----------------------------- | ------------------------------------------------------------------------- |
-| `LLMS.md`                     | Official "how to write Effect v4" guide written for coding agents         |
-| `MIGRATION.md`                | v3 to v4 overview: versioning, package consolidation, unstable modules    |
-| `migration/v3-to-v4.md`       | Generated import and API rename map (very large, grep it, do not read it) |
-| `migration/services.md`       | `Context.Tag` to `Context.Service`                                        |
-| `migration/error-handling.md` | `catch*` renamings                                                        |
-| `migration/cause.md`          | Flattened `Cause` structure                                               |
-| `migration/yieldable.md`      | Effect subtyping removal (stale on `Option`/`Result`, see below)          |
-| `migration/forking.md`        | `fork` to `forkChild`, `forkDaemon` to `forkDetach`                       |
-| `migration/fiberref.md`       | `FiberRef` to `Context.Reference`                                         |
-| `migration/schema.md`         | Schema v4 migration                                                       |
-| `ai-docs/src/`                | Runnable, type-checked examples grouped by topic                          |
-| `ai-docs/src/06_schedule/`    | Schedule recipes                                                          |
+| Path in `$SKILL_DIR/.source/`    | Contents                                                                  |
+| -------------------------------- | ------------------------------------------------------------------------- |
+| `LLMS.md`                        | Official "how to write Effect v4" guide written for coding agents         |
+| `MIGRATION.md`                   | v3 to v4 overview: versioning, package consolidation, unstable modules    |
+| `migration/v3-to-v4.md`          | Generated import and API rename map (very large, grep it, do not read it) |
+| `migration/services.md`          | `Context.Tag` to `Context.Service`                                        |
+| `migration/error-handling.md`    | `catch*` renamings                                                        |
+| `migration/cause.md`             | Flattened `Cause` structure                                               |
+| `migration/yieldable.md`         | Effect subtyping removal                                                  |
+| `migration/layer-memoization.md` | Which `Effect.provide` calls reuse already-built layers                   |
+| `migration/forking.md`           | `fork` to `forkChild`, `forkDaemon` to `forkDetach`                       |
+| `migration/fiberref.md`          | `FiberRef` to `Context.Reference`                                         |
+| `migration/schema.md`            | Schema v4 migration                                                       |
+| `ai-docs/src/`                   | Runnable, type-checked examples grouped by topic                          |
+| `ai-docs/src/06_schedule/`       | Schedule recipes                                                          |
 
 Grep the rename map rather than reading it:
 
@@ -78,7 +81,7 @@ grep -n 'Effect.catchAll\|Stream.acquireRelease' "$SKILL_DIR/.source/migration/v
 3. **Source.** `$SKILL_DIR/.source/packages/effect/src/` for exact signatures. Unstable modules (`@stability unstable`) live
    in subdirectories such as `src/http/` and `src/cli/`, test utilities under `src/testing/`.
 
-Because the pinned version is a prerelease and pretrained knowledge of v4 is unreliable, verify a symbol exists before recommending it:
+Because pretrained knowledge of v4 is unreliable, verify a symbol exists before recommending it:
 
 ```bash
 grep -rn "^export const someApi" "$SKILL_DIR/.source/packages/effect/src/Effect.ts"
@@ -206,10 +209,9 @@ const program = Effect.gen(function* () {
 | `yield* option`               | `yield* Effect.fromOption(option)` |
 | `yield* either`               | `yield* Effect.fromResult(result)` |
 
-`Option.gen` and `Result.gen` give generator syntax over those types without entering Effect. Upstream
-`migration/yieldable.md` still shows `yield* Option.some(42)` inside `Effect.gen` and an `.asEffect()` method. Neither
-matches the `4.0.0-rc.118` source: `Option` and `Result` have no `asEffect`, and yielding one in `Effect.gen` is a
-type error.
+`Option.gen` and `Result.gen` give generator syntax over those types without entering Effect. `Option` and `Result`
+have no `.asEffect()` method, and yielding one in `Effect.gen` is a type error. Older prerelease copies of
+`migration/yieldable.md` showed both; the current guide matches the source.
 
 ## Common Failure Modes
 
@@ -226,8 +228,9 @@ Migrating v3 muscle memory is where most v4 errors come from:
   `Effect.fromOption`.
 - **`Effect.Service` not found**: replaced by `Context.Service` with a `make` option, and no auto-generated `.Default`.
 - **`@effect/platform` not resolving**: `FileSystem`, `Path`, `Terminal`, and `PlatformError` moved into core `effect`.
-- **Layer built twice**: v4 memoizes layers across `Effect.provide` calls. If you _wanted_ two instances, use
-  `Layer.fresh` or `Effect.provide(layer, { local: true })`.
+- **Layer built twice, or unexpectedly shared**: nested `Effect.provide` calls reuse a layer already built by an
+  enclosing `provide` or runtime, but sibling `provide` calls each build their own copy, as in v3. Compose layers and
+  provide once. For an isolated instance, use `Layer.fresh` or `Effect.provide(layer, { local: true })`.
 
 ## Quick Reference
 
@@ -254,7 +257,7 @@ Effect.forEach(items, fn, { concurrency: 5 });
 // Collect every result instead of short-circuiting (v3 used mode: "validate").
 Effect.all([e1, e2, e3], { mode: "result" });
 
-// Returns [failures, successes].
+// Returns [successes, failures], matching Stream.partition.
 Effect.partition(items, (item) => process(item));
 ```
 
@@ -277,6 +280,11 @@ Effect.orElseSucceed(effect, fn); // v3 Effect.orElse is gone, use Effect.catch
 Effect.catchReason(effect, "AiError", "RateLimitError", fn);
 Effect.catchReasons(effect, "AiError", { RateLimitError: fn });
 ```
+
+Defects take precedence in mixed causes: when a cause holds both a typed error and a defect (for example a finalizer
+that died after the effect failed), every typed-error recovery operator (`catch`, `catchTag`, `catchIf`,
+`orElseSucceed`, `result`, `option`, `retry`, and the `Stream` equivalents) skips its handler and propagates the cause
+as defects. Recover such causes with `Effect.catchCause` or `Effect.catchDefect`. See `migration/error-handling.md`.
 
 ### Error Taxonomy
 
@@ -334,7 +342,7 @@ const FeatureFlag = Context.Reference<boolean>("myapp/FeatureFlag", { defaultVal
 Layer.provide(inner, outer); // expose only inner's services
 Layer.provideMerge(inner, outer); // expose both
 Effect.provide(effect, Logger.layer);
-Effect.provide(effect, Logger.layer, { local: true }); // opt out of shared memoization
+Effect.provide(effect, Logger.layer, { local: true }); // ignore layers built by enclosing provides
 ```
 
 Access a service with `yield*` in a generator. `Service.use` / `Service.useSync` exist but hide the dependency at the
