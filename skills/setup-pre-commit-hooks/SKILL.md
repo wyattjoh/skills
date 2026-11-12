@@ -115,7 +115,14 @@ pre-commit:
   Earlier versions, and runs with `--no-stage-fixed`, lack all or part of that
   protection, so an autofixer can pull unstaged work into the commit. Pin
   `min_version: 2.1.16` in `lefthook.yml` if a command in this config writes files
-  or uses `stage_fixed`.
+  or uses `stage_fixed`. Linked worktrees share one backup patch and stash list:
+  before 2.2.1 concurrent commits in sibling worktrees could overwrite each other's
+  hidden unstaged changes, and before 2.2.2 cleanup could drop another worktree's
+  stash ([lefthook#1582](https://github.com/evilmartians/lefthook/pull/1582),
+  [lefthook#1597](https://github.com/evilmartians/lefthook/pull/1597)). When agents
+  or developers commit from parallel worktrees, pin `min_version: 2.2.2` instead;
+  a narrower stash-position race remains open on 2.2.2
+  ([lefthook#1619](https://github.com/evilmartians/lefthook/issues/1619)).
 - Keep pre-commit fast. Move whole-project analysis that cannot be scoped to staged
   files, such as type checking and test suites, to `pre-push` or CI.
 - Use `root:` only when a tool must run from a subdirectory. It changes the working
