@@ -7,6 +7,6 @@
     "test": "bun test"
   },
   "dependencies": {
-    "effect": "4.0.0"
+    "effect": "4.1.2"
   }
 }

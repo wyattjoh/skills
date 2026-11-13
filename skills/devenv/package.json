@@ -8,6 +8,6 @@
     "check": "bun scripts/build-skill.ts --check"
   },
   "dependencies": {
-    "effect": "4.0.0"
+    "effect": "4.1.2"
   }
 }
