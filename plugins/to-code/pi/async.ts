@@ -3,7 +3,7 @@ import { mkdir, realpath } from "node:fs/promises";
 import { hostname } from "node:os";
 import { isAbsolute, join, relative } from "node:path";
 
-import { Type } from "@earendil-works/pi-ai";
+import { Type } from "typebox";
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { Schema } from "effect";
 

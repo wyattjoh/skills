@@ -15,15 +15,15 @@
   },
   "dependencies": {
     "@typeonce/effect-machine": "0.40.0",
-    "effect": "4.0.0"
+    "effect": "4.1.2"
   },
   "devDependencies": {
-    "@earendil-works/pi-ai": "1.1.0",
-    "@earendil-works/pi-coding-agent": "1.1.0"
+    "@earendil-works/pi-coding-agent": "1.5.0",
+    "typebox": "1.3.27"
   },
   "peerDependencies": {
-    "@earendil-works/pi-ai": "*",
-    "@earendil-works/pi-coding-agent": "*"
+    "@earendil-works/pi-coding-agent": "*",
+    "typebox": "*"
   },
   "pi": {
     "extensions": [

@@ -8,6 +8,6 @@
     "submit": "bun scripts/submit-pr-review.ts"
   },
   "dependencies": {
-    "effect": "4.0.0"
+    "effect": "4.1.2"
   }
 }
