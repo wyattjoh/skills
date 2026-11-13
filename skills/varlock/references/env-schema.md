@@ -7,13 +7,13 @@ variable _names, types, and descriptions_ but not secret _values_, which is what
 makes it safe to share with AI agents.
 
 Decorator, type, and function lists below are drawn from the vendored docs at
-`.claude/references/varlock/` (varlock 1.21.1):
+`.claude/references/varlock/` (varlock 1.24.0):
 [item-decorators](https://varlock.dev/reference/item-decorators/),
 [root-decorators](https://varlock.dev/reference/root-decorators/),
 [data-types](https://varlock.dev/reference/data-types/),
 [functions](https://varlock.dev/reference/functions/). Behavior changes since
 1.10.0 are cited from the
-[changelog](https://github.com/dmno-dev/varlock/blob/varlock%401.21.1/packages/varlock/CHANGELOG.md).
+[changelog](https://github.com/dmno-dev/varlock/blob/varlock%401.24.0/packages/varlock/CHANGELOG.md).
 
 ## File shape
 
@@ -49,6 +49,9 @@ Source: [schema guide](https://varlock.dev/guides/schema/).
 - Item decorators may sit on the line(s) above an item, or inline after the value:
   `APP_ENV=development # @type=enum(development, staging, production)`.
 - `@flag` with no value means `@flag=true` (e.g. `@required` == `@required=true`).
+- Since 1.23.0, a commented-out item (`# API_KEY=prod-value`, including multi-line
+  values) is no longer folded into the next item's description, so its value does
+  not leak into generated types.
 
 Source: [env-spec reference](https://varlock.dev/env-spec/reference/).
 
@@ -64,7 +67,7 @@ Source: [env-spec reference](https://varlock.dev/env-spec/reference/).
 | `@setValuesBulk(...)`                                                                                 | Bulk-set values from a source.                                                                                              |
 | `@plugin(<pkg>)`                                                                                      | Load a provider plugin (e.g. `@varlock/1password-plugin`).                                                                  |
 | `@cache`                                                                                              | Configure the value cache.                                                                                                  |
-| `@redactLogs` / `@preventLeaks`                                                                       | Log redaction and leak prevention toggles.                                                                                  |
+| `@redact` / `@preventLeaks`                                                                           | Log redaction and leak prevention toggles. `@redact` was `@redactLogs` before 1.22.0 (old name warns). See below.           |
 | `@encryptInjectedEnv`                                                                                 | Encrypt the injected env blob.                                                                                              |
 | `@disableProcessEnvInjection`                                                                         | Do not inject into `process.env`.                                                                                           |
 | `@injectUndefinedAsEmpty`                                                                             | Inject items that resolve to `undefined` as `""` (pre-1.18.0 auto-load behavior). Default: left out of `process.env`.       |
@@ -73,11 +76,22 @@ Source: [env-spec reference](https://varlock.dev/env-spec/reference/).
 | `@auditIgnoreKeys(KEY, PREFIX_*)`                                                                     | Keys `varlock audit` never reports as missing from the schema (scanner false positives). 1.21.0.                            |
 | `@auditExtraPatterns(regex(...), fileTypes=[...])`                                                    | Extra env-access patterns for `varlock audit`; first capture group is the key. 1.19.0.                                      |
 | `@proxyConfig={egress=..., reload=...}` / `@proxy(...)`                                               | Credential proxy policy and detached rules (preview; see [`commands/proxy.md`](commands/proxy.md)).                         |
-| `@generateTsTypes` / `@generatePythonEnv` / `@generateRustEnv` / `@generateGoEnv` / `@generatePhpEnv` | Per-language generators (add `auto=false` to defer to `varlock codegen`, `filter=` to emit a subset).                       |
+| `@generateTsTypes` / `@generatePythonEnv` / `@generateRustEnv` / `@generateGoEnv` / `@generatePhpEnv` | Per-language generators (add `auto=false` to defer to `varlock codegen`, `filter=` to emit a subset; TS: `icons=false`).    |
 | `@generateJavaEnv` / `@generateCsharpEnv`                                                             | Java and C# env modules (1.12.0).                                                                                           |
 | `@generateTypes(lang=ts, path=...)`                                                                   | Deprecated alias for `@generateTsTypes`.                                                                                    |
 
 Source: [root-decorators](https://varlock.dev/reference/root-decorators/).
+
+`@redact` (1.22.0) takes a boolean or an options object: `console` (default
+`true`, redacts `console` output even in a terminal) and `stdout` (redacts all
+writes to non-TTY stdout/stderr, including `process.stdout.write` and
+`Bun.write`). In-process `stdout` redaction in auto-load and framework
+integrations is opt-in for now (`@redact={stdout=true}`) and planned as the
+default in the next major; `varlock run` already redacts piped child output.
+`@redact=false` turns all redaction off, including `varlock run` output. Using
+`@redactLogs` and `@redact` together is an error. Source:
+[`@redact`](https://varlock.dev/reference/root-decorators/#redact);
+[changelog](https://github.com/dmno-dev/varlock/blob/varlock%401.24.0/packages/varlock/CHANGELOG.md).
 
 `@import` filtering: `pick` (allowlist) or `omit` (denylist), not both. Entries
 use the `--filter` selector language minus decorator selectors: key names, globs,
@@ -95,20 +109,20 @@ Source: [`@import()`](https://varlock.dev/reference/root-decorators/#import).
 
 ## Item decorators
 
-| Decorator                      | Purpose                                                                                      |
-| ------------------------------ | -------------------------------------------------------------------------------------------- |
-| `@type=<type>`                 | Type + coercion + validation (see below).                                                    |
-| `@required` / `@optional`      | Presence rules. Conditional forms: `@required=forEnv(prod)`, `@required=eq($OTHER, foo)`.    |
-| `@sensitive` / `@public`       | Mark (or unmark) a secret. `@public` is the opposite of `@sensitive`.                        |
-| `@internal`                    | Used only by varlock/other items; excluded from injected env, the blob, and generated types. |
-| `@dynamic` / `@static`         | Resolve at runtime vs allow build-time replacement (default follows sensitivity).            |
-| `@tag(name, ...)`              | Tag for `--filter="#name"`, `@import` `pick`/`omit`, and `@generate*` `filter=`. 1.11.0.     |
-| `@example`                     | An example value for docs/tooling.                                                           |
-| `@docs()`                      | Attach documentation (`@docsUrl` is deprecated in favor of `@docs(url)`).                    |
-| `@deprecated`                  | Mark deprecated (`@deprecated="Use X instead"`); still resolves and validates.               |
-| `@icon`                        | An icon (for UI/tooling).                                                                    |
-| `@auditIgnore`                 | Suppress "unused in schema" warnings from `varlock audit` for this item.                     |
-| `@proxy(...)` / `@placeholder` | Route the secret through the credential proxy (preview); set the placeholder the child sees. |
+| Decorator                      | Purpose                                                                                                                                                                                                             |
+| ------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `@type=<type>`                 | Type + coercion + validation (see below).                                                                                                                                                                           |
+| `@required` / `@optional`      | Presence rules. Conditional forms: `@required=forEnv(prod)`, `@required=eq($OTHER, foo)`.                                                                                                                           |
+| `@sensitive` / `@public`       | Mark (or unmark) a secret. `@public` is the opposite of `@sensitive`; public values may be inlined into client bundles. `@sensitive={redact=false}` (1.22.0) keeps it secret but exempts it from log redaction.     |
+| `@internal`                    | Used only by varlock/other items; excluded from injected env, the blob, and generated types.                                                                                                                        |
+| `@dynamic` / `@static`         | Resolve at runtime vs allow build-time replacement (default follows sensitivity). `@dynamic=boot` (1.22.0): bound per instance at process start (e.g. `PORT`); only differs from `@dynamic` under `varlock freeze`. |
+| `@tag(name, ...)`              | Tag for `--filter="#name"`, `@import` `pick`/`omit`, and `@generate*` `filter=`. 1.11.0.                                                                                                                            |
+| `@example`                     | An example value for docs/tooling.                                                                                                                                                                                  |
+| `@docs()`                      | Attach documentation (`@docsUrl` is deprecated in favor of `@docs(url)`).                                                                                                                                           |
+| `@deprecated`                  | Mark deprecated (`@deprecated="Use X instead"`); still resolves and validates.                                                                                                                                      |
+| `@icon`                        | An icon (for UI/tooling).                                                                                                                                                                                           |
+| `@auditIgnore`                 | Suppress "unused in schema" warnings from `varlock audit` for this item.                                                                                                                                            |
+| `@proxy(...)` / `@placeholder` | Route the secret through the credential proxy (preview); set the placeholder the child sees.                                                                                                                        |
 
 Source: [item-decorators](https://varlock.dev/reference/item-decorators/).
 
@@ -131,6 +145,14 @@ Additions since 1.10.0:
   separator-joined string input. `simple-object` equals a bare `record`.
 - `uuid(version=N)` (1.21.0): require a specific version; versions 6-8 (incl.
   UUIDv7) and `MAX` are now accepted.
+- `url` (1.23.0) now warns on values that only parse because `new URL()` is
+  permissive: no `scheme://`, whitespace or control characters, a missing host,
+  malformed `http`/`https` hosts, and any protocol other than `http`/`https` when
+  `allowedProtocols` is unset. These warnings become errors in the next major.
+  New options: `allowedProtocols="*"` (any protocol) and `allowNoHost=true`
+  (e.g. `sqlite:///app.db`). `allowedDomains` rejects hosts other parsers could
+  read differently (write internationalized hosts in punycode), and
+  `prependHttps=true` now prefixes `host:port` values like `localhost:3000`.
 - `matches` options take a `regex("pattern", "flags")` call (1.20.0). Passing the
   pattern as a string (`"^abc$"` or `/^abc$/`) is deprecated and warns, and a
   pattern from another variable (`matches=$PATTERN`) has no replacement.
@@ -200,6 +222,7 @@ Values can call functions instead of holding a literal. Key ones:
 | `regex("pattern", "flags")`                                                     | The one way to write a regex (1.20.0), for `remap()` and `matches`. No surrounding slashes.                                                 |
 | `ifs(cond1, val1, cond2, val2, default)`                                        | Ordered conditional pairs.                                                                                                                  |
 | `if(cond, a, b)` / `not(x)` / `eq($X, v)` / `isEmpty(x)`                        | Boolean/conditional helpers.                                                                                                                |
+| `and(a, b, ...)` / `or(a, b, ...)`                                              | Combine boolean conditions (1.22.0); short-circuit later function calls (not `$REF`s). E.g. `@required=or(forEnv(production), $FLAG)`.      |
 | `forEnv(prod)`                                                                  | True in the named environment (used with `@required`, `@sensitive`, plugin init).                                                           |
 | `exec("my-cli --arg")`                                                          | Run a CLI and use its stdout. Sugar: `$(my-cli --arg)` == `exec("my-cli --arg")`. Backticks allowed: `exec(\`op read "op://app/db/url"\`)`. |
 | `domainFromUrl($URL)`                                                           | Extract the host from a URL (1.19.0).                                                                                                       |

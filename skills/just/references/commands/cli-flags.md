@@ -83,10 +83,15 @@ them blindly.**
 | --------------------- | ----- | ------------ | ----------------------------------------------------------------------------------- |
 | `--justfile`          | `-f`  | `<JUSTFILE>` | Use this justfile, or `-` to read from stdin. `[env: JUST_JUSTFILE]`                |
 | `--justfile-name`     |       | `<NAME>`     | Search for a justfile with this name (comma-separated list accepted, since 1.58.0). |
-| `--working-directory` | `-d`  | `<DIR>`      | Working dir for recipes. **`--justfile` must also be set.**                         |
+| `--working-directory` | `-d`  | `<DIR>`      | Working dir for recipes. Before 1.59.0, **`--justfile` must also be set.**          |
 | `--global-justfile`   | `-g`  |              | Use the global justfile (`$XDG_CONFIG_HOME/just/justfile`, `~/.justfile`, ...).     |
 | `--ceiling`           |       | `<CEILING>`  | Do not ascend above `<CEILING>` when searching upward.                              |
 | `--allow-missing`     |       |              | Ignore missing recipe and module errors.                                            |
+
+Since 1.59.0, `--working-directory` alone works like `git -C`: `just` searches for the
+justfile upward from `<DIR>` and runs recipes there. The local binary is 1.57.0, so pass
+`--justfile` as well unless the target `just` is 1.59.0 or later
+([just#3720](https://github.com/casey/just/pull/3720)).
 
 ### Execution control
 

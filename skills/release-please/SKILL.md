@@ -404,11 +404,11 @@ The single most useful debugging signal is the PR label: `autorelease: pending` 
 
 ## Known Upstream Issues (verify if affected)
 
-The three linked issues are open upstream; last verified 2026-10-01. Re-check before recommending workarounds.
+Issue states last verified 2026-11-12. Re-check before recommending workarounds.
 
 - **`separate-pull-requests: true` with Go monorepos** can fail with "A pull request already exists" on release-please library v17.6.0. Confirmed open as [release-please#2773](https://github.com/googleapis/release-please/issues/2773) (opened 2026-05-09, explicitly reproduces on v17.6.0). No action release avoids it: the issue also reproduces on library v17.3.0 (bundled by action v4.4.1), and no v4.x release bundles v17.5.x. If affected, use `separate-pull-requests: false` until upstream ships a fix.
-- **`include-commit-authors`** (v17.5.0) is a no-op: author metadata is dropped. Tracked as [release-please#2761](https://github.com/googleapis/release-please/issues/2761) (P2); a fix, [PR #2892](https://github.com/googleapis/release-please/pull/2892), exists but is unmerged.
-- **`chore(deps)` commits** are recognized by the dependency manifest plugin but don't trigger releases. Use `fix(deps):` to trigger a patch release from a dependency bump. Confirmed open as [release-please#2764](https://github.com/googleapis/release-please/issues/2764) (P2, "DependencyManifest recognizes chore(deps) commits but never releases them").
+- **`include-commit-authors`** (v17.5.0) is a no-op in every published release through v17.11.2: author metadata is dropped. [release-please#2761](https://github.com/googleapis/release-please/issues/2761) was closed by [PR #2911](https://github.com/googleapis/release-please/pull/2911), merged to `main` on 2026-10-22 but not yet in a published release. Expect the option to work only once a library release containing that fix ships and your action pin bundles it.
+- **`chore(deps)` commits** are recognized by the dependency manifest plugin but don't trigger releases. This is intended: [release-please#2764](https://github.com/googleapis/release-please/issues/2764) was closed as "not planned" on 2026-10-22 because `chore:` is not a releasable type. Use `fix(deps):` (or `deps:`) to trigger a patch release from a dependency bump.
 - **Label-application races**: occasional 422s when release-please tries to label a freshly created PR. Workflow retry usually clears it. No upstream issue tracks this.
 
 ## References

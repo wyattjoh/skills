@@ -124,8 +124,12 @@ These apply to most apps and are worth checking for the one you're driving:
 
 ## Setup notes (one-time)
 
-- Install the tooling: `brew install facebook/fb/idb` (not in homebrew-core); this one
-  formula installs both the `idb` client and `idb_companion`, per
+- Install the tooling: `brew tap meta/fb && brew trust meta/fb && brew install meta/fb/idb`
+  (not in homebrew-core; the tap moved from `facebook/fb` to `meta/fb`). Current Homebrew
+  refuses formulae from an untrusted tap, including `idb`'s `idb-cli` and `idb-companion`
+  dependencies, so trust the tap, not only the formula. An existing `facebook/fb` tap
+  moves to `meta/fb` on `brew update` but loses its trust. This one formula installs
+  both the `idb` client and `idb_companion`, per
   [idb's official README](https://github.com/facebook/idb#quick-start). The client
   can alternatively come from `pip3 install fb-idb` (requires Python 3.10+), which puts
   `idb` at `~/.local/bin/idb`. The scripts prepend `~/.local/bin` to `PATH` so `idb` resolves

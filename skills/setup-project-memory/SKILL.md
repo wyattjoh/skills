@@ -170,7 +170,10 @@ section there.
 ## Edge cases
 
 - **Not a git repo:** stop, offer `git init`.
-- **No CLAUDE.md:** create it containing just the `## Project memory` section.
+- **No CLAUDE.md:** if the repo has an `AGENTS.md`, add the section there
+  instead, because Claude Code (v2.1.277+) reads `AGENTS.md` only while no
+  `CLAUDE.md` exists, so creating one would stop it loading. Otherwise create
+  `CLAUDE.md` containing just the `## Project memory` section.
 - **Import already present:** do not add a second `@.claude/memory/MEMORY.md`.
 - **Slug collision:** update the existing note rather than duplicating it, and
   refresh its index summary if the meaning changed.

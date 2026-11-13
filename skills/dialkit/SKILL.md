@@ -29,9 +29,13 @@ source as inline literals.
 > duration of an exploration session.
 
 > **Terminology:** as of dialkit 2.x, the panel's own UI labels saved entries
-> "versions" (e.g. "Version 1", listed in the **Versions** menu on the panel
-> toolbar, whose **+ New version** item saves and selects a new version)
-> rather than "presets". Say "version" when describing the panel to the
+> "versions" rather than "presets". Since 2.1.0 the default UI is a thumbnail
+> gallery: **Save version** captures the page and selects the new version,
+> **V1** holds the base values, and clicking a thumbnail switches versions.
+> The older version menu (**New version** item, checkmark on the current
+> version) appears only with `<DialRoot versions="menu" />`
+> ([README](https://github.com/joshpuckett/dialkit#versions-and-persistence)).
+> Say "version" when describing the panel to the
 > user throughout this workflow. The config option and `DialStore` methods
 > referenced below (`savePreset`, `getPresets`, `seedPresets`, etc.) still use
 > the name "preset" in code, so no code or field name here needs to change.
@@ -42,8 +46,8 @@ source as inline literals.
 
 The user has a vague idea or wants to discover. Instrument the component(s)
 with a wide set of controls, then **explicitly guide the user to save 2 to 4
-named versions** ("Compact", "Bold", "Airy") with the version menu's
-**+ New version** item. Once versions are saved, help them compare, pick a winner, or **merge across
+named versions** ("Compact", "Bold", "Airy") with the panel's
+**Save version** button (or the **New version** menu item when the root sets `versions="menu"`). Once versions are saved, help them compare, pick a winner, or **merge across
 presets** ("I like Bold's color but Airy's spacing, synthesize").
 
 ### Tweak Mode
@@ -174,11 +178,12 @@ Make these edits in this order:
 This is the killer pattern for exploration mode. The panel ships **already
 populated** with the seeded presets from Phase 3.
 
-1. Tell the user: "The panel's **Versions** menu (in its toolbar) has the directions
+1. Tell the user: "The panel's versions (thumbnails by default, or the
+   version menu if the root sets `versions="menu"`) include the directions
    we pre-seeded ('Compact', 'Bold', 'Airy', etc.). Pick each to switch the
-   live preview. Drag any control to refine the active version (it
-   auto-saves). Use **+ New version** in that menu to add a version for any
-   direction we missed."
+   live preview. Drag any control to refine the active version (edits stay
+   with it). Use **Save version** (or **New version** in the menu) to add a
+   version for any direction we missed."
 2. When the user has narrowed down, ask them to either:
    - Tell you which preset wins ("Bold feels right"), or
    - Click **Copy** on each preset they're considering and paste the JSONs

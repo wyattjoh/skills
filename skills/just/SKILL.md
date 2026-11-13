@@ -47,7 +47,7 @@ flag has a matching `JUST_*` env var (e.g. `JUST_UNSTABLE`, `JUST_NO_DOTENV`).
 | `--jobs <N>`                |       | Limit simultaneous dependencies of `[parallel]` recipes.                      |
 | `--set <VAR> <VALUE>`       |       | Override a variable for this invocation.                                      |
 | `--justfile <FILE>`         | `-f`  | Use a specific justfile (`-` reads stdin).                                    |
-| `--working-directory <DIR>` | `-d`  | Working dir for recipes (**requires `--justfile` too**).                      |
+| `--working-directory <DIR>` | `-d`  | Working dir for recipes; before 1.59.0 **requires `--justfile` too**.         |
 | `--no-dotenv`               |       | Don't load a `.env` file this run.                                            |
 | `--yes`                     |       | Auto-confirm `[confirm]` recipes.                                             |
 | `--completions <SHELL>`     |       | Emit completions: `bash`, `elvish`, `fish`, `nushell`, `powershell`, `zsh`.   |
