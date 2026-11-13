@@ -1,7 +1,7 @@
 # Testing Effect v4 with @effect/vitest
 
 A pragmatic guide for writing _deterministic_ tests against Effect v4. `@effect/vitest` shares the single ecosystem
-version, so it must be `4.0.0-rc.118` when `effect` is.
+version, so it must be `4.1.4` when `effect` is.
 
 ## v3 to v4 Changes
 
@@ -14,7 +14,7 @@ version, so it must be `4.0.0-rc.118` when `effect` is.
 | `it.scoped` / `it.scopedLive`          | `it.effect` / `it.live` (already scoped)             |
 
 `effect/testing` also adds `TestConsole` and `TestSchema`. Schema-derived arbitraries live in the top-level
-`Arbitrary` module (`import { Arbitrary } from "effect"`); `effect/unstable/arbitrary` was removed in `4.0.0-rc.118`.
+`Arbitrary` module (`import { Arbitrary } from "effect"`); there is no `effect/unstable/arbitrary` path.
 
 ## The #1 gotcha: `it.effect` uses `TestClock`
 
@@ -181,16 +181,26 @@ layer(TodoRepo.layerTest)("TodoRepo", (it) => {
 Split a service's layer into a dependency-free part (`layerNoDeps`) and wired variants (`layer`, `layerTest`). Tests
 then swap dependencies without redefining the service.
 
-For per-test isolation instead, provide inside each test and opt out of shared memoization:
+For per-test isolation instead, pass `buildPerTest: true` to rebuild a `layer` block's services for every test, while
+services from enclosing blocks stay shared:
+
+```typescript
+layer(Database.layer)("repository", (it) => {
+  it.layer(Cache.layer, { buildPerTest: true })((it) => {
+    it.effect("gets its own Cache", () => program);
+  });
+});
+```
+
+Or provide inside each test. Separate tests are sibling `Effect.provide` calls, so each builds its own instance. A
+`provide` nested inside a `layer` block, though, reuses any layer the block already built, so add `local: true` (or
+`Layer.fresh`) when the test must not see the shared instance:
 
 ```typescript
 it.effect("gets its own instance", () =>
   program.pipe(Effect.provide(MyService.layerTest, { local: true })),
 );
 ```
-
-This matters more in v4 than v3: layers are now memoized **across** `Effect.provide` calls, so two tests that each
-provide the same layer on the same fiber will share one instance unless you use `local: true` or `Layer.fresh`.
 
 ## Streams, watches, and background fibers: always bound and clean up
 
@@ -268,4 +278,5 @@ v4, so some v3 assertions that relied on reference inequality will now pass unex
 - Needs wall clock, Node timers, or real delays? Use `it.live`.
 - Allocates resources that must be finalized? `it.effect` and `it.live` are already scoped.
 - Needs a shared service context across a block? Use `layer(MyLayer)("name", (it) => ...)`.
-- Needs a fresh instance per test? Provide inside the test with `{ local: true }`.
+- Needs a fresh instance per test? Use `layer(MyLayer, { buildPerTest: true })`, or provide inside the test with
+  `{ local: true }`.

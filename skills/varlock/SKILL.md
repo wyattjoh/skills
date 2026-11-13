@@ -21,9 +21,11 @@ it safe to hand to an AI agent.
 ## Local setup
 
 - Binary: `/opt/homebrew/bin/varlock` (on `PATH` as `varlock`; installed via `brew install dmno-dev/tap/varlock`).
-- **Pinned version explored: `varlock 1.21.0`.** Every command and flag below is
-  verified against that binary's `--help`. Docs were read at the same 1.21.0
-  ([changelog](https://github.com/dmno-dev/varlock/blob/varlock%401.21.0/packages/varlock/CHANGELOG.md)).
+- **Pinned version: `varlock 1.24.0`.** Commands and flags were first verified
+  against the `varlock 1.21.0` binary's `--help` (the `(v1.21.0)` source notes
+  below), then re-checked against the 1.24.0 command specs and docs; only `load`,
+  `run`, and the new `freeze` command changed
+  ([changelog](https://github.com/dmno-dev/varlock/blob/varlock%401.24.0/packages/varlock/CHANGELOG.md)).
 - Config files read:
   - **`.env.schema`**: the committed source-of-truth schema (see [`references/env-schema.md`](references/env-schema.md)).
   - Value files layered over it, lowest to highest precedence: `.env` -> `.env.local`
@@ -47,6 +49,7 @@ tables):
 | `--clear-cache`/`--skip-cache` |       | `load`, `run`, `printenv`                                                                                            | Clear the cache and re-resolve, or bypass the cache entirely, for this run.                                             |
 | `--agent`                      |       | `init`, `load`                                                                                                       | Non-interactive / redacted mode for AI agents and CI.                                                                   |
 | `--filter <filter>`            |       | `load`, `run`                                                                                                        | Select which items are shown (`load`) or injected (`run`). Also settable via `_VARLOCK_FILTER` (the flag wins).         |
+| `--frozen [path]`              |       | `load`, `run`                                                                                                        | Use a `varlock freeze` file instead of resolving (1.22.0). Same as `_VARLOCK_USE_FROZEN_ENV`.                           |
 
 `--filter` (added in 1.11.0) takes a comma-separated list of selectors:
 
@@ -78,31 +81,32 @@ varlock <command> [options] [-- <child command and args>]
 
 ## Commands
 
-20 top-level commands, grouped below. Full per-command flag tables and verbatim
+21 top-level commands, grouped below. Full per-command flag tables and verbatim
 `EXAMPLES:` blocks live in the linked reference files.
 
-| Command          | Purpose                                                             | Reference                                   |
-| ---------------- | ------------------------------------------------------------------- | ------------------------------------------- |
-| `load`           | Load + validate env, print resolved values (✓/✗, secrets redacted). | [core](references/commands/core.md)         |
-| `run`            | Run a child command with the resolved env injected.                 | [core](references/commands/core.md)         |
-| `printenv`       | Print one resolved variable's value.                                | [core](references/commands/core.md)         |
-| `explain`        | Show how a single item's value was resolved (debug).                | [core](references/commands/core.md)         |
-| `init`           | Interactive onboarding: scaffold `.env.schema`, add the dep.        | [project](references/commands/project.md)   |
-| `codegen`        | Generate typed env accessors (ts/py/rust/go/php/java/c#).           | [project](references/commands/project.md)   |
-| `flatten`        | Copy `@import`ed env files into one self-contained dir (monorepos). | [project](references/commands/project.md)   |
-| `install-plugin` | Pre-download a plugin from npm for the standalone binary.           | [project](references/commands/project.md)   |
-| `complete`       | Emit a shell completion script.                                     | [project](references/commands/project.md)   |
-| `telemetry`      | Opt in/out of anonymous usage analytics.                            | [project](references/commands/project.md)   |
-| `help`           | Print the top-level command list.                                   | [project](references/commands/project.md)   |
-| `encrypt`        | Encrypt a value (or a file's `@sensitive` values) device-locally.   | [secrets](references/commands/secrets.md)   |
-| `reveal`         | Securely view / copy a sensitive value.                             | [secrets](references/commands/secrets.md)   |
-| `lock`           | Lock the encryption daemon (next decrypt needs biometric).          | [secrets](references/commands/secrets.md)   |
-| `generate-key`   | Generate an encryption key for deployments.                         | [secrets](references/commands/secrets.md)   |
-| `keychain`       | Manage macOS Keychain items used by `keychain()`. Has subcommands.  | [secrets](references/commands/secrets.md)   |
-| `cache`          | Manage the encrypted value cache. Has subcommands.                  | [secrets](references/commands/secrets.md)   |
-| `scan`           | Detect plaintext secrets in files; install as a git hook.           | [security](references/commands/security.md) |
-| `audit`          | Compare code env-var references against the schema.                 | [security](references/commands/security.md) |
-| `proxy`          | Credential proxy for agents (preview). Has subcommands.             | [proxy](references/commands/proxy.md)       |
+| Command          | Purpose                                                                | Reference                                   |
+| ---------------- | ---------------------------------------------------------------------- | ------------------------------------------- |
+| `load`           | Load + validate env, print resolved values (✓/✗, secrets redacted).    | [core](references/commands/core.md)         |
+| `run`            | Run a child command with the resolved env injected.                    | [core](references/commands/core.md)         |
+| `printenv`       | Print one resolved variable's value.                                   | [core](references/commands/core.md)         |
+| `explain`        | Show how a single item's value was resolved (debug).                   | [core](references/commands/core.md)         |
+| `init`           | Interactive onboarding: scaffold `.env.schema`, add the dep.           | [project](references/commands/project.md)   |
+| `codegen`        | Generate typed env accessors (ts/py/rust/go/php/java/c#).              | [project](references/commands/project.md)   |
+| `flatten`        | Copy `@import`ed env files into one self-contained dir (monorepos).    | [project](references/commands/project.md)   |
+| `freeze`         | Resolve once at deploy time into an encrypted file the app boots from. | [project](references/commands/project.md)   |
+| `install-plugin` | Pre-download a plugin from npm for the standalone binary.              | [project](references/commands/project.md)   |
+| `complete`       | Emit a shell completion script.                                        | [project](references/commands/project.md)   |
+| `telemetry`      | Opt in/out of anonymous usage analytics.                               | [project](references/commands/project.md)   |
+| `help`           | Print the top-level command list.                                      | [project](references/commands/project.md)   |
+| `encrypt`        | Encrypt a value (or a file's `@sensitive` values) device-locally.      | [secrets](references/commands/secrets.md)   |
+| `reveal`         | Securely view / copy a sensitive value.                                | [secrets](references/commands/secrets.md)   |
+| `lock`           | Lock the encryption daemon (next decrypt needs biometric).             | [secrets](references/commands/secrets.md)   |
+| `generate-key`   | Generate an encryption key for deployments.                            | [secrets](references/commands/secrets.md)   |
+| `keychain`       | Manage macOS Keychain items used by `keychain()`. Has subcommands.     | [secrets](references/commands/secrets.md)   |
+| `cache`          | Manage the encrypted value cache. Has subcommands.                     | [secrets](references/commands/secrets.md)   |
+| `scan`           | Detect plaintext secrets in files; install as a git hook.              | [security](references/commands/security.md) |
+| `audit`          | Compare code env-var references against the schema.                    | [security](references/commands/security.md) |
+| `proxy`          | Credential proxy for agents (preview). Has subcommands.                | [proxy](references/commands/proxy.md)       |
 
 The **`.env.schema` format** (decorators, types, functions, environments, plugins)
 is documented in full in [`references/env-schema.md`](references/env-schema.md).
@@ -166,7 +170,11 @@ schema header to restore the old behavior).
 Source: [usage](https://varlock.dev/getting-started/usage/);
 [JavaScript integration](https://varlock.dev/integrations/javascript/);
 [`@injectUndefinedAsEmpty`](https://varlock.dev/reference/root-decorators/#injectundefinedasempty);
-[changelog](https://github.com/dmno-dev/varlock/blob/varlock%401.21.0/packages/varlock/CHANGELOG.md).
+[changelog](https://github.com/dmno-dev/varlock/blob/varlock%401.24.0/packages/varlock/CHANGELOG.md).
+
+Since 1.22.0, auto-load and the framework integrations warn when no config items
+load (no `.env` files, or none define items); this becomes an error in the next
+major. Set `_VARLOCK_ALLOW_EMPTY_CONFIG=1` to allow an intentionally empty config.
 
 ### Export the resolved env into your shell (direnv / eval)
 
@@ -254,7 +262,7 @@ varlock codegen                 # deterministic; run when @generate*=auto=false
 - [`references/commands/core.md`](references/commands/core.md): `load`, `run`, `printenv`, `explain` (the daily resolution commands).
 - [`references/commands/secrets.md`](references/commands/secrets.md): `encrypt`, `reveal`, `lock`, `generate-key`, `keychain`, `cache`.
 - [`references/commands/security.md`](references/commands/security.md): `scan`, `audit`.
-- [`references/commands/project.md`](references/commands/project.md): `init`, `codegen`, `flatten`, `install-plugin`, `complete`, `telemetry`, `help`.
+- [`references/commands/project.md`](references/commands/project.md): `init`, `codegen`, `flatten`, `freeze`, `install-plugin`, `complete`, `telemetry`, `help`.
 - [`references/commands/proxy.md`](references/commands/proxy.md): `proxy` and its subcommands (credential proxy, preview).
 - [`references/env-schema.md`](references/env-schema.md): the `.env.schema` / `@env-spec` format: decorators, types, functions, environments, file layering, plugins.
 - [`references/patterns.md`](references/patterns.md): schema patterns and gotchas: optional secret refs (`allowMissing` + `fallback`), unsetting vars per environment with `undefined`, operator-scoped overlays, absent vs empty, plugin pinning and app auth.

@@ -13,13 +13,13 @@ pre-commit hook.
 varlock scan [OPTIONS] [<targets> ...]
 ```
 
-| Arg / Flag          | Short | Purpose                                                                  |
-| ------------------- | ----- | ------------------------------------------------------------------------ |
-| `targets`           |       | Files, dirs, or globs to scan (defaults to the current directory).       |
-| `--staged`          |       | Only scan staged git files.                                              |
-| `--include-ignored` |       | Include git-ignored files in the scan.                                   |
-| `--install-hook`    |       | Set up `varlock scan` as a git pre-commit hook.                          |
-| `--path <path>`     | `-p`  | `.env` file or dir (trailing `/`) as the schema entry point. Repeatable. |
+| Arg / Flag          | Short | Purpose                                                                     |
+| ------------------- | ----- | --------------------------------------------------------------------------- |
+| `targets`           |       | Files, dirs, or globs to scan (defaults to the current directory).          |
+| `--staged`          |       | Only scan staged git files.                                                 |
+| `--include-ignored` |       | Include git-ignored files in the scan.                                      |
+| `--install-hook`    |       | Set up `varlock scan` as a git pre-commit hook (respects `core.hooksPath`). |
+| `--path <path>`     | `-p`  | `.env` file or dir (trailing `/`) as the schema entry point. Repeatable.    |
 
 `EXAMPLES:` (verbatim from `varlock scan --help`):
 

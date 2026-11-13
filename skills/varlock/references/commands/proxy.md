@@ -4,7 +4,8 @@
 local MITM proxy so the child only ever sees **placeholder** secrets. Real values
 are injected into matching outbound requests at the wire (bound to a verified
 upstream TLS identity), responses are scrubbed back to placeholders, and every
-request is policy-checked and audited. Verified against `varlock 1.21.0` `--help`.
+request is policy-checked and audited. Verified against `varlock 1.21.0` `--help`;
+the proxy command spec is unchanged through 1.24.0.
 
 > **Preview.** Upstream docs still mark the credential proxy as an early preview:
 > its flags, decorators, and behavior may change (including breaking changes) in
@@ -47,6 +48,15 @@ starts its own), and the others use the single active session.
 
 `reload` must be run from a trusted terminal; a reload requested from inside the
 proxied agent is refused.
+
+Since 1.22.0, `@proxy(path=...)` globs match the **canonical** request path (dot
+segments resolved, repeated slashes collapsed, unreserved percent-escapes decoded),
+and that canonical path is what goes upstream. Paths that cannot be canonicalized
+unambiguously (encoded `/` or `\`, backslashes, control characters, `#`, `;`, `..`
+above the root) are rejected with a `400`. Since 1.24.0, `proxy run --url` sets
+`NODE_USE_ENV_PROXY=1` in the child so Node's built-in `fetch` uses the remote
+broker. Source: [proxy rules](https://varlock.dev/guides/proxy/rules/);
+[changelog](https://github.com/dmno-dev/varlock/blob/varlock%401.24.0/packages/varlock/CHANGELOG.md).
 
 ### `proxy run` flags
 

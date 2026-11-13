@@ -35,8 +35,13 @@ the [official hooks reference](https://code.claude.com/docs/en/hooks.md).
 For subagents, a `Stop` hook is automatically converted to `SubagentStop`,
 since that's the event that actually fires when a subagent completes.
 
-`/hooks` opens a read-only browser showing every registered hook, its type, and
-its source; hooks a skill registered appear there as `Session Hooks`.
+`/hooks` opens a read-only browser showing every registered hook and where it
+comes from; hooks a skill registered are labeled as coming from the current
+session. If a skill's hooks are missing there, the skill may be under a
+`strictPluginOnlyCustomization` hooks lock (only plugin, bundled, and managed
+skills keep frontmatter hooks under it) or past the per-source limit of 1,024
+hooks and 16,384 matcher characters per session (v2.1.304+). Source:
+[Limits on skill hooks](https://code.claude.com/docs/en/hooks#limits-on-skill-hooks).
 
 ### Hook Configuration Example
 
@@ -71,8 +76,9 @@ hooks:
 ```
 
 Command hooks also accept `args` (exec-form argument list, run without a
-shell) and `asyncRewake` (run in the background and wake Claude when the
-command exits with code 2).
+shell), `asyncRewake` (run in the background and wake Claude when the
+command exits with code 2), and `onFailure` (`"continue"` or `"block"`: whether
+the triggering action goes ahead when the hook fails; v2.1.295+).
 
 **HTTP hooks** send a POST request to an endpoint:
 
@@ -114,7 +120,9 @@ command exits with code 2).
 - `once: true`: Run only once per session, then remove
 - `matcher`: Regex pattern to match tool names (e.g., `"Bash"`, `"Write|Edit"`)
 - `if`: Permission rule syntax filter (e.g., `Bash(git *)`) to control when the
-  hook fires, reducing process spawning overhead
+  hook fires, reducing process spawning overhead. Evaluated only on tool events
+  (`PreToolUse`, `PostToolUse`, `PostToolUseFailure`, `PermissionRequest`,
+  `PermissionDenied`); on any other event a hook with `if` set never runs
 - `async: true`: Run command hooks in the background without blocking
 - `statusMessage`: Custom spinner message during execution
 
