@@ -142,6 +142,7 @@ Restart Claude Code after adding or changing an agent definition.
 | icon-gen                      | Generate app icons with OpenRouter Gemini and varlock-managed configuration        |
 | json-inspect                  | Generate JSON Schema from JSON files with genson                                   |
 | just                          | Kickstart the just command runner and author justfiles                             |
+| knip                          | Kickstart knip to find and fix unused files, dependencies, and exports             |
 | land-local                    | Rebase, verify, and fast-forward a worktree branch into local main atomically      |
 | linked-docs                   | Retrieve focused evidence from llms.txt sites with Jev-powered hierarchical search |
 | macos-notifications           | Send local macOS Notification Center alerts from task context                      |
