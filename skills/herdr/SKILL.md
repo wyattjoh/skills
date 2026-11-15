@@ -1,6 +1,6 @@
 ---
 name: herdr
-description: "Loads the installed Herdr CLI instructions for terminal and agent control with herdr-core (hc), and visible layout with herdr-app. Use only when the user explicitly mentions Herdr or asks to use Herdr to control terminals, agents, or the app. Do not use merely because a task could benefit from delegation or background work."
+description: "Controls Herdr persistent terminals, agents, and remote commands or files through herdr-core (hc), and inspects or customizes the visible app through herdr-app. Use when the user explicitly requests Herdr work, names herdr-core or herdr-app, or uses hc in a Herdr CLI context. Covers agent coordination, terminal output, spaces, tabs, panes, layouts, settings, and mods. Do not activate for generic delegation or background work."
 ---
 
 # Herdr
