@@ -2,7 +2,7 @@
   "name": "@wyattjoh/to-code-plugin",
   "version": "0.1.0",
   "private": true,
-  "description": "Optional herdr fleet tools for the to-code skill, as a Claude Code mod and a pi extension",
+  "description": "Optional herdr fleet tools, as a Claude Code mod and a pi extension",
   "keywords": [
     "pi-package"
   ],

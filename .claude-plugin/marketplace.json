@@ -14,7 +14,7 @@
     {
       "name": "to-code",
       "source": "./plugins/to-code",
-      "description": "Optional herdr fleet tools for the to-code skill: model-callable fleet status, wait, read, send, and watch, with wake-on-settle and a dispatch stop gate"
+      "description": "Optional herdr fleet tools: model-callable fleet status, wait, read, send, and watch, with wake-on-settle and a dispatch stop gate"
     }
   ]
 }

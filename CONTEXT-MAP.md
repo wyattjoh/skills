@@ -2,9 +2,8 @@
 
 ## Contexts
 
-- [Implementation Coordination](./skills/to-code/CONTEXT.md): assigns, observes, reviews, and lands bounded implementation work
+No published skill currently declares a bounded context.
 
 ## Relationships
 
-- **Implementation Coordination to agent harnesses**: records durable worker identity and observes execution without delegating workflow authority to harness state.
-- **Implementation Coordination to semantic providers**: submits bounded Assessments and retains workflow authority through versioned Authority Policies.
+No context relationships are currently declared.

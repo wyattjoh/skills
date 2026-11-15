@@ -85,15 +85,6 @@
         "effect": "4.1.2",
       },
     },
-    "skills/herd": {
-      "name": "@wyattjoh/herd-skill",
-      "version": "1.0.0",
-      "dependencies": {
-        "commander": "^15.1.0",
-        "effect": "4.1.2",
-        "yaml": "^2.9.1",
-      },
-    },
     "skills/icon-gen": {
       "name": "@wyattjoh/icon-gen-skill",
       "version": "1.0.0",
@@ -598,8 +589,6 @@
     "@wyattjoh/devenv-skill": ["@wyattjoh/devenv-skill@workspace:skills/devenv"],
 
     "@wyattjoh/driving-ios-simulator-skill": ["@wyattjoh/driving-ios-simulator-skill@workspace:skills/driving-ios-simulator"],
-
-    "@wyattjoh/herd-skill": ["@wyattjoh/herd-skill@workspace:skills/herd"],
 
     "@wyattjoh/icon-gen-skill": ["@wyattjoh/icon-gen-skill@workspace:skills/icon-gen"],
 

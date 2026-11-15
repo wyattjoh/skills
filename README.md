@@ -33,8 +33,7 @@ the session's mode when loaded from the plugin. The manifests live in
 
 ### Optional `to-code` plugin (Claude Code and pi)
 
-[`plugins/to-code/`](plugins/to-code/) gives the agent model-callable herdr fleet tools for
-the `to-code` skill: `fleet_setup`, `fleet_status`, `fleet_wait`, `fleet_read`,
+[`plugins/to-code/`](plugins/to-code/) gives the agent model-callable herdr fleet tools: `fleet_setup`, `fleet_status`, `fleet_wait`, `fleet_read`,
 `fleet_send`, and `fleet_watch`. Call `fleet_setup({ panes: ["w1:p2"] })` to get a
 session-local `fleetId`, then pass it to other fleet tools to scope results and targets.
 A fleet includes all agents in the selected panes' Herdr workspaces, including new workers,
@@ -43,7 +42,7 @@ and excludes the coordinator. Keep unrelated workers in separate workspaces. Omi
 
 A watched pane wakes the session when it settles, with its fleet ID in the wake.
 A turn that dispatched herdr work with nothing watching it is kept going once.
-It does nothing outside herdr, and the skill works without it. IDs belong to the current
+It does nothing outside herdr. IDs belong to the current
 coordinator's memory: recreate fleets and watches after a Pi extension reload or coordinator
 handoff, and recreate unknown IDs rather than falling back to global calls.
 
@@ -130,13 +129,11 @@ Restart Claude Code after adding or changing an agent definition.
 | claude-sessions               | Query indexed Claude Code conversation history with a Bun CLI                      |
 | clean-storage                 | Reclaim disk space from verified build artifacts and tool caches                   |
 | code-walkthrough              | Build an annotated walkthrough page with pinned source and scrolling notes         |
-| conductor                     | Navigate Conductor worktree environments for parallel agents                       |
 | devenv                        | Answer devenv.sh questions from an indexed local copy of the full documentation    |
 | dialkit                       | Live parameter tweaking and design exploration in React via dialkit                |
 | driving-ios-simulator         | Drive a booted iOS Simulator: tap, swipe, type, read elements, screenshot          |
 | effect-ts                     | Effect v4 patterns: services, layers, error handling, plus the v3 to v4 migration  |
 | executing-workflows-manually  | Run Claude Code workflow scripts in harnesses without the Workflow tool            |
-| herd                          | Run tickets in parallel as real agent sessions in sibling herdr tabs               |
 | harness-handoff               | Transfer a live conversation to Pi or Claude Code in a neighboring Herdr pane      |
 | herdr                         | Control terminals with herdr-core (hc) and visible layout with herdr-app           |
 | icon-gen                      | Generate app icons with OpenRouter Gemini and varlock-managed configuration        |
@@ -169,7 +166,6 @@ Restart Claude Code after adding or changing an agent definition.
 | swift-composable-architecture | Adoption index for The Composable Architecture (TCA 1.26.2), mapped by topic       |
 | swift-sql                     | Type-safe Swift SQL with swift-structured-queries                                  |
 | tidy                          | Interactive code simplification with batched approval                              |
-| to-code                       | Coordinate Pi or Claude tickets in Herdr onto a dedicated local run branch         |
 | varlock                       | Kickstart varlock, the encrypted schema-driven dotenv replacement                  |
 | vhs                           | Interview-driven terminal screencasts rendered to GIF/MP4/WebM                     |
 | whats-next                    | Emit the copy-ready prompt for the next agent session on a wayfinder map           |

@@ -34,8 +34,7 @@ repository, runs a fixture through `spawnGit`, and asserts the decoy still has
 exactly one commit and an empty tree.
 
 Skills ship independently, so a skill outside `workspaces` duplicates the small
-key list rather than importing across skill directories (see
-`skills/herd/scripts/preflight.ts`).
+key list rather than importing across skill directories.
 
 # Spawned helpers must receive an explicit environment
 
