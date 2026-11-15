@@ -1,14 +1,18 @@
 # to-code fleet adapters
 
-Pi's async coordinator and workers share the production statecharts in `fleet/model.ts` with the offline simulator. The Claude mod and unmanaged Pi fleets retain the dependency-free legacy `hooks/core/` tools. A Herdr pane becoming idle is never an async outcome.
+Pi's async coordinator and workers share the production statecharts in `fleet/model.ts` with the offline simulator. The Claude mod and unmanaged Pi fleets use the dependency-free `hooks/core/` tools against current hc. A core terminal becoming idle is never an async outcome.
 
 ## Pi async protocol
 
-Use the @earendil-works Pi CLI 1.0.2 or newer inside Herdr. Async startup checks the actual host package, not the plugin's dev dependency. Unknown embedded hosts fail closed. Install this package's pinned dependencies before loading `pi/index.ts`. Do not load multiple copies of the extension.
+Use the @earendil-works Pi CLI 1.0.2 or newer inside current hc/herdr-app with `HC_TERMINAL_ID`. Legacy `herdr` is unsupported. The current CLI contracts were checked against hc 0.1.21 and herdr-app 0.1.15. Async startup checks the actual host package, not the plugin's dev dependency. Unknown embedded hosts fail closed. Install this package's pinned dependencies before loading `pi/index.ts`. Do not load multiple copies of the extension.
 
-Resolve the installed skill and extension independently before a run, and record their real paths/revisions plus the actual Pi host version in the run evidence. `pi list` shows configured package sources; a local package loads directly from that path. A skill manager may instead cache a remote Git checkout. Updating that source follows its configured remote/ref, not unpushed local commits. Use the manager's supported local-source/provider selection for approved local development, or wait for publication; preserve its cache and load only one extension copy. Restart/reload after approved installation changes and check the newly loaded skill's managed/legacy routing.
+Resolve the installed skill and extension independently before a run, and record their real paths/revisions plus the actual Pi host version in the run evidence. `pi list` shows configured package sources; a local package loads directly from that path. A skill manager may instead cache a remote Git checkout. Updating that source follows its configured remote/ref, not unpushed local commits. Use the manager's supported local-source/provider selection for approved local development, or wait for publication; preserve its cache and load only one extension copy. Restart/reload after approved installation changes and check the newly loaded skill's managed/unmanaged routing.
 
-The coordinator owns scheduling, questions, and serial integration. Workers receive an existing ticket worktree, explicit model/thinking configuration, and one assignment ID. Startup uses a new background tab (`--no-focus`) in the coordinator-selected existing workspace, without creating a branch or worktree:
+The coordinator owns scheduling, questions, and serial integration. Workers receive an existing ticket worktree, explicit model/thinking configuration, and one assignment ID. Startup records a unique worker name, launches `hc run --bg --outlive-parent` with `herdr.space`, `to-code.run`, and `to-code.worker` labels, then binds the immutable terminal address after checking ownership. This makes workers visible in the coordinator-selected existing space without creating a branch or worktree. App focus behavior is not guaranteed. A bounded durable-registration notification confirms startup, never an agent-completion wait:
+
+Durable runs are same-host only: select a local space, not a space on another machine. Remote terminals are excluded from unmanaged fleet discovery to avoid cross-core space-ID collisions.
+
+Tool fields `workspace`, `pane`/`panes`, and `coordinatorPane` retain their historical names: values now mean an app space ID and core terminal addresses, not legacy workspace/pane IDs. The stored `tab` slot is null for current launches; app views are not fleet-owned resources.
 
 ```text
 pi --extension <plugin>/pi/index.ts --model <provider/model> --thinking <level>
@@ -29,7 +33,7 @@ A reviewer uses `--fleet-reviewer` instead. Only one role flag is allowed. Launc
 | `fleet_resume`         | Canonical absolute `directory`. Reopens session-owned callbacks and replays pending applicable notifications; never takes over a live/ambiguous owner.                                                                               |
 | `fleet_restart_worker` | `fleetId`, `workerId`. Reconciles a confirmed existing instance or restarts an absent worker in its recorded pane/configuration. Never allocates replacement Git resources.                                                          |
 
-`fleet_status` returns snapshots, assignment IDs, launch/transport state, and pending callbacks. `fleet_read` is an owned-worker diagnostic, not a result source. Managed `fleet_wait`/`fleet_watch` return an error: use callbacks, not completion polling. Finish/account for legacy watches before switching modes.
+`fleet_status` returns snapshots, assignment IDs, launch/transport state, and pending callbacks. `fleet_read` is an owned-worker diagnostic, not a result source. Managed `fleet_wait`/`fleet_watch` return an error: use callbacks, not completion polling. Finish/account for unmanaged watches before switching modes.
 
 If Git changes during review or approval, `fleet_send` explicitly supersedes stale work, invalidates the old ticket evidence, and assigns implementation re-verification. A reviewer question on a changed snapshot also takes this route. Superseding is a durable control outcome, not reviewer approval or failure. Old replies and reports cannot clear a newer assignment's gate.
 
@@ -76,14 +80,16 @@ Findings go directly to the implementor. The implementor fixes them and requests
 
 ## Durability and recovery
 
+Version 2 runs use only current-core terminal identities. Version 1 runs fail with an explicit incompatibility error; preserve their evidence and reconcile/retire old workers before starting a new run. Do not edit version numbers to bypass this boundary.
+
 Each Git-ignored run lives at `<integration-worktree>/.scratch/to-code/async-<uuid>/`. `state.json` stores schema-decoded Machine snapshots, resource ownership, immutable report records, and a callback outbox. Updates use a bounded cross-process lock and fsync/atomic rename on a local filesystem. Proven-dead same-host writer locks are archived; live, remote, or ambiguous locks fail closed. Preserve archived locks and scratch evidence for investigation.
 
 Callbacks are at least once. Session-owned Unix sockets (Windows named-pipe addressing is also defined) announce durable work, with no detached daemon. A queued `sendMessage` is not delivery: only a persisted Pi custom-message entry acknowledges its outbox ID. Duplicate/stale notifications are deduplicated or marked obsolete; offline recipients replay from durable state on resume. No managed-worker completion timer is used.
 
-Takeover requires the recorded host and repository identity and a proven absent predecessor. Preserve worktrees, branches, reports, and unrelated panes. Cleanup happens only after durable `Landed`; failures are separately retryable. Close only the exact owned, settled Pi pane, and close its tab only if it contains no other pane. Role checks and filesystem validation are workflow safeguards, not an OS security sandbox.
+Takeover requires the recorded host and repository identity and a proven absent predecessor. Preserve worktrees, branches, reports, and unrelated panes. Cleanup happens only after durable `Landed`; failures are separately retryable. Kill/remove only the exact owned, settled core terminal after rechecking its run/worker labels, selected space, harness, and worktree. Never close an app tab: it may contain unrelated panes or another view. Role checks and filesystem validation are workflow safeguards, not an OS security sandbox.
 
 ## Shared simulator and checks
 
 From the repository root, `bun plugins/to-code/demo/build.ts` writes `.scratch/fleet-state-machine.html`. Open it directly: the generated HTML contains its own script and styles, imports the production model/validator through the build, and needs no network or install on the viewing machine. Its Git, checks, transport, and panes are simulated, not claims about real Herdr behavior.
 
-Run `bun test plugins/to-code/fleet plugins/to-code/pi plugins/to-code/hooks/core plugins/to-code/demo`, plus root `check`, `lint`, and formatting. Claude mod tests still use `claude plugin test plugins/to-code`. Live Herdr launch validation must run inside Herdr, against a human-selected workspace and disposable already-created worktree; fixtures alone do not prove the live launcher contract.
+Run `bun test plugins/to-code/fleet plugins/to-code/pi plugins/to-code/hooks/core plugins/to-code/demo`, plus root `check`, `lint`, and formatting. Claude mod tests still use `claude plugin test plugins/to-code`. Live Herdr launch validation must run inside Herdr, against a human-selected existing space and disposable already-created worktree; fixtures alone do not prove the live launcher contract.

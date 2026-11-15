@@ -37,7 +37,7 @@ const fixture = async (newId: (() => string) | undefined = undefined) => {
   await mkdir(join(directory, "reports"), { recursive: true });
   const storage = fleetStorage(directory);
   const seed: FleetRun = {
-    version: 1,
+    version: 2,
     id: "async-test",
     directory,
     repository,
@@ -85,7 +85,7 @@ const fixture = async (newId: (() => string) | undefined = undefined) => {
       if (!merged) throw new Error("Head is not in integration branch");
       return head;
     },
-    createTab: async () => {
+    prepareWorker: async () => {
       pane++;
       events.push("tab");
       return { pane: `w1:p${pane}`, tab: `w1:t${pane}` };
@@ -104,6 +104,7 @@ const fixture = async (newId: (() => string) | undefined = undefined) => {
       }));
     },
     agents: async () => [],
+    claimWorker: async () => undefined,
     closeOwned: async (run, worker) => {
       expect(run.tickets[0]?.snapshot.state.path).toBe("Landed");
       events.push(`close:${worker.id}`);
@@ -247,6 +248,134 @@ const fixture = async (newId: (() => string) | undefined = undefined) => {
 };
 
 describe("durable real-runtime interface", () => {
+  test("landing cleanup resumes after external removal succeeds but retirement persistence fails", async () => {
+    const f = await fixture();
+    await f.approval();
+    f.merge();
+    const removed = new Set<string>();
+    let destructive = 0;
+    f.platform.closeOwned = async (_run, worker) => {
+      if (removed.has(worker.id)) return;
+      removed.add(worker.id);
+      destructive++;
+    };
+    const change = f.storage.change;
+    let failRetirement = true;
+    f.storage.change = async (operation) =>
+      change(async (run) => {
+        const next = await operation(run);
+        if (
+          failRetirement &&
+          next.run.workers.some((worker) => worker.snapshot.state.path === "Retired")
+        ) {
+          failRetirement = false;
+          throw new Error("retirement write interrupted");
+        }
+        return next;
+      });
+    expect(await rejected(f.coordinator.finishTicket("T1"))).toContain(
+      "retirement write interrupted",
+    );
+    expect((await f.storage.read()).tickets[0]?.snapshot.state.path).toBe("Landed");
+    await f.coordinator.finishTicket("T1");
+    expect(destructive).toBe(2);
+    expect((await f.storage.read()).workers.map((worker) => worker.snapshot.state.path)).toEqual([
+      "Retired",
+      "Retired",
+    ]);
+  });
+  test("restart reconciles an early finished launch by full ownership before rebinding and cleanup", async () => {
+    const f = await fixture();
+    const id = await f.implementation();
+    await f.storage.change(async (run) => ({
+      run: {
+        ...run,
+        workers: run.workers.map((worker) =>
+          worker.id === id
+            ? {
+                ...worker,
+                pane: worker.name,
+                pid: null,
+                callbackReady: false,
+                launch: "uncertain" as const,
+              }
+            : worker,
+        ),
+      },
+      value: undefined,
+    }));
+    const previous = (await f.storage.read()).workers[0]!;
+    f.platform.agents = async () => [
+      {
+        pane: "t-old",
+        name: previous.name,
+        harness: "pi",
+        status: "finished",
+        cwd: "/ticket",
+        workspace: "w1",
+        seq: 1,
+      },
+    ];
+    let claimed = 0;
+    f.platform.claimWorker = async (_run, worker, address) => {
+      expect(worker.id).toBe(id);
+      expect(address).toBe("t-old");
+      claimed++;
+    };
+    let removed = 0;
+    f.platform.closeOwned = async (_run, worker) => {
+      expect(worker.pane).toBe("t-old");
+      expect((await f.storage.read()).workers[0]?.pane).toBe("t-old");
+      removed++;
+    };
+    const start = f.platform.start;
+    f.platform.start = async (run, worker, bind) => {
+      await bind("t-new");
+      await start(run, worker, bind);
+    };
+    await f.coordinator.restartWorker(id);
+    expect(claimed).toBe(1);
+    expect(removed).toBe(1);
+    expect((await f.storage.read()).workers[0]?.pane).toBe("t-new");
+  });
+
+  test("uncertain name reconciliation refuses a same-named terminal with foreign ownership", async () => {
+    const f = await fixture();
+    const id = await f.implementation();
+    await f.storage.change(async (run) => ({
+      run: {
+        ...run,
+        workers: run.workers.map((worker) =>
+          worker.id === id
+            ? { ...worker, pane: worker.name, pid: null, callbackReady: false }
+            : worker,
+        ),
+      },
+      value: undefined,
+    }));
+    const previous = (await f.storage.read()).workers[0]!;
+    f.platform.agents = async () => [
+      {
+        pane: "t-foreign",
+        name: previous.name,
+        harness: "pi",
+        status: "finished",
+        cwd: "/ticket",
+        workspace: "w1",
+        seq: 1,
+      },
+    ];
+    f.platform.claimWorker = async () => {
+      throw new Error("foreign labels");
+    };
+    let removed = 0;
+    f.platform.closeOwned = async () => {
+      removed++;
+    };
+    expect(await rejected(f.coordinator.restartWorker(id))).toContain("foreign labels");
+    expect(removed).toBe(0);
+    expect((await f.storage.read()).workers[0]?.pane).toBe(previous.name);
+  });
   test("explicit existing worktree dispatch records resources before launch and rejects duplicate starts", async () => {
     const f = await fixture();
     const id = await f.coordinator.startTicket({
@@ -645,6 +774,18 @@ describe("durable real-runtime interface", () => {
 });
 
 describe("cross-process snapshot storage", () => {
+  test("rejects legacy runs without rewriting their evidence", async () => {
+    const f = await fixture();
+    const run = await f.storage.read();
+    const filename = join(run.directory, "state.json");
+    const current = await readFile(filename, "utf8");
+    const legacy = JSON.stringify({ ...JSON.parse(current), version: 1 });
+    await writeFile(filename, legacy);
+    await expect(f.storage.read()).rejects.toThrow(
+      "Incompatible fleet run: current hc requires version 2",
+    );
+    expect(await readFile(filename, "utf8")).toBe(legacy);
+  });
   test("concurrent transactions serialize and a proven dead writer lock is archived", async () => {
     const f = await fixture();
     await Promise.all(

@@ -330,7 +330,7 @@ export const createFleetRuntime = (options: {
     try {
       if (allocate) {
         const ticket = ticketOf(run, worker.ticketId);
-        const resource = await platform.createTab(
+        const resource = await platform.prepareWorker(
           run.workspace,
           ticket.snapshot.value.worktree,
           worker.name,
@@ -346,7 +346,15 @@ export const createFleetRuntime = (options: {
       }
       run = await storage.read();
       coordinator(run);
-      await platform.start(run, workerOf(run, workerId));
+      await platform.start(run, workerOf(run, workerId), async (address) => {
+        await storage.change(async (current) => {
+          coordinator(current);
+          const recorded = workerOf(current, workerId);
+          if (recorded.pane !== recorded.name && recorded.pane !== address)
+            throw new Error("Worker address changed during launch binding");
+          return { run: replaceWorker(current, { ...recorded, pane: address }), value: undefined };
+        });
+      });
       await storage.change(async (current) => {
         coordinator(current);
         const registered = workerOf(current, workerId);
@@ -1046,13 +1054,31 @@ export const createFleetRuntime = (options: {
     restartWorker: async (workerId: string): Promise<void> => {
       const run = await storage.read();
       coordinator(run);
-      const worker = workerOf(run, workerId);
-      if (worker.pane === null || worker.tab === null || worker.snapshot.state.path === "Retired")
+      let worker = workerOf(run, workerId);
+      if (worker.pane === null || worker.snapshot.state.path === "Retired")
         throw new Error(
-          "Worker resources are absent/unowned; inspect the uncertain launch instead of allocating duplicate tabs",
+          "Worker resources are absent/unowned; inspect the uncertain launch instead of allocating duplicate terminals",
         );
-      const live = (await platform.agents()).find((agent) => agent.pane === worker.pane);
-      if (live !== undefined) {
+      const live = (await platform.agents()).find(
+        (agent) => agent.pane === worker.pane || agent.name === worker.name,
+      );
+      if (live !== undefined && worker.pane === worker.name) {
+        await platform.claimWorker(run, worker, live.pane);
+        const previous = worker;
+        await storage.change(async (current) => {
+          coordinator(current);
+          const recorded = workerOf(current, workerId);
+          if (recorded.pane !== previous.pane || recorded.pid !== previous.pid)
+            throw new Error("Worker owner changed during uncertain-launch reconciliation");
+          return {
+            run: replaceWorker(current, { ...recorded, pane: live.pane }),
+            value: undefined,
+          };
+        });
+        worker = { ...worker, pane: live.pane };
+      }
+      if (live !== undefined && live.status !== "finished") {
+        await platform.claimWorker(run, worker, live.pane);
         if (
           live.name !== worker.name ||
           live.harness !== "pi" ||
@@ -1075,6 +1101,28 @@ export const createFleetRuntime = (options: {
         await notify();
         return;
       }
+      if (worker.pid !== null && processIsAlive(worker.pid))
+        throw new Error("Recorded worker process is still live; inspect rather than relaunching");
+      if (live !== undefined) await platform.closeOwned(run, worker);
+      await storage.change(async (current) => {
+        coordinator(current);
+        const recorded = workerOf(current, workerId);
+        if (recorded.pane !== worker.pane || recorded.pid !== worker.pid)
+          throw new Error("Worker ownership changed before restart");
+        return {
+          run: replaceWorker(current, {
+            ...recorded,
+            pane: recorded.name,
+            tab: null,
+            // Retain the proven-dead predecessor PID until the replacement
+            // claims its callback endpoint; resume uses it to recover stale sockets.
+            callbackReady: false,
+            launch: "prepared",
+            launchError: null,
+          }),
+          value: undefined,
+        };
+      });
       await launch(workerId, false);
     },
     finishTicket: async (ticketId: string): Promise<void> => {

@@ -73,37 +73,48 @@ const fixture = async () => {
   spawnGit(ticket, ["commit", "-qm", "Implementation"]);
   const commands: readonly string[][] = [];
   const mutableCommands = [...commands];
+  const bindings: string[] = [];
+  let removed = false;
+  let probeFails = false;
   let occupant = "fleet_impl";
+  let status = "idle";
+  let space = "w1";
+  let waitReason = "status";
+  const terminal = () => ({
+    address: "t2",
+    name: occupant,
+    cwd: ticket,
+    state: "live",
+    status: { app: "pi", state: status },
+    turn: 3,
+    labels: { "herdr.space": space, "to-code.run": "async-test", "to-code.worker": "impl" },
+  });
   const runner: Runner = async (argv) => {
     mutableCommands.push([...argv]);
     let result: unknown = {};
-    if (argv[1] === "workspace") result = { workspaces: [{ workspace_id: "w1" }] };
-    if (argv[1] === "tab" && argv[2] === "create")
-      result = { tab: { tab_id: "w1:t2" }, root_pane: { pane_id: "w1:p2" } };
-    if (argv[1] === "pane" && argv[2] === "list")
+    if (argv[0] === "herdr-app")
       result = {
-        panes: [
-          { pane_id: "w1:p2", tab_id: "w1:t2" },
-          { pane_id: "w1:p9", tab_id: "w1:t2" },
+        spaces: [
+          { id: "w1", machine: null },
+          { id: "remote", machine: "vps" },
         ],
       };
-    if (argv[1] === "pane" && argv[2] === "get")
-      result = { pane: { pane_id: "w1:p2", tab_id: "w1:t2", workspace_id: "w1" } };
-    if (argv[1] === "agent" && argv[2] === "list")
-      result = {
-        agents: [
-          {
-            pane_id: "w1:p2",
-            workspace_id: "w1",
-            name: occupant,
-            agent: "pi",
-            agent_status: "idle",
-            cwd: ticket,
-            state_change_seq: 3,
-          },
-        ],
-      };
-    return { exitCode: 0, stdout: JSON.stringify({ result }), stderr: "" };
+    if (argv[1] === "run") result = { address: "t2" };
+    if (argv[0] === "hc" && argv[1] === "ls") result = { terminals: removed ? [] : [terminal()] };
+    if (argv[1] === "get") {
+      if (removed)
+        return {
+          exitCode: probeFails ? 1 : 3,
+          stdout: "",
+          stderr: JSON.stringify({
+            error: { kind: probeFails ? "transport" : "not_found", message: "probe" },
+          }),
+        };
+      result = terminal();
+    }
+    if (argv[1] === "rm") removed = true;
+    if (argv[1] === "wait") result = { terminal: "t2", ended: true, reason: waitReason };
+    return { exitCode: 0, stdout: JSON.stringify(result), stderr: "" };
   };
   const directory = join(repository, ".scratch", "to-code", "async-test");
   await mkdir(join(directory, "reports"), { recursive: true });
@@ -118,8 +129,8 @@ const fixture = async () => {
   const worker: WorkerRecord = {
     id: "impl",
     ticketId: "T1",
-    pane: "w1:p2",
-    tab: "w1:t2",
+    pane: "t2",
+    tab: null,
     name: "fleet_impl",
     pid: process.pid,
     callbackReady: true,
@@ -136,14 +147,14 @@ const fixture = async () => {
     ),
   };
   const run: FleetRun = {
-    version: 1,
+    version: 2,
     id: "async-test",
     directory,
     repository,
     commonDirectory: join(repository, ".git"),
     workspace: "w1",
     integrationBranch: "main",
-    coordinatorPane: "w1:p1",
+    coordinatorPane: "t1",
     coordinatorSession: "test",
     coordinatorPid: process.pid,
     hostname: hostname(),
@@ -159,12 +170,31 @@ const fixture = async () => {
     ticket,
     decoy,
     contaminated,
-    platform: nodeFleetPlatform(runner, contaminated),
+    platform: nodeFleetPlatform(runner, contaminated, undefined, async () => {
+      if (waitReason !== "status")
+        throw new Error("Startup registration timed out; inspect before retrying");
+    }),
     run,
     worker,
     commands: mutableCommands,
+    bindings,
+    bind: async (address: string) => {
+      bindings.push(address);
+    },
+    probeFailure: () => {
+      probeFails = true;
+    },
     foreign: () => {
       occupant = "other_user";
+    },
+    move: () => {
+      space = "other";
+    },
+    working: () => {
+      status = "working";
+    },
+    uncertain: () => {
+      waitReason = "timeout";
     },
   };
 };
@@ -212,42 +242,86 @@ test("verification commands time out as process groups and honor an already-abor
   await expect(aborted.checks(f.ticket, ["sleep 10"], 1000)).rejects.toThrow("aborted");
 });
 
-test("launch uses explicit background topology and fleet role flags", async () => {
+test("launch uses hc background terminals, selected-space labels and exact role/model flags", async () => {
   const f = await fixture();
+  expect(await f.platform.workspaceExists("remote")).toBe(false);
   expect(await f.platform.workspaceExists("w1")).toBe(true);
-  expect(await f.platform.createTab("w1", f.ticket, "fleet_impl")).toEqual({
-    pane: "w1:p2",
-    tab: "w1:t2",
+  expect(await f.platform.prepareWorker("w1", f.ticket, "fleet_impl")).toEqual({
+    pane: "fleet_impl",
+    tab: null,
   });
-  await f.platform.start(f.run, f.worker);
-  expect(f.commands[1]).toEqual([
-    "herdr",
-    "tab",
-    "create",
-    "--workspace",
-    "w1",
+  expect(f.commands).toEqual([
+    ["herdr-app", "ls"],
+    ["herdr-app", "ls"],
+  ]);
+  await f.platform.start(f.run, f.worker, f.bind);
+  expect(f.commands[2]?.slice(0, 13)).toEqual([
+    "hc",
+    "run",
+    "--bg",
+    "--outlive-parent",
+    "--name",
+    "fleet_impl",
     "--cwd",
     f.ticket,
     "--label",
-    "fleet_impl",
-    "--no-focus",
+    "herdr.space=w1",
+    "--label",
+    "to-code.run=async-test",
+    "--label",
   ]);
-  expect(f.commands[2]?.slice(-4)).toEqual([
+  expect(f.commands[2]?.slice(-8)).toEqual([
+    "--model",
+    "test/model",
+    "--thinking",
+    "high",
     "--fleet-run",
     f.run.directory,
     "--fleet-implementor",
     "impl",
   ]);
+  expect(f.commands.at(-1)).toEqual(["hc", "get", "t2"]);
+  expect(f.commands.filter((command) => command[1] === "wait")).toEqual([]);
+  expect(f.bindings).toEqual(["t2"]);
 });
 
-test("cleanup refuses a foreign occupant and never closes a tab containing another pane", async () => {
+test("cleanup refuses a foreign occupant, moved terminal or working worker", async () => {
+  for (const change of ["foreign", "move", "working"] as const) {
+    const f = await fixture();
+    f[change]();
+    await rejected(f.platform.closeOwned(f.run, f.worker));
+    expect(f.commands.filter((command) => ["kill", "rm"].includes(command[1]!))).toEqual([]);
+  }
+});
+
+test("cleanup kills and removes only the owned terminal and never closes an app tab", async () => {
   const f = await fixture();
-  f.foreign();
-  expect(await rejected(f.platform.closeOwned(f.run, f.worker))).toContain("owned, settled");
-  expect(f.commands.filter((command) => command[2] === "close")).toEqual([]);
-  const own = await fixture();
-  await own.platform.closeOwned(own.run, own.worker);
-  expect(own.commands.filter((command) => command[2] === "close")).toEqual([
-    ["herdr", "pane", "close", "w1:p2"],
+  await f.platform.closeOwned(f.run, f.worker);
+  expect(f.commands.filter((command) => ["kill", "rm"].includes(command[1]!))).toEqual([
+    ["hc", "kill", "t2"],
+    ["hc", "rm", "t2"],
   ]);
+  expect(f.commands.every((command) => command[0] === "hc")).toBe(true);
+});
+
+test("cleanup retries after removal using exact-address not_found proof, not just a missing list row", async () => {
+  const f = await fixture();
+  await f.platform.closeOwned(f.run, f.worker);
+  await f.platform.closeOwned(f.run, f.worker);
+  expect(f.commands.filter((command) => ["kill", "rm"].includes(command[1]!))).toEqual([
+    ["hc", "kill", "t2"],
+    ["hc", "rm", "t2"],
+  ]);
+  f.probeFailure();
+  expect(await rejected(f.platform.closeOwned(f.run, f.worker))).toContain("transport");
+});
+
+test("startup timeouts remain uncertain instead of claiming completion or relaunching", async () => {
+  const f = await fixture();
+  f.uncertain();
+  expect(await rejected(f.platform.start(f.run, f.worker, f.bind))).toContain(
+    "inspect before retrying",
+  );
+  expect(f.commands.filter((command) => command[1] === "run")).toHaveLength(1);
+  expect(f.bindings).toEqual(["t2"]);
 });

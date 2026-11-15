@@ -6,17 +6,17 @@ import { parseAgentList, type RunOutput, type Runner } from "./herdr.ts";
 import { executeFleetTool, FLEET_TOOLS, type ToolContext } from "./tools.ts";
 
 const row = (pane: string, workspace: string, seq = 1, status = "idle") => ({
-  pane_id: pane,
-  workspace_id: workspace,
+  address: pane,
+  labels: { "herdr.space": workspace },
   name: pane,
-  agent: "pi",
-  agent_status: status,
-  state_change_seq: seq,
+  state: "live",
+  status: { app: "pi", state: status },
+  turn: seq,
 });
 
 const output = (agents: ReturnType<typeof row>[]): RunOutput => ({
   exitCode: 0,
-  stdout: JSON.stringify({ result: { agents } }),
+  stdout: JSON.stringify({ terminals: agents }),
   stderr: "",
 });
 
@@ -25,9 +25,7 @@ const fixture = () => {
   const calls: (readonly string[])[] = [];
   const runner: Runner = async (argv) => {
     calls.push(argv);
-    return argv[2] === "list"
-      ? output(state.rows)
-      : { exitCode: 0, stdout: "terminal", stderr: "" };
+    return argv[1] === "ls" ? output(state.rows) : { exitCode: 0, stdout: "terminal", stderr: "" };
   };
   const context: ToolContext = {
     runner,
@@ -84,7 +82,7 @@ describe("workspace fleets", () => {
       expect((await f.call("fleet_setup", { panes })).isError).toBe(true);
       expect(await f.context.store.read()).toEqual(EMPTY_MEMORY);
     }
-    f.state.rows = [{ ...row("a", "w1"), workspace_id: "" }];
+    f.state.rows = [{ ...row("a", "w1"), labels: { "herdr.space": "" } }];
     expect((await f.call("fleet_setup", { panes: ["a"] })).text).toBe(
       "Herdr did not report workspace IDs for the selected panes; fleet_setup requires workspace metadata",
     );
@@ -129,7 +127,7 @@ describe("workspace fleets", () => {
         text: `not members of ${fleetId}: b; call fleet_status with fleetId for the current list`,
       });
     }
-    expect(f.calls.every((argv) => argv[2] === "list")).toBe(true);
+    expect(f.calls.every((argv) => argv[1] === "ls")).toBe(true);
     expect((await f.context.store.read()).fleets[fleetId]?.watched).toEqual({});
   });
 
@@ -193,11 +191,15 @@ describe("workspace fleets", () => {
     await f.call("fleet_watch", { fleetId: first, panes: ["a"] });
     await f.call("fleet_watch", { fleetId: second, panes: ["a"] });
     f.context.runner = async (argv) => {
-      if (argv[2] === "list") return output(f.state.rows);
+      if (argv[1] === "ls") return output(f.state.rows);
       expect([...f.context.awaiting]).toEqual([waitKey(first, "a")]);
       return {
         exitCode: 0,
-        stdout: JSON.stringify({ result: { agent: row("a", "w1", 2, "done") } }),
+        stdout: JSON.stringify(
+          argv[1] === "get"
+            ? row("a", "w1", 2, "done")
+            : { terminal: "a", ended: true, reason: "status" },
+        ),
         stderr: "",
       };
     };
@@ -235,7 +237,7 @@ describe("workspace fleets", () => {
     const f = fixture();
     const fleetId = await f.setup();
     await f.context.store.update((memory) =>
-      recordBashDispatch(memory, "herdr agent prompt a go", parseAgentList(output(f.state.rows))),
+      recordBashDispatch(memory, "hc send a go", parseAgentList(output(f.state.rows))),
     );
     f.state.rows = [row("a", "w1", 3, "done")];
     await f.call("fleet_watch", { fleetId, panes: ["a"] });
@@ -250,7 +252,7 @@ describe("workspace fleets", () => {
   test("setup retains shell dispatch baselines captured before the fleet existed", async () => {
     const f = fixture();
     await f.context.store.update((memory) =>
-      recordBashDispatch(memory, "herdr agent prompt a go", parseAgentList(output(f.state.rows))),
+      recordBashDispatch(memory, "hc send a go", parseAgentList(output(f.state.rows))),
     );
     f.state.rows = [row("a", "w1", 3, "done")];
     const fleetId = await f.setup();
@@ -263,14 +265,18 @@ describe("workspace fleets", () => {
     const f = fixture();
     const fleetId = await f.setup();
     await f.context.store.update((memory) =>
-      recordBashDispatch(memory, "herdr agent prompt a go", parseAgentList(output(f.state.rows))),
+      recordBashDispatch(memory, "hc send a go", parseAgentList(output(f.state.rows))),
     );
     f.context.runner = async (argv) =>
-      argv[2] === "list"
+      argv[1] === "ls"
         ? output(f.state.rows)
         : {
             exitCode: 0,
-            stdout: JSON.stringify({ result: { agent: row("a", "w1", 3, "done") } }),
+            stdout: JSON.stringify(
+              argv[1] === "get"
+                ? row("a", "w1", 3, "done")
+                : { terminal: "a", ended: true, reason: "status" },
+            ),
             stderr: "",
           };
     expect((await f.call("fleet_wait", { fleetId, panes: ["a"], timeoutMs: 1000 })).isError).toBe(
@@ -286,11 +292,15 @@ describe("workspace fleets", () => {
     const f = fixture();
     const fleetId = await f.setup();
     f.context.runner = async (argv) =>
-      argv[2] === "list"
+      argv[1] === "ls"
         ? output(f.state.rows)
         : {
             exitCode: 0,
-            stdout: JSON.stringify({ result: { agent: row("a", "w2", 3, "done") } }),
+            stdout: JSON.stringify(
+              argv[1] === "get"
+                ? row("a", "w2", 3, "done")
+                : { terminal: "a", ended: true, reason: "status" },
+            ),
             stderr: "",
           };
     expect(await f.call("fleet_wait", { fleetId, panes: ["a"], timeoutMs: 1000 })).toEqual({

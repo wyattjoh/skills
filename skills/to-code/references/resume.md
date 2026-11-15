@@ -28,7 +28,7 @@ values, and mark unknown facts explicitly. Put detailed results in linked files.
 
 ## Coordinator
 
-<Current harness, Herdr session/pane identity, host, and last update time.
+<Current harness, hc terminal address and selected Herdr space, host, and last update time.
 Previous owner and evidence for any takeover. Identity is observational,
 not a requirement that the next coordinator use the same harness.>
 
@@ -68,16 +68,16 @@ the downstream scope rather than treating it as landed.
 Record the canonical async run directory and `fleetId` beside the handoff. Resume
 with `fleet_resume` in a supported Pi coordinator and apply
 [pi-async.md](pi-async.md). Its persisted snapshots/outbox own protocol progress;
-this Markdown owns human decisions and context pointers. Switching to legacy
+this Markdown owns human decisions and context pointers. Switching to unmanaged
 supervision needs an explicit migration decision, not silently bypassed guards.
 
-## Legacy takeover from either harness
+## Unmanaged takeover from either harness
 
 1. Read this handoff, the spec, tickets, decisions, and linked results. Missing
    or stale fields are questions to resolve, not grounds to require the old
    harness. Check the recorded repository and actual worktrees before using paths.
 2. Verify through Herdr and process inspection that the former coordinator no
-   longer drives the run. A stale timestamp, exhausted quota, absent pane on a
+   longer drives the run. A stale timestamp, exhausted quota, absent terminal on a
    different server, or user saying it is dead is not sufficient process evidence.
    If it is alive or cannot be checked, establish an explicit safe handoff with
    the user before mutating shared state. Do not kill a live predecessor or clear
@@ -86,7 +86,7 @@ supervision needs an explicit migration decision, not silently bypassed guards.
    and commit ancestry. A commit already merged can be recorded landed even if
    the old coordinator died before updating the table. A report without a merge
    is not landed. Preserve dirty work and investigate unexpected branch movement.
-4. Match recorded workers to live Herdr sessions and their cwd/configuration.
+4. Match recorded workers to live core terminals and their cwd/configuration.
    Reuse active workers. Inspect an interrupted launch or prompt before repeating
    it; absence of a result is not proof that nothing started. Recover results
    from their files or ask the existing worker for a concise status.

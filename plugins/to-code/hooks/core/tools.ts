@@ -72,12 +72,13 @@ const toolAgents = async (context: ScopedContext): Promise<FleetAgent[]> =>
 
 const PANE = {
   type: "string",
-  description: "herdr pane id, as fleet_status lists it (for example w5V:p2)",
+  description:
+    "Core terminal address, as fleet_status lists it (for example t7); the pane field name is retained for tool compatibility",
 };
 const PANES = { type: "array", items: PANE, minItems: 1 };
 const STATES = {
   type: "array",
-  items: { type: "string", enum: ["idle", "working", "blocked", "done", "unknown"] },
+  items: { type: "string", enum: ["idle", "blocked", "done", "error", "finished"] },
 };
 
 /**
@@ -89,7 +90,7 @@ export const FLEET_TOOLS: readonly FleetToolSpec[] = (
       name: "fleet_setup",
       label: "Fleet setup",
       description:
-        "Issue a session-local fleetId from explicit agent pane IDs. The fleet follows all other agents in their Herdr workspaces, including workers created later. Pass fleetId to later fleet tools to limit their results and targets. Setup does not watch or prompt workers.",
+        "Issue a session-local fleetId from explicit core terminal addresses (panes). The fleet follows all other agents in their labeled Herdr spaces, including workers created later. Pass fleetId to later fleet tools to limit their results and targets. Setup does not watch or prompt workers.",
       inputSchema: {
         type: "object",
         properties: { panes: PANES },
@@ -101,19 +102,22 @@ export const FLEET_TOOLS: readonly FleetToolSpec[] = (
       name: "fleet_status",
       label: "Fleet status",
       description:
-        "List the other herdr agent panes: pane id, name, harness (claude or pi), status (idle, working, blocked, done, unknown), cwd, and whether this session watches it. Use instead of parsing `herdr agent list` in the shell.",
+        "List other core agent terminals: address (pane), name, harness, status, cwd, and watch state. Includes error and finished terminals. Use instead of parsing `hc ls --all`.",
       inputSchema: { type: "object", properties: {}, additionalProperties: false },
     },
     {
       name: "fleet_wait",
       label: "Fleet wait",
       description:
-        "Block until the first of the given panes reaches one of the states (default idle, done, or blocked), or the timeout passes. Use instead of sleep or until loops. Returns the pane that settled and its status, or a timeout.",
+        "Wait for a core terminal settlement, message interruption or bounded check-in. The until filter defaults to idle, done, blocked, error and finished; a different observed state returns a check-in. Use instead of sleep or polling.",
       inputSchema: {
         type: "object",
         properties: {
           panes: PANES,
-          until: { ...STATES, description: "States to match; default idle, done, blocked" },
+          until: {
+            ...STATES,
+            description: "Settlement filter; default idle, done, blocked, error, finished",
+          },
           timeoutMs: { type: "number", description: `How long to wait; capped at ${MAX_WAIT_MS}` },
         },
         required: ["panes", "timeoutMs"],
@@ -139,7 +143,7 @@ export const FLEET_TOOLS: readonly FleetToolSpec[] = (
       name: "fleet_send",
       label: "Fleet send",
       description:
-        "Submit a prompt to a pane's agent and, by default, watch the pane so this session wakes when it settles. A blocked agent rejects the prompt: read it and answer its question instead. A stalled or timed-out submission may still have landed, so check fleet_status before sending again; never resend blindly.",
+        "Submit a prompt to a pane's agent and, by default, watch the pane so this session wakes when it settles. A blocked terminal rejects the prompt: read it and surface the permission or question to the user; do not force-send through its dialog. A stalled or timed-out submission may still have landed, so check fleet_status before sending again; never resend blindly.",
       inputSchema: {
         type: "object",
         properties: {
@@ -155,7 +159,7 @@ export const FLEET_TOOLS: readonly FleetToolSpec[] = (
       name: "fleet_watch",
       label: "Fleet watch",
       description:
-        "Wake this session once each given pane next settles (idle, done, or blocked), then forget it. Use after dispatching work any other way, so you can end the turn instead of polling. Work this session sent with fleet_send (watch false) or `herdr agent prompt`/`herdr pane run` in the shell counts from when it was sent, so a pane that already finished it fires on the next check. With unwatch true, stop watching the panes.",
+        "Wake this session once each given pane next settles (idle, done, blocked, error or finished), then forget it. Already-blocked/error terminals wake immediately for attention, even without a completed turn. Use after dispatching work any other way, so you can end the turn instead of polling. Work this session sent with fleet_send (watch false) or `hc send` in the shell counts from when it was sent, so a pane that already finished it fires on the next check. With unwatch true, stop watching the panes.",
       inputSchema: {
         type: "object",
         properties: {
@@ -272,6 +276,7 @@ const wait = async (
     if (outcome.kind === "failed") return fail(outcome.error);
     if (outcome.kind === "aborted") return fail("fleet_wait was interrupted");
     if (outcome.kind === "timeout") return ok({ timedOut: true, panes });
+    if (outcome.kind === "message") return ok({ interruptedByMessage: true, panes });
     if (!panes.includes(outcome.agent.pane))
       return fail("Herdr returned an unexpected pane for fleet_wait");
     if (
@@ -308,7 +313,7 @@ const send = async (
   if (before === undefined)
     return fail(`${pane} is not an agent pane; call fleet_status for the current list`);
 
-  assertOk(await context.runner(promptArgv(pane, text), 30_000, context.signal));
+  assertOk(await context.runner(promptArgv(pane, text), 75_000, context.signal));
   const watch = input.watch !== false;
   await context.store.update((memory) => {
     const dispatched = recordDispatch(memory, pane);
@@ -420,9 +425,9 @@ export const executeFleetTool = async (
         return await watchPanes(input, scoped);
     }
   } catch (error) {
-    if (error instanceof HerdrFailure && error.code === "agent_blocked") {
+    if (error instanceof HerdrFailure && error.code === "blocked") {
       return fail(
-        "agent_blocked: the agent is waiting on a question. Read it with fleet_read and answer that instead.",
+        "blocked: the terminal needs human attention. Read it with fleet_read and surface the permission or question; do not force-send through the dialog.",
       );
     }
     return fail(error instanceof Error ? error.message : String(error));

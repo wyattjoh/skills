@@ -1,31 +1,31 @@
 import type { FleetMemory } from "./fleet.ts";
 import type { FleetAgent } from "./herdr.ts";
 
-const HERDR_DISPATCH = /\bherdr\s+(agent\s+(prompt|start)|pane\s+run)\b/;
-const HERDR_TARGET = /\bherdr\s+(?:agent\s+prompt|pane\s+run)\s+["']?([A-Za-z0-9_.:-]+)/g;
+const CORE_DISPATCH = /\bhc\s+(run|send)\b/;
+const CORE_TARGET = /\bhc\s+send\s+["']?([A-Za-z0-9_./:-]+)/g;
 
 /**
  * The label a shell dispatch gets when its target pane cannot be named.
  */
-export const BASH_DISPATCH = "herdr via Bash";
+export const BASH_DISPATCH = "hc via Bash";
 
 /**
  * Whether a shell command hands work to another herdr pane.
  *
  * @param command the shell command
- * @returns true for `herdr agent prompt|start` and `herdr pane run`
+ * @returns true for `hc send` and `hc run`
  */
-export const isHerdrDispatch = (command: string): boolean => HERDR_DISPATCH.test(command);
+export const isHerdrDispatch = (command: string): boolean => CORE_DISPATCH.test(command);
 
 /**
- * The literal targets of the `herdr agent prompt` and `herdr pane run` calls
+ * The literal targets of the `hc send` calls
  * in a shell command: pane ids or agent names, as written.
  *
  * @param command the shell command
  * @returns the targets, in order
  */
 export const dispatchTargets = (command: string): string[] =>
-  [...command.matchAll(HERDR_TARGET)].flatMap((match) => (match[1] ? [match[1]] : []));
+  [...command.matchAll(CORE_TARGET)].flatMap((match) => (match[1] ? [match[1]] : []));
 
 /**
  * What the stop gate knows when a turn is about to end.
@@ -80,7 +80,7 @@ export const recordDispatch = (memory: FleetMemory, label: string): FleetMemory 
  * Records a shell dispatch: each target that names a listed agent pane by id
  * or agent name is recorded as that pane, with its seq before the work began
  * as the baseline a later `fleet_watch` starts from. Anything else, including
- * `herdr agent start`, is recorded under BASH_DISPATCH.
+ * `hc run`, is recorded under BASH_DISPATCH.
  *
  * @param memory the session's memory
  * @param command the shell command, already known to dispatch
@@ -98,9 +98,7 @@ export const recordBashDispatch = (
     return agent === undefined ? [] : [agent];
   });
   const isNamedOnly =
-    resolved.length > 0 &&
-    resolved.length === targets.length &&
-    !/\bherdr\s+agent\s+start\b/.test(command);
+    resolved.length > 0 && resolved.length === targets.length && !/\bhc\s+run\b/.test(command);
 
   const recorded = resolved.reduce(
     (current, agent) => ({

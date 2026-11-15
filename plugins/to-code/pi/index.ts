@@ -25,7 +25,7 @@ const DEFAULT_INTERVAL_MS = 3_000;
  */
 export const nodeRunner: Runner = (argv, timeoutMs, signal) =>
   new Promise((resolve) => {
-    const [file = "herdr", ...args] = argv;
+    const [file = "hc", ...args] = argv;
     execFile(
       file,
       args,
@@ -62,22 +62,25 @@ export const createFleetExtension =
     let asyncFleet: ReturnType<typeof createAsyncFleetAdapter> | undefined;
     let timer: ReturnType<typeof setInterval> | undefined;
     let initialize: ((ctx: ExtensionContext) => Promise<void>) | undefined;
-    let startLegacy: ((ctx: ExtensionContext) => void) | undefined;
+    let startUnmanaged: ((ctx: ExtensionContext) => void) | undefined;
     let initialized = false;
     pi.on("session_start", async (_event, ctx) => {
       if (
-        options.env.HERDR_ENV !== "1" &&
-        (pi.getFlag("fleet-implementor") !== undefined ||
+        options.env.HC_TERMINAL_ID === undefined &&
+        (options.env.HERDR_ENV === "1" ||
+          pi.getFlag("fleet-implementor") !== undefined ||
           pi.getFlag("fleet-reviewer") !== undefined)
       )
-        throw new Error("Async fleet workers must launch inside Herdr");
-      if (options.env.HERDR_ENV !== "1") return;
+        throw new Error(
+          "Fleet workers require current hc and HC_TERMINAL_ID; legacy Herdr is unsupported",
+        );
+      if (options.env.HC_TERMINAL_ID === undefined) return;
       if (!initialized) {
         await initialize?.(ctx);
         initialized = true;
       }
       await asyncFleet?.start(ctx);
-      startLegacy?.(ctx);
+      startUnmanaged?.(ctx);
     });
     pi.on("session_before_switch", async () => {
       if (timer !== undefined) clearInterval(timer);
@@ -90,7 +93,7 @@ export const createFleetExtension =
       await asyncFleet?.shutdown();
     });
     initialize = async (ctx: ExtensionContext): Promise<void> => {
-      const selfPane = options.env.HERDR_PANE_ID;
+      const selfPane = options.env.HC_TERMINAL_ID;
       const adapter = createAsyncFleetAdapter(pi, {
         runner: options.runner,
         env: options.env,
@@ -185,12 +188,12 @@ export const createFleetExtension =
         });
       }
 
-      startLegacy = (sessionCtx: ExtensionContext) => {
+      startUnmanaged = (sessionCtx: ExtensionContext) => {
         if (timer !== undefined) clearInterval(timer);
         if (!adapter.managed())
           timer = setInterval(() => void poll(sessionCtx), options.intervalMs);
       };
-      startLegacy(ctx);
+      startUnmanaged(ctx);
 
       // Each agent run, a typed prompt or a wake, gets its own stop-gate record.
       pi.on("agent_start", async () => {

@@ -80,7 +80,7 @@ export const ReportRecord = Schema.Struct({
 const StoredWorker = Schema.Struct({ ...WorkerMetadata, snapshot: Schema.Unknown });
 const StoredTicket = Schema.Struct({ ...TicketMetadata, snapshot: Schema.Unknown });
 const Envelope = Schema.Struct({
-  version: Schema.Literal(1),
+  version: Schema.Literal(2),
   id: Schema.NonEmptyString,
   directory: Schema.NonEmptyString,
   repository: Schema.NonEmptyString,
@@ -120,7 +120,17 @@ export type FleetRun = Omit<typeof Envelope.Type, "workers" | "tickets"> & {
 };
 
 const decode = async (json: string): Promise<FleetRun> => {
-  const stored = Schema.decodeUnknownSync(Envelope)(JSON.parse(json));
+  const document: unknown = JSON.parse(json);
+  if (
+    typeof document !== "object" ||
+    document === null ||
+    !("version" in document) ||
+    document.version !== 2
+  )
+    throw new Error(
+      "Incompatible fleet run: current hc requires version 2; preserve legacy evidence and start a new run, never reinterpret pane IDs",
+    );
+  const stored = Schema.decodeUnknownSync(Envelope)(document);
   const workers = await Promise.all(
     stored.workers.map(async (worker) => ({
       ...worker,

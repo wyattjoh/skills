@@ -8,7 +8,7 @@ import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-a
 import { Schema } from "effect";
 
 import { currentAssignment } from "../fleet/model.ts";
-import type { Runner } from "../hooks/core/herdr.ts";
+import { readArgv, type Runner } from "../hooks/core/herdr.ts";
 import { listenCallbacks, notifyCallback } from "./callbacks.ts";
 import { nodeFleetPlatform, processIsAlive, type FleetPlatform } from "./platform.ts";
 import {
@@ -149,8 +149,9 @@ export const createAsyncFleetAdapter = (
     assertHost: (() => void) | undefined;
   },
 ) => {
-  const pane = options.env.HERDR_PANE_ID;
-  if (pane === undefined) throw new Error("Async fleet requires HERDR_PANE_ID");
+  const pane = options.env.HC_TERMINAL_ID;
+  if (pane === undefined)
+    throw new Error("Async fleet requires HC_TERMINAL_ID; legacy Herdr is unsupported");
   const implementor = pi.getFlag("fleet-implementor");
   const reviewer = pi.getFlag("fleet-reviewer");
   const runFlag = pi.getFlag("fleet-run");
@@ -319,18 +320,30 @@ export const createAsyncFleetAdapter = (
       throw new Error("Run directory/host does not match persisted ownership");
     if (workerId !== undefined) {
       const worker = previous.workers.find((entry) => entry.id === workerId);
-      if (worker === undefined || worker.pane !== pane || worker.snapshot.value.role !== role)
-        throw new Error("Launch role/worker/pane does not match the durable assignment");
+      if (
+        worker === undefined ||
+        (worker.pane !== pane && worker.pane !== worker.name) ||
+        worker.snapshot.value.role !== role
+      )
+        throw new Error("Launch role/worker/terminal does not match the durable assignment");
+      await (
+        options.platform ?? nodeFleetPlatform(options.runner, process.env, signal)
+      ).claimWorker(previous, worker, pane);
       if (worker.pid !== null && worker.pid !== process.pid && processIsAlive(worker.pid))
         throw new Error("A live process already owns this worker");
       await storage.change(async (run) => {
         const current = run.workers.find((entry) => entry.id === workerId);
-        if (current?.pid !== worker.pid) throw new Error("Worker owner changed during startup");
+        // The coordinator may bind this exact verified address while the worker
+        // is checking core ownership. A different address or PID is still a conflict.
+        if (current?.pid !== worker.pid || (current.pane !== worker.pane && current.pane !== pane))
+          throw new Error("Worker owner changed during startup");
         return {
           run: {
             ...run,
             workers: run.workers.map((entry) =>
-              entry.id === workerId ? { ...entry, pid: process.pid, callbackReady: false } : entry,
+              entry.id === workerId
+                ? { ...entry, pane, pid: process.pid, callbackReady: false }
+                : entry,
             ),
           },
           value: undefined,
@@ -471,7 +484,7 @@ export const createAsyncFleetAdapter = (
     );
     register(
       "fleet_restart_worker",
-      "Reconcile a known worker's uncertain launch or restart in its existing owned pane. Never allocate a duplicate tab or replace an unknown/busy occupant.",
+      "Reconcile a known worker's uncertain launch by immutable core address and ownership labels. Restart only after proving the predecessor is absent; preserve its callback recovery lease. Never duplicate a live worker or replace an unknown/busy occupant.",
       Restart,
       Schema.decodeUnknownSync(Restart),
       async (input, ctx, signal) => {
@@ -612,7 +625,7 @@ export const createAsyncFleetAdapter = (
     description: (name: string, legacy: string): string => {
       switch (name) {
         case "fleet_setup":
-          return "Set up one of two modes: managed Pi takes workspace, integrationBranch, checks, optional commandTimeoutMs (integer MILLISECONDS, 1..570000, default 120000); legacy takes panes. Managed mode persists assignment-correlated work and uses durable callbacks, never fleet_wait/fleet_watch completion polling. Legacy mode scopes Herdr panes and permits bounded wait/watch supervision. Finish/account for legacy dispatches before switching.";
+          return "Set up one of two modes: managed Pi takes workspace, integrationBranch, checks, optional commandTimeoutMs (integer MILLISECONDS, 1..570000, default 120000); unmanaged takes panes. Managed mode persists assignment-correlated work and uses durable callbacks, never fleet_wait/fleet_watch completion polling. Legacy mode scopes Herdr panes and permits bounded wait/watch supervision. Finish/account for legacy dispatches before switching.";
         case "fleet_status":
           return "With a managed async fleetId, read durable ticket/worker snapshots, assignments, launch/transport state and pending callbacks. Otherwise list legacy Herdr pane status/watches. Diagnostic only: native idle is not a managed outcome.";
         case "fleet_send":
@@ -678,7 +691,7 @@ export const createAsyncFleetAdapter = (
           )
             throw new Error("Fleet scratch directory must be canonical and inside the repository");
           const run: FleetRun = {
-            version: 1,
+            version: 2,
             id: fleetId,
             directory,
             repository,
@@ -726,22 +739,17 @@ export const createAsyncFleetAdapter = (
           if (name === "fleet_read") {
             const run = await rt.read();
             const worker = run.workers.find((entry) => entry.pane === params.pane);
-            if (worker === undefined || worker.pane === pane)
-              throw new Error("Read target is not an owned worker");
-            const output = await options.runner(
-              [
-                "herdr",
-                "agent",
-                "read",
-                worker.name,
-                "--source",
-                "recent-unwrapped",
-                "--lines",
-                "80",
-              ],
-              10_000,
-              signal,
-            );
+            if (
+              worker === undefined ||
+              worker.pane === null ||
+              worker.pane === worker.name ||
+              worker.pane === pane
+            )
+              throw new Error("Read target is not a bound owned worker");
+            await (
+              options.platform ?? nodeFleetPlatform(options.runner, process.env, signal)
+            ).claimWorker(run, worker, worker.pane);
+            const output = await options.runner(readArgv(worker.pane, 80), 10_000, signal);
             return result(output.stdout || output.stderr, output.exitCode !== 0);
           }
         }

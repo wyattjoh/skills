@@ -1,15 +1,23 @@
 /**
- * Agent states herdr reports for a pane.
+ * Current core agent states, plus unreported and finished terminals.
  */
-export type FleetStatus = "idle" | "working" | "blocked" | "done" | "unknown";
+export type FleetStatus =
+  | "idle"
+  | "working"
+  | "blocked"
+  | "done"
+  | "error"
+  | "finished"
+  | "unknown";
 
 /**
- * States that mean an agent stopped and wants attention.
+ * Terminal observations that need coordinator attention, not proof of an async outcome.
  */
-export const SETTLED: readonly FleetStatus[] = ["idle", "done", "blocked"];
+export const SETTLED: readonly FleetStatus[] = ["idle", "done", "blocked", "error", "finished"];
 
 /**
- * One agent pane, projected from herdr's `agent list` / `agent wait` JSON.
+ * A core terminal projected for fleet tools. `pane` is the tool API's historical
+ * field name; its value is always a core terminal address, never an app pane ID.
  */
 export type FleetAgent = {
   pane: string;
@@ -22,25 +30,17 @@ export type FleetAgent = {
 };
 
 /**
- * The `error` object herdr prints on stdout when a command fails.
+ * Normalized current-core failure.
  */
-export type HerdrError = {
-  code: string;
-  message: string;
-};
+export type HerdrError = { code: string; message: string };
 
 /**
- * What a runner reports for one finished child process.
+ * One bounded subprocess result.
  */
-export type RunOutput = {
-  exitCode: number;
-  stdout: string;
-  stderr: string;
-};
+export type RunOutput = { exitCode: number; stdout: string; stderr: string };
 
 /**
- * Runs an argv to completion. Each harness adapter supplies its own: the
- * Claude Code mod through `$.process.run`, the pi extension through Node.
+ * Harness-injected process execution; the mod implementation remains Node-free.
  */
 export type Runner = (
   argv: readonly string[],
@@ -49,13 +49,12 @@ export type Runner = (
 ) => Promise<RunOutput>;
 
 /**
- * Raised when herdr answers with an error document or unreadable output.
+ * A core protocol or command failure, preserving the core's error kind.
  */
 export class HerdrFailure extends Error {
   readonly code: string;
-
   /**
-   * @param error the parsed herdr error
+   * Preserve a normalized core error kind and message.
    */
   constructor(error: HerdrError) {
     super(`${error.code}: ${error.message}`);
@@ -63,34 +62,25 @@ export class HerdrFailure extends Error {
   }
 }
 
-type RawAgent = {
-  pane_id?: unknown;
-  workspace_id?: unknown;
-  name?: unknown;
-  display_agent?: unknown;
-  title?: unknown;
-  agent?: unknown;
-  agent_status?: unknown;
-  cwd?: unknown;
-  state_change_seq?: unknown;
-};
-
-const STATUSES: readonly FleetStatus[] = ["idle", "working", "blocked", "done", "unknown"];
-
-const asString = (value: unknown, fallback: string): string =>
+const record = (value: unknown): Record<string, unknown> =>
+  typeof value === "object" && value !== null ? (value as Record<string, unknown>) : {};
+const string = (value: unknown, fallback = ""): string =>
   typeof value === "string" ? value : fallback;
-
-const firstText = (...values: unknown[]): string =>
-  values.find((value): value is string => typeof value === "string" && value !== "") ?? "";
+const STATUSES: readonly FleetStatus[] = [
+  "idle",
+  "working",
+  "blocked",
+  "done",
+  "error",
+  "finished",
+  "unknown",
+];
 
 /**
- * Reduces a herdr-reported label to a short, single-line, plain token.
- * Pane names and titles are set by whoever runs in the pane, and they reach
- * the session inside wake prompts, so they must not carry instructions.
- *
- * @param value the raw label
- * @param max the longest label kept
- * @returns the label with anything outside letters, digits, and `._:/-` turned into spaces
+ * Make untrusted names safe for wake prompts.
+ * @param value Raw terminal label.
+ * @param max Maximum retained length.
+ * @returns A plain single-line label.
  */
 export const label = (value: string, max = 48): string =>
   value
@@ -99,27 +89,29 @@ export const label = (value: string, max = 48): string =>
     .trim()
     .slice(0, max);
 
-const toAgent = (raw: RawAgent): FleetAgent => {
-  const status = asString(raw.agent_status, "unknown") as FleetStatus;
-
+const toAgent = (raw: Record<string, unknown>): FleetAgent => {
+  const status = record(raw.status);
+  const argv = Array.isArray(raw.argv) ? raw.argv : [];
+  const command = string(argv[0]).split("/").pop();
+  const state = raw.state === "finished" ? "finished" : string(status.state, "unknown");
   return {
-    pane: label(asString(raw.pane_id, ""), 32),
-    // herdr's own agent name is set at `agent start`; the display name and
-    // title come later from the agent and drift with its session.
-    name: label(firstText(raw.name, raw.display_agent, raw.title)),
-    harness: label(asString(raw.agent, "unknown"), 16),
-    status: STATUSES.includes(status) ? status : "unknown",
-    cwd: asString(raw.cwd, ""),
-    workspace:
-      typeof raw.workspace_id === "string" && raw.workspace_id !== ""
-        ? raw.workspace_id
-        : undefined,
-    seq: typeof raw.state_change_seq === "number" ? raw.state_change_seq : 0,
+    pane: string(raw.address),
+    name: label(string(raw.name) || string(raw.title)),
+    harness: label(
+      string(status.app) || (command === "pi" || command === "claude" ? command : "unknown"),
+      16,
+    ),
+    status: STATUSES.includes(state as FleetStatus) ? (state as FleetStatus) : "unknown",
+    cwd: string(record(raw.foreground).cwd) || string(raw.cwd),
+    workspace: string(record(raw.labels)["herdr.space"]) || undefined,
+    // Core turns advance on leaving working. Startup idle alone must not wake a
+    // dispatch watch. An exit adds one observation even without a final root word.
+    seq: (typeof raw.turn === "number" ? raw.turn : 0) + (raw.state === "finished" ? 1 : 0),
   };
 };
 
 const parseDocument = (output: RunOutput): Record<string, unknown> => {
-  const text = output.stdout.trim() || output.stderr.trim();
+  const text = (output.exitCode !== 0 ? output.stderr || output.stdout : output.stdout).trim();
   let parsed: unknown;
   try {
     parsed = JSON.parse(text);
@@ -129,114 +121,126 @@ const parseDocument = (output: RunOutput): Record<string, unknown> => {
       message: text.slice(0, 300) || `exit ${output.exitCode}`,
     });
   }
-  if (typeof parsed !== "object" || parsed === null) {
+  if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed))
     throw new HerdrFailure({ code: "unreadable_output", message: text.slice(0, 300) });
+  const document = record(parsed);
+  if (document.error !== undefined) {
+    const error = record(document.error);
+    throw new HerdrFailure({
+      code: string(error.kind, "unknown_error"),
+      message: string(error.message),
+    });
   }
-  const document = parsed as Record<string, unknown>;
-  const error = document.error as Partial<HerdrError> | undefined;
-  if (error !== undefined) {
-    throw new HerdrFailure({ code: error.code ?? "unknown_error", message: error.message ?? "" });
-  }
+  if (output.exitCode !== 0)
+    throw new HerdrFailure({ code: "command_failed", message: text.slice(0, 300) });
   return document;
 };
 
 /**
- * Parses `herdr agent list` output.
- *
- * @param output the finished command
- * @returns every agent pane herdr knows about
- * @throws HerdrFailure when herdr reported an error
+ * Parse local agents from `hc ls --all`, rejecting legacy envelopes rather than hiding workers.
+ * @param output Bounded CLI result.
+ * @returns Local agent terminals, including finished workers but excluding plain programs and remote cores.
  */
 export const parseAgentList = (output: RunOutput): FleetAgent[] => {
-  const result = parseDocument(output).result as { agents?: RawAgent[] } | undefined;
-  return (result?.agents ?? []).map(toAgent).filter((agent) => agent.pane !== "");
+  const document = parseDocument(output);
+  if (!Array.isArray(document.terminals))
+    throw new HerdrFailure({
+      code: "incompatible_runtime",
+      message: "Expected hc terminal list; legacy Herdr is unsupported",
+    });
+  return document.terminals
+    .map((value) => toAgent(record(value)))
+    .filter(
+      (agent) => agent.pane !== "" && !agent.pane.includes("/") && agent.harness !== "unknown",
+    );
 };
 
 /**
- * Parses the single agent `herdr agent wait` and `agent prompt --wait` print.
- *
- * @param output the finished command
- * @returns the agent as it settled
- * @throws HerdrFailure when herdr reported an error (including `timeout`)
+ * Parse one `hc get` result; core wait results must be handled separately.
+ * @param output Bounded CLI result.
+ * @returns The terminal's fleet projection.
  */
 export const parseAgentInfo = (output: RunOutput): FleetAgent => {
-  const result = parseDocument(output).result as { agent?: RawAgent } | undefined;
-  return toAgent(result?.agent ?? {});
+  const document = parseDocument(output);
+  if (typeof document.address !== "string")
+    throw new HerdrFailure({
+      code: "incompatible_runtime",
+      message: "Expected hc terminal document",
+    });
+  return toAgent(document);
 };
 
 /**
- * Throws when a command that prints no JSON on success failed.
- *
- * @param output the finished command
- * @throws HerdrFailure when the command failed
+ * Classify a core wait without treating messages, startup or timeouts as completion.
+ * @param output Bounded CLI result.
+ * @param terminal Expected immutable terminal address.
+ * @returns Settlement, timeout/check-in or message interruption.
+ */
+export const parseWait = (
+  output: RunOutput,
+  terminal: string,
+): "settled" | "timeout" | "message" => {
+  const document = parseDocument(output);
+  if (
+    document.terminal !== terminal ||
+    typeof document.reason !== "string" ||
+    typeof document.ended !== "boolean"
+  )
+    throw new HerdrFailure({ code: "incompatible_runtime", message: "Expected hc wait result" });
+  if (document.reason === "message") return "message";
+  if (document.reason === "timeout" || document.reason === "not_started") return "timeout";
+  if ((document.reason === "status" || document.reason === "exit") && document.ended === true)
+    return "settled";
+  throw new HerdrFailure({ code: "unexpected_wait", message: string(document.reason) });
+};
+
+/**
+ * Require a successful command, preserving structured core errors when present.
+ * @param output Bounded CLI result.
+ * @returns Nothing on success; throws a normalized core failure otherwise.
  */
 export const assertOk = (output: RunOutput): void => {
   if (output.exitCode === 0) return;
   parseDocument(output);
-  throw new HerdrFailure({
-    code: "command_failed",
-    message: (output.stderr || output.stdout).slice(0, 300),
-  });
 };
 
 /**
- * Argv for listing every agent pane.
- *
- * @returns the argv
+ * Include finished terminals so owned exits remain observable.
+ * @returns Current-core list argv.
  */
-export const listArgv = (): string[] => ["herdr", "agent", "list"];
+export const listArgv = (): string[] => ["hc", "ls", "--all"];
 
 /**
- * Argv for waiting on one pane to reach a state.
- *
- * @param pane the pane id
- * @param until the states to match
- * @param timeoutMs herdr's own timeout
- * @returns the argv
+ * Convert the public millisecond budget to core seconds. State selection is local.
+ * @param pane Core terminal address (historical tool field name).
+ * @param _until Settlement filter applied by the caller, not passed to core.
+ * @param timeoutMs Public timeout budget in milliseconds.
+ * @returns Current-core wait argv.
  */
 export const waitArgv = (
   pane: string,
-  until: readonly FleetStatus[],
+  _until: readonly FleetStatus[],
   timeoutMs: number,
-): string[] => [
-  "herdr",
-  "agent",
-  "wait",
-  pane,
-  ...until.flatMap((status) => ["--until", status]),
-  "--timeout",
-  String(timeoutMs),
-];
+): string[] => ["hc", "wait", pane, "--timeout", String(timeoutMs / 1000)];
 
 /**
- * Argv for reading a pane's recent terminal output.
- *
- * @param pane the pane id
- * @param lines how many lines
- * @returns the argv
+ * Read a bounded amount of terminal screen/history as plain text.
+ * @param pane Core terminal address.
+ * @param lines Requested history limit.
+ * @returns Current-core read argv.
  */
 export const readArgv = (pane: string, lines: number): string[] => [
-  "herdr",
-  "agent",
+  "hc",
   "read",
   pane,
-  "--source",
-  "recent-unwrapped",
   "--lines",
   String(lines),
 ];
 
 /**
- * Argv for submitting a prompt to a pane's agent without waiting.
- *
- * @param pane the pane id
- * @param text the prompt
- * @returns the argv
+ * Submit without forcing blocked terminals or granting native permissions.
+ * @param pane Core terminal address.
+ * @param text Assignment text to submit.
+ * @returns Current-core send argv, without a force flag.
  */
-export const promptArgv = (pane: string, text: string): string[] => [
-  "herdr",
-  "agent",
-  "prompt",
-  pane,
-  text,
-];
+export const promptArgv = (pane: string, text: string): string[] => ["hc", "send", pane, text];

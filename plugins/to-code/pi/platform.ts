@@ -1,6 +1,6 @@
 import { spawn } from "node:child_process";
 import { createHash } from "node:crypto";
-import { constants } from "node:fs";
+import { constants, watch } from "node:fs";
 import { lstat, open, realpath } from "node:fs/promises";
 import { dirname, isAbsolute, join, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -9,12 +9,15 @@ import { Schema } from "effect";
 
 import {
   assertOk,
+  HerdrFailure,
   parseAgentList,
+  parseAgentInfo,
   type FleetAgent,
   type Runner,
   type RunOutput,
 } from "../hooks/core/herdr.ts";
-import type { FleetRun, WorkerRecord } from "./storage.ts";
+import { fleetStorage, type FleetRun, type WorkerRecord } from "./storage.ts";
+import { waitForRegistration } from "./registration.ts";
 
 const GIT_LOCATION = [
   "GIT_DIR",
@@ -26,30 +29,14 @@ const GIT_LOCATION = [
   "GIT_CEILING_DIRECTORIES",
   "GIT_DISCOVERY_ACROSS_FILESYSTEM",
 ];
-const CreatedTab = Schema.Struct({
-  result: Schema.Struct({
-    tab: Schema.Struct({ tab_id: Schema.String }),
-    root_pane: Schema.Struct({ pane_id: Schema.String }),
-  }),
+const SpaceList = Schema.Struct({
+  spaces: Schema.Array(Schema.Struct({ id: Schema.String, machine: Schema.NullOr(Schema.String) })),
 });
-const WorkspaceList = Schema.Struct({
-  result: Schema.Struct({
-    workspaces: Schema.Array(Schema.Struct({ workspace_id: Schema.String })),
-  }),
-});
-const PaneList = Schema.Struct({
-  result: Schema.Struct({
-    panes: Schema.Array(Schema.Struct({ pane_id: Schema.String, tab_id: Schema.String })),
-  }),
-});
-const PaneDocument = Schema.Struct({
-  result: Schema.Struct({
-    pane: Schema.Struct({
-      pane_id: Schema.String,
-      tab_id: Schema.String,
-      workspace_id: Schema.String,
-    }),
-  }),
+const OwnedTerminal = Schema.Struct({
+  address: Schema.String,
+  name: Schema.String,
+  cwd: Schema.String,
+  labels: Schema.Record(Schema.String, Schema.String),
 });
 
 /**
@@ -76,12 +63,17 @@ export type FleetPlatform = {
     timeoutMs: number,
   ) => Promise<readonly string[]>;
   landed: (worktree: string, integrationBranch: string, head: string) => Promise<string>;
-  createTab: (
+  prepareWorker: (
     workspace: string,
     worktree: string,
     label: string,
-  ) => Promise<{ pane: string; tab: string }>;
-  start: (run: FleetRun, worker: WorkerRecord) => Promise<void>;
+  ) => Promise<{ pane: string; tab: string | null }>;
+  start: (
+    run: FleetRun,
+    worker: WorkerRecord,
+    bind: (address: string) => Promise<void>,
+  ) => Promise<void>;
+  claimWorker: (run: FleetRun, worker: WorkerRecord, address: string) => Promise<void>;
   agents: () => Promise<readonly FleetAgent[]>;
   closeOwned: (run: FleetRun, worker: WorkerRecord) => Promise<void>;
   reviewFile: (run: FleetRun, filename: string) => Promise<{ text: string; hash: string }>;
@@ -199,12 +191,20 @@ const subprocess = (
   });
 
 /**
- * Node/Herdr adapter. Every subprocess is bounded and receives an explicit sanitized environment.
+ * Node/current-core adapter. Git subprocesses use an explicit sanitized environment.
+ * @param runner Harness-injected bounded CLI execution.
+ * @param environment Environment to sanitize for Git and check commands.
+ * @param signal Optional cancellation for this operation.
+ * @param registration Optional injected startup waiter for deterministic platform tests.
+ * @returns Current-core effects with same-host durable startup and ownership-safe cleanup.
  */
 export const nodeFleetPlatform = (
   runner: Runner,
   environment: NodeJS.ProcessEnv = process.env,
   signal: AbortSignal | undefined = undefined,
+  registration:
+    | ((run: FleetRun, worker: WorkerRecord, address: string) => Promise<void>)
+    | undefined = undefined,
 ): FleetPlatform => {
   const env = gitEnvironment(environment);
   const git = async (cwd: string, args: readonly string[]): Promise<string> => {
@@ -213,17 +213,42 @@ export const nodeFleetPlatform = (
       throw new Error(`git ${args[0]} failed: ${result.stderr.trim().slice(0, 500)}`);
     return result.stdout.trim();
   };
-  const herdr = async (args: readonly string[], timeout = 10_000): Promise<RunOutput> => {
-    const result = await runner(["herdr", ...args], timeout, signal);
+  const core = async (args: readonly string[], timeout = 10_000): Promise<RunOutput> => {
+    const result = await runner(["hc", ...args], timeout, signal);
     assertOk(result);
     return result;
   };
-  const agents = async (): Promise<FleetAgent[]> => parseAgentList(await herdr(["agent", "list"]));
+  const agents = async (): Promise<FleetAgent[]> => parseAgentList(await core(["ls", "--all"]));
+  const claimWorker = async (
+    run: FleetRun,
+    worker: WorkerRecord,
+    address: string,
+  ): Promise<FleetAgent> => {
+    const output = await core(["get", address]);
+    const terminal = Schema.decodeUnknownSync(OwnedTerminal)(JSON.parse(output.stdout));
+    const agent = parseAgentInfo(output);
+    const ticket = run.tickets.find((entry) => entry.id === worker.ticketId);
+    if (
+      terminal.address !== address ||
+      terminal.name !== worker.name ||
+      agent.harness !== "pi" ||
+      terminal.labels["to-code.run"] !== run.id ||
+      terminal.labels["to-code.worker"] !== worker.id ||
+      terminal.labels["herdr.space"] !== run.workspace ||
+      ticket === undefined ||
+      (await realpath(agent.cwd)) !== ticket.snapshot.value.worktree
+    )
+      throw new Error("Terminal is not the owned Pi worker in its assigned space/worktree");
+    return agent;
+  };
   return {
-    workspaceExists: async (workspace) =>
-      Schema.decodeUnknownSync(WorkspaceList)(
-        JSON.parse((await herdr(["workspace", "list"])).stdout),
-      ).result.workspaces.some((entry) => entry.workspace_id === workspace),
+    workspaceExists: async (workspace) => {
+      const result = await runner(["herdr-app", "ls"], 10_000, signal);
+      assertOk(result);
+      return Schema.decodeUnknownSync(SpaceList)(JSON.parse(result.stdout)).spaces.some(
+        (entry) => entry.id === workspace && (entry.machine === null || entry.machine === ""),
+      );
+    },
     scratchIgnored: async (worktree) =>
       (
         await subprocess(
@@ -276,93 +301,104 @@ export const nodeFleetPlatform = (
       await git(worktree, ["merge-base", "--is-ancestor", head, integrationHead]);
       return integrationHead;
     },
-    createTab: async (workspace, worktree, label) => {
-      const result = Schema.decodeUnknownSync(CreatedTab)(
-        JSON.parse(
-          (
-            await herdr([
-              "tab",
-              "create",
-              "--workspace",
-              workspace,
-              "--cwd",
-              worktree,
-              "--label",
-              label,
-              "--no-focus",
-            ])
-          ).stdout,
-        ),
-      ).result;
-      return { pane: result.root_pane.pane_id, tab: result.tab.tab_id };
-    },
-    start: async (run, worker) => {
-      if (worker.pane === null) throw new Error("Cannot launch an unallocated worker");
+    // Persist a unique core name before launch. The worker binds its immutable
+    // terminal address after checking core ownership labels during session_start.
+    prepareWorker: async (_workspace, _worktree, name) => ({ pane: name, tab: null }),
+    start: async (run, worker, bind) => {
+      const ticket = run.tickets.find((entry) => entry.id === worker.ticketId);
+      if (ticket === undefined) throw new Error("Worker ticket is missing");
       const flag =
         worker.snapshot.value.role === "implementor" ? "--fleet-implementor" : "--fleet-reviewer";
-      await herdr(
-        [
-          "agent",
-          "start",
-          worker.name,
-          "--kind",
-          "pi",
-          "--pane",
-          worker.pane,
-          "--timeout",
-          "30000",
-          "--",
-          "--extension",
-          fileURLToPath(new URL("./index.ts", import.meta.url)),
-          "--model",
-          worker.model,
-          "--thinking",
-          worker.thinking,
-          "--fleet-run",
-          run.directory,
-          flag,
-          worker.id,
-        ],
-        35_000,
-      );
+      const launched = await core([
+        "run",
+        "--bg",
+        "--outlive-parent",
+        "--name",
+        worker.name,
+        "--cwd",
+        ticket.snapshot.value.worktree,
+        "--label",
+        `herdr.space=${run.workspace}`,
+        "--label",
+        `to-code.run=${run.id}`,
+        "--label",
+        `to-code.worker=${worker.id}`,
+        "--",
+        "pi",
+        "--extension",
+        fileURLToPath(new URL("./index.ts", import.meta.url)),
+        "--model",
+        worker.model,
+        "--thinking",
+        worker.thinking,
+        "--fleet-run",
+        run.directory,
+        flag,
+        worker.id,
+      ]);
+      const address = Schema.decodeUnknownSync(Schema.Struct({ address: Schema.String }))(
+        JSON.parse(launched.stdout),
+      ).address;
+      await claimWorker(run, worker, address);
+      // Bind independently of worker readiness, including early process exits.
+      await bind(address);
+      if (registration !== undefined) await registration(run, worker, address);
+      else
+        await waitForRegistration(
+          async () => {
+            const stored = await fleetStorage(run.directory).read();
+            const registered = stored.workers.find((entry) => entry.id === worker.id);
+            return (
+              registered?.pane === address &&
+              registered.name === worker.name &&
+              registered.callbackReady &&
+              registered.pid !== null &&
+              processIsAlive(registered.pid)
+            );
+          },
+          (changed) => watch(run.directory, changed),
+          signal,
+        );
+    },
+    claimWorker: async (run, worker, address) => {
+      await claimWorker(run, worker, address);
     },
     agents,
     closeOwned: async (run, worker) => {
-      if (worker.pane === null || worker.tab === null || worker.pane === run.coordinatorPane)
-        throw new Error("Worker resource ownership is incomplete");
-      const panes = Schema.decodeUnknownSync(PaneList)(
-        JSON.parse((await herdr(["pane", "list", "--workspace", run.workspace])).stdout),
-      ).result.panes;
-      const pane = panes.find((entry) => entry.pane_id === worker.pane);
-      if (pane === undefined) return;
-      if (pane.tab_id !== worker.tab)
-        throw new Error("Owned pane moved; refuse to close its new location");
-      const live = (await agents()).find((agent) => agent.pane === worker.pane);
       if (
-        live === undefined ||
-        live.name !== worker.name ||
-        live.harness !== "pi" ||
-        live.workspace !== run.workspace ||
-        !["idle", "done"].includes(live.status)
-      ) {
+        worker.pane === null ||
+        worker.pane === worker.name ||
+        worker.pane === run.coordinatorPane
+      )
+        throw new Error("Worker terminal ownership is incomplete");
+      const live = (await agents()).find((agent) => agent.pane === worker.pane);
+      if (live === undefined) {
+        // A lost rm reply or crash before durable retirement must be retryable.
+        // Listing filters are not absence evidence; inspect the exact immutable ID.
+        const probe = await runner(["hc", "get", worker.pane], 10_000, signal);
+        try {
+          assertOk(probe);
+        } catch (error) {
+          if (probe.exitCode === 3 && error instanceof HerdrFailure && error.code === "not_found")
+            return;
+          throw error;
+        }
         throw new Error(
-          "Worker occupant is not the owned, settled Pi agent; inspect before cleanup",
+          "Owned terminal is absent from agent discovery but still exists; inspect before cleanup",
         );
       }
-      const ticket = run.tickets.find((entry) => entry.id === worker.ticketId);
-      if (ticket === undefined || (await realpath(live.cwd)) !== ticket.snapshot.value.worktree)
-        throw new Error("Worker cwd no longer matches the owned ticket");
-      const current = Schema.decodeUnknownSync(PaneDocument)(
-        JSON.parse((await herdr(["pane", "get", worker.pane])).stdout),
-      ).result.pane;
-      if (current.tab_id !== worker.tab || current.workspace_id !== run.workspace)
-        throw new Error("Worker topology changed before cleanup");
-      await herdr(["pane", "close", worker.pane]);
-      // Closing the last pane closes the tab. Never close a tab containing another user's pane.
-      const remaining = Schema.decodeUnknownSync(PaneList)(
-        JSON.parse((await herdr(["pane", "list", "--workspace", run.workspace])).stdout),
-      ).result.panes;
-      if (remaining.some((entry) => entry.tab_id === worker.tab)) return;
+      await claimWorker(run, worker, worker.pane);
+      if (!["idle", "done", "finished"].includes(live.status))
+        throw new Error("Worker is not settled; inspect before cleanup");
+      // Recheck immediately before destructive operations; core's status guard on
+      // send is not a kill guard, so never infer ownership from a terminal name.
+      const current = await claimWorker(run, worker, worker.pane);
+      if (!["idle", "done", "finished"].includes(current.status))
+        throw new Error("Worker status changed before cleanup");
+      if (current.status !== "finished") await core(["kill", worker.pane]);
+      await core(["rm", worker.pane]);
+      // App tabs are views, not resources owned by this fleet. Never close one:
+      // it can contain another person's panes or another view of this terminal.
     },
     reviewFile: async (run, filename) => {
       if (

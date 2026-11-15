@@ -11,7 +11,7 @@ A plugin may ship as a Claude Code function-hooks mod and a pi extension from on
 Load the `plugin-authoring` skill before changing a mod: it lays the API types for the
 running build.
 
-## Shared legacy core and Pi async fleets
+## Shared unmanaged core and Pi async fleets
 
 Keep mod-compatible behaviour in `hooks/core/*.ts`. A mod imports only its own plugin's
 files, and its runtime has no Node, DOM, or npm packages, so that core stays plain
@@ -21,7 +21,7 @@ For `to-code` async fleets, put the browser-safe Effect Machine definition and r
 validation in `fleet/`, Node/Herdr/storage operations in `pi/`, and the simulator in
 `demo/`. Pi tools and the browser must import the same `fleet/` definition, never copy
 its transitions into a separate reducer. The Claude mod retains the dependency-free
-legacy tools and does not import `fleet/`.
+unmanaged tools and does not import `fleet/`.
 
 ```ts
 // Pi and the browser share this model; only Pi imports Node-backed operations.
@@ -31,6 +31,8 @@ import { ticketMachine } from "../fleet/model.ts";
 Record accepted reports and pending callbacks durably before releasing a worker's
 assignment stop gate. Rearm that gate on every correlated follow-up assignment. Machine
 snapshots alone do not provide cross-process persistence or reliable callback delivery.
+
+Use current `hc` contracts in `hooks/core/herdr.ts` for shared transport. Core terminal addresses, not app pane IDs, identify workers; `herdr-app` owns visible topology. Keep startup registration separate from task completion and preserve predecessor evidence needed for callback recovery. The supported runtime and persisted-run boundary live in `plugins/to-code/README.md`.
 
 The adapters inject what differs per harness, the process runner and the session store:
 

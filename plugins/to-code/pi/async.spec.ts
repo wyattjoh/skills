@@ -1,12 +1,12 @@
 import { afterEach, expect, test } from "bun:test";
-import { mkdtemp, readdir, realpath, rm } from "node:fs/promises";
+import { lstat, mkdtemp, readdir, realpath, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 import { currentAssignment } from "../fleet/model.ts";
 import { reviewTemplate } from "../fleet/reports.ts";
 import { createAsyncFleetAdapter } from "./async.ts";
-import { notifyCallback } from "./callbacks.ts";
+import { callbackAddress, notifyCallback } from "./callbacks.ts";
 import { digest, type FleetPlatform } from "./platform.ts";
 import { reviewFilename } from "./runtime.ts";
 import { fleetStorage } from "./storage.ts";
@@ -67,7 +67,7 @@ const fakePi = (flags: Record<string, string>, cwd: string, session: string) => 
   };
 };
 
-const fixture = async () => {
+const fixture = async (duringClaim: FleetPlatform["claimWorker"] | undefined = undefined) => {
   const repository = await realpath(await mkdtemp(join(tmpdir(), "to-code-adapter-")));
   cleanups.push(() => rm(repository, { recursive: true, force: true }));
   const coordinator = fakePi({}, repository, "coordinator");
@@ -93,15 +93,16 @@ const fixture = async () => {
     checks: async () => ["test: passed"],
     landed: async () => "c000001",
     agents: async () => [],
-    createTab: async () => {
-      tabNumber += 1;
-      return { pane: `w1:p${tabNumber}`, tab: `w1:t${tabNumber}` };
+    claimWorker: async (run, record, address) => {
+      await duringClaim?.(run, record, address);
     },
+    prepareWorker: async (_space, _worktree, name) => ({ pane: name, tab: null }),
     closeOwned: async () => undefined,
     reviewFile: async () => {
       throw new Error("No review file in this fixture");
     },
     start: async (run, record) => {
+      tabNumber += 1;
       const isReviewer = record.snapshot.value.role === "reviewer";
       const launched = fakePi(
         {
@@ -115,7 +116,7 @@ const fixture = async () => {
         reviewer = launched;
         reviewerAdapter = createAsyncFleetAdapter(reviewer.pi as never, {
           runner,
-          env: { HERDR_PANE_ID: record.pane! },
+          env: { HC_TERMINAL_ID: `w1:p${tabNumber}` },
           platform,
           assertHost: undefined,
         });
@@ -126,7 +127,7 @@ const fixture = async () => {
       worker = launched;
       workerAdapter = createAsyncFleetAdapter(worker.pi as never, {
         runner,
-        env: { HERDR_PANE_ID: record.pane! },
+        env: { HC_TERMINAL_ID: `w1:p${tabNumber}` },
         platform,
         assertHost: undefined,
       });
@@ -136,7 +137,7 @@ const fixture = async () => {
   };
   const adapter = createAsyncFleetAdapter(coordinator.pi as never, {
     runner,
-    env: { HERDR_PANE_ID: "w1:p1" },
+    env: { HC_TERMINAL_ID: "w1:p1" },
     platform,
     assertHost: undefined,
   });
@@ -194,6 +195,131 @@ const fixture = async () => {
     assignmentId: currentAssignment(record.snapshot)!.id,
   };
 };
+
+test("worker startup still rejects concurrent different-address or PID ownership changes", async () => {
+  for (const conflict of ["address", "pid"] as const) {
+    const f = await fixture();
+    await f.workerAdapter.shutdown();
+    const storage = fleetStorage(f.directory);
+    await storage.change(async (run) => ({
+      run: {
+        ...run,
+        workers: run.workers.map((worker) =>
+          worker.id === f.workerId ? { ...worker, pane: worker.name, pid: null } : worker,
+        ),
+      },
+      value: undefined,
+    }));
+    f.platform.claimWorker = async (run, worker, address) => {
+      await fleetStorage(run.directory).change(async (current) => ({
+        run: {
+          ...current,
+          workers: current.workers.map((entry) =>
+            entry.id === worker.id
+              ? {
+                  ...entry,
+                  pane: conflict === "address" ? "t-foreign" : address,
+                  pid: conflict === "pid" ? process.pid : null,
+                }
+              : entry,
+          ),
+        },
+        value: undefined,
+      }));
+    };
+    const launched = fakePi(
+      { "fleet-run": f.directory, "fleet-implementor": f.workerId },
+      "/ticket",
+      f.workerId,
+    );
+    const adapter = createAsyncFleetAdapter(launched.pi as never, {
+      runner: f.runner,
+      env: { HC_TERMINAL_ID: "t-new" },
+      platform: f.platform,
+      assertHost: undefined,
+    });
+    cleanups.push(() => adapter.shutdown());
+    await expect(adapter.start(launched.ctx as never)).rejects.toThrow(
+      "Worker owner changed during startup",
+    );
+  }
+});
+
+test("worker startup accepts concurrent coordinator binding to the same verified core address", async () => {
+  let bound = 0;
+  const f = await fixture(async (run, worker, address) => {
+    expect(worker.pane).toBe(worker.name);
+    await fleetStorage(run.directory).change(async (current) => ({
+      run: {
+        ...current,
+        workers: current.workers.map((entry) =>
+          entry.id === worker.id ? { ...entry, pane: address } : entry,
+        ),
+      },
+      value: undefined,
+    }));
+    bound++;
+  });
+  expect(bound).toBe(1);
+  const worker = (await fleetStorage(f.directory).read()).workers[0]!;
+  expect(worker.pane).toBe("w1:p2");
+  expect(worker.callbackReady).toBe(true);
+});
+
+test.skipIf(process.platform === "win32")(
+  "restart preserves a dead worker lease to recover its stale callback socket",
+  async () => {
+    const f = await fixture();
+    await f.workerAdapter.shutdown();
+    const address = callbackAddress(f.directory, f.workerId);
+    cleanups.push(() => rm(address, { force: true }));
+    const child = Bun.spawnSync(
+      [
+        process.execPath,
+        "-e",
+        `import { createServer } from "node:net"; createServer().listen(${JSON.stringify(address)}, () => process.kill(process.pid, "SIGKILL"));`,
+      ],
+      { env: process.env, timeout: 5_000 },
+    );
+    expect((await lstat(address)).isSocket()).toBe(true);
+    const storage = fleetStorage(f.directory);
+    await storage.change(async (run) => ({
+      run: {
+        ...run,
+        workers: run.workers.map((worker) =>
+          worker.id === f.workerId ? { ...worker, pid: child.pid, callbackReady: false } : worker,
+        ),
+      },
+      value: undefined,
+    }));
+    const previous = (await storage.read()).workers[0]!;
+    f.platform.agents = async () => [
+      {
+        pane: previous.pane!,
+        name: previous.name,
+        harness: "pi",
+        status: "finished",
+        cwd: "/ticket",
+        workspace: "w1",
+        seq: 1,
+      },
+    ];
+    const tool = f.coordinator.tools.find((entry) => entry.name === "fleet_restart_worker")!;
+    const result = await tool.execute(
+      "restart",
+      { fleetId: f.fleetId, workerId: f.workerId },
+      undefined,
+      undefined,
+      f.coordinator.ctx,
+    );
+    expect(result.isError).toBe(false);
+    const current = (await storage.read()).workers[0]!;
+    expect(current.pane).toBe("w1:p3");
+    expect(current.pid).toBe(process.pid);
+    expect(current.callbackReady).toBe(true);
+    expect(await notifyCallback(f.directory, f.workerId)).toBe(true);
+  },
+);
 
 test("callback-only implementor context includes literal identity, role-specific report IDs and timeout units", async () => {
   const f = await fixture();
@@ -522,7 +648,7 @@ test("offline coordinator gets the persisted question after resume, without comp
   const replacement = fakePi({}, f.repository, "replacement");
   const adapter = createAsyncFleetAdapter(replacement.pi as never, {
     runner: f.runner,
-    env: { HERDR_PANE_ID: "w1:p1" },
+    env: { HC_TERMINAL_ID: "w1:p1" },
     platform: f.platform,
     assertHost: undefined,
   });

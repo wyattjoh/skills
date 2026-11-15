@@ -57,9 +57,15 @@ export const register: Register = (on, options) => {
   let pending: string[] = [];
 
   on("session.start", async ($, e, next) => {
-    isActive = (await $.env.get("HERDR_ENV")) === "1";
-    if (!isActive) return next(e);
-    selfPane = await $.env.get("HERDR_PANE_ID");
+    selfPane = await $.env.get("HC_TERMINAL_ID");
+    isActive = typeof selfPane === "string" && selfPane.length > 0;
+    if (!isActive) {
+      if ((await $.env.get("HERDR_ENV")) === "1")
+        await $.ui.status(
+          "to-code requires current hc and HC_TERMINAL_ID; legacy Herdr is unsupported",
+        );
+      return next(e);
+    }
 
     for (const tool of FLEET_TOOLS) {
       await $.tool.register({

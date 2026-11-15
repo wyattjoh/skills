@@ -2,13 +2,13 @@ import { type Engine, expect, mock, test } from "claude-code/testing";
 import type { On } from "claude-code";
 
 const agentRow = (pane: string, status: string, seq: number) => ({
-  agent: "pi",
-  agent_status: status,
+  status: { app: "pi", state: status },
+  state: "live",
   cwd: "/repo",
-  display_agent: `worker-${pane}`,
-  pane_id: pane,
-  workspace_id: pane.split(":")[0],
-  state_change_seq: seq,
+  name: `worker-${pane}`,
+  address: pane,
+  labels: { "herdr.space": pane.split(":")[0] },
+  turn: seq,
 });
 
 // Answers $.process.run for herdr: `agent list` from the current rows, every
@@ -16,8 +16,8 @@ const agentRow = (pane: string, status: string, seq: number) => ({
 const herdr = (on: On, rows: () => ReturnType<typeof agentRow>[], argvs: string[][] = []) => {
   on("process.run", async (_$, e) => {
     argvs.push([...e.argv]);
-    const isList = e.argv[1] === "agent" && e.argv[2] === "list";
-    const stdout = isList ? JSON.stringify({ result: { agents: rows() } }) : "{}";
+    const isList = e.argv[1] === "ls";
+    const stdout = isList ? JSON.stringify({ terminals: rows() }) : "{}";
     return {
       value: {
         exitCode: 0,
@@ -45,8 +45,27 @@ test("registers nothing outside herdr", async ($, on) => {
   expect(registered).toEqual([]);
 });
 
+test("legacy Herdr gets an explicit incompatibility diagnostic without registering tools", async ($, on) => {
+  mock.env(on, { HERDR_ENV: "1", HERDR_PANE_ID: "old:p1" });
+  const messages: unknown[] = [];
+  on("ui.status", async (_$, event) => {
+    messages.push(event);
+    return { value: undefined };
+  });
+  const registered: string[] = [];
+  on("tool.register", async (_$, event) => {
+    registered.push(event.name);
+    return { value: { tool: event.name } };
+  });
+  on("session.start", async () => ({ cwd: "/repo" }));
+  await start($);
+  expect(registered).toEqual([]);
+  expect(messages.length).toBe(1);
+  expect(JSON.stringify(messages)).toContain("legacy Herdr is unsupported");
+});
+
 test("registers the fleet tools inside herdr", async ($, on) => {
-  mock.env(on, { HERDR_ENV: "1", HERDR_PANE_ID: "self" });
+  mock.env(on, { HC_TERMINAL_ID: "self" });
   mock.clock(on);
   const registered: string[] = [];
   on("tool.register", async (_$, e) => {
@@ -66,7 +85,7 @@ test("registers the fleet tools inside herdr", async ($, on) => {
 });
 
 test("setup scopes status and rejects outside targets through the mod adapter", async ($, on) => {
-  mock.env(on, { HERDR_ENV: "1", HERDR_PANE_ID: "self" });
+  mock.env(on, { HC_TERMINAL_ID: "self" });
   mock.clock(on);
   on("tool.register", async (_$, e) => ({ value: { tool: `mcp__to-code__${e.name}` } }));
   on("session.start", async () => ({ cwd: "/repo" }));
@@ -89,11 +108,11 @@ test("setup scopes status and rejects outside targets through the mod adapter", 
     pane: "w2:p3",
   } as never);
   expect(read.isError).toBe(true);
-  expect(argvs.every((argv) => argv[2] === "list")).toBe(true);
+  expect(argvs.every((argv) => argv[1] === "ls")).toBe(true);
 });
 
 test("fleet_send prompts the pane and watches it, so the stop gate stays quiet", async ($, on) => {
-  mock.env(on, { HERDR_ENV: "1", HERDR_PANE_ID: "self" });
+  mock.env(on, { HC_TERMINAL_ID: "self" });
   mock.clock(on);
   on("tool.register", async (_$, e) => ({ value: { tool: `mcp__to-code__${e.name}` } }));
   on("session.start", async () => ({ cwd: "/repo" }));
@@ -108,8 +127,8 @@ test("fleet_send prompts the pane and watches it, so the stop gate stays quiet",
   } as never);
   expect(sent.isError).toBe(undefined);
   expect(argvs).toEqual([
-    ["herdr", "agent", "list"],
-    ["herdr", "agent", "prompt", "w1:p2", "go"],
+    ["hc", "ls", "--all"],
+    ["hc", "send", "w1:p2", "go"],
   ]);
 
   const stop = await $.classic.Stop({
@@ -121,7 +140,7 @@ test("fleet_send prompts the pane and watches it, so the stop gate stays quiet",
 });
 
 test("a Bash herdr dispatch with no wake path is blocked once", async ($, on) => {
-  mock.env(on, { HERDR_ENV: "1", HERDR_PANE_ID: "self" });
+  mock.env(on, { HC_TERMINAL_ID: "self" });
   mock.clock(on);
   on("tool.register", async (_$, e) => ({ value: { tool: `mcp__to-code__${e.name}` } }));
   on("session.start", async () => ({ cwd: "/repo" }));
@@ -131,15 +150,15 @@ test("a Bash herdr dispatch with no wake path is blocked once", async ($, on) =>
   }));
   await start($);
 
-  await $.tool.call({ tool: "Bash", command: "herdr agent prompt w1:p2 'go'" } as never);
+  await $.tool.call({ tool: "Bash", command: "hc send w1:p2 'go'" } as never);
   const first = await $.classic.Stop({
     stop_hook_active: false,
     background_tasks: [],
     session_crons: [],
   });
-  expect(
-    first.block?.startsWith("[to-code fleet] This turn dispatched work (herdr via Bash)"),
-  ).toBe(true);
+  expect(first.block?.startsWith("[to-code fleet] This turn dispatched work (hc via Bash)")).toBe(
+    true,
+  );
 
   const second = await $.classic.Stop({
     stop_hook_active: true,
@@ -150,12 +169,12 @@ test("a Bash herdr dispatch with no wake path is blocked once", async ($, on) =>
 });
 
 test("the watcher wakes an idle session when a watched pane settles", async ($, on) => {
-  mock.env(on, { HERDR_ENV: "1", HERDR_PANE_ID: "self" });
+  mock.env(on, { HC_TERMINAL_ID: "self" });
   const clock = mock.clock(on);
   on("tool.register", async (_$, e) => ({ value: { tool: `mcp__to-code__${e.name}` } }));
   on("session.start", async () => ({ cwd: "/repo" }));
-  on("ui.status", async () => undefined as never);
-  on("ui.toast", async () => undefined as never);
+  on("ui.status", async () => ({ value: undefined }));
+  on("ui.toast", async () => ({ value: undefined }));
   const prompts: string[] = [];
   on("prompt.submit", async (_$, e) => {
     prompts.push(e.text);
@@ -181,12 +200,12 @@ test("the watcher wakes an idle session when a watched pane settles", async ($, 
 });
 
 test("a wake turn leaves the stop gate quiet once its pane settled", async ($, on) => {
-  mock.env(on, { HERDR_ENV: "1", HERDR_PANE_ID: "self" });
+  mock.env(on, { HC_TERMINAL_ID: "self" });
   const clock = mock.clock(on);
   on("tool.register", async (_$, e) => ({ value: { tool: `mcp__to-code__${e.name}` } }));
   on("session.start", async () => ({ cwd: "/repo" }));
-  on("ui.status", async () => undefined as never);
-  on("ui.toast", async () => undefined as never);
+  on("ui.status", async () => ({ value: undefined }));
+  on("ui.toast", async () => ({ value: undefined }));
   on("classic.Stop", async () => ({}));
   const prompts: string[] = [];
   on("prompt.submit", async (_$, e) => {
@@ -211,12 +230,12 @@ test("a wake turn leaves the stop gate quiet once its pane settled", async ($, o
 });
 
 test("a pane that settles mid-turn wakes the session after the turn", async ($, on) => {
-  mock.env(on, { HERDR_ENV: "1", HERDR_PANE_ID: "self" });
+  mock.env(on, { HC_TERMINAL_ID: "self" });
   const clock = mock.clock(on);
   on("tool.register", async (_$, e) => ({ value: { tool: `mcp__to-code__${e.name}` } }));
   on("session.start", async () => ({ cwd: "/repo" }));
-  on("ui.status", async () => undefined as never);
-  on("ui.toast", async () => undefined as never);
+  on("ui.status", async () => ({ value: undefined }));
+  on("ui.toast", async () => ({ value: undefined }));
   on("turn.start", async (_$, e) => ({ turnId: e.turnId }));
   on("turn.complete", async () => ({ text: "" }));
   const prompts: string[] = [];

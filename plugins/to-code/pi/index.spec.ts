@@ -40,18 +40,16 @@ const createFakePi = () => {
 const list = (status: string, seq: number): RunOutput => ({
   exitCode: 0,
   stdout: JSON.stringify({
-    result: {
-      agents: [
-        {
-          pane_id: "w1:p2",
-          workspace_id: "w1",
-          agent: "claude",
-          agent_status: status,
-          display_agent: "impl",
-          state_change_seq: seq,
-        },
-      ],
-    },
+    terminals: [
+      {
+        address: "w1:p2",
+        labels: { "herdr.space": "w1" },
+        status: { app: "claude", state: status },
+        state: "live",
+        name: "impl",
+        turn: seq,
+      },
+    ],
   }),
   stderr: "",
 });
@@ -65,7 +63,7 @@ const ctx = {
 
 const load = async (
   runner: Runner,
-  env: Record<string, string | undefined> = { HERDR_ENV: "1", HERDR_PANE_ID: "self" },
+  env: Record<string, string | undefined> = { HC_TERMINAL_ID: "self" },
 ) => {
   const fake = createFakePi();
   createFleetExtension({ runner, env, intervalMs: 60_000 })(fake.pi as never);
@@ -94,7 +92,7 @@ describe("pi fleet extension", () => {
     const fake = createFakePi();
     createFleetExtension({
       runner: async () => list("idle", 1),
-      env: { HERDR_ENV: "1", HERDR_PANE_ID: "self" },
+      env: { HC_TERMINAL_ID: "self" },
       intervalMs: 60_000,
       assertHost: () => undefined,
     })(fake.pi as never);
@@ -122,10 +120,10 @@ describe("pi fleet extension", () => {
     );
     fake.flags["fleet-implementor"] = "worker-1";
     await expect(fake.handlers.get("session_start")?.({}, ctx)).rejects.toThrow(
-      "Async fleet workers must launch inside Herdr",
+      "Fleet workers require current hc and HC_TERMINAL_ID; legacy Herdr is unsupported",
     );
     await expect(fake.handlers.get("session_start")?.({}, ctx)).rejects.toThrow(
-      "Async fleet workers must launch inside Herdr",
+      "Fleet workers require current hc and HC_TERMINAL_ID; legacy Herdr is unsupported",
     );
     expect(fake.tools).toEqual([]);
   });
@@ -137,10 +135,10 @@ describe("pi fleet extension", () => {
       fake.pi as never,
     );
     await expect(fake.handlers.get("session_start")?.({}, ctx)).rejects.toThrow(
-      "Async fleet requires HERDR_PANE_ID",
+      "Fleet workers require current hc and HC_TERMINAL_ID; legacy Herdr is unsupported",
     );
     expect(fake.tools).toEqual([]);
-    env.HERDR_PANE_ID = "self";
+    env.HC_TERMINAL_ID = "self";
     await fake.handlers.get("session_start")?.({}, ctx);
     const registeredTools = fake.tools.map((entry) => entry.name);
     const registeredHooks = [...fake.registrations];
@@ -179,7 +177,7 @@ describe("pi fleet extension", () => {
     for (const registered of fake.tools) expect(registered.parameters.type).toBe("object");
     const setup = tool(fake, "fleet_setup");
     expect(setup.description).toContain("managed Pi takes workspace, integrationBranch, checks");
-    expect(setup.description).toContain("legacy takes panes");
+    expect(setup.description).toContain("unmanaged takes panes");
     expect(setup.description).toContain("MILLISECONDS");
     expect(setup.parameters).toMatchObject({
       anyOf: [
@@ -253,7 +251,7 @@ describe("pi fleet extension", () => {
     const fake = await load(async () => list("working", 3));
     await fake.handlers.get("agent_start")?.({}, ctx);
     await fake.handlers.get("tool_call")?.(
-      { toolName: "bash", input: { command: "herdr agent prompt w1:p2 go" } },
+      { toolName: "bash", input: { command: "hc send w1:p2 go" } },
       ctx,
     );
     await fake.handlers.get("agent_end")?.({}, ctx);
@@ -266,7 +264,7 @@ describe("pi fleet extension", () => {
     const fake = await load(async () => list("working", 3));
     await fake.handlers.get("agent_start")?.({}, ctx);
     await fake.handlers.get("tool_call")?.(
-      { toolName: "bash", input: { command: "herdr agent prompt impl go" } },
+      { toolName: "bash", input: { command: "hc send impl go" } },
       ctx,
     );
     await fake.handlers.get("agent_end")?.({}, ctx);
@@ -278,7 +276,7 @@ describe("pi fleet extension", () => {
   test("a new run starts with a clean stop-gate record", async () => {
     const fake = await load(async () => list("working", 3));
     await fake.handlers.get("tool_call")?.(
-      { toolName: "bash", input: { command: "herdr agent prompt w1:p2 go" } },
+      { toolName: "bash", input: { command: "hc send w1:p2 go" } },
       ctx,
     );
     await fake.handlers.get("agent_start")?.({}, ctx);
@@ -288,7 +286,7 @@ describe("pi fleet extension", () => {
 
   test("stays quiet when the dispatch went through fleet_send", async () => {
     const fake = await load(async (argv) =>
-      argv[2] === "list" ? list("idle", 3) : { exitCode: 0, stdout: "{}", stderr: "" },
+      argv[1] === "ls" ? list("idle", 3) : { exitCode: 0, stdout: "{}", stderr: "" },
     );
     await tool(fake, "fleet_send").execute(
       "call-1",
