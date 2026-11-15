@@ -1,6 +1,6 @@
 ---
 name: herdr
-description: "Controls Herdr persistent terminals, agents, and remote commands or files through herdr-core (hc), and inspects or customizes the visible app through herdr-app. Use when the user explicitly requests Herdr work, names herdr-core or herdr-app, or uses hc in a Herdr CLI context. Covers agent coordination, terminal output, spaces, tabs, panes, layouts, settings, and mods. Do not activate for generic delegation or background work."
+description: "Controls Herdr persistent terminals, agents, and remote commands or files through herdr-core (hc), and inspects or customizes the Sheprd app through sheprd. Use when the user explicitly requests Herdr or Sheprd work, names herdr-core or sheprd, or uses hc in a Herdr CLI context. Covers agent coordination, terminal output, windows, tabs, browser pages, settings, and mods. Do not activate for generic delegation or background work."
 ---
 
 # Herdr
@@ -8,7 +8,7 @@ description: "Controls Herdr persistent terminals, agents, and remote commands o
 Before acting, run and read the relevant installed manual:
 
 - **Terminals, programs, agents, or remote commands and files:** `herdr-core --skill` (`hc --skill` is equivalent).
-- **Visible window, spaces, tabs, panes, settings, layouts, or mods:** `herdr-app --skill`.
+- **Sheprd app windows, app tabs, browser pages, settings, or mods:** `sheprd skill`.
 - **Work spanning both:** run and read both commands.
 
 Follow those manuals as the source of operating instructions and command discovery. If a required manual cannot be loaded, report the error and stop rather than substituting the older `herdr` CLI or remembered syntax.
