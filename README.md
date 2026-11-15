@@ -166,6 +166,7 @@ Restart Claude Code after adding or changing an agent definition.
 | swift-composable-architecture | Adoption index for The Composable Architecture (TCA 1.26.2), mapped by topic       |
 | swift-sql                     | Type-safe Swift SQL with swift-structured-queries                                  |
 | tidy                          | Interactive code simplification with batched approval                              |
+| to-code                       | Coordinate Pi or Claude tickets in Herdr onto a dedicated local run branch         |
 | varlock                       | Kickstart varlock, the encrypted schema-driven dotenv replacement                  |
 | vhs                           | Interview-driven terminal screencasts rendered to GIF/MP4/WebM                     |
 | whats-next                    | Emit the copy-ready prompt for the next agent session on a wayfinder map           |

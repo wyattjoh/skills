@@ -1,0 +1,6 @@
+interface:
+  display_name: "To Code"
+  short_description: "Coordinate Pi or Claude tickets in Herdr onto a run branch"
+
+policy:
+  allow_implicit_invocation: false
