@@ -136,6 +136,7 @@ Restart Claude Code after adding or changing an agent definition.
 | executing-workflows-manually  | Run Claude Code workflow scripts in harnesses without the Workflow tool            |
 | harness-handoff               | Transfer a live conversation to Pi or Claude Code in a neighboring Herdr pane      |
 | herdr                         | Control terminals with herdr-core (hc) and visible layout with herdr-app           |
+| herdr-gpui-kit                | Write Herdr mods to GPUI Kit's official coding and design standards                |
 | icon-gen                      | Generate app icons with OpenRouter Gemini and varlock-managed configuration        |
 | json-inspect                  | Generate JSON Schema from JSON files with genson                                   |
 | just                          | Kickstart the just command runner and author justfiles                             |
