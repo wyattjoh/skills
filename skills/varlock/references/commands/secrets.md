@@ -61,7 +61,11 @@ varlock lock
 ## `generate-key`
 
 Generate a random 256-bit hex key for `_VARLOCK_ENV_KEY`, which encrypts the
-injected env blob in deployments.
+injected env blob in deployments. Since 1.25.0, every `_VARLOCK_*` config var
+can also be set without the leading underscore (`VARLOCK_ENV_KEY`) for
+platforms such as AWS Lambda that reject names starting with `_`; the
+underscore form wins when both are set
+([changelog](https://github.com/dmno-dev/varlock/blob/varlock%401.25.0/packages/varlock/CHANGELOG.md)).
 
 ```
 varlock generate-key [OPTIONS]

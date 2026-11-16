@@ -21,11 +21,11 @@ it safe to hand to an AI agent.
 ## Local setup
 
 - Binary: `/opt/homebrew/bin/varlock` (on `PATH` as `varlock`; installed via `brew install dmno-dev/tap/varlock`).
-- **Pinned version: `varlock 1.24.0`.** Commands and flags were first verified
+- **Pinned version: `varlock 1.25.0`.** Commands and flags were first verified
   against the `varlock 1.21.0` binary's `--help` (the `(v1.21.0)` source notes
-  below), then re-checked against the 1.24.0 command specs and docs; only `load`,
-  `run`, and the new `freeze` command changed
-  ([changelog](https://github.com/dmno-dev/varlock/blob/varlock%401.24.0/packages/varlock/CHANGELOG.md)).
+  below), then re-checked against the 1.24.0 and 1.25.0 command specs and docs; only `load`,
+  `run`, and the new `freeze` command changed (1.25.0 changed no command specs)
+  ([changelog](https://github.com/dmno-dev/varlock/blob/varlock%401.25.0/packages/varlock/CHANGELOG.md)).
 - Config files read:
   - **`.env.schema`**: the committed source-of-truth schema (see [`references/env-schema.md`](references/env-schema.md)).
   - Value files layered over it, lowest to highest precedence: `.env` -> `.env.local`
