@@ -15,7 +15,7 @@
   },
   "dependencies": {
     "@typeonce/effect-machine": "0.46.0",
-    "effect": "4.1.2"
+    "effect": "4.1.4"
   },
   "devDependencies": {
     "@earendil-works/pi-coding-agent": "1.5.2",
