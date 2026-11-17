@@ -206,7 +206,7 @@ export const worktreeRow = Effect.fn("worktreeRow")(function* (
   if (notStarted) notes.push("never committed");
   if (gitFailed) notes.push("git status or git log failed here");
   if (dirty && dirty.length > 0) notes.push(`${dirty.length} uncommitted`);
-  if (lost > 0) notes.push(`${lost} commits on no remote or base`);
+  if (lost > 0) notes.push(`${lost} ${lost === 1 ? "commit" : "commits"} on no remote or base`);
   for (const session of here) notes.push(`session ${session.name} in "${session.where}"`);
   if (pids.length > 0 && here.length === 0) notes.push(`processes: ${pids.slice(0, 4).join("; ")}`);
   if (ctx.ended.has(path)) notes.push("ended delegate record");
