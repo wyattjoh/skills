@@ -6,9 +6,7 @@ import type { FolderWatch } from "herdr";
 import {
   FOLDED_BY_DEFAULT,
   LIST_SCRIPT,
-  backlogsDir,
   configPath,
-  documentPath,
   endedDate,
   endedPath,
   groupItems,
@@ -29,6 +27,7 @@ import type {
   ItemGroup,
   ListingState,
 } from "./model.ts";
+import { backlogsDir, documentPath } from "../../lib/store.ts";
 import type { Item } from "../../lib/store.ts";
 import { panel } from "./view.ts";
 import type { Theme } from "./view.ts";

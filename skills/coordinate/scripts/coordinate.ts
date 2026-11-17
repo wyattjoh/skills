@@ -15,7 +15,7 @@ import {
 } from "./lib/backlog-doc.ts";
 import { ITEM_STATUSES, type ItemStatus } from "./lib/backlog-store/schema.ts";
 import { loadConfig, type Config } from "./lib/config.ts";
-import { domainOfCaller, Refused, resolveDomain } from "./lib/fleet.ts";
+import { coordinatorDomain, domainOfCaller, Refused, resolveDomain } from "./lib/fleet.ts";
 import type { FirstMessage, Harness, ImplementSkill } from "./lib/harness.ts";
 import { delegate, endDelegate, listIdle, resumeDelegate, sendTo, start } from "./lib/lifecycle.ts";
 import { Proc } from "./lib/proc.ts";
@@ -258,7 +258,7 @@ for (const [verb, run, help] of [
     .description(help)
     .action((path: string, options: { adjacent?: boolean; domain?: string; json?: boolean }) =>
       main((config) =>
-        Effect.flatMap(resolveDomain(options.domain), (domain) =>
+        Effect.flatMap(coordinatorDomain(options.domain), (domain) =>
           run(config, domain, {
             path,
             adjacent: options.adjacent === true,
@@ -279,7 +279,7 @@ backlog
   .description("record a standing yes with its date")
   .action((text: string, options: { at?: string; domain?: string; json?: boolean }) =>
     main((config) =>
-      Effect.flatMap(resolveDomain(options.domain), (domain) =>
+      Effect.flatMap(coordinatorDomain(options.domain), (domain) =>
         standingAdd(config, domain, {
           text,
           at: options.at,
@@ -304,7 +304,7 @@ backlog
         process.exit(1);
       }
       return main((config) =>
-        Effect.flatMap(resolveDomain(options.domain), (domain) =>
+        Effect.flatMap(coordinatorDomain(options.domain), (domain) =>
           focusSet(config, domain, { focus: text ?? null, json: options.json === true }),
         ),
       );
@@ -321,7 +321,7 @@ item
   .description("add an open item; prints its short id (i1, i2, ...)")
   .action((title: string, options: { domain?: string; json?: boolean }) =>
     main((config) =>
-      Effect.flatMap(resolveDomain(options.domain), (domain) =>
+      Effect.flatMap(coordinatorDomain(options.domain), (domain) =>
         itemAdd(config, domain, {
           title,
           json: options.json === true,
@@ -373,7 +373,7 @@ item
       },
     ) =>
       main((config) =>
-        Effect.flatMap(resolveDomain(options.domain), (domain) =>
+        Effect.flatMap(coordinatorDomain(options.domain), (domain) =>
           itemUpdate(config, domain, {
             id,
             status: options.status,
@@ -409,7 +409,7 @@ item
       options: { outcome: string; dismissed?: boolean; domain?: string; json?: boolean },
     ) =>
       main((config) =>
-        Effect.flatMap(resolveDomain(options.domain), (domain) =>
+        Effect.flatMap(coordinatorDomain(options.domain), (domain) =>
           itemClose(config, domain, {
             id,
             outcome: options.outcome,
@@ -482,7 +482,7 @@ finding
       options: { outcome: string; dismissed?: boolean; domain?: string; json?: boolean },
     ) =>
       main((config) =>
-        Effect.flatMap(resolveDomain(options.domain), (domain) =>
+        Effect.flatMap(coordinatorDomain(options.domain), (domain) =>
           findingClose(config, domain, {
             id,
             outcome: options.outcome,

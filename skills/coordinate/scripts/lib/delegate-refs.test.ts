@@ -29,6 +29,11 @@ const messageOf = (error: unknown): string =>
     ? String(error.message)
     : String(error);
 
+const tagOf = (error: unknown): [string, string] =>
+  typeof error === "object" && error !== null
+    ? [error.constructor.name, messageOf(error)]
+    : ["none", String(error)];
+
 const COORDINATOR = { "fleet.role": "coordinator", "fleet.domain": "app" };
 const DELEGATE = { "fleet.domain": "app", "fleet.session": "s-parent" };
 
@@ -234,6 +239,49 @@ describe("delegate --item", () => {
         `started fix-a (t7, session ${session}) but could not file it under i1: ${path} is not JSON`,
       ),
     ).toBe(true);
+  });
+
+  it.each([
+    ["with --item", "i1", undefined],
+    ["without --item", undefined, "app"],
+  ])(
+    "exits 2, starting nothing, when hc get cannot answer for the caller (%s)",
+    async (_name, item, domain) => {
+      const { state, cfg, path } = await started();
+      const before = readFileSync(path, "utf8");
+      const answer = herdrAnswers(COORDINATOR);
+      const fake = fakeProc((argv) =>
+        argv[1] === "get" && argv[2] === "t1"
+          ? {
+              exitCode: 1,
+              stdout: "",
+              stderr: '{"error":{"kind":"unavailable","message":"herdr-core is not answering"}}',
+            }
+          : answer(argv),
+      );
+      const error = await failureOf(
+        delegate(cfg, options({ cwd: state, item, domain })),
+        fake.layer,
+      );
+      expect(tagOf(error)).toEqual(["HerdrError", "herdr-core is not answering"]);
+      expect(fake.calls.filter((call) => call.argv[1] === "run").length).toBe(0);
+      expect(readFileSync(path, "utf8")).toBe(before);
+    },
+  );
+
+  it("exits 2, starting nothing, when HC_TERMINAL_ID is unset", async () => {
+    const { state, cfg } = await started();
+    delete process.env.HC_TERMINAL_ID;
+    const fake = fakeProc(herdrAnswers(COORDINATOR));
+    const error = await failureOf(
+      delegate(cfg, options({ cwd: state, domain: "app" })),
+      fake.layer,
+    );
+    expect(tagOf(error)).toEqual([
+      "Unchecked",
+      "HC_TERMINAL_ID is unset, so this terminal's role cannot be checked: run this inside a Herdr terminal",
+    ]);
+    expect(fake.calls.filter((call) => call.argv[1] === "run").length).toBe(0);
   });
 
   it("resumes without touching the backlog", async () => {

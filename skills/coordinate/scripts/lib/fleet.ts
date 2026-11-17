@@ -104,6 +104,64 @@ export const ownCoordinator = Effect.fn("ownCoordinator")(function* (
 });
 
 /**
+ * The caller's role could not be checked (exit 2), as opposed to a caller found to be no coordinator.
+ */
+export class Unchecked extends Schema.TaggedError<Unchecked>()("Unchecked", {
+  message: Schema.String,
+}) {}
+
+/**
+ * Who runs the command: the domain's coordinator, or any other terminal (a delegate, or one herdr-core
+ * does not know).
+ */
+export type Caller =
+  | { kind: "coordinator"; address: string; terminal: hc.Terminal; domain: string }
+  | { kind: "other"; address: string; terminal: hc.Terminal | undefined };
+
+/**
+ * The calling terminal's role, from `HC_TERMINAL_ID`. Fails closed: with no terminal id, or when
+ * `hc get` fails other than `not_found`, the role is unknown and the check fails rather than
+ * reading the caller as a delegate.
+ * @param env Environment.
+ * @returns The caller.
+ */
+export const callerRole = Effect.fn("callerRole")(function* (
+  env: Record<string, string | undefined> = process.env,
+) {
+  const address = env.HC_TERMINAL_ID;
+  if (!address)
+    return yield* new Unchecked({
+      message:
+        "HC_TERMINAL_ID is unset, so this terminal's role cannot be checked: run this inside a Herdr terminal",
+    });
+  const terminal = yield* hc.get(address);
+  const domain = terminal?.labels[L.role] === "coordinator" ? terminal.labels[L.domain] : undefined;
+  return terminal && domain
+    ? ({ kind: "coordinator", address, terminal, domain } satisfies Caller)
+    : ({ kind: "other", address, terminal } satisfies Caller);
+});
+
+/**
+ * The domain for a backlog mutation, which only a coordinator may run: `--domain` when given (a
+ * coordinator routes an item into another domain's backlog that way), else the caller's own domain.
+ * Any other terminal is refused.
+ * @param flag `--domain` value.
+ * @param env Environment (`HC_TERMINAL_ID`).
+ * @returns Domain.
+ */
+export const coordinatorDomain = Effect.fn("coordinatorDomain")(function* (
+  flag: string | undefined,
+  env: Record<string, string | undefined> = process.env,
+) {
+  const caller = yield* callerRole(env);
+  if (caller.kind === "other")
+    return yield* new Refused({
+      message: `only a coordinator changes the backlog, and terminal ${caller.address} is not labelled as one; a delegate records what it notices with coordinate finding add`,
+    });
+  return flag ?? caller.domain;
+});
+
+/**
  * Resolve the domain: the flag when given, else the coordinator terminal's label.
  * @param flag `--domain` value.
  * @returns Domain.

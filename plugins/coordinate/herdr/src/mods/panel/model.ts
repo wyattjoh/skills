@@ -1,6 +1,6 @@
-// What the panel shows, decided without Herdr: which domain it follows, where that domain's
-// document lives, whether the document is usable, and how its items group.
-import { ITEM_STATUSES, validateBacklog } from "../../lib/store.ts";
+// What the panel shows, decided without Herdr: which domain it follows, whether that domain's
+// document is usable, and how its items group. Where the document lives is the store's paths.
+import { ITEM_STATUSES, isRecord, validateBacklog } from "../../lib/store.ts";
 import type { Ask, Backlog, DelegateRef, Finding, Item, ItemStatus } from "../../lib/store.ts";
 
 /**
@@ -70,9 +70,6 @@ export const rankedOptions = (ask: Ask): RankedOption[] => {
   return [...options.filter((entry) => entry.rec), ...options.filter((entry) => !entry.rec)];
 };
 
-const isRecord = (value: unknown): value is Record<string, unknown> =>
-  typeof value === "object" && value !== null && !Array.isArray(value);
-
 /**
  * The domain the panel follows. A focused terminal decides: its `fleet.domain` label, or no
  * domain when it has none. With no terminal focused (the panel's own pane, say), the panel
@@ -123,22 +120,6 @@ export const stateDirOf = (configText: string | null, home: string): string => {
   if (dir === "~") return home;
   return dir.startsWith("~/") ? `${home}/${dir.slice(2)}` : dir;
 };
-
-/**
- * The folder holding every domain's document, which the panel watches.
- * @param stateDir The coordinate state folder.
- * @returns The path.
- */
-export const backlogsDir = (stateDir: string): string => `${stateDir}/backlogs`;
-
-/**
- * One domain's document.
- * @param stateDir The coordinate state folder.
- * @param domain The domain.
- * @returns The path.
- */
-export const documentPath = (stateDir: string, domain: string): string =>
-  `${backlogsDir(stateDir)}/${domain}.json`;
 
 /**
  * What the panel knows about the followed domain's document.

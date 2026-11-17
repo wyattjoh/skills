@@ -3,9 +3,8 @@ import { div, svg } from "gpui-kit";
 import type { Color, Context, Element } from "gpui-kit";
 import { h_flex, v_flex } from "gpui-base";
 import type { Finding, Item } from "../../lib/store.ts";
+import { CONTROL } from "../../lib/look.ts";
 import {
-  BAR_CONTROL_HEIGHT,
-  BUTTON,
   DETAIL_LINE_GAP,
   DETAIL_ROW_PADDING_Y,
   BAR_PADDING_Y,
@@ -89,19 +88,19 @@ export const message = (t: Theme, id: string, title: string, detail: string): El
 const button = (t: Theme, id: string, icon: string, label: string, run: (cx: Context) => void) =>
   h_flex()
     .id(id)
-    .h(BAR_CONTROL_HEIGHT)
-    .px(BUTTON.paddingX)
-    .gap(BUTTON.gap)
+    .h(CONTROL.height)
+    .px(CONTROL.paddingX)
+    .gap(CONTROL.gap)
     .flex_none()
     .items_center()
-    .rounded(BUTTON.radius)
+    .rounded(CONTROL.radius)
     .cursor_pointer()
-    .text_size(TEXT_SMALL)
+    .text_size(CONTROL.textSize)
     .bg(t.chrome)
     .text_color(t.muted)
     .hover((s) => s.bg(t.hover))
     .on_click((_event, cx) => run(cx))
-    .child(svg(icon).size(BUTTON.iconSize))
+    .child(svg(icon).size(CONTROL.iconSize))
     .child(label);
 
 const toolbar = (t: Theme, back: ((cx: Context) => void) | undefined): Element =>
@@ -110,12 +109,12 @@ const toolbar = (t: Theme, back: ((cx: Context) => void) | undefined): Element =
     .flex_none()
     .px(PANEL_PADDING)
     .py(BAR_PADDING_Y)
-    .gap(BUTTON.gap)
+    .gap(CONTROL.gap)
     .bg(t.chrome)
     .when(back !== undefined, (el) => el.child(button(t, "back", ICONS.back, "Back", back!)))
     .child(
       h_flex()
-        .h(BAR_CONTROL_HEIGHT)
+        .h(CONTROL.height)
         .items_center()
         .text_size(TEXT_SMALL)
         .font_medium()
@@ -387,7 +386,7 @@ const fact = (t: Theme, id: string, label: string, values: string[]): Element =>
         ? div().text_color(t.dim).child("None")
         : h_flex()
             .flex_wrap()
-            .gap(BUTTON.gap)
+            .gap(CONTROL.gap)
             .children(values.map((value) => div().child(value))),
     );
 
@@ -404,7 +403,7 @@ const askCard = (t: Theme, item: Item): Element[] => {
       .when(rec, (el) => el.bg(t.selected))
       .child(
         h_flex()
-          .gap(BUTTON.gap)
+          .gap(CONTROL.gap)
           .items_center()
           .child(div().min_w_0().child(option))
           .when(rec, (el) => el.child(small(t, t.accent, "Recommended"))),
@@ -450,7 +449,7 @@ const delegatesCard = (t: Theme, item: Item, rows: DelegateRow[]): Element[] =>
             detailRow(t, `delegate-${ref.session}`)
               .child(
                 h_flex()
-                  .gap(BUTTON.gap)
+                  .gap(CONTROL.gap)
                   .items_center()
                   .child(div().font_medium().child(ref.name))
                   .children(
@@ -462,13 +461,13 @@ const delegatesCard = (t: Theme, item: Item, rows: DelegateRow[]): Element[] =>
               )
               .child(
                 h_flex()
-                  .gap(BUTTON.gap)
+                  .gap(CONTROL.gap)
                   .child(small(t, t.muted, "Brief"))
                   .child(small(t, t.foreground, ref.brief)),
               )
               .child(
                 h_flex()
-                  .gap(BUTTON.gap)
+                  .gap(CONTROL.gap)
                   .child(small(t, t.muted, "Report"))
                   .child(small(t, t.foreground, ref.report)),
               ),

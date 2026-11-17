@@ -101,7 +101,12 @@ export type Backlog = {
  */
 export type Validated = { ok: true; backlog: Backlog } | { ok: false; errors: string[] };
 
-const isRecord = (value: unknown): value is Record<string, unknown> =>
+/**
+ * Whether a parsed JSON value is an object (not null, not an array), so its fields can be read.
+ * @param value Any value.
+ * @returns True for a plain object.
+ */
+export const isRecord = (value: unknown): value is Record<string, unknown> =>
   typeof value === "object" && value !== null && !Array.isArray(value);
 
 const DATE = /^\d{4}-\d{2}-\d{2}$/;

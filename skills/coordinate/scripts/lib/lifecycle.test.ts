@@ -169,7 +169,8 @@ describe("launch parent", () => {
 
   for (const command of ["delegate", "resume"] as const) {
     for (const ownSpace of [false, true]) {
-      it.each(callers)(
+      // A delegate needs the caller's role, so only resume runs with no terminal.
+      it.each(command === "delegate" ? callers.slice(0, 2) : callers)(
         `${command} from $role uses the caller as parent (own space: ${ownSpace})`,
         async (caller) => {
           if (caller.address === undefined) delete process.env.HC_TERMINAL_ID;

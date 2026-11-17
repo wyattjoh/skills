@@ -4,16 +4,8 @@ import { View, svg } from "gpui-kit";
 import type { AsyncContext, Element } from "gpui-kit";
 import { h_flex } from "gpui-base";
 import { checking, focused, layout, nextCommand, run, setShared, shared, theme } from "herdr";
-import {
-  ICON,
-  ICON_SIZE,
-  PILL_GAP,
-  PILL_HEIGHT,
-  PILL_INSET,
-  PILL_RADIUS,
-  PILL_SPACING,
-  PILL_TEXT,
-} from "./look.ts";
+import { CONTROL } from "../../lib/look.ts";
+import { ICON, PILL_SPACING } from "./look.ts";
 import {
   DOCK_SETTING,
   FIRST_SYNC,
@@ -23,13 +15,13 @@ import {
   scopeOf,
   toggleEffects,
 } from "./model.ts";
-import type { Effect, SyncMemory } from "./model.ts";
+import type { SyncMemory, ToggleAction } from "./model.ts";
 import type { Theme } from "../panel/view.ts";
 
 // How often the toggle matches the docked panel to the focused tab.
 const SYNC_MS = 1_000;
 
-const apply = (effects: Effect[]) => {
+const apply = (effects: ToggleAction[]) => {
   for (const effect of effects)
     if (effect.kind === "run") run(effect.command, effect.args);
     else setShared(effect.key, effect.value);
@@ -86,18 +78,18 @@ export default class Toggle extends View {
     const inert = dock === undefined;
     const button = h_flex()
       .id("coordinate-toggle-button")
-      .h(PILL_HEIGHT)
-      .px(PILL_INSET)
-      .gap(PILL_GAP)
+      .h(CONTROL.height)
+      .px(CONTROL.paddingX)
+      .gap(CONTROL.gap)
       .flex_none()
       .flex_nowrap()
       .items_center()
       .justify_center()
-      .rounded(PILL_RADIUS)
-      .text_size(PILL_TEXT)
+      .rounded(CONTROL.radius)
+      .text_size(CONTROL.textSize)
       .bg(on ? t.selected : t.chrome)
       .text_color(inert ? t.dim : on ? t.foreground : t.muted)
-      .child(svg(ICON).size(ICON_SIZE))
+      .child(svg(ICON).size(CONTROL.iconSize))
       .child("Backlog");
     return h_flex()
       .id("coordinate-toggle")

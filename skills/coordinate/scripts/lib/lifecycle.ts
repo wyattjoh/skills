@@ -3,18 +3,14 @@ import { copyFile, mkdir } from "node:fs/promises";
 import { userInfo } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { Effect, Option } from "effect";
-import {
-  BacklogError,
-  checkFileable,
-  createDocument,
-  documentPath,
-  recordDelegate,
-} from "./backlog-doc.ts";
+import { BacklogError, checkFileable, createDocument, recordDelegate } from "./backlog-doc.ts";
+import { documentPath } from "./backlog-store/paths.ts";
 import type { Config } from "./config.ts";
 import {
   backlogPath,
   coordinators,
   L,
+  callerRole,
   members,
   ownCoordinator,
   readEnded,
@@ -200,21 +196,22 @@ export const delegate = Effect.fn("delegate")(function* (config: Config, options
     return yield* new Refused({
       message: "pass exactly one of --repo (new worktree) or --cwd (a folder with no repo work)",
     });
-  const coordinator = yield* ownCoordinator().pipe(Effect.option);
-  if (Option.isSome(coordinator) && options.item === undefined)
+  // Fails closed: a caller whose role cannot be checked is neither filed nor exempt.
+  const caller = yield* callerRole();
+  const coordinator = caller.kind === "coordinator" ? caller : undefined;
+  if (coordinator !== undefined && options.item === undefined)
     return yield* new Refused({
       message:
         "a coordinator files every delegate under an item: pass --item <id> (coordinate item add prints one)",
     });
-  if (Option.isNone(coordinator) && options.item !== undefined)
+  if (coordinator === undefined && options.item !== undefined)
     return yield* new Refused({
       message: "--item is for the coordinator; a delegate starting a child review passes no --item",
     });
   const domain =
     options.domain ??
-    (Option.isSome(coordinator)
-      ? coordinator.value.domain
-      : yield* new Refused({ message: "no coordinator label on this terminal; pass --domain" }));
+    coordinator?.domain ??
+    (yield* new Refused({ message: "no coordinator label on this terminal; pass --domain" }));
   if (options.item !== undefined) yield* checkFileable(config, domain, options.item);
   const taken = (yield* hc.list()).find((terminal) => terminal.name === options.name);
   if (taken)
@@ -279,7 +276,7 @@ export const delegate = Effect.fn("delegate")(function* (config: Config, options
     message: firstMessage(options.harness, message),
     resume: false,
   });
-  const coordinatorTerminal = Option.isSome(coordinator) ? coordinator.value.terminal : undefined;
+  const coordinatorTerminal = coordinator?.terminal;
   const launched = yield* launch({
     name: options.name,
     cwd,

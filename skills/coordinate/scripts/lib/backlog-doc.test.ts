@@ -12,7 +12,7 @@ import {
   showBacklog,
 } from "./backlog-doc.ts";
 import { resolveConfig } from "./config.ts";
-import { failureOf, runWith, tempDir } from "./fixture.ts";
+import { cliEnv, failureOf, runWith, tempDir } from "./fixture.ts";
 import { domainOfCaller, Refused } from "./fleet.ts";
 import { start } from "./lifecycle.ts";
 import { fakeProc, ok } from "./proc.ts";
@@ -36,6 +36,7 @@ const hcFake = () =>
     throw new Error(`unexpected command: ${argv.join(" ")}`);
   });
 const NOW = "2026-11-17T10:00:00.000Z";
+const COORDINATOR = { "fleet.role": "coordinator", "fleet.domain": "app" };
 const LATER = "2026-11-18T09:30:00.000Z";
 
 const started = async () => {
@@ -1073,9 +1074,7 @@ describe("backlog-store", () => {
 describe("coordinate CLI", () => {
   it("exits 1 with the reason on invalid input, and 0 for backlog show --json", async () => {
     const { state, path } = await started();
-    const configFile = join(state, "config.json");
-    writeFileSync(configFile, JSON.stringify({ state_dir: state, backlog_dir: join(state, "md") }));
-    const env = { ...process.env, COORDINATE_CONFIG: configFile };
+    const env = cliEnv(state, COORDINATOR);
     const script = join(import.meta.dir, "..", "coordinate.ts");
     const before = readFileSync(path, "utf8");
     const refused = Bun.spawnSync(["bun", script, "item", "add", "", "--domain", "app"], {
@@ -1098,12 +1097,11 @@ describe("coordinate CLI", () => {
   it("parses finding add and finding close flags", async () => {
     const { state, cfg, path } = await started();
     await runWith(itemAdd(cfg, "app", { title: "fix login", json: false, now: NOW }));
-    const configFile = join(state, "config.json");
-    writeFileSync(configFile, JSON.stringify({ state_dir: state, backlog_dir: join(state, "md") }));
+    const env = cliEnv(state, COORDINATOR);
     const script = join(import.meta.dir, "..", "coordinate.ts");
     const run = (args: string[]) => {
       const result = Bun.spawnSync(["bun", script, ...args], {
-        env: { ...process.env, COORDINATE_CONFIG: configFile },
+        env,
         stdout: "pipe",
         stderr: "pipe",
         timeout: 10_000,
@@ -1150,9 +1148,7 @@ describe("coordinate CLI", () => {
   it("runs item update with every ask flag, and exits 1 with no write on a bad rec", async () => {
     const { cfg, state, path } = await started();
     await runWith(itemAdd(cfg, "app", { title: "a", json: false, now: NOW }));
-    const configFile = join(state, "config.json");
-    writeFileSync(configFile, JSON.stringify({ state_dir: state, backlog_dir: join(state, "md") }));
-    const env = { ...process.env, COORDINATE_CONFIG: configFile };
+    const env = cliEnv(state, COORDINATOR);
     const script = join(import.meta.dir, "..", "coordinate.ts");
     const run = (args: string[]) =>
       Bun.spawnSync(["bun", script, "item", "update", "i1", "--domain", "app", ...args], {
@@ -1204,5 +1200,111 @@ describe("coordinate CLI", () => {
       null,
       null,
     ]);
+  });
+});
+
+const cli = join(import.meta.dir, "..", "coordinate.ts");
+const spawn = (env: Record<string, string>, args: string[]) => {
+  const done = Bun.spawnSync(["bun", cli, ...args], {
+    env,
+    stdout: "pipe",
+    stderr: "pipe",
+    timeout: 10_000,
+  });
+  return [done.exitCode, done.stdout.toString() + done.stderr.toString()];
+};
+const prepared = async () => {
+  const { state, cfg, path } = await started();
+  await runWith(itemAdd(cfg, "app", { title: "fix login", json: false, now: NOW }));
+  await runWith(findingAdd(cfg, "app", finding({ from: "i1" })));
+  return { state, path };
+};
+const mutations = (state: string): string[][] => [
+  ["backlog", "boundary", "add", state],
+  ["backlog", "boundary", "rm", state, "--adjacent"],
+  ["backlog", "standing", "add", "ship it"],
+  ["backlog", "focus", "login v2"],
+  ["item", "add", "another"],
+  ["item", "update", "i1", "--decided", "scope is api only"],
+  ["item", "close", "i1", "--outcome", "shipped"],
+  ["finding", "close", "f2", "--outcome", "fixed"],
+];
+
+describe("coordinator-only mutations", () => {
+  it("refuses every mutation but finding add from a delegate, even with --domain", async () => {
+    const { state, path } = await prepared();
+    const env = cliEnv(state, { "fleet.domain": "app", "fleet.session": "s-parent" });
+    const before = readFileSync(path, "utf8");
+    expect(mutations(state).map((args) => spawn(env, [...args, "--domain", "app"]))).toEqual(
+      mutations(state).map(() => [
+        1,
+        "refused: only a coordinator changes the backlog, and terminal t1 is not labelled as one; a delegate records what it notices with coordinate finding add\n",
+      ]),
+    );
+    expect(readFileSync(path, "utf8")).toBe(before);
+    expect(
+      spawn(env, [
+        "finding",
+        "add",
+        "flaky test",
+        "--kind",
+        "issue",
+        "--from",
+        "i1",
+        "--domain",
+        "app",
+      ]),
+    ).toEqual([0, "added f3: flaky test\n"]);
+  });
+
+  it("lets another domain's coordinator route an item in with --domain", async () => {
+    const { state, path } = await prepared();
+    const env = cliEnv(state, { "fleet.role": "coordinator", "fleet.domain": "web" });
+    expect(spawn(env, ["item", "add", "rotate keys (from web)", "--domain", "app"])).toEqual([
+      0,
+      "added i3: rotate keys (from web)\n",
+    ]);
+    expect(read(path).items.map((item: { title: string }) => item.title)).toEqual([
+      "fix login",
+      "rotate keys (from web)",
+    ]);
+  });
+
+  it("lets the domain's coordinator run them, with or without --domain", async () => {
+    const { state, path } = await prepared();
+    const env = cliEnv(state, COORDINATOR);
+    expect([
+      spawn(env, ["backlog", "focus", "login v2"]),
+      spawn(env, ["item", "close", "i1", "--outcome", "shipped", "--domain", "app"]),
+    ]).toEqual([
+      [0, "focus: login v2\n"],
+      [0, "done i1: shipped\n"],
+    ]);
+    expect([read(path).focus, read(path).items[0].status]).toEqual(["login v2", "done"]);
+  });
+
+  it("exits 2 when the caller's role cannot be checked", async () => {
+    const { state, path } = await prepared();
+    const before = readFileSync(path, "utf8");
+    const { HC_TERMINAL_ID: _unset, ...outside } = cliEnv(state, COORDINATOR);
+    expect([
+      spawn(outside, ["item", "close", "i1", "--outcome", "shipped", "--domain", "app"]),
+      spawn(cliEnv(state, COORDINATOR, "unavailable"), [
+        "item",
+        "close",
+        "i1",
+        "--outcome",
+        "shipped",
+        "--domain",
+        "app",
+      ]),
+    ]).toEqual([
+      [
+        2,
+        "could not check: Unchecked: HC_TERMINAL_ID is unset, so this terminal's role cannot be checked: run this inside a Herdr terminal\n",
+      ],
+      [2, "could not check: HerdrError: herdr-core is not answering\n"],
+    ]);
+    expect(readFileSync(path, "utf8")).toBe(before);
   });
 });

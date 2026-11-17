@@ -1,4 +1,4 @@
-import { mkdtempSync, realpathSync, writeFileSync } from "node:fs";
+import { chmodSync, mkdirSync, mkdtempSync, realpathSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { Effect, Layer } from "effect";
@@ -110,4 +110,39 @@ export const gitAndFake = (
     }),
   );
   return { layer, calls };
+};
+
+/**
+ * An environment for spawning the coordinate CLI against `state`: a config file naming it, a stub
+ * `hc` first on PATH, and `HC_TERMINAL_ID=t1`. The stub's `hc get` answers t1 with `labels`,
+ * or, given `getError`, fails the way herdr-core reports an error; `hc ls` lists nothing.
+ * @param state State dir.
+ * @param labels The calling terminal's labels.
+ * @param getError An error kind for `hc get` to fail with.
+ * @returns The environment.
+ */
+export const cliEnv = (
+  state: string,
+  labels: Record<string, string>,
+  getError: string | undefined = undefined,
+): Record<string, string> => {
+  const configFile = join(state, "config.json");
+  writeFileSync(configFile, JSON.stringify({ state_dir: state, backlog_dir: join(state, "md") }));
+  const bin = join(state, "bin");
+  mkdirSync(bin, { recursive: true });
+  const got =
+    getError === undefined
+      ? `printf '%s' '${JSON.stringify({ address: "t1", state: "live", labels })}'`
+      : `printf '%s' '${JSON.stringify({ error: { kind: getError, message: "herdr-core is not answering" } })}' >&2; exit 1`;
+  writeFileSync(
+    join(bin, "hc"),
+    `#!/bin/sh\ncase "$1" in\n  get) ${got} ;;\n  ls) printf '{"terminals":[]}' ;;\n  *) printf '{}' ;;\nesac\n`,
+  );
+  chmodSync(join(bin, "hc"), 0o755);
+  return {
+    ...(process.env as Record<string, string>),
+    COORDINATE_CONFIG: configFile,
+    HC_TERMINAL_ID: "t1",
+    PATH: `${bin}:${process.env.PATH ?? ""}`,
+  };
 };

@@ -55,7 +55,7 @@ The CLI refuses any change that would break these:
 
 ## Findings
 
-`{ kind, title, detail, path, from, status, closedAt, outcome }`: `kind` is `issue` or `opportunity`, `from` the item it was noticed under, `status` `open`, `acted` or `dismissed`. Delegates may run `coordinate finding add` (the domain comes from their terminal's label); every other change is the coordinator's.
+`{ kind, title, detail, path, from, status, closedAt, outcome }`: `kind` is `issue` or `opportunity`, `from` the item it was noticed under, `status` `open`, `acted` or `dismissed`. Delegates may run `coordinate finding add` (the domain comes from their terminal's label); every other change is the coordinator's, and the CLI refuses it (exit 1) from any terminal not labelled `fleet.role=coordinator`, even with `--domain`. A coordinator's `--domain` may name another domain, which is how it routes an item there.
 
 ## Retention
 

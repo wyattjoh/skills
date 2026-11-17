@@ -12,7 +12,16 @@ import {
   standingAdd,
 } from "./backlog-doc.ts";
 import { resolveConfig } from "./config.ts";
-import { commitFile, failureOf, g, gitAndFake, initRepo, runWith, tempDir } from "./fixture.ts";
+import {
+  cliEnv,
+  commitFile,
+  failureOf,
+  g,
+  gitAndFake,
+  initRepo,
+  runWith,
+  tempDir,
+} from "./fixture.ts";
 import { Refused, writeEnded } from "./fleet.ts";
 import { start } from "./lifecycle.ts";
 import { fakeProc, ok, type RunOutput } from "./proc.ts";
@@ -345,9 +354,7 @@ describe("owned-only domain repos", () => {
 describe("coordinate CLI", () => {
   it("wires boundary, standing and focus, refusing focus with neither text nor --clear", async () => {
     const { state, path } = await started();
-    const configFile = join(state, "config.json");
-    writeFileSync(configFile, JSON.stringify({ state_dir: state, backlog_dir: join(state, "md") }));
-    const env = { ...process.env, COORDINATE_CONFIG: configFile };
+    const env = cliEnv(state, { "fleet.role": "coordinator", "fleet.domain": "app" });
     const script = join(import.meta.dir, "..", "coordinate.ts");
     const run = (...args: string[]) => {
       const done = Bun.spawnSync(["bun", script, ...args, "--domain", "app"], {

@@ -24,6 +24,7 @@ import {
   unfileable,
   updateItem,
 } from "./backlog-store/ops.ts";
+import { backlogsDir, documentPath } from "./backlog-store/paths.ts";
 import { renderBacklog } from "./backlog-store/render.ts";
 import {
   type Backlog,
@@ -41,22 +42,6 @@ export class BacklogError extends Schema.TaggedError<BacklogError>()("BacklogErr
   path: Schema.String,
   message: Schema.String,
 }) {}
-
-/**
- * Folder of backlog documents, beside the watch and ended folders.
- * @param stateDir State dir.
- * @returns Path.
- */
-export const backlogsDir = (stateDir: string): string => join(stateDir, "backlogs");
-
-/**
- * The backlog document of a domain.
- * @param stateDir State dir.
- * @param domain Domain.
- * @returns Path.
- */
-export const documentPath = (stateDir: string, domain: string): string =>
-  join(backlogsDir(stateDir), `${domain}.json`);
 
 const hasCode = (error: unknown, code: string): boolean =>
   error instanceof Error && "code" in error && error.code === code;

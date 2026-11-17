@@ -1,5 +1,6 @@
 // How the panel looks, as theme() color names and sizes. The metrics follow the Tasks Herdr
-// panel's chrome, copied here so the two panels read as one family.
+// panel's chrome, copied here so the two panels read as one family; the tool bar's control
+// metrics, which the Backlog pill shares, are src/lib/look.ts's CONTROL.
 import type { Finding, ItemStatus } from "../../lib/store.ts";
 import type { LiveStatus } from "./model.ts";
 
@@ -12,11 +13,6 @@ export const PANEL_PADDING = 12;
  * The tool bar's padding above and below its controls.
  */
 export const BAR_PADDING_Y = 6;
-
-/**
- * A tool bar control's height.
- */
-export const BAR_CONTROL_HEIGHT = 26;
 
 /**
  * The domain crumb band's height.
@@ -83,12 +79,6 @@ export const TEXT_BODY = 13;
  * Text size of labels, crumbs, group headers, counts and empties.
  */
 export const TEXT_SMALL = 12;
-
-/**
- * A tool bar button: its padding, the gap between icon and label, radius and icon size, the
- * Tasks panel's button metrics.
- */
-export const BUTTON = { paddingX: 8, gap: 5, radius: 6, iconSize: 14 } as const;
 
 /**
  * The gap between a detail card's rows of text.

@@ -282,6 +282,14 @@ test("lists every domain with its waiting, delegated, open and findings counts",
   expect(text(get(root, "domain-beta"))).toBe("beta 0 waiting 0 delegated 1 open 1 findings");
 });
 
+test("lists only names the CLI could have written, sorted, whatever order the folder gives", async () => {
+  focusPlain();
+  for (const name of ["beta", "my domain", "Upper", "alpha", ".hidden"])
+    host.files.set(`${STATE}/backlogs/${name}.json`, JSON.stringify(betaBacklog()));
+  const { render } = await mount();
+  expect(ids(render(), "domain-")).toEqual(["domain-alpha", "domain-beta"]);
+});
+
 test("opens a domain from the listing and Back returns to it", async () => {
   focusPlain();
   host.files.set(DOC, JSON.stringify(everyStatus()));

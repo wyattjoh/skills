@@ -1,5 +1,6 @@
 // What the Backlog toggle reads from the layout and shared values, and the commands and shared
 // writes that open or close the docked panel for the focused tab. No gpui-kit or herdr import.
+import { isRecord } from "../../lib/store.ts";
 
 /**
  * The panel mod the toggle opens and closes.
@@ -32,20 +33,17 @@ export type Dock = { column: string; shown: boolean };
 /**
  * One thing the toggle does: run a Herdr command or set a shared value.
  */
-export type Effect =
+export type ToggleAction =
   | { kind: "run"; command: string; args: Record<string, unknown> }
   | { kind: "shared"; key: string; value: Scope[] };
 
 type Node = Record<string, unknown>;
 
-const isNode = (value: unknown): value is Node =>
-  typeof value === "object" && value !== null && !Array.isArray(value);
-
 const named = (value: unknown): string | undefined =>
   typeof value === "string" && value !== "" ? value : undefined;
 
 const childrenOf = (node: Node): Node[] =>
-  Array.isArray(node.children) ? node.children.filter(isNode) : [];
+  Array.isArray(node.children) ? node.children.filter(isRecord) : [];
 
 /**
  * The column holding the panel's docked block. A panel docked in no column, docked in more than
@@ -57,7 +55,7 @@ export const panelDock = (tree: unknown): Dock | undefined => {
   const found: (Dock | undefined)[] = [];
   const visit = (node: Node, column: Dock | undefined) => {
     const content = node.content;
-    if (isNode(content) && content.mod === PANEL_MOD) found.push(column);
+    if (isRecord(content) && content.mod === PANEL_MOD) found.push(column);
     const id = named(node.id);
     const own =
       node.type === "column" && id !== undefined
@@ -65,7 +63,7 @@ export const panelDock = (tree: unknown): Dock | undefined => {
         : column;
     for (const child of childrenOf(node)) visit(child, own);
   };
-  if (isNode(tree)) visit(tree, undefined);
+  if (isRecord(tree)) visit(tree, undefined);
   const [first] = found;
   if (first === undefined || found.some((dock) => dock?.column !== first.column)) return undefined;
   return first;
@@ -77,7 +75,7 @@ export const panelDock = (tree: unknown): Dock | undefined => {
  * @returns The tab, or undefined.
  */
 export const scopeOf = (focused: unknown): Scope | undefined => {
-  if (!isNode(focused)) return undefined;
+  if (!isRecord(focused)) return undefined;
   const space = named(focused.space);
   const tab = named(focused.tab);
   return space === undefined || tab === undefined ? undefined : { space, tab };
@@ -107,14 +105,14 @@ const same = (a: Scope, b: Scope) => a.space === b.space && a.tab === b.tab;
 export const openIn = (value: unknown, scope: Scope): boolean =>
   readScopes(value).some((entry) => same(entry, scope));
 
-const mark = (value: unknown, scope: Scope, open: boolean): Effect[] => {
+const mark = (value: unknown, scope: Scope, open: boolean): ToggleAction[] => {
   if (openIn(value, scope) === open) return [];
   const others = readScopes(value).filter((entry) => !same(entry, scope));
   const next = open ? [...others, scope].slice(-SCOPE_LIMIT) : others;
   return [{ kind: "shared", key: DOCK_SETTING, value: next }];
 };
 
-const showOrHide = (dock: Dock, show: boolean): Effect => ({
+const showOrHide = (dock: Dock, show: boolean): ToggleAction => ({
   kind: "run",
   command: show ? "layout.show" : "layout.hide",
   args: { id: dock.column },
@@ -156,7 +154,7 @@ export const dockSync = (
   scope: Scope | undefined,
   memory: SyncMemory,
   now: number,
-): { effects: Effect[]; memory: SyncMemory } => {
+): { effects: ToggleAction[]; memory: SyncMemory } => {
   if (dock === undefined || scope === undefined) return { effects: [], memory };
   const key = JSON.stringify([scope.space, scope.tab]);
   const settled = (shown: boolean): SyncMemory => ({ scope: key, shown, pending: undefined });
@@ -193,7 +191,7 @@ export const toggleEffects = (
   dock: Dock | undefined,
   value: unknown,
   scope: Scope | undefined,
-): Effect[] => {
+): ToggleAction[] => {
   if (dock === undefined || scope === undefined) return [];
   const open = !dock.shown;
   return [showOrHide(dock, open), ...mark(value, scope, open)];
