@@ -1,5 +1,5 @@
 import { beforeEach, expect, test } from "bun:test";
-import { addItem, closeItem, emptyBacklog } from "../../lib/store.ts";
+import { addFinding, addItem, closeFinding, closeItem, emptyBacklog } from "../../lib/store.ts";
 import type { Backlog, Item } from "../../lib/store.ts";
 import { context, get, host, ids, resetHost, settle, text } from "../../test/renderer.ts";
 
@@ -74,6 +74,28 @@ const everyStatus = (): Backlog => {
   backlog = add(backlog, "Abandoned work");
   backlog = close(backlog, "i7", false);
   return close(backlog, "i8", true);
+};
+
+const find = (
+  backlog: Backlog,
+  kind: "issue" | "opportunity",
+  title: string,
+  from: string | undefined = undefined,
+): Backlog => {
+  const added = addFinding(backlog, { kind, title, detail: undefined, path: undefined, from });
+  if (!added.ok) throw new Error(added.reason);
+  return added.backlog;
+};
+
+// Open findings f2 (issue) and f3 (opportunity, from i1), and f4, an issue already acted on.
+const withFindings = (): Backlog => {
+  let backlog = add(emptyBacklog("alpha", null), "Base work");
+  backlog = find(backlog, "issue", "Flaky watcher test");
+  backlog = find(backlog, "opportunity", "Share the validator", "i1");
+  backlog = find(backlog, "issue", "Old crash");
+  const closed = closeFinding(backlog, { id: "f4", outcome: "fixed", dismissed: false, now: NOW });
+  if (!closed.ok) throw new Error(closed.reason);
+  return closed.backlog;
 };
 
 const mount = async () => {
@@ -237,4 +259,154 @@ test("starts nothing under herdr-app check", async () => {
   focusDomain("alpha");
   const { ctx } = await mount();
   expect([ctx.timers.length, host.reads.length, host.watches.length]).toEqual([0, 0, 0]);
+});
+
+test("lists open findings under the Items card with kind glyphs in their tones", async () => {
+  focusDomain("alpha");
+  host.files.set(DOC, JSON.stringify(withFindings()));
+  const { render } = await mount();
+  const root = render();
+  expect(ids(root, "").filter((id) => id.endsWith("-header"))).toEqual([
+    "items-header",
+    "findings-header",
+  ]);
+  expect(text(get(root, "findings-header"))).toBe("Findings");
+  expect(ids(root, "finding-")).toEqual(["finding-f2", "finding-f3"]);
+  expect(text(get(root, "finding-f2"))).toBe("▲ f2 Flaky watcher test");
+  expect(text(get(root, "finding-f3"))).toBe("✦ f3 Share the validator");
+  const glyph = (id: string) =>
+    (get(root, id).nodes[0] as { styles: Record<string, unknown> }).styles.text_color;
+  expect([glyph("finding-f2"), glyph("finding-f3")]).toEqual(["ansi1", "ansi5"]);
+});
+
+test("says so when no finding is open", async () => {
+  focusDomain("alpha");
+  host.files.set(DOC, JSON.stringify(everyStatus()));
+  const { render } = await mount();
+  expect(text(get(render(), "findings-empty"))).toBe("No open findings");
+});
+
+// i1 waits on the user with an ask whose recommended option is not listed first; i2 has no rec.
+const withAsk = (): Backlog => {
+  let backlog = add(emptyBacklog("alpha", null), "Name the panel", {
+    status: "waiting-user",
+    touches: ["skills", "herdr-finbar"],
+    due: "2026-11-20",
+    decided: [{ text: "Keep it read-only", at: "2026-11-16T09:00:00.000Z" }],
+    ask: {
+      question: "Which title?",
+      context: "It shows in the tab row",
+      options: ["Coordinate backlog", "Backlog", "Queue"],
+      rec: "Backlog",
+      recReason: "fits the pill",
+    },
+    delegates: [
+      {
+        name: "impl-name",
+        session: "s-9",
+        branch: "wyattjoh/name",
+        worktree: null,
+        brief: "/briefs/name.md",
+        report: "/reports/name.md",
+      },
+    ],
+  });
+  backlog = add(backlog, "Pick a tone", {
+    status: "waiting-user",
+    ask: {
+      question: "Which tone?",
+      context: null,
+      options: ["ansi3", "blocked"],
+      rec: null,
+      recReason: null,
+    },
+  });
+  return backlog;
+};
+
+test("opens an item's read-only detail with the recommended option first and highlighted", async () => {
+  focusDomain("alpha");
+  host.files.set(DOC, JSON.stringify(withAsk()));
+  const { ctx, render } = await mount();
+  get(render(), "item-i1").click!({}, ctx.cx);
+  const root = render();
+  expect(text(get(root, "detail-title"))).toBe("i1 Name the panel");
+  expect(text(get(root, "detail-status"))).toBe("Waiting on you");
+  expect(get(root, "detail-status").styles.text_color).toBe("blocked");
+  expect(text(get(root, "ask-question"))).toBe("Which title?");
+  expect(text(get(root, "ask-context"))).toBe("It shows in the tab row");
+  expect(ids(root, "ask-option-")).toEqual(["ask-option-1", "ask-option-0", "ask-option-2"]);
+  expect(text(get(root, "ask-option-1"))).toBe("Backlog Recommended fits the pill");
+  expect(get(root, "ask-option-1").styles.bg).toBe("selected");
+  expect(get(root, "ask-option-0").styles.bg).toBe(undefined);
+  expect(text(get(root, "ask-rec-reason"))).toBe("fits the pill");
+  expect(text(get(root, "decided-0"))).toBe("Keep it read-only 2026-11-16");
+  expect(text(get(root, "fact-touches"))).toBe("Touches skills herdr-finbar");
+  expect(text(get(root, "fact-due"))).toBe("Due 2026-11-20");
+  expect(text(get(root, "delegate-s-9"))).toBe(
+    "impl-name Brief /briefs/name.md Report /reports/name.md",
+  );
+  expect(text(get(root, "back"))).toBe("Back");
+});
+
+test("keeps an ask without a recommendation in its own order, with nothing highlighted", async () => {
+  focusDomain("alpha");
+  host.files.set(DOC, JSON.stringify(withAsk()));
+  const { ctx, render } = await mount();
+  get(render(), "item-i2").click!({}, ctx.cx);
+  const root = render();
+  expect(ids(root, "ask-option-")).toEqual(["ask-option-0", "ask-option-1"]);
+  expect(text(get(root, "ask-option-0"))).toBe("ansi3");
+  expect([get(root, "ask-option-0").styles.bg, get(root, "ask-option-1").styles.bg]).toEqual([
+    undefined,
+    undefined,
+  ]);
+  expect(ids(root, "ask-rec-reason")).toEqual([]);
+  expect(text(get(root, "fact-touches"))).toBe("Touches None");
+  expect(text(get(root, "fact-due"))).toBe("Due None");
+  expect(ids(root, "delegate-")).toEqual([]);
+});
+
+test("Back returns to the list, which stayed mounted under the detail to keep its scroll", async () => {
+  focusDomain("alpha");
+  const original = JSON.stringify(withAsk());
+  host.files.set(DOC, original);
+  const { ctx, render } = await mount();
+  let root = render();
+  expect(ids(root, "back")).toEqual([]);
+  expect(get(root, "screen-list").styles.invisible).toBe(undefined);
+  get(root, "item-i1").click!({}, ctx.cx);
+  root = render();
+  expect(get(root, "screen-list").styles.invisible).toBe(true);
+  expect(ids(get(root, "screen-list"), "panel-scroll")).toEqual(["panel-scroll"]);
+  expect(ids(root, "screen-item")).toEqual(["screen-item"]);
+  get(root, "back").click!({}, ctx.cx);
+  root = render();
+  expect(get(root, "screen-list").styles.invisible).toBe(undefined);
+  expect(ids(root, "screen-item")).toEqual([]);
+  expect(ids(root, "back")).toEqual([]);
+  expect(host.files.get(DOC)).toBe(original);
+});
+
+test("falls back to the list when the open item leaves the document or focus changes domain", async () => {
+  focusDomain("alpha");
+  host.files.set(DOC, JSON.stringify(withAsk()));
+  host.files.set(`${STATE}/backlogs/beta.json`, JSON.stringify(withAsk()));
+  const { ctx, render } = await mount();
+  get(render(), "item-i1").click!({}, ctx.cx);
+  focusDomain("beta");
+  ctx.tick(1_000);
+  await settle();
+  expect(ids(render(), "screen-item")).toEqual([]);
+  focusDomain("alpha");
+  ctx.tick(1_000);
+  await settle();
+  expect(ids(render(), "screen-item")).toEqual([]);
+  get(render(), "item-i2").click!({}, ctx.cx);
+  host.files.set(DOC, JSON.stringify({ ...withAsk(), items: withAsk().items.slice(0, 1) }));
+  host.watches.at(-1)!.fire([DOC]);
+  await settle();
+  const root = render();
+  expect(ids(root, "screen-item")).toEqual([]);
+  expect(text(get(root, "crumb"))).toBe("alpha");
 });

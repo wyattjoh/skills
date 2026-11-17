@@ -1,6 +1,6 @@
 // How the panel looks, as theme() color names and sizes. The metrics follow the Tasks Herdr
 // panel's chrome, copied here so the two panels read as one family.
-import type { ItemStatus } from "../../lib/store.ts";
+import type { Finding, ItemStatus } from "../../lib/store.ts";
 
 /**
  * The panel's padding on every side.
@@ -79,9 +79,26 @@ export const TEXT_BODY = 13;
 export const TEXT_SMALL = 12;
 
 /**
- * Herdr's shipped fold chevrons.
+ * A tool bar button: its padding, the gap between icon and label, radius and icon size, the
+ * Tasks panel's button metrics.
+ */
+export const BUTTON = { paddingX: 8, gap: 5, radius: 6, iconSize: 14 } as const;
+
+/**
+ * The gap between a detail card's rows of text.
+ */
+export const DETAIL_LINE_GAP = 2;
+
+/**
+ * Vertical padding inside a detail card's rows, which wrap and so have no fixed height.
+ */
+export const DETAIL_ROW_PADDING_Y = 6;
+
+/**
+ * Herdr's shipped fold chevrons and the Back chevron the Tasks panel uses.
  */
 export const ICONS = {
+  back: "mods/workspace-chrome/chevron-left.svg",
   groupOpen: "mods/files/chevron-down.svg",
   groupClosed: "mods/files/chevron-right.svg",
 } as const;
@@ -98,4 +115,12 @@ export const STATUS_TONES: Readonly<Record<ItemStatus, string>> = {
   parked: "muted",
   done: "ansi2",
   dismissed: "ansi1",
+};
+
+/**
+ * Each finding kind's glyph and its tone, as a theme() color name.
+ */
+export const FINDING_GLYPHS: Readonly<Record<Finding["kind"], { glyph: string; tone: string }>> = {
+  issue: { glyph: "▲", tone: "ansi1" },
+  opportunity: { glyph: "✦", tone: "ansi5" },
 };

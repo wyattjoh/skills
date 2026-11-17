@@ -1,7 +1,7 @@
 // What the panel shows, decided without Herdr: which domain it follows, where that domain's
 // document lives, whether the document is usable, and how its items group.
 import { ITEM_STATUSES, validateBacklog } from "../../lib/store.ts";
-import type { Backlog, Item, ItemStatus } from "../../lib/store.ts";
+import type { Ask, Backlog, Finding, Item, ItemStatus } from "../../lib/store.ts";
 
 /**
  * The terminal label naming the coordinate domain a coordinator or delegate belongs to.
@@ -45,6 +45,30 @@ export const groupItems = (backlog: Backlog): ItemGroup[] =>
     label: GROUP_LABELS[status],
     items: backlog.items.filter((item) => item.status === status),
   })).filter((group) => group.items.length > 0);
+
+/**
+ * The findings still open, in document order.
+ * @param backlog A validated document.
+ * @returns The open findings.
+ */
+export const openFindings = (backlog: Backlog): Finding[] =>
+  backlog.findings.filter((finding) => finding.status === "open");
+
+/**
+ * One option of an ask as the detail screen lists it: its text, its place in the ask's own
+ * list (a stable id), and whether it is the recommendation.
+ */
+export type RankedOption = { option: string; index: number; rec: boolean };
+
+/**
+ * An ask's options with the recommended one first, the rest in their own order.
+ * @param ask The ask.
+ * @returns The options to list.
+ */
+export const rankedOptions = (ask: Ask): RankedOption[] => {
+  const options = ask.options.map((option, index) => ({ option, index, rec: option === ask.rec }));
+  return [...options.filter((entry) => entry.rec), ...options.filter((entry) => !entry.rec)];
+};
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>
   typeof value === "object" && value !== null && !Array.isArray(value);

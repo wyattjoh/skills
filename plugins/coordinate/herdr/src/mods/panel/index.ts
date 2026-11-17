@@ -9,11 +9,13 @@ import {
   configPath,
   documentPath,
   groupItems,
+  openFindings,
   readDocument,
   stateDirOf,
   targetDomain,
 } from "./model.ts";
 import type { DocumentState, ItemGroup } from "./model.ts";
+import type { Item } from "../../lib/store.ts";
 import { panel } from "./view.ts";
 import type { Theme } from "./view.ts";
 
@@ -36,6 +38,9 @@ export default class Panel extends View {
   // The backlogs folder being watched, and the pending watch on it.
   watched: string | undefined;
   watch: FolderWatch | undefined;
+  // The item whose detail is open, by domain and id, so a reload shows its latest copy and a
+  // vanished item falls back to the list.
+  selected: { domain: string; id: string } | undefined;
 
   init(_props: unknown, cx: AsyncContext) {
     if (checking()) return;
@@ -63,6 +68,7 @@ export default class Panel extends View {
       this.watchBacklogs(backlogsDir(stateDir), task);
       if (domain !== this.domain) {
         this.domain = domain;
+        this.selected = undefined;
         this.doc = { kind: "loading" };
         task.notify();
       }
@@ -131,6 +137,25 @@ export default class Panel extends View {
     cx.notify();
   }
 
+  open(item: Item, cx: Context) {
+    if (this.domain === undefined) return;
+    this.selected = { domain: this.domain, id: item.id };
+    cx.notify();
+  }
+
+  back(cx: Context) {
+    this.selected = undefined;
+    cx.notify();
+  }
+
+  // The open item as the document now has it, if it is still there.
+  detail(domain: string | undefined, doc: DocumentState): Item | undefined {
+    const selected = this.selected;
+    if (selected === undefined || selected.domain !== domain || doc.kind !== "loaded")
+      return undefined;
+    return doc.backlog.items.find((item) => item.id === selected.id);
+  }
+
   render(): Element {
     const domain = this.target();
     const doc: DocumentState = domain === this.domain ? this.doc : { kind: "loading" };
@@ -138,8 +163,12 @@ export default class Panel extends View {
       domain,
       doc,
       groups: doc.kind === "loaded" ? groupItems(doc.backlog) : [],
+      findings: doc.kind === "loaded" ? openFindings(doc.backlog) : [],
       isOpen: (group) => this.isOpen(group),
       toggle: (group, cx) => this.toggleFold(group, cx),
+      detail: this.detail(domain, doc),
+      open: (item, cx) => this.open(item, cx),
+      back: (cx) => this.back(cx),
     });
   }
 }

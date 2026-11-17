@@ -2,9 +2,12 @@
 import { div, svg } from "gpui-kit";
 import type { Color, Context, Element } from "gpui-kit";
 import { h_flex, v_flex } from "gpui-base";
-import type { Item } from "../../lib/store.ts";
+import type { Finding, Item } from "../../lib/store.ts";
 import {
   BAR_CONTROL_HEIGHT,
+  BUTTON,
+  DETAIL_LINE_GAP,
+  DETAIL_ROW_PADDING_Y,
   BAR_PADDING_Y,
   CARD_GAP,
   CARD_HEADER_HEIGHT,
@@ -12,6 +15,7 @@ import {
   CARD_RADIUS,
   CARD_SECTION_GAP,
   CRUMB_HEIGHT,
+  FINDING_GLYPHS,
   FOLD_MOTION,
   GROUP_HEADER_HEIGHT,
   ICONS,
@@ -22,6 +26,7 @@ import {
   TEXT_BODY,
   TEXT_SMALL,
 } from "./look.ts";
+import { GROUP_LABELS, rankedOptions } from "./model.ts";
 import type { DocumentState, ItemGroup } from "./model.ts";
 
 /**
@@ -36,8 +41,13 @@ export type PanelModel = {
   domain: string | undefined;
   doc: DocumentState;
   groups: ItemGroup[];
+  findings: Finding[];
   isOpen: (group: ItemGroup) => boolean;
   toggle: (group: ItemGroup, cx: Context) => void;
+  // The item whose detail screen is on top of the list, if any.
+  detail: Item | undefined;
+  open: (item: Item, cx: Context) => void;
+  back: (cx: Context) => void;
 };
 
 /**
@@ -56,13 +66,34 @@ export const message = (t: Theme, id: string, title: string, detail: string): El
     .child(div().text_size(TEXT_BODY).font_medium().text_color(t.foreground).child(title))
     .child(div().text_size(TEXT_SMALL).text_color(t.muted).child(detail));
 
-const toolbar = (t: Theme): Element =>
+// The Tasks panel's tool bar button: an icon and a label on the bar's fill.
+const button = (t: Theme, id: string, icon: string, label: string, run: (cx: Context) => void) =>
+  h_flex()
+    .id(id)
+    .h(BAR_CONTROL_HEIGHT)
+    .px(BUTTON.paddingX)
+    .gap(BUTTON.gap)
+    .flex_none()
+    .items_center()
+    .rounded(BUTTON.radius)
+    .cursor_pointer()
+    .text_size(TEXT_SMALL)
+    .bg(t.chrome)
+    .text_color(t.muted)
+    .hover((s) => s.bg(t.hover))
+    .on_click((_event, cx) => run(cx))
+    .child(svg(icon).size(BUTTON.iconSize))
+    .child(label);
+
+const toolbar = (t: Theme, back: ((cx: Context) => void) | undefined): Element =>
   h_flex()
     .id("toolbar")
     .flex_none()
     .px(PANEL_PADDING)
     .py(BAR_PADDING_Y)
+    .gap(BUTTON.gap)
     .bg(t.chrome)
+    .when(back !== undefined, (el) => el.child(button(t, "back", ICONS.back, "Back", back!)))
     .child(
       h_flex()
         .h(BAR_CONTROL_HEIGHT)
@@ -124,9 +155,11 @@ const cardRow = (t: Theme, id: string, hover: Color): Element =>
     .border_color(t.border)
     .hover((s) => s.bg(hover));
 
-const itemRow = (t: Theme, item: Item): Element =>
+const itemRow = (t: Theme, item: Item, open: (item: Item, cx: Context) => void): Element =>
   cardRow(t, `item-${item.id}`, t.hover)
     .h(ITEM_ROW_HEIGHT)
+    .cursor_pointer()
+    .on_click((_event, cx) => open(item, cx))
     .child(div().flex_none().text_size(TEXT_SMALL).text_color(t.muted).child(item.id))
     .child(
       div()
@@ -148,6 +181,7 @@ const groupBlock = (
   first: boolean,
   last: boolean,
   toggle: (cx: Context) => void,
+  openItem: (item: Item, cx: Context) => void,
 ): Element =>
   v_flex()
     .id(`group-${group.status}`)
@@ -175,7 +209,7 @@ const groupBlock = (
         .overflow_hidden()
         .h(open ? group.items.length * ITEM_ROW_HEIGHT : 0)
         .transition("height", FOLD_MOTION)
-        .children(group.items.map((item) => itemRow(t, item))),
+        .children(group.items.map((item) => itemRow(t, item, openItem))),
     );
 
 const itemsCard = (t: Theme, model: PanelModel): Element =>
@@ -186,15 +220,7 @@ const itemsCard = (t: Theme, model: PanelModel): Element =>
     .child(
       card(t, "items").children(
         model.groups.length === 0
-          ? [
-              div()
-                .id("items-empty")
-                .px(CARD_PADDING_X)
-                .py(8)
-                .text_size(TEXT_SMALL)
-                .text_color(t.dim)
-                .child("No items"),
-            ]
+          ? [emptyRow(t, "items-empty", "No items")]
           : model.groups.map((group, index) =>
               groupBlock(
                 t,
@@ -203,9 +229,209 @@ const itemsCard = (t: Theme, model: PanelModel): Element =>
                 index === 0,
                 index === model.groups.length - 1,
                 (cx) => model.toggle(group, cx),
+                model.open,
               ),
             ),
       ),
+    );
+
+const emptyRow = (t: Theme, id: string, label: string): Element =>
+  div().id(id).px(CARD_PADDING_X).py(8).text_size(TEXT_SMALL).text_color(t.dim).child(label);
+
+const findingRow = (t: Theme, finding: Finding): Element =>
+  cardRow(t, `finding-${finding.id}`, t.hover)
+    .h(ITEM_ROW_HEIGHT)
+    .child(
+      div()
+        .flex_none()
+        .text_size(TEXT_SMALL)
+        .text_color(t[FINDING_GLYPHS[finding.kind].tone])
+        .child(FINDING_GLYPHS[finding.kind].glyph),
+    )
+    .child(div().flex_none().text_size(TEXT_SMALL).text_color(t.muted).child(finding.id))
+    .child(
+      div()
+        .flex_1()
+        .min_w_0()
+        .truncate()
+        .text_size(TEXT_BODY)
+        .text_color(t.foreground)
+        .child(finding.title),
+    );
+
+// Open findings, one fixed row each. The first row drops its rule so it sits flush with the
+// card's top edge, as the first group band does in the Items card.
+const findingsCard = (t: Theme, findings: Finding[]): Element =>
+  v_flex()
+    .flex_none()
+    .gap(CARD_SECTION_GAP)
+    .child(cardHeader(t, "findings-header", "Findings"))
+    .child(
+      card(t, "findings").children(
+        findings.length === 0
+          ? [emptyRow(t, "findings-empty", "No open findings")]
+          : findings.map((finding, index) =>
+              findingRow(t, finding).when(index === 0, (el) => el.border_t(0)),
+            ),
+      ),
+    );
+
+// A detail card's row: wrapping text, so its height follows its content.
+const detailRow = (t: Theme, id: string): Element =>
+  v_flex()
+    .id(id)
+    .flex_none()
+    .px(CARD_PADDING_X)
+    .py(DETAIL_ROW_PADDING_Y)
+    .gap(DETAIL_LINE_GAP)
+    .border_t(1)
+    .border_color(t.border)
+    .text_size(TEXT_BODY)
+    .text_color(t.foreground);
+
+const detailCard = (t: Theme, id: string, name: string, rows: Element[]): Element =>
+  v_flex()
+    .flex_none()
+    .gap(CARD_SECTION_GAP)
+    .child(cardHeader(t, `${id}-header`, name))
+    .child(card(t, id).children(rows.map((row, index) => (index === 0 ? row.border_t(0) : row))));
+
+const small = (t: Theme, tone: Color, value: string): Element =>
+  div().text_size(TEXT_SMALL).text_color(tone).child(value);
+
+// A labelled fact: a muted label, then its values, or None in dim.
+const fact = (t: Theme, id: string, label: string, values: string[]): Element =>
+  detailRow(t, id)
+    .child(small(t, t.muted, label))
+    .child(
+      values.length === 0
+        ? div().text_color(t.dim).child("None")
+        : h_flex()
+            .flex_wrap()
+            .gap(BUTTON.gap)
+            .children(values.map((value) => div().child(value))),
+    );
+
+const askCard = (t: Theme, item: Item): Element[] => {
+  const ask = item.ask;
+  if (ask === null) return [];
+  const question = detailRow(t, "ask-question").font_medium().child(ask.question);
+  const context =
+    ask.context === null
+      ? []
+      : [detailRow(t, "ask-context").text_color(t.muted).child(ask.context)];
+  const options = rankedOptions(ask).map(({ option, index, rec }) =>
+    detailRow(t, `ask-option-${index}`)
+      .when(rec, (el) => el.bg(t.selected))
+      .child(
+        h_flex()
+          .gap(BUTTON.gap)
+          .items_center()
+          .child(div().min_w_0().child(option))
+          .when(rec, (el) => el.child(small(t, t.accent, "Recommended"))),
+      )
+      .when(rec && ask.recReason !== null, (el) =>
+        el.child(
+          div()
+            .id("ask-rec-reason")
+            .text_size(TEXT_SMALL)
+            .text_color(t.muted)
+            .child(ask.recReason!),
+        ),
+      ),
+  );
+  return [detailCard(t, "ask", "Ask", [question, ...context, ...options])];
+};
+
+const decidedCard = (t: Theme, item: Item): Element[] =>
+  item.decided.length === 0
+    ? []
+    : [
+        detailCard(
+          t,
+          "decided",
+          "Decided",
+          item.decided.map((entry, index) =>
+            detailRow(t, `decided-${index}`)
+              .child(div().child(entry.text))
+              .child(small(t, t.dim, entry.at.slice(0, 10))),
+          ),
+        ),
+      ];
+
+const delegatesCard = (t: Theme, item: Item): Element[] =>
+  item.delegates.length === 0
+    ? []
+    : [
+        detailCard(
+          t,
+          "delegates",
+          "Delegates",
+          item.delegates.map((ref) =>
+            detailRow(t, `delegate-${ref.session}`)
+              .child(div().font_medium().child(ref.name))
+              .child(
+                h_flex()
+                  .gap(BUTTON.gap)
+                  .child(small(t, t.muted, "Brief"))
+                  .child(small(t, t.foreground, ref.brief)),
+              )
+              .child(
+                h_flex()
+                  .gap(BUTTON.gap)
+                  .child(small(t, t.muted, "Report"))
+                  .child(small(t, t.foreground, ref.report)),
+              ),
+          ),
+        ),
+      ];
+
+// The read-only detail of one item, in its own scroll area so the list's keeps its place.
+const detailScreen = (t: Theme, item: Item): Element =>
+  v_flex()
+    .id("detail-scroll")
+    .size_full()
+    .overflow_y_scrollbar()
+    .p(PANEL_PADDING)
+    .child(
+      v_flex()
+        .id("detail")
+        .gap(CARD_GAP)
+        .child(
+          v_flex()
+            .gap(DETAIL_LINE_GAP)
+            .child(
+              h_flex()
+                .id("detail-title")
+                .gap(7)
+                .child(div().flex_none().text_size(TEXT_SMALL).text_color(t.muted).child(item.id))
+                .child(
+                  div()
+                    .min_w_0()
+                    .text_size(TEXT_BODY)
+                    .font_medium()
+                    .text_color(t.foreground)
+                    .child(item.title),
+                ),
+            )
+            .child(
+              div()
+                .id("detail-status")
+                .text_size(TEXT_SMALL)
+                .text_color(t[STATUS_TONES[item.status]])
+                .child(GROUP_LABELS[item.status]),
+            ),
+        )
+        .children(askCard(t, item))
+        .child(
+          detailCard(t, "facts", "Details", [
+            fact(t, "fact-due", "Due", item.due === null ? [] : [item.due]),
+            fact(t, "fact-touches", "Touches", item.touches),
+            ...(item.outcome === null ? [] : [fact(t, "fact-outcome", "Outcome", [item.outcome])]),
+          ]),
+        )
+        .children(decidedCard(t, item))
+        .children(delegatesCard(t, item)),
     );
 
 const domainBody = (t: Theme, domain: string, doc: DocumentState, model: PanelModel): Element => {
@@ -223,7 +449,8 @@ const domainBody = (t: Theme, domain: string, doc: DocumentState, model: PanelMo
     .id("domain")
     .gap(CARD_GAP)
     .child(focusHeader(t, doc.backlog.focus))
-    .child(itemsCard(t, model));
+    .child(itemsCard(t, model))
+    .child(findingsCard(t, model.findings));
 };
 
 /**
@@ -237,7 +464,7 @@ export const panel = (t: Theme, model: PanelModel): Element =>
     .id("coordinate-panel")
     .size_full()
     .bg(t.surface)
-    .child(toolbar(t))
+    .child(toolbar(t, model.detail === undefined ? undefined : model.back))
     .when(model.domain === undefined, (el) =>
       el.child(
         message(
@@ -250,12 +477,37 @@ export const panel = (t: Theme, model: PanelModel): Element =>
     )
     .when(model.domain !== undefined, (el) =>
       el.child(crumb(t, model.domain!)).child(
+        // Screens stack as the Tasks panel's do: the list stays mounted, invisible, under an
+        // item's detail, so its scroll area keeps its position for Back.
         v_flex()
-          .id("panel-scroll")
+          .id("screens")
+          .relative()
           .flex_1()
           .min_h_0()
-          .overflow_y_scrollbar()
-          .p(PANEL_PADDING)
-          .child(domainBody(t, model.domain!, model.doc, model)),
+          .child(
+            v_flex()
+              .id("screen-list")
+              .absolute()
+              .inset_0()
+              .when(model.detail !== undefined, (list) => list.invisible())
+              .child(
+                v_flex()
+                  .id("panel-scroll")
+                  .size_full()
+                  .overflow_y_scrollbar()
+                  .p(PANEL_PADDING)
+                  .child(domainBody(t, model.domain!, model.doc, model)),
+              ),
+          )
+          .when(model.detail !== undefined, (screens) =>
+            screens.child(
+              v_flex()
+                .id("screen-item")
+                .absolute()
+                .inset_0()
+                .bg(t.surface)
+                .child(detailScreen(t, model.detail!)),
+            ),
+          ),
       ),
     );
