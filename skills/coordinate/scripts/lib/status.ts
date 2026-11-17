@@ -44,6 +44,30 @@ export const waitsOn = (
 };
 
 /**
+ * The main checkouts a domain works in: Boundary paths, live delegates' folders and ended records' repos.
+ * @param config Config.
+ * @param domain Domain.
+ * @returns Main checkouts.
+ */
+export const domainRepos = Effect.fn("domainRepos")(function* (config: Config, domain: string) {
+  const backlog = yield* readBacklog(config, domain);
+  const paths = [
+    ...boundaryPaths(backlog.text),
+    ...(yield* members(domain, undefined)).map((delegate) => delegate.cwd),
+    ...(yield* readEnded(config.stateDir)).records
+      .filter((entry) => entry.record.domain === domain)
+      .map((entry) => entry.record.repo ?? entry.record.cwd),
+  ];
+  const repos = new Set<string>();
+  for (const path of paths) {
+    if (!path || !existsSync(path)) continue;
+    const main = yield* mainCheckout(path);
+    if (main) repos.add(main);
+  }
+  return [...repos];
+});
+
+/**
  * The domain's status: delegates, ended delegates, PRs on GitHub and Forgejo, and who acts next.
  * @param config Config.
  * @param domain Domain.

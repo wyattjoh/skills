@@ -15,6 +15,16 @@ export class GitError extends Schema.TaggedError<GitError>()("GitError", {
 }) {}
 
 /**
+ * Branches never treated as task branches.
+ */
+export const PROTECTED_BRANCHES: ReadonlySet<string> = new Set([
+  "main",
+  "master",
+  "next",
+  "develop",
+]);
+
+/**
  * Run git in `dir` with the repository-location variables stripped.
  * @param dir Working directory.
  * @param args Git arguments.
@@ -77,6 +87,15 @@ export const real = (path: string): string => {
 };
 
 /**
+ * Whether `path` is `folder` or inside it. Both should be real paths.
+ * @param path Candidate.
+ * @param folder Container.
+ * @returns True when inside.
+ */
+export const inside = (path: string, folder: string): boolean =>
+  `${path}/`.startsWith(`${folder.replace(/\/+$/, "")}/`);
+
+/**
  * One entry of `git worktree list --porcelain`.
  */
 export type Worktree = { path: string; branch: string | undefined; head: string | undefined };
@@ -107,6 +126,15 @@ export const parseWorktrees = (text: string): Worktree[] =>
     });
 
 /**
+ * The repository's worktrees.
+ * @param repo Any checkout of the repository.
+ * @returns Worktrees, main checkout first.
+ */
+export const worktrees = Effect.fn("worktrees")(function* (repo: string) {
+  return parseWorktrees(yield* gitOk(repo, ["worktree", "list", "--porcelain"]));
+});
+
+/**
  * The main checkout of the repository holding `dir`, from its common git dir.
  * @param dir Any folder inside a checkout.
  * @returns The main checkout's path, or undefined outside Git.
@@ -124,6 +152,17 @@ export const mainCheckout = Effect.fn("mainCheckout")(function* (dir: string) {
  */
 export const currentBranch = Effect.fn("currentBranch")(function* (dir: string) {
   return (yield* gitTry(dir, ["symbolic-ref", "--short", "-q", "HEAD"])) || undefined;
+});
+
+/**
+ * `git status --porcelain` lines.
+ * @param dir Checkout.
+ * @returns Lines, or undefined when git failed.
+ */
+export const statusLines = Effect.fn("statusLines")(function* (dir: string) {
+  const out = yield* git(dir, ["status", "--porcelain"]);
+  if (out.exitCode !== 0) return undefined;
+  return out.stdout.split("\n").filter((line) => line !== "");
 });
 
 /**
@@ -266,6 +305,17 @@ export const excludeScratch = Effect.fn("excludeScratch")(function* (dir: string
 });
 
 /**
+ * Delete a branch with `git branch -d` only. When git refuses, the caller gets its message.
+ * @param repo Repository.
+ * @param branch Branch.
+ * @returns undefined on success, else git's refusal.
+ */
+export const deleteBranch = Effect.fn("deleteBranch")(function* (repo: string, branch: string) {
+  const out = yield* git(repo, ["branch", "-d", branch]);
+  return out.exitCode === 0 ? undefined : (out.stderr || out.stdout).trim();
+});
+
+/**
  * The fetch URL of `origin`, else of the first remote.
  * @param dir Checkout.
  * @returns URL, or undefined with no remote.
@@ -275,4 +325,17 @@ export const remoteUrl = Effect.fn("remoteUrl")(function* (dir: string) {
   const remote = remotes.includes("origin") ? "origin" : remotes[0];
   if (remote === undefined) return undefined;
   return yield* gitTry(dir, ["remote", "get-url", remote]);
+});
+
+/**
+ * How far a checkout's branch is ahead of its upstream.
+ * @param dir Checkout.
+ * @returns Branch, upstream and ahead count, or undefined with no upstream.
+ */
+export const aheadOfUpstream = Effect.fn("aheadOfUpstream")(function* (dir: string) {
+  const branch = yield* currentBranch(dir);
+  const upstream = yield* gitTry(dir, ["rev-parse", "--abbrev-ref", "@{upstream}"]);
+  if (!branch || !upstream) return undefined;
+  const count = yield* gitTry(dir, ["rev-list", "--count", "@{upstream}..HEAD"]);
+  return { branch, upstream, ahead: Number(count ?? "0") };
 });

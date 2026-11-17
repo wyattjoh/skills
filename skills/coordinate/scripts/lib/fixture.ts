@@ -1,9 +1,9 @@
 import { mkdtempSync, realpathSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { Effect, type Layer } from "effect";
+import { Effect, Layer } from "effect";
 import { spawnGit } from "./git-env.ts";
-import { Proc } from "./proc.ts";
+import { Proc, realProc, type RunOutput } from "./proc.ts";
 
 /**
  * A fresh temporary directory (real path).
@@ -89,3 +89,25 @@ export const failureOf = <A, E>(
       Effect.provide(layer),
     ),
   ) as Promise<E | "no failure">;
+
+/**
+ * A `Proc` that runs git for real and answers every other program with `answer`.
+ * @param answer Answers for hc, herdr-app, lsof, gh, forgejo, du.
+ * @returns The layer and the non-git calls.
+ */
+export const gitAndFake = (
+  answer: (argv: readonly string[]) => RunOutput,
+): { layer: Layer.Layer<Proc>; calls: string[][] } => {
+  const calls: string[][] = [];
+  const layer = Layer.succeed(
+    Proc,
+    Proc.of({
+      run: (argv, options) => {
+        if (argv[0] === "git") return realProc.run(argv, options);
+        calls.push([...argv]);
+        return Effect.succeed(answer(argv));
+      },
+    }),
+  );
+  return { layer, calls };
+};

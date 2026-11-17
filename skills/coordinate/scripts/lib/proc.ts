@@ -48,21 +48,23 @@ export class Proc extends Context.Service<
     ): Effect.Effect<RunOutput, SpawnError>;
   }
 >()("coordinate/Proc") {
-  static readonly layer = Layer.succeed(
-    Proc,
-    Proc.of({
-      run: (argv, options) =>
-        Effect.tryPromise({
-          try: () => bunRun(argv, options ?? {}),
-          catch: (cause) =>
-            new SpawnError({
-              argv: [...argv],
-              message: cause instanceof Error ? cause.message : String(cause),
-            }),
+  static readonly layer = Layer.sync(Proc, () => realProc);
+}
+
+/**
+ * The real subprocess runner, used by `Proc.layer`.
+ */
+export const realProc: Proc["Service"] = {
+  run: (argv, options) =>
+    Effect.tryPromise({
+      try: () => bunRun(argv, options ?? {}),
+      catch: (cause) =>
+        new SpawnError({
+          argv: [...argv],
+          message: cause instanceof Error ? cause.message : String(cause),
         }),
     }),
-  );
-}
+};
 
 const bunRun = async (
   argv: readonly string[],

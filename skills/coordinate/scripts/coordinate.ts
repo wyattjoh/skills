@@ -6,7 +6,10 @@ import { Refused, resolveDomain } from "./lib/fleet.ts";
 import type { FirstMessage, Harness, ImplementSkill } from "./lib/harness.ts";
 import { delegate, endDelegate, listIdle, resumeDelegate, sendTo, start } from "./lib/lifecycle.ts";
 import { Proc } from "./lib/proc.ts";
-import { domainStatus } from "./lib/status.ts";
+import { domainRepos, domainStatus } from "./lib/status.ts";
+import { context, pruneBranches, pruneEnded, removeMany, renderRows, report } from "./lib/sweep.ts";
+import { mainCheckout } from "./lib/git.ts";
+import { resolve } from "node:path";
 
 /**
  * Run one command at the CLI boundary: print its lines, exit 0; a `Refused` exits 1; anything else exits 2.
@@ -52,6 +55,18 @@ program
       Effect.gen(function* () {
         const lines = [...(yield* start(config, domain))];
         lines.push("", ...(yield* domainStatus(config, domain, false, Date.now())));
+        lines.push(
+          "",
+          "sweep:",
+          ...renderRows(
+            yield* report(config, yield* domainRepos(config, domain), {
+              bases: [],
+              keep: [],
+              sizes: false,
+              nowMs: Date.now(),
+            }),
+          ),
+        );
         lines.push("", ...(yield* listIdle(config, domain, Date.now())));
         return lines;
       }),
@@ -184,5 +199,134 @@ program
       ),
     ),
   );
+
+const collect = (value: string, previous: string[]): string[] => [...previous, value];
+
+/**
+ * Main checkouts from explicit paths, else the domain's repos.
+ * @param paths Paths given on the command line.
+ * @param domain `--domain`.
+ * @param config Config.
+ * @returns Main checkouts.
+ */
+const reposFor = (paths: readonly string[], domain: string | undefined, config: Config) =>
+  Effect.gen(function* () {
+    if (paths.length === 0) return yield* domainRepos(config, yield* resolveDomain(domain));
+    const repos: string[] = [];
+    for (const path of paths) {
+      const checkout = yield* mainCheckout(resolve(path));
+      if (checkout && !repos.includes(checkout)) repos.push(checkout);
+      if (!checkout) return yield* new Refused({ message: `${path} is not a Git checkout` });
+    }
+    return repos;
+  });
+
+const sweep = program
+  .command("sweep")
+  .description("find finished worktrees, branches and records, and remove the safe ones");
+
+sweep
+  .command("report")
+  .argument("[repos...]", "checkouts (default: the domain's repos)")
+  .option("--domain <domain>", "domain (default: this coordinator's label)")
+  .option("--base <ref>", "extra base ref (repeatable)", collect, [])
+  .option("--keep <path>", "folder never removed (repeatable)", collect, [])
+  .option("--sizes", "show sizes of non-KEEP worktrees")
+  .description("one verdict per item, changing nothing: SAFE, CLOSE, ASK, KEEP, INFO")
+  .action(
+    (
+      repos: string[],
+      options: { domain?: string; base: string[]; keep: string[]; sizes?: boolean },
+    ) =>
+      main((config) =>
+        Effect.gen(function* () {
+          const found = yield* reposFor(repos, options.domain, config);
+          return renderRows(
+            yield* report(config, found, {
+              bases: options.base,
+              keep: options.keep,
+              sizes: options.sizes === true,
+              nowMs: Date.now(),
+            }),
+          );
+        }),
+      ),
+  );
+
+sweep
+  .command("remove")
+  .argument("[worktrees...]", "worktrees to remove")
+  .option("--all-safe", "remove every SAFE worktree of the domain's repos (or --repo)")
+  .option("--repo <path>", "repo for --all-safe (repeatable)", collect, [])
+  .option("--domain <domain>", "domain for --all-safe")
+  .option("--base <ref>", "extra base ref (repeatable)", collect, [])
+  .description(
+    "re-check each worktree and remove it only when SAFE: park .scratch/, drop the rest, git branch -d",
+  )
+  .action(
+    (
+      paths: string[],
+      options: { allSafe?: boolean; repo: string[]; domain?: string; base: string[] },
+    ) =>
+      main((config) =>
+        Effect.gen(function* () {
+          const targets = paths.map((path) => resolve(path));
+          const repos: string[] = [];
+          for (const path of targets) {
+            const repo = yield* mainCheckout(path);
+            if (repo && !repos.includes(repo)) repos.push(repo);
+          }
+          if (options.allSafe)
+            for (const repo of yield* reposFor(options.repo, options.domain, config))
+              if (!repos.includes(repo)) repos.push(repo);
+          const ctx = yield* context(config, repos, options.base, []);
+          if (options.allSafe) {
+            const rows = yield* report(config, repos, {
+              bases: options.base,
+              keep: [],
+              sizes: false,
+              nowMs: Date.now(),
+            });
+            for (const row of rows)
+              if (
+                row.verdict === "SAFE" &&
+                row.text.startsWith("worktree ") &&
+                row.path &&
+                !targets.includes(row.path)
+              )
+                targets.push(row.path);
+          }
+          if (targets.length === 0) return ["no worktree to remove"];
+          return yield* removeMany(config, targets, ctx);
+        }),
+      ),
+  );
+
+sweep
+  .command("prune-branches")
+  .argument("<repo>", "checkout")
+  .argument("[branches...]", "landed branches to delete with git branch -d")
+  .option("--list", "list landed branches")
+  .option("--base <ref>", "extra base ref (repeatable)", collect, [])
+  .description("list or delete local branches whose work is on a base or whose PR merged")
+  .action((repoPath: string, branches: string[], options: { list?: boolean; base: string[] }) =>
+    main((config) =>
+      Effect.gen(function* () {
+        const [repo] = yield* reposFor([repoPath], undefined, config);
+        const ctx = yield* context(config, [repo ?? repoPath], options.base, []);
+        return yield* pruneBranches(
+          repo ?? repoPath,
+          branches,
+          options.list === true || branches.length === 0,
+          ctx,
+        );
+      }),
+    ),
+  );
+
+sweep
+  .command("prune-ended")
+  .description("delete ended-delegate records whose worktree folder is gone")
+  .action(() => main((config) => pruneEnded(config)));
 
 await program.parseAsync();
