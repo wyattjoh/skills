@@ -289,6 +289,79 @@ describe("backlog show", () => {
   });
 });
 
+describe("invalid documents", () => {
+  const item = (fields: Record<string, unknown>) => ({
+    id: "i1",
+    title: "a",
+    status: "open",
+    touches: [],
+    decided: [],
+    ask: null,
+    due: null,
+    delegates: [],
+    createdAt: NOW,
+    closedAt: null,
+    outcome: null,
+    ...fields,
+  });
+  const doc = (fields: Record<string, unknown>) => ({
+    schemaVersion: 1,
+    domain: "app",
+    focus: null,
+    legacy: null,
+    boundary: { owned: [], adjacent: [] },
+    standingYes: [],
+    items: [],
+    findings: [],
+    nextId: 3,
+    ...fields,
+  });
+  it.each([
+    ["a non-object", [], "the document must be a JSON object"],
+    ["a missing list", doc({ items: undefined }), "items must be a list"],
+    ["a duplicate id", doc({ items: [item({}), item({})] }), "items[1].id i1 is not unique"],
+    [
+      "an id not below nextId",
+      doc({ items: [item({ id: "i3" })] }),
+      "items[0].id i3 is not below nextId 3",
+    ],
+    [
+      "done without an outcome",
+      doc({ items: [item({ status: "done", closedAt: NOW })] }),
+      "items[0].outcome must be a non-empty string",
+    ],
+    [
+      "delegated without a delegate",
+      doc({ items: [item({ status: "delegated" })] }),
+      "items[0] is delegated but has no delegate",
+    ],
+    [
+      "waiting-user with no ask or decision",
+      doc({ items: [item({ status: "waiting-user" })] }),
+      "items[0] is waiting-user but has no ask and no decision",
+    ],
+    [
+      "a rec outside its options",
+      doc({
+        items: [
+          item({
+            status: "waiting-user",
+            ask: { question: "q", context: null, options: ["a", "b"], rec: "c", recReason: null },
+          }),
+        ],
+      }),
+      "items[0].ask.rec must be one of its options",
+    ],
+  ])("reports %s as could-not-check", async (_name, value, reason) => {
+    const { cfg, path } = await started();
+    writeFileSync(path, JSON.stringify(value));
+    expect(tagged(await failureOf(showBacklog(cfg, "app", false)))).toEqual({
+      tag: "BacklogError",
+      message: `${path} is invalid: ${reason}`,
+    });
+  });
+});
+
 describe("backlog-store", () => {
   it("imports only files inside its own folder", () => {
     const folder = join(import.meta.dir, "backlog-store");
@@ -317,6 +390,7 @@ describe("coordinate CLI", () => {
       env,
       stdout: "pipe",
       stderr: "pipe",
+      timeout: 10_000,
     });
     expect([refused.exitCode, refused.stderr.toString()]).toEqual([1, "refused: title is empty\n"]);
     expect(readFileSync(path, "utf8")).toBe(before);
@@ -324,6 +398,7 @@ describe("coordinate CLI", () => {
       env,
       stdout: "pipe",
       stderr: "pipe",
+      timeout: 10_000,
     });
     expect([shown.exitCode, JSON.parse(shown.stdout.toString())]).toEqual([0, read(path)]);
   });
