@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { existsSync } from "node:fs";
-import { mkdir, open, readFile, rename, rmdir, unlink } from "node:fs/promises";
+import { appendFile, mkdir, open, readFile, rename, rmdir, unlink } from "node:fs/promises";
 import { hostname } from "node:os";
 import { join } from "node:path";
 import { setTimeout as sleep } from "node:timers/promises";
@@ -13,6 +13,8 @@ import {
   emptyBacklog,
   type ItemUpdate,
   type OpResult,
+  RETAINED_CLOSED,
+  retain,
   updateItem,
 } from "./backlog-store/ops.ts";
 import { renderBacklog } from "./backlog-store/render.ts";
@@ -78,6 +80,32 @@ const commit = async (path: string, backlog: Backlog): Promise<void> => {
     await parent.sync();
   } finally {
     await parent.close();
+  }
+};
+
+/**
+ * The domain's append-only archive of closed records, one JSON record per line.
+ * @param stateDir State dir.
+ * @param domain Domain.
+ * @returns Path.
+ */
+export const archivePath = (stateDir: string, domain: string): string =>
+  join(backlogsDir(stateDir), `${domain}.archive.jsonl`);
+
+/**
+ * Append records to the archive and fsync it. Runs before the document is committed, so a crash
+ * between the two repeats a line rather than losing a record.
+ */
+const appendArchive = async (path: string, records: unknown[]): Promise<void> => {
+  if (records.length === 0) return;
+  await appendFile(path, records.map((record) => `${JSON.stringify(record)}\n`).join(""), {
+    mode: 0o600,
+  });
+  const file = await open(path, "r");
+  try {
+    await file.sync();
+  } finally {
+    await file.close();
   }
 };
 
@@ -207,8 +235,8 @@ export const readDocument = Effect.fn("readDocument")(function* (config: Config,
 });
 
 /**
- * Apply a pure operation under the lock: read, apply, validate, write. A refused operation or an
- * invalid result writes nothing.
+ * Apply a pure operation under the lock: read, apply, validate, archive closed records beyond the
+ * newest `RETAINED_CLOSED`, write. A refused operation or an invalid result writes nothing.
  * @param config Config.
  * @param domain Domain.
  * @param operation Pure operation.
@@ -228,7 +256,9 @@ const change = <A>(config: Config, domain: string, operation: (backlog: Backlog)
           if (!applied.ok) return { ok: false as const, reason: applied.reason };
           const checked = validateBacklog(applied.backlog);
           if (!checked.ok) return { ok: false as const, reason: checked.errors.join("; ") };
-          await commit(path, checked.backlog);
+          const kept = retain(checked.backlog, RETAINED_CLOSED);
+          await appendArchive(archivePath(config.stateDir, domain), kept.archived);
+          await commit(path, kept.backlog);
           return { ok: true as const, value: applied.value };
         }),
       catch: failure(path),

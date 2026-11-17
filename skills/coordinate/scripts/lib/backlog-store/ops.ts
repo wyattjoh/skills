@@ -326,3 +326,40 @@ export const updateItem = (backlog: Backlog, input: ItemUpdate): OpResult<Item> 
     value: item,
   };
 };
+
+const sequence = (record: Item | Finding): number => Number(record.id.slice(1));
+
+/**
+ * How many closed items and findings, together, a document keeps.
+ */
+export const RETAINED_CLOSED = 50;
+
+/**
+ * Split off the closed items and findings beyond the newest `keep`, by close time.
+ * @param backlog Current document.
+ * @param keep How many closed records stay.
+ * @returns The document without them, and the removed records oldest first.
+ */
+export const retain = (
+  backlog: Backlog,
+  keep: number,
+): { backlog: Backlog; archived: (Item | Finding)[] } => {
+  const closed: (Item | Finding)[] = [...backlog.items, ...backlog.findings].filter(
+    (record) => record.closedAt !== null,
+  );
+  const archived = closed
+    .toSorted(
+      (a, b) => (a.closedAt ?? "").localeCompare(b.closedAt ?? "") || sequence(a) - sequence(b),
+    )
+    .slice(0, Math.max(0, closed.length - keep));
+  if (archived.length === 0) return { backlog, archived };
+  const gone = new Set(archived.map((record) => record.id));
+  return {
+    backlog: {
+      ...backlog,
+      items: backlog.items.filter((item) => !gone.has(item.id)),
+      findings: backlog.findings.filter((finding) => !gone.has(finding.id)),
+    },
+    archived,
+  };
+};

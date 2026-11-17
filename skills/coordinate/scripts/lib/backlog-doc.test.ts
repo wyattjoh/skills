@@ -896,6 +896,152 @@ describe("invalid documents", () => {
   });
 });
 
+describe("retention", () => {
+  const at = (minute: number) => new Date(Date.UTC(2026, 0, 1, 0, minute)).toISOString();
+  const closedItem = (n: number, closedAt: string) => ({
+    id: `i${n}`,
+    title: `item ${n}`,
+    status: "done",
+    touches: [],
+    decided: [],
+    ask: null,
+    due: null,
+    delegates: [],
+    createdAt: NOW,
+    closedAt,
+    outcome: `shipped ${n}`,
+  });
+  const openItem = (n: number) => ({
+    ...closedItem(n, NOW),
+    status: "open",
+    closedAt: null,
+    outcome: null,
+  });
+  const seed = (path: string, items: unknown[], findings: unknown[], nextId: number) =>
+    writeFileSync(
+      path,
+      JSON.stringify({
+        schemaVersion: 1,
+        domain: "app",
+        focus: null,
+        legacy: null,
+        boundary: { owned: [], adjacent: [] },
+        standingYes: [],
+        items,
+        findings,
+        nextId,
+      }),
+    );
+  const archived = (path: string) =>
+    readFileSync(path.replace(/\.json$/, ".archive.jsonl"), "utf8")
+      .split("\n")
+      .filter((line) => line !== "")
+      .map((line) => JSON.parse(line));
+  const ids = (records: { id: string }[]) => records.map((record) => record.id);
+
+  it("moves the oldest closed item to the archive when a 51st is closed", async () => {
+    const { cfg, path } = await started();
+    const fifty = Array.from({ length: 50 }, (_, index) => closedItem(index + 1, at(index + 1)));
+    seed(path, [...fifty, openItem(51)], [], 52);
+    await runWith(
+      itemClose(cfg, "app", {
+        id: "i51",
+        outcome: "last",
+        dismissed: false,
+        json: false,
+        now: at(60),
+      }),
+    );
+    const doc = read(path);
+    expect(ids(doc.items)).toEqual(Array.from({ length: 50 }, (_, index) => `i${index + 2}`));
+    expect(archived(path)).toEqual([fifty[0]]);
+  });
+
+  it("archives closed items and findings from one pool in close order and keeps open ones", async () => {
+    const { cfg, path } = await started();
+    const closedFinding = (n: number, closedAt: string | null) => ({
+      id: `f${n}`,
+      kind: "issue",
+      title: `finding ${n}`,
+      detail: null,
+      path: null,
+      from: null,
+      status: closedAt === null ? "open" : "acted",
+      closedAt,
+      outcome: closedAt === null ? null : `fixed ${n}`,
+    });
+    const items = Array.from({ length: 25 }, (_, index) =>
+      closedItem(index + 1, at(2 * index + 2)),
+    );
+    const findings = Array.from({ length: 25 }, (_, index) =>
+      closedFinding(index + 26, at(2 * index + 1)),
+    );
+    seed(
+      path,
+      [openItem(51), ...items, openItem(52)],
+      [closedFinding(53, null), ...findings, closedFinding(54, null)],
+      55,
+    );
+    await runWith(
+      findingClose(cfg, "app", {
+        id: "f54",
+        outcome: "a",
+        dismissed: false,
+        json: false,
+        now: at(90),
+      }),
+    );
+    await runWith(
+      itemClose(cfg, "app", { id: "i52", outcome: "b", dismissed: true, json: false, now: at(91) }),
+    );
+    await runWith(itemAdd(cfg, "app", { title: "fresh", json: false, now: at(92) }));
+    const doc = read(path);
+    expect(archived(path)).toEqual([findings[0], items[0]]);
+    expect(ids(doc.items)).toEqual([
+      "i51",
+      ...Array.from({ length: 24 }, (_, index) => `i${index + 2}`),
+      "i52",
+      "i55",
+    ]);
+    expect(ids(doc.findings)).toEqual([
+      "f53",
+      ...Array.from({ length: 24 }, (_, index) => `f${index + 27}`),
+      "f54",
+    ]);
+  });
+
+  it("archives each record exactly once when sixty closes race", async () => {
+    const { cfg, path } = await started();
+    seed(
+      path,
+      Array.from({ length: 60 }, (_, index) => openItem(index + 1)),
+      [],
+      61,
+    );
+    await Promise.all(
+      Array.from({ length: 60 }, (_, index) =>
+        runWith(
+          itemClose(cfg, "app", {
+            id: `i${index + 1}`,
+            outcome: "raced",
+            dismissed: false,
+            json: false,
+            now: at(index + 1),
+          }),
+        ),
+      ),
+    );
+    const kept = ids(read(path).items);
+    const moved = ids(archived(path));
+    expect(kept.length).toBe(50);
+    expect(moved.length).toBe(10);
+    expect([...kept, ...moved].toSorted()).toEqual(
+      Array.from({ length: 60 }, (_, index) => `i${index + 1}`).toSorted(),
+    );
+    expect(readdirSync(join(path, "..")).toSorted()).toEqual(["app.archive.jsonl", "app.json"]);
+  });
+});
+
 describe("backlog-store", () => {
   it("imports only files inside its own folder", () => {
     const folder = join(import.meta.dir, "backlog-store");
