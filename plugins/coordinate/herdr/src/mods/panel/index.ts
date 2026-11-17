@@ -9,7 +9,11 @@ import {
   backlogsDir,
   configPath,
   documentPath,
+  endedDate,
+  endedPath,
   groupItems,
+  joinDelegates,
+  missingSessions,
   openFindings,
   parseListing,
   readDocument,
@@ -17,7 +21,14 @@ import {
   summarize,
   targetDomain,
 } from "./model.ts";
-import type { DocumentState, DomainSummary, ItemGroup, ListingState } from "./model.ts";
+import type {
+  DelegateJoin,
+  DocumentState,
+  DomainSummary,
+  EndedRecords,
+  ItemGroup,
+  ListingState,
+} from "./model.ts";
 import type { Item } from "../../lib/store.ts";
 import { panel } from "./view.ts";
 import type { Theme } from "./view.ts";
@@ -51,6 +62,13 @@ export default class Panel extends View {
   // The item whose detail is open, by domain and id, so a reload shows its latest copy and a
   // vanished item falls back to the list.
   selected: { domain: string; id: string } | undefined;
+  // The state folder the last load found, the ended records read for the delegate refs that had
+  // no live terminal then, and which sessions those were, so a delegate that loses its terminal
+  // between document changes is looked up again.
+  stateDir: string | undefined;
+  ended: EndedRecords = new Map();
+  endedFor: string | undefined;
+  endedGeneration = 0;
 
   init(_props: unknown, cx: AsyncContext) {
     if (checking()) return;
@@ -80,7 +98,33 @@ export default class Panel extends View {
   // Load again only when focus moved to another domain.
   follow(cx: AsyncContext) {
     this.track();
-    if (this.target() !== this.domain) this.load(cx);
+    if (this.target() !== this.domain) {
+      this.load(cx);
+      return;
+    }
+    if (this.doc.kind !== "loaded" || this.stateDir === undefined) return;
+    const missing = missingSessions(this.doc.backlog, terminals());
+    if (missing.join("\0") !== this.endedFor) this.lookUpEnded(this.stateDir, missing, cx);
+  }
+
+  // Read the ended record of each session that has no live terminal. Only reads: the panel
+  // never writes an ended record or anything else.
+  lookUpEnded(stateDir: string, sessions: string[], cx: Context) {
+    const generation = ++this.endedGeneration;
+    this.endedFor = sessions.join("\0");
+    cx.spawn(async (task) => {
+      const found = await Promise.all(
+        sessions.map(async (session) => {
+          const text = await this.read(endedPath(stateDir, session));
+          return [session, text === null ? undefined : endedDate(text)] as const;
+        }),
+      );
+      if (generation !== this.endedGeneration) return;
+      const ended = new Map<string, string | null>();
+      for (const [session, at] of found) if (at !== undefined) ended.set(session, at);
+      this.ended = ended;
+      task.notify();
+    });
   }
 
   openDomain(domain: string, cx: Context) {
@@ -95,6 +139,7 @@ export default class Panel extends View {
     cx.spawn(async (task) => {
       const stateDir = stateDirOf(await this.read(configPath(home())), home());
       if (generation !== this.generation) return;
+      this.stateDir = stateDir;
       this.watchBacklogs(backlogsDir(stateDir), task);
       if (domain !== this.domain) {
         this.domain = domain;
@@ -113,6 +158,8 @@ export default class Panel extends View {
       if (generation !== this.generation) return;
       this.doc = doc;
       task.notify();
+      if (doc.kind === "loaded")
+        this.lookUpEnded(stateDir, missingSessions(doc.backlog, terminals()), task);
     });
   }
 
@@ -228,6 +275,12 @@ export default class Panel extends View {
     return doc.backlog.items.find((item) => item.id === selected.id);
   }
 
+  // The document's delegates joined to the terminals live now.
+  delegates(domain: string | undefined, doc: DocumentState): DelegateJoin {
+    if (domain === undefined || doc.kind !== "loaded") return { byItem: new Map(), unfiled: [] };
+    return joinDelegates(doc.backlog, terminals(), this.ended, domain);
+  }
+
   render(): Element {
     const domain = this.target();
     const doc: DocumentState = domain === this.domain ? this.doc : { kind: "loading" };
@@ -238,6 +291,7 @@ export default class Panel extends View {
       picked: domain !== undefined && domain === this.picked,
       groups: doc.kind === "loaded" ? groupItems(doc.backlog) : [],
       findings: doc.kind === "loaded" ? openFindings(doc.backlog) : [],
+      delegates: this.delegates(domain, doc),
       openDomain: (name, cx) => this.openDomain(name, cx),
       isOpen: (group) => this.isOpen(group),
       toggle: (group, cx) => this.toggleFold(group, cx),

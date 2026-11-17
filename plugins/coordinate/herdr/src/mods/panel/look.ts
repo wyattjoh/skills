@@ -1,6 +1,7 @@
 // How the panel looks, as theme() color names and sizes. The metrics follow the Tasks Herdr
 // panel's chrome, copied here so the two panels read as one family.
 import type { Finding, ItemStatus } from "../../lib/store.ts";
+import type { LiveStatus } from "./model.ts";
 
 /**
  * The panel's padding on every side.
@@ -140,3 +141,31 @@ export const COUNT_TONES = {
   open: "foreground",
   findings: "foreground",
 } as const;
+
+/**
+ * A delegate row's height under its item, fixed like item rows so a group's open height is
+ * still known without measuring.
+ */
+export const DELEGATE_ROW_HEIGHT = 28;
+
+/**
+ * How far each nesting level indents a delegate row: one level under its item, one more per
+ * parent delegate.
+ */
+export const DELEGATE_INDENT = 14;
+
+/**
+ * Each delegate state's tone, as a theme() color name: Herdr's own agent tokens for live
+ * statuses (it has no error token, so error takes the palette's red), a quiet dim for a
+ * delegate that ended, and a warning yellow for one that is gone with no record.
+ */
+export const DELEGATE_TONES: Readonly<Record<LiveStatus | "ended" | "gone", string>> = {
+  working: "working",
+  idle: "idle",
+  blocked: "blocked",
+  done: "done",
+  error: "ansi1",
+  unknown: "unknown",
+  ended: "dim",
+  gone: "ansi3",
+};

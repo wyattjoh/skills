@@ -15,6 +15,9 @@ import {
   CARD_RADIUS,
   CARD_SECTION_GAP,
   CRUMB_HEIGHT,
+  DELEGATE_INDENT,
+  DELEGATE_ROW_HEIGHT,
+  DELEGATE_TONES,
   FINDING_GLYPHS,
   FOLD_MOTION,
   GROUP_HEADER_HEIGHT,
@@ -29,7 +32,15 @@ import {
   TEXT_SMALL,
 } from "./look.ts";
 import { GROUP_LABELS, rankedOptions } from "./model.ts";
-import type { DocumentState, DomainSummary, ItemGroup, ListingState } from "./model.ts";
+import type {
+  DelegateJoin,
+  DelegateRow,
+  DelegateState,
+  DocumentState,
+  DomainSummary,
+  ItemGroup,
+  ListingState,
+} from "./model.ts";
 
 /**
  * Theme colors by name.
@@ -47,6 +58,8 @@ export type PanelModel = {
   picked: boolean;
   groups: ItemGroup[];
   findings: Finding[];
+  // Each item's delegates joined to the live terminals, and the domain's unfiled delegates.
+  delegates: DelegateJoin;
   isOpen: (group: ItemGroup) => boolean;
   toggle: (group: ItemGroup, cx: Context) => void;
   // The item whose detail screen is on top of the list, if any.
@@ -161,6 +174,38 @@ const cardRow = (t: Theme, id: string, hover: Color): Element =>
     .border_color(t.border)
     .hover((s) => s.bg(hover));
 
+const delegateLabel = (state: DelegateState): string => {
+  if (state.kind === "live") return state.status;
+  if (state.kind === "gone") return "gone";
+  return state.at === null ? "ended" : `ended ${state.at}`;
+};
+
+const delegateTone = (t: Theme, state: DelegateState): Color =>
+  t[DELEGATE_TONES[state.kind === "live" ? state.status : state.kind]];
+
+// A delegate line: its name, then its live status, ended or gone in that state's tone. A ref
+// is keyed by its session, a terminal by its address; indent counts nesting levels.
+const delegateRow = (t: Theme, row: DelegateRow, indent: number): Element =>
+  cardRow(t, row.source === "ref" ? `ref-${row.key}` : `term-${row.key}`, t.hover)
+    .h(DELEGATE_ROW_HEIGHT)
+    .pl(CARD_PADDING_X + indent * DELEGATE_INDENT)
+    .child(
+      div()
+        .flex_1()
+        .min_w_0()
+        .truncate()
+        .text_size(TEXT_SMALL)
+        .text_color(t.foreground)
+        .child(row.name),
+    )
+    .child(
+      div()
+        .flex_none()
+        .text_size(TEXT_SMALL)
+        .text_color(delegateTone(t, row.state))
+        .child(delegateLabel(row.state)),
+    );
+
 const itemRow = (t: Theme, item: Item, open: (item: Item, cx: Context) => void): Element =>
   cardRow(t, `item-${item.id}`, t.hover)
     .h(ITEM_ROW_HEIGHT)
@@ -188,8 +233,11 @@ const groupBlock = (
   last: boolean,
   toggle: (cx: Context) => void,
   openItem: (item: Item, cx: Context) => void,
-): Element =>
-  v_flex()
+  delegates: DelegateJoin,
+): Element => {
+  const rowsOf = (item: Item) => delegates.byItem.get(item.id) ?? [];
+  const delegateCount = group.items.reduce((sum, item) => sum + rowsOf(item).length, 0);
+  return v_flex()
     .id(`group-${group.status}`)
     .child(
       cardRow(t, `fold-${group.status}`, t.raised)
@@ -213,10 +261,16 @@ const groupBlock = (
       v_flex()
         .id(`rows-${group.status}`)
         .overflow_hidden()
-        .h(open ? group.items.length * ITEM_ROW_HEIGHT : 0)
+        .h(open ? group.items.length * ITEM_ROW_HEIGHT + delegateCount * DELEGATE_ROW_HEIGHT : 0)
         .transition("height", FOLD_MOTION)
-        .children(group.items.map((item) => itemRow(t, item, openItem))),
+        .children(
+          group.items.flatMap((item) => [
+            itemRow(t, item, openItem),
+            ...rowsOf(item).map((row) => delegateRow(t, row, row.depth + 1)),
+          ]),
+        ),
     );
+};
 
 const itemsCard = (t: Theme, model: PanelModel): Element =>
   v_flex()
@@ -236,6 +290,7 @@ const itemsCard = (t: Theme, model: PanelModel): Element =>
                 index === model.groups.length - 1,
                 (cx) => model.toggle(group, cx),
                 model.open,
+                model.delegates,
               ),
             ),
       ),
@@ -264,6 +319,24 @@ const findingRow = (t: Theme, finding: Finding): Element =>
         .text_color(t.foreground)
         .child(finding.title),
     );
+
+// Live domain terminals no item names, nested under their parents like an item's delegates.
+const unfiledCard = (t: Theme, rows: DelegateRow[]): Element[] =>
+  rows.length === 0
+    ? []
+    : [
+        v_flex()
+          .flex_none()
+          .gap(CARD_SECTION_GAP)
+          .child(cardHeader(t, "unfiled-header", "Unfiled delegates"))
+          .child(
+            card(t, "unfiled").children(
+              rows.map((row, index) =>
+                delegateRow(t, row, row.depth).when(index === 0, (el) => el.border_t(0)),
+              ),
+            ),
+          ),
+      ];
 
 // Open findings, one fixed row each. The first row drops its rule so it sits flush with the
 // card's top edge, as the first group band does in the Items card.
@@ -365,7 +438,7 @@ const decidedCard = (t: Theme, item: Item): Element[] =>
         ),
       ];
 
-const delegatesCard = (t: Theme, item: Item): Element[] =>
+const delegatesCard = (t: Theme, item: Item, rows: DelegateRow[]): Element[] =>
   item.delegates.length === 0
     ? []
     : [
@@ -375,7 +448,18 @@ const delegatesCard = (t: Theme, item: Item): Element[] =>
           "Delegates",
           item.delegates.map((ref) =>
             detailRow(t, `delegate-${ref.session}`)
-              .child(div().font_medium().child(ref.name))
+              .child(
+                h_flex()
+                  .gap(BUTTON.gap)
+                  .items_center()
+                  .child(div().font_medium().child(ref.name))
+                  .children(
+                    rows
+                      .filter((row) => row.source === "ref" && row.key === ref.session)
+                      .slice(0, 1)
+                      .map((row) => small(t, delegateTone(t, row.state), delegateLabel(row.state))),
+                  ),
+              )
               .child(
                 h_flex()
                   .gap(BUTTON.gap)
@@ -393,7 +477,7 @@ const delegatesCard = (t: Theme, item: Item): Element[] =>
       ];
 
 // The read-only detail of one item, in its own scroll area so the list's keeps its place.
-const detailScreen = (t: Theme, item: Item): Element =>
+const detailScreen = (t: Theme, item: Item, delegates: DelegateJoin): Element =>
   v_flex()
     .id("detail-scroll")
     .size_full()
@@ -437,7 +521,7 @@ const detailScreen = (t: Theme, item: Item): Element =>
           ]),
         )
         .children(decidedCard(t, item))
-        .children(delegatesCard(t, item)),
+        .children(delegatesCard(t, item, delegates.byItem.get(item.id) ?? [])),
     );
 
 const domainBody = (t: Theme, domain: string, doc: DocumentState, model: PanelModel): Element => {
@@ -459,6 +543,7 @@ const domainBody = (t: Theme, domain: string, doc: DocumentState, model: PanelMo
     .gap(CARD_GAP)
     .child(focusHeader(t, doc.backlog.focus))
     .child(itemsCard(t, model))
+    .children(unfiledCard(t, model.delegates.unfiled))
     .child(findingsCard(t, model.findings));
 };
 
@@ -584,7 +669,7 @@ export const panel = (t: Theme, model: PanelModel): Element =>
                 .absolute()
                 .inset_0()
                 .bg(t.surface)
-                .child(detailScreen(t, model.detail!)),
+                .child(detailScreen(t, model.detail!, model.delegates)),
             ),
           ),
       ),

@@ -509,7 +509,7 @@ test("opens an item's read-only detail with the recommended option first and hig
   expect(text(get(root, "fact-touches"))).toBe("Touches skills herdr-finbar");
   expect(text(get(root, "fact-due"))).toBe("Due 2026-11-20");
   expect(text(get(root, "delegate-s-9"))).toBe(
-    "impl-name Brief /briefs/name.md Report /reports/name.md",
+    "impl-name gone Brief /briefs/name.md Report /reports/name.md",
   );
   expect(text(get(root, "back"))).toBe("Back");
 });
@@ -574,4 +574,198 @@ test("falls back to the list when the open item leaves the document or focus cha
   const root = render();
   expect(ids(root, "screen-item")).toEqual([]);
   expect(text(get(root, "crumb"))).toBe("alpha");
+});
+
+const ref = (name: string, session: string) => ({
+  name,
+  session,
+  branch: null,
+  worktree: null,
+  brief: `/briefs/${name}.md`,
+  report: `/reports/${name}.md`,
+});
+
+// A live delegate terminal in alpha, running the given session.
+const agent = (
+  address: string,
+  session: string,
+  status: string,
+  extra: Record<string, unknown> = {},
+): Record<string, unknown> => ({
+  address,
+  state: "live",
+  status,
+  name: `agent-${address}`,
+  parent: "t1",
+  labels: { "fleet.domain": "alpha", "fleet.session": session, "fleet.task": `task ${address}` },
+  ...extra,
+});
+
+const ENDED = `${STATE}/ended`;
+
+const statusOf = (root: unknown, id: string) => {
+  const node = get(root as never, id).nodes[1] as { styles: Record<string, unknown> };
+  return [text(node), node.styles.text_color];
+};
+
+test("joins each delegate to its live terminal by session and tones its status", async () => {
+  focusDomain("alpha");
+  host.terminals.push(
+    agent("t2", "s-w", "working"),
+    agent("t3", "s-i", "idle"),
+    agent("t4", "s-b", "blocked"),
+    agent("t5", "s-d", "done"),
+    agent("t6", "s-e", "error"),
+  );
+  const backlog = add(emptyBacklog("alpha", null), "Fan out", {
+    status: "delegated",
+    delegates: ["s-w", "s-i", "s-b", "s-d", "s-e"].map((session) => ref(`d${session}`, session)),
+  });
+  host.files.set(DOC, JSON.stringify(backlog));
+  const { render } = await mount();
+  const root = render();
+  expect(ids(root, "ref-")).toEqual(["ref-s-w", "ref-s-i", "ref-s-b", "ref-s-d", "ref-s-e"]);
+  expect(text(get(root, "ref-s-w"))).toBe("ds-w working");
+  expect(
+    ["ref-s-w", "ref-s-i", "ref-s-b", "ref-s-d", "ref-s-e"].map((id) => statusOf(root, id)),
+  ).toEqual([
+    ["working", "working"],
+    ["idle", "idle"],
+    ["blocked", "blocked"],
+    ["done", "done"],
+    ["error", "ansi1"],
+  ]);
+  expect(get(root, "rows-delegated").styles.h).toBe(32 + 5 * 28);
+});
+
+test("shows a delegate with an ended record as ended and one with neither as gone", async () => {
+  focusDomain("alpha");
+  const backlog = add(emptyBacklog("alpha", null), "Finished work", {
+    status: "delegated",
+    delegates: [ref("closer", "s-end"), ref("lost", "s-lost")],
+  });
+  const original = JSON.stringify(backlog);
+  host.files.set(DOC, original);
+  const record = JSON.stringify({
+    name: "closer",
+    session: "s-end",
+    ended_at: "2026-11-16T08:00:00.000Z",
+  });
+  host.files.set(`${ENDED}/s-end.json`, record);
+  const { render } = await mount();
+  const root = render();
+  expect([statusOf(root, "ref-s-end"), statusOf(root, "ref-s-lost")]).toEqual([
+    ["ended 2026-11-16", "dim"],
+    ["gone", "ansi3"],
+  ]);
+  expect(host.reads.filter((path) => path.startsWith(ENDED))).toEqual([
+    `${ENDED}/s-end.json`,
+    `${ENDED}/s-lost.json`,
+  ]);
+  expect([...host.files.entries()]).toEqual([
+    [DOC, original],
+    [`${ENDED}/s-end.json`, record],
+  ]);
+  expect([host.execs, host.runs]).toEqual([[], []]);
+});
+
+test("looks up the ended record once a delegate's terminal goes away", async () => {
+  focusDomain("alpha");
+  host.terminals.push(agent("t2", "s-w", "working"));
+  host.files.set(
+    DOC,
+    JSON.stringify(
+      add(emptyBacklog("alpha", null), "Running work", {
+        status: "delegated",
+        delegates: [ref("runner", "s-w")],
+      }),
+    ),
+  );
+  const { ctx, render } = await mount();
+  expect(statusOf(render(), "ref-s-w")).toEqual(["working", "working"]);
+  host.terminals = host.terminals.filter((terminal) => terminal.address !== "t2");
+  host.files.set(`${ENDED}/s-w.json`, JSON.stringify({ ended_at: "2026-11-17T10:00:00.000Z" }));
+  expect(statusOf(render(), "ref-s-w")).toEqual(["gone", "ansi3"]);
+  ctx.tick(1_000);
+  await settle();
+  expect(statusOf(render(), "ref-s-w")).toEqual(["ended 2026-11-17", "dim"]);
+  ctx.tick(1_000);
+  await settle();
+  expect(host.reads.filter((path) => path.startsWith(ENDED))).toEqual([`${ENDED}/s-w.json`]);
+});
+
+test("nests a child review under the delegate that started it", async () => {
+  focusDomain("alpha");
+  host.terminals.push(
+    agent("t2", "s-impl", "idle"),
+    agent("t3", "s-review", "working", { name: "review", parent: "t2" }),
+  );
+  host.files.set(
+    DOC,
+    JSON.stringify(
+      add(emptyBacklog("alpha", null), "Build it", {
+        status: "delegated",
+        delegates: [ref("impl", "s-impl")],
+      }),
+    ),
+  );
+  const { render } = await mount();
+  const root = render();
+  expect(ids(get(root, "rows-delegated"), "")).toEqual([
+    "rows-delegated",
+    "item-i1",
+    "ref-s-impl",
+    "term-t3",
+  ]);
+  expect(text(get(root, "term-t3"))).toBe("review working");
+  expect([get(root, "ref-s-impl").styles.pl, get(root, "term-t3").styles.pl]).toEqual([24, 38]);
+  expect(get(root, "rows-delegated").styles.h).toBe(32 + 2 * 28);
+  expect(ids(root, "unfiled")).toEqual([]);
+});
+
+test("lists live domain terminals no item names under Unfiled delegates", async () => {
+  focusDomain("alpha");
+  host.terminals.push(
+    agent("t2", "s-old", "idle", { name: "old-impl" }),
+    agent("t3", "s-old-review", "blocked", { name: "old-review", parent: "t2" }),
+    agent("t4", "s-other", "working", {
+      name: "elsewhere",
+      labels: { "fleet.domain": "beta", "fleet.session": "s-other" },
+    }),
+    agent("t5", "s-done", "done", { state: "finished" }),
+  );
+  host.files.set(DOC, JSON.stringify(add(emptyBacklog("alpha", null), "Base work")));
+  const { render } = await mount();
+  const root = render();
+  expect(text(get(root, "unfiled-header"))).toBe("Unfiled delegates");
+  expect(ids(get(root, "unfiled"), "term-")).toEqual(["term-t2", "term-t3"]);
+  expect(text(get(root, "term-t2"))).toBe("old-impl idle");
+  expect([statusOf(root, "term-t3"), get(root, "term-t3").styles.pl]).toEqual([
+    ["blocked", "blocked"],
+    24,
+  ]);
+  expect(ids(root, "").filter((id) => id.endsWith("-header"))).toEqual([
+    "items-header",
+    "unfiled-header",
+    "findings-header",
+  ]);
+});
+
+test("shows each delegate's live status on the item's detail screen", async () => {
+  focusDomain("alpha");
+  host.terminals.push(agent("t2", "s-w", "blocked"));
+  host.files.set(
+    DOC,
+    JSON.stringify(
+      add(emptyBacklog("alpha", null), "Blocked work", {
+        status: "delegated",
+        delegates: [ref("runner", "s-w")],
+      }),
+    ),
+  );
+  const { ctx, render } = await mount();
+  get(render(), "item-i1").click!({}, ctx.cx);
+  expect(text(get(render(), "delegate-s-w"))).toBe(
+    "runner blocked Brief /briefs/runner.md Report /reports/runner.md",
+  );
 });
