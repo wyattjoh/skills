@@ -7,6 +7,7 @@ import type { FirstMessage, Harness, ImplementSkill } from "./lib/harness.ts";
 import { delegate, endDelegate, listIdle, resumeDelegate, sendTo, start } from "./lib/lifecycle.ts";
 import { Proc } from "./lib/proc.ts";
 import { domainRepos, domainStatus } from "./lib/status.ts";
+import { watch } from "./lib/watch.ts";
 import { context, pruneBranches, pruneEnded, removeMany, renderRows, report } from "./lib/sweep.ts";
 import { mainCheckout } from "./lib/git.ts";
 import { resolve } from "node:path";
@@ -201,6 +202,43 @@ program
   );
 
 const collect = (value: string, previous: string[]): string[] => [...previous, value];
+
+program
+  .command("watch")
+  .option("--domain <domain>", "domain (default: this coordinator's label)")
+  .option("--interval <seconds>", "herdr-core poll interval", "5")
+  .option("--forge-interval <seconds>", "GitHub/Forgejo and due-date poll interval", "90")
+  .option(
+    "--max-minutes <minutes>",
+    "exit with an alive line after this long without events",
+    "110",
+  )
+  .option("--replace", "stop a running watcher for the domain and take over")
+  .description(
+    "wait until a delegate settles, blocks, errors or goes, a PR merges, closes, fails checks or gets a review, or a due date arrives; print one line per event and exit",
+  )
+  .action(
+    (options: {
+      domain?: string;
+      interval: string;
+      forgeInterval: string;
+      maxMinutes: string;
+      replace?: boolean;
+    }) =>
+      main((config) =>
+        Effect.flatMap(resolveDomain(options.domain), (domain) =>
+          watch(config, {
+            domain,
+            intervalMs: Number(options.interval) * 1000,
+            forgeIntervalMs: Number(options.forgeInterval) * 1000,
+            maxMs: Number(options.maxMinutes) * 60_000,
+            owner: process.env.HC_TERMINAL_ID,
+            replace: options.replace === true,
+            today: () => new Date().toISOString().slice(0, 10),
+          }),
+        ),
+      ),
+  );
 
 /**
  * Main checkouts from explicit paths, else the domain's repos.
