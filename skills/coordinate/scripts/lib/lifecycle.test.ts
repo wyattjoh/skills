@@ -1,10 +1,19 @@
-import { afterAll, describe, expect, it } from "bun:test";
+import { afterAll, afterEach, beforeEach, describe, expect, it } from "bun:test";
 import { existsSync, readdirSync, readFileSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import { resolveConfig } from "./config.ts";
 import { Effect } from "effect";
 import { failureOf, runWith, tempDir } from "./fixture.ts";
-import { delegate, endDelegate, handleLine, listIdle, sendTo, start } from "./lifecycle.ts";
+import { writeEnded } from "./fleet.ts";
+import {
+  delegate,
+  endDelegate,
+  handleLine,
+  listIdle,
+  resumeDelegate,
+  sendTo,
+  start,
+} from "./lifecycle.ts";
 import { fakeProc, ok, type RunOutput } from "./proc.ts";
 
 const dirs: string[] = [];
@@ -130,6 +139,112 @@ describe("delegate", () => {
     );
     expect(messageOf(error)).toBe("minimal is not a claude effort: low, medium, high, xhigh, max");
   });
+});
+
+describe("launch parent", () => {
+  let originalTerminal: string | undefined;
+  beforeEach(() => {
+    originalTerminal = process.env.HC_TERMINAL_ID;
+  });
+  afterEach(() => {
+    if (originalTerminal === undefined) delete process.env.HC_TERMINAL_ID;
+    else process.env.HC_TERMINAL_ID = originalTerminal;
+  });
+
+  const callers = [
+    { role: "coordinator", address: "t1", labels: { "fleet.role": "coordinator" } },
+    { role: "delegate", address: "t2", labels: { "fleet.role": "delegate" } },
+    { role: "no terminal", address: undefined, labels: {} },
+  ];
+
+  for (const command of ["delegate", "resume"] as const) {
+    for (const ownSpace of [false, true]) {
+      it.each(callers)(
+        `${command} from $role uses the caller as parent (own space: ${ownSpace})`,
+        async (caller) => {
+          if (caller.address === undefined) delete process.env.HC_TERMINAL_ID;
+          else process.env.HC_TERMINAL_ID = caller.address;
+          const state = dir();
+          const fake = fakeProc((argv) => {
+            if (argv[0] === "hc") {
+              if (argv[1] === "ls") return ok('{"terminals":[]}');
+              if (argv[1] === "run") return ok('{"address":"t7"}');
+              if (argv[1] === "kill" || argv[1] === "rm") return ok("{}");
+              if (argv[1] === "get" && argv[2] === caller.address)
+                return ok(
+                  terminal({
+                    address: caller.address,
+                    labels: {
+                      ...caller.labels,
+                      "fleet.domain": "app",
+                      "herdr.space": "caller-space",
+                    },
+                  }),
+                );
+              if (argv[1] === "get" && argv[2] === "t7")
+                return ok(terminal({ address: "t7", status: { state: "working" } }));
+            }
+            if (argv[0] === "herdr-app") {
+              if (argv[1] === "ls") return ok('{"spaces":[]}');
+              if (argv[2] === "space.new")
+                return ok('{"space":"child-space","tab":"child-tab","terminal":"t6"}');
+              if (argv[2] === "tab.rename") return ok("{}");
+            }
+            throw new Error(`unexpected command: ${argv.join(" ")}`);
+          });
+          const cfg = await config(state);
+          let endedPath: string | undefined;
+          if (command === "resume") {
+            endedPath = await Effect.runPromise(
+              writeEnded(state, {
+                name: "fix-a",
+                domain: "app",
+                session: "s-1",
+                program: "pi",
+                cwd: state,
+                ended_at: "2026-11-17T00:00:00.000Z",
+              }),
+            );
+            await runWith(resumeDelegate(cfg, "fix-a", ownSpace), fake.layer);
+          } else {
+            await runWith(
+              delegate(cfg, {
+                name: "fix-a",
+                task: "fix a",
+                repo: undefined,
+                cwd: state,
+                base: undefined,
+                harness: "pi",
+                model: undefined,
+                effort: undefined,
+                message: { kind: "skill", skill: "implement", args: ".scratch/spec.md" },
+                space: ownSpace,
+                domain: caller.role === "coordinator" ? undefined : "app",
+              }),
+              fake.layer,
+            );
+          }
+          const runs = fake.calls.filter((call) => call.argv[1] === "run");
+          expect(runs.length).toBe(1);
+          const argv = runs[0]?.argv ?? [];
+          expect(argv.slice(8, argv.indexOf("--label"))).toEqual(
+            caller.address === undefined
+              ? ["--no-parent"]
+              : ["--parent", caller.address, "--outlive-parent", "--no-notify"],
+          );
+          const spaceLabels = argv.filter((arg) => arg.startsWith("herdr.space="));
+          expect(spaceLabels).toEqual(
+            ownSpace
+              ? ["herdr.space=child-space"]
+              : caller.role === "coordinator"
+                ? ["herdr.space=caller-space"]
+                : [],
+          );
+          if (endedPath !== undefined) expect(existsSync(endedPath)).toBe(false);
+        },
+      );
+    }
+  }
 });
 
 describe("handleLine", () => {

@@ -302,7 +302,7 @@ export const delegate = Effect.fn("delegate")(function* (config: Config, options
     tabLabel,
     spaceName: `${domain} [${options.task}]`,
     labels,
-    parent: coordinatorTerminal?.address,
+    parent: coordinatorTerminal?.address ?? process.env.HC_TERMINAL_ID,
     argv,
     ownSpace: options.space,
     coordinatorSpace: coordinatorTerminal?.labels["herdr.space"],
@@ -491,7 +491,7 @@ export const resumeDelegate = Effect.fn("resumeDelegate")(function* (
     tabLabel: task,
     spaceName: `${record.domain} [${task}]`,
     labels,
-    parent: coordinatorTerminal?.address,
+    parent: coordinatorTerminal?.address ?? process.env.HC_TERMINAL_ID,
     argv: agentArgv({
       harness,
       name,
