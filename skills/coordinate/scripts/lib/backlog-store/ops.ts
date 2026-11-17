@@ -1,4 +1,4 @@
-import type { Ask, Backlog, Finding, Item, ItemStatus } from "./schema.ts";
+import type { Ask, Backlog, Dated, Finding, Item, ItemStatus } from "./schema.ts";
 
 /**
  * An operation's result: the next document and a value, or why the input was refused.
@@ -365,4 +365,115 @@ export const retain = (
     },
     archived,
   };
+};
+
+/**
+ * Which Boundary list a path belongs to.
+ */
+export type BoundaryList = "owned" | "adjacent";
+
+const boundaryPath = (path: string): string | undefined => {
+  if (path === "") return "path is empty";
+  if (/[\r\n]/.test(path)) return "path must be one line";
+  if (!path.startsWith("/")) return `${path} is not an absolute path`;
+  return undefined;
+};
+
+/**
+ * Add an absolute path to the owned or adjacent Boundary. A path already in that list is kept
+ * once; a path in the other list is refused, so the two lists never overlap.
+ * @param backlog Current document.
+ * @param input The absolute path and which list.
+ * @returns The next document and whether the path was added.
+ */
+export const addBoundary = (
+  backlog: Backlog,
+  input: { path: string; list: BoundaryList },
+): OpResult<{ added: boolean }> => {
+  const problem = boundaryPath(input.path);
+  if (problem) return { ok: false, reason: problem };
+  const other: BoundaryList = input.list === "owned" ? "adjacent" : "owned";
+  if (backlog.boundary[other].includes(input.path))
+    return {
+      ok: false,
+      reason: `${input.path} is already ${other}; remove it first: coordinate backlog boundary rm ${input.path}${other === "adjacent" ? " --adjacent" : ""}`,
+    };
+  if (backlog.boundary[input.list].includes(input.path))
+    return { ok: true, backlog, value: { added: false } };
+  return {
+    ok: true,
+    backlog: {
+      ...backlog,
+      boundary: {
+        ...backlog.boundary,
+        [input.list]: [...backlog.boundary[input.list], input.path],
+      },
+    },
+    value: { added: true },
+  };
+};
+
+/**
+ * Remove a path from the owned or adjacent Boundary.
+ * @param backlog Current document.
+ * @param input The absolute path and which list.
+ * @returns The next document; refused when the list does not hold the path.
+ */
+export const removeBoundary = (
+  backlog: Backlog,
+  input: { path: string; list: BoundaryList },
+): OpResult<null> => {
+  if (!backlog.boundary[input.list].includes(input.path))
+    return { ok: false, reason: `${input.path} is not in the ${input.list} Boundary` };
+  return {
+    ok: true,
+    backlog: {
+      ...backlog,
+      boundary: {
+        ...backlog.boundary,
+        [input.list]: backlog.boundary[input.list].filter((path) => path !== input.path),
+      },
+    },
+    value: null,
+  };
+};
+
+/**
+ * Record a standing approval in the user's words, kept verbatim, with its date.
+ * @param backlog Current document.
+ * @param input The text and the date as YYYY-MM-DD.
+ * @returns The next document and the new entry.
+ */
+export const addStanding = (
+  backlog: Backlog,
+  input: { text: string; at: string },
+): OpResult<Dated> => {
+  const problem = oneLine("text", input.text);
+  if (problem) return { ok: false, reason: problem };
+  if (!isDate(input.at)) return { ok: false, reason: "--at must be YYYY-MM-DD" };
+  const entry: Dated = { text: input.text, at: input.at };
+  return {
+    ok: true,
+    backlog: { ...backlog, standingYes: [...backlog.standingYes, entry] },
+    value: entry,
+  };
+};
+
+/**
+ * Set the domain's focus line, or clear it with null.
+ * @param backlog Current document.
+ * @param input The focus line, or null.
+ * @returns The next document and the focus now stored.
+ */
+export const setFocus = (
+  backlog: Backlog,
+  input: { focus: string | null },
+): OpResult<string | null> => {
+  if (input.focus === null) return { ok: true, backlog: { ...backlog, focus: null }, value: null };
+  if (input.focus.trim() === "")
+    return { ok: false, reason: "focus is empty; pass --clear to clear it" };
+  const problem = oneLine("focus", input.focus);
+  if (problem) return { ok: false, reason: problem };
+  const focus = input.focus.trim();
+  return { ok: true, backlog: { ...backlog, focus }, value: focus };
 };

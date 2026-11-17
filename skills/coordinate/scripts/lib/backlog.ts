@@ -1,5 +1,3 @@
-import { homedir } from "node:os";
-
 /**
  * One `## ` section of a backlog, by character offsets into the text.
  */
@@ -127,34 +125,6 @@ export const missingSections = (text: string): string[] => {
 };
 
 /**
- * Paths the Boundary section names: backticked paths (spaces allowed) and bare `~/` or `/` paths.
- * @param text Backlog text.
- * @param home Home directory for `~`.
- * @returns Absolute paths, unique, in order.
- */
-export const boundaryPaths = (text: string, home: string = homedir()): string[] => {
-  const body = section(text, "Boundary") ?? "";
-  const found: string[] = [];
-  for (const match of body.matchAll(/`([~/][^`]*)`/g)) found.push(match[1] ?? "");
-  const unquoted = body.replace(/`[^`]*`/g, " ");
-  for (const match of unquoted.matchAll(/(?<![\w.])(~\/[\w./@+-]*|\/[\w./@+-]+)/g))
-    found.push(match[1] ?? "");
-  return [
-    ...new Set(
-      found
-        .map((path) =>
-          path
-            .trim()
-            .replace(/[.,;:)]+$/, "")
-            .replace(/\/+$/, ""),
-        )
-        .filter((path) => path !== "" && path !== "~")
-        .map((path) => (path.startsWith("~/") ? `${home}${path.slice(1)}` : path)),
-    ),
-  ];
-};
-
-/**
  * Whether the text names a session id (by its first 8 characters or more).
  * @param text Section text.
  * @param session Session id.
@@ -184,23 +154,3 @@ export const dueItems = (text: string, today: string): DueItem[] =>
         : [];
     })
     .toSorted((a, b) => a.date.localeCompare(b.date));
-
-/**
- * Pull-request URLs the text links (GitHub `/pull/N` and Forgejo `/pulls/N`).
- * @param text Backlog text.
- * @returns `{host, slug, number}` per link, unique.
- */
-export const pullRequestLinks = (
-  text: string,
-): Array<{ host: string; slug: string; number: number }> => {
-  const seen = new Map<string, { host: string; slug: string; number: number }>();
-  for (const match of text.matchAll(/https?:\/\/([\w.-]+)\/([\w.-]+\/[\w.-]+)\/pulls?\/(\d+)/g)) {
-    const link = {
-      host: (match[1] ?? "").toLowerCase(),
-      slug: match[2] ?? "",
-      number: Number(match[3]),
-    };
-    seen.set(`${link.host}/${link.slug}#${link.number}`, link);
-  }
-  return [...seen.values()];
-};

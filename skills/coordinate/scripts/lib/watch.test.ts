@@ -2,7 +2,7 @@ import { afterAll, describe, expect, it } from "bun:test";
 import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { Effect } from "effect";
-import { template } from "./backlog.ts";
+import { emptyBacklog } from "./backlog-store/ops.ts";
 import { resolveConfig } from "./config.ts";
 import { runWith, tempDir } from "./fixture.ts";
 import { fakeProc, ok, type RunOutput } from "./proc.ts";
@@ -154,7 +154,7 @@ describe("watch", () => {
       resolveConfig({ state_dir: state, backlog_dir: join(state, "backlogs") }, "/c"),
     );
     mkdirSync(join(state, "backlogs"), { recursive: true });
-    writeFileSync(join(state, "backlogs", "app-backlog.md"), template("app"));
+    writeFileSync(join(state, "backlogs", "app.json"), JSON.stringify(emptyBacklog("app", null)));
     mkdirSync(join(state, "watch"), { recursive: true });
     writeFileSync(
       join(state, "watch", "app.json"),

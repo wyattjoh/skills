@@ -1,20 +1,25 @@
 import { randomUUID } from "node:crypto";
 import { existsSync } from "node:fs";
 import { appendFile, mkdir, open, readFile, rename, rmdir, unlink } from "node:fs/promises";
-import { hostname } from "node:os";
-import { join } from "node:path";
+import { homedir, hostname } from "node:os";
+import { join, resolve } from "node:path";
 import { setTimeout as sleep } from "node:timers/promises";
 import { Effect, Schema } from "effect";
 import {
+  addBoundary,
   addFinding,
   addItem,
+  addStanding,
+  type BoundaryList,
   closeFinding,
   closeItem,
   emptyBacklog,
   type ItemUpdate,
   type OpResult,
+  removeBoundary,
   RETAINED_CLOSED,
   retain,
+  setFocus,
   updateItem,
 } from "./backlog-store/ops.ts";
 import { renderBacklog } from "./backlog-store/render.ts";
@@ -394,4 +399,103 @@ export const itemUpdate = Effect.fn("itemUpdate")(function* (
 ) {
   const item = yield* change(config, domain, (backlog) => updateItem(backlog, input));
   return input.json ? json(item) : [`updated ${item.id} [${item.status}] ${item.title}`];
+});
+
+/**
+ * A Boundary path as stored: `~` expanded, made absolute, trailing slashes dropped.
+ * @param path Path as given.
+ * @param home Home directory for `~`.
+ * @returns The stored form; an empty or multi-line path is returned as given, for the op to refuse.
+ */
+const normalizeBoundary = (path: string, home: string = homedir()): string => {
+  if (path.trim() === "" || /[\r\n]/.test(path)) return path.trim() === "" ? "" : path;
+  const expanded = path === "~" ? home : path.startsWith("~/") ? join(home, path.slice(2)) : path;
+  const absolute = resolve(expanded);
+  return absolute === "/" ? absolute : absolute.replace(/\/+$/, "");
+};
+
+/**
+ * `coordinate backlog boundary add`: add an existing path to the owned (or adjacent) Boundary.
+ * @param config Config.
+ * @param domain Domain.
+ * @param input Path, `--adjacent`, `--json`.
+ * @returns Lines to print.
+ */
+export const boundaryAdd = Effect.fn("boundaryAdd")(function* (
+  config: Config,
+  domain: string,
+  input: { path: string; adjacent: boolean; json: boolean },
+) {
+  const path = normalizeBoundary(input.path);
+  const list: BoundaryList = input.adjacent ? "adjacent" : "owned";
+  if (path.startsWith("/") && !/[\r\n]/.test(path) && !existsSync(path))
+    return yield* new Refused({ message: `${path} does not exist` });
+  let boundary: Backlog["boundary"] | undefined;
+  const result = yield* change(config, domain, (backlog) => {
+    const applied = addBoundary(backlog, { path, list });
+    if (applied.ok) boundary = applied.backlog.boundary;
+    return applied;
+  });
+  if (input.json) return json(boundary);
+  return [result.added ? `${list}: added ${path}` : `${list}: ${path} is already listed`];
+});
+
+/**
+ * `coordinate backlog boundary rm`: remove a path from the owned (or adjacent) Boundary.
+ * @param config Config.
+ * @param domain Domain.
+ * @param input Path, `--adjacent`, `--json`.
+ * @returns Lines to print.
+ */
+export const boundaryRm = Effect.fn("boundaryRm")(function* (
+  config: Config,
+  domain: string,
+  input: { path: string; adjacent: boolean; json: boolean },
+) {
+  const path = normalizeBoundary(input.path);
+  const list: BoundaryList = input.adjacent ? "adjacent" : "owned";
+  let boundary: Backlog["boundary"] | undefined;
+  yield* change(config, domain, (backlog) => {
+    const applied = removeBoundary(backlog, { path, list });
+    if (applied.ok) boundary = applied.backlog.boundary;
+    return applied;
+  });
+  return input.json ? json(boundary) : [`${list}: removed ${path}`];
+});
+
+/**
+ * `coordinate backlog standing add`: record a standing approval verbatim, dated today or `--at`.
+ * @param config Config.
+ * @param domain Domain.
+ * @param input Text, `--at`, `--json`, and the time.
+ * @returns Lines to print.
+ */
+export const standingAdd = Effect.fn("standingAdd")(function* (
+  config: Config,
+  domain: string,
+  input: { text: string; at: string | undefined; json: boolean; now: string },
+) {
+  const entry = yield* change(config, domain, (backlog) =>
+    addStanding(backlog, { text: input.text, at: input.at ?? input.now.slice(0, 10) }),
+  );
+  return input.json ? json(entry) : [`standing yes ${entry.at}: ${entry.text}`];
+});
+
+/**
+ * `coordinate backlog focus`: set the domain's focus line, or clear it with null.
+ * @param config Config.
+ * @param domain Domain.
+ * @param input Focus line or null, `--json`.
+ * @returns Lines to print.
+ */
+export const focusSet = Effect.fn("focusSet")(function* (
+  config: Config,
+  domain: string,
+  input: { focus: string | null; json: boolean },
+) {
+  const focus = yield* change(config, domain, (backlog) =>
+    setFocus(backlog, { focus: input.focus }),
+  );
+  if (input.json) return json({ focus });
+  return [focus === null ? "focus cleared" : `focus: ${focus}`];
 });

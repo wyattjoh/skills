@@ -1,11 +1,9 @@
 import { describe, expect, it } from "bun:test";
 import {
   appendToSection,
-  boundaryPaths,
   dueItems,
   missingSections,
   namesSession,
-  pullRequestLinks,
   replaceSection,
   section,
   sections,
@@ -60,16 +58,6 @@ describe("sections", () => {
   });
 });
 
-describe("boundaryPaths", () => {
-  it("reads backticked paths with spaces and bare paths", () => {
-    expect(boundaryPaths(text, "/home/u")).toEqual([
-      "/home/u/Code/my repo",
-      "/srv/app",
-      "/home/u/Code/lib",
-    ]);
-  });
-});
-
 describe("dueItems", () => {
   it("returns open items due on or before today", () => {
     expect(dueItems(text, "2026-11-16")).toEqual([
@@ -82,18 +70,5 @@ describe("namesSession", () => {
   it("matches the first 8 characters", () => {
     expect(namesSession(text, "0b9c2a51-0000-4000-8000-000000000001")).toBe(true);
     expect(namesSession(text, "short")).toBe(false);
-  });
-});
-
-describe("pullRequestLinks", () => {
-  it("reads GitHub and Forgejo links", () => {
-    expect(
-      pullRequestLinks(
-        "see https://github.com/o/a/pull/12 and https://git.example.net/o/b/pulls/3 and https://github.com/o/a/pull/12",
-      ),
-    ).toEqual([
-      { host: "github.com", slug: "o/a", number: 12 },
-      { host: "git.example.net", slug: "o/b", number: 3 },
-    ]);
   });
 });

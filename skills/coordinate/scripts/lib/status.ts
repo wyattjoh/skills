@@ -1,7 +1,6 @@
 import { existsSync } from "node:fs";
 import { Effect } from "effect";
-import { showBacklog } from "./backlog-doc.ts";
-import { boundaryPaths, pullRequestLinks } from "./backlog.ts";
+import { readDocument, showBacklog } from "./backlog-doc.ts";
 import type { Config } from "./config.ts";
 import { type Delegate, members, readEnded } from "./fleet.ts";
 import { currentBranch, defaultBases, mainCheckout } from "./git.ts";
@@ -45,27 +44,26 @@ export const waitsOn = (
 };
 
 /**
- * The main checkouts a domain works in: Boundary paths, live delegates' folders and ended records' repos.
+ * The main checkouts a domain owns: its `boundary.owned` paths, nothing else. Adjacent repos, and
+ * repos a delegate or an ended record happens to sit in, never feed PR polling, watch or sweep. A
+ * repo holding an adjacent path stays adjacent even when an owned folder sits inside it.
  * @param config Config.
  * @param domain Domain.
- * @returns Main checkouts.
+ * @returns Main checkouts, unique, in Boundary order.
  */
 export const domainRepos = Effect.fn("domainRepos")(function* (config: Config, domain: string) {
-  const backlog = yield* readBacklog(config, domain);
-  const paths = [
-    ...boundaryPaths(backlog.text),
-    ...(yield* members(domain, undefined)).map((delegate) => delegate.cwd),
-    ...(yield* readEnded(config.stateDir)).records
-      .filter((entry) => entry.record.domain === domain)
-      .map((entry) => entry.record.repo ?? entry.record.cwd),
-  ];
-  const repos = new Set<string>();
-  for (const path of paths) {
-    if (!path || !existsSync(path)) continue;
-    const main = yield* mainCheckout(path);
-    if (main) repos.add(main);
-  }
-  return [...repos];
+  const { backlog } = yield* readDocument(config, domain);
+  const checkouts = Effect.fn("checkouts")(function* (paths: readonly string[]) {
+    const found: string[] = [];
+    for (const path of paths) {
+      if (!existsSync(path)) continue;
+      const main = yield* mainCheckout(path);
+      if (main && !found.includes(main)) found.push(main);
+    }
+    return found;
+  });
+  const adjacent = yield* checkouts(backlog.boundary.adjacent);
+  return (yield* checkouts(backlog.boundary.owned)).filter((repo) => !adjacent.includes(repo));
 });
 
 /**
@@ -82,27 +80,30 @@ export const domainStatus = Effect.fn("domainStatus")(function* (
   withResume: boolean,
   nowMs: number,
 ) {
+  // Status still reports delegates when the document is missing or invalid; --resume names why.
+  const ownedOrProblem = yield* domainRepos(config, domain).pipe(
+    Effect.catchTags({
+      Refused: (refused) => Effect.succeed(refused.message),
+      BacklogError: (error) => Effect.succeed(`could not read the backlog: ${error.message}`),
+    }),
+  );
+  const owned = typeof ownedOrProblem === "string" ? [] : ownedOrProblem;
   const backlog = yield* readBacklog(config, domain);
   const delegates = yield* members(domain, backlog.open);
   const ended = (yield* readEnded(config.stateDir)).records.filter(
     (entry) => entry.record.domain === domain,
   );
 
-  const checkouts = new Set<string>();
-  const addCheckout = Effect.fn("addCheckout")(function* (path: string | null | undefined) {
+  const repoOf = Effect.fn("repoOf")(function* (path: string | null | undefined) {
     if (!path || !existsSync(path)) return undefined;
-    const main = yield* mainCheckout(path);
-    if (main) checkouts.add(main);
-    return main;
+    return yield* mainCheckout(path);
   });
-  for (const path of boundaryPaths(backlog.text)) yield* addCheckout(path);
   const delegateRepos = new Map<Delegate, string | undefined>();
-  for (const delegate of delegates) delegateRepos.set(delegate, yield* addCheckout(delegate.cwd));
-  for (const entry of ended) yield* addCheckout(entry.record.repo ?? entry.record.cwd);
+  for (const delegate of delegates) delegateRepos.set(delegate, yield* repoOf(delegate.cwd));
 
   const prsByRepo = new Map<string, RepoPrs>();
   const basesByRepo = new Map<string, string[]>();
-  for (const repo of checkouts) {
+  for (const repo of owned) {
     prsByRepo.set(repo, yield* repoPullRequests(config, repo, true));
     basesByRepo.set(repo, yield* defaultBases(repo, []));
   }
@@ -120,6 +121,16 @@ export const domainStatus = Effect.fn("domainStatus")(function* (
     if (!repo || !branch)
       return {
         text: branch ? "no repo" : "no branch",
+        next: waitsOn(status, {
+          state: undefined,
+          checks: undefined,
+          review: undefined,
+          landed: undefined,
+        }),
+      };
+    if (!owned.includes(repo))
+      return {
+        text: `${branch} · repo ${repo} is outside the owned Boundary`,
         next: waitsOn(status, {
           state: undefined,
           checks: undefined,
@@ -170,16 +181,8 @@ export const domainStatus = Effect.fn("domainStatus")(function* (
         `  #${pr.number} ${pr.headRef ?? pr.headSha.slice(0, 8)} checks ${pr.checks} review ${pr.review} ${pr.url}`,
       );
   }
-  const linked = pullRequestLinks(backlog.text).filter(
-    (link) =>
-      ![...prsByRepo.values()].some(
-        (result) => result.ok && result.ref.host === link.host && result.ref.slug === link.slug,
-      ),
-  );
-  if (linked.length > 0)
-    lines.push(
-      `backlog links PRs in repos outside Boundary: ${linked.map((link) => `${link.host}/${link.slug}#${link.number}`).join(", ")}`,
-    );
+  if (typeof ownedOrProblem === "string" && !withResume)
+    lines.push(`no repos polled: ${ownedOrProblem}`);
   if (withResume) {
     const rendered = yield* showBacklog(config, domain, false).pipe(
       Effect.catchTags({

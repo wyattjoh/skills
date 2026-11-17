@@ -2,12 +2,16 @@
 import { Command, Option } from "commander";
 import { Cause, Effect, Exit } from "effect";
 import {
+  boundaryAdd,
+  boundaryRm,
   findingAdd,
   findingClose,
+  focusSet,
   itemAdd,
   itemClose,
   itemUpdate,
   showBacklog,
+  standingAdd,
 } from "./lib/backlog-doc.ts";
 import { ITEM_STATUSES, type ItemStatus } from "./lib/backlog-store/schema.ts";
 import { loadConfig, type Config } from "./lib/config.ts";
@@ -214,7 +218,7 @@ const collect = (value: string, previous: string[]): string[] => [...previous, v
 
 const backlog = program
   .command("backlog")
-  .description("read the domain's structured backlog (the CLI is its only writer)");
+  .description("read and edit the domain's structured backlog (the CLI is its only writer)");
 
 backlog
   .command("show")
@@ -227,6 +231,78 @@ backlog
         showBacklog(config, domain, options.json === true),
       ),
     ),
+  );
+
+const boundary = backlog
+  .command("boundary")
+  .description(
+    "owned and adjacent repos and folders; only owned ones feed status, watch and sweep",
+  );
+
+for (const [verb, run, help] of [
+  ["add", boundaryAdd, "add an existing path (~ expands) to the owned Boundary, or --adjacent"],
+  ["rm", boundaryRm, "remove a path from the owned Boundary, or --adjacent"],
+] as const)
+  boundary
+    .command(verb)
+    .argument("<path>", "repo or folder path")
+    .option("--adjacent", "the adjacent list: read freely, change only with the user's yes")
+    .option("--domain <domain>", "domain (default: this coordinator's label)")
+    .option("--json", "print the Boundary as JSON")
+    .description(help)
+    .action((path: string, options: { adjacent?: boolean; domain?: string; json?: boolean }) =>
+      main((config) =>
+        Effect.flatMap(resolveDomain(options.domain), (domain) =>
+          run(config, domain, {
+            path,
+            adjacent: options.adjacent === true,
+            json: options.json === true,
+          }),
+        ),
+      ),
+    );
+
+backlog
+  .command("standing")
+  .description("standing approvals, in the user's words")
+  .command("add")
+  .argument("<text>", "the approval, verbatim, on one line")
+  .option("--at <date>", "date it was given, YYYY-MM-DD (default: today)")
+  .option("--domain <domain>", "domain (default: this coordinator's label)")
+  .option("--json", "print the entry as JSON")
+  .description("record a standing yes with its date")
+  .action((text: string, options: { at?: string; domain?: string; json?: boolean }) =>
+    main((config) =>
+      Effect.flatMap(resolveDomain(options.domain), (domain) =>
+        standingAdd(config, domain, {
+          text,
+          at: options.at,
+          json: options.json === true,
+          now: new Date().toISOString(),
+        }),
+      ),
+    ),
+  );
+
+backlog
+  .command("focus")
+  .argument("[text]", "one line on what the domain is doing now")
+  .option("--clear", "clear the focus line")
+  .option("--domain <domain>", "domain (default: this coordinator's label)")
+  .option("--json", "print the focus as JSON")
+  .description("set the domain's focus line, or clear it with --clear")
+  .action(
+    (text: string | undefined, options: { clear?: boolean; domain?: string; json?: boolean }) => {
+      if ((text === undefined) === (options.clear !== true)) {
+        console.error("refused: pass exactly one of <text> or --clear");
+        process.exit(1);
+      }
+      return main((config) =>
+        Effect.flatMap(resolveDomain(options.domain), (domain) =>
+          focusSet(config, domain, { focus: text ?? null, json: options.json === true }),
+        ),
+      );
+    },
   );
 
 const item = program.command("item").description("add, update and close backlog items");
