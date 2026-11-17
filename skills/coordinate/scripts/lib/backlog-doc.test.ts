@@ -725,6 +725,18 @@ describe("status --resume", () => {
     );
   });
 
+  it("refuses a domain with neither a document nor a legacy Markdown backlog", async () => {
+    const state = dir();
+    const error = await failureOf(
+      domainStatus(await config(state), "app", true, Date.parse(NOW)),
+      hcFake().layer,
+    );
+    expect(tagged(error)).toEqual({
+      tag: "Refused",
+      message: `no backlog for app at ${join(state, "backlogs", "app.json")}; run coordinate start app`,
+    });
+  });
+
   it("names the missing document when only a legacy Markdown backlog exists", async () => {
     const state = dir();
     const cfg = await config(state);

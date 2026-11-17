@@ -53,6 +53,16 @@ pi install /path/to/skills/plugins/to-code            # pi extension
 
 In Claude Code, `watchIntervalMs` and `stopGate` are settable from `/config`.
 
+### Optional coordinate Backlog panel (Herdr)
+
+The `coordinate` skill keeps each domain's backlog as a structured JSON document that its CLI alone writes (`coordinate backlog show` renders it). [`plugins/coordinate/herdr/`](plugins/coordinate/herdr/) builds two read-only Herdr mods that display it: `coordinate-panel`, the Backlog panel that follows the focused terminal's domain with live delegate status, and `coordinate-toggle`, a tab-row pill bound to `cmd-alt-b`. It is not a Claude Code plugin and has no marketplace entry.
+
+```bash
+cd plugins/coordinate/herdr
+just check      # tests, typecheck and a staged herdr-app check; never touches the live Herdr home
+just install    # copies the mods into $HERDR_APP_HOME/mods and adds the key binding
+```
+
 ## Install skills
 
 Use the open source [Skills CLI](https://github.com/vercel-labs/skills) to browse and
@@ -194,7 +204,7 @@ Restart Claude Code after adding or changing an agent definition.
 ```text
 skills/              # One directory per published skill, with SKILL.md and optional supporting files
 agents/              # Claude Code subagent definitions
-plugins/             # Optional plugins that ship beside the skills (Claude Code mods, pi extensions)
+plugins/             # Optional plugins that ship beside the skills (Claude Code mods, pi extensions, Herdr mods)
 .claude-plugin/      # Claude Code plugin and marketplace manifests
 .claude/skills/      # Skills internal to this repository, not published
 .claude/references/  # Shared authoring documentation and pinned dependency submodules

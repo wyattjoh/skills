@@ -24,7 +24,8 @@ Read first: <repo guides, the plan or spec, by absolute path>.
 ## Boundary
 
 Change only <files, apps or areas>. Write only inside this worktree. Anything else is a question
-for the coordinator, not a change.
+for the coordinator, not a change. Record an issue or opportunity you notice outside this task with
+`coordinate finding add "<title>" --kind issue|opportunity --from <item id> --detail "<what>"`.
 
 ## Stop points
 
@@ -42,13 +43,13 @@ its own `.scratch/`, no source edits, commits or remote writes. Require a report
 (command, log, exit status), and a ready / needs changes verdict.
 
 From your own terminal, run `coordinate delegate <child name> --domain <domain> --task "<review task>" --repo <absolute repo path> --base <delegate branch> --harness <pi|claude> --model <model> --brief <absolute child brief path>`.
-Wait with `hc wait <child terminal from handle> --timeout <seconds, e.g. 900>`, at most
+Wait with `hc wait <child terminal address from the "started" line> --timeout <seconds, e.g. 900>`, at most
 <wait count, e.g. 4> times per round. Read the child's report; fix findings and use
 `coordinate send <child name> "<what changed; re-review the delegate branch>"` if needed.
 Cap at <round cap, default 2> rounds. If either bound is exhausted without a ready verdict, stop
 and report without integrating. After reading its final report, end the child with `coordinate end <child name>`.
 Integrate only as authorized in Stop points and only after a ready verdict.
-Include the child handle, rounds, final verdict and report path in your report for coordinator verification.
+Include the child's name, terminal address and session id, rounds, final verdict and report path in your report for coordinator verification.
 
 ## Report
 

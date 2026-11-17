@@ -1,9 +1,8 @@
 import { existsSync } from "node:fs";
-import { copyFile, mkdir, readFile } from "node:fs/promises";
+import { copyFile, mkdir } from "node:fs/promises";
 import { userInfo } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { Effect, Option } from "effect";
-import { section } from "./backlog.ts";
 import {
   BacklogError,
   checkFileable,
@@ -515,22 +514,19 @@ export const resumeDelegate = Effect.fn("resumeDelegate")(function* (
 });
 
 /**
- * The legacy Markdown backlog text (empty when the domain has only its JSON document), or a refusal
- * when the domain has neither. Transitional: the Markdown readers go with their own tickets.
+ * Refuse a domain that has neither a backlog document nor a legacy Markdown backlog. Neither file
+ * is read: the document has its own readers, and the legacy file is a pointer only.
  * @param config Config.
  * @param domain Domain.
- * @returns Text and path.
+ * @returns Nothing; refused when the domain was never started.
  */
-export const readBacklog = Effect.fn("readBacklog")(function* (config: Config, domain: string) {
-  const path = backlogPath(config.backlogDir, domain);
-  if (!existsSync(path)) {
-    const document = documentPath(config.stateDir, domain);
-    if (!existsSync(document))
-      return yield* new Refused({
-        message: `no backlog for ${domain} at ${document}; run coordinate start ${domain}`,
-      });
-    return { path: document, text: "", open: "" };
-  }
-  const text = yield* Effect.promise(() => readFile(path, "utf8"));
-  return { path, text, open: section(text, "Open") ?? "" };
+export const requireBacklog = Effect.fn("requireBacklog")(function* (
+  config: Config,
+  domain: string,
+) {
+  const document = documentPath(config.stateDir, domain);
+  if (existsSync(document) || existsSync(backlogPath(config.backlogDir, domain))) return;
+  return yield* new Refused({
+    message: `no backlog for ${domain} at ${document}; run coordinate start ${domain}`,
+  });
 });

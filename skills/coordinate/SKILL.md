@@ -8,16 +8,16 @@ disable-model-invocation: true
 
 # Coordinate
 
-Take the user's ideas, gripes, links and requests for one domain, often half-formed, and see each through, mostly by delegating, so this session stays free for the next item. The domain's **backlog** is your only memory across compaction and restarts. You are a router, not a pipeline: nothing here merges, lands, pushes or opens a PR unless the user names that integration for the item.
+Take the user's ideas, gripes, links and requests for one domain, often half-formed, and see each through, mostly by delegating, so this session stays free for the next item. The domain's **backlog** is your only memory across compaction and restarts. It is a structured document the `coordinate` CLI owns: you record every state change through `backlog`, `item` and `finding` commands and read it back with `coordinate backlog show`, never by editing a file. You are a router, not a pipeline: nothing here merges, lands, pushes or opens a PR unless the user names that integration for the item.
 
 `coordinate` below means `bun $SKILL_DIR/scripts/coordinate.ts`. Its `--help` (and each subcommand's) is the manual for flags and output. Exit 0 is done, 1 is a refusal to act on, 2 is a check that could not run: fix what it prints and run it again. Use the `herdr` skill for any `hc` or `herdr-app` work the script does not cover.
 
 ## Start
 
-Run `coordinate start <domain>`. It labels this terminal, creates the backlog if missing, and prints status, the sweep report and quiet delegates. Then:
+Run `coordinate start <domain>`. It labels this terminal, creates the backlog document if missing, and prints status, the sweep report and quiet delegates. When it names a legacy Markdown backlog, that file is reference only: read it for context and record what still matters through the commands below. Then:
 
-- **Boundary**: the backlog names the repos (by path), docs, tools and decisions the domain owns, and the adjacent ones it reads but does not own. Ask once when either is unclear. Done when Boundary holds both and the user has seen them in two lines.
-- Read every open item. Arm the watcher (below).
+- **Boundary**: `coordinate backlog boundary add <path>` for each repo or folder the domain owns, `--adjacent` for the ones it reads but does not own. Only owned paths feed status, watch and sweep. Ask once when either list is unclear. Done when `backlog show` lists both and the user has seen them in two lines.
+- Run `coordinate backlog show` and read every open item and finding. Set or refresh the domain's focus line with `coordinate backlog focus "<what the domain is doing now>"`. Arm the watcher (below).
 - Report what finished, what waits on the user as self-contained asks, what runs, and what you take next.
 
 After compaction or a restart, run `coordinate status --resume` and re-arm the watcher.
@@ -28,24 +28,25 @@ A question gets an answer: read what it needs and reply. A change is an item:
 
 1. Restate it in one line and name what it touches. Check its ripple: what depends on it, what it duplicates or contradicts, from the real files (or a subagent's conclusion).
 2. Decide or ask (below), then route it: **answer**; **build** here when it fits one turn with no worktree, branch, running app or render to check; otherwise **delegate**.
-3. Record what outlives the turn in the backlog in the same turn: done, delegated (`delegate --item` records it), or waiting with the ask.
+3. Record what outlives the turn in the same turn (commands in [Backlog](#backlog)): `item add` for anything not finished this turn, then its status, decisions, ask or close.
 
-**Drift test**, before each action: does it change something outside the boundary, or go past the item? Either yes: say "This moves into <X>, outside <domain>" and route it. Adjacent work is a delegated task with the user's yes for that repo. Another domain of the user's gets a line in that domain's backlog marked "from <domain>". Other people's work stays theirs; raise it only when it blocks the domain.
+**Drift test**, before each action: does it change something outside the boundary, or go past the item? Either yes: say "This moves into <X>, outside <domain>" and route it. Adjacent work is a delegated task with the user's yes for that repo. Another domain of the user's gets an item in that domain's backlog: `coordinate item add "<title> (from <domain>)" --domain <other>` (refused until that domain has run `coordinate start`). Other people's work stays theirs; raise it only when it blocks the domain.
 
 ## Decide or ask
 
-**Decide** what sits inside the scope the user asked for and is reversible: say what you chose and why in one line, and go on. What their instructions, Standing yes or a Decided line already approve is a decision too: take the step and cite it.
+**Decide** what sits inside the scope the user asked for and is reversible: say what you chose and why in one line, and go on. What their instructions, Standing yes or an item's decisions already approve is a decision too: take the step and cite it.
 
-**Ask** when the answer changes what gets built, spends time or money they would notice, reaches anyone outside, is their taste, or their rules require their yes. A delegate's question is an ask even when you could decide it, unless the brief, their instructions, Standing yes or a Decided line answers it; then answer and cite that. Search those first: an answer already given is a decision.
+**Ask** when the answer changes what gets built, spends time or money they would notice, reaches anyone outside, is their taste, or their rules require their yes. A delegate's question is an ask even when you could decide it, unless the brief, their instructions, Standing yes or an item's decisions answer it; then answer and cite that. Search those first: an answer already given is a decision.
 
-Each ask is self-contained in the reply and the backlog: what, why it came up, options with consequences, your recommendation. Batch asks into the next reply, most consequential first, five at most; the rest wait in the backlog. An ask a delegate is blocked on goes out at once. A dismissed or unanswered ask stays open: absorb what they said and ask it again, revised. When an answer covers later cases, add it to Standing yes in their words.
+Each ask is self-contained in the reply and on its item: `coordinate item update <id> --status waiting-user --ask "<question>" --context "<why it came up>" --option ... --rec <option> --why "<reason>"`. The reply gives what, why, the options with consequences, and your recommendation. Batch asks into the next reply, most consequential first, five at most; the rest wait on their items. An ask a delegate is blocked on goes out at once. Record the user's answer with `item update <id> --answer "<their words>"` (it clears the ask and keeps the answer as a decision), then set the next status. A dismissed or unanswered ask stays open: absorb what they said and ask it again, revised. When an answer covers later cases, record it with `coordinate backlog standing add "<their words>"`.
 
 ## Delegate
 
 - One delegate per task, one worktree per delegate, each in its own Herdr space: `coordinate delegate <name> --task "<few words>" --repo <path> --harness pi|claude ...` makes `<repo>/.claude/worktrees/<name>` on `<branch_prefix><name>`. `--cwd` is for a domain with no repo; `--no-space` puts it in a tab of your space. Invoking this skill is the user's request for these worktrees, branches and spaces.
 - Brief it from [brief.md](references/brief.md) (`--brief`), or for a spec, start it with the implement skill: `--skill implement|implement-spec --args "<spec path>"` (the script writes `/implement` for Claude, `/skill:implement` for pi).
 - Harness and model: the user's named choice wins; otherwise follow Standing yes; otherwise pick by the work (a cheap model for bounded mechanical edits, the strongest for design, debugging and new features) and say which in one line.
-- Pass `--item <id>`: it is required from your terminal, and `coordinate delegate` records the delegate on that item and sets it to delegated. A delegate starting a child review passes no `--item`. Done when the delegate shows a status and the item lists it.
+- Pass `--item <id>`: it is required from your terminal, and `coordinate delegate` records the delegate (name, session, branch, worktree, brief and report) on that item and sets it to delegated. A delegate starting a child review passes no `--item`. Done when the delegate shows a status and `backlog show` lists it under the item.
+- A delegate records what it notices outside its task with `coordinate finding add`; you close each finding with `coordinate finding close <id> --outcome "..."` (`--dismissed` when not acted on).
 - Send follow-ups with `coordinate send`, not `hc send`. Send no progress check-ins; the watcher tells you when a delegate settles. A permission dialog is the user's to answer in that tab: name the tab.
 - A review session runs only when the user asks for one. For a delegate's own review, give it the optional [Child review brief](references/brief.md): it runs `coordinate delegate` from its own terminal, so `HC_TERMINAL_ID` nests the read-only reviewer under that delegate, with its own brief.
 - The delegate uses bounded `hc wait`, caps review rounds (default two), reads the child's report, then ends it with `coordinate end`; authorized integration waits for a ready verdict. When the delegate settles, the coordinator verifies the child's verdict too.
@@ -75,12 +76,26 @@ Sweep at Start, after compaction, when the watcher fires, and in the turn a task
 
 ## Backlog
 
-Shape, handle lines and Standing yes form: [backlog.md](references/backlog.md). Update it in the turn a state changes.
+The CLI is the backlog's only writer; it validates, locks and writes atomically, and refuses a change that breaks an invariant (exit 1: fix the call and run it again). Record each state change in the turn it happens:
+
+| State change                       | Command                                                                                |
+| ---------------------------------- | -------------------------------------------------------------------------------------- |
+| New work                           | `item add "<title>"` (prints its id, such as `i4`)                                     |
+| Building it here, parked, reopened | `item update <id> --status building\|parked\|open`                                     |
+| What it touches, a due date        | `item update <id> --touch <repo>`, `--due YYYY-MM-DD` (the watcher fires on that date) |
+| A decision                         | `item update <id> --decided "<the user's words>"`                                      |
+| An ask, its answer                 | `item update <id> --status waiting-user --ask ...`, then `--answer "<their words>"`    |
+| Delegated                          | `delegate <name> --item <id> ...`                                                      |
+| Done or dismissed                  | `item close <id> --outcome "<one line>"` (`--dismissed`)                               |
+| Standing yes, Boundary, focus      | `backlog standing add`, `backlog boundary add\|rm`, `backlog focus`                    |
+| A finding opened or closed         | `finding add --kind issue\|opportunity "<title>"`, `finding close <id> --outcome ...`  |
+
+Every command takes `--json`; `--help` has the flags. Read it back with `coordinate backlog show` (`--json` for the document). Fields, statuses and invariants: [backlog.md](references/backlog.md).
 
 ## Restart
 
-Before a restart (`/clear` then `/coordinate <domain>`): close asks the backlog already answers, write every open item, handle and open ask (marked "open before restart") into the backlog, and stop the watcher. Reply "ready for restart". After it, run Start and raise those asks again within the five-ask limit.
+Before a restart (`/clear` then `/coordinate <domain>`): answer or close what the backlog already resolves, make sure every open item, decision and ask is recorded (`backlog show` is what the next session sees), and stop the watcher. Reply "ready for restart". After it, run Start and raise the open asks again within the five-ask limit.
 
 ## Compound
 
-You see friction repeat. Note its first occurrence in the backlog; on the second, propose the skill, rule or script that removes it, or add it to the owning domain's backlog marked "from <domain>".
+You see friction repeat. Note its first occurrence with `coordinate finding add --kind opportunity`; on the second, propose the skill, rule or script that removes it, or add it to the owning domain's backlog with `item add "<title> (from <domain>)" --domain <other>`.

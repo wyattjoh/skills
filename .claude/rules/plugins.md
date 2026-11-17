@@ -29,7 +29,8 @@ stage, copies every mod into `$HERDR_APP_HOME/mods`, and adds `keys.json`'s bind
 person's `keys.json`, refusing a key they already bind elsewhere. Point `HERDR_APP_HOME` at a
 scratch folder to exercise it.
 
-The mods share the backlog schema and validator by relative import from
+The mods never write the backlog document or message a terminal: the coordinate CLI is the
+document's only writer. They share the backlog schema and validator by relative import from
 `skills/coordinate/scripts/lib/backlog-store/`, which must stay dependency-free (Herdr has no
 `TextEncoder`, so Effect Schema cannot load in a mod).
 

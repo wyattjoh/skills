@@ -4,7 +4,7 @@ import { readDocument, refSessions, showBacklog } from "./backlog-doc.ts";
 import type { Config } from "./config.ts";
 import { type Delegate, members, readEnded } from "./fleet.ts";
 import { currentBranch, defaultBases, mainCheckout } from "./git.ts";
-import { readBacklog } from "./lifecycle.ts";
+import { requireBacklog } from "./lifecycle.ts";
 import { branchState, type RepoPrs, repoPullRequests } from "./prs.ts";
 import { watcherAlive } from "./watch-lock.ts";
 
@@ -89,7 +89,7 @@ export const domainStatus = Effect.fn("domainStatus")(function* (
   );
   const owned = typeof ownedOrProblem === "string" ? [] : ownedOrProblem;
   // Refuses a domain with neither a document nor a legacy Markdown backlog.
-  yield* readBacklog(config, domain);
+  yield* requireBacklog(config, domain);
   const delegates = yield* members(domain, yield* refSessions(config, domain));
   const ended = (yield* readEnded(config.stateDir)).records.filter(
     (entry) => entry.record.domain === domain,
