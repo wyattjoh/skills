@@ -123,12 +123,12 @@ export const expandHome = (path: string): string =>
   path === "~" ? homedir() : path.startsWith("~/") ? join(homedir(), path.slice(2)) : path;
 
 /**
- * Where the config file lives: `COORDINATOR_CONFIG`, else `~/.config/coordinator/config.json`.
+ * Where the config file lives: `COORDINATE_CONFIG`, else `~/.config/coordinate/config.json`.
  * @param env Environment to read.
  * @returns The path.
  */
 export const configPath = (env: Record<string, string | undefined> = process.env): string =>
-  expandHome(env.COORDINATOR_CONFIG ?? "~/.config/coordinator/config.json");
+  expandHome(env.COORDINATE_CONFIG ?? "~/.config/coordinate/config.json");
 
 /**
  * Resolve parsed JSON into a full config.
@@ -150,8 +150,8 @@ export const resolveConfig = Effect.fn("resolveConfig")(function* (raw: unknown,
     Effect.mapError((error) => new ConfigError({ path, message: error.message })),
   );
   return {
-    backlogDir: expandHome(file.backlog_dir ?? "~/.config/coordinator/backlogs"),
-    stateDir: expandHome(file.state_dir ?? "~/.local/state/coordinator"),
+    backlogDir: expandHome(file.backlog_dir ?? "~/.config/coordinate/backlogs"),
+    stateDir: expandHome(file.state_dir ?? "~/.local/state/coordinate"),
     keepRunning: [...(file.keep_running ?? [])],
     delegateClaudeArgs: [...(file.delegate_claude_args ?? [])],
     delegatePiArgs: [...(file.delegate_pi_args ?? [])],

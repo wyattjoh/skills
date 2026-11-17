@@ -9,8 +9,8 @@ const fail = (raw: unknown) => Effect.runPromise(Effect.flip(resolveConfig(raw, 
 describe("resolveConfig", () => {
   it("fills every default from an empty file", async () => {
     const config = await resolve({});
-    expect(config.backlogDir).toBe(`${homedir()}/.config/coordinator/backlogs`);
-    expect(config.stateDir).toBe(`${homedir()}/.local/state/coordinator`);
+    expect(config.backlogDir).toBe(`${homedir()}/.config/coordinate/backlogs`);
+    expect(config.stateDir).toBe(`${homedir()}/.local/state/coordinate`);
     expect(config.forges).toEqual({ "github.com": "github", "codeberg.org": "forgejo" });
     expect(config.buildOutput).toEqual([...DEFAULT_BUILD_OUTPUT]);
     expect(config.quietHours).toBe(24);

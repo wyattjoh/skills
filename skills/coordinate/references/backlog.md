@@ -1,6 +1,6 @@
 # Backlog
 
-`<backlog_dir>/<domain>-backlog.md` (default `~/.config/coordinator/backlogs`). Working memory, not docs: plans, specs and reports live where the user keeps docs. Sections, in order: `## Boundary`, `## Standing yes`, `## Open`, `## Done`. `coordinate start` creates them and reports any missing.
+`<backlog_dir>/<domain>-backlog.md` (default `~/.config/coordinate/backlogs`). Working memory, not docs: plans, specs and reports live where the user keeps docs. Sections, in order: `## Boundary`, `## Standing yes`, `## Open`, `## Done`. `coordinate start` creates them and reports any missing.
 
 ## Boundary
 
