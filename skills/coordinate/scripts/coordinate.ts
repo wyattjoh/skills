@@ -1,6 +1,7 @@
 #!/usr/bin/env bun
 import { Command, Option } from "commander";
 import { Cause, Effect, Exit } from "effect";
+import { itemAdd, itemClose, showBacklog } from "./lib/backlog-doc.ts";
 import { loadConfig, type Config } from "./lib/config.ts";
 import { Refused, resolveDomain } from "./lib/fleet.ts";
 import type { FirstMessage, Harness, ImplementSkill } from "./lib/harness.ts";
@@ -49,7 +50,7 @@ program
   .command("start")
   .argument("<domain>", "domain name, also the backlog's file name")
   .description(
-    "label this terminal as the domain's coordinator, create the backlog if missing, then print status",
+    "label this terminal as the domain's coordinator, create the backlog document if missing, then print status",
   )
   .action((domain: string) =>
     main((config) =>
@@ -202,6 +203,69 @@ program
   );
 
 const collect = (value: string, previous: string[]): string[] => [...previous, value];
+
+const backlog = program
+  .command("backlog")
+  .description("read the domain's structured backlog (the CLI is its only writer)");
+
+backlog
+  .command("show")
+  .option("--domain <domain>", "domain (default: this coordinator's label)")
+  .option("--json", "print the document instead of Markdown")
+  .description("render the backlog as Markdown, including the legacy Markdown pointer")
+  .action((options: { domain?: string; json?: boolean }) =>
+    main((config) =>
+      Effect.flatMap(resolveDomain(options.domain), (domain) =>
+        showBacklog(config, domain, options.json === true),
+      ),
+    ),
+  );
+
+const item = program.command("item").description("add and close backlog items");
+
+item
+  .command("add")
+  .argument("<title>", "one-line title")
+  .option("--domain <domain>", "domain (default: this coordinator's label)")
+  .option("--json", "print the new item as JSON")
+  .description("add an open item; prints its short id (i1, i2, ...)")
+  .action((title: string, options: { domain?: string; json?: boolean }) =>
+    main((config) =>
+      Effect.flatMap(resolveDomain(options.domain), (domain) =>
+        itemAdd(config, domain, {
+          title,
+          json: options.json === true,
+          now: new Date().toISOString(),
+        }),
+      ),
+    ),
+  );
+
+item
+  .command("close")
+  .argument("<id>", "item id, such as i3")
+  .option("--outcome <text>", "one line on how it ended (required)", "")
+  .option("--dismissed", "close as dismissed instead of done")
+  .option("--domain <domain>", "domain (default: this coordinator's label)")
+  .option("--json", "print the closed item as JSON")
+  .description("close an item as done (or dismissed) with an outcome")
+  .action(
+    (
+      id: string,
+      options: { outcome: string; dismissed?: boolean; domain?: string; json?: boolean },
+    ) =>
+      main((config) =>
+        Effect.flatMap(resolveDomain(options.domain), (domain) =>
+          itemClose(config, domain, {
+            id,
+            outcome: options.outcome,
+            dismissed: options.dismissed === true,
+            json: options.json === true,
+            now: new Date().toISOString(),
+          }),
+        ),
+      ),
+  );
 
 program
   .command("watch")

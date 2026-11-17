@@ -1,9 +1,10 @@
 import { existsSync } from "node:fs";
-import { copyFile, mkdir, readFile, writeFile } from "node:fs/promises";
+import { copyFile, mkdir, readFile } from "node:fs/promises";
 import { userInfo } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { Effect, Option } from "effect";
-import { missingSections, section, template } from "./backlog.ts";
+import { section } from "./backlog.ts";
+import { createDocument, documentPath } from "./backlog-doc.ts";
 import type { Config } from "./config.ts";
 import {
   backlogPath,
@@ -67,18 +68,12 @@ export const start = Effect.fn("start")(function* (
     );
   yield* hc.label(address, { [L.role]: "coordinator", [L.domain]: domain });
   lines.push(`labelled ${address}: fleet.role=coordinator fleet.domain=${domain}`);
-  const path = backlogPath(config.backlogDir, domain);
-  if (!existsSync(path)) {
-    yield* Effect.promise(async () => {
-      await mkdir(dirname(path), { recursive: true });
-      await writeFile(path, template(domain));
-    });
-    lines.push(`created backlog ${path}: fill in Boundary with the user`);
-  } else {
-    const missing = missingSections(yield* Effect.promise(() => readFile(path, "utf8")));
-    lines.push(
-      `backlog ${path}` + (missing.length > 0 ? ` (missing sections: ${missing.join(", ")})` : ""),
-    );
+  const made = yield* createDocument(config, domain);
+  if (!made.created) lines.push(`backlog ${made.path}`);
+  else {
+    lines.push(`created backlog ${made.path}`);
+    if (made.legacy)
+      lines.push(`recorded legacy Markdown backlog ${made.legacy} (reference only, not read)`);
   }
   return lines;
 });
@@ -518,17 +513,22 @@ export const resumeDelegate = Effect.fn("resumeDelegate")(function* (
 });
 
 /**
- * The backlog text, or a refusal when it is missing.
+ * The legacy Markdown backlog text (empty when the domain has only its JSON document), or a refusal
+ * when the domain has neither. Transitional: the Markdown readers go with their own tickets.
  * @param config Config.
  * @param domain Domain.
  * @returns Text and path.
  */
 export const readBacklog = Effect.fn("readBacklog")(function* (config: Config, domain: string) {
   const path = backlogPath(config.backlogDir, domain);
-  if (!existsSync(path))
-    return yield* new Refused({
-      message: `no backlog for ${domain} at ${path}; run coordinate start ${domain}`,
-    });
+  if (!existsSync(path)) {
+    const document = documentPath(config.stateDir, domain);
+    if (!existsSync(document))
+      return yield* new Refused({
+        message: `no backlog for ${domain} at ${document}; run coordinate start ${domain}`,
+      });
+    return { path: document, text: "", open: "" };
+  }
   const text = yield* Effect.promise(() => readFile(path, "utf8"));
   return { path, text, open: section(text, "Open") ?? "" };
 });

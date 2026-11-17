@@ -62,15 +62,30 @@ describe("sendTo", () => {
 });
 
 describe("start", () => {
-  it("labels the terminal and creates the backlog", async () => {
+  it("labels the terminal and creates the backlog document", async () => {
     const state = dir();
     const fake = fakeProc((argv) => (argv[1] === "ls" ? ok('{"terminals":[]}') : ok("{}")));
     const lines = await runWith(
       start(await config(state), "app", { HC_TERMINAL_ID: "t9" }),
       fake.layer,
     );
-    expect(lines[0]).toBe("labelled t9: fleet.role=coordinator fleet.domain=app");
-    expect(existsSync(join(state, "backlogs", "app-backlog.md"))).toBe(true);
+    const path = join(state, "backlogs", "app.json");
+    expect(lines).toEqual([
+      "labelled t9: fleet.role=coordinator fleet.domain=app",
+      `created backlog ${path}`,
+    ]);
+    expect(JSON.parse(readFileSync(path, "utf8"))).toEqual({
+      schemaVersion: 1,
+      domain: "app",
+      focus: null,
+      legacy: null,
+      boundary: { owned: [], adjacent: [] },
+      standingYes: [],
+      items: [],
+      findings: [],
+      nextId: 1,
+    });
+    expect(existsSync(join(state, "backlogs", "app-backlog.md"))).toBe(false);
     expect(fake.calls[1]?.argv).toEqual([
       "hc",
       "label",
