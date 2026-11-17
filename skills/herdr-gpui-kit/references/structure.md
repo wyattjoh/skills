@@ -25,7 +25,7 @@ One repository can ship several mod folders (a panel, its toggle, a menu). Give 
 
 - Code starts in its mod's folder and moves to `components/`, `lib/` or `theme/` when a second mod imports it. A one-mod project uses the same shape with one `mods/<piece>/` folder, so a second mod lands without moving files.
 - Deployed folder names (`<project>-<piece>`) live in one inventory that the build, the checks and any code finding its own layout block all read.
-- Code that runs outside Herdr (a compiled helper, a CLI the mod spawns) gets its own source root beside `src/`. Mods reach it only through its command line or wire protocol, never by importing its modules.
+- Code that runs outside Herdr (a compiled helper, a CLI the mod spawns) gets its own source root beside `src/`. Mods reach it through its command line or wire protocol; the one module both sides may import is a pure contract (request shapes, exit codes) with no Node or Herdr imports.
 - Tests sit beside their module as `<module>.test.ts`. The test script preloads `src/test/`'s harness so every suite sees the same `gpui-kit`/`gpui-base`/`herdr` mocks regardless of run order. Bundles reach only what the entries import, so tests never ship.
 - The build stages every folder (bundle, manifest, assets) into an ignored output tree, and the check runs `herdr-app check` on each with that tree as `HERDR_APP_HOME`. One `check` command runs format, lint, tests, typecheck and build; installing into the live app is a separate command.
 
