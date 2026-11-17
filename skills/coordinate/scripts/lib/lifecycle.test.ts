@@ -1,0 +1,239 @@
+import { afterAll, describe, expect, it } from "bun:test";
+import { existsSync, readdirSync, readFileSync, rmSync } from "node:fs";
+import { join } from "node:path";
+import { resolveConfig } from "./config.ts";
+import { Effect } from "effect";
+import { failureOf, runWith, tempDir } from "./fixture.ts";
+import { delegate, endDelegate, handleLine, listIdle, sendTo, start } from "./lifecycle.ts";
+import { fakeProc, ok, type RunOutput } from "./proc.ts";
+
+const dirs: string[] = [];
+const dir = () => {
+  const made = tempDir();
+  dirs.push(made);
+  return made;
+};
+afterAll(() => {
+  for (const made of dirs) rmSync(made, { recursive: true, force: true });
+});
+const config = (state: string) =>
+  Effect.runPromise(
+    resolveConfig({ backlog_dir: join(state, "backlogs"), state_dir: state, quiet_hours: 1 }, "/c"),
+  );
+
+const terminal = (fields: Record<string, unknown>) =>
+  JSON.stringify({ address: "t2", name: "fix-a", state: "live", labels: {}, ...fields });
+
+const messageOf = (error: unknown): string =>
+  typeof error === "object" && error !== null && "message" in error
+    ? String(error.message)
+    : String(error);
+
+describe("sendTo", () => {
+  it("refuses a terminal blocked on a dialog", async () => {
+    const fake = fakeProc(() =>
+      ok(terminal({ status: { state: "blocked" }, labels: { where: "app / fix a" } })),
+    );
+    const error = await failureOf(sendTo("fix-a", "hi"), fake.layer);
+    expect(
+      messageOf(error).startsWith(
+        'fix-a is blocked on a dialog, which is the user\'s to answer in "app / fix a"',
+      ),
+    ).toBe(true);
+    expect(fake.calls.length).toBe(1);
+  });
+
+  it("sends to an idle terminal by address", async () => {
+    const fake = fakeProc((argv) =>
+      argv[1] === "get" ? ok(terminal({ status: { state: "idle" } })) : ok("{}"),
+    );
+    expect(await runWith(sendTo("fix-a", "hi"), fake.layer)).toEqual(["sent to fix-a (t2, idle)"]);
+    expect(fake.calls[1]?.argv).toEqual(["hc", "send", "t2", "hi", "--json"]);
+  });
+});
+
+describe("start", () => {
+  it("labels the terminal and creates the backlog", async () => {
+    const state = dir();
+    const fake = fakeProc((argv) => (argv[1] === "ls" ? ok('{"terminals":[]}') : ok("{}")));
+    const lines = await runWith(
+      start(await config(state), "app", { HC_TERMINAL_ID: "t9" }),
+      fake.layer,
+    );
+    expect(lines[0]).toBe("labelled t9: fleet.role=coordinator fleet.domain=app");
+    expect(existsSync(join(state, "backlogs", "app-backlog.md"))).toBe(true);
+    expect(fake.calls[1]?.argv).toEqual([
+      "hc",
+      "label",
+      "t9",
+      "fleet.role=coordinator",
+      "fleet.domain=app",
+      "--json",
+    ]);
+  });
+
+  it("warns about a second coordinator of the same domain", async () => {
+    const state = dir();
+    const fake = fakeProc((argv) =>
+      argv[1] === "ls" ? ok('{"terminals":[{"address":"t3","state":"live"}]}') : ok("{}"),
+    );
+    const lines = await runWith(
+      start(await config(state), "app", { HC_TERMINAL_ID: "t9" }),
+      fake.layer,
+    );
+    expect(lines[0]).toBe(
+      "warning: t3 also coordinates app; end or unlabel it (hc label <t> fleet.role= fleet.domain=)",
+    );
+  });
+});
+
+describe("delegate", () => {
+  it("refuses a bad name before touching anything", async () => {
+    const fake = fakeProc(() => ok());
+    const error = await failureOf(
+      delegate(await config(dir()), {
+        name: "Bad Name",
+        task: "t",
+        repo: "/x",
+        cwd: undefined,
+        base: undefined,
+        harness: "pi",
+        model: undefined,
+        effort: undefined,
+        message: { kind: "brief", path: "/b" },
+        space: true,
+        domain: "app",
+      }),
+      fake.layer,
+    );
+    expect(messageOf(error)).toBe("Bad Name is not a terminal name: 1 to 32 of a-z, 0-9, - and _");
+    expect(fake.calls.length).toBe(0);
+  });
+
+  it("refuses an unknown effort for the harness", async () => {
+    const fake = fakeProc(() => ok());
+    const error = await failureOf(
+      delegate(await config(dir()), {
+        name: "fix-a",
+        task: "t",
+        repo: "/x",
+        cwd: undefined,
+        base: undefined,
+        harness: "claude",
+        model: undefined,
+        effort: "minimal",
+        message: { kind: "brief", path: "/b" },
+        space: true,
+        domain: "app",
+      }),
+      fake.layer,
+    );
+    expect(messageOf(error)).toBe("minimal is not a claude effort: low, medium, high, xhigh, max");
+  });
+});
+
+describe("handleLine", () => {
+  it("joins every handle field", () => {
+    expect(
+      handleLine({
+        name: "fix-a",
+        address: "t7",
+        tabLabel: "fix a",
+        cwd: "/r/.claude/worktrees/fix-a",
+        branch: "wyattjoh/fix-a",
+        session: "s-1",
+        harness: "pi",
+        model: "openai/gpt",
+        effort: "high",
+        brief: "/r/.claude/worktrees/fix-a/.scratch/BRIEF.md",
+        report: "/r/.claude/worktrees/fix-a/.scratch/REPORT.md",
+      }),
+    ).toBe(
+      '- fix-a | t7 | "fix a" | /r/.claude/worktrees/fix-a | wyattjoh/fix-a | s-1 | pi openai/gpt high | brief /r/.claude/worktrees/fix-a/.scratch/BRIEF.md | report /r/.claude/worktrees/fix-a/.scratch/REPORT.md',
+    );
+  });
+});
+
+const endLabels = {
+  "fleet.domain": "app",
+  "fleet.session": "s-1",
+  "fleet.task": "fix a",
+  "fleet.harness": "pi",
+  "fleet.worktree": "/nonexistent/wt",
+  "fleet.branch": "wyattjoh/fix-a",
+  "fleet.space": "sp1",
+};
+
+const endAnswers = (argv: readonly string[]): RunOutput =>
+  argv[1] === "get"
+    ? ok(
+        terminal({
+          status: { state: "idle" },
+          status_ms: 0,
+          labels: endLabels,
+          cwd: "/nonexistent/wt",
+        }),
+      )
+    : ok("{}");
+
+describe("endDelegate", () => {
+  it("refuses a working delegate without --now", async () => {
+    const fake = fakeProc(() => ok(terminal({ status: { state: "working" }, labels: endLabels })));
+    const error = await failureOf(endDelegate(await config(dir()), "fix-a", false), fake.layer);
+    expect(messageOf(error)).toBe("fix-a is working; wait for it to settle, or pass --now");
+  });
+
+  it("writes the ended record, ends the terminal and closes its space", async () => {
+    const state = dir();
+    const fake = fakeProc(endAnswers);
+    const lines = await runWith(endDelegate(await config(state), "fix-a", false), fake.layer);
+    expect(lines[1]).toBe(
+      "worktree, branch and session stay; resume with: coordinate resume fix-a",
+    );
+    const files = readdirSync(join(state, "ended"));
+    expect(files).toEqual(["s-1.json"]);
+    const record = JSON.parse(readFileSync(join(state, "ended", "s-1.json"), "utf8"));
+    expect([record.program, record.cwd, record.branch, record.space]).toEqual([
+      "pi",
+      "/nonexistent/wt",
+      "wyattjoh/fix-a",
+      true,
+    ]);
+    expect(fake.calls.map((call) => call.argv.slice(0, 3).join(" "))).toEqual([
+      "hc get fix-a",
+      "git -c commit.gpgsign=false",
+      "hc kill t2",
+      "hc rm t2",
+      "herdr-app do space.close",
+    ]);
+  });
+});
+
+describe("listIdle", () => {
+  it("lists settled delegates quiet past quiet_hours", async () => {
+    const fake = fakeProc((argv) =>
+      argv[1] === "ls"
+        ? ok('{"terminals":[{"address":"t2","state":"live"},{"address":"t3","state":"live"}]}')
+        : argv[2] === "t2"
+          ? ok(
+              terminal({
+                status: { state: "idle" },
+                status_ms: 0,
+                labels: { "fleet.domain": "app" },
+              }),
+            )
+          : ok(
+              terminal({
+                address: "t3",
+                name: "busy",
+                status: { state: "working" },
+                status_ms: 0,
+                labels: { "fleet.domain": "app" },
+              }),
+            ),
+    );
+    expect(await runWith(listIdle(await config(dir()), "app", 2 * 3_600_000), fake.layer)).toEqual([
+      "fix-a (t2) idle for 2h: coordinate end fix-a",
+    ]);
+  });
+});

@@ -1,0 +1,39 @@
+{
+  "address": "t2",
+  "argv": [
+    "/bin/zsh",
+    "-lic",
+    "exec \"$@\"",
+    "/bin/zsh",
+    "pi",
+    "--session-id",
+    "0b9c2a51-0000-4000-8000-000000000001"
+  ],
+  "cwd": "/home/u/code/app/.claude/worktrees/fix-a",
+  "foreground": {
+    "argv": [
+      "pi",
+      "--session-id",
+      "0b9c2a51-0000-4000-8000-000000000001"
+    ],
+    "cwd": "/home/u/code/app/.claude/worktrees/fix-a",
+    "pid": 4242
+  },
+  "labels": {
+    "fleet.domain": "app",
+    "fleet.task": "fix a",
+    "fleet.harness": "pi",
+    "herdr.space": "sp1",
+    "herdr.tab": "tb1",
+    "where": "app [fix a] / fix a"
+  },
+  "name": "fix-a",
+  "parent": "t9",
+  "state": "live",
+  "status": {
+    "app": "pi",
+    "state": "working"
+  },
+  "status_ms": 1794885612797,
+  "turn": 46
+}

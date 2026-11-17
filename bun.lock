@@ -71,6 +71,14 @@
         "effect": "4.1.2",
       },
     },
+    "skills/coordinate": {
+      "name": "@wyattjoh/coordinate-skill",
+      "version": "1.0.0",
+      "dependencies": {
+        "commander": "^15.1.0",
+        "effect": "4.1.2",
+      },
+    },
     "skills/devenv": {
       "name": "@wyattjoh/devenv-skill",
       "version": "1.0.0",
@@ -585,6 +593,8 @@
     "@wyattjoh/clean-storage-skill": ["@wyattjoh/clean-storage-skill@workspace:skills/clean-storage"],
 
     "@wyattjoh/code-walkthrough-skill": ["@wyattjoh/code-walkthrough-skill@workspace:skills/code-walkthrough"],
+
+    "@wyattjoh/coordinate-skill": ["@wyattjoh/coordinate-skill@workspace:skills/coordinate"],
 
     "@wyattjoh/devenv-skill": ["@wyattjoh/devenv-skill@workspace:skills/devenv"],
 

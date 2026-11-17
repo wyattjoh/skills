@@ -1,0 +1,46 @@
+[
+  {
+    "baseRefName": "main",
+    "headRefName": "wyattjoh/weekly-skill-freshness",
+    "headRefOid": "31900b4b5c1a7f3b50667aba20a50e9b11b0e626",
+    "mergedAt": null,
+    "number": 99,
+    "reviewDecision": "",
+    "state": "OPEN",
+    "statusCheckRollup": [
+      {
+        "__typename": "CheckRun",
+        "completedAt": "2026-11-16T15:19:35Z",
+        "conclusion": "SUCCESS",
+        "detailsUrl": "https://github.com/wyattjoh/skills/actions/runs/43894974251/job/133395932715",
+        "name": "test",
+        "startedAt": "2026-11-16T15:18:51Z",
+        "status": "COMPLETED",
+        "workflowName": "CI"
+      }
+    ],
+    "url": "https://github.com/wyattjoh/skills/pull/99"
+  },
+  {
+    "baseRefName": "main",
+    "headRefName": "wyattjoh/fix-ci-spawnsync-hang",
+    "headRefOid": "b64f869dd4443ec9142edf490347cdc6d5e6706e",
+    "mergedAt": "2026-11-13T06:12:02Z",
+    "number": 98,
+    "reviewDecision": "",
+    "state": "MERGED",
+    "statusCheckRollup": [
+      {
+        "__typename": "CheckRun",
+        "completedAt": "2026-11-13T06:11:32Z",
+        "conclusion": "SUCCESS",
+        "detailsUrl": "https://github.com/wyattjoh/skills/actions/runs/43376908676/job/131725410638",
+        "name": "test",
+        "startedAt": "2026-11-13T06:10:57Z",
+        "status": "COMPLETED",
+        "workflowName": "CI"
+      }
+    ],
+    "url": "https://github.com/wyattjoh/skills/pull/98"
+  }
+]

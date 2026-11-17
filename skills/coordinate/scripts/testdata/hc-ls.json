@@ -1,0 +1,42 @@
+{
+  "hidden_finished": 0,
+  "machines": [],
+  "terminals": [
+    {
+      "address": "t1",
+      "agent": "zsh",
+      "cwd": "/home/u/code",
+      "state": "live",
+      "turn": 0,
+      "where": "code / 1"
+    },
+    {
+      "address": "t2",
+      "agent": "pi",
+      "cwd": "/home/u/code/app/.claude/worktrees/fix-a",
+      "state": "live",
+      "status": "working",
+      "turn": 46,
+      "where": "app [fix a] / fix a",
+      "name": "fix-a",
+      "parent": "t9"
+    },
+    {
+      "address": "t3",
+      "agent": "claude-code",
+      "cwd": "/home/u/code/app",
+      "state": "live",
+      "status": "idle",
+      "turn": 110,
+      "where": "app / Coordinator"
+    },
+    {
+      "address": "t4",
+      "agent": "pi",
+      "cwd": "/home/u/code/app",
+      "state": "finished",
+      "turn": 3,
+      "where": "app / 2"
+    }
+  ]
+}

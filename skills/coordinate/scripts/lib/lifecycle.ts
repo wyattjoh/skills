@@ -1,0 +1,534 @@
+import { existsSync } from "node:fs";
+import { copyFile, mkdir, readFile, writeFile } from "node:fs/promises";
+import { userInfo } from "node:os";
+import { dirname, join, resolve } from "node:path";
+import { Effect, Option } from "effect";
+import { missingSections, section, template } from "./backlog.ts";
+import type { Config } from "./config.ts";
+import {
+  backlogPath,
+  coordinators,
+  L,
+  members,
+  ownCoordinator,
+  readEnded,
+  Refused,
+  removeEnded,
+  writeEnded,
+  type EndedRecord,
+} from "./fleet.ts";
+import { currentBranch, excludeScratch, gitOk, mainCheckout, real, refExists } from "./git.ts";
+import {
+  agentArgv,
+  CLAUDE_EFFORTS,
+  type FirstMessage,
+  firstMessage,
+  type Harness,
+  harnessOf,
+  inLoginShell,
+  PI_THINKING,
+} from "./harness.ts";
+import * as hc from "./herdr.ts";
+
+const loginShell = (): string => {
+  try {
+    return userInfo().shell ?? process.env.SHELL ?? "/bin/sh";
+  } catch {
+    return process.env.SHELL ?? "/bin/sh";
+  }
+};
+
+/**
+ * Label this terminal as the domain's coordinator and make sure its backlog exists.
+ * @param config Config.
+ * @param domain Domain.
+ * @param env Environment (`HC_TERMINAL_ID`).
+ * @returns Lines to print.
+ */
+export const start = Effect.fn("start")(function* (
+  config: Config,
+  domain: string,
+  env: Record<string, string | undefined> = process.env,
+) {
+  if (!/^[a-z0-9][a-z0-9._-]*$/.test(domain))
+    return yield* new Refused({
+      message: `${domain} is not a domain name: lowercase letters, digits, . _ -`,
+    });
+  const address = env.HC_TERMINAL_ID;
+  if (!address)
+    return yield* new Refused({
+      message: "HC_TERMINAL_ID is unset: run this inside a Herdr terminal",
+    });
+  const lines: string[] = [];
+  const others = (yield* coordinators(domain)).filter((terminal) => terminal.address !== address);
+  if (others.length > 0)
+    lines.push(
+      `warning: ${others.map((terminal) => terminal.address).join(", ")} also coordinates ${domain}; end or unlabel it (hc label <t> fleet.role= fleet.domain=)`,
+    );
+  yield* hc.label(address, { [L.role]: "coordinator", [L.domain]: domain });
+  lines.push(`labelled ${address}: fleet.role=coordinator fleet.domain=${domain}`);
+  const path = backlogPath(config.backlogDir, domain);
+  if (!existsSync(path)) {
+    yield* Effect.promise(async () => {
+      await mkdir(dirname(path), { recursive: true });
+      await writeFile(path, template(domain));
+    });
+    lines.push(`created backlog ${path}: fill in Boundary with the user`);
+  } else {
+    const missing = missingSections(yield* Effect.promise(() => readFile(path, "utf8")));
+    lines.push(
+      `backlog ${path}` + (missing.length > 0 ? ` (missing sections: ${missing.join(", ")})` : ""),
+    );
+  }
+  return lines;
+});
+
+/**
+ * Options for `coordinate delegate`.
+ */
+export type DelegateOptions = {
+  name: string;
+  task: string;
+  repo: string | undefined;
+  cwd: string | undefined;
+  base: string | undefined;
+  harness: Harness;
+  model: string | undefined;
+  effort: string | undefined;
+  message: FirstMessage;
+  space: boolean;
+  domain: string | undefined;
+};
+
+/**
+ * Wait until the agent reports a status, or its terminal ends.
+ * @param address Terminal.
+ * @param seconds Budget.
+ * @returns True when the agent showed.
+ */
+const agentShowed = Effect.fn("agentShowed")(function* (address: string, seconds: number) {
+  for (let elapsed = 0; elapsed < seconds; elapsed += 1) {
+    const terminal = yield* hc.get(address).pipe(Effect.catch(() => Effect.succeed(undefined)));
+    if (terminal === undefined || !terminal.live) return false;
+    if (terminal.status !== undefined) return true;
+    yield* Effect.sleep("1 second");
+  }
+  return false;
+});
+
+/**
+ * Launch an agent terminal, in its own space or as a tab in the coordinator's space.
+ * @param spec What to run and where.
+ * @returns Address, tab label, and the space id when one was made.
+ */
+const launch = Effect.fn("launch")(function* (spec: {
+  name: string;
+  cwd: string;
+  tabLabel: string;
+  spaceName: string;
+  labels: Record<string, string>;
+  parent: string | undefined;
+  argv: string[];
+  ownSpace: boolean;
+  coordinatorSpace: string | undefined;
+}) {
+  const argv = inLoginShell(loginShell(), spec.argv);
+  if (!spec.ownSpace) {
+    const labels = spec.coordinatorSpace
+      ? { "herdr.space": spec.coordinatorSpace, ...spec.labels }
+      : spec.labels;
+    const address = yield* hc.run({
+      name: spec.name,
+      cwd: spec.cwd,
+      labels,
+      parent: spec.parent,
+      argv,
+    });
+    const tab = (yield* hc.get(address).pipe(Effect.catch(() => Effect.succeed(undefined))))
+      ?.labels["herdr.tab"];
+    if (tab) yield* hc.appDo("tab.rename", { id: tab, name: spec.tabLabel }).pipe(Effect.ignore);
+    return { address, space: undefined };
+  }
+  const made = yield* hc.newSpace(spec.spaceName, spec.cwd);
+  const address = yield* hc
+    .run({
+      name: spec.name,
+      cwd: spec.cwd,
+      labels: {
+        "herdr.space": made.space,
+        "herdr.tab": made.tab,
+        [L.space]: made.space,
+        ...spec.labels,
+      },
+      parent: spec.parent,
+      argv,
+    })
+    .pipe(Effect.tapError(() => hc.closeSpace(made.space).pipe(Effect.ignore)));
+  // The space came with a placeholder shell; close its pane so the agent has the tab to itself.
+  const spaces = yield* hc.appSpaces().pipe(Effect.catch(() => Effect.succeed([])));
+  const pane = spaces
+    .find((space) => space.id === made.space)
+    ?.tabs.flatMap((tab) => tab.terminals)
+    .find((terminal) => terminal.terminal === made.terminal)?.pane;
+  if (pane) yield* hc.appDo("pane.close", { pane }).pipe(Effect.ignore);
+  yield* hc.end(made.terminal).pipe(Effect.ignore);
+  yield* hc.appDo("tab.rename", { id: made.tab, name: spec.tabLabel }).pipe(Effect.ignore);
+  return { address, space: made.space };
+});
+
+/**
+ * The backlog handle line for a delegate.
+ * @param fields Handle fields.
+ * @returns One Markdown list line.
+ */
+export const handleLine = (fields: {
+  name: string;
+  address: string;
+  tabLabel: string;
+  cwd: string;
+  branch: string | undefined;
+  session: string;
+  harness: Harness;
+  model: string | undefined;
+  effort: string | undefined;
+  brief: string | undefined;
+  report: string | undefined;
+}): string =>
+  [
+    `- ${fields.name}`,
+    fields.address,
+    `"${fields.tabLabel}"`,
+    fields.cwd,
+    fields.branch ?? "no branch",
+    fields.session,
+    [fields.harness, fields.model, fields.effort].filter(Boolean).join(" "),
+    ...(fields.brief ? [`brief ${fields.brief}`] : []),
+    ...(fields.report ? [`report ${fields.report}`] : []),
+  ].join(" | ");
+
+/**
+ * Create the worktree, copy the brief, and start a delegate.
+ * @param config Config.
+ * @param options Delegate options.
+ * @returns Lines to print; the last is the handle.
+ */
+export const delegate = Effect.fn("delegate")(function* (config: Config, options: DelegateOptions) {
+  if (!hc.TERMINAL_NAME.test(options.name))
+    return yield* new Refused({
+      message: `${options.name} is not a terminal name: 1 to 32 of a-z, 0-9, - and _`,
+    });
+  const efforts = options.harness === "pi" ? PI_THINKING : CLAUDE_EFFORTS;
+  if (options.effort && !efforts.has(options.effort))
+    return yield* new Refused({
+      message: `${options.effort} is not a ${options.harness} ${options.harness === "pi" ? "thinking level" : "effort"}: ${[...efforts].join(", ")}`,
+    });
+  if ((options.repo === undefined) === (options.cwd === undefined))
+    return yield* new Refused({
+      message: "pass exactly one of --repo (new worktree) or --cwd (a folder with no repo work)",
+    });
+  const coordinator = yield* ownCoordinator().pipe(Effect.option);
+  const domain =
+    options.domain ??
+    (Option.isSome(coordinator)
+      ? coordinator.value.domain
+      : yield* new Refused({ message: "no coordinator label on this terminal; pass --domain" }));
+  const taken = (yield* hc.list()).find((terminal) => terminal.name === options.name);
+  if (taken)
+    return yield* new Refused({
+      message: `a live terminal is already named ${options.name} (${taken.address})`,
+    });
+
+  const lines: string[] = [];
+  let cwd: string;
+  let branch: string | undefined;
+  if (options.repo !== undefined) {
+    const repo = yield* mainCheckout(resolve(options.repo));
+    if (!repo) return yield* new Refused({ message: `${options.repo} is not a Git checkout` });
+    branch = `${config.branchPrefix}${options.name}`;
+    cwd = join(repo, ".claude", "worktrees", options.name);
+    if (existsSync(cwd)) return yield* new Refused({ message: `${cwd} already exists` });
+    if (yield* refExists(repo, `refs/heads/${branch}`))
+      return yield* new Refused({ message: `branch ${branch} already exists in ${repo}` });
+    const base = options.base ?? (yield* currentBranch(repo)) ?? "HEAD";
+    yield* gitOk(repo, ["worktree", "add", cwd, "-b", branch, base]);
+    lines.push(`worktree ${cwd} on ${branch} from ${base}`);
+    // After the name and collision checks, so a refused start changes nothing in the repo.
+    if (yield* excludeScratch(cwd)) lines.push("added .scratch/ to the repo's info/exclude");
+  } else {
+    cwd = real(resolve(options.cwd ?? "."));
+    if (!existsSync(cwd)) return yield* new Refused({ message: `${cwd} does not exist` });
+  }
+
+  let brief: string | undefined;
+  let message = options.message;
+  if (message.kind === "brief") {
+    const source = resolve(message.path);
+    if (!existsSync(source)) return yield* new Refused({ message: `no brief at ${source}` });
+    brief = join(cwd, ".scratch", "BRIEF.md");
+    if (real(source) !== real(brief))
+      yield* Effect.promise(async () => {
+        await mkdir(dirname(brief ?? cwd), { recursive: true });
+        await copyFile(source, brief ?? source);
+      });
+    message = { kind: "brief", path: brief };
+  }
+  const report = brief ? join(cwd, ".scratch", "REPORT.md") : undefined;
+  const session = crypto.randomUUID();
+  const tabLabel = options.task;
+  const labels: Record<string, string> = {
+    [L.domain]: domain,
+    [L.task]: options.task,
+    [L.session]: session,
+    [L.harness]: options.harness,
+    [L.worktree]: cwd,
+    ...(options.model ? { [L.model]: options.model } : {}),
+    ...(options.effort ? { [L.effort]: options.effort } : {}),
+    ...(branch ? { [L.branch]: branch } : {}),
+  };
+  const argv = agentArgv({
+    harness: options.harness,
+    name: options.name,
+    session,
+    model: options.model,
+    effort: options.effort,
+    extraArgs: options.harness === "pi" ? config.delegatePiArgs : config.delegateClaudeArgs,
+    message: firstMessage(options.harness, message),
+    resume: false,
+  });
+  const coordinatorTerminal = Option.isSome(coordinator) ? coordinator.value.terminal : undefined;
+  const launched = yield* launch({
+    name: options.name,
+    cwd,
+    tabLabel,
+    spaceName: `${domain} [${options.task}]`,
+    labels,
+    parent: coordinatorTerminal?.address,
+    argv,
+    ownSpace: options.space,
+    coordinatorSpace: coordinatorTerminal?.labels["herdr.space"],
+  });
+  const showed = yield* agentShowed(launched.address, 60);
+  if (!showed) {
+    const text = yield* hc.read(launched.address, 40).pipe(Effect.catch(() => Effect.succeed("")));
+    lines.push(
+      `warning: no agent status in ${launched.address} within 60s; it shows:\n${text.trim().slice(-1500)}`,
+    );
+  }
+  lines.push(
+    `started ${options.name} (${launched.address})${launched.space ? ` in its own space ${launched.space}` : ""}`,
+    "handle:",
+    handleLine({
+      name: options.name,
+      address: launched.address,
+      tabLabel,
+      cwd,
+      branch,
+      session,
+      harness: options.harness,
+      model: options.model,
+      effort: options.effort,
+      brief,
+      report,
+    }),
+  );
+  return lines;
+});
+
+/**
+ * Send a message to a delegate. Refuses a terminal blocked on a dialog; hc itself waits for a draft.
+ * @param target Name or address.
+ * @param text Message.
+ * @returns Lines to print.
+ */
+export const sendTo = Effect.fn("sendTo")(function* (target: string, text: string) {
+  const terminal = yield* hc.get(target);
+  if (!terminal || !terminal.live)
+    return yield* new Refused({ message: `no live terminal ${target}` });
+  if (terminal.status === "blocked")
+    return yield* new Refused({
+      message: `${target} is blocked on a dialog, which is the user's to answer in "${terminal.labels.where ?? target}"; read it with hc read ${terminal.address}`,
+    });
+  yield* hc.send(terminal.address, text);
+  return [
+    `sent to ${terminal.name ?? terminal.address} (${terminal.address}, ${terminal.status ?? "no status"})`,
+  ];
+});
+
+/**
+ * End a settled delegate: record what resuming needs, end its terminal, close its space.
+ * @param config Config.
+ * @param target Name or address.
+ * @param now End even while working.
+ * @returns Lines to print.
+ */
+export const endDelegate = Effect.fn("endDelegate")(function* (
+  config: Config,
+  target: string,
+  now: boolean,
+) {
+  const terminal = yield* hc.get(target);
+  if (!terminal) return yield* new Refused({ message: `no terminal ${target}` });
+  if (terminal.labels[L.role] === "coordinator")
+    return yield* new Refused({ message: `${target} is a coordinator` });
+  if (terminal.status === "working" && !now)
+    return yield* new Refused({
+      message: `${target} is working; wait for it to settle, or pass --now`,
+    });
+  const session = terminal.labels[L.session] ?? "";
+  const domain = terminal.labels[L.domain];
+  if (!session || !domain)
+    return yield* new Refused({
+      message: `${target} carries no ${L.session}/${L.domain} label, so it could not be resumed; end it with hc kill if the user agrees`,
+    });
+  const record: EndedRecord = {
+    name: terminal.name ?? terminal.address,
+    task: terminal.labels[L.task] ?? null,
+    domain,
+    tab_label: terminal.labels[L.task] ?? null,
+    session,
+    program: terminal.labels[L.harness] ?? harnessOf(terminal.app) ?? null,
+    model: terminal.labels[L.model] ?? null,
+    effort: terminal.labels[L.effort] ?? null,
+    cwd: terminal.labels[L.worktree] ?? terminal.cwd,
+    repo:
+      (yield* mainCheckout(terminal.cwd).pipe(Effect.catch(() => Effect.succeed(undefined)))) ??
+      null,
+    branch: terminal.labels[L.branch] ?? null,
+    ended_at: new Date().toISOString(),
+    quiet_since: terminal.statusMs ? new Date(terminal.statusMs).toISOString() : null,
+    space: terminal.labels[L.space] !== undefined,
+  };
+  const path = yield* writeEnded(config.stateDir, record);
+  yield* hc.end(terminal.address).pipe(Effect.tapError(() => removeEnded(path)));
+  const space = terminal.labels[L.space];
+  if (space) yield* hc.closeSpace(space).pipe(Effect.ignore);
+  return [
+    `ended ${record.name} (${terminal.address}); record ${path}`,
+    `worktree, branch and session stay; resume with: coordinate resume ${record.name}`,
+  ];
+});
+
+/**
+ * Delegates settled for longer than `quiet_hours`, each with the command that ends it.
+ * @param config Config.
+ * @param domain Domain.
+ * @param nowMs Current time.
+ * @returns Lines to print.
+ */
+export const listIdle = Effect.fn("listIdle")(function* (
+  config: Config,
+  domain: string,
+  nowMs: number,
+) {
+  if (config.keepRunning.includes(domain))
+    return [`${domain} is in keep_running: its delegates are never ended`];
+  const limit = config.quietHours * 3_600_000;
+  const quiet = (yield* members(domain, undefined)).filter(
+    (member) =>
+      member.status !== undefined &&
+      hc.SETTLED.has(member.status) &&
+      member.status !== "blocked" &&
+      member.statusMs !== undefined &&
+      nowMs - member.statusMs >= limit,
+  );
+  if (quiet.length === 0)
+    return [`no delegate of ${domain} has been quiet for ${config.quietHours}h`];
+  return quiet.map(
+    (member) =>
+      `${member.name} (${member.address}) ${member.status} for ${Math.round((nowMs - (member.statusMs ?? nowMs)) / 3_600_000)}h: coordinate end ${member.name}`,
+  );
+});
+
+/**
+ * Resume an ended delegate in a new terminal with the same name, labels and session.
+ * @param config Config.
+ * @param name Delegate name.
+ * @param space Give it its own space (default: what it had).
+ * @returns Lines to print.
+ */
+export const resumeDelegate = Effect.fn("resumeDelegate")(function* (
+  config: Config,
+  name: string,
+  space: boolean | undefined,
+) {
+  const { records } = yield* readEnded(config.stateDir);
+  const found = records
+    .filter((entry) => entry.record.name === name)
+    .toSorted((a, b) => b.record.ended_at.localeCompare(a.record.ended_at))[0];
+  if (!found)
+    return yield* new Refused({
+      message: `no ended record for ${name} in ${config.stateDir}/ended`,
+    });
+  const { record } = found;
+  const harness = harnessOf(record.program ?? "claude");
+  if (!harness)
+    return yield* new Refused({
+      message: `${name} ran ${record.program}, which this skill cannot resume`,
+    });
+  if (!existsSync(record.cwd))
+    return yield* new Refused({ message: `${name}'s folder is gone: ${record.cwd}` });
+  const taken = (yield* hc.list()).find((terminal) => terminal.name === name);
+  if (taken)
+    return yield* new Refused({
+      message: `a live terminal is already named ${name} (${taken.address})`,
+    });
+  const coordinator = yield* ownCoordinator().pipe(Effect.option);
+  const coordinatorTerminal = Option.isSome(coordinator) ? coordinator.value.terminal : undefined;
+  const task = record.task ?? name;
+  const labels: Record<string, string> = {
+    [L.domain]: record.domain,
+    [L.task]: task,
+    [L.session]: record.session,
+    [L.harness]: harness,
+    [L.worktree]: record.cwd,
+    ...(record.model ? { [L.model]: record.model } : {}),
+    ...(record.effort ? { [L.effort]: record.effort } : {}),
+    ...(record.branch ? { [L.branch]: record.branch } : {}),
+  };
+  const launched = yield* launch({
+    name,
+    cwd: record.cwd,
+    tabLabel: task,
+    spaceName: `${record.domain} [${task}]`,
+    labels,
+    parent: coordinatorTerminal?.address,
+    argv: agentArgv({
+      harness,
+      name,
+      session: record.session,
+      model: record.model ?? undefined,
+      effort: record.effort ?? undefined,
+      extraArgs: harness === "pi" ? config.delegatePiArgs : config.delegateClaudeArgs,
+      message: undefined,
+      resume: true,
+    }),
+    ownSpace: space ?? record.space ?? true,
+    coordinatorSpace: coordinatorTerminal?.labels["herdr.space"],
+  });
+  const showed = yield* agentShowed(launched.address, 60);
+  if (!showed)
+    return yield* new Refused({
+      message: `${name} did not show an agent status in ${launched.address} within 60s; read it with hc read ${launched.address}`,
+    });
+  yield* removeEnded(found.path);
+  return [
+    `resumed ${name} in ${launched.address}; update the backlog handle's address`,
+    `send it what arrived: coordinate send ${name} "<message>"`,
+  ];
+});
+
+/**
+ * The backlog text, or a refusal when it is missing.
+ * @param config Config.
+ * @param domain Domain.
+ * @returns Text and path.
+ */
+export const readBacklog = Effect.fn("readBacklog")(function* (config: Config, domain: string) {
+  const path = backlogPath(config.backlogDir, domain);
+  if (!existsSync(path))
+    return yield* new Refused({
+      message: `no backlog for ${domain} at ${path}; run coordinate start ${domain}`,
+    });
+  const text = yield* Effect.promise(() => readFile(path, "utf8"));
+  return { path, text, open: section(text, "Open") ?? "" };
+});
