@@ -17,7 +17,7 @@ For how Claude Code auto-loads skills, agents, rules, and memory, see
 ```
 skills/              # one directory per published skill, each with a SKILL.md (plus optional scripts/ and references/)
 agents/              # one Markdown file per agent
-plugins/             # optional plugins beside the root one (e.g. to-code: a Claude Code mod plus a pi extension)
+plugins/             # optional plugins beside the root one (e.g. to-code: a Claude Code mod plus a pi extension); plugins/coordinate/herdr holds Herdr mods, not a plugin
 .claude-plugin/      # plugin.json and marketplace.json, so the repo installs as a Claude Code plugin
 .claude/skills/      # skills internal to this repo, not published (e.g. writing-skills-update)
 .claude/references/  # shared reference docs for authoring in this repo, plus pinned dependency submodules
@@ -60,7 +60,7 @@ Claude edits matching files:
 
 The repository root is a Claude Code plugin (`wyattjoh`) and the marketplace
 (`wyattjoh-skills`), defined in `.claude-plugin/`. The marketplace also lists each optional
-plugin under `plugins/`, so installing `wyattjoh` never pulls them in. The root plugin relies on the default
+plugin under `plugins/` (except `plugins/coordinate`, which ships Herdr mods only), so installing `wyattjoh` never pulls them in. The root plugin relies on the default
 `skills/` and `agents/` directories, so new skills and agents ship without manifest
 edits. `version` is intentionally omitted so installs track the commit SHA. Run
 `claude plugin validate .` after touching either manifest.

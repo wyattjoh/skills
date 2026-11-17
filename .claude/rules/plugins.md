@@ -11,6 +11,21 @@ A plugin may ship as a Claude Code function-hooks mod and a pi extension from on
 Load the `plugin-authoring` skill before changing a mod: it lays the API types for the
 running build.
 
+## Exception: `plugins/coordinate`
+
+`plugins/coordinate/herdr/` builds read-only Herdr mods (`coordinate-panel`) for the coordinate
+skill's backlog. It is not a Claude Code plugin: no `.claude-plugin/`, no marketplace entry, no
+mod or pi extension. It is its own project with its own `package.json`, `bunfig.toml` and
+`justfile`. Root `bun test` and `knip` skip it, and root `bun run check` skips its `src/` (its
+tests need the renderer preload and its mod sources need Herdr's host `.d.ts` files); root
+`check` still type-checks its Bun `scripts/`, and root lint and format cover all of it. Run `just check` there: tests, a typecheck against the installed declarations copied
+into `node_modules/.cache/`, and a build that stages each mod under `.scratch/` and runs
+`herdr-app check` with that stage as `HERDR_APP_HOME`. Nothing there writes the live Herdr home.
+
+The mods share the backlog schema and validator by relative import from
+`skills/coordinate/scripts/lib/backlog-store/`, which must stay dependency-free (Herdr has no
+`TextEncoder`, so Effect Schema cannot load in a mod).
+
 ## Shared unmanaged core and Pi async fleets
 
 Keep mod-compatible behaviour in `hooks/core/*.ts`. A mod imports only its own plugin's

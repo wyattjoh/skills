@@ -1,0 +1,3 @@
+# Build stages and the cached Herdr host declarations
+.scratch/
+node_modules/

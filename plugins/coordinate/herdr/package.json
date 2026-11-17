@@ -1,0 +1,11 @@
+{
+  "name": "coordinate-herdr",
+  "private": true,
+  "license": "MIT",
+  "type": "module",
+  "scripts": {
+    "test": "bun test",
+    "typecheck": "bun scripts/typecheck.ts",
+    "build": "bun scripts/build.ts"
+  }
+}

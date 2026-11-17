@@ -15,6 +15,7 @@
     "bun.lock",
     ".pi/**",
     ".scratch/**",
+    "**/.scratch/**",
     "**/testdata/**",
     ".agents/**",
     ".claude/agents/**",

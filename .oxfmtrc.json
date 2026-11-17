@@ -9,6 +9,7 @@
     "skills/code-walkthrough/assets/**",
     ".pi/**",
     ".scratch/**",
+    "**/.scratch/**",
     ".claude/agents/**",
     ".claude/skills/**",
     ".claude/references/**",

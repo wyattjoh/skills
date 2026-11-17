@@ -1,0 +1,17 @@
+default:
+    @just --list
+
+# Run the View and model tests against the gpui-kit, gpui-base and herdr doubles
+test:
+    bun run test
+
+# Type-check against Herdr's installed declarations (copied into a local cache, never written back)
+typecheck:
+    bun run typecheck
+
+# Bundle every mod into .scratch/stage-* and run herdr-app check with that stage as HERDR_APP_HOME; never installs
+build:
+    bun run build
+
+# Tests, typecheck and the staged build. Installing into the live Herdr home is a separate, approved step
+check: test typecheck build

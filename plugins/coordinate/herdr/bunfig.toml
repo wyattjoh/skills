@@ -1,0 +1,3 @@
+[test]
+# Every suite sees the same gpui-kit, gpui-base and herdr doubles, whatever the run order.
+preload = ["./src/test/renderer.ts"]

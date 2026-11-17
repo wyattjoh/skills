@@ -16,6 +16,7 @@
     "plugins/*/hooks/register.ts",
     "plugins/*/tests/**",
     "plugins/*/types/**",
-    "plugins/*/.claude-plugin/**"
+    "plugins/*/.claude-plugin/**",
+    "plugins/coordinate/herdr/src/**"
   ]
 }

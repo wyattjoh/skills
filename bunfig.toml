@@ -7,5 +7,6 @@ linker = "hoisted"
 
 [test]
 # Claude Code mod tests run under `claude plugin test`, not bun.
-pathIgnorePatterns = ["plugins/*/tests/**"]
+# The coordinate Herdr mods run their own suite with a renderer preload (plugins/coordinate/herdr).
+pathIgnorePatterns = ["plugins/*/tests/**", "plugins/coordinate/**"]
 preload = ["./test-setup.ts"]
