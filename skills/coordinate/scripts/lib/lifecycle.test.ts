@@ -1,19 +1,12 @@
 import { afterAll, afterEach, beforeEach, describe, expect, it } from "bun:test";
 import { existsSync, readdirSync, readFileSync, rmSync } from "node:fs";
 import { join } from "node:path";
+import { createDocument, itemAdd } from "./backlog-doc.ts";
 import { resolveConfig } from "./config.ts";
 import { Effect } from "effect";
 import { failureOf, runWith, tempDir } from "./fixture.ts";
 import { writeEnded } from "./fleet.ts";
-import {
-  delegate,
-  endDelegate,
-  handleLine,
-  listIdle,
-  resumeDelegate,
-  sendTo,
-  start,
-} from "./lifecycle.ts";
+import { delegate, endDelegate, listIdle, resumeDelegate, sendTo, start } from "./lifecycle.ts";
 import { fakeProc, ok, type RunOutput } from "./proc.ts";
 
 const dirs: string[] = [];
@@ -127,6 +120,7 @@ describe("delegate", () => {
         message: { kind: "brief", path: "/b" },
         space: true,
         domain: "app",
+        item: undefined,
       }),
       fake.layer,
     );
@@ -149,6 +143,7 @@ describe("delegate", () => {
         message: { kind: "brief", path: "/b" },
         space: true,
         domain: "app",
+        item: undefined,
       }),
       fake.layer,
     );
@@ -222,6 +217,10 @@ describe("launch parent", () => {
             );
             await runWith(resumeDelegate(cfg, "fix-a", ownSpace), fake.layer);
           } else {
+            if (caller.role === "coordinator") {
+              await Effect.runPromise(createDocument(cfg, "app"));
+              await runWith(itemAdd(cfg, "app", { title: "fix a", json: false, now: "x" }));
+            }
             await runWith(
               delegate(cfg, {
                 name: "fix-a",
@@ -235,6 +234,7 @@ describe("launch parent", () => {
                 message: { kind: "skill", skill: "implement", args: ".scratch/spec.md" },
                 space: ownSpace,
                 domain: caller.role === "coordinator" ? undefined : "app",
+                item: caller.role === "coordinator" ? "i1" : undefined,
               }),
               fake.layer,
             );
@@ -260,28 +260,6 @@ describe("launch parent", () => {
       );
     }
   }
-});
-
-describe("handleLine", () => {
-  it("joins every handle field", () => {
-    expect(
-      handleLine({
-        name: "fix-a",
-        address: "t7",
-        tabLabel: "fix a",
-        cwd: "/r/.claude/worktrees/fix-a",
-        branch: "wyattjoh/fix-a",
-        session: "s-1",
-        harness: "pi",
-        model: "openai/gpt",
-        effort: "high",
-        brief: "/r/.claude/worktrees/fix-a/.scratch/BRIEF.md",
-        report: "/r/.claude/worktrees/fix-a/.scratch/REPORT.md",
-      }),
-    ).toBe(
-      '- fix-a | t7 | "fix a" | /r/.claude/worktrees/fix-a | wyattjoh/fix-a | s-1 | pi openai/gpt high | brief /r/.claude/worktrees/fix-a/.scratch/BRIEF.md | report /r/.claude/worktrees/fix-a/.scratch/REPORT.md',
-    );
-  });
 });
 
 const endLabels = {

@@ -1,6 +1,6 @@
 import { existsSync } from "node:fs";
 import { Effect } from "effect";
-import { readDocument, showBacklog } from "./backlog-doc.ts";
+import { readDocument, refSessions, showBacklog } from "./backlog-doc.ts";
 import type { Config } from "./config.ts";
 import { type Delegate, members, readEnded } from "./fleet.ts";
 import { currentBranch, defaultBases, mainCheckout } from "./git.ts";
@@ -88,8 +88,9 @@ export const domainStatus = Effect.fn("domainStatus")(function* (
     }),
   );
   const owned = typeof ownedOrProblem === "string" ? [] : ownedOrProblem;
-  const backlog = yield* readBacklog(config, domain);
-  const delegates = yield* members(domain, backlog.open);
+  // Refuses a domain with neither a document nor a legacy Markdown backlog.
+  yield* readBacklog(config, domain);
+  const delegates = yield* members(domain, yield* refSessions(config, domain));
   const ended = (yield* readEnded(config.stateDir)).records.filter(
     (entry) => entry.record.domain === domain,
   );
@@ -158,7 +159,7 @@ export const domainStatus = Effect.fn("domainStatus")(function* (
     const branch = delegate.labels["fleet.branch"] ?? (yield* currentBranch(delegate.cwd));
     const info = yield* describe(repo, branch, delegate.status);
     lines.push(
-      `  ${delegate.name} ${delegate.address} ${delegate.status ?? "no status"} ${age(delegate.statusMs, nowMs)}${delegate.byLabel ? "" : " (by backlog session)"} · ${info.text} · next: ${info.next}`,
+      `  ${delegate.name} ${delegate.address} ${delegate.status ?? "no status"} ${age(delegate.statusMs, nowMs)}${delegate.byLabel ? "" : " (by item ref)"} · ${info.text} · next: ${info.next}`,
     );
   }
   for (const { record } of ended) {

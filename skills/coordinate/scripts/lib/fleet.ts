@@ -1,7 +1,6 @@
 import { mkdir, readdir, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { Effect, Option, Schema } from "effect";
-import { namesSession } from "./backlog.ts";
 import { type Harness, harnessOf } from "./harness.ts";
 import * as hc from "./herdr.ts";
 
@@ -40,7 +39,7 @@ export type Delegate = {
   task: string;
   labels: Record<string, string>;
   /**
-   * True when the terminal carries the domain label; false when only the backlog names its session.
+   * True when the terminal carries the domain label; false when only an item's delegate ref names its session.
    */
   byLabel: boolean;
 };
@@ -141,15 +140,14 @@ export const domainOfCaller = Effect.fn("domainOfCaller")(function* (
 
 /**
  * The domain's live delegates: terminals labelled with the domain (one `hc ls --label` call plus a
- * `hc get` per member), and, when `openText` is given, unlabelled agents whose session the backlog's
- * Open section names.
+ * `hc get` per member), and unlabelled agents whose session an item's delegate ref names exactly.
  * @param domain Domain.
- * @param openText Backlog Open section, to match unlabelled sessions; undefined skips that scan.
+ * @param refSessions Session ids from the backlog's delegate refs; undefined or empty skips that scan.
  * @returns Delegates.
  */
 export const members = Effect.fn("members")(function* (
   domain: string,
-  openText: string | undefined,
+  refSessions: ReadonlySet<string> | undefined,
 ) {
   const labelled = yield* hc.list([`${L.domain}=${domain}`]);
   const found: Delegate[] = [];
@@ -158,7 +156,7 @@ export const members = Effect.fn("members")(function* (
     if (!terminal || terminal.labels[L.role] === "coordinator") continue;
     found.push(toDelegate(terminal, true));
   }
-  if (openText === undefined) return found;
+  if (refSessions === undefined || refSessions.size === 0) return found;
   const known = new Set(labelled.map((terminal) => terminal.address));
   for (const listed of yield* hc.list()) {
     if (known.has(listed.address) || !hc.isAgent(listed)) continue;
@@ -166,7 +164,7 @@ export const members = Effect.fn("members")(function* (
     if (!terminal || terminal.labels[L.domain] || terminal.labels[L.role] === "coordinator")
       continue;
     const session = sessionOf(terminal);
-    if (session && namesSession(openText, session)) found.push(toDelegate(terminal, false));
+    if (refSessions.has(session)) found.push(toDelegate(terminal, false));
   }
   return found;
 });

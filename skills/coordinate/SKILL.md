@@ -28,7 +28,7 @@ A question gets an answer: read what it needs and reply. A change is an item:
 
 1. Restate it in one line and name what it touches. Check its ripple: what depends on it, what it duplicates or contradicts, from the real files (or a subagent's conclusion).
 2. Decide or ask (below), then route it: **answer**; **build** here when it fits one turn with no worktree, branch, running app or render to check; otherwise **delegate**.
-3. Record what outlives the turn in the backlog in the same turn: done, delegated with its handle, or waiting with the ask.
+3. Record what outlives the turn in the backlog in the same turn: done, delegated (`delegate --item` records it), or waiting with the ask.
 
 **Drift test**, before each action: does it change something outside the boundary, or go past the item? Either yes: say "This moves into <X>, outside <domain>" and route it. Adjacent work is a delegated task with the user's yes for that repo. Another domain of the user's gets a line in that domain's backlog marked "from <domain>". Other people's work stays theirs; raise it only when it blocks the domain.
 
@@ -45,7 +45,7 @@ Each ask is self-contained in the reply and the backlog: what, why it came up, o
 - One delegate per task, one worktree per delegate, each in its own Herdr space: `coordinate delegate <name> --task "<few words>" --repo <path> --harness pi|claude ...` makes `<repo>/.claude/worktrees/<name>` on `<branch_prefix><name>`. `--cwd` is for a domain with no repo; `--no-space` puts it in a tab of your space. Invoking this skill is the user's request for these worktrees, branches and spaces.
 - Brief it from [brief.md](references/brief.md) (`--brief`), or for a spec, start it with the implement skill: `--skill implement|implement-spec --args "<spec path>"` (the script writes `/implement` for Claude, `/skill:implement` for pi).
 - Harness and model: the user's named choice wins; otherwise follow Standing yes; otherwise pick by the work (a cheap model for bounded mechanical edits, the strongest for design, debugging and new features) and say which in one line.
-- Put the printed handle line in the backlog under the item. Done when the delegate shows a status and its handle is recorded.
+- Pass `--item <id>`: it is required from your terminal, and `coordinate delegate` records the delegate on that item and sets it to delegated. A delegate starting a child review passes no `--item`. Done when the delegate shows a status and the item lists it.
 - Send follow-ups with `coordinate send`, not `hc send`. Send no progress check-ins; the watcher tells you when a delegate settles. A permission dialog is the user's to answer in that tab: name the tab.
 - A review session runs only when the user asks for one. For a delegate's own review, give it the optional [Child review brief](references/brief.md): it runs `coordinate delegate` from its own terminal, so `HC_TERMINAL_ID` nests the read-only reviewer under that delegate, with its own brief.
 - The delegate uses bounded `hc wait`, caps review rounds (default two), reads the child's report, then ends it with `coordinate end`; authorized integration waits for a ready verdict. When the delegate settles, the coordinator verifies the child's verdict too.

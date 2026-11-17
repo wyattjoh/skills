@@ -123,12 +123,3 @@ export const missingSections = (text: string): string[] => {
   const present = new Set(sections(text).map((found) => found.heading));
   return SECTION_NAMES.filter((name) => !present.has(name));
 };
-
-/**
- * Whether the text names a session id (by its first 8 characters or more).
- * @param text Section text.
- * @param session Session id.
- * @returns True when named.
- */
-export const namesSession = (text: string, session: string): boolean =>
-  session.length >= 8 && text.includes(session.slice(0, 8));

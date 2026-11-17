@@ -1,4 +1,4 @@
-import type { Ask, Backlog, Dated, Finding, Item, ItemStatus } from "./schema.ts";
+import type { Ask, Backlog, Dated, DelegateRef, Finding, Item, ItemStatus } from "./schema.ts";
 
 /**
  * An operation's result: the next document and a value, or why the input was refused.
@@ -476,4 +476,43 @@ export const setFocus = (
   if (problem) return { ok: false, reason: problem };
   const focus = input.focus.trim();
   return { ok: true, backlog: { ...backlog, focus }, value: focus };
+};
+
+/**
+ * Why an item cannot take a delegate, or undefined when it can: it must exist and be open.
+ * @param backlog Current document.
+ * @param id Item id.
+ * @returns The refusal, or undefined.
+ */
+export const unfileable = (backlog: Backlog, id: string): string | undefined => {
+  const found = backlog.items.find((item) => item.id === id);
+  if (!found) return `no item ${id} in ${backlog.domain}`;
+  if (isClosed(found.status))
+    return `${id} is already ${found.status}; a delegate needs an open item`;
+  return undefined;
+};
+
+/**
+ * File a delegate under an item: append its ref and set the item to delegated.
+ * @param backlog Current document.
+ * @param input Item id and the delegate ref.
+ * @returns The next document and the updated item.
+ */
+export const fileDelegate = (
+  backlog: Backlog,
+  input: { id: string; ref: DelegateRef },
+): OpResult<Item> => {
+  const problem = unfileable(backlog, input.id);
+  if (problem) return refuse(problem);
+  const item = backlog.items.find((entry) => entry.id === input.id);
+  if (!item) return refuse(`no item ${input.id} in ${backlog.domain}`);
+  const filed: Item = { ...item, status: "delegated", delegates: [...item.delegates, input.ref] };
+  return {
+    ok: true,
+    backlog: {
+      ...backlog,
+      items: backlog.items.map((entry) => (entry.id === filed.id ? filed : entry)),
+    },
+    value: filed,
+  };
 };

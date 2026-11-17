@@ -2,7 +2,6 @@ import { describe, expect, it } from "bun:test";
 import {
   appendToSection,
   missingSections,
-  namesSession,
   replaceSection,
   section,
   sections,
@@ -54,12 +53,5 @@ describe("sections", () => {
   it("lists missing sections in order", () => {
     expect(missingSections(text)).toEqual(["Standing yes"]);
     expect(missingSections(template("app"))).toEqual([]);
-  });
-});
-
-describe("namesSession", () => {
-  it("matches the first 8 characters", () => {
-    expect(namesSession(text, "0b9c2a51-0000-4000-8000-000000000001")).toBe(true);
-    expect(namesSession(text, "short")).toBe(false);
   });
 });

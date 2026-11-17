@@ -114,8 +114,12 @@ program
   .option("--args <text>", "arguments after the skill prefix", "")
   .option("--no-space", "open a tab in the coordinator's space instead of a new space")
   .option("--domain <domain>", "domain (default: this coordinator's label)")
+  .option(
+    "--item <id>",
+    "item to file the delegate under (required from a coordinator, refused from a delegate)",
+  )
   .description(
-    "create the worktree, start a pi or Claude Code delegate in its own Herdr space, print its handle",
+    "create the worktree, start a pi or Claude Code delegate in its own Herdr space, record it on the item",
   )
   .action(
     (
@@ -133,6 +137,7 @@ program
         args: string;
         space: boolean;
         domain?: string;
+        item?: string;
       },
     ) => {
       if ((options.brief === undefined) === (options.skill === undefined)) {
@@ -158,6 +163,7 @@ program
           message,
           space: options.space,
           domain: options.domain,
+          item: options.item,
         }),
       );
     },

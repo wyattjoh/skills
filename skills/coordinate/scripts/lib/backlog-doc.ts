@@ -4,7 +4,7 @@ import { appendFile, mkdir, open, readFile, rename, rmdir, unlink } from "node:f
 import { homedir, hostname } from "node:os";
 import { join, resolve } from "node:path";
 import { setTimeout as sleep } from "node:timers/promises";
-import { Effect, Schema } from "effect";
+import { Effect, Option, Schema } from "effect";
 import {
   addBoundary,
   addFinding,
@@ -14,16 +14,23 @@ import {
   closeFinding,
   closeItem,
   emptyBacklog,
+  fileDelegate,
   type ItemUpdate,
   type OpResult,
   removeBoundary,
   RETAINED_CLOSED,
   retain,
   setFocus,
+  unfileable,
   updateItem,
 } from "./backlog-store/ops.ts";
 import { renderBacklog } from "./backlog-store/render.ts";
-import { type Backlog, type Finding, validateBacklog } from "./backlog-store/schema.ts";
+import {
+  type Backlog,
+  type DelegateRef,
+  type Finding,
+  validateBacklog,
+} from "./backlog-store/schema.ts";
 import type { Config } from "./config.ts";
 import { backlogPath, Refused } from "./fleet.ts";
 
@@ -498,4 +505,49 @@ export const focusSet = Effect.fn("focusSet")(function* (
   );
   if (input.json) return json({ focus });
   return [focus === null ? "focus cleared" : `focus: ${focus}`];
+});
+
+/**
+ * Refuse, before anything is created, an item a delegate cannot be filed under.
+ * @param config Config.
+ * @param domain Domain.
+ * @param id Item id.
+ */
+export const checkFileable = Effect.fn("checkFileable")(function* (
+  config: Config,
+  domain: string,
+  id: string,
+) {
+  const { backlog } = yield* readDocument(config, domain);
+  const problem = unfileable(backlog, id);
+  if (problem) return yield* new Refused({ message: problem });
+});
+
+/**
+ * Record a delegate ref on an item and set the item to delegated.
+ * @param config Config.
+ * @param domain Domain.
+ * @param input Item id and the delegate ref.
+ * @returns The updated item.
+ */
+export const recordDelegate = Effect.fn("recordDelegate")(function* (
+  config: Config,
+  domain: string,
+  input: { id: string; ref: DelegateRef },
+) {
+  return yield* change(config, domain, (backlog) => fileDelegate(backlog, input));
+});
+
+/**
+ * The session ids every item's delegate refs name, or an empty set when the domain has no document.
+ * @param config Config.
+ * @param domain Domain.
+ * @returns Session ids.
+ */
+export const refSessions = Effect.fn("refSessions")(function* (config: Config, domain: string) {
+  const read = yield* readDocument(config, domain).pipe(Effect.option);
+  if (Option.isNone(read)) return new Set<string>();
+  return new Set(
+    read.value.backlog.items.flatMap((item) => item.delegates.map((ref) => ref.session)),
+  );
 });

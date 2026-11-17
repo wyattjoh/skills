@@ -4,7 +4,13 @@ import { userInfo } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { Effect, Option } from "effect";
 import { section } from "./backlog.ts";
-import { createDocument, documentPath } from "./backlog-doc.ts";
+import {
+  BacklogError,
+  checkFileable,
+  createDocument,
+  documentPath,
+  recordDelegate,
+} from "./backlog-doc.ts";
 import type { Config } from "./config.ts";
 import {
   backlogPath,
@@ -93,6 +99,10 @@ export type DelegateOptions = {
   message: FirstMessage;
   space: boolean;
   domain: string | undefined;
+  /**
+   * Item to file the delegate under: required from a coordinator, refused from a delegate.
+   */
+  item: string | undefined;
 };
 
 /**
@@ -172,40 +182,10 @@ const launch = Effect.fn("launch")(function* (spec: {
 });
 
 /**
- * The backlog handle line for a delegate.
- * @param fields Handle fields.
- * @returns One Markdown list line.
- */
-export const handleLine = (fields: {
-  name: string;
-  address: string;
-  tabLabel: string;
-  cwd: string;
-  branch: string | undefined;
-  session: string;
-  harness: Harness;
-  model: string | undefined;
-  effort: string | undefined;
-  brief: string | undefined;
-  report: string | undefined;
-}): string =>
-  [
-    `- ${fields.name}`,
-    fields.address,
-    `"${fields.tabLabel}"`,
-    fields.cwd,
-    fields.branch ?? "no branch",
-    fields.session,
-    [fields.harness, fields.model, fields.effort].filter(Boolean).join(" "),
-    ...(fields.brief ? [`brief ${fields.brief}`] : []),
-    ...(fields.report ? [`report ${fields.report}`] : []),
-  ].join(" | ");
-
-/**
  * Create the worktree, copy the brief, and start a delegate.
  * @param config Config.
  * @param options Delegate options.
- * @returns Lines to print; the last is the handle.
+ * @returns Lines to print.
  */
 export const delegate = Effect.fn("delegate")(function* (config: Config, options: DelegateOptions) {
   if (!hc.TERMINAL_NAME.test(options.name))
@@ -222,11 +202,21 @@ export const delegate = Effect.fn("delegate")(function* (config: Config, options
       message: "pass exactly one of --repo (new worktree) or --cwd (a folder with no repo work)",
     });
   const coordinator = yield* ownCoordinator().pipe(Effect.option);
+  if (Option.isSome(coordinator) && options.item === undefined)
+    return yield* new Refused({
+      message:
+        "a coordinator files every delegate under an item: pass --item <id> (coordinate item add prints one)",
+    });
+  if (Option.isNone(coordinator) && options.item !== undefined)
+    return yield* new Refused({
+      message: "--item is for the coordinator; a delegate starting a child review passes no --item",
+    });
   const domain =
     options.domain ??
     (Option.isSome(coordinator)
       ? coordinator.value.domain
       : yield* new Refused({ message: "no coordinator label on this terminal; pass --domain" }));
+  if (options.item !== undefined) yield* checkFileable(config, domain, options.item);
   const taken = (yield* hc.list()).find((terminal) => terminal.name === options.name);
   if (taken)
     return yield* new Refused({
@@ -302,6 +292,29 @@ export const delegate = Effect.fn("delegate")(function* (config: Config, options
     ownSpace: options.space,
     coordinatorSpace: coordinatorTerminal?.labels["herdr.space"],
   });
+  const unfiled = (why: string): string =>
+    `started ${options.name} (${launched.address}, session ${session}) but could not file it under ${options.item}: ${why}`;
+  // Filed before the status wait, so a slow start is still on the item.
+  const filed =
+    options.item === undefined
+      ? undefined
+      : yield* recordDelegate(config, domain, {
+          id: options.item,
+          ref: {
+            name: options.name,
+            session,
+            branch: branch ?? null,
+            worktree: cwd,
+            brief: brief ?? "",
+            report: report ?? "",
+          },
+        }).pipe(
+          Effect.catchTags({
+            Refused: (error) => Effect.fail(new Refused({ message: `${unfiled(error.message)}` })),
+            BacklogError: (error) =>
+              Effect.fail(new BacklogError({ path: error.path, message: unfiled(error.message) })),
+          }),
+        );
   const showed = yield* agentShowed(launched.address, 60);
   if (!showed) {
     const text = yield* hc.read(launched.address, 40).pipe(Effect.catch(() => Effect.succeed("")));
@@ -311,20 +324,9 @@ export const delegate = Effect.fn("delegate")(function* (config: Config, options
   }
   lines.push(
     `started ${options.name} (${launched.address})${launched.space ? ` in its own space ${launched.space}` : ""}`,
-    "handle:",
-    handleLine({
-      name: options.name,
-      address: launched.address,
-      tabLabel,
-      cwd,
-      branch,
-      session,
-      harness: options.harness,
-      model: options.model,
-      effort: options.effort,
-      brief,
-      report,
-    }),
+    filed
+      ? `filed ${options.name} under ${filed.id} [${filed.status}]`
+      : `session ${session}${report ? ` report ${report}` : ""}`,
   );
   return lines;
 });
@@ -507,7 +509,7 @@ export const resumeDelegate = Effect.fn("resumeDelegate")(function* (
     });
   yield* removeEnded(found.path);
   return [
-    `resumed ${name} in ${launched.address}; update the backlog handle's address`,
+    `resumed ${name} in ${launched.address}`,
     `send it what arrived: coordinate send ${name} "<message>"`,
   ];
 });
