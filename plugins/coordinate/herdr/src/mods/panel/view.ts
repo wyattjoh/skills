@@ -21,13 +21,15 @@ import {
   ICONS,
   INNER_RADIUS,
   ITEM_ROW_HEIGHT,
+  COUNT_TONES,
+  LISTING_ROW_HEIGHT,
   PANEL_PADDING,
   STATUS_TONES,
   TEXT_BODY,
   TEXT_SMALL,
 } from "./look.ts";
 import { GROUP_LABELS, rankedOptions } from "./model.ts";
-import type { DocumentState, ItemGroup } from "./model.ts";
+import type { DocumentState, DomainSummary, ItemGroup, ListingState } from "./model.ts";
 
 /**
  * Theme colors by name.
@@ -40,6 +42,9 @@ export type Theme = Record<string, Color>;
 export type PanelModel = {
   domain: string | undefined;
   doc: DocumentState;
+  listing: ListingState;
+  // Whether the domain was opened from the listing, so Back can return to it.
+  picked: boolean;
   groups: ItemGroup[];
   findings: Finding[];
   isOpen: (group: ItemGroup) => boolean;
@@ -47,6 +52,7 @@ export type PanelModel = {
   // The item whose detail screen is on top of the list, if any.
   detail: Item | undefined;
   open: (item: Item, cx: Context) => void;
+  openDomain: (domain: string, cx: Context) => void;
   back: (cx: Context) => void;
 };
 
@@ -444,7 +450,10 @@ const domainBody = (t: Theme, domain: string, doc: DocumentState, model: PanelMo
       `No backlog for ${domain}`,
       `Run coordinate start ${domain} to create it.`,
     );
-  if (doc.kind === "invalid") return message(t, "invalid", "Couldn't read the backlog", doc.reason);
+  if (doc.kind === "invalid")
+    return message(t, "invalid", `${domain}'s backlog is invalid`, doc.reason);
+  if (doc.kind === "unreadable")
+    return message(t, "unreadable", `Couldn't read ${domain}'s backlog`, doc.reason);
   return v_flex()
     .id("domain")
     .gap(CARD_GAP)
@@ -453,8 +462,84 @@ const domainBody = (t: Theme, domain: string, doc: DocumentState, model: PanelMo
     .child(findingsCard(t, model.findings));
 };
 
+const COUNT_LABELS = [
+  ["waiting", "waiting"],
+  ["delegated", "delegated"],
+  ["open", "open"],
+  ["findings", "findings"],
+] as const;
+
+const domainRow = (t: Theme, row: DomainSummary, open: (cx: Context) => void): Element =>
+  cardRow(t, `domain-${row.domain}`, t.hover)
+    .h(LISTING_ROW_HEIGHT)
+    .cursor_pointer()
+    .on_click((_event, cx) => open(cx))
+    .child(
+      div()
+        .flex_1()
+        .min_w_0()
+        .truncate()
+        .text_size(TEXT_BODY)
+        .text_color(t.foreground)
+        .child(row.domain),
+    )
+    .children(
+      row.kind === "loaded"
+        ? COUNT_LABELS.map(([key, label]) =>
+            div()
+              .flex_none()
+              .text_size(TEXT_SMALL)
+              .text_color(row.counts[key] > 0 ? t[COUNT_TONES[key]] : t.dim)
+              .child(`${row.counts[key]} ${label}`),
+          )
+        : [
+            div()
+              .flex_none()
+              .text_size(TEXT_SMALL)
+              .text_color(t.ansi1)
+              .child(row.kind === "invalid" ? "Invalid" : "Unreadable"),
+          ],
+    );
+
+const listingBody = (t: Theme, listing: ListingState, model: PanelModel): Element => {
+  if (listing.kind === "loading") return message(t, "loading", "Loading…", "Listing the backlogs.");
+  if (listing.kind === "unreadable")
+    return message(t, "listing-error", "Couldn't list the backlogs", listing.reason);
+  if (listing.domains.length === 0)
+    return message(
+      t,
+      "no-backlogs",
+      "No backlogs yet",
+      "Run coordinate start <domain> to create one.",
+    );
+  return v_flex()
+    .id("listing")
+    .flex_none()
+    .gap(CARD_SECTION_GAP)
+    .child(cardHeader(t, "domains-header", "Domains"))
+    .child(
+      card(t, "domains").children(
+        listing.domains.map((row, index) =>
+          domainRow(t, row, (cx) => model.openDomain(row.domain, cx)).when(index === 0, (el) =>
+            el.border_t(0),
+          ),
+        ),
+      ),
+    );
+};
+
+const scroll = (body: Element): Element =>
+  v_flex()
+    .id("panel-scroll")
+    .flex_1()
+    .min_h_0()
+    .overflow_y_scrollbar()
+    .p(PANEL_PADDING)
+    .child(body);
+
 /**
- * The whole panel: tool bar, then the domain crumb and its body, or why there is none.
+ * The whole panel: tool bar, then either the domain crumb and its body, or the all-domains
+ * listing when no domain is focused or opened.
  * @param t The theme.
  * @param model What to draw.
  * @returns The element.
@@ -464,16 +549,9 @@ export const panel = (t: Theme, model: PanelModel): Element =>
     .id("coordinate-panel")
     .size_full()
     .bg(t.surface)
-    .child(toolbar(t, model.detail === undefined ? undefined : model.back))
+    .child(toolbar(t, model.detail !== undefined || model.picked ? model.back : undefined))
     .when(model.domain === undefined, (el) =>
-      el.child(
-        message(
-          t,
-          "no-domain",
-          "No domain focused",
-          "Focus a coordinator or one of its delegates to see its backlog.",
-        ),
-      ),
+      el.child(crumb(t, "All domains")).child(scroll(listingBody(t, model.listing, model))),
     )
     .when(model.domain !== undefined, (el) =>
       el.child(crumb(t, model.domain!)).child(

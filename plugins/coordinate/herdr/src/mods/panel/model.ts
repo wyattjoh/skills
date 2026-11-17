@@ -147,6 +147,7 @@ export type DocumentState =
   | { kind: "loading" }
   | { kind: "missing" }
   | { kind: "invalid"; reason: string }
+  | { kind: "unreadable"; reason: string }
   | { kind: "loaded"; backlog: Backlog };
 
 /**
@@ -167,3 +168,73 @@ export const readDocument = (text: string | null): DocumentState => {
     ? { kind: "loaded", backlog: validated.backlog }
     : { kind: "invalid", reason: validated.errors.join("; ") };
 };
+
+/**
+ * The shell listing the panel runs through exec, `sh -c LIST_SCRIPT <name> <folder>`: each
+ * regular `*.json` file's name without the extension, NUL-terminated. A missing folder lists
+ * nothing and succeeds; a folder that exists but can't be read exits 1, naming it on stderr.
+ */
+export const LIST_SCRIPT =
+  '[ -d "$1" ] || exit 0; [ -r "$1" ] && [ -x "$1" ] || { echo "cannot read $1" >&2; exit 1; }; for p in "$1"/*.json; do [ -f "$p" ] || continue; n=${p##*/}; printf "%s\\0" "${n%.json}"; done';
+
+/**
+ * The domains in the listing script's output: names the CLI could have written, sorted.
+ * @param stdout The script's output.
+ * @returns The domain names.
+ */
+export const parseListing = (stdout: string): string[] =>
+  stdout
+    .split("\0")
+    .filter((name) => DOMAIN_NAME.test(name))
+    .sort((a, b) => a.localeCompare(b));
+
+/**
+ * The counts a listing row shows: items waiting on the user, delegated and open, and open
+ * findings.
+ */
+export type DomainCounts = { waiting: number; delegated: number; open: number; findings: number };
+
+/**
+ * A domain's counts.
+ * @param backlog A validated document.
+ * @returns The counts.
+ */
+export const countDomain = (backlog: Backlog): DomainCounts => {
+  const items = (status: ItemStatus) =>
+    backlog.items.filter((item) => item.status === status).length;
+  return {
+    waiting: items("waiting-user"),
+    delegated: items("delegated"),
+    open: items("open"),
+    findings: backlog.findings.filter((finding) => finding.status === "open").length,
+  };
+};
+
+/**
+ * One listing row: a domain's counts, or why its document can't be shown.
+ */
+export type DomainSummary =
+  | { domain: string; kind: "loaded"; counts: DomainCounts }
+  | { domain: string; kind: "invalid" | "unreadable"; reason: string };
+
+/**
+ * Summarize a listed domain from its document's state. A document that vanished after the
+ * listing leaves the listing.
+ * @param domain The domain.
+ * @param doc The document's state.
+ * @returns The row, or undefined.
+ */
+export const summarize = (domain: string, doc: DocumentState): DomainSummary | undefined => {
+  if (doc.kind === "loaded") return { domain, kind: "loaded", counts: countDomain(doc.backlog) };
+  if (doc.kind === "invalid" || doc.kind === "unreadable")
+    return { domain, kind: doc.kind, reason: doc.reason };
+  return undefined;
+};
+
+/**
+ * What the panel knows about the all-domains listing.
+ */
+export type ListingState =
+  | { kind: "loading" }
+  | { kind: "unreadable"; reason: string }
+  | { kind: "loaded"; domains: DomainSummary[] };

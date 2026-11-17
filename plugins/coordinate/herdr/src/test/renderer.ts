@@ -177,8 +177,24 @@ export const host = {
   } | null,
   watches: [] as Watch[],
   reads: [] as string[],
+  // Paths whose read rejects, as an unreadable file does.
+  unreadable: new Set<string>(),
+  // Every exec call, and how the next ones end: a rejection, or a non-zero exit.
+  execs: [] as { command: string; args: string[] }[],
+  execRejects: undefined as unknown,
+  execExit: undefined as { code: number; stderr: string } | undefined,
   checking: false,
 };
+
+// The panel's listing protocol (sh -c LIST_SCRIPT name folder): each *.json basename in the
+// folder without its extension, NUL-terminated; nothing at all when the folder is missing.
+const listFolder = (folder: string): string =>
+  [...host.files.keys()]
+    .filter((path) => path.startsWith(`${folder}/`) && path.endsWith(".json"))
+    .map((path) => path.slice(folder.length + 1, -".json".length))
+    .filter((name) => !name.includes("/"))
+    .map((name) => `${name}\0`)
+    .join("");
 
 mock.module("herdr", () => ({
   checking: () => host.checking,
@@ -194,7 +210,14 @@ mock.module("herdr", () => ({
   focused: () => host.focused,
   readTextFile: async (path: string) => {
     host.reads.push(path);
+    if (host.unreadable.has(path)) throw new Error(`permission denied: ${path}`);
     return host.files.get(path) ?? null;
+  },
+  exec: async (command: string, args: string[] = []) => {
+    host.execs.push({ command, args });
+    if (host.execRejects !== undefined) throw host.execRejects;
+    if (host.execExit !== undefined) return { stdout: "", ...host.execExit };
+    return { code: 0, stdout: listFolder(args.at(-1) ?? ""), stderr: "" };
   },
   watchFolder: (path: string) => {
     const pending = deferred<string[]>();
@@ -279,5 +302,9 @@ export const resetHost = () => {
   host.focused = null;
   host.watches = [];
   host.reads = [];
+  host.unreadable = new Set();
+  host.execs = [];
+  host.execRejects = undefined;
+  host.execExit = undefined;
   host.checking = false;
 };

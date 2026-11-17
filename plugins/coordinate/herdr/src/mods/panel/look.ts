@@ -64,6 +64,11 @@ export const GROUP_HEADER_HEIGHT = 28;
 export const ITEM_ROW_HEIGHT = 32;
 
 /**
+ * An all-domains listing row's height, the Tasks panel's listing row.
+ */
+export const LISTING_ROW_HEIGHT = 34;
+
+/**
  * A group folds in 200ms.
  */
 export const FOLD_MOTION = { duration: 200, easing: "ease-out" } as const;
@@ -124,3 +129,14 @@ export const FINDING_GLYPHS: Readonly<Record<Finding["kind"], { glyph: string; t
   issue: { glyph: "▲", tone: "ansi1" },
   opportunity: { glyph: "✦", tone: "ansi5" },
 };
+
+/**
+ * Each listing count's tone, as a theme() color name, used only while the count is nonzero so
+ * a domain that needs nothing reads quiet.
+ */
+export const COUNT_TONES = {
+  waiting: "blocked",
+  delegated: "ansi4",
+  open: "foreground",
+  findings: "foreground",
+} as const;

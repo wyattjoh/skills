@@ -4,6 +4,7 @@ import type { Backlog, Item } from "../../lib/store.ts";
 import { context, get, host, ids, resetHost, settle, text } from "../../test/renderer.ts";
 
 const { default: Panel } = await import("./index.ts");
+const { LIST_SCRIPT } = await import("./model.ts");
 
 const STATE = "/Users/test/.local/state/coordinate";
 const DOC = `${STATE}/backlogs/alpha.json`;
@@ -235,22 +236,184 @@ test("reads the state folder from the coordinate config", async () => {
   expect(host.watches.map((watch) => watch.path)).toEqual(["/Users/test/state/backlogs"]);
 });
 
-test("shows why there is nothing to draw", async () => {
+// A focused terminal with no fleet.domain label.
+const focusPlain = () => {
   host.terminals = [{ address: "t9", state: "live", labels: {} }];
   host.focused = { space: "s1", tab: "tab1", pane: "p1", terminal: "t9" };
-  let mounted = await mount();
-  expect(text(get(mounted.render(), "no-domain"))).toBe(
-    "No domain focused Focus a coordinator or one of its delegates to see its backlog.",
-  );
+};
+
+// Focus moves to the panel's own pane, as a click on it does.
+const focusPanel = () => {
+  host.focused = { space: "s1", tab: "tab1", pane: "p2", terminal: null };
+};
+
+const addIssue = (backlog: Backlog, title: string): Backlog => {
+  const added = addFinding(backlog, {
+    kind: "issue",
+    title,
+    detail: undefined,
+    path: undefined,
+    from: undefined,
+  });
+  if (!added.ok) throw new Error(added.reason);
+  return added.backlog;
+};
+
+// beta: one open item and two findings, f3 closed as acted on.
+const betaBacklog = (): Backlog => {
+  let backlog = add({ ...emptyBacklog("beta", null), focus: "Beta focus" }, "Beta work");
+  backlog = addIssue(addIssue(backlog, "Flaky test"), "Stale docs");
+  const closed = closeFinding(backlog, { id: "f3", outcome: "fixed", dismissed: false, now: NOW });
+  if (!closed.ok) throw new Error(closed.reason);
+  return closed.backlog;
+};
+
+test("lists every domain with its waiting, delegated, open and findings counts", async () => {
+  focusPlain();
+  host.files.set(DOC, JSON.stringify(everyStatus()));
+  host.files.set(`${STATE}/backlogs/beta.json`, JSON.stringify(betaBacklog()));
+  const { render } = await mount();
+  const root = render();
+  expect(host.execs).toEqual([
+    { command: "sh", args: ["-c", LIST_SCRIPT, "coordinate-panel", `${STATE}/backlogs`] },
+  ]);
+  expect(ids(root, "domain-")).toEqual(["domain-alpha", "domain-beta"]);
+  expect(text(get(root, "domain-alpha"))).toBe("alpha 1 waiting 1 delegated 2 open 0 findings");
+  expect(text(get(root, "domain-beta"))).toBe("beta 0 waiting 0 delegated 1 open 1 findings");
+});
+
+test("opens a domain from the listing and Back returns to it", async () => {
+  focusPlain();
+  host.files.set(DOC, JSON.stringify(everyStatus()));
+  host.files.set(`${STATE}/backlogs/beta.json`, JSON.stringify(betaBacklog()));
+  const { ctx, render } = await mount();
+  focusPanel();
+  get(render(), "domain-beta").click!({}, ctx.cx);
+  await settle();
+  ctx.tick(1_000);
+  await settle();
+  let root = render();
+  expect(text(get(root, "crumb"))).toBe("beta");
+  expect(text(get(root, "focus"))).toBe("Beta focus");
+  get(root, "back").click!({}, ctx.cx);
+  await settle();
+  ctx.tick(1_000);
+  await settle();
+  root = render();
+  expect(ids(root, "domain-")).toEqual(["domain-alpha", "domain-beta"]);
+  expect(ids(root, "back")).toEqual([]);
+});
+
+test("a focused domain terminal wins over a domain opened from the listing", async () => {
+  focusPlain();
+  host.files.set(DOC, JSON.stringify(everyStatus()));
+  host.files.set(`${STATE}/backlogs/beta.json`, JSON.stringify(betaBacklog()));
+  const { ctx, render } = await mount();
+  focusPanel();
+  get(render(), "domain-beta").click!({}, ctx.cx);
+  await settle();
   focusDomain("alpha");
+  ctx.tick(1_000);
+  await settle();
+  expect(text(get(render(), "crumb"))).toBe("alpha");
+  expect(ids(render(), "back")).toEqual([]);
+  focusPlain();
+  ctx.tick(1_000);
+  await settle();
+  expect(ids(render(), "domain-")).toEqual(["domain-alpha", "domain-beta"]);
+});
+
+test("Back from an item opened in a listed domain returns to that domain, then to the listing", async () => {
+  focusPlain();
+  host.files.set(DOC, JSON.stringify(everyStatus()));
+  const { ctx, render } = await mount();
+  focusPanel();
+  get(render(), "domain-alpha").click!({}, ctx.cx);
+  await settle();
+  get(render(), "item-i1").click!({}, ctx.cx);
+  expect(ids(render(), "screen-item")).toEqual(["screen-item"]);
+  get(render(), "back").click!({}, ctx.cx);
+  await settle();
+  let root = render();
+  expect([text(get(root, "crumb")), ids(root, "screen-item"), ids(root, "back")]).toEqual([
+    "alpha",
+    [],
+    ["back"],
+  ]);
+  get(root, "back").click!({}, ctx.cx);
+  await settle();
+  root = render();
+  expect([text(get(root, "crumb")), ids(root, "domain-")]).toEqual([
+    "All domains",
+    ["domain-alpha"],
+  ]);
+});
+
+test("names an invalid or unreadable domain in the listing instead of failing it", async () => {
+  focusPlain();
+  host.files.set(DOC, JSON.stringify({ ...everyStatus(), items: "none" }));
+  host.files.set(`${STATE}/backlogs/beta.json`, JSON.stringify(betaBacklog()));
+  host.files.set(`${STATE}/backlogs/gamma.json`, "{}");
+  host.unreadable.add(`${STATE}/backlogs/gamma.json`);
+  const { ctx, render } = await mount();
+  const root = render();
+  expect(text(get(root, "domain-alpha"))).toBe("alpha Invalid");
+  expect(text(get(root, "domain-beta"))).toBe("beta 0 waiting 0 delegated 1 open 1 findings");
+  expect(text(get(root, "domain-gamma"))).toBe("gamma Unreadable");
+  focusPanel();
+  get(root, "domain-alpha").click!({}, ctx.cx);
+  await settle();
+  expect(text(get(render(), "invalid"))).toBe("alpha's backlog is invalid items must be a list");
+});
+
+test("relists the domains when the watched backlogs folder changes", async () => {
+  focusPlain();
+  const { render } = await mount();
+  expect(ids(render(), "no-backlogs")).toEqual(["no-backlogs"]);
+  host.files.set(`${STATE}/backlogs/beta.json`, JSON.stringify(betaBacklog()));
+  host.watches[0]!.fire([`${STATE}/backlogs/beta.json`]);
+  await settle();
+  expect(ids(render(), "domain-")).toEqual(["domain-beta"]);
+});
+
+test("shows an empty state when there are no backlogs", async () => {
+  focusPlain();
+  const { render } = await mount();
+  expect(text(get(render(), "no-backlogs"))).toBe(
+    "No backlogs yet Run coordinate start <domain> to create one.",
+  );
+});
+
+test("shows why the backlogs folder can't be listed", async () => {
+  focusPlain();
+  host.execExit = { code: 1, stderr: "sh: permission denied\n" };
+  let mounted = await mount();
+  expect(text(get(mounted.render(), "listing-error"))).toBe(
+    "Couldn't list the backlogs sh: permission denied",
+  );
+  host.execExit = undefined;
+  host.execRejects = new Error("cannot start sh: program not found");
   mounted = await mount();
+  expect(text(get(mounted.render(), "listing-error"))).toBe(
+    "Couldn't list the backlogs Error: cannot start sh: program not found",
+  );
+});
+
+test("shows why there is nothing to draw for a focused domain", async () => {
+  focusDomain("alpha");
+  let mounted = await mount();
   expect(text(get(mounted.render(), "missing"))).toBe(
     "No backlog for alpha Run coordinate start alpha to create it.",
   );
   host.files.set(DOC, JSON.stringify({ ...everyStatus(), items: "none" }));
   mounted = await mount();
   expect(text(get(mounted.render(), "invalid"))).toBe(
-    "Couldn't read the backlog items must be a list",
+    "alpha's backlog is invalid items must be a list",
+  );
+  host.unreadable.add(DOC);
+  mounted = await mount();
+  expect(text(get(mounted.render(), "unreadable"))).toBe(
+    "Couldn't read alpha's backlog Error: permission denied: " + DOC,
   );
 });
 
@@ -258,7 +421,9 @@ test("starts nothing under herdr-app check", async () => {
   host.checking = true;
   focusDomain("alpha");
   const { ctx } = await mount();
-  expect([ctx.timers.length, host.reads.length, host.watches.length]).toEqual([0, 0, 0]);
+  expect([ctx.timers.length, host.reads.length, host.watches.length, host.execs.length]).toEqual([
+    0, 0, 0, 0,
+  ]);
 });
 
 test("lists open findings under the Items card with kind glyphs in their tones", async () => {
