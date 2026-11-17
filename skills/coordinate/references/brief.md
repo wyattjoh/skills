@@ -2,7 +2,7 @@
 
 The brief is what a delegate reads first and the contract you verify against. Write it anywhere (your own `.scratch/` is fine) and pass it with `--brief`; `coordinate delegate` copies it to `<worktree>/.scratch/BRIEF.md` and Git ignores `.scratch/`. The worktree is always `<repo>/.claude/worktrees/<name>`, so you can write its absolute paths before it exists.
 
-Fill every heading. Quote the user where they decided something, so the delegate neither asks again nor widens it.
+Fill every required heading. Include Child review only when the user requested it. Quote the user where they decided something, so the delegate neither asks again nor widens it.
 
 ```markdown
 # Brief: <task in a few words>
@@ -33,6 +33,22 @@ PR, or land anything: the coordinator integrates when the user names how.
 Stop and report before bumping a version, releasing, messaging a person, changing CI or
 infrastructure, a second round of measurement, and after two failed attempts at one check.
 <Task-specific stop points, including choices the user still has to make.>
+
+## Child review
+
+After committing and passing checks, write `<absolute child brief path>`: review
+`git diff <review base>...<delegate branch>` against <requirements>; read-only, writes only to
+its own `.scratch/`, no source edits, commits or remote writes. Require a report with findings, checks
+(command, log, exit status), and a ready / needs changes verdict.
+
+From your own terminal, run `coordinate delegate <child name> --domain <domain> --task "<review task>" --repo <absolute repo path> --base <delegate branch> --harness <pi|claude> --model <model> --brief <absolute child brief path>`.
+Wait with `hc wait <child terminal from handle> --timeout <seconds, e.g. 900>`, at most
+<wait count, e.g. 4> times per round. Read the child's report; fix findings and use
+`coordinate send <child name> "<what changed; re-review the delegate branch>"` if needed.
+Cap at <round cap, default 2> rounds. If either bound is exhausted without a ready verdict, stop
+and report without integrating. After reading its final report, end the child with `coordinate end <child name>`.
+Integrate only as authorized in Stop points and only after a ready verdict.
+Include the child handle, rounds, final verdict and report path in your report for coordinator verification.
 
 ## Report
 

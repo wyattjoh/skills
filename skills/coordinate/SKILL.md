@@ -47,7 +47,8 @@ Each ask is self-contained in the reply and the backlog: what, why it came up, o
 - Harness and model: the user's named choice wins; otherwise follow Standing yes; otherwise pick by the work (a cheap model for bounded mechanical edits, the strongest for design, debugging and new features) and say which in one line.
 - Put the printed handle line in the backlog under the item. Done when the delegate shows a status and its handle is recorded.
 - Send follow-ups with `coordinate send`, not `hc send`. Send no progress check-ins; the watcher tells you when a delegate settles. A permission dialog is the user's to answer in that tab: name the tab.
-- A review session runs only when the user asks for one.
+- A review session runs only when the user asks for one. For a delegate's own review, give it the optional [Child review brief](references/brief.md): it runs `coordinate delegate` from its own terminal, so `HC_TERMINAL_ID` nests the read-only reviewer under that delegate, with its own brief.
+- The delegate uses bounded `hc wait`, caps review rounds (default two), reads the child's report, then ends it with `coordinate end`; authorized integration waits for a ready verdict. When the delegate settles, the coordinator verifies the child's verdict too.
 
 ## Watch
 
