@@ -1,19 +1,45 @@
 # Structure
 
-How the Coding Guides' architecture, unit choice, identity, naming and testing rules land in a TypeScript mod bundled to one `main.js`.
+How the Coding Guides' architecture, unit choice, identity, naming and testing rules land in a TypeScript project that bundles one or more mods, each to its own `main.js`.
 
-Contents: [Layers](#layers) · [Choosing the unit](#choosing-the-unit) · [Identity](#identity) · [Checked inputs](#checked-inputs) · [Extension points](#extension-points) · [Naming](#naming) · [Testing](#testing)
+Contents: [Project layout](#project-layout) · [Layers](#layers) · [Choosing the unit](#choosing-the-unit) · [Identity](#identity) · [Checked inputs](#checked-inputs) · [Extension points](#extension-points) · [Naming](#naming) · [Testing](#testing)
+
+## Project layout
+
+One repository can ship several mod folders (a panel, its toggle, a menu). Give each deployed mod its own source folder whose `index.ts` is the bundle entry, and share code between them only through tiers that no mod owns:
+
+```
+<project>/
+├── <piece>.mod.json        # one manifest per deployed folder, copied by the build
+├── src/
+│   ├── mods/<piece>/       # one folder per deployed mod
+│   │   ├── index.ts        # bundle entry and composition root
+│   │   └── *.ts, *.test.ts # that mod's regions, state classes and models, by capability
+│   ├── components/         # shared controls used by more than one mod
+│   ├── lib/                # shared pure models and host adapters, no gpui-kit runtime import
+│   ├── theme/              # shared theme derivations
+│   └── test/               # renderer harness and cross-mod suites
+├── scripts/                # build, typecheck and check scripts
+└── tests/                  # tests for scripts/ only
+```
+
+- Code starts in its mod's folder and moves to `components/`, `lib/` or `theme/` when a second mod imports it. A one-mod project uses the same shape with one `mods/<piece>/` folder, so a second mod lands without moving files.
+- Deployed folder names (`<project>-<piece>`) live in one inventory that the build, the checks and any code finding its own layout block all read.
+- Code that runs outside Herdr (a compiled helper, a CLI the mod spawns) gets its own source root beside `src/`. Mods reach it only through its command line or wire protocol, never by importing its modules.
+- Tests sit beside their module as `<module>.test.ts`. The test script preloads `src/test/`'s harness so every suite sees the same `gpui-kit`/`gpui-base`/`herdr` mocks regardless of run order. Bundles reach only what the entries import, so tests never ship.
+- The build stages every folder (bundle, manifest, assets) into an ignored output tree, and the check runs `herdr-app check` on each with that tree as `HERDR_APP_HOME`. One `check` command runs format, lint, tests, typecheck and build; installing into the live app is a separate command.
 
 ## Layers
 
-Dependencies point downward; organize by capability (the toolbar, the tab strip, panel memory), not by role folders (`views/`, `models/`).
+Dependencies point downward. Inside a mod's folder, organize by capability (the toolbar, the tab strip, panel memory), not by role folders (`views/`, `models/`); the shared tiers above are the only cross-mod folders.
 
-| Layer                        | Holds                                                                                        | Imports                               |
-| ---------------------------- | -------------------------------------------------------------------------------------------- | ------------------------------------- |
-| Composition root (`main.ts`) | the exported `View`: classifies the copy, owns state instances and handles, composes regions | everything below                      |
-| Region modules               | element functions for one capability, their small state classes                              | controls, models, `gpui-kit`, `herdr` |
-| Shared controls              | the few repeated shapes (a chip, an icon button, a fold card) with their states              | `gpui-kit`, theme type                |
-| Pure models                  | parsing, ordering, item unions, layout-tree reads, protocol helpers                          | nothing from `gpui-kit` or `herdr`    |
+| Layer                         | Holds                                                                                                                                                 | Imports                                         |
+| ----------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------- |
+| Composition root (`index.ts`) | the exported `View`: classifies the copy, owns state instances and handles, composes regions                                                          | everything below                                |
+| Region modules                | element functions for one capability, their small state classes                                                                                       | controls, models, adapters, `gpui-kit`, `herdr` |
+| Shared controls               | the few repeated shapes (a chip, an icon button, a fold card) with their states                                                                       | `gpui-kit`, theme type                          |
+| Host adapters                 | the seam around `exec`, `fetch`, timers and other host calls: a service or function that takes the host function as a parameter, so tests pass a fake | `herdr` types only, models                      |
+| Pure models                   | parsing, ordering, item unions, layout-tree reads, protocol helpers                                                                                   | nothing from `gpui-kit` or `herdr`              |
 
 `render` reads like the screen: `.child(tabStrip(...)).child(newTabButton(...)).children(toolbar(...))`. Move domain operations and non-trivial mutation into named methods or model functions. Extract a helper when it names a region and shrinks what a reader must hold; extract a control only when it has its own contract (several callers, shared states), not because a chain is long.
 
@@ -64,7 +90,7 @@ Use one word per concept across the mod (panel vs dock vs drawer), matching Herd
 
 ## Testing
 
-Test at the lowest layer that proves the behavior:
+Test at the lowest layer that proves the behavior (placement is in [Project layout](#project-layout)):
 
 1. Pure models with the project's test runner (`bun test`): parsing, ordering, protocol decisions, malformed input.
 2. Views through the project's renderer harness when it has one (a fake `herdr` host recording `run`/`setShared` effects), asserting element IDs, geometry and effects.

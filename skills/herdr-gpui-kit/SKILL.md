@@ -1,6 +1,6 @@
 ---
 name: herdr-gpui-kit
-description: Applies GPUI Kit's official Coding and Design Guides, translated to Herdr mods written in TypeScript or JavaScript on the gpui-shell runtime. Use when writing, structuring, refactoring, or reviewing a Herdr mod's `main.js`/`src/*.ts` (View classes, gpui-kit builder chains, `herdr` module calls), when splitting a large mod into modules, or when designing a mod's extension points such as props-driven slots.
+description: Applies GPUI Kit's official Coding and Design Guides, translated to Herdr mods written in TypeScript or JavaScript on the gpui-shell runtime. Use when writing, structuring, refactoring, or reviewing a Herdr mod's `main.js`/`src/**/*.ts` (View classes, gpui-kit builder chains, `herdr` module calls), when splitting a large mod into modules, when laying out a project that builds several mods, or when designing a mod's extension points such as props-driven slots.
 ---
 
 # Herdr mods to GPUI Kit standards
@@ -37,5 +37,5 @@ A change is done when you can name, for every region you touched:
 ## Pointers
 
 - Writing or reviewing behavior (phases, callbacks, state, tasks, timers, copies, cleanup): [runtime model](references/runtime.md).
-- Splitting a mod into modules, choosing between an element function, a state class and a nested View, IDs, naming, extension points and tests: [structure](references/structure.md).
+- Laying out the project (one folder per deployed mod, shared tiers, test placement, staged build), splitting a mod into modules, choosing between an element function, a state class and a nested View, IDs, naming, extension points and tests: [structure](references/structure.md).
 - Anything visible (colors, spacing, states, popups, motion, copy): [design](references/design.md).
