@@ -8,6 +8,7 @@ import {
   findingClose,
   itemAdd,
   itemClose,
+  itemUpdate,
   showBacklog,
 } from "./backlog-doc.ts";
 import { resolveConfig } from "./config.ts";
@@ -421,6 +422,324 @@ describe("finding close", () => {
   });
 });
 
+const update = (fields: Partial<Parameters<typeof itemUpdate>[2]>) => ({
+  id: "i1",
+  status: undefined,
+  outcome: undefined,
+  decided: [],
+  touch: [],
+  untouch: [],
+  due: undefined,
+  ask: undefined,
+  context: undefined,
+  options: [],
+  rec: undefined,
+  why: undefined,
+  answer: undefined,
+  json: false,
+  now: LATER,
+  ...fields,
+});
+
+describe("item update", () => {
+  it("sets open, building and parked, printing the item", async () => {
+    const { cfg, path } = await started();
+    await runWith(itemAdd(cfg, "app", { title: "a", json: false, now: NOW }));
+    expect(await runWith(itemUpdate(cfg, "app", update({ status: "building" })))).toEqual([
+      "updated i1 [building] a",
+    ]);
+    expect(read(path).items[0].status).toBe("building");
+    const printed = await runWith(itemUpdate(cfg, "app", update({ status: "parked", json: true })));
+    expect(JSON.parse(printed.join("\n"))).toEqual(read(path).items[0]);
+    expect(read(path).items[0].status).toBe("parked");
+    await runWith(itemUpdate(cfg, "app", update({ status: "open" })));
+    expect(read(path).items[0].status).toBe("open");
+  });
+
+  it("closes through done or dismissed with an outcome, and reopening clears it", async () => {
+    const { cfg, path } = await started();
+    await runWith(itemAdd(cfg, "app", { title: "a", json: false, now: NOW }));
+    await runWith(itemAdd(cfg, "app", { title: "b", json: false, now: NOW }));
+    await runWith(itemUpdate(cfg, "app", update({ status: "done", outcome: " shipped " })));
+    await runWith(
+      itemUpdate(cfg, "app", update({ id: "i2", status: "dismissed", outcome: "moot" })),
+    );
+    expect(
+      read(path).items.map((entry: Record<string, unknown>) => [
+        entry.status,
+        entry.closedAt,
+        entry.outcome,
+      ]),
+    ).toEqual([
+      ["done", LATER, "shipped"],
+      ["dismissed", LATER, "moot"],
+    ]);
+    expect(
+      tagged(
+        await failureOf(itemUpdate(cfg, "app", update({ status: "dismissed", outcome: "x" }))),
+      ),
+    ).toEqual({
+      tag: "Refused",
+      message: "i1 is already done",
+    });
+    expect(tagged(await failureOf(itemUpdate(cfg, "app", update({ ask: "q" }))))).toEqual({
+      tag: "Refused",
+      message: "an ask needs an item that is not done or dismissed",
+    });
+    await runWith(itemUpdate(cfg, "app", update({ status: "building" })));
+    expect(read(path).items[0]).toMatchObject({
+      status: "building",
+      closedAt: null,
+      outcome: null,
+    });
+  });
+
+  it("sets delegated on an item that already has a delegate", async () => {
+    const { cfg, path } = await started();
+    await runWith(itemAdd(cfg, "app", { title: "a", json: false, now: NOW }));
+    const doc = read(path);
+    const ref = {
+      name: "fix-a",
+      session: "s-1",
+      branch: null,
+      worktree: null,
+      brief: "/b.md",
+      report: "/r.md",
+    };
+    doc.items[0] = { ...doc.items[0], status: "building", delegates: [ref] };
+    writeFileSync(path, JSON.stringify(doc));
+    await runWith(itemUpdate(cfg, "app", update({ status: "delegated" })));
+    expect(read(path).items[0]).toMatchObject({ status: "delegated", delegates: [ref] });
+  });
+
+  it("appends dated decisions, so waiting-user can rest on one", async () => {
+    const { cfg, path } = await started();
+    await runWith(itemAdd(cfg, "app", { title: "a", json: false, now: NOW }));
+    await runWith(
+      itemUpdate(
+        cfg,
+        "app",
+        update({ status: "waiting-user", decided: ["land via PR; waiting on the user to merge"] }),
+      ),
+    );
+    await runWith(itemUpdate(cfg, "app", update({ decided: [" keep v1 ", "no flag"], now: NOW })));
+    expect(read(path).items[0]).toMatchObject({
+      status: "waiting-user",
+      decided: [
+        { text: "land via PR; waiting on the user to merge", at: "2026-11-18" },
+        { text: "keep v1", at: "2026-11-17" },
+        { text: "no flag", at: "2026-11-17" },
+      ],
+    });
+  });
+
+  it("adds and removes touched repos, and sets and clears the due date", async () => {
+    const { cfg, path } = await started();
+    await runWith(itemAdd(cfg, "app", { title: "a", json: false, now: NOW }));
+    await runWith(
+      itemUpdate(cfg, "app", update({ touch: ["/r/api", "/r/web", "/r/api"], due: "2026-12-01" })),
+    );
+    expect(read(path).items[0]).toMatchObject({ touches: ["/r/api", "/r/web"], due: "2026-12-01" });
+    await runWith(
+      itemUpdate(cfg, "app", update({ touch: ["/r/cli"], untouch: ["/r/api"], due: null })),
+    );
+    expect(read(path).items[0]).toMatchObject({ touches: ["/r/web", "/r/cli"], due: null });
+  });
+
+  it("attaches a structured ask, rendered with the recommendation first", async () => {
+    const { cfg, path } = await started();
+    await runWith(itemAdd(cfg, "app", { title: "pick a store", json: false, now: NOW }));
+    await runWith(
+      itemUpdate(
+        cfg,
+        "app",
+        update({
+          status: "waiting-user",
+          ask: "Which store?",
+          context: "both work",
+          options: ["sqlite", "json"],
+          rec: "json",
+          why: "no dependency",
+        }),
+      ),
+    );
+    expect(read(path).items[0].ask).toEqual({
+      question: "Which store?",
+      context: "both work",
+      options: ["sqlite", "json"],
+      rec: "json",
+      recReason: "no dependency",
+    });
+    const shown = (await runWith(showBacklog(cfg, "app", false))).join("\n");
+    expect(shown.split("## Open\n\n")[1]?.split("\n\n")[0]).toBe(
+      [
+        "- i1 [waiting-user] pick a store",
+        "  - ask: Which store?",
+        "    - context: both work",
+        "    - json (recommended: no dependency)",
+        "    - sqlite",
+      ].join("\n"),
+    );
+    await runWith(itemUpdate(cfg, "app", update({ ask: "Ship today?", options: ["yes", "no"] })));
+    expect(read(path).items[0].ask).toEqual({
+      question: "Ship today?",
+      context: null,
+      options: ["yes", "no"],
+      rec: null,
+      recReason: null,
+    });
+  });
+
+  it("answering an ask clears it and records the answer as a dated decision", async () => {
+    const { cfg, path } = await started();
+    await runWith(itemAdd(cfg, "app", { title: "a", json: false, now: NOW }));
+    await runWith(
+      itemUpdate(
+        cfg,
+        "app",
+        update({
+          status: "waiting-user",
+          ask: "Which store?",
+          options: ["sqlite", "json"],
+          now: NOW,
+        }),
+      ),
+    );
+    const printed = await runWith(
+      itemUpdate(cfg, "app", update({ answer: "json, but keep it small", json: true })),
+    );
+    const answered = {
+      id: "i1",
+      title: "a",
+      status: "waiting-user",
+      touches: [],
+      decided: [{ text: 'Re "Which store?": json, but keep it small', at: "2026-11-18" }],
+      ask: null,
+      due: null,
+      delegates: [],
+      createdAt: NOW,
+      closedAt: null,
+      outcome: null,
+    };
+    expect(JSON.parse(printed.join("\n"))).toEqual(answered);
+    expect(read(path).items[0]).toEqual(answered);
+  });
+
+  it.each([
+    ["an unknown id", update({ id: "i7", status: "parked" }), "no item i7 in app"],
+    ["no changes", update({}), "nothing to update on i1"],
+    ["done without an outcome", update({ status: "done" }), "i1 needs --outcome to become done"],
+    [
+      "dismissed with a blank outcome",
+      update({ status: "dismissed", outcome: " " }),
+      "i1 needs --outcome to become dismissed",
+    ],
+    [
+      "an outcome without a closing status",
+      update({ outcome: "x" }),
+      "--outcome needs --status done or dismissed",
+    ],
+    ["a two-line decision", update({ decided: ["a\nb"] }), "decided must be one line"],
+    ["a blank touch", update({ touch: [" "] }), "touch is empty"],
+    ["removing an untouched repo", update({ untouch: ["/r/x"] }), "i1 does not touch /r/x"],
+    ["a malformed due date", update({ due: "tomorrow" }), "due must be a date as YYYY-MM-DD"],
+    ["an impossible due date", update({ due: "2026-02-30" }), "due must be a date as YYYY-MM-DD"],
+    ["a thirteenth month", update({ due: "2026-13-01" }), "due must be a date as YYYY-MM-DD"],
+    ["a 32nd day", update({ due: "2026-02-32" }), "due must be a date as YYYY-MM-DD"],
+    [
+      "an ask on an item it closes",
+      update({ status: "done", outcome: "x", ask: "q" }),
+      "an ask needs an item that is not done or dismissed",
+    ],
+    [
+      "a rec outside the options",
+      update({ ask: "q", options: ["a", "b"], rec: "c" }),
+      "--rec c must be one of the --option values: a, b",
+    ],
+    [
+      "a rec with no options",
+      update({ ask: "q", rec: "a" }),
+      "--rec a must be one of the --option values: (none)",
+    ],
+    ["a reason without a rec", update({ ask: "q", options: ["a"], why: "w" }), "--why needs --rec"],
+    [
+      "duplicate options",
+      update({ ask: "q", options: ["a", "a"] }),
+      "--option values must be unique",
+    ],
+    [
+      "ask parts without an ask",
+      update({ options: ["a"] }),
+      "--context, --option, --rec and --why need --ask",
+    ],
+    ["a blank question", update({ ask: " " }), "ask is empty"],
+    ["an answer with no ask", update({ answer: "yes" }), "i1 has no ask to answer"],
+    [
+      "an answer beside a new ask",
+      update({ ask: "q", answer: "yes" }),
+      "--answer and --ask cannot be combined",
+    ],
+    [
+      "delegated without a delegate",
+      update({ status: "delegated" }),
+      "i1 cannot be delegated without a delegate; coordinate delegate --item i1 records one",
+    ],
+    [
+      "waiting-user without an ask or decision",
+      update({ status: "waiting-user" }),
+      "i1 cannot wait on the user without an ask (--ask) or a decision naming the pending integration (--decided)",
+    ],
+  ])("refuses %s and leaves the file unchanged", async (_name, input, message) => {
+    const { cfg, path } = await started();
+    await runWith(itemAdd(cfg, "app", { title: "a", json: false, now: NOW }));
+    const before = readFileSync(path, "utf8");
+    expect(tagged(await failureOf(itemUpdate(cfg, "app", input)))).toEqual({
+      tag: "Refused",
+      message,
+    });
+    expect(readFileSync(path, "utf8")).toBe(before);
+  });
+});
+
+describe("status --resume", () => {
+  it("prints the rendered backlog in place of the raw Open section", async () => {
+    const { cfg } = await started();
+    await runWith(itemAdd(cfg, "app", { title: "fix login", json: false, now: NOW }));
+    const lines = await runWith(domainStatus(cfg, "app", true, Date.parse(NOW)), hcFake().layer);
+    expect(lines).toEqual([
+      "app: 0 live delegates, 0 ended",
+      "",
+      ...(await runWith(showBacklog(cfg, "app", false))),
+      "",
+      "no watcher running: arm coordinate watch",
+    ]);
+    expect(lines[2]?.split("\n").slice(0, 1)).toEqual(["# app backlog"]);
+  });
+
+  it("names an invalid document instead of failing the whole status", async () => {
+    const { cfg, path } = await started();
+    writeFileSync(path, '{"schemaVersion":2}');
+    const lines = await runWith(domainStatus(cfg, "app", true, Date.parse(NOW)), hcFake().layer);
+    expect(lines[2]).toBe(
+      `could not read the backlog: ${path} is invalid: schemaVersion must be 1; domain must be a non-empty string; focus must be a string or null; legacy must be a string or null; boundary must be an object; standingYes must be a list; nextId must be a positive integer; items must be a list; findings must be a list`,
+    );
+  });
+
+  it("names the missing document when only a legacy Markdown backlog exists", async () => {
+    const state = dir();
+    const cfg = await config(state);
+    mkdirSync(join(state, "md"));
+    writeFileSync(join(state, "md", "app-backlog.md"), "## Open\n- old item\n");
+    expect(await runWith(domainStatus(cfg, "app", true, Date.parse(NOW)), hcFake().layer)).toEqual([
+      "app: 0 live delegates, 0 ended",
+      "",
+      `no backlog for app at ${join(state, "backlogs", "app.json")}; run coordinate start app`,
+      "",
+      "no watcher running: arm coordinate watch",
+    ]);
+  });
+});
+
 describe("backlog show", () => {
   it("renders Markdown with the legacy pointer, open and done items", async () => {
     const state = dir();
@@ -668,5 +987,64 @@ describe("coordinate CLI", () => {
       "error: option '--kind <kind>' argument 'bug' is invalid. Allowed choices are issue, opportunity.",
     ]);
     expect(readFileSync(path, "utf8")).toBe(before);
+  });
+
+  it("runs item update with every ask flag, and exits 1 with no write on a bad rec", async () => {
+    const { cfg, state, path } = await started();
+    await runWith(itemAdd(cfg, "app", { title: "a", json: false, now: NOW }));
+    const configFile = join(state, "config.json");
+    writeFileSync(configFile, JSON.stringify({ state_dir: state, backlog_dir: join(state, "md") }));
+    const env = { ...process.env, COORDINATE_CONFIG: configFile };
+    const script = join(import.meta.dir, "..", "coordinate.ts");
+    const run = (args: string[]) =>
+      Bun.spawnSync(["bun", script, "item", "update", "i1", "--domain", "app", ...args], {
+        env,
+        stdout: "pipe",
+        stderr: "pipe",
+        timeout: 10_000,
+      });
+    const flags = ["--status", "waiting-user", "--ask", "Which?", "--context", "c"];
+    const before = readFileSync(path, "utf8");
+    const refused = run([...flags, "--option", "a", "--option", "b", "--rec", "z"]);
+    expect([refused.exitCode, refused.stderr.toString()]).toEqual([
+      1,
+      "refused: --rec z must be one of the --option values: a, b\n",
+    ]);
+    expect(readFileSync(path, "utf8")).toBe(before);
+    const updated = run([
+      ...flags,
+      "--option",
+      "a",
+      "--option",
+      "b",
+      "--rec",
+      "b",
+      "--why",
+      "w",
+      "--touch",
+      "/r/api",
+      "--due",
+      "2026-12-01",
+      "--decided",
+      "scope is api only",
+      "--json",
+    ]);
+    expect([updated.exitCode, JSON.parse(updated.stdout.toString())]).toEqual([
+      0,
+      read(path).items[0],
+    ]);
+    expect(read(path).items[0]).toMatchObject({
+      status: "waiting-user",
+      ask: { question: "Which?", context: "c", options: ["a", "b"], rec: "b", recReason: "w" },
+      touches: ["/r/api"],
+      due: "2026-12-01",
+      decided: [{ text: "scope is api only" }],
+    });
+    const cleared = run(["--no-due", "--answer", "b"]);
+    expect([cleared.exitCode, read(path).items[0].due, read(path).items[0].ask]).toEqual([
+      0,
+      null,
+      null,
+    ]);
   });
 });

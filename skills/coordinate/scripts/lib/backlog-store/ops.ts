@@ -1,4 +1,4 @@
-import type { Backlog, Finding, Item } from "./schema.ts";
+import type { Ask, Backlog, Finding, Item, ItemStatus } from "./schema.ts";
 
 /**
  * An operation's result: the next document and a value, or why the input was refused.
@@ -171,5 +171,158 @@ export const closeFinding = (
       findings: backlog.findings.map((entry) => (entry.id === finding.id ? finding : entry)),
     },
     value: finding,
+  };
+};
+
+/**
+ * The changes one `item update` applies. Unset fields, and empty lists, leave the item as it is.
+ */
+export type ItemUpdate = {
+  id: string;
+  status: ItemStatus | undefined;
+  outcome: string | undefined;
+  decided: string[];
+  touch: string[];
+  untouch: string[];
+  due: string | null | undefined;
+  ask: string | undefined;
+  context: string | undefined;
+  options: string[];
+  rec: string | undefined;
+  why: string | undefined;
+  answer: string | undefined;
+  now: string;
+};
+
+const refuse = (reason: string): OpResult<Item> => ({ ok: false, reason });
+
+const isClosed = (status: ItemStatus): boolean => status === "done" || status === "dismissed";
+
+const isDate = (value: string): boolean => {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) return false;
+  const date = new Date(`${value}T00:00:00Z`);
+  return !Number.isNaN(date.getTime()) && date.toISOString().slice(0, 10) === value;
+};
+
+const firstProblem = (field: string, values: string[]): string | undefined =>
+  values.map((value) => oneLine(field, value)).find((problem) => problem !== undefined);
+
+/**
+ * The ask an update attaches: undefined when it sets none, or why its parts do not fit together.
+ */
+const askOf = (input: ItemUpdate): Ask | undefined | string => {
+  if (input.ask === undefined) {
+    const parts = [input.context, input.rec, input.why].some((part) => part !== undefined);
+    return parts || input.options.length > 0
+      ? "--context, --option, --rec and --why need --ask"
+      : undefined;
+  }
+  const problem =
+    oneLine("ask", input.ask) ??
+    (input.context === undefined ? undefined : oneLine("context", input.context)) ??
+    firstProblem("option", input.options) ??
+    (input.why === undefined ? undefined : oneLine("why", input.why));
+  if (problem) return problem;
+  const options = input.options.map((option) => option.trim());
+  if (new Set(options).size !== options.length) return "--option values must be unique";
+  const rec = input.rec?.trim();
+  if (rec !== undefined && !options.includes(rec))
+    return `--rec ${rec} must be one of the --option values: ${options.length > 0 ? options.join(", ") : "(none)"}`;
+  if (input.why !== undefined && rec === undefined) return "--why needs --rec";
+  return {
+    question: input.ask.trim(),
+    context: input.context?.trim() ?? null,
+    options,
+    rec: rec ?? null,
+    recReason: input.why?.trim() ?? null,
+  };
+};
+
+/**
+ * Apply an update to an item, refusing a result that breaks an item invariant.
+ * @param backlog Current document.
+ * @param input The changes, and the time as an ISO string.
+ * @returns The next document and the updated item.
+ */
+export const updateItem = (backlog: Backlog, input: ItemUpdate): OpResult<Item> => {
+  const found = backlog.items.find((item) => item.id === input.id);
+  if (!found) return refuse(`no item ${input.id} in ${backlog.domain}`);
+  const unchanged =
+    input.status === undefined &&
+    input.outcome === undefined &&
+    input.decided.length === 0 &&
+    input.touch.length === 0 &&
+    input.untouch.length === 0 &&
+    input.due === undefined &&
+    input.ask === undefined &&
+    input.context === undefined &&
+    input.options.length === 0 &&
+    input.rec === undefined &&
+    input.why === undefined &&
+    input.answer === undefined;
+  if (unchanged) return refuse(`nothing to update on ${input.id}`);
+  const problem =
+    firstProblem("decided", input.decided) ??
+    firstProblem("touch", input.touch) ??
+    firstProblem("untouch", input.untouch);
+  if (problem) return refuse(problem);
+  const asked = askOf(input);
+  if (typeof asked === "string") return refuse(asked);
+  if (input.answer !== undefined) {
+    if (asked) return refuse("--answer and --ask cannot be combined");
+    if (!found.ask) return refuse(`${input.id} has no ask to answer`);
+    const unanswerable = oneLine("answer", input.answer);
+    if (unanswerable) return refuse(unanswerable);
+  }
+  const touches = [...found.touches];
+  for (const path of input.untouch.map((entry) => entry.trim())) {
+    if (!touches.includes(path)) return refuse(`${input.id} does not touch ${path}`);
+    touches.splice(touches.indexOf(path), 1);
+  }
+  for (const path of input.touch.map((entry) => entry.trim()))
+    if (!touches.includes(path)) touches.push(path);
+  if (typeof input.due === "string" && !isDate(input.due))
+    return refuse("due must be a date as YYYY-MM-DD");
+  if (input.outcome !== undefined && !(input.status && isClosed(input.status)))
+    return refuse("--outcome needs --status done or dismissed");
+
+  const at = input.now.slice(0, 10);
+  let item: Item = {
+    ...found,
+    status: input.status ?? found.status,
+    touches,
+    due: input.due === undefined ? found.due : input.due,
+    ask: asked ?? (input.answer === undefined ? found.ask : null),
+    decided: [
+      ...found.decided,
+      ...(input.answer !== undefined && found.ask
+        ? [{ text: `Re "${found.ask.question}": ${input.answer.trim()}`, at }]
+        : []),
+      ...input.decided.map((text) => ({ text: text.trim(), at })),
+    ],
+  };
+  if (asked && isClosed(input.status ?? found.status))
+    return refuse("an ask needs an item that is not done or dismissed");
+  if (input.status && isClosed(input.status)) {
+    if (isClosed(found.status)) return refuse(`${input.id} is already ${found.status}`);
+    if (input.outcome === undefined || oneLine("outcome", input.outcome))
+      return refuse(`${input.id} needs --outcome to become ${input.status}`);
+    item = { ...item, ask: null, closedAt: input.now, outcome: input.outcome.trim() };
+  } else if (isClosed(found.status)) item = { ...item, closedAt: null, outcome: null };
+  if (item.status === "delegated" && item.delegates.length === 0)
+    return refuse(
+      `${input.id} cannot be delegated without a delegate; coordinate delegate --item ${input.id} records one`,
+    );
+  if (item.status === "waiting-user" && item.ask === null && item.decided.length === 0)
+    return refuse(
+      `${input.id} cannot wait on the user without an ask (--ask) or a decision naming the pending integration (--decided)`,
+    );
+  return {
+    ok: true,
+    backlog: {
+      ...backlog,
+      items: backlog.items.map((entry) => (entry.id === item.id ? item : entry)),
+    },
+    value: item,
   };
 };

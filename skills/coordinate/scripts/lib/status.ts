@@ -1,5 +1,6 @@
 import { existsSync } from "node:fs";
 import { Effect } from "effect";
+import { showBacklog } from "./backlog-doc.ts";
 import { boundaryPaths, pullRequestLinks } from "./backlog.ts";
 import type { Config } from "./config.ts";
 import { type Delegate, members, readEnded } from "./fleet.ts";
@@ -71,7 +72,7 @@ export const domainRepos = Effect.fn("domainRepos")(function* (config: Config, d
  * The domain's status: delegates, ended delegates, PRs on GitHub and Forgejo, and who acts next.
  * @param config Config.
  * @param domain Domain.
- * @param withResume Also print the Open section and the watcher state.
+ * @param withResume Also print the rendered backlog and the watcher state.
  * @param nowMs Current time.
  * @returns Lines to print.
  */
@@ -180,7 +181,13 @@ export const domainStatus = Effect.fn("domainStatus")(function* (
       `backlog links PRs in repos outside Boundary: ${linked.map((link) => `${link.host}/${link.slug}#${link.number}`).join(", ")}`,
     );
   if (withResume) {
-    lines.push("", `## Open (${backlog.path})`, backlog.open.trim() || "(empty)");
+    const rendered = yield* showBacklog(config, domain, false).pipe(
+      Effect.catchTags({
+        Refused: (refused) => Effect.succeed([refused.message]),
+        BacklogError: (error) => Effect.succeed([`could not read the backlog: ${error.message}`]),
+      }),
+    );
+    lines.push("", ...rendered);
     const watcher = yield* watcherAlive(config.stateDir, domain);
     lines.push(
       "",

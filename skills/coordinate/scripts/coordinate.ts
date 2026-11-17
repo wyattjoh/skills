@@ -1,7 +1,15 @@
 #!/usr/bin/env bun
 import { Command, Option } from "commander";
 import { Cause, Effect, Exit } from "effect";
-import { findingAdd, findingClose, itemAdd, itemClose, showBacklog } from "./lib/backlog-doc.ts";
+import {
+  findingAdd,
+  findingClose,
+  itemAdd,
+  itemClose,
+  itemUpdate,
+  showBacklog,
+} from "./lib/backlog-doc.ts";
+import { ITEM_STATUSES, type ItemStatus } from "./lib/backlog-store/schema.ts";
 import { loadConfig, type Config } from "./lib/config.ts";
 import { domainOfCaller, Refused, resolveDomain } from "./lib/fleet.ts";
 import type { FirstMessage, Harness, ImplementSkill } from "./lib/harness.ts";
@@ -192,7 +200,7 @@ program
 program
   .command("status")
   .option("--domain <domain>", "domain (default: this coordinator's label)")
-  .option("--resume", "also print the backlog's Open section and the watcher state")
+  .option("--resume", "also print the rendered backlog and the watcher state")
   .description("delegates, ended delegates and PRs (GitHub and Forgejo), with who acts next")
   .action((options: { domain?: string; resume?: boolean }) =>
     main((config) =>
@@ -221,7 +229,7 @@ backlog
     ),
   );
 
-const item = program.command("item").description("add and close backlog items");
+const item = program.command("item").description("add, update and close backlog items");
 
 item
   .command("add")
@@ -239,6 +247,70 @@ item
         }),
       ),
     ),
+  );
+
+item
+  .command("update")
+  .argument("<id>", "item id, such as i3")
+  .addOption(new Option("--status <status>", "set the status").choices(ITEM_STATUSES))
+  .option("--outcome <text>", "one line on how it ended (with --status done or dismissed)")
+  .option("--decided <text>", "append a decision, dated today (repeatable)", collect, [])
+  .option("--touch <repo>", "record a repo the item touches (repeatable)", collect, [])
+  .option("--untouch <repo>", "remove a touched repo (repeatable)", collect, [])
+  .option("--due <date>", "due date, YYYY-MM-DD")
+  .option("--no-due", "clear the due date")
+  .option("--ask <question>", "attach a question for the user, replacing any ask")
+  .option("--context <text>", "why the ask is asked (with --ask)")
+  .option("--option <text>", "an answer choice (with --ask, repeatable)", collect, [])
+  .option("--rec <option>", "the recommended option, one of --option (with --ask)")
+  .option("--why <reason>", "why the recommended option (with --rec)")
+  .option("--answer <text>", "the user's answer: clears the ask and appends it as a decision")
+  .option("--domain <domain>", "domain (default: this coordinator's label)")
+  .option("--json", "print the updated item as JSON")
+  .description(
+    "change an item's status, decisions, touched repos, due date or ask; waiting-user needs an ask or a decision, delegated needs a delegate",
+  )
+  .action(
+    (
+      id: string,
+      options: {
+        status?: ItemStatus;
+        outcome?: string;
+        decided: string[];
+        touch: string[];
+        untouch: string[];
+        due?: string | false;
+        ask?: string;
+        context?: string;
+        option: string[];
+        rec?: string;
+        why?: string;
+        answer?: string;
+        domain?: string;
+        json?: boolean;
+      },
+    ) =>
+      main((config) =>
+        Effect.flatMap(resolveDomain(options.domain), (domain) =>
+          itemUpdate(config, domain, {
+            id,
+            status: options.status,
+            outcome: options.outcome,
+            decided: options.decided,
+            touch: options.touch,
+            untouch: options.untouch,
+            due: options.due === false ? null : options.due,
+            ask: options.ask,
+            context: options.context,
+            options: options.option,
+            rec: options.rec,
+            why: options.why,
+            answer: options.answer,
+            json: options.json === true,
+            now: new Date().toISOString(),
+          }),
+        ),
+      ),
   );
 
 item

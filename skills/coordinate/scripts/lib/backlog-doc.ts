@@ -11,7 +11,9 @@ import {
   closeFinding,
   closeItem,
   emptyBacklog,
+  type ItemUpdate,
   type OpResult,
+  updateItem,
 } from "./backlog-store/ops.ts";
 import { renderBacklog } from "./backlog-store/render.ts";
 import { type Backlog, type Finding, validateBacklog } from "./backlog-store/schema.ts";
@@ -346,4 +348,20 @@ export const findingClose = Effect.fn("findingClose")(function* (
     }),
   );
   return input.json ? json(finding) : [`${finding.status} ${finding.id}: ${finding.outcome ?? ""}`];
+});
+
+/**
+ * `coordinate item update`: change an item's status, touches, due date, decisions or ask.
+ * @param config Config.
+ * @param domain Domain.
+ * @param input The changes, `--json`, and the time.
+ * @returns Lines to print.
+ */
+export const itemUpdate = Effect.fn("itemUpdate")(function* (
+  config: Config,
+  domain: string,
+  input: ItemUpdate & { json: boolean },
+) {
+  const item = yield* change(config, domain, (backlog) => updateItem(backlog, input));
+  return input.json ? json(item) : [`updated ${item.id} [${item.status}] ${item.title}`];
 });
