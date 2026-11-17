@@ -115,6 +115,31 @@ export const resolveDomain = Effect.fn("resolveDomain")(function* (flag: string 
 });
 
 /**
+ * Resolve the domain for a command delegates may run: the flag when given, else the
+ * `fleet.domain` label of the calling terminal, whether coordinator or delegate.
+ * @param flag `--domain` value.
+ * @param env Environment (`HC_TERMINAL_ID`).
+ * @returns Domain.
+ */
+export const domainOfCaller = Effect.fn("domainOfCaller")(function* (
+  flag: string | undefined,
+  env: Record<string, string | undefined> = process.env,
+) {
+  if (flag) return flag;
+  const address = env.HC_TERMINAL_ID;
+  if (!address)
+    return yield* new Refused({
+      message: "HC_TERMINAL_ID is unset: run this inside a Herdr terminal, or pass --domain",
+    });
+  const domain = (yield* hc.get(address))?.labels[L.domain];
+  if (!domain)
+    return yield* new Refused({
+      message: `terminal ${address} carries no ${L.domain} label; pass --domain`,
+    });
+  return domain;
+});
+
+/**
  * The domain's live delegates: terminals labelled with the domain (one `hc ls --label` call plus a
  * `hc get` per member), and, when `openText` is given, unlabelled agents whose session the backlog's
  * Open section names.

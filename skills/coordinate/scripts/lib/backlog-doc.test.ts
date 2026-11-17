@@ -2,10 +2,17 @@ import { afterAll, describe, expect, it } from "bun:test";
 import { mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { Effect } from "effect";
-import { BacklogError, itemAdd, itemClose, showBacklog } from "./backlog-doc.ts";
+import {
+  BacklogError,
+  findingAdd,
+  findingClose,
+  itemAdd,
+  itemClose,
+  showBacklog,
+} from "./backlog-doc.ts";
 import { resolveConfig } from "./config.ts";
 import { failureOf, runWith, tempDir } from "./fixture.ts";
-import { Refused } from "./fleet.ts";
+import { domainOfCaller, Refused } from "./fleet.ts";
 import { start } from "./lifecycle.ts";
 import { fakeProc, ok } from "./proc.ts";
 import { domainStatus } from "./status.ts";
@@ -232,6 +239,188 @@ describe("item close", () => {
   });
 });
 
+const finding = (fields: Partial<Parameters<typeof findingAdd>[2]>) => ({
+  kind: "issue" as const,
+  title: "flaky test",
+  detail: undefined,
+  path: undefined,
+  from: undefined,
+  json: false,
+  ...fields,
+});
+
+describe("finding add", () => {
+  it("adds open findings with short ids f1, f2", async () => {
+    const { cfg, path } = await started();
+    expect(await runWith(findingAdd(cfg, "app", finding({ title: " flaky test " })))).toEqual([
+      "added f1: flaky test",
+    ]);
+    const printed = await runWith(
+      findingAdd(
+        cfg,
+        "app",
+        finding({
+          kind: "opportunity",
+          title: "cache builds",
+          detail: "CI rebuilds deps\nevery run",
+          path: "ci/build.yml",
+          json: true,
+        }),
+      ),
+    );
+    const second = {
+      id: "f2",
+      kind: "opportunity",
+      title: "cache builds",
+      detail: "CI rebuilds deps\nevery run",
+      path: "ci/build.yml",
+      from: null,
+      status: "open",
+      closedAt: null,
+      outcome: null,
+    };
+    expect(JSON.parse(printed.join("\n"))).toEqual(second);
+    const doc = read(path);
+    expect(doc.findings.map((entry: { id: string }) => entry.id)).toEqual(["f1", "f2"]);
+    expect(doc.findings[1]).toEqual(second);
+    expect(doc.nextId).toBe(3);
+  });
+
+  it("links a finding to the item it came from", async () => {
+    const { cfg, path } = await started();
+    await runWith(itemAdd(cfg, "app", { title: "fix login", json: false, now: NOW }));
+    await runWith(findingAdd(cfg, "app", finding({ from: "i1" })));
+    expect(
+      read(path).findings.map((entry: { id: string; from: string }) => [entry.id, entry.from]),
+    ).toEqual([["f2", "i1"]]);
+  });
+
+  it.each([
+    [{ from: "i9" }, "no item i9 in app to file a finding from"],
+    [{ title: "" }, "title is empty"],
+    [{ title: "two\nlines" }, "title must be one line"],
+    [{ path: "a\nb" }, "path must be one line"],
+    [{ path: " " }, "path is empty"],
+    [{ detail: " " }, "detail is empty"],
+  ])("refuses %j and leaves the file unchanged", async (fields, message) => {
+    const { cfg, path } = await started();
+    await runWith(itemAdd(cfg, "app", { title: "fix login", json: false, now: NOW }));
+    const before = readFileSync(path, "utf8");
+    const error = await failureOf(findingAdd(cfg, "app", finding(fields)));
+    expect(tagged(error)).toEqual({ tag: "Refused", message });
+    expect(readFileSync(path, "utf8")).toBe(before);
+  });
+});
+
+const hcGet = (labels: Record<string, string>) =>
+  fakeProc((argv) => {
+    if (argv.slice(0, 3).join(" ") === "hc get t2")
+      return ok(JSON.stringify({ address: "t2", name: "fix-a", state: "live", labels }));
+    throw new Error(`unexpected command: ${argv.join(" ")}`);
+  });
+const addFrom = (cfg: Awaited<ReturnType<typeof config>>, env: Record<string, string>) =>
+  Effect.flatMap(domainOfCaller(undefined, env), (domain) =>
+    findingAdd(cfg, domain, finding({ from: "i1" })),
+  );
+
+describe("finding add from a delegate terminal", () => {
+  it.each([
+    ["a delegate", { "fleet.domain": "app" }],
+    ["a coordinator", { "fleet.domain": "app", "fleet.role": "coordinator" }],
+  ])("files into the domain labelled on %s terminal", async (_name, labels) => {
+    const { cfg, path } = await started();
+    await runWith(itemAdd(cfg, "app", { title: "fix login", json: false, now: NOW }));
+    expect(await runWith(addFrom(cfg, { HC_TERMINAL_ID: "t2" }), hcGet(labels).layer)).toEqual([
+      "added f2: flaky test",
+    ]);
+    expect(read(path).findings.map((entry: { from: string }) => entry.from)).toEqual(["i1"]);
+  });
+
+  it("refuses a terminal with no domain label", async () => {
+    const { cfg } = await started();
+    expect(
+      tagged(await failureOf(addFrom(cfg, { HC_TERMINAL_ID: "t2" }), hcGet({}).layer)),
+    ).toEqual({
+      tag: "Refused",
+      message: "terminal t2 carries no fleet.domain label; pass --domain",
+    });
+  });
+
+  it("refuses outside a Herdr terminal", async () => {
+    const { cfg } = await started();
+    expect(tagged(await failureOf(addFrom(cfg, {}), hcGet({}).layer))).toEqual({
+      tag: "Refused",
+      message: "HC_TERMINAL_ID is unset: run this inside a Herdr terminal, or pass --domain",
+    });
+  });
+});
+
+describe("finding close", () => {
+  it("closes as acted or dismissed with the outcome and time", async () => {
+    const { cfg, path } = await started();
+    await runWith(findingAdd(cfg, "app", finding({ title: "a" })));
+    await runWith(findingAdd(cfg, "app", finding({ title: "b" })));
+    expect(
+      await runWith(
+        findingClose(cfg, "app", {
+          id: "f1",
+          outcome: "filed as i3",
+          dismissed: false,
+          json: false,
+          now: LATER,
+        }),
+      ),
+    ).toEqual(["acted f1: filed as i3"]);
+    const printed = await runWith(
+      findingClose(cfg, "app", {
+        id: "f2",
+        outcome: "not worth it",
+        dismissed: true,
+        json: true,
+        now: LATER,
+      }),
+    );
+    expect(JSON.parse(printed.join("\n")).status).toBe("dismissed");
+    expect(
+      read(path).findings.map((entry: { status: string; closedAt: string; outcome: string }) => [
+        entry.status,
+        entry.closedAt,
+        entry.outcome,
+      ]),
+    ).toEqual([
+      ["acted", LATER, "filed as i3"],
+      ["dismissed", LATER, "not worth it"],
+    ]);
+  });
+
+  it.each([
+    ["f1", "", "closing f1 needs an outcome: outcome is empty"],
+    ["f1", "a\nb", "closing f1 needs an outcome: outcome must be one line"],
+    ["f7", "done", "no finding f7 in app"],
+    ["i1", "done", "no finding i1 in app"],
+  ])("refuses %s with outcome %j and leaves the file unchanged", async (id, outcome, message) => {
+    const { cfg, path } = await started();
+    await runWith(findingAdd(cfg, "app", finding({})));
+    const before = readFileSync(path, "utf8");
+    const error = await failureOf(
+      findingClose(cfg, "app", { id, outcome, dismissed: false, json: false, now: LATER }),
+    );
+    expect(tagged(error)).toEqual({ tag: "Refused", message });
+    expect(readFileSync(path, "utf8")).toBe(before);
+  });
+
+  it("refuses to close a finding twice", async () => {
+    const { cfg } = await started();
+    await runWith(findingAdd(cfg, "app", finding({})));
+    const close = { id: "f1", outcome: "ok", dismissed: true, json: false, now: LATER };
+    await runWith(findingClose(cfg, "app", close));
+    expect(tagged(await failureOf(findingClose(cfg, "app", close)))).toEqual({
+      tag: "Refused",
+      message: "f1 is already dismissed",
+    });
+  });
+});
+
 describe("backlog show", () => {
   it("renders Markdown with the legacy pointer, open and done items", async () => {
     const state = dir();
@@ -277,6 +466,32 @@ describe("backlog show", () => {
         "",
         "- i2 [done 2026-11-18] docs: merged",
       ].join("\n"),
+    ]);
+  });
+
+  it("lists open findings and leaves closed ones out", async () => {
+    const { cfg } = await started();
+    await runWith(itemAdd(cfg, "app", { title: "fix login", json: false, now: NOW }));
+    await runWith(findingAdd(cfg, "app", finding({ title: "flaky test", from: "i1" })));
+    await runWith(findingAdd(cfg, "app", finding({ kind: "opportunity", title: "cache builds" })));
+    await runWith(findingAdd(cfg, "app", finding({ title: "old typo" })));
+    await runWith(
+      findingClose(cfg, "app", {
+        id: "f4",
+        outcome: "fixed",
+        dismissed: false,
+        json: false,
+        now: LATER,
+      }),
+    );
+    const shown = (await runWith(showBacklog(cfg, "app", false))).join("\n").split("\n");
+    const at = shown.indexOf("## Findings");
+    expect(shown.slice(at, shown.indexOf("## Done"))).toEqual([
+      "## Findings",
+      "",
+      "- f2 [issue] flaky test (from i1)",
+      "- f3 [opportunity] cache builds",
+      "",
     ]);
   });
 
@@ -401,5 +616,57 @@ describe("coordinate CLI", () => {
       timeout: 10_000,
     });
     expect([shown.exitCode, JSON.parse(shown.stdout.toString())]).toEqual([0, read(path)]);
+  });
+
+  it("parses finding add and finding close flags", async () => {
+    const { state, cfg, path } = await started();
+    await runWith(itemAdd(cfg, "app", { title: "fix login", json: false, now: NOW }));
+    const configFile = join(state, "config.json");
+    writeFileSync(configFile, JSON.stringify({ state_dir: state, backlog_dir: join(state, "md") }));
+    const script = join(import.meta.dir, "..", "coordinate.ts");
+    const run = (args: string[]) => {
+      const result = Bun.spawnSync(["bun", script, ...args], {
+        env: { ...process.env, COORDINATE_CONFIG: configFile },
+        stdout: "pipe",
+        stderr: "pipe",
+        timeout: 10_000,
+      });
+      return [result.exitCode, result.stdout.toString(), result.stderr.toString()];
+    };
+    expect(
+      run([
+        "finding",
+        "add",
+        "flaky test",
+        "--kind",
+        "issue",
+        "--detail",
+        "fails one run in ten",
+        "--path",
+        "src/login.test.ts",
+        "--from",
+        "i1",
+        "--domain",
+        "app",
+      ]),
+    ).toEqual([0, "added f2: flaky test\n", ""]);
+    expect(
+      run(["finding", "close", "f2", "--outcome", "duplicate", "--dismissed", "--domain", "app"]),
+    ).toEqual([0, "dismissed f2: duplicate\n", ""]);
+    const [stored] = read(path).findings;
+    expect([stored.kind, stored.detail, stored.path, stored.from, stored.status]).toEqual([
+      "issue",
+      "fails one run in ten",
+      "src/login.test.ts",
+      "i1",
+      "dismissed",
+    ]);
+    const before = readFileSync(path, "utf8");
+    const [code, , stderr] = run(["finding", "add", "x", "--kind", "bug", "--domain", "app"]);
+    expect([code, String(stderr).split("\n")[0]]).toEqual([
+      1,
+      "error: option '--kind <kind>' argument 'bug' is invalid. Allowed choices are issue, opportunity.",
+    ]);
+    expect(readFileSync(path, "utf8")).toBe(before);
   });
 });

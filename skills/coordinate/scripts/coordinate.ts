@@ -1,9 +1,9 @@
 #!/usr/bin/env bun
 import { Command, Option } from "commander";
 import { Cause, Effect, Exit } from "effect";
-import { itemAdd, itemClose, showBacklog } from "./lib/backlog-doc.ts";
+import { findingAdd, findingClose, itemAdd, itemClose, showBacklog } from "./lib/backlog-doc.ts";
 import { loadConfig, type Config } from "./lib/config.ts";
-import { Refused, resolveDomain } from "./lib/fleet.ts";
+import { domainOfCaller, Refused, resolveDomain } from "./lib/fleet.ts";
 import type { FirstMessage, Harness, ImplementSkill } from "./lib/harness.ts";
 import { delegate, endDelegate, listIdle, resumeDelegate, sendTo, start } from "./lib/lifecycle.ts";
 import { Proc } from "./lib/proc.ts";
@@ -257,6 +257,79 @@ item
       main((config) =>
         Effect.flatMap(resolveDomain(options.domain), (domain) =>
           itemClose(config, domain, {
+            id,
+            outcome: options.outcome,
+            dismissed: options.dismissed === true,
+            json: options.json === true,
+            now: new Date().toISOString(),
+          }),
+        ),
+      ),
+  );
+
+const finding = program
+  .command("finding")
+  .description("record and close issues and opportunities noticed outside an item's scope");
+
+finding
+  .command("add")
+  .argument("<title>", "one-line title")
+  .addOption(
+    new Option("--kind <kind>", "what was noticed")
+      .choices(["issue", "opportunity"])
+      .makeOptionMandatory(),
+  )
+  .option("--detail <text>", "more detail")
+  .option("--path <path>", "file or folder it concerns")
+  .option("--from <item>", "item it was noticed while working on, such as i3")
+  .option(
+    "--domain <domain>",
+    "domain (default: this terminal's fleet.domain label, coordinator or delegate)",
+  )
+  .option("--json", "print the new finding as JSON")
+  .description("add an open finding; delegates may run this. Prints its short id (f1, f2, ...)")
+  .action(
+    (
+      title: string,
+      options: {
+        kind: "issue" | "opportunity";
+        detail?: string;
+        path?: string;
+        from?: string;
+        domain?: string;
+        json?: boolean;
+      },
+    ) =>
+      main((config) =>
+        Effect.flatMap(domainOfCaller(options.domain), (domain) =>
+          findingAdd(config, domain, {
+            kind: options.kind,
+            title,
+            detail: options.detail,
+            path: options.path,
+            from: options.from,
+            json: options.json === true,
+          }),
+        ),
+      ),
+  );
+
+finding
+  .command("close")
+  .argument("<id>", "finding id, such as f2")
+  .option("--outcome <text>", "one line on what was done (required)", "")
+  .option("--dismissed", "close as dismissed instead of acted")
+  .option("--domain <domain>", "domain (default: this coordinator's label)")
+  .option("--json", "print the closed finding as JSON")
+  .description("close a finding as acted (or dismissed) with an outcome")
+  .action(
+    (
+      id: string,
+      options: { outcome: string; dismissed?: boolean; domain?: string; json?: boolean },
+    ) =>
+      main((config) =>
+        Effect.flatMap(resolveDomain(options.domain), (domain) =>
+          findingClose(config, domain, {
             id,
             outcome: options.outcome,
             dismissed: options.dismissed === true,

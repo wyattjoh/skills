@@ -5,9 +5,16 @@ import { hostname } from "node:os";
 import { join } from "node:path";
 import { setTimeout as sleep } from "node:timers/promises";
 import { Effect, Schema } from "effect";
-import { addItem, closeItem, emptyBacklog, type OpResult } from "./backlog-store/ops.ts";
+import {
+  addFinding,
+  addItem,
+  closeFinding,
+  closeItem,
+  emptyBacklog,
+  type OpResult,
+} from "./backlog-store/ops.ts";
 import { renderBacklog } from "./backlog-store/render.ts";
-import { type Backlog, validateBacklog } from "./backlog-store/schema.ts";
+import { type Backlog, type Finding, validateBacklog } from "./backlog-store/schema.ts";
 import type { Config } from "./config.ts";
 import { backlogPath, Refused } from "./fleet.ts";
 
@@ -285,4 +292,58 @@ export const itemClose = Effect.fn("itemClose")(function* (
     }),
   );
   return input.json ? json(item) : [`${item.status} ${item.id}: ${item.outcome ?? ""}`];
+});
+
+/**
+ * `coordinate finding add`: record an open issue or opportunity. Delegates may run it.
+ * @param config Config.
+ * @param domain Domain.
+ * @param input Kind, title, optional detail, path and source item, and `--json`.
+ * @returns Lines to print.
+ */
+export const findingAdd = Effect.fn("findingAdd")(function* (
+  config: Config,
+  domain: string,
+  input: {
+    kind: Finding["kind"];
+    title: string;
+    detail: string | undefined;
+    path: string | undefined;
+    from: string | undefined;
+    json: boolean;
+  },
+) {
+  const finding = yield* change(config, domain, (backlog) =>
+    addFinding(backlog, {
+      kind: input.kind,
+      title: input.title,
+      detail: input.detail,
+      path: input.path,
+      from: input.from,
+    }),
+  );
+  return input.json ? json(finding) : [`added ${finding.id}: ${finding.title}`];
+});
+
+/**
+ * `coordinate finding close`: close a finding as acted on (or dismissed) with an outcome.
+ * @param config Config.
+ * @param domain Domain.
+ * @param input Finding id, outcome, `--dismissed`, `--json`, and the time.
+ * @returns Lines to print.
+ */
+export const findingClose = Effect.fn("findingClose")(function* (
+  config: Config,
+  domain: string,
+  input: { id: string; outcome: string; dismissed: boolean; json: boolean; now: string },
+) {
+  const finding = yield* change(config, domain, (backlog) =>
+    closeFinding(backlog, {
+      id: input.id,
+      outcome: input.outcome,
+      dismissed: input.dismissed,
+      now: input.now,
+    }),
+  );
+  return input.json ? json(finding) : [`${finding.status} ${finding.id}: ${finding.outcome ?? ""}`];
 });
