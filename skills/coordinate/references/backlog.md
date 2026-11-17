@@ -25,7 +25,7 @@ Each item names what it touches, what is decided (in the user's words, dated), w
 ```
 
 - **Asks** start `Ask:` and carry options and a recommendation; mark ones that survive a restart "open before restart".
-- **Due dates**: `due: YYYY-MM-DD` anywhere in an Open line makes the watcher fire on that day.
+- **Due dates**: set them with `coordinate item update <id> --due YYYY-MM-DD`; the watcher reads them from the structured item and fires once per item and date, never for a closed item. A `due:` in this Markdown is not read.
 - **Ended delegates**: write "ended <date>" on the handle; `coordinate status` still lists them with their resume command.
 - **Unlabelled sessions**: a session the user started is counted as the domain's when Open names its session id.
 

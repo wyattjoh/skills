@@ -132,25 +132,3 @@ export const missingSections = (text: string): string[] => {
  */
 export const namesSession = (text: string, session: string): boolean =>
   session.length >= 8 && text.includes(session.slice(0, 8));
-
-/**
- * A `due: YYYY-MM-DD` list item.
- */
-export type DueItem = { date: string; text: string };
-
-/**
- * Open items whose due date is on or before `today`.
- * @param text Backlog text.
- * @param today `YYYY-MM-DD`.
- * @returns Items due, oldest first.
- */
-export const dueItems = (text: string, today: string): DueItem[] =>
-  (section(text, "Open") ?? "")
-    .split("\n")
-    .flatMap((line) => {
-      const match = /^\s*[-*]\s+(.*\bdue:?\s*(\d{4}-\d{2}-\d{2}).*)$/.exec(line);
-      return match && (match[2] ?? "") <= today
-        ? [{ date: match[2] ?? "", text: (match[1] ?? "").trim() }]
-        : [];
-    })
-    .toSorted((a, b) => a.date.localeCompare(b.date));

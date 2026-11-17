@@ -2,7 +2,8 @@ import { afterAll, describe, expect, it } from "bun:test";
 import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { Effect } from "effect";
-import { emptyBacklog } from "./backlog-store/ops.ts";
+import { createDocument, itemAdd, itemClose, itemUpdate } from "./backlog-doc.ts";
+import { emptyBacklog, type ItemUpdate } from "./backlog-store/ops.ts";
 import { resolveConfig } from "./config.ts";
 import { runWith, tempDir } from "./fixture.ts";
 import { fakeProc, ok, type RunOutput } from "./proc.ts";
@@ -185,5 +186,118 @@ describe("watch", () => {
       JSON.parse(readFileSync(join(state, "watch", "app.json"), "utf8")).delegates.t2.turn,
     ).toBe(5);
     expect(existsSync(lockPath(state, "app"))).toBe(false);
+  });
+});
+
+const quietHc = (argv: readonly string[]): RunOutput => {
+  if (argv[0] === "hc" && argv[1] === "ls") return ok('{"terminals":[]}');
+  throw new Error(`unexpected command: ${argv.join(" ")}`);
+};
+
+const NOW = "2026-11-10T09:00:00.000Z";
+const update = (id: string, change: Partial<ItemUpdate>): ItemUpdate & { json: boolean } => ({
+  id,
+  status: undefined,
+  outcome: undefined,
+  decided: [],
+  touch: [],
+  untouch: [],
+  due: undefined,
+  ask: undefined,
+  context: undefined,
+  options: [],
+  rec: undefined,
+  why: undefined,
+  answer: undefined,
+  now: NOW,
+  json: false,
+  ...change,
+});
+
+const dueDomain = async () => {
+  const state = tempDir();
+  made.push(state);
+  const config = await Effect.runPromise(
+    resolveConfig({ state_dir: state, backlog_dir: join(state, "md") }, "/c"),
+  );
+  await runWith(createDocument(config, "app"));
+  for (const title of ["Fix login", "Ship later", "Old reminder"])
+    await runWith(itemAdd(config, "app", { title, json: false, now: NOW }));
+  await runWith(itemUpdate(config, "app", update("i1", { due: "2026-11-12" })));
+  await runWith(itemUpdate(config, "app", update("i2", { due: "2026-12-01" })));
+  await runWith(itemUpdate(config, "app", update("i3", { due: "2026-11-11" })));
+  await runWith(
+    itemClose(config, "app", {
+      id: "i3",
+      outcome: "no longer needed",
+      dismissed: true,
+      json: false,
+      now: NOW,
+    }),
+  );
+  const arm = (today: string) =>
+    runWith(
+      watch(config, {
+        domain: "app",
+        intervalMs: 5,
+        forgeIntervalMs: 60_000,
+        maxMs: 20,
+        owner: undefined,
+        replace: false,
+        today: () => today,
+      }),
+      fakeProc(quietHc).layer,
+    );
+  const documentFile = join(state, "backlogs", "app.json");
+  const stateFile = join(state, "watch", "app.json");
+  return { config, arm, documentFile, stateFile };
+};
+const alive = ["alive: no events in 0m; re-arm the watcher"];
+
+describe("watch due events", () => {
+  it("fires a due open item once per id and date across re-arms, never a closed one", async () => {
+    const { config, arm, stateFile } = await dueDomain();
+    expect(await arm("2026-11-11")).toEqual(alive);
+    expect(await arm("2026-11-12")).toEqual(["due 2026-11-12: i1 Fix login"]);
+    expect(await arm("2026-11-13")).toEqual(alive);
+    expect(JSON.parse(readFileSync(stateFile, "utf8")).due).toEqual(["i1 2026-11-12"]);
+    await runWith(itemUpdate(config, "app", update("i1", { due: "2026-11-14" })));
+    expect(await arm("2026-11-14")).toEqual(["due 2026-11-14: i1 Fix login"]);
+    await runWith(itemUpdate(config, "app", update("i1", { due: null })));
+    await runWith(itemUpdate(config, "app", update("i1", { due: "2026-11-12" })));
+    expect(await arm("2026-11-15")).toEqual(alive);
+    expect(await arm("2026-12-01")).toEqual(["due 2026-12-01: i2 Ship later"]);
+    expect(JSON.parse(readFileSync(stateFile, "utf8")).due).toEqual([
+      "i1 2026-11-12",
+      "i1 2026-11-14",
+      "i2 2026-12-01",
+    ]);
+  });
+
+  it("does not fire again when an item's title is edited", async () => {
+    const { arm, documentFile } = await dueDomain();
+    expect(await arm("2026-11-12")).toEqual(["due 2026-11-12: i1 Fix login"]);
+    const document = JSON.parse(readFileSync(documentFile, "utf8"));
+    document.items[0].title = "Fix login on Safari";
+    writeFileSync(documentFile, JSON.stringify(document));
+    expect(await arm("2026-11-13")).toEqual(alive);
+  });
+
+  it("re-arms on a state file written by the Markdown watcher", async () => {
+    const { arm, stateFile } = await dueDomain();
+    mkdirSync(join(stateFile, ".."), { recursive: true });
+    writeFileSync(
+      stateFile,
+      JSON.stringify({ delegates: {}, prs: {}, due: ["2026-11-01 **Fix** due: 2026-11-01"] }),
+    );
+    expect(await arm("2026-11-12")).toEqual(["due 2026-11-12: i1 Fix login"]);
+    expect(JSON.parse(readFileSync(stateFile, "utf8"))).toEqual({
+      delegates: {},
+      prs: {},
+      due: ["2026-11-01 **Fix** due: 2026-11-01", "i1 2026-11-12"],
+    });
+    writeFileSync(stateFile, JSON.stringify({ delegates: {}, prs: {} }));
+    expect(await arm("2026-11-12")).toEqual(["due 2026-11-12: i1 Fix login"]);
+    expect(await arm("2026-11-12")).toEqual(alive);
   });
 });

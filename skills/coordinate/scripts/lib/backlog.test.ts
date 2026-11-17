@@ -1,7 +1,6 @@
 import { describe, expect, it } from "bun:test";
 import {
   appendToSection,
-  dueItems,
   missingSections,
   namesSession,
   replaceSection,
@@ -55,14 +54,6 @@ describe("sections", () => {
   it("lists missing sections in order", () => {
     expect(missingSections(text)).toEqual(["Standing yes"]);
     expect(missingSections(template("app"))).toEqual([]);
-  });
-});
-
-describe("dueItems", () => {
-  it("returns open items due on or before today", () => {
-    expect(dueItems(text, "2026-11-16")).toEqual([
-      { date: "2026-11-10", text: "**Fix** due: 2026-11-10. Session 0b9c2a51-0000." },
-    ]);
   });
 });
 

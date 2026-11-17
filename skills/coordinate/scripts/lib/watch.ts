@@ -2,11 +2,11 @@ import { existsSync } from "node:fs";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { Effect, Option, Result } from "effect";
-import { dueItems } from "./backlog.ts";
+import { readDocument } from "./backlog-doc.ts";
+import type { Item } from "./backlog-store/schema.ts";
 import type { Config } from "./config.ts";
 import { L, Refused } from "./fleet.ts";
 import * as hc from "./herdr.ts";
-import { readBacklog } from "./lifecycle.ts";
 import { repoPullRequests } from "./prs.ts";
 import { domainRepos } from "./status.ts";
 import { acquireLock, releaseLock } from "./watch-lock.ts";
@@ -27,6 +27,9 @@ export type SeenPr = { state: string; checks: string; review: string; url: strin
 export type WatchState = {
   delegates: Record<string, SeenDelegate>;
   prs: Record<string, SeenPr>;
+  /**
+   * Due events already fired, keyed `<item id> <date>`.
+   */
   due: string[];
 };
 
@@ -118,6 +121,25 @@ export const statusBeat = (delegates: Readonly<Record<string, SeenDelegate>>): s
     .toSorted(([a], [b]) => a.localeCompare(b))
     .map(([status, count]) => `${count} ${status}`);
   return `status: ${parts.length === 0 ? "no live delegates" : parts.join(", ")}; give the user a short status in your next reply`;
+};
+
+const CLOSED: ReadonlySet<Item["status"]> = new Set(["done", "dismissed"]);
+
+/**
+ * Due events for open items due on or before `today`, oldest first, skipping keys already fired.
+ * The key is the item id plus its date, so a title edit never re-fires and a new date fires once.
+ * Fired keys are only ever added, so a date that fired once never fires again.
+ */
+const dueEvents = (items: readonly Item[], today: string, fired: readonly string[]) => {
+  const due = items
+    .filter((item) => !CLOSED.has(item.status) && item.due !== null && item.due <= today)
+    .toSorted((a, b) => (a.due ?? "").localeCompare(b.due ?? ""));
+  const seen = new Set(fired);
+  const fresh = due.filter((item) => !seen.has(`${item.id} ${item.due}`));
+  return {
+    lines: fresh.map((item) => `due ${item.due}: ${item.id} ${item.title}`),
+    fired: [...fired, ...fresh.map((item) => `${item.id} ${item.due}`)],
+  };
 };
 
 const statePath = (stateDir: string, domain: string): string =>
@@ -272,14 +294,12 @@ export const watch = Effect.fn("watch")(function* (config: Config, options: Watc
         const prs = yield* snapshotPrs(config, repos, state.prs);
         lines.push(...prEvents(state.prs, prs.snapshot));
         state.prs = prs.snapshot;
-        const backlog = yield* readBacklog(config, options.domain).pipe(Effect.option);
-        if (Option.isSome(backlog))
-          for (const item of dueItems(backlog.value.text, options.today())) {
-            const key = `${item.date} ${item.text}`;
-            if (state.due.includes(key)) continue;
-            state.due.push(key);
-            lines.push(`due ${item.date}: ${item.text}`);
-          }
+        const document = yield* readDocument(config, options.domain).pipe(Effect.option);
+        if (Option.isSome(document)) {
+          const due = dueEvents(document.value.backlog.items, options.today(), state.due);
+          lines.push(...due.lines);
+          state.due = due.fired;
+        }
       }
       first = false;
       if (options.owner) {
