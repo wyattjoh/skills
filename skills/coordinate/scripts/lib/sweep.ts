@@ -171,7 +171,10 @@ export const worktreeRow = Effect.fn("worktreeRow")(function* (
   const baseNames = new Set(info.bases.map((base) => base.split("/").at(-1)));
   const onBase = branch !== undefined && (PROTECTED_BRANCHES.has(branch) || baseNames.has(branch));
   const notStarted =
-    branch !== undefined && state?.prState === undefined && (yield* neverCommitted(repo, branch));
+    branch !== undefined &&
+    state?.prState === undefined &&
+    (unsaved ?? 0) === 0 &&
+    (yield* neverCommitted(repo, branch));
   const landed = !notStarted ? state?.landed : undefined;
   const finished = !onBase && (landed !== undefined || state?.prState === "closed");
   // Squash and rebase merges leave the branch's own commits off every base; the base holds the work.
@@ -321,19 +324,21 @@ export const report = Effect.fn("sweepReport")(function* (
     if (prs && !prs.ok)
       rows.push({ verdict: "INFO", path: repo, text: `PRs for ${repo} unknown: ${prs.error}` });
     const root = join(repo, ".claude", "worktrees");
-    const orphans = new Map<string, Held>();
-    for (const held of ctx.processes)
-      if (
-        inside(held.path, real(root)) &&
-        !existsSync(held.path) &&
-        !SELF_EXITING.has(held.command)
-      )
-        orphans.set(held.pid, held);
-    for (const held of orphans.values())
+    const realRoot = real(root);
+    const byFolder = new Map<string, Map<string, string>>();
+    for (const held of ctx.processes) {
+      if (!inside(held.path, realRoot) || existsSync(held.path) || SELF_EXITING.has(held.command))
+        continue;
+      const folder = join(realRoot, held.path.slice(realRoot.length + 1).split("/")[0] ?? "");
+      const pids = byFolder.get(folder) ?? new Map<string, string>();
+      pids.set(held.pid, held.command);
+      byFolder.set(folder, pids);
+    }
+    for (const [folder, pids] of byFolder)
       rows.push({
         verdict: "SAFE",
         path: undefined,
-        text: `process ${held.pid} ${held.command} · runs in deleted folder ${held.path}`,
+        text: `processes in deleted folder ${folder}: ${[...pids].map(([pid, command]) => `${pid} ${command}`).join(", ")} · stop them: kill ${[...pids.keys()].join(" ")}`,
       });
   }
   return rows.toSorted((a, b) => ORDER[a.verdict] - ORDER[b.verdict]);

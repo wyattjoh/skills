@@ -169,7 +169,7 @@ describe("prsForBranch", () => {
     expect(matched.map((found) => found.number)).toEqual([1, 2]);
   });
 
-  it("matches a merged PR only when the branch holds nothing past its head", async () => {
+  it("matches a merged PR by name when the branch holds nothing past its head, an AGit PR only at its exact head", async () => {
     const prs = [
       pr({ number: 1, state: "merged", headSha: "head1" }),
       pr({ number: 2, state: "merged", headRef: undefined, headSha: "head2" }),
@@ -178,7 +178,9 @@ describe("prsForBranch", () => {
     const matched = await Effect.runPromise(
       prsForBranch(prs, "b", "tip", within(["head1", "head2"])),
     );
-    expect(matched.map((found) => found.number)).toEqual([1, 2]);
+    expect(matched.map((found) => found.number)).toEqual([1]);
+    const exact = await Effect.runPromise(prsForBranch(prs, "b", "head2", within([])));
+    expect(exact.map((found) => found.number)).toEqual([2]);
   });
 });
 

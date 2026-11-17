@@ -303,8 +303,9 @@ export const listPullRequests = Effect.fn("listPullRequests")(function* (
 });
 
 /**
- * The PRs that speak for a branch. An open PR matches by head name or tip; a closed or merged one only
- * when the branch holds nothing past the PR's head, so a reused branch name does not inherit it.
+ * The PRs that speak for a branch. Any PR whose head is the branch tip matches. Otherwise an open PR
+ * matches by head name, and a closed or merged one by head name only when the branch holds nothing past
+ * the PR's head, so a reused branch name does not inherit it.
  * @param prs The repo's pull requests.
  * @param branch Branch name.
  * @param tip The branch's tip commit.
@@ -321,7 +322,9 @@ export const prsForBranch = <E, R>(
     const named = pr.headRef === branch;
     if (pr.headSha === tip) return Effect.succeed(true);
     if (pr.state === "open") return Effect.succeed(named);
-    if (!named && pr.headRef !== undefined) return Effect.succeed(false);
+    // An AGit PR (no head name) speaks for a branch only at its exact head: older branches are
+    // ancestors of every later PR head, so ancestry would match them all.
+    if (!named) return Effect.succeed(false);
     return tipWithin(pr.headSha);
   });
 
