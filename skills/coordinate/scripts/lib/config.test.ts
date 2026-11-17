@@ -17,6 +17,11 @@ describe("resolveConfig", () => {
     expect(config.branchPrefix).toBe("wyattjoh/");
   });
 
+  it("normalises state_dir, so backlog paths built on it have no doubled slash", async () => {
+    const config = await resolve({ state_dir: "~/state/coordinate/" });
+    expect(config.stateDir).toBe(`${homedir()}/state/coordinate`);
+  });
+
   it("ignores retired upstream keys and merges forges", async () => {
     const config = await resolve({
       pr_limits: { a: 1 },

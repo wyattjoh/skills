@@ -1,7 +1,7 @@
 default:
     @just --list
 
-# Run the View and model tests against the gpui-kit, gpui-base and herdr doubles
+# Run the View tests against the gpui-kit, gpui-base and herdr doubles
 test:
     bun run test
 

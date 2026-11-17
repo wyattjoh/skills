@@ -1,5 +1,5 @@
 import { homedir } from "node:os";
-import { join } from "node:path";
+import { join, resolve } from "node:path";
 import { Effect, Schema } from "effect";
 
 /**
@@ -151,7 +151,8 @@ export const resolveConfig = Effect.fn("resolveConfig")(function* (raw: unknown,
   );
   return {
     backlogDir: expandHome(file.backlog_dir ?? "~/.config/coordinate/backlogs"),
-    stateDir: expandHome(file.state_dir ?? "~/.local/state/coordinate"),
+    // Resolved, so paths built on it by string (backlog-store/paths.ts) never double a slash.
+    stateDir: resolve(expandHome(file.state_dir ?? "~/.local/state/coordinate")),
     keepRunning: [...(file.keep_running ?? [])],
     delegateClaudeArgs: [...(file.delegate_claude_args ?? [])],
     delegatePiArgs: [...(file.delegate_pi_args ?? [])],
