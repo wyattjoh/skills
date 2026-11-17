@@ -129,6 +129,7 @@ Restart Claude Code after adding or changing an agent definition.
 | claude-sessions               | Query indexed Claude Code conversation history with a Bun CLI                      |
 | clean-storage                 | Reclaim disk space from verified build artifacts and tool caches                   |
 | code-walkthrough              | Build an annotated walkthrough page with pinned source and scrolling notes         |
+| coordinate                    | Coordinate one domain's requests through pi or Claude delegates in Herdr spaces    |
 | devenv                        | Answer devenv.sh questions from an indexed local copy of the full documentation    |
 | dialkit                       | Live parameter tweaking and design exploration in React via dialkit                |
 | driving-ios-simulator         | Drive a booted iOS Simulator: tap, swipe, type, read elements, screenshot          |

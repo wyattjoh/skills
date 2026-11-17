@@ -1,0 +1,6 @@
+interface:
+  display_name: "Coordinate"
+  short_description: "Coordinate one domain's pi and Claude delegates in Herdr"
+
+policy:
+  allow_implicit_invocation: false
