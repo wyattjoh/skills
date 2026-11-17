@@ -13,5 +13,12 @@ typecheck:
 build:
     bun run build
 
-# Tests, typecheck and the staged build. Installing into the live Herdr home is a separate, approved step
+# Explicit, approved live write: build and check a stage, then copy every mod into
+# HERDR_APP_HOME/mods (default ~/.config/herdr-app) and add keys.json's cmd-alt-b binding to the
+# person's keys.json. --replace backs up mods already installed (under .scratch/) and replaces them
+[positional-arguments]
+install *args:
+    bun scripts/install.ts "$@"
+
+# Tests, typecheck and the staged build. Never installs: deploying is just install, after approval
 check: test typecheck build

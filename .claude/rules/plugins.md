@@ -13,14 +13,21 @@ running build.
 
 ## Exception: `plugins/coordinate`
 
-`plugins/coordinate/herdr/` builds read-only Herdr mods (`coordinate-panel`) for the coordinate
-skill's backlog. It is not a Claude Code plugin: no `.claude-plugin/`, no marketplace entry, no
+`plugins/coordinate/herdr/` builds read-only Herdr mods for the coordinate skill's backlog:
+`coordinate-panel` and `coordinate-toggle`, the tab row's Backlog pill. The pill shows and hides the
+column docking the panel, remembering each tab in shared `coordinate-panel.dock`, and owns the
+`toggle` key command, which the project's `keys.json` binds to `cmd-alt-b` (key commands reach
+only mounted mods). It is not a Claude Code plugin: no `.claude-plugin/`, no marketplace entry, no
 mod or pi extension. It is its own project with its own `package.json`, `bunfig.toml` and
 `justfile`. Root `bun test` and `knip` skip it, and root `bun run check` skips its `src/` (its
 tests need the renderer preload and its mod sources need Herdr's host `.d.ts` files); root
 `check` still type-checks its Bun `scripts/`, and root lint and format cover all of it. Run `just check` there: tests, a typecheck against the installed declarations copied
 into `node_modules/.cache/`, and a build that stages each mod under `.scratch/` and runs
-`herdr-app check` with that stage as `HERDR_APP_HOME`. Nothing there writes the live Herdr home.
+`herdr-app check` with that stage as `HERDR_APP_HOME`. `just check` never writes the live Herdr
+home. Only `just install [--replace]`, run after the user approves, does: it builds and checks a
+stage, copies every mod into `$HERDR_APP_HOME/mods`, and adds `keys.json`'s bindings to the
+person's `keys.json`, refusing a key they already bind elsewhere. Point `HERDR_APP_HOME` at a
+scratch folder to exercise it.
 
 The mods share the backlog schema and validator by relative import from
 `skills/coordinate/scripts/lib/backlog-store/`, which must stay dependency-free (Herdr has no

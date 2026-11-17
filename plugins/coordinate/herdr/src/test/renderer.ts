@@ -184,6 +184,21 @@ export const host = {
   execRejects: undefined as unknown,
   execExit: undefined as { code: number; stderr: string } | undefined,
   checking: false,
+  // The shown layout tree, shared values, commands the mod ran, and pending nextCommand calls.
+  layout: null as unknown,
+  shared: new Map<string, unknown>(),
+  runs: [] as { command: string; args: Record<string, unknown> | undefined }[],
+  commandReaders: [] as ((command: string) => void)[],
+};
+
+/**
+ * Deliver a key command to the mod's pending nextCommand(), as keys.json's "<mod>.<command>" does.
+ * @param command The command after the mod name.
+ */
+export const sendCommand = (command: string) => {
+  const reader = host.commandReaders.shift();
+  if (!reader) throw new Error("no nextCommand is waiting");
+  reader(command);
 };
 
 // The panel's listing protocol (sh -c LIST_SCRIPT name folder): each *.json basename in the
@@ -208,6 +223,17 @@ mock.module("herdr", () => ({
     ),
   terminals: () => host.terminals,
   focused: () => host.focused,
+  layout: () => host.layout,
+  shared: (key: string) => host.shared.get(key),
+  setShared: (key: string, value: unknown) => {
+    host.shared.set(key, value);
+    return null;
+  },
+  run: (command: string, args?: Record<string, unknown>) => {
+    host.runs.push({ command, args });
+    return null;
+  },
+  nextCommand: () => new Promise<string>((resolve) => host.commandReaders.push(resolve)),
   readTextFile: async (path: string) => {
     host.reads.push(path);
     if (host.unreadable.has(path)) throw new Error(`permission denied: ${path}`);
@@ -307,4 +333,8 @@ export const resetHost = () => {
   host.execRejects = undefined;
   host.execExit = undefined;
   host.checking = false;
+  host.layout = null;
+  host.shared = new Map();
+  host.runs = [];
+  host.commandReaders = [];
 };
