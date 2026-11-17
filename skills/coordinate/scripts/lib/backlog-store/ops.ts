@@ -347,9 +347,12 @@ export const retain = (
   const closed: (Item | Finding)[] = [...backlog.items, ...backlog.findings].filter(
     (record) => record.closedAt !== null,
   );
-  const archived = closed
-    .toSorted(
-      (a, b) => (a.closedAt ?? "").localeCompare(b.closedAt ?? "") || sequence(a) - sequence(b),
+  // Copy-then-sort, not toSorted: this module is bundled into Herdr, whose lib lacks ES2023.
+  const archived = [...closed]
+    // oxlint-disable-next-line unicorn/no-array-sort -- sorts a fresh copy; see above.
+    .sort(
+      (a: Item | Finding, b: Item | Finding) =>
+        (a.closedAt ?? "").localeCompare(b.closedAt ?? "") || sequence(a) - sequence(b),
     )
     .slice(0, Math.max(0, closed.length - keep));
   if (archived.length === 0) return { backlog, archived };
