@@ -11,6 +11,7 @@ import {
   answerCommand,
   answerFailure,
   cachedDocument,
+  closedFindings,
   chosenAnswer,
   configPath,
   draftFor,
@@ -19,6 +20,7 @@ import {
   endedPath,
   groupItems,
   joinDelegates,
+  mergeEnded,
   missingSessions,
   openFindings,
   parseListing,
@@ -26,6 +28,7 @@ import {
   stateDirOf,
   summarize,
   targetDomain,
+  trailOf,
 } from "./model.ts";
 import type {
   AnswerDraft,
@@ -35,9 +38,10 @@ import type {
   EndedRecords,
   ItemGroup,
   ListingState,
+  Screen,
 } from "./model.ts";
 import { backlogsDir, documentPath } from "../../lib/store.ts";
-import type { Item } from "../../lib/store.ts";
+import type { Finding, Item } from "../../lib/store.ts";
 import { panel } from "./view.ts";
 import type { AnswerModel, Theme } from "./view.ts";
 
@@ -57,9 +61,12 @@ export default class Panel extends View {
   docs = new Map<string, DocumentState>();
   // The domain focus last named, kept while a pane with no terminal (the panel) has focus.
   followed: string | undefined;
-  // The domain opened from the listing, shown while focus names none. A focused domain
-  // terminal clears it, and Back does.
+  // The domain opened from the listing or the trail, shown over the one focus names until
+  // focus moves to another domain terminal. The Domains crumb clears it.
   picked: string | undefined;
+  // The Domains crumb was pressed: the listing shows, whatever domain focus names, until a
+  // domain is opened or focus moves to another domain terminal.
+  listed = false;
   // The all-domains listing, kept across opening a domain so Back shows it at once.
   listing: ListingState = { kind: "loading" };
   // Bumped by every load, so a slower, older read never overwrites a newer one.
@@ -69,9 +76,9 @@ export default class Panel extends View {
   // The backlogs folder being watched, and the pending watch on it.
   watched: string | undefined;
   watch: FolderWatch | undefined;
-  // The item whose detail is open, by domain and id, so a reload shows its latest copy and a
-  // vanished item falls back to the list.
-  selected: { domain: string; id: string } | undefined;
+  // The item or finding whose detail is open, by domain and id, so a reload shows its latest
+  // copy and a vanished record falls back to the lists.
+  selected: { kind: "item" | "finding"; domain: string; id: string } | undefined;
   // The state folder the last load found, the ended records read for the delegate refs that had
   // no live terminal then, and which sessions those were, so a delegate that loses its terminal
   // between document changes is looked up again.
@@ -105,7 +112,7 @@ export default class Panel extends View {
 
   // The domain the panel should show now, or undefined for the listing.
   target(): string | undefined {
-    return this.focusDomain() ?? this.picked;
+    return this.listed ? undefined : (this.picked ?? this.focusDomain());
   }
 
   // Record where focus went: a focused domain terminal replaces a domain opened by hand.
@@ -113,7 +120,9 @@ export default class Panel extends View {
     const followed = this.focusDomain();
     if (followed === this.followed) return;
     this.followed = followed;
-    if (followed !== undefined) this.picked = undefined;
+    if (followed === undefined) return;
+    this.picked = undefined;
+    this.listed = false;
   }
 
   // Load again only when focus moved to another domain.
@@ -141,16 +150,39 @@ export default class Panel extends View {
         }),
       );
       if (generation !== this.endedGeneration) return;
-      const ended = new Map<string, string | null>();
-      for (const [session, at] of found) if (at !== undefined) ended.set(session, at);
-      this.ended = ended;
+      this.ended = mergeEnded(this.ended, found);
       task.notify();
     });
   }
 
   openDomain(domain: string, cx: Context) {
     this.picked = domain;
+    this.listed = false;
     this.load(cx);
+  }
+
+  // Open a screen the trail or a link names. A detail opens over its domain's lists; the
+  // lists close any detail; Domains shows the listing.
+  go(screen: Screen, cx: Context) {
+    if (screen.kind === "item" || screen.kind === "finding") {
+      this.selected = { kind: screen.kind, domain: screen.domain, id: screen.id };
+      this.clearDraft();
+      cx.notify();
+      return;
+    }
+    this.selected = undefined;
+    this.clearDraft();
+    if (screen.kind === "domains") {
+      this.picked = undefined;
+      this.listed = true;
+      this.load(cx);
+      return;
+    }
+    if (this.target() === screen.domain) {
+      cx.notify();
+      return;
+    }
+    this.openDomain(screen.domain, cx);
   }
 
   load(cx: Context) {
@@ -274,9 +306,12 @@ export default class Panel extends View {
 
   open(item: Item, cx: Context) {
     if (this.domain === undefined) return;
-    this.selected = { domain: this.domain, id: item.id };
-    this.clearDraft();
-    cx.notify();
+    this.go({ kind: "item", domain: this.domain, id: item.id }, cx);
+  }
+
+  openFinding(finding: Finding, cx: Context) {
+    if (this.domain === undefined) return;
+    this.go({ kind: "finding", domain: this.domain, id: finding.id }, cx);
   }
 
   // Forget the draft and empty the field, so another item or ask starts clean.
@@ -355,24 +390,56 @@ export default class Panel extends View {
     };
   }
 
-  // Back closes an item's detail first, then leaves a domain opened from the listing.
-  back(cx: Context) {
-    if (this.selected !== undefined) {
-      this.selected = undefined;
-      this.clearDraft();
-      cx.notify();
-      return;
-    }
-    this.picked = undefined;
-    this.load(cx);
-  }
-
   // The open item as the document now has it, if it is still there.
   detail(domain: string | undefined, doc: DocumentState): Item | undefined {
     const selected = this.selected;
-    if (selected === undefined || selected.domain !== domain || doc.kind !== "loaded")
+    if (selected?.kind !== "item" || selected.domain !== domain || doc.kind !== "loaded")
       return undefined;
     return doc.backlog.items.find((item) => item.id === selected.id);
+  }
+
+  // The open finding as the document now has it, if it is still there.
+  findingDetail(domain: string | undefined, doc: DocumentState): Finding | undefined {
+    const selected = this.selected;
+    if (selected?.kind !== "finding" || selected.domain !== domain || doc.kind !== "loaded")
+      return undefined;
+    return doc.backlog.findings.find((finding) => finding.id === selected.id);
+  }
+
+  // The screen drawn: a detail only while its record is still in the document.
+  screen(domain: string | undefined, item: Item | undefined, finding: Finding | undefined): Screen {
+    if (domain === undefined) return { kind: "domains" };
+    if (item !== undefined) return { kind: "item", domain, id: item.id };
+    if (finding !== undefined) return { kind: "finding", domain, id: finding.id };
+    return { kind: "domain", domain };
+  }
+
+  closedKey(): string {
+    return `${this.domain}:findings-closed`;
+  }
+
+  // Closed findings start folded, as closed item groups do.
+  closedOpen(): boolean {
+    return this.folds.get(this.closedKey()) ?? false;
+  }
+
+  toggleClosed(cx: Context) {
+    this.folds.set(this.closedKey(), !this.closedOpen());
+    cx.notify();
+  }
+
+  standingKey(): string {
+    return `${this.domain}:standing-yes`;
+  }
+
+  // The Standing yes card starts folded, as the Closed findings do.
+  standingOpen(): boolean {
+    return this.folds.get(this.standingKey()) ?? false;
+  }
+
+  toggleStanding(cx: Context) {
+    this.folds.set(this.standingKey(), !this.standingOpen());
+    cx.notify();
   }
 
   // The document's delegates joined to the terminals live now.
@@ -384,21 +451,35 @@ export default class Panel extends View {
   render(): Element {
     const domain = this.target();
     const doc = domain === this.domain ? this.doc : cachedDocument(this.docs, domain);
+    const detail = this.detail(domain, doc);
+    const finding = this.findingDetail(domain, doc);
+    const origin =
+      finding?.from === null || finding === undefined || doc.kind !== "loaded"
+        ? undefined
+        : doc.backlog.items.find((item) => item.id === finding.from);
     return panel(theme() as Theme, {
       domain,
       doc,
       listing: this.listing,
-      picked: domain !== undefined && domain === this.picked,
+      trail: trailOf(this.screen(domain, detail, finding)),
+      go: (screen, cx) => this.go(screen, cx),
       groups: doc.kind === "loaded" ? groupItems(doc.backlog) : [],
       findings: doc.kind === "loaded" ? openFindings(doc.backlog) : [],
+      closed: doc.kind === "loaded" ? closedFindings(doc.backlog) : [],
+      closedOpen: this.closedOpen(),
+      toggleClosed: (cx) => this.toggleClosed(cx),
+      standingOpen: this.standingOpen(),
+      toggleStanding: (cx) => this.toggleStanding(cx),
+      finding,
+      origin,
+      openFinding: (record, cx) => this.openFinding(record, cx),
       delegates: this.delegates(domain, doc),
       openDomain: (name, cx) => this.openDomain(name, cx),
       isOpen: (group) => this.isOpen(group),
       toggle: (group, cx) => this.toggleFold(group, cx),
-      detail: this.detail(domain, doc),
+      detail,
       open: (item, cx) => this.open(item, cx),
       answer: this.answerModel(),
-      back: (cx) => this.back(cx),
     });
   }
 }

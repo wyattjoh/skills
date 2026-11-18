@@ -15,11 +15,6 @@ export const PANEL_PADDING = 12;
 export const BAR_PADDING_Y = 6;
 
 /**
- * The domain crumb band's height.
- */
-export const CRUMB_HEIGHT = 36;
-
-/**
  * A card's radius.
  */
 export const CARD_RADIUS = 8;
@@ -91,10 +86,9 @@ export const DETAIL_LINE_GAP = 2;
 export const DETAIL_ROW_PADDING_Y = 6;
 
 /**
- * Herdr's shipped fold chevrons and the Back chevron the Tasks panel uses.
+ * Herdr's shipped fold chevrons.
  */
 export const ICONS = {
-  back: "mods/workspace-chrome/chevron-left.svg",
   groupOpen: "mods/files/chevron-down.svg",
   groupClosed: "mods/files/chevron-right.svg",
 } as const;
@@ -122,6 +116,16 @@ export const FINDING_GLYPHS: Readonly<Record<Finding["kind"], { glyph: string; t
 };
 
 /**
+ * Each finding status's tone on its detail screen, as a theme() color name, matching the item
+ * statuses they mirror: open as Open, acted on as Done, dismissed as Dismissed.
+ */
+export const FINDING_STATUS_TONES: Readonly<Record<Finding["status"], string>> = {
+  open: "dim",
+  acted: "ansi2",
+  dismissed: "ansi1",
+};
+
+/**
  * Each listing count's tone, as a theme() color name, used only while the count is nonzero so
  * a domain that needs nothing reads quiet.
  */
@@ -133,14 +137,17 @@ export const COUNT_TONES = {
 } as const;
 
 /**
- * A delegate row's height under its item, fixed like item rows so a group's open height is
- * still known without measuring.
+ * A delegated item's row height: the title, then the line naming its delegate and state.
+ */
+export const DELEGATED_ROW_HEIGHT = 48;
+
+/**
+ * An Unfiled delegates row's height.
  */
 export const DELEGATE_ROW_HEIGHT = 28;
 
 /**
- * How far each nesting level indents a delegate row: one level under its item, one more per
- * parent delegate.
+ * How far each nesting level indents an Unfiled delegates row under its parent delegate.
  */
 export const DELEGATE_INDENT = 14;
 

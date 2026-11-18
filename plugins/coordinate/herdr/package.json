@@ -7,5 +7,8 @@
     "test": "bun test",
     "typecheck": "bun scripts/typecheck.ts",
     "build": "bun scripts/build.ts"
+  },
+  "dependencies": {
+    "@wyattjoh/herdr-ui": "0.2.0"
   }
 }

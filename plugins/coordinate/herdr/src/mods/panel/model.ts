@@ -55,6 +55,79 @@ export const openFindings = (backlog: Backlog): Finding[] =>
   backlog.findings.filter((finding) => finding.status === "open");
 
 /**
+ * The findings already acted on or dismissed, in document order.
+ * @param backlog A validated document.
+ * @returns The closed findings.
+ */
+export const closedFindings = (backlog: Backlog): Finding[] =>
+  backlog.findings.filter((finding) => finding.status !== "open");
+
+/**
+ * Each finding status's name on its detail screen.
+ */
+export const FINDING_STATUS_LABELS: Readonly<Record<Finding["status"], string>> = {
+  open: "Open",
+  acted: "Acted on",
+  dismissed: "Dismissed",
+};
+
+/**
+ * Each finding kind's name on its detail screen.
+ */
+export const FINDING_KIND_LABELS: Readonly<Record<Finding["kind"], string>> = {
+  issue: "Issue",
+  opportunity: "Opportunity",
+};
+
+/**
+ * A screen of the panel: the all-domains listing, one domain's lists, or one item's or
+ * finding's detail in a domain.
+ */
+export type Screen =
+  | { kind: "domains" }
+  | { kind: "domain"; domain: string }
+  | { kind: "item"; domain: string; id: string }
+  | { kind: "finding"; domain: string; id: string };
+
+/**
+ * One step of the breadcrumb trail: its element id, its label, and the screen it opens, which
+ * only the last step (where the trail ends) has none of.
+ */
+export type Crumb = { id: string; label: string; to: Screen | undefined };
+
+/**
+ * The breadcrumb trail down to a screen, root first: Domains, then the domain, then Items or
+ * Findings and the record's id. The section step has no screen of its own, so it opens the
+ * domain's lists, where its card is.
+ * @param screen The screen shown.
+ * @returns The crumbs.
+ */
+export const trailOf = (screen: Screen): Crumb[] => {
+  const steps: { id: string; label: string; screen: Screen }[] = [
+    { id: "crumb-domains", label: "Domains", screen: { kind: "domains" } },
+  ];
+  if (screen.kind !== "domains") {
+    const lists: Screen = { kind: "domain", domain: screen.domain };
+    steps.push({ id: `crumb-domain-${screen.domain}`, label: screen.domain, screen: lists });
+    if (screen.kind === "item")
+      steps.push(
+        { id: "crumb-items", label: "Items", screen: lists },
+        { id: `crumb-item-${screen.id}`, label: screen.id, screen },
+      );
+    if (screen.kind === "finding")
+      steps.push(
+        { id: "crumb-findings", label: "Findings", screen: lists },
+        { id: `crumb-finding-${screen.id}`, label: screen.id, screen },
+      );
+  }
+  return steps.map((step, index) => ({
+    id: step.id,
+    label: step.label,
+    to: index === steps.length - 1 ? undefined : step.screen,
+  }));
+};
+
+/**
  * One option of an ask as the detail screen lists it: its text, its place in the ask's own
  * list (a stable id), and whether it is the recommendation.
  */
@@ -363,6 +436,26 @@ export const endedDate = (text: string): string | null => {
 };
 
 /**
+ * The ended records known after a lookup: every record already known, with each looked-up
+ * session's result laid over it, so a domain shown again keeps its delegates' records while
+ * its own lookup runs. A looked-up session with no record (undefined) loses any it had.
+ * @param known The records known before the lookup.
+ * @param found Each looked-up session and the date its record names (null for none), or
+ *   undefined when it has no record.
+ * @returns The records.
+ */
+export const mergeEnded = (
+  known: EndedRecords,
+  found: readonly (readonly [string, string | null | undefined])[],
+): EndedRecords => {
+  const merged = new Map(known);
+  for (const [session, at] of found)
+    if (at === undefined) merged.delete(session);
+    else merged.set(session, at);
+  return merged;
+};
+
+/**
  * Join a domain's delegate refs to the live terminals at render time. A ref matches the live
  * terminal whose `fleet.session` label is its session; with none it is ended when an ended
  * record exists, else gone. Live terminals whose `parent` is a shown delegate nest under it.
@@ -436,6 +529,57 @@ export const joinDelegates = (
       return [terminalRow(terminal, 0), ...nested(terminal.address, 1)];
     });
   return { byItem, unfiled };
+};
+
+/**
+ * How much a delegate state needs the user, most first: a live agent asking for a person
+ * (Herdr's blocked), then one that failed (error), then one at work, then one resting (idle,
+ * done, or reporting nothing yet), then a ref with neither terminal nor record (gone), then one
+ * whose session ended.
+ * @param state The delegate's state.
+ * @returns Its rank; lower needs the user more.
+ */
+export const delegateUrgency = (state: DelegateState): number => {
+  if (state.kind === "ended") return 5;
+  if (state.kind === "gone") return 4;
+  if (state.status === "blocked") return 0;
+  if (state.status === "error") return 1;
+  if (state.status === "working") return 2;
+  return 3;
+};
+
+/**
+ * A delegate state as a delegate line names it: the live status, gone, or ended with its date
+ * when the record names one.
+ * @param state The delegate's state.
+ * @returns The label.
+ */
+export const delegateLabel = (state: DelegateState): string => {
+  if (state.kind === "live") return state.status;
+  if (state.kind === "gone") return "gone";
+  return state.at === null ? "ended" : `ended ${state.at}`;
+};
+
+/**
+ * An item row's second line: its one delegate's name and state, or, with two or more, the most
+ * urgent state and the count. The state decides the line's tone. Only the item's own refs
+ * count; terminals nested under them do not.
+ * @param rows The item's delegate rows.
+ * @returns The line, or undefined for an item with no delegate.
+ */
+export const delegateLine = (
+  rows: readonly DelegateRow[],
+): { text: string; state: DelegateState } | undefined => {
+  const refs = rows.filter((row) => row.source === "ref");
+  const [first] = refs;
+  if (first === undefined) return undefined;
+  if (refs.length === 1)
+    return { text: `${first.name} · ${delegateLabel(first.state)}`, state: first.state };
+  const urgent = refs.reduce((best, row) =>
+    delegateUrgency(row.state) < delegateUrgency(best.state) ? row : best,
+  );
+  const label = urgent.state.kind === "live" ? urgent.state.status : urgent.state.kind;
+  return { text: `${label} ×${refs.length}`, state: urgent.state };
 };
 
 // The bun the build found on its PATH, baked in by scripts/build.ts with --define: a mod's exec

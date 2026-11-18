@@ -1,7 +1,14 @@
 import { expect, test } from "bun:test";
 import { emptyBacklog } from "../../lib/store.ts";
-import { cachedDocument } from "./model.ts";
-import type { DocumentState } from "./model.ts";
+import {
+  cachedDocument,
+  delegateLabel,
+  delegateLine,
+  delegateUrgency,
+  mergeEnded,
+  trailOf,
+} from "./model.ts";
+import type { DelegateRow, DelegateState, DocumentState } from "./model.ts";
 
 const loaded: DocumentState = { kind: "loaded", backlog: emptyBacklog("alpha", null) };
 const invalid: DocumentState = { kind: "invalid", reason: "items must be a list" };
@@ -18,4 +25,119 @@ test("cachedDocument draws a domain's last read state, whatever its kind", () =>
 test("cachedDocument draws loading for a domain not read yet and for the listing", () => {
   expect(cachedDocument(shown, "gamma")).toEqual({ kind: "loading" });
   expect(cachedDocument(shown, undefined)).toEqual({ kind: "loading" });
+});
+
+test("trailOf ends at the listing, a domain, an item and a finding, linking every step but the last", () => {
+  const lists = { kind: "domain", domain: "skills" } as const;
+  expect(trailOf({ kind: "domains" })).toEqual([
+    { id: "crumb-domains", label: "Domains", to: undefined },
+  ]);
+  expect(trailOf(lists)).toEqual([
+    { id: "crumb-domains", label: "Domains", to: { kind: "domains" } },
+    { id: "crumb-domain-skills", label: "skills", to: undefined },
+  ]);
+  expect(trailOf({ kind: "item", domain: "skills", id: "i4" })).toEqual([
+    { id: "crumb-domains", label: "Domains", to: { kind: "domains" } },
+    { id: "crumb-domain-skills", label: "skills", to: lists },
+    { id: "crumb-items", label: "Items", to: lists },
+    { id: "crumb-item-i4", label: "i4", to: undefined },
+  ]);
+  expect(trailOf({ kind: "finding", domain: "skills", id: "f5" })).toEqual([
+    { id: "crumb-domains", label: "Domains", to: { kind: "domains" } },
+    { id: "crumb-domain-skills", label: "skills", to: lists },
+    { id: "crumb-findings", label: "Findings", to: lists },
+    { id: "crumb-finding-f5", label: "f5", to: undefined },
+  ]);
+});
+
+test("mergeEnded keeps known records, lays each lookup over them and drops a vanished one", () => {
+  const known = new Map<string, string | null>([
+    ["s-a", "2026-11-16"],
+    ["s-b", null],
+    ["s-c", "2026-11-14"],
+  ]);
+  const merged = mergeEnded(known, [
+    ["s-b", "2026-11-17"],
+    ["s-c", undefined],
+    ["s-d", null],
+  ]);
+  expect([...merged]).toEqual([
+    ["s-a", "2026-11-16"],
+    ["s-b", "2026-11-17"],
+    ["s-d", null],
+  ]);
+  expect([...known]).toEqual([
+    ["s-a", "2026-11-16"],
+    ["s-b", null],
+    ["s-c", "2026-11-14"],
+  ]);
+});
+
+const live = (status: "working" | "idle" | "blocked" | "done" | "error" | "unknown") =>
+  ({ kind: "live", status }) as const;
+
+test("delegateUrgency ranks asking, failed, working, resting, gone, then ended", () => {
+  const states: DelegateState[] = [
+    live("blocked"),
+    live("error"),
+    live("working"),
+    live("idle"),
+    live("done"),
+    live("unknown"),
+    { kind: "gone" },
+    { kind: "ended", at: "2026-11-16" },
+  ];
+  expect(states.map(delegateUrgency)).toEqual([0, 1, 2, 3, 3, 3, 4, 5]);
+});
+
+test("delegateLabel names a live status, gone, and ended with or without its date", () => {
+  expect(
+    [
+      live("working"),
+      { kind: "gone" } as const,
+      { kind: "ended", at: "2026-11-16" } as const,
+      { kind: "ended", at: null } as const,
+    ].map(delegateLabel),
+  ).toEqual(["working", "gone", "ended 2026-11-16", "ended"]);
+});
+
+const row = (
+  name: string,
+  state: DelegateState,
+  source: "ref" | "terminal" = "ref",
+): DelegateRow => ({
+  source,
+  key: name,
+  name,
+  depth: source === "ref" ? 0 : 1,
+  state,
+});
+
+test("delegateLine names one delegate, or counts several under the most urgent state", () => {
+  expect(delegateLine([])).toBe(undefined);
+  expect(
+    delegateLine([row("impl", live("working")), row("review", live("blocked"), "terminal")]),
+  ).toEqual({
+    text: "impl · working",
+    state: live("working"),
+  });
+  expect(delegateLine([row("a", { kind: "ended", at: "2026-11-16" })])).toEqual({
+    text: "a · ended 2026-11-16",
+    state: { kind: "ended", at: "2026-11-16" },
+  });
+  expect(
+    delegateLine([row("a", live("idle")), row("b", live("error")), row("c", live("working"))]),
+  ).toEqual({ text: "error ×3", state: live("error") });
+  expect(
+    delegateLine([row("a", { kind: "ended", at: "2026-11-16" }), row("b", { kind: "gone" })]),
+  ).toEqual({ text: "gone ×2", state: { kind: "gone" } });
+  expect(
+    delegateLine([
+      row("a", { kind: "ended", at: null }),
+      row("b", { kind: "ended", at: "2026-11-15" }),
+    ]),
+  ).toEqual({
+    text: "ended ×2",
+    state: { kind: "ended", at: null },
+  });
 });

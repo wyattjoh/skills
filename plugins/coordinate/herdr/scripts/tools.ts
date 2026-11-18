@@ -8,8 +8,8 @@ import { dirname, join, resolve } from "node:path";
 export const root = resolve(import.meta.dir, "..");
 
 /**
- * The tsc binary from the nearest node_modules above this project. The project has no
- * dependencies of its own; the repository root's install provides TypeScript.
+ * The tsc binary from the nearest node_modules above this project. The project's own
+ * install adds only @wyattjoh/herdr-ui; the repository root's install provides TypeScript.
  * @returns The binary's path.
  */
 export const tscPath = (): string => {

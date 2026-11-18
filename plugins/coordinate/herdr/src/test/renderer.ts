@@ -177,6 +177,11 @@ mock.module("gpui-base", () => ({
   h_flex: () => element("h_flex"),
   v_flex: () => element("v_flex"),
   InputState: { new: fakeInput },
+  // @wyattjoh/herdr-ui's root entry links every element module, so the double names the
+  // gpui-base exports they import; the panel draws none of these.
+  Popover: { new: () => element("popover") },
+  Scrollbar: { new: () => element("scrollbar") },
+  TextView: { new: () => element("text_view") },
   Input: {
     new: (state: FakeInput) => {
       const node = element("input");
