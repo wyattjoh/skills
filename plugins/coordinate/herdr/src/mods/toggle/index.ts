@@ -5,7 +5,7 @@ import type { AsyncContext, Element } from "gpui-kit";
 import { h_flex } from "gpui-base";
 import { checking, focused, layout, nextCommand, run, setShared, shared, theme } from "herdr";
 import { CONTROL } from "../../lib/look.ts";
-import { ICON, PILL_SPACING } from "./look.ts";
+import { ICON, TOGGLE_END_INSET } from "./look.ts";
 import {
   DOCK_SETTING,
   FIRST_SYNC,
@@ -95,7 +95,7 @@ export default class Toggle extends View {
       .id("coordinate-toggle")
       .size_full()
       .justify_end()
-      .pr(PILL_SPACING)
+      .pr(TOGGLE_END_INSET)
       .items_center()
       .bg(t.chrome)
       .border_b(1)
