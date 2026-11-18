@@ -115,16 +115,19 @@ export const gitAndFake = (
 /**
  * An environment for spawning the coordinate CLI against `state`: a config file naming it, a stub
  * `hc` first on PATH, and `HC_TERMINAL_ID=t1`. The stub's `hc get` answers t1 with `labels`,
- * or, given `getError`, fails the way herdr-core reports an error; `hc ls` lists nothing.
+ * or, given `getError`, fails the way herdr-core reports an error; `hc get` answers each address in
+ * `terminals` with its document; `hc ls` lists nothing.
  * @param state State dir.
  * @param labels The calling terminal's labels.
  * @param getError An error kind for `hc get` to fail with.
+ * @param terminals Other terminals `hc get` knows, by address.
  * @returns The environment.
  */
 export const cliEnv = (
   state: string,
   labels: Record<string, string>,
   getError: string | undefined = undefined,
+  terminals: Record<string, unknown> = {},
 ): Record<string, string> => {
   const configFile = join(state, "config.json");
   writeFileSync(configFile, JSON.stringify({ state_dir: state, backlog_dir: join(state, "md") }));
@@ -136,7 +139,12 @@ export const cliEnv = (
       : `printf '%s' '${JSON.stringify({ error: { kind: getError, message: "herdr-core is not answering" } })}' >&2; exit 1`;
   writeFileSync(
     join(bin, "hc"),
-    `#!/bin/sh\ncase "$1" in\n  get) ${got} ;;\n  ls) printf '{"terminals":[]}' ;;\n  *) printf '{}' ;;\nesac\n`,
+    `#!/bin/sh\ncase "$1" in\n${Object.entries(terminals)
+      .map(
+        ([address, terminal]) =>
+          `  get) [ "$2" = '${address}' ] && { printf '%s' '${JSON.stringify(terminal)}'; exit 0; }; ${got} ;;\n`,
+      )
+      .join("")}  get) ${got} ;;\n  ls) printf '{"terminals":[]}' ;;\n  *) printf '{}' ;;\nesac\n`,
   );
   chmodSync(join(bin, "hc"), 0o755);
   return {

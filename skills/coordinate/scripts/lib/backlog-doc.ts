@@ -22,6 +22,7 @@ import {
   retain,
   setFocus,
   unfileable,
+  unfileDelegate,
   updateItem,
 } from "./backlog-store/ops.ts";
 import { backlogsDir, documentPath } from "./backlog-store/paths.ts";
@@ -521,6 +522,22 @@ export const recordDelegate = Effect.fn("recordDelegate")(function* (
   input: { id: string; ref: DelegateRef },
 ) {
   return yield* change(config, domain, (backlog) => fileDelegate(backlog, input));
+});
+
+/**
+ * Remove a delegate ref from an item, matched by session id or name; an item left delegated with
+ * no delegates goes back to open.
+ * @param config Config.
+ * @param domain Domain.
+ * @param input Item id, and the delegate's session id or name.
+ * @returns The updated item and the removed ref.
+ */
+export const releaseDelegate = Effect.fn("releaseDelegate")(function* (
+  config: Config,
+  domain: string,
+  input: { id: string; key: string },
+) {
+  return yield* change(config, domain, (backlog) => unfileDelegate(backlog, input));
 });
 
 /**

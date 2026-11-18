@@ -17,6 +17,7 @@ import { ITEM_STATUSES, type ItemStatus } from "./lib/backlog-store/schema.ts";
 import { loadConfig, type Config } from "./lib/config.ts";
 import { coordinatorDomain, domainOfCaller, Refused, resolveDomain } from "./lib/fleet.ts";
 import type { FirstMessage, Harness, ImplementSkill } from "./lib/harness.ts";
+import { attachDelegate, detachDelegate } from "./lib/attach.ts";
 import { delegate, endDelegate, listIdle, resumeDelegate, sendTo, start } from "./lib/lifecycle.ts";
 import { Proc } from "./lib/proc.ts";
 import { domainRepos, domainStatus } from "./lib/status.ts";
@@ -420,6 +421,34 @@ item
         ),
       ),
   );
+
+for (const [verb, run, help] of [
+  [
+    "attach",
+    attachDelegate,
+    "file an already-running agent session under an item, as delegate --item would; labels a hand-started one so status, watch, end and resume track it",
+  ],
+  [
+    "detach",
+    detachDelegate,
+    "remove a delegate from an item; an item left with no delegates goes back to open",
+  ],
+] as const)
+  item
+    .command(verb)
+    .argument("<id>", "item id, such as i3")
+    .argument(
+      "<delegate>",
+      "delegate name or Herdr terminal address (detach also takes a session id)",
+    )
+    .option("--domain <domain>", "domain (default: this coordinator's label)")
+    .option("--json", "print the updated item as JSON")
+    .description(help)
+    .action((id: string, target: string, options: { domain?: string; json?: boolean }) =>
+      main((config) =>
+        run(config, { id, target, domain: options.domain, json: options.json === true }),
+      ),
+    );
 
 const finding = program
   .command("finding")

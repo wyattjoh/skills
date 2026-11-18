@@ -86,6 +86,7 @@ The CLI is the backlog's only writer; it validates, locks and writes atomically,
 | A decision                         | `item update <id> --decided "<the user's words>"`                                      |
 | An ask, its answer                 | `item update <id> --status waiting-user --ask ...`, then `--answer "<their words>"`    |
 | Delegated                          | `delegate <name> --item <id> ...`                                                      |
+| A running session filed, unfiled   | `item attach <id> <delegate>`, `item detach <id> <delegate>` (name or address)         |
 | Done or dismissed                  | `item close <id> --outcome "<one line>"` (`--dismissed`)                               |
 | Standing yes, Boundary, focus      | `backlog standing add`, `backlog boundary add\|rm`, `backlog focus`                    |
 | A finding opened or closed         | `finding add --kind issue\|opportunity "<title>"`, `finding close <id> --outcome ...`  |

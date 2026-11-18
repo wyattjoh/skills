@@ -493,7 +493,17 @@ export const unfileable = (backlog: Backlog, id: string): string | undefined => 
 };
 
 /**
- * File a delegate under an item: append its ref and set the item to delegated.
+ * The item whose delegate refs name a session, open or closed.
+ * @param backlog Current document.
+ * @param session Session id.
+ * @returns The item, or undefined when no item names it.
+ */
+export const filedUnder = (backlog: Backlog, session: string): Item | undefined =>
+  backlog.items.find((item) => item.delegates.some((ref) => ref.session === session));
+
+/**
+ * File a delegate under an item: append its ref and set the item to delegated. A session any
+ * item already names is refused, so one session is filed under one item.
  * @param backlog Current document.
  * @param input Item id and the delegate ref.
  * @returns The next document and the updated item.
@@ -506,6 +516,15 @@ export const fileDelegate = (
   if (problem) return refuse(problem);
   const item = backlog.items.find((entry) => entry.id === input.id);
   if (!item) return refuse(`no item ${input.id} in ${backlog.domain}`);
+  const holder = filedUnder(backlog, input.ref.session);
+  if (holder) {
+    const held = holder.delegates.find((ref) => ref.session === input.ref.session);
+    return refuse(
+      holder.id === input.id
+        ? `${held?.name ?? input.ref.name} is already filed under ${holder.id}`
+        : `${held?.name ?? input.ref.name} is already filed under ${holder.id}; detach it first: coordinate item detach ${holder.id} ${held?.name ?? input.ref.session}`,
+    );
+  }
   const filed: Item = { ...item, status: "delegated", delegates: [...item.delegates, input.ref] };
   return {
     ok: true,
@@ -514,5 +533,57 @@ export const fileDelegate = (
       items: backlog.items.map((entry) => (entry.id === filed.id ? filed : entry)),
     },
     value: filed,
+  };
+};
+
+/**
+ * Undo a filing: remove one delegate ref from an item, matched by session id, else by name. An
+ * item left `delegated` with no delegates goes back to `open`; any other status stays, so a
+ * closed item keeps its outcome.
+ * @param backlog Current document.
+ * @param input Item id, and the delegate's session id or name.
+ * @returns The next document, the updated item and the removed ref.
+ */
+export const unfileDelegate = (
+  backlog: Backlog,
+  input: { id: string; key: string },
+): OpResult<{ item: Item; ref: DelegateRef }> => {
+  const found = backlog.items.find((item) => item.id === input.id);
+  if (!found) return { ok: false, reason: `no item ${input.id} in ${backlog.domain}` };
+  const bySession = found.delegates.filter((ref) => ref.session === input.key);
+  const matches =
+    bySession.length > 0 ? bySession : found.delegates.filter((ref) => ref.name === input.key);
+  const [ref] = matches;
+  if (ref === undefined) {
+    const holder = filedUnder(backlog, input.key);
+    const named = backlog.items.find((item) =>
+      item.delegates.some((entry) => entry.name === input.key),
+    );
+    const elsewhere = holder ?? named;
+    return {
+      ok: false,
+      reason: elsewhere
+        ? `${input.key} is filed under ${elsewhere.id}, not ${input.id}`
+        : `${input.id} has no delegate ${input.key}`,
+    };
+  }
+  if (matches.length > 1)
+    return {
+      ok: false,
+      reason: `${input.key} names ${matches.length} delegates on ${input.id}; pass a session id: ${matches.map((entry) => entry.session).join(", ")}`,
+    };
+  const delegates = found.delegates.filter((entry) => entry !== ref);
+  const item: Item = {
+    ...found,
+    delegates,
+    status: found.status === "delegated" && delegates.length === 0 ? "open" : found.status,
+  };
+  return {
+    ok: true,
+    backlog: {
+      ...backlog,
+      items: backlog.items.map((entry) => (entry.id === item.id ? item : entry)),
+    },
+    value: { item, ref },
   };
 };
