@@ -21,7 +21,7 @@
       "name": "@wyattjoh/to-code-plugin",
       "version": "0.1.0",
       "dependencies": {
-        "@typeonce/effect-machine": "0.40.0",
+        "@typeonce/effect-machine": "0.46.0",
         "effect": "4.1.2",
       },
       "devDependencies": {
@@ -462,7 +462,7 @@
 
     "@tybys/wasm-util": ["@tybys/wasm-util@0.10.4", "", { "dependencies": { "tslib": "^2.4.0" } }, "sha512-W3c4gRigFS0T/Ma4qIYF3GDAc5AQdHb1yL5znJT1Zv1YaD9Kitx656wBjvr19qbiosmZT8lWDM5BEMynUqX65A=="],
 
-    "@typeonce/effect-machine": ["@typeonce/effect-machine@0.40.0", "", { "peerDependencies": { "effect": "^4.0.0" } }, "sha512-BaTY12ylWy+MPxEJtcD/9+PqQtLXzmiXbbdfIk46L+QXpo6eAtKl0NoS2/sGLOXTE25gXFFNRTU669Rz8PmTtQ=="],
+    "@typeonce/effect-machine": ["@typeonce/effect-machine@0.46.0", "", { "peerDependencies": { "effect": "^4.0.0" } }, "sha512-Fsvvzf2htH6XqrROyBlEonneuVvZjlTqdoXlY7cNnttN6gb/jWVZJDGtssehfKiN83NRLqT4Df22/Y9UiuK2vg=="],
 
     "@types/bun": ["@types/bun@1.4.4", "", { "dependencies": { "bun-types": "1.4.4" } }, "sha512-9wkRDXUXK124pEnAutE6n/l18j+i9GC5IAHK8TmX/2nlySETmky0OU6yL5U8pW1AoKh++AN9auDCr647BfurjQ=="],
 

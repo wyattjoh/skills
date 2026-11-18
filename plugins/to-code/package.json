@@ -14,7 +14,7 @@
     "demo": "bun demo/build.ts"
   },
   "dependencies": {
-    "@typeonce/effect-machine": "0.40.0",
+    "@typeonce/effect-machine": "0.46.0",
     "effect": "4.1.2"
   },
   "devDependencies": {
