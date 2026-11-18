@@ -74,7 +74,7 @@ test("the pill is dim and inert when the layout docks no Backlog panel", async (
   expect(pill.click).toBe(undefined);
 });
 
-test("the panel follows each tab's own open state as focus moves between tabs", async () => {
+test("the panel follows each tab's own open state as focus moves between tabs, on the render the move causes", async () => {
   host.layout = docked(false);
   focusTab("tab1");
   const { ctx, render } = await mount();
@@ -84,15 +84,35 @@ test("the panel follows each tab's own open state as focus moves between tabs", 
 
   // tab2 never opened the panel, so moving there hides it.
   focusTab("tab2");
-  ctx.tick(1_000);
+  render();
   expect(host.runs).toEqual([{ command: "layout.hide", args: { id: "backlog-column" } }]);
   host.layout = docked(false);
 
   // Back on tab1 it shows again.
   host.runs = [];
   focusTab("tab1");
-  ctx.tick(1_000);
+  render();
   expect(host.runs).toEqual([{ command: "layout.show", args: { id: "backlog-column" } }]);
+  expect(host.shared.get("coordinate-panel.dock")).toEqual([{ space: "s1", tab: "tab1" }]);
+});
+
+test("a switch away and back before its sync task runs leaves the open tab's column alone", async () => {
+  host.layout = docked(true);
+  host.shared.set("coordinate-panel.dock", [{ space: "s1", tab: "tab1" }]);
+  focusTab("tab1");
+  const { view, render } = await mount();
+  render();
+
+  // A context whose tasks wait, as Herdr's run after the render that spawned them.
+  const queued: (() => unknown)[] = [];
+  const deferred = { spawn: (body: (cx: unknown) => unknown) => queued.push(() => body(deferred)) };
+  focusTab("tab2");
+  view.render(deferred as never);
+  focusTab("tab1");
+  view.render(deferred as never);
+  for (const body of queued) await body();
+
+  expect(host.runs).toEqual([]);
   expect(host.shared.get("coordinate-panel.dock")).toEqual([{ space: "s1", tab: "tab1" }]);
 });
 
@@ -134,11 +154,30 @@ test("under herdr-app check it starts no command loop or timer", async () => {
   expect(ctx.timers.length).toBe(0);
 });
 
+test("under herdr-app check a render shows, hides and records nothing", async () => {
+  host.checking = true;
+  host.layout = docked(true);
+  focusTab("tab1");
+  const { render } = await mount();
+  render();
+
+  expect(host.runs).toEqual([]);
+  expect(host.shared.get("coordinate-panel.dock")).toBe(undefined);
+});
+
+test("the toggle starts no timer, so only renders match the column to the tab", async () => {
+  host.layout = docked(false);
+  focusTab("tab1");
+  const { ctx } = await mount();
+
+  expect(ctx.timers.length).toBe(0);
+});
+
 test("the first sync adopts a panel already shown, with no tab remembered, as open on this tab", async () => {
   host.layout = docked(true);
   focusTab("tab1");
-  const { ctx } = await mount();
-  ctx.tick(1_000);
+  const { render } = await mount();
+  render();
 
   expect(host.runs).toEqual([]);
   expect(host.shared.get("coordinate-panel.dock")).toEqual([{ space: "s1", tab: "tab1" }]);
@@ -148,11 +187,11 @@ test("hiding the column some other way on the same tab is remembered for that ta
   host.layout = docked(true);
   host.shared.set("coordinate-panel.dock", [{ space: "s1", tab: "tab1" }]);
   focusTab("tab1");
-  const { ctx } = await mount();
-  ctx.tick(1_000);
+  const { render } = await mount();
+  render();
 
   host.layout = docked(false);
-  ctx.tick(1_000);
+  render();
 
   expect(host.runs).toEqual([]);
   expect(host.shared.get("coordinate-panel.dock")).toEqual([]);
@@ -164,20 +203,20 @@ test("a hide the layout has not applied yet is not read as the person reopening 
     host.layout = docked(true);
     host.shared.set("coordinate-panel.dock", [{ space: "s1", tab: "tab1" }]);
     focusTab("tab1");
-    const { ctx } = await mount();
-    ctx.tick(1_000);
+    const { render } = await mount();
+    render();
     focusTab("tab2");
-    ctx.tick(1_000);
+    render();
     expect(host.runs).toEqual([{ command: "layout.hide", args: { id: "backlog-column" } }]);
 
     // Still shown half a second later: the hide is in flight, so tab2 stays closed.
     setSystemTime(new Date("2026-11-17T12:00:00.500Z"));
-    ctx.tick(1_000);
+    render();
     expect(host.shared.get("coordinate-panel.dock")).toEqual([{ space: "s1", tab: "tab1" }]);
 
     // Still shown after the window: now it counts as the person's choice for tab2.
     setSystemTime(new Date("2026-11-17T12:00:01.500Z"));
-    ctx.tick(1_000);
+    render();
     expect(host.shared.get("coordinate-panel.dock")).toEqual([
       { space: "s1", tab: "tab1" },
       { space: "s1", tab: "tab2" },

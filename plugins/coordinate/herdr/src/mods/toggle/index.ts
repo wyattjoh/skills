@@ -1,7 +1,8 @@
 // coordinate-toggle: the tab row's Backlog pill, and the target of the cmd-alt-b key command.
-// It opens and closes the docked coordinate-panel for the focused tab.
+// It opens and closes the docked coordinate-panel for the focused tab, and on every render (Herdr
+// renders it on each focus, layout and shared change) matches the column to the focused tab.
 import { View, svg } from "gpui-kit";
-import type { AsyncContext, Element } from "gpui-kit";
+import type { AsyncContext, Context, Element } from "gpui-kit";
 import { h_flex } from "gpui-base";
 import { checking, focused, layout, nextCommand, run, setShared, shared, theme } from "herdr";
 import { CONTROL } from "../../lib/look.ts";
@@ -18,9 +19,6 @@ import {
 import type { SyncMemory, ToggleAction } from "./model.ts";
 import type { Theme } from "../panel/view.ts";
 
-// How often the toggle matches the docked panel to the focused tab.
-const SYNC_MS = 1_000;
-
 const apply = (effects: ToggleAction[]) => {
   for (const effect of effects)
     if (effect.kind === "run") run(effect.command, effect.args);
@@ -36,7 +34,6 @@ export default class Toggle extends View {
 
   init(_props: unknown, cx: AsyncContext) {
     if (checking()) return;
-    cx.timer.every(SYNC_MS, () => this.sync());
     // Key commands reach only mounted mods, which is why cmd-alt-b goes to this always-shown pill.
     cx.spawn(async () => {
       try {
@@ -55,6 +52,16 @@ export default class Toggle extends View {
     this.closed = true;
   }
 
+  // Match the column to the focused tab from a task, outside render. The task reads the layout,
+  // focus and shared value when it runs, so a switch away and back before it runs decides on
+  // where focus is then. A second task on the same tab finds nothing to do.
+  schedule(cx: Context) {
+    if (this.closed || checking()) return;
+    cx.spawn(async () => {
+      if (!this.closed) this.sync();
+    });
+  }
+
   sync() {
     const synced = dockSync(
       panelDock(layout()),
@@ -71,7 +78,8 @@ export default class Toggle extends View {
     apply(toggleEffects(panelDock(layout()), shared(DOCK_SETTING), scopeOf(focused())));
   }
 
-  render(): Element {
+  render(cx: Context): Element {
+    this.schedule(cx);
     const t = theme() as Theme;
     const dock = panelDock(layout());
     const on = dock?.shown === true;
