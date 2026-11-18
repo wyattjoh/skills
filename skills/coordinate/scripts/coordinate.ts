@@ -422,33 +422,55 @@ item
       ),
   );
 
-for (const [verb, run, help] of [
-  [
-    "attach",
-    attachDelegate,
+const delegateArgument = [
+  "<delegate>",
+  "delegate name or Herdr terminal address (detach also takes a session id)",
+] as const;
+
+item
+  .command("attach")
+  .argument("<id>", "item id, such as i3")
+  .argument(...delegateArgument)
+  .option(
+    "--session <id>",
+    "the agent's session id, when Herdr sees none (Claude Code shows it in /status)",
+  )
+  .option("--domain <domain>", "domain (default: this coordinator's label)")
+  .option("--json", "print the updated item as JSON")
+  .description(
     "file an already-running agent session under an item, as delegate --item would; labels a hand-started one so status, watch, end and resume track it",
-  ],
-  [
-    "detach",
-    detachDelegate,
-    "remove a delegate from an item; an item left with no delegates goes back to open",
-  ],
-] as const)
-  item
-    .command(verb)
-    .argument("<id>", "item id, such as i3")
-    .argument(
-      "<delegate>",
-      "delegate name or Herdr terminal address (detach also takes a session id)",
-    )
-    .option("--domain <domain>", "domain (default: this coordinator's label)")
-    .option("--json", "print the updated item as JSON")
-    .description(help)
-    .action((id: string, target: string, options: { domain?: string; json?: boolean }) =>
+  )
+  .action(
+    (id: string, target: string, options: { session?: string; domain?: string; json?: boolean }) =>
       main((config) =>
-        run(config, { id, target, domain: options.domain, json: options.json === true }),
+        attachDelegate(config, {
+          id,
+          target,
+          domain: options.domain,
+          json: options.json === true,
+          session: options.session,
+        }),
       ),
-    );
+  );
+
+item
+  .command("detach")
+  .argument("<id>", "item id, such as i3")
+  .argument(...delegateArgument)
+  .option("--domain <domain>", "domain (default: this coordinator's label)")
+  .option("--json", "print the updated item as JSON")
+  .description("remove a delegate from an item; an item left with no delegates goes back to open")
+  .action((id: string, target: string, options: { domain?: string; json?: boolean }) =>
+    main((config) =>
+      detachDelegate(config, {
+        id,
+        target,
+        domain: options.domain,
+        json: options.json === true,
+        session: undefined,
+      }),
+    ),
+  );
 
 const finding = program
   .command("finding")

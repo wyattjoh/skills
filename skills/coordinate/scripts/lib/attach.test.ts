@@ -79,6 +79,7 @@ const options = (fields: Partial<AttachOptions>): AttachOptions => ({
   target: "t4",
   domain: undefined,
   json: false,
+  session: undefined,
   ...fields,
 });
 
@@ -182,7 +183,7 @@ describe("item attach", () => {
     [
       "a terminal with no session id",
       handStarted("/x", { foreground: { argv: ["claude"], cwd: "/x" } }),
-      "t4 has no agent session id (no fleet.session label, no --session-id or --resume argument), so it could not be resumed; start the work with coordinate delegate instead",
+      "t4 has no agent session id Herdr can see (no fleet.session label, no --session-id or --resume argument); pass it with --session <id> (in Claude Code, /status shows the session id)",
     ],
     [
       "a terminal running no agent",
@@ -192,7 +193,7 @@ describe("item attach", () => {
     [
       "a --resume with no session after it",
       handStarted("/x", { foreground: { argv: ["claude", "--resume", "--verbose"], cwd: "/x" } }),
-      "t4 has no agent session id (no fleet.session label, no --session-id or --resume argument), so it could not be resumed; start the work with coordinate delegate instead",
+      "t4 has no agent session id Herdr can see (no fleet.session label, no --session-id or --resume argument); pass it with --session <id> (in Claude Code, /status shows the session id)",
     ],
   ])("refuses %s, writing and labelling nothing", async (_case, target, message) => {
     const { cfg, path } = await started();
@@ -202,6 +203,32 @@ describe("item attach", () => {
     expect(messageOf(error)).toBe(message);
     expect(readFileSync(path, "utf8")).toBe(before);
     expect(labelCalls(fake.calls.map((call) => call.argv)).length).toBe(0);
+  });
+
+  it("files a session Herdr cannot see with --session, and labels it", async () => {
+    const { state, cfg, path } = await started();
+    const fake = gitAndFake(
+      answers(handStarted(state, { foreground: { argv: ["claude"], cwd: state } })),
+    );
+    const lines = await runWith(
+      attachDelegate(cfg, options({ session: "s-typed" }), ENV),
+      fake.layer,
+    );
+    expect(lines[0]).toBe("filed manual (t4, session s-typed) under i1 [delegated]");
+    expect(labelCalls(fake.calls)[0]?.includes("fleet.session=s-typed")).toBe(true);
+    expect(read(path).items[0].delegates[0].session).toBe("s-typed");
+  });
+
+  it.each([
+    ["one Herdr sees otherwise", "s-other", `t4 runs session ${SESSION}, not s-other`],
+    ["a flag", "--verbose", "--session --verbose is not a session id"],
+  ])("refuses --session naming %s", async (_case, session, message) => {
+    const { state, cfg, path } = await started();
+    const before = readFileSync(path, "utf8");
+    const fake = fakeProc(answers(handStarted(state)));
+    const error = await failureOf(attachDelegate(cfg, options({ session }), ENV), fake.layer);
+    expect(messageOf(error)).toBe(message);
+    expect(readFileSync(path, "utf8")).toBe(before);
   });
 
   it("exits 2 naming the filing and the missing labels when hc label fails", async () => {
@@ -430,6 +457,7 @@ describe("coordinate item attach and detach CLI", () => {
       run(["attach", "i1", "t4"]),
       run(["attach", "i2", "t4"]),
       run(["detach", "i1", "manual"]),
+      run(["attach", "i1", "t4", "--session", "s-other"]),
     ]).toEqual([
       [
         0,
@@ -440,6 +468,7 @@ describe("coordinate item attach and detach CLI", () => {
         "refused: manual is already filed under i1; detach it first: coordinate item detach i1 manual\n",
       ],
       [0, `detached manual (session ${SESSION}) from i1 [open]\n`],
+      [1, `refused: t4 runs session ${SESSION}, not s-other\n`],
     ]);
     expect(read(path).items[0].delegates).toEqual([]);
   });

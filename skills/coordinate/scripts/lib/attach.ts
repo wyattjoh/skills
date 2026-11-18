@@ -37,6 +37,10 @@ export type AttachOptions = {
   target: string;
   domain: string | undefined;
   json: boolean;
+  /**
+   * Session id for a terminal Herdr sees none for (`--session`, attach only).
+   */
+  session: string | undefined;
 };
 
 /**
@@ -67,10 +71,19 @@ export const attachDelegate = Effect.fn("attachDelegate")(function* (
     return yield* new Refused({
       message: `${options.target} is labelled for ${labelledDomain}, not ${domain}; its coordinator files it`,
     });
-  const session = sessionOf(terminal);
-  if (session === "" || session.startsWith("-"))
+  const given = options.session?.trim();
+  if (given !== undefined && (given === "" || given.startsWith("-") || /\s/.test(given)))
+    return yield* new Refused({ message: `--session ${options.session} is not a session id` });
+  const seen = sessionOf(terminal);
+  const visible = seen === "" || seen.startsWith("-") ? undefined : seen;
+  if (visible !== undefined && given !== undefined && given !== visible)
     return yield* new Refused({
-      message: `${options.target} has no agent session id (no ${L.session} label, no --session-id or --resume argument), so it could not be resumed; start the work with coordinate delegate instead`,
+      message: `${options.target} runs session ${visible}, not ${given}`,
+    });
+  const session = visible ?? given;
+  if (session === undefined)
+    return yield* new Refused({
+      message: `${options.target} has no agent session id Herdr can see (no ${L.session} label, no --session-id or --resume argument); pass it with --session <id> (in Claude Code, /status shows the session id)`,
     });
   const harness = harnessOf(terminal.labels[L.harness] ?? terminal.app);
   if (harness === undefined)
