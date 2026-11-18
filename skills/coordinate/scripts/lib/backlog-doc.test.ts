@@ -1283,6 +1283,80 @@ describe("coordinator-only mutations", () => {
     expect([read(path).focus, read(path).items[0].status]).toEqual(["login v2", "done"]);
   });
 
+  it("records an answer from outside a terminal with --domain, and nothing else", async () => {
+    const { state, path } = await prepared();
+    expect(
+      spawn(cliEnv(state, COORDINATOR), [
+        "item",
+        "update",
+        "i1",
+        "--status",
+        "waiting-user",
+        "--ask",
+        "Which provider?",
+        "--option",
+        "-none-",
+        "--option",
+        "okta",
+      ]),
+    ).toEqual([0, "updated i1 [waiting-user] fix login\n"]);
+    const { HC_TERMINAL_ID: _unset, ...outside } = cliEnv(state, COORDINATOR);
+    const before = readFileSync(path, "utf8");
+    expect(spawn(outside, ["item", "answer", "i1", "okta"])).toEqual([
+      1,
+      "refused: an answer from outside a Herdr terminal names its domain: pass --domain\n",
+    ]);
+    expect(spawn(outside, ["item", "update", "i1", "--answer", "okta", "--domain", "app"])[0]).toBe(
+      2,
+    );
+    expect(readFileSync(path, "utf8")).toBe(before);
+    expect(spawn(outside, ["item", "answer", "--domain", "app", "--", "i1", "-none-"])).toEqual([
+      0,
+      "updated i1 [waiting-user] fix login\n",
+    ]);
+    expect([
+      read(path).items[0].ask,
+      read(path).items[0].decided.map((d: { text: string }) => d.text),
+    ]).toEqual([null, ['Re "Which provider?": -none-']]);
+  });
+
+  it("refuses an answer from a delegate or another non-coordinator terminal, even with --domain", async () => {
+    const { state, path } = await prepared();
+    spawn(cliEnv(state, COORDINATOR), ["item", "update", "i1", "--ask", "Which provider?"]);
+    const before = readFileSync(path, "utf8");
+    expect([
+      spawn(cliEnv(state, { "fleet.domain": "app", "fleet.session": "s-parent" }), [
+        "item",
+        "answer",
+        "i1",
+        "okta",
+        "--domain",
+        "app",
+      ]),
+      spawn(cliEnv(state, {}), ["item", "answer", "i1", "okta", "--domain", "app"]),
+    ]).toEqual([
+      [
+        1,
+        "refused: only a coordinator changes the backlog, and terminal t1 is not labelled as one; a delegate records what it notices with coordinate finding add\n",
+      ],
+      [
+        1,
+        "refused: only a coordinator changes the backlog, and terminal t1 is not labelled as one; a delegate records what it notices with coordinate finding add\n",
+      ],
+    ]);
+    expect(readFileSync(path, "utf8")).toBe(before);
+  });
+
+  it("refuses every other mutation from outside a terminal", async () => {
+    const { state, path } = await prepared();
+    const { HC_TERMINAL_ID: _unset, ...outside } = cliEnv(state, COORDINATOR);
+    const before = readFileSync(path, "utf8");
+    expect(mutations(state).map((args) => spawn(outside, [...args, "--domain", "app"])[0])).toEqual(
+      mutations(state).map(() => 2),
+    );
+    expect(readFileSync(path, "utf8")).toBe(before);
+  });
+
   it("exits 2 when the caller's role cannot be checked", async () => {
     const { state, path } = await prepared();
     const before = readFileSync(path, "utf8");

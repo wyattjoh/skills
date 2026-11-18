@@ -15,7 +15,13 @@ import {
 } from "./lib/backlog-doc.ts";
 import { ITEM_STATUSES, type ItemStatus } from "./lib/backlog-store/schema.ts";
 import { loadConfig, type Config } from "./lib/config.ts";
-import { coordinatorDomain, domainOfCaller, Refused, resolveDomain } from "./lib/fleet.ts";
+import {
+  answerDomain,
+  coordinatorDomain,
+  domainOfCaller,
+  Refused,
+  resolveDomain,
+} from "./lib/fleet.ts";
 import type { FirstMessage, Harness, ImplementSkill } from "./lib/harness.ts";
 import { attachDelegate, detachDelegate } from "./lib/attach.ts";
 import { delegate, endDelegate, listIdle, resumeDelegate, sendTo, start } from "./lib/lifecycle.ts";
@@ -394,6 +400,45 @@ item
           }),
         ),
       ),
+  );
+
+item
+  .command("answer")
+  .argument("<id>", "item id, such as i3")
+  .argument(
+    "<answer>",
+    "the user's answer, one line (put -- before the arguments if it starts with -)",
+  )
+  .option(
+    "--domain <domain>",
+    "domain (default: this coordinator's label; required outside a terminal)",
+  )
+  .option("--json", "print the updated item as JSON")
+  .description(
+    "record the user's answer to an item's ask, as item update --answer does; the one change allowed outside a Herdr terminal, such as from the Backlog panel",
+  )
+  .action((id: string, answer: string, options: { domain?: string; json?: boolean }) =>
+    main((config) =>
+      Effect.flatMap(answerDomain(options.domain), (domain) =>
+        itemUpdate(config, domain, {
+          id,
+          status: undefined,
+          outcome: undefined,
+          decided: [],
+          touch: [],
+          untouch: [],
+          due: undefined,
+          ask: undefined,
+          context: undefined,
+          options: [],
+          rec: undefined,
+          why: undefined,
+          answer,
+          json: options.json === true,
+          now: new Date().toISOString(),
+        }),
+      ),
+    ),
   );
 
 item
