@@ -159,3 +159,15 @@ export const DELEGATE_TONES: Readonly<Record<LiveStatus | "ended" | "gone", stri
   ended: "dim",
   gone: "ansi3",
 };
+
+/**
+ * The answer row under an ask: the shipped Changes panel's commit row, a text field beside a
+ * solid button, at the same height, padding and radius.
+ */
+export const ANSWER = {
+  height: 32,
+  fieldPaddingX: 10,
+  buttonPaddingX: 14,
+  radius: 8,
+  gap: 8,
+} as const;

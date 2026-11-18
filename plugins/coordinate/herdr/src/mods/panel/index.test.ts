@@ -1,7 +1,14 @@
 import { beforeEach, expect, test } from "bun:test";
-import { addFinding, addItem, closeFinding, closeItem, emptyBacklog } from "../../lib/store.ts";
+import {
+  addFinding,
+  addItem,
+  closeFinding,
+  closeItem,
+  emptyBacklog,
+  updateItem,
+} from "../../lib/store.ts";
 import type { Backlog, Item } from "../../lib/store.ts";
-import { context, get, host, ids, resetHost, settle, text } from "../../test/renderer.ts";
+import { context, get, host, ids, resetHost, settle, text, typeInto } from "../../test/renderer.ts";
 
 const { default: Panel } = await import("./index.ts");
 const { LIST_SCRIPT } = await import("./model.ts");
@@ -538,6 +545,126 @@ test("keeps an ask without a recommendation in its own order, with nothing highl
   expect(text(get(root, "fact-touches"))).toBe("Touches None");
   expect(text(get(root, "fact-due"))).toBe("Due None");
   expect(ids(root, "delegate-")).toEqual([]);
+});
+
+// The document after the CLI recorded an answer to i1's ask.
+const answered = (answer: string): Backlog => {
+  const done = updateItem(withAsk(), {
+    id: "i1",
+    status: undefined,
+    outcome: undefined,
+    decided: [],
+    touch: [],
+    untouch: [],
+    due: undefined,
+    ask: undefined,
+    context: undefined,
+    options: [],
+    rec: undefined,
+    why: undefined,
+    answer,
+    now: NOW,
+  });
+  if (!done.ok) throw new Error(done.reason);
+  return done.backlog;
+};
+
+const answerArgs = (id: string, answer: string) => [
+  "-u",
+  "HC_TERMINAL_ID",
+  "bun",
+  "/Users/test/.claude/skills/coordinate/scripts/coordinate.ts",
+  "item",
+  "answer",
+  "--domain",
+  "alpha",
+  "--",
+  id,
+  answer,
+];
+
+test("answers with a picked option through the CLI, then shows the item as it reloads", async () => {
+  focusDomain("alpha");
+  host.files.set(DOC, JSON.stringify(withAsk()));
+  const { ctx, render } = await mount();
+  get(render(), "item-i1").click!({}, ctx.cx);
+  expect([
+    text(get(render(), "ask-answer-submit")),
+    get(render(), "ask-answer-submit").styles.bg,
+  ]).toEqual(["Answer", "solid"]);
+  get(render(), "ask-option-0").click!({}, ctx.cx);
+  const picked = render();
+  expect([get(picked, "ask-option-0").styles.bg, get(picked, "ask-option-1").styles.bg]).toEqual([
+    "selected",
+    undefined,
+  ]);
+  expect(host.execs).toEqual([]);
+  host.files.set(DOC, JSON.stringify(answered("Coordinate backlog")));
+  get(picked, "ask-answer-submit").click!({}, ctx.cx);
+  expect(text(get(render(), "ask-answer-submit"))).toBe("Answering…");
+  await settle();
+  expect(host.execs).toEqual([
+    { command: "/usr/bin/env", args: answerArgs("i1", "Coordinate backlog") },
+  ]);
+  const root = render();
+  expect(ids(root, "ask-")).toEqual([]);
+  expect(text(get(root, "decided-1"))).toBe('Re "Which title?": Coordinate backlog 2026-11-17');
+});
+
+test("answers with typed text over the picked option, a leading dash kept as one argument", async () => {
+  focusDomain("alpha");
+  host.files.set(DOC, JSON.stringify(withAsk()));
+  const { ctx, render } = await mount();
+  get(render(), "item-i1").click!({}, ctx.cx);
+  typeInto(host.inputs[0]!, "  -call it Board ", ctx.cx);
+  const typed = render();
+  expect(ids(typed, "ask-option-").map((id) => get(typed, id).styles.bg)).toEqual([
+    undefined,
+    undefined,
+    undefined,
+  ]);
+  get(typed, "ask-answer-submit").click!({}, ctx.cx);
+  await settle();
+  expect(host.execs).toEqual([
+    { command: "/usr/bin/env", args: answerArgs("i1", "-call it Board") },
+  ]);
+});
+
+test("shows the CLI's message and keeps the draft when recording fails or cannot start", async () => {
+  focusDomain("alpha");
+  host.files.set(DOC, JSON.stringify(withAsk()));
+  const { ctx, render } = await mount();
+  get(render(), "item-i1").click!({}, ctx.cx);
+  host.execExit = { code: 1, stderr: "refused: i1 has no ask to answer\n" };
+  get(render(), "ask-answer-submit").click!({}, ctx.cx);
+  await settle();
+  const refused = render();
+  expect([
+    text(get(refused, "ask-answer-error")),
+    text(get(refused, "ask-answer-submit")),
+    get(refused, "ask-option-1").styles.bg,
+  ]).toEqual(["refused: i1 has no ask to answer", "Answer", "selected"]);
+  host.execExit = undefined;
+  host.execRejects = new Error("no such file: bun");
+  get(refused, "ask-answer-submit").click!({}, ctx.cx);
+  await settle();
+  expect(text(get(render(), "ask-answer-error"))).toBe(
+    "could not run coordinate: Error: no such file: bun",
+  );
+  expect(host.execs.length).toBe(2);
+});
+
+test("keeps Answer inert until an option is picked or text typed", async () => {
+  focusDomain("alpha");
+  host.files.set(DOC, JSON.stringify(withAsk()));
+  const { ctx, render } = await mount();
+  get(render(), "item-i2").click!({}, ctx.cx);
+  const empty = get(render(), "ask-answer-submit");
+  expect([empty.styles.bg, empty.click]).toEqual(["raised", undefined]);
+  host.inputs[0]!.handlers.get("submit")!({}, ctx.cx);
+  typeInto(host.inputs[0]!, "   ", ctx.cx);
+  expect(get(render(), "ask-answer-submit").click).toBe(undefined);
+  expect(host.execs).toEqual([]);
 });
 
 test("Back returns to the list, which stayed mounted under the detail to keep its scroll", async () => {

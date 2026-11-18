@@ -1,10 +1,12 @@
 // The panel's regions as element functions: everything it draws, from data the View hands in.
 import { div, svg } from "gpui-kit";
 import type { Color, Context, Element } from "gpui-kit";
-import { h_flex, v_flex } from "gpui-base";
+import { Input, h_flex, v_flex } from "gpui-base";
+import type { InputState } from "gpui-base";
 import type { Finding, Item } from "../../lib/store.ts";
 import { CONTROL } from "../../lib/look.ts";
 import {
+  ANSWER,
   DETAIL_LINE_GAP,
   DETAIL_ROW_PADDING_Y,
   BAR_PADDING_Y,
@@ -30,8 +32,9 @@ import {
   TEXT_BODY,
   TEXT_SMALL,
 } from "./look.ts";
-import { GROUP_LABELS, rankedOptions } from "./model.ts";
+import { GROUP_LABELS, chosenAnswer, rankedOptions } from "./model.ts";
 import type {
+  AnswerDraft,
   DelegateJoin,
   DelegateRow,
   DelegateState,
@@ -64,8 +67,22 @@ export type PanelModel = {
   // The item whose detail screen is on top of the list, if any.
   detail: Item | undefined;
   open: (item: Item, cx: Context) => void;
+  // The answer being written on the open item's ask, when it has one.
+  answer: AnswerModel | undefined;
   openDomain: (domain: string, cx: Context) => void;
   back: (cx: Context) => void;
+};
+
+/**
+ * The answer row's state and what its controls do: pick an option, type, and record it.
+ */
+export type AnswerModel = {
+  draft: AnswerDraft;
+  // The text field's retained state, absent until the View's init made it.
+  input: InputState | undefined;
+  typing: boolean;
+  choose: (option: string, cx: Context) => void;
+  submit: (cx: Context) => void;
 };
 
 /**
@@ -390,9 +407,58 @@ const fact = (t: Theme, id: string, label: string, values: string[]): Element =>
             .children(values.map((value) => div().child(value))),
     );
 
-const askCard = (t: Theme, item: Item): Element[] => {
+// The answer row: a text field beside an Answer button that is solid once there is an answer,
+// as the Changes panel's commit row is, and the CLI's error under it when recording failed.
+const answerRows = (t: Theme, answer: AnswerModel): Element[] => {
+  const { draft } = answer;
+  const enabled = chosenAnswer(draft) !== undefined && !draft.busy;
+  const field = div()
+    .id("ask-answer-field")
+    .flex_1()
+    .min_w(0)
+    .h(ANSWER.height)
+    .px(ANSWER.fieldPaddingX)
+    .flex()
+    .items_center()
+    .rounded(ANSWER.radius)
+    .border_1()
+    .border_color(answer.typing ? t.accent : t.border)
+    .cursor_text()
+    .when(answer.input !== undefined, (el) =>
+      el.child(Input.new(answer.input!).h_full().text_size(TEXT_BODY).text_color(t.foreground)),
+    );
+  const submit = div()
+    .id("ask-answer-submit")
+    .flex_none()
+    .h(ANSWER.height)
+    .px(ANSWER.buttonPaddingX)
+    .flex()
+    .items_center()
+    .rounded(ANSWER.radius)
+    .text_size(TEXT_SMALL)
+    .bg(enabled ? t.solid : t.raised)
+    .text_color(enabled ? t.solid_foreground : t.dim)
+    .when(enabled, (el) => el.cursor_pointer().on_click((_event, cx) => answer.submit(cx)))
+    .child(draft.busy ? "Answering…" : "Answer");
+  return [
+    detailRow(t, "ask-answer").child(h_flex().gap(ANSWER.gap).child(field).child(submit)),
+    ...(draft.error === undefined
+      ? []
+      : [
+          detailRow(t, "ask-answer-error")
+            .text_size(TEXT_SMALL)
+            .text_color(t.ansi1)
+            .child(draft.error),
+        ]),
+  ];
+};
+
+const askCard = (t: Theme, item: Item, answer: AnswerModel | undefined): Element[] => {
   const ask = item.ask;
   if (ask === null) return [];
+  // The picked option is highlighted until text is typed, which then answers instead.
+  const picked =
+    answer === undefined ? ask.rec : answer.draft.text.trim() === "" ? answer.draft.choice : null;
   const question = detailRow(t, "ask-question").font_medium().child(ask.question);
   const context =
     ask.context === null
@@ -400,7 +466,13 @@ const askCard = (t: Theme, item: Item): Element[] => {
       : [detailRow(t, "ask-context").text_color(t.muted).child(ask.context)];
   const options = rankedOptions(ask).map(({ option, index, rec }) =>
     detailRow(t, `ask-option-${index}`)
-      .when(rec, (el) => el.bg(t.selected))
+      .when(option === picked, (el) => el.bg(t.selected))
+      .when(answer !== undefined, (el) =>
+        el
+          .cursor_pointer()
+          .hover((s) => s.bg(option === picked ? t.selected : t.hover))
+          .on_click((_event, cx) => answer!.choose(option, cx)),
+      )
       .child(
         h_flex()
           .gap(CONTROL.gap)
@@ -418,7 +490,14 @@ const askCard = (t: Theme, item: Item): Element[] => {
         ),
       ),
   );
-  return [detailCard(t, "ask", "Ask", [question, ...context, ...options])];
+  return [
+    detailCard(t, "ask", "Ask", [
+      question,
+      ...context,
+      ...options,
+      ...(answer === undefined ? [] : answerRows(t, answer)),
+    ]),
+  ];
 };
 
 const decidedCard = (t: Theme, item: Item): Element[] =>
@@ -475,8 +554,14 @@ const delegatesCard = (t: Theme, item: Item, rows: DelegateRow[]): Element[] =>
         ),
       ];
 
-// The read-only detail of one item, in its own scroll area so the list's keeps its place.
-const detailScreen = (t: Theme, item: Item, delegates: DelegateJoin): Element =>
+// The detail of one item, in its own scroll area so the list's keeps its place. Its ask is the
+// one thing on it that can be acted on.
+const detailScreen = (
+  t: Theme,
+  item: Item,
+  delegates: DelegateJoin,
+  answer: AnswerModel | undefined,
+): Element =>
   v_flex()
     .id("detail-scroll")
     .size_full()
@@ -511,7 +596,7 @@ const detailScreen = (t: Theme, item: Item, delegates: DelegateJoin): Element =>
                 .child(GROUP_LABELS[item.status]),
             ),
         )
-        .children(askCard(t, item))
+        .children(askCard(t, item, answer))
         .child(
           detailCard(t, "facts", "Details", [
             fact(t, "fact-due", "Due", item.due === null ? [] : [item.due]),
@@ -668,7 +753,7 @@ export const panel = (t: Theme, model: PanelModel): Element =>
                 .absolute()
                 .inset_0()
                 .bg(t.surface)
-                .child(detailScreen(t, model.detail!, model.delegates)),
+                .child(detailScreen(t, model.detail!, model.delegates, model.answer)),
             ),
           ),
       ),

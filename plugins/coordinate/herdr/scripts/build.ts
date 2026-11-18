@@ -27,6 +27,19 @@ const FLAGS = [
 ];
 
 /**
+ * The bun the panel runs the coordinate CLI with, baked into the bundle as `COORDINATE_BUN`. A
+ * mod's exec runs with the app's environment, whose PATH (often only /usr/bin:/bin:/usr/sbin:
+ * /sbin) has no bun, so the build resolves it from its own PATH: whoever runs `just install`
+ * installs the panel with the bun they use. Rebuild after moving bun.
+ * @returns The define flags.
+ */
+const bunDefine = (): string[] => {
+  const bun = Bun.which("bun");
+  if (bun === null) throw new Error("bun is not on PATH, so the panel cannot bake its path");
+  return ["--define", `COORDINATE_BUN=${JSON.stringify(bun)}`];
+};
+
+/**
  * Bundle and check every mod in a fresh stage.
  * @returns The stage folder, laid out like a Herdr home (mods/<name>/).
  */
@@ -45,6 +58,7 @@ export const build = async (): Promise<string> => {
       "--outfile",
       join(folder, "main.js"),
       ...FLAGS,
+      ...bunDefine(),
     ]);
     if (built !== 0) throw new Error(`Bundling ${mod.name} failed (${built})`);
   }

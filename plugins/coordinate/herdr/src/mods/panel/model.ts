@@ -425,3 +425,100 @@ export const joinDelegates = (
     });
   return { byItem, unfiled };
 };
+
+// The bun the build found on its PATH, baked in by scripts/build.ts with --define: a mod's exec
+// runs with the app's environment, whose PATH (often /usr/bin:/bin:/usr/sbin:/sbin) has no bun.
+// Unbundled (in tests) it is undeclared, and the bare name stands in.
+declare const COORDINATE_BUN: string | undefined;
+
+/**
+ * The installed coordinate CLI, where the skill's installer links it under the user's home.
+ * @param home The user's home directory.
+ * @returns Its absolute path.
+ */
+export const coordinateCli = (home: string): string =>
+  `${home}/.claude/skills/coordinate/scripts/coordinate.ts`;
+
+/**
+ * The command that records an answer: `coordinate item answer`, the one backlog change the CLI
+ * accepts from outside a Herdr terminal. `env -u HC_TERMINAL_ID` makes the panel that caller
+ * even when the app itself was started from a terminal, and `--` keeps an answer that starts
+ * with a dash from reading as a flag.
+ * @param home The user's home directory.
+ * @param domain The item's domain.
+ * @param id The item id.
+ * @param answer The answer, one line.
+ * @returns The program and its arguments for exec.
+ */
+export const answerCommand = (
+  home: string,
+  domain: string,
+  id: string,
+  answer: string,
+): { command: string; args: string[] } => ({
+  command: "/usr/bin/env",
+  args: [
+    "-u",
+    "HC_TERMINAL_ID",
+    typeof COORDINATE_BUN === "string" ? COORDINATE_BUN : "bun",
+    coordinateCli(home),
+    "item",
+    "answer",
+    "--domain",
+    domain,
+    "--",
+    id,
+    answer,
+  ],
+});
+
+/**
+ * An answer being written on an item's detail: the option picked, the text typed, and the run
+ * recording it. `key` names the domain, item and question, so a new ask starts a fresh draft.
+ */
+export type AnswerDraft = {
+  key: string;
+  choice: string | undefined;
+  text: string;
+  busy: boolean;
+  error: string | undefined;
+};
+
+/**
+ * The key a draft belongs to.
+ * @param domain The domain.
+ * @param item The item, which has an ask.
+ * @param ask The item's ask.
+ * @returns The key.
+ */
+export const draftKey = (domain: string, item: Item, ask: Ask): string =>
+  `${domain}\0${item.id}\0${ask.question}`;
+
+/**
+ * The draft for a key: the one kept when it matches, else a fresh one with the recommended
+ * option picked, so the recommendation is one click on Answer away.
+ * @param key The draft key.
+ * @param ask The ask being answered.
+ * @param kept The draft the panel holds, if any.
+ * @returns The draft.
+ */
+export const draftFor = (key: string, ask: Ask, kept: AnswerDraft | undefined): AnswerDraft =>
+  kept?.key === key
+    ? kept
+    : { key, choice: ask.rec ?? undefined, text: "", busy: false, error: undefined };
+
+/**
+ * What Answer records: typed text when there is any, else the picked option.
+ * @param draft The draft.
+ * @returns The answer, or undefined when there is none yet.
+ */
+export const chosenAnswer = (draft: AnswerDraft): string | undefined =>
+  draft.text.trim() === "" ? draft.choice : draft.text.trim();
+
+/**
+ * What a failed answer run says, for the panel to show as it is.
+ * @param result The exec result, with a non-zero code.
+ * @returns The CLI's own message, or its exit code when it printed nothing.
+ */
+export const answerFailure = (result: { code: number; stdout: string; stderr: string }): string =>
+  result.stderr.trim() || result.stdout.trim() || `coordinate exited ${result.code}`;

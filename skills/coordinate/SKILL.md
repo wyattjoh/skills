@@ -78,18 +78,18 @@ Sweep at Start, after compaction, when the watcher fires, and in the turn a task
 
 The CLI is the backlog's only writer; it validates, locks and writes atomically, and refuses a change that breaks an invariant (exit 1: fix the call and run it again). Record each state change in the turn it happens:
 
-| State change                       | Command                                                                                |
-| ---------------------------------- | -------------------------------------------------------------------------------------- |
-| New work                           | `item add "<title>"` (prints its id, such as `i4`)                                     |
-| Building it here, parked, reopened | `item update <id> --status building\|parked\|open`                                     |
-| What it touches, a due date        | `item update <id> --touch <repo>`, `--due YYYY-MM-DD` (the watcher fires on that date) |
-| A decision                         | `item update <id> --decided "<the user's words>"`                                      |
-| An ask, its answer                 | `item update <id> --status waiting-user --ask ...`, then `--answer "<their words>"`    |
-| Delegated                          | `delegate <name> --item <id> ...`                                                      |
-| A running session filed, unfiled   | `item attach <id> <delegate>`, `item detach <id> <delegate>` (name or address)         |
-| Done or dismissed                  | `item close <id> --outcome "<one line>"` (`--dismissed`)                               |
-| Standing yes, Boundary, focus      | `backlog standing add`, `backlog boundary add\|rm`, `backlog focus`                    |
-| A finding opened or closed         | `finding add --kind issue\|opportunity "<title>"`, `finding close <id> --outcome ...`  |
+| State change                       | Command                                                                                                                                                 |
+| ---------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| New work                           | `item add "<title>"` (prints its id, such as `i4`)                                                                                                      |
+| Building it here, parked, reopened | `item update <id> --status building\|parked\|open`                                                                                                      |
+| What it touches, a due date        | `item update <id> --touch <repo>`, `--due YYYY-MM-DD` (the watcher fires on that date)                                                                  |
+| A decision                         | `item update <id> --decided "<the user's words>"`                                                                                                       |
+| An ask, its answer                 | `item update <id> --status waiting-user --ask ...`, then `--answer "<their words>"`; the user may answer from the Backlog panel instead (`item answer`) |
+| Delegated                          | `delegate <name> --item <id> ...`                                                                                                                       |
+| A running session filed, unfiled   | `item attach <id> <delegate>`, `item detach <id> <delegate>` (name or address)                                                                          |
+| Done or dismissed                  | `item close <id> --outcome "<one line>"` (`--dismissed`)                                                                                                |
+| Standing yes, Boundary, focus      | `backlog standing add`, `backlog boundary add\|rm`, `backlog focus`                                                                                     |
+| A finding opened or closed         | `finding add --kind issue\|opportunity "<title>"`, `finding close <id> --outcome ...`                                                                   |
 
 Every command takes `--json`; `--help` has the flags. Read it back with `coordinate backlog show` (`--json` for the document). Fields, statuses and invariants: [backlog.md](references/backlog.md).
 

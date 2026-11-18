@@ -1,12 +1,19 @@
-// coordinate-panel: one coordinate domain's backlog, read-only, following the focused terminal.
+// coordinate-panel: one coordinate domain's backlog, following the focused terminal. Its one
+// write is answering an item's ask, through the coordinate CLI.
 import { View } from "gpui-kit";
+import { InputState } from "gpui-base";
 import type { AsyncContext, Context, Element } from "gpui-kit";
 import { checking, exec, focused, home, readTextFile, terminals, theme, watchFolder } from "herdr";
 import type { FolderWatch } from "herdr";
 import {
   FOLDED_BY_DEFAULT,
   LIST_SCRIPT,
+  answerCommand,
+  answerFailure,
+  chosenAnswer,
   configPath,
+  draftFor,
+  draftKey,
   endedDate,
   endedPath,
   groupItems,
@@ -20,6 +27,7 @@ import {
   targetDomain,
 } from "./model.ts";
 import type {
+  AnswerDraft,
   DelegateJoin,
   DocumentState,
   DomainSummary,
@@ -30,7 +38,7 @@ import type {
 import { backlogsDir, documentPath } from "../../lib/store.ts";
 import type { Item } from "../../lib/store.ts";
 import { panel } from "./view.ts";
-import type { Theme } from "./view.ts";
+import type { AnswerModel, Theme } from "./view.ts";
 
 // How often the panel checks whether focus moved to another domain, and how often it rereads
 // the document in case a folder watch was reclaimed.
@@ -68,8 +76,19 @@ export default class Panel extends View {
   ended: EndedRecords = new Map();
   endedFor: string | undefined;
   endedGeneration = 0;
+  // The answer field's retained text state, whether it has the keyboard, and the draft being
+  // written on the open item's ask.
+  input: InputState | undefined;
+  typing = false;
+  draft: AnswerDraft | undefined;
 
   init(_props: unknown, cx: AsyncContext) {
+    const input = InputState.new({ placeholder: "Or type an answer" });
+    input.on("change", (_event, changed) => this.type(input.value(), changed));
+    input.on("submit", (_event, submitted) => this.answer(submitted));
+    input.on("focus", (_event, gained) => this.setTyping(true, gained));
+    input.on("blur", (_event, lost) => this.setTyping(false, lost));
+    this.input = input;
     if (checking()) return;
     this.load(cx);
     cx.timer.every(FOLLOW_MS, (tick) => this.follow(tick));
@@ -252,13 +271,91 @@ export default class Panel extends View {
   open(item: Item, cx: Context) {
     if (this.domain === undefined) return;
     this.selected = { domain: this.domain, id: item.id };
+    this.clearDraft();
     cx.notify();
+  }
+
+  // Forget the draft and empty the field, so another item or ask starts clean.
+  clearDraft() {
+    this.draft = undefined;
+    this.input?.set_value("");
+  }
+
+  setTyping(typing: boolean, cx: Context) {
+    this.typing = typing;
+    cx.notify();
+  }
+
+  // The open item's ask and the draft for it now, or undefined when it has no ask.
+  answering(): { item: Item; draft: AnswerDraft } | undefined {
+    const domain = this.target();
+    const doc: DocumentState = domain === this.domain ? this.doc : { kind: "loading" };
+    const item = this.detail(domain, doc);
+    if (domain === undefined || item === undefined || item.ask === null) return undefined;
+    return { item, draft: draftFor(draftKey(domain, item, item.ask), item.ask, this.draft) };
+  }
+
+  choose(option: string, cx: Context) {
+    const open = this.answering();
+    if (open === undefined || open.draft.busy) return;
+    this.draft = { ...open.draft, choice: option, text: "", error: undefined };
+    this.input?.set_value("");
+    cx.notify();
+  }
+
+  type(value: string, cx: Context) {
+    const open = this.answering();
+    if (open === undefined || open.draft.text === value) return;
+    this.draft = { ...open.draft, text: value, error: undefined };
+    cx.notify();
+  }
+
+  // Record the draft's answer with the coordinate CLI. Success is exit 0 and nothing less: the
+  // draft clears and the document is read again; any other end shows the CLI's message.
+  answer(cx: Context) {
+    const open = this.answering();
+    if (open === undefined || open.draft.busy || this.domain === undefined) return;
+    const answer = chosenAnswer(open.draft);
+    if (answer === undefined) return;
+    const { key } = open.draft;
+    const { command, args } = answerCommand(home(), this.domain, open.item.id, answer);
+    this.draft = { ...open.draft, busy: true, error: undefined };
+    cx.notify();
+    cx.spawn(async (task) => {
+      let error: string | undefined;
+      try {
+        const ran = await exec(command, args);
+        if (ran.code !== 0) error = answerFailure(ran);
+      } catch (failure) {
+        error = `could not run coordinate: ${String(failure)}`;
+      }
+      if (this.draft?.key !== key) return;
+      if (error === undefined) {
+        this.clearDraft();
+        this.load(task);
+      } else this.draft = { ...this.draft, busy: false, error };
+      task.notify();
+    });
+  }
+
+  // The answer row's model for the view, when the open item has an ask.
+  answerModel(): AnswerModel | undefined {
+    const open = this.answering();
+    if (open === undefined) return undefined;
+    return {
+      draft: open.draft,
+      input: this.input,
+      typing: this.typing,
+      choose: (option, cx) => this.choose(option, cx),
+      submit: (cx) => this.answer(cx),
+    };
   }
 
   // Back closes an item's detail first, then leaves a domain opened from the listing.
   back(cx: Context) {
     if (this.selected !== undefined) {
       this.selected = undefined;
+      this.clearDraft();
       cx.notify();
       return;
     }
@@ -296,6 +393,7 @@ export default class Panel extends View {
       toggle: (group, cx) => this.toggleFold(group, cx),
       detail: this.detail(domain, doc),
       open: (item, cx) => this.open(item, cx),
+      answer: this.answerModel(),
       back: (cx) => this.back(cx),
     });
   }

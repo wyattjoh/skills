@@ -13,7 +13,7 @@ running build.
 
 ## Exception: `plugins/coordinate`
 
-`plugins/coordinate/herdr/` builds read-only Herdr mods for the coordinate skill's backlog:
+`plugins/coordinate/herdr/` builds Herdr mods for the coordinate skill's backlog, read-only except for answering an ask:
 `coordinate-panel` and `coordinate-toggle`, the tab row's Backlog pill. The pill shows and hides the
 column docking the panel, remembering each tab in shared `coordinate-panel.dock`, and owns the
 `toggle` key command, which the project's `keys.json` binds to `cmd-alt-b` (key commands reach
@@ -30,7 +30,13 @@ person's `keys.json`, refusing a key they already bind elsewhere. Point `HERDR_A
 scratch folder to exercise it.
 
 The mods never write the backlog document or message a terminal: the coordinate CLI is the
-document's only writer. They share the backlog schema and validator by relative import from
+document's only writer. The panel's one write is the Answer button on an item's detail screen. It runs
+`coordinate item answer --domain <d> -- <id> <answer>`, the one mutation the CLI accepts from
+outside a Herdr terminal, as `/usr/bin/env -u HC_TERMINAL_ID <bun> ~/.claude/skills/coordinate/scripts/coordinate.ts`.
+Unsetting the variable keeps the panel that caller even in an app started from a terminal. A
+mod's `exec` runs with the app's environment, whose PATH has no bun, so `scripts/build.ts` bakes
+`<bun>` from the build's own PATH as `COORDINATE_BUN`; reinstall after moving bun. The panel shows
+the CLI's message on a non-zero exit or a failed start, and reloads only after exit 0. The mods share the backlog schema and validator by relative import from
 `skills/coordinate/scripts/lib/backlog-store/`, which must stay dependency-free (Herdr has no
 `TextEncoder`, so Effect Schema cannot load in a mod).
 

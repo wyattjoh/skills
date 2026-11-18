@@ -132,9 +132,58 @@ mock.module("gpui-kit", () => ({
   svg: (path: string) => element("svg", path),
 }));
 
+/**
+ * A retained text field's state, as InputState.new makes it: its value and its event handlers.
+ */
+export type FakeInput = {
+  placeholder: string | undefined;
+  current: string;
+  handlers: Map<string, (event: unknown, cx: unknown) => void>;
+  value: () => string;
+  set_value: (next: string) => void;
+  on: (event: string, handler: (event: unknown, cx: unknown) => void) => boolean;
+};
+
+const fakeInput = (options: { placeholder?: string; value?: string } = {}): FakeInput => {
+  const input: FakeInput = {
+    placeholder: options.placeholder,
+    current: options.value ?? "",
+    handlers: new Map(),
+    value: () => input.current,
+    set_value: (next) => {
+      input.current = next;
+    },
+    on: (event, handler) => {
+      input.handlers.set(event, handler);
+      return true;
+    },
+  };
+  host.inputs.push(input);
+  return input;
+};
+
+/**
+ * Type into a field as a person does: the value changes, then its change handler runs.
+ * @param input The field's state.
+ * @param value The whole new value.
+ * @param cx The context the handler gets.
+ */
+export const typeInto = (input: FakeInput, value: string, cx: unknown) => {
+  input.current = value;
+  input.handlers.get("change")?.({}, cx);
+};
+
 mock.module("gpui-base", () => ({
   h_flex: () => element("h_flex"),
   v_flex: () => element("v_flex"),
+  InputState: { new: fakeInput },
+  Input: {
+    new: (state: FakeInput) => {
+      const node = element("input");
+      node.styles.state = state;
+      return node;
+    },
+  },
 }));
 
 type Deferred<T> = {
@@ -189,6 +238,8 @@ export const host = {
   shared: new Map<string, unknown>(),
   runs: [] as { command: string; args: Record<string, unknown> | undefined }[],
   commandReaders: [] as ((command: string) => void)[],
+  // Every text field state a mod made.
+  inputs: [] as FakeInput[],
 };
 
 /**
@@ -337,4 +388,5 @@ export const resetHost = () => {
   host.shared = new Map();
   host.runs = [];
   host.commandReaders = [];
+  host.inputs = [];
 };
