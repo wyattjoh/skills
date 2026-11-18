@@ -194,6 +194,22 @@ export type ItemUpdate = {
   now: string;
 };
 
+/**
+ * The decision an answer appends to its item, the one format `isAnswer` recognises.
+ * @param question The ask's question.
+ * @param answer The user's answer.
+ * @returns The decision text.
+ */
+export const answerDecision = (question: string, answer: string): string =>
+  `Re "${question}": ${answer}`;
+
+/**
+ * Whether a decision records the answer to an ask, so the watcher can wake the coordinator on it.
+ * @param text A decision's text.
+ * @returns True for a decision `answerDecision` wrote.
+ */
+export const isAnswer = (text: string): boolean => /^Re ".*": /s.test(text);
+
 const refuse = (reason: string): OpResult<Item> => ({ ok: false, reason });
 
 const isClosed = (status: ItemStatus): boolean => status === "done" || status === "dismissed";
@@ -296,7 +312,7 @@ export const updateItem = (backlog: Backlog, input: ItemUpdate): OpResult<Item> 
     decided: [
       ...found.decided,
       ...(input.answer !== undefined && found.ask
-        ? [{ text: `Re "${found.ask.question}": ${input.answer.trim()}`, at }]
+        ? [{ text: answerDecision(found.ask.question, input.answer.trim()), at }]
         : []),
       ...input.decided.map((text) => ({ text: text.trim(), at })),
     ],

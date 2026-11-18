@@ -3,6 +3,7 @@ import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { Effect, Option, Result } from "effect";
 import { readDocument } from "./backlog-doc.ts";
+import { isAnswer } from "./backlog-store/ops.ts";
 import type { Item } from "./backlog-store/schema.ts";
 import type { Config } from "./config.ts";
 import { L, Refused } from "./fleet.ts";
@@ -31,12 +32,18 @@ export type WatchState = {
    * Due events already fired, keyed `<item id> <date>`.
    */
   due: string[];
+  /**
+   * Answers already fired, keyed `<item id> <date> <decision text>`. Null until the first read of
+   * the document seeds it, so arming (or re-arming on a state file from before answers fired) never
+   * floods with answers recorded earlier.
+   */
+  answered: string[] | null;
 };
 
 /**
  * An empty state.
  */
-export const emptyState = (): WatchState => ({ delegates: {}, prs: {}, due: [] });
+export const emptyState = (): WatchState => ({ delegates: {}, prs: {}, due: [], answered: null });
 
 /**
  * Lines for delegate changes between two snapshots. A delegate that settles (or takes another settled
@@ -142,6 +149,29 @@ const dueEvents = (items: readonly Item[], today: string, fired: readonly string
   };
 };
 
+/**
+ * Answered events for answers recorded since the last read, in document order, skipping keys already
+ * fired. Any caller's answer counts: the panel's and the CLI's both append an `answerDecision`.
+ * With no fired keys yet (null), every current answer is recorded as fired and none fires.
+ */
+const answeredEvents = (items: readonly Item[], fired: readonly string[] | null) => {
+  const answers = items.flatMap((item) =>
+    item.decided
+      .filter((decision) => isAnswer(decision.text))
+      .map((decision) => ({
+        key: `${item.id} ${decision.at} ${decision.text}`,
+        line: `answered ${item.id} ${item.title}: ${decision.text}`,
+      })),
+  );
+  if (fired === null) return { lines: [], fired: answers.map((answer) => answer.key) };
+  const seen = new Set(fired);
+  const fresh = answers.filter((answer) => !seen.has(answer.key));
+  return {
+    lines: fresh.map((answer) => answer.line),
+    fired: [...fired, ...fresh.map((answer) => answer.key)],
+  };
+};
+
 const statePath = (stateDir: string, domain: string): string =>
   join(stateDir, "watch", `${domain}.json`);
 
@@ -150,7 +180,12 @@ const readState = (path: string) =>
     if (!existsSync(path)) return undefined;
     try {
       const parsed = JSON.parse(await readFile(path, "utf8")) as Partial<WatchState>;
-      return { delegates: parsed.delegates ?? {}, prs: parsed.prs ?? {}, due: parsed.due ?? [] };
+      return {
+        delegates: parsed.delegates ?? {},
+        prs: parsed.prs ?? {},
+        due: parsed.due ?? [],
+        answered: parsed.answered ?? null,
+      };
     } catch {
       return undefined;
     }
@@ -294,12 +329,17 @@ export const watch = Effect.fn("watch")(function* (config: Config, options: Watc
         const prs = yield* snapshotPrs(config, repos, state.prs);
         lines.push(...prEvents(state.prs, prs.snapshot));
         state.prs = prs.snapshot;
-        const document = yield* readDocument(config, options.domain).pipe(Effect.option);
-        if (Option.isSome(document)) {
-          const due = dueEvents(document.value.backlog.items, options.today(), state.due);
-          lines.push(...due.lines);
-          state.due = due.fired;
-        }
+      }
+      // The document is a local file, so it is read every tick: an answer wakes the coordinator
+      // within one interval, not at forge cadence.
+      const document = yield* readDocument(config, options.domain).pipe(Effect.option);
+      if (Option.isSome(document)) {
+        const due = dueEvents(document.value.backlog.items, options.today(), state.due);
+        lines.push(...due.lines);
+        state.due = due.fired;
+        const answered = answeredEvents(document.value.backlog.items, state.answered);
+        lines.push(...answered.lines);
+        state.answered = answered.fired;
       }
       first = false;
       if (options.owner) {

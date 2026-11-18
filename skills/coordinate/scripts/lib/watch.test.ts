@@ -295,9 +295,67 @@ describe("watch due events", () => {
       delegates: {},
       prs: {},
       due: ["2026-11-01 **Fix** due: 2026-11-01", "i1 2026-11-12"],
+      answered: [],
     });
     writeFileSync(stateFile, JSON.stringify({ delegates: {}, prs: {} }));
     expect(await arm("2026-11-12")).toEqual(["due 2026-11-12: i1 Fix login"]);
     expect(await arm("2026-11-12")).toEqual(alive);
+  });
+});
+
+const ask = (question: string) => update("i1", { ask: question, options: ["A", "B"] });
+
+describe("watch answered events", () => {
+  it("fires each answer once across re-arms, carrying the item id and the answer", async () => {
+    const { config, arm, stateFile } = await dueDomain();
+    await runWith(itemUpdate(config, "app", ask("Which login provider?")));
+    expect(await arm("2026-11-10")).toEqual(alive);
+    await runWith(itemUpdate(config, "app", update("i1", { answer: "B" })));
+    expect(await arm("2026-11-10")).toEqual([
+      'answered i1 Fix login: Re "Which login provider?": B',
+    ]);
+    expect(await arm("2026-11-10")).toEqual(alive);
+    await runWith(itemUpdate(config, "app", ask("Ship it behind a flag?")));
+    await runWith(itemUpdate(config, "app", update("i1", { answer: "yes, flag it" })));
+    expect(await arm("2026-11-10")).toEqual([
+      'answered i1 Fix login: Re "Ship it behind a flag?": yes, flag it',
+    ]);
+    expect(JSON.parse(readFileSync(stateFile, "utf8")).answered).toEqual([
+      'i1 2026-11-10 Re "Which login provider?": B',
+      'i1 2026-11-10 Re "Ship it behind a flag?": yes, flag it',
+    ]);
+  });
+
+  it("stays quiet when an ask is replaced or its item closes", async () => {
+    const { config, arm } = await dueDomain();
+    await runWith(itemUpdate(config, "app", ask("Which login provider?")));
+    expect(await arm("2026-11-10")).toEqual(alive);
+    await runWith(itemUpdate(config, "app", ask("Which session store?")));
+    expect(await arm("2026-11-10")).toEqual(alive);
+    await runWith(
+      itemClose(config, "app", {
+        id: "i1",
+        outcome: "moot",
+        dismissed: true,
+        json: false,
+        now: NOW,
+      }),
+    );
+    expect(await arm("2026-11-10")).toEqual(alive);
+  });
+
+  it("seeds without firing on a first arm or a state file from before answers fired", async () => {
+    const { config, arm, stateFile } = await dueDomain();
+    await runWith(itemUpdate(config, "app", ask("Which login provider?")));
+    await runWith(itemUpdate(config, "app", update("i1", { answer: "A" })));
+    expect(await arm("2026-11-10")).toEqual(alive);
+    writeFileSync(stateFile, JSON.stringify({ delegates: {}, prs: {}, due: [] }));
+    expect(await arm("2026-11-10")).toEqual(alive);
+    expect(JSON.parse(readFileSync(stateFile, "utf8")).answered).toEqual([
+      'i1 2026-11-10 Re "Which login provider?": A',
+    ]);
+    await runWith(itemUpdate(config, "app", update("i2", { ask: "Now or later?" })));
+    await runWith(itemUpdate(config, "app", update("i2", { answer: "later" })));
+    expect(await arm("2026-11-10")).toEqual(['answered i2 Ship later: Re "Now or later?": later']);
   });
 });

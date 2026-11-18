@@ -62,7 +62,7 @@ $`bun $SKILL_DIR/scripts/coordinate.ts watch`
   .then((out) => log(out.stdout));
 ```
 
-It exits on the first events, one line each, and keeps its snapshot so changes while it was down fire on re-arm. Handle every line, then arm it again. `alive` means nothing happened before its time limit; `blind` or `owner gone` means it lost sight of Herdr or of you. A `settled` line comes with a status beat: give the user a two-line status in your next reply.
+It exits on the first events, one line each, and keeps its snapshot so changes while it was down fire on re-arm. Handle every line, then arm it again. `alive` means nothing happened before its time limit; `blind` or `owner gone` means it lost sight of Herdr or of you. A `settled` line comes with a status beat: give the user a two-line status in your next reply. An `answered <id>` line carries an answer recorded since the last check, by you or by the user outside this chat: read the item's decisions, set its next status, and unblock whoever waited on it.
 
 ## Verify, then report and wait
 
