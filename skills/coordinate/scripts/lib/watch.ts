@@ -33,7 +33,7 @@ export type WatchState = {
    */
   due: string[];
   /**
-   * Answers already fired, keyed `<item id> <date> <decision text>`. Null until the first read of
+   * Answers already fired, keyed `<item id> <date> #<ordinal> <decision text>`. Null until the first read of
    * the document seeds it, so arming (or re-arming on a state file from before answers fired) never
    * floods with answers recorded earlier.
    */
@@ -155,14 +155,21 @@ const dueEvents = (items: readonly Item[], today: string, fired: readonly string
  * With no fired keys yet (null), every current answer is recorded as fired and none fires.
  */
 const answeredEvents = (items: readonly Item[], fired: readonly string[] | null) => {
-  const answers = items.flatMap((item) =>
-    item.decided
+  const answers = items.flatMap((item) => {
+    // Decisions are dated by day, so the same answer twice in a day needs its ordinal to stay distinct.
+    const seen = new Map<string, number>();
+    return item.decided
       .filter((decision) => isAnswer(decision.text))
-      .map((decision) => ({
-        key: `${item.id} ${decision.at} ${decision.text}`,
-        line: `answered ${item.id} ${item.title}: ${decision.text}`,
-      })),
-  );
+      .map((decision) => {
+        const base = `${item.id} ${decision.at} ${decision.text}`;
+        const ordinal = (seen.get(base) ?? 0) + 1;
+        seen.set(base, ordinal);
+        return {
+          key: `${item.id} ${decision.at} #${ordinal} ${decision.text}`,
+          line: `answered ${item.id} ${item.title}: ${decision.text}`,
+        };
+      });
+  });
   if (fired === null) return { lines: [], fired: answers.map((answer) => answer.key) };
   const seen = new Set(fired);
   const fresh = answers.filter((answer) => !seen.has(answer.key));

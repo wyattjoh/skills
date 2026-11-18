@@ -321,8 +321,8 @@ describe("watch answered events", () => {
       'answered i1 Fix login: Re "Ship it behind a flag?": yes, flag it',
     ]);
     expect(JSON.parse(readFileSync(stateFile, "utf8")).answered).toEqual([
-      'i1 2026-11-10 Re "Which login provider?": B',
-      'i1 2026-11-10 Re "Ship it behind a flag?": yes, flag it',
+      'i1 2026-11-10 #1 Re "Which login provider?": B',
+      'i1 2026-11-10 #1 Re "Ship it behind a flag?": yes, flag it',
     ]);
   });
 
@@ -352,10 +352,34 @@ describe("watch answered events", () => {
     writeFileSync(stateFile, JSON.stringify({ delegates: {}, prs: {}, due: [] }));
     expect(await arm("2026-11-10")).toEqual(alive);
     expect(JSON.parse(readFileSync(stateFile, "utf8")).answered).toEqual([
-      'i1 2026-11-10 Re "Which login provider?": A',
+      'i1 2026-11-10 #1 Re "Which login provider?": A',
     ]);
     await runWith(itemUpdate(config, "app", update("i2", { ask: "Now or later?" })));
     await runWith(itemUpdate(config, "app", update("i2", { answer: "later" })));
     expect(await arm("2026-11-10")).toEqual(['answered i2 Ship later: Re "Now or later?": later']);
+  });
+
+  it("fires a repeated answer on the same day, and one recorded while the watch runs", async () => {
+    const { config, arm } = await dueDomain();
+    await runWith(itemUpdate(config, "app", ask("Retry now?")));
+    expect(await arm("2026-11-10")).toEqual(alive);
+    const watching = runWith(
+      watch(config, {
+        domain: "app",
+        intervalMs: 5,
+        forgeIntervalMs: 60_000,
+        maxMs: 5_000,
+        owner: undefined,
+        replace: false,
+        today: () => "2026-11-10",
+      }),
+      fakeProc(quietHc).layer,
+    );
+    await Bun.sleep(50);
+    await runWith(itemUpdate(config, "app", update("i1", { answer: "yes" })));
+    expect(await watching).toEqual(['answered i1 Fix login: Re "Retry now?": yes']);
+    await runWith(itemUpdate(config, "app", ask("Retry now?")));
+    await runWith(itemUpdate(config, "app", update("i1", { answer: "yes" })));
+    expect(await arm("2026-11-10")).toEqual(['answered i1 Fix login: Re "Retry now?": yes']);
   });
 });
