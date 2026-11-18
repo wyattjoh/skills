@@ -504,7 +504,7 @@ const withAsk = (): Backlog => {
   return backlog;
 };
 
-test("opens an item's read-only detail with the recommended option first and highlighted", async () => {
+test("opens an item's detail with the recommended option first, labelled and not yet picked", async () => {
   focusDomain("alpha");
   host.files.set(DOC, JSON.stringify(withAsk()));
   const { ctx, render } = await mount();
@@ -517,8 +517,10 @@ test("opens an item's read-only detail with the recommended option first and hig
   expect(text(get(root, "ask-context"))).toBe("It shows in the tab row");
   expect(ids(root, "ask-option-")).toEqual(["ask-option-1", "ask-option-0", "ask-option-2"]);
   expect(text(get(root, "ask-option-1"))).toBe("Backlog Recommended fits the pill");
-  expect(get(root, "ask-option-1").styles.bg).toBe("selected");
-  expect(get(root, "ask-option-0").styles.bg).toBe(undefined);
+  expect([get(root, "ask-option-1").styles.bg, get(root, "ask-option-0").styles.bg]).toEqual([
+    undefined,
+    undefined,
+  ]);
   expect(text(get(root, "ask-rec-reason"))).toBe("fits the pill");
   expect(text(get(root, "decided-0"))).toBe("Keep it read-only 2026-11-16");
   expect(text(get(root, "fact-touches"))).toBe("Touches skills herdr-finbar");
@@ -591,8 +593,9 @@ test("answers with a picked option through the CLI, then shows the item as it re
   expect([
     text(get(render(), "ask-answer-submit")),
     get(render(), "ask-answer-submit").styles.bg,
-  ]).toEqual(["Answer", "solid"]);
+  ]).toEqual(["Answer", "raised"]);
   get(render(), "ask-option-0").click!({}, ctx.cx);
+  expect(get(render(), "ask-answer-submit").styles.bg).toBe("solid");
   const picked = render();
   expect([get(picked, "ask-option-0").styles.bg, get(picked, "ask-option-1").styles.bg]).toEqual([
     "selected",
@@ -635,6 +638,7 @@ test("shows the CLI's message and keeps the draft when recording fails or cannot
   host.files.set(DOC, JSON.stringify(withAsk()));
   const { ctx, render } = await mount();
   get(render(), "item-i1").click!({}, ctx.cx);
+  get(render(), "ask-option-1").click!({}, ctx.cx);
   host.execExit = { code: 1, stderr: "refused: i1 has no ask to answer\n" };
   get(render(), "ask-answer-submit").click!({}, ctx.cx);
   await settle();

@@ -495,17 +495,15 @@ export const draftKey = (domain: string, item: Item, ask: Ask): string =>
   `${domain}\0${item.id}\0${ask.question}`;
 
 /**
- * The draft for a key: the one kept when it matches, else a fresh one with the recommended
- * option picked, so the recommendation is one click on Answer away.
+ * The draft for a key: the one kept when it matches, else a fresh one with nothing picked, so
+ * every answer is chosen before Answer records it.
  * @param key The draft key.
  * @param ask The ask being answered.
  * @param kept The draft the panel holds, if any.
  * @returns The draft.
  */
 export const draftFor = (key: string, ask: Ask, kept: AnswerDraft | undefined): AnswerDraft =>
-  kept?.key === key
-    ? kept
-    : { key, choice: ask.rec ?? undefined, text: "", busy: false, error: undefined };
+  kept?.key === key ? kept : { key, choice: undefined, text: "", busy: false, error: undefined };
 
 /**
  * What Answer records: typed text when there is any, else the picked option.
