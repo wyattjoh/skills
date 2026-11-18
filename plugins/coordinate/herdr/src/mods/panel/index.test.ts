@@ -226,6 +226,7 @@ test("follows focus to another domain's document", async () => {
   await settle();
   const root = render();
   expect(trail(root)).toBe("Domains › beta");
+  expect(text(get(root, "toolbar"))).toBe("Backlog beta");
   expect(text(get(root, "focus"))).toBe("Beta focus");
   expect(text(get(root, "items-empty"))).toBe("No items");
 });
@@ -361,6 +362,7 @@ test("opens a domain from the listing and the Domains crumb returns to it", asyn
   expect(ids(root, "domain-")).toEqual(["domain-alpha", "domain-beta"]);
   expect(trail(root)).toBe("Domains");
   expect(get(root, "crumb-domains").click).toBe(undefined);
+  expect([text(get(root, "toolbar")), ids(root, "toolbar-domain")]).toEqual(["Backlog", []]);
 });
 
 test("the Domains crumb lists every domain while focus names one, until focus moves", async () => {
@@ -1187,4 +1189,16 @@ test("keeps a domain's ended records while another domain's are looked up", asyn
   expect(lineOf(render(), "i1")).toEqual(["other · ended 2026-11-15", "dim"]);
   focusDomain("alpha");
   expect(lineOf(render(), "i1")).toEqual(["closer · ended 2026-11-16", "dim"]);
+});
+
+test("names the shown domain at the right end of the tool bar, dim and truncating", async () => {
+  focusDomain("alpha");
+  host.files.set(DOC, JSON.stringify(everyStatus()));
+  const { render } = await mount();
+  const name = get(render(), "toolbar-domain").nodes[0] as Node;
+  expect([get(render(), "toolbar-domain").styles.flex_1, name.styles]).toEqual([
+    true,
+    { min_w_0: true, truncate: true, text_right: true, text_size: 12, text_color: "dim" },
+  ]);
+  expect(text(name)).toBe("alpha");
 });

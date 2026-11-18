@@ -125,7 +125,9 @@ export const message = (t: Theme, id: string, title: string, detail: string): El
     .child(div().text_size(TEXT_BODY).font_medium().text_color(t.foreground).child(title))
     .child(div().text_size(TEXT_SMALL).text_color(t.muted).child(detail));
 
-const toolbar = (t: Theme): Element =>
+// The tool bar: the panel's name on the left and, on a domain's screens, the domain at the
+// right end in dim text, as herdr-finbar's Files header shows its root.
+const toolbar = (t: Theme, domain: string | undefined): Element =>
   h_flex()
     .id("toolbar")
     .flex_none()
@@ -141,6 +143,26 @@ const toolbar = (t: Theme): Element =>
         .font_medium()
         .text_color(t.muted)
         .child("Backlog"),
+    )
+    .when(domain !== undefined, (el) =>
+      el.child(
+        h_flex()
+          .id("toolbar-domain")
+          .flex_1()
+          .min_w_0()
+          .h(CONTROL.height)
+          .items_center()
+          .justify_end()
+          .child(
+            div()
+              .min_w_0()
+              .truncate()
+              .text_right()
+              .text_size(TEXT_SMALL)
+              .text_color(t.dim)
+              .child(domain!),
+          ),
+      ),
     );
 
 // The breadcrumb band from @wyattjoh/herdr-ui: every crumb but the last opens its screen.
@@ -904,7 +926,7 @@ export const panel = (t: Theme, model: PanelModel): Element =>
     .id("coordinate-panel")
     .size_full()
     .bg(t.surface)
-    .child(toolbar(t))
+    .child(toolbar(t, model.domain))
     .child(trailBand(t, model.trail, model.go))
     .when(model.domain === undefined, (el) =>
       el.child(scroll(listingBody(t, model.listing, model))),
