@@ -68,7 +68,7 @@ export const attachDelegate = Effect.fn("attachDelegate")(function* (
       message: `${options.target} is labelled for ${labelledDomain}, not ${domain}; its coordinator files it`,
     });
   const session = sessionOf(terminal);
-  if (session === "")
+  if (session === "" || session.startsWith("-"))
     return yield* new Refused({
       message: `${options.target} has no agent session id (no ${L.session} label, no --session-id or --resume argument), so it could not be resumed; start the work with coordinate delegate instead`,
     });
@@ -102,7 +102,8 @@ export const attachDelegate = Effect.fn("attachDelegate")(function* (
     [L.task]: name,
     [L.session]: session,
     [L.harness]: harness,
-    [L.worktree]: place.worktree ?? terminal.cwd,
+    // The folder the session runs in, as `delegate` labels it, so `end` and `resume` start there.
+    [L.worktree]: terminal.cwd,
     ...(place.branch ? { [L.branch]: place.branch } : {}),
   };
   const missing = Object.fromEntries(

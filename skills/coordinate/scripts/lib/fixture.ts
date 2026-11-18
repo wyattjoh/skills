@@ -137,14 +137,15 @@ export const cliEnv = (
     getError === undefined
       ? `printf '%s' '${JSON.stringify({ address: "t1", state: "live", labels })}'`
       : `printf '%s' '${JSON.stringify({ error: { kind: getError, message: "herdr-core is not answering" } })}' >&2; exit 1`;
+  const known = Object.entries(terminals)
+    .map(
+      ([address, terminal]) =>
+        `[ "$2" = '${address}' ] && { printf '%s' '${JSON.stringify(terminal)}'; exit 0; }; `,
+    )
+    .join("");
   writeFileSync(
     join(bin, "hc"),
-    `#!/bin/sh\ncase "$1" in\n${Object.entries(terminals)
-      .map(
-        ([address, terminal]) =>
-          `  get) [ "$2" = '${address}' ] && { printf '%s' '${JSON.stringify(terminal)}'; exit 0; }; ${got} ;;\n`,
-      )
-      .join("")}  get) ${got} ;;\n  ls) printf '{"terminals":[]}' ;;\n  *) printf '{}' ;;\nesac\n`,
+    `#!/bin/sh\ncase "$1" in\n  get) ${known}${got} ;;\n  ls) printf '{"terminals":[]}' ;;\n  *) printf '{}' ;;\nesac\n`,
   );
   chmodSync(join(bin, "hc"), 0o755);
   return {

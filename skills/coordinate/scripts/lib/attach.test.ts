@@ -7,7 +7,8 @@ import { itemAdd, itemClose, recordDelegate } from "./backlog-doc.ts";
 import { fileDelegate } from "./backlog-store/ops.ts";
 import { resolveConfig } from "./config.ts";
 import { cliEnv, failureOf, g, gitAndFake, initRepo, runWith, tempDir } from "./fixture.ts";
-import { start } from "./lifecycle.ts";
+import { HerdrError } from "./herdr.ts";
+import { endDelegate, start } from "./lifecycle.ts";
 import { fakeProc, ok, type RunOutput } from "./proc.ts";
 
 const dirs: string[] = [];
@@ -99,7 +100,7 @@ describe("item attach", () => {
       "fleet.task=manual",
       `fleet.session=${SESSION}`,
       "fleet.harness=claude",
-      `fleet.worktree=${worktree}`,
+      `fleet.worktree=${join(worktree, "src")}`,
       "fleet.branch=wyattjoh/manual",
     ];
     expect(lines).toEqual([
@@ -188,6 +189,11 @@ describe("item attach", () => {
       handStarted("/x", { status: { app: "zsh", state: "idle" } }),
       "t4 runs zsh, not pi or Claude Code",
     ],
+    [
+      "a --resume with no session after it",
+      handStarted("/x", { foreground: { argv: ["claude", "--resume", "--verbose"], cwd: "/x" } }),
+      "t4 has no agent session id (no fleet.session label, no --session-id or --resume argument), so it could not be resumed; start the work with coordinate delegate instead",
+    ],
   ])("refuses %s, writing and labelling nothing", async (_case, target, message) => {
     const { cfg, path } = await started();
     const before = readFileSync(path, "utf8");
@@ -196,6 +202,53 @@ describe("item attach", () => {
     expect(messageOf(error)).toBe(message);
     expect(readFileSync(path, "utf8")).toBe(before);
     expect(labelCalls(fake.calls.map((call) => call.argv)).length).toBe(0);
+  });
+
+  it("exits 2 naming the filing and the missing labels when hc label fails", async () => {
+    const { state, cfg, path } = await started();
+    const answer = answers(handStarted(state));
+    const fake = gitAndFake((argv) =>
+      argv[1] === "label"
+        ? { exitCode: 1, stdout: "", stderr: '{"error":{"kind":"unavailable","message":"down"}}' }
+        : answer(argv),
+    );
+    const error = await failureOf(attachDelegate(cfg, options({}), ENV), fake.layer);
+    expect([error instanceof HerdrError, messageOf(error)]).toEqual([
+      true,
+      `filed manual under i1 but could not label t4 with fleet.domain=app fleet.task=manual fleet.session=${SESSION} fleet.harness=claude fleet.worktree=${state}: down`,
+    ]);
+    expect(read(path).items[0].delegates.length).toBe(1);
+  });
+
+  it("leaves a hand-started session labelled so end records where to resume it", async () => {
+    const { cfg } = await started();
+    const repo = initRepo();
+    dirs.push(repo);
+    const sub = join(repo, "src");
+    mkdirSync(sub);
+    const labels: Record<string, string> = {};
+    const answer = answers(handStarted(sub));
+    const attach = gitAndFake((argv) => {
+      if (argv[1] === "label")
+        for (const pair of argv.slice(3, -1)) {
+          const at = pair.indexOf("=");
+          labels[pair.slice(0, at)] = pair.slice(at + 1);
+        }
+      return answer(argv);
+    });
+    await runWith(attachDelegate(cfg, options({}), ENV), attach.layer);
+    const ending = gitAndFake((argv) =>
+      argv[1] === "get" ? ok(JSON.stringify(handStarted(sub, { labels }))) : ok("{}"),
+    );
+    await runWith(endDelegate(cfg, "t4", false), ending.layer);
+    const record = read(join(cfg.stateDir, "ended", `${SESSION}.json`));
+    expect([record.name, record.cwd, record.session, record.program, record.domain]).toEqual([
+      "manual",
+      sub,
+      SESSION,
+      "claude",
+      "app",
+    ]);
   });
 
   it("refuses a closed or missing item before looking at the terminal", async () => {
