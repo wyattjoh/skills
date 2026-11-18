@@ -151,6 +151,18 @@ export const readDocument = (text: string | null): DocumentState => {
 };
 
 /**
+ * What the panel shows for a domain while its read is still running: the last state it read for
+ * that domain this session, or loading for a domain it has not read yet.
+ * @param shown The last state read per domain.
+ * @param domain The domain to show, or undefined for the listing.
+ * @returns The state to draw until the read finishes.
+ */
+export const cachedDocument = (
+  shown: ReadonlyMap<string, DocumentState>,
+  domain: string | undefined,
+): DocumentState => (domain === undefined ? undefined : shown.get(domain)) ?? { kind: "loading" };
+
+/**
  * The shell listing the panel runs through exec, `sh -c LIST_SCRIPT <name> <folder>`: each
  * regular `*.json` file's name without the extension, NUL-terminated. A missing folder lists
  * nothing and succeeds; a folder that exists but can't be read exits 1, naming it on stderr.

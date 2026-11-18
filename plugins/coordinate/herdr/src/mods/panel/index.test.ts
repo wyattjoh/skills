@@ -223,6 +223,42 @@ test("follows focus to another domain's document", async () => {
   expect(text(get(root, "items-empty"))).toBe("No items");
 });
 
+test("shows a domain's last read at once on returning to it, then its reread", async () => {
+  focusDomain("alpha");
+  host.files.set(DOC, JSON.stringify(everyStatus()));
+  host.files.set(
+    `${STATE}/backlogs/beta.json`,
+    JSON.stringify({ ...emptyBacklog("beta", null), focus: "Beta focus" }),
+  );
+  const { ctx, render } = await mount();
+  focusDomain("beta");
+  ctx.tick(1_000);
+  await settle();
+  expect(text(get(render(), "focus"))).toBe("Beta focus");
+  host.files.set(DOC, JSON.stringify({ ...everyStatus(), focus: "Fresh alpha focus" }));
+  focusDomain("alpha");
+  expect(text(get(render(), "focus"))).toBe("Ship the panel tracer");
+  ctx.tick(1_000);
+  expect(text(get(render(), "focus"))).toBe("Ship the panel tracer");
+  await settle();
+  expect(text(get(render(), "focus"))).toBe("Fresh alpha focus");
+});
+
+test("a failed reread replaces the domain's last read", async () => {
+  focusDomain("alpha");
+  host.files.set(DOC, JSON.stringify(everyStatus()));
+  const { ctx, render } = await mount();
+  focusPlain();
+  ctx.tick(1_000);
+  await settle();
+  host.files.set(DOC, JSON.stringify({ ...everyStatus(), items: "none" }));
+  focusDomain("alpha");
+  expect(text(get(render(), "focus"))).toBe("Ship the panel tracer");
+  ctx.tick(1_000);
+  await settle();
+  expect(text(get(render(), "invalid"))).toBe("alpha's backlog is invalid items must be a list");
+});
+
 test("keeps its domain while a pane with no terminal, such as the panel, has focus", async () => {
   focusDomain("alpha");
   host.files.set(DOC, JSON.stringify(everyStatus()));

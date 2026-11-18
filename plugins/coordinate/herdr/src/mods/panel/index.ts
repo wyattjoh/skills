@@ -10,6 +10,7 @@ import {
   LIST_SCRIPT,
   answerCommand,
   answerFailure,
+  cachedDocument,
   chosenAnswer,
   configPath,
   draftFor,
@@ -52,6 +53,8 @@ export default class Panel extends View {
   // The domain the document belongs to, and what is known about it.
   domain: string | undefined;
   doc: DocumentState = { kind: "loading" };
+  // The last state read for each domain this session, drawn while a reread of it runs.
+  docs = new Map<string, DocumentState>();
   // The domain focus last named, kept while a pane with no terminal (the panel) has focus.
   followed: string | undefined;
   // The domain opened from the listing, shown while focus names none. A focused domain
@@ -162,7 +165,7 @@ export default class Panel extends View {
       if (domain !== this.domain) {
         this.domain = domain;
         this.selected = undefined;
-        this.doc = { kind: "loading" };
+        this.doc = cachedDocument(this.docs, domain);
         task.notify();
       }
       if (domain === undefined) {
@@ -175,6 +178,7 @@ export default class Panel extends View {
       const doc = await this.readDomain(stateDir, domain);
       if (generation !== this.generation) return;
       this.doc = doc;
+      this.docs.set(domain, doc);
       task.notify();
       if (doc.kind === "loaded")
         this.lookUpEnded(stateDir, missingSessions(doc.backlog, terminals()), task);
@@ -289,7 +293,7 @@ export default class Panel extends View {
   // The open item's ask and the draft for it now, or undefined when it has no ask.
   answering(): { item: Item; draft: AnswerDraft } | undefined {
     const domain = this.target();
-    const doc: DocumentState = domain === this.domain ? this.doc : { kind: "loading" };
+    const doc = domain === this.domain ? this.doc : cachedDocument(this.docs, domain);
     const item = this.detail(domain, doc);
     if (domain === undefined || item === undefined || item.ask === null) return undefined;
     return { item, draft: draftFor(draftKey(domain, item, item.ask), item.ask, this.draft) };
@@ -379,7 +383,7 @@ export default class Panel extends View {
 
   render(): Element {
     const domain = this.target();
-    const doc: DocumentState = domain === this.domain ? this.doc : { kind: "loading" };
+    const doc = domain === this.domain ? this.doc : cachedDocument(this.docs, domain);
     return panel(theme() as Theme, {
       domain,
       doc,
