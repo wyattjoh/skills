@@ -160,6 +160,7 @@ describe("delegate", () => {
           space: false,
           domain: "app",
           item: undefined,
+          overBudget: false,
         }),
         fake.layer,
       );
