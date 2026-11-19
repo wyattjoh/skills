@@ -595,6 +595,64 @@ export const coordinateCli = (home: string): string =>
   `${home}/.claude/skills/coordinate/scripts/coordinate.ts`;
 
 /**
+ * Parse and validate the JSON Boundary printed by the coordinate CLI.
+ * @param text The CLI's stdout.
+ * @returns The owned and adjacent paths, or undefined when the output is invalid.
+ */
+export const boundaryOutput = (text: string): Backlog["boundary"] | undefined => {
+  try {
+    const parsed: unknown = JSON.parse(text);
+    if (typeof parsed !== "object" || parsed === null) return undefined;
+    const boundary = parsed as Record<string, unknown>;
+    if (
+      !Array.isArray(boundary.owned) ||
+      !boundary.owned.every((path) => typeof path === "string") ||
+      !Array.isArray(boundary.adjacent) ||
+      !boundary.adjacent.every((path) => typeof path === "string")
+    )
+      return undefined;
+    return { owned: boundary.owned, adjacent: boundary.adjacent };
+  } catch {
+    return undefined;
+  }
+};
+
+/**
+ * Build a boundary edit command, which the CLI accepts from outside a Herdr terminal.
+ * `env -u HC_TERMINAL_ID` makes the panel the caller even when the app itself was started from
+ * a terminal.
+ * @param home The user's home directory.
+ * @param domain The domain whose backlog is being edited.
+ * @param action Whether to add or remove the path.
+ * @param path The repo or folder path to edit.
+ * @param adjacent Whether an addition targets the Adjacent list.
+ * @returns The program and its arguments for exec.
+ */
+export const boundaryCommand = (
+  home: string,
+  domain: string,
+  action: "add" | "rm",
+  path: string,
+  adjacent: boolean,
+): { command: string; args: string[] } => ({
+  command: "/usr/bin/env",
+  args: [
+    "-u",
+    "HC_TERMINAL_ID",
+    typeof COORDINATE_BUN === "string" ? COORDINATE_BUN : "bun",
+    coordinateCli(home),
+    "backlog",
+    "boundary",
+    action,
+    path,
+    ...(action === "add" && adjacent ? ["--adjacent"] : []),
+    "--domain",
+    domain,
+    "--json",
+  ],
+});
+
+/**
  * The command that records an answer: `coordinate item answer`, the one backlog change the CLI
  * accepts from outside a Herdr terminal. `env -u HC_TERMINAL_ID` makes the panel that caller
  * even when the app itself was started from a terminal, and `--` keeps an answer that starts

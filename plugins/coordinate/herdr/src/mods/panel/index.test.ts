@@ -1172,21 +1172,134 @@ test("folds Standing yes by default and shows Owned and Adjacent cards after Fin
   ]);
   expect(ids(root, "boundary-")).toEqual([
     "boundary-owned-header",
+    "boundary-alpha-owned-add",
     "boundary-owned",
-    "boundary-owned-0",
-    "boundary-owned-1",
+    "boundary-alpha-owned-skills/coordinate",
+    "boundary-alpha-owned-plugins/coordinate",
     "boundary-adjacent-header",
+    "boundary-alpha-adjacent-add",
     "boundary-adjacent",
-    "boundary-adjacent-empty",
+    "boundary-alpha-adjacent-empty",
   ]);
   expect(
     ["boundary-owned-header", "boundary-adjacent-header"].map((id) => text(get(root, id))),
-  ).toEqual(["Owned", "Adjacent"]);
+  ).toEqual(["Owned +", "Adjacent +"]);
   expect(
-    ["boundary-owned-0", "boundary-owned-1", "boundary-adjacent-empty"].map((id) =>
-      text(get(root, id)),
-    ),
+    [
+      "boundary-alpha-owned-skills/coordinate",
+      "boundary-alpha-owned-plugins/coordinate",
+      "boundary-alpha-adjacent-empty",
+    ].map((id) => text(get(root, id))),
   ).toEqual(["skills/coordinate", "plugins/coordinate", "None"]);
+});
+
+test("shows a hovered X on boundary rows and runs rm with the row path and domain", async () => {
+  focusDomain("alpha");
+  host.files.set(
+    DOC,
+    JSON.stringify({
+      ...emptyBacklog("alpha", null),
+      boundary: { owned: ["plugins/coordinate"], adjacent: [] },
+    }),
+  );
+  const { ctx, render } = await mount();
+  let root = render();
+  expect(ids(root, "boundary-alpha-owned-remove-")).toEqual([]);
+  const hover = get(root, "boundary-alpha-owned-plugins/coordinate").styles.on_hover;
+  if (typeof hover !== "function") throw new Error("boundary row has no hover handler");
+  (hover as (hovering: boolean, cx: unknown) => void)(true, ctx.cx);
+  root = render();
+  const remove = get(root, "boundary-alpha-owned-remove-plugins/coordinate");
+  expect((remove.nodes[0] as Node).styles.asset).toBe("mods/workspace-chrome/x.svg");
+  expect(remove.calls).toContain("on_click");
+  remove.click!({}, ctx.cx);
+  await settle();
+  expect(host.execs).toEqual([
+    {
+      command: "/usr/bin/env",
+      args: [
+        "-u",
+        "HC_TERMINAL_ID",
+        "bun",
+        "/Users/test/.claude/skills/coordinate/scripts/coordinate.ts",
+        "backlog",
+        "boundary",
+        "rm",
+        "plugins/coordinate",
+        "--domain",
+        "alpha",
+        "--json",
+      ],
+    },
+  ]);
+  expect(host.reads).toContain(DOC);
+});
+
+test("Escape cancels an inline boundary input", async () => {
+  focusDomain("alpha");
+  host.files.set(DOC, JSON.stringify(emptyBacklog("alpha", null)));
+  const { ctx, render } = await mount();
+  get(render(), "boundary-alpha-owned-add").click!({}, ctx.cx);
+  const field = get(render(), "boundary-alpha-owned-input");
+  const keyDown = (field.nodes[0] as Node).styles.on_key_down;
+  if (typeof keyDown !== "function") throw new Error("boundary input has no key handler");
+  (keyDown as (event: { keystroke: string }, cx: unknown) => void)({ keystroke: "escape" }, ctx.cx);
+  expect(ids(render(), "boundary-alpha-owned-input")).toEqual([]);
+  expect(host.execs).toEqual([]);
+});
+
+test("opens the Adjacent inline input and adds with --adjacent and the focused domain", async () => {
+  focusDomain("alpha");
+  host.files.set(DOC, JSON.stringify(emptyBacklog("alpha", null)));
+  const { ctx, render } = await mount();
+  get(render(), "boundary-alpha-adjacent-add").click!({}, ctx.cx);
+  const root = render();
+  expect(get(root, "boundary-alpha-adjacent-input")).toBeDefined();
+  const input = host.inputs.at(-1)!;
+  typeInto(input, "/tmp/new-adjacent-path", ctx.cx);
+  input.handlers.get("submit")?.({}, ctx.cx);
+  await settle();
+  expect(host.execs).toEqual([
+    {
+      command: "/usr/bin/env",
+      args: [
+        "-u",
+        "HC_TERMINAL_ID",
+        "bun",
+        "/Users/test/.claude/skills/coordinate/scripts/coordinate.ts",
+        "backlog",
+        "boundary",
+        "add",
+        "/tmp/new-adjacent-path",
+        "--adjacent",
+        "--domain",
+        "alpha",
+        "--json",
+      ],
+    },
+  ]);
+  expect(host.reads).toContain(DOC);
+});
+
+test("shows the boundary CLI refusal on the card and refuses a blank path locally", async () => {
+  focusDomain("alpha");
+  host.files.set(DOC, JSON.stringify(emptyBacklog("alpha", null)));
+  const { ctx, render } = await mount();
+  get(render(), "boundary-alpha-owned-add").click!({}, ctx.cx);
+  const input = host.inputs.at(-1)!;
+  input.handlers.get("submit")?.({}, ctx.cx);
+  await settle();
+  expect(host.execs).toEqual([]);
+  expect(text(get(render(), "boundary-alpha-owned-error"))).toBe("refused: path must not be blank");
+
+  typeInto(input, "/tmp/duplicate-boundary-path", ctx.cx);
+  host.execExit = { code: 1, stderr: "refused: duplicate path" };
+  input.handlers.get("submit")?.({}, ctx.cx);
+  await settle();
+  expect(host.execs.length).toBe(1);
+  expect(text(get(render(), "boundary-alpha-owned-error-/tmp/duplicate-boundary-path"))).toBe(
+    "refused: duplicate path",
+  );
 });
 
 test("says None for an unfolded standing yes with no entries", async () => {

@@ -108,6 +108,8 @@ export type PanelModel = {
   open: (item: Item, cx: Context) => void;
   // The answer being written on the open item's ask, when it has one.
   answer: AnswerModel | undefined;
+  // Boundary paths can be edited on either card.
+  boundary: BoundaryModel;
   openDomain: (domain: string, cx: Context) => void;
 };
 
@@ -121,6 +123,23 @@ export type AnswerModel = {
   typing: boolean;
   choose: (option: string, cx: Context) => void;
   submit: (cx: Context) => void;
+};
+
+export type BoundaryList = "owned" | "adjacent";
+
+export type BoundaryModel = {
+  domain: string;
+  editing: BoundaryList | undefined;
+  input: InputState | undefined;
+  busy: boolean;
+  hovered: string | undefined;
+  error:
+    | { domain: string; list: BoundaryList; path: string | undefined; message: string }
+    | undefined;
+  begin: (list: BoundaryList, cx: Context) => void;
+  cancel: (cx: Context) => void;
+  remove: (list: BoundaryList, path: string, cx: Context) => void;
+  hover: (list: BoundaryList, path: string, hovered: boolean, cx: Context) => void;
 };
 
 /**
@@ -715,22 +734,92 @@ const standingCard = (t: Theme, backlog: Backlog, model: PanelModel): Element =>
     );
 };
 
-// The paths the domain owns and those next to it, in separate cards.
-const boundaryCard = (t: Theme, backlog: Backlog): Element[] => {
-  const section = (id: string, label: string, paths: string[]) =>
-    detailCard(
-      t,
-      `boundary-${id}`,
-      label,
-      paths.length === 0
-        ? [detailRow(t, `boundary-${id}-empty`).child(div().text_color(t.dim).child("None"))]
-        : paths.map((path, index) =>
-            detailRow(t, `boundary-${id}-${index}`).child(div().child(path)),
-          ),
+// The paths the domain owns and those next to it, in separate editable cards.
+const boundaryCard = (t: Theme, boundary: Backlog["boundary"], model: BoundaryModel): Element[] => {
+  const section = (list: BoundaryList, label: string, paths: string[]) => {
+    const id = `boundary-${list}`;
+    const rows = paths.map((path, index) => {
+      const hovered = model.hovered === `${model.domain}\\0${list}\\0${path}`;
+      const row = listRow(t, {
+        id: `boundary-${model.domain}-${list}-${path}`,
+        title: path,
+        first: index === 0,
+        height: ROW.list,
+        trailing: hovered
+          ? [
+              button(t, {
+                id: `boundary-${model.domain}-${list}-remove-${path}`,
+                label: "Remove path",
+                icon: HERDR_ICONS.close,
+                labelled: false,
+                tooltip: "Remove path",
+                onClick: model.busy ? undefined : (cx) => model.remove(list, path, cx),
+              }),
+            ]
+          : [],
+      });
+      return row.on_hover((hovering, cx) => model.hover(list, path, hovering, cx));
+    });
+    if (paths.length === 0)
+      rows.push(
+        detailRow(t, `boundary-${model.domain}-${list}-empty`).child(
+          div().text_color(t.dim).child("None"),
+        ),
+      );
+    if (model.editing === list && model.input !== undefined) {
+      const field = div()
+        .id(`boundary-${model.domain}-${list}-input`)
+        .flex_1()
+        .min_w(0)
+        .h(ANSWER.height)
+        .px(ANSWER.fieldPaddingX)
+        .flex()
+        .items_center()
+        .rounded(ANSWER.radius)
+        .border_1()
+        .border_color(t.border)
+        .cursor_text()
+        .child(
+          Input.new(model.input)
+            .h_full()
+            .text_size(TEXT.body)
+            .text_color(t.foreground)
+            .on_key_down((event, cx) => {
+              if (event.keystroke === "escape") model.cancel(cx);
+            }),
+        );
+      rows.push(detailRow(t, `boundary-${model.domain}-${list}-edit`).child(field));
+    }
+    const error =
+      model.error?.domain === model.domain && model.error.list === list ? model.error : undefined;
+    if (error !== undefined)
+      rows.push(
+        detailRow(
+          t,
+          `boundary-${model.domain}-${list}-error${error.path === undefined ? "" : `-${error.path}`}`,
+        )
+          .text_size(TEXT.label)
+          .text_color(role(t, "ansi1"))
+          .child(error.message),
+      );
+    const header = cardHeader(t, `${id}-header`, label)
+      .child(div().flex_1())
+      .child(
+        button(t, {
+          id: `boundary-${model.domain}-${list}-add`,
+          label: "+",
+          tooltip: "Add path",
+          onClick: model.busy ? undefined : (cx) => model.begin(list, cx),
+        }),
+      );
+    return cardSection(
+      header,
+      card(t, id).children(rows.map((row, index) => (index === 0 ? row.border_t(0) : row))),
     );
+  };
   return [
-    section("owned", "Owned", backlog.boundary.owned),
-    section("adjacent", "Adjacent", backlog.boundary.adjacent),
+    section("owned", "Owned", boundary.owned),
+    section("adjacent", "Adjacent", boundary.adjacent),
   ];
 };
 
@@ -756,7 +845,7 @@ const domainBody = (t: Theme, domain: string, doc: DocumentState, model: PanelMo
     .children(unfiledCard(t, model.delegates.unfiled, model))
     .child(findingsCard(t, model))
     .child(standingCard(t, doc.backlog, model))
-    .children(boundaryCard(t, doc.backlog));
+    .children(boundaryCard(t, doc.backlog.boundary, model.boundary));
 };
 
 const COUNT_LABELS = [

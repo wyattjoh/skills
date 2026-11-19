@@ -10,6 +10,8 @@ import {
   LIST_SCRIPT,
   answerCommand,
   answerFailure,
+  boundaryCommand,
+  boundaryOutput,
   cachedDocument,
   closedFindings,
   chosenAnswer,
@@ -43,7 +45,7 @@ import type {
 import { backlogsDir, documentPath } from "../../lib/store.ts";
 import type { Finding, Item } from "../../lib/store.ts";
 import { panel } from "./view.ts";
-import type { AnswerModel, Theme } from "./view.ts";
+import type { AnswerModel, BoundaryList, BoundaryModel, Theme } from "./view.ts";
 
 // How often the panel checks whether focus moved to another domain, and how often it rereads
 // the document in case a folder watch was reclaimed.
@@ -95,6 +97,11 @@ export default class Panel extends View {
   input: InputState | undefined;
   typing = false;
   draft: AnswerDraft | undefined;
+  boundaryInput: InputState | undefined;
+  boundaryEditing: { domain: string; list: BoundaryList } | undefined;
+  boundaryBusy = false;
+  boundaryHovered: string | undefined;
+  boundaryError: BoundaryModel["error"];
 
   init(_props: unknown, cx: AsyncContext) {
     const input = InputState.new({ placeholder: "Or type an answer" });
@@ -103,6 +110,9 @@ export default class Panel extends View {
     input.on("focus", (_event, gained) => this.setTyping(true, gained));
     input.on("blur", (_event, lost) => this.setTyping(false, lost));
     this.input = input;
+    const boundaryInput = InputState.new({ placeholder: "Path" });
+    boundaryInput.on("submit", (_event, submitted) => this.addBoundary(submitted));
+    this.boundaryInput = boundaryInput;
     if (checking()) return;
     this.load(cx);
     cx.timer.every(FOLLOW_MS, (tick) => this.follow(tick));
@@ -398,6 +408,124 @@ export default class Panel extends View {
     };
   }
 
+  beginBoundary(list: BoundaryList, cx: Context) {
+    const domain = this.target();
+    if (domain === undefined || this.boundaryBusy) return;
+    this.boundaryEditing = { domain, list };
+    this.boundaryError = undefined;
+    this.boundaryInput?.set_value("");
+    this.boundaryInput?.focus();
+    cx.notify();
+  }
+
+  cancelBoundary(cx: Context) {
+    this.boundaryEditing = undefined;
+    this.boundaryError = undefined;
+    this.boundaryInput?.set_value("");
+    cx.notify();
+  }
+
+  hoverBoundary(domain: string, list: BoundaryList, path: string, hovered: boolean, cx: Context) {
+    const key = `${domain}\\0${list}\\0${path}`;
+    if (hovered) {
+      if (this.boundaryHovered === key) return;
+      this.boundaryHovered = key;
+    } else {
+      if (this.boundaryHovered !== key) return;
+      this.boundaryHovered = undefined;
+    }
+    cx.notify();
+  }
+
+  applyBoundary(domain: string, boundary: NonNullable<ReturnType<typeof boundaryOutput>>) {
+    const current = this.docs.get(domain) ?? (this.domain === domain ? this.doc : undefined);
+    if (current?.kind !== "loaded") return;
+    const updated: DocumentState = {
+      ...current,
+      backlog: { ...current.backlog, boundary },
+    };
+    this.docs.set(domain, updated);
+    if (this.domain === domain) this.doc = updated;
+  }
+
+  addBoundary(cx: Context) {
+    const editing = this.boundaryEditing;
+    if (editing === undefined || this.boundaryBusy) return;
+    const { domain, list } = editing;
+    const path = this.boundaryInput?.value().trim() ?? "";
+    if (path === "") {
+      this.boundaryError = {
+        domain,
+        list,
+        path: undefined,
+        message: "refused: path must not be blank",
+      };
+      cx.notify();
+      return;
+    }
+    this.runBoundary("add", list, path, domain, cx);
+  }
+
+  removeBoundary(list: BoundaryList, path: string, cx: Context) {
+    const domain = this.target();
+    if (domain === undefined || this.boundaryBusy) return;
+    this.runBoundary("rm", list, path, domain, cx);
+  }
+
+  runBoundary(action: "add" | "rm", list: BoundaryList, path: string, domain: string, cx: Context) {
+    const { command, args } = boundaryCommand(home(), domain, action, path, list === "adjacent");
+    this.boundaryBusy = true;
+    this.boundaryError = undefined;
+    cx.notify();
+    cx.spawn(async (task) => {
+      let error: string | undefined;
+      let boundary: ReturnType<typeof boundaryOutput>;
+      try {
+        const ran = await exec(command, args);
+        if (ran.code !== 0)
+          error = ran.stderr.trim() || ran.stdout.trim() || `coordinate exited ${ran.code}`;
+        else boundary = boundaryOutput(ran.stdout);
+      } catch (failure) {
+        error = `could not run coordinate: ${String(failure)}`;
+      }
+      this.boundaryBusy = false;
+      if (error === undefined) {
+        if (boundary !== undefined) this.applyBoundary(domain, boundary);
+        if (
+          action === "add" &&
+          this.boundaryEditing?.domain === domain &&
+          this.boundaryEditing.list === list
+        ) {
+          this.boundaryEditing = undefined;
+          this.boundaryInput?.set_value("");
+        }
+        this.load(task);
+      } else {
+        this.boundaryError = { domain, list, path, message: error };
+      }
+      task.notify();
+    });
+  }
+
+  boundaryModel(domain: string | undefined): BoundaryModel {
+    const editing = this.boundaryEditing;
+    const error = this.boundaryError;
+    return {
+      domain: domain ?? "domains",
+      editing: domain !== undefined && editing?.domain === domain ? editing.list : undefined,
+      input: this.boundaryInput,
+      busy: this.boundaryBusy,
+      hovered: this.boundaryHovered,
+      error: domain !== undefined && error?.domain === domain ? error : undefined,
+      begin: (list, cx) => this.beginBoundary(list, cx),
+      cancel: (cx) => this.cancelBoundary(cx),
+      remove: (list, path, cx) => this.removeBoundary(list, path, cx),
+      hover: (list, path, hovered, cx) => {
+        if (domain !== undefined) this.hoverBoundary(domain, list, path, hovered, cx);
+      },
+    };
+  }
+
   // The open item as the document now has it, if it is still there.
   detail(domain: string | undefined, doc: DocumentState): Item | undefined {
     const selected = this.selected;
@@ -507,6 +635,7 @@ export default class Panel extends View {
       detail,
       open: (item, cx) => this.open(item, cx),
       answer: this.answerModel(),
+      boundary: this.boundaryModel(domain),
     });
   }
 }

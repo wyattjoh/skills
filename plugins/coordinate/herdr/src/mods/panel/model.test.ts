@@ -1,6 +1,7 @@
 import { expect, test } from "bun:test";
 import { emptyBacklog } from "../../lib/store.ts";
 import {
+  boundaryOutput,
   cachedDocument,
   delegateLabel,
   delegateLine,
@@ -16,6 +17,15 @@ const shown = new Map<string, DocumentState>([
   ["alpha", loaded],
   ["beta", invalid],
 ]);
+
+test("boundaryOutput accepts the CLI's Boundary JSON and rejects malformed output", () => {
+  expect(boundaryOutput('{"owned":["/repo"],"adjacent":["/nearby"]}')).toEqual({
+    owned: ["/repo"],
+    adjacent: ["/nearby"],
+  });
+  expect(boundaryOutput('{"owned":[1],"adjacent":[]}')).toBeUndefined();
+  expect(boundaryOutput("refused: duplicate path")).toBeUndefined();
+});
 
 test("cachedDocument draws a domain's last read state, whatever its kind", () => {
   expect(cachedDocument(shown, "alpha")).toEqual(loaded);
