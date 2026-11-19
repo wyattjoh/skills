@@ -9,7 +9,7 @@ export const root = resolve(import.meta.dir, "..");
 
 /**
  * The tsc binary from the nearest node_modules above this project. The project's own
- * install adds only @wyattjoh/herdr-ui; the repository root's install provides TypeScript.
+ * install adds its Herdr dependencies; the repository root's install provides TypeScript.
  * @returns The binary's path.
  */
 export const tscPath = (): string => {
@@ -21,8 +21,7 @@ export const tscPath = (): string => {
 };
 
 /**
- * Run a command to completion, inheriting output, with a fifteen-minute bound. herdr-app check
- * has taken over eleven minutes under heavy machine load, so a shorter bound fails good builds.
+ * Run a command to completion, inheriting output.
  * @param argv The command and its arguments.
  * @param env The environment to run it with.
  * @returns The exit code.
@@ -36,7 +35,6 @@ export const run = async (
     env,
     stdout: "inherit",
     stderr: "inherit",
-    timeout: 900_000,
   });
   return await child.exited;
 };

@@ -1,7 +1,7 @@
 default:
     @just --list
 
-# Run the View tests against the gpui-kit, gpui-base and herdr doubles
+# Run the View tests against herdr-dev's renderer and local host-service extensions
 test:
     bun run test
 
@@ -9,7 +9,11 @@ test:
 typecheck:
     bun run typecheck
 
-# Bundle every mod into .scratch/stage-* and run herdr-app check with that stage as HERDR_APP_HOME; never installs
+# Check source timer intervals with the shared herdr-dev lint
+render-sync:
+    bunx herdr-render-sync src/mods
+
+# Bundle every mod into .scratch/stage-* and validate with herdr-dev; never installs
 build:
     bun run build
 
@@ -20,5 +24,5 @@ build:
 install *args:
     bun scripts/install.ts "$@"
 
-# Tests, typecheck and the staged build. Never installs: deploying is just install, after approval
-check: test typecheck build
+# Tests, typecheck, render-sync and staged build. Never installs; deploying is just install, after approval
+check: test typecheck render-sync build

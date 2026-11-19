@@ -1,6 +1,8 @@
-// The gpui-kit, gpui-base and herdr doubles every suite in this project renders through.
-// Elements keep their children, styles and callbacks so tests can assert ids, text and tones.
+// Local test-only extensions for host services and retained input state.
 import { mock } from "bun:test";
+import { byId, nodeOf, texts, walk } from "@wyattjoh/herdr-dev/test/renderer";
+import type { Node as SharedNode } from "@wyattjoh/herdr-dev/test/renderer";
+import { div } from "gpui-kit";
 
 /**
  * One rendered element: its id, children, the style calls made on it and its callbacks.
@@ -13,60 +15,11 @@ export type Node = {
   click: ((event: unknown, cx: unknown) => void) | undefined;
 };
 
-const attached = new WeakSet<object>();
-
-const element = (kind: string, asset: string | undefined = undefined): Node => {
-  const node: Node = { kind, elementId: undefined, nodes: [], styles: {}, click: undefined };
-  if (asset !== undefined) node.styles.asset = asset;
-  const attach = (child: Node | string) => {
-    if (typeof child !== "string") {
-      if (attached.has(child)) throw new Error("an element was added to two parents");
-      attached.add(child);
-    }
-    node.nodes.push(child);
-  };
-  const builder: Node = new Proxy(node, {
-    get(target, key) {
-      if (key === "then") return undefined;
-      if (typeof key === "symbol" || key in target) return Reflect.get(target, key);
-      if (key === "id")
-        return (id: string) => {
-          target.elementId = id;
-          return builder;
-        };
-      if (key === "child")
-        return (child: Node | string) => {
-          attach(child);
-          return builder;
-        };
-      if (key === "children")
-        return (children: (Node | string)[]) => {
-          children.forEach(attach);
-          return builder;
-        };
-      if (key === "when")
-        return (condition: unknown, branch: (el: Node) => Node) =>
-          condition ? branch(builder) : builder;
-      if (key === "on_click")
-        return (handler: Node["click"]) => {
-          target.click = handler;
-          return builder;
-        };
-      if (key === "hover")
-        return (declare: (el: Node) => unknown) => {
-          const hovered = element("hover");
-          declare(hovered);
-          target.styles.hover = hovered.styles;
-          return builder;
-        };
-      return (...args: unknown[]) => {
-        target.styles[key] = args.length === 0 ? true : args.length === 1 ? args[0] : args;
-        return builder;
-      };
-    },
-  });
-  return builder;
-};
+const adapt = (node: SharedNode): Node => ({
+  ...node,
+  elementId: node.styles.id as string | undefined,
+  nodes: node.children as (Node | string)[],
+});
 
 /**
  * The first element with this id, depth first.
@@ -76,12 +29,8 @@ const element = (kind: string, asset: string | undefined = undefined): Node => {
  */
 export const find = (root: Node | string, id: string): Node | undefined => {
   if (typeof root === "string") return undefined;
-  if (root.elementId === id) return root;
-  for (const child of root.nodes) {
-    const found = find(child, id);
-    if (found) return found;
-  }
-  return undefined;
+  const found = byId(root, id);
+  return found ? adapt(found) : undefined;
 };
 
 /**
@@ -105,10 +54,9 @@ export const get = (root: Node | string, id: string): Node => {
 export const ids = (root: Node | string, prefix: string): string[] =>
   typeof root === "string"
     ? []
-    : [
-        ...(root.elementId?.startsWith(prefix) ? [root.elementId] : []),
-        ...root.nodes.flatMap((child) => ids(child, prefix)),
-      ];
+    : walk(root)
+        .map((node) => node.styles.id)
+        .filter((id): id is string => typeof id === "string" && id.startsWith(prefix));
 
 /**
  * The element's text, its string descendants joined by single spaces.
@@ -116,21 +64,7 @@ export const ids = (root: Node | string, prefix: string): string[] =>
  * @returns The text.
  */
 export const text = (root: Node | string): string =>
-  typeof root === "string"
-    ? root
-    : root.nodes
-        .map(text)
-        .filter((part) => part !== "")
-        .join(" ");
-
-// oxlint-disable-next-line typescript/no-extraneous-class -- the empty base every mod View extends
-class View {}
-
-mock.module("gpui-kit", () => ({
-  View,
-  div: () => element("div"),
-  svg: (path: string) => element("svg", path),
-}));
+  typeof root === "string" ? root : texts(root).join(" ");
 
 /**
  * A retained text field's state, as InputState.new makes it: its value and its event handlers.
@@ -173,22 +107,36 @@ export const typeInto = (input: FakeInput, value: string, cx: unknown) => {
   input.handlers.get("change")?.({}, cx);
 };
 
+// Bun cannot extend a registered mock's named exports. Keep only these base-element adapters,
+// and build every one with the shared renderer's GPUI element factory.
+const baseElement = (kind: string) => {
+  const value = div();
+  nodeOf(value).kind = kind;
+  return value;
+};
+
+const baseFactory = (kind: string) => ({
+  new: (id?: unknown, extra?: unknown) => {
+    const value = baseElement(kind);
+    if (id !== undefined) nodeOf(value).styles.ctor = extra === undefined ? id : [id, extra];
+    return value;
+  },
+});
+
 mock.module("gpui-base", () => ({
-  h_flex: () => element("h_flex"),
-  v_flex: () => element("v_flex"),
+  h_flex: () => baseElement("h_flex"),
+  v_flex: () => baseElement("v_flex"),
   InputState: { new: fakeInput },
-  // @wyattjoh/herdr-ui's root entry links every element module, so the double names the
-  // gpui-base exports they import; the panel draws none of these.
-  Popover: { new: () => element("popover") },
-  Scrollbar: { vertical: () => element("scrollbar") },
-  TextView: { new: () => element("text_view") },
   Input: {
     new: (state: FakeInput) => {
-      const node = element("input");
-      node.styles.state = state;
-      return node;
+      const value = baseElement("Input");
+      nodeOf(value).styles.state = state;
+      return value;
     },
   },
+  Popover: baseFactory("Popover"),
+  Scrollbar: { vertical: baseFactory("Scrollbar").new },
+  TextView: { markdown: baseFactory("TextView").new, new: baseFactory("TextView").new },
 }));
 
 type Deferred<T> = {
@@ -267,6 +215,7 @@ const listFolder = (folder: string): string =>
     .map((name) => `${name}\0`)
     .join("");
 
+// The shared renderer provides an empty herdr mock; these host services extend it for these tests.
 mock.module("herdr", () => ({
   checking: () => host.checking,
   home: () => "/Users/test",

@@ -84,7 +84,7 @@ test("refuses an installed mod without --replace, and backs it up with it", asyn
   expect(await Bun.file(join(backups, "coordinate-panel/main.js")).text()).toBe("// older\n");
 });
 
-test("check never installs: it runs only test, typecheck and the staged build", async () => {
+test("check never installs: it runs tests, typecheck, render-sync and the staged build", async () => {
   const justfile = await Bun.file(join(import.meta.dir, "../justfile")).text();
   const recipes = justfile.split("\n").filter((line) => /^[a-z][\w-]*( [^:]*)?:/.test(line));
 
@@ -92,8 +92,9 @@ test("check never installs: it runs only test, typecheck and the staged build", 
     "default:",
     "test:",
     "typecheck:",
+    "render-sync:",
     "build:",
     "install *args:",
-    "check: test typecheck build",
+    "check: test typecheck render-sync build",
   ]);
 });
