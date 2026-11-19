@@ -706,12 +706,24 @@ const standingCard = (t: Theme, backlog: Backlog, model: PanelModel): Element =>
     );
 };
 
-// The paths the domain owns and those next to it.
-const boundaryCard = (t: Theme, backlog: Backlog): Element =>
-  detailCard(t, "boundary", "Boundary", [
-    fact(t, "boundary-owned", "Owned", backlog.boundary.owned),
-    fact(t, "boundary-adjacent", "Adjacent", backlog.boundary.adjacent),
-  ]);
+// The paths the domain owns and those next to it, in separate cards.
+const boundaryCard = (t: Theme, backlog: Backlog): Element[] => {
+  const section = (id: string, label: string, paths: string[]) =>
+    detailCard(
+      t,
+      `boundary-${id}`,
+      label,
+      paths.length === 0
+        ? [detailRow(t, `boundary-${id}-empty`).child(div().text_color(t.dim).child("None"))]
+        : paths.map((path, index) =>
+            detailRow(t, `boundary-${id}-${index}`).child(div().child(path)),
+          ),
+    );
+  return [
+    section("owned", "Owned", backlog.boundary.owned),
+    section("adjacent", "Adjacent", backlog.boundary.adjacent),
+  ];
+};
 
 const domainBody = (t: Theme, domain: string, doc: DocumentState, model: PanelModel): Element => {
   if (doc.kind === "loading")
@@ -735,7 +747,7 @@ const domainBody = (t: Theme, domain: string, doc: DocumentState, model: PanelMo
     .children(unfiledCard(t, model.delegates.unfiled, model))
     .child(findingsCard(t, model))
     .child(standingCard(t, doc.backlog, model))
-    .child(boundaryCard(t, doc.backlog));
+    .children(boundaryCard(t, doc.backlog));
 };
 
 const COUNT_LABELS = [

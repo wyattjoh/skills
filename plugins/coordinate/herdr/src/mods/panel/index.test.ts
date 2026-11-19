@@ -526,7 +526,8 @@ test("lists open findings under the Items card with kind glyphs in their tones",
     "items-header",
     "findings-header",
     "standing-header",
-    "boundary-header",
+    "boundary-owned-header",
+    "boundary-adjacent-header",
   ]);
   expect(text(get(root, "findings-header"))).toBe("Findings");
   expect(ids(root, "finding-")).toEqual(["finding-f2", "finding-f3", "finding-f4"]);
@@ -1007,7 +1008,8 @@ test("lists live domain terminals no item names under Unfiled delegates", async 
     "unfiled-header",
     "findings-header",
     "standing-header",
-    "boundary-header",
+    "boundary-owned-header",
+    "boundary-adjacent-header",
   ]);
 });
 
@@ -1124,7 +1126,7 @@ test("shows a closed item's closing date beside its creation date", async () => 
   ]);
 });
 
-test("folds the standing yes entries by default, counting them, and shows the boundary after Findings", async () => {
+test("folds Standing yes by default and shows Owned and Adjacent cards after Findings", async () => {
   focusDomain("alpha");
   host.files.set(
     DOC,
@@ -1152,14 +1154,22 @@ test("folds the standing yes entries by default, counting them, and shows the bo
     "Rebase local branches 2026-11-15",
   ]);
   expect(ids(root, "boundary-")).toEqual([
-    "boundary-header",
+    "boundary-owned-header",
     "boundary-owned",
+    "boundary-owned-0",
+    "boundary-owned-1",
+    "boundary-adjacent-header",
     "boundary-adjacent",
+    "boundary-adjacent-empty",
   ]);
-  expect(["boundary-owned", "boundary-adjacent"].map((id) => text(get(root, id)))).toEqual([
-    "Owned skills/coordinate plugins/coordinate",
-    "Adjacent None",
-  ]);
+  expect(
+    ["boundary-owned-header", "boundary-adjacent-header"].map((id) => text(get(root, id))),
+  ).toEqual(["Owned", "Adjacent"]);
+  expect(
+    ["boundary-owned-0", "boundary-owned-1", "boundary-adjacent-empty"].map((id) =>
+      text(get(root, id)),
+    ),
+  ).toEqual(["skills/coordinate", "plugins/coordinate", "None"]);
 });
 
 test("says None for an unfolded standing yes with no entries", async () => {
