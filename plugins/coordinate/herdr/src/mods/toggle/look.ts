@@ -1,4 +1,4 @@
-// How the Backlog pill looks beyond the shared control metrics in src/lib/look.ts.
+// The Backlog pill's host icon and row inset. herdr-ui supplies its shared control geometry.
 
 /**
  * Inset between the pill and the block's right edge, matching the CI toggle's end inset.

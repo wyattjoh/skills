@@ -1,97 +1,22 @@
-// How the panel looks, as theme() color names and sizes. The metrics follow the Tasks Herdr
-// panel's chrome, copied here so the two panels read as one family; the tool bar's control
-// metrics, which the Backlog pill shares, are src/lib/look.ts's CONTROL.
+// Coordinate-specific status, glyph and layout data. Shared geometry and rendered look come
+// from @wyattjoh/herdr-ui.
 import type { Finding, ItemStatus } from "../../lib/store.ts";
 import type { LiveStatus } from "./model.ts";
 
 /**
- * The panel's padding on every side.
+ * A delegated item's row height: its title, then the line naming its delegate and state.
  */
-export const PANEL_PADDING = 12;
+export const DELEGATED_ROW_HEIGHT = 48;
 
 /**
- * The tool bar's padding above and below its controls.
+ * An Unfiled delegates row's height.
  */
-export const BAR_PADDING_Y = 6;
+export const DELEGATE_ROW_HEIGHT = 28;
 
 /**
- * A card's radius.
+ * How far each nesting level indents an Unfiled delegates row under its parent delegate.
  */
-export const CARD_RADIUS = 8;
-
-/**
- * The radius inside a card's 1px outline, which its first and last bands round to.
- */
-export const INNER_RADIUS = CARD_RADIUS - 1;
-
-/**
- * The gap between cards.
- */
-export const CARD_GAP = 10;
-
-/**
- * The gap between a card's title and its body.
- */
-export const CARD_SECTION_GAP = 2;
-
-/**
- * A card title's height.
- */
-export const CARD_HEADER_HEIGHT = 24;
-
-/**
- * Horizontal padding inside cards, their titles and their rows.
- */
-export const CARD_PADDING_X = 10;
-
-/**
- * A status group's header band height.
- */
-export const GROUP_HEADER_HEIGHT = 28;
-
-/**
- * An item row's height. Rows are fixed so a group's open height is known without measuring,
- * which the fold animates to and from.
- */
-export const ITEM_ROW_HEIGHT = 32;
-
-/**
- * An all-domains listing row's height, the Tasks panel's listing row.
- */
-export const LISTING_ROW_HEIGHT = 34;
-
-/**
- * A group folds in 200ms.
- */
-export const FOLD_MOTION = { duration: 200, easing: "ease-out" } as const;
-
-/**
- * Text size of rows, the focus line and message titles.
- */
-export const TEXT_BODY = 13;
-
-/**
- * Text size of labels, crumbs, group headers, counts and empties.
- */
-export const TEXT_SMALL = 12;
-
-/**
- * The gap between a detail card's rows of text.
- */
-export const DETAIL_LINE_GAP = 2;
-
-/**
- * Vertical padding inside a detail card's rows, which wrap and so have no fixed height.
- */
-export const DETAIL_ROW_PADDING_Y = 6;
-
-/**
- * Herdr's shipped fold chevrons.
- */
-export const ICONS = {
-  groupOpen: "mods/files/chevron-down.svg",
-  groupClosed: "mods/files/chevron-right.svg",
-} as const;
+export const DELEGATE_INDENT = 14;
 
 /**
  * Each status group's header tone, as a theme() color name. Herdr's own `done` is blue in its
@@ -108,7 +33,7 @@ export const STATUS_TONES: Readonly<Record<ItemStatus, string>> = {
 };
 
 /**
- * Each finding kind's glyph and its tone, as a theme() color name.
+ * Each finding kind's domain glyph and its tone. herdr-ui has no generic issue/opportunity mark.
  */
 export const FINDING_GLYPHS: Readonly<Record<Finding["kind"], { glyph: string; tone: string }>> = {
   issue: { glyph: "▲", tone: "ansi1" },
@@ -116,8 +41,7 @@ export const FINDING_GLYPHS: Readonly<Record<Finding["kind"], { glyph: string; t
 };
 
 /**
- * Each finding status's tone on its detail screen, as a theme() color name, matching the item
- * statuses they mirror: open as Open, acted on as Done, dismissed as Dismissed.
+ * Each finding status's tone on its detail screen, matching the item statuses they mirror.
  */
 export const FINDING_STATUS_TONES: Readonly<Record<Finding["status"], string>> = {
   open: "dim",
@@ -126,8 +50,8 @@ export const FINDING_STATUS_TONES: Readonly<Record<Finding["status"], string>> =
 };
 
 /**
- * Each listing count's tone, as a theme() color name, used only while the count is nonzero so
- * a domain that needs nothing reads quiet.
+ * Each listing count's tone, used only while the count is nonzero so a domain that needs nothing
+ * reads quiet.
  */
 export const COUNT_TONES = {
   waiting: "blocked",
@@ -137,24 +61,7 @@ export const COUNT_TONES = {
 } as const;
 
 /**
- * A delegated item's row height: the title, then the line naming its delegate and state.
- */
-export const DELEGATED_ROW_HEIGHT = 48;
-
-/**
- * An Unfiled delegates row's height.
- */
-export const DELEGATE_ROW_HEIGHT = 28;
-
-/**
- * How far each nesting level indents an Unfiled delegates row under its parent delegate.
- */
-export const DELEGATE_INDENT = 14;
-
-/**
- * Each delegate state's tone, as a theme() color name: Herdr's own agent tokens for live
- * statuses (it has no error token, so error takes the palette's red), a quiet dim for a
- * delegate that ended, and a warning yellow for one that is gone with no record.
+ * Each delegate state's tone as a theme() color name.
  */
 export const DELEGATE_TONES: Readonly<Record<LiveStatus | "ended" | "gone", string>> = {
   working: "working",
@@ -168,8 +75,7 @@ export const DELEGATE_TONES: Readonly<Record<LiveStatus | "ended" | "gone", stri
 };
 
 /**
- * The answer row under an ask: the shipped Changes panel's commit row, a text field beside a
- * solid button, at the same height, padding and radius.
+ * The Answer field's geometry, which has no generic form-field counterpart in herdr-ui.
  */
 export const ANSWER = {
   height: 32,

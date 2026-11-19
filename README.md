@@ -55,7 +55,7 @@ In Claude Code, `watchIntervalMs` and `stopGate` are settable from `/config`.
 
 ### Optional coordinate Backlog panel (Herdr)
 
-The `coordinate` skill keeps each domain's backlog as a structured JSON document that its CLI alone writes (`coordinate backlog show` renders it). [`plugins/coordinate/herdr/`](plugins/coordinate/herdr/) builds two read-only Herdr mods that display it: `coordinate-panel`, the Backlog panel that follows the focused terminal's domain with live delegate status, and `coordinate-toggle`, a tab-row pill bound to `cmd-alt-b`. It is not a Claude Code plugin and has no marketplace entry.
+The `coordinate` skill keeps each domain's backlog as a structured JSON document that its CLI alone writes (`coordinate backlog show` renders it). [`plugins/coordinate/herdr/`](plugins/coordinate/herdr/) builds two read-only Herdr mods that display it: `coordinate-panel`, the Backlog panel that follows the focused terminal's domain with live delegate status, and `coordinate-toggle`, a tab-row pill bound to `cmd-alt-b`. It is not a Claude Code plugin and has no marketplace entry. Both mods use `@wyattjoh/herdr-ui` 0.3.0 for shared visual components; their staged builds copy its icons and third-party notices.
 
 ```bash
 cd plugins/coordinate/herdr

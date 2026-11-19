@@ -180,7 +180,7 @@ mock.module("gpui-base", () => ({
   // @wyattjoh/herdr-ui's root entry links every element module, so the double names the
   // gpui-base exports they import; the panel draws none of these.
   Popover: { new: () => element("popover") },
-  Scrollbar: { new: () => element("scrollbar") },
+  Scrollbar: { vertical: () => element("scrollbar") },
   TextView: { new: () => element("text_view") },
   Input: {
     new: (state: FakeInput) => {

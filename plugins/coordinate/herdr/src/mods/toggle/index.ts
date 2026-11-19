@@ -1,11 +1,11 @@
 // coordinate-toggle: the tab row's Backlog pill, and the target of the cmd-alt-b key command.
 // It opens and closes the docked coordinate-panel for the focused tab, and on every render (Herdr
 // renders it on each focus, layout and shared change) matches the column to the focused tab.
-import { View, svg } from "gpui-kit";
+import { View } from "gpui-kit";
 import type { AsyncContext, Context, Element } from "gpui-kit";
 import { h_flex } from "gpui-base";
+import { togglePill, type Theme } from "@wyattjoh/herdr-ui";
 import { checking, focused, layout, nextCommand, run, setShared, shared, theme } from "herdr";
-import { CONTROL } from "../../lib/look.ts";
 import { ICON, TOGGLE_END_INSET } from "./look.ts";
 import {
   DOCK_SETTING,
@@ -17,7 +17,6 @@ import {
   toggleEffects,
 } from "./model.ts";
 import type { SyncMemory, ToggleAction } from "./model.ts";
-import type { Theme } from "../panel/view.ts";
 
 const apply = (effects: ToggleAction[]) => {
   for (const effect of effects)
@@ -84,21 +83,13 @@ export default class Toggle extends View {
     const dock = panelDock(layout());
     const on = dock?.shown === true;
     const inert = dock === undefined;
-    const button = h_flex()
-      .id("coordinate-toggle-button")
-      .h(CONTROL.height)
-      .px(CONTROL.paddingX)
-      .gap(CONTROL.gap)
-      .flex_none()
-      .flex_nowrap()
-      .items_center()
-      .justify_center()
-      .rounded(CONTROL.radius)
-      .text_size(CONTROL.textSize)
-      .bg(on ? t.selected : t.chrome)
-      .text_color(inert ? t.dim : on ? t.foreground : t.muted)
-      .child(svg(ICON).size(CONTROL.iconSize))
-      .child("Backlog");
+    const button = togglePill(t, {
+      id: "coordinate-toggle-button",
+      label: "Backlog",
+      icon: ICON,
+      lit: on,
+      onClick: inert ? undefined : () => this.toggle(),
+    });
     return h_flex()
       .id("coordinate-toggle")
       .size_full()

@@ -1,6 +1,7 @@
 // Bundle every mod into a fresh stage under .scratch/ and run herdr-app check on each with that
 // stage as HERDR_APP_HOME, so validation never reads or writes the live Herdr home. Installing
 // is a separate, explicit step.
+import { copyIcons, copyNotices } from "@wyattjoh/herdr-ui/assets";
 import { copyFile, mkdir, mkdtemp } from "node:fs/promises";
 import { join } from "node:path";
 import { root, run } from "./tools.ts";
@@ -61,6 +62,8 @@ export const build = async (): Promise<string> => {
       ...bunDefine(),
     ]);
     if (built !== 0) throw new Error(`Bundling ${mod.name} failed (${built})`);
+    await copyIcons(folder);
+    await copyNotices(folder);
   }
   // Under heavy load herdr-app's isolated checker can miss its own 30s connect deadline, so a
   // failed check gets two more tries; a real failure fails all three.

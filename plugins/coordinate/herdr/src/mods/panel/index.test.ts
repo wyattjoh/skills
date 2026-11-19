@@ -157,14 +157,14 @@ test("folds Done and Dismissed by default and toggles a group from its header", 
   const { ctx, render } = await mount();
   const before = ctx.notified;
   let root = render();
-  expect(get(root, "rows-open").styles.h).toBe(64);
-  expect(get(root, "rows-done").styles.h).toBe(0);
-  expect(get(root, "rows-dismissed").styles.h).toBe(0);
+  expect(get(root, "alpha-rows-open").styles.h).toBe(64);
+  expect(get(root, "alpha-rows-done").styles.h).toBe(0);
+  expect(get(root, "alpha-rows-dismissed").styles.h).toBe(0);
   get(root, "fold-done").click!({}, ctx.cx);
   get(root, "fold-open").click!({}, ctx.cx);
   root = render();
-  expect(get(root, "rows-done").styles.h).toBe(32);
-  expect(get(root, "rows-open").styles.h).toBe(0);
+  expect(get(root, "alpha-rows-done").styles.h).toBe(32);
+  expect(get(root, "alpha-rows-open").styles.h).toBe(0);
   expect(ctx.notified - before).toBe(2);
 });
 
@@ -522,7 +522,7 @@ test("lists open findings under the Items card with kind glyphs in their tones",
   ]);
   expect(text(get(root, "findings-header"))).toBe("Findings");
   expect(ids(root, "finding-")).toEqual(["finding-f2", "finding-f3", "finding-f4"]);
-  expect(ids(get(root, "rows-findings-closed"), "finding-")).toEqual(["finding-f4"]);
+  expect(ids(get(root, "alpha-group-findings-closed-body"), "finding-")).toEqual(["finding-f4"]);
   expect(text(get(root, "finding-f2"))).toBe("▲ f2 Flaky watcher test");
   expect(text(get(root, "finding-f3"))).toBe("✦ f3 Share the validator");
   const glyph = (id: string) =>
@@ -581,7 +581,7 @@ test("opens an item's detail with the recommended option first, labelled and not
   const { ctx, render } = await mount();
   get(render(), "item-i1").click!({}, ctx.cx);
   const root = render();
-  expect(text(get(root, "detail-title"))).toBe("i1 Name the panel");
+  expect(text(get(root, "detail-title"))).toBe("i1 Name the panel Waiting on you");
   expect(text(get(root, "detail-status"))).toBe("Waiting on you");
   expect(get(root, "detail-status").styles.text_color).toBe("blocked");
   expect(text(get(root, "ask-question"))).toBe("Which title?");
@@ -755,7 +755,10 @@ test("the Items crumb returns to the list, which stayed mounted under the detail
   get(root, "item-i1").click!({}, ctx.cx);
   root = render();
   expect(get(root, "screen-list").styles.invisible).toBe(true);
-  expect(ids(get(root, "screen-list"), "panel-scroll")).toEqual(["panel-scroll"]);
+  expect(ids(get(root, "screen-list"), "panel-scroll")).toEqual([
+    "panel-scroll-frame",
+    "panel-scroll",
+  ]);
   expect(ids(root, "screen-item")).toEqual(["screen-item"]);
   press(root, "crumb-items", ctx.cx);
   root = render();
@@ -855,7 +858,7 @@ test("names an item's one delegate and its live status on the row's second line,
   expect(ids(root, "ref-")).toEqual([]);
   expect(ids(root, "item-i6")).toEqual(["item-i6"]);
   expect([get(root, "item-i1").styles.h, get(root, "item-i6").styles.h]).toEqual([48, 32]);
-  expect(get(root, "rows-delegated").styles.h).toBe(5 * 48);
+  expect(get(root, "alpha-rows-delegated").styles.h).toBe(5 * 48);
 });
 
 test("with two or more delegates, shows the most urgent state and the count", async () => {
@@ -959,13 +962,13 @@ test("draws no row for a child terminal under a delegate, whose own state names 
   );
   const { render } = await mount();
   const root = render();
-  expect(ids(get(root, "rows-delegated"), "")).toEqual([
-    "rows-delegated",
+  expect(ids(get(root, "alpha-rows-delegated"), "")).toEqual([
+    "alpha-rows-delegated",
     "item-i1",
     "delegates-i1",
   ]);
   expect(lineOf(root, "i1")).toEqual(["impl · idle", "idle"]);
-  expect(get(root, "rows-delegated").styles.h).toBe(48);
+  expect(get(root, "alpha-rows-delegated").styles.h).toBe(48);
   expect(ids(root, "unfiled")).toEqual([]);
 });
 
@@ -1023,11 +1026,11 @@ test("folds closed findings into a Closed group that opens from its band", async
   host.files.set(DOC, JSON.stringify(withFindings()));
   const { ctx, render } = await mount();
   let root = render();
-  expect(text(get(root, "fold-findings-closed"))).toBe("Closed 1");
-  expect(get(root, "rows-findings-closed").styles.h).toBe(0);
-  get(root, "fold-findings-closed").click!({}, ctx.cx);
+  expect(text(get(root, "group-findings-closed-toggle"))).toBe("Closed 1");
+  expect(get(root, "alpha-group-findings-closed-body").styles.h).toBe(0);
+  get(root, "group-findings-closed-toggle").click!({}, ctx.cx);
   root = render();
-  expect(get(root, "rows-findings-closed").styles.h).toBe(32);
+  expect(get(root, "alpha-group-findings-closed-body").styles.h).toBe(32);
   expect(text(get(root, "finding-f4"))).toBe("▲ f4 Old crash");
 });
 
@@ -1050,7 +1053,7 @@ test("opens an open finding's detail with its fields, and its origin opens the i
   expect(ids(root, "screen-finding")).toEqual(["screen-finding"]);
   expect(get(root, "screen-list").styles.invisible).toBe(true);
   expect(trail(root)).toBe("Domains › alpha › Findings › f3");
-  expect(text(get(root, "finding-title"))).toBe("f3 Share the validator");
+  expect(text(get(root, "finding-title"))).toBe("f3 Share the validator Open");
   expect([
     text(get(root, "finding-status")),
     get(root, "finding-status").styles.text_color,
@@ -1069,7 +1072,7 @@ test("a closed finding's detail shows its outcome and closing date, and Findings
   focusDomain("alpha");
   host.files.set(DOC, JSON.stringify(withFindings()));
   const { ctx, render } = await mount();
-  get(render(), "fold-findings-closed").click!({}, ctx.cx);
+  get(render(), "group-findings-closed-toggle").click!({}, ctx.cx);
   get(render(), "finding-f4").click!({}, ctx.cx);
   let root = render();
   expect([
@@ -1130,7 +1133,7 @@ test("folds the standing yes entries by default, counting them, and shows the bo
   let root = render();
   expect(text(get(root, "standing-header"))).toBe("Standing yes 2");
   expect(get(root, "standing-header").nodes[1]).toMatchObject({
-    styles: { asset: "mods/files/chevron-right.svg" },
+    styles: { asset: "mods/workspace-chrome/chevron-right.svg" },
   });
   expect(ids(root, "standing-")).toEqual(["standing-header"]);
   get(root, "standing-header").click!({}, ctx.cx);
@@ -1198,7 +1201,14 @@ test("names the shown domain at the right end of the tool bar, dim and truncatin
   const name = get(render(), "toolbar-domain").nodes[0] as Node;
   expect([get(render(), "toolbar-domain").styles.flex_1, name.styles]).toEqual([
     true,
-    { min_w_0: true, truncate: true, text_right: true, text_size: 12, text_color: "dim" },
+    {
+      flex_none: true,
+      min_w_0: true,
+      truncate: true,
+      text_right: true,
+      text_size: 12,
+      text_color: "dim",
+    },
   ]);
   expect(text(name)).toBe("alpha");
 });
