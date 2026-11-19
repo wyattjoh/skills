@@ -5,11 +5,16 @@
     "": {
       "name": "coordinate-herdr",
       "dependencies": {
-        "@wyattjoh/herdr-ui": "0.5.0",
+        "@wyattjoh/herdr-ui": "0.5.1",
+      },
+      "devDependencies": {
+        "@wyattjoh/herdr-dev": "0.1.0",
       },
     },
   },
   "packages": {
-    "@wyattjoh/herdr-ui": ["@wyattjoh/herdr-ui@0.5.0", "", {}, "sha512-0pVqq0ttjTLTDEaevHzWI/FlWqTxnojr+hqqM5mnzC3jAC1RDLoRBeDzhtvJa/K8Y6tMQTM4qeRUYnCsVUsjXg=="],
+    "@wyattjoh/herdr-dev": ["@wyattjoh/herdr-dev@0.1.0", "", { "bin": { "herdr-check": "src/cli.ts", "herdr-render-sync": "src/render-sync.ts" } }, "sha512-hZ979+dCjJMcSk013ydicJBZlK40HnpS3Hg2DsfWeyEjQiyduMtpOct2b7oAr30nLdNMQ2hEPR+gAg5MbqfiCg=="],
+
+    "@wyattjoh/herdr-ui": ["@wyattjoh/herdr-ui@0.5.1", "", {}, "sha512-6bacd09kILGkUitqqULe9hPry8mmDpEiVW1ovryLKq0xghItDN9a2Q2EVvbsxc9hbHD/QgjqoQUhkAFMEu9feA=="],
   }
 }
