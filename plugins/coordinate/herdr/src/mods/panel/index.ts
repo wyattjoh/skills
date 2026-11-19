@@ -49,6 +49,7 @@ import type { AnswerModel, Theme } from "./view.ts";
 // the document in case a folder watch was reclaimed.
 const FOLLOW_MS = 1_000;
 const REFRESH_MS = 30_000;
+const ROW_PAGE_SIZE = 10;
 
 /**
  * The Backlog panel.
@@ -73,6 +74,9 @@ export default class Panel extends View {
   generation = 0;
   // Fold state per domain and status, for groups the user has folded or opened.
   folds = new Map<string, boolean>();
+  // Rows revealed per group in the current domain.
+  paginationDomain: string | undefined;
+  revealedRows = new Map<string, number>();
   // The backlogs folder being watched, and the pending watch on it.
   watched: string | undefined;
   watch: FolderWatch | undefined;
@@ -189,6 +193,10 @@ export default class Panel extends View {
     const generation = ++this.generation;
     this.track();
     const domain = this.target();
+    if (domain !== this.paginationDomain) {
+      this.paginationDomain = domain;
+      this.revealedRows.clear();
+    }
     cx.spawn(async (task) => {
       const stateDir = stateDirOf(await this.read(configPath(home())), home());
       if (generation !== this.generation) return;
@@ -442,6 +450,23 @@ export default class Panel extends View {
     cx.notify();
   }
 
+  visibleRows(domain: string | undefined, group: string, total: number): number {
+    const revealed =
+      domain === this.paginationDomain
+        ? (this.revealedRows.get(group) ?? ROW_PAGE_SIZE)
+        : ROW_PAGE_SIZE;
+    return Math.min(total, revealed);
+  }
+
+  revealMore(domain: string | undefined, group: string, cx: Context) {
+    if (domain !== this.paginationDomain) {
+      this.paginationDomain = domain;
+      this.revealedRows.clear();
+    }
+    this.revealedRows.set(group, (this.revealedRows.get(group) ?? ROW_PAGE_SIZE) + ROW_PAGE_SIZE);
+    cx.notify();
+  }
+
   // The document's delegates joined to the terminals live now.
   delegates(domain: string | undefined, doc: DocumentState): DelegateJoin {
     if (domain === undefined || doc.kind !== "loaded") return { byItem: new Map(), unfiled: [] };
@@ -477,6 +502,8 @@ export default class Panel extends View {
       openDomain: (name, cx) => this.openDomain(name, cx),
       isOpen: (group) => this.isOpen(group),
       toggle: (group, cx) => this.toggleFold(group, cx),
+      visibleRows: (group, total) => this.visibleRows(domain, group, total),
+      loadMore: (group, cx) => this.revealMore(domain, group, cx),
       detail,
       open: (item, cx) => this.open(item, cx),
       answer: this.answerModel(),

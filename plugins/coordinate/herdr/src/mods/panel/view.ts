@@ -30,6 +30,7 @@ import {
   panelFrame,
   role,
   rowNote,
+  staticRow,
   titleRow,
   toolRow,
   topBar,
@@ -99,6 +100,9 @@ export type PanelModel = {
   delegates: DelegateJoin;
   isOpen: (group: ItemGroup) => boolean;
   toggle: (group: ItemGroup, cx: Context) => void;
+  // Rows shown by each list and the control that reveals its next page.
+  visibleRows: (group: string, total: number) => number;
+  loadMore: (group: string, cx: Context) => void;
   // The item whose detail screen is on top of the list, if any.
   detail: Item | undefined;
   open: (item: Item, cx: Context) => void;
@@ -248,13 +252,15 @@ const statusGroup = (
   toggle: (cx: Context) => void,
   openItem: (item: Item, cx: Context) => void,
   delegates: DelegateJoin,
-): Element =>
-  groupBlock(t, motionScope, {
-    id: `group-${group.status}`,
+  model: PanelModel,
+): Element => {
+  const id = `group-${group.status}`;
+  return groupBlock(t, motionScope, {
+    id,
     label: group.label,
     tone: STATUS_TONES[group.status],
     count: group.items.length,
-    rows: group.items.map((item) =>
+    rows: pagedRows(t, id, group.items, model, ROW.compact, (item) =>
       itemRow(t, item, delegates.byItem.get(item.id) ?? [], openItem),
     ),
     rowHeight: ROW.compact,
@@ -263,6 +269,7 @@ const statusGroup = (
     last,
     toggle,
   });
+};
 
 const itemsCard = (t: Theme, model: PanelModel): Element =>
   cardSection(
@@ -281,12 +288,40 @@ const itemsCard = (t: Theme, model: PanelModel): Element =>
               (cx) => model.toggle(group, cx),
               model.open,
               model.delegates,
+              model,
             ),
           ),
     ),
   );
 
 const emptyRow = (t: Theme, id: string, label: string): Element => cardNote(t, label).id(id);
+
+const loadMoreRow = (t: Theme, groupId: string, model: PanelModel, rowHeight: number): Element =>
+  staticRow(t, `pagination-row-${groupId}`)
+    .h(rowHeight)
+    .justify_center()
+    .child(
+      button(t, {
+        id: `load-more-${groupId}`,
+        label: "Load more",
+        onClick: (cx) => model.loadMore(groupId, cx),
+      }),
+    );
+
+const pagedRows = <T>(
+  t: Theme,
+  groupId: string,
+  rows: readonly T[],
+  model: PanelModel,
+  rowHeight: number,
+  renderRow: (row: T, index: number) => Element,
+): Element[] => {
+  const visible = model.visibleRows(groupId, rows.length);
+  return [
+    ...rows.slice(0, visible).map(renderRow),
+    ...(visible < rows.length ? [loadMoreRow(t, groupId, model, rowHeight)] : []),
+  ];
+};
 
 const findingRow = (
   t: Theme,
@@ -310,14 +345,16 @@ const findingRow = (
   });
 
 // Live domain terminals have no item name, so they stay in their own section.
-const unfiledCard = (t: Theme, rows: DelegateRow[]): Element[] =>
+const unfiledCard = (t: Theme, rows: DelegateRow[], model: PanelModel): Element[] =>
   rows.length === 0
     ? []
     : [
         cardSection(
           cardHeader(t, "unfiled-header", "Unfiled delegates"),
           card(t, "unfiled").children(
-            rows.map((row, index) => delegateRow(t, row, row.depth, index === 0)),
+            pagedRows(t, "unfiled", rows, model, DELEGATE_ROW_HEIGHT, (row, index) =>
+              delegateRow(t, row, row.depth, index === 0),
+            ),
           ),
         ),
       ];
@@ -329,7 +366,9 @@ const closedGroup = (t: Theme, model: PanelModel): Element =>
     label: "Closed",
     tone: "muted",
     count: model.closed.length,
-    rows: model.closed.map((finding) => findingRow(t, finding, model.openFinding)),
+    rows: pagedRows(t, "group-findings-closed", model.closed, model, ROW.compact, (finding) =>
+      findingRow(t, finding, model.openFinding),
+    ),
     rowHeight: ROW.compact,
     open: model.closedOpen,
     first: false,
@@ -338,19 +377,20 @@ const closedGroup = (t: Theme, model: PanelModel): Element =>
   });
 
 // Open findings, one package row each, then the closed ones in the package's collapsible group.
-const findingsCard = (t: Theme, model: PanelModel): Element =>
-  cardSection(
+const findingsCard = (t: Theme, model: PanelModel): Element => {
+  const openRows =
+    model.findings.length === 0
+      ? [emptyRow(t, "findings-empty", "No open findings")]
+      : pagedRows(t, "findings-open", model.findings, model, ROW.compact, (finding, index) =>
+          findingRow(t, finding, model.openFinding, index === 0),
+        );
+  return cardSection(
     cardHeader(t, "findings-header", "Findings"),
     card(t, "findings")
-      .children(
-        model.findings.length === 0
-          ? [emptyRow(t, "findings-empty", "No open findings")]
-          : model.findings.map((finding, index) =>
-              findingRow(t, finding, model.openFinding, index === 0),
-            ),
-      )
+      .children(openRows)
       .children(model.closed.length === 0 ? [] : [closedGroup(t, model)]),
   );
+};
 
 // A detail card item wraps naturally; herdr-ui owns its padding, gap and separator.
 const detailRow = (t: Theme, id: string): Element =>
@@ -655,7 +695,7 @@ const standingCard = (t: Theme, backlog: Backlog, model: PanelModel): Element =>
         card(t, "standing").children(
           entries.length === 0
             ? [emptyRow(t, "standing-empty", "None")]
-            : entries.map((entry, index) =>
+            : pagedRows(t, "standing-yes", entries, model, ROW.list, (entry, index) =>
                 detailRow(t, `standing-${index}`)
                   .when(index === 0, (row) => row.border_t(0))
                   .child(div().child(entry.text))
@@ -692,7 +732,7 @@ const domainBody = (t: Theme, domain: string, doc: DocumentState, model: PanelMo
     .gap(PANEL.sectionGap)
     .child(focusHeader(t, doc.backlog.focus))
     .child(itemsCard(t, model))
-    .children(unfiledCard(t, model.delegates.unfiled))
+    .children(unfiledCard(t, model.delegates.unfiled, model))
     .child(findingsCard(t, model))
     .child(standingCard(t, doc.backlog, model))
     .child(boundaryCard(t, doc.backlog));
@@ -746,7 +786,7 @@ const listingBody = (t: Theme, listing: ListingState, model: PanelModel): Elemen
   return cardSection(
     cardHeader(t, "domains-header", "Domains"),
     card(t, "domains").children(
-      listing.domains.map((row, index) =>
+      pagedRows(t, "domains", listing.domains, model, ROW.list, (row, index) =>
         domainRow(t, row, (cx) => model.openDomain(row.domain, cx), index === 0),
       ),
     ),

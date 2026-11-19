@@ -1221,3 +1221,166 @@ test("names the shown domain at the right end of the tool bar, dim and truncatin
   ]);
   expect(text(name)).toBe("alpha");
 });
+
+test("reveals item rows ten at a time and resets pagination when the domain changes", async () => {
+  const manyItems = (domain: string, count: number) => {
+    let backlog = emptyBacklog(domain, null);
+    for (let index = 1; index <= count; index++) backlog = add(backlog, `Work ${index}`);
+    return backlog;
+  };
+  focusDomain("alpha");
+  host.files.set(DOC, JSON.stringify(manyItems("alpha", 25)));
+  host.files.set(`${STATE}/backlogs/beta.json`, JSON.stringify(manyItems("beta", 15)));
+  const { ctx, render } = await mount();
+  let root = render();
+  expect([ids(root, "item-").length, ids(root, "load-more-")]).toEqual([
+    10,
+    ["load-more-group-open"],
+  ]);
+  get(root, "load-more-group-open").click!({}, ctx.cx);
+  root = render();
+  expect([ids(root, "item-").length, ids(root, "load-more-")]).toEqual([
+    20,
+    ["load-more-group-open"],
+  ]);
+  get(root, "load-more-group-open").click!({}, ctx.cx);
+  root = render();
+  expect([ids(root, "item-").length, ids(root, "load-more-")]).toEqual([25, []]);
+
+  focusDomain("beta");
+  ctx.tick(1_000);
+  await settle();
+  expect([ids(render(), "item-").length, ids(render(), "load-more-")]).toEqual([
+    10,
+    ["load-more-group-open"],
+  ]);
+  focusDomain("alpha");
+  ctx.tick(1_000);
+  await settle();
+  expect([ids(render(), "item-").length, ids(render(), "load-more-")]).toEqual([
+    10,
+    ["load-more-group-open"],
+  ]);
+});
+
+test("paginates open and closed findings independently", async () => {
+  let backlog = emptyBacklog("alpha", null);
+  for (let index = 1; index <= 25; index++) backlog = find(backlog, "issue", `Finding ${index}`);
+  const allIds = backlog.findings.map((finding) => finding.id);
+  const closedIds = allIds.slice(0, 12).map((id) => `finding-${id}`);
+  for (const id of allIds.slice(0, 12)) {
+    const closed = closeFinding(backlog, {
+      id,
+      outcome: "fixed",
+      dismissed: false,
+      now: NOW,
+    });
+    if (!closed.ok) throw new Error(closed.reason);
+    backlog = closed.backlog;
+  }
+  const openIds = allIds.slice(12).map((id) => `finding-${id}`);
+  focusDomain("alpha");
+  host.files.set(DOC, JSON.stringify(backlog));
+  const { ctx, render } = await mount();
+  let root = render();
+  const shownOpen = () => ids(root, "finding-").filter((id) => openIds.includes(id));
+  const shownClosed = () => ids(root, "finding-").filter((id) => closedIds.includes(id));
+  expect([shownOpen().length, shownClosed().length, ids(root, "load-more-")]).toEqual([
+    10,
+    10,
+    ["load-more-findings-open", "load-more-group-findings-closed"],
+  ]);
+
+  get(root, "load-more-findings-open").click!({}, ctx.cx);
+  root = render();
+  expect([shownOpen().length, shownClosed().length, ids(root, "load-more-")]).toEqual([
+    13,
+    10,
+    ["load-more-group-findings-closed"],
+  ]);
+  get(root, "group-findings-closed-toggle").click!({}, ctx.cx);
+  root = render();
+  get(root, "load-more-group-findings-closed").click!({}, ctx.cx);
+  root = render();
+  expect([shownOpen().length, shownClosed().length, ids(root, "load-more-")]).toEqual([13, 12, []]);
+});
+
+test("paginates Unfiled delegates while preserving nested rows", async () => {
+  focusDomain("alpha");
+  host.terminals.push(
+    ...Array.from({ length: 9 }, (_, index) => agent(`t${index + 2}`, `s${index + 2}`, "idle")),
+    agent("t11", "s11", "idle"),
+    agent("t12", "s12", "working", { parent: "t11" }),
+  );
+  host.files.set(DOC, JSON.stringify(emptyBacklog("alpha", null)));
+  const { ctx, render } = await mount();
+  let root = render();
+  expect([ids(get(root, "unfiled"), "term-").length, ids(root, "load-more-")]).toEqual([
+    10,
+    ["load-more-unfiled"],
+  ]);
+  get(root, "load-more-unfiled").click!({}, ctx.cx);
+  root = render();
+  expect([ids(get(root, "unfiled"), "term-").length, ids(root, "load-more-")]).toEqual([11, []]);
+});
+
+test("paginates Standing yes entries ten at a time", async () => {
+  focusDomain("alpha");
+  host.files.set(
+    DOC,
+    JSON.stringify({
+      ...emptyBacklog("alpha", null),
+      standingYes: Array.from({ length: 12 }, (_, index) => ({
+        text: `Decision ${index + 1}`,
+        at: NOW,
+      })),
+    }),
+  );
+  const { ctx, render } = await mount();
+  get(render(), "standing-header").click!({}, ctx.cx);
+  let root = render();
+  const standingRows = () => ids(root, "standing-").filter((id) => id !== "standing-header");
+  expect([standingRows().length, ids(root, "load-more-")]).toEqual([
+    10,
+    ["load-more-standing-yes"],
+  ]);
+  get(root, "load-more-standing-yes").click!({}, ctx.cx);
+  root = render();
+  expect([standingRows().length, ids(root, "load-more-")]).toEqual([12, []]);
+});
+
+test("paginates the Domains listing ten rows at a time", async () => {
+  for (let index = 1; index <= 12; index++) {
+    const domain = `domain-${index}`;
+    host.files.set(`${STATE}/backlogs/${domain}.json`, JSON.stringify(emptyBacklog(domain, null)));
+  }
+  const { ctx, render } = await mount();
+  let root = render();
+  expect([ids(root, "domain-").length, ids(root, "load-more-")]).toEqual([
+    10,
+    ["load-more-domains"],
+  ]);
+  get(root, "load-more-domains").click!({}, ctx.cx);
+  root = render();
+  expect([ids(root, "domain-").length, ids(root, "load-more-")]).toEqual([12, []]);
+});
+
+test("paginates the Done status group ten rows at a time", async () => {
+  let backlog = emptyBacklog("alpha", null);
+  for (let index = 1; index <= 12; index++) {
+    backlog = add(backlog, `Work ${index}`);
+    backlog = close(backlog, `i${index}`, false);
+  }
+  focusDomain("alpha");
+  host.files.set(DOC, JSON.stringify(backlog));
+  const { ctx, render } = await mount();
+  get(render(), "group-done-toggle").click!({}, ctx.cx);
+  let root = render();
+  expect([ids(root, "item-").length, ids(root, "load-more-")]).toEqual([
+    10,
+    ["load-more-group-done"],
+  ]);
+  get(root, "load-more-group-done").click!({}, ctx.cx);
+  root = render();
+  expect([ids(root, "item-").length, ids(root, "load-more-")]).toEqual([12, []]);
+});
