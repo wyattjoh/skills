@@ -26,6 +26,17 @@ export const L = {
 export class Refused extends Schema.TaggedError<Refused>()("Refused", { message: Schema.String }) {}
 
 /**
+ * Refuse a name that cannot be a domain: it names files under the state folder and Herdr labels.
+ * @param domain Candidate name.
+ */
+export const checkDomainName = Effect.fn("checkDomainName")(function* (domain: string) {
+  if (!/^[a-z0-9][a-z0-9._-]*$/.test(domain))
+    return yield* new Refused({
+      message: `${domain} is not a domain name: lowercase letters, digits, . _ -`,
+    });
+});
+
+/**
  * One delegate: a live agent terminal the domain owns.
  */
 export type Delegate = {

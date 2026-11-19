@@ -89,6 +89,7 @@ The CLI is the backlog's only writer; it validates, locks and writes atomically,
 | A running session filed, unfiled   | `item attach <id> <delegate>`, `item detach <id> <delegate>` (name or address)                                                                          |
 | Done or dismissed                  | `item close <id> --outcome "<one line>"` (`--dismissed`)                                                                                                |
 | Standing yes, Boundary, focus      | `backlog standing add`, `backlog boundary add\|rm`, `backlog focus`                                                                                     |
+| The domain renamed                 | `backlog rename <new>` (`--domain <old>` from any terminal); refused while it has a live delegate or watcher                                            |
 | A finding opened or closed         | `finding add --kind issue\|opportunity "<title>"`, `finding close <id> --outcome ...`                                                                   |
 
 Every command takes `--json`; `--help` has the flags. Read it back with `coordinate backlog show` (`--json` for the document). Fields, statuses and invariants: [backlog.md](references/backlog.md).

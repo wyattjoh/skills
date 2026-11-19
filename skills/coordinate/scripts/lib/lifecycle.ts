@@ -8,6 +8,7 @@ import { documentPath } from "./backlog-store/paths.ts";
 import type { Config } from "./config.ts";
 import {
   backlogPath,
+  checkDomainName,
   coordinators,
   L,
   callerRole,
@@ -52,10 +53,7 @@ export const start = Effect.fn("start")(function* (
   domain: string,
   env: Record<string, string | undefined> = process.env,
 ) {
-  if (!/^[a-z0-9][a-z0-9._-]*$/.test(domain))
-    return yield* new Refused({
-      message: `${domain} is not a domain name: lowercase letters, digits, . _ -`,
-    });
+  yield* checkDomainName(domain);
   const address = env.HC_TERMINAL_ID;
   if (!address)
     return yield* new Refused({

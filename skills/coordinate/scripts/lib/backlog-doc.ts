@@ -60,14 +60,14 @@ const parse = (path: string, json: string): Backlog => {
 };
 
 /**
- * Write the document durably: a temp file in the same folder, fsync, rename, then fsync the folder.
+ * Write a file durably: a temp file in the same folder, fsync, rename, then fsync the folder.
  */
-const commit = async (path: string, backlog: Backlog): Promise<void> => {
+const commitText = async (path: string, text: string): Promise<void> => {
   const dir = join(path, "..");
   const temp = join(dir, `.${randomUUID()}.tmp`);
   const file = await open(temp, "wx", 0o600);
   try {
-    await file.writeFile(`${JSON.stringify(backlog, null, 2)}\n`);
+    await file.writeFile(text);
     await file.sync();
   } finally {
     await file.close();
@@ -80,6 +80,9 @@ const commit = async (path: string, backlog: Backlog): Promise<void> => {
     await parent.close();
   }
 };
+
+const commit = (path: string, backlog: Backlog): Promise<void> =>
+  commitText(path, `${JSON.stringify(backlog, null, 2)}\n`);
 
 /**
  * The domain's append-only archive of closed records, one JSON record per line.
@@ -141,9 +144,10 @@ const recoverDeadWriter = async (lock: string): Promise<void> => {
 };
 
 /**
- * Run an operation holding the domain's exclusive write lock (a directory next to the document).
+ * Take the domain's exclusive write lock (a directory next to the document).
+ * @returns The lock directory, for `dropLock`.
  */
-const locked = async <A>(path: string, timeoutMs: number, operation: () => Promise<A>) => {
+const takeLock = async (path: string, timeoutMs: number): Promise<string> => {
   const lock = path.replace(/\.json$/, ".lock");
   await mkdir(join(path, ".."), { recursive: true });
   const deadline = Date.now() + timeoutMs;
@@ -177,10 +181,27 @@ const locked = async <A>(path: string, timeoutMs: number, operation: () => Promi
     } finally {
       await file.close();
     }
+  } catch (error) {
+    await dropLock(lock);
+    throw error;
+  }
+  return lock;
+};
+
+const dropLock = async (lock: string): Promise<void> => {
+  await unlink(join(lock, "owner.json")).catch(() => undefined);
+  await rmdir(lock);
+};
+
+/**
+ * Run an operation holding the domain's exclusive write lock.
+ */
+const locked = async <A>(path: string, timeoutMs: number, operation: () => Promise<A>) => {
+  const lock = await takeLock(path, timeoutMs);
+  try {
     return await operation();
   } finally {
-    await unlink(owner).catch(() => undefined);
-    await rmdir(lock);
+    await dropLock(lock);
   }
 };
 
@@ -188,6 +209,50 @@ const LOCK_TIMEOUT_MS = 5_000;
 
 const failure = (path: string) => (cause: unknown) =>
   new BacklogError({ path, message: cause instanceof Error ? cause.message : String(cause) });
+
+/**
+ * Run an effect holding the backlog locks of several domains. They are taken in name order, so two
+ * callers locking the same pair cannot deadlock, and released in reverse.
+ * @param config Config.
+ * @param domains Domains to lock.
+ * @param effect What to run under the locks.
+ * @returns The effect's value.
+ */
+export const holdingLocks = <A, E, R>(
+  config: Config,
+  domains: readonly string[],
+  effect: Effect.Effect<A, E, R>,
+): Effect.Effect<A, E | BacklogError, R> =>
+  [...new Set(domains)]
+    .toSorted()
+    .reduceRight<Effect.Effect<A, E | BacklogError, R>>((inner, domain) => {
+      const path = documentPath(config.stateDir, domain);
+      return Effect.acquireUseRelease(
+        Effect.tryPromise({ try: () => takeLock(path, LOCK_TIMEOUT_MS), catch: failure(path) }),
+        () => inner,
+        (lock) => Effect.promise(() => dropLock(lock)),
+      );
+    }, effect);
+
+/**
+ * Write a file with the backlog's atomic write (temp file, fsync, rename). The caller holds the lock.
+ * @param path File.
+ * @param text Contents.
+ */
+export const writeAtomic = Effect.fn("writeAtomic")(function* (path: string, text: string) {
+  yield* Effect.tryPromise({ try: () => commitText(path, text), catch: failure(path) });
+});
+
+/**
+ * Write a whole document atomically, validated first. The caller holds the domain's lock.
+ * @param path Document path.
+ * @param backlog Document.
+ */
+export const writeDocument = Effect.fn("writeDocument")(function* (path: string, backlog: Backlog) {
+  const checked = validateBacklog(backlog);
+  if (!checked.ok) return yield* new Refused({ message: checked.errors.join("; ") });
+  yield* Effect.tryPromise({ try: () => commit(path, checked.backlog), catch: failure(path) });
+});
 
 /**
  * Create the domain's document when it is missing. An existing document is left untouched.

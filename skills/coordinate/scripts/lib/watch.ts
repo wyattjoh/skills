@@ -179,7 +179,13 @@ const answeredEvents = (items: readonly Item[], fired: readonly string[] | null)
   };
 };
 
-const statePath = (stateDir: string, domain: string): string =>
+/**
+ * The watcher's snapshot for a domain.
+ * @param stateDir State dir.
+ * @param domain Domain.
+ * @returns Path.
+ */
+export const statePath = (stateDir: string, domain: string): string =>
   join(stateDir, "watch", `${domain}.json`);
 
 const readState = (path: string) =>

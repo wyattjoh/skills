@@ -27,6 +27,7 @@ import { attachDelegate, detachDelegate } from "./lib/attach.ts";
 import { delegate, endDelegate, listIdle, resumeDelegate, sendTo, start } from "./lib/lifecycle.ts";
 import { Proc } from "./lib/proc.ts";
 import { domainRepos, domainStatus } from "./lib/status.ts";
+import { renameDomain } from "./lib/rename.ts";
 import { watch } from "./lib/watch.ts";
 import { context, pruneBranches, pruneEnded, removeMany, renderRows, report } from "./lib/sweep.ts";
 import { mainCheckout } from "./lib/git.ts";
@@ -243,6 +244,20 @@ backlog
       Effect.flatMap(resolveDomain(options.domain), (domain) =>
         showBacklog(config, domain, options.json === true),
       ),
+    ),
+  );
+
+backlog
+  .command("rename")
+  .argument("<new>", "new domain name (lowercase letters, digits, . _ -)")
+  .option("--domain <domain>", "domain to rename (default: this coordinator's label)")
+  .option("--json", "print what moved as JSON")
+  .description(
+    "rename the domain: its backlog, archive, watcher snapshot, ended-delegate records and fleet.domain labels; refused while it has a live delegate or watcher",
+  )
+  .action((to: string, options: { domain?: string; json?: boolean }) =>
+    main((config) =>
+      renameDomain(config, { to, domain: options.domain, json: options.json === true }),
     ),
   );
 
