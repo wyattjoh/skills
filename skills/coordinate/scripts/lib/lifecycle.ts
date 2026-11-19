@@ -1,5 +1,5 @@
 import { existsSync } from "node:fs";
-import { copyFile, mkdir } from "node:fs/promises";
+import { copyFile, mkdir, readFile, rename } from "node:fs/promises";
 import { loadavg, userInfo } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { Effect, Option } from "effect";
@@ -289,11 +289,31 @@ export const delegate = Effect.fn("delegate")(function* (
     const source = resolve(message.path);
     if (!existsSync(source)) return yield* new Refused({ message: `no brief at ${source}` });
     brief = join(cwd, ".scratch", "BRIEF.md");
-    if (real(source) !== real(brief))
-      yield* Effect.promise(async () => {
-        await mkdir(dirname(brief ?? cwd), { recursive: true });
-        await copyFile(source, brief ?? source);
+    const destination = brief;
+    if (real(source) !== real(destination)) {
+      const preserved = yield* Effect.promise(async () => {
+        await mkdir(dirname(destination), { recursive: true });
+        if (existsSync(destination)) {
+          const [incoming, existing] = await Promise.all([readFile(source), readFile(destination)]);
+          if (incoming.equals(existing)) return undefined;
+          const backup = join(
+            dirname(destination),
+            `BRIEF.${Date.now()}.${crypto.randomUUID()}.md`,
+          );
+          await rename(destination, backup);
+          try {
+            await copyFile(source, destination);
+          } catch (error) {
+            await rename(backup, destination);
+            throw error;
+          }
+          return backup;
+        }
+        await copyFile(source, destination);
+        return undefined;
       });
+      if (preserved) lines.push(`preserved existing brief at ${preserved}`);
+    }
     message = { kind: "brief", path: brief };
   }
   const report = brief ? join(cwd, ".scratch", "REPORT.md") : undefined;

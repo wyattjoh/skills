@@ -1,6 +1,6 @@
 # Brief
 
-The brief is what a delegate reads first and the contract you verify against. Write it anywhere (your own `.scratch/` is fine) and pass it with `--brief`; `coordinate delegate` copies it to `<worktree>/.scratch/BRIEF.md` and Git ignores `.scratch/`. The worktree is always `<repo>/.claude/worktrees/<name>`, so you can write its absolute paths before it exists.
+The brief is what a delegate reads first and the contract you verify against. Write it anywhere (your own `.scratch/` is fine) and pass it with `--brief`; `coordinate delegate` copies it to `<worktree>/.scratch/BRIEF.md`. A different existing brief there is moved beside it under a unique name and that path is printed; byte-identical briefs need no backup. Git ignores `.scratch/`. The worktree is always `<repo>/.claude/worktrees/<name>`, so you can write its absolute paths before it exists.
 
 Fill every required heading. Include Child review only when the user requested it. Quote the user where they decided something, so the delegate neither asks again nor widens it.
 

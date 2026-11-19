@@ -1,5 +1,5 @@
 import { afterAll, afterEach, beforeEach, describe, expect, it } from "bun:test";
-import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { Effect } from "effect";
 import { BacklogError, itemAdd, itemClose } from "./backlog-doc.ts";
@@ -195,6 +195,51 @@ describe("delegate --item", () => {
         report: "",
       },
     ]);
+  });
+
+  it("preserves a different existing --cwd brief before copying the new brief", async () => {
+    const { state, cfg } = await started();
+    const scratch = join(state, ".scratch");
+    mkdirSync(scratch, { recursive: true });
+    const existing = join(scratch, "BRIEF.md");
+    const incoming = join(state, "incoming-brief.md");
+    writeFileSync(existing, "# existing\n");
+    writeFileSync(incoming, "# incoming\n");
+    const fake = fakeProc(herdrAnswers(COORDINATOR));
+    const lines = await runWith(
+      delegate(
+        cfg,
+        options({ cwd: state, item: "i1", message: { kind: "brief", path: incoming } }),
+      ),
+      fake.layer,
+    );
+    const prefix = "preserved existing brief at ";
+    const preservedLine = lines[0] ?? "";
+    expect(preservedLine.startsWith(prefix)).toBe(true);
+    const preserved = preservedLine.slice(prefix.length);
+    expect(preserved.startsWith(join(scratch, "BRIEF."))).toBe(true);
+    expect(readFileSync(preserved, "utf8")).toBe("# existing\n");
+    expect(readFileSync(existing, "utf8")).toBe("# incoming\n");
+  });
+
+  it("does not move an existing --cwd brief with identical content", async () => {
+    const { state, cfg } = await started();
+    const scratch = join(state, ".scratch");
+    mkdirSync(scratch, { recursive: true });
+    const existing = join(scratch, "BRIEF.md");
+    const incoming = join(state, "incoming-brief.md");
+    writeFileSync(existing, "# same\n");
+    writeFileSync(incoming, "# same\n");
+    const fake = fakeProc(herdrAnswers(COORDINATOR));
+    await runWith(
+      delegate(
+        cfg,
+        options({ cwd: state, item: "i1", message: { kind: "brief", path: incoming } }),
+      ),
+      fake.layer,
+    );
+    expect(readdirSync(scratch)).toEqual(["BRIEF.md"]);
+    expect(readFileSync(existing, "utf8")).toBe("# same\n");
   });
 
   it("refuses --item when a delegate starts a child", async () => {
