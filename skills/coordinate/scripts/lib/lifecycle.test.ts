@@ -121,6 +121,7 @@ describe("delegate", () => {
         space: true,
         domain: "app",
         item: undefined,
+        overBudget: false,
       }),
       fake.layer,
     );
@@ -186,6 +187,7 @@ describe("delegate", () => {
         space: true,
         domain: "app",
         item: undefined,
+        overBudget: false,
       }),
       fake.layer,
     );
@@ -278,6 +280,7 @@ describe("launch parent", () => {
                 space: ownSpace,
                 domain: caller.role === "coordinator" ? undefined : "app",
                 item: caller.role === "coordinator" ? "i1" : undefined,
+                overBudget: false,
               }),
               fake.layer,
             );

@@ -1,6 +1,6 @@
 import { existsSync } from "node:fs";
 import { copyFile, mkdir } from "node:fs/promises";
-import { userInfo } from "node:os";
+import { loadavg, userInfo } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { Effect, Option } from "effect";
 import {
@@ -114,6 +114,7 @@ export type DelegateOptions = {
    * Item to file the delegate under: required from a coordinator, refused from a delegate.
    */
   item: string | undefined;
+  overBudget: boolean;
 };
 
 /**
@@ -196,9 +197,14 @@ const launch = Effect.fn("launch")(function* (spec: {
  * Create the worktree, copy the brief, and start a delegate.
  * @param config Config.
  * @param options Delegate options.
+ * @param readLoadAverage Read the 1-minute load average, injectable for tests.
  * @returns Lines to print.
  */
-export const delegate = Effect.fn("delegate")(function* (config: Config, options: DelegateOptions) {
+export const delegate = Effect.fn("delegate")(function* (
+  config: Config,
+  options: DelegateOptions,
+  readLoadAverage: () => number = () => loadavg()[0] ?? 0,
+) {
   if (!hc.TERMINAL_NAME.test(options.name))
     return yield* new Refused({
       message: `${options.name} is not a terminal name: 1 to 32 of a-z, 0-9, - and _`,
@@ -229,13 +235,31 @@ export const delegate = Effect.fn("delegate")(function* (config: Config, options
     coordinator?.domain ??
     (yield* new Refused({ message: "no coordinator label on this terminal; pass --domain" }));
   if (options.item !== undefined) yield* checkFileable(config, domain, options.item);
-  const taken = (yield* hc.list()).find((terminal) => terminal.name === options.name);
+  const terminals = yield* hc.list();
+  const taken = terminals.find((terminal) => terminal.name === options.name);
   if (taken)
     return yield* new Refused({
       message: `a live terminal is already named ${options.name} (${taken.address})`,
     });
 
+  let liveDelegates = 0;
+  for (const listed of terminals) {
+    if (!listed.live) continue;
+    const terminal = yield* hc.get(listed.address);
+    if (terminal?.live && terminal.labels[L.domain] && terminal.labels[L.role] !== "coordinator")
+      liveDelegates += 1;
+  }
+
+  const load = readLoadAverage();
   const lines: string[] = [];
+  if (load > config.cores)
+    lines.push(
+      `warning: 1-minute load average ${load} exceeds ${config.cores} cores; native gates may be slow`,
+    );
+  if (coordinator !== undefined && liveDelegates >= config.maxFleetDelegates && !options.overBudget)
+    return yield* new Refused({
+      message: `fleet has ${liveDelegates} live delegates (budget ${config.maxFleetDelegates}); refusing ${options.name} for item ${options.item ?? "?"}; pass --over-budget to start anyway`,
+    });
   let cwd: string;
   let branch: string | undefined;
   let baseSha: string | undefined;

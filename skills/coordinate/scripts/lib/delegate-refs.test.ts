@@ -3,10 +3,15 @@ import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node
 import { join } from "node:path";
 import { Effect } from "effect";
 import { BacklogError, itemAdd, itemClose } from "./backlog-doc.ts";
-import { resolveConfig } from "./config.ts";
+import { resolveConfig, type Config } from "./config.ts";
 import { failureOf, g, gitAndFake, initRepo, runWith, tempDir } from "./fixture.ts";
 import { writeEnded } from "./fleet.ts";
-import { delegate, type DelegateOptions, resumeDelegate, start } from "./lifecycle.ts";
+import {
+  delegate as startDelegate,
+  type DelegateOptions,
+  resumeDelegate,
+  start,
+} from "./lifecycle.ts";
 import { fakeProc, ok, type RunOutput } from "./proc.ts";
 import { domainStatus } from "./status.ts";
 
@@ -74,6 +79,9 @@ const started = async () => {
   return { state, cfg, path: join(state, "backlogs", "app.json") };
 };
 
+const delegate = (settings: Config, options: DelegateOptions) =>
+  startDelegate(settings, options, () => 0);
+
 const options = (fields: Partial<DelegateOptions>): DelegateOptions => ({
   name: "fix-a",
   task: "fix a",
@@ -87,6 +95,7 @@ const options = (fields: Partial<DelegateOptions>): DelegateOptions => ({
   space: false,
   domain: undefined,
   item: undefined,
+  overBudget: false,
   ...fields,
 });
 

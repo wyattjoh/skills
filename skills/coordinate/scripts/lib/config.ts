@@ -1,4 +1,4 @@
-import { homedir } from "node:os";
+import { availableParallelism, homedir } from "node:os";
 import { join, resolve } from "node:path";
 import { Effect, Schema } from "effect";
 
@@ -20,6 +20,8 @@ export type Config = {
   buildOutput: string[];
   quietHours: number;
   branchPrefix: string;
+  cores: number;
+  maxFleetDelegates: number;
 };
 
 /**
@@ -45,6 +47,7 @@ const ConfigFile = Schema.Struct({
   build_output: Schema.optionalKey(Strings),
   quiet_hours: Schema.optionalKey(Schema.Number),
   branch_prefix: Schema.optionalKey(Schema.String),
+  max_fleet_delegates: Schema.optionalKey(Schema.Number),
 });
 
 const KNOWN_KEYS = new Set([
@@ -57,6 +60,7 @@ const KNOWN_KEYS = new Set([
   "build_output",
   "quiet_hours",
   "branch_prefix",
+  "max_fleet_delegates",
 ]);
 
 /**
@@ -136,7 +140,11 @@ export const configPath = (env: Record<string, string | undefined> = process.env
  * @param path File path, for messages.
  * @returns The config, or a typed error naming the bad key.
  */
-export const resolveConfig = Effect.fn("resolveConfig")(function* (raw: unknown, path: string) {
+export const resolveConfig = Effect.fn("resolveConfig")(function* (
+  raw: unknown,
+  path: string,
+  cores: number = availableParallelism(),
+) {
   if (typeof raw !== "object" || raw === null || Array.isArray(raw))
     return yield* new ConfigError({ path, message: "holds no JSON object" });
   const unknown = Object.keys(raw).filter((key) => !KNOWN_KEYS.has(key) && !RETIRED_KEYS.has(key));
@@ -149,7 +157,17 @@ export const resolveConfig = Effect.fn("resolveConfig")(function* (raw: unknown,
   const file = yield* Schema.decodeUnknownEffect(ConfigFile)(kept).pipe(
     Effect.mapError((error) => new ConfigError({ path, message: error.message })),
   );
+  if (
+    file.max_fleet_delegates !== undefined &&
+    (!Number.isInteger(file.max_fleet_delegates) || file.max_fleet_delegates < 1)
+  )
+    return yield* new ConfigError({
+      path,
+      message: "max_fleet_delegates must be a positive integer",
+    });
   return {
+    cores,
+    maxFleetDelegates: file.max_fleet_delegates ?? Math.max(2, Math.floor(cores / 4)),
     backlogDir: expandHome(file.backlog_dir ?? "~/.config/coordinate/backlogs"),
     // Resolved, so paths built on it by string (backlog-store/paths.ts) never double a slash.
     stateDir: resolve(expandHome(file.state_dir ?? "~/.local/state/coordinate")),

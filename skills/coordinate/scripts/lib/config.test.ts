@@ -3,8 +3,9 @@ import { Effect } from "effect";
 import { DEFAULT_BUILD_OUTPUT, expandHome, resolveConfig } from "./config.ts";
 import { homedir } from "node:os";
 
-const resolve = (raw: unknown) => Effect.runPromise(resolveConfig(raw, "/cfg.json"));
-const fail = (raw: unknown) => Effect.runPromise(Effect.flip(resolveConfig(raw, "/cfg.json")));
+const resolve = (raw: unknown, cores = 8) =>
+  Effect.runPromise(resolveConfig(raw, "/cfg.json", cores));
+const fail = (raw: unknown) => Effect.runPromise(Effect.flip(resolveConfig(raw, "/cfg.json", 8)));
 
 describe("resolveConfig", () => {
   it("fills every default from an empty file", async () => {
@@ -15,6 +16,29 @@ describe("resolveConfig", () => {
     expect(config.buildOutput).toEqual([...DEFAULT_BUILD_OUTPUT]);
     expect(config.quietHours).toBe(24);
     expect(config.branchPrefix).toBe("wyattjoh/");
+    expect(config.cores).toBe(8);
+    expect(config.maxFleetDelegates).toBe(2);
+  });
+
+  it("sets the default fleet delegate budget from the injected core count", async () => {
+    const config = await resolve({}, 16);
+    expect(config.maxFleetDelegates).toBe(4);
+  });
+
+  it("accepts an explicit fleet delegate budget", async () => {
+    const config = await resolve({ max_fleet_delegates: 6 });
+    expect(config.maxFleetDelegates).toBe(6);
+  });
+
+  it("rejects a non-positive or fractional fleet delegate budget", async () => {
+    const invalid = await Promise.all([
+      fail({ max_fleet_delegates: 0 }),
+      fail({ max_fleet_delegates: 1.5 }),
+    ]);
+    expect(invalid.map((error) => error.message)).toEqual([
+      "max_fleet_delegates must be a positive integer",
+      "max_fleet_delegates must be a positive integer",
+    ]);
   });
 
   it("normalises state_dir, so backlog paths built on it have no doubled slash", async () => {

@@ -34,7 +34,7 @@ PR, or land anything: the coordinator integrates when the user names how.
 Stop and report before bumping a version, releasing, messaging a person, changing CI or
 infrastructure, a second round of measurement, and after two failed attempts at the final verification of one check.
 A lock timeout or a model usage-limit error is not a failed attempt: wait and retry.
-<Task-specific stop points, including choices the user still has to make.>
+List only fast checks (format, lint, typecheck, unit tests, bundle). Name native or machine-heavy gates as "coordinator runs at landing"; the coordinator runs each once before landing. Add task-specific stop points, including choices the user still has to make.
 
 ## Child review
 

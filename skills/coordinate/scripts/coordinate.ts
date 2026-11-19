@@ -149,6 +149,7 @@ program
   .option("--args <text>", "arguments after the skill prefix", "")
   .option("--no-space", "open a tab in the coordinator's space instead of a new space")
   .option("--domain <domain>", "domain (default: this coordinator's label)")
+  .option("--over-budget", "start even when the fleet delegate budget is reached")
   .option(
     "--item <id>",
     "item to file the delegate under (required from a coordinator, refused from a delegate)",
@@ -173,6 +174,7 @@ program
         space: boolean;
         domain?: string;
         item?: string;
+        overBudget: boolean;
       },
     ) => {
       if ((options.brief === undefined) === (options.skill === undefined)) {
@@ -199,6 +201,7 @@ program
           space: options.space,
           domain: options.domain,
           item: options.item,
+          overBudget: options.overBudget,
         }),
       );
     },
