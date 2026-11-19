@@ -33,7 +33,14 @@ const liveStatus = async (landed: boolean): Promise<string[]> => {
     resolveConfig({ state_dir: state, backlog_dir: join(state, "backlogs") }, "/c"),
   );
   await runWith(createDocument(config, "app"));
-  await runWith(boundaryAdd(config, "app", { path: repo, adjacent: false, json: false }));
+  await runWith(
+    boundaryAdd(config, "app", {
+      path: repo,
+      adjacent: false,
+      json: false,
+      outsideTerminal: false,
+    }),
+  );
 
   const listed = {
     address: "t2",

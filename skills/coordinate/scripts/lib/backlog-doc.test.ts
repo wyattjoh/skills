@@ -1274,9 +1274,7 @@ const prepared = async () => {
   await runWith(findingAdd(cfg, "app", finding({ from: "i1" })));
   return { state, path };
 };
-const mutations = (state: string): string[][] => [
-  ["backlog", "boundary", "add", state],
-  ["backlog", "boundary", "rm", state, "--adjacent"],
+const mutations = (): string[][] => [
   ["backlog", "standing", "add", "ship it"],
   ["backlog", "focus", "login v2"],
   ["item", "add", "another"],
@@ -1290,8 +1288,8 @@ describe("coordinator-only mutations", () => {
     const { state, path } = await prepared();
     const env = cliEnv(state, { "fleet.domain": "app", "fleet.session": "s-parent" });
     const before = readFileSync(path, "utf8");
-    expect(mutations(state).map((args) => spawn(env, [...args, "--domain", "app"]))).toEqual(
-      mutations(state).map(() => [
+    expect(mutations().map((args) => spawn(env, [...args, "--domain", "app"]))).toEqual(
+      mutations().map(() => [
         1,
         "refused: only a coordinator changes the backlog, and terminal t1 is not labelled as one; a delegate records what it notices with coordinate finding add\n",
       ]),
@@ -1366,7 +1364,7 @@ describe("coordinator-only mutations", () => {
     const before = readFileSync(path, "utf8");
     expect(spawn(outside, ["item", "answer", "i1", "okta"])).toEqual([
       1,
-      "refused: an answer from outside a Herdr terminal names its domain: pass --domain\n",
+      "refused: a backlog change from outside a Herdr terminal names its domain: pass --domain\n",
     ]);
     expect(spawn(outside, ["item", "update", "i1", "--answer", "okta", "--domain", "app"])[0]).toBe(
       2,
@@ -1380,6 +1378,62 @@ describe("coordinator-only mutations", () => {
       read(path).items[0].ask,
       read(path).items[0].decided.map((d: { text: string }) => d.text),
     ]).toEqual([null, ['Re "Which provider?": -none-']]);
+  });
+
+  it("allows boundary edits from outside a terminal with --domain", async () => {
+    const { state, path } = await prepared();
+    const owned = join(dir(), "owned");
+    const adjacent = join(dir(), "adjacent");
+    const missing = join(dir(), "missing");
+    mkdirSync(owned);
+    mkdirSync(adjacent);
+    const { HC_TERMINAL_ID: _unset, ...outside } = cliEnv(state, COORDINATOR);
+
+    expect(spawn(outside, ["backlog", "boundary", "add", owned])).toEqual([
+      1,
+      "refused: a backlog change from outside a Herdr terminal names its domain: pass --domain\n",
+    ]);
+    expect(spawn(outside, ["backlog", "boundary", "rm", owned])).toEqual([
+      1,
+      "refused: a backlog change from outside a Herdr terminal names its domain: pass --domain\n",
+    ]);
+
+    expect(
+      spawn(outside, ["backlog", "boundary", "add", owned, "--domain", "app", "--json"]),
+    ).toEqual([0, `${JSON.stringify({ owned: [owned], adjacent: [] }, null, 2)}\n`]);
+    expect(
+      spawn(outside, [
+        "backlog",
+        "boundary",
+        "add",
+        adjacent,
+        "--adjacent",
+        "--domain",
+        "app",
+        "--json",
+      ]),
+    ).toEqual([0, `${JSON.stringify({ owned: [owned], adjacent: [adjacent] }, null, 2)}\n`]);
+    expect(read(path).boundary).toEqual({ owned: [owned], adjacent: [adjacent] });
+
+    expect(spawn(outside, ["backlog", "boundary", "add", owned, "--domain", "app"])).toEqual([
+      1,
+      `refused: ${owned} is already in the owned Boundary\n`,
+    ]);
+    expect(spawn(outside, ["backlog", "boundary", "add", missing, "--domain", "app"])).toEqual([
+      1,
+      `refused: ${missing} does not exist\n`,
+    ]);
+    expect(
+      spawn(outside, ["backlog", "boundary", "rm", owned, "--domain", "app", "--json"]),
+    ).toEqual([0, `${JSON.stringify({ owned: [], adjacent: [adjacent] }, null, 2)}\n`]);
+    expect(
+      spawn(outside, ["backlog", "boundary", "rm", adjacent, "--domain", "app", "--json"]),
+    ).toEqual([0, `${JSON.stringify({ owned: [], adjacent: [] }, null, 2)}\n`]);
+    expect(read(path).boundary).toEqual({ owned: [], adjacent: [] });
+    expect(spawn(outside, ["backlog", "boundary", "rm", missing, "--domain", "app"])).toEqual([
+      1,
+      `refused: ${missing} is not in the owned Boundary\n`,
+    ]);
   });
 
   it("refuses an answer from a delegate or another non-coordinator terminal, even with --domain", async () => {
@@ -1413,8 +1467,8 @@ describe("coordinator-only mutations", () => {
     const { state, path } = await prepared();
     const { HC_TERMINAL_ID: _unset, ...outside } = cliEnv(state, COORDINATOR);
     const before = readFileSync(path, "utf8");
-    expect(mutations(state).map((args) => spawn(outside, [...args, "--domain", "app"])[0])).toEqual(
-      mutations(state).map(() => 2),
+    expect(mutations().map((args) => spawn(outside, [...args, "--domain", "app"])[0])).toEqual(
+      mutations().map(() => 2),
     );
     expect(readFileSync(path, "utf8")).toBe(before);
   });

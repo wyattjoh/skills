@@ -55,7 +55,7 @@ const tagged = (error: unknown) =>
     ? { tag: error.constructor.name, message: error.message }
     : { tag: "none", message: String(error) };
 const add = (cfg: Awaited<ReturnType<typeof config>>, path: string, adjacent = false) =>
-  runWith(boundaryAdd(cfg, "app", { path, adjacent, json: false }));
+  runWith(boundaryAdd(cfg, "app", { path, adjacent, json: false, outsideTerminal: false }));
 
 describe("backlog boundary", () => {
   it("adds owned and adjacent paths to separate lists, resolved and deduplicated", async () => {
@@ -69,7 +69,12 @@ describe("backlog boundary", () => {
       JSON.parse(
         (
           await runWith(
-            boundaryAdd(cfg, "app", { path: join(state, ".."), adjacent: true, json: true }),
+            boundaryAdd(cfg, "app", {
+              path: join(state, ".."),
+              adjacent: true,
+              json: true,
+              outsideTerminal: false,
+            }),
           )
         ).join("\n"),
       ),
@@ -99,7 +104,12 @@ describe("backlog boundary", () => {
     const root = dir();
     const before = readFileSync(path, "utf8");
     const error = await failureOf(
-      boundaryAdd(cfg, "app", { path: given(root), adjacent: false, json: false }),
+      boundaryAdd(cfg, "app", {
+        path: given(root),
+        adjacent: false,
+        json: false,
+        outsideTerminal: false,
+      }),
     );
     expect(tagged(error)).toEqual({ tag: "Refused", message: message(root) });
     expect(readFileSync(path, "utf8")).toBe(before);
@@ -110,7 +120,12 @@ describe("backlog boundary", () => {
     const repo = dir();
     await add(cfg, repo, true);
     const error = await failureOf(
-      boundaryAdd(cfg, "app", { path: repo, adjacent: false, json: false }),
+      boundaryAdd(cfg, "app", {
+        path: repo,
+        adjacent: false,
+        json: false,
+        outsideTerminal: false,
+      }),
     );
     expect(tagged(error)).toEqual({
       tag: "Refused",
@@ -127,7 +142,14 @@ describe("backlog boundary", () => {
     await add(cfg, gone);
     rmSync(gone, { recursive: true });
     expect(
-      await runWith(boundaryRm(cfg, "app", { path: `${gone}/`, adjacent: false, json: false })),
+      await runWith(
+        boundaryRm(cfg, "app", {
+          path: `${gone}/`,
+          adjacent: false,
+          json: false,
+          outsideTerminal: false,
+        }),
+      ),
     ).toEqual([`owned: removed ${gone}`]);
     expect(read(path).boundary).toEqual({ owned: [keep], adjacent: [] });
   });
@@ -137,7 +159,12 @@ describe("backlog boundary", () => {
     const repo = dir();
     await add(cfg, repo);
     const error = await failureOf(
-      boundaryRm(cfg, "app", { path: repo, adjacent: true, json: false }),
+      boundaryRm(cfg, "app", {
+        path: repo,
+        adjacent: true,
+        json: false,
+        outsideTerminal: false,
+      }),
     );
     expect(tagged(error)).toEqual({
       tag: "Refused",

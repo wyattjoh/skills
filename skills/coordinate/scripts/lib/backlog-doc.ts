@@ -490,13 +490,13 @@ const normalizeBoundary = (path: string, home: string = homedir()): string => {
  * `coordinate backlog boundary add`: add an existing path to the owned (or adjacent) Boundary.
  * @param config Config.
  * @param domain Domain.
- * @param input Path, `--adjacent`, `--json`.
+ * @param input Path, `--adjacent`, `--json`, and whether the caller is outside a Herdr terminal.
  * @returns Lines to print.
  */
 export const boundaryAdd = Effect.fn("boundaryAdd")(function* (
   config: Config,
   domain: string,
-  input: { path: string; adjacent: boolean; json: boolean },
+  input: { path: string; adjacent: boolean; json: boolean; outsideTerminal: boolean },
 ) {
   const path = normalizeBoundary(input.path);
   const list: BoundaryList = input.adjacent ? "adjacent" : "owned";
@@ -505,7 +505,10 @@ export const boundaryAdd = Effect.fn("boundaryAdd")(function* (
   let boundary: Backlog["boundary"] | undefined;
   const result = yield* change(config, domain, (backlog) => {
     const applied = addBoundary(backlog, { path, list });
-    if (applied.ok) boundary = applied.backlog.boundary;
+    if (!applied.ok) return applied;
+    if (input.outsideTerminal && !applied.value.added)
+      return { ok: false as const, reason: `${path} is already in the ${list} Boundary` };
+    boundary = applied.backlog.boundary;
     return applied;
   });
   if (input.json) return json(boundary);
@@ -516,19 +519,26 @@ export const boundaryAdd = Effect.fn("boundaryAdd")(function* (
  * `coordinate backlog boundary rm`: remove a path from the owned (or adjacent) Boundary.
  * @param config Config.
  * @param domain Domain.
- * @param input Path, `--adjacent`, `--json`.
+ * @param input Path, `--adjacent`, `--json`, and whether the caller is outside a Herdr terminal.
  * @returns Lines to print.
  */
 export const boundaryRm = Effect.fn("boundaryRm")(function* (
   config: Config,
   domain: string,
-  input: { path: string; adjacent: boolean; json: boolean },
+  input: { path: string; adjacent: boolean; json: boolean; outsideTerminal: boolean },
 ) {
   const path = normalizeBoundary(input.path);
   const list: BoundaryList = input.adjacent ? "adjacent" : "owned";
   let boundary: Backlog["boundary"] | undefined;
   yield* change(config, domain, (backlog) => {
-    const applied = removeBoundary(backlog, { path, list });
+    const other: BoundaryList = list === "owned" ? "adjacent" : "owned";
+    const selected =
+      input.outsideTerminal &&
+      !backlog.boundary[list].includes(path) &&
+      backlog.boundary[other].includes(path)
+        ? other
+        : list;
+    const applied = removeBoundary(backlog, { path, list: selected });
     if (applied.ok) boundary = applied.backlog.boundary;
     return applied;
   });

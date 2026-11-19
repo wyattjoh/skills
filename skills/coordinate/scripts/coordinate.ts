@@ -546,11 +546,12 @@ const boundaryAddCommand = Command.make(
   },
   (options) =>
     execute((config) =>
-      Effect.flatMap(coordinatorDomain(Option.getOrUndefined(options.domain)), (domain) =>
+      Effect.flatMap(answerDomain(Option.getOrUndefined(options.domain)), (domain) =>
         boundaryAdd(config, domain, {
           path: options.path,
           adjacent: options.adjacent,
           json: options.json,
+          outsideTerminal: !process.env.HC_TERMINAL_ID,
         }),
       ),
     ),
@@ -571,11 +572,12 @@ const boundaryRmCommand = Command.make(
   },
   (options) =>
     execute((config) =>
-      Effect.flatMap(coordinatorDomain(Option.getOrUndefined(options.domain)), (domain) =>
+      Effect.flatMap(answerDomain(Option.getOrUndefined(options.domain)), (domain) =>
         boundaryRm(config, domain, {
           path: options.path,
           adjacent: options.adjacent,
           json: options.json,
+          outsideTerminal: !process.env.HC_TERMINAL_ID,
         }),
       ),
     ),
@@ -762,7 +764,7 @@ const itemAnswerCommand = Command.make(
     ),
 ).pipe(
   Command.withDescription(
-    "record the user's answer to an item's ask, as item update --answer does; the one change allowed outside a Herdr terminal, such as from the Backlog panel",
+    "record the user's answer to an item's ask, as item update --answer does; this and backlog boundary add/rm are allowed outside a Herdr terminal with --domain",
   ),
 );
 
