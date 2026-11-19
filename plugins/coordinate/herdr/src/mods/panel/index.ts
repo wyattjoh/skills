@@ -16,6 +16,7 @@ import {
   closedFindings,
   chosenAnswer,
   configPath,
+  countLiveDelegates,
   draftFor,
   draftKey,
   endedDate,
@@ -261,8 +262,16 @@ export default class Panel extends View {
     } catch (error) {
       return { kind: "unreadable", reason: String(error) };
     }
+    const live = terminals();
     const rows = await Promise.all(
-      names.map(async (name) => summarize(name, await this.readDomain(stateDir, name))),
+      names.map(async (name) => {
+        const doc = await this.readDomain(stateDir, name);
+        const agents =
+          doc.kind === "loaded"
+            ? countLiveDelegates(joinDelegates(doc.backlog, live, this.ended, name))
+            : 0;
+        return summarize(name, doc, agents);
+      }),
     );
     return {
       kind: "loaded",

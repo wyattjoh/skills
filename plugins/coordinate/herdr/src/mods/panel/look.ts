@@ -49,10 +49,10 @@ export const FINDING_STATUS_TONES: Readonly<Record<Finding["status"], string>> =
  * reads quiet.
  */
 export const COUNT_TONES = {
+  agents: "ansi4",
   waiting: "blocked",
   delegated: "ansi4",
   open: "foreground",
-  findings: "foreground",
 } as const;
 
 /**

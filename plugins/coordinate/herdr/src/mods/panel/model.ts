@@ -255,24 +255,24 @@ export const parseListing = (stdout: string): string[] =>
     .sort((a, b) => a.localeCompare(b));
 
 /**
- * The counts a listing row shows: items waiting on the user, delegated and open, and open
- * findings.
+ * The counts a listing row shows: live agents and items waiting on the user, delegated and open.
  */
-export type DomainCounts = { waiting: number; delegated: number; open: number; findings: number };
+export type DomainCounts = { agents: number; waiting: number; delegated: number; open: number };
 
 /**
  * A domain's counts.
  * @param backlog A validated document.
+ * @param agents The number of distinct referenced delegates with a live terminal.
  * @returns The counts.
  */
-export const countDomain = (backlog: Backlog): DomainCounts => {
+export const countDomain = (backlog: Backlog, agents = 0): DomainCounts => {
   const items = (status: ItemStatus) =>
     backlog.items.filter((item) => item.status === status).length;
   return {
+    agents,
     waiting: items("waiting-user"),
     delegated: items("delegated"),
     open: items("open"),
-    findings: backlog.findings.filter((finding) => finding.status === "open").length,
   };
 };
 
@@ -288,10 +288,16 @@ export type DomainSummary =
  * listing leaves the listing.
  * @param domain The domain.
  * @param doc The document's state.
+ * @param agents The number of distinct referenced delegates with a live terminal.
  * @returns The row, or undefined.
  */
-export const summarize = (domain: string, doc: DocumentState): DomainSummary | undefined => {
-  if (doc.kind === "loaded") return { domain, kind: "loaded", counts: countDomain(doc.backlog) };
+export const summarize = (
+  domain: string,
+  doc: DocumentState,
+  agents = 0,
+): DomainSummary | undefined => {
+  if (doc.kind === "loaded")
+    return { domain, kind: "loaded", counts: countDomain(doc.backlog, agents) };
   if (doc.kind === "invalid" || doc.kind === "unreadable")
     return { domain, kind: doc.kind, reason: doc.reason };
   return undefined;
@@ -529,6 +535,19 @@ export const joinDelegates = (
       return [terminalRow(terminal, 0), ...nested(terminal.address, 1)];
     });
   return { byItem, unfiled };
+};
+
+/**
+ * Count each distinct referenced delegate session with a live terminal once.
+ * @param join The joined delegate rows for a domain.
+ * @returns The number of live delegate sessions.
+ */
+export const countLiveDelegates = (join: DelegateJoin): number => {
+  const sessions = new Set<string>();
+  for (const rows of join.byItem.values())
+    for (const row of rows)
+      if (row.source === "ref" && row.state.kind === "live") sessions.add(row.key);
+  return sessions.size;
 };
 
 /**

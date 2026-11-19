@@ -336,9 +336,10 @@ const betaBacklog = (): Backlog => {
   return closed.backlog;
 };
 
-test("lists every domain with its waiting, delegated, open and findings counts", async () => {
+test("lists every domain with only its nonzero waiting, delegated and open counts", async () => {
   focusPlain();
-  host.files.set(DOC, JSON.stringify(everyStatus()));
+  const alpha = everyStatus();
+  host.files.set(DOC, JSON.stringify(alpha));
   host.files.set(`${STATE}/backlogs/beta.json`, JSON.stringify(betaBacklog()));
   const { render } = await mount();
   const root = render();
@@ -346,8 +347,64 @@ test("lists every domain with its waiting, delegated, open and findings counts",
     { command: "sh", args: ["-c", LIST_SCRIPT, "coordinate-panel", `${STATE}/backlogs`] },
   ]);
   expect(ids(root, "domain-")).toEqual(["domain-alpha", "domain-beta"]);
-  expect(text(get(root, "domain-alpha"))).toBe("alpha 1 waiting 1 delegated 2 open 0 findings");
-  expect(text(get(root, "domain-beta"))).toBe("beta 0 waiting 0 delegated 1 open 1 findings");
+  expect(text(get(root, "domain-alpha"))).toBe("alpha 1 waiting 1 delegated 2 open");
+  expect(text(get(root, "domain-beta"))).toBe("beta 1 open");
+});
+
+test("hides count notes when a domain has no counts", async () => {
+  focusPlain();
+  host.files.set(DOC, JSON.stringify(emptyBacklog("alpha", null)));
+  host.files.set(`${STATE}/backlogs/beta.json`, JSON.stringify(emptyBacklog("beta", null)));
+  const { render } = await mount();
+  const root = render();
+  expect(text(get(root, "domain-alpha"))).toBe("alpha");
+  expect(text(get(root, "domain-beta"))).toBe("beta");
+});
+
+test("counts each live delegate once and not unrelated or missing terminals", async () => {
+  focusPlain();
+  const alpha = everyStatus();
+  const ref = alpha.items.find((item) => item.id === "i3")?.delegates[0];
+  if (ref === undefined) throw new Error("Expected alpha to have a delegate ref");
+  host.files.set(
+    DOC,
+    JSON.stringify(
+      add(alpha, "Another delegated item", {
+        status: "delegated",
+        delegates: [ref],
+      }),
+    ),
+  );
+  host.files.set(
+    `${STATE}/backlogs/beta.json`,
+    JSON.stringify(
+      add(emptyBacklog("beta", null), "Beta work", {
+        status: "delegated",
+        delegates: [
+          {
+            name: "impl",
+            session: "s-beta",
+            branch: null,
+            worktree: null,
+            brief: "/b.md",
+            report: "/r.md",
+          },
+        ],
+      }),
+    ),
+  );
+  host.terminals.push(
+    { address: "t2", state: "live", labels: { "fleet.session": "s-1" } },
+    {
+      address: "t3",
+      state: "live",
+      labels: { "fleet.domain": "beta", "fleet.session": "s-unrelated" },
+    },
+  );
+  const { render } = await mount();
+  const root = render();
+  expect(text(get(root, "domain-alpha"))).toBe("alpha 1 agents 1 waiting 2 delegated 2 open");
+  expect(text(get(root, "domain-beta"))).toBe("beta 1 delegated");
 });
 
 test("lists only names the CLI could have written, sorted, whatever order the folder gives", async () => {
@@ -458,7 +515,7 @@ test("names an invalid or unreadable domain in the listing instead of failing it
   const { ctx, render } = await mount();
   const root = render();
   expect(text(get(root, "domain-alpha"))).toBe("alpha Invalid");
-  expect(text(get(root, "domain-beta"))).toBe("beta 0 waiting 0 delegated 1 open 1 findings");
+  expect(text(get(root, "domain-beta"))).toBe("beta 1 open");
   expect(text(get(root, "domain-gamma"))).toBe("gamma Unreadable");
   focusPanel();
   get(root, "domain-alpha").click!({}, ctx.cx);

@@ -849,10 +849,10 @@ const domainBody = (t: Theme, domain: string, doc: DocumentState, model: PanelMo
 };
 
 const COUNT_LABELS = [
+  ["agents", "agents"],
   ["waiting", "waiting"],
   ["delegated", "delegated"],
   ["open", "open"],
-  ["findings", "findings"],
 ] as const;
 
 const domainRow = (
@@ -869,10 +869,8 @@ const domainRow = (
     onClick: (cx) => open(cx),
     trailing:
       row.kind === "loaded"
-        ? COUNT_LABELS.map(([key, label]) =>
-            rowNote(t, `${row.counts[key]} ${label}`).text_color(
-              role(t, row.counts[key] > 0 ? COUNT_TONES[key] : "dim"),
-            ),
+        ? COUNT_LABELS.filter(([key]) => row.counts[key] > 0).map(([key, label]) =>
+            rowNote(t, `${row.counts[key]} ${label}`).text_color(role(t, COUNT_TONES[key])),
           )
         : [
             rowNote(t, row.kind === "invalid" ? "Invalid" : "Unreadable").text_color(
