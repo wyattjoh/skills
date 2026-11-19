@@ -45,7 +45,7 @@ After committing and passing checks, write `<absolute child brief path>`: review
 its own `.scratch/`, no source edits, commits or remote writes. Require a report with findings, checks
 (command, log, exit status), and a ready / needs changes verdict.
 
-From your own terminal, run `coordinate delegate <child name> --domain <domain> --task "<review task>" --repo <absolute repo path> --base <delegate branch> --harness <pi|claude> --model <model> --brief <absolute child brief path>`.
+From your own terminal, run `coordinate delegate <child name> --domain <domain> --task "<review task>" --repo <absolute repo path> --base <delegate branch> --harness <pi|claude> [--model <verified-model>] --brief <absolute child brief path>`. Omit `--model` by default. Never pass a specific model until its availability is verified for the chosen harness; for pi, verify an explicit model ID with `pi --list-models`. An ordinary pi launch omits both `--model` and `--provider` so pi keeps its default `auto` model. Pass an explicit model only for a concrete reason after that check.
 Wait with `hc wait <child terminal address from the "started" line> --timeout <seconds, e.g. 900>`, at most
 <wait count, e.g. 4> times per round. Read the child's report; fix findings and use
 `coordinate send <child name> "<what changed; re-review the delegate branch>"` if needed.
