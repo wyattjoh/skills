@@ -505,7 +505,13 @@ describe("watch --follow", () => {
       let text = "";
       const deadline = Date.now() + 10_000;
       while (text.split("\n").length < 3 && Date.now() < deadline) {
-        const chunk = await reader.read();
+        const chunk = await Promise.race([
+          reader.read(),
+          Bun.sleep(Math.max(0, deadline - Date.now())).then(() => ({
+            done: true as const,
+            value: undefined,
+          })),
+        ]);
         if (chunk.done) break;
         text += new TextDecoder().decode(chunk.value);
       }

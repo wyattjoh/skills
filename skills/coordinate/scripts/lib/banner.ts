@@ -25,5 +25,6 @@ export const watcherBanner = Effect.fn("watcherBanner")(
     if (live.length === 0) return undefined;
     return `watcher for ${domain} is down; arm it (coordinate watch --follow)`;
   },
-  Effect.catch(() => Effect.succeed(undefined)),
+  // Defects too: the banner must never change a command's exit code.
+  Effect.catchCause(() => Effect.succeed(undefined)),
 );

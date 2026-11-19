@@ -195,7 +195,9 @@ export const domainStatus = Effect.fn("domainStatus")(function* (
     const watcher = yield* watcherAlive(config.stateDir, domain);
     lines.push(
       "",
-      watcher ? `watcher running (pid ${watcher})` : "no watcher running: arm coordinate watch",
+      watcher
+        ? `watcher running (pid ${watcher})`
+        : "no watcher running: arm coordinate watch --follow",
     );
   }
   return lines;

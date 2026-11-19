@@ -712,7 +712,7 @@ describe("status --resume", () => {
       "",
       ...(await runWith(showBacklog(cfg, "app", false))),
       "",
-      "no watcher running: arm coordinate watch",
+      "no watcher running: arm coordinate watch --follow",
     ]);
     expect(lines[2]?.split("\n").slice(0, 1)).toEqual(["# app backlog"]);
   });
@@ -748,7 +748,7 @@ describe("status --resume", () => {
       "",
       `no backlog for app at ${join(state, "backlogs", "app.json")}; run coordinate start app`,
       "",
-      "no watcher running: arm coordinate watch",
+      "no watcher running: arm coordinate watch --follow",
     ]);
   });
 });

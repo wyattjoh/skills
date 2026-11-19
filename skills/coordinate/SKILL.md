@@ -20,7 +20,7 @@ Run `coordinate start <domain>`. It labels this terminal, creates the backlog do
 - Run `coordinate backlog show` and read every open item and finding. Set or refresh the domain's focus line with `coordinate backlog focus "<what the domain is doing now>"`. Arm the watcher (below).
 - Report what finished, what waits on the user as self-contained asks, what runs, and what you take next.
 
-After compaction or a restart, run `coordinate status --resume` and arm the watcher again unless a running Monitor still owns it.
+After compaction or a restart, run `coordinate status --resume`; arm the watcher unless it prints `watcher running (pid N)`.
 
 ## Each item
 
@@ -55,7 +55,7 @@ Each ask is self-contained in the reply and on its item: `coordinate item update
 
 Run exactly one watcher per domain and handle every line it prints. It keeps a snapshot, so changes while it was down fire when it is armed again. While no watcher runs and a delegate lives, every `coordinate` command you run says so on stderr (`status` on its first line): arm it at once.
 
-- **Claude Code**: arm it with the Monitor tool, `timeout_ms: 1800000` and the command `bun $SKILL_DIR/scripts/coordinate.ts watch --follow --replace 2>&1`. Each event arrives as its own notification while it keeps running. Monitor stops it after 30 minutes: arm it again on the expiry notice, and whenever it exits.
+- **Claude Code**: arm it with the Monitor tool, `timeout_ms: 1800000` and the command `bun $SKILL_DIR/scripts/coordinate.ts watch --follow --replace 2>&1`. Each event arrives as its own notification while it keeps running. Monitor stops it after 30 minutes: arm it again on the expiry notice, after `blind` or `owner gone`, and after an exit with no line. `stopped` means it was replaced or stopped on purpose: arm it again only when `coordinate status --resume` shows no watcher.
 - **Elsewhere** (pi): run one-shot `watch` unawaited and act on its output when it arrives; it exits on the first events, so arm it again after handling them:
 
   ```js
