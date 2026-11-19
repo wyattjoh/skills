@@ -63,7 +63,9 @@ Whenever you stop, write `<absolute worktree path>/.scratch/REPORT.md` with:
 - made outside the worktree: processes (PID, port), folders, simulators, other worktrees,
   each with how to remove it, or "nothing"
 
-Then end your turn with the same summary, so the coordinator's watcher fires.
+Then run `coordinate notify "<name>: <status>, report at <absolute worktree path>/.scratch/REPORT.md"`
+to wake the coordinator, and end your turn with the same summary. A refused or failed notify does not
+stop you ending the turn: the coordinator's watcher still fires.
 ```
 
 When the user named an integration for this task up front (say, "push and open a PR when green"), replace the first stop-point paragraph with that instruction in their words.

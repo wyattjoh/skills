@@ -5,7 +5,7 @@ import { Effect } from "effect";
 import { createDocument, itemAdd, itemClose, itemUpdate } from "./backlog-doc.ts";
 import { emptyBacklog, type ItemUpdate } from "./backlog-store/ops.ts";
 import { resolveConfig } from "./config.ts";
-import { runWith, tempDir } from "./fixture.ts";
+import { cliEnv, runWith, tempDir } from "./fixture.ts";
 import { fakeProc, ok, type RunOutput } from "./proc.ts";
 import { delegateEvents, prEvents, statusBeat, watch } from "./watch.ts";
 import { acquireLock, lockPath, releaseLock } from "./watch-lock.ts";
@@ -175,6 +175,8 @@ describe("watch", () => {
         owner: undefined,
         replace: false,
         today: () => "2026-11-16",
+        follow: false,
+        emit: () => undefined,
       }),
       fake.layer,
     );
@@ -245,6 +247,8 @@ const dueDomain = async () => {
         owner: undefined,
         replace: false,
         today: () => today,
+        follow: false,
+        emit: () => undefined,
       }),
       fakeProc(quietHc).layer,
     );
@@ -372,6 +376,8 @@ describe("watch answered events", () => {
         owner: undefined,
         replace: false,
         today: () => "2026-11-10",
+        follow: false,
+        emit: () => undefined,
       }),
       fakeProc(quietHc).layer,
     );
@@ -381,5 +387,137 @@ describe("watch answered events", () => {
     await runWith(itemUpdate(config, "app", ask("Retry now?")));
     await runWith(itemUpdate(config, "app", update("i1", { answer: "yes" })));
     expect(await arm("2026-11-10")).toEqual(['answered i1 Fix login: Re "Retry now?": yes']);
+  });
+});
+
+describe("watch --follow", () => {
+  it("emits each tick's events without exiting, then stops once its owner is gone", async () => {
+    const state = tempDir();
+    made.push(state);
+    const config = await Effect.runPromise(
+      resolveConfig({ state_dir: state, backlog_dir: join(state, "backlogs") }, "/c"),
+    );
+    mkdirSync(join(state, "backlogs"), { recursive: true });
+    writeFileSync(join(state, "backlogs", "app.json"), JSON.stringify(emptyBacklog("app", null)));
+    mkdirSync(join(state, "watch"), { recursive: true });
+    writeFileSync(
+      join(state, "watch", "app.json"),
+      JSON.stringify({
+        delegates: { t2: { name: "fix-a", status: "working", turn: 4 } },
+        prs: {},
+        due: [],
+      }),
+    );
+    // One tick per members listing: settle, then block, then no change while the owner goes.
+    const ticks = [
+      { status: "idle", turn: 5 },
+      { status: "blocked", turn: 5 },
+      { status: "blocked", turn: 5 },
+    ];
+    let tick = 0;
+    const fake = fakeProc((argv) => {
+      if (argv[1] === "ls" && argv.includes("fleet.role=coordinator"))
+        return ok('{"terminals":[]}');
+      if (argv[1] === "ls") {
+        const now = ticks[Math.min(tick, ticks.length - 1)];
+        tick += 1;
+        return ok(
+          JSON.stringify({
+            terminals: [
+              { address: "t2", name: "fix-a", state: "live", cwd: "/nonexistent", ...now },
+            ],
+          }),
+        );
+      }
+      if (argv[1] === "get" && argv[2] === "t1")
+        return tick < 3
+          ? ok(JSON.stringify({ address: "t1", state: "live" }))
+          : { exitCode: 1, stdout: "", stderr: '{"error":{"kind":"not_found","message":"gone"}}' };
+      return ok("");
+    });
+    const emitted: string[] = [];
+    const returned = await runWith(
+      watch(config, {
+        domain: "app",
+        intervalMs: 5,
+        forgeIntervalMs: 60_000,
+        maxMs: 0,
+        owner: "t1",
+        replace: false,
+        today: () => "2026-11-16",
+        follow: true,
+        emit: (line) => emitted.push(line),
+      }),
+      fake.layer,
+    );
+    expect(returned).toEqual([]);
+    expect(emitted).toEqual([
+      "settled fix-a (t2): read its REPORT.md, verify, then report",
+      "status: 1 idle; give the user a short status in your next reply",
+      "blocked fix-a (t2): a dialog or question; read it with hc read t2",
+      "owner gone: t1 no longer runs; nothing will read these events",
+    ]);
+    expect(JSON.parse(readFileSync(join(state, "watch", "app.json"), "utf8")).delegates).toEqual({
+      t2: { name: "fix-a", status: "blocked", turn: 5 },
+    });
+    expect(existsSync(lockPath(state, "app"))).toBe(false);
+  });
+
+  it("emits blind once herdr-core fails three times, and returns", async () => {
+    const { config } = await dueDomain();
+    const emitted: string[] = [];
+    const fake = fakeProc(() => ({ exitCode: 1, stdout: "", stderr: "down" }));
+    expect(
+      await runWith(
+        watch(config, {
+          domain: "app",
+          intervalMs: 5,
+          forgeIntervalMs: 60_000,
+          maxMs: 0,
+          owner: undefined,
+          replace: false,
+          today: () => "2026-11-10",
+          follow: true,
+          emit: (line) => emitted.push(line),
+        }),
+        fake.layer,
+      ),
+    ).toEqual([]);
+    expect(emitted).toEqual(["blind: herdr-core unreadable 3 times: down; re-arm the watcher"]);
+  });
+
+  it("prints a line to stdout while the CLI keeps running", async () => {
+    const { config } = await dueDomain();
+    const state = config.stateDir;
+    await runWith(itemUpdate(config, "app", ask("Which login provider?")));
+    const env = cliEnv(state, { "fleet.role": "coordinator", "fleet.domain": "app" });
+    const cli = join(import.meta.dir, "..", "coordinate.ts");
+    const child = Bun.spawn(
+      ["bun", cli, "watch", "--follow", "--domain", "app", "--interval", "0.05"],
+      { env, stdout: "pipe", stderr: "pipe" },
+    );
+    try {
+      const stateFile = join(state, "watch", "app.json");
+      for (let waited = 0; !existsSync(stateFile) && waited < 10_000; waited += 20)
+        await Bun.sleep(20);
+      await runWith(itemUpdate(config, "app", update("i1", { answer: "B" })));
+      const reader = child.stdout.getReader();
+      let text = "";
+      const deadline = Date.now() + 10_000;
+      while (text.split("\n").length < 3 && Date.now() < deadline) {
+        const chunk = await reader.read();
+        if (chunk.done) break;
+        text += new TextDecoder().decode(chunk.value);
+      }
+      reader.releaseLock();
+      expect(text).toBe(
+        'due 2026-11-12: i1 Fix login\nanswered i1 Fix login: Re "Which login provider?": B\n',
+      );
+      expect(child.exitCode).toBe(null);
+    } finally {
+      child.kill("SIGTERM");
+      await child.exited;
+    }
+    expect(existsSync(lockPath(state, "app"))).toBe(false);
   });
 });

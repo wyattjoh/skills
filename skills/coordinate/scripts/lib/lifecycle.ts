@@ -346,6 +346,37 @@ export const sendTo = Effect.fn("sendTo")(function* (target: string, text: strin
 });
 
 /**
+ * Wake the caller's coordinator with one line, through `sendTo` (refused while it is blocked on a
+ * dialog; hc waits for the user's draft). Run from a delegate terminal: the coordinator it was started
+ * under when that one lives, else any live coordinator of its domain. With none, nothing is sent and
+ * it still succeeds, since the delegate's turn ends either way.
+ * @param text One line.
+ * @param env Environment (`HC_TERMINAL_ID`).
+ * @returns Lines to print.
+ */
+export const notifyCoordinator = Effect.fn("notifyCoordinator")(function* (
+  text: string,
+  env: Record<string, string | undefined> = process.env,
+) {
+  const caller = yield* callerRole(env);
+  if (caller.kind === "coordinator")
+    return yield* new Refused({
+      message: `terminal ${caller.address} is the coordinator; notify is for delegates, use coordinate send`,
+    });
+  const domain = caller.terminal?.labels[L.domain];
+  if (!domain)
+    return yield* new Refused({
+      message: `terminal ${caller.address} carries no ${L.domain} label, so it has no coordinator to notify`,
+    });
+  const live = (yield* coordinators(domain)).filter(
+    (terminal) => terminal.live && terminal.address !== caller.address,
+  );
+  const target = live.find((terminal) => terminal.address === caller.terminal?.parent) ?? live[0];
+  if (!target) return [`no live coordinator for ${domain}; nothing sent: ${text}`];
+  return yield* sendTo(target.address, text);
+});
+
+/**
  * End a settled delegate: record what resuming needs, end its terminal, close its space.
  * @param config Config.
  * @param target Name or address.

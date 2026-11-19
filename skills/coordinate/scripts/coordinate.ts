@@ -24,7 +24,16 @@ import {
 } from "./lib/fleet.ts";
 import type { FirstMessage, Harness, ImplementSkill } from "./lib/harness.ts";
 import { attachDelegate, detachDelegate } from "./lib/attach.ts";
-import { delegate, endDelegate, listIdle, resumeDelegate, sendTo, start } from "./lib/lifecycle.ts";
+import { watcherBanner } from "./lib/banner.ts";
+import {
+  delegate,
+  endDelegate,
+  listIdle,
+  notifyCoordinator,
+  resumeDelegate,
+  sendTo,
+  start,
+} from "./lib/lifecycle.ts";
 import { Proc } from "./lib/proc.ts";
 import { domainRepos, domainStatus } from "./lib/status.ts";
 import { renameDomain } from "./lib/rename.ts";
@@ -35,13 +44,30 @@ import { resolve } from "node:path";
 
 /**
  * Run one command at the CLI boundary: print its lines, exit 0; a `Refused` exits 1; anything else exits 2.
+ * From a coordinator's terminal it first prints the watcher-down banner to stderr, whatever the
+ * outcome, unless `banner` is false (`watch`, `item answer`, and `status`, which prints it itself).
  * @param build The command, given the config.
+ * @param banner Check for the watcher-down banner.
  */
 const main = async <E extends { message: string }>(
   build: (config: Config) => Effect.Effect<readonly string[], E, Proc>,
+  banner = true,
 ): Promise<void> => {
   const exit = await Effect.runPromiseExit(
-    loadConfig().pipe(Effect.flatMap(build), Effect.provide(Proc.layer)),
+    loadConfig().pipe(
+      Effect.flatMap((config) =>
+        build(config).pipe(
+          Effect.ensuring(
+            banner
+              ? Effect.map(watcherBanner(config), (line) => {
+                  if (line) console.error(line);
+                })
+              : Effect.void,
+          ),
+        ),
+      ),
+      Effect.provide(Proc.layer),
+    ),
   );
   if (Exit.isSuccess(exit)) {
     if (exit.value.length > 0) console.log(exit.value.join("\n"));
@@ -187,6 +213,14 @@ program
   .action((target: string, text: string) => main(() => sendTo(target, text)));
 
 program
+  .command("notify")
+  .argument("<text>", 'one line, such as "<name>: done, report at <path>"')
+  .description(
+    "from a delegate: wake its coordinator with one line, as send does; with no live coordinator, prints and exits 0",
+  )
+  .action((text: string) => main(() => notifyCoordinator(text)));
+
+program
   .command("end")
   .argument("[target]", "delegate name or address")
   .option("--now", "end it even while working")
@@ -221,10 +255,15 @@ program
   .option("--resume", "also print the rendered backlog and the watcher state")
   .description("delegates, ended delegates and PRs (GitHub and Forgejo), with who acts next")
   .action((options: { domain?: string; resume?: boolean }) =>
-    main((config) =>
-      Effect.flatMap(resolveDomain(options.domain), (domain) =>
-        domainStatus(config, domain, options.resume === true, Date.now()),
-      ),
+    main(
+      (config) =>
+        Effect.gen(function* () {
+          const domain = yield* resolveDomain(options.domain);
+          const lines = yield* domainStatus(config, domain, options.resume === true, Date.now());
+          const line = yield* watcherBanner(config);
+          return line ? [line, ...lines] : lines;
+        }),
+      false,
     ),
   );
 
@@ -433,26 +472,28 @@ item
     "record the user's answer to an item's ask, as item update --answer does; the one change allowed outside a Herdr terminal, such as from the Backlog panel",
   )
   .action((id: string, answer: string, options: { domain?: string; json?: boolean }) =>
-    main((config) =>
-      Effect.flatMap(answerDomain(options.domain), (domain) =>
-        itemUpdate(config, domain, {
-          id,
-          status: undefined,
-          outcome: undefined,
-          decided: [],
-          touch: [],
-          untouch: [],
-          due: undefined,
-          ask: undefined,
-          context: undefined,
-          options: [],
-          rec: undefined,
-          why: undefined,
-          answer,
-          json: options.json === true,
-          now: new Date().toISOString(),
-        }),
-      ),
+    main(
+      (config) =>
+        Effect.flatMap(answerDomain(options.domain), (domain) =>
+          itemUpdate(config, domain, {
+            id,
+            status: undefined,
+            outcome: undefined,
+            decided: [],
+            touch: [],
+            untouch: [],
+            due: undefined,
+            ask: undefined,
+            context: undefined,
+            options: [],
+            rec: undefined,
+            why: undefined,
+            answer,
+            json: options.json === true,
+            now: new Date().toISOString(),
+          }),
+        ),
+      false,
     ),
   );
 
@@ -616,8 +657,12 @@ program
     "110",
   )
   .option("--replace", "stop a running watcher for the domain and take over")
+  .option(
+    "--follow",
+    "keep running and print each event line as it happens (no alive line, no time limit); exits after blind or owner gone",
+  )
   .description(
-    "wait until a delegate settles, blocks, errors or goes, a PR merges, closes, fails checks or gets a review, or a due date arrives; print one line per event and exit",
+    "wait until a delegate settles, blocks, errors or goes, a PR merges, closes, fails checks or gets a review, a due date arrives or an ask is answered; print one line per event and exit (or keep printing with --follow)",
   )
   .action(
     (options: {
@@ -626,19 +671,24 @@ program
       forgeInterval: string;
       maxMinutes: string;
       replace?: boolean;
+      follow?: boolean;
     }) =>
-      main((config) =>
-        Effect.flatMap(resolveDomain(options.domain), (domain) =>
-          watch(config, {
-            domain,
-            intervalMs: Number(options.interval) * 1000,
-            forgeIntervalMs: Number(options.forgeInterval) * 1000,
-            maxMs: Number(options.maxMinutes) * 60_000,
-            owner: process.env.HC_TERMINAL_ID,
-            replace: options.replace === true,
-            today: () => new Date().toISOString().slice(0, 10),
-          }),
-        ),
+      main(
+        (config) =>
+          Effect.flatMap(resolveDomain(options.domain), (domain) =>
+            watch(config, {
+              domain,
+              intervalMs: Number(options.interval) * 1000,
+              forgeIntervalMs: Number(options.forgeInterval) * 1000,
+              maxMs: Number(options.maxMinutes) * 60_000,
+              owner: process.env.HC_TERMINAL_ID,
+              replace: options.replace === true,
+              today: () => new Date().toISOString().slice(0, 10),
+              follow: options.follow === true,
+              emit: (line) => console.log(line),
+            }),
+          ),
+        false,
       ),
   );
 

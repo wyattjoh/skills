@@ -1,3 +1,4 @@
+import { readFileSync, rmSync } from "node:fs";
 import { mkdir, open, readFile, rm } from "node:fs/promises";
 import { join } from "node:path";
 import { Effect } from "effect";
@@ -98,3 +99,20 @@ export const releaseLock = Effect.fn("releaseLock")(function* (
     if ((await readPid(path)) === pid) await rm(path, { force: true });
   });
 });
+
+/**
+ * Release the lock now, synchronously, for a signal handler that exits right after.
+ * @param stateDir State dir.
+ * @param domain Domain.
+ * @param pid This process.
+ */
+export const releaseLockSync = (stateDir: string, domain: string, pid: number): void => {
+  const path = lockPath(stateDir, domain);
+  let text = "";
+  try {
+    text = readFileSync(path, "utf8");
+  } catch {
+    return;
+  }
+  if (Number(text.trim()) === pid) rmSync(path, { force: true });
+};

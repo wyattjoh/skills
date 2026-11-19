@@ -20,7 +20,7 @@ Run `coordinate start <domain>`. It labels this terminal, creates the backlog do
 - Run `coordinate backlog show` and read every open item and finding. Set or refresh the domain's focus line with `coordinate backlog focus "<what the domain is doing now>"`. Arm the watcher (below).
 - Report what finished, what waits on the user as self-contained asks, what runs, and what you take next.
 
-After compaction or a restart, run `coordinate status --resume` and re-arm the watcher.
+After compaction or a restart, run `coordinate status --resume` and arm the watcher again unless a running Monitor still owns it.
 
 ## Each item
 
@@ -47,22 +47,25 @@ Each ask is self-contained in the reply and on its item: `coordinate item update
 - Harness and model: the user's named choice wins; otherwise follow Standing yes; otherwise pick by the work (a cheap model for bounded mechanical edits, the strongest for design, debugging and new features) and say which in one line.
 - Pass `--item <id>`: it is required from your terminal, and `coordinate delegate` records the delegate (name, session, branch, worktree, brief and report) on that item and sets it to delegated. A delegate starting a child review passes no `--item`. Done when the delegate shows a status and `backlog show` lists it under the item.
 - A delegate records what it notices outside its task with `coordinate finding add`; you close each finding with `coordinate finding close <id> --outcome "..."` (`--dismissed` when not acted on).
-- Send follow-ups with `coordinate send`, not `hc send`. Send no progress check-ins; the watcher tells you when a delegate settles. A permission dialog is the user's to answer in that tab: name the tab.
+- Send follow-ups with `coordinate send`, not `hc send`. Send no progress check-ins; the watcher tells you when a delegate settles, and the delegate's `coordinate notify` line (from its brief's Report) wakes you too. A permission dialog is the user's to answer in that tab: name the tab.
 - A review session runs only when the user asks for one. For a delegate's own review, give it the optional [Child review brief](references/brief.md): it runs `coordinate delegate` from its own terminal, so `HC_TERMINAL_ID` nests the read-only reviewer under that delegate, with its own brief.
 - The delegate uses bounded `hc wait`, caps review rounds (default two), reads the child's report, then ends it with `coordinate end`; authorized integration waits for a ready verdict. When the delegate settles, the coordinator verifies the child's verdict too.
 
 ## Watch
 
-Run exactly one watcher per domain, unawaited, and act on its output when it arrives:
+Run exactly one watcher per domain and handle every line it prints. It keeps a snapshot, so changes while it was down fire when it is armed again. While no watcher runs and a delegate lives, every `coordinate` command you run says so on stderr (`status` on its first line): arm it at once.
 
-```js
-$`bun $SKILL_DIR/scripts/coordinate.ts watch`
-  .timeout(7_200_000)
-  .nothrow()
-  .then((out) => log(out.stdout));
-```
+- **Claude Code**: arm it with the Monitor tool, `timeout_ms: 1800000` and the command `bun $SKILL_DIR/scripts/coordinate.ts watch --follow --replace 2>&1`. Each event arrives as its own notification while it keeps running. Monitor stops it after 30 minutes: arm it again on the expiry notice, and whenever it exits.
+- **Elsewhere** (pi): run one-shot `watch` unawaited and act on its output when it arrives; it exits on the first events, so arm it again after handling them:
 
-It exits on the first events, one line each, and keeps its snapshot so changes while it was down fire on re-arm. Handle every line, then arm it again. `alive` means nothing happened before its time limit; `blind` or `owner gone` means it lost sight of Herdr or of you. A `settled` line comes with a status beat: give the user a two-line status in your next reply. An `answered <id>` line carries an answer recorded since the last check, by you or by the user outside this chat: read the item's decisions, set its next status, and unblock whoever waited on it.
+  ```js
+  $`bun $SKILL_DIR/scripts/coordinate.ts watch`
+    .timeout(7_200_000)
+    .nothrow()
+    .then((out) => log(out.stdout));
+  ```
+
+`alive` (one-shot only) means nothing happened before its time limit; `blind` or `owner gone` means it lost sight of Herdr or of you, and it exits: arm it again. A `settled` line comes with a status beat: give the user a two-line status in your next reply. An `answered <id>` line carries an answer recorded since the last check, by you or by the user outside this chat: read the item's decisions, set its next status, and unblock whoever waited on it.
 
 ## Verify, then report and wait
 
@@ -96,7 +99,7 @@ Every command takes `--json`; `--help` has the flags. Read it back with `coordin
 
 ## Restart
 
-Before a restart (`/clear` then `/coordinate <domain>`): answer or close what the backlog already resolves, make sure every open item, decision and ask is recorded (`backlog show` is what the next session sees), and stop the watcher. Reply "ready for restart". After it, run Start and raise the open asks again within the five-ask limit.
+Before a restart (`/clear` then `/coordinate <domain>`): answer or close what the backlog already resolves, make sure every open item, decision and ask is recorded (`backlog show` is what the next session sees), and stop the watcher (its Monitor, or `kill` the pid in `coordinate status --resume`). Reply "ready for restart". After it, run Start and raise the open asks again within the five-ask limit.
 
 ## Compound
 

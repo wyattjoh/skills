@@ -10,7 +10,7 @@ import { L, Refused } from "./fleet.ts";
 import * as hc from "./herdr.ts";
 import { repoPullRequests } from "./prs.ts";
 import { domainRepos } from "./status.ts";
-import { acquireLock, releaseLock } from "./watch-lock.ts";
+import { acquireLock, releaseLock, releaseLockSync } from "./watch-lock.ts";
 
 /**
  * What the watcher remembers about one delegate terminal.
@@ -278,13 +278,23 @@ export type WatchOptions = {
   owner: string | undefined;
   replace: boolean;
   today: () => string;
+  /**
+   * Keep running and hand each event line to `emit` as it happens, instead of returning on the first
+   * events. No `alive` line and no time limit; `blind` and `owner gone` are emitted, then it returns.
+   */
+  follow: boolean;
+  /**
+   * Where follow mode writes each event line (the CLI prints it at once).
+   */
+  emit: (line: string) => void;
 };
 
 /**
- * Watch one domain until something needs the coordinator, then print one line per event and exit.
+ * Watch one domain until something needs the coordinator, then print one line per event and exit. In
+ * follow mode, emit each event line as it happens and run until stopped, blind, or its owner is gone.
  * @param config Config.
  * @param options Watch options.
- * @returns Event lines.
+ * @returns Event lines (in follow mode, none: every line went to `emit`).
  */
 export const watch = Effect.fn("watch")(function* (config: Config, options: WatchOptions) {
   const pid = process.pid;
@@ -300,7 +310,8 @@ export const watch = Effect.fn("watch")(function* (config: Config, options: Watc
     });
   const release = releaseLock(config.stateDir, options.domain, pid);
   const onSignal = () => {
-    Effect.runFork(release);
+    // An async release would never finish before exit, leaving a stale pid file behind.
+    releaseLockSync(config.stateDir, options.domain, pid);
     console.log("stopped");
     process.exit(0);
   };
@@ -321,10 +332,12 @@ export const watch = Effect.fn("watch")(function* (config: Config, options: Watc
       const polled = yield* snapshotDelegates(options.domain).pipe(Effect.result);
       if (Result.isFailure(polled)) {
         failures += 1;
-        if (failures >= 3)
-          return [
-            `blind: herdr-core unreadable 3 times: ${polled.failure.message}; re-arm the watcher`,
-          ];
+        if (failures >= 3) {
+          const blind = `blind: herdr-core unreadable 3 times: ${polled.failure.message}; re-arm the watcher`;
+          if (!options.follow) return [blind];
+          options.emit(blind);
+          return [];
+        }
       } else {
         failures = 0;
         const events = first ? [] : delegateEvents(state.delegates, polled.success);
@@ -355,14 +368,23 @@ export const watch = Effect.fn("watch")(function* (config: Config, options: Watc
         state.answered = answered.fired;
       }
       first = false;
+      let ownerGone = false;
       if (options.owner) {
         const owner = yield* hc
           .get(options.owner)
           .pipe(Effect.catch(() => Effect.succeed(undefined)));
-        if (owner === undefined || !owner.live)
+        ownerGone = owner === undefined || !owner.live;
+        if (ownerGone)
           lines.push(`owner gone: ${options.owner} no longer runs; nothing will read these events`);
       }
       yield* writeState(path, state);
+      if (options.follow) {
+        for (const line of lines) options.emit(line);
+        // Nothing reads a follow stream whose owner is gone, so it stops rather than repeat the line.
+        if (ownerGone) return [];
+        yield* Effect.sleep(options.intervalMs);
+        continue;
+      }
       if (lines.length > 0) return lines;
       if (Date.now() - started >= options.maxMs)
         return [`alive: no events in ${Math.round(options.maxMs / 60_000)}m; re-arm the watcher`];
