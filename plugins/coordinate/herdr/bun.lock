@@ -5,16 +5,16 @@
     "": {
       "name": "coordinate-herdr",
       "dependencies": {
-        "@wyattjoh/herdr-ui": "0.5.1",
+        "@wyattjoh/herdr-ui": "0.6.0",
       },
       "devDependencies": {
-        "@wyattjoh/herdr-dev": "0.1.0",
+        "@wyattjoh/herdr-dev": "0.2.0",
       },
     },
   },
   "packages": {
-    "@wyattjoh/herdr-dev": ["@wyattjoh/herdr-dev@0.1.0", "", { "bin": { "herdr-check": "src/cli.ts", "herdr-render-sync": "src/render-sync.ts" } }, "sha512-hZ979+dCjJMcSk013ydicJBZlK40HnpS3Hg2DsfWeyEjQiyduMtpOct2b7oAr30nLdNMQ2hEPR+gAg5MbqfiCg=="],
+    "@wyattjoh/herdr-dev": ["@wyattjoh/herdr-dev@0.2.0", "", { "bin": { "herdr-check": "src/cli.ts", "herdr-render-sync": "src/render-sync.ts" } }, "sha512-JcClkoBWHOrD1mTHXEdHotFO5uPAB4N8n7dK3CGZgi/Tp/S+dBfnL4Y28HXB2MBuszFXpK74lOqRqGcuGFEYFA=="],
 
-    "@wyattjoh/herdr-ui": ["@wyattjoh/herdr-ui@0.5.1", "", {}, "sha512-6bacd09kILGkUitqqULe9hPry8mmDpEiVW1ovryLKq0xghItDN9a2Q2EVvbsxc9hbHD/QgjqoQUhkAFMEu9feA=="],
+    "@wyattjoh/herdr-ui": ["@wyattjoh/herdr-ui@0.6.0", "", {}, "sha512-sXoiYPfm26r3u4pQXy4swhJF5p1AtkvCpSGExtxh9Outnn0tj0am0lOtV3GmP955wIi1BuEMP8GwTGqXWMPQOw=="],
   }
 }
