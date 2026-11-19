@@ -7,13 +7,13 @@ variable _names, types, and descriptions_ but not secret _values_, which is what
 makes it safe to share with AI agents.
 
 Decorator, type, and function lists below are drawn from the vendored docs at
-`.claude/references/varlock/` (varlock 1.24.0):
+`.claude/references/varlock/` (varlock 1.25.0):
 [item-decorators](https://varlock.dev/reference/item-decorators/),
 [root-decorators](https://varlock.dev/reference/root-decorators/),
 [data-types](https://varlock.dev/reference/data-types/),
 [functions](https://varlock.dev/reference/functions/). Behavior changes since
 1.10.0 are cited from the
-[changelog](https://github.com/dmno-dev/varlock/blob/varlock%401.24.0/packages/varlock/CHANGELOG.md).
+[changelog](https://github.com/dmno-dev/varlock/blob/varlock%401.25.0/packages/varlock/CHANGELOG.md).
 
 ## File shape
 
@@ -133,7 +133,7 @@ Built-in base types (each coerces + validates; many take parameters):
 `string` (params like `startsWith`, `minLength`, `matches`, ...), `number`,
 `boolean`, `enum` (e.g. `enum(development, staging, production)`; an empty `enum`
 is a schema error), `url`, `domain`, `email`, `port`, `ip`, `semver`, `isoDate`,
-`uuid`, `md5`, `simple-object`, `duration`, `array`, and `record`.
+`uuid`, `md5`, `simpleObject`, `duration`, `timeZone`, `array`, and `record`.
 
 Additions since 1.10.0:
 
@@ -142,7 +142,11 @@ Additions since 1.10.0:
   `normalize`, `matches`.
 - `array(<elementType>, ...)` and `record(<valueType>, keyType=...)` (1.13.0):
   per-element validation, native `[a, b]` / `{k=v}` literals, JSON or
-  separator-joined string input. `simple-object` equals a bare `record`.
+  separator-joined string input. `simpleObject` equals a bare `record`.
+- `timeZone` (1.25.0): an IANA time zone name such as `America/Edmonton`.
+- `simpleObject` (1.25.0): the camelCase name for `simple-object`, so every
+  built-in type name is camelCase. `simple-object` still works but logs a
+  deprecation warning ([changelog](https://github.com/dmno-dev/varlock/blob/varlock%401.25.0/packages/varlock/CHANGELOG.md)).
 - `uuid(version=N)` (1.21.0): require a specific version; versions 6-8 (incl.
   UUIDv7) and `MAX` are now accepted.
 - `url` (1.23.0) now warns on values that only parse because `new URL()` is

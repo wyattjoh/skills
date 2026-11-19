@@ -5,7 +5,7 @@
     "": {
       "name": "agent-toolkit",
       "dependencies": {
-        "effect": "4.1.2",
+        "effect": "4.1.4",
       },
       "devDependencies": {
         "@types/bun": "1.4.4",
@@ -22,7 +22,7 @@
       "version": "0.1.0",
       "dependencies": {
         "@typeonce/effect-machine": "0.46.0",
-        "effect": "4.1.2",
+        "effect": "4.1.4",
       },
       "devDependencies": {
         "@earendil-works/pi-coding-agent": "1.5.2",
@@ -37,7 +37,7 @@
       "name": "@wyattjoh/alchemy-skill",
       "version": "1.0.0",
       "dependencies": {
-        "effect": "4.1.2",
+        "effect": "4.1.4",
         "yaml": "^2.9.1",
       },
     },
@@ -45,8 +45,8 @@
       "name": "@wyattjoh/beam-me-up-skill",
       "version": "1.0.0",
       "dependencies": {
-        "@effect/platform-bun": "4.1.2",
-        "effect": "4.1.2",
+        "@effect/platform-bun": "4.1.4",
+        "effect": "4.1.4",
       },
     },
     "skills/claude-sessions": {
@@ -54,7 +54,7 @@
       "version": "1.0.0",
       "dependencies": {
         "@typesafe-ai/sdk": "^0.6.0",
-        "effect": "4.1.2",
+        "effect": "4.1.4",
       },
     },
     "skills/clean-storage": {
@@ -68,7 +68,7 @@
       "name": "@wyattjoh/code-walkthrough-skill",
       "version": "1.0.0",
       "dependencies": {
-        "effect": "4.1.2",
+        "effect": "4.1.4",
       },
     },
     "skills/coordinate": {
@@ -82,21 +82,21 @@
       "name": "@wyattjoh/devenv-skill",
       "version": "1.0.0",
       "dependencies": {
-        "effect": "4.1.2",
+        "effect": "4.1.4",
       },
     },
     "skills/driving-ios-simulator": {
       "name": "@wyattjoh/driving-ios-simulator-skill",
       "version": "1.0.0",
       "dependencies": {
-        "effect": "4.1.2",
+        "effect": "4.1.4",
       },
     },
     "skills/icon-gen": {
       "name": "@wyattjoh/icon-gen-skill",
       "version": "1.0.0",
       "dependencies": {
-        "effect": "4.1.2",
+        "effect": "4.1.4",
       },
     },
     "skills/linked-docs": {
@@ -120,28 +120,28 @@
       "name": "@wyattjoh/name-gen-skill",
       "version": "1.0.0",
       "dependencies": {
-        "effect": "4.1.2",
+        "effect": "4.1.4",
       },
     },
     "skills/network-topology": {
       "name": "@wyattjoh/network-topology-skill",
       "version": "1.0.0",
       "dependencies": {
-        "effect": "4.1.2",
+        "effect": "4.1.4",
       },
     },
     "skills/npm-info": {
       "name": "@wyattjoh/npm-info-skill",
       "version": "1.0.0",
       "dependencies": {
-        "effect": "4.1.2",
+        "effect": "4.1.4",
       },
     },
     "skills/pr-review": {
       "name": "@wyattjoh/pr-review-skill",
       "version": "1.0.0",
       "dependencies": {
-        "effect": "4.1.2",
+        "effect": "4.1.4",
       },
     },
     "skills/reference-submodules": {
@@ -155,7 +155,7 @@
       "name": "@wyattjoh/setup-alchemy-skill",
       "version": "1.0.0",
       "dependencies": {
-        "effect": "4.1.2",
+        "effect": "4.1.4",
       },
     },
     "skills/setup-forgejo-renovate": {
@@ -245,9 +245,9 @@
 
     "@earendil-works/pi-tui": ["@earendil-works/pi-tui@1.5.2", "", { "dependencies": { "get-east-asian-width": "1.6.0", "marked": "18.0.11", "marked-cjk-friendly": "0.1.2" } }, "sha512-WK8ih+c88GWizaB79y7Pq3PV7ySf5VI1pZ1i/6aBBjDOAiG2EE3ojKjl+pxQqLfyQGnzHYu4VfakOBJgumuoyw=="],
 
-    "@effect/platform-bun": ["@effect/platform-bun@4.1.2", "", { "dependencies": { "@effect/platform-node-shared": "4.1.2" }, "peerDependencies": { "effect": "^4.1.2" } }, "sha512-waEAa84CITqjctgw9VdhlL9PyXRHICG3KAWTFRDPUE2XL/pfMPhO7V9oFdfx22dbAhhUzV+MHs0d9hnmy/DQ7w=="],
+    "@effect/platform-bun": ["@effect/platform-bun@4.1.4", "", { "dependencies": { "@effect/platform-node-shared": "4.1.4" }, "peerDependencies": { "effect": "^4.1.4" } }, "sha512-Vdq82GOrD5HVF43aXVwHeX+4uIOrgAnjju9MEyizzFZ3yt3A6x9prtmHej1q/zAOaeNddtkpPr2ExHEvZ13S6Q=="],
 
-    "@effect/platform-node-shared": ["@effect/platform-node-shared@4.1.2", "", { "dependencies": { "@types/ws": "^8.18.2", "ws": "^8.22.1" }, "peerDependencies": { "effect": "^4.1.2" } }, "sha512-wSwl9A/G1hcVvF8nLI+YfB3EyOIDvWS6+lsTZBkmgDnPBL7m8YWZF+1HD+mdEsb52SUGfukip46Q3gRwSdk3QA=="],
+    "@effect/platform-node-shared": ["@effect/platform-node-shared@4.1.4", "", { "dependencies": { "@types/ws": "^8.18.2", "ws": "^8.22.1" }, "peerDependencies": { "effect": "^4.1.4" } }, "sha512-DWdfphHGOFJNj/mYadgpT3jIm8aRXDcPrQiGXFBH4p2H4XmA7iYMrPsI8NxVgZ7kNX0q1+FGJZJama0tINHRAg=="],
 
     "@emnapi/core": ["@emnapi/core@1.11.2", "", { "dependencies": { "@emnapi/wasi-threads": "1.2.2", "tslib": "^2.4.0" } }, "sha512-TC8MkTuZUtcTSiFeuC0ksCh9QIJ5+F21MvZ4Wn4ORfYaFJ/0dsiudv5tVkejgwZlwQ39jL9WWDe2lz8x0WglOA=="],
 
@@ -737,7 +737,7 @@
 
     "ecdsa-sig-formatter": ["ecdsa-sig-formatter@1.0.11", "", { "dependencies": { "safe-buffer": "^5.0.1" } }, "sha512-nagl3RYrbNv6kQkeJIpt6NJZy8twLB/2vtz6yN9Z4vRKHN4/QZJIEbqohALSgwKdnksuY3k5Addp5lg8sVoVcQ=="],
 
-    "effect": ["effect@4.1.2", "", {}, "sha512-d3Oah1WyKxFLFh19yWheS5IXIVaITzxZ71JkE1rkUozq/6EcJSU5nPk5bF2QrSygZ3SQoiNQB8TsxFriyMeMaQ=="],
+    "effect": ["effect@4.1.4", "", {}, "sha512-Tgrv/9FN+TZYyOn8XSli+fVqAfwDrDAkiX5Uu9vztINb675VTQdhD0gWI5Kzvhlh9QqzjZvw72iugqw5pwoghQ=="],
 
     "elkjs": ["elkjs@0.12.1", "", {}, "sha512-IhMYKHE4S2vtx0QrhBP3lYOIKDeIiJXBrdq9MGYkuB8ZHqhrBnHNfSUndjXFewrX1CPK8chwq+2NA0K0hliYuw=="],
 
@@ -972,6 +972,8 @@
     "@google/genai/ws": ["ws@8.21.1", "", { "peerDependencies": { "bufferutil": "^4.0.1", "utf-8-validate": ">=5.0.2" }, "optionalPeers": ["bufferutil", "utf-8-validate"] }, "sha512-+0NTnW77fFN/DjQi6k/Sq/Yvk4Sgajw7urW8V+asjXnRgDs9gyGkdb7EzgfhA4goXsRIZKE28fzIXBHEzhuiWw=="],
 
     "@wyattjoh/clean-storage-skill/effect": ["effect@3.22.4", "", { "dependencies": { "@standard-schema/spec": "^1.0.0", "fast-check": "^3.23.1" } }, "sha512-RNshu7AXVxxDh6aS4lothhJ+QoZ4xSykbWNaaVdvDN72RMyVwhCGdALkyl1TbEydgAmRIdD1eTyJqBUGwSBGDA=="],
+
+    "@wyattjoh/coordinate-skill/effect": ["effect@4.1.2", "", {}, "sha512-d3Oah1WyKxFLFh19yWheS5IXIVaITzxZ71JkE1rkUozq/6EcJSU5nPk5bF2QrSygZ3SQoiNQB8TsxFriyMeMaQ=="],
 
     "@wyattjoh/linked-docs-skill/effect": ["effect@3.22.4", "", { "dependencies": { "@standard-schema/spec": "^1.0.0", "fast-check": "^3.23.1" } }, "sha512-RNshu7AXVxxDh6aS4lothhJ+QoZ4xSykbWNaaVdvDN72RMyVwhCGdALkyl1TbEydgAmRIdD1eTyJqBUGwSBGDA=="],
 
