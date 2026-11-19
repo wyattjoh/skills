@@ -1180,9 +1180,9 @@ describe("coordinate CLI", () => {
     ]);
     const before = readFileSync(path, "utf8");
     const [code, , stderr] = run(["finding", "add", "x", "--kind", "bug", "--domain", "app"]);
-    expect([code, String(stderr).split("\n")[0]]).toEqual([
+    expect([code, String(stderr).split("\n").filter(Boolean).at(-1)]).toEqual([
       1,
-      "error: option '--kind <kind>' argument 'bug' is invalid. Allowed choices are issue, opportunity.",
+      '  Invalid value for flag --kind: "bug". Expected: "issue" | "opportunity"',
     ]);
     expect(readFileSync(path, "utf8")).toBe(before);
   });
