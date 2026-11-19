@@ -7,11 +7,15 @@ import {
   sendCommand,
   settle,
   text,
+  useRenderer,
 } from "@wyattjoh/herdr-dev/test/renderer";
 
 const { default: Toggle } = await import("./index.ts");
 
-beforeEach(resetHost);
+beforeEach(() => {
+  resetHost();
+  useRenderer({});
+});
 
 // A layout with the tab row's pill and a right column docking the Backlog panel.
 const docked = (shown: boolean) => ({
@@ -171,6 +175,63 @@ test("under herdr-app check a render shows, hides and records nothing", async ()
 
   expect(host.runs).toEqual([]);
   expect(host.shared.get("coordinate-panel.dock")).toBe(undefined);
+});
+
+test("fits the inline block to the measured pill plus its end inset", async () => {
+  const id = "backlog-toggle";
+  host.layout = {
+    type: "row",
+    children: [
+      {
+        id,
+        type: "block",
+        size: { px: 100 },
+        content: { mod: "coordinate-toggle", props: { block: id } },
+      },
+    ],
+  };
+  focusTab("tab1");
+  useRenderer({ herdr: { props: () => ({ block: id }) } });
+  const { render } = await mount();
+  const root = render();
+  expect(get(root, "coordinate-toggle").styles.pr).toBe(10);
+  expect(host.runs).toEqual([]);
+
+  type ResizeTask = { ms: number; callback: (cx: unknown) => void };
+  type SizeChange = (size: { width: number; height: number }, cx: unknown) => void;
+  const pending: ResizeTask[] = [];
+  const sizeChange = get(root, "coordinate-toggle-fit").styles.on_size_change as SizeChange;
+  const measure = (width: number) =>
+    sizeChange(
+      { width, height: 26 },
+      {
+        timer: {
+          after: (ms: number, callback: (cx: unknown) => void) => pending.push({ ms, callback }),
+        },
+        notify: () => {
+          throw new Error("measurement context expired");
+        },
+      },
+    );
+  const flush = () => {
+    let notified = 0;
+    for (const task of pending.splice(0)) {
+      expect(task.ms).toBe(0);
+      task.callback({ notify: () => notified++ });
+    }
+    return notified;
+  };
+
+  measure(40.2);
+  measure(43.1);
+  expect(pending).toHaveLength(1);
+  expect(host.runs).toEqual([]);
+  expect(flush()).toBe(1);
+  expect(host.runs).toEqual([{ command: "layout.resize", args: { id, px: 54 } }]);
+
+  measure(43.1);
+  expect(flush()).toBe(0);
+  expect(host.runs).toHaveLength(1);
 });
 
 test("the toggle starts no timer, so only renders match the column to the tab", async () => {

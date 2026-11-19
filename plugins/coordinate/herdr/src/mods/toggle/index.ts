@@ -5,8 +5,18 @@ import { View } from "gpui-kit";
 import type { AsyncContext, Context, Element } from "gpui-kit";
 import { h_flex } from "gpui-base";
 import { togglePill, type Theme } from "@wyattjoh/herdr-ui";
-import { checking, focused, layout, nextCommand, run, setShared, shared, theme } from "herdr";
-import { ICON, TOGGLE_END_INSET } from "./look.ts";
+import {
+  checking,
+  focused,
+  layout,
+  nextCommand,
+  props,
+  run,
+  setShared,
+  shared,
+  theme,
+} from "herdr";
+import { ICON } from "./look.ts";
 import {
   DOCK_SETTING,
   FIRST_SYNC,
@@ -17,6 +27,8 @@ import {
   toggleEffects,
 } from "./model.ts";
 import type { SyncMemory, ToggleAction } from "./model.ts";
+import { fitInset, fitRequest, fitTarget, fitWidth } from "./sizing.ts";
+import type { FitHistory } from "./sizing.ts";
 
 const apply = (effects: ToggleAction[]) => {
   for (const effect of effects)
@@ -30,6 +42,9 @@ const apply = (effects: ToggleAction[]) => {
 export default class Toggle extends View {
   memory: SyncMemory = FIRST_SYNC;
   closed = false;
+  private wanted: number | undefined;
+  private fitPending = false;
+  private fitHistory: FitHistory = { fitted: undefined, requests: [], stopped: false };
 
   init(_props: unknown, cx: AsyncContext) {
     if (checking()) return;
@@ -77,6 +92,32 @@ export default class Toggle extends View {
     apply(toggleEffects(panelDock(layout()), shared(DOCK_SETTING), scopeOf(focused())));
   }
 
+  private fit(width: number, sizeCx: Context) {
+    const targetAtMeasure = fitTarget(layout(), props());
+    if (
+      checking() ||
+      targetAtMeasure === undefined ||
+      fitWidth(width, targetAtMeasure.inset) === undefined
+    )
+      return;
+    if (this.fitHistory.stopped) return;
+    this.wanted = width;
+    if (this.fitPending) return;
+    this.fitPending = true;
+    sizeCx.timer.after(0, (timerCx) => {
+      this.fitPending = false;
+      const liveTarget = fitTarget(layout(), props());
+      if (liveTarget === undefined || this.wanted === undefined) return;
+      const wanted = fitWidth(this.wanted, liveTarget.inset);
+      if (wanted === undefined) return;
+      const plan = fitRequest(this.fitHistory, liveTarget, wanted, Date.now());
+      this.fitHistory = plan.history;
+      if (plan.request === undefined) return;
+      run("layout.resize", plan.request);
+      timerCx.notify();
+    });
+  }
+
   render(cx: Context): Element {
     this.schedule(cx);
     const t = theme() as Theme;
@@ -94,11 +135,18 @@ export default class Toggle extends View {
       .id("coordinate-toggle")
       .size_full()
       .justify_end()
-      .pr(TOGGLE_END_INSET)
+      .pr(fitInset(layout(), props()))
       .items_center()
       .bg(t.chrome)
       .border_b(1)
       .border_color(t.border)
-      .child(inert ? button : button.hover((s) => s.bg(t.hover)).on_click(() => this.toggle()));
+      .child(
+        h_flex()
+          .id("coordinate-toggle-fit")
+          .flex_none()
+          .flex_nowrap()
+          .on_size_change(({ width }, sizeCx) => this.fit(width, sizeCx))
+          .child(inert ? button : button.hover((s) => s.bg(t.hover)).on_click(() => this.toggle())),
+      );
   }
 }
