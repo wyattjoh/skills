@@ -75,25 +75,26 @@ A status question ("sitrep", "where are we") gets `coordinate status` and at mos
 
 ## Clean up
 
-Sweep at Start, after compaction, when the watcher fires, and in the turn a task finishes (integrated, delivered, dismissed or parked). [sweep.md](references/sweep.md) says what each verdict asks of you. End delegates quiet for a day with `coordinate end --list-idle`; `coordinate resume <name>` brings one back when a review or answer arrives.
+Sweep at Start, after compaction, when the watcher fires, and in the turn a task finishes (integrated, delivered, dismissed or parked). [sweep.md](references/sweep.md) says what each verdict asks of you. End delegates quiet for a day with `coordinate end --list-idle`, passing `--item-status` when the item is not done with it, so no item sits at `delegated` with no live delegate (`status` lists any that does); `coordinate resume <name>` brings one back when a review or answer arrives.
 
 ## Backlog
 
 The CLI is the backlog's only writer; it validates, locks and writes atomically, and refuses a change that breaks an invariant (exit 1: fix the call and run it again). Record each state change in the turn it happens:
 
-| State change                       | Command                                                                                                                                                 |
-| ---------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| New work                           | `item add "<title>"` (prints its id, such as `i4`)                                                                                                      |
-| Building it here, parked, reopened | `item update <id> --status building\|parked\|open`                                                                                                      |
-| What it touches, a due date        | `item update <id> --touch <repo>`, `--due YYYY-MM-DD` (the watcher fires on that date)                                                                  |
-| A decision                         | `item update <id> --decided "<the user's words>"`                                                                                                       |
-| An ask, its answer                 | `item update <id> --status waiting-user --ask ...`, then `--answer "<their words>"`; the user may answer from the Backlog panel instead (`item answer`) |
-| Delegated                          | `delegate <name> --item <id> ...`                                                                                                                       |
-| A running session filed, unfiled   | `item attach <id> <delegate>`, `item detach <id> <delegate>` (name or address)                                                                          |
-| Done or dismissed                  | `item close <id> --outcome "<one line>"` (`--dismissed`)                                                                                                |
-| Standing yes, Boundary, focus      | `backlog standing add`, `backlog boundary add\|rm`, `backlog focus`                                                                                     |
-| The domain renamed                 | `backlog rename <new>` (`--domain <old>` from any terminal); refused while it has a live delegate or watcher                                            |
-| A finding opened or closed         | `finding add --kind issue\|opportunity "<title>"`, `finding close <id> --outcome ...`                                                                   |
+| State change                       | Command                                                                                                                                                                           |
+| ---------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| New work                           | `item add "<title>"` (prints its id, such as `i4`)                                                                                                                                |
+| Building it here, parked, reopened | `item update <id> --status building\|parked\|open`                                                                                                                                |
+| What it touches, a due date        | `item update <id> --touch <repo>`, `--due YYYY-MM-DD` (the watcher fires on that date)                                                                                            |
+| A decision                         | `item update <id> --decided "<the user's words>"`                                                                                                                                 |
+| An ask, its answer                 | `item update <id> --status waiting-user --ask ...`, then `--answer "<their words>"`; the user may answer from the Backlog panel instead (`item answer`)                           |
+| Delegated                          | `delegate <name> --item <id> ...`                                                                                                                                                 |
+| Its last delegate ended            | `end <name> --item-status open\|parked\|waiting-user\|building`; without it `end` prints the command, and `status` and `backlog show` flag a delegated item with no live delegate |
+| A running session filed, unfiled   | `item attach <id> <delegate>`, `item detach <id> <delegate>` (name or address)                                                                                                    |
+| Done or dismissed                  | `item close <id> --outcome "<one line>"` (`--dismissed`)                                                                                                                          |
+| Standing yes, Boundary, focus      | `backlog standing add`, `backlog boundary add\|rm`, `backlog focus`                                                                                                               |
+| The domain renamed                 | `backlog rename <new>` (`--domain <old>` from any terminal); refused while it has a live delegate or watcher                                                                      |
+| A finding opened or closed         | `finding add --kind issue\|opportunity "<title>"`, `finding close <id> --outcome ...`                                                                                             |
 
 Every command takes `--json`; `--help` has the flags. Read it back with `coordinate backlog show` (`--json` for the document). Fields, statuses and invariants: [backlog.md](references/backlog.md).
 

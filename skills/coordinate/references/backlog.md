@@ -43,7 +43,7 @@ One JSON document per domain at `<state_dir>/backlogs/<domain>.json` (default `~
 
 The CLI refuses any change that would break these:
 
-- A `delegated` item has at least one delegate; `delegate --item` and `item attach` add one and set the status, and `item detach` sets the item back to `open` when it removes the last.
+- A `delegated` item has at least one delegate; `delegate --item` and `item attach` add one and set the status, and `item detach` sets the item back to `open` when it removes the last. Ending the last live delegate leaves the item `delegated`; `end --item-status` sets its next status, and `status` and `backlog show` flag it (`[delegated, none live]`) until then.
 - One session is filed under one item: attaching a session any item already names, open or closed, is refused with that item's id and the `item detach` command.
 - A `waiting-user` item has an ask, or a decision naming the integration choice it waits on.
 - An ask's `rec` is one of its `options`.

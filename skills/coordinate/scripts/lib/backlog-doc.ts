@@ -15,6 +15,7 @@ import {
   closeItem,
   emptyBacklog,
   fileDelegate,
+  idleDelegated,
   type ItemUpdate,
   type OpResult,
   removeBoundary,
@@ -34,7 +35,7 @@ import {
   validateBacklog,
 } from "./backlog-store/schema.ts";
 import type { Config } from "./config.ts";
-import { backlogPath, Refused } from "./fleet.ts";
+import { backlogPath, members, Refused } from "./fleet.ts";
 
 /**
  * The backlog document could not be read, locked or written (exit 2, not a refusal).
@@ -337,15 +338,28 @@ const json = (value: unknown): string[] => [JSON.stringify(value, null, 2)];
  * @param config Config.
  * @param domain Domain.
  * @param asJson Print the document instead.
+ * @param live Session ids of the live delegates when the caller already has them; otherwise
+ * they are read, only when an item is delegated. Unreadable liveness marks nothing.
  * @returns Lines to print.
  */
 export const showBacklog = Effect.fn("showBacklog")(function* (
   config: Config,
   domain: string,
   asJson: boolean,
+  live: ReadonlySet<string> | undefined = undefined,
 ) {
   const { backlog } = yield* readDocument(config, domain);
-  return asJson ? json(backlog) : [renderBacklog(backlog).trimEnd()];
+  if (asJson) return json(backlog);
+  const sessions =
+    live ??
+    (backlog.items.some((item) => item.status === "delegated")
+      ? yield* members(domain, yield* refSessions(config, domain)).pipe(
+          Effect.map((found) => new Set(found.map((delegate) => delegate.session))),
+          Effect.catch(() => Effect.succeed(undefined)),
+        )
+      : undefined);
+  const idle = sessions ? idleDelegated(backlog, sessions).map((item) => item.id) : [];
+  return [renderBacklog(backlog, new Set(idle)).trimEnd()];
 });
 
 /**

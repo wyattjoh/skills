@@ -1,6 +1,7 @@
 import { existsSync } from "node:fs";
-import { Effect } from "effect";
+import { Effect, Option } from "effect";
 import { readDocument, refSessions, showBacklog } from "./backlog-doc.ts";
+import { idleDelegated } from "./backlog-store/ops.ts";
 import type { Config } from "./config.ts";
 import { type Delegate, members, readEnded } from "./fleet.ts";
 import { currentBranch, defaultBases, mainCheckout } from "./git.ts";
@@ -170,6 +171,13 @@ export const domainStatus = Effect.fn("domainStatus")(function* (
       `  ${record.name} ended ${record.ended_at.slice(0, 10)} · ${info.text}${gone} · resume: coordinate resume ${record.name}`,
     );
   }
+  const live = new Set(delegates.map((delegate) => delegate.session));
+  const document = yield* readDocument(config, domain).pipe(Effect.option);
+  if (Option.isSome(document))
+    for (const item of idleDelegated(document.value.backlog, live))
+      lines.push(
+        `  ${item.id} delegated, no live delegate · ${item.title} · next: coordinator: set its next status`,
+      );
   for (const [repo, result] of prsByRepo) {
     if (!result.ok) {
       lines.push(`repo ${repo}: could not read PRs: ${result.error}`);
@@ -185,7 +193,7 @@ export const domainStatus = Effect.fn("domainStatus")(function* (
   if (typeof ownedOrProblem === "string" && !withResume)
     lines.push(`no repos polled: ${ownedOrProblem}`);
   if (withResume) {
-    const rendered = yield* showBacklog(config, domain, false).pipe(
+    const rendered = yield* showBacklog(config, domain, false, live).pipe(
       Effect.catchTags({
         Refused: (refused) => Effect.succeed([refused.message]),
         BacklogError: (error) => Effect.succeed([`could not read the backlog: ${error.message}`]),

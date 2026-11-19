@@ -29,6 +29,7 @@ import {
   delegate,
   endDelegate,
   listIdle,
+  NEXT_STATUSES,
   notifyCoordinator,
   resumeDelegate,
   sendTo,
@@ -224,18 +225,27 @@ program
   .command("end")
   .argument("[target]", "delegate name or address")
   .option("--now", "end it even while working")
+  .addOption(
+    new Option(
+      "--item-status <status>",
+      "when it was the item's last live delegate, set the item's next status",
+    ).choices(NEXT_STATUSES),
+  )
   .option("--list-idle", "list delegates settled for quiet_hours, each with its end command")
   .option("--domain <domain>", "domain for --list-idle (default: this coordinator's label)")
   .description("end a settled delegate, keeping its worktree, branch and session for resume")
   .action(
-    (target: string | undefined, options: { now?: boolean; listIdle?: boolean; domain?: string }) =>
+    (
+      target: string | undefined,
+      options: { now?: boolean; listIdle?: boolean; domain?: string; itemStatus?: ItemStatus },
+    ) =>
       main((config) => {
         if (options.listIdle)
           return Effect.flatMap(resolveDomain(options.domain), (domain) =>
             listIdle(config, domain, Date.now()),
           );
         if (!target) return Effect.succeed(["give a delegate name, or --list-idle"]);
-        return endDelegate(config, target, options.now === true);
+        return endDelegate(config, target, options.now === true, options.itemStatus);
       }),
   );
 

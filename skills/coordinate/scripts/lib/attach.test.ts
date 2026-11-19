@@ -265,7 +265,11 @@ describe("item attach", () => {
     });
     await runWith(attachDelegate(cfg, options({}), ENV), attach.layer);
     const ending = gitAndFake((argv) =>
-      argv[1] === "get" ? ok(JSON.stringify(handStarted(sub, { labels }))) : ok("{}"),
+      argv[1] === "get"
+        ? ok(JSON.stringify(handStarted(sub, { labels })))
+        : argv[1] === "ls"
+          ? ok('{"terminals":[]}')
+          : ok("{}"),
     );
     await runWith(endDelegate(cfg, "t4", false), ending.layer);
     const record = read(join(cfg.stateDir, "ended", `${SESSION}.json`));

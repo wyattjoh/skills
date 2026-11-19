@@ -518,6 +518,18 @@ export const filedUnder = (backlog: Backlog, session: string): Item | undefined 
   backlog.items.find((item) => item.delegates.some((ref) => ref.session === session));
 
 /**
+ * The items still `delegated` that none of whose delegate refs names a live session. One
+ * definition of "no live delegate" for `end`, `status` and `backlog show`.
+ * @param backlog Current document.
+ * @param live Session ids of the domain's live delegates.
+ * @returns The idle delegated items, in document order.
+ */
+export const idleDelegated = (backlog: Backlog, live: ReadonlySet<string>): Item[] =>
+  backlog.items.filter(
+    (item) => item.status === "delegated" && item.delegates.every((ref) => !live.has(ref.session)),
+  );
+
+/**
  * File a delegate under an item: append its ref and set the item to delegated. A session any
  * item already names is refused, so one session is filed under one item.
  * @param backlog Current document.

@@ -3,7 +3,17 @@ import { copyFile, mkdir } from "node:fs/promises";
 import { userInfo } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { Effect, Option } from "effect";
-import { BacklogError, checkFileable, createDocument, recordDelegate } from "./backlog-doc.ts";
+import {
+  BacklogError,
+  checkFileable,
+  createDocument,
+  itemUpdate,
+  readDocument,
+  recordDelegate,
+  refSessions,
+} from "./backlog-doc.ts";
+import { filedUnder, idleDelegated, updateItem, type ItemUpdate } from "./backlog-store/ops.ts";
+import type { ItemStatus } from "./backlog-store/schema.ts";
 import { documentPath } from "./backlog-store/paths.ts";
 import type { Config } from "./config.ts";
 import {
@@ -377,17 +387,48 @@ export const notifyCoordinator = Effect.fn("notifyCoordinator")(function* (
 });
 
 /**
- * End a settled delegate: record what resuming needs, end its terminal, close its space.
+ * The statuses `end --item-status` sets: where an item rests when its last delegate is gone.
+ * Closing is `item close`, and `delegated` needs a delegate.
+ */
+export const NEXT_STATUSES = ["waiting-user", "building", "open", "parked"] as const;
+
+const statusUpdate = (id: string, status: ItemStatus, now: string): ItemUpdate => ({
+  id,
+  status,
+  outcome: undefined,
+  decided: [],
+  touch: [],
+  untouch: [],
+  due: undefined,
+  ask: undefined,
+  context: undefined,
+  options: [],
+  rec: undefined,
+  why: undefined,
+  answer: undefined,
+  now,
+});
+
+/**
+ * End a settled delegate: record what resuming needs, end its terminal, close its space. When it
+ * was the last live delegate filed under a delegated item, set the item's next status, or say that
+ * it still needs one.
  * @param config Config.
  * @param target Name or address.
  * @param now End even while working.
+ * @param itemStatus Next status for the item left with no live delegate.
  * @returns Lines to print.
  */
 export const endDelegate = Effect.fn("endDelegate")(function* (
   config: Config,
   target: string,
   now: boolean,
+  itemStatus: ItemStatus | undefined = undefined,
 ) {
+  if (itemStatus !== undefined && !NEXT_STATUSES.some((known) => known === itemStatus))
+    return yield* new Refused({
+      message: `--item-status ${itemStatus} is not one of ${NEXT_STATUSES.join(", ")}; close an item with coordinate item close`,
+    });
   const terminal = yield* hc.get(target);
   if (!terminal) return yield* new Refused({ message: `no terminal ${target}` });
   if (terminal.labels[L.role] === "coordinator")
@@ -402,6 +443,24 @@ export const endDelegate = Effect.fn("endDelegate")(function* (
     return yield* new Refused({
       message: `${target} carries no ${L.session}/${L.domain} label, so it could not be resumed; end it with hc kill if the user agrees`,
     });
+  // Before anything ends: find the item left with no live delegate, and refuse a status it cannot take.
+  const read = yield* readDocument(config, domain).pipe(Effect.option);
+  const filed = Option.isSome(read) ? filedUnder(read.value.backlog, session) : undefined;
+  let orphan: string | undefined;
+  if (Option.isSome(read) && filed?.status === "delegated") {
+    const others = (yield* members(domain, yield* refSessions(config, domain))).filter(
+      (member) => member.session !== session,
+    );
+    const idle = idleDelegated(read.value.backlog, new Set(others.map((member) => member.session)));
+    orphan = idle.find((item) => item.id === filed.id)?.id;
+    if (orphan !== undefined && itemStatus !== undefined) {
+      const dry = updateItem(
+        read.value.backlog,
+        statusUpdate(orphan, itemStatus, new Date().toISOString()),
+      );
+      if (!dry.ok) return yield* new Refused({ message: dry.reason });
+    }
+  }
   const record: EndedRecord = {
     name: terminal.name ?? terminal.address,
     task: terminal.labels[L.task] ?? null,
@@ -424,9 +483,26 @@ export const endDelegate = Effect.fn("endDelegate")(function* (
   yield* hc.end(terminal.address).pipe(Effect.tapError(() => removeEnded(path)));
   const space = terminal.labels[L.space];
   if (space) yield* hc.closeSpace(space).pipe(Effect.ignore);
-  return [
+  const lines = [
     `ended ${record.name} (${terminal.address}); record ${path}`,
     `worktree, branch and session stay; resume with: coordinate resume ${record.name}`,
+  ];
+  if (orphan === undefined) {
+    if (itemStatus !== undefined && filed?.status !== "delegated")
+      lines.push(`--item-status ignored: ${record.name} is not filed under a delegated item`);
+    return lines;
+  }
+  if (itemStatus === undefined)
+    return [
+      ...lines,
+      `${orphan} is still delegated with no live delegate; set its next status (coordinate item update ${orphan} --status ...)`,
+    ];
+  return [
+    ...lines,
+    ...(yield* itemUpdate(config, domain, {
+      ...statusUpdate(orphan, itemStatus, new Date().toISOString()),
+      json: false,
+    })),
   ];
 });
 

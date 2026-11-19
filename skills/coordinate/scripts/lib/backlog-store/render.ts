@@ -1,12 +1,12 @@
 import { ITEM_STATUSES, type Backlog, type Item } from "./schema.ts";
 
-const itemLines = (item: Item): string[] => {
+const itemLines = (item: Item, idle: ReadonlySet<string>): string[] => {
   const facts = [
     ...(item.due ? [`due ${item.due}`] : []),
     ...(item.touches.length > 0 ? [`touches ${item.touches.join(", ")}`] : []),
   ];
   const lines = [
-    `- ${item.id} [${item.status}] ${item.title}${facts.map((fact) => ` · ${fact}`).join("")}`,
+    `- ${item.id} [${item.status}${idle.has(item.id) ? ", none live" : ""}] ${item.title}${facts.map((fact) => ` · ${fact}`).join("")}`,
   ];
   if (item.ask) {
     lines.push(`  - ask: ${item.ask.question}`);
@@ -39,9 +39,10 @@ const list = (paths: string[]): string => (paths.length > 0 ? paths.join(", ") :
 /**
  * Render a backlog as Markdown for reading; the document stays the only source of truth.
  * @param backlog Document.
+ * @param idle Ids of delegated items with no live delegate, marked `[delegated, none live]`.
  * @returns Markdown, ending in a newline.
  */
-export const renderBacklog = (backlog: Backlog): string => {
+export const renderBacklog = (backlog: Backlog, idle: ReadonlySet<string> = new Set()): string => {
   const open = ITEM_STATUSES.flatMap((status) =>
     backlog.items.filter((item) => item.status === status && !closed(item)),
   );
@@ -67,7 +68,7 @@ export const renderBacklog = (backlog: Backlog): string => {
     "",
     "## Open",
     "",
-    ...(open.length > 0 ? open.flatMap(itemLines) : ["(none)"]),
+    ...(open.length > 0 ? open.flatMap((item) => itemLines(item, idle)) : ["(none)"]),
     "",
     "## Findings",
     "",
