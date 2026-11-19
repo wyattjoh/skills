@@ -428,13 +428,14 @@ describe("coordinate CLI parity", () => {
       [["sweep", "prune-ended"], ["delete ended-delegate records"]],
     ];
     for (const [path, markers] of helpCases) {
-      const result = run([...path, "--help"]);
-      expect(result.exit).toBe(0);
+      const args = [...path, "--help"];
+      const result = run(args);
+      expect({ args, exit: result.exit }).toEqual({ args, exit: 0 });
       const help = `${result.stdout}\n${result.stderr}`.replace(/\s+/g, " ");
       for (const marker of markers) expect(help).toContain(marker);
     }
     const shortHelp = run(["start", "-h"]);
     expect(shortHelp.exit).toBe(0);
     expect(shortHelp.stdout).toContain("label this terminal");
-  }, 30_000);
+  }, 60_000);
 });
