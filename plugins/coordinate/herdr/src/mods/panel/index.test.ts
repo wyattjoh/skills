@@ -361,7 +361,7 @@ test("hides count notes when a domain has no counts", async () => {
   expect(text(get(root, "domain-beta"))).toBe("beta");
 });
 
-test("counts each live delegate once and not unrelated or missing terminals", async () => {
+test("counts each referenced live delegate once and ignores unmatched terminals", async () => {
   focusPlain();
   const alpha = everyStatus();
   const ref = alpha.items.find((item) => item.id === "i3")?.delegates[0];
@@ -398,7 +398,7 @@ test("counts each live delegate once and not unrelated or missing terminals", as
     {
       address: "t3",
       state: "live",
-      labels: { "fleet.domain": "beta", "fleet.session": "s-unrelated" },
+      labels: { "fleet.session": "s-unrelated" },
     },
   );
   const { render } = await mount();
@@ -897,6 +897,22 @@ const agent = (
   parent: "t1",
   labels: { "fleet.domain": "alpha", "fleet.session": session, "fleet.task": `task ${address}` },
   ...extra,
+});
+
+test("counts nested and unfiled live delegate rows on the Domains listing", async () => {
+  focusPlain();
+  const backlog = add(emptyBacklog("alpha", null), "Reviewed work", {
+    status: "delegated",
+    delegates: [ref("review", "s-review")],
+  });
+  host.files.set(DOC, JSON.stringify(backlog));
+  host.terminals.push(
+    agent("t2", "s-review", "working"),
+    agent("t3", "s-child", "idle", { parent: "t2" }),
+    agent("t4", "s-unfiled", "working"),
+  );
+  const { render } = await mount();
+  expect(text(get(render(), "domain-alpha"))).toBe("alpha 3 agents 1 delegated");
 });
 
 const ENDED = `${STATE}/ended`;

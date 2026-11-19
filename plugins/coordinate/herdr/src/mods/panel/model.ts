@@ -538,16 +538,19 @@ export const joinDelegates = (
 };
 
 /**
- * Count each distinct referenced delegate session with a live terminal once.
+ * Count every live delegate row in the join once by key, including referenced, nested and
+ * unfiled rows.
  * @param join The joined delegate rows for a domain.
- * @returns The number of live delegate sessions.
+ * @returns The number of distinct live delegate keys.
  */
 export const countLiveDelegates = (join: DelegateJoin): number => {
-  const sessions = new Set<string>();
-  for (const rows of join.byItem.values())
-    for (const row of rows)
-      if (row.source === "ref" && row.state.kind === "live") sessions.add(row.key);
-  return sessions.size;
+  const keys = new Set<string>();
+  const addLiveRows = (rows: readonly DelegateRow[]) => {
+    for (const row of rows) if (row.state.kind === "live") keys.add(row.key);
+  };
+  for (const rows of join.byItem.values()) addLiveRows(rows);
+  addLiveRows(join.unfiled);
+  return keys.size;
 };
 
 /**
