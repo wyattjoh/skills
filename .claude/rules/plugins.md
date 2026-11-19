@@ -21,7 +21,9 @@ only mounted mods). It is not a Claude Code plugin: no `.claude-plugin/`, no mar
 mod or pi extension. It is its own project with its own `package.json`, `bunfig.toml` and
 `justfile`. Root `bun test` and `knip` skip it, and root `bun run check` skips its `src/` (its
 tests need the renderer preload and its mod sources need Herdr's host `.d.ts` files); root
-`check` still type-checks its Bun `scripts/`, and root lint and format cover all of it. Run `just check` there: tests, a typecheck against the installed declarations copied
+`check` still type-checks its Bun `scripts/`, and root lint and format cover all of it. It depends on
+`@wyattjoh/herdr-ui`, which the root install does not provide, so run `bun install` in that folder
+(in every fresh worktree too) before `just check`. Run `just check` there: tests, a typecheck against the installed declarations copied
 into `node_modules/.cache/`, and a build that stages each mod under `.scratch/` and runs
 `herdr-app check` with that stage as `HERDR_APP_HOME`. `just check` never writes the live Herdr
 home. Only `just install [--replace]`, run after the user approves, does: it builds and checks a

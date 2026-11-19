@@ -3,7 +3,9 @@
   "ignore": [
     "skills/dialkit/references/DialKitPersistence.tsx",
     "plugins/*/tests/**",
-    "plugins/coordinate/**"
+    "plugins/coordinate/**",
+    ".claude/worktrees/**",
+    ".scratch/**"
   ],
   "ignoreBinaries": ["du", "pgrep"],
   "workspaces": {

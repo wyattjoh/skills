@@ -21,7 +21,8 @@ export const tscPath = (): string => {
 };
 
 /**
- * Run a command to completion, inheriting output, with a two-minute bound.
+ * Run a command to completion, inheriting output, with a fifteen-minute bound. herdr-app check
+ * has taken over eleven minutes under heavy machine load, so a shorter bound fails good builds.
  * @param argv The command and its arguments.
  * @param env The environment to run it with.
  * @returns The exit code.
@@ -35,7 +36,7 @@ export const run = async (
     env,
     stdout: "inherit",
     stderr: "inherit",
-    timeout: 120_000,
+    timeout: 900_000,
   });
   return await child.exited;
 };

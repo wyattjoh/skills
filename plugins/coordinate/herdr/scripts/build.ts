@@ -62,11 +62,16 @@ export const build = async (): Promise<string> => {
     ]);
     if (built !== 0) throw new Error(`Bundling ${mod.name} failed (${built})`);
   }
-  for (const mod of MODS) {
-    const checked = await run(["herdr-app", "check", join(stage, "mods", mod.name)], {
+  // Under heavy load herdr-app's isolated checker can miss its own 30s connect deadline, so a
+  // failed check gets two more tries; a real failure fails all three.
+  const check = (name: string) =>
+    run(["herdr-app", "check", join(stage, "mods", name)], {
       ...process.env,
       HERDR_APP_HOME: stage,
     });
+  for (const mod of MODS) {
+    let checked = await check(mod.name);
+    for (let retry = 0; checked !== 0 && retry < 2; retry += 1) checked = await check(mod.name);
     if (checked !== 0)
       throw new Error(`herdr-app check failed for ${mod.name}; stage kept at ${stage}`);
   }
