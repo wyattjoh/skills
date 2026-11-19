@@ -33,6 +33,7 @@ export type Ask = {
   question: string;
   context: string | null;
   options: string[];
+  optionDetails?: string[];
   rec: string | null;
   recReason: string | null;
 };
@@ -207,6 +208,15 @@ export const validateBacklog = (value: unknown): Validated => {
         nonEmpty(`${where}.ask.question`, item.ask.question);
         textOrNull(`${where}.ask.context`, item.ask.context);
         strings(`${where}.ask.options`, item.ask.options);
+        if (item.ask.optionDetails !== undefined) {
+          strings(`${where}.ask.optionDetails`, item.ask.optionDetails);
+          if (
+            Array.isArray(item.ask.optionDetails) &&
+            Array.isArray(item.ask.options) &&
+            item.ask.optionDetails.length !== item.ask.options.length
+          )
+            errors.push(`${where}.ask.optionDetails must have the same length as options`);
+        }
         textOrNull(`${where}.ask.rec`, item.ask.rec);
         textOrNull(`${where}.ask.recReason`, item.ask.recReason);
         const { options, rec } = item.ask;

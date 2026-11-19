@@ -703,9 +703,28 @@ describe("item update", () => {
 });
 
 describe("status --resume", () => {
-  it("prints the rendered backlog in place of the raw Open section", async () => {
+  it("prints option details in the rendered backlog", async () => {
     const { cfg } = await started();
     await runWith(itemAdd(cfg, "app", { title: "fix login", json: false, now: NOW }));
+    await runWith(
+      itemUpdate(cfg, "app", {
+        id: "i1",
+        status: "waiting-user",
+        outcome: undefined,
+        decided: [],
+        touch: [],
+        untouch: [],
+        due: undefined,
+        ask: "Which?",
+        context: "context",
+        options: ["a :: alpha :: tail", "b"],
+        rec: "a",
+        why: "preferred",
+        answer: undefined,
+        now: NOW,
+        json: false,
+      }),
+    );
     const lines = await runWith(domainStatus(cfg, "app", true, Date.parse(NOW)), hcFake().layer);
     expect(lines).toEqual([
       "app: 0 live delegates, 0 ended",
@@ -715,6 +734,10 @@ describe("status --resume", () => {
       "no watcher running: arm coordinate watch --follow",
     ]);
     expect(lines[2]?.split("\n").slice(0, 1)).toEqual(["# app backlog"]);
+    expect(lines[2]?.split("\n").filter((line) => /^    - [ab](?: |$)/.test(line))).toEqual([
+      "    - a (recommended: preferred): alpha :: tail",
+      "    - b",
+    ]);
   });
 
   it("names an invalid document instead of failing the whole status", async () => {
@@ -886,6 +909,25 @@ describe("invalid documents", () => {
       "waiting-user with no ask or decision",
       doc({ items: [item({ status: "waiting-user" })] }),
       "items[0] is waiting-user but has no ask and no decision",
+    ],
+    [
+      "option details with the wrong length",
+      doc({
+        items: [
+          item({
+            status: "waiting-user",
+            ask: {
+              question: "q",
+              context: null,
+              options: ["a", "b"],
+              optionDetails: ["detail"],
+              rec: "a",
+              recReason: null,
+            },
+          }),
+        ],
+      }),
+      "items[0].ask.optionDetails must have the same length as options",
     ],
     [
       "a rec outside its options",
@@ -1168,11 +1210,11 @@ describe("coordinate CLI", () => {
     const updated = run([
       ...flags,
       "--option",
-      "a",
+      "a :: alpha :: tail",
       "--option",
       "b",
       "--rec",
-      "b",
+      "a",
       "--why",
       "w",
       "--touch",
@@ -1189,17 +1231,30 @@ describe("coordinate CLI", () => {
     ]);
     expect(read(path).items[0]).toMatchObject({
       status: "waiting-user",
-      ask: { question: "Which?", context: "c", options: ["a", "b"], rec: "b", recReason: "w" },
+      ask: {
+        question: "Which?",
+        context: "c",
+        options: ["a", "b"],
+        optionDetails: ["alpha :: tail", ""],
+        rec: "a",
+        recReason: "w",
+      },
       touches: ["/r/api"],
       due: "2026-12-01",
       decided: [{ text: "scope is api only" }],
     });
-    const cleared = run(["--no-due", "--answer", "b"]);
-    expect([cleared.exitCode, read(path).items[0].due, read(path).items[0].ask]).toEqual([
-      0,
-      null,
-      null,
+    const shown = (await runWith(showBacklog(cfg, "app", false))).join("\n");
+    expect(shown.split("\n").filter((line) => /^    - [ab](?: |$)/.test(line))).toEqual([
+      "    - a (recommended: w): alpha :: tail",
+      "    - b",
     ]);
+    const cleared = run(["--no-due", "--answer", "a"]);
+    expect([
+      cleared.exitCode,
+      read(path).items[0].due,
+      read(path).items[0].ask,
+      read(path).items[0].decided.map((entry: { text: string }) => entry.text),
+    ]).toEqual([0, null, null, ["scope is api only", 'Re "Which?": a']]);
   });
 });
 
@@ -1300,6 +1355,13 @@ describe("coordinator-only mutations", () => {
         "okta",
       ]),
     ).toEqual([0, "updated i1 [waiting-user] fix login\n"]);
+    expect(read(path).items[0].ask).toEqual({
+      question: "Which provider?",
+      context: null,
+      options: ["-none-", "okta"],
+      rec: null,
+      recReason: null,
+    });
     const { HC_TERMINAL_ID: _unset, ...outside } = cliEnv(state, COORDINATOR);
     const before = readFileSync(path, "utf8");
     expect(spawn(outside, ["item", "answer", "i1", "okta"])).toEqual([

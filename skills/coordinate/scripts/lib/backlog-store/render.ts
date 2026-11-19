@@ -11,15 +11,22 @@ const itemLines = (item: Item, idle: ReadonlySet<string>): string[] => {
   if (item.ask) {
     lines.push(`  - ask: ${item.ask.question}`);
     if (item.ask.context) lines.push(`    - context: ${item.ask.context}`);
-    const ordered = item.ask.rec
-      ? [item.ask.rec, ...item.ask.options.filter((option) => option !== item.ask?.rec)]
-      : item.ask.options;
-    for (const option of ordered)
-      lines.push(
-        option === item.ask.rec
-          ? `    - ${option} (recommended${item.ask.recReason ? `: ${item.ask.recReason}` : ""})`
-          : `    - ${option}`,
-      );
+    const choices = item.ask.options.map((option, index) => ({ option, index }));
+    const recIndex = item.ask.rec
+      ? choices.find(({ option }) => option === item.ask?.rec)?.index
+      : undefined;
+    const ordered =
+      recIndex === undefined
+        ? choices
+        : [choices[recIndex]!, ...choices.filter(({ index }) => index !== recIndex)];
+    for (const { option, index } of ordered) {
+      const recommended = option === item.ask.rec;
+      const detail = item.ask.optionDetails?.[index];
+      const label = recommended
+        ? `${option} (recommended${item.ask.recReason ? `: ${item.ask.recReason}` : ""})`
+        : option;
+      lines.push(`    - ${label}${detail ? `: ${detail}` : ""}`);
+    }
   }
   for (const entry of item.decided) lines.push(`  - decided ${entry.at}: ${entry.text}`);
   for (const ref of item.delegates)

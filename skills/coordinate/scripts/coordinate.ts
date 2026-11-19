@@ -417,8 +417,13 @@ item
   .option("--no-due", "clear the due date")
   .option("--ask <question>", "attach a question for the user, replacing any ask")
   .option("--context <text>", "why the ask is asked (with --ask)")
-  .option("--option <text>", "an answer choice (with --ask, repeatable)", collect, [])
-  .option("--rec <option>", "the recommended option, one of --option (with --ask)")
+  .option(
+    "--option <text>",
+    "an answer choice, optionally '<label> :: <detail>' (with --ask, repeatable)",
+    collect,
+    [],
+  )
+  .option("--rec <option>", "the recommended option label, one of --option (with --ask)")
   .option("--why <reason>", "why the recommended option (with --rec)")
   .option("--answer <text>", "the user's answer: clears the ask and appends it as a decision")
   .option("--domain <domain>", "domain (default: this coordinator's label)")

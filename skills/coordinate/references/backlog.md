@@ -27,9 +27,12 @@ One JSON document per domain at `<state_dir>/backlogs/<domain>.json` (default `~
 | `touches`                          | Repos the item changes (`--touch`, `--untouch`)                                                                                |
 | `decided`                          | `{ text, at }`, the user's words, dated (`--decided`; `--answer` appends the answered ask here)                                |
 | `ask`                              | `{ question, context, options, rec, recReason }` or null (`--ask`, `--context`, `--option`, `--rec`, `--why`)                  |
+| `ask.optionDetails`                | Optional strings aligned with `ask.options`; omitted when no option has a detail                                               |
 | `due`                              | `YYYY-MM-DD` or null (`--due`, `--no-due`)                                                                                     |
 | `delegates`                        | `{ name, session, branch, worktree, brief, report }`, recorded by `delegate --item` or `item attach`; removed by `item detach` |
 | `createdAt`, `closedAt`, `outcome` | When it was added and closed, and the one-line outcome                                                                         |
+
+Use `--option "<label> :: <detail>"` to store a detail; parsing splits at the first delimiter and the detail is optional.
 
 | Status         | Means                                                              |
 | -------------- | ------------------------------------------------------------------ |

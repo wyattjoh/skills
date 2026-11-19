@@ -240,15 +240,28 @@ const askOf = (input: ItemUpdate): Ask | undefined | string => {
     (input.why === undefined ? undefined : oneLine("why", input.why));
   if (problem) return problem;
   const options = input.options.map((option) => option.trim());
-  if (new Set(options).size !== options.length) return "--option values must be unique";
+  const parsed = options.map((option) => {
+    const delimiter = option.indexOf(" :: ");
+    return {
+      label: delimiter === -1 ? option : option.slice(0, delimiter).trim(),
+      detail: delimiter === -1 ? "" : option.slice(delimiter + 4).trim(),
+    };
+  });
+  const labels = parsed.map(({ label }) => label);
+  const details = parsed.map(({ detail }) => detail);
+  const optionDetails = details.some(Boolean) ? details : undefined;
+  const labelProblem = firstProblem("option", labels);
+  if (labelProblem) return labelProblem;
+  if (new Set(labels).size !== labels.length) return "--option values must be unique";
   const rec = input.rec?.trim();
-  if (rec !== undefined && !options.includes(rec))
-    return `--rec ${rec} must be one of the --option values: ${options.length > 0 ? options.join(", ") : "(none)"}`;
+  if (rec !== undefined && !labels.includes(rec))
+    return `--rec ${rec} must be one of the --option values: ${labels.length > 0 ? labels.join(", ") : "(none)"}`;
   if (input.why !== undefined && rec === undefined) return "--why needs --rec";
   return {
     question: input.ask.trim(),
     context: input.context?.trim() ?? null,
-    options,
+    options: labels,
+    ...(optionDetails ? { optionDetails } : {}),
     rec: rec ?? null,
     recReason: input.why?.trim() ?? null,
   };
