@@ -1094,7 +1094,7 @@ describe("retention", () => {
       Array.from({ length: 60 }, (_, index) => `i${index + 1}`).toSorted(),
     );
     expect(readdirSync(join(path, "..")).toSorted()).toEqual(["app.archive.jsonl", "app.json"]);
-  });
+  }, 45_000);
 });
 
 describe("backlog-store", () => {

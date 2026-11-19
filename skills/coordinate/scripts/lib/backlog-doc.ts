@@ -206,7 +206,8 @@ const locked = async <A>(path: string, timeoutMs: number, operation: () => Promi
   }
 };
 
-const LOCK_TIMEOUT_MS = 5_000;
+// A burst of writers serializes fsync-backed commits, so allow time for a loaded filesystem.
+const LOCK_TIMEOUT_MS = 30_000;
 
 const failure = (path: string) => (cause: unknown) =>
   new BacklogError({ path, message: cause instanceof Error ? cause.message : String(cause) });
