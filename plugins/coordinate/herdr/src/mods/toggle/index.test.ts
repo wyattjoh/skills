@@ -1,5 +1,13 @@
 import { beforeEach, expect, setSystemTime, test } from "bun:test";
-import { context, get, host, resetHost, sendCommand, settle, text } from "../../test/renderer.ts";
+import {
+  context,
+  get,
+  host,
+  resetHost,
+  sendCommand,
+  settle,
+  text,
+} from "@wyattjoh/herdr-dev/test/renderer";
 
 const { default: Toggle } = await import("./index.ts");
 
@@ -54,7 +62,7 @@ test("clicking the pill with the panel shown hides its column and forgets the ta
   const { ctx, render } = await mount();
 
   const pill = get(render(), "coordinate-toggle-button");
-  expect(pill.styles.bg).toBe("selected");
+  expect(pill.styles.bg).toBe("#2563eb");
   pill.click!({}, ctx.cx);
 
   expect(host.runs).toEqual([{ command: "layout.hide", args: { id: "backlog-column" } }]);
@@ -70,7 +78,7 @@ test("the pill is dim and inert when the layout docks no Backlog panel", async (
   const { render } = await mount();
 
   const pill = get(render(), "coordinate-toggle-button");
-  expect(pill.styles.text_color).toBe("dim");
+  expect(pill.styles.text_color).toBe("#737373");
   expect(pill.click).toBe(undefined);
 });
 

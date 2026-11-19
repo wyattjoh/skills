@@ -8,8 +8,17 @@ import {
   updateItem,
 } from "../../lib/store.ts";
 import type { Backlog, Item } from "../../lib/store.ts";
-import { context, get, host, ids, resetHost, settle, text, typeInto } from "../../test/renderer.ts";
-import type { Node } from "../../test/renderer.ts";
+import {
+  context,
+  get,
+  host,
+  ids,
+  resetHost,
+  settle,
+  text,
+  typeInto,
+} from "@wyattjoh/herdr-dev/test/renderer";
+import type { Node } from "@wyattjoh/herdr-dev/test/renderer";
 
 const { default: Panel } = await import("./index.ts");
 const { LIST_SCRIPT } = await import("./model.ts");
@@ -175,7 +184,7 @@ test("folds Done and Dismissed by default and toggles a group from its header", 
   expect(ctx.notified - before).toBe(2);
 });
 
-test("tones each group header by its status with theme token names", async () => {
+test("tones each group header by its status with the fixture's colors", async () => {
   focusDomain("alpha");
   host.files.set(DOC, JSON.stringify(everyStatus()));
   const { render } = await mount();
@@ -185,10 +194,10 @@ test("tones each group header by its status with theme token names", async () =>
       .text_color;
   expect(
     ["waiting-user", "building", "delegated", "open", "parked", "done", "dismissed"].map(tone),
-  ).toEqual(["blocked", "working", "ansi4", "dim", "muted", "ansi2", "ansi1"]);
+  ).toEqual(["#ef4444", "#3b82f6", "#a855f7", "#737373", "#a3a3a3", "#22c55e", "#ef4444"]);
   const title = (id: string) =>
     (get(root, id).nodes[1] as { styles: Record<string, unknown> }).styles.text_color;
-  expect([title("item-i7"), title("item-i8")]).toEqual(["foreground", "dim"]);
+  expect([title("item-i7"), title("item-i8")]).toEqual(["#f5f5f5", "#737373"]);
 });
 
 test("rereads the document when the watched backlogs folder changes", async () => {
@@ -536,7 +545,7 @@ test("lists open findings under the Items card with kind glyphs in their tones",
   expect(text(get(root, "finding-f3"))).toBe("✦ f3 Share the validator");
   const glyph = (id: string) =>
     (get(root, id).nodes[0] as { styles: Record<string, unknown> }).styles.text_color;
-  expect([glyph("finding-f2"), glyph("finding-f3")]).toEqual(["ansi1", "ansi5"]);
+  expect([glyph("finding-f2"), glyph("finding-f3")]).toEqual(["#ef4444", "#f97316"]);
 });
 
 test("says so when no finding is open", async () => {
@@ -592,7 +601,7 @@ test("opens an item's detail with the recommended option first, labelled and not
   const root = render();
   expect(text(get(root, "detail-title"))).toBe("i1 Name the panel Waiting on you");
   expect(text(get(root, "detail-status"))).toBe("Waiting on you");
-  expect(get(root, "detail-status").styles.text_color).toBe("blocked");
+  expect(get(root, "detail-status").styles.text_color).toBe("#ef4444");
   expect(text(get(root, "ask-question"))).toBe("Which title?");
   expect(text(get(root, "ask-context"))).toBe("It shows in the tab row");
   expect(ids(root, "ask-option-")).toEqual(["ask-option-1", "ask-option-0", "ask-option-2"]);
@@ -676,12 +685,12 @@ test("answers with a picked option through the CLI, then shows the item as it re
   expect([
     text(get(render(), "ask-answer-submit")),
     get(render(), "ask-answer-submit").styles.bg,
-  ]).toEqual(["Answer", "raised"]);
+  ]).toEqual(["Answer", "#404040"]);
   get(render(), "ask-option-0").click!({}, ctx.cx);
-  expect(get(render(), "ask-answer-submit").styles.bg).toBe("solid");
+  expect(get(render(), "ask-answer-submit").styles.bg).toBe("#ffffff");
   const picked = render();
   expect([get(picked, "ask-option-0").styles.bg, get(picked, "ask-option-1").styles.bg]).toEqual([
-    "selected",
+    "#2563eb",
     undefined,
   ]);
   expect(host.execs).toEqual([]);
@@ -730,7 +739,7 @@ test("shows the CLI's message and keeps the draft when recording fails or cannot
     text(get(refused, "ask-answer-error")),
     text(get(refused, "ask-answer-submit")),
     get(refused, "ask-option-1").styles.bg,
-  ]).toEqual(["refused: i1 has no ask to answer", "Answer", "selected"]);
+  ]).toEqual(["refused: i1 has no ask to answer", "Answer", "#2563eb"]);
   host.execExit = undefined;
   host.execRejects = new Error("no such file: bun");
   get(refused, "ask-answer-submit").click!({}, ctx.cx);
@@ -747,7 +756,7 @@ test("keeps Answer inert until an option is picked or text typed", async () => {
   const { ctx, render } = await mount();
   get(render(), "item-i2").click!({}, ctx.cx);
   const empty = get(render(), "ask-answer-submit");
-  expect([empty.styles.bg, empty.click]).toEqual(["raised", undefined]);
+  expect([empty.styles.bg, empty.click]).toEqual(["#404040", undefined]);
   host.inputs[0]!.handlers.get("submit")!({}, ctx.cx);
   typeInto(host.inputs[0]!, "   ", ctx.cx);
   expect(get(render(), "ask-answer-submit").click).toBe(undefined);
@@ -858,11 +867,11 @@ test("shows a delegated item's status chip at the right edge of its one-line row
   const { render } = await mount();
   const root = render();
   expect(["i1", "i2", "i3", "i4", "i5"].map((id) => lineOf(root, id))).toEqual([
-    ["working", "working"],
-    ["idle", "idle"],
-    ["blocked", "blocked"],
-    ["done", "done"],
-    ["error", "ansi1"],
+    ["working", "#3b82f6"],
+    ["idle", "#737373"],
+    ["blocked", "#ef4444"],
+    ["done", "#22c55e"],
+    ["error", "#ef4444"],
   ]);
   expect(text(get(root, "item-i1"))).toBe("i1 Run s-w working");
   expect(ids(root, "ref-")).toEqual([]);
@@ -890,8 +899,8 @@ test("with two or more delegates, shows the most urgent state and the count", as
   const { render } = await mount();
   const root = render();
   expect([lineOf(root, "i1"), lineOf(root, "i2")]).toEqual([
-    ["blocked ×3", "blocked"],
-    ["working ×2", "working"],
+    ["blocked ×3", "#ef4444"],
+    ["working ×2", "#3b82f6"],
   ]);
 });
 
@@ -916,8 +925,8 @@ test("shows a delegate with an ended record as ended and one with neither as gon
   const { render } = await mount();
   const root = render();
   expect([lineOf(root, "i1"), lineOf(root, "i2")]).toEqual([
-    ["ended", "dim"],
-    ["gone", "ansi3"],
+    ["ended", "#737373"],
+    ["gone", "#eab308"],
   ]);
   expect(host.reads.filter((path) => path.startsWith(ENDED))).toEqual([
     `${ENDED}/s-end.json`,
@@ -943,13 +952,13 @@ test("looks up the ended record once a delegate's terminal goes away", async () 
     ),
   );
   const { ctx, render } = await mount();
-  expect(lineOf(render(), "i1")).toEqual(["working", "working"]);
+  expect(lineOf(render(), "i1")).toEqual(["working", "#3b82f6"]);
   host.terminals = host.terminals.filter((terminal) => terminal.address !== "t2");
   host.files.set(`${ENDED}/s-w.json`, JSON.stringify({ ended_at: "2026-11-17T10:00:00.000Z" }));
-  expect(lineOf(render(), "i1")).toEqual(["gone", "ansi3"]);
+  expect(lineOf(render(), "i1")).toEqual(["gone", "#eab308"]);
   ctx.tick(1_000);
   await settle();
-  expect(lineOf(render(), "i1")).toEqual(["ended", "dim"]);
+  expect(lineOf(render(), "i1")).toEqual(["ended", "#737373"]);
   ctx.tick(1_000);
   await settle();
   expect(host.reads.filter((path) => path.startsWith(ENDED))).toEqual([`${ENDED}/s-w.json`]);
@@ -977,7 +986,7 @@ test("draws no row for a child terminal under a delegate, whose own state names 
     "item-i1",
     "delegates-i1",
   ]);
-  expect(lineOf(root, "i1")).toEqual(["idle", "idle"]);
+  expect(lineOf(root, "i1")).toEqual(["idle", "#737373"]);
   expect(get(root, "alpha-group-delegated-body").styles.h).toBe(32);
   expect(ids(root, "unfiled")).toEqual([]);
 });
@@ -1000,7 +1009,7 @@ test("lists live domain terminals no item names under Unfiled delegates", async 
   expect(ids(get(root, "unfiled"), "term-")).toEqual(["term-t2", "term-t3"]);
   expect(text(get(root, "term-t2"))).toBe("old-impl idle");
   expect([statusOf(root, "term-t3"), get(root, "term-t3").styles.pl]).toEqual([
-    ["blocked", "blocked"],
+    ["blocked", "#ef4444"],
     24,
   ]);
   expect(ids(root, "").filter((id) => id.endsWith("-header"))).toEqual([
@@ -1068,7 +1077,7 @@ test("opens an open finding's detail with its fields, and its origin opens the i
   expect([
     text(get(root, "finding-status")),
     get(root, "finding-status").styles.text_color,
-  ]).toEqual(["Open", "dim"]);
+  ]).toEqual(["Open", "#737373"]);
   expect(
     ["fact-kind", "fact-detail", "fact-path", "fact-origin"].map((id) => text(get(root, id))),
   ).toEqual(["Kind Opportunity", "Detail None", "Path None", "Origin i1 Base work"]);
@@ -1089,7 +1098,7 @@ test("a closed finding's detail shows its outcome and closing date, and Findings
   expect([
     text(get(root, "finding-status")),
     get(root, "finding-status").styles.text_color,
-  ]).toEqual(["Acted on", "ansi2"]);
+  ]).toEqual(["Acted on", "#22c55e"]);
   expect(["fact-origin", "fact-closed", "fact-outcome"].map((id) => text(get(root, id)))).toEqual([
     "Origin None",
     "Closed 2026-11-17",
@@ -1204,13 +1213,13 @@ test("keeps a domain's ended records while another domain's are looked up", asyn
   host.files.set(`${ENDED}/s-a.json`, JSON.stringify({ ended_at: "2026-11-16T08:00:00.000Z" }));
   host.files.set(`${ENDED}/s-b.json`, JSON.stringify({ ended_at: "2026-11-15T08:00:00.000Z" }));
   const { ctx, render } = await mount();
-  expect(lineOf(render(), "i1")).toEqual(["ended", "dim"]);
+  expect(lineOf(render(), "i1")).toEqual(["ended", "#737373"]);
   focusDomain("beta");
   ctx.tick(1_000);
   await settle();
-  expect(lineOf(render(), "i1")).toEqual(["ended", "dim"]);
+  expect(lineOf(render(), "i1")).toEqual(["ended", "#737373"]);
   focusDomain("alpha");
-  expect(lineOf(render(), "i1")).toEqual(["ended", "dim"]);
+  expect(lineOf(render(), "i1")).toEqual(["ended", "#737373"]);
 });
 
 test("names the shown domain at the right end of the tool bar, dim and truncating", async () => {
@@ -1226,7 +1235,7 @@ test("names the shown domain at the right end of the tool bar, dim and truncatin
       truncate: true,
       text_right: true,
       text_size: 12,
-      text_color: "dim",
+      text_color: "#737373",
     },
   ]);
   expect(text(name)).toBe("alpha");
