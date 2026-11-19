@@ -42,8 +42,8 @@ export type ItemGroup = { status: ItemStatus; label: string; items: Item[] };
 export const groupItems = (backlog: Backlog): ItemGroup[] =>
   ITEM_STATUSES.map((status) => ({
     status,
-    label: GROUP_LABELS[status],
-    items: backlog.items.filter((item) => item.status === status),
+    label: status === "waiting-user" ? "Answered, waiting for coordinator" : GROUP_LABELS[status],
+    items: backlog.items.filter((item) => item.status === status && item.ask === null),
   })).filter((group) => group.items.length > 0);
 
 /**

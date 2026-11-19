@@ -57,6 +57,27 @@ const close = (backlog: Backlog, id: string, dismissed: boolean): Backlog => {
   return closed.backlog;
 };
 
+const recordAnswer = (backlog: Backlog, id: string, answer: string): Backlog => {
+  const updated = updateItem(backlog, {
+    id,
+    status: undefined,
+    outcome: undefined,
+    decided: [],
+    touch: [],
+    untouch: [],
+    due: undefined,
+    ask: undefined,
+    context: undefined,
+    options: [],
+    rec: undefined,
+    why: undefined,
+    answer,
+    now: NOW,
+  });
+  if (!updated.ok) throw new Error(updated.reason);
+  return updated.backlog;
+};
+
 // One item in every status: i1 waiting-user, i2 building, i3 delegated, i4 and i5 open,
 // i6 parked, i7 done, i8 dismissed.
 const everyStatus = (): Backlog => {
@@ -130,15 +151,24 @@ const mount = async () => {
   return { ctx, view, render: () => view.render(ctx.cx as never) as never };
 };
 
-test("groups the focused domain's items by status, in routing order, with counts", async () => {
+test("separates asked items from status groups and keeps each item row unique", async () => {
   focusDomain("alpha");
   host.files.set(DOC, JSON.stringify(everyStatus()));
   const { render } = await mount();
   const root = render();
   expect(text(get(root, "focus"))).toBe("Ship the panel tracer");
+  expect(ids(root, "waiting-header")).toEqual(["waiting-header"]);
+  expect(ids(get(root, "waiting"), "item-")).toEqual(["item-i1"]);
+  expect(ids(get(root, "items"), "item-")).toEqual([
+    "item-i2",
+    "item-i3",
+    "item-i4",
+    "item-i5",
+    "item-i6",
+    "item-i7",
+    "item-i8",
+  ]);
   expect(ids(root, "group-")).toEqual([
-    "group-waiting-user",
-    "group-waiting-user-toggle",
     "group-building",
     "group-building-toggle",
     "group-delegated",
@@ -152,9 +182,27 @@ test("groups the focused domain's items by status, in routing order, with counts
     "group-dismissed",
     "group-dismissed-toggle",
   ]);
-  expect(text(get(root, "group-waiting-user-toggle"))).toBe("Waiting on you 1");
   expect(text(get(root, "group-open-toggle"))).toBe("Open 2");
   expect(text(get(root, "group-done-toggle"))).toBe("Done 1");
+  expect(ids(root, "item-")).toEqual([
+    "item-i1",
+    "item-i2",
+    "item-i3",
+    "item-i4",
+    "item-i5",
+    "item-i6",
+    "item-i7",
+    "item-i8",
+  ]);
+});
+
+test("hides the Waiting on you card when no items have open asks", async () => {
+  focusDomain("alpha");
+  host.files.set(DOC, JSON.stringify(recordAnswer(everyStatus(), "i1", "Coordinate backlog")));
+  const { render } = await mount();
+  const root = render();
+  expect(ids(root, "waiting-header")).toEqual([]);
+  expect(text(get(root, "group-waiting-user-toggle"))).toBe("Answered, waiting for coordinator 1");
   expect(ids(root, "item-")).toEqual([
     "item-i1",
     "item-i2",
@@ -186,7 +234,7 @@ test("folds Done and Dismissed by default and toggles a group from its header", 
 
 test("tones each group header by its status with the fixture's colors", async () => {
   focusDomain("alpha");
-  host.files.set(DOC, JSON.stringify(everyStatus()));
+  host.files.set(DOC, JSON.stringify(recordAnswer(everyStatus(), "i1", "Coordinate backlog")));
   const { render } = await mount();
   const root = render();
   const tone = (status: string) =>
@@ -707,26 +755,7 @@ test("keeps an ask without a recommendation in its own order, with nothing highl
 });
 
 // The document after the CLI recorded an answer to i1's ask.
-const answered = (answer: string): Backlog => {
-  const done = updateItem(withAsk(), {
-    id: "i1",
-    status: undefined,
-    outcome: undefined,
-    decided: [],
-    touch: [],
-    untouch: [],
-    due: undefined,
-    ask: undefined,
-    context: undefined,
-    options: [],
-    rec: undefined,
-    why: undefined,
-    answer,
-    now: NOW,
-  });
-  if (!done.ok) throw new Error(done.reason);
-  return done.backlog;
-};
+const answered = (answer: string): Backlog => recordAnswer(withAsk(), "i1", answer);
 
 const answerArgs = (id: string, answer: string) => [
   "-u",
@@ -769,6 +798,11 @@ test("answers with a picked option through the CLI, then shows the item as it re
   const root = render();
   expect(ids(root, "ask-")).toEqual([]);
   expect(text(get(root, "decided-1"))).toBe('Re "Which title?": Coordinate backlog 2026-11-17');
+  press(root, "crumb-items", ctx.cx);
+  const list = render();
+  expect(ids(get(list, "waiting"), "item-")).toEqual(["item-i2"]);
+  expect(text(get(list, "group-waiting-user-toggle"))).toBe("Answered, waiting for coordinator 1");
+  expect(ids(list, "item-")).toEqual(["item-i2", "item-i1"]);
 });
 
 test("answers with typed text over the picked option, a leading dash kept as one argument", async () => {

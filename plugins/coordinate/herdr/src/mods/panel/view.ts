@@ -290,6 +290,22 @@ const statusGroup = (
   });
 };
 
+const waitingCard = (t: Theme, model: PanelModel): Element[] => {
+  if (model.doc.kind !== "loaded") return [];
+  const items = model.doc.backlog.items.filter((item) => item.ask !== null);
+  if (items.length === 0) return [];
+  return [
+    cardSection(
+      cardHeader(t, "waiting-header", "Waiting on you"),
+      card(t, "waiting").children(
+        pagedRows(t, "waiting", items, model, ROW.compact, (item) =>
+          itemRow(t, item, model.delegates.byItem.get(item.id) ?? [], model.open),
+        ),
+      ),
+    ),
+  ];
+};
+
 const itemsCard = (t: Theme, model: PanelModel): Element =>
   cardSection(
     cardHeader(t, "items-header", "Items"),
@@ -841,7 +857,7 @@ const domainBody = (t: Theme, domain: string, doc: DocumentState, model: PanelMo
     .id("domain")
     .gap(PANEL.sectionGap)
     .child(focusHeader(t, doc.backlog.focus))
-    .child(itemsCard(t, model))
+    .children([...waitingCard(t, model), itemsCard(t, model)])
     .children(unfiledCard(t, model.delegates.unfiled, model))
     .child(findingsCard(t, model))
     .child(standingCard(t, doc.backlog, model))
