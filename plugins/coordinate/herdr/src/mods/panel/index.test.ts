@@ -566,6 +566,7 @@ const withAsk = (): Backlog => {
       question: "Which title?",
       context: "It shows in the tab row",
       options: ["Coordinate backlog", "Backlog", "Queue"],
+      optionDetails: ["Long form for the tab", "Short and clear", "A neutral alternative"],
       rec: "Backlog",
       recReason: "fits the pill",
     },
@@ -586,6 +587,7 @@ const withAsk = (): Backlog => {
       question: "Which tone?",
       context: null,
       options: ["ansi3", "blocked"],
+      optionDetails: ["", "Blocked means unavailable"],
       rec: null,
       recReason: null,
     },
@@ -605,7 +607,11 @@ test("opens an item's detail with the recommended option first, labelled and not
   expect(text(get(root, "ask-question"))).toBe("Which title?");
   expect(text(get(root, "ask-context"))).toBe("It shows in the tab row");
   expect(ids(root, "ask-option-")).toEqual(["ask-option-1", "ask-option-0", "ask-option-2"]);
-  expect(text(get(root, "ask-option-1"))).toBe("Backlog Recommended fits the pill");
+  expect(text(get(root, "ask-option-1"))).toBe("Backlog Recommended Short and clear fits the pill");
+  expect(text(get(root, "ask-detail-1"))).toBe("Short and clear");
+  expect(get(root, "ask-detail-1").styles.text_color).toBe("#a3a3a3");
+  expect(text(get(root, "ask-detail-0"))).toBe("Long form for the tab");
+  expect(text(get(root, "ask-detail-2"))).toBe("A neutral alternative");
   expect([get(root, "ask-option-1").styles.bg, get(root, "ask-option-0").styles.bg]).toEqual([
     undefined,
     undefined,
@@ -631,6 +637,8 @@ test("keeps an ask without a recommendation in its own order, with nothing highl
   const root = render();
   expect(ids(root, "ask-option-")).toEqual(["ask-option-0", "ask-option-1"]);
   expect(text(get(root, "ask-option-0"))).toBe("ansi3");
+  expect(text(get(root, "ask-option-1"))).toBe("blocked Blocked means unavailable");
+  expect(ids(root, "ask-detail-")).toEqual(["ask-detail-1"]);
   expect([get(root, "ask-option-0").styles.bg, get(root, "ask-option-1").styles.bg]).toEqual([
     undefined,
     undefined,

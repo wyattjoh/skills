@@ -494,6 +494,15 @@ const askCard = (t: Theme, item: Item, answer: AnswerModel | undefined): Element
           .child(div().min_w_0().child(option))
           .when(rec, (el) => el.child(small(t, t.accent, "Recommended"))),
       )
+      .when(Boolean(ask.optionDetails?.[index]), (el) =>
+        el.child(
+          div()
+            .id(`ask-detail-${index}`)
+            .text_size(TEXT.label)
+            .text_color(t.muted)
+            .child(ask.optionDetails![index]!),
+        ),
+      )
       .when(rec && ask.recReason !== null, (el) =>
         el.child(
           div()
