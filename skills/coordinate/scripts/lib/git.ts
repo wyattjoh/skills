@@ -267,8 +267,20 @@ export const landedOn = Effect.fn("landedOn")(function* (
     if (!tree) continue;
     if (tree === (yield* gitTry(repo, ["rev-parse", `${mergeBase}^{tree}`]))) continue;
     // A throwaway commit holding the branch's whole diff; `git cherry` marks it "-" when a
-    // commit on the base carries the same patch. The object stays unreferenced.
-    const squashed = yield* gitTry(repo, ["commit-tree", tree, "-p", mergeBase, "-m", "squash"]);
+    // commit on the base carries the same patch. The object stays unreferenced. Set an identity
+    // explicitly because CI and clean user environments may not have one configured.
+    const squashed = yield* gitTry(repo, [
+      "-c",
+      "user.name=coordinate",
+      "-c",
+      "user.email=coordinate@localhost",
+      "commit-tree",
+      tree,
+      "-p",
+      mergeBase,
+      "-m",
+      "squash",
+    ]);
     if (!squashed) continue;
     const squashCherry = yield* gitTry(repo, ["cherry", base, squashed]);
     if (squashCherry?.startsWith("-")) return "squash" satisfies Landing;

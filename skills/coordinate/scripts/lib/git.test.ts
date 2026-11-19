@@ -1,7 +1,9 @@
 import { afterAll, describe, expect, it } from "bun:test";
+import { Layer } from "effect";
 import { readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { commitFile, g, initRepo, runWith, tempDir } from "./fixture.ts";
+import { Proc, realProc } from "./proc.ts";
 import {
   branchCreationBase,
   excludeScratch,
@@ -65,7 +67,23 @@ describe("landedOn", () => {
     commitFile(r, "other.txt", "o\n");
     g(r, "merge", "-q", "--squash", "sq");
     g(r, "-c", "user.name=T", "-c", "user.email=t@e", "commit", "-q", "-m", "squash sq");
-    expect(await runWith(landedOn(r, "sq", ["main"]))).toBe("squash");
+    const home = tempDir("coordinate-home-");
+    writeFileSync(join(home, ".gitconfig"), "[user]\n\tuseConfigOnly = true\n");
+    const layer = Layer.succeed(
+      Proc,
+      Proc.of({
+        run: (argv, options) =>
+          realProc.run(argv, {
+            ...options,
+            env: { ...options?.env, HOME: home, XDG_CONFIG_HOME: home },
+          }),
+      }),
+    );
+    try {
+      expect(await runWith(landedOn(r, "sq", ["main"]), layer)).toBe("squash");
+    } finally {
+      rmSync(home, { recursive: true, force: true });
+    }
   });
 
   it("does not call an empty branch landed", async () => {
