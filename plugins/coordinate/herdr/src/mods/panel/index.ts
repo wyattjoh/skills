@@ -13,7 +13,6 @@ import {
   boundaryCommand,
   boundaryOutput,
   cachedDocument,
-  closedFindings,
   chosenAnswer,
   configPath,
   countLiveDelegates,
@@ -37,6 +36,7 @@ import type {
   AnswerDraft,
   DelegateJoin,
   DocumentState,
+  DomainPage,
   DomainSummary,
   EndedRecords,
   ItemGroup,
@@ -86,6 +86,8 @@ export default class Panel extends View {
   // The item or finding whose detail is open, by domain and id, so a reload shows its latest
   // copy and a vanished record falls back to the lists.
   selected: { kind: "item" | "finding"; domain: string; id: string } | undefined;
+  // A domain page remains mounted beneath a finding detail so its scroll position is retained.
+  page: DomainPage | undefined;
   // The state folder the last load found, the ended records read for the delegate refs that had
   // no live terminal then, and which sessions those were, so a delegate that loses its terminal
   // between document changes is looked up again.
@@ -135,6 +137,8 @@ export default class Panel extends View {
     const followed = this.focusDomain();
     if (followed === this.followed) return;
     this.followed = followed;
+    this.page = undefined;
+    this.selected = undefined;
     if (followed === undefined) return;
     this.picked = undefined;
     this.listed = false;
@@ -173,14 +177,18 @@ export default class Panel extends View {
   openDomain(domain: string, cx: Context) {
     this.picked = domain;
     this.listed = false;
+    this.page = undefined;
+    this.selected = undefined;
     this.load(cx);
   }
 
-  // Open a screen the trail or a link names. A detail opens over its domain's lists; the
-  // lists close any detail; Domains shows the listing.
+  // Open a screen the trail or a link names. Details open over their list, pages open over the
+  // domain's main list, and Domains shows the listing.
   go(screen: Screen, cx: Context) {
     if (screen.kind === "item" || screen.kind === "finding") {
       this.selected = { kind: screen.kind, domain: screen.domain, id: screen.id };
+      this.page =
+        screen.kind === "finding" ? { kind: "findings", domain: screen.domain } : undefined;
       this.clearDraft();
       cx.notify();
       return;
@@ -188,16 +196,29 @@ export default class Panel extends View {
     this.selected = undefined;
     this.clearDraft();
     if (screen.kind === "domains") {
+      this.page = undefined;
       this.picked = undefined;
       this.listed = true;
       this.load(cx);
       return;
     }
+    if (screen.kind === "domain") {
+      this.page = undefined;
+      if (this.target() === screen.domain) {
+        cx.notify();
+        return;
+      }
+      this.openDomain(screen.domain, cx);
+      return;
+    }
+    this.page = screen;
+    this.picked = screen.domain;
+    this.listed = false;
     if (this.target() === screen.domain) {
       cx.notify();
       return;
     }
-    this.openDomain(screen.domain, cx);
+    this.load(cx);
   }
 
   load(cx: Context) {
@@ -552,39 +573,17 @@ export default class Panel extends View {
   }
 
   // The screen drawn: a detail only while its record is still in the document.
-  screen(domain: string | undefined, item: Item | undefined, finding: Finding | undefined): Screen {
+  screen(
+    domain: string | undefined,
+    item: Item | undefined,
+    finding: Finding | undefined,
+    page: DomainPage | undefined,
+  ): Screen {
     if (domain === undefined) return { kind: "domains" };
     if (item !== undefined) return { kind: "item", domain, id: item.id };
     if (finding !== undefined) return { kind: "finding", domain, id: finding.id };
+    if (page?.domain === domain) return page;
     return { kind: "domain", domain };
-  }
-
-  closedKey(): string {
-    return `${this.domain}:findings-closed`;
-  }
-
-  // Closed findings start folded, as closed item groups do.
-  closedOpen(): boolean {
-    return this.folds.get(this.closedKey()) ?? false;
-  }
-
-  toggleClosed(cx: Context) {
-    this.folds.set(this.closedKey(), !this.closedOpen());
-    cx.notify();
-  }
-
-  standingKey(): string {
-    return `${this.domain}:standing-yes`;
-  }
-
-  // The Standing yes card starts folded, as the Closed findings do.
-  standingOpen(): boolean {
-    return this.folds.get(this.standingKey()) ?? false;
-  }
-
-  toggleStanding(cx: Context) {
-    this.folds.set(this.standingKey(), !this.standingOpen());
-    cx.notify();
   }
 
   visibleRows(domain: string | undefined, group: string, total: number): number {
@@ -623,15 +622,11 @@ export default class Panel extends View {
       domain,
       doc,
       listing: this.listing,
-      trail: trailOf(this.screen(domain, detail, finding)),
+      trail: trailOf(this.screen(domain, detail, finding, this.page)),
       go: (screen, cx) => this.go(screen, cx),
       groups: doc.kind === "loaded" ? groupItems(doc.backlog) : [],
       findings: doc.kind === "loaded" ? openFindings(doc.backlog) : [],
-      closed: doc.kind === "loaded" ? closedFindings(doc.backlog) : [],
-      closedOpen: this.closedOpen(),
-      toggleClosed: (cx) => this.toggleClosed(cx),
-      standingOpen: this.standingOpen(),
-      toggleStanding: (cx) => this.toggleStanding(cx),
+      page: this.page === undefined || this.page.domain !== domain ? undefined : this.page.kind,
       finding,
       origin,
       openFinding: (record, cx) => this.openFinding(record, cx),

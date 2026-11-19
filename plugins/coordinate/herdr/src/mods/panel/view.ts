@@ -61,6 +61,7 @@ import type {
   AnswerDraft,
   Crumb,
   DelegateJoin,
+  DomainPage,
   DelegateRow,
   DelegateState,
   DocumentState,
@@ -83,14 +84,10 @@ export type PanelModel = {
   trail: Crumb[];
   go: (screen: Screen, cx: Context) => void;
   groups: ItemGroup[];
-  // The open findings, and the closed ones in their folded group.
+  // The active list page, or undefined while the domain's main list is shown.
+  page: DomainPage["kind"] | undefined;
+  // The open findings.
   findings: Finding[];
-  closed: Finding[];
-  closedOpen: boolean;
-  toggleClosed: (cx: Context) => void;
-  // Whether the Standing yes card is unfolded, and what folds it.
-  standingOpen: boolean;
-  toggleStanding: (cx: Context) => void;
   // The finding whose detail screen is on top of the lists, if any, and the item it came from
   // when the document still has it.
   finding: Finding | undefined;
@@ -379,7 +376,7 @@ const findingRow = (
     onClick: (cx) => open(finding, cx),
   });
 
-// Live domain terminals have no item name, so they stay in their own section.
+// Live domain terminals with no item name, shown with their domain-specific nesting.
 const unfiledCard = (t: Theme, rows: DelegateRow[], model: PanelModel): Element[] =>
   rows.length === 0
     ? []
@@ -394,26 +391,9 @@ const unfiledCard = (t: Theme, rows: DelegateRow[], model: PanelModel): Element[
         ),
       ];
 
-// Closed findings have fixed-height rows, so herdr-ui's generic animated group fits directly.
-const closedGroup = (t: Theme, model: PanelModel): Element =>
-  groupBlock(t, model.domain ?? "coordinate-panel", {
-    id: "group-findings-closed",
-    label: "Closed",
-    tone: "muted",
-    count: model.closed.length,
-    rows: pagedRows(t, "group-findings-closed", model.closed, model, ROW.compact, (finding) =>
-      findingRow(t, finding, model.openFinding),
-    ),
-    rowHeight: ROW.compact,
-    open: model.closedOpen,
-    first: false,
-    last: true,
-    toggle: model.toggleClosed,
-  });
-
-// Open findings, one package row each, then the closed ones in the package's collapsible group.
-const findingsCard = (t: Theme, model: PanelModel): Element => {
-  const openRows =
+// Open findings, one package row each. Closed findings stay off this page.
+const findingsPage = (t: Theme, model: PanelModel): Element => {
+  const rows =
     model.findings.length === 0
       ? [emptyRow(t, "findings-empty", "No open findings")]
       : pagedRows(t, "findings-open", model.findings, model, ROW.compact, (finding, index) =>
@@ -421,9 +401,7 @@ const findingsCard = (t: Theme, model: PanelModel): Element => {
         );
   return cardSection(
     cardHeader(t, "findings-header", "Findings"),
-    card(t, "findings")
-      .children(openRows)
-      .children(model.closed.length === 0 ? [] : [closedGroup(t, model)]),
+    card(t, "findings").children(rows),
   );
 };
 
@@ -720,34 +698,22 @@ const detailScreen = (
     .children(decidedCard(t, item))
     .children(delegatesCard(t, item, delegates.byItem.get(item.id) ?? []));
 
-// Standing approvals wrap and do not animate, so the package's header, fold chevron and card
-// pieces are composed directly instead of using its fixed-row groupBlock.
-const standingCard = (t: Theme, backlog: Backlog, model: PanelModel): Element => {
-  const open = model.standingOpen;
+// Standing approvals wrap, so use the package's card pieces instead of fixed-height groupBlock.
+const standingPage = (t: Theme, backlog: Backlog, model: PanelModel): Element => {
   const entries = backlog.standingYes;
-  const header = cardHeader(t, "standing-header", "Standing yes", open)
-    .cursor_pointer()
-    .on_click((_event, cx) => model.toggleStanding(cx))
-    .child(div().flex_1())
-    .child(rowNote(t, String(entries.length)));
-  return v_flex()
-    .flex_none()
-    .gap(CARD.sectionGap)
-    .child(header)
-    .when(open, (el) =>
-      el.child(
-        card(t, "standing").children(
-          entries.length === 0
-            ? [emptyRow(t, "standing-empty", "None")]
-            : pagedRows(t, "standing-yes", entries, model, ROW.list, (entry, index) =>
-                detailRow(t, `standing-${index}`)
-                  .when(index === 0, (row) => row.border_t(0))
-                  .child(div().child(entry.text))
-                  .child(small(t, t.dim, entry.at.slice(0, 10))),
-              ),
-        ),
-      ),
-    );
+  return cardSection(
+    cardHeader(t, "standing-header", "Standing yes"),
+    card(t, "standing").children(
+      entries.length === 0
+        ? [emptyRow(t, "standing-empty", "None")]
+        : pagedRows(t, "standing-yes", entries, model, ROW.list, (entry, index) =>
+            detailRow(t, `standing-${index}`)
+              .when(index === 0, (row) => row.border_t(0))
+              .child(div().child(entry.text))
+              .child(small(t, t.dim, entry.at.slice(0, 10))),
+          ),
+    ),
+  );
 };
 
 // The paths the domain owns and those next to it, in separate editable cards.
@@ -839,6 +805,73 @@ const boundaryCard = (t: Theme, boundary: Backlog["boundary"], model: BoundaryMo
   ];
 };
 
+const sectionRow = (
+  t: Theme,
+  id: string,
+  label: string,
+  count: number,
+  screen: DomainPage,
+  model: PanelModel,
+): Element =>
+  listRow(t, {
+    id,
+    title: label,
+    height: ROW.list,
+    trailing: [rowNote(t, String(count))],
+    onClick: (cx) => model.go(screen, cx),
+  });
+
+const sectionLinks = (t: Theme, domain: string, backlog: Backlog, model: PanelModel): Element =>
+  cardSection(
+    cardHeader(t, "lists-header", "Lists"),
+    card(t, "lists").children([
+      sectionRow(
+        t,
+        "page-standing",
+        "Standing yes",
+        backlog.standingYes.length,
+        { kind: "standing", domain },
+        model,
+      ),
+      sectionRow(
+        t,
+        "page-findings",
+        "Findings",
+        model.findings.length,
+        { kind: "findings", domain },
+        model,
+      ),
+      sectionRow(
+        t,
+        "page-boundary",
+        "Boundary",
+        backlog.boundary.owned.length + backlog.boundary.adjacent.length,
+        { kind: "boundary", domain },
+        model,
+      ),
+    ]),
+  );
+
+const domainPage = (t: Theme, backlog: Backlog, model: PanelModel): Element => {
+  let content: Element;
+  switch (model.page) {
+    case "standing":
+      content = standingPage(t, backlog, model);
+      break;
+    case "findings":
+      content = findingsPage(t, model);
+      break;
+    case "boundary":
+      content = v_flex()
+        .gap(PANEL.sectionGap)
+        .children(boundaryCard(t, backlog.boundary, model.boundary));
+      break;
+    default:
+      content = message(t, "page-unavailable", "Page unavailable", "Return to the domain list.");
+  }
+  return v_flex().id("domain-page").gap(PANEL.sectionGap).child(content);
+};
+
 const domainBody = (t: Theme, domain: string, doc: DocumentState, model: PanelModel): Element => {
   if (doc.kind === "loading")
     return message(t, "loading", "Loading…", `Reading ${domain}'s backlog.`, "loading");
@@ -859,9 +892,7 @@ const domainBody = (t: Theme, domain: string, doc: DocumentState, model: PanelMo
     .child(focusHeader(t, doc.backlog.focus))
     .children([...waitingCard(t, model), itemsCard(t, model)])
     .children(unfiledCard(t, model.delegates.unfiled, model))
-    .child(findingsCard(t, model))
-    .child(standingCard(t, doc.backlog, model))
-    .children(boundaryCard(t, doc.backlog.boundary, model.boundary));
+    .child(sectionLinks(t, domain, doc.backlog, model));
 };
 
 const COUNT_LABELS = [
@@ -928,7 +959,10 @@ const domainScreens = (t: Theme, model: PanelModel): Element =>
         .id("screen-list")
         .absolute()
         .inset_0()
-        .when(model.detail !== undefined || model.finding !== undefined, (list) => list.invisible())
+        .when(
+          model.page !== undefined || model.detail !== undefined || model.finding !== undefined,
+          (list) => list.invisible(),
+        )
         .child(
           paneScrollRegion(
             "panel-scroll",
@@ -936,6 +970,27 @@ const domainScreens = (t: Theme, model: PanelModel): Element =>
             PANEL.padding,
           ),
         ),
+    )
+    .when(model.page !== undefined, (screens) =>
+      screens.child(
+        v_flex()
+          .id("screen-page")
+          .absolute()
+          .inset_0()
+          .bg(t.surface)
+          .when(model.detail !== undefined || model.finding !== undefined, (page) =>
+            page.invisible(),
+          )
+          .child(
+            paneScrollRegion(
+              "page-scroll",
+              model.doc.kind === "loaded"
+                ? domainPage(t, model.doc.backlog, model)
+                : domainBody(t, model.domain!, model.doc, model),
+              PANEL.padding,
+            ),
+          ),
+      ),
     )
     .when(model.detail !== undefined, (screens) =>
       screens.child(

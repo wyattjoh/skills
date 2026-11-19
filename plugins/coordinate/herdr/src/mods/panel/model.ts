@@ -80,12 +80,21 @@ export const FINDING_KIND_LABELS: Readonly<Record<Finding["kind"], string>> = {
 };
 
 /**
- * A screen of the panel: the all-domains listing, one domain's lists, or one item's or
- * finding's detail in a domain.
+ * A page within one domain's backlog.
+ */
+export type DomainPage =
+  | { kind: "standing"; domain: string }
+  | { kind: "findings"; domain: string }
+  | { kind: "boundary"; domain: string };
+
+/**
+ * A screen of the panel: the all-domains listing, one domain's main list or page, or a record's
+ * detail in a domain.
  */
 export type Screen =
   | { kind: "domains" }
   | { kind: "domain"; domain: string }
+  | DomainPage
   | { kind: "item"; domain: string; id: string }
   | { kind: "finding"; domain: string; id: string };
 
@@ -96,9 +105,8 @@ export type Screen =
 export type Crumb = { id: string; label: string; to: Screen | undefined };
 
 /**
- * The breadcrumb trail down to a screen, root first: Domains, then the domain, then Items or
- * Findings and the record's id. The section step has no screen of its own, so it opens the
- * domain's lists, where its card is.
+ * The breadcrumb trail down to a screen, root first: Domains, then the domain, then its page
+ * or the item/finding list and record detail.
  * @param screen The screen shown.
  * @returns The crumbs.
  */
@@ -109,6 +117,10 @@ export const trailOf = (screen: Screen): Crumb[] => {
   if (screen.kind !== "domains") {
     const lists: Screen = { kind: "domain", domain: screen.domain };
     steps.push({ id: `crumb-domain-${screen.domain}`, label: screen.domain, screen: lists });
+    if (screen.kind === "standing")
+      steps.push({ id: "crumb-standing", label: "Standing yes", screen });
+    if (screen.kind === "findings") steps.push({ id: "crumb-findings", label: "Findings", screen });
+    if (screen.kind === "boundary") steps.push({ id: "crumb-boundary", label: "Boundary", screen });
     if (screen.kind === "item")
       steps.push(
         { id: "crumb-items", label: "Items", screen: lists },
@@ -116,7 +128,11 @@ export const trailOf = (screen: Screen): Crumb[] => {
       );
     if (screen.kind === "finding")
       steps.push(
-        { id: "crumb-findings", label: "Findings", screen: lists },
+        {
+          id: "crumb-findings",
+          label: "Findings",
+          screen: { kind: "findings", domain: screen.domain },
+        },
         { id: `crumb-finding-${screen.id}`, label: screen.id, screen },
       );
   }

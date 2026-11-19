@@ -140,8 +140,10 @@ const withFindings = (): Backlog => {
 // The breadcrumb trail as it reads, separators included.
 const trail = (root: Node) => text(get(root, "breadcrumb"));
 
-// Press a crumb by its id.
+// Press a crumb or a page row by its id.
 const press = (root: Node, id: string, cx: unknown) => get(root, id).click!({}, cx);
+const openPage = (root: Node, page: string, cx: unknown) =>
+  get(root, `page-${page}`).click!({}, cx);
 
 const mount = async () => {
   const ctx = context();
@@ -158,6 +160,11 @@ test("separates asked items from status groups and keeps each item row unique", 
   const root = render();
   expect(text(get(root, "focus"))).toBe("Ship the panel tracer");
   expect(ids(root, "waiting-header")).toEqual(["waiting-header"]);
+  expect(
+    ids(root, "")
+      .filter((id) => id.endsWith("-header"))
+      .slice(0, 2),
+  ).toEqual(["waiting-header", "items-header"]);
   expect(ids(get(root, "waiting"), "item-")).toEqual(["item-i1"]);
   expect(ids(get(root, "items"), "item-")).toEqual([
     "item-i2",
@@ -631,21 +638,22 @@ test("starts nothing under herdr-app check", async () => {
   ]);
 });
 
-test("lists open findings under the Items card with kind glyphs in their tones", async () => {
+test("shows page buttons on the main list and lists only open findings on the Findings page", async () => {
   focusDomain("alpha");
   host.files.set(DOC, JSON.stringify(withFindings()));
-  const { render } = await mount();
-  const root = render();
-  expect(ids(root, "").filter((id) => id.endsWith("-header"))).toEqual([
-    "items-header",
-    "findings-header",
-    "standing-header",
-    "boundary-owned-header",
-    "boundary-adjacent-header",
-  ]);
+  const { ctx, render } = await mount();
+  let root = render();
+  expect(ids(root, "page-")).toEqual(["page-standing", "page-findings", "page-boundary"]);
+  expect(
+    ["page-standing", "page-findings", "page-boundary"].map((id) => text(get(root, id))),
+  ).toEqual(["Standing yes 0", "Findings 2", "Boundary 0"]);
+  expect(ids(root, "finding-")).toEqual([]);
+
+  openPage(root, "findings", ctx.cx);
+  root = render();
+  expect(trail(root)).toBe("Domains › alpha › Findings");
   expect(text(get(root, "findings-header"))).toBe("Findings");
-  expect(ids(root, "finding-")).toEqual(["finding-f2", "finding-f3", "finding-f4"]);
-  expect(ids(get(root, "alpha-group-findings-closed-body"), "finding-")).toEqual(["finding-f4"]);
+  expect(ids(root, "finding-")).toEqual(["finding-f2", "finding-f3"]);
   expect(text(get(root, "finding-f2"))).toBe("▲ f2 Flaky watcher test");
   expect(text(get(root, "finding-f3"))).toBe("✦ f3 Share the validator");
   const glyph = (id: string) =>
@@ -653,10 +661,11 @@ test("lists open findings under the Items card with kind glyphs in their tones",
   expect([glyph("finding-f2"), glyph("finding-f3")]).toEqual(["#ef4444", "#f97316"]);
 });
 
-test("says so when no finding is open", async () => {
+test("says so on the Findings page when no finding is open", async () => {
   focusDomain("alpha");
   host.files.set(DOC, JSON.stringify(everyStatus()));
-  const { render } = await mount();
+  const { ctx, render } = await mount();
+  openPage(render(), "findings", ctx.cx);
   expect(text(get(render(), "findings-empty"))).toBe("No open findings");
 });
 
@@ -1127,14 +1136,7 @@ test("lists live domain terminals no item names under Unfiled delegates", async 
     ["blocked", "#ef4444"],
     24,
   ]);
-  expect(ids(root, "").filter((id) => id.endsWith("-header"))).toEqual([
-    "items-header",
-    "unfiled-header",
-    "findings-header",
-    "standing-header",
-    "boundary-owned-header",
-    "boundary-adjacent-header",
-  ]);
+  expect(trail(root)).toBe("Domains › alpha");
 });
 
 test("shows each delegate's live status on the item's detail screen", async () => {
@@ -1156,33 +1158,11 @@ test("shows each delegate's live status on the item's detail screen", async () =
   );
 });
 
-test("folds closed findings into a Closed group that opens from its band", async () => {
-  focusDomain("alpha");
-  host.files.set(DOC, JSON.stringify(withFindings()));
-  const { ctx, render } = await mount();
-  let root = render();
-  expect(text(get(root, "group-findings-closed-toggle"))).toBe("Closed 1");
-  expect(get(root, "alpha-group-findings-closed-body").styles.h).toBe(0);
-  get(root, "group-findings-closed-toggle").click!({}, ctx.cx);
-  root = render();
-  expect(get(root, "alpha-group-findings-closed-body").styles.h).toBe(32);
-  expect(text(get(root, "finding-f4"))).toBe("▲ f4 Old crash");
-});
-
-test("draws no Closed group while every finding is open", async () => {
-  focusDomain("alpha");
-  host.files.set(
-    DOC,
-    JSON.stringify(find(add(emptyBacklog("alpha", null), "Base"), "issue", "Bug")),
-  );
-  const { render } = await mount();
-  expect(ids(render(), "group-findings-closed")).toEqual([]);
-});
-
 test("opens an open finding's detail with its fields, and its origin opens the item", async () => {
   focusDomain("alpha");
   host.files.set(DOC, JSON.stringify(withFindings()));
   const { ctx, render } = await mount();
+  openPage(render(), "findings", ctx.cx);
   get(render(), "finding-f3").click!({}, ctx.cx);
   let root = render();
   expect(ids(root, "screen-finding")).toEqual(["screen-finding"]);
@@ -1203,37 +1183,35 @@ test("opens an open finding's detail with its fields, and its origin opens the i
   expect(trail(root)).toBe("Domains › alpha › Items › i1");
 });
 
-test("a closed finding's detail shows its outcome and closing date, and Findings returns", async () => {
+test("the Findings crumb returns from a finding detail to its page", async () => {
   focusDomain("alpha");
   host.files.set(DOC, JSON.stringify(withFindings()));
   const { ctx, render } = await mount();
-  get(render(), "group-findings-closed-toggle").click!({}, ctx.cx);
-  get(render(), "finding-f4").click!({}, ctx.cx);
+  openPage(render(), "findings", ctx.cx);
+  get(render(), "finding-f3").click!({}, ctx.cx);
   let root = render();
-  expect([
-    text(get(root, "finding-status")),
-    get(root, "finding-status").styles.text_color,
-  ]).toEqual(["Acted on", "#22c55e"]);
-  expect(["fact-origin", "fact-closed", "fact-outcome"].map((id) => text(get(root, id)))).toEqual([
-    "Origin None",
-    "Closed 2026-11-17",
-    "Outcome fixed",
-  ]);
+  expect(trail(root)).toBe("Domains › alpha › Findings › f3");
   press(root, "crumb-findings", ctx.cx);
   root = render();
-  expect([ids(root, "screen-finding"), trail(root)]).toEqual([[], "Domains › alpha"]);
+  expect([ids(root, "screen-finding"), ids(root, "screen-page"), trail(root)]).toEqual([
+    [],
+    ["screen-page"],
+    "Domains › alpha › Findings",
+  ]);
+  expect(ids(root, "finding-")).toEqual(["finding-f2", "finding-f3"]);
 });
 
 test("a finding that leaves the document falls back to the lists", async () => {
   focusDomain("alpha");
   host.files.set(DOC, JSON.stringify(withFindings()));
   const { ctx, render } = await mount();
+  openPage(render(), "findings", ctx.cx);
   get(render(), "finding-f2").click!({}, ctx.cx);
   host.files.set(DOC, JSON.stringify({ ...withFindings(), findings: [] }));
   host.watches.at(-1)!.fire([DOC]);
   await settle();
   const root = render();
-  expect([ids(root, "screen-finding"), trail(root)]).toEqual([[], "Domains › alpha"]);
+  expect([ids(root, "screen-finding"), trail(root)]).toEqual([[], "Domains › alpha › Findings"]);
 });
 
 test("shows a closed item's closing date beside its creation date", async () => {
@@ -1250,7 +1228,7 @@ test("shows a closed item's closing date beside its creation date", async () => 
   ]);
 });
 
-test("folds Standing yes by default and shows Owned and Adjacent cards after Findings", async () => {
+test("opens Standing yes and Boundary from count rows on the main list", async () => {
   focusDomain("alpha");
   host.files.set(
     DOC,
@@ -1266,17 +1244,27 @@ test("folds Standing yes by default and shows Owned and Adjacent cards after Fin
   );
   const { ctx, render } = await mount();
   let root = render();
-  expect(text(get(root, "standing-header"))).toBe("Standing yes 2");
-  expect(get(root, "standing-header").nodes[1]).toMatchObject({
-    styles: { asset: "mods/workspace-chrome/chevron-right.svg" },
-  });
-  expect(ids(root, "standing-")).toEqual(["standing-header"]);
-  get(root, "standing-header").click!({}, ctx.cx);
+  expect([text(get(root, "page-standing")), text(get(root, "page-boundary"))]).toEqual([
+    "Standing yes 2",
+    "Boundary 2",
+  ]);
+  expect(ids(root, "standing-")).toEqual([]);
+  expect(ids(root, "boundary-")).toEqual([]);
+
+  openPage(root, "standing", ctx.cx);
   root = render();
+  expect(trail(root)).toBe("Domains › alpha › Standing yes");
   expect(["standing-0", "standing-1"].map((id) => text(get(root, id)))).toEqual([
     "Merge doc fixes 2026-11-17",
     "Rebase local branches 2026-11-15",
   ]);
+  press(root, "crumb-domain-alpha", ctx.cx);
+  root = render();
+  expect([ids(root, "screen-page"), trail(root)]).toEqual([[], "Domains › alpha"]);
+
+  openPage(root, "boundary", ctx.cx);
+  root = render();
+  expect(trail(root)).toBe("Domains › alpha › Boundary");
   expect(ids(root, "boundary-")).toEqual([
     "boundary-owned-header",
     "boundary-alpha-owned-add",
@@ -1310,6 +1298,7 @@ test("shows a hovered X on boundary rows and runs rm with the row path and domai
     }),
   );
   const { ctx, render } = await mount();
+  openPage(render(), "boundary", ctx.cx);
   let root = render();
   expect(ids(root, "boundary-alpha-owned-remove-")).toEqual([]);
   const hover = get(root, "boundary-alpha-owned-plugins/coordinate").styles.on_hover;
@@ -1346,6 +1335,7 @@ test("Escape cancels an inline boundary input", async () => {
   focusDomain("alpha");
   host.files.set(DOC, JSON.stringify(emptyBacklog("alpha", null)));
   const { ctx, render } = await mount();
+  openPage(render(), "boundary", ctx.cx);
   get(render(), "boundary-alpha-owned-add").click!({}, ctx.cx);
   const field = get(render(), "boundary-alpha-owned-input");
   const keyDown = (field.nodes[0] as Node).styles.on_key_down;
@@ -1359,6 +1349,7 @@ test("opens the Adjacent inline input and adds with --adjacent and the focused d
   focusDomain("alpha");
   host.files.set(DOC, JSON.stringify(emptyBacklog("alpha", null)));
   const { ctx, render } = await mount();
+  openPage(render(), "boundary", ctx.cx);
   get(render(), "boundary-alpha-adjacent-add").click!({}, ctx.cx);
   const root = render();
   expect(get(root, "boundary-alpha-adjacent-input")).toBeDefined();
@@ -1392,6 +1383,7 @@ test("shows the boundary CLI refusal on the card and refuses a blank path locall
   focusDomain("alpha");
   host.files.set(DOC, JSON.stringify(emptyBacklog("alpha", null)));
   const { ctx, render } = await mount();
+  openPage(render(), "boundary", ctx.cx);
   get(render(), "boundary-alpha-owned-add").click!({}, ctx.cx);
   const input = host.inputs.at(-1)!;
   input.handlers.get("submit")?.({}, ctx.cx);
@@ -1409,12 +1401,11 @@ test("shows the boundary CLI refusal on the card and refuses a blank path locall
   );
 });
 
-test("says None for an unfolded standing yes with no entries", async () => {
+test("shows None on an empty Standing yes page", async () => {
   focusDomain("alpha");
   host.files.set(DOC, JSON.stringify(emptyBacklog("alpha", null)));
   const { ctx, render } = await mount();
-  expect(text(get(render(), "standing-header"))).toBe("Standing yes 0");
-  get(render(), "standing-header").click!({}, ctx.cx);
+  openPage(render(), "standing", ctx.cx);
   expect(text(get(render(), "standing-empty"))).toBe("None");
 });
 
@@ -1510,11 +1501,10 @@ test("reveals item rows ten at a time and resets pagination when the domain chan
   ]);
 });
 
-test("paginates open and closed findings independently", async () => {
+test("paginates open findings while leaving closed findings off the Findings page", async () => {
   let backlog = emptyBacklog("alpha", null);
   for (let index = 1; index <= 25; index++) backlog = find(backlog, "issue", `Finding ${index}`);
   const allIds = backlog.findings.map((finding) => finding.id);
-  const closedIds = allIds.slice(0, 12).map((id) => `finding-${id}`);
   for (const id of allIds.slice(0, 12)) {
     const closed = closeFinding(backlog, {
       id,
@@ -1529,27 +1519,16 @@ test("paginates open and closed findings independently", async () => {
   focusDomain("alpha");
   host.files.set(DOC, JSON.stringify(backlog));
   const { ctx, render } = await mount();
+  openPage(render(), "findings", ctx.cx);
   let root = render();
-  const shownOpen = () => ids(root, "finding-").filter((id) => openIds.includes(id));
-  const shownClosed = () => ids(root, "finding-").filter((id) => closedIds.includes(id));
-  expect([shownOpen().length, shownClosed().length, ids(root, "load-more-")]).toEqual([
-    10,
-    10,
-    ["load-more-findings-open", "load-more-group-findings-closed"],
+  expect([ids(root, "finding-"), ids(root, "load-more-")]).toEqual([
+    openIds.slice(0, 10),
+    ["load-more-findings-open"],
   ]);
 
   get(root, "load-more-findings-open").click!({}, ctx.cx);
   root = render();
-  expect([shownOpen().length, shownClosed().length, ids(root, "load-more-")]).toEqual([
-    13,
-    10,
-    ["load-more-group-findings-closed"],
-  ]);
-  get(root, "group-findings-closed-toggle").click!({}, ctx.cx);
-  root = render();
-  get(root, "load-more-group-findings-closed").click!({}, ctx.cx);
-  root = render();
-  expect([shownOpen().length, shownClosed().length, ids(root, "load-more-")]).toEqual([13, 12, []]);
+  expect([ids(root, "finding-"), ids(root, "load-more-")]).toEqual([openIds, []]);
 });
 
 test("paginates Unfiled delegates while preserving nested rows", async () => {
@@ -1584,7 +1563,7 @@ test("paginates Standing yes entries ten at a time", async () => {
     }),
   );
   const { ctx, render } = await mount();
-  get(render(), "standing-header").click!({}, ctx.cx);
+  openPage(render(), "standing", ctx.cx);
   let root = render();
   const standingRows = () => ids(root, "standing-").filter((id) => id !== "standing-header");
   expect([standingRows().length, ids(root, "load-more-")]).toEqual([

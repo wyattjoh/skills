@@ -37,14 +37,24 @@ test("cachedDocument draws loading for a domain not read yet and for the listing
   expect(cachedDocument(shown, undefined)).toEqual({ kind: "loading" });
 });
 
-test("trailOf ends at the listing, a domain, an item and a finding, linking every step but the last", () => {
+test("trailOf links domain pages and record details back to their parent screens", () => {
   const lists = { kind: "domain", domain: "skills" } as const;
+  const findings = { kind: "findings", domain: "skills" } as const;
   expect(trailOf({ kind: "domains" })).toEqual([
     { id: "crumb-domains", label: "Domains", to: undefined },
   ]);
   expect(trailOf(lists)).toEqual([
     { id: "crumb-domains", label: "Domains", to: { kind: "domains" } },
     { id: "crumb-domain-skills", label: "skills", to: undefined },
+  ]);
+  expect(
+    [{ kind: "standing", domain: "skills" }, findings, { kind: "boundary", domain: "skills" }].map(
+      (screen) => trailOf(screen).at(-1),
+    ),
+  ).toEqual([
+    { id: "crumb-standing", label: "Standing yes", to: undefined },
+    { id: "crumb-findings", label: "Findings", to: undefined },
+    { id: "crumb-boundary", label: "Boundary", to: undefined },
   ]);
   expect(trailOf({ kind: "item", domain: "skills", id: "i4" })).toEqual([
     { id: "crumb-domains", label: "Domains", to: { kind: "domains" } },
@@ -55,7 +65,7 @@ test("trailOf ends at the listing, a domain, an item and a finding, linking ever
   expect(trailOf({ kind: "finding", domain: "skills", id: "f5" })).toEqual([
     { id: "crumb-domains", label: "Domains", to: { kind: "domains" } },
     { id: "crumb-domain-skills", label: "skills", to: lists },
-    { id: "crumb-findings", label: "Findings", to: lists },
+    { id: "crumb-findings", label: "Findings", to: findings },
     { id: "crumb-finding-f5", label: "f5", to: undefined },
   ]);
 });
