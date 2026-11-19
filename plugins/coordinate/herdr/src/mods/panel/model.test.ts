@@ -113,16 +113,20 @@ const row = (
   state,
 });
 
-test("delegateLine names one delegate, or counts several under the most urgent state", () => {
+test("delegateLine shows one state without a count, or counts refs by the most urgent state", () => {
   expect(delegateLine([])).toBe(undefined);
   expect(
     delegateLine([row("impl", live("working")), row("review", live("blocked"), "terminal")]),
   ).toEqual({
-    text: "impl · working",
+    text: "working",
     state: live("working"),
   });
+  expect(delegateLine([row("a", live("blocked"))])).toEqual({
+    text: "blocked",
+    state: live("blocked"),
+  });
   expect(delegateLine([row("a", { kind: "ended", at: "2026-11-16" })])).toEqual({
-    text: "a · ended 2026-11-16",
+    text: "ended",
     state: { kind: "ended", at: "2026-11-16" },
   });
   expect(

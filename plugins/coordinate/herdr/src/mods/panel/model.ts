@@ -561,25 +561,24 @@ export const delegateLabel = (state: DelegateState): string => {
 };
 
 /**
- * An item row's second line: its one delegate's name and state, or, with two or more, the most
- * urgent state and the count. The state decides the line's tone. Only the item's own refs
- * count; terminals nested under them do not.
+ * An item's delegate chip: the most urgent state, with a count only when two or more refs exist.
+ * Only the item's own refs count; terminals nested under them do not.
  * @param rows The item's delegate rows.
- * @returns The line, or undefined for an item with no delegate.
+ * @returns The chip label and its state, or undefined for an item with no delegate.
  */
 export const delegateLine = (
   rows: readonly DelegateRow[],
 ): { text: string; state: DelegateState } | undefined => {
   const refs = rows.filter((row) => row.source === "ref");
-  const [first] = refs;
-  if (first === undefined) return undefined;
-  if (refs.length === 1)
-    return { text: `${first.name} · ${delegateLabel(first.state)}`, state: first.state };
+  if (refs.length === 0) return undefined;
   const urgent = refs.reduce((best, row) =>
     delegateUrgency(row.state) < delegateUrgency(best.state) ? row : best,
   );
   const label = urgent.state.kind === "live" ? urgent.state.status : urgent.state.kind;
-  return { text: `${label} ×${refs.length}`, state: urgent.state };
+  return {
+    text: refs.length < 2 ? label : `${label} ×${refs.length}`,
+    state: urgent.state,
+  };
 };
 
 // The bun the build found on its PATH, baked in by scripts/build.ts with --define: a mod's exec

@@ -129,16 +129,23 @@ test("groups the focused domain's items by status, in routing order, with counts
   expect(text(get(root, "focus"))).toBe("Ship the panel tracer");
   expect(ids(root, "group-")).toEqual([
     "group-waiting-user",
+    "group-waiting-user-toggle",
     "group-building",
+    "group-building-toggle",
     "group-delegated",
+    "group-delegated-toggle",
     "group-open",
+    "group-open-toggle",
     "group-parked",
+    "group-parked-toggle",
     "group-done",
+    "group-done-toggle",
     "group-dismissed",
+    "group-dismissed-toggle",
   ]);
-  expect(text(get(root, "fold-waiting-user"))).toBe("Waiting on you 1");
-  expect(text(get(root, "fold-open"))).toBe("Open 2");
-  expect(text(get(root, "fold-done"))).toBe("Done 1");
+  expect(text(get(root, "group-waiting-user-toggle"))).toBe("Waiting on you 1");
+  expect(text(get(root, "group-open-toggle"))).toBe("Open 2");
+  expect(text(get(root, "group-done-toggle"))).toBe("Done 1");
   expect(ids(root, "item-")).toEqual([
     "item-i1",
     "item-i2",
@@ -157,14 +164,14 @@ test("folds Done and Dismissed by default and toggles a group from its header", 
   const { ctx, render } = await mount();
   const before = ctx.notified;
   let root = render();
-  expect(get(root, "alpha-rows-open").styles.h).toBe(64);
-  expect(get(root, "alpha-rows-done").styles.h).toBe(0);
-  expect(get(root, "alpha-rows-dismissed").styles.h).toBe(0);
-  get(root, "fold-done").click!({}, ctx.cx);
-  get(root, "fold-open").click!({}, ctx.cx);
+  expect(get(root, "alpha-group-open-body").styles.h).toBe(64);
+  expect(get(root, "alpha-group-done-body").styles.h).toBe(0);
+  expect(get(root, "alpha-group-dismissed-body").styles.h).toBe(0);
+  get(root, "group-done-toggle").click!({}, ctx.cx);
+  get(root, "group-open-toggle").click!({}, ctx.cx);
   root = render();
-  expect(get(root, "alpha-rows-done").styles.h).toBe(32);
-  expect(get(root, "alpha-rows-open").styles.h).toBe(0);
+  expect(get(root, "alpha-group-done-body").styles.h).toBe(32);
+  expect(get(root, "alpha-group-open-body").styles.h).toBe(0);
   expect(ctx.notified - before).toBe(2);
 });
 
@@ -174,7 +181,8 @@ test("tones each group header by its status with theme token names", async () =>
   const { render } = await mount();
   const root = render();
   const tone = (status: string) =>
-    (get(root, `fold-${status}`).nodes[0] as { styles: Record<string, unknown> }).styles.text_color;
+    (get(root, `group-${status}-toggle`).nodes[0] as { styles: Record<string, unknown> }).styles
+      .text_color;
   expect(
     ["waiting-user", "building", "delegated", "open", "parked", "done", "dismissed"].map(tone),
   ).toEqual(["blocked", "working", "ansi4", "dim", "muted", "ansi2", "ansi1"]);
@@ -823,13 +831,13 @@ const statusOf = (root: unknown, id: string) => {
   return [text(node), node.styles.text_color];
 };
 
-// An item row's delegate line: its text and its tone.
+// An item row's delegate chip: its text and its tone.
 const lineOf = (root: unknown, id: string) => {
   const node = get(root as never, `delegates-${id}`);
   return [text(node), node.styles.text_color];
 };
 
-test("names an item's one delegate and its live status on the row's second line, in its tone", async () => {
+test("shows a delegated item's status chip at the right edge of its one-line row", async () => {
   focusDomain("alpha");
   host.terminals.push(
     agent("t2", "s-w", "working"),
@@ -849,16 +857,17 @@ test("names an item's one delegate and its live status on the row's second line,
   const { render } = await mount();
   const root = render();
   expect(["i1", "i2", "i3", "i4", "i5"].map((id) => lineOf(root, id))).toEqual([
-    ["ds-w · working", "working"],
-    ["ds-i · idle", "idle"],
-    ["ds-b · blocked", "blocked"],
-    ["ds-d · done", "done"],
-    ["ds-e · error", "ansi1"],
+    ["working", "working"],
+    ["idle", "idle"],
+    ["blocked", "blocked"],
+    ["done", "done"],
+    ["error", "ansi1"],
   ]);
+  expect(text(get(root, "item-i1"))).toBe("i1 Run s-w working");
   expect(ids(root, "ref-")).toEqual([]);
   expect(ids(root, "item-i6")).toEqual(["item-i6"]);
-  expect([get(root, "item-i1").styles.h, get(root, "item-i6").styles.h]).toEqual([48, 32]);
-  expect(get(root, "alpha-rows-delegated").styles.h).toBe(5 * 48);
+  expect([get(root, "item-i1").styles.h, get(root, "item-i6").styles.h]).toEqual([32, 32]);
+  expect(get(root, "alpha-group-delegated-body").styles.h).toBe(5 * 32);
 });
 
 test("with two or more delegates, shows the most urgent state and the count", async () => {
@@ -906,8 +915,8 @@ test("shows a delegate with an ended record as ended and one with neither as gon
   const { render } = await mount();
   const root = render();
   expect([lineOf(root, "i1"), lineOf(root, "i2")]).toEqual([
-    ["closer · ended 2026-11-16", "dim"],
-    ["lost · gone", "ansi3"],
+    ["ended", "dim"],
+    ["gone", "ansi3"],
   ]);
   expect(host.reads.filter((path) => path.startsWith(ENDED))).toEqual([
     `${ENDED}/s-end.json`,
@@ -933,13 +942,13 @@ test("looks up the ended record once a delegate's terminal goes away", async () 
     ),
   );
   const { ctx, render } = await mount();
-  expect(lineOf(render(), "i1")).toEqual(["runner · working", "working"]);
+  expect(lineOf(render(), "i1")).toEqual(["working", "working"]);
   host.terminals = host.terminals.filter((terminal) => terminal.address !== "t2");
   host.files.set(`${ENDED}/s-w.json`, JSON.stringify({ ended_at: "2026-11-17T10:00:00.000Z" }));
-  expect(lineOf(render(), "i1")).toEqual(["runner · gone", "ansi3"]);
+  expect(lineOf(render(), "i1")).toEqual(["gone", "ansi3"]);
   ctx.tick(1_000);
   await settle();
-  expect(lineOf(render(), "i1")).toEqual(["runner · ended 2026-11-17", "dim"]);
+  expect(lineOf(render(), "i1")).toEqual(["ended", "dim"]);
   ctx.tick(1_000);
   await settle();
   expect(host.reads.filter((path) => path.startsWith(ENDED))).toEqual([`${ENDED}/s-w.json`]);
@@ -962,13 +971,13 @@ test("draws no row for a child terminal under a delegate, whose own state names 
   );
   const { render } = await mount();
   const root = render();
-  expect(ids(get(root, "alpha-rows-delegated"), "")).toEqual([
-    "alpha-rows-delegated",
+  expect(ids(get(root, "alpha-group-delegated-body"), "")).toEqual([
+    "alpha-group-delegated-body",
     "item-i1",
     "delegates-i1",
   ]);
-  expect(lineOf(root, "i1")).toEqual(["impl · idle", "idle"]);
-  expect(get(root, "alpha-rows-delegated").styles.h).toBe(48);
+  expect(lineOf(root, "i1")).toEqual(["idle", "idle"]);
+  expect(get(root, "alpha-group-delegated-body").styles.h).toBe(32);
   expect(ids(root, "unfiled")).toEqual([]);
 });
 
@@ -1105,7 +1114,7 @@ test("shows a closed item's closing date beside its creation date", async () => 
   focusDomain("alpha");
   host.files.set(DOC, JSON.stringify(everyStatus()));
   const { ctx, render } = await mount();
-  get(render(), "fold-done").click!({}, ctx.cx);
+  get(render(), "group-done-toggle").click!({}, ctx.cx);
   get(render(), "item-i7").click!({}, ctx.cx);
   const root = render();
   expect(["fact-created", "fact-closed", "fact-outcome"].map((id) => text(get(root, id)))).toEqual([
@@ -1185,13 +1194,13 @@ test("keeps a domain's ended records while another domain's are looked up", asyn
   host.files.set(`${ENDED}/s-a.json`, JSON.stringify({ ended_at: "2026-11-16T08:00:00.000Z" }));
   host.files.set(`${ENDED}/s-b.json`, JSON.stringify({ ended_at: "2026-11-15T08:00:00.000Z" }));
   const { ctx, render } = await mount();
-  expect(lineOf(render(), "i1")).toEqual(["closer · ended 2026-11-16", "dim"]);
+  expect(lineOf(render(), "i1")).toEqual(["ended", "dim"]);
   focusDomain("beta");
   ctx.tick(1_000);
   await settle();
-  expect(lineOf(render(), "i1")).toEqual(["other · ended 2026-11-15", "dim"]);
+  expect(lineOf(render(), "i1")).toEqual(["ended", "dim"]);
   focusDomain("alpha");
-  expect(lineOf(render(), "i1")).toEqual(["closer · ended 2026-11-16", "dim"]);
+  expect(lineOf(render(), "i1")).toEqual(["ended", "dim"]);
 });
 
 test("names the shown domain at the right end of the tool bar, dim and truncating", async () => {

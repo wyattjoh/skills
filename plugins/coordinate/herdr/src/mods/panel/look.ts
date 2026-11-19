@@ -4,11 +4,6 @@ import type { Finding, ItemStatus } from "../../lib/store.ts";
 import type { LiveStatus } from "./model.ts";
 
 /**
- * A delegated item's row height: its title, then the line naming its delegate and state.
- */
-export const DELEGATED_ROW_HEIGHT = 48;
-
-/**
  * An Unfiled delegates row's height.
  */
 export const DELEGATE_ROW_HEIGHT = 28;

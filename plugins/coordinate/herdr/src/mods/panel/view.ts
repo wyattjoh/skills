@@ -6,7 +6,7 @@ import type { InputState } from "gpui-base";
 import {
   BUTTON_STYLE,
   CARD,
-  FOLD_MOTION,
+  HERDR_ICONS,
   PANEL,
   ROW,
   TEXT,
@@ -16,14 +16,13 @@ import {
   cardHeader,
   cardItem,
   cardNote,
-  cardRow,
   cardSection,
   crumb,
   crumbBand,
   emptyState,
   errorState,
-  foldChevron,
   groupBlock,
+  labelChip,
   listRow,
   loadingState,
   paneScrollRegion,
@@ -44,7 +43,6 @@ import {
   DELEGATE_INDENT,
   DELEGATE_ROW_HEIGHT,
   DELEGATE_TONES,
-  DELEGATED_ROW_HEIGHT,
   FINDING_GLYPHS,
   FINDING_STATUS_TONES,
   STATUS_TONES,
@@ -147,10 +145,8 @@ const BACKLOG_ICON = "mods/workspace-chrome/layers.svg";
 
 const toolbar = (t: Theme, domain: string | undefined): Element =>
   topBar(t, {
-    floating: false,
     content: toolRow({
       id: "toolbar",
-      fixed: false,
       brand: brand(t, { id: "toolbar-brand", icon: BACKLOG_ICON, name: "Backlog" }),
       leading: [],
       trailing:
@@ -209,12 +205,21 @@ const delegateRow = (t: Theme, row: DelegateRow, indent: number, first: boolean)
     ],
   }).pl(CARD.paddingX + indent * DELEGATE_INDENT);
 
-// The height of an item's row: two lines for an item with delegates, else one.
-const itemRowHeight = (rows: DelegateRow[]): number =>
-  delegateLine(rows) === undefined ? ROW.compact : DELEGATED_ROW_HEIGHT;
+const delegateChip = (
+  t: Theme,
+  item: Item,
+  line: NonNullable<ReturnType<typeof delegateLine>>,
+): Element => {
+  const tone = delegateTone(t, line.state);
+  return labelChip(t, {
+    id: `delegates-${item.id}`,
+    label: line.text,
+    icon: HERDR_ICONS.square,
+    color: tone,
+  }).text_color(tone);
+};
 
-// The delegate subtitle is domain-specific; the package owns the clickable row's surface,
-// spacing, rule and hover state.
+// The item id leads the title on the package row; a delegated item's state chip stays at the end.
 const itemRow = (
   t: Theme,
   item: Item,
@@ -222,37 +227,17 @@ const itemRow = (
   open: (item: Item, cx: Context) => void,
 ): Element => {
   const line = delegateLine(rows);
-  const title = div()
-    .min_w_0()
-    .truncate()
-    .text_size(TEXT.body)
-    .text_color(item.status === "dismissed" ? t.dim : t.foreground)
-    .child(item.title);
-  return cardRow(t, `item-${item.id}`, t.hover)
-    .h(itemRowHeight(rows))
-    .on_click((_event, cx) => open(item, cx))
-    .child(div().flex_none().text_size(TEXT.label).text_color(t.muted).child(item.id))
-    .child(
-      line === undefined
-        ? title.flex_1()
-        : v_flex()
-            .flex_1()
-            .min_w_0()
-            .child(title)
-            .child(
-              div()
-                .id(`delegates-${item.id}`)
-                .min_w_0()
-                .truncate()
-                .text_size(TEXT.label)
-                .text_color(delegateTone(t, line.state))
-                .child(line.text),
-            ),
-    );
+  return listRow(t, {
+    id: `item-${item.id}`,
+    label: item.id,
+    title: item.title,
+    titleRole: item.status === "dismissed" ? "dim" : "foreground",
+    height: ROW.compact,
+    trailing: line === undefined ? [] : [delegateChip(t, item, line)],
+    onClick: (cx) => open(item, cx),
+  });
 };
 
-// A status group uses package rows and fold styling. Its items can have different heights, so
-// its animated body stays local until herdr-ui supports per-row heights in groupBlock.
 const statusGroup = (
   t: Theme,
   motionScope: string,
@@ -263,40 +248,21 @@ const statusGroup = (
   toggle: (cx: Context) => void,
   openItem: (item: Item, cx: Context) => void,
   delegates: DelegateJoin,
-): Element => {
-  const rowsOf = (item: Item) => delegates.byItem.get(item.id) ?? [];
-  const height = group.items.reduce((sum, item) => sum + itemRowHeight(rowsOf(item)), 0);
-  return v_flex()
-    .id(`group-${group.status}`)
-    .child(
-      cardRow(t, `fold-${group.status}`, t.raised, first)
-        .h(CARD.groupHeaderHeight)
-        .bg(t.popover)
-        .text_size(TEXT.label)
-        .when(last && !open, (el) => el.rounded_b(CARD.innerRadius))
-        .on_click((_event, cx) => toggle(cx))
-        .child(
-          div().font_medium().text_color(role(t, STATUS_TONES[group.status])).child(group.label),
-        )
-        .child(foldChevron(t, open))
-        .child(div().text_color(t.dim).child(String(group.items.length))),
-    )
-    .child(
-      v_flex()
-        .id(`${motionScope}-rows-${group.status}`)
-        .overflow_hidden()
-        .h(open ? height : 0)
-        .transition("height", FOLD_MOTION)
-        .children(
-          group.items.map((item, index) =>
-            itemRow(t, item, rowsOf(item), openItem).when(
-              last && index === group.items.length - 1,
-              (row) => row.rounded_b(CARD.innerRadius),
-            ),
-          ),
-        ),
-    );
-};
+): Element =>
+  groupBlock(t, motionScope, {
+    id: `group-${group.status}`,
+    label: group.label,
+    tone: STATUS_TONES[group.status],
+    count: group.items.length,
+    rows: group.items.map((item) =>
+      itemRow(t, item, delegates.byItem.get(item.id) ?? [], openItem),
+    ),
+    rowHeight: ROW.compact,
+    open,
+    first,
+    last,
+    toggle,
+  });
 
 const itemsCard = (t: Theme, model: PanelModel): Element =>
   cardSection(
@@ -848,12 +814,11 @@ const domainScreens = (t: Theme, model: PanelModel): Element =>
  * @returns The element.
  */
 export const panel = (t: Theme, model: PanelModel): Element =>
-  panelFrame(t, "coordinate-panel", undefined)
+  panelFrame(t, "coordinate-panel")
     .child(toolbar(t, model.domain))
     .child(trailBand(t, model.trail, model.go))
     .child(
       panelBody({
-        scrollCap: undefined,
         hold: letThrough,
         content:
           model.domain === undefined

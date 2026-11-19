@@ -5,11 +5,11 @@
     "": {
       "name": "coordinate-herdr",
       "dependencies": {
-        "@wyattjoh/herdr-ui": "0.3.0",
+        "@wyattjoh/herdr-ui": "0.5.0",
       },
     },
   },
   "packages": {
-    "@wyattjoh/herdr-ui": ["@wyattjoh/herdr-ui@0.3.0", "", {}, "sha512-ysyZdrhE8RXkbUe7cLzAGkdZBviRoqiGcYRPfNSkHUJhyDfhl45soj+OU8dyKhXjQByauKBWM8cZJtWFpuEnKA=="],
+    "@wyattjoh/herdr-ui": ["@wyattjoh/herdr-ui@0.5.0", "", {}, "sha512-0pVqq0ttjTLTDEaevHzWI/FlWqTxnojr+hqqM5mnzC3jAC1RDLoRBeDzhtvJa/K8Y6tMQTM4qeRUYnCsVUsjXg=="],
   }
 }
