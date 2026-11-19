@@ -30,7 +30,15 @@ import {
   writeEnded,
   type EndedRecord,
 } from "./fleet.ts";
-import { currentBranch, excludeScratch, gitOk, mainCheckout, real, refExists } from "./git.ts";
+import {
+  currentBranch,
+  excludeScratch,
+  gitOk,
+  gitTry,
+  mainCheckout,
+  real,
+  refExists,
+} from "./git.ts";
 import {
   agentArgv,
   CLAUDE_EFFORTS,
@@ -230,6 +238,7 @@ export const delegate = Effect.fn("delegate")(function* (config: Config, options
   const lines: string[] = [];
   let cwd: string;
   let branch: string | undefined;
+  let baseSha: string | undefined;
   if (options.repo !== undefined) {
     const repo = yield* mainCheckout(resolve(options.repo));
     if (!repo) return yield* new Refused({ message: `${options.repo} is not a Git checkout` });
@@ -239,7 +248,9 @@ export const delegate = Effect.fn("delegate")(function* (config: Config, options
     if (yield* refExists(repo, `refs/heads/${branch}`))
       return yield* new Refused({ message: `branch ${branch} already exists in ${repo}` });
     const base = options.base ?? (yield* currentBranch(repo)) ?? "HEAD";
-    yield* gitOk(repo, ["worktree", "add", cwd, "-b", branch, base]);
+    baseSha = yield* gitTry(repo, ["rev-parse", "--verify", `${base}^{commit}`]);
+    if (!baseSha) return yield* new Refused({ message: `${base} is not a commit in ${repo}` });
+    yield* gitOk(repo, ["worktree", "add", cwd, "-b", branch, baseSha]);
     lines.push(`worktree ${cwd} on ${branch} from ${base}`);
     // After the name and collision checks, so a refused start changes nothing in the repo.
     if (yield* excludeScratch(cwd)) lines.push("added .scratch/ to the repo's info/exclude");
@@ -273,6 +284,7 @@ export const delegate = Effect.fn("delegate")(function* (config: Config, options
     ...(options.model ? { [L.model]: options.model } : {}),
     ...(options.effort ? { [L.effort]: options.effort } : {}),
     ...(branch ? { [L.branch]: branch } : {}),
+    ...(baseSha ? { [L.base]: baseSha } : {}),
   };
   const argv = agentArgv({
     harness: options.harness,
@@ -475,6 +487,7 @@ export const endDelegate = Effect.fn("endDelegate")(function* (
       (yield* mainCheckout(terminal.cwd).pipe(Effect.catch(() => Effect.succeed(undefined)))) ??
       null,
     branch: terminal.labels[L.branch] ?? null,
+    base_sha: terminal.labels[L.base] ?? null,
     ended_at: new Date().toISOString(),
     quiet_since: terminal.statusMs ? new Date(terminal.statusMs).toISOString() : null,
     space: terminal.labels[L.space] !== undefined,
@@ -582,6 +595,7 @@ export const resumeDelegate = Effect.fn("resumeDelegate")(function* (
     ...(record.model ? { [L.model]: record.model } : {}),
     ...(record.effort ? { [L.effort]: record.effort } : {}),
     ...(record.branch ? { [L.branch]: record.branch } : {}),
+    ...(record.base_sha ? { [L.base]: record.base_sha } : {}),
   };
   const launched = yield* launch({
     name,

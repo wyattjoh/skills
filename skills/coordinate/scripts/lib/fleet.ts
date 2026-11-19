@@ -17,6 +17,7 @@ export const L = {
   effort: "fleet.effort",
   worktree: "fleet.worktree",
   branch: "fleet.branch",
+  base: "fleet.base",
   space: "fleet.space",
 } as const;
 
@@ -271,6 +272,7 @@ const EndedRecordSchema = Schema.Struct({
   cwd: Schema.String,
   repo: Schema.optionalKey(Schema.NullOr(Schema.String)),
   branch: Schema.optionalKey(Schema.NullOr(Schema.String)),
+  base_sha: Schema.optionalKey(Schema.NullOr(Schema.String)),
   ended_at: Schema.String,
   quiet_since: Schema.optionalKey(Schema.NullOr(Schema.String)),
   space: Schema.optionalKey(Schema.NullOr(Schema.Boolean)),

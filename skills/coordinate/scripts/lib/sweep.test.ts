@@ -20,7 +20,10 @@ const config = (state: string) =>
   Effect.runPromise(resolveConfig({ state_dir: state, backlog_dir: join(state, "b") }, "/c"));
 
 const fakes =
-  (sessions: Array<{ address: string; cwd: string }> = []) =>
+  (
+    sessions: Array<{ address: string; cwd: string }> = [],
+    processPath: string | undefined = undefined,
+  ) =>
   (argv: readonly string[]): RunOutput => {
     if (argv[0] === "hc")
       return ok(
@@ -33,7 +36,8 @@ const fakes =
           })),
         }),
       );
-    if (argv[0] === "lsof") return ok("p1\ncbash\nn/\n");
+    if (argv[0] === "lsof")
+      return ok(processPath ? `p1\ncnode\nn${processPath}\n` : "p1\ncbash\nn/\n");
     if (argv[0] === "herdr-app") return ok('{"spaces":[]}');
     return ok("");
   };
@@ -50,16 +54,44 @@ const repoWithWorktree = (): { repo: string; wt: string } => {
   return { repo, wt };
 };
 
+const repoWithEmptyWorktree = (): { repo: string; wt: string } => {
+  const repo = track(initRepo());
+  commitFile(repo, ".gitignore", ".devenv/\n.scratch/\n");
+  const wt = join(repo, ".claude", "worktrees", "x");
+  g(repo, "worktree", "add", "-q", wt, "-b", "x");
+  return { repo, wt };
+};
+
 const squashIntoMain = (repo: string): void => {
   commitFile(repo, "other.txt", "o\n");
   g(repo, "merge", "-q", "--squash", "x");
   g(repo, "commit", "-q", "-m", "squash x");
 };
 
-const verdicts = async (repo: string, sessions: Array<{ address: string; cwd: string }> = []) => {
-  const fake = gitAndFake(fakes(sessions));
+const worktreeRows = async (
+  repo: string,
+  sessions: Array<{ address: string; cwd: string }> = [],
+  ended: { cwd: string; branch: string } | undefined = undefined,
+  processPath: string | undefined = undefined,
+) => {
+  const state = track(tempDir());
+  if (ended) {
+    mkdirSync(join(state, "ended"), { recursive: true });
+    writeFileSync(
+      join(state, "ended", "session.json"),
+      JSON.stringify({
+        name: "ended",
+        domain: "app",
+        session: "session",
+        cwd: ended.cwd,
+        branch: ended.branch,
+        ended_at: "2026-11-18T00:00:00Z",
+      }),
+    );
+  }
+  const fake = gitAndFake(fakes(sessions, processPath));
   const rows = await runWith(
-    report(await config(track(tempDir())), [repo], {
+    report(await config(state), [repo], {
       bases: [],
       keep: [],
       sizes: false,
@@ -67,8 +99,11 @@ const verdicts = async (repo: string, sessions: Array<{ address: string; cwd: st
     }),
     fake.layer,
   );
-  return rows.filter((row) => row.text.startsWith("worktree ")).map((row) => row.verdict);
+  return rows.filter((row) => row.text.startsWith("worktree "));
 };
+
+const verdicts = async (repo: string, sessions: Array<{ address: string; cwd: string }> = []) =>
+  (await worktreeRows(repo, sessions)).map((row) => row.verdict);
 
 describe("parseLsof", () => {
   it("reads pid, command and name fields", () => {
@@ -85,6 +120,13 @@ describe("report", () => {
     const { repo } = repoWithWorktree();
     squashIntoMain(repo);
     expect(await verdicts(repo)).toEqual(["SAFE"]);
+  });
+
+  it("keeps a live worktree with no commits and labels it no commits yet", async () => {
+    const { repo, wt } = repoWithEmptyWorktree();
+    expect((await worktreeRows(repo)).map((row) => [row.verdict, row.text])).toEqual([
+      ["KEEP", `worktree ${wt} [x] PRs unknown: no remote · no commits yet`],
+    ]);
   });
 
   it("asks about an unpushed, unlanded commit", async () => {
@@ -104,6 +146,66 @@ describe("report", () => {
     const { repo, wt } = repoWithWorktree();
     squashIntoMain(repo);
     expect(await verdicts(repo, [{ address: "t2", cwd: wt }])).toEqual(["CLOSE"]);
+  });
+
+  it("marks an ended clean worktree with no commits SAFE", async () => {
+    const { repo, wt } = repoWithEmptyWorktree();
+    expect(
+      (await worktreeRows(repo, [], { cwd: wt, branch: "x" })).map((row) => [
+        row.verdict,
+        row.text,
+      ]),
+    ).toEqual([
+      [
+        "SAFE",
+        `worktree ${wt} [x] PRs unknown: no remote · no commits (nothing to land) · ended delegate record`,
+      ],
+    ]);
+  });
+
+  it("asks before sweeping an ended worktree with uncommitted files", async () => {
+    const { repo, wt } = repoWithEmptyWorktree();
+    writeFileSync(join(wt, "unfinished.txt"), "unfinished\n");
+    expect(
+      (await worktreeRows(repo, [], { cwd: wt, branch: "x" })).map((row) => [
+        row.verdict,
+        row.text,
+      ]),
+    ).toEqual([
+      [
+        "ASK",
+        `worktree ${wt} [x] PRs unknown: no remote · no commits (nothing to land) · 1 uncommitted · ended delegate record`,
+      ],
+    ]);
+  });
+
+  it("keeps an ended empty worktree while a session still runs there", async () => {
+    const { repo, wt } = repoWithEmptyWorktree();
+    expect(
+      (await worktreeRows(repo, [{ address: "t2", cwd: wt }], { cwd: wt, branch: "x" })).map(
+        (row) => [row.verdict, row.text],
+      ),
+    ).toEqual([
+      [
+        "KEEP",
+        `worktree ${wt} [x] PRs unknown: no remote · no commits (nothing to land) · session t2 in "no tab" · ended delegate record`,
+      ],
+    ]);
+  });
+
+  it("keeps an ended empty worktree while a process still runs there", async () => {
+    const { repo, wt } = repoWithEmptyWorktree();
+    expect(
+      (await worktreeRows(repo, [], { cwd: wt, branch: "x" }, wt)).map((row) => [
+        row.verdict,
+        row.text,
+      ]),
+    ).toEqual([
+      [
+        "KEEP",
+        `worktree ${wt} [x] PRs unknown: no remote · no commits (nothing to land) · processes: 1 node · ended delegate record`,
+      ],
+    ]);
   });
 });
 

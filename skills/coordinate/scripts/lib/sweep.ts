@@ -12,7 +12,6 @@ import {
   gitTry,
   inside,
   mainCheckout,
-  neverCommitted,
   PROTECTED_BRANCHES,
   real,
   statusLines,
@@ -58,6 +57,7 @@ export type SweepContext = {
   repos: Map<string, { bases: string[]; prs: RepoPrs }>;
   keep: string[];
   ended: Set<string>;
+  creationBases: Map<string, string>;
 };
 
 /**
@@ -131,10 +131,14 @@ export const context = Effect.fn("sweepContext")(function* (
       prs: yield* repoPullRequests(config, repo),
     });
   }
-  const ended = new Set(
-    (yield* readEnded(config.stateDir)).records.map((entry) => real(entry.record.cwd)),
+  const endedRecords = (yield* readEnded(config.stateDir)).records;
+  const ended = new Set(endedRecords.map((entry) => real(entry.record.cwd)));
+  const creationBases = new Map(
+    endedRecords
+      .filter((entry) => entry.record.base_sha)
+      .map((entry) => [real(entry.record.cwd), entry.record.base_sha ?? ""]),
   );
-  return { ...seen, repos: map, keep: keep.map(real), ended } satisfies SweepContext;
+  return { ...seen, repos: map, keep: keep.map(real), ended, creationBases } satisfies SweepContext;
 });
 
 /**
@@ -156,7 +160,9 @@ export const worktreeRow = Effect.fn("worktreeRow")(function* (
   const path = real(worktree.path);
   const branch = worktree.branch;
   const prs = info.prs.ok ? info.prs.prs : [];
-  const state = branch ? yield* branchState(repo, branch, info.bases, prs) : undefined;
+  const state = branch
+    ? yield* branchState(repo, branch, info.bases, prs, ctx.creationBases.get(path))
+    : undefined;
   const dirty = existsSync(path) ? yield* statusLines(path) : undefined;
   const unsaved = existsSync(path) ? yield* unsavedCommits(path, info.bases) : undefined;
   const gitFailed = dirty === undefined || unsaved === undefined;
@@ -170,13 +176,14 @@ export const worktreeRow = Effect.fn("worktreeRow")(function* (
   ].toSorted();
   const baseNames = new Set(info.bases.map((base) => base.split("/").at(-1)));
   const onBase = branch !== undefined && (PROTECTED_BRANCHES.has(branch) || baseNames.has(branch));
-  const notStarted =
-    branch !== undefined &&
-    state?.prState === undefined &&
-    (unsaved ?? 0) === 0 &&
-    (yield* neverCommitted(repo, branch));
-  const landed = !notStarted ? state?.landed : undefined;
-  const finished = !onBase && (landed !== undefined || state?.prState === "closed");
+  const noOwnCommits = state?.hasCommits === false;
+  const endedNoCommits = noOwnCommits && ctx.ended.has(path);
+  const landed = state?.landed;
+  const finished =
+    !onBase &&
+    (landed !== undefined ||
+      (state?.hasCommits !== false && state?.prState === "closed") ||
+      endedNoCommits);
   // Squash and rebase merges leave the branch's own commits off every base; the base holds the work.
   const lost = landed === undefined ? (unsaved ?? 0) : 0;
   const openPr = state?.prState === "open";
@@ -186,6 +193,7 @@ export const worktreeRow = Effect.fn("worktreeRow")(function* (
   else if (!branch || gitFailed) verdict = here.length > 0 ? "KEEP" : "ASK";
   else if (here.length > 0 && ((dirty?.length ?? 0) > 0 || lost > 0)) verdict = "KEEP";
   else if ((dirty?.length ?? 0) > 0 || lost > 0) verdict = "ASK";
+  else if (endedNoCommits && (here.length > 0 || pids.length > 0)) verdict = "KEEP";
   else if (here.length > 0) verdict = finished ? "CLOSE" : "KEEP";
   else if (pids.length > 0) verdict = "ASK";
   else if (openPr) verdict = "KEEP";
@@ -203,7 +211,7 @@ export const worktreeRow = Effect.fn("worktreeRow")(function* (
             : `PRs unknown: ${info.prs.error}`),
   ];
   if (landed && landed !== "pr-merged") notes.push(`on base (${landed})`);
-  if (notStarted) notes.push("never committed");
+  if (noOwnCommits) notes.push(endedNoCommits ? "no commits (nothing to land)" : "no commits yet");
   if (gitFailed) notes.push("git status or git log failed here");
   if (dirty && dirty.length > 0) notes.push(`${dirty.length} uncommitted`);
   if (lost > 0) notes.push(`${lost} ${lost === 1 ? "commit" : "commits"} on no remote or base`);
@@ -244,7 +252,6 @@ export const landedBranches = Effect.fn("landedBranches")(function* (
     if (checkedOut.has(branch) || baseNames.has(branch) || PROTECTED_BRANCHES.has(branch)) continue;
     const state = yield* branchState(repo, branch, bases, prs);
     if (state.prState === "open" || state.landed === undefined) continue;
-    if (state.prState === undefined && (yield* neverCommitted(repo, branch))) continue;
     found.push({
       branch,
       sha,

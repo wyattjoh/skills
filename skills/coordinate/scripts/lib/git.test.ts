@@ -3,7 +3,9 @@ import { readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { commitFile, g, initRepo, runWith, tempDir } from "./fixture.ts";
 import {
+  branchCreationBase,
   excludeScratch,
+  hasCommitsSince,
   landedOn,
   mainCheckout,
   neverCommitted,
@@ -64,6 +66,14 @@ describe("landedOn", () => {
     g(r, "merge", "-q", "--squash", "sq");
     g(r, "-c", "user.name=T", "-c", "user.email=t@e", "commit", "-q", "-m", "squash sq");
     expect(await runWith(landedOn(r, "sq", ["main"]))).toBe("squash");
+  });
+
+  it("does not call an empty branch landed", async () => {
+    const r = repo();
+    g(r, "branch", "fresh", "main");
+    expect(await runWith(branchCreationBase(r, "fresh"))).toBe(g(r, "rev-parse", "main"));
+    expect(await runWith(hasCommitsSince(r, "fresh", undefined))).toBe(false);
+    expect(await runWith(landedOn(r, "fresh", ["main"]))).toBe(undefined);
   });
 
   it("reports unlanded work as undefined", async () => {

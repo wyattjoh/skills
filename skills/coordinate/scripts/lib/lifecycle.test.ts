@@ -4,7 +4,7 @@ import { join } from "node:path";
 import { createDocument, itemAdd } from "./backlog-doc.ts";
 import { resolveConfig } from "./config.ts";
 import { Effect } from "effect";
-import { failureOf, runWith, tempDir } from "./fixture.ts";
+import { failureOf, g, gitAndFake, initRepo, runWith, tempDir } from "./fixture.ts";
 import { writeEnded } from "./fleet.ts";
 import { delegate, endDelegate, listIdle, resumeDelegate, sendTo, start } from "./lifecycle.ts";
 import { fakeProc, ok, type RunOutput } from "./proc.ts";
@@ -126,6 +126,48 @@ describe("delegate", () => {
     );
     expect(messageOf(error)).toBe("Bad Name is not a terminal name: 1 to 32 of a-z, 0-9, - and _");
     expect(fake.calls.length).toBe(0);
+  });
+
+  it("records the resolved creation base on a new worktree delegate", async () => {
+    const repo = initRepo();
+    dirs.push(repo);
+    const baseSha = g(repo, "rev-parse", "HEAD");
+    const fake = gitAndFake((argv) => {
+      if (argv[0] !== "hc") return ok("{}");
+      if (argv[1] === "ls") return ok('{"terminals":[]}');
+      if (argv[1] === "run") return ok('{"address":"t2"}');
+      if (argv[1] === "get" && argv[2] === "t1")
+        return ok(terminal({ address: "t1", labels: { "fleet.domain": "app" } }));
+      if (argv[1] === "get" && argv[2] === "t2")
+        return ok(terminal({ status: { state: "working" } }));
+      return ok("{}");
+    });
+    const saved = process.env.HC_TERMINAL_ID;
+    process.env.HC_TERMINAL_ID = "t1";
+    try {
+      await runWith(
+        delegate(await config(dir()), {
+          name: "fix-a",
+          task: "fix a",
+          repo,
+          cwd: undefined,
+          base: undefined,
+          harness: "pi",
+          model: undefined,
+          effort: undefined,
+          message: { kind: "skill", skill: "implement", args: "" },
+          space: false,
+          domain: "app",
+          item: undefined,
+        }),
+        fake.layer,
+      );
+    } finally {
+      if (saved === undefined) delete process.env.HC_TERMINAL_ID;
+      else process.env.HC_TERMINAL_ID = saved;
+    }
+    const run = fake.calls.find((call) => call[0] === "hc" && call[1] === "run");
+    expect(run?.includes(`fleet.base=${baseSha}`)).toBe(true);
   });
 
   it("refuses an unknown effort for the harness", async () => {
@@ -270,6 +312,7 @@ const endLabels = {
   "fleet.harness": "pi",
   "fleet.worktree": "/nonexistent/wt",
   "fleet.branch": "wyattjoh/fix-a",
+  "fleet.base": "0123456789abcdef0123456789abcdef01234567",
   "fleet.space": "sp1",
 };
 
@@ -302,10 +345,11 @@ describe("endDelegate", () => {
     const files = readdirSync(join(state, "ended"));
     expect(files).toEqual(["s-1.json"]);
     const record = JSON.parse(readFileSync(join(state, "ended", "s-1.json"), "utf8"));
-    expect([record.program, record.cwd, record.branch, record.space]).toEqual([
+    expect([record.program, record.cwd, record.branch, record.base_sha, record.space]).toEqual([
       "pi",
       "/nonexistent/wt",
       "wyattjoh/fix-a",
+      endLabels["fleet.base"],
       true,
     ]);
     expect(fake.calls.map((call) => call.argv.slice(0, 3).join(" "))).toEqual([

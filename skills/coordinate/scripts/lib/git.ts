@@ -240,13 +240,19 @@ export type Landing = "ancestor" | "rebase" | "squash";
  * @param repo Repository.
  * @param branch Branch or commit.
  * @param bases Base refs.
+ * @param creationBase Recorded base SHA, or undefined to use the branch creation reflog.
+ * @param hasCommits Known result when the caller already checked the creation base.
  * @returns How it landed, or undefined.
  */
 export const landedOn = Effect.fn("landedOn")(function* (
   repo: string,
   branch: string,
   bases: readonly string[],
+  creationBase: string | undefined = undefined,
+  hasCommits: boolean | undefined = undefined,
 ) {
+  if ((hasCommits ?? (yield* hasCommitsSince(repo, branch, creationBase))) !== true)
+    return undefined;
   for (const base of bases) {
     if (yield* isAncestor(repo, branch, base)) return "ancestor" satisfies Landing;
   }
@@ -283,6 +289,39 @@ export const neverCommitted = Effect.fn("neverCommitted")(function* (repo: strin
   return !log
     .split("\n")
     .some((entry) => /^(commit|cherry-pick|revert|merge|rebase|pull)/.test(entry));
+});
+
+/**
+ * The branch tip when it was created, read from the oldest reflog entry for legacy records.
+ * @param repo Repository.
+ * @param branch Branch.
+ * @returns The creation tip, or undefined when the branch reflog is unavailable.
+ */
+export const branchCreationBase = Effect.fn("branchCreationBase")(function* (
+  repo: string,
+  branch: string,
+) {
+  const entries = yield* gitTry(repo, ["reflog", "show", "--format=%H", `refs/heads/${branch}`]);
+  return entries?.split("\n").at(-1) || undefined;
+});
+
+/**
+ * Whether a branch has commits beyond the tip it started from.
+ * @param repo Repository.
+ * @param branch Branch.
+ * @param creationBase Recorded base, or undefined to use the branch reflog.
+ * @returns True, false, or undefined when no trustworthy creation base is available.
+ */
+export const hasCommitsSince = Effect.fn("hasCommitsSince")(function* (
+  repo: string,
+  branch: string,
+  creationBase: string | undefined,
+) {
+  const base = creationBase ?? (yield* branchCreationBase(repo, branch));
+  if (!base) return undefined;
+  const count = yield* gitTry(repo, ["rev-list", "--count", `${base}..refs/heads/${branch}`]);
+  if (count === undefined) return undefined;
+  return Number(count) > 0;
 });
 
 /**

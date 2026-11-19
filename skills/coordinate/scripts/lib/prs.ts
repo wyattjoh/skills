@@ -9,7 +9,7 @@ import {
   type PullRequest,
   type RepoRef,
 } from "./forge.ts";
-import { gitTry, isAncestor, type Landing, landedOn, remoteUrl } from "./git.ts";
+import { gitTry, hasCommitsSince, isAncestor, type Landing, landedOn, remoteUrl } from "./git.ts";
 
 /**
  * A checkout's pull requests, or why they could not be read. Never a silent empty list.
@@ -52,6 +52,7 @@ export const repoPullRequests = Effect.fn("repoPullRequests")(function* (
  */
 export type BranchState = {
   tip: string | undefined;
+  hasCommits: boolean | undefined;
   prs: PullRequest[];
   prState: PullRequest["state"] | undefined;
   prLabel: string;
@@ -64,6 +65,7 @@ export type BranchState = {
  * @param branch Branch.
  * @param bases Base refs.
  * @param prs The repo's PRs (empty when unknown).
+ * @param creationBase Recorded base SHA, or undefined to use the branch creation reflog.
  * @returns Branch state.
  */
 export const branchState = Effect.fn("branchState")(function* (
@@ -71,22 +73,30 @@ export const branchState = Effect.fn("branchState")(function* (
   branch: string,
   bases: readonly string[],
   prs: readonly PullRequest[],
+  creationBase: string | undefined = undefined,
 ) {
   const tip = yield* gitTry(repo, ["rev-parse", "--verify", "-q", `refs/heads/${branch}`]);
   if (!tip)
     return {
       tip: undefined,
+      hasCommits: undefined,
       prs: [],
       prState: undefined,
       prLabel: "",
       landed: undefined,
     } satisfies BranchState;
+  const hasCommits = yield* hasCommitsSince(repo, branch, creationBase);
   const matched = yield* prsForBranch(prs, branch, tip, (sha) => isAncestor(repo, tip, sha));
   const summary = prSummary(matched);
   const landed: BranchState["landed"] =
-    summary.state === "merged" ? "pr-merged" : yield* landedOn(repo, branch, bases);
+    hasCommits !== true
+      ? undefined
+      : summary.state === "merged"
+        ? "pr-merged"
+        : yield* landedOn(repo, branch, bases, creationBase, hasCommits);
   return {
     tip,
+    hasCommits,
     prs: matched,
     prState: summary.state,
     prLabel: summary.label,

@@ -3,7 +3,7 @@ import { Effect, Option } from "effect";
 import { readDocument, refSessions, showBacklog } from "./backlog-doc.ts";
 import { idleDelegated } from "./backlog-store/ops.ts";
 import type { Config } from "./config.ts";
-import { type Delegate, members, readEnded } from "./fleet.ts";
+import { L, type Delegate, members, readEnded } from "./fleet.ts";
 import { currentBranch, defaultBases, mainCheckout } from "./git.ts";
 import { requireBacklog } from "./lifecycle.ts";
 import { branchState, type RepoPrs, repoPullRequests } from "./prs.ts";
@@ -119,6 +119,7 @@ export const domainStatus = Effect.fn("domainStatus")(function* (
     repo: string | undefined,
     branch: string | undefined,
     status: string | undefined,
+    creationBase: string | undefined = undefined,
   ) {
     if (!repo || !branch)
       return {
@@ -140,13 +141,25 @@ export const domainStatus = Effect.fn("domainStatus")(function* (
           landed: undefined,
         }),
       };
-    const state = yield* branchState(repo, branch, basesByRepo.get(repo) ?? [], prsOf(repo));
+    const state = yield* branchState(
+      repo,
+      branch,
+      basesByRepo.get(repo) ?? [],
+      prsOf(repo),
+      creationBase,
+    );
     const open = state.prs.find((pr) => pr.state === "open");
     const prText = state.prLabel || (prsByRepo.get(repo)?.ok === false ? "PRs unknown" : "no PR");
+    const noCommits =
+      state.hasCommits === false
+        ? status === "ended"
+          ? "no commits (nothing to land)"
+          : "no commits yet"
+        : undefined;
     const extra = open ? ` checks ${open.checks} review ${open.review} ${open.url}` : "";
     const landed = state.landed ? ` · landed (${state.landed})` : "";
     return {
-      text: `${branch} · ${prText}${extra}${landed}`,
+      text: `${branch} · ${noCommits ? `${noCommits} · ` : ""}${prText}${extra}${landed}`,
       next: waitsOn(status, {
         state: open?.state,
         checks: open?.checks,
@@ -158,14 +171,19 @@ export const domainStatus = Effect.fn("domainStatus")(function* (
   for (const delegate of delegates) {
     const repo = delegateRepos.get(delegate);
     const branch = delegate.labels["fleet.branch"] ?? (yield* currentBranch(delegate.cwd));
-    const info = yield* describe(repo, branch, delegate.status);
+    const info = yield* describe(repo, branch, delegate.status, delegate.labels[L.base]);
     lines.push(
       `  ${delegate.name} ${delegate.address} ${delegate.status ?? "no status"} ${age(delegate.statusMs, nowMs)}${delegate.byLabel ? "" : " (by item ref)"} · ${info.text} · next: ${info.next}`,
     );
   }
   for (const { record } of ended) {
     const repo = record.repo ?? undefined;
-    const info = yield* describe(repo, record.branch ?? undefined, "ended");
+    const info = yield* describe(
+      repo,
+      record.branch ?? undefined,
+      "ended",
+      record.base_sha ?? undefined,
+    );
     const gone = existsSync(record.cwd) ? "" : " · folder gone (coordinate sweep prune-ended)";
     lines.push(
       `  ${record.name} ended ${record.ended_at.slice(0, 10)} · ${info.text}${gone} · resume: coordinate resume ${record.name}`,
