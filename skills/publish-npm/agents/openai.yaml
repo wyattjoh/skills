@@ -1,0 +1,6 @@
+interface:
+  display_name: "Publish npm"
+  short_description: "Set up npm trusted publishing from GitHub Actions or publish the next version"
+
+policy:
+  allow_implicit_invocation: false

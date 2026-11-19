@@ -164,6 +164,7 @@ Restart Claude Code after adding or changing an agent definition.
 | pr-fix                        | Triage PR review comments and failing CI, then implement agreed fixes              |
 | pr-rebase                     | Rebase onto the latest base, resolve conflicts, force-push with lease              |
 | pr-review                     | Review Git changes with evidence-based findings and optional inline PR submission  |
+| publish-npm                   | Set up npm trusted publishing from GitHub Actions or publish the next version      |
 | raycast-dev                   | Build, maintain, and publish Raycast extensions                                    |
 | reference-submodules          | Manage context repos as pinned shallow git submodules under `.claude/references/`  |
 | release-please                | Configure, operate, and debug release-please                                       |
