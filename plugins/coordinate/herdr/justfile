@@ -17,9 +17,9 @@ render-sync:
 build:
     bun run build
 
-# Explicit, approved live write: build and check a stage, then copy every mod into
-# HERDR_APP_HOME/mods (default ~/.config/herdr-app) and add keys.json's cmd-alt-b binding to the
-# person's keys.json. --replace backs up mods already installed (under .scratch/) and replaces them
+# Explicit, approved live write: build and check a stage, then copy every bundled mod into
+# HERDR_APP_HOME/mods (default ~/.config/herdr-app) and merge any keys.json bindings. --replace
+# backs up matching installed mods (under .scratch/) and replaces them
 [positional-arguments]
 install *args:
     bun scripts/install.ts "$@"

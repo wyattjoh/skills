@@ -25,46 +25,37 @@ beforeEach(async () => {
 
 afterEach(() => rm(dir, { recursive: true, force: true }));
 
-const keysJson = () => Bun.file(join(home, "keys.json")).json();
-
-test("copies every staged mod into the home and adds cmd-alt-b to the person's keys", async () => {
-  await Bun.write(
-    join(home, "keys.json"),
-    JSON.stringify({ global: { "cmd-q": "app.quit" }, terminal: { "cmd-c": "terminal.copy" } }),
-  );
+test("copies the coordinate-panel mod and preserves existing key bindings", async () => {
+  const live = JSON.stringify({
+    global: { "cmd-q": "app.quit", "cmd-alt-b": "layout.toggle:sidebar" },
+    terminal: { "cmd-c": "terminal.copy" },
+  });
+  await Bun.write(join(home, "keys.json"), live);
 
   expect(await installStage(stage, home, { replace: false, backups })).toEqual([
     "coordinate-panel",
-    "coordinate-toggle",
   ]);
 
-  expect(await Bun.file(join(home, "mods/coordinate-toggle/main.js")).text()).toBe(
-    "// coordinate-toggle build\n",
-  );
   expect(await Bun.file(join(home, "mods/coordinate-panel/main.js")).text()).toBe(
     "// coordinate-panel build\n",
   );
-  expect(await keysJson()).toEqual({
-    global: { "cmd-q": "app.quit", "cmd-alt-b": "coordinate-toggle.toggle" },
-    terminal: { "cmd-c": "terminal.copy" },
-  });
+  expect(await Bun.file(join(home, "keys.json")).text()).toBe(live);
 });
 
-test("creates keys.json when the home has none", async () => {
+test("does not create keys.json when this plugin has no key bindings", async () => {
   await installStage(stage, home, { replace: false, backups });
 
-  expect(await keysJson()).toEqual({ global: { "cmd-alt-b": "coordinate-toggle.toggle" } });
+  expect(await readdir(home)).toEqual(["mods"]);
 });
 
-test("refuses, writing nothing, when cmd-alt-b already does something else", async () => {
-  const live = JSON.stringify({ global: { "cmd-alt-b": "layout.toggle:sidebar" } });
-  await Bun.write(join(home, "keys.json"), live);
+test("leaves installed mods outside its build list untouched", async () => {
+  const unmanaged = join(home, "mods/unmanaged-mod");
+  await mkdir(unmanaged, { recursive: true });
+  await Bun.write(join(unmanaged, "main.js"), "// not managed by this build\n");
 
-  await expect(installStage(stage, home, { replace: false, backups })).rejects.toThrow(
-    'keys.json global "cmd-alt-b" is "layout.toggle:sidebar"; rebind it before installing',
-  );
-  expect(await Bun.file(join(home, "keys.json")).text()).toBe(live);
-  expect(await readdir(home)).toEqual(["keys.json"]);
+  await installStage(stage, home, { replace: true, backups });
+
+  expect(await Bun.file(join(unmanaged, "main.js")).text()).toBe("// not managed by this build\n");
 });
 
 test("refuses an installed mod without --replace, and backs it up with it", async () => {

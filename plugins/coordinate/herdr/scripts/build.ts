@@ -11,7 +11,6 @@ import { root, run } from "./tools.ts";
  */
 export const MODS = [
   { name: "coordinate-panel", entry: "src/mods/panel/index.ts", manifest: "panel.mod.json" },
-  { name: "coordinate-toggle", entry: "src/mods/toggle/index.ts", manifest: "toggle.mod.json" },
 ] as const;
 
 const FLAGS = [

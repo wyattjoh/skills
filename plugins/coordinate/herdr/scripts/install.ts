@@ -1,6 +1,5 @@
-// Install the staged mods into a Herdr home and merge keys.json's binding into the person's.
-// This is the only script that writes a Herdr home, and only `just install` runs it: validation
-// (`just check`) stops at the staged build.
+// Install the staged mods into a Herdr home. This is the only script that writes a Herdr home,
+// and only `just install` runs it: validation (`just check`) stops at the staged build.
 import { existsSync } from "node:fs";
 import { cp, mkdir, rename } from "node:fs/promises";
 import { homedir } from "node:os";
@@ -27,7 +26,8 @@ const readKeys = async (path: string): Promise<Keys> => {
 };
 
 // The person's keys with ours added, or undefined when they already have every one. A key they
-// bind to something else is refused rather than replaced.
+// bind to something else is refused rather than replaced. With an empty keys.json, the person's
+// key file is left unchanged.
 const mergeKeys = (live: Keys, ours: Keys): Keys | undefined => {
   let changed = false;
   const merged: Keys = { ...live };
@@ -46,12 +46,12 @@ const mergeKeys = (live: Keys, ours: Keys): Keys | undefined => {
 };
 
 /**
- * Copy every mod from a checked stage into a Herdr home, and add this project's key bindings to
- * the home's keys.json. Everything is checked before anything is written.
+ * Copy every mod from a checked stage into a Herdr home, and merge this project's key bindings
+ * into the home's keys.json. Everything is checked before anything is written.
  * @param stage A stage from build(), laid out as mods/<name>/.
  * @param home The Herdr home to install into.
- * @param options replace: move mods already installed to backups first, instead of refusing;
- * backups: where replaced mods and the previous keys.json go.
+ * @param options replace: move matching mods already installed to backups first, instead of
+ * refusing; backups: where replaced mods and the previous keys.json go.
  * @returns The installed mod names.
  */
 export const installStage = async (
