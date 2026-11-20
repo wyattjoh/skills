@@ -159,12 +159,14 @@ test("separates asked items from status groups and keeps each item row unique", 
   const { render } = await mount();
   const root = render();
   expect(text(get(root, "focus"))).toBe("Ship the panel tracer");
+  expect(text(get(root, "focus-header"))).toBe("Focus");
+  expect(ids(root, "focus-card")).toEqual(["focus-card"]);
   expect(ids(root, "waiting-header")).toEqual(["waiting-header"]);
   expect(
     ids(root, "")
       .filter((id) => id.endsWith("-header"))
       .slice(0, 2),
-  ).toEqual(["waiting-header", "items-header"]);
+  ).toEqual(["focus-header", "waiting-header"]);
   expect(ids(get(root, "waiting"), "item-")).toEqual(["item-i1"]);
   expect(ids(get(root, "items"), "item-")).toEqual([
     "item-i2",

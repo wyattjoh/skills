@@ -206,6 +206,12 @@ const focusHeader = (t: Theme, focus: string | null): Element =>
     .text_color(focus === null ? t.dim : t.foreground)
     .child(focus ?? "No focus set");
 
+const focusCard = (t: Theme, focus: string | null): Element =>
+  cardSection(
+    cardHeader(t, "focus-header", "Focus"),
+    card(t, "focus-card").child(focusHeader(t, focus)),
+  );
+
 const delegateTone = (t: Theme, state: DelegateState): Color =>
   role(t, DELEGATE_TONES[state.kind === "live" ? state.status : state.kind]);
 
@@ -889,7 +895,7 @@ const domainBody = (t: Theme, domain: string, doc: DocumentState, model: PanelMo
   return v_flex()
     .id("domain")
     .gap(PANEL.sectionGap)
-    .child(focusHeader(t, doc.backlog.focus))
+    .child(focusCard(t, doc.backlog.focus))
     .children([...waitingCard(t, model), itemsCard(t, model)])
     .children(unfiledCard(t, model.delegates.unfiled, model))
     .child(sectionLinks(t, domain, doc.backlog, model));
