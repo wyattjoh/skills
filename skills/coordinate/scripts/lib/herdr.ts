@@ -226,6 +226,20 @@ export const get = Effect.fn("hc.get")(function* (target: string) {
 });
 
 /**
+ * Read the online processor count from another Herdr machine.
+ * @param machine Herdr machine name.
+ * @returns The positive core count, or undefined when the output is invalid.
+ */
+export const coresOn = Effect.fn("hc.coresOn")(function* (machine: string) {
+  const output = yield* herdr(
+    ["hc", "exec", "--on", machine, "--timeout", "5", "getconf", "_NPROCESSORS_ONLN"],
+    7_000,
+  );
+  const cores = Number(output.trim());
+  return Number.isSafeInteger(cores) && cores > 0 ? cores : undefined;
+});
+
+/**
  * Set labels; an empty value removes one.
  * @param target Address or name.
  * @param labels Labels to set.

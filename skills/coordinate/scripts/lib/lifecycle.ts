@@ -1,6 +1,6 @@
 import { existsSync } from "node:fs";
 import { copyFile, mkdir, readFile, rename } from "node:fs/promises";
-import { loadavg, userInfo } from "node:os";
+import { hostname, loadavg, userInfo } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { Effect, Option } from "effect";
 import {
@@ -58,6 +58,11 @@ const loginShell = (): string => {
   } catch {
     return process.env.SHELL ?? "/bin/sh";
   }
+};
+
+const machineOfAddress = (address: string): string => {
+  const separator = address.indexOf("/");
+  return separator === -1 ? hostname() : address.slice(0, separator);
 };
 
 /**
@@ -248,12 +253,37 @@ export const delegate = Effect.fn("delegate")(function* (
       message: `a live terminal is already named ${options.name} (${taken.address})`,
     });
 
+  const targetMachine = machineOfAddress(caller.address);
   let liveDelegates = 0;
   for (const listed of terminals) {
-    if (!listed.live) continue;
+    if (!listed.live || machineOfAddress(listed.address) !== targetMachine) continue;
     const terminal = yield* hc.get(listed.address);
     if (terminal?.live && terminal.labels[L.domain] && terminal.labels[L.role] !== "coordinator")
       liveDelegates += 1;
+  }
+
+  const configuredMachineBudget = (machine: string): number | undefined =>
+    Object.hasOwn(config.maxFleetDelegatesByMachine, machine)
+      ? config.maxFleetDelegatesByMachine[machine]
+      : undefined;
+  const machineBudget =
+    configuredMachineBudget(targetMachine) ??
+    (coordinator?.address.includes("/") === false ? configuredMachineBudget("local") : undefined);
+  let budget = machineBudget ?? config.maxFleetDelegates;
+  let budgetWarning: string | undefined;
+  if (
+    coordinator !== undefined &&
+    !options.overBudget &&
+    machineBudget === undefined &&
+    config.maxFleetDelegatesOverride === undefined &&
+    coordinator.address.includes("/")
+  ) {
+    const cores = yield* hc
+      .coresOn(targetMachine)
+      .pipe(Effect.catch(() => Effect.succeed(undefined)));
+    if (cores === undefined)
+      budgetWarning = `warning: could not read core count for machine ${targetMachine}; using configured max_fleet_delegates default ${budget}`;
+    else budget = Math.max(2, Math.floor(cores / 4));
   }
 
   const load = readLoadAverage();
@@ -262,9 +292,10 @@ export const delegate = Effect.fn("delegate")(function* (
     lines.push(
       `warning: 1-minute load average ${load} exceeds ${config.cores} cores; native gates may be slow`,
     );
-  if (coordinator !== undefined && liveDelegates >= config.maxFleetDelegates && !options.overBudget)
+  if (budgetWarning && liveDelegates < budget) lines.push(budgetWarning);
+  if (coordinator !== undefined && liveDelegates >= budget && !options.overBudget)
     return yield* new Refused({
-      message: `fleet has ${liveDelegates} live delegates (budget ${config.maxFleetDelegates}); refusing ${options.name} for item ${options.item ?? "?"}; pass --over-budget to start anyway`,
+      message: `machine ${targetMachine} has ${liveDelegates} live delegates (budget ${budget}); refusing ${options.name} for item ${options.item ?? "?"}; pass --over-budget to start anyway${budgetWarning ? `; ${budgetWarning}` : ""}`,
     });
   let cwd: string;
   let branch: string | undefined;

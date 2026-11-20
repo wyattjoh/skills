@@ -3,7 +3,7 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { Effect } from "effect";
 import { failureOf, runWith } from "./fixture.ts";
-import { get, isAgent, newSpace, parseGet, parseList, run } from "./herdr.ts";
+import { coresOn, get, isAgent, newSpace, parseGet, parseList, run } from "./herdr.ts";
 import { fakeProc, ok } from "./proc.ts";
 
 const testdata = (name: string) =>
@@ -53,6 +53,28 @@ describe("get", () => {
     }));
     const error = await failureOf(get("t9"), fake.layer);
     expect(error === "no failure" ? "" : error.kind).toBe("unavailable");
+  });
+});
+
+describe("coresOn", () => {
+  it("reads and parses the online core count from a remote machine", async () => {
+    const fake = fakeProc(() => ok("32\n"));
+    expect(await runWith(coresOn("strix"), fake.layer)).toBe(32);
+    expect(fake.calls[0]?.argv).toEqual([
+      "hc",
+      "exec",
+      "--on",
+      "strix",
+      "--timeout",
+      "5",
+      "getconf",
+      "_NPROCESSORS_ONLN",
+    ]);
+  });
+
+  it("returns undefined for an unreadable core count", async () => {
+    const fake = fakeProc(() => ok("not-a-number\n"));
+    expect(await runWith(coresOn("nigelsheldon"), fake.layer)).toBe(undefined);
   });
 });
 

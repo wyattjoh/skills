@@ -18,6 +18,8 @@ describe("resolveConfig", () => {
     expect(config.branchPrefix).toBe("wyattjoh/");
     expect(config.cores).toBe(8);
     expect(config.maxFleetDelegates).toBe(2);
+    expect(config.maxFleetDelegatesOverride).toBe(undefined);
+    expect(config.maxFleetDelegatesByMachine).toEqual({});
   });
 
   it("sets the default fleet delegate budget from the injected core count", async () => {
@@ -28,6 +30,27 @@ describe("resolveConfig", () => {
   it("accepts an explicit fleet delegate budget", async () => {
     const config = await resolve({ max_fleet_delegates: 6 });
     expect(config.maxFleetDelegates).toBe(6);
+    expect(config.maxFleetDelegatesOverride).toBe(6);
+  });
+
+  it("accepts per-machine fleet delegate budget overrides", async () => {
+    const config = await resolve({
+      max_fleet_delegates: 6,
+      max_fleet_delegates_by_machine: { local: 4, strix: 8 },
+    });
+    expect(config.maxFleetDelegates).toBe(6);
+    expect(config.maxFleetDelegatesByMachine).toEqual({ local: 4, strix: 8 });
+  });
+
+  it("rejects non-positive or fractional per-machine budgets", async () => {
+    const invalid = await Promise.all([
+      fail({ max_fleet_delegates_by_machine: { strix: 0 } }),
+      fail({ max_fleet_delegates_by_machine: { nigelsheldon: 1.5 } }),
+    ]);
+    expect(invalid.map((error) => error.message)).toEqual([
+      "max_fleet_delegates_by_machine.strix must be a positive integer",
+      "max_fleet_delegates_by_machine.nigelsheldon must be a positive integer",
+    ]);
   });
 
   it("rejects a non-positive or fractional fleet delegate budget", async () => {

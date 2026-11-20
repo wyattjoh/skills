@@ -22,6 +22,8 @@ export type Config = {
   branchPrefix: string;
   cores: number;
   maxFleetDelegates: number;
+  maxFleetDelegatesOverride: number | undefined;
+  maxFleetDelegatesByMachine: Record<string, number>;
 };
 
 /**
@@ -48,6 +50,7 @@ const ConfigFile = Schema.Struct({
   quiet_hours: Schema.optionalKey(Schema.Number),
   branch_prefix: Schema.optionalKey(Schema.String),
   max_fleet_delegates: Schema.optionalKey(Schema.Number),
+  max_fleet_delegates_by_machine: Schema.optionalKey(Schema.Record(Schema.String, Schema.Number)),
 });
 
 const KNOWN_KEYS = new Set([
@@ -61,6 +64,7 @@ const KNOWN_KEYS = new Set([
   "quiet_hours",
   "branch_prefix",
   "max_fleet_delegates",
+  "max_fleet_delegates_by_machine",
 ]);
 
 /**
@@ -165,9 +169,19 @@ export const resolveConfig = Effect.fn("resolveConfig")(function* (
       path,
       message: "max_fleet_delegates must be a positive integer",
     });
+  const invalidMachineBudget = Object.entries(file.max_fleet_delegates_by_machine ?? {}).find(
+    ([, budget]) => !Number.isInteger(budget) || budget < 1,
+  );
+  if (invalidMachineBudget)
+    return yield* new ConfigError({
+      path,
+      message: `max_fleet_delegates_by_machine.${invalidMachineBudget[0]} must be a positive integer`,
+    });
   return {
     cores,
     maxFleetDelegates: file.max_fleet_delegates ?? Math.max(2, Math.floor(cores / 4)),
+    maxFleetDelegatesOverride: file.max_fleet_delegates,
+    maxFleetDelegatesByMachine: { ...file.max_fleet_delegates_by_machine },
     backlogDir: expandHome(file.backlog_dir ?? "~/.config/coordinate/backlogs"),
     // Resolved, so paths built on it by string (backlog-store/paths.ts) never double a slash.
     stateDir: resolve(expandHome(file.state_dir ?? "~/.local/state/coordinate")),

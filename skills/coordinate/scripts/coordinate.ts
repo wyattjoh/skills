@@ -401,7 +401,10 @@ const delegateCommand = Command.make(
       "open a tab in the coordinator's space instead of a new space",
     ).pipe(Flag.withoutNegation),
     domain: optionalStringFlag("domain", "domain (default: this coordinator's label)"),
-    overBudget: booleanFlag("over-budget", "start even when the fleet delegate budget is reached"),
+    overBudget: booleanFlag(
+      "over-budget",
+      "start even when this machine's per-machine delegate budget is reached",
+    ),
     item: optionalStringFlag(
       "item",
       "item to file the delegate under (required from a coordinator, refused from a delegate)",
