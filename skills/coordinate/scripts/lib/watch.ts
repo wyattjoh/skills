@@ -13,6 +13,7 @@ import * as hc from "./herdr.ts";
 import { repoPullRequests } from "./prs.ts";
 import { domainRepos } from "./status.ts";
 import { acquireLock, releaseLock, releaseLockSync } from "./watch-lock.ts";
+import type { WatchLogEntry, WatchView } from "./watch-terminal.ts";
 
 /**
  * What the watcher remembers about one delegate terminal.
@@ -437,6 +438,11 @@ export type WatchOptions = {
    * Write one already-identified outbox event to stdout. A rejected promise leaves it pending.
    */
   emit: (line: string) => void | Promise<void>;
+  /**
+   * Best-effort read-only view, invoked only for delivery watchers.
+   * @param view Current watcher snapshot.
+   */
+  render?: (view: WatchView) => void;
 };
 
 const eventLine = (event: WatchEvent): string => `${event.line} [e${event.id}]`;
@@ -493,25 +499,67 @@ export const watch = Effect.fn("watch")(function* (config: Config, options: Watc
       state = { ...state, ...state.staged, staged: undefined };
       yield* writeState(path, state);
     }
-    const repos = yield* domainRepos(config, options.domain);
+    let repos = yield* domainRepos(config, options.domain);
     const clock = options.now ?? Date.now;
     const started = clock();
     let lastForge = Number.NEGATIVE_INFINITY;
+    let lastTick: number | undefined;
+    let viewOwnerState: WatchView["ownerState"] = "live";
+    let lastDelivery = state.outbox.length > 0 ? "pending from outbox" : "not sent yet";
+    const log: WatchLogEntry[] = [];
     let failures = 0;
     let failureMessage = "";
     let first = saved === undefined;
 
+    const appendLog = (event: WatchEvent, delivery: string, at: number) => {
+      log.push({ at, event, delivery });
+      if (log.length > 500) log.splice(0, log.length - 500);
+    };
+
+    const renderView = (items: readonly Item[]) => {
+      if (!options.deliver || options.render === undefined) return;
+      try {
+        options.render({
+          domain: options.domain,
+          owner: options.owner ?? "unknown",
+          ownerState: viewOwnerState,
+          pid,
+          started,
+          intervalMs: options.intervalMs,
+          forgeIntervalMs: options.forgeIntervalMs,
+          lastTick,
+          nextForge: Number.isFinite(lastForge) ? lastForge + options.forgeIntervalMs : started,
+          nextDue: (lastTick ?? started) + options.intervalMs,
+          outboxDepth: state.outbox.length,
+          lastDelivery,
+          delegates: state.delegates,
+          repos,
+          prs: state.prs,
+          items,
+          log: [...log],
+        });
+      } catch {
+        // The terminal view is observational; a renderer failure must never affect delivery.
+      }
+    };
+
+    renderView([]);
+
     const deliverPending = () =>
       Effect.gen(function* () {
-        if (state.outbox.length === 0) return true;
+        if (state.outbox.length === 0) return { sent: true, failure: undefined };
         if (options.deliver) {
           const result = yield* hc
             .send(options.owner ?? "", state.outbox.map(eventLine).join("\n"))
             .pipe(Effect.result);
-          if (Result.isFailure(result)) return false;
+          if (Result.isFailure(result))
+            return {
+              sent: false,
+              failure: { kind: result.failure.kind, message: result.failure.message },
+            };
           state = { ...state, outbox: [] };
           yield* writeState(path, state);
-          return true;
+          return { sent: true, failure: undefined };
         }
         for (const event of state.outbox) {
           yield* Effect.promise(async () => {
@@ -520,7 +568,7 @@ export const watch = Effect.fn("watch")(function* (config: Config, options: Watc
           state = { ...state, outbox: state.outbox.filter((pending) => pending.id !== event.id) };
           yield* writeState(path, state);
         }
-        return true;
+        return { sent: true, failure: undefined };
       });
 
     const ownerState = () =>
@@ -545,6 +593,12 @@ export const watch = Effect.fn("watch")(function* (config: Config, options: Watc
         ),
       };
       const lines: string[] = [];
+      const latestRepos = yield* domainRepos(config, options.domain);
+      const reposChanged =
+        repos.length !== latestRepos.length ||
+        repos.some((repo, index) => repo !== latestRepos[index]);
+      repos = latestRepos;
+      if (reposChanged) lastForge = Number.NEGATIVE_INFINITY;
       const polled = yield* snapshotDelegates(options.domain).pipe(Effect.result);
       if (Result.isFailure(polled)) {
         failures += 1;
@@ -618,6 +672,7 @@ export const watch = Effect.fn("watch")(function* (config: Config, options: Watc
         id: (state.nextEventId + index).toString(36),
         line: line.replace(/[\r\n]+/gu, " ").trim(),
       }));
+      const newEventIds = new Set(events.map((event) => event.id));
       const staged: WatchState = {
         ...state,
         outbox: [...state.outbox, ...events],
@@ -630,15 +685,45 @@ export const watch = Effect.fn("watch")(function* (config: Config, options: Watc
       state = { ...staged, ...snapshot, staged: undefined };
       yield* writeState(path, state);
 
-      if (ownerGone && options.deliver) return [];
+      const items = Option.isSome(document) ? document.value.backlog.items : [];
+      lastTick = clock();
+      viewOwnerState = owner;
+      if (ownerGone && options.deliver) {
+        lastDelivery =
+          state.outbox.length > 0 ? "error: owner gone; events remain queued" : "owner gone";
+        for (const event of state.outbox) appendLog(event, "error: owner gone", lastTick);
+        renderView(items);
+        return [];
+      }
       if (owner === "unknown" && options.deliver) {
-        yield* Effect.sleep(
-          Math.min(options.intervalMs * 2 ** Math.max(0, failures), MAX_RETRY_DELAY_MS),
+        const retryMs = Math.min(
+          options.intervalMs * 2 ** Math.max(0, failures),
+          MAX_RETRY_DELAY_MS,
         );
+        lastDelivery = `error: owner status unavailable; retry in ${Math.ceil(retryMs / 1000)}s`;
+        for (const event of state.outbox) appendLog(event, lastDelivery, lastTick);
+        renderView(items);
+        yield* Effect.sleep(retryMs);
         continue;
       }
-      const pending = state.outbox.length > 0;
-      const delivered = yield* deliverPending();
+      const pendingEvents = [...state.outbox];
+      const pending = pendingEvents.length > 0;
+      const delivery = yield* deliverPending();
+      if (options.deliver && pending) {
+        const retrySeconds = Math.ceil(options.intervalMs / 1000);
+        lastDelivery = delivery.sent
+          ? `sent to ${options.owner}`
+          : `${delivery.failure?.kind === "blocked" ? "refused" : "error"}: ${delivery.failure?.message ?? "delivery failed"}; retry in ${retrySeconds}s`;
+        for (const event of pendingEvents) {
+          const replayed = newEventIds.has(event.id) ? "" : "replayed from outbox, ";
+          appendLog(
+            event,
+            delivery.sent ? `${replayed}sent to ${options.owner}` : `${replayed}${lastDelivery}`,
+            lastTick,
+          );
+        }
+      }
+      renderView(items);
       if (options.follow && ownerNotice !== undefined)
         yield* Effect.promise(async () => options.emit(ownerNotice));
       if (ownerGone) return options.follow ? [] : [ownerNotice ?? "owner gone"];
@@ -663,7 +748,7 @@ export const watch = Effect.fn("watch")(function* (config: Config, options: Watc
       }
       if (clock() - started >= options.maxMs)
         return [`alive: no events in ${Math.round(options.maxMs / 60_000)}m; re-arm the watcher`];
-      if (!delivered && pending) return [];
+      if (!delivery.sent && pending) return [];
       yield* Effect.sleep(options.intervalMs);
     }
   }).pipe(

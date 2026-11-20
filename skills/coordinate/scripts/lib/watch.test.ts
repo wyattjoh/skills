@@ -642,6 +642,37 @@ describe("watch --deliver outbox", () => {
     expect(saved.outbox).toEqual([]);
   });
 
+  it("keeps delivery working when the read-only renderer throws", async () => {
+    const { config } = await dueDomain();
+    let ownerReads = 0;
+    let sends = 0;
+    const fake = fakeProc((argv) => {
+      if (argv[1] === "ls") return ok('{"terminals":[]}');
+      if (argv[1] === "get" && argv[2] === "t1") {
+        ownerReads += 1;
+        return ownerReads <= 2 ? ok(liveCoordinator) : goneCoordinator;
+      }
+      if (argv[1] === "send") {
+        sends += 1;
+        return ok();
+      }
+      throw new Error(`unexpected command: ${argv.join(" ")}`);
+    });
+
+    expect(
+      await runWith(
+        watch(config, {
+          ...options,
+          render: () => {
+            throw new Error("terminal disconnected");
+          },
+        }),
+        fake.layer,
+      ),
+    ).toEqual([]);
+    expect(sends).toBe(1);
+  });
+
   it("keeps stdout events pending when the writer rejects, then removes them after a successful write", async () => {
     const { config, stateFile } = await dueDomain();
     const failedWrite: string[] = [];

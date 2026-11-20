@@ -44,7 +44,13 @@ import { Proc } from "./lib/proc.ts";
 import { domainRepos, domainStatus } from "./lib/status.ts";
 import { renameDomain } from "./lib/rename.ts";
 import { watch } from "./lib/watch.ts";
-import { armWatcher, stopWatcher, watcherInfoLine } from "./lib/watch-terminal.ts";
+import {
+  armWatcher,
+  createWatchViewWriter,
+  stopWatcher,
+  watcherInfoLine,
+} from "./lib/watch-terminal.ts";
+import type { WatchView } from "./lib/watch-terminal.ts";
 import { context, pruneBranches, pruneEnded, removeMany, renderRows, report } from "./lib/sweep.ts";
 import { mainCheckout } from "./lib/git.ts";
 import { resolve } from "node:path";
@@ -105,6 +111,25 @@ const writeWatchLine = (line: string): Promise<void> =>
       else resolve();
     });
   });
+
+const createWatchTerminalRenderer = (): ((view: WatchView) => void) => {
+  process.stdout.on("error", () => undefined);
+  const renderer = createWatchViewWriter(
+    (output) => process.stdout.write(output, () => undefined),
+    {
+      ansi: process.stdout.isTTY === true && process.env.NO_COLOR === undefined,
+      columns: process.stdout.columns ?? 100,
+      rows: process.stdout.rows ?? 24,
+    },
+  );
+  return (view) => {
+    try {
+      renderer(view);
+    } catch {
+      // Rendering is best-effort and never participates in event delivery.
+    }
+  };
+};
 
 const argument = (name: string, description: string) =>
   Argument.String(name).pipe(Argument.withDescription(description));
@@ -1096,6 +1121,7 @@ const watchCommand = Command.make(
             now: () => Date.now(),
             follow: options.follow || options.deliver,
             emit: writeWatchLine,
+            render: options.deliver ? createWatchTerminalRenderer() : undefined,
           });
         }),
       false,

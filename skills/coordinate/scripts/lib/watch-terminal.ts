@@ -1,10 +1,44 @@
 import { createHash } from "node:crypto";
-import { join } from "node:path";
+import { basename, join } from "node:path";
 import { Effect } from "effect";
 import type { Config } from "./config.ts";
 import { checkDomainName, L } from "./fleet.ts";
 import * as hc from "./herdr.ts";
 import { watcherAlive } from "./watch-lock.ts";
+import type { Item } from "./backlog-store/schema.ts";
+import type { SeenDelegate, SeenPr, WatchEvent } from "./watch.ts";
+
+/**
+ * One watcher event as displayed in the terminal's append-only log.
+ */
+export type WatchLogEntry = {
+  at: number;
+  event: WatchEvent;
+  delivery: string;
+};
+
+/**
+ * Data displayed by the read-only live watcher view.
+ */
+export type WatchView = {
+  domain: string;
+  owner: string;
+  ownerState: "live" | "unknown" | "gone";
+  pid: number;
+  started: number;
+  intervalMs: number;
+  forgeIntervalMs: number;
+  lastTick: number | undefined;
+  nextForge: number;
+  nextDue: number;
+  outboxDepth: number;
+  lastDelivery: string;
+  delegates: Readonly<Record<string, SeenDelegate>>;
+  repos: readonly string[];
+  prs: Readonly<Record<string, SeenPr>>;
+  items: readonly Item[];
+  log: readonly WatchLogEntry[];
+};
 
 /** A watcher-domain label that is deliberately separate from the delegate fleet label. */
 export const WATCHER_DOMAIN_LABEL = "coordinate.watch-domain";
@@ -29,6 +63,154 @@ export const watcherInfoLine = (info: WatcherInfo): string => {
   if (info.state === "unavailable")
     return `watcher unavailable: ${info.detail ?? "Herdr could not launch it"}; use the Watch fallback in coordinate/SKILL.md`;
   return "no watcher running";
+};
+
+const pad2 = (part: number): string => String(part).padStart(2, "0");
+
+const time = (value: number | undefined): string => {
+  if (value === undefined) return "not yet";
+  const date = new Date(value);
+  return `${pad2(date.getHours())}:${pad2(date.getMinutes())}:${pad2(date.getSeconds())}`;
+};
+
+const startedTime = (value: number): string => {
+  const date = new Date(value);
+  return `${date.getFullYear()}-${pad2(date.getMonth() + 1)}-${pad2(date.getDate())} ${time(value)}`;
+};
+
+const repoName = (repo: string): string => basename(repo) || repo;
+
+const interval = (value: number): string => `${Math.round(value / 1000)}s`;
+
+/**
+ * Format watcher data as a header, status line and event log.
+ * @param view Current watcher snapshot.
+ * @returns Display lines in screen order.
+ */
+export const watchViewLines = (view: WatchView): string[] => {
+  const delegates = Object.entries(view.delegates).map(
+    ([address, delegate]) => `${delegate.name} [${delegate.status ?? "unknown"}] (${address})`,
+  );
+  const prs = Object.entries(view.prs).map(
+    ([key, pr]) => `${key} ${pr.state}/${pr.checks}/${pr.review}`,
+  );
+  const due = view.items
+    .filter((item) => item.due !== null && item.status !== "done" && item.status !== "dismissed")
+    .toSorted((a, b) => (a.due ?? "").localeCompare(b.due ?? ""))
+    .map((item) => `${item.due} ${item.id} ${item.title}`);
+  const asks = view.items
+    .filter((item) => item.status === "waiting-user" && item.ask !== null)
+    .map((item) => `${item.id} ${item.title}: ${item.ask?.question ?? "question pending"}`);
+  const lines = [
+    `coordinate watch: ${view.domain}`,
+    `owner: ${view.owner} (${view.ownerState}) | pid ${view.pid} | started ${startedTime(view.started)}`,
+    `poll: delegates/backlog ${interval(view.intervalMs)} | forge/PRs ${interval(view.forgeIntervalMs)}`,
+    `live delegates (${delegates.length}): ${delegates.join(", ") || "none"}`,
+    `owned repos (${view.repos.length}): ${view.repos.map(repoName).join(", ") || "none"}`,
+    `PRs (${prs.length}): ${prs.join(", ") || "none"}`,
+    `due dates (${due.length}): ${due.join(", ") || "none"}`,
+    `asks waiting on user (${asks.length}): ${asks.join(", ") || "none"}`,
+    `last tick ${time(view.lastTick)} | next forge ${time(view.nextForge)} | next due ${time(view.nextDue)} | outbox ${view.outboxDepth} | delivery ${view.lastDelivery}`,
+    "events (newest at bottom):",
+    ...view.log.map(
+      (entry) => `${time(entry.at)} ${entry.event.line} [e${entry.event.id}] | ${entry.delivery}`,
+    ),
+  ];
+  return lines;
+};
+
+const terminalRows = (rows: number): number => Math.max(11, rows);
+
+const clipped = (line: string, columns: number): string => [...line].slice(0, columns).join("");
+
+const headerOutput = (
+  lines: readonly string[],
+  rows: number,
+  columns: number,
+  logCount: number,
+): string => {
+  const logRows = Math.max(1, rows - 10);
+  const cursorRow = logCount >= logRows ? rows : 11 + logCount;
+  return `\u001b[r\u001b[1;1H${lines
+    .slice(0, 10)
+    .map((line) => `\u001b[2K${clipped(line, columns)}\r\n`)
+    .join("")}\u001b[11;${rows}r\u001b[${cursorRow};1H`;
+};
+
+const eventLine = (entry: WatchLogEntry): string =>
+  `${time(entry.at)} ${entry.event.line} [e${entry.event.id}] | ${entry.delivery}`;
+
+const appendLogOutput = (
+  entries: readonly WatchLogEntry[],
+  existingCount: number,
+  rows: number,
+  columns: number,
+): string => {
+  const logRows = Math.max(1, rows - 10);
+  let count = existingCount;
+  let output = "";
+  for (const entry of entries) {
+    if (count >= logRows) output += "\r\n";
+    output += clipped(eventLine(entry), columns);
+    count += 1;
+    if (count < logRows) output += "\r\n";
+  }
+  return output;
+};
+
+/**
+ * Render the initial live view with a fixed header and a scrolling event region.
+ * @param view Current watcher snapshot.
+ * @param options Terminal color and dimensions.
+ * @returns Text for the terminal.
+ */
+export const renderWatchView = (
+  view: WatchView,
+  options: { ansi: boolean; columns: number; rows: number },
+): string => {
+  const lines = watchViewLines(view);
+  if (!options.ansi) return `${lines.join("\n")}\n`;
+  const rows = terminalRows(options.rows);
+  const entries = view.log.slice(-Math.max(1, rows - 10));
+  const output = `${headerOutput(lines, rows, options.columns, 0)}${appendLogOutput(entries, 0, rows, options.columns)}`;
+  return `\u001b[2J${output}`;
+};
+
+/**
+ * Create a renderer that appends plain status and new event lines, or redraws an ANSI view.
+ * @param write Output sink.
+ * @param options Terminal color and dimensions.
+ * @returns A writer for successive watcher snapshots.
+ */
+export const createWatchViewWriter = (
+  write: (output: string) => void,
+  options: { ansi: boolean; columns: number; rows: number },
+): ((view: WatchView) => void) => {
+  let rendered = false;
+  let lastLogEntry: WatchLogEntry | undefined;
+  return (view) => {
+    const lines = watchViewLines(view);
+    if (options.ansi && !rendered) {
+      write(renderWatchView(view, options));
+    } else if (options.ansi) {
+      const rows = terminalRows(options.rows);
+      const previousLogIndex = lastLogEntry === undefined ? -1 : view.log.indexOf(lastLogEntry);
+      const existingCount = Math.max(0, previousLogIndex + 1);
+      const newEntries = previousLogIndex < 0 ? view.log : view.log.slice(previousLogIndex + 1);
+      write(
+        `${headerOutput(lines, rows, options.columns, existingCount)}${appendLogOutput(newEntries, existingCount, rows, options.columns)}`,
+      );
+    } else if (!rendered) {
+      write(`${lines.join("\n")}\n`);
+    } else {
+      const previousLogIndex = lastLogEntry === undefined ? -1 : view.log.indexOf(lastLogEntry);
+      const newLogLines = lines.slice(10 + previousLogIndex + 1);
+      const status = [lines[1], ...lines.slice(3, 9)].join(" | ");
+      write(`${status}\n${newLogLines.length > 0 ? `${newLogLines.join("\n")}\n` : ""}`);
+    }
+    rendered = true;
+    lastLogEntry = view.log.at(-1);
+  };
 };
 
 /**
