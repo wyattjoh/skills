@@ -169,6 +169,15 @@ const mount = async () => {
   return { ctx, view, render: () => view.render(ctx.cx as never) as never };
 };
 
+test("renders the toolbar brand without an icon", async () => {
+  focusDomain("alpha");
+  host.files.set(DOC, JSON.stringify(emptyBacklog("alpha", null)));
+  const { render } = await mount();
+  const brand = get(render(), "toolbar-brand");
+  expect(text(brand)).toBe("Backlog");
+  expect(brand.children).toHaveLength(1);
+});
+
 test("uses a multiline textarea configured to grow through 100 rows", async () => {
   focusDomain("alpha");
   host.files.set(DOC, JSON.stringify(withAsk()));

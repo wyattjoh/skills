@@ -168,14 +168,12 @@ export const message = (
 };
 
 // The panel's chrome and domain label use the same frame, brand and tool-row pieces as the
-// Tasks panel. The layers mark remains host-owned because herdr-ui does not ship that glyph.
-const BACKLOG_ICON = "mods/workspace-chrome/layers.svg";
-
+// Tasks panel.
 const toolbar = (t: Theme, domain: string | undefined): Element =>
   topBar(t, {
     content: toolRow({
       id: "toolbar",
-      brand: brand(t, { id: "toolbar-brand", icon: BACKLOG_ICON, name: "Backlog" }),
+      brand: brand(t, { id: "toolbar-brand", name: "Backlog" }),
       leading: [],
       trailing:
         domain === undefined
