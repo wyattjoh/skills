@@ -1,5 +1,5 @@
 import { afterAll, describe, expect, it } from "bun:test";
-import { mkdirSync, rmSync } from "node:fs";
+import { mkdirSync, readFileSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import { cliEnv, tempDir } from "./lib/fixture.ts";
 
@@ -399,11 +399,12 @@ describe("coordinate CLI parity", () => {
           "--answer",
           "optionally '<label> :: <detail>'",
           "recommended option label",
+          "Discuss",
         ],
       ],
       [
         ["item", "answer"],
-        ["id", "answer", "--domain", "--json"],
+        ["id", "answer", "--domain", "--json", "Discuss"],
       ],
       [
         ["item", "close"],
@@ -455,5 +456,85 @@ describe("coordinate CLI parity", () => {
     const shortHelp = run(["start", "-h"]);
     expect(shortHelp.exit).toBe(0);
     expect(shortHelp.stdout).toContain("label this terminal");
+  }, 60_000);
+});
+
+describe("coordinate Discuss answers", () => {
+  it("keeps the ask open through both answer commands and clears discussion on revision or answer", () => {
+    const state = tempDir("coordinate-discuss-");
+    made.push(state);
+    const env = cliEnv(state, COORDINATOR);
+    const run = (args: string[]): Result => {
+      const done = Bun.spawnSync(["bun", cli, ...args], {
+        env,
+        stdout: "pipe",
+        stderr: "pipe",
+        timeout: 10_000,
+      });
+      return {
+        args,
+        exit: done.exitCode,
+        stdout: done.stdout.toString(),
+        stderr: done.stderr.toString(),
+      };
+    };
+
+    expect(run(["start", "app"]).exit).toBe(0);
+    expect(run(["item", "add", "pick a store", "--domain", "app"]).exit).toBe(0);
+    expect(
+      run([
+        "item",
+        "update",
+        "i1",
+        "--status",
+        "waiting-user",
+        "--ask",
+        "Which store?",
+        "--option",
+        "A",
+        "--option",
+        "B",
+        "--domain",
+        "app",
+      ]).exit,
+    ).toBe(0);
+
+    expect(
+      run(["item", "answer", "--domain", "app", "i1", "Discuss: compare migrations"]).exit,
+    ).toBe(0);
+    const path = join(state, "backlogs", "app.json");
+    const discussedByAnswer = JSON.parse(readFileSync(path, "utf8")).items[0];
+    expect(discussedByAnswer.status).toBe("waiting-user");
+    expect(discussedByAnswer.ask.discuss.note).toBe("compare migrations");
+    expect(discussedByAnswer.ask.discuss.at).toMatch(/^\d{4}-\d{2}-\d{2}$/);
+    expect(discussedByAnswer.answered).toEqual([]);
+
+    expect(
+      run([
+        "item",
+        "update",
+        "i1",
+        "--status",
+        "waiting-user",
+        "--ask",
+        "Revised question?",
+        "--option",
+        "C",
+        "--domain",
+        "app",
+      ]).exit,
+    ).toBe(0);
+    expect(JSON.parse(readFileSync(path, "utf8")).items[0].ask.discuss).toBe(null);
+
+    expect(run(["item", "update", "i1", "--answer", "Discuss", "--domain", "app"]).exit).toBe(0);
+    const discussedByUpdate = JSON.parse(readFileSync(path, "utf8")).items[0];
+    expect(discussedByUpdate.status).toBe("waiting-user");
+    expect(discussedByUpdate.ask.discuss.note).toBe("");
+    expect(discussedByUpdate.answered).toEqual([]);
+
+    expect(run(["item", "answer", "--domain", "app", "i1", "C"]).exit).toBe(0);
+    const answered = JSON.parse(readFileSync(path, "utf8")).items[0];
+    expect(answered.ask).toBe(null);
+    expect(answered.answered[0]).toMatchObject({ discuss: null, answer: "C" });
   }, 60_000);
 });

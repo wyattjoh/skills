@@ -4,6 +4,7 @@ import { join } from "node:path";
 import { Effect, Option, Result } from "effect";
 import { readDocument } from "./backlog-doc.ts";
 import { isAnswer } from "./backlog-store/ops.ts";
+import { isDiscussion } from "./backlog-store/schema.ts";
 import type { Item } from "./backlog-store/schema.ts";
 import type { Config } from "./config.ts";
 import { L, Refused } from "./fleet.ts";
@@ -38,12 +39,22 @@ export type WatchState = {
    * floods with answers recorded earlier.
    */
   answered: string[] | null;
+  /**
+   * Discussion requests already fired, keyed like answers.
+   */
+  discussed: string[] | null;
 };
 
 /**
  * An empty state.
  */
-export const emptyState = (): WatchState => ({ delegates: {}, prs: {}, due: [], answered: null });
+export const emptyState = (): WatchState => ({
+  delegates: {},
+  prs: {},
+  due: [],
+  answered: null,
+  discussed: null,
+});
 
 /**
  * Lines for delegate changes between two snapshots. A delegate that settles (or takes another settled
@@ -180,6 +191,34 @@ const answeredEvents = (items: readonly Item[], fired: readonly string[] | null)
 };
 
 /**
+ * Discussion events for requests recorded since the last read, in document order, skipping keys
+ * already fired. A null snapshot seeds existing events without notifying on arm.
+ */
+const discussionEvents = (items: readonly Item[], fired: readonly string[] | null) => {
+  const discussions = items.flatMap((item) => {
+    const seen = new Map<string, number>();
+    return item.decided
+      .filter((decision) => isDiscussion(decision.text))
+      .map((decision) => {
+        const base = `${item.id} ${decision.at} ${decision.text}`;
+        const ordinal = (seen.get(base) ?? 0) + 1;
+        seen.set(base, ordinal);
+        return {
+          key: `${item.id} ${decision.at} #${ordinal} ${decision.text}`,
+          line: `discuss ${item.id} ${item.title}: ${decision.text.slice("Discuss ".length)}`,
+        };
+      });
+  });
+  if (fired === null) return { lines: [], fired: discussions.map((entry) => entry.key) };
+  const seen = new Set(fired);
+  const fresh = discussions.filter((entry) => !seen.has(entry.key));
+  return {
+    lines: fresh.map((entry) => entry.line),
+    fired: [...fired, ...fresh.map((entry) => entry.key)],
+  };
+};
+
+/**
  * The watcher's snapshot for a domain.
  * @param stateDir State dir.
  * @param domain Domain.
@@ -198,6 +237,7 @@ const readState = (path: string) =>
         prs: parsed.prs ?? {},
         due: parsed.due ?? [],
         answered: parsed.answered ?? null,
+        discussed: parsed.discussed ?? null,
       };
     } catch {
       return undefined;
@@ -366,6 +406,9 @@ export const watch = Effect.fn("watch")(function* (config: Config, options: Watc
         const answered = answeredEvents(document.value.backlog.items, state.answered);
         lines.push(...answered.lines);
         state.answered = answered.fired;
+        const discussed = discussionEvents(document.value.backlog.items, state.discussed);
+        lines.push(...discussed.lines);
+        state.discussed = discussed.fired;
       }
       first = false;
       let ownerGone = false;

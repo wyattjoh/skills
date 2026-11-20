@@ -729,6 +729,7 @@ export const answerCommand = (
 export type AnswerDraft = {
   key: string;
   choice: string | undefined;
+  discuss: boolean;
   text: string;
   busy: boolean;
   error: string | undefined;
@@ -753,15 +754,20 @@ export const draftKey = (domain: string, item: Item, ask: Ask): string =>
  * @returns The draft.
  */
 export const draftFor = (key: string, ask: Ask, kept: AnswerDraft | undefined): AnswerDraft =>
-  kept?.key === key ? kept : { key, choice: undefined, text: "", busy: false, error: undefined };
+  kept?.key === key
+    ? kept
+    : { key, choice: undefined, discuss: false, text: "", busy: false, error: undefined };
 
 /**
  * What Answer records: typed text when there is any, else the picked option.
  * @param draft The draft.
  * @returns The answer, or undefined when there is none yet.
  */
-export const chosenAnswer = (draft: AnswerDraft): string | undefined =>
-  draft.text.trim() === "" ? draft.choice : draft.text.trim();
+export const chosenAnswer = (draft: AnswerDraft): string | undefined => {
+  const text = draft.text.trim();
+  if (draft.discuss) return text === "" ? "Discuss" : `Discuss: ${text}`;
+  return text === "" ? draft.choice : text;
+};
 
 /**
  * What a failed answer run says, for the panel to show as it is.

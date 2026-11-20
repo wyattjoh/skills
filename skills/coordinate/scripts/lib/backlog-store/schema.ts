@@ -22,9 +22,16 @@ export const ITEM_STATUSES = [
 export type ItemStatus = (typeof ITEM_STATUSES)[number];
 
 /**
- * A dated entry recorded verbatim: a decision.
+ * A dated item event, such as a decision or a discussion request.
  */
 export type Dated = { text: string; at: string };
+
+/**
+ * Whether a dated entry records a discussion request rather than a decision or answer.
+ * @param text The entry text.
+ * @returns True for the reserved discussion event format.
+ */
+export const isDiscussion = (text: string): boolean => text.startsWith('Discuss "');
 
 /**
  * A reusable policy recorded with its stable short id and date.
@@ -32,7 +39,12 @@ export type Dated = { text: string; at: string };
 export type Policy = { id: string; text: string; at: string };
 
 /**
- * A question that waits on the user, with the coordinator's recommendation.
+ * A request to discuss an ask before the user decides it.
+ */
+export type DiscussionRequest = { note: string; at: string };
+
+/**
+ * A question that waits on the user, with the coordinator's recommendation and optional discussion request.
  */
 export type Ask = {
   question: string;
@@ -41,6 +53,7 @@ export type Ask = {
   optionDetails?: string[];
   rec: string | null;
   recReason: string | null;
+  discuss: DiscussionRequest | null;
 };
 
 /** A completed ask and the answer recorded at the time it was resolved. */
@@ -184,9 +197,17 @@ export const validateBacklog = (value: unknown): Validated => {
     }, 1);
   }
   if (Array.isArray(candidate.items)) {
-    candidate.items = candidate.items.map((item: unknown) =>
-      isRecord(item) && !("answered" in item) ? { ...item, answered: [] } : item,
-    );
+    const migrateAsk = (ask: unknown): unknown =>
+      isRecord(ask) && !("discuss" in ask) ? { ...ask, discuss: null } : ask;
+    candidate.items = candidate.items.map((item: unknown) => {
+      if (!isRecord(item)) return item;
+      return {
+        ...item,
+        ...(!("answered" in item) ? { answered: [] } : {}),
+        ...(item.ask === null || item.ask === undefined ? {} : { ask: migrateAsk(item.ask) }),
+        ...(Array.isArray(item.answered) ? { answered: item.answered.map(migrateAsk) } : {}),
+      };
+    });
   }
   if (value.schemaVersion !== 1) errors.push("schemaVersion must be 1");
   nonEmpty("domain", candidate.domain);
@@ -272,6 +293,16 @@ export const validateBacklog = (value: unknown): Validated => {
       }
       textOrNull(`${askWhere}.rec`, ask.rec);
       textOrNull(`${askWhere}.recReason`, ask.recReason);
+      if (ask.discuss !== null) {
+        if (!isRecord(ask.discuss)) errors.push(`${askWhere}.discuss must be an object or null`);
+        else {
+          text(`${askWhere}.discuss.note`, ask.discuss.note);
+          if (typeof ask.discuss.note === "string" && /[\r\n]/.test(ask.discuss.note))
+            errors.push(`${askWhere}.discuss.note must be one line`);
+          if (typeof ask.discuss.at !== "string" || !DATE.test(ask.discuss.at))
+            errors.push(`${askWhere}.discuss.at must be YYYY-MM-DD`);
+        }
+      }
       if (
         typeof ask.rec === "string" &&
         !(Array.isArray(ask.options) && ask.options.includes(ask.rec))

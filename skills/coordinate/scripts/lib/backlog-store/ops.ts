@@ -212,6 +212,26 @@ export const answerDecision = (question: string, answer: string): string =>
  */
 export const isAnswer = (text: string): boolean => /^Re ".*": /s.test(text);
 
+/**
+ * Read the reserved Discuss answer form, or return undefined for a real answer.
+ * @param answer The submitted answer.
+ * @returns The trimmed note, including an empty string for a request without a note.
+ */
+export const discussionNoteFromAnswer = (answer: string): string | undefined => {
+  const trimmed = answer.trim();
+  if (trimmed === "Discuss") return "";
+  return trimmed.startsWith("Discuss:") ? trimmed.slice("Discuss:".length).trim() : undefined;
+};
+
+/**
+ * The event text appended when the user asks to discuss an ask.
+ * @param question The ask's question.
+ * @param note The optional note.
+ * @returns The discussion event text.
+ */
+export const discussionDecision = (question: string, note: string): string =>
+  `Discuss "${question}"${note === "" ? "" : `: ${note}`}`;
+
 const refuse = (reason: string): OpResult<Item> => ({ ok: false, reason });
 
 const isClosed = (status: ItemStatus): boolean => status === "done" || status === "dismissed";
@@ -266,6 +286,7 @@ const askOf = (input: ItemUpdate): Ask | undefined | string => {
     ...(optionDetails ? { optionDetails } : {}),
     rec: rec ?? null,
     recReason: input.why?.trim() ?? null,
+    discuss: null,
   };
 };
 
@@ -299,11 +320,19 @@ export const updateItem = (backlog: Backlog, input: ItemUpdate): OpResult<Item> 
   if (problem) return refuse(problem);
   const asked = askOf(input);
   if (typeof asked === "string") return refuse(asked);
+  const discussionNote =
+    input.answer === undefined ? undefined : discussionNoteFromAnswer(input.answer);
   if (input.answer !== undefined) {
     if (asked) return refuse("--answer and --ask cannot be combined");
     if (!found.ask) return refuse(`${input.id} has no ask to answer`);
     const unanswerable = oneLine("answer", input.answer);
     if (unanswerable) return refuse(unanswerable);
+    if (
+      discussionNote !== undefined &&
+      input.status !== undefined &&
+      input.status !== "waiting-user"
+    )
+      return refuse("a Discuss answer must keep status waiting-user");
   }
   const touches = [...found.touches];
   for (const path of input.untouch.map((entry) => entry.trim())) {
@@ -320,18 +349,37 @@ export const updateItem = (backlog: Backlog, input: ItemUpdate): OpResult<Item> 
   const at = input.now.slice(0, 10);
   let item: Item = {
     ...found,
-    status: input.status ?? found.status,
+    status: discussionNote === undefined ? (input.status ?? found.status) : "waiting-user",
     touches,
     due: input.due === undefined ? found.due : input.due,
-    ask: asked ?? (input.answer === undefined ? found.ask : null),
+    ask:
+      asked ??
+      (input.answer === undefined
+        ? found.ask
+        : discussionNote === undefined
+          ? null
+          : found.ask === null
+            ? null
+            : { ...found.ask, discuss: { note: discussionNote, at } }),
     answered:
-      input.answer !== undefined && found.ask
-        ? [...found.answered, { ...found.ask, answer: input.answer.trim(), answeredAt: at }]
+      input.answer !== undefined && found.ask && discussionNote === undefined
+        ? [
+            ...found.answered,
+            { ...found.ask, discuss: null, answer: input.answer.trim(), answeredAt: at },
+          ]
         : found.answered,
     decided: [
       ...found.decided,
       ...(input.answer !== undefined && found.ask
-        ? [{ text: answerDecision(found.ask.question, input.answer.trim()), at }]
+        ? [
+            {
+              text:
+                discussionNote === undefined
+                  ? answerDecision(found.ask.question, input.answer.trim())
+                  : discussionDecision(found.ask.question, discussionNote),
+              at,
+            },
+          ]
         : []),
       ...input.decided.map((text) => ({ text: text.trim(), at })),
     ],

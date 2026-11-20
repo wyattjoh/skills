@@ -90,6 +90,7 @@ const everyStatus = (): Backlog => {
       options: ["a", "b"],
       rec: "a",
       recReason: "shorter",
+      discuss: null,
     },
   });
   backlog = add(backlog, "Build the store", { status: "building" });
@@ -685,6 +686,7 @@ const withAsk = (): Backlog => {
       optionDetails: ["Long form for the tab", "Short and clear", "A neutral alternative"],
       rec: "Backlog",
       recReason: "fits the pill",
+      discuss: null,
     },
     delegates: [
       {
@@ -706,6 +708,7 @@ const withAsk = (): Backlog => {
       optionDetails: ["", "Blocked means unavailable"],
       rec: null,
       recReason: null,
+      discuss: null,
     },
   });
   return backlog;
@@ -764,6 +767,26 @@ test("opens an item's detail with the recommended option first, labelled and not
   expect(get(root, "crumb-item-i1").click).toBe(undefined);
 });
 
+test("shows a pending discussion with its marker and note in the ask card", async () => {
+  focusDomain("alpha");
+  host.files.set(DOC, JSON.stringify(withDiscussion()));
+  const { ctx, render } = await mount();
+  get(render(), "item-i1").click!({}, ctx.cx);
+  const root = render();
+
+  expect(text(get(root, "ask-discuss-number"))).toBe("4.");
+  expect(get(root, "ask-discuss-number").styles.w).toBe(28);
+  expect(get(root, "ask-discuss-content").styles.flex_1).toBe(true);
+  expect(get(root, "ask-discuss-content").styles.min_w_0).toBe(true);
+  expect(text(get(root, "ask-discuss-tag"))).toBe("In discussion");
+  expect(text(get(root, "ask-discuss-note"))).toBe("Note: compare migration support");
+  expect(ids(root, "ask-discuss-detail")).toEqual([]);
+  expect(get(root, "ask-discuss").styles.bg).toBe("#111111");
+  expect(get(root, "ask-discuss").click).toBeDefined();
+  expect(ids(root, "decided-")).toEqual(["decided-header", "decided-0"]);
+  expect(text(get(root, "decided-0"))).toBe("Keep it read-only 2026-11-16");
+});
+
 test("keeps an ask without a recommendation in its own order, with nothing highlighted", async () => {
   focusDomain("alpha");
   host.files.set(DOC, JSON.stringify(withAsk()));
@@ -787,6 +810,8 @@ test("keeps an ask without a recommendation in its own order, with nothing highl
 
 // The document after the CLI recorded an answer to i1's ask.
 const answered = (answer: string): Backlog => recordAnswer(withAsk(), "i1", answer);
+const withDiscussion = (note = "compare migration support"): Backlog =>
+  recordAnswer(withAsk(), "i1", note === "" ? "Discuss" : `Discuss: ${note}`);
 
 const withAskHistory = (): Backlog => {
   const backlog = withAsk();
@@ -805,6 +830,7 @@ const withAskHistory = (): Backlog => {
                 optionDetails: ["Supports comments", "Easy to inspect"],
                 rec: "json",
                 recReason: "existing tooling",
+                discuss: null,
                 answer: "json",
                 answeredAt: "2026-11-15",
               },
@@ -815,6 +841,7 @@ const withAskHistory = (): Backlog => {
                 optionDetails: ["Docs folder", "Repo root"],
                 rec: "docs",
                 recReason: "keeps docs together",
+                discuss: null,
                 answer: "keep it beside the docs",
                 answeredAt: "2026-11-16",
               },
@@ -927,6 +954,44 @@ test("answers with a picked option through the CLI, then keeps the answered ask 
   expect(ids(get(list, "waiting"), "item-")).toEqual(["item-i2"]);
   expect(text(get(list, "group-waiting-user-toggle"))).toBe("Answered, waiting for coordinator 1");
   expect(ids(list, "item-")).toEqual(["item-i2", "item-i1"]);
+});
+
+test("selects Discuss, accepts an optional note, and submits it through the CLI", async () => {
+  focusDomain("alpha");
+  host.files.set(DOC, JSON.stringify(withAsk()));
+  const { ctx, render } = await mount();
+  get(render(), "item-i1").click!({}, ctx.cx);
+  get(render(), "ask-discuss").click!({}, ctx.cx);
+  typeInto(host.inputs[0]!, "compare migration support", ctx.cx);
+  const typed = render();
+  expect([
+    get(typed, "ask-discuss").styles.bg,
+    get(typed, "ask-answer-submit").styles.bg,
+    text(get(typed, "ask-answer-submit")),
+    text(get(typed, "ask-discuss-detail")),
+  ]).toEqual(["#2563eb", "#ffffff", "Discuss", "Optional note"]);
+  host.files.set(DOC, JSON.stringify(withDiscussion()));
+  get(typed, "ask-answer-submit").click!({}, ctx.cx);
+  await settle();
+  expect(host.execs).toEqual([
+    { command: "/usr/bin/env", args: answerArgs("i1", "Discuss: compare migration support") },
+  ]);
+  expect(text(get(render(), "ask-discuss-tag"))).toBe("In discussion");
+  expect(text(get(render(), "ask-discuss-note"))).toBe("Note: compare migration support");
+});
+
+test("submits Discuss without a note when the discussion row is selected", async () => {
+  focusDomain("alpha");
+  host.files.set(DOC, JSON.stringify(withAsk()));
+  const { ctx, render } = await mount();
+  get(render(), "item-i1").click!({}, ctx.cx);
+  get(render(), "ask-discuss").click!({}, ctx.cx);
+  expect(text(get(render(), "ask-answer-submit"))).toBe("Discuss");
+  host.files.set(DOC, JSON.stringify(withDiscussion("")));
+  get(render(), "ask-answer-submit").click!({}, ctx.cx);
+  await settle();
+  expect(host.execs).toEqual([{ command: "/usr/bin/env", args: answerArgs("i1", "Discuss") }]);
+  expect(ids(render(), "ask-discuss-note")).toEqual([]);
 });
 
 test("answers with typed text over the picked option, a leading dash kept as one argument", async () => {

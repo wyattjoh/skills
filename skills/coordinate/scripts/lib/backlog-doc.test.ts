@@ -15,6 +15,7 @@ import {
 import { resolveConfig } from "./config.ts";
 import { cliEnv, failureOf, runWith, tempDir } from "./fixture.ts";
 import { domainOfCaller, Refused } from "./fleet.ts";
+import { validateBacklog } from "./backlog-store/schema.ts";
 import { start } from "./lifecycle.ts";
 import { fakeProc, ok } from "./proc.ts";
 import { domainStatus } from "./status.ts";
@@ -572,6 +573,7 @@ describe("item update", () => {
       options: ["sqlite", "json"],
       rec: "json",
       recReason: "no dependency",
+      discuss: null,
     });
     const shown = (await runWith(showBacklog(cfg, "app", false))).join("\n");
     expect(shown.split("## Open\n\n")[1]?.split("\n\n")[0]).toBe(
@@ -590,6 +592,7 @@ describe("item update", () => {
       options: ["yes", "no"],
       rec: null,
       recReason: null,
+      discuss: null,
     });
   });
 
@@ -606,6 +609,101 @@ describe("item update", () => {
 
     await runWith(itemUpdate(cfg, "app", update({ decided: ["kept history"], now: NOW })));
     expect(read(path).items[0].answered).toEqual([]);
+  });
+
+  it("records Discuss as an open discussion request, not a completed answer", async () => {
+    const { cfg, path } = await started();
+    await runWith(itemAdd(cfg, "app", { title: "a", json: false, now: NOW }));
+    await runWith(
+      itemUpdate(
+        cfg,
+        "app",
+        update({
+          status: "waiting-user",
+          ask: "Which store?",
+          options: ["sqlite", "json"],
+        }),
+      ),
+    );
+
+    const printed = await runWith(
+      itemUpdate(cfg, "app", update({ answer: "Discuss: compare migration support", json: true })),
+    );
+    const item = JSON.parse(printed.join("\n"));
+    expect(item.status).toBe("waiting-user");
+    expect(item.ask).toEqual({
+      question: "Which store?",
+      context: null,
+      options: ["sqlite", "json"],
+      rec: null,
+      recReason: null,
+      discuss: { note: "compare migration support", at: "2026-11-18" },
+    });
+    expect(item.answered).toEqual([]);
+    expect(item.decided).toEqual([
+      { text: 'Discuss "Which store?": compare migration support', at: "2026-11-18" },
+    ]);
+    expect(read(path).items[0]).toEqual(item);
+    const shown = (await runWith(showBacklog(cfg, "app", false))).join("\n");
+    expect(shown).toContain("    - discussion requested (2026-11-18): compare migration support");
+  });
+
+  it("migrates missing discussion markers on open and answered asks", async () => {
+    const { cfg, path } = await started();
+    await runWith(itemAdd(cfg, "app", { title: "a", json: false, now: NOW }));
+    await runWith(
+      itemUpdate(
+        cfg,
+        "app",
+        update({ status: "waiting-user", ask: "Which store?", options: ["A", "B"] }),
+      ),
+    );
+    await runWith(itemUpdate(cfg, "app", update({ answer: "Discuss: compare migration" })));
+    expect(read(path).items[0].ask.discuss).toEqual({
+      note: "compare migration",
+      at: "2026-11-18",
+    });
+    await runWith(itemUpdate(cfg, "app", update({ ask: "Revised question?", options: ["C"] })));
+    expect(read(path).items[0].ask.discuss).toBe(null);
+    await runWith(itemUpdate(cfg, "app", update({ answer: "Discuss" })));
+    await runWith(itemUpdate(cfg, "app", update({ answer: "C" })));
+    expect(read(path).items[0].answered[0].discuss).toBe(null);
+    await runWith(itemUpdate(cfg, "app", update({ ask: "Where next?", options: ["D"] })));
+
+    const legacy = read(path);
+    delete legacy.items[0].ask.discuss;
+    delete legacy.items[0].answered[0].discuss;
+    writeFileSync(path, JSON.stringify(legacy));
+
+    const shown = JSON.parse((await runWith(showBacklog(cfg, "app", true))).join("\n"));
+    expect(shown.items[0].ask.discuss).toBe(null);
+    expect(shown.items[0].answered[0].discuss).toBe(null);
+    expect(read(path).items[0].ask.discuss).toBe(undefined);
+
+    await runWith(itemUpdate(cfg, "app", update({ decided: ["persist migration"] })));
+    expect(read(path).items[0].ask.discuss).toBe(null);
+    expect(read(path).items[0].answered[0].discuss).toBe(null);
+  });
+
+  it("rejects malformed discussion request fields", async () => {
+    const { cfg, path } = await started();
+    await runWith(itemAdd(cfg, "app", { title: "a", json: false, now: NOW }));
+    await runWith(
+      itemUpdate(
+        cfg,
+        "app",
+        update({ status: "waiting-user", ask: "Which store?", options: ["A", "B"] }),
+      ),
+    );
+    const backlog = read(path);
+    backlog.items[0].ask.discuss = { note: 12, at: "tomorrow" };
+    expect(validateBacklog(backlog)).toEqual({
+      ok: false,
+      errors: [
+        "items[0].ask.discuss.note must be a string",
+        "items[0].ask.discuss.at must be YYYY-MM-DD",
+      ],
+    });
   });
 
   it("answering an ask keeps its details in history and records the answer as a dated decision", async () => {
@@ -640,6 +738,7 @@ describe("item update", () => {
           options: ["sqlite", "json"],
           rec: null,
           recReason: null,
+          discuss: null,
           answer: "json, but keep it small",
           answeredAt: "2026-11-18",
         },
@@ -775,6 +874,7 @@ describe("status --resume", () => {
         json: false,
       }),
     );
+    await runWith(itemUpdate(cfg, "app", update({ answer: "Discuss: compare options" })));
     const lines = await runWith(domainStatus(cfg, "app", true, Date.parse(NOW)), hcFake().layer);
     expect(lines).toEqual([
       "app: 0 live delegates, 0 ended",
@@ -784,6 +884,7 @@ describe("status --resume", () => {
       "no watcher running: arm coordinate watch --follow",
     ]);
     expect(lines[2]?.split("\n").slice(0, 1)).toEqual(["# app backlog"]);
+    expect(lines[2]).toContain("    - discussion requested (2026-11-18): compare options");
     expect(lines[2]?.split("\n").filter((line) => /^    - [ab](?: |$)/.test(line))).toEqual([
       "    - a (recommended: preferred): alpha :: tail",
       "    - b",
@@ -1540,6 +1641,7 @@ describe("coordinator-only mutations", () => {
       options: ["-none-", "okta"],
       rec: null,
       recReason: null,
+      discuss: null,
     });
     const { HC_TERMINAL_ID: _unset, ...outside } = cliEnv(state, COORDINATOR);
     const before = readFileSync(path, "utf8");

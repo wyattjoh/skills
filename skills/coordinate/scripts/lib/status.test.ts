@@ -2,7 +2,7 @@ import { afterAll, describe, expect, it } from "bun:test";
 import { rmSync } from "node:fs";
 import { join } from "node:path";
 import { Effect } from "effect";
-import { boundaryAdd, createDocument } from "./backlog-doc.ts";
+import { boundaryAdd, createDocument, itemAdd, itemUpdate } from "./backlog-doc.ts";
 import { resolveConfig } from "./config.ts";
 import { commitFile, g, gitAndFake, initRepo, runWith, tempDir } from "./fixture.ts";
 import { domainStatus } from "./status.ts";
@@ -71,6 +71,68 @@ const liveStatus = async (landed: boolean): Promise<string[]> => {
     fake.layer,
   );
 };
+
+describe("domainStatus discussion requests", () => {
+  it("prints a pending discussion summary without treating it as an answer", async () => {
+    const state = track(tempDir());
+    const config = await Effect.runPromise(
+      resolveConfig({ state_dir: state, backlog_dir: join(state, "backlogs") }, "/c"),
+    );
+    await runWith(createDocument(config, "app"));
+    await runWith(
+      itemAdd(config, "app", { title: "Choose store", json: false, now: "2026-11-18" }),
+    );
+    await runWith(
+      itemUpdate(config, "app", {
+        id: "i1",
+        status: "waiting-user",
+        outcome: undefined,
+        decided: [],
+        touch: [],
+        untouch: [],
+        due: undefined,
+        ask: "Which store?",
+        context: undefined,
+        options: ["sqlite", "json"],
+        rec: undefined,
+        why: undefined,
+        answer: undefined,
+        now: "2026-11-18",
+        json: false,
+      }),
+    );
+    await runWith(
+      itemUpdate(config, "app", {
+        id: "i1",
+        status: undefined,
+        outcome: undefined,
+        decided: [],
+        touch: [],
+        untouch: [],
+        due: undefined,
+        ask: undefined,
+        context: undefined,
+        options: [],
+        rec: undefined,
+        why: undefined,
+        answer: "Discuss: compare migrations",
+        now: "2026-11-18",
+        json: false,
+      }),
+    );
+    const fake = gitAndFake((argv) =>
+      argv[0] === "hc" && argv[1] === "ls" ? ok(JSON.stringify({ terminals: [] })) : ok("{}"),
+    );
+    const lines = await runWith(
+      domainStatus(config, "app", false, Date.parse("2026-11-18T00:00:00Z")),
+      fake.layer,
+    );
+    expect(lines).toContain(
+      '  discuss i1 Choose store: "Which store?" (2026-11-18; compare migrations)',
+    );
+    expect(lines.filter((line) => line.includes("answer"))).toEqual([]);
+  });
+});
 
 describe("domainStatus branch commits", () => {
   it("reports a live delegate with no commits without calling it landed", async () => {

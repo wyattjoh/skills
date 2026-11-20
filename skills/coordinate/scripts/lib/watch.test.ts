@@ -300,6 +300,7 @@ describe("watch due events", () => {
       prs: {},
       due: ["2026-11-01 **Fix** due: 2026-11-01", "i1 2026-11-12"],
       answered: [],
+      discussed: [],
     });
     writeFileSync(stateFile, JSON.stringify({ delegates: {}, prs: {} }));
     expect(await arm("2026-11-12")).toEqual(["due 2026-11-12: i1 Fix login"]);
@@ -387,6 +388,42 @@ describe("watch answered events", () => {
     await runWith(itemUpdate(config, "app", ask("Retry now?")));
     await runWith(itemUpdate(config, "app", update("i1", { answer: "yes" })));
     expect(await arm("2026-11-10")).toEqual(['answered i1 Fix login: Re "Retry now?": yes']);
+  });
+});
+
+describe("watch discussion events", () => {
+  it("fires each discussion request once and seeds old watcher state", async () => {
+    const { config, arm, stateFile } = await dueDomain();
+    await runWith(itemUpdate(config, "app", ask("Which login provider?")));
+    expect(await arm("2026-11-10")).toEqual(alive);
+
+    await runWith(itemUpdate(config, "app", update("i1", { answer: "Discuss: compare SSO" })));
+    expect(await arm("2026-11-10")).toEqual([
+      'discuss i1 Fix login: "Which login provider?": compare SSO',
+    ]);
+    expect(await arm("2026-11-10")).toEqual(alive);
+    const state = JSON.parse(readFileSync(stateFile, "utf8"));
+    expect(state.discussed).toEqual([
+      'i1 2026-11-10 #1 Discuss "Which login provider?": compare SSO',
+    ]);
+
+    writeFileSync(
+      stateFile,
+      JSON.stringify({
+        delegates: state.delegates,
+        prs: state.prs,
+        due: state.due,
+        answered: state.answered,
+      }),
+    );
+    expect(await arm("2026-11-10")).toEqual(alive);
+    expect(JSON.parse(readFileSync(stateFile, "utf8")).discussed).toEqual([
+      'i1 2026-11-10 #1 Discuss "Which login provider?": compare SSO',
+    ]);
+
+    await runWith(itemUpdate(config, "app", ask("Which session store?")));
+    await runWith(itemUpdate(config, "app", update("i1", { answer: "Discuss" })));
+    expect(await arm("2026-11-10")).toEqual(['discuss i1 Fix login: "Which session store?"']);
   });
 });
 

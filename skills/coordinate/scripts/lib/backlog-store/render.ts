@@ -1,8 +1,12 @@
-import { ITEM_STATUSES, type Ask, type Backlog, type Item } from "./schema.ts";
+import { isDiscussion, ITEM_STATUSES, type Ask, type Backlog, type Item } from "./schema.ts";
 
 const askLines = (ask: Ask, header: string): string[] => {
   const lines = [header];
   if (ask.context) lines.push(`    - context: ${ask.context}`);
+  if (ask.discuss !== null)
+    lines.push(
+      `    - discussion requested (${ask.discuss.at})${ask.discuss.note ? `: ${ask.discuss.note}` : ""}`,
+    );
   const choices = ask.options.map((option, index) => ({ option, index }));
   const recIndex = ask.rec ? choices.find(({ option }) => option === ask.rec)?.index : undefined;
   const ordered =
@@ -42,7 +46,12 @@ const itemLines = (item: Item, idle: ReadonlySet<string>): string[] => {
   ];
   if (item.ask) lines.push(...askLines(item.ask, `  - ask: ${item.ask.question}`));
   lines.push(...answeredLines(item));
-  for (const entry of item.decided) lines.push(`  - decided ${entry.at}: ${entry.text}`);
+  for (const entry of item.decided)
+    lines.push(
+      isDiscussion(entry.text)
+        ? `  - discuss ${entry.at}: ${entry.text.slice("Discuss ".length)}`
+        : `  - decided ${entry.at}: ${entry.text}`,
+    );
   for (const ref of item.delegates)
     lines.push(
       `  - delegate ${ref.name} session ${ref.session}${ref.branch ? ` branch ${ref.branch}` : ""}${ref.worktree ? ` worktree ${ref.worktree}` : ""}${ref.brief ? ` brief ${ref.brief}` : ""}${ref.report ? ` report ${ref.report}` : ""}`,

@@ -385,8 +385,17 @@ export default class Panel extends View {
   choose(option: string, cx: Context) {
     const open = this.answering();
     if (open === undefined || open.draft.busy) return;
-    this.draft = { ...open.draft, choice: option, text: "", error: undefined };
+    this.draft = { ...open.draft, choice: option, discuss: false, text: "", error: undefined };
     this.input?.set_value("");
+    cx.notify();
+  }
+
+  discuss(cx: Context) {
+    const open = this.answering();
+    if (open === undefined || open.draft.busy) return;
+    this.draft = { ...open.draft, choice: undefined, discuss: true, text: "", error: undefined };
+    this.input?.set_value("");
+    this.input?.focus();
     cx.notify();
   }
 
@@ -434,6 +443,7 @@ export default class Panel extends View {
       input: this.input,
       typing: this.typing,
       choose: (option, cx) => this.choose(option, cx),
+      discuss: (cx) => this.discuss(cx),
       submit: (cx) => this.answer(cx),
     };
   }

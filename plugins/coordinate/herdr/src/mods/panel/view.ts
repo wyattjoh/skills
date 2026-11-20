@@ -37,6 +37,7 @@ import {
   letThrough,
 } from "@wyattjoh/herdr-ui";
 import type { ButtonStyle, Theme } from "@wyattjoh/herdr-ui";
+import { isDiscussion } from "../../lib/store.ts";
 import type { AnsweredAsk, Ask, Backlog, Finding, Item } from "../../lib/store.ts";
 import {
   ANSWER,
@@ -120,6 +121,7 @@ export type AnswerModel = {
   input: InputState | undefined;
   typing: boolean;
   choose: (option: string, cx: Context) => void;
+  discuss: (cx: Context) => void;
   submit: (cx: Context) => void;
 };
 
@@ -479,7 +481,13 @@ const answerRows = (t: Theme, answer: AnswerModel, prefix = "ask"): Element[] =>
     );
   const submit = button(t, {
     id: `${prefix}-answer-submit`,
-    label: draft.busy ? "Answering…" : "Answer",
+    label: draft.busy
+      ? draft.discuss
+        ? "Discussing…"
+        : "Answering…"
+      : draft.discuss
+        ? "Discuss"
+        : "Answer",
     style: enabled ? ANSWER_BUTTON_STYLE : { ...ANSWER_BUTTON_STYLE, background: "raised" },
     onClick: enabled ? (cx) => answer.submit(cx) : undefined,
   });
@@ -587,6 +595,56 @@ const askCard = (
           .child(content),
       );
   });
+  const discussion =
+    completed === undefined
+      ? [
+          askBodyRow(t, `${id}-discuss`)
+            .when(answer?.draft.discuss === true, (el) => el.bg(t.selected))
+            .when(answer !== undefined, (el) =>
+              el
+                .cursor_pointer()
+                .hover((style) => style.bg(answer?.draft.discuss === true ? t.selected : t.hover))
+                .on_click((_event, cx) => answer!.discuss(cx)),
+            )
+            .child(
+              h_flex()
+                .gap(BUTTON_STYLE.gap)
+                .items_start()
+                .child(
+                  div()
+                    .id(`${id}-discuss-number`)
+                    .w(ASK_OPTION_NUMBER_WIDTH)
+                    .flex_shrink_0()
+                    .text_color(t.muted)
+                    .child(`${ask.options.length + 1}.`),
+                )
+                .child(
+                  v_flex()
+                    .id(`${id}-discuss-content`)
+                    .flex_1()
+                    .min_w_0()
+                    .gap(BUTTON_STYLE.gap)
+                    .child(
+                      h_flex()
+                        .gap(BUTTON_STYLE.gap)
+                        .items_center()
+                        .child(div().flex_1().min_w_0().child("Discuss"))
+                        .when(ask.discuss !== null, (el) =>
+                          el.child(small(t, t.accent, "In discussion").id(`${id}-discuss-tag`)),
+                        ),
+                    )
+                    .when(answer?.draft.discuss === true, (el) =>
+                      el.child(small(t, t.muted, "Optional note").id(`${id}-discuss-detail`)),
+                    )
+                    .when(ask.discuss !== null && ask.discuss.note !== "", (el) =>
+                      el.child(
+                        small(t, t.muted, `Note: ${ask.discuss!.note}`).id(`${id}-discuss-note`),
+                      ),
+                    ),
+                ),
+            ),
+        ]
+      : [];
   const completion =
     completed === undefined
       ? answer === undefined
@@ -610,6 +668,7 @@ const askCard = (
       ...context,
       ...touches,
       ...options,
+      ...discussion,
       ...completion,
     ]),
   ];
@@ -625,21 +684,23 @@ const askCards = (t: Theme, item: Item, answer: AnswerModel | undefined): Elemen
   return cards;
 };
 
-const decidedCard = (t: Theme, item: Item): Element[] =>
-  item.decided.length === 0
+const decidedCard = (t: Theme, item: Item): Element[] => {
+  const decisions = item.decided.filter((entry) => !isDiscussion(entry.text));
+  return decisions.length === 0
     ? []
     : [
         detailCard(
           t,
           "decided",
           "Decided",
-          item.decided.map((entry, index) =>
+          decisions.map((entry, index) =>
             detailRow(t, `decided-${index}`)
               .child(div().child(entry.text))
               .child(small(t, t.dim, entry.at.slice(0, 10))),
           ),
         ),
       ];
+};
 
 const delegatesCard = (t: Theme, item: Item, rows: DelegateRow[]): Element[] =>
   item.delegates.length === 0

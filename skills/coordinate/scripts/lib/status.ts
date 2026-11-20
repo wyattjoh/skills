@@ -191,11 +191,20 @@ export const domainStatus = Effect.fn("domainStatus")(function* (
   }
   const live = new Set(delegates.map((delegate) => delegate.session));
   const document = yield* readDocument(config, domain).pipe(Effect.option);
-  if (Option.isSome(document))
+  if (Option.isSome(document)) {
     for (const item of idleDelegated(document.value.backlog, live))
       lines.push(
         `  ${item.id} delegated, no live delegate · ${item.title} · next: coordinator: set its next status`,
       );
+    if (!withResume)
+      for (const item of document.value.backlog.items) {
+        if (item.ask === null || item.ask.discuss === null) continue;
+        const note = item.ask.discuss.note === "" ? "" : `; ${item.ask.discuss.note}`;
+        lines.push(
+          `  discuss ${item.id} ${item.title}: "${item.ask.question}" (${item.ask.discuss.at}${note})`,
+        );
+      }
+  }
   for (const [repo, result] of prsByRepo) {
     if (!result.ok) {
       lines.push(`repo ${repo}: could not read PRs: ${result.error}`);

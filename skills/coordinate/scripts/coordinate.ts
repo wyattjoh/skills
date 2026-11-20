@@ -764,7 +764,7 @@ const itemUpdateCommand = Command.make(
     why: optionalStringFlag("why", "why the recommended option (with --rec)"),
     answer: optionalStringFlag(
       "answer",
-      "the user's answer: clears the ask and appends it as a decision",
+      "the user's answer clears the ask; Discuss or Discuss: <note> keeps it open for conversation",
     ),
     domain: optionalStringFlag("domain", "domain (default: this coordinator's label)"),
     json: booleanFlag("json", "print the updated item as JSON"),
@@ -793,7 +793,7 @@ const itemUpdateCommand = Command.make(
     ),
 ).pipe(
   Command.withDescription(
-    "change an item's status, decisions, touched repos, due date or ask; waiting-user needs an ask or a decision, delegated needs a delegate",
+    "change an item's status, decisions, touched repos, due date or ask; Discuss keeps an ask open for conversation; waiting-user needs an ask or a decision, delegated needs a delegate",
   ),
 );
 
@@ -803,7 +803,7 @@ const itemAnswerCommand = Command.make(
     id: argument("id", "item id, such as i3"),
     answer: argument(
       "answer",
-      "the user's answer, one line (put -- before the arguments if it starts with -)",
+      "the user's answer, Discuss or Discuss: <note>, one line (put -- before the arguments if it starts with -)",
     ),
     domain: optionalStringFlag(
       "domain",
@@ -837,7 +837,7 @@ const itemAnswerCommand = Command.make(
     ),
 ).pipe(
   Command.withDescription(
-    "record the user's answer to an item's ask, as item update --answer does; this and backlog boundary add/rm are allowed outside a Herdr terminal with --domain",
+    "record the user's answer or Discuss request for an item's ask, as item update --answer does; this and backlog boundary add/rm are allowed outside a Herdr terminal with --domain",
   ),
 );
 

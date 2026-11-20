@@ -3,9 +3,11 @@ import { emptyBacklog } from "../../lib/store.ts";
 import {
   boundaryOutput,
   cachedDocument,
+  chosenAnswer,
   delegateLabel,
   delegateLine,
   delegateUrgency,
+  draftFor,
   mergeEnded,
   readDocument,
   trailOf,
@@ -18,6 +20,31 @@ const shown = new Map<string, DocumentState>([
   ["alpha", loaded],
   ["beta", invalid],
 ]);
+
+test("draftFor and chosenAnswer encode an optional Discuss note without changing real answers", () => {
+  const ask = {
+    question: "Which store?",
+    context: null,
+    options: ["A"],
+    rec: null,
+    recReason: null,
+    discuss: null,
+  };
+  const draft = draftFor("alpha\\0i1\\0Which store?", ask, undefined);
+  expect(draft).toEqual({
+    key: "alpha\\0i1\\0Which store?",
+    choice: undefined,
+    discuss: false,
+    text: "",
+    busy: false,
+    error: undefined,
+  });
+  expect(chosenAnswer({ ...draft, discuss: true })).toBe("Discuss");
+  expect(chosenAnswer({ ...draft, discuss: true, text: "  compare migrations  " })).toBe(
+    "Discuss: compare migrations",
+  );
+  expect(chosenAnswer({ ...draft, choice: "A" })).toBe("A");
+});
 
 test("boundaryOutput accepts the CLI's Boundary JSON and rejects malformed output", () => {
   expect(boundaryOutput('{"owned":["/repo"],"adjacent":["/nearby"]}')).toEqual({
