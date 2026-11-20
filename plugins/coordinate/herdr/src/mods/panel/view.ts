@@ -1,7 +1,7 @@
 // The panel's regions as element functions: everything it draws, from data the View hands in.
-import { div, svg } from "gpui-kit";
+import { div } from "gpui-kit";
 import type { Color, Context, Element } from "gpui-kit";
-import { Input, InputState, Popover, h_flex, v_flex } from "gpui-base";
+import { Input, InputState, h_flex, v_flex } from "gpui-base";
 import { answerInputElement } from "./textarea.ts";
 import type { AnswerInputState } from "./textarea.ts";
 import {
@@ -26,8 +26,6 @@ import {
   labelChip,
   listRow,
   loadingState,
-  menuPanel,
-  menuRow,
   paneScrollRegion,
   panelBody,
   panelFrame,
@@ -40,7 +38,6 @@ import {
   letThrough,
 } from "@wyattjoh/herdr-ui";
 import type { ButtonStyle, Theme } from "@wyattjoh/herdr-ui";
-import { opaqueOver, tint } from "@wyattjoh/herdr-ui/pure";
 import { isDiscussion } from "../../lib/store.ts";
 import type { AnsweredAsk, Ask, Backlog, Finding, Item } from "../../lib/store.ts";
 import {
@@ -58,8 +55,6 @@ import {
   FINDING_KIND_LABELS,
   FINDING_STATUS_LABELS,
   GROUP_LABELS,
-  WAITING_TREATMENT_LABELS,
-  WAITING_TREATMENTS,
   chosenAnswer,
   delegateLabel,
   delegateLine,
@@ -77,21 +72,10 @@ import type {
   ItemGroup,
   ListingState,
   Screen,
-  WaitingTreatment,
 } from "./model.ts";
 
 export type { Theme } from "@wyattjoh/herdr-ui";
 
-const PICKER = {
-  triggerHeight: 22,
-  menuWidth: 228,
-  menuHeight: 320,
-  paddingX: 6,
-  gap: 4,
-  radius: 4,
-  swatchSize: 10,
-} as const;
-const WAITING_ACCENT_ALPHA = "30";
 const WAITING_PULSE_PERIOD = 1_100;
 const WAITING_PULSE_FROM = 0.4;
 const WAITING_PULSE_TO = 1;
@@ -128,14 +112,6 @@ export type PanelModel = {
   open: (item: Item, cx: Context) => void;
   // The answer being written on the open item's ask, when it has one.
   answer: AnswerModel | undefined;
-  askColorToken: string;
-  waitingTreatment: WaitingTreatment;
-  askColorPickerOpen: boolean;
-  waitingTreatmentPickerOpen: boolean;
-  setAskColorPickerOpen: (open: boolean, cx: Context) => void;
-  setWaitingTreatmentPickerOpen: (open: boolean, cx: Context) => void;
-  selectAskColorToken: (token: string, cx: Context) => void;
-  selectWaitingTreatment: (treatment: WaitingTreatment, cx: Context) => void;
   // Boundary paths can be edited on either card.
   boundary: BoundaryModel;
   openDomain: (domain: string, cx: Context) => void;
@@ -285,7 +261,6 @@ const itemRow = (
   rows: DelegateRow[],
   open: (item: Item, cx: Context) => void,
   mark: Element | undefined = undefined,
-  bold: boolean = false,
 ): Element => {
   const line = delegateLine(rows);
   const row = listRow(t, {
@@ -298,7 +273,7 @@ const itemRow = (
     trailing: line === undefined ? [] : [delegateChip(t, item, line)],
     onClick: (cx) => open(item, cx),
   });
-  return bold ? row.font_bold() : row;
+  return row;
 };
 
 const statusGroup = (
@@ -330,49 +305,9 @@ const statusGroup = (
   });
 };
 
-const waitingHeader = (t: Theme, model: PanelModel, count: number): Element => {
-  const treatmentPicker = dropdownPicker(t, {
-    id: `waiting-treatment-${model.domain ?? "domain"}`,
-    selected: model.waitingTreatment,
-    open: model.waitingTreatmentPickerOpen,
-    choices: waitingTreatmentChoices,
-    tooltip: "Choose a Waiting on you row treatment",
-    onOpenChange: model.setWaitingTreatmentPickerOpen,
-    onSelect: (value, cx) => {
-      const treatment = WAITING_TREATMENTS.find((candidate) => candidate === value);
-      if (treatment !== undefined) model.selectWaitingTreatment(treatment, cx);
-    },
-  });
-  if (model.waitingTreatment === "needs-answer")
-    return h_flex()
-      .id("waiting-header")
-      .h(CARD.headerHeight)
-      .flex_none()
-      .px(CARD.paddingX)
-      .gap(CARD.headerGap)
-      .items_center()
-      .child(
-        div().text_size(TEXT.body).font_bold().text_color(t.foreground).child("Needs your answer"),
-      )
-      .child(
-        h_flex()
-          .h(18)
-          .px(6)
-          .items_center()
-          .rounded(9)
-          .bg(t.accent)
-          .text_color(t.accent_foreground)
-          .text_size(TEXT.label)
-          .child(String(count)),
-      )
-      .child(div().flex_1())
-      .child(treatmentPicker);
-  return cardHeader(t, "waiting-header", "Waiting on you")
-    .child(div().flex_1())
-    .child(treatmentPicker);
-};
+const waitingHeader = (t: Theme): Element => cardHeader(t, "waiting-header", "Waiting on you");
 
-const waitingAccentMark = (t: Theme, id: string, pulse: boolean): Element =>
+const waitingAccentMark = (t: Theme, id: string): Element =>
   div()
     .id(id)
     .w(3)
@@ -380,61 +315,21 @@ const waitingAccentMark = (t: Theme, id: string, pulse: boolean): Element =>
     .flex_none()
     .rounded(2)
     .bg(t.accent)
-    .when(pulse, (mark) =>
-      mark.opacity(WAITING_PULSE_FROM).loop("opacity", {
-        from: WAITING_PULSE_FROM,
-        to: WAITING_PULSE_TO,
-        period: WAITING_PULSE_PERIOD,
-      }),
-    );
+    .opacity(WAITING_PULSE_FROM)
+    .loop("opacity", {
+      from: WAITING_PULSE_FROM,
+      to: WAITING_PULSE_TO,
+      period: WAITING_PULSE_PERIOD,
+    });
 
-const waitingItemRow = (t: Theme, item: Item, model: PanelModel): Element => {
-  const treatment = model.waitingTreatment;
-  const accentBar = treatment === "pulse-bar" || treatment === "inline-accent";
-  let row = itemRow(
+const waitingItemRow = (t: Theme, item: Item, model: PanelModel): Element =>
+  itemRow(
     t,
     item,
     model.delegates.byItem.get(item.id) ?? [],
     model.open,
-    accentBar
-      ? waitingAccentMark(t, `waiting-accent-${item.id}`, treatment === "pulse-bar")
-      : undefined,
-    treatment === "needs-answer",
+    waitingAccentMark(t, `waiting-accent-${item.id}`),
   );
-  if (treatment === "accent-fill")
-    row = row.bg(opaqueOver(tint(t.accent, WAITING_ACCENT_ALPHA), t.surface) as Color);
-  if (item.ask === null || (treatment !== "inline-question" && treatment !== "inline-accent"))
-    return row;
-  return v_flex()
-    .id(`waiting-item-${item.id}`)
-    .w_full()
-    .children([
-      row,
-      cardItem(t, `waiting-question-${item.id}`)
-        .border_t(0)
-        .py(CARD.paddingY)
-        .child(
-          div()
-            .text_size(TEXT.label)
-            .font_medium()
-            .text_color(t.foreground)
-            .child(item.ask.question),
-        )
-        .when(item.ask.options.length > 0, (detail) =>
-          detail.child(
-            div()
-              .text_size(TEXT.label)
-              .text_color(t.muted)
-              .child(`Options: ${item.ask!.options.join(" · ")}`),
-          ),
-        )
-        .when(item.ask.rec !== null, (detail) =>
-          detail.child(
-            div().text_size(TEXT.label).text_color(t.accent).child(`Recommended: ${item.ask!.rec}`),
-          ),
-        ),
-    ]);
-};
 
 const waitingCard = (t: Theme, model: PanelModel): Element[] => {
   if (model.doc.kind !== "loaded") return [];
@@ -442,7 +337,7 @@ const waitingCard = (t: Theme, model: PanelModel): Element[] => {
   if (items.length === 0) return [];
   return [
     cardSection(
-      waitingHeader(t, model, items.length),
+      waitingHeader(t),
       card(t, "waiting").children(
         pagedRows(t, "waiting", items, model, ROW.compact, (item) =>
           waitingItemRow(t, item, model),
@@ -558,96 +453,11 @@ const findingsPage = (t: Theme, model: PanelModel): Element => {
 const detailRow = (t: Theme, id: string): Element =>
   cardItem(t, id).text_size(TEXT.body).text_color(t.foreground);
 
-type PickerChoice = { value: string; label: string; swatch: Color | undefined };
-
-type PickerOptions = {
-  id: string;
-  selected: string;
-  open: boolean;
-  choices: PickerChoice[];
-  tooltip: string;
-  onOpenChange: (open: boolean, cx: Context) => void;
-  onSelect: (value: string, cx: Context) => void;
-};
-
-const dropdownPicker = (t: Theme, options: PickerOptions): Element => {
-  const selected = options.choices.find((choice) => choice.value === options.selected);
-  if (selected === undefined) return div().id(`${options.id}-unavailable`);
-  const trigger = h_flex()
-    .id(`${options.id}-trigger`)
-    .h(PICKER.triggerHeight)
-    .px(PICKER.paddingX)
-    .gap(PICKER.gap)
-    .items_center()
-    .rounded(PICKER.radius)
-    .bg(t.raised)
-    .text_color(t.foreground)
-    .cursor_pointer()
-    .hover((style) => style.bg(t.hover))
-    .tooltip(options.tooltip)
-    .when(selected.swatch !== undefined, (el) =>
-      el.child(
-        div().w(PICKER.swatchSize).h(PICKER.swatchSize).flex_none().rounded(2).bg(selected.swatch!),
-      ),
-    )
-    .child(div().flex_none().text_size(TEXT.label).child(selected.label))
-    .child(svg(HERDR_ICONS.chevronDown).size(11).flex_none().text_color(t.muted));
-  return Popover.new(options.id)
-    .open(options.open)
-    .anchor("top_left")
-    .on_open_change(options.onOpenChange)
-    .trigger(trigger)
-    .content(
-      menuPanel(t, PICKER.menuWidth)
-        .id(`${options.id}-menu`)
-        .max_h(PICKER.menuHeight)
-        .overflow_y_scroll()
-        .children(
-          options.choices.map((choice) =>
-            menuRow(t, {
-              id: `${options.id}-option-${choice.value}`,
-              label: choice.label,
-              checked: choice.value === options.selected,
-              ...(choice.swatch === undefined
-                ? {}
-                : {
-                    leading: div()
-                      .w(PICKER.swatchSize)
-                      .h(PICKER.swatchSize)
-                      .flex_none()
-                      .rounded(2)
-                      .bg(choice.swatch),
-                  }),
-              onClick: (cx) => options.onSelect(choice.value, cx),
-            }),
-          ),
-        ),
-    );
-};
-
-const themeTokenChoices = (t: Theme): PickerChoice[] =>
-  Object.keys(t).map((token) => ({ value: token, label: token, swatch: t[token] }));
-
-const waitingTreatmentChoices: PickerChoice[] = WAITING_TREATMENTS.map((treatment) => ({
-  value: treatment,
-  label: WAITING_TREATMENT_LABELS[treatment],
-  swatch: undefined,
-}));
-
-const detailCard = (
-  t: Theme,
-  id: string,
-  name: string,
-  rows: Element[],
-  trailing: Element[] = [],
-): Element => {
-  const header = cardHeader(t, `${id}-header`, name);
-  if (trailing.length > 0) header.child(div().flex_1()).children(trailing);
-  return cardSection(
-    header,
+const detailCard = (t: Theme, id: string, name: string, rows: Element[]): Element =>
+  cardSection(
+    cardHeader(t, `${id}-header`, name),
     card(t, id).children(rows.map((row, index) => (index === 0 ? row.border_t(0) : row))),
   );
-};
 
 const small = (t: Theme, tone: Color, value: string): Element =>
   div().text_size(TEXT.label).text_color(tone).child(value);
@@ -683,15 +493,9 @@ const ANSWER_BUTTON_STYLE: ButtonStyle = {
 };
 
 // The answer field is app-specific; the package owns its surrounding card item and button.
-const askBodyRow = (t: Theme, id: string, token: string): Element =>
-  detailRow(t, id).bg(role(t, token));
+const askBodyRow = (t: Theme, id: string): Element => detailRow(t, id).bg(t.surface);
 
-const answerRows = (
-  t: Theme,
-  answer: AnswerModel,
-  askColorToken: string,
-  prefix = "ask",
-): Element[] => {
+const answerRows = (t: Theme, answer: AnswerModel, prefix = "ask"): Element[] => {
   const { draft } = answer;
   const enabled = chosenAnswer(draft) !== undefined && !draft.busy;
   const field = div()
@@ -724,13 +528,11 @@ const answerRows = (
     onClick: enabled ? (cx) => answer.submit(cx) : undefined,
   });
   return [
-    askBodyRow(t, `${prefix}-answer`, askColorToken).child(
-      h_flex().gap(ANSWER.gap).child(field).child(submit),
-    ),
+    askBodyRow(t, `${prefix}-answer`).child(h_flex().gap(ANSWER.gap).child(field).child(submit)),
     ...(draft.error === undefined
       ? []
       : [
-          askBodyRow(t, `${prefix}-answer-error`, askColorToken)
+          askBodyRow(t, `${prefix}-answer-error`)
             .text_size(TEXT.label)
             .text_color(role(t, "ansi1"))
             .child(draft.error),
@@ -741,13 +543,10 @@ const answerRows = (
 const askCard = (
   t: Theme,
   id: string,
-  itemId: string,
   ask: Ask,
   answer: AnswerModel | undefined,
   completed: AnsweredAsk | undefined,
   itemTouches: string[] | undefined,
-  model: PanelModel,
-  showColorPicker: boolean,
 ): Element[] => {
   // Notes do not replace the picked option; completed cards have no active draft.
   const picked =
@@ -766,17 +565,13 @@ const askCard = (
   const context =
     ask.context === null
       ? []
-      : [
-          askBodyRow(t, `${id}-context`, model.askColorToken)
-            .text_color(t.muted)
-            .child(ask.context),
-        ];
+      : [askBodyRow(t, `${id}-context`).text_color(t.muted).child(ask.context)];
   const touches =
     itemTouches === undefined || itemTouches.length === 0
       ? []
       : [
           fact(t, `${id}-touches`, "Touches", itemTouches, (theme, rowId) =>
-            askBodyRow(theme, rowId, model.askColorToken),
+            askBodyRow(theme, rowId),
           ),
         ];
   const options = rankedOptions(ask).map(({ option, index, rec }, displayIndex) => {
@@ -817,7 +612,7 @@ const askCard = (
             ),
         ),
       );
-    return askBodyRow(t, `${id}-option-${index}`, model.askColorToken)
+    return askBodyRow(t, `${id}-option-${index}`)
       .when(selected, (el) => el.bg(t.selected))
       .when(answer !== undefined && completed === undefined, (el) =>
         el
@@ -843,7 +638,7 @@ const askCard = (
   const discussion =
     completed === undefined
       ? [
-          askBodyRow(t, `${id}-discuss`, model.askColorToken)
+          askBodyRow(t, `${id}-discuss`)
             .when(answer?.draft.discuss === true, (el) => el.bg(t.selected))
             .when(answer !== undefined, (el) =>
               el
@@ -894,74 +689,43 @@ const askCard = (
     completed === undefined
       ? answer === undefined
         ? []
-        : answerRows(t, answer, model.askColorToken, id)
+        : answerRows(t, answer, id)
       : completed.options.includes(completed.answer)
         ? [
-            askBodyRow(t, `${id}-answered-at`, model.askColorToken)
+            askBodyRow(t, `${id}-answered-at`)
               .child(small(t, t.muted, "Answered"))
               .child(div().child(completed.answeredAt)),
           ]
         : [
-            askBodyRow(t, `${id}-answer`, model.askColorToken)
+            askBodyRow(t, `${id}-answer`)
               .child(small(t, t.muted, "Answer"))
               .child(div().flex_1().min_w_0().child(completed.answer))
               .child(small(t, t.muted, completed.answeredAt)),
           ];
   if (completed !== undefined && completed.note !== null && completed.note !== "")
     completion.push(
-      askBodyRow(t, `${id}-answer-note`, model.askColorToken)
+      askBodyRow(t, `${id}-answer-note`)
         .child(small(t, t.muted, "Note"))
         .child(div().flex_1().min_w_0().child(completed.note)),
     );
-  const trailing = showColorPicker
-    ? [
-        dropdownPicker(t, {
-          id: `ask-color-${itemId}`,
-          selected: model.askColorToken,
-          open: model.askColorPickerOpen,
-          choices: themeTokenChoices(t),
-          tooltip: "Choose an ask row background color token",
-          onOpenChange: model.setAskColorPickerOpen,
-          onSelect: model.selectAskColorToken,
-        }),
-      ]
-    : [];
   return [
-    detailCard(
-      t,
-      id,
-      completed === undefined ? "Ask" : "Answered ask",
-      [question, ...context, ...touches, ...options, ...discussion, ...completion],
-      trailing,
-    ),
+    detailCard(t, id, completed === undefined ? "Ask" : "Answered ask", [
+      question,
+      ...context,
+      ...touches,
+      ...options,
+      ...discussion,
+      ...completion,
+    ]),
   ];
 };
 
-const askCards = (
-  t: Theme,
-  item: Item,
-  answer: AnswerModel | undefined,
-  model: PanelModel,
-): Element[] => {
+const askCards = (t: Theme, item: Item, answer: AnswerModel | undefined): Element[] => {
   const cards =
-    item.ask === null
-      ? []
-      : askCard(t, "ask", item.id, item.ask, answer, undefined, item.touches, model, true);
+    item.ask === null ? [] : askCard(t, "ask", item.ask, answer, undefined, item.touches);
   for (let index = item.answered.length - 1; index >= 0; index -= 1) {
     const answered = item.answered[index]!;
-    cards.push(
-      ...askCard(
-        t,
-        `ask-answered-${index}`,
-        item.id,
-        answered,
-        undefined,
-        answered,
-        undefined,
-        model,
-        item.ask === null && cards.length === 0,
-      ),
-    );
+    cards.push(...askCard(t, `ask-answered-${index}`, answered, undefined, answered, undefined));
   }
   return cards;
 };
@@ -1101,7 +865,6 @@ const detailScreen = (
   item: Item,
   delegates: DelegateJoin,
   answer: AnswerModel | undefined,
-  model: PanelModel,
 ): Element =>
   v_flex()
     .id("detail")
@@ -1116,7 +879,7 @@ const detailScreen = (
         role(t, STATUS_TONES[item.status]),
       ),
     )
-    .children(askCards(t, item, answer, model))
+    .children(askCards(t, item, answer))
     .child(
       detailCard(t, "facts", "Details", [
         fact(t, "fact-due", "Due", item.due === null ? [] : [item.due]),
@@ -1437,7 +1200,7 @@ const domainScreens = (t: Theme, model: PanelModel): Element =>
           .child(
             paneScrollRegion(
               "detail-scroll",
-              detailScreen(t, model.detail!, model.delegates, model.answer, model),
+              detailScreen(t, model.detail!, model.delegates, model.answer),
               PANEL.padding,
             ),
           ),

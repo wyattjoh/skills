@@ -4,15 +4,12 @@ import {
   boundaryOutput,
   cachedDocument,
   chosenAnswer,
-  defaultAskColorToken,
   delegateLabel,
   delegateLine,
   delegateUrgency,
   draftFor,
   mergeEnded,
-  panelPreferences,
   readDocument,
-  themeColorLightnessOrder,
   trailOf,
 } from "./model.ts";
 import type { DelegateRow, DelegateState, DocumentState } from "./model.ts";
@@ -23,64 +20,6 @@ const shown = new Map<string, DocumentState>([
   ["alpha", loaded],
   ["beta", invalid],
 ]);
-
-test("ask surface defaults to the next lighter theme token and sorts the old blend", () => {
-  const colors = {
-    background: "#000000",
-    chrome: "#202020",
-    canvas: "#303030",
-    popover: "#404040",
-    foreground: "#ffffff",
-    accent: "#ff0000",
-  };
-  expect(themeColorLightnessOrder(colors, "#282828").map(({ name }) => name)).toEqual([
-    "background",
-    "chrome",
-    "today's ask blend",
-    "canvas",
-    "popover",
-    "accent",
-    "foreground",
-  ]);
-  expect(defaultAskColorToken(colors, "#282828")).toBe("canvas");
-});
-
-test("lightness ordering composites translucent theme colors over the card surface", () => {
-  const colors = {
-    surface: "#202020",
-    canvas: "#00000000",
-    glass: "#ffffff00",
-    raised: "#303030",
-    foreground: "#ffffff",
-  };
-  const order = themeColorLightnessOrder(colors, "#00000080");
-  const lightness = (name: string) => order.find((entry) => entry.name === name)!.lightness;
-  expect(lightness("canvas")).toBe(lightness("surface"));
-  expect(lightness("glass")).toBe(lightness("surface"));
-  expect(defaultAskColorToken(colors, "#00000080")).toBe("canvas");
-});
-
-test("panelPreferences validates persisted tokens and treatments", () => {
-  const colors = { canvas: "#202020", popover: "#303030" };
-  expect(panelPreferences(null, colors, "canvas")).toEqual({
-    askColorToken: "canvas",
-    waitingTreatment: "current",
-  });
-  expect(
-    panelPreferences(
-      { askColorToken: "removed", waitingTreatment: "not-a-treatment" },
-      colors,
-      "popover",
-    ),
-  ).toEqual({ askColorToken: "popover", waitingTreatment: "current" });
-  expect(
-    panelPreferences(
-      { askColorToken: "popover", waitingTreatment: "inline-accent" },
-      colors,
-      "canvas",
-    ),
-  ).toEqual({ askColorToken: "popover", waitingTreatment: "inline-accent" });
-});
 
 test("draftFor and chosenAnswer encode an optional Discuss note without changing real answers", () => {
   const ask = {
