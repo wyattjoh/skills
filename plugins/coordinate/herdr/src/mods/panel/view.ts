@@ -11,7 +11,6 @@ import {
   PANEL,
   ROW,
   TEXT,
-  brand,
   button,
   bundledIconPaths,
   card,
@@ -171,13 +170,19 @@ export const message = (
   return emptyState(t, { id, title, detail });
 };
 
-// The panel's chrome and domain label use the same frame, brand and tool-row pieces as the
-// Tasks panel.
+// Keep the shared chrome and tool row, while matching the Files panel's header text size.
 const toolbar = (t: Theme, domain: string | undefined): Element =>
   topBar(t, {
     content: toolRow({
       id: "toolbar",
-      brand: brand(t, { id: "toolbar-brand", name: "Backlog" }),
+      brand: h_flex()
+        .id("toolbar-brand")
+        .h(BUTTON_STYLE.height)
+        .flex_none()
+        .items_center()
+        .text_size(13)
+        .text_color(t.foreground)
+        .child(div().font_semibold().child("Backlog")),
       leading: [],
       trailing:
         domain === undefined

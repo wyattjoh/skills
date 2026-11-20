@@ -183,6 +183,9 @@ test("renders the toolbar brand without an icon", async () => {
   const brand = get(render(), "toolbar-brand");
   expect(text(brand)).toBe("Backlog");
   expect(brand.children).toHaveLength(1);
+  expect(brand.styles.text_size).toBe(13);
+  expect(brand.styles.text_color).toBe("#f5f5f5");
+  expect((brand.children[0] as Node).styles.font_semibold).toBe(true);
 });
 
 test("uses a multiline textarea configured to grow through 100 rows", async () => {
