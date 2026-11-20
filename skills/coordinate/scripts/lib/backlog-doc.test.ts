@@ -673,11 +673,13 @@ describe("item update", () => {
     const legacy = read(path);
     delete legacy.items[0].ask.discuss;
     delete legacy.items[0].answered[0].discuss;
+    delete legacy.items[0].answered[0].note;
     writeFileSync(path, JSON.stringify(legacy));
 
     const shown = JSON.parse((await runWith(showBacklog(cfg, "app", true))).join("\n"));
     expect(shown.items[0].ask.discuss).toBe(null);
     expect(shown.items[0].answered[0].discuss).toBe(null);
+    expect(shown.items[0].answered[0].note).toBe(null);
     expect(read(path).items[0].ask.discuss).toBe(undefined);
 
     await runWith(itemUpdate(cfg, "app", update({ decided: ["persist migration"] })));
@@ -704,6 +706,35 @@ describe("item update", () => {
         "items[0].ask.discuss.at must be YYYY-MM-DD",
       ],
     });
+  });
+
+  it("keeps a Discuss note verbatim while flattening its decision event", async () => {
+    const { cfg, path } = await started();
+    await runWith(itemAdd(cfg, "app", { title: "a", json: false, now: NOW }));
+    await runWith(itemUpdate(cfg, "app", update({ status: "waiting-user", ask: "Proceed?" })));
+    await runWith(itemUpdate(cfg, "app", update({ answer: "Discuss", note: "first\nsecond" })));
+    const item = read(path).items[0];
+    expect(item.status).toBe("waiting-user");
+    expect(item.ask.discuss.note).toBe("first\nsecond");
+    expect(item.decided.at(-1).text).toBe('Discuss "Proceed?": first second');
+    expect(item.answered).toEqual([]);
+    expect((await runWith(showBacklog(cfg, "app", false))).join("\n")).toContain(
+      "discussion requested (2026-11-18): first\nsecond",
+    );
+  });
+
+  it("stores a flattened answer note, appends it to the decision, and renders it", async () => {
+    const { cfg, path } = await started();
+    await runWith(itemAdd(cfg, "app", { title: "a", json: false, now: NOW }));
+    await runWith(itemUpdate(cfg, "app", update({ status: "waiting-user", ask: "Proceed?" })));
+    await runWith(itemUpdate(cfg, "app", update({ answer: "yes", note: "because\nit is safe" })));
+    const answered = read(path).items[0].answered[0];
+    expect(answered.note).toBe("because\nit is safe");
+    expect(read(path).items[0].decided.at(-1).text).toBe(
+      'Re "Proceed?": yes. Note: because it is safe',
+    );
+    const shown = (await runWith(showBacklog(cfg, "app", false))).join("\n");
+    expect(shown).toContain("    - answer note: because\nit is safe");
   });
 
   it("answering an ask keeps its details in history and records the answer as a dated decision", async () => {
@@ -740,6 +771,7 @@ describe("item update", () => {
           recReason: null,
           discuss: null,
           answer: "json, but keep it small",
+          note: null,
           answeredAt: "2026-11-18",
         },
       ],
@@ -760,6 +792,7 @@ describe("item update", () => {
       item.indexOf("  - answered ask (2026-11-18): Which store?"),
     );
     expect(item).toContain("    - answer: json, but keep it small");
+    expect(item).not.toContain("answer note:");
 
     await runWith(
       itemClose(cfg, "app", {
@@ -780,6 +813,7 @@ describe("item update", () => {
   it.each([
     ["an unknown id", update({ id: "i7", status: "parked" }), "no item i7 in app"],
     ["no changes", update({}), "nothing to update on i1"],
+    ["a note without an answer", update({ note: "extra context" }), "--note needs --answer"],
     ["done without an outcome", update({ status: "done" }), "i1 needs --outcome to become done"],
     [
       "dismissed with a blank outcome",

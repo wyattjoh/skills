@@ -57,7 +57,7 @@ export type Ask = {
 };
 
 /** A completed ask and the answer recorded at the time it was resolved. */
-export type AnsweredAsk = Ask & { answer: string; answeredAt: string };
+export type AnsweredAsk = Ask & { answer: string; note: string | null; answeredAt: string };
 
 /**
  * A delegate filed under an item. The session id is the stable key; no address is stored.
@@ -205,7 +205,19 @@ export const validateBacklog = (value: unknown): Validated => {
         ...item,
         ...(!("answered" in item) ? { answered: [] } : {}),
         ...(item.ask === null || item.ask === undefined ? {} : { ask: migrateAsk(item.ask) }),
-        ...(Array.isArray(item.answered) ? { answered: item.answered.map(migrateAsk) } : {}),
+        ...(Array.isArray(item.answered)
+          ? {
+              answered: item.answered.map((entry: unknown) =>
+                isRecord(entry)
+                  ? {
+                      ...(!("discuss" in entry) ? { discuss: null } : {}),
+                      ...(!("note" in entry) ? { note: null } : {}),
+                      ...entry,
+                    }
+                  : entry,
+              ),
+            }
+          : {}),
       };
     });
   }
@@ -297,8 +309,6 @@ export const validateBacklog = (value: unknown): Validated => {
         if (!isRecord(ask.discuss)) errors.push(`${askWhere}.discuss must be an object or null`);
         else {
           text(`${askWhere}.discuss.note`, ask.discuss.note);
-          if (typeof ask.discuss.note === "string" && /[\r\n]/.test(ask.discuss.note))
-            errors.push(`${askWhere}.discuss.note must be one line`);
           if (typeof ask.discuss.at !== "string" || !DATE.test(ask.discuss.at))
             errors.push(`${askWhere}.discuss.at must be YYYY-MM-DD`);
         }
@@ -315,6 +325,7 @@ export const validateBacklog = (value: unknown): Validated => {
       checkAsk(entryWhere, entry);
       if (isRecord(entry)) {
         nonEmpty(`${entryWhere}.answer`, entry.answer);
+        textOrNull(`${entryWhere}.note`, entry.note);
         if (typeof entry.answeredAt !== "string" || !DATE.test(entry.answeredAt))
           errors.push(`${entryWhere}.answeredAt must be YYYY-MM-DD`);
       }

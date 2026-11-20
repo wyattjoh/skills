@@ -773,6 +773,7 @@ const itemUpdateCommand = Command.make(
     ),
     rec: optionalStringFlag("rec", "the recommended option label, one of --option (with --ask)"),
     why: optionalStringFlag("why", "why the recommended option (with --rec)"),
+    note: optionalStringFlag("note", "a note attached to the answer"),
     answer: optionalStringFlag(
       "answer",
       "the user's answer clears the ask; Discuss or Discuss: <note> keeps it open for conversation",
@@ -797,6 +798,7 @@ const itemUpdateCommand = Command.make(
           rec: Option.getOrUndefined(options.rec),
           why: Option.getOrUndefined(options.why),
           answer: Option.getOrUndefined(options.answer),
+          note: Option.getOrUndefined(options.note),
           json: options.json,
           now: new Date().toISOString(),
         }),
@@ -814,8 +816,9 @@ const itemAnswerCommand = Command.make(
     id: argument("id", "item id, such as i3"),
     answer: argument(
       "answer",
-      "the user's answer, Discuss or Discuss: <note>, one line (put -- before the arguments if it starts with -)",
+      "the user's answer, Discuss or Discuss: <note> (put -- before the arguments if it starts with -)",
     ),
+    note: optionalStringFlag("note", "a note attached to the answer"),
     domain: optionalStringFlag(
       "domain",
       "domain (default: this coordinator's label; required outside a terminal)",
@@ -840,6 +843,7 @@ const itemAnswerCommand = Command.make(
             rec: undefined,
             why: undefined,
             answer: options.answer,
+            note: Option.getOrUndefined(options.note),
             json: options.json,
             now: new Date().toISOString(),
           }),

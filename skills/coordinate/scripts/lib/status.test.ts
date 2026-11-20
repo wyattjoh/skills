@@ -134,6 +134,66 @@ describe("domainStatus discussion requests", () => {
   });
 });
 
+describe("domainStatus answer notes", () => {
+  it("prints notes from resolved answers", async () => {
+    const state = track(tempDir());
+    const config = await Effect.runPromise(
+      resolveConfig({ state_dir: state, backlog_dir: join(state, "backlogs") }, "/c"),
+    );
+    await runWith(createDocument(config, "app"));
+    await runWith(
+      itemAdd(config, "app", { title: "Choose store", json: false, now: "2026-11-18" }),
+    );
+    await runWith(
+      itemUpdate(config, "app", {
+        id: "i1",
+        status: "waiting-user",
+        outcome: undefined,
+        decided: [],
+        touch: [],
+        untouch: [],
+        due: undefined,
+        ask: "Which store?",
+        context: undefined,
+        options: ["sqlite"],
+        rec: undefined,
+        why: undefined,
+        answer: undefined,
+        now: "2026-11-18",
+        json: false,
+      }),
+    );
+    await runWith(
+      itemUpdate(config, "app", {
+        id: "i1",
+        status: undefined,
+        outcome: undefined,
+        decided: [],
+        touch: [],
+        untouch: [],
+        due: undefined,
+        ask: undefined,
+        context: undefined,
+        options: [],
+        rec: undefined,
+        why: undefined,
+        answer: "sqlite",
+        note: "because it is simple",
+        now: "2026-11-18",
+        json: false,
+      }),
+    );
+    const fake = gitAndFake((argv) =>
+      argv[0] === "hc" && argv[1] === "ls" ? ok(JSON.stringify({ terminals: [] })) : ok("{}"),
+    );
+    const lines = await runWith(
+      domainStatus(config, "app", false, Date.parse("2026-11-18T00:00:00Z")),
+      fake.layer,
+    );
+    expect(lines).toContain("  answer note i1 Choose store: because it is simple");
+  });
+});
+
 describe("domainStatus resume history", () => {
   it("hides closed items unless showDone is enabled", async () => {
     const state = track(tempDir());

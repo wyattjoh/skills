@@ -200,11 +200,16 @@ export const domainStatus = Effect.fn("domainStatus")(function* (
       );
     if (!withResume)
       for (const item of document.value.backlog.items) {
-        if (item.ask === null || item.ask.discuss === null) continue;
-        const note = item.ask.discuss.note === "" ? "" : `; ${item.ask.discuss.note}`;
-        lines.push(
-          `  discuss ${item.id} ${item.title}: "${item.ask.question}" (${item.ask.discuss.at}${note})`,
-        );
+        if (item.ask !== null && item.ask.discuss !== null) {
+          const note = item.ask.discuss.note === "" ? "" : `; ${item.ask.discuss.note}`;
+          lines.push(
+            `  discuss ${item.id} ${item.title}: "${item.ask.question}" (${item.ask.discuss.at}${note})`,
+          );
+        }
+        for (const answered of item.answered) {
+          if (answered.note !== null)
+            lines.push(`  answer note ${item.id} ${item.title}: ${answered.note}`);
+        }
       }
   }
   for (const [repo, result] of prsByRepo) {

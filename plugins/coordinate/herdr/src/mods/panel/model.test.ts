@@ -40,9 +40,9 @@ test("draftFor and chosenAnswer encode an optional Discuss note without changing
     error: undefined,
   });
   expect(chosenAnswer({ ...draft, discuss: true })).toBe("Discuss");
-  expect(chosenAnswer({ ...draft, discuss: true, text: "  compare migrations  " })).toBe(
-    "Discuss: compare migrations",
-  );
+  expect(chosenAnswer({ ...draft, discuss: true, text: "  compare migrations  " })).toBe("Discuss");
+  expect(chosenAnswer({ ...draft, choice: "A", text: "note" })).toBe("A");
+  expect(chosenAnswer({ ...draft, text: "custom answer" })).toBe("custom answer");
   expect(chosenAnswer({ ...draft, choice: "A" })).toBe("A");
 });
 

@@ -705,6 +705,7 @@ export const answerCommand = (
   domain: string,
   id: string,
   answer: string,
+  note: string | undefined,
 ): { command: string; args: string[] } => ({
   command: "/usr/bin/env",
   args: [
@@ -716,6 +717,7 @@ export const answerCommand = (
     "answer",
     "--domain",
     domain,
+    ...(note === undefined ? [] : ["--note", note]),
     "--",
     id,
     answer,
@@ -765,8 +767,8 @@ export const draftFor = (key: string, ask: Ask, kept: AnswerDraft | undefined): 
  */
 export const chosenAnswer = (draft: AnswerDraft): string | undefined => {
   const text = draft.text.trim();
-  if (draft.discuss) return text === "" ? "Discuss" : `Discuss: ${text}`;
-  return text === "" ? draft.choice : text;
+  if (draft.discuss) return "Discuss";
+  return draft.choice === undefined ? (text === "" ? undefined : text) : draft.choice;
 };
 
 /**

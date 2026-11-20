@@ -1,8 +1,9 @@
 // The panel's regions as element functions: everything it draws, from data the View hands in.
 import { div } from "gpui-kit";
 import type { Color, Context, Element } from "gpui-kit";
-import { Input, h_flex, v_flex } from "gpui-base";
-import type { InputState } from "gpui-base";
+import { Input, InputState, h_flex, v_flex } from "gpui-base";
+import { answerInputElement } from "./textarea.ts";
+import type { AnswerInputState } from "./textarea.ts";
 import {
   BUTTON_STYLE,
   CARD,
@@ -119,7 +120,7 @@ export type PanelModel = {
 export type AnswerModel = {
   draft: AnswerDraft;
   // The text field's retained state, absent until the View's init made it.
-  input: InputState | undefined;
+  input: AnswerInputState | undefined;
   typing: boolean;
   choose: (option: string, cx: Context) => void;
   discuss: (cx: Context) => void;
@@ -473,16 +474,18 @@ const answerRows = (t: Theme, answer: AnswerModel, prefix = "ask"): Element[] =>
     .id(`${prefix}-answer-field`)
     .flex_1()
     .min_w(0)
-    .h(ANSWER.height)
+    .min_h(ANSWER.height)
     .px(ANSWER.fieldPaddingX)
     .flex()
-    .items_center()
+    .items_start()
     .rounded(ANSWER.radius)
     .border_1()
     .border_color(answer.typing ? t.accent : t.border)
     .cursor_text()
     .when(answer.input !== undefined, (el) =>
-      el.child(Input.new(answer.input!).h_full().text_size(TEXT.body).text_color(t.foreground)),
+      el.child(
+        answerInputElement(answer.input!).h_full().text_size(TEXT.body).text_color(t.foreground),
+      ),
     );
   const submit = button(t, {
     id: `${prefix}-answer-submit`,
@@ -667,6 +670,12 @@ const askCard = (
               .child(div().flex_1().min_w_0().child(completed.answer))
               .child(small(t, t.muted, completed.answeredAt)),
           ];
+  if (completed !== undefined && completed.note !== null && completed.note !== "")
+    completion.push(
+      askBodyRow(t, `${id}-answer-note`)
+        .child(small(t, t.muted, "Note"))
+        .child(div().flex_1().min_w_0().child(completed.note)),
+    );
   return [
     detailCard(t, id, completed === undefined ? "Ask" : "Answered ask", [
       question,

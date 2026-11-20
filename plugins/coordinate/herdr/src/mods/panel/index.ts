@@ -2,6 +2,7 @@
 // write is answering an item's ask, through the coordinate CLI.
 import { View } from "gpui-kit";
 import { InputState } from "gpui-base";
+import { createAnswerInput } from "./textarea.ts";
 import type { AsyncContext, Context, Element } from "gpui-kit";
 import { checking, exec, focused, home, readTextFile, terminals, theme, watchFolder } from "herdr";
 import type { FolderWatch } from "herdr";
@@ -97,7 +98,7 @@ export default class Panel extends View {
   endedGeneration = 0;
   // The answer field's retained text state, whether it has the keyboard, and the draft being
   // written on the open item's ask.
-  input: InputState | undefined;
+  input: ReturnType<typeof createAnswerInput> | undefined;
   typing = false;
   draft: AnswerDraft | undefined;
   boundaryInput: InputState | undefined;
@@ -107,7 +108,7 @@ export default class Panel extends View {
   boundaryError: BoundaryModel["error"];
 
   init(_props: unknown, cx: AsyncContext) {
-    const input = InputState.new({ placeholder: "Or type an answer" });
+    const input = createAnswerInput();
     input.on("change", (_event, changed) => this.type(input.value(), changed));
     input.on("submit", (_event, submitted) => this.answer(submitted));
     input.on("focus", (_event, gained) => this.setTyping(true, gained));
@@ -413,8 +414,9 @@ export default class Panel extends View {
     if (open === undefined || open.draft.busy || this.domain === undefined) return;
     const answer = chosenAnswer(open.draft);
     if (answer === undefined) return;
+    const note = open.draft.text.trim() || undefined;
     const { key } = open.draft;
-    const { command, args } = answerCommand(home(), this.domain, open.item.id, answer);
+    const { command, args } = answerCommand(home(), this.domain, open.item.id, answer, note);
     this.draft = { ...open.draft, busy: true, error: undefined };
     cx.notify();
     cx.spawn(async (task) => {

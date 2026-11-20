@@ -31,6 +31,7 @@ const answeredLines = (item: Item): string[] => {
     lines.push(
       ...askLines(answered, `  - answered ask (${answered.answeredAt}): ${answered.question}`),
       `    - answer: ${answered.answer}`,
+      ...(answered.note === null ? [] : [`    - answer note: ${answered.note}`]),
     );
   }
   return lines;

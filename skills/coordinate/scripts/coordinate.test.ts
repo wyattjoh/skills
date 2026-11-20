@@ -18,6 +18,55 @@ type Result = {
   stderr: string;
 };
 
+describe("coordinate CLI answer notes", () => {
+  it("accepts notes for answer and update, renders them, and preserves Discuss", () => {
+    const state = tempDir("coordinate-note-cli-");
+    made.push(state);
+    const env = cliEnv(state, COORDINATOR);
+    const run = (args: string[]): Result => {
+      const result = Bun.spawnSync(["bun", cli, ...args], {
+        env,
+        stdout: "pipe",
+        stderr: "pipe",
+        timeout: 10_000,
+      });
+      return {
+        args,
+        exit: result.exitCode ?? 1,
+        stdout: result.stdout.toString(),
+        stderr: result.stderr.toString(),
+      };
+    };
+    expect(run(["start", "app"]).exit).toBe(0);
+    expect(run(["item", "add", "choose", "--domain", "app"]).exit).toBe(0);
+    expect(
+      run([
+        "item",
+        "update",
+        "i1",
+        "--status",
+        "waiting-user",
+        "--ask",
+        "Which?",
+        "--domain",
+        "app",
+      ]).exit,
+    ).toBe(0);
+    expect(run(["item", "answer", "i1", "yes", "--note", "one\ntwo", "--domain", "app"]).exit).toBe(
+      0,
+    );
+    expect(run(["backlog", "show", "--domain", "app"]).stdout).toContain("answer note: one\ntwo");
+    expect(run(["item", "update", "i1", "--ask", "Again?", "--domain", "app"]).exit).toBe(0);
+    expect(
+      run(["item", "update", "i1", "--answer", "Discuss", "--note", "talk more", "--domain", "app"])
+        .exit,
+    ).toBe(0);
+    const shown = run(["backlog", "show", "--domain", "app"]).stdout;
+    expect(shown).toContain("discussion requested");
+    expect(shown).toContain("talk more");
+  });
+});
+
 describe("coordinate CLI Done history", () => {
   it("hides closed items from text views unless --done and keeps JSON unchanged", () => {
     const state = tempDir("coordinate-done-cli-");

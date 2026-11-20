@@ -193,6 +193,7 @@ export type ItemUpdate = {
   rec: string | undefined;
   why: string | undefined;
   answer: string | undefined;
+  note?: string | undefined;
   now: string;
 };
 
@@ -230,7 +231,7 @@ export const discussionNoteFromAnswer = (answer: string): string | undefined => 
  * @returns The discussion event text.
  */
 export const discussionDecision = (question: string, note: string): string =>
-  `Discuss "${question}"${note === "" ? "" : `: ${note}`}`;
+  `Discuss "${question}"${note === "" ? "" : `: ${note.replace(/[\r\n]+/g, " ")}`}`;
 
 const refuse = (reason: string): OpResult<Item> => ({ ok: false, reason });
 
@@ -311,7 +312,8 @@ export const updateItem = (backlog: Backlog, input: ItemUpdate): OpResult<Item> 
     input.options.length === 0 &&
     input.rec === undefined &&
     input.why === undefined &&
-    input.answer === undefined;
+    input.answer === undefined &&
+    input.note === undefined;
   if (unchanged) return refuse(`nothing to update on ${input.id}`);
   const problem =
     firstProblem("decided", input.decided) ??
@@ -320,8 +322,14 @@ export const updateItem = (backlog: Backlog, input: ItemUpdate): OpResult<Item> 
   if (problem) return refuse(problem);
   const asked = askOf(input);
   if (typeof asked === "string") return refuse(asked);
-  const discussionNote =
+  const discussionAnswerNote =
     input.answer === undefined ? undefined : discussionNoteFromAnswer(input.answer);
+  const discussionNote =
+    discussionAnswerNote === undefined
+      ? undefined
+      : [discussionAnswerNote, input.note ?? ""].filter(Boolean).join("; ");
+  if (input.note !== undefined && input.answer === undefined)
+    return refuse("--note needs --answer");
   if (input.answer !== undefined) {
     if (asked) return refuse("--answer and --ask cannot be combined");
     if (!found.ask) return refuse(`${input.id} has no ask to answer`);
@@ -365,7 +373,13 @@ export const updateItem = (backlog: Backlog, input: ItemUpdate): OpResult<Item> 
       input.answer !== undefined && found.ask && discussionNote === undefined
         ? [
             ...found.answered,
-            { ...found.ask, discuss: null, answer: input.answer.trim(), answeredAt: at },
+            {
+              ...found.ask,
+              discuss: null,
+              answer: input.answer.trim(),
+              note: input.note || null,
+              answeredAt: at,
+            },
           ]
         : found.answered,
     decided: [
@@ -375,7 +389,7 @@ export const updateItem = (backlog: Backlog, input: ItemUpdate): OpResult<Item> 
             {
               text:
                 discussionNote === undefined
-                  ? answerDecision(found.ask.question, input.answer.trim())
+                  ? `${answerDecision(found.ask.question, input.answer.trim())}${input.note?.trim() ? `. Note: ${input.note.replace(/[\r\n]+/g, " ").trim()}` : ""}`
                   : discussionDecision(found.ask.question, discussionNote),
               at,
             },

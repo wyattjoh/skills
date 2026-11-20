@@ -1,4 +1,5 @@
 import { beforeEach, expect, test } from "bun:test";
+import { Input, InputState } from "gpui-base";
 import {
   addFinding,
   addItem,
@@ -20,6 +21,17 @@ import {
 } from "@wyattjoh/herdr-dev/test/renderer";
 import type { Node } from "@wyattjoh/herdr-dev/test/renderer";
 
+const { setAnswerTextareaTestApi } = await import("./textarea.ts");
+let textareaAutoGrow: { minRows: number; maxRows: number } | undefined;
+setAnswerTextareaTestApi({
+  createState: (options) =>
+    Object.assign(InputState.new(options), {
+      set_auto_grow: (minRows: number, maxRows: number) => {
+        textareaAutoGrow = { minRows, maxRows };
+      },
+    }),
+  render: (state) => Input.new(state as ReturnType<typeof InputState.new>),
+});
 const { default: Panel } = await import("./index.ts");
 const { LIST_SCRIPT } = await import("./model.ts");
 
@@ -27,7 +39,10 @@ const STATE = "/Users/test/.local/state/coordinate";
 const DOC = `${STATE}/backlogs/alpha.json`;
 const NOW = "2026-11-17T12:00:00.000Z";
 
-beforeEach(resetHost);
+beforeEach(() => {
+  resetHost();
+  textareaAutoGrow = undefined;
+});
 
 // A coordinator terminal labelled with its domain, focused.
 const focusDomain = (domain: string) => {
@@ -153,6 +168,15 @@ const mount = async () => {
   await settle();
   return { ctx, view, render: () => view.render(ctx.cx as never) as never };
 };
+
+test("uses a multiline textarea configured to grow through 100 rows", async () => {
+  focusDomain("alpha");
+  host.files.set(DOC, JSON.stringify(withAsk()));
+  const { ctx, render } = await mount();
+  expect(textareaAutoGrow).toEqual({ minRows: 1, maxRows: 100 });
+  get(render(), "item-i1").click!({}, ctx.cx);
+  expect(get(render(), "ask-answer-field")).toBeDefined();
+});
 
 test("separates asked items from status groups and keeps each item row unique", async () => {
   focusDomain("alpha");
@@ -893,6 +917,49 @@ test("shows the open ask first and earlier answered asks read-only, newest first
   expect(get(root, "ask-option-0").click).toBeDefined();
 });
 
+test("shows a recorded note beneath completed answers and discussions", async () => {
+  focusDomain("alpha");
+  const backlog = answered("json");
+  const item = backlog.items[0]!;
+  const withNote: Backlog = {
+    ...backlog,
+    items: backlog.items.map((entry) =>
+      entry.id === item.id
+        ? {
+            ...entry,
+            answered: entry.answered.map((record) => ({
+              ...record,
+              note: "Use the shared config",
+            })),
+          }
+        : entry,
+    ),
+  };
+  host.files.set(DOC, JSON.stringify(withNote));
+  const { ctx, render } = await mount();
+  get(render(), "item-i1").click!({}, ctx.cx);
+  expect(text(get(render(), "ask-answered-0-answer-note"))).toContain("Use the shared config");
+  const discussion = {
+    ...withNote,
+    items: withNote.items.map((entry) =>
+      entry.id === item.id
+        ? {
+            ...entry,
+            answered: entry.answered.map((record) => ({
+              ...record,
+              answer: "Discuss",
+              note: "Compare deployment options",
+            })),
+          }
+        : entry,
+    ),
+  };
+  host.files.set(DOC, JSON.stringify(discussion));
+  host.watches.at(-1)!.fire([DOC]);
+  await settle();
+  expect(text(get(render(), "ask-answered-0-answer-note"))).toContain("Compare deployment options");
+});
+
 test("loads legacy items without answered history as empty history", async () => {
   focusDomain("alpha");
   const legacy = JSON.parse(JSON.stringify(withAsk()));
@@ -903,7 +970,7 @@ test("loads legacy items without answered history as empty history", async () =>
   if (view.doc.kind === "loaded") expect(view.doc.backlog.items[0]?.answered).toEqual([]);
 });
 
-const answerArgs = (id: string, answer: string) => [
+const answerArgs = (id: string, answer: string, note?: string) => [
   "-u",
   "HC_TERMINAL_ID",
   "bun",
@@ -912,6 +979,7 @@ const answerArgs = (id: string, answer: string) => [
   "answer",
   "--domain",
   "alpha",
+  ...(note === undefined ? [] : ["--note", note]),
   "--",
   id,
   answer,
@@ -974,7 +1042,7 @@ test("selects Discuss, accepts an optional note, and submits it through the CLI"
   get(typed, "ask-answer-submit").click!({}, ctx.cx);
   await settle();
   expect(host.execs).toEqual([
-    { command: "/usr/bin/env", args: answerArgs("i1", "Discuss: compare migration support") },
+    { command: "/usr/bin/env", args: answerArgs("i1", "Discuss", "compare migration support") },
   ]);
   expect(text(get(render(), "ask-discuss-tag"))).toBe("In discussion");
   expect(text(get(render(), "ask-discuss-note"))).toBe("Note: compare migration support");
@@ -1010,7 +1078,7 @@ test("answers with typed text over the picked option, a leading dash kept as one
   get(typed, "ask-answer-submit").click!({}, ctx.cx);
   await settle();
   expect(host.execs).toEqual([
-    { command: "/usr/bin/env", args: answerArgs("i1", "-call it Board") },
+    { command: "/usr/bin/env", args: answerArgs("i1", "-call it Board", "-call it Board") },
   ]);
   const root = render();
   expect(text(get(root, "ask-answered-0-answer"))).toBe("Answer -call it Board 2026-11-17");
