@@ -723,8 +723,17 @@ test("opens an item's detail with the recommended option first, labelled and not
   expect(text(get(root, "ask-question"))).toBe("Which title?");
   expect(text(get(root, "ask-context"))).toBe("It shows in the tab row");
   expect(ids(root, "ask-option-")).toEqual(["ask-option-1", "ask-option-0", "ask-option-2"]);
+  expect([
+    text(get(root, "ask-number-1")),
+    text(get(root, "ask-number-0")),
+    text(get(root, "ask-number-2")),
+  ]).toEqual(["1.", "2.", "3."]);
+  expect(get(root, "ask-number-1").styles.w).toBe(28);
+  expect(get(root, "ask-number-1").styles.text_color).toBe("#a3a3a3");
+  expect(get(root, "ask-content-1").styles.flex_1).toBe(true);
+  expect(get(root, "ask-content-1").styles.min_w_0).toBe(true);
   expect(text(get(root, "ask-option-1"))).toBe(
-    "Backlog Recommended Short and clear Why recommended fits the pill",
+    "1. Backlog Recommended Short and clear Why recommended fits the pill",
   );
   expect(text(get(root, "ask-detail-1"))).toBe("Short and clear");
   expect(get(root, "ask-detail-1").styles.text_color).toBe("#a3a3a3");
@@ -762,8 +771,9 @@ test("keeps an ask without a recommendation in its own order, with nothing highl
   get(render(), "item-i2").click!({}, ctx.cx);
   const root = render();
   expect(ids(root, "ask-option-")).toEqual(["ask-option-0", "ask-option-1"]);
-  expect(text(get(root, "ask-option-0"))).toBe("ansi3");
-  expect(text(get(root, "ask-option-1"))).toBe("blocked Blocked means unavailable");
+  expect([text(get(root, "ask-number-0")), text(get(root, "ask-number-1"))]).toEqual(["1.", "2."]);
+  expect(text(get(root, "ask-option-0"))).toBe("1. ansi3");
+  expect(text(get(root, "ask-option-1"))).toBe("2. blocked Blocked means unavailable");
   expect(ids(root, "ask-detail-")).toEqual(["ask-detail-1"]);
   expect([get(root, "ask-option-0").styles.bg, get(root, "ask-option-1").styles.bg]).toEqual([
     "#111111",
@@ -837,6 +847,11 @@ test("shows the open ask first and earlier answered asks read-only, newest first
     "ask-answered-0-option-0",
   ]);
   expect(get(root, "ask-answered-0-option-1").styles.bg).toBe("#2563eb");
+  expect([
+    text(get(root, "ask-answered-0-number-1")),
+    text(get(root, "ask-answered-0-number-0")),
+  ]).toEqual(["1.", "2."]);
+  expect(get(root, "ask-answered-0-content-1").styles.flex_1).toBe(true);
   expect(text(get(root, "ask-answered-0-option-1"))).toContain("Recommended Answered");
   expect(text(get(root, "ask-answered-0-detail-1"))).toBe("Easy to inspect");
   expect(text(get(root, "ask-answered-0-rec-reason"))).toBe("Why recommended existing tooling");

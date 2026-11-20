@@ -40,6 +40,7 @@ import type { ButtonStyle, Theme } from "@wyattjoh/herdr-ui";
 import type { AnsweredAsk, Ask, Backlog, Finding, Item } from "../../lib/store.ts";
 import {
   ANSWER,
+  ASK_OPTION_NUMBER_WIDTH,
   COUNT_TONES,
   DELEGATE_INDENT,
   DELEGATE_ROW_HEIGHT,
@@ -525,25 +526,21 @@ const askCard = (
     itemTouches === undefined || itemTouches.length === 0
       ? []
       : [fact(t, `${id}-touches`, "Touches", itemTouches, askBodyRow)];
-  const options = rankedOptions(ask).map(({ option, index, rec }) => {
+  const options = rankedOptions(ask).map(({ option, index, rec }, displayIndex) => {
     const selected = option === picked;
     const chosen = completed !== undefined && option === completed.answer;
-    return askBodyRow(t, `${id}-option-${index}`)
-      .when(selected, (el) => el.bg(t.selected))
-      .when(answer !== undefined && completed === undefined, (el) =>
-        el
-          .cursor_pointer()
-          .hover((s) => s.bg(selected ? t.selected : t.hover))
-          .on_click((_event, cx) => answer!.choose(option, cx)),
-      )
-      .child(
-        h_flex()
-          .gap(BUTTON_STYLE.gap)
-          .items_center()
-          .child(div().min_w_0().child(option))
-          .when(rec, (el) => el.child(small(t, t.accent, "Recommended")))
-          .when(chosen, (el) => el.child(small(t, t.done, "Answered"))),
-      )
+    const heading = h_flex()
+      .gap(BUTTON_STYLE.gap)
+      .items_center()
+      .child(div().flex_1().min_w_0().child(option))
+      .when(rec, (el) => el.child(small(t, t.accent, "Recommended")))
+      .when(chosen, (el) => el.child(small(t, t.done, "Answered")));
+    const content = v_flex()
+      .id(`${id}-content-${index}`)
+      .flex_1()
+      .min_w_0()
+      .gap(BUTTON_STYLE.gap)
+      .child(heading)
       .when(Boolean(ask.optionDetails?.[index]), (el) =>
         el.child(
           div()
@@ -563,9 +560,31 @@ const askCard = (
               v_flex()
                 .gap(BUTTON_STYLE.gap)
                 .child(small(t, t.muted, "Why recommended").id(`${id}-rec-reason-label`))
-                .child(div().min_w(0).child(ask.recReason!)),
+                .child(div().min_w_0().child(ask.recReason!)),
             ),
         ),
+      );
+    return askBodyRow(t, `${id}-option-${index}`)
+      .when(selected, (el) => el.bg(t.selected))
+      .when(answer !== undefined && completed === undefined, (el) =>
+        el
+          .cursor_pointer()
+          .hover((s) => s.bg(selected ? t.selected : t.hover))
+          .on_click((_event, cx) => answer!.choose(option, cx)),
+      )
+      .child(
+        h_flex()
+          .gap(BUTTON_STYLE.gap)
+          .items_start()
+          .child(
+            div()
+              .id(`${id}-number-${index}`)
+              .w(ASK_OPTION_NUMBER_WIDTH)
+              .flex_shrink_0()
+              .text_color(t.muted)
+              .child(`${displayIndex + 1}.`),
+          )
+          .child(content),
       );
   });
   const completion =

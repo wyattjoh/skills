@@ -9,6 +9,11 @@ import type { LiveStatus } from "./model.ts";
 export const DELEGATE_ROW_HEIGHT = 28;
 
 /**
+ * Width of the leading column that numbers ask options.
+ */
+export const ASK_OPTION_NUMBER_WIDTH = 28;
+
+/**
  * How far each nesting level indents an Unfiled delegates row under its parent delegate.
  */
 export const DELEGATE_INDENT = 14;
