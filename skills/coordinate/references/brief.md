@@ -4,6 +4,8 @@ The brief is what a delegate reads first and the contract you verify against. Wr
 
 Fill every required heading. Include Child review only when the user requested it. Quote the user where they decided something, so the delegate neither asks again nor widens it.
 
+When writing a real brief, replace `<absolute coordinate skill path>` with the actual absolute path to the installed coordinate skill, so the notification works even when `coordinate` is not on PATH.
+
 ```markdown
 # Brief: <task in a few words>
 
@@ -65,7 +67,7 @@ Whenever you stop, write `<absolute worktree path>/.scratch/REPORT.md` with:
 - made outside the worktree: processes (PID, port), folders, simulators, other worktrees,
   each with how to remove it, or "nothing"
 
-Then run `coordinate notify "<name>: <status>, report at <absolute worktree path>/.scratch/REPORT.md"`
+Then run `bun <absolute coordinate skill path>/scripts/coordinate.ts notify "<name>: <status>, report at <absolute worktree path>/.scratch/REPORT.md"`
 to wake the coordinator, and end your turn with the same summary. A refused or failed notify does not
 stop you ending the turn: the coordinator's watcher still fires.
 ```

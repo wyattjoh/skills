@@ -13,13 +13,10 @@ running build.
 
 ## Exception: `plugins/coordinate`
 
-`plugins/coordinate/herdr/` builds Herdr mods for the coordinate skill's backlog, read-only except for answering an ask:
-`coordinate-panel` and `coordinate-toggle`, the tab row's Backlog pill. The pill shows and hides the
-column docking the panel, remembering each tab in shared `coordinate-panel.dock`, and owns the
-`toggle` key command, which the project's `keys.json` binds to `cmd-alt-b` (key commands reach
-only mounted mods). It is not a Claude Code plugin: no `.claude-plugin/`, no marketplace entry, no
-mod or pi extension. It is its own project with its own `package.json`, `bunfig.toml` and
-`justfile`. Root `bun test` and `knip` skip it, and root `bun run check` skips its `src/` (its
+`plugins/coordinate/herdr/` builds `coordinate-panel`, a Herdr mod for the coordinate skill's
+backlog. It is read-only except for answering an ask and follows the focused terminal. It is not a
+Claude Code plugin: no `.claude-plugin/`, no marketplace entry, no mod or pi extension. It is its
+own project with its own `package.json`, `bunfig.toml` and `justfile`. Root `bun test` and `knip` skip it, and root `bun run check` skips its `src/` (its
 tests need the renderer preload and its mod sources need Herdr's host `.d.ts` files); root
 `check` still type-checks its Bun `scripts/`, and root lint and format cover all of it. It depends on
 `@wyattjoh/herdr-ui`, which the root install does not provide. CI runs `bun install --frozen-lockfile`
@@ -28,9 +25,9 @@ in that folder after the root install; run `bun install` there in every fresh wo
 into `node_modules/.cache/`, and a build that stages each mod under `.scratch/` and runs
 `herdr-app check` with that stage as `HERDR_APP_HOME`. `just check` never writes the live Herdr
 home. Only `just install [--replace]`, run after the user approves, does: it builds and checks a
-stage, copies every mod into `$HERDR_APP_HOME/mods`, and adds `keys.json`'s bindings to the
-person's `keys.json`, refusing a key they already bind elsewhere. Point `HERDR_APP_HOME` at a
-scratch folder to exercise it.
+stage, copies every mod into `$HERDR_APP_HOME/mods`, and merges `keys.json`'s bindings into the
+person's `keys.json` when the plugin defines any, refusing a key they already bind elsewhere.
+Point `HERDR_APP_HOME` at a scratch folder to exercise it.
 
 The mods never write the backlog document or message a terminal: the coordinate CLI is the
 document's only writer. The panel's one write is the Answer button on an item's detail screen. It runs
