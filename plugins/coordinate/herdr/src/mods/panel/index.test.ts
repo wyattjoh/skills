@@ -33,7 +33,7 @@ setAnswerTextareaTestApi({
   render: (state) => Input.new(state as ReturnType<typeof InputState.new>),
 });
 const { default: Panel } = await import("./index.ts");
-const { LIST_SCRIPT } = await import("./model.ts");
+const { LIST_SCRIPT, PANEL_PREFERENCES_KEY } = await import("./model.ts");
 
 const STATE = "/Users/test/.local/state/coordinate";
 const DOC = `${STATE}/backlogs/alpha.json`;
@@ -247,6 +247,75 @@ test("hides the Waiting on you card when no items have open asks", async () => {
     "item-i7",
     "item-i8",
   ]);
+});
+
+test("Waiting on you treatment picker persists all five alternatives and renders each treatment", async () => {
+  focusDomain("alpha");
+  host.files.set(DOC, JSON.stringify(withAsk()));
+  const { ctx, render } = await mount();
+  let root = render();
+  expect(ids(root, "waiting-treatment-alpha-option-")).toEqual([
+    "waiting-treatment-alpha-option-current",
+    "waiting-treatment-alpha-option-accent-fill",
+    "waiting-treatment-alpha-option-pulse-bar",
+    "waiting-treatment-alpha-option-needs-answer",
+    "waiting-treatment-alpha-option-inline-question",
+    "waiting-treatment-alpha-option-inline-accent",
+  ]);
+  expect(text(get(root, "waiting-treatment-alpha-option-current"))).toBe("Current");
+  expect(get(root, "waiting-treatment-alpha-option-current").nodes.length).toBe(2);
+  expect(text(get(root, "waiting-treatment-alpha-option-accent-fill"))).toBe("Accent wash");
+  expect(text(get(root, "waiting-treatment-alpha-option-pulse-bar"))).toBe("Pulsing accent bar");
+  expect(text(get(root, "waiting-treatment-alpha-option-needs-answer"))).toBe(
+    "Needs-answer emphasis",
+  );
+  expect(text(get(root, "waiting-treatment-alpha-option-inline-question"))).toBe("Inline question");
+  expect(text(get(root, "waiting-treatment-alpha-option-inline-accent"))).toBe(
+    "Inline question + accent bar",
+  );
+
+  get(root, "waiting-treatment-alpha-option-accent-fill").click!({}, ctx.cx);
+  root = render();
+  expect(get(root, "item-i1").styles.bg).toBeDefined();
+  expect(host.shared.get(PANEL_PREFERENCES_KEY)).toEqual({
+    askColorToken: "chrome",
+    waitingTreatment: "accent-fill",
+  });
+
+  get(root, "waiting-treatment-alpha-option-pulse-bar").click!({}, ctx.cx);
+  root = render();
+  expect(get(root, "waiting-accent-i1").styles.loop).toEqual([
+    "opacity",
+    { from: 0.4, to: 1, period: 1_100 },
+  ]);
+  expect(host.shared.get(PANEL_PREFERENCES_KEY)).toEqual({
+    askColorToken: "chrome",
+    waitingTreatment: "pulse-bar",
+  });
+
+  get(root, "waiting-treatment-alpha-option-needs-answer").click!({}, ctx.cx);
+  root = render();
+  expect(text(get(root, "waiting-header"))).toContain("Needs your answer");
+  expect(text(get(root, "waiting-header"))).toContain("2");
+  expect(get(root, "item-i1").styles.font_bold).toBe(true);
+
+  get(root, "waiting-treatment-alpha-option-inline-question").click!({}, ctx.cx);
+  root = render();
+  expect(text(get(root, "waiting-question-i1"))).toContain("Which title?");
+  expect(text(get(root, "waiting-question-i1"))).toContain(
+    "Options: Coordinate backlog · Backlog · Queue",
+  );
+  expect(text(get(root, "waiting-question-i1"))).toContain("Recommended: Backlog");
+
+  get(root, "waiting-treatment-alpha-option-inline-accent").click!({}, ctx.cx);
+  root = render();
+  expect(get(root, "waiting-accent-i1")).toBeDefined();
+  expect(get(root, "waiting-question-i1")).toBeDefined();
+
+  const reloaded = await mount();
+  root = reloaded.render();
+  expect(text(get(root, "waiting-treatment-alpha-trigger"))).toBe("Inline question + accent bar");
+  expect(get(root, "waiting-question-i1")).toBeDefined();
 });
 
 test("folds Done and Dismissed by default and toggles a group from its header", async () => {
@@ -738,6 +807,32 @@ const withAsk = (): Backlog => {
   return backlog;
 };
 
+test("ask color picker lists named swatches and persists a token across panel reloads", async () => {
+  focusDomain("alpha");
+  host.files.set(DOC, JSON.stringify(withAsk()));
+  const { ctx, render } = await mount();
+  get(render(), "item-i1").click!({}, ctx.cx);
+  let root = render();
+  expect(text(get(root, "ask-color-i1-trigger"))).toBe("chrome");
+  expect(text(get(root, "ask-color-i1-option-canvas"))).toBe("canvas");
+  expect(get(root, "ask-color-i1-option-chrome").nodes.length).toBe(3);
+  expect(get(root, "ask-color-i1-option-canvas").nodes.length).toBe(2);
+  expect(get(root, "ask-color-i1-option-canvas").nodes[0]?.styles.bg).toBe("#111111");
+  get(root, "ask-color-i1-option-canvas").click!({}, ctx.cx);
+  expect(host.shared.get(PANEL_PREFERENCES_KEY)).toEqual({
+    askColorToken: "canvas",
+    waitingTreatment: "current",
+  });
+  expect(get(render(), "ask-context").styles.bg).toBe("#111111");
+
+  const reloaded = await mount();
+  get(reloaded.render(), "item-i1").click!({}, reloaded.ctx.cx);
+  root = reloaded.render();
+  expect(text(get(root, "ask-color-i1-trigger"))).toBe("canvas");
+  expect(get(root, "ask-color-i1-option-canvas").nodes.length).toBe(3);
+  expect(get(root, "ask-context").styles.bg).toBe("#111111");
+});
+
 test("opens an item's detail with the recommended option first, labelled and not yet picked", async () => {
   focusDomain("alpha");
   host.files.set(DOC, JSON.stringify(withAsk()));
@@ -768,17 +863,17 @@ test("opens an item's detail with the recommended option first, labelled and not
   expect(text(get(root, "ask-detail-2"))).toBe("A neutral alternative");
   expect([get(root, "ask-question").styles.bg, get(root, "ask-context").styles.bg]).toEqual([
     "#292929",
-    "#141414",
+    "#171717",
   ]);
   expect([get(root, "ask-option-1").styles.bg, get(root, "ask-option-0").styles.bg]).toEqual([
-    "#141414",
-    "#141414",
+    "#171717",
+    "#171717",
   ]);
   expect(get(root, "ask-option-0").hoverStyles.bg).toBe("#404040");
   expect(text(get(root, "ask-rec-reason"))).toBe("Why recommended fits the pill");
   expect(text(get(root, "ask-rec-reason-label"))).toBe("Why recommended");
   expect(text(get(root, "ask-touches"))).toBe("Touches skills herdr-finbar");
-  expect(get(root, "ask-touches").styles.bg).toBe("#141414");
+  expect(get(root, "ask-touches").styles.bg).toBe("#171717");
   expect(ids(root, "fact-touches")).toEqual([]);
   expect(text(get(root, "decided-0"))).toBe("Keep it read-only 2026-11-16");
   expect(text(get(root, "fact-due"))).toBe("Due 2026-11-20");
@@ -805,7 +900,7 @@ test("shows a pending discussion with its marker and note in the ask card", asyn
   expect(text(get(root, "ask-discuss-tag"))).toBe("In discussion");
   expect(text(get(root, "ask-discuss-note"))).toBe("Note: compare migration support");
   expect(ids(root, "ask-discuss-detail")).toEqual([]);
-  expect(get(root, "ask-discuss").styles.bg).toBe("#141414");
+  expect(get(root, "ask-discuss").styles.bg).toBe("#171717");
   expect(get(root, "ask-discuss").click).toBeDefined();
   expect(ids(root, "decided-")).toEqual(["decided-header", "decided-0"]);
   expect(text(get(root, "decided-0"))).toBe("Keep it read-only 2026-11-16");
@@ -823,8 +918,8 @@ test("keeps an ask without a recommendation in its own order, with nothing highl
   expect(text(get(root, "ask-option-1"))).toBe("2. blocked Blocked means unavailable");
   expect(ids(root, "ask-detail-")).toEqual(["ask-detail-1"]);
   expect([get(root, "ask-option-0").styles.bg, get(root, "ask-option-1").styles.bg]).toEqual([
-    "#141414",
-    "#141414",
+    "#171717",
+    "#171717",
   ]);
   expect(ids(root, "ask-rec-reason")).toEqual([]);
   expect(text(get(root, "fact-touches"))).toBe("Touches None");
@@ -1000,7 +1095,7 @@ test("answers with a picked option through the CLI, then keeps the answered ask 
   const picked = render();
   expect([get(picked, "ask-option-0").styles.bg, get(picked, "ask-option-1").styles.bg]).toEqual([
     "#2563eb",
-    "#141414",
+    "#171717",
   ]);
   expect(host.execs).toEqual([]);
   const recorded = answered("Coordinate backlog");
@@ -1077,9 +1172,9 @@ test("answers with free text only, without duplicating it as a note", async () =
   typeInto(host.inputs[0]!, "  -call it Board ", ctx.cx);
   const typed = render();
   expect(ids(typed, "ask-option-").map((id) => get(typed, id).styles.bg)).toEqual([
-    "#141414",
-    "#141414",
-    "#141414",
+    "#171717",
+    "#171717",
+    "#171717",
   ]);
   host.files.set(DOC, JSON.stringify(answered("-call it Board")));
   get(typed, "ask-answer-submit").click!({}, ctx.cx);
@@ -1100,7 +1195,7 @@ test("unselects a picked option so typed text becomes a free-text answer", async
   get(render(), "ask-option-0").click!({}, ctx.cx);
   expect(get(render(), "ask-option-0").styles.bg).toBe("#2563eb");
   get(render(), "ask-option-0").click!({}, ctx.cx);
-  expect(get(render(), "ask-option-0").styles.bg).toBe("#141414");
+  expect(get(render(), "ask-option-0").styles.bg).toBe("#171717");
   typeInto(host.inputs[0]!, "Custom answer", ctx.cx);
   const draft = render();
   expect(get(draft, "ask-answer-submit").click).toBeDefined();
@@ -1120,7 +1215,7 @@ test("unselects Discuss so typed text becomes a free-text answer", async () => {
   get(render(), "ask-discuss").click!({}, ctx.cx);
   expect(get(render(), "ask-discuss").styles.bg).toBe("#2563eb");
   get(render(), "ask-discuss").click!({}, ctx.cx);
-  expect(get(render(), "ask-discuss").styles.bg).toBe("#141414");
+  expect(get(render(), "ask-discuss").styles.bg).toBe("#171717");
   typeInto(host.inputs[0]!, "Custom answer after Discuss", ctx.cx);
   const draft = render();
   expect(text(get(draft, "ask-answer-submit"))).toBe("Answer");

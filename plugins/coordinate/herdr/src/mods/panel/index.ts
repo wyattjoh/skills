@@ -4,7 +4,18 @@ import { View } from "gpui-kit";
 import { InputState } from "gpui-base";
 import { createAnswerInput } from "./textarea.ts";
 import type { AsyncContext, Context, Element } from "gpui-kit";
-import { checking, exec, focused, home, readTextFile, terminals, theme, watchFolder } from "herdr";
+import {
+  checking,
+  exec,
+  focused,
+  home,
+  readTextFile,
+  setShared,
+  shared,
+  terminals,
+  theme,
+  watchFolder,
+} from "herdr";
 import type { FolderWatch } from "herdr";
 import {
   FOLDED_BY_DEFAULT,
@@ -14,6 +25,7 @@ import {
   boundaryCommand,
   boundaryOutput,
   cachedDocument,
+  defaultAskColorToken,
   chosenAnswer,
   configPath,
   countLiveDelegates,
@@ -26,12 +38,15 @@ import {
   mergeEnded,
   missingSessions,
   openFindings,
+  panelPreferences,
+  PANEL_PREFERENCES_KEY,
   parseListing,
   readDocument,
   stateDirOf,
   summarize,
   targetDomain,
   trailOf,
+  WAITING_TREATMENTS,
 } from "./model.ts";
 import type {
   AnswerDraft,
@@ -42,8 +57,11 @@ import type {
   EndedRecords,
   ItemGroup,
   ListingState,
+  PanelPreferences,
   Screen,
+  WaitingTreatment,
 } from "./model.ts";
+import { opaqueOver, tint } from "@wyattjoh/herdr-ui/pure";
 import { backlogsDir, documentPath } from "../../lib/store.ts";
 import type { Finding, Item } from "../../lib/store.ts";
 import { panel } from "./view.ts";
@@ -101,6 +119,8 @@ export default class Panel extends View {
   input: ReturnType<typeof createAnswerInput> | undefined;
   typing = false;
   draft: AnswerDraft | undefined;
+  askColorPickerOpen = false;
+  waitingTreatmentPickerOpen = false;
   boundaryInput: InputState | undefined;
   boundaryEditing: { domain: string; list: BoundaryList } | undefined;
   boundaryBusy = false;
@@ -630,6 +650,49 @@ export default class Panel extends View {
     cx.notify();
   }
 
+  preferences(colors: Theme): PanelPreferences {
+    const tokens = colors as unknown as Record<string, string>;
+    const previousSurface = opaqueOver(
+      tint(colors.chrome as string, "80"),
+      colors.canvas as string,
+    );
+    return panelPreferences(
+      shared(PANEL_PREFERENCES_KEY),
+      tokens,
+      defaultAskColorToken(tokens, previousSurface),
+    );
+  }
+
+  setAskColorPickerOpen(open: boolean, cx: Context) {
+    this.askColorPickerOpen = open;
+    cx.notify();
+  }
+
+  setWaitingTreatmentPickerOpen(open: boolean, cx: Context) {
+    this.waitingTreatmentPickerOpen = open;
+    cx.notify();
+  }
+
+  selectAskColorToken(token: string, cx: Context) {
+    const colors = theme() as Theme;
+    const current = this.preferences(colors);
+    const selected = Object.prototype.hasOwnProperty.call(colors, token)
+      ? token
+      : current.askColorToken;
+    setShared(PANEL_PREFERENCES_KEY, { ...current, askColorToken: selected });
+    this.askColorPickerOpen = false;
+    cx.notify();
+  }
+
+  selectWaitingTreatment(treatment: WaitingTreatment, cx: Context) {
+    const selected = WAITING_TREATMENTS.find((candidate) => candidate === treatment);
+    if (selected === undefined) return;
+    const current = this.preferences(theme() as Theme);
+    setShared(PANEL_PREFERENCES_KEY, { ...current, waitingTreatment: selected });
+    this.waitingTreatmentPickerOpen = false;
+    cx.notify();
+  }
+
   // The document's delegates joined to the terminals live now.
   delegates(domain: string | undefined, doc: DocumentState): DelegateJoin {
     if (domain === undefined || doc.kind !== "loaded") return { byItem: new Map(), unfiled: [] };
@@ -645,7 +708,9 @@ export default class Panel extends View {
       finding?.from === null || finding === undefined || doc.kind !== "loaded"
         ? undefined
         : doc.backlog.items.find((item) => item.id === finding.from);
-    return panel(theme() as Theme, {
+    const currentTheme = theme() as Theme;
+    const preferences = this.preferences(currentTheme);
+    return panel(currentTheme, {
       domain,
       doc,
       listing: this.listing,
@@ -666,6 +731,14 @@ export default class Panel extends View {
       detail,
       open: (item, cx) => this.open(item, cx),
       answer: this.answerModel(),
+      askColorToken: preferences.askColorToken,
+      waitingTreatment: preferences.waitingTreatment,
+      askColorPickerOpen: this.askColorPickerOpen,
+      waitingTreatmentPickerOpen: this.waitingTreatmentPickerOpen,
+      setAskColorPickerOpen: (open, cx) => this.setAskColorPickerOpen(open, cx),
+      setWaitingTreatmentPickerOpen: (open, cx) => this.setWaitingTreatmentPickerOpen(open, cx),
+      selectAskColorToken: (token, cx) => this.selectAskColorToken(token, cx),
+      selectWaitingTreatment: (treatment, cx) => this.selectWaitingTreatment(treatment, cx),
       boundary: this.boundaryModel(domain),
     });
   }

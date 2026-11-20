@@ -3,6 +3,153 @@
 import { ITEM_STATUSES, isRecord, validateBacklog } from "../../lib/store.ts";
 import type { Ask, Backlog, DelegateRef, Finding, Item, ItemStatus } from "../../lib/store.ts";
 
+/** The key for the panel's persisted visual preferences in Herdr shared state. */
+export const PANEL_PREFERENCES_KEY = "coordinate-panel.preferences.v1";
+
+/** The selectable treatments for the Waiting on you rows. */
+export const WAITING_TREATMENTS = [
+  "current",
+  "accent-fill",
+  "pulse-bar",
+  "needs-answer",
+  "inline-question",
+  "inline-accent",
+] as const;
+
+/** A persisted Waiting on you row treatment. */
+export type WaitingTreatment = (typeof WAITING_TREATMENTS)[number];
+
+/** The visible names for Waiting on you row treatments. */
+export const WAITING_TREATMENT_LABELS: Readonly<Record<WaitingTreatment, string>> = {
+  current: "Current",
+  "accent-fill": "Accent wash",
+  "pulse-bar": "Pulsing accent bar",
+  "needs-answer": "Needs-answer emphasis",
+  "inline-question": "Inline question",
+  "inline-accent": "Inline question + accent bar",
+};
+
+/** The panel's persisted visual preferences. */
+export type PanelPreferences = {
+  askColorToken: string;
+  waitingTreatment: WaitingTreatment;
+};
+
+type HexColor = { red: number; green: number; blue: number; alpha: number };
+
+const parseHexColor = (color: string): HexColor | undefined => {
+  const match = /^#([\da-f]{3,4}|[\da-f]{6}|[\da-f]{8})$/i.exec(color.trim());
+  if (match === null) return undefined;
+  let hex = match[1]!;
+  if (hex.length === 3 || hex.length === 4) hex = [...hex].map((c) => c + c).join("");
+  const channels = [0, 2, 4, 6].map((offset) =>
+    offset < hex.length ? Number.parseInt(hex.slice(offset, offset + 2), 16) / 255 : 1,
+  );
+  return { red: channels[0]!, green: channels[1]!, blue: channels[2]!, alpha: channels[3]! };
+};
+
+const themeBackdrop = (colors: Readonly<Record<string, string>>): HexColor => {
+  for (const role of ["surface", "popover", "raised", "background", "canvas", "foreground"]) {
+    const color = colors[role] === undefined ? undefined : parseHexColor(colors[role]!);
+    if (color?.alpha === 1) return color;
+  }
+  return { red: 0, green: 0, blue: 0, alpha: 1 };
+};
+
+const parseHexLightness = (color: string, backdrop: HexColor): number | undefined => {
+  const foreground = parseHexColor(color);
+  if (foreground === undefined) return undefined;
+  const channels = ["red", "green", "blue"].map((channel) => {
+    const key = channel as "red" | "green" | "blue";
+    return foreground[key] * foreground.alpha + backdrop[key] * (1 - foreground.alpha);
+  });
+  const linear = channels.map((channel) =>
+    channel <= 0.04045 ? channel / 12.92 : ((channel + 0.055) / 1.055) ** 2.4,
+  );
+  return linear[0]! * 0.2126 + linear[1]! * 0.7152 + linear[2]! * 0.0722;
+};
+
+/**
+ * Orders valid hex theme colors and the previous ask surface by relative luminance.
+ * @param colors Every named color exposed by the active theme.
+ * @param currentSurface The previous chrome-over-canvas ask surface.
+ * @returns The token names and surface marker from darkest to lightest.
+ */
+export const themeColorLightnessOrder = (
+  colors: Readonly<Record<string, string>>,
+  currentSurface: string,
+): { name: string; lightness: number }[] => {
+  const backdrop = themeBackdrop(colors);
+  const entries = Object.entries(colors).flatMap(([name, color]) => {
+    const lightness = parseHexLightness(color, backdrop);
+    return lightness === undefined ? [] : [{ name, lightness }];
+  });
+  const currentLightness = parseHexLightness(currentSurface, backdrop);
+  if (currentLightness !== undefined)
+    entries.push({ name: "today's ask blend", lightness: currentLightness });
+  const compare = (a: (typeof entries)[number], b: (typeof entries)[number]): number =>
+    a.lightness - b.lightness || a.name.localeCompare(b.name);
+  const ordered: typeof entries = [];
+  for (const entry of entries) {
+    let index = 0;
+    while (index < ordered.length && compare(ordered[index]!, entry) <= 0) index += 1;
+    ordered.splice(index, 0, entry);
+  }
+  return ordered;
+};
+
+/**
+ * Chooses the first theme color lighter than the previous ask surface.
+ * @param colors Every named color exposed by the active theme.
+ * @param currentSurface The previous chrome-over-canvas ask surface.
+ * @returns The next lighter token, or the lightest valid token if none is lighter.
+ */
+export const defaultAskColorToken = (
+  colors: Readonly<Record<string, string>>,
+  currentSurface: string,
+): string => {
+  const order = themeColorLightnessOrder(colors, currentSurface);
+  const currentIndex = order.findIndex((entry) => entry.name === "today's ask blend");
+  if (currentIndex >= 0) {
+    for (let index = currentIndex + 1; index < order.length; index += 1) {
+      const entry = order[index]!;
+      if (entry.name !== "today's ask blend") return entry.name;
+    }
+  }
+  for (let index = order.length - 1; index >= 0; index -= 1) {
+    const entry = order[index]!;
+    if (entry.name !== "today's ask blend") return entry.name;
+  }
+  return "canvas";
+};
+
+/**
+ * Reads persisted panel preferences, falling back when a theme token or treatment is stale.
+ * @param value The value returned by Herdr's shared state.
+ * @param colors The active theme's color tokens.
+ * @param defaultToken The default ask color token for the active theme.
+ * @returns Valid preferences for the active theme.
+ */
+export const panelPreferences = (
+  value: unknown,
+  colors: Readonly<Record<string, string>>,
+  defaultToken: string,
+): PanelPreferences => {
+  if (!isRecord(value)) return { askColorToken: defaultToken, waitingTreatment: "current" };
+  const askColorToken =
+    typeof value.askColorToken === "string" &&
+    Object.prototype.hasOwnProperty.call(colors, value.askColorToken)
+      ? value.askColorToken
+      : defaultToken;
+  const waitingTreatment = WAITING_TREATMENTS.find(
+    (treatment) => treatment === value.waitingTreatment,
+  );
+  return {
+    askColorToken,
+    waitingTreatment: waitingTreatment ?? "current",
+  };
+};
+
 /**
  * The terminal label naming the coordinate domain a coordinator or delegate belongs to.
  */
