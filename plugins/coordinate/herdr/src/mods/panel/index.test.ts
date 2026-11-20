@@ -744,17 +744,17 @@ test("opens an item's detail with the recommended option first, labelled and not
   expect(text(get(root, "ask-detail-2"))).toBe("A neutral alternative");
   expect([get(root, "ask-question").styles.bg, get(root, "ask-context").styles.bg]).toEqual([
     "#292929",
-    "#111111",
+    "#141414",
   ]);
   expect([get(root, "ask-option-1").styles.bg, get(root, "ask-option-0").styles.bg]).toEqual([
-    "#111111",
-    "#111111",
+    "#141414",
+    "#141414",
   ]);
   expect(get(root, "ask-option-0").hoverStyles.bg).toBe("#404040");
   expect(text(get(root, "ask-rec-reason"))).toBe("Why recommended fits the pill");
   expect(text(get(root, "ask-rec-reason-label"))).toBe("Why recommended");
   expect(text(get(root, "ask-touches"))).toBe("Touches skills herdr-finbar");
-  expect(get(root, "ask-touches").styles.bg).toBe("#111111");
+  expect(get(root, "ask-touches").styles.bg).toBe("#141414");
   expect(ids(root, "fact-touches")).toEqual([]);
   expect(text(get(root, "decided-0"))).toBe("Keep it read-only 2026-11-16");
   expect(text(get(root, "fact-due"))).toBe("Due 2026-11-20");
@@ -781,7 +781,7 @@ test("shows a pending discussion with its marker and note in the ask card", asyn
   expect(text(get(root, "ask-discuss-tag"))).toBe("In discussion");
   expect(text(get(root, "ask-discuss-note"))).toBe("Note: compare migration support");
   expect(ids(root, "ask-discuss-detail")).toEqual([]);
-  expect(get(root, "ask-discuss").styles.bg).toBe("#111111");
+  expect(get(root, "ask-discuss").styles.bg).toBe("#141414");
   expect(get(root, "ask-discuss").click).toBeDefined();
   expect(ids(root, "decided-")).toEqual(["decided-header", "decided-0"]);
   expect(text(get(root, "decided-0"))).toBe("Keep it read-only 2026-11-16");
@@ -799,8 +799,8 @@ test("keeps an ask without a recommendation in its own order, with nothing highl
   expect(text(get(root, "ask-option-1"))).toBe("2. blocked Blocked means unavailable");
   expect(ids(root, "ask-detail-")).toEqual(["ask-detail-1"]);
   expect([get(root, "ask-option-0").styles.bg, get(root, "ask-option-1").styles.bg]).toEqual([
-    "#111111",
-    "#111111",
+    "#141414",
+    "#141414",
   ]);
   expect(ids(root, "ask-rec-reason")).toEqual([]);
   expect(text(get(root, "fact-touches"))).toBe("Touches None");
@@ -931,7 +931,7 @@ test("answers with a picked option through the CLI, then keeps the answered ask 
   const picked = render();
   expect([get(picked, "ask-option-0").styles.bg, get(picked, "ask-option-1").styles.bg]).toEqual([
     "#2563eb",
-    "#111111",
+    "#141414",
   ]);
   expect(host.execs).toEqual([]);
   host.files.set(DOC, JSON.stringify(answered("Coordinate backlog")));
@@ -1002,9 +1002,9 @@ test("answers with typed text over the picked option, a leading dash kept as one
   typeInto(host.inputs[0]!, "  -call it Board ", ctx.cx);
   const typed = render();
   expect(ids(typed, "ask-option-").map((id) => get(typed, id).styles.bg)).toEqual([
-    "#111111",
-    "#111111",
-    "#111111",
+    "#141414",
+    "#141414",
+    "#141414",
   ]);
   host.files.set(DOC, JSON.stringify(answered("-call it Board")));
   get(typed, "ask-answer-submit").click!({}, ctx.cx);

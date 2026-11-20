@@ -37,6 +37,7 @@ import {
   letThrough,
 } from "@wyattjoh/herdr-ui";
 import type { ButtonStyle, Theme } from "@wyattjoh/herdr-ui";
+import { opaqueOver, tint } from "@wyattjoh/herdr-ui/pure";
 import { isDiscussion } from "../../lib/store.ts";
 import type { AnsweredAsk, Ask, Backlog, Finding, Item } from "../../lib/store.ts";
 import {
@@ -459,7 +460,11 @@ const ANSWER_BUTTON_STYLE: ButtonStyle = {
 };
 
 // The answer field is app-specific; the package owns its surrounding card item and button.
-const askBodyRow = (t: Theme, id: string): Element => detailRow(t, id).bg(t.canvas);
+// Ask rows sit halfway between the cards' canvas and the darker sidebar chrome, so an ask stands
+// out from the cards around it while following the theme.
+const askSurface = (t: Theme): string =>
+  opaqueOver(tint(t.chrome as string, "80"), t.canvas as string);
+const askBodyRow = (t: Theme, id: string): Element => detailRow(t, id).bg(askSurface(t) as Color);
 
 const answerRows = (t: Theme, answer: AnswerModel, prefix = "ask"): Element[] => {
   const { draft } = answer;
