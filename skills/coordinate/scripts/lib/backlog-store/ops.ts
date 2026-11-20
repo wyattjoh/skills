@@ -49,6 +49,7 @@ export const addItem = (
     touches: [],
     decided: [],
     ask: null,
+    answered: [],
     due: null,
     delegates: [],
     createdAt: input.now,
@@ -323,6 +324,10 @@ export const updateItem = (backlog: Backlog, input: ItemUpdate): OpResult<Item> 
     touches,
     due: input.due === undefined ? found.due : input.due,
     ask: asked ?? (input.answer === undefined ? found.ask : null),
+    answered:
+      input.answer !== undefined && found.ask
+        ? [...found.answered, { ...found.ask, answer: input.answer.trim(), answeredAt: at }]
+        : found.answered,
     decided: [
       ...found.decided,
       ...(input.answer !== undefined && found.ask

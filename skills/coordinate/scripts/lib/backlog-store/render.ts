@@ -1,4 +1,36 @@
-import { ITEM_STATUSES, type Backlog, type Item } from "./schema.ts";
+import { ITEM_STATUSES, type Ask, type Backlog, type Item } from "./schema.ts";
+
+const askLines = (ask: Ask, header: string): string[] => {
+  const lines = [header];
+  if (ask.context) lines.push(`    - context: ${ask.context}`);
+  const choices = ask.options.map((option, index) => ({ option, index }));
+  const recIndex = ask.rec ? choices.find(({ option }) => option === ask.rec)?.index : undefined;
+  const ordered =
+    recIndex === undefined
+      ? choices
+      : [choices[recIndex]!, ...choices.filter(({ index }) => index !== recIndex)];
+  for (const { option, index } of ordered) {
+    const recommended = option === ask.rec;
+    const detail = ask.optionDetails?.[index];
+    const label = recommended
+      ? `${option} (recommended${ask.recReason ? `: ${ask.recReason}` : ""})`
+      : option;
+    lines.push(`    - ${label}${detail ? `: ${detail}` : ""}`);
+  }
+  return lines;
+};
+
+const answeredLines = (item: Item): string[] => {
+  const lines: string[] = [];
+  for (let index = item.answered.length - 1; index >= 0; index -= 1) {
+    const answered = item.answered[index]!;
+    lines.push(
+      ...askLines(answered, `  - answered ask (${answered.answeredAt}): ${answered.question}`),
+      `    - answer: ${answered.answer}`,
+    );
+  }
+  return lines;
+};
 
 const itemLines = (item: Item, idle: ReadonlySet<string>): string[] => {
   const facts = [
@@ -8,26 +40,8 @@ const itemLines = (item: Item, idle: ReadonlySet<string>): string[] => {
   const lines = [
     `- ${item.id} [${item.status}${idle.has(item.id) ? ", none live" : ""}] ${item.title}${facts.map((fact) => ` · ${fact}`).join("")}`,
   ];
-  if (item.ask) {
-    lines.push(`  - ask: ${item.ask.question}`);
-    if (item.ask.context) lines.push(`    - context: ${item.ask.context}`);
-    const choices = item.ask.options.map((option, index) => ({ option, index }));
-    const recIndex = item.ask.rec
-      ? choices.find(({ option }) => option === item.ask?.rec)?.index
-      : undefined;
-    const ordered =
-      recIndex === undefined
-        ? choices
-        : [choices[recIndex]!, ...choices.filter(({ index }) => index !== recIndex)];
-    for (const { option, index } of ordered) {
-      const recommended = option === item.ask.rec;
-      const detail = item.ask.optionDetails?.[index];
-      const label = recommended
-        ? `${option} (recommended${item.ask.recReason ? `: ${item.ask.recReason}` : ""})`
-        : option;
-      lines.push(`    - ${label}${detail ? `: ${detail}` : ""}`);
-    }
-  }
+  if (item.ask) lines.push(...askLines(item.ask, `  - ask: ${item.ask.question}`));
+  lines.push(...answeredLines(item));
   for (const entry of item.decided) lines.push(`  - decided ${entry.at}: ${entry.text}`);
   for (const ref of item.delegates)
     lines.push(
@@ -38,6 +52,8 @@ const itemLines = (item: Item, idle: ReadonlySet<string>): string[] => {
 
 const closedLine = (item: Item): string =>
   `- ${item.id} [${item.status} ${(item.closedAt ?? "").slice(0, 10)}] ${item.title}: ${item.outcome ?? ""}`;
+
+const closedLines = (item: Item): string[] => [closedLine(item), ...answeredLines(item)];
 
 const closed = (item: Item): boolean => item.status === "done" || item.status === "dismissed";
 
@@ -88,7 +104,7 @@ export const renderBacklog = (backlog: Backlog, idle: ReadonlySet<string> = new 
     "",
     "## Done",
     "",
-    ...(done.length > 0 ? done.map(closedLine) : ["(none)"]),
+    ...(done.length > 0 ? done.flatMap(closedLines) : ["(none)"]),
   );
   return `${lines.join("\n")}\n`;
 };

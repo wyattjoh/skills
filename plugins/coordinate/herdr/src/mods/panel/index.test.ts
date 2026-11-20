@@ -728,10 +728,15 @@ test("opens an item's detail with the recommended option first, labelled and not
   expect(get(root, "ask-detail-1").styles.text_color).toBe("#a3a3a3");
   expect(text(get(root, "ask-detail-0"))).toBe("Long form for the tab");
   expect(text(get(root, "ask-detail-2"))).toBe("A neutral alternative");
-  expect([get(root, "ask-option-1").styles.bg, get(root, "ask-option-0").styles.bg]).toEqual([
-    undefined,
-    undefined,
+  expect([get(root, "ask-question").styles.bg, get(root, "ask-context").styles.bg]).toEqual([
+    "#292929",
+    "#111111",
   ]);
+  expect([get(root, "ask-option-1").styles.bg, get(root, "ask-option-0").styles.bg]).toEqual([
+    "#111111",
+    "#111111",
+  ]);
+  expect(get(root, "ask-option-0").hoverStyles.bg).toBe("#404040");
   expect(text(get(root, "ask-rec-reason"))).toBe("fits the pill");
   expect(text(get(root, "decided-0"))).toBe("Keep it read-only 2026-11-16");
   expect(text(get(root, "fact-touches"))).toBe("Touches skills herdr-finbar");
@@ -756,8 +761,8 @@ test("keeps an ask without a recommendation in its own order, with nothing highl
   expect(text(get(root, "ask-option-1"))).toBe("blocked Blocked means unavailable");
   expect(ids(root, "ask-detail-")).toEqual(["ask-detail-1"]);
   expect([get(root, "ask-option-0").styles.bg, get(root, "ask-option-1").styles.bg]).toEqual([
-    undefined,
-    undefined,
+    "#111111",
+    "#111111",
   ]);
   expect(ids(root, "ask-rec-reason")).toEqual([]);
   expect(text(get(root, "fact-touches"))).toBe("Touches None");
@@ -767,6 +772,88 @@ test("keeps an ask without a recommendation in its own order, with nothing highl
 
 // The document after the CLI recorded an answer to i1's ask.
 const answered = (answer: string): Backlog => recordAnswer(withAsk(), "i1", answer);
+
+const withAskHistory = (): Backlog => {
+  const backlog = withAsk();
+  return {
+    ...backlog,
+    items: backlog.items.map((item) =>
+      item.id !== "i1"
+        ? item
+        : {
+            ...item,
+            answered: [
+              {
+                question: "Which format?",
+                context: "Used in CI",
+                options: ["yaml", "json"],
+                optionDetails: ["Supports comments", "Easy to inspect"],
+                rec: "json",
+                recReason: "existing tooling",
+                answer: "json",
+                answeredAt: "2026-11-15",
+              },
+              {
+                question: "Which folder?",
+                context: null,
+                options: ["docs", "repo"],
+                optionDetails: ["Docs folder", "Repo root"],
+                rec: "docs",
+                recReason: "keeps docs together",
+                answer: "keep it beside the docs",
+                answeredAt: "2026-11-16",
+              },
+            ],
+          },
+    ),
+  };
+};
+
+test("shows the open ask first and earlier answered asks read-only, newest first", async () => {
+  focusDomain("alpha");
+  host.files.set(DOC, JSON.stringify(withAskHistory()));
+  const { ctx, render } = await mount();
+  get(render(), "item-i1").click!({}, ctx.cx);
+  const root = render();
+
+  expect(ids(root, "ask-").filter((id) => id.endsWith("-header"))).toEqual([
+    "ask-header",
+    "ask-answered-1-header",
+    "ask-answered-0-header",
+  ]);
+  expect([
+    text(get(root, "ask-question")),
+    text(get(root, "ask-answered-1-question")),
+    text(get(root, "ask-answered-0-question")),
+  ]).toEqual(["Which title?", "Which folder?", "Which format?"]);
+  expect(ids(root, "ask-answered-1-context")).toEqual([]);
+  expect(ids(root, "ask-answered-0-option-")).toEqual([
+    "ask-answered-0-option-1",
+    "ask-answered-0-option-0",
+  ]);
+  expect(get(root, "ask-answered-0-option-1").styles.bg).toBe("#2563eb");
+  expect(text(get(root, "ask-answered-0-option-1"))).toContain("Recommended Answered");
+  expect(text(get(root, "ask-answered-0-detail-1"))).toBe("Easy to inspect");
+  expect(text(get(root, "ask-answered-0-rec-reason"))).toBe("existing tooling");
+  expect(text(get(root, "ask-answered-0-answered-at"))).toBe("Answered 2026-11-15");
+  expect(text(get(root, "ask-answered-1-answer"))).toBe(
+    "Answer keep it beside the docs 2026-11-16",
+  );
+  expect(ids(root, "ask-answered-1-answer-submit")).toEqual([]);
+  expect(get(root, "ask-answered-1-option-0").click).toBe(undefined);
+  expect(get(root, "ask-answered-1-option-1").click).toBe(undefined);
+  expect(get(root, "ask-option-0").click).toBeDefined();
+});
+
+test("loads legacy items without answered history as empty history", async () => {
+  focusDomain("alpha");
+  const legacy = JSON.parse(JSON.stringify(withAsk()));
+  delete legacy.items[0].answered;
+  host.files.set(DOC, JSON.stringify(legacy));
+  const { view } = await mount();
+  expect(view.doc.kind).toBe("loaded");
+  if (view.doc.kind === "loaded") expect(view.doc.backlog.items[0]?.answered).toEqual([]);
+});
 
 const answerArgs = (id: string, answer: string) => [
   "-u",
@@ -782,7 +869,7 @@ const answerArgs = (id: string, answer: string) => [
   answer,
 ];
 
-test("answers with a picked option through the CLI, then shows the item as it reloads", async () => {
+test("answers with a picked option through the CLI, then keeps the answered ask on reload", async () => {
   focusDomain("alpha");
   host.files.set(DOC, JSON.stringify(withAsk()));
   const { ctx, render } = await mount();
@@ -796,7 +883,7 @@ test("answers with a picked option through the CLI, then shows the item as it re
   const picked = render();
   expect([get(picked, "ask-option-0").styles.bg, get(picked, "ask-option-1").styles.bg]).toEqual([
     "#2563eb",
-    undefined,
+    "#111111",
   ]);
   expect(host.execs).toEqual([]);
   host.files.set(DOC, JSON.stringify(answered("Coordinate backlog")));
@@ -807,7 +894,12 @@ test("answers with a picked option through the CLI, then shows the item as it re
     { command: "/usr/bin/env", args: answerArgs("i1", "Coordinate backlog") },
   ]);
   const root = render();
-  expect(ids(root, "ask-")).toEqual([]);
+  expect(text(get(root, "ask-answered-0-question"))).toBe("Which title?");
+  expect(text(get(root, "ask-answered-0-option-0"))).toContain("Answered");
+  expect(get(root, "ask-answered-0-option-0").styles.bg).toBe("#2563eb");
+  expect(text(get(root, "ask-answered-0-answered-at"))).toBe("Answered 2026-11-17");
+  expect(ids(root, "ask-answer-submit")).toEqual([]);
+  expect(get(root, "ask-answered-0-option-0").click).toBe(undefined);
   expect(text(get(root, "decided-1"))).toBe('Re "Which title?": Coordinate backlog 2026-11-17');
   press(root, "crumb-items", ctx.cx);
   const list = render();
@@ -824,15 +916,19 @@ test("answers with typed text over the picked option, a leading dash kept as one
   typeInto(host.inputs[0]!, "  -call it Board ", ctx.cx);
   const typed = render();
   expect(ids(typed, "ask-option-").map((id) => get(typed, id).styles.bg)).toEqual([
-    undefined,
-    undefined,
-    undefined,
+    "#111111",
+    "#111111",
+    "#111111",
   ]);
+  host.files.set(DOC, JSON.stringify(answered("-call it Board")));
   get(typed, "ask-answer-submit").click!({}, ctx.cx);
   await settle();
   expect(host.execs).toEqual([
     { command: "/usr/bin/env", args: answerArgs("i1", "-call it Board") },
   ]);
+  const root = render();
+  expect(text(get(root, "ask-answered-0-answer"))).toBe("Answer -call it Board 2026-11-17");
+  expect(ids(root, "ask-answer-submit")).toEqual([]);
 });
 
 test("shows the CLI's message and keeps the draft when recording fails or cannot start", async () => {

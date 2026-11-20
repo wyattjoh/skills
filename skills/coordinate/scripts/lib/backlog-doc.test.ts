@@ -98,6 +98,7 @@ describe("item add", () => {
       touches: [],
       decided: [],
       ask: null,
+      answered: [],
       due: null,
       delegates: [],
       createdAt: LATER,
@@ -592,7 +593,22 @@ describe("item update", () => {
     });
   });
 
-  it("answering an ask clears it and records the answer as a dated decision", async () => {
+  it("defaults answered history on legacy items when read and persists it on the next write", async () => {
+    const { cfg, path } = await started();
+    await runWith(itemAdd(cfg, "app", { title: "a", json: false, now: NOW }));
+    const legacy = read(path);
+    delete legacy.items[0].answered;
+    writeFileSync(path, JSON.stringify(legacy));
+
+    const shown = JSON.parse((await runWith(showBacklog(cfg, "app", true))).join("\n"));
+    expect(shown.items[0].answered).toEqual([]);
+    expect(read(path).items[0].answered).toBe(undefined);
+
+    await runWith(itemUpdate(cfg, "app", update({ decided: ["kept history"], now: NOW })));
+    expect(read(path).items[0].answered).toEqual([]);
+  });
+
+  it("answering an ask keeps its details in history and records the answer as a dated decision", async () => {
     const { cfg, path } = await started();
     await runWith(itemAdd(cfg, "app", { title: "a", json: false, now: NOW }));
     await runWith(
@@ -617,6 +633,17 @@ describe("item update", () => {
       touches: [],
       decided: [{ text: 'Re "Which store?": json, but keep it small', at: "2026-11-18" }],
       ask: null,
+      answered: [
+        {
+          question: "Which store?",
+          context: null,
+          options: ["sqlite", "json"],
+          rec: null,
+          recReason: null,
+          answer: "json, but keep it small",
+          answeredAt: "2026-11-18",
+        },
+      ],
       due: null,
       delegates: [],
       createdAt: NOW,
@@ -625,6 +652,28 @@ describe("item update", () => {
     };
     expect(JSON.parse(printed.join("\n"))).toEqual(answered);
     expect(read(path).items[0]).toEqual(answered);
+    await runWith(
+      itemUpdate(cfg, "app", update({ ask: "Where next?", options: ["cache"], rec: "cache" })),
+    );
+    const shown = (await runWith(showBacklog(cfg, "app", false))).join("\n");
+    const item = shown.split("## Open\n\n")[1]?.split("\n\n")[0] ?? "";
+    expect(item.indexOf("  - ask: Where next?")).toBeLessThan(
+      item.indexOf("  - answered ask (2026-11-18): Which store?"),
+    );
+    expect(item).toContain("    - answer: json, but keep it small");
+
+    await runWith(
+      itemClose(cfg, "app", {
+        id: "i1",
+        outcome: "finished",
+        dismissed: false,
+        json: false,
+        now: LATER,
+      }),
+    );
+    const done = (await runWith(showBacklog(cfg, "app", false))).join("\n").split("## Done\n\n")[1];
+    expect(done).toContain("  - answered ask (2026-11-18): Which store?");
+    expect(done).toContain("    - answer: json, but keep it small");
   });
 
   it.each([
@@ -1091,6 +1140,7 @@ describe("retention", () => {
     touches: [],
     decided: [],
     ask: null,
+    answered: [],
     due: null,
     delegates: [],
     createdAt: NOW,

@@ -43,6 +43,9 @@ export type Ask = {
   recReason: string | null;
 };
 
+/** A completed ask and the answer recorded at the time it was resolved. */
+export type AnsweredAsk = Ask & { answer: string; answeredAt: string };
+
 /**
  * A delegate filed under an item. The session id is the stable key; no address is stored.
  */
@@ -65,6 +68,7 @@ export type Item = {
   touches: string[];
   decided: Dated[];
   ask: Ask | null;
+  answered: AnsweredAsk[];
   due: string | null;
   delegates: DelegateRef[];
   createdAt: string;
@@ -179,6 +183,11 @@ export const validateBacklog = (value: unknown): Validated => {
       return Number.isSafeInteger(number) ? Math.max(next, number + 1) : next;
     }, 1);
   }
+  if (Array.isArray(candidate.items)) {
+    candidate.items = candidate.items.map((item: unknown) =>
+      isRecord(item) && !("answered" in item) ? { ...item, answered: [] } : item,
+    );
+  }
   if (value.schemaVersion !== 1) errors.push("schemaVersion must be 1");
   nonEmpty("domain", candidate.domain);
   textOrNull("focus", candidate.focus);
@@ -244,28 +253,41 @@ export const validateBacklog = (value: unknown): Validated => {
       errors.push(`${where}.status must be one of ${ITEM_STATUSES.join(", ")}`);
     strings(`${where}.touches`, item.touches);
     dated(`${where}.decided`, item.decided);
-    if (item.ask !== null) {
-      if (!isRecord(item.ask)) errors.push(`${where}.ask must be an object or null`);
-      else {
-        nonEmpty(`${where}.ask.question`, item.ask.question);
-        textOrNull(`${where}.ask.context`, item.ask.context);
-        strings(`${where}.ask.options`, item.ask.options);
-        if (item.ask.optionDetails !== undefined) {
-          strings(`${where}.ask.optionDetails`, item.ask.optionDetails);
-          if (
-            Array.isArray(item.ask.optionDetails) &&
-            Array.isArray(item.ask.options) &&
-            item.ask.optionDetails.length !== item.ask.options.length
-          )
-            errors.push(`${where}.ask.optionDetails must have the same length as options`);
-        }
-        textOrNull(`${where}.ask.rec`, item.ask.rec);
-        textOrNull(`${where}.ask.recReason`, item.ask.recReason);
-        const { options, rec } = item.ask;
-        if (typeof rec === "string" && !(Array.isArray(options) && options.includes(rec)))
-          errors.push(`${where}.ask.rec must be one of its options`);
+    const checkAsk = (askWhere: string, ask: unknown): void => {
+      if (!isRecord(ask)) {
+        errors.push(`${askWhere} must be an object`);
+        return;
       }
-    }
+      nonEmpty(`${askWhere}.question`, ask.question);
+      textOrNull(`${askWhere}.context`, ask.context);
+      strings(`${askWhere}.options`, ask.options);
+      if (ask.optionDetails !== undefined) {
+        strings(`${askWhere}.optionDetails`, ask.optionDetails);
+        if (
+          Array.isArray(ask.optionDetails) &&
+          Array.isArray(ask.options) &&
+          ask.optionDetails.length !== ask.options.length
+        )
+          errors.push(`${askWhere}.optionDetails must have the same length as options`);
+      }
+      textOrNull(`${askWhere}.rec`, ask.rec);
+      textOrNull(`${askWhere}.recReason`, ask.recReason);
+      if (
+        typeof ask.rec === "string" &&
+        !(Array.isArray(ask.options) && ask.options.includes(ask.rec))
+      )
+        errors.push(`${askWhere}.rec must be one of its options`);
+    };
+    if (item.ask !== null) checkAsk(`${where}.ask`, item.ask);
+    list(`${where}.answered`, item.answered).forEach((entry, at) => {
+      const entryWhere = `${where}.answered[${at}]`;
+      checkAsk(entryWhere, entry);
+      if (isRecord(entry)) {
+        nonEmpty(`${entryWhere}.answer`, entry.answer);
+        if (typeof entry.answeredAt !== "string" || !DATE.test(entry.answeredAt))
+          errors.push(`${entryWhere}.answeredAt must be YYYY-MM-DD`);
+      }
+    });
     if (item.due !== null && !(typeof item.due === "string" && DATE.test(item.due)))
       errors.push(`${where}.due must be YYYY-MM-DD or null`);
     const delegates = list(`${where}.delegates`, item.delegates);

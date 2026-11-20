@@ -37,7 +37,7 @@ import {
   letThrough,
 } from "@wyattjoh/herdr-ui";
 import type { ButtonStyle, Theme } from "@wyattjoh/herdr-ui";
-import type { Backlog, Finding, Item } from "../../lib/store.ts";
+import type { AnsweredAsk, Ask, Backlog, Finding, Item } from "../../lib/store.ts";
 import {
   ANSWER,
   COUNT_TONES,
@@ -450,11 +450,13 @@ const ANSWER_BUTTON_STYLE: ButtonStyle = {
 };
 
 // The answer field is app-specific; the package owns its surrounding card item and button.
-const answerRows = (t: Theme, answer: AnswerModel): Element[] => {
+const askBodyRow = (t: Theme, id: string): Element => detailRow(t, id).bg(t.canvas);
+
+const answerRows = (t: Theme, answer: AnswerModel, prefix = "ask"): Element[] => {
   const { draft } = answer;
   const enabled = chosenAnswer(draft) !== undefined && !draft.busy;
   const field = div()
-    .id("ask-answer-field")
+    .id(`${prefix}-answer-field`)
     .flex_1()
     .min_w(0)
     .h(ANSWER.height)
@@ -469,17 +471,17 @@ const answerRows = (t: Theme, answer: AnswerModel): Element[] => {
       el.child(Input.new(answer.input!).h_full().text_size(TEXT.body).text_color(t.foreground)),
     );
   const submit = button(t, {
-    id: "ask-answer-submit",
+    id: `${prefix}-answer-submit`,
     label: draft.busy ? "Answering…" : "Answer",
     style: enabled ? ANSWER_BUTTON_STYLE : { ...ANSWER_BUTTON_STYLE, background: "raised" },
     onClick: enabled ? (cx) => answer.submit(cx) : undefined,
   });
   return [
-    detailRow(t, "ask-answer").child(h_flex().gap(ANSWER.gap).child(field).child(submit)),
+    askBodyRow(t, `${prefix}-answer`).child(h_flex().gap(ANSWER.gap).child(field).child(submit)),
     ...(draft.error === undefined
       ? []
       : [
-          detailRow(t, "ask-answer-error")
+          askBodyRow(t, `${prefix}-answer-error`)
             .text_size(TEXT.label)
             .text_color(role(t, "ansi1"))
             .child(draft.error),
@@ -487,24 +489,40 @@ const answerRows = (t: Theme, answer: AnswerModel): Element[] => {
   ];
 };
 
-const askCard = (t: Theme, item: Item, answer: AnswerModel | undefined): Element[] => {
-  const ask = item.ask;
-  if (ask === null) return [];
-  // The picked option is highlighted until text is typed, which then answers instead.
+const askCard = (
+  t: Theme,
+  id: string,
+  ask: Ask,
+  answer: AnswerModel | undefined,
+  completed: AnsweredAsk | undefined,
+): Element[] => {
+  // Typed text answers instead of the picked option; completed cards have no active draft.
   const picked =
-    answer === undefined ? ask.rec : answer.draft.text.trim() === "" ? answer.draft.choice : null;
-  const question = detailRow(t, "ask-question").font_medium().child(ask.question);
+    completed !== undefined
+      ? completed.answer
+      : answer === undefined
+        ? ask.rec
+        : answer.draft.text.trim() === ""
+          ? answer.draft.choice
+          : null;
+  const question = detailRow(t, `${id}-question`)
+    .bg(t.popover)
+    .rounded_t(CARD.innerRadius)
+    .font_medium()
+    .child(ask.question);
   const context =
     ask.context === null
       ? []
-      : [detailRow(t, "ask-context").text_color(t.muted).child(ask.context)];
-  const options = rankedOptions(ask).map(({ option, index, rec }) =>
-    detailRow(t, `ask-option-${index}`)
-      .when(option === picked, (el) => el.bg(t.selected))
-      .when(answer !== undefined, (el) =>
+      : [askBodyRow(t, `${id}-context`).text_color(t.muted).child(ask.context)];
+  const options = rankedOptions(ask).map(({ option, index, rec }) => {
+    const selected = option === picked;
+    const chosen = completed !== undefined && option === completed.answer;
+    return askBodyRow(t, `${id}-option-${index}`)
+      .when(selected, (el) => el.bg(t.selected))
+      .when(answer !== undefined && completed === undefined, (el) =>
         el
           .cursor_pointer()
-          .hover((s) => s.bg(option === picked ? t.selected : t.hover))
+          .hover((s) => s.bg(selected ? t.selected : t.hover))
           .on_click((_event, cx) => answer!.choose(option, cx)),
       )
       .child(
@@ -512,12 +530,13 @@ const askCard = (t: Theme, item: Item, answer: AnswerModel | undefined): Element
           .gap(BUTTON_STYLE.gap)
           .items_center()
           .child(div().min_w_0().child(option))
-          .when(rec, (el) => el.child(small(t, t.accent, "Recommended"))),
+          .when(rec, (el) => el.child(small(t, t.accent, "Recommended")))
+          .when(chosen, (el) => el.child(small(t, t.done, "Answered"))),
       )
       .when(Boolean(ask.optionDetails?.[index]), (el) =>
         el.child(
           div()
-            .id(`ask-detail-${index}`)
+            .id(`${id}-detail-${index}`)
             .text_size(TEXT.label)
             .text_color(t.muted)
             .child(ask.optionDetails![index]!),
@@ -526,21 +545,47 @@ const askCard = (t: Theme, item: Item, answer: AnswerModel | undefined): Element
       .when(rec && ask.recReason !== null, (el) =>
         el.child(
           div()
-            .id("ask-rec-reason")
+            .id(`${id}-rec-reason`)
             .text_size(TEXT.label)
             .text_color(t.muted)
             .child(ask.recReason!),
         ),
-      ),
-  );
+      );
+  });
+  const completion =
+    completed === undefined
+      ? answer === undefined
+        ? []
+        : answerRows(t, answer, id)
+      : completed.options.includes(completed.answer)
+        ? [
+            askBodyRow(t, `${id}-answered-at`)
+              .child(small(t, t.muted, "Answered"))
+              .child(div().child(completed.answeredAt)),
+          ]
+        : [
+            askBodyRow(t, `${id}-answer`)
+              .child(small(t, t.muted, "Answer"))
+              .child(div().flex_1().min_w_0().child(completed.answer))
+              .child(small(t, t.muted, completed.answeredAt)),
+          ];
   return [
-    detailCard(t, "ask", "Ask", [
+    detailCard(t, id, completed === undefined ? "Ask" : "Answered ask", [
       question,
       ...context,
       ...options,
-      ...(answer === undefined ? [] : answerRows(t, answer)),
+      ...completion,
     ]),
   ];
+};
+
+const askCards = (t: Theme, item: Item, answer: AnswerModel | undefined): Element[] => {
+  const cards = item.ask === null ? [] : askCard(t, "ask", item.ask, answer, undefined);
+  for (let index = item.answered.length - 1; index >= 0; index -= 1) {
+    const answered = item.answered[index]!;
+    cards.push(...askCard(t, `ask-answered-${index}`, answered, undefined, answered));
+  }
+  return cards;
 };
 
 const decidedCard = (t: Theme, item: Item): Element[] =>
@@ -690,7 +735,7 @@ const detailScreen = (
         role(t, STATUS_TONES[item.status]),
       ),
     )
-    .children(askCard(t, item, answer))
+    .children(askCards(t, item, answer))
     .child(
       detailCard(t, "facts", "Details", [
         fact(t, "fact-due", "Due", item.due === null ? [] : [item.due]),
