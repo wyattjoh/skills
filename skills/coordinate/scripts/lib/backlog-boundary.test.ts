@@ -278,8 +278,6 @@ describe("backlog show", () => {
         "(none)",
         "",
         "## Done",
-        "",
-        "(none)",
       ].join("\n"),
     ]);
   });

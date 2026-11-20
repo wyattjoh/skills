@@ -10,17 +10,17 @@ disable-model-invocation: true
 
 Take the user's ideas, gripes, links and requests for one domain, often half-formed, and see each through, mostly by delegating, so this session stays free for the next item. The domain's **backlog** is your only memory across compaction and restarts. It is a structured document the `coordinate` CLI owns: you record every state change through `backlog`, `item` and `finding` commands and read it back with `coordinate backlog show`, never by editing a file. You are a router, not a pipeline: nothing here merges, lands, pushes or opens a PR unless the user names that integration for the item.
 
-`coordinate` below means `bun $SKILL_DIR/scripts/coordinate.ts`. Its `--help` (and each subcommand's) is the manual for flags and output. Exit 0 is done, 1 is a refusal to act on, 2 is a check that could not run: fix what it prints and run it again. Use the `herdr` skill for any `hc` or `herdr-app` work the script does not cover.
+`coordinate` below means `bun $SKILL_DIR/scripts/coordinate.ts`. Its `--help` (and each subcommand's) is the manual for flags and output. Exit 0 is done, 1 is a refusal to act on, 2 is a check that could not run: fix what it prints and run it again. Text backlog views hide closed items by default; use `coordinate backlog show --done` or `coordinate status --resume --done` to include them. `--json` output is unchanged. Use the `herdr` skill for any `hc` or `herdr-app` work the script does not cover.
 
 ## Start
 
 Run `coordinate start <domain>`. It labels this terminal, creates the backlog document if missing, and prints status, the sweep report and quiet delegates. When it names a legacy Markdown backlog, that file is reference only: read it for context and record what still matters through the commands below. Then:
 
 - **Boundary**: `coordinate backlog boundary add <path>` for each repo or folder the domain owns, `--adjacent` for the ones it reads but does not own. Only owned paths feed status, watch and sweep. Ask once when either list is unclear. Done when `backlog show` lists both and the user has seen them in two lines.
-- Run `coordinate backlog show` and read every open item and finding. Set or refresh the domain's focus line with `coordinate backlog focus "<what the domain is doing now>"`. Arm the watcher (below).
+- Run `coordinate backlog show` and read every open item and finding. Add `--done` when closed-item history is relevant. Set or refresh the domain's focus line with `coordinate backlog focus "<what the domain is doing now>"`. Arm the watcher (below).
 - Report what finished, what waits on the user as self-contained asks, what runs, and what you take next.
 
-After compaction or a restart, run `coordinate status --resume`; arm the watcher unless it prints `watcher running (pid N)`.
+After compaction or a restart, run `coordinate status --resume`; add `--done` when closed-item history is relevant. Arm the watcher unless it prints `watcher running (pid N)`.
 
 ## Each item
 
@@ -98,7 +98,7 @@ The CLI is the backlog's only writer; it validates, locks and writes atomically,
 | The domain renamed                 | `backlog rename <new>` (`--domain <old>` from any terminal); refused while it has a live delegate or watcher                                                                                                                                                      |
 | A finding opened or closed         | `finding add --kind issue\|opportunity "<title>"`, `finding close <id> --outcome ...`                                                                                                                                                                             |
 
-The Backlog panel may edit Boundary paths from outside a Herdr terminal with `backlog boundary add <path> [--adjacent] --domain <d>` and `backlog boundary rm <path> --domain <d>`. Every command takes `--json`; `--help` has the flags. Read it back with `coordinate backlog show` (`--json` for the document). Fields, statuses and invariants: [backlog.md](references/backlog.md).
+The Backlog panel may edit Boundary paths from outside a Herdr terminal with `backlog boundary add <path> [--adjacent] --domain <d>` and `backlog boundary rm <path> --domain <d>`. Every command takes `--json`; `--help` has the flags. Read it back with `coordinate backlog show` (`--json` for the document, `--done` to include closed items). Fields, statuses and invariants: [backlog.md](references/backlog.md).
 
 ## Restart
 

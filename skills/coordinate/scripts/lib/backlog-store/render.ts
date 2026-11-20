@@ -72,9 +72,14 @@ const list = (paths: string[]): string => (paths.length > 0 ? paths.join(", ") :
  * Render a backlog as Markdown for reading; the document stays the only source of truth.
  * @param backlog Document.
  * @param idle Ids of delegated items with no live delegate, marked `[delegated, none live]`.
+ * @param showDone Include closed items instead of the hidden-count line.
  * @returns Markdown, ending in a newline.
  */
-export const renderBacklog = (backlog: Backlog, idle: ReadonlySet<string> = new Set()): string => {
+export const renderBacklog = (
+  backlog: Backlog,
+  idle: ReadonlySet<string> = new Set(),
+  showDone = false,
+): string => {
   const open = ITEM_STATUSES.flatMap((status) =>
     backlog.items.filter((item) => item.status === status && !closed(item)),
   );
@@ -113,7 +118,13 @@ export const renderBacklog = (backlog: Backlog, idle: ReadonlySet<string> = new 
     "",
     "## Done",
     "",
-    ...(done.length > 0 ? done.flatMap(closedLines) : ["(none)"]),
+    ...(showDone
+      ? done.length > 0
+        ? done.flatMap(closedLines)
+        : ["(none)"]
+      : done.length > 0
+        ? [`${done.length} closed items hidden (coordinate backlog show --done)`]
+        : []),
   );
   return `${lines.join("\n")}\n`;
 };

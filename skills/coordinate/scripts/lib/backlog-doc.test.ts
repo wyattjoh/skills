@@ -770,7 +770,9 @@ describe("item update", () => {
         now: LATER,
       }),
     );
-    const done = (await runWith(showBacklog(cfg, "app", false))).join("\n").split("## Done\n\n")[1];
+    const done = (await runWith(showBacklog(cfg, "app", false, undefined, true)))
+      .join("\n")
+      .split("## Done\n\n")[1];
     expect(done).toContain("  - answered ask (2026-11-18): Which store?");
     expect(done).toContain("    - answer: json, but keep it small");
   });
@@ -928,7 +930,7 @@ describe("status --resume", () => {
 });
 
 describe("backlog show", () => {
-  it("renders Markdown with the legacy pointer, open and done items", async () => {
+  it("hides closed items by default and prints them with --done", async () => {
     const state = dir();
     const cfg = await config(state);
     mkdirSync(join(state, "md"));
@@ -936,11 +938,21 @@ describe("backlog show", () => {
     await runWith(start(cfg, "app", { HC_TERMINAL_ID: "t9" }), hcFake().layer);
     await runWith(itemAdd(cfg, "app", { title: "fix login", json: false, now: NOW }));
     await runWith(itemAdd(cfg, "app", { title: "docs", json: false, now: NOW }));
+    await runWith(itemAdd(cfg, "app", { title: "ignored", json: false, now: NOW }));
     await runWith(
       itemClose(cfg, "app", {
         id: "i2",
         outcome: "merged",
         dismissed: false,
+        json: false,
+        now: LATER,
+      }),
+    );
+    await runWith(
+      itemClose(cfg, "app", {
+        id: "i3",
+        outcome: "not planned",
+        dismissed: true,
         json: false,
         now: LATER,
       }),
@@ -970,7 +982,36 @@ describe("backlog show", () => {
         "",
         "## Done",
         "",
+        "2 closed items hidden (coordinate backlog show --done)",
+      ].join("\n"),
+    ]);
+    expect(await runWith(showBacklog(cfg, "app", false, undefined, true))).toEqual([
+      [
+        "# app backlog",
+        "",
+        `Legacy Markdown backlog (reference only, not read): ${join(state, "md", "app-backlog.md")}`,
+        "",
+        "## Boundary",
+        "",
+        "- Owned: (none)",
+        "- Adjacent: (none)",
+        "",
+        "## Policies",
+        "",
+        "(none)",
+        "",
+        "## Open",
+        "",
+        "- i1 [open] fix login",
+        "",
+        "## Findings",
+        "",
+        "(none)",
+        "",
+        "## Done",
+        "",
         "- i2 [done 2026-11-18] docs: merged",
+        "- i3 [dismissed 2026-11-18] ignored: not planned",
       ].join("\n"),
     ]);
   });
@@ -1004,9 +1045,9 @@ describe("backlog show", () => {
   it("prints the document with --json", async () => {
     const { cfg, path } = await started();
     await runWith(itemAdd(cfg, "app", { title: "a", json: false, now: NOW }));
-    expect(JSON.parse((await runWith(showBacklog(cfg, "app", true))).join("\n"))).toEqual(
-      read(path),
-    );
+    expect(
+      JSON.parse((await runWith(showBacklog(cfg, "app", true, undefined, true))).join("\n")),
+    ).toEqual(read(path));
   });
 });
 

@@ -172,6 +172,7 @@ const switchOptions = new Set([
   "--all-safe",
   "--clear",
   "--dismissed",
+  "--done",
   "--follow",
   "--json",
   "--list",
@@ -491,13 +492,20 @@ const statusCommand = Command.make(
   {
     domain: optionalStringFlag("domain", "domain (default: this coordinator's label)"),
     resume: booleanFlag("resume", "also print the rendered backlog and the watcher state"),
+    done: booleanFlag("done", "include closed items in the rendered backlog (with --resume)"),
   },
   (options) =>
     execute(
       (config) =>
         Effect.gen(function* () {
           const domain = yield* resolveDomain(Option.getOrUndefined(options.domain));
-          const lines = yield* domainStatus(config, domain, options.resume, Date.now());
+          const lines = yield* domainStatus(
+            config,
+            domain,
+            options.resume,
+            Date.now(),
+            options.done,
+          );
           const line = yield* watcherBanner(config);
           return line ? [line, ...lines] : lines;
         }),
@@ -505,7 +513,7 @@ const statusCommand = Command.make(
     ),
 ).pipe(
   Command.withDescription(
-    "delegates, ended delegates and PRs (GitHub and Forgejo), with who acts next",
+    "delegates, ended delegates and PRs (GitHub and Forgejo), with who acts next; --resume renders the backlog and --done includes closed items",
   ),
 );
 
@@ -514,15 +522,18 @@ const backlogShowCommand = Command.make(
   {
     domain: optionalStringFlag("domain", "domain (default: this coordinator's label)"),
     json: booleanFlag("json", "print the document instead of Markdown"),
+    done: booleanFlag("done", "include closed items in the Done section"),
   },
   (options) =>
     execute((config) =>
       Effect.flatMap(resolveDomain(Option.getOrUndefined(options.domain)), (domain) =>
-        showBacklog(config, domain, options.json),
+        showBacklog(config, domain, options.json, undefined, options.done),
       ),
     ),
 ).pipe(
-  Command.withDescription("render the backlog as Markdown, including the legacy Markdown pointer"),
+  Command.withDescription(
+    "render the backlog as Markdown, hiding closed items unless --done is set",
+  ),
 );
 
 const backlogRenameCommand = Command.make(

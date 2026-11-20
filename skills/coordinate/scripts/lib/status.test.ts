@@ -2,7 +2,7 @@ import { afterAll, describe, expect, it } from "bun:test";
 import { rmSync } from "node:fs";
 import { join } from "node:path";
 import { Effect } from "effect";
-import { boundaryAdd, createDocument, itemAdd, itemUpdate } from "./backlog-doc.ts";
+import { boundaryAdd, createDocument, itemAdd, itemClose, itemUpdate } from "./backlog-doc.ts";
 import { resolveConfig } from "./config.ts";
 import { commitFile, g, gitAndFake, initRepo, runWith, tempDir } from "./fixture.ts";
 import { domainStatus } from "./status.ts";
@@ -131,6 +131,41 @@ describe("domainStatus discussion requests", () => {
       '  discuss i1 Choose store: "Which store?" (2026-11-18; compare migrations)',
     );
     expect(lines.filter((line) => line.includes("answer"))).toEqual([]);
+  });
+});
+
+describe("domainStatus resume history", () => {
+  it("hides closed items unless showDone is enabled", async () => {
+    const state = track(tempDir());
+    const config = await Effect.runPromise(
+      resolveConfig({ state_dir: state, backlog_dir: join(state, "backlogs") }, "/c"),
+    );
+    await runWith(createDocument(config, "app"));
+    await runWith(itemAdd(config, "app", { title: "closed task", json: false, now: "2026-11-18" }));
+    await runWith(
+      itemClose(config, "app", {
+        id: "i1",
+        outcome: "finished",
+        dismissed: false,
+        json: false,
+        now: "2026-11-19",
+      }),
+    );
+    const fake = gitAndFake((argv) =>
+      argv[0] === "hc" && argv[1] === "ls" ? ok(JSON.stringify({ terminals: [] })) : ok("{}"),
+    );
+    const hidden = await runWith(
+      domainStatus(config, "app", true, Date.parse("2026-11-19T00:00:00Z")),
+      fake.layer,
+    );
+    expect(hidden.join("\n")).toContain("1 closed items hidden (coordinate backlog show --done)");
+    expect(hidden.filter((line) => line.includes("closed task"))).toEqual([]);
+
+    const shown = await runWith(
+      domainStatus(config, "app", true, Date.parse("2026-11-19T00:00:00Z"), true),
+      fake.layer,
+    );
+    expect(shown.join("\n")).toContain("- i1 [done 2026-11-19] closed task: finished");
   });
 });
 

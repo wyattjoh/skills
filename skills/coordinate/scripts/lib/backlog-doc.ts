@@ -343,6 +343,7 @@ const json = (value: unknown): string[] => [JSON.stringify(value, null, 2)];
  * @param asJson Print the document instead.
  * @param live Session ids of the live delegates when the caller already has them; otherwise
  * they are read, only when an item is delegated. Unreadable liveness marks nothing.
+ * @param showDone Include closed items in text output; JSON output is unchanged.
  * @returns Lines to print.
  */
 export const showBacklog = Effect.fn("showBacklog")(function* (
@@ -350,6 +351,7 @@ export const showBacklog = Effect.fn("showBacklog")(function* (
   domain: string,
   asJson: boolean,
   live: ReadonlySet<string> | undefined = undefined,
+  showDone = false,
 ) {
   const { backlog } = yield* readDocument(config, domain);
   if (asJson) return json(backlog);
@@ -362,7 +364,7 @@ export const showBacklog = Effect.fn("showBacklog")(function* (
         )
       : undefined);
   const idle = sessions ? idleDelegated(backlog, sessions).map((item) => item.id) : [];
-  return [renderBacklog(backlog, new Set(idle)).trimEnd()];
+  return [renderBacklog(backlog, new Set(idle), showDone).trimEnd()];
 });
 
 /**

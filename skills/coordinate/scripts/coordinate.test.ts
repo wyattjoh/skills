@@ -18,6 +18,46 @@ type Result = {
   stderr: string;
 };
 
+describe("coordinate CLI Done history", () => {
+  it("hides closed items from text views unless --done and keeps JSON unchanged", () => {
+    const state = tempDir("coordinate-done-cli-");
+    made.push(state);
+    const env = cliEnv(state, COORDINATOR);
+    const run = (args: string[]): string => {
+      const result = Bun.spawnSync(["bun", cli, ...args], {
+        env,
+        stdout: "pipe",
+        stderr: "pipe",
+        timeout: 10_000,
+      });
+      expect(result.exitCode).toBe(0);
+      return result.stdout.toString();
+    };
+
+    run(["start", "app"]);
+    run(["item", "add", "closed task", "--domain", "app"]);
+    run(["item", "close", "i1", "--outcome", "finished", "--domain", "app"]);
+    const closedDate = new Date().toISOString().slice(0, 10);
+
+    const backlog = run(["backlog", "show", "--domain", "app"]);
+    expect(backlog.split("## Done\n\n")[1]).toBe(
+      "1 closed items hidden (coordinate backlog show --done)\n",
+    );
+    const backlogWithDone = run(["backlog", "show", "--done", "--domain", "app"]);
+    expect(backlogWithDone.split("## Done\n\n")[1]).toBe(
+      `- i1 [done ${closedDate}] closed task: finished\n`,
+    );
+
+    const status = run(["status", "--resume", "--domain", "app"]);
+    expect(status).toContain("1 closed items hidden (coordinate backlog show --done)");
+    const statusWithDone = run(["status", "--resume", "--done", "--domain", "app"]);
+    expect(statusWithDone).toContain(`- i1 [done ${closedDate}] closed task: finished`);
+
+    const document = JSON.parse(run(["backlog", "show", "--json", "--done", "--domain", "app"]));
+    expect(document.items[0].status).toBe("done");
+  }, 30_000);
+});
+
 describe("coordinate CLI parity", () => {
   it("records representative invocations across every command", () => {
     const state = tempDir("coordinate-cli-parity-");
@@ -280,7 +320,7 @@ describe("coordinate CLI parity", () => {
       {
         exit: 0,
         stdout:
-          "app: 0 live delegates, 0 ended\\n\\n# app backlog\\n\\n## Boundary\\n\\n- Owned: (none)\\n- Adjacent: (none)\\n\\n## Policies\\n\\n(none)\\n\\n## Open\\n\\n(none)\\n\\n## Findings\\n\\n(none)\\n\\n## Done\\n\\n(none)\\n\\nno watcher running: arm coordinate watch --follow\\n",
+          "app: 0 live delegates, 0 ended\\n\\n# app backlog\\n\\n## Boundary\\n\\n- Owned: (none)\\n- Adjacent: (none)\\n\\n## Policies\\n\\n(none)\\n\\n## Open\\n\\n(none)\\n\\n## Findings\\n\\n(none)\\n\\n## Done\\n\\nno watcher running: arm coordinate watch --follow\\n",
         stderr: "",
       },
       {
