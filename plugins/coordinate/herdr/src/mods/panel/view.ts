@@ -1,7 +1,6 @@
 // The panel's regions as element functions: everything it draws, from data the View hands in.
 import { div, svg } from "gpui-kit";
 import type { Color, Context, Element } from "gpui-kit";
-import * as herdr from "herdr";
 import { Input, InputState, h_flex, v_flex } from "gpui-base";
 import { answerInputElement } from "./textarea.ts";
 import type { AnswerInputState } from "./textarea.ts";
@@ -34,8 +33,6 @@ import {
   rowNote,
   staticRow,
   titleRow,
-  toolRow,
-  topBar,
   letThrough,
 } from "@wyattjoh/herdr-ui";
 import type { ButtonStyle, Theme } from "@wyattjoh/herdr-ui";
@@ -171,47 +168,28 @@ export const message = (
   return emptyState(t, { id, title, detail });
 };
 
-/**
- * Build the Backlog brand text, applying the configured mod UI font when it is a string.
- * @param uiFont The configured `ui_font` setting.
- * @returns The semibold Backlog label.
- */
-export const backlogBrandText = (uiFont: unknown): Element => {
-  const label = div().font_semibold();
-  return (typeof uiFont === "string" ? label.font_family(uiFont) : label).child("Backlog");
-};
-
-// Keep the shared chrome and tool row, while matching the Files panel's header typography.
-const toolbar = (t: Theme, domain: string | undefined): Element => {
-  const uiFont = typeof herdr.settings === "function" ? herdr.settings().ui_font : undefined;
-  return topBar(t, {
-    content: toolRow({
-      id: "toolbar",
-      brand: h_flex()
-        .id("toolbar-brand")
-        .h(BUTTON_STYLE.height)
-        .flex_none()
-        .items_center()
-        .text_size(13)
-        .text_color(t.foreground)
-        .child(backlogBrandText(uiFont)),
-      leading: [],
-      trailing:
-        domain === undefined
-          ? []
-          : [
-              h_flex()
-                .id("toolbar-domain")
-                .flex_1()
-                .min_w_0()
-                .h(BUTTON_STYLE.height)
-                .items_center()
-                .justify_end()
-                .child(rowNote(t, domain).min_w_0().truncate().text_right()),
-            ],
-    }),
-  });
-};
+// Match Files' plain header row, keeping the domain in the same trailing text slot.
+const toolbar = (t: Theme, domain: string | undefined): Element =>
+  h_flex()
+    .id("toolbar")
+    .h(42)
+    .flex_none()
+    .px(14)
+    .gap(8)
+    .items_center()
+    .border_b(1)
+    .border_color(t.border)
+    .child(div().font_semibold().child("Backlog"))
+    .child(
+      div()
+        .flex_1()
+        .min_w_0()
+        .truncate()
+        .text_right()
+        .text_size(12)
+        .text_color(t.dim)
+        .child(domain ?? ""),
+    );
 
 // The breadcrumb band from @wyattjoh/herdr-ui: every crumb but the last opens its screen.
 const trailBand = (t: Theme, trail: Crumb[], go: (screen: Screen, cx: Context) => void): Element =>
@@ -1256,6 +1234,8 @@ const domainScreens = (t: Theme, model: PanelModel): Element =>
  */
 export const panel = (t: Theme, model: PanelModel): Element =>
   panelFrame(t, "coordinate-panel")
+    .text_color(t.foreground)
+    .text_size(13)
     .child(toolbar(t, model.domain))
     .child(trailBand(t, model.trail, model.go))
     .child(

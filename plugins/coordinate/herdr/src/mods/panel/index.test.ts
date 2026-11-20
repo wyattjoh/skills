@@ -14,14 +14,12 @@ import {
   get,
   host,
   ids,
-  nodeOf,
   resetHost,
   settle,
   text,
   typeInto,
 } from "@wyattjoh/herdr-dev/test/renderer";
 import type { Node } from "@wyattjoh/herdr-dev/test/renderer";
-import { backlogBrandText } from "./view.ts";
 const { setAnswerTextareaTestApi } = await import("./textarea.ts");
 let textareaAutoGrow: { minRows: number; maxRows: number } | undefined;
 setAnswerTextareaTestApi({
@@ -177,28 +175,38 @@ const mount = async () => {
   return { ctx, view, render: () => view.render(ctx.cx as never) as never };
 };
 
-test("renders the toolbar brand without an icon", async () => {
+test("renders the Files-style toolbar header", async () => {
   focusDomain("alpha");
   host.files.set(DOC, JSON.stringify(emptyBacklog("alpha", null)));
   const { render } = await mount();
-  const brand = get(render(), "toolbar-brand");
-  expect(text(brand)).toBe("Backlog");
-  expect(brand.children).toHaveLength(1);
-  expect(brand.styles.text_size).toBe(13);
-  expect(brand.styles.text_color).toBe("#f5f5f5");
-  expect((brand.children[0] as Node).styles.font_semibold).toBe(true);
-});
+  const root = render();
+  const container = get(root, "coordinate-panel");
+  const header = get(root, "toolbar");
+  const brand = header.children[0] as Node;
+  const domain = header.children[1] as Node;
 
-test("uses ui_font for the Backlog brand only when it is a string", () => {
-  const configured = nodeOf(backlogBrandText("JetBrains Mono"));
-  expect(configured.styles.font_family).toBe("JetBrains Mono");
-  expect(configured.styles.font_semibold).toBe(true);
-  expect(text(configured)).toBe("Backlog");
-
-  const unset = nodeOf(backlogBrandText(13));
-  expect(unset.styles.font_family).toBeUndefined();
-  expect(unset.styles.font_semibold).toBe(true);
-  expect(text(unset)).toBe("Backlog");
+  expect([container.styles.text_color, container.styles.text_size]).toEqual(["#f5f5f5", 13]);
+  expect(header.styles).toEqual({
+    id: "toolbar",
+    h: 42,
+    flex_none: true,
+    px: 14,
+    gap: 8,
+    items_center: true,
+    border_b: 1,
+    border_color: "#525252",
+  });
+  expect(header.children).toHaveLength(2);
+  expect([text(brand), brand.styles]).toEqual(["Backlog", { font_semibold: true }]);
+  expect(domain.styles).toEqual({
+    flex_1: true,
+    min_w_0: true,
+    truncate: true,
+    text_right: true,
+    text_size: 12,
+    text_color: "#737373",
+  });
+  expect(text(domain)).toBe("alpha");
 });
 
 test("uses a multiline textarea configured to grow through 100 rows", async () => {
@@ -652,7 +660,9 @@ test("opens a domain from the listing and the home crumb returns to it", async (
   expect(ids(root, "domain-")).toEqual(["domain-alpha", "domain-beta"]);
   expect(trail(root)).toBe("⌂");
   expect(get(root, "crumb-home").click).toBe(undefined);
-  expect([text(get(root, "toolbar")), ids(root, "toolbar-domain")]).toEqual(["Backlog", []]);
+  const toolbar = get(root, "toolbar");
+  expect(toolbar.children).toHaveLength(2);
+  expect(toolbar.children.map((child) => text(child))).toEqual(["Backlog", ""]);
 });
 
 test("the home crumb lists every domain while focus names one, until focus moves", async () => {
@@ -1880,22 +1890,19 @@ test("keeps a domain's ended records while another domain's are looked up", asyn
   expect(lineOf(render(), "i1")).toEqual(["ended", "#737373"]);
 });
 
-test("names the shown domain at the right end of the tool bar, dim and truncating", async () => {
+test("names the shown domain at the right end of the toolbar, dim and truncating", async () => {
   focusDomain("alpha");
   host.files.set(DOC, JSON.stringify(everyStatus()));
   const { render } = await mount();
-  const name = get(render(), "toolbar-domain").nodes[0] as Node;
-  expect([get(render(), "toolbar-domain").styles.flex_1, name.styles]).toEqual([
-    true,
-    {
-      flex_none: true,
-      min_w_0: true,
-      truncate: true,
-      text_right: true,
-      text_size: 12,
-      text_color: "#737373",
-    },
-  ]);
+  const name = get(render(), "toolbar").children[1] as Node;
+  expect(name.styles).toEqual({
+    flex_1: true,
+    min_w_0: true,
+    truncate: true,
+    text_right: true,
+    text_size: 12,
+    text_color: "#737373",
+  });
   expect(text(name)).toBe("alpha");
 });
 
