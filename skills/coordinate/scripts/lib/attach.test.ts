@@ -402,7 +402,7 @@ describe("one session, one item", () => {
       focus: null,
       legacy: null,
       boundary: { owned: [], adjacent: [] },
-      standingYes: [],
+      policies: [],
       items: [
         {
           id: "i1",
@@ -433,6 +433,7 @@ describe("one session, one item", () => {
       ],
       findings: [],
       nextId: 3,
+      nextPolicyId: 1,
     };
     expect(fileDelegate(backlog, { id: "i2", ref: ref("renamed", "s-1") })).toEqual({
       ok: false,

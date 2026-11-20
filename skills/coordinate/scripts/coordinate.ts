@@ -11,8 +11,11 @@ import {
   itemAdd,
   itemClose,
   itemUpdate,
+  policyAdd,
+  policyLs,
+  policyReplace,
+  policyRm,
   showBacklog,
-  standingAdd,
 } from "./lib/backlog-doc.ts";
 import { ITEM_STATUSES, type ItemStatus } from "./lib/backlog-store/schema.ts";
 import { loadConfig, type Config } from "./lib/config.ts";
@@ -284,8 +287,20 @@ const normalizeResumeSpace = (args: readonly string[]): string[] => {
   );
 };
 
+/**
+ * Preserve the former add invocation as an alias without advertising it in generated help.
+ * @param args Original command-line arguments.
+ * @returns Arguments using the current policy command.
+ */
+const normalizeStandingAlias = (args: readonly string[]): string[] =>
+  args[0] === "backlog" && args[1] === "standing" && args[2] === "add"
+    ? ["backlog", "policy", "add", ...args.slice(3)]
+    : [...args];
+
 const normalizeArgs = (args: readonly string[]) =>
-  normalizeLeadingDashValues(normalizeDueOverrides(normalizeResumeSpace(args)));
+  normalizeLeadingDashValues(
+    normalizeDueOverrides(normalizeResumeSpace(normalizeStandingAlias(args))),
+  );
 
 const startCommand = Command.make(
   "start",
@@ -588,18 +603,32 @@ const boundaryCommand = Command.make("boundary").pipe(
   Command.withSubcommands([boundaryAddCommand, boundaryRmCommand]),
 );
 
-const standingAddCommand = Command.make(
+const policyLsCommand = Command.make(
+  "ls",
+  {
+    domain: optionalStringFlag("domain", "domain (default: this coordinator's label)"),
+    json: booleanFlag("json", "print policies as JSON"),
+  },
+  (options) =>
+    execute((config) =>
+      Effect.flatMap(resolveDomain(Option.getOrUndefined(options.domain)), (domain) =>
+        policyLs(config, domain, options.json),
+      ),
+    ),
+).pipe(Command.withDescription("list reusable policies by id and date"));
+
+const policyAddCommand = Command.make(
   "add",
   {
-    text: argument("text", "the approval, verbatim, on one line"),
-    at: optionalStringFlag("at", "date it was given, YYYY-MM-DD (default: today)"),
+    text: argument("text", "the policy, on one line"),
+    at: optionalStringFlag("at", "date it was set, YYYY-MM-DD (default: today)"),
     domain: optionalStringFlag("domain", "domain (default: this coordinator's label)"),
-    json: booleanFlag("json", "print the entry as JSON"),
+    json: booleanFlag("json", "print the policy as JSON"),
   },
   (options) =>
     execute((config) =>
       Effect.flatMap(coordinatorDomain(Option.getOrUndefined(options.domain)), (domain) =>
-        standingAdd(config, domain, {
+        policyAdd(config, domain, {
           text: options.text,
           at: Option.getOrUndefined(options.at),
           json: options.json,
@@ -607,11 +636,55 @@ const standingAddCommand = Command.make(
         }),
       ),
     ),
-).pipe(Command.withDescription("record a standing yes with its date"));
+).pipe(Command.withDescription("add a reusable policy; prints its short id"));
 
-const standingCommand = Command.make("standing")
-  .pipe(Command.withDescription("standing approvals, in the user's words"))
-  .pipe(Command.withSubcommands([standingAddCommand]));
+const policyRmCommand = Command.make(
+  "rm",
+  {
+    id: argument("id", "policy id, such as p1"),
+    domain: optionalStringFlag("domain", "domain (default: this coordinator's label)"),
+    json: booleanFlag("json", "print the removed policy as JSON"),
+  },
+  (options) =>
+    execute((config) =>
+      Effect.flatMap(coordinatorDomain(Option.getOrUndefined(options.domain)), (domain) =>
+        policyRm(config, domain, { id: options.id, json: options.json }),
+      ),
+    ),
+).pipe(Command.withDescription("remove a policy by id"));
+
+const policyReplaceCommand = Command.make(
+  "replace",
+  {
+    id: argument("id", "policy id, such as p1"),
+    text: argument("text", "replacement policy, on one line"),
+    at: optionalStringFlag("at", "date it was replaced, YYYY-MM-DD (default: today)"),
+    domain: optionalStringFlag("domain", "domain (default: this coordinator's label)"),
+    json: booleanFlag("json", "print the replacement policy as JSON"),
+  },
+  (options) =>
+    execute((config) =>
+      Effect.flatMap(coordinatorDomain(Option.getOrUndefined(options.domain)), (domain) =>
+        policyReplace(config, domain, {
+          id: options.id,
+          text: options.text,
+          at: Option.getOrUndefined(options.at),
+          json: options.json,
+          now: new Date().toISOString(),
+        }),
+      ),
+    ),
+).pipe(Command.withDescription("replace a policy's text and date while keeping its id"));
+
+const policyCommand = Command.make("policy").pipe(
+  Command.withDescription("reusable policies, in the user's words"),
+  Command.withSubcommands([
+    policyAddCommand,
+    policyLsCommand,
+    policyRmCommand,
+    policyReplaceCommand,
+  ]),
+);
 
 const focusCommand = Command.make(
   "focus",
@@ -643,7 +716,7 @@ const backlogCommand = Command.make("backlog").pipe(
     backlogShowCommand,
     backlogRenameCommand,
     boundaryCommand,
-    standingCommand,
+    policyCommand,
     focusCommand,
   ]),
 );

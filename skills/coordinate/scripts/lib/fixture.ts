@@ -160,6 +160,7 @@ export const cliEnv = (
   return {
     ...(process.env as Record<string, string>),
     COORDINATE_CONFIG: configFile,
+    XDG_STATE_HOME: join(state, "xdg"),
     HC_TERMINAL_ID: "t1",
     PATH: `${bin}:${process.env.PATH ?? ""}`,
   };

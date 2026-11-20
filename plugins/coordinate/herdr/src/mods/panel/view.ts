@@ -704,16 +704,16 @@ const detailScreen = (
     .children(decidedCard(t, item))
     .children(delegatesCard(t, item, delegates.byItem.get(item.id) ?? []));
 
-// Standing approvals wrap, so use the package's card pieces instead of fixed-height groupBlock.
-const standingPage = (t: Theme, backlog: Backlog, model: PanelModel): Element => {
-  const entries = backlog.standingYes;
+// Policy text wraps, so use the package's card pieces instead of fixed-height groupBlock.
+const policiesPage = (t: Theme, backlog: Backlog, model: PanelModel): Element => {
+  const entries = backlog.policies;
   return cardSection(
-    cardHeader(t, "standing-header", "Standing yes"),
-    card(t, "standing").children(
+    cardHeader(t, "policies-header", "Policies"),
+    card(t, "policies").children(
       entries.length === 0
-        ? [emptyRow(t, "standing-empty", "None")]
-        : pagedRows(t, "standing-yes", entries, model, ROW.list, (entry, index) =>
-            detailRow(t, `standing-${index}`)
+        ? [emptyRow(t, "policies-empty", "None")]
+        : pagedRows(t, "policies", entries, model, ROW.list, (entry, index) =>
+            detailRow(t, `policy-${entry.id}`)
               .when(index === 0, (row) => row.border_t(0))
               .child(div().child(entry.text))
               .child(small(t, t.dim, entry.at.slice(0, 10))),
@@ -833,10 +833,10 @@ const sectionLinks = (t: Theme, domain: string, backlog: Backlog, model: PanelMo
     card(t, "lists").children([
       sectionRow(
         t,
-        "page-standing",
-        "Standing yes",
-        backlog.standingYes.length,
-        { kind: "standing", domain },
+        "page-policies",
+        "Policies",
+        backlog.policies.length,
+        { kind: "policies", domain },
         model,
       ),
       sectionRow(
@@ -861,8 +861,8 @@ const sectionLinks = (t: Theme, domain: string, backlog: Backlog, model: PanelMo
 const domainPage = (t: Theme, backlog: Backlog, model: PanelModel): Element => {
   let content: Element;
   switch (model.page) {
-    case "standing":
-      content = standingPage(t, backlog, model);
+    case "policies":
+      content = policiesPage(t, backlog, model);
       break;
     case "findings":
       content = findingsPage(t, model);

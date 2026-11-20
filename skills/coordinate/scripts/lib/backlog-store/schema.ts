@@ -22,9 +22,14 @@ export const ITEM_STATUSES = [
 export type ItemStatus = (typeof ITEM_STATUSES)[number];
 
 /**
- * A dated entry recorded verbatim: a decision or a standing approval.
+ * A dated entry recorded verbatim: a decision.
  */
 export type Dated = { text: string; at: string };
+
+/**
+ * A reusable policy recorded with its stable short id and date.
+ */
+export type Policy = { id: string; text: string; at: string };
 
 /**
  * A question that waits on the user, with the coordinator's recommendation.
@@ -91,10 +96,11 @@ export type Backlog = {
   focus: string | null;
   legacy: string | null;
   boundary: { owned: string[]; adjacent: string[] };
-  standingYes: Dated[];
+  policies: Policy[];
   items: Item[];
   findings: Finding[];
   nextId: number;
+  nextPolicyId: number;
 };
 
 /**
@@ -113,7 +119,8 @@ export const isRecord = (value: unknown): value is Record<string, unknown> =>
 const DATE = /^\d{4}-\d{2}-\d{2}$/;
 
 /**
- * Check an unknown value against schema v1 and its invariants. Never throws.
+ * Normalize legacy `standingYes` entries to ordered policy ids and derive a missing policy counter,
+ * then validate schema v1 and its invariants. Never throws.
  * @param value Parsed JSON.
  * @returns The document, or the reasons it is invalid.
  */
@@ -154,31 +161,66 @@ export const validateBacklog = (value: unknown): Validated => {
   };
 
   if (!isRecord(value)) return { ok: false, errors: ["the document must be a JSON object"] };
-  if (value.schemaVersion !== 1) errors.push("schemaVersion must be 1");
-  nonEmpty("domain", value.domain);
-  textOrNull("focus", value.focus);
-  textOrNull("legacy", value.legacy);
-  if (!isRecord(value.boundary)) errors.push("boundary must be an object");
-  else {
-    strings("boundary.owned", value.boundary.owned);
-    strings("boundary.adjacent", value.boundary.adjacent);
+  const candidate: Record<string, unknown> = { ...value };
+  if (!("policies" in candidate) && Array.isArray(candidate.standingYes)) {
+    const policies = candidate.standingYes.map((entry: unknown, index) =>
+      isRecord(entry) ? { id: `p${index + 1}`, text: entry.text, at: entry.at } : entry,
+    );
+    candidate.policies = policies;
+    delete candidate.standingYes;
+  } else if ("policies" in candidate && "standingYes" in candidate) {
+    errors.push("standingYes cannot be combined with policies");
   }
-  dated("standingYes", value.standingYes);
-  const nextId = value.nextId;
+  if (!("nextPolicyId" in candidate) && Array.isArray(candidate.policies)) {
+    candidate.nextPolicyId = candidate.policies.reduce((next: number, entry: unknown) => {
+      if (!isRecord(entry) || typeof entry.id !== "string") return next;
+      const match = /^p([1-9]\d*)$/.exec(entry.id);
+      const number = match?.[1] === undefined ? 0 : Number(match[1]);
+      return Number.isSafeInteger(number) ? Math.max(next, number + 1) : next;
+    }, 1);
+  }
+  if (value.schemaVersion !== 1) errors.push("schemaVersion must be 1");
+  nonEmpty("domain", candidate.domain);
+  textOrNull("focus", candidate.focus);
+  textOrNull("legacy", candidate.legacy);
+  if (!isRecord(candidate.boundary)) errors.push("boundary must be an object");
+  else {
+    strings("boundary.owned", candidate.boundary.owned);
+    strings("boundary.adjacent", candidate.boundary.adjacent);
+  }
+  const policies = list("policies", candidate.policies);
+  policies.forEach((policy: unknown, index) => {
+    const where = `policies[${index}]`;
+    if (!isRecord(policy)) {
+      errors.push(`${where} must be an object`);
+      return;
+    }
+    nonEmpty(`${where}.text`, policy.text);
+    nonEmpty(`${where}.at`, policy.at);
+  });
+  const nextId = candidate.nextId;
   if (typeof nextId !== "number" || !Number.isInteger(nextId) || nextId < 1)
     errors.push("nextId must be a positive integer");
+  const nextPolicyId = candidate.nextPolicyId;
+  if (typeof nextPolicyId !== "number" || !Number.isInteger(nextPolicyId) || nextPolicyId < 1)
+    errors.push("nextPolicyId must be a positive integer");
 
   const ids = new Set<string>();
-  const checkId = (where: string, id: unknown, prefix: "i" | "f"): void => {
+  const checkId = (where: string, id: unknown, prefix: "i" | "f" | "p"): void => {
     if (typeof id !== "string" || !new RegExp(`^${prefix}[1-9]\\d*$`).test(id)) {
       errors.push(`${where}.id must look like ${prefix}1`);
       return;
     }
     if (ids.has(id)) errors.push(`${where}.id ${id} is not unique`);
     ids.add(id);
-    if (typeof nextId === "number" && Number(id.slice(1)) >= nextId)
-      errors.push(`${where}.id ${id} is not below nextId ${nextId}`);
+    const counter = prefix === "p" ? nextPolicyId : nextId;
+    const counterName = prefix === "p" ? "nextPolicyId" : "nextId";
+    if (typeof counter === "number" && Number(id.slice(1)) >= counter)
+      errors.push(`${where}.id ${id} is not below ${counterName} ${counter}`);
   };
+  policies.forEach((policy: unknown, index) => {
+    if (isRecord(policy)) checkId(`policies[${index}]`, policy.id, "p");
+  });
   const closed = (where: string, closedAt: unknown, outcome: unknown, isClosed: boolean) => {
     if (isClosed) {
       nonEmpty(`${where}.closedAt`, closedAt);
@@ -189,7 +231,7 @@ export const validateBacklog = (value: unknown): Validated => {
     }
   };
 
-  list("items", value.items).forEach((item: unknown, index) => {
+  list("items", candidate.items).forEach((item: unknown, index) => {
     const where = `items[${index}]`;
     if (!isRecord(item)) {
       errors.push(`${where} must be an object`);
@@ -252,7 +294,7 @@ export const validateBacklog = (value: unknown): Validated => {
       errors.push(`${where} is waiting-user but has no ask and no decision`);
   });
 
-  list("findings", value.findings).forEach((finding: unknown, index) => {
+  list("findings", candidate.findings).forEach((finding: unknown, index) => {
     const where = `findings[${index}]`;
     if (!isRecord(finding)) {
       errors.push(`${where} must be an object`);
@@ -271,6 +313,6 @@ export const validateBacklog = (value: unknown): Validated => {
   });
 
   return errors.length === 0
-    ? { ok: true, backlog: value as unknown as Backlog }
+    ? { ok: true, backlog: candidate as unknown as Backlog }
     : { ok: false, errors };
 };

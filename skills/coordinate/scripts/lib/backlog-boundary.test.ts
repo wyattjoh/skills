@@ -9,7 +9,7 @@ import {
   boundaryRm,
   focusSet,
   showBacklog,
-  standingAdd,
+  policyAdd,
 } from "./backlog-doc.ts";
 import { resolveConfig } from "./config.ts";
 import {
@@ -173,26 +173,30 @@ describe("backlog boundary", () => {
   });
 });
 
-describe("backlog standing add", () => {
-  it("records the text verbatim with the date", async () => {
+describe("backlog policy add", () => {
+  it("records the text verbatim with a stable id and date", async () => {
     const { cfg, path } = await started();
     expect(
       await runWith(
-        standingAdd(cfg, "app", {
+        policyAdd(cfg, "app", {
           text: "  merge doc PRs, no need to ask ",
           at: undefined,
           json: false,
           now: NOW,
         }),
       ),
-    ).toEqual(["standing yes 2026-11-17:   merge doc PRs, no need to ask "]);
+    ).toEqual(["added policy p1:   merge doc PRs, no need to ask "]);
     const printed = await runWith(
-      standingAdd(cfg, "app", { text: "rebase freely", at: "2026-10-01", json: true, now: NOW }),
+      policyAdd(cfg, "app", { text: "rebase freely", at: "2026-10-01", json: true, now: NOW }),
     );
-    expect(JSON.parse(printed.join("\n"))).toEqual({ text: "rebase freely", at: "2026-10-01" });
-    expect(read(path).standingYes).toEqual([
-      { text: "  merge doc PRs, no need to ask ", at: "2026-11-17" },
-      { text: "rebase freely", at: "2026-10-01" },
+    expect(JSON.parse(printed.join("\n"))).toEqual({
+      id: "p2",
+      text: "rebase freely",
+      at: "2026-10-01",
+    });
+    expect(read(path).policies).toEqual([
+      { id: "p1", text: "  merge doc PRs, no need to ask ", at: "2026-11-17" },
+      { id: "p2", text: "rebase freely", at: "2026-10-01" },
     ]);
   });
 
@@ -203,7 +207,7 @@ describe("backlog standing add", () => {
   ])("refuses %j (at %j)", async (text, at, message) => {
     const { cfg, path } = await started();
     const before = readFileSync(path, "utf8");
-    const error = await failureOf(standingAdd(cfg, "app", { text, at, json: false, now: NOW }));
+    const error = await failureOf(policyAdd(cfg, "app", { text, at, json: false, now: NOW }));
     expect(tagged(error)).toEqual({ tag: "Refused", message });
     expect(readFileSync(path, "utf8")).toBe(before);
   });
@@ -240,14 +244,14 @@ describe("backlog focus", () => {
 });
 
 describe("backlog show", () => {
-  it("renders focus, Boundary and Standing yes", async () => {
+  it("renders focus, Boundary and Policies", async () => {
     const { cfg } = await started();
     const owned = dir();
     const adjacent = dir();
     await add(cfg, owned);
     await add(cfg, adjacent, true);
     await runWith(
-      standingAdd(cfg, "app", { text: "merge doc PRs", at: undefined, json: false, now: NOW }),
+      policyAdd(cfg, "app", { text: "merge doc PRs", at: undefined, json: false, now: NOW }),
     );
     await runWith(focusSet(cfg, "app", { focus: "ship login v2", json: false }));
     expect(await runWith(showBacklog(cfg, "app", false))).toEqual([
@@ -261,9 +265,9 @@ describe("backlog show", () => {
         `- Owned: ${owned}`,
         `- Adjacent: ${adjacent}`,
         "",
-        "## Standing yes",
+        "## Policies",
         "",
-        "- 2026-11-17: merge doc PRs",
+        "- p1 2026-11-17: merge doc PRs",
         "",
         "## Open",
         "",
@@ -379,7 +383,7 @@ describe("owned-only domain repos", () => {
 });
 
 describe("coordinate CLI", () => {
-  it("wires boundary, standing and focus, refusing focus with neither text nor --clear", async () => {
+  it("wires policy, Boundary and focus, refusing focus with neither text nor --clear", async () => {
     const { state, path } = await started();
     const env = cliEnv(state, { "fleet.role": "coordinator", "fleet.domain": "app" });
     const script = join(import.meta.dir, "..", "coordinate.ts");
@@ -396,9 +400,9 @@ describe("coordinate CLI", () => {
       0,
       `adjacent: added ${state}\n`,
     ]);
-    expect(run("backlog", "standing", "add", "ship it", "--at", "2026-11-01")).toEqual([
+    expect(run("backlog", "policy", "add", "ship it", "--at", "2026-11-01")).toEqual([
       0,
-      "standing yes 2026-11-01: ship it\n",
+      "added policy p1: ship it\n",
     ]);
     expect(run("backlog", "focus", "login v2")).toEqual([0, "focus: login v2\n"]);
     expect(run("backlog", "focus")).toEqual([
@@ -413,7 +417,7 @@ describe("coordinate CLI", () => {
       ...read(path),
       focus: "login v2",
       boundary: { owned: [], adjacent: [state] },
-      standingYes: [{ text: "ship it", at: "2026-11-01" }],
+      policies: [{ id: "p1", text: "ship it", at: "2026-11-01" }],
     });
   });
 });
@@ -428,7 +432,7 @@ describe("status without a readable document", () => {
     );
     expect(lines).toEqual([
       "app: 0 live delegates, 0 ended",
-      `no repos polled: could not read the backlog: ${path} is invalid: schemaVersion must be 1; domain must be a non-empty string; focus must be a string or null; legacy must be a string or null; boundary must be an object; standingYes must be a list; nextId must be a positive integer; items must be a list; findings must be a list`,
+      `no repos polled: could not read the backlog: ${path} is invalid: schemaVersion must be 1; domain must be a non-empty string; focus must be a string or null; legacy must be a string or null; boundary must be an object; policies must be a list; nextId must be a positive integer; nextPolicyId must be a positive integer; items must be a list; findings must be a list`,
     ]);
   });
 });

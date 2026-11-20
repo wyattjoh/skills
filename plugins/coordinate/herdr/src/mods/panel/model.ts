@@ -83,7 +83,7 @@ export const FINDING_KIND_LABELS: Readonly<Record<Finding["kind"], string>> = {
  * A page within one domain's backlog.
  */
 export type DomainPage =
-  | { kind: "standing"; domain: string }
+  | { kind: "policies"; domain: string }
   | { kind: "findings"; domain: string }
   | { kind: "boundary"; domain: string };
 
@@ -117,8 +117,7 @@ export const trailOf = (screen: Screen): Crumb[] => {
   if (screen.kind !== "domains") {
     const lists: Screen = { kind: "domain", domain: screen.domain };
     steps.push({ id: `crumb-domain-${screen.domain}`, label: screen.domain, screen: lists });
-    if (screen.kind === "standing")
-      steps.push({ id: "crumb-standing", label: "Standing yes", screen });
+    if (screen.kind === "policies") steps.push({ id: "crumb-policies", label: "Policies", screen });
     if (screen.kind === "findings") steps.push({ id: "crumb-findings", label: "Findings", screen });
     if (screen.kind === "boundary") steps.push({ id: "crumb-boundary", label: "Boundary", screen });
     if (screen.kind === "item")

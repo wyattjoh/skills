@@ -9,7 +9,7 @@ import {
   addBoundary,
   addFinding,
   addItem,
-  addStanding,
+  addPolicy,
   type BoundaryList,
   closeFinding,
   closeItem,
@@ -19,6 +19,8 @@ import {
   type ItemUpdate,
   type OpResult,
   removeBoundary,
+  removePolicy,
+  replacePolicy,
   RETAINED_CLOSED,
   retain,
   setFocus,
@@ -547,21 +549,79 @@ export const boundaryRm = Effect.fn("boundaryRm")(function* (
 });
 
 /**
- * `coordinate backlog standing add`: record a standing approval verbatim, dated today or `--at`.
+ * `coordinate backlog policy ls`: list policies in document order.
+ * @param config Config.
+ * @param domain Domain.
+ * @param asJson Print the policies as JSON.
+ * @returns Lines to print.
+ */
+export const policyLs = Effect.fn("policyLs")(function* (
+  config: Config,
+  domain: string,
+  asJson: boolean,
+) {
+  const { backlog } = yield* readDocument(config, domain);
+  return asJson
+    ? json(backlog.policies)
+    : backlog.policies.length === 0
+      ? ["(none)"]
+      : backlog.policies.map(({ id, at, text }) => `${id} ${at}: ${text}`);
+});
+
+/**
+ * `coordinate backlog policy add`: add a reusable policy with its date.
  * @param config Config.
  * @param domain Domain.
  * @param input Text, `--at`, `--json`, and the time.
  * @returns Lines to print.
  */
-export const standingAdd = Effect.fn("standingAdd")(function* (
+export const policyAdd = Effect.fn("policyAdd")(function* (
   config: Config,
   domain: string,
   input: { text: string; at: string | undefined; json: boolean; now: string },
 ) {
-  const entry = yield* change(config, domain, (backlog) =>
-    addStanding(backlog, { text: input.text, at: input.at ?? input.now.slice(0, 10) }),
+  const policy = yield* change(config, domain, (backlog) =>
+    addPolicy(backlog, { text: input.text, at: input.at ?? input.now.slice(0, 10) }),
   );
-  return input.json ? json(entry) : [`standing yes ${entry.at}: ${entry.text}`];
+  return input.json ? json(policy) : [`added policy ${policy.id}: ${policy.text}`];
+});
+
+/**
+ * `coordinate backlog policy rm`: remove a policy by id.
+ * @param config Config.
+ * @param domain Domain.
+ * @param input Policy id and `--json`.
+ * @returns Lines to print.
+ */
+export const policyRm = Effect.fn("policyRm")(function* (
+  config: Config,
+  domain: string,
+  input: { id: string; json: boolean },
+) {
+  const policy = yield* change(config, domain, (backlog) => removePolicy(backlog, input.id));
+  return input.json ? json(policy) : [`removed policy ${policy.id}: ${policy.text}`];
+});
+
+/**
+ * `coordinate backlog policy replace`: replace text and date while preserving the id.
+ * @param config Config.
+ * @param domain Domain.
+ * @param input Policy id, text, `--at`, `--json`, and the time.
+ * @returns Lines to print.
+ */
+export const policyReplace = Effect.fn("policyReplace")(function* (
+  config: Config,
+  domain: string,
+  input: { id: string; text: string; at: string | undefined; json: boolean; now: string },
+) {
+  const policy = yield* change(config, domain, (backlog) =>
+    replacePolicy(backlog, {
+      id: input.id,
+      text: input.text,
+      at: input.at ?? input.now.slice(0, 10),
+    }),
+  );
+  return input.json ? json(policy) : [`replaced policy ${policy.id}: ${policy.text}`];
 });
 
 /**

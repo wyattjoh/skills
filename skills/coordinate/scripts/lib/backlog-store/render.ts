@@ -67,10 +67,10 @@ export const renderBacklog = (backlog: Backlog, idle: ReadonlySet<string> = new 
     `- Owned: ${list(backlog.boundary.owned)}`,
     `- Adjacent: ${list(backlog.boundary.adjacent)}`,
     "",
-    "## Standing yes",
+    "## Policies",
     "",
-    ...(backlog.standingYes.length > 0
-      ? backlog.standingYes.map((entry) => `- ${entry.at}: ${entry.text}`)
+    ...(backlog.policies.length > 0
+      ? backlog.policies.map((policy) => `- ${policy.id} ${policy.at}: ${policy.text}`)
       : ["(none)"]),
     "",
     "## Open",

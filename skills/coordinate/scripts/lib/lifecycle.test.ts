@@ -73,10 +73,11 @@ describe("start", () => {
       focus: null,
       legacy: null,
       boundary: { owned: [], adjacent: [] },
-      standingYes: [],
+      policies: [],
       items: [],
       findings: [],
       nextId: 1,
+      nextPolicyId: 1,
     });
     expect(existsSync(join(state, "backlogs", "app-backlog.md"))).toBe(false);
     expect(fake.calls[1]?.argv).toEqual([

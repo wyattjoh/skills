@@ -1,4 +1,4 @@
-import type { Ask, Backlog, Dated, DelegateRef, Finding, Item, ItemStatus } from "./schema.ts";
+import type { Ask, Backlog, DelegateRef, Finding, Item, ItemStatus, Policy } from "./schema.ts";
 
 /**
  * An operation's result: the next document and a value, or why the input was refused.
@@ -17,10 +17,11 @@ export const emptyBacklog = (domain: string, legacy: string | null): Backlog => 
   focus: null,
   legacy,
   boundary: { owned: [], adjacent: [] },
-  standingYes: [],
+  policies: [],
   items: [],
   findings: [],
   nextId: 1,
+  nextPolicyId: 1,
 });
 
 const oneLine = (field: string, value: string): string | undefined => {
@@ -468,23 +469,69 @@ export const removeBoundary = (
 };
 
 /**
- * Record a standing approval in the user's words, kept verbatim, with its date.
+ * Add a reusable policy with a stable short id.
  * @param backlog Current document.
- * @param input The text and the date as YYYY-MM-DD.
- * @returns The next document and the new entry.
+ * @param input The policy text and date as YYYY-MM-DD.
+ * @returns The next document and the new policy.
  */
-export const addStanding = (
+export const addPolicy = (
   backlog: Backlog,
   input: { text: string; at: string },
-): OpResult<Dated> => {
+): OpResult<Policy> => {
   const problem = oneLine("text", input.text);
   if (problem) return { ok: false, reason: problem };
   if (!isDate(input.at)) return { ok: false, reason: "--at must be YYYY-MM-DD" };
-  const entry: Dated = { text: input.text, at: input.at };
+  const policy: Policy = { id: `p${backlog.nextPolicyId}`, text: input.text, at: input.at };
   return {
     ok: true,
-    backlog: { ...backlog, standingYes: [...backlog.standingYes, entry] },
-    value: entry,
+    backlog: {
+      ...backlog,
+      policies: [...backlog.policies, policy],
+      nextPolicyId: backlog.nextPolicyId + 1,
+    },
+    value: policy,
+  };
+};
+
+/**
+ * Remove a policy by its stable id.
+ * @param backlog Current document.
+ * @param id Policy id.
+ * @returns The next document and the removed policy.
+ */
+export const removePolicy = (backlog: Backlog, id: string): OpResult<Policy> => {
+  const policy = backlog.policies.find((entry) => entry.id === id);
+  if (!policy) return { ok: false, reason: `no policy ${id} in ${backlog.domain}` };
+  return {
+    ok: true,
+    backlog: { ...backlog, policies: backlog.policies.filter((entry) => entry.id !== id) },
+    value: policy,
+  };
+};
+
+/**
+ * Replace a policy's text and date while preserving its stable id.
+ * @param backlog Current document.
+ * @param input The policy id, replacement text and date.
+ * @returns The next document and the updated policy.
+ */
+export const replacePolicy = (
+  backlog: Backlog,
+  input: { id: string; text: string; at: string },
+): OpResult<Policy> => {
+  const found = backlog.policies.find((entry) => entry.id === input.id);
+  if (!found) return { ok: false, reason: `no policy ${input.id} in ${backlog.domain}` };
+  const problem = oneLine("text", input.text);
+  if (problem) return { ok: false, reason: problem };
+  if (!isDate(input.at)) return { ok: false, reason: "--at must be YYYY-MM-DD" };
+  const policy: Policy = { ...found, text: input.text, at: input.at };
+  return {
+    ok: true,
+    backlog: {
+      ...backlog,
+      policies: backlog.policies.map((entry) => (entry.id === policy.id ? policy : entry)),
+    },
+    value: policy,
   };
 };
 

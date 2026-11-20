@@ -280,13 +280,13 @@ describe("coordinate CLI parity", () => {
       {
         exit: 0,
         stdout:
-          "app: 0 live delegates, 0 ended\\n\\n# app backlog\\n\\n## Boundary\\n\\n- Owned: (none)\\n- Adjacent: (none)\\n\\n## Standing yes\\n\\n(none)\\n\\n## Open\\n\\n(none)\\n\\n## Findings\\n\\n(none)\\n\\n## Done\\n\\n(none)\\n\\nno watcher running: arm coordinate watch --follow\\n",
+          "app: 0 live delegates, 0 ended\\n\\n# app backlog\\n\\n## Boundary\\n\\n- Owned: (none)\\n- Adjacent: (none)\\n\\n## Policies\\n\\n(none)\\n\\n## Open\\n\\n(none)\\n\\n## Findings\\n\\n(none)\\n\\n## Done\\n\\n(none)\\n\\nno watcher running: arm coordinate watch --follow\\n",
         stderr: "",
       },
       {
         exit: 0,
         stdout:
-          '{\\n  "schemaVersion": 1,\\n  "domain": "app",\\n  "focus": null,\\n  "legacy": null,\\n  "boundary": {\\n    "owned": [],\\n    "adjacent": []\\n  },\\n  "standingYes": [],\\n  "items": [],\\n  "findings": [],\\n  "nextId": 1\\n}\\n',
+          '{\\n  "schemaVersion": 1,\\n  "domain": "app",\\n  "focus": null,\\n  "legacy": null,\\n  "boundary": {\\n    "owned": [],\\n    "adjacent": []\\n  },\\n  "policies": [],\\n  "items": [],\\n  "findings": [],\\n  "nextId": 1,\\n  "nextPolicyId": 1\\n}\\n',
         stderr: "",
       },
       { exit: 1, stdout: "", stderr: "refused: app is already named app\\n" },
@@ -302,7 +302,7 @@ describe("coordinate CLI parity", () => {
       },
       {
         exit: 0,
-        stdout: '{\\n  "text": "ship it",\\n  "at": "2026-11-19"\\n}\\n',
+        stdout: '{\\n  "id": "p1",\\n  "text": "ship it",\\n  "at": "2026-11-19"\\n}\\n',
         stderr: "",
       },
       { exit: 0, stdout: "focus: parser parity\\n", stderr: "" },
@@ -363,9 +363,22 @@ describe("coordinate CLI parity", () => {
         ["backlog", "boundary", "rm"],
         ["path", "--adjacent", "--json"],
       ],
+      [["backlog"], ["policy", "boundary", "focus"]],
       [
-        ["backlog", "standing", "add"],
+        ["backlog", "policy", "add"],
         ["text", "--at", "--domain"],
+      ],
+      [
+        ["backlog", "policy", "ls"],
+        ["--domain", "--json"],
+      ],
+      [
+        ["backlog", "policy", "rm"],
+        ["id", "--domain", "--json"],
+      ],
+      [
+        ["backlog", "policy", "replace"],
+        ["id", "text", "--at", "--domain", "--json"],
       ],
       [
         ["backlog", "focus"],
@@ -434,6 +447,11 @@ describe("coordinate CLI parity", () => {
       const help = `${result.stdout}\n${result.stderr}`.replace(/\s+/g, " ");
       for (const marker of markers) expect(help).toContain(marker);
     }
+    const backlogHelp = run(["backlog", "--help"]);
+    const visibleBacklogHelp = `${backlogHelp.stdout}\n${backlogHelp.stderr}`;
+    expect(backlogHelp.exit).toBe(0);
+    expect(visibleBacklogHelp.match(/\bstanding\b/gi) ?? []).toEqual([]);
+
     const shortHelp = run(["start", "-h"]);
     expect(shortHelp.exit).toBe(0);
     expect(shortHelp.stdout).toContain("label this terminal");

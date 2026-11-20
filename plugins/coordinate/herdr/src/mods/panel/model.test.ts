@@ -7,6 +7,7 @@ import {
   delegateLine,
   delegateUrgency,
   mergeEnded,
+  readDocument,
   trailOf,
 } from "./model.ts";
 import type { DelegateRow, DelegateState, DocumentState } from "./model.ts";
@@ -37,6 +38,34 @@ test("cachedDocument draws loading for a domain not read yet and for the listing
   expect(cachedDocument(shown, undefined)).toEqual({ kind: "loading" });
 });
 
+test("readDocument migrates legacy standing approvals to ordered policy ids", () => {
+  const legacy = {
+    schemaVersion: 1,
+    domain: "alpha",
+    focus: null,
+    legacy: null,
+    boundary: { owned: [], adjacent: [] },
+    standingYes: [
+      { text: "merge docs", at: "2026-11-17" },
+      { text: "keep branches local", at: "2026-11-18T08:00:00.000Z" },
+    ],
+    items: [],
+    findings: [],
+    nextId: 1,
+  };
+  expect(readDocument(JSON.stringify(legacy))).toEqual({
+    kind: "loaded",
+    backlog: {
+      ...emptyBacklog("alpha", null),
+      policies: [
+        { id: "p1", text: "merge docs", at: "2026-11-17" },
+        { id: "p2", text: "keep branches local", at: "2026-11-18T08:00:00.000Z" },
+      ],
+      nextPolicyId: 3,
+    },
+  });
+});
+
 test("trailOf links domain pages and record details back to their parent screens", () => {
   const lists = { kind: "domain", domain: "skills" } as const;
   const findings = { kind: "findings", domain: "skills" } as const;
@@ -48,11 +77,11 @@ test("trailOf links domain pages and record details back to their parent screens
     { id: "crumb-domain-skills", label: "skills", to: undefined },
   ]);
   expect(
-    [{ kind: "standing", domain: "skills" }, findings, { kind: "boundary", domain: "skills" }].map(
+    [{ kind: "policies", domain: "skills" }, findings, { kind: "boundary", domain: "skills" }].map(
       (screen) => trailOf(screen).at(-1),
     ),
   ).toEqual([
-    { id: "crumb-standing", label: "Standing yes", to: undefined },
+    { id: "crumb-policies", label: "Policies", to: undefined },
     { id: "crumb-findings", label: "Findings", to: undefined },
     { id: "crumb-boundary", label: "Boundary", to: undefined },
   ]);

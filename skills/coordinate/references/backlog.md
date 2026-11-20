@@ -13,10 +13,15 @@ One JSON document per domain at `<state_dir>/backlogs/<domain>.json` (default `~
 | `focus`         | One line on what the domain is doing now, or null                              | `backlog focus "<text>"`, `--clear`                                   |
 | `legacy`        | Path of the old Markdown backlog, reference only, or null                      | `start`                                                               |
 | `boundary`      | `owned` and `adjacent` absolute paths; only `owned` feeds status, watch, sweep | `backlog boundary add\|rm <path> [--adjacent]`                        |
-| `standingYes`   | `{ text, at }`: approvals for every later case, in the user's words, dated     | `backlog standing add "<text>" [--at date]`                           |
+| `policies`      | `{ id, text, at }[]`: reusable rules with stable short ids (`p1`, `p2`, ...)   | `backlog policy add\|ls\|rm\|replace`                                 |
 | `items`         | The work (below)                                                               | `item add`, `item update`, `item close`, `item attach`, `item detach` |
 | `findings`      | Issues and opportunities noticed outside an item's scope (below)               | `finding add`, `finding close`                                        |
-| `nextId`        | The next short id; items are `i1`, `i2`, ..., findings `f1`, `f2`, ...         | every add                                                             |
+| `nextId`        | The next shared item/finding id number; items use `iN`, findings `fN`          | item and finding adds                                                 |
+| `nextPolicyId`  | The next policy id number (`p1`, `p2`, ...); removals do not reuse ids         | policy adds                                                           |
+
+**Policies**: `backlog policy add "<text>" [--at YYYY-MM-DD]` appends a policy and prints its id. `policy ls` lists ids, dates and text; `policy rm <id>` removes one; `policy replace <id> "<text>" [--at YYYY-MM-DD]` updates its text and date while preserving its id. IDs are not reused after removal. Dates default to today. Each command supports `--domain` and `--json`.
+
+A document that has `standingYes` but no `policies` migrates in memory when read: entries become `p1`, `p2`, ... in their existing order, preserving their text and date. Read-only commands leave the source file untouched; its next successful write stores the `policies` field and no `standingYes` field. The panel uses the same validator and accepts both shapes.
 
 ## Items
 
@@ -51,7 +56,7 @@ The CLI refuses any change that would break these:
 - A `waiting-user` item has an ask, or a decision naming the integration choice it waits on.
 - An ask's `rec` is one of its `options`.
 - `done` and `dismissed` items, and closed findings, have an `outcome` and a `closedAt`.
-- Ids are unique.
+- Item, finding and policy ids are unique.
 
 **Due dates**: the watcher fires once per item id and date, for items that are not closed. Editing the title does not fire it again.
 

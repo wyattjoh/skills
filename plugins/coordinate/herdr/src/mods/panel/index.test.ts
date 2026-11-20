@@ -645,10 +645,10 @@ test("shows page buttons on the main list and lists only open findings on the Fi
   host.files.set(DOC, JSON.stringify(withFindings()));
   const { ctx, render } = await mount();
   let root = render();
-  expect(ids(root, "page-")).toEqual(["page-standing", "page-findings", "page-boundary"]);
+  expect(ids(root, "page-")).toEqual(["page-policies", "page-findings", "page-boundary"]);
   expect(
-    ["page-standing", "page-findings", "page-boundary"].map((id) => text(get(root, id))),
-  ).toEqual(["Standing yes 0", "Findings 2", "Boundary 0"]);
+    ["page-policies", "page-findings", "page-boundary"].map((id) => text(get(root, id))),
+  ).toEqual(["Policies 0", "Findings 2", "Boundary 0"]);
   expect(ids(root, "finding-")).toEqual([]);
 
   openPage(root, "findings", ctx.cx);
@@ -1230,33 +1230,38 @@ test("shows a closed item's closing date beside its creation date", async () => 
   ]);
 });
 
-test("opens Standing yes and Boundary from count rows on the main list", async () => {
+test("migrates legacy approvals and opens Policies and Boundary from count rows", async () => {
   focusDomain("alpha");
   host.files.set(
     DOC,
     JSON.stringify({
-      ...emptyBacklog("alpha", null),
+      schemaVersion: 1,
+      domain: "alpha",
+      focus: null,
       legacy: "/old/backlog.md",
       boundary: { owned: ["skills/coordinate", "plugins/coordinate"], adjacent: [] },
       standingYes: [
         { text: "Merge doc fixes", at: NOW },
         { text: "Rebase local branches", at: "2026-11-15T09:00:00.000Z" },
       ],
+      items: [],
+      findings: [],
+      nextId: 1,
     }),
   );
   const { ctx, render } = await mount();
   let root = render();
-  expect([text(get(root, "page-standing")), text(get(root, "page-boundary"))]).toEqual([
-    "Standing yes 2",
+  expect([text(get(root, "page-policies")), text(get(root, "page-boundary"))]).toEqual([
+    "Policies 2",
     "Boundary 2",
   ]);
-  expect(ids(root, "standing-")).toEqual([]);
+  expect(ids(root, "policy-")).toEqual([]);
   expect(ids(root, "boundary-")).toEqual([]);
 
-  openPage(root, "standing", ctx.cx);
+  openPage(root, "policies", ctx.cx);
   root = render();
-  expect(trail(root)).toBe("Domains › alpha › Standing yes");
-  expect(["standing-0", "standing-1"].map((id) => text(get(root, id)))).toEqual([
+  expect(trail(root)).toBe("Domains › alpha › Policies");
+  expect(["policy-p1", "policy-p2"].map((id) => text(get(root, id)))).toEqual([
     "Merge doc fixes 2026-11-17",
     "Rebase local branches 2026-11-15",
   ]);
@@ -1403,12 +1408,12 @@ test("shows the boundary CLI refusal on the card and refuses a blank path locall
   );
 });
 
-test("shows None on an empty Standing yes page", async () => {
+test("shows None on an empty Policies page", async () => {
   focusDomain("alpha");
   host.files.set(DOC, JSON.stringify(emptyBacklog("alpha", null)));
   const { ctx, render } = await mount();
-  openPage(render(), "standing", ctx.cx);
-  expect(text(get(render(), "standing-empty"))).toBe("None");
+  openPage(render(), "policies", ctx.cx);
+  expect(text(get(render(), "policies-empty"))).toBe("None");
 });
 
 test("keeps a domain's ended records while another domain's are looked up", async () => {
@@ -1552,29 +1557,28 @@ test("paginates Unfiled delegates while preserving nested rows", async () => {
   expect([ids(get(root, "unfiled"), "term-").length, ids(root, "load-more-")]).toEqual([11, []]);
 });
 
-test("paginates Standing yes entries ten at a time", async () => {
+test("paginates Policies ten at a time", async () => {
   focusDomain("alpha");
   host.files.set(
     DOC,
     JSON.stringify({
       ...emptyBacklog("alpha", null),
-      standingYes: Array.from({ length: 12 }, (_, index) => ({
-        text: `Decision ${index + 1}`,
+      policies: Array.from({ length: 12 }, (_, index) => ({
+        id: `p${index + 1}`,
+        text: `Policy ${index + 1}`,
         at: NOW,
       })),
+      nextPolicyId: 13,
     }),
   );
   const { ctx, render } = await mount();
-  openPage(render(), "standing", ctx.cx);
+  openPage(render(), "policies", ctx.cx);
   let root = render();
-  const standingRows = () => ids(root, "standing-").filter((id) => id !== "standing-header");
-  expect([standingRows().length, ids(root, "load-more-")]).toEqual([
-    10,
-    ["load-more-standing-yes"],
-  ]);
-  get(root, "load-more-standing-yes").click!({}, ctx.cx);
+  const policyRows = () => ids(root, "policy-");
+  expect([policyRows().length, ids(root, "load-more-")]).toEqual([10, ["load-more-policies"]]);
+  get(root, "load-more-policies").click!({}, ctx.cx);
   root = render();
-  expect([standingRows().length, ids(root, "load-more-")]).toEqual([12, []]);
+  expect([policyRows().length, ids(root, "load-more-")]).toEqual([12, []]);
 });
 
 test("paginates the Domains listing ten rows at a time", async () => {

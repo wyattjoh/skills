@@ -9,6 +9,7 @@ import {
   itemAdd,
   itemClose,
   itemUpdate,
+  policyAdd,
   showBacklog,
 } from "./backlog-doc.ts";
 import { resolveConfig } from "./config.ts";
@@ -745,7 +746,7 @@ describe("status --resume", () => {
     writeFileSync(path, '{"schemaVersion":2}');
     const lines = await runWith(domainStatus(cfg, "app", true, Date.parse(NOW)), hcFake().layer);
     expect(lines[2]).toBe(
-      `could not read the backlog: ${path} is invalid: schemaVersion must be 1; domain must be a non-empty string; focus must be a string or null; legacy must be a string or null; boundary must be an object; standingYes must be a list; nextId must be a positive integer; items must be a list; findings must be a list`,
+      `could not read the backlog: ${path} is invalid: schemaVersion must be 1; domain must be a non-empty string; focus must be a string or null; legacy must be a string or null; boundary must be an object; policies must be a list; nextId must be a positive integer; nextPolicyId must be a positive integer; items must be a list; findings must be a list`,
     );
   });
 
@@ -805,7 +806,7 @@ describe("backlog show", () => {
         "- Owned: (none)",
         "- Adjacent: (none)",
         "",
-        "## Standing yes",
+        "## Policies",
         "",
         "(none)",
         "",
@@ -859,6 +860,135 @@ describe("backlog show", () => {
   });
 });
 
+describe("backlog policies", () => {
+  it("migrates legacy entries in order on read and persists the new shape on write", async () => {
+    const { cfg, path } = await started();
+    const legacy = {
+      schemaVersion: 1,
+      domain: "app",
+      focus: null,
+      legacy: null,
+      boundary: { owned: [], adjacent: [] },
+      standingYes: [
+        { text: "merge doc PRs", at: "2026-11-15" },
+        { text: "rebase freely", at: "2026-11-16T08:00:00.000Z" },
+      ],
+      items: [],
+      findings: [],
+      nextId: 1,
+    };
+    writeFileSync(path, JSON.stringify(legacy));
+
+    const shown = JSON.parse((await runWith(showBacklog(cfg, "app", true))).join("\n"));
+    expect(shown.policies).toEqual([
+      { id: "p1", text: "merge doc PRs", at: "2026-11-15" },
+      { id: "p2", text: "rebase freely", at: "2026-11-16T08:00:00.000Z" },
+    ]);
+    expect(shown.nextPolicyId).toBe(3);
+    expect(read(path)).toEqual(legacy);
+
+    await runWith(
+      policyAdd(cfg, "app", {
+        text: "future builds use Bun",
+        at: undefined,
+        json: false,
+        now: NOW,
+      }),
+    );
+    const stored = read(path);
+    expect(stored.policies).toEqual([
+      { id: "p1", text: "merge doc PRs", at: "2026-11-15" },
+      { id: "p2", text: "rebase freely", at: "2026-11-16T08:00:00.000Z" },
+      { id: "p3", text: "future builds use Bun", at: "2026-11-17" },
+    ]);
+    expect(stored.nextPolicyId).toBe(4);
+    expect(Object.keys(stored).toSorted()).toEqual([
+      "boundary",
+      "domain",
+      "findings",
+      "focus",
+      "items",
+      "legacy",
+      "nextId",
+      "nextPolicyId",
+      "policies",
+      "schemaVersion",
+    ]);
+  });
+
+  it("adds, lists, replaces and removes policies by id, refusing unknown ids", async () => {
+    const { state, path } = await started();
+    const env = cliEnv(state, COORDINATOR);
+    const script = join(import.meta.dir, "..", "coordinate.ts");
+    const run = (args: string[]) => {
+      const result = Bun.spawnSync(["bun", script, ...args], {
+        env,
+        stdout: "pipe",
+        stderr: "pipe",
+        timeout: 10_000,
+      });
+      return [result.exitCode, result.stdout.toString(), result.stderr.toString()];
+    };
+
+    expect(
+      run(["backlog", "policy", "add", "first", "--at", "2026-11-19", "--domain", "app"]),
+    ).toEqual([0, "added policy p1: first\n", ""]);
+    expect(
+      run(["backlog", "policy", "add", "second", "--at", "2026-11-19", "--domain", "app"]),
+    ).toEqual([0, "added policy p2: second\n", ""]);
+    expect(run(["backlog", "policy", "ls", "--domain", "app"])).toEqual([
+      0,
+      "p1 2026-11-19: first\np2 2026-11-19: second\n",
+      "",
+    ]);
+    const replaced = run([
+      "backlog",
+      "policy",
+      "replace",
+      "p1",
+      "updated",
+      "--at",
+      "2026-11-20",
+      "--domain",
+      "app",
+      "--json",
+    ]);
+    expect([replaced[0], JSON.parse(String(replaced[1] ?? "{}")), replaced[2]]).toEqual([
+      0,
+      { id: "p1", text: "updated", at: "2026-11-20" },
+      "",
+    ]);
+    expect(run(["backlog", "policy", "rm", "p1", "--domain", "app"])).toEqual([
+      0,
+      "removed policy p1: updated\n",
+      "",
+    ]);
+    expect(
+      run(["backlog", "policy", "add", "third", "--at", "2026-11-21", "--domain", "app"]),
+    ).toEqual([0, "added policy p3: third\n", ""]);
+    expect(run(["backlog", "policy", "rm", "p3", "--domain", "app"])).toEqual([
+      0,
+      "removed policy p3: third\n",
+      "",
+    ]);
+    expect(
+      run(["backlog", "policy", "add", "fourth", "--at", "2026-11-22", "--domain", "app"]),
+    ).toEqual([0, "added policy p4: fourth\n", ""]);
+    expect(read(path).policies).toEqual([
+      { id: "p2", text: "second", at: "2026-11-19" },
+      { id: "p4", text: "fourth", at: "2026-11-22" },
+    ]);
+    expect(read(path).nextPolicyId).toBe(5);
+    const beforeUnknown = readFileSync(path, "utf8");
+    expect(run(["backlog", "policy", "rm", "p9", "--domain", "app"])).toEqual([
+      1,
+      "",
+      "refused: no policy p9 in app\n",
+    ]);
+    expect(readFileSync(path, "utf8")).toBe(beforeUnknown);
+  });
+});
+
 describe("invalid documents", () => {
   const item = (fields: Record<string, unknown>) => ({
     id: "i1",
@@ -880,10 +1010,11 @@ describe("invalid documents", () => {
     focus: null,
     legacy: null,
     boundary: { owned: [], adjacent: [] },
-    standingYes: [],
+    policies: [],
     items: [],
     findings: [],
     nextId: 3,
+    nextPolicyId: 1,
     ...fields,
   });
   it.each([
@@ -981,7 +1112,7 @@ describe("retention", () => {
         focus: null,
         legacy: null,
         boundary: { owned: [], adjacent: [] },
-        standingYes: [],
+        policies: [],
         items,
         findings,
         nextId,
@@ -1275,7 +1406,7 @@ const prepared = async () => {
   return { state, path };
 };
 const mutations = (): string[][] => [
-  ["backlog", "standing", "add", "ship it"],
+  ["backlog", "policy", "add", "ship it"],
   ["backlog", "focus", "login v2"],
   ["item", "add", "another"],
   ["item", "update", "i1", "--decided", "scope is api only"],
