@@ -1,13 +1,14 @@
 import { existsSync } from "node:fs";
-import { mkdir, readFile, writeFile } from "node:fs/promises";
-import { join } from "node:path";
+import { randomUUID } from "node:crypto";
+import { mkdir, open, readFile, rename, unlink } from "node:fs/promises";
+import { dirname, join } from "node:path";
 import { Effect, Option, Result } from "effect";
 import { readDocument } from "./backlog-doc.ts";
 import { isAnswer } from "./backlog-store/ops.ts";
 import { isDiscussion } from "./backlog-store/schema.ts";
 import type { Item } from "./backlog-store/schema.ts";
 import type { Config } from "./config.ts";
-import { L, Refused, sessionOf } from "./fleet.ts";
+import { checkDomainName, L, Refused, sessionOf } from "./fleet.ts";
 import * as hc from "./herdr.ts";
 import { repoPullRequests } from "./prs.ts";
 import { domainRepos } from "./status.ts";
@@ -32,10 +33,11 @@ export type IdleReminder = {
   interval: number;
 };
 
-/**
- * The watcher's state file: the last snapshot, so changes while it was not running fire on re-arm.
- */
-export type WatchState = {
+/** One pending event with its stable delivery identifier. */
+export type WatchEvent = { id: string; line: string };
+
+/** The watcher's last committed snapshot, separate from its staged update. */
+export type WatchSnapshot = {
   delegates: Record<string, SeenDelegate>;
   prs: Record<string, SeenPr>;
   /**
@@ -55,6 +57,13 @@ export type WatchState = {
   idle: Record<string, IdleReminder>;
 };
 
+/** The watcher's committed snapshot, pending events, and recovery point. */
+export type WatchState = WatchSnapshot & {
+  outbox: WatchEvent[];
+  nextEventId: number;
+  staged: WatchSnapshot | undefined;
+};
+
 /**
  * An empty state.
  */
@@ -65,6 +74,9 @@ export const emptyState = (): WatchState => ({
   answered: null,
   discussed: null,
   idle: {},
+  outbox: [],
+  nextEventId: 1,
+  staged: undefined,
 });
 
 /**
@@ -112,7 +124,6 @@ export const idleEvents = (
   items: readonly Item[],
   reminders: Record<string, IdleReminder>,
   now: number,
-  force = false,
 ): string[] => {
   const lines: string[] = [];
   for (const address of Object.keys(reminders))
@@ -136,12 +147,7 @@ export const idleEvents = (
       continue;
     }
     let reminder = reminders[address];
-    if (
-      force ||
-      !reminder ||
-      reminder.status !== delegate.status ||
-      reminder.turn !== delegate.turn
-    ) {
+    if (!reminder || reminder.status !== delegate.status || reminder.turn !== delegate.turn) {
       reminder = {
         status: delegate.status,
         turn: delegate.turn,
@@ -151,7 +157,7 @@ export const idleEvents = (
       };
       reminders[address] = reminder;
     }
-    if (!force && now < reminder.next) continue;
+    if (now < reminder.next) continue;
     const minutes = Math.max(0, now - reminder.since) / 60_000;
     const age =
       minutes < 60
@@ -315,6 +321,9 @@ const readState = (path: string) =>
         answered: parsed.answered ?? null,
         discussed: parsed.discussed ?? null,
         idle: parsed.idle ?? {},
+        outbox: parsed.outbox ?? [],
+        nextEventId: parsed.nextEventId ?? 1,
+        staged: parsed.staged,
       };
     } catch {
       return undefined;
@@ -323,8 +332,31 @@ const readState = (path: string) =>
 
 const writeState = (path: string, state: WatchState) =>
   Effect.promise(async () => {
-    await mkdir(join(path, ".."), { recursive: true });
-    await writeFile(path, `${JSON.stringify(state, null, 1)}\n`);
+    const directory = dirname(path);
+    await mkdir(directory, { recursive: true });
+    const temporary = `${path}.${process.pid}.${randomUUID()}.tmp`;
+    let created = false;
+    let renamed = false;
+    try {
+      const file = await open(temporary, "wx", 0o600);
+      created = true;
+      try {
+        await file.writeFile(`${JSON.stringify(state, null, 1)}\n`);
+        await file.sync();
+      } finally {
+        await file.close();
+      }
+      await rename(temporary, path);
+      renamed = true;
+      const parent = await open(directory, "r");
+      try {
+        await parent.sync();
+      } finally {
+        await parent.close();
+      }
+    } finally {
+      if (created && !renamed) await unlink(temporary).catch(() => undefined);
+    }
   });
 
 /**
@@ -385,7 +417,7 @@ export const snapshotPrs = Effect.fn("snapshotPrs")(function* (
 });
 
 /**
- * Watch options.
+ * Options for one watch loop.
  */
 export type WatchOptions = {
   domain: string;
@@ -394,27 +426,45 @@ export type WatchOptions = {
   maxMs: number;
   owner: string | undefined;
   replace: boolean;
+  deliver: boolean;
   today: () => string;
   now?: () => number;
   /**
-   * Keep running and hand each event line to `emit` as it happens, instead of returning on the first
-   * events. No `alive` line and no time limit; `blind` and `owner gone` are emitted, then it returns.
+   * Keep polling and emit every event batch until stopped or the owner is gone.
    */
   follow: boolean;
   /**
-   * Where follow mode writes each event line (the CLI prints it at once).
+   * Write one already-identified outbox event to stdout. A rejected promise leaves it pending.
    */
-  emit: (line: string) => void;
+  emit: (line: string) => void | Promise<void>;
 };
 
+const eventLine = (event: WatchEvent): string => `${event.line} [e${event.id}]`;
+// Keep a watcher alive through a Herdr restart without retrying more than once per minute.
+const MAX_RETRY_DELAY_MS = 60_000;
+
 /**
- * Watch one domain until something needs the coordinator, then print one line per event and exit. In
- * follow mode, emit each event line as it happens and run until stopped, blind, or its owner is gone.
+ * Watch one domain, durably queuing each event before committing its snapshot. Events are removed
+ * only after stdout accepts them or Herdr confirms a send.
  * @param config Config.
  * @param options Watch options.
- * @returns Event lines (in follow mode, none: every line went to `emit`).
+ * @returns Control lines such as `alive`, `blind`, or `owner gone`.
  */
 export const watch = Effect.fn("watch")(function* (config: Config, options: WatchOptions) {
+  yield* checkDomainName(options.domain);
+  if (options.deliver && !options.owner)
+    return yield* new Refused({ message: "watch --deliver requires an explicit --owner address" });
+  if (options.deliver) {
+    const owner = yield* hc.get(options.owner ?? "");
+    if (
+      !owner?.live ||
+      owner.labels[L.role] !== "coordinator" ||
+      owner.labels[L.domain] !== options.domain
+    )
+      return yield* new Refused({
+        message: `--owner ${options.owner} is not a live coordinator for ${options.domain}`,
+      });
+  }
   const pid = process.pid;
   let lock = yield* acquireLock(config.stateDir, options.domain, pid);
   if (!lock.ok && options.replace && lock.holder !== undefined) {
@@ -428,7 +478,6 @@ export const watch = Effect.fn("watch")(function* (config: Config, options: Watc
     });
   const release = releaseLock(config.stateDir, options.domain, pid);
   const onSignal = () => {
-    // An async release would never finish before exit, leaving a stale pid file behind.
     releaseLockSync(config.stateDir, options.domain, pid);
     console.log("stopped");
     process.exit(0);
@@ -439,44 +488,87 @@ export const watch = Effect.fn("watch")(function* (config: Config, options: Watc
   return yield* Effect.gen(function* () {
     const path = statePath(config.stateDir, options.domain);
     const saved = yield* readState(path);
-    const state: WatchState = saved ?? emptyState();
+    let state: WatchState = saved ?? emptyState();
+    if (state.staged !== undefined) {
+      state = { ...state, ...state.staged, staged: undefined };
+      yield* writeState(path, state);
+    }
     const repos = yield* domainRepos(config, options.domain);
-    const started = Date.now();
-    let lastForge = 0;
+    const clock = options.now ?? Date.now;
+    const started = clock();
+    let lastForge = Number.NEGATIVE_INFINITY;
     let failures = 0;
+    let failureMessage = "";
     let first = saved === undefined;
-    let firstTick = true;
+
+    const deliverPending = () =>
+      Effect.gen(function* () {
+        if (state.outbox.length === 0) return true;
+        if (options.deliver) {
+          const result = yield* hc
+            .send(options.owner ?? "", state.outbox.map(eventLine).join("\n"))
+            .pipe(Effect.result);
+          if (Result.isFailure(result)) return false;
+          state = { ...state, outbox: [] };
+          yield* writeState(path, state);
+          return true;
+        }
+        for (const event of state.outbox) {
+          yield* Effect.promise(async () => {
+            await options.emit(eventLine(event));
+          });
+          state = { ...state, outbox: state.outbox.filter((pending) => pending.id !== event.id) };
+          yield* writeState(path, state);
+        }
+        return true;
+      });
+
+    const ownerState = () =>
+      Effect.gen(function* () {
+        if (!options.owner) return "live" as const;
+        const result = yield* hc.get(options.owner).pipe(Effect.result);
+        if (Result.isFailure(result)) return "unknown" as const;
+        return result.success === undefined || !result.success.live
+          ? ("gone" as const)
+          : ("live" as const);
+      });
+
     for (;;) {
+      const snapshot: WatchSnapshot = {
+        delegates: state.delegates,
+        prs: state.prs,
+        due: [...state.due],
+        answered: state.answered === null ? null : [...state.answered],
+        discussed: state.discussed === null ? null : [...state.discussed],
+        idle: Object.fromEntries(
+          Object.entries(state.idle).map(([address, reminder]) => [address, { ...reminder }]),
+        ),
+      };
       const lines: string[] = [];
       const polled = yield* snapshotDelegates(options.domain).pipe(Effect.result);
       if (Result.isFailure(polled)) {
         failures += 1;
-        if (failures >= 3) {
-          const blind = `blind: herdr-core unreadable 3 times: ${polled.failure.message}; re-arm the watcher`;
-          if (!options.follow) return [blind];
-          options.emit(blind);
-          return [];
-        }
+        failureMessage = polled.failure.message;
       } else {
         failures = 0;
-        const events = first ? [] : delegateEvents(state.delegates, polled.success);
+        failureMessage = "";
+        const events = first ? [] : delegateEvents(snapshot.delegates, polled.success);
         if (first)
-          for (const [address, now] of Object.entries(polled.success))
-            if (now.status === "blocked" || now.status === "error")
-              events.push(`${now.status} ${now.name} (${address}): read its terminal`);
+          for (const [address, current] of Object.entries(polled.success))
+            if (current.status === "blocked" || current.status === "error")
+              events.push(`${current.status} ${current.name} (${address}): read its terminal`);
         if (events.some((line) => line.startsWith("settled ")))
           events.push(statusBeat(polled.success));
         lines.push(...events);
-        state.delegates = polled.success;
+        snapshot.delegates = polled.success;
       }
-      if (Date.now() - lastForge >= options.forgeIntervalMs) {
-        lastForge = Date.now();
-        const prs = yield* snapshotPrs(config, repos, state.prs);
-        lines.push(...prEvents(state.prs, prs.snapshot));
-        state.prs = prs.snapshot;
+      if (clock() - lastForge >= options.forgeIntervalMs) {
+        lastForge = clock();
+        const prs = yield* snapshotPrs(config, repos, snapshot.prs);
+        lines.push(...prEvents(snapshot.prs, prs.snapshot));
+        snapshot.prs = prs.snapshot;
       }
-      // The document is a local file, so it is read every tick: an answer wakes the coordinator
-      // within one interval, not at forge cadence.
+      // The local backlog is read every tick, so an answer wakes within one interval, not forge cadence.
       const document = yield* readDocument(config, options.domain).pipe(Effect.option);
       if (Result.isSuccess(polled)) {
         const details: Record<string, { session: string; statusMs: number | undefined }> = {};
@@ -497,47 +589,81 @@ export const watch = Effect.fn("watch")(function* (config: Config, options: Watc
           polled.success,
           details,
           Option.isSome(document) ? document.value.backlog.items : [],
-          state.idle,
-          options.now?.() ?? Date.now(),
-          firstTick,
+          snapshot.idle,
+          clock(),
         );
         lines.push(...idle);
         if (idle.length > 0 && !lines.some((line) => line.startsWith("status: ")))
           lines.push(statusBeat(polled.success));
       }
       if (Option.isSome(document)) {
-        const due = dueEvents(document.value.backlog.items, options.today(), state.due);
+        const due = dueEvents(document.value.backlog.items, options.today(), snapshot.due);
         lines.push(...due.lines);
-        state.due = due.fired;
-        const answered = answeredEvents(document.value.backlog.items, state.answered);
+        snapshot.due = due.fired;
+        const answered = answeredEvents(document.value.backlog.items, snapshot.answered);
         lines.push(...answered.lines);
-        state.answered = answered.fired;
-        const discussed = discussionEvents(document.value.backlog.items, state.discussed);
+        snapshot.answered = answered.fired;
+        const discussed = discussionEvents(document.value.backlog.items, snapshot.discussed);
         lines.push(...discussed.lines);
-        state.discussed = discussed.fired;
+        snapshot.discussed = discussed.fired;
       }
       first = false;
-      firstTick = false;
-      let ownerGone = false;
-      if (options.owner) {
-        const owner = yield* hc
-          .get(options.owner)
-          .pipe(Effect.catch(() => Effect.succeed(undefined)));
-        ownerGone = owner === undefined || !owner.live;
-        if (ownerGone)
-          lines.push(`owner gone: ${options.owner} no longer runs; nothing will read these events`);
-      }
+
+      const owner = yield* ownerState();
+      const ownerGone = owner === "gone";
+      const ownerNotice = ownerGone
+        ? `owner gone: ${options.owner} no longer runs; nothing will read these events`
+        : undefined;
+      const events = lines.map((line, index) => ({
+        id: (state.nextEventId + index).toString(36),
+        line: line.replace(/[\r\n]+/gu, " ").trim(),
+      }));
+      const staged: WatchState = {
+        ...state,
+        outbox: [...state.outbox, ...events],
+        nextEventId: state.nextEventId + events.length,
+        staged: snapshot,
+      };
+      // The outbox and staged snapshot are one atomic write. Recovery commits the staged snapshot
+      // before another poll, so a crash cannot regenerate and enqueue the same snapshot transition.
+      yield* writeState(path, staged);
+      state = { ...staged, ...snapshot, staged: undefined };
       yield* writeState(path, state);
+
+      if (ownerGone && options.deliver) return [];
+      if (owner === "unknown" && options.deliver) {
+        yield* Effect.sleep(
+          Math.min(options.intervalMs * 2 ** Math.max(0, failures), MAX_RETRY_DELAY_MS),
+        );
+        continue;
+      }
+      const pending = state.outbox.length > 0;
+      const delivered = yield* deliverPending();
+      if (options.follow && ownerNotice !== undefined)
+        yield* Effect.promise(async () => options.emit(ownerNotice));
+      if (ownerGone) return options.follow ? [] : [ownerNotice ?? "owner gone"];
+      if (!options.follow && (pending || events.length > 0)) return [];
+
+      if (failures >= 3) {
+        const blind = `blind: herdr-core unreadable 3 times: ${failureMessage}; re-arm the watcher`;
+        if (!options.deliver) {
+          if (options.follow) {
+            yield* Effect.promise(async () => options.emit(blind));
+            return [];
+          }
+          return [blind];
+        }
+        // Stay alive through Herdr restarts, backing off to at most one retry per minute.
+        yield* Effect.sleep(Math.min(options.intervalMs * 2 ** (failures - 1), MAX_RETRY_DELAY_MS));
+        continue;
+      }
       if (options.follow) {
-        for (const line of lines) options.emit(line);
-        // Nothing reads a follow stream whose owner is gone, so it stops rather than repeat the line.
-        if (ownerGone) return [];
         yield* Effect.sleep(options.intervalMs);
         continue;
       }
-      if (lines.length > 0) return lines;
-      if (Date.now() - started >= options.maxMs)
+      if (clock() - started >= options.maxMs)
         return [`alive: no events in ${Math.round(options.maxMs / 60_000)}m; re-arm the watcher`];
+      if (!delivered && pending) return [];
       yield* Effect.sleep(options.intervalMs);
     }
   }).pipe(

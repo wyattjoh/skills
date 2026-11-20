@@ -45,7 +45,19 @@ const started = async () => {
   const cfg = await config(state);
   await runWith(
     start(cfg, "app", { HC_TERMINAL_ID: "t9" }),
-    fakeProc((argv) => ok(argv[1] === "ls" ? '{"terminals":[]}' : "{}")).layer,
+    fakeProc((argv) => {
+      if (argv[1] === "ls") return ok('{"terminals":[]}');
+      if (argv[1] === "get")
+        return ok(
+          JSON.stringify({
+            address: "t9",
+            state: "live",
+            labels: { "fleet.role": "coordinator", "fleet.domain": "app" },
+          }),
+        );
+      if (argv[1] === "run") return ok('{"address":"t-watch","state":"live"}');
+      return ok("{}");
+    }).layer,
   );
   return { state, cfg, path: join(state, "backlogs", "app.json") };
 };

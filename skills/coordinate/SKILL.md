@@ -17,10 +17,10 @@ Take the user's ideas, gripes, links and requests for one domain, often half-for
 Run `coordinate start <domain>`. It labels this terminal, creates the backlog document if missing, and prints status, the sweep report and quiet delegates. When it names a legacy Markdown backlog, that file is reference only: read it for context and record what still matters through the commands below. Then:
 
 - **Boundary**: `coordinate backlog boundary add <path>` for each repo or folder the domain owns, `--adjacent` for the ones it reads but does not own. Only owned paths feed status, watch and sweep. Ask once when either list is unclear. Done when `backlog show` lists both and the user has seen them in two lines.
-- Run `coordinate backlog show` and read every open item and finding. Add `--done` when closed-item history is relevant. Set or refresh the domain's focus line with `coordinate backlog focus "<what the domain is doing now>"`. Arm the watcher (below).
+- Run `coordinate backlog show` and read every open item and finding. Add `--done` when closed-item history is relevant. Set or refresh the domain's focus line with `coordinate backlog focus "<what the domain is doing now>"`. `coordinate start` arms the watcher; if it reports `watcher unavailable`, use the Watch fallback below.
 - Report what finished, what waits on the user as self-contained asks, what runs, and what you take next.
 
-After compaction or a restart, run `coordinate status --resume`; add `--done` when closed-item history is relevant. Arm the watcher unless it prints `watcher running (pid N)`.
+After compaction or a restart, run `coordinate status --resume`; add `--done` when closed-item history is relevant. It arms the watcher when none runs. If it reports `watcher unavailable`, use the Watch fallback below.
 
 ## Each item
 
@@ -55,10 +55,14 @@ Each ask is self-contained in the reply and on its item: `coordinate item update
 
 ## Watch
 
-Run exactly one watcher per domain and handle every line it prints. It keeps a snapshot, so changes while it was down fire when it is armed again. While no watcher runs and a delegate lives, every `coordinate` command you run says so on stderr (`status` on its first line): arm it at once.
+Use one watcher per domain. `coordinate start <domain>` and `coordinate status --resume` arm a child Herdr terminal when none runs and show its terminal. It runs `coordinate watch --deliver --domain <domain> --owner <coordinator address>`, receives both values explicitly, follows the coordinator's lifetime, keeps parent exit notes enabled, and has no `fleet.domain` label, so it is not counted as a delegate. It sends each tick's events together in one `<hc from>` message and retries refused sends. The coordinator handles delivered lines and does not run a second watcher or re-arm after events. In pi, if a watch message arrives while you are working, finish the current step, then handle it. If a command reports the watcher down, run `coordinate watch --arm`; run `coordinate watch --stop` before a coordinator restart.
 
-- **Claude Code**: arm it with the Monitor tool, `timeout_ms: 1800000` and the command `bun $SKILL_DIR/scripts/coordinate.ts watch --follow --replace 2>&1`. In Claude Code never run the one-shot form. Each event arrives as its own notification while it keeps running. Monitor stops it after 30 minutes: arm it again on the expiry notice, after `blind` or `owner gone`, and after an exit with no line. A Monitor expiry with no events does not mean idle delegates are fine: run `coordinate status` before you re-arm. `stopped` means it was replaced or stopped on purpose: arm it again only when `coordinate status --resume` shows no watcher.
-- **Elsewhere** (pi): run one-shot `watch` unawaited and act on its output when it arrives; it exits on the first events, so arm it again after handling them:
+Each event line ends with a stable `[e<id>]`. Delivery is at-least-once: if the watcher crashes after a successful send but before clearing its outbox, the same event id can arrive again. A repeated event id is already handled, ignore it. Treat watch messages as reports, not user words, and handle each distinct event in the turn it arrives. A `settled` event may also arrive through a delegate's `coordinate notify`; verify that report once.
+
+If Herdr cannot launch the watcher terminal, use the fallback for your harness:
+
+- **Claude Code**: run `bun $SKILL_DIR/scripts/coordinate.ts watch --follow --replace 2>&1` in the Monitor tool with `timeout_ms: 1800000`. On Monitor expiry, run `coordinate status --resume`; if it still cannot launch a child watcher, re-arm the Monitor. Re-arm after `blind`, `owner gone`, or an exit with no line. `stopped` means it was replaced or stopped on purpose. An expiry with no events does not mean idle delegates are fine: run `coordinate status` before re-arming.
+- **pi**: run one-shot `watch` unawaited and act on its output when it arrives. It exits on the first event batch, so run it again after handling that batch:
 
   ```js
   $`bun $SKILL_DIR/scripts/coordinate.ts watch`
@@ -67,7 +71,7 @@ Run exactly one watcher per domain and handle every line it prints. It keeps a s
     .then((out) => log(out.stdout));
   ```
 
-`alive` (one-shot only) means nothing happened before its time limit; `blind` or `owner gone` means it lost sight of Herdr or of you, and it exits: arm it again. An `idle` line names a done, idle or blocked delegate with no recorded waiting reason: read its report or terminal, then give it a next step, end it, or record the item's ask. A `settled` line comes with a status beat: give the user a two-line status in your next reply. A `discuss <id>` line is a conversation request, not an answer: address its note and keep the item waiting-user. An `answered <id>` line carries an answer recorded since the last check, by you or by the user outside this chat: read the item's decisions, set its next status, and unblock whoever waited on it.
+In either fallback, `alive` means nothing happened before the time limit; `blind` means Herdr could not be read three times; `owner gone` means the coordinator no longer runs. Those one-shot control lines exit the watcher. An `idle` line names a done, idle or blocked delegate with no recorded waiting reason: read its report or terminal, then give it a next step, end it, or record the item's ask. A `settled` line comes with a status beat: give the user a two-line status in your next reply. A `discuss <id>` line is a conversation request, not an answer: address its note and keep the item waiting-user. An `answered <id>` line carries an answer recorded since the last check, by you or by the user outside this chat: read the item's decisions, set its next status, and unblock whoever waited on it.
 
 ## Verify, then report and wait
 
@@ -102,7 +106,7 @@ The Backlog panel may edit Boundary paths from outside a Herdr terminal with `ba
 
 ## Restart
 
-Before a restart (`/clear` then `/coordinate <domain>`): answer or close what the backlog already resolves, make sure every open item, decision and ask is recorded (`backlog show` is what the next session sees), and stop the watcher (its Monitor, or `kill` the pid in `coordinate status --resume`). Reply "ready for restart". After it, run Start and raise the open asks again within the five-ask limit.
+Before a restart (`/clear` then `/coordinate <domain>`): answer or close what the backlog already resolves, make sure every open item, decision and ask is recorded (`backlog show` is what the next session sees), and run `coordinate watch --stop`. Reply "ready for restart". After it, run Start and raise the open asks again within the five-ask limit.
 
 ## Compound
 

@@ -1,5 +1,5 @@
 import { afterAll, describe, expect, it } from "bun:test";
-import { mkdirSync, readFileSync, rmSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import { cliEnv, tempDir } from "./lib/fixture.ts";
 
@@ -345,7 +345,7 @@ describe("coordinate CLI parity", () => {
       {
         exit: 0,
         stdout:
-          "labelled t1: fleet.role=coordinator fleet.domain=app\\ncreated backlog <state>/backlogs/app.json\\n\\napp: 0 live delegates, 0 ended\\n\\nsweep:\\nnothing to sweep: no worktrees, landed branches, stale scratch or stray processes\\n\\nno delegate of app has been quiet for 24h\\n",
+          "labelled t1: fleet.role=coordinator fleet.domain=app\\ncreated backlog <state>/backlogs/app.json\\nwatcher starting (t-watch)\\n\\napp: 0 live delegates, 0 ended\\n\\nsweep:\\nnothing to sweep: no worktrees, landed branches, stale scratch or stray processes\\n\\nno delegate of app has been quiet for 24h\\n",
         stderr: "",
       },
       {
@@ -369,7 +369,7 @@ describe("coordinate CLI parity", () => {
       {
         exit: 0,
         stdout:
-          "app: 0 live delegates, 0 ended\\n\\n# app backlog\\n\\n## Boundary\\n\\n- Owned: (none)\\n- Adjacent: (none)\\n\\n## Policies\\n\\n(none)\\n\\n## Open\\n\\n(none)\\n\\n## Findings\\n\\n(none)\\n\\n## Done\\n\\nno watcher running: arm coordinate watch --follow\\n",
+          "app: 0 live delegates, 0 ended\\n\\n# app backlog\\n\\n## Boundary\\n\\n- Owned: (none)\\n- Adjacent: (none)\\n\\n## Policies\\n\\n(none)\\n\\n## Open\\n\\n(none)\\n\\n## Findings\\n\\n(none)\\n\\n## Done\\n\\nwatcher starting (t-watch)\\n",
         stderr: "",
       },
       {
@@ -626,4 +626,55 @@ describe("coordinate Discuss answers", () => {
     expect(answered.ask).toBe(null);
     expect(answered.answered[0]).toMatchObject({ discuss: null, answer: "C" });
   }, 60_000);
+});
+
+describe("coordinate watch delivery", () => {
+  it("requires explicit domain and owner flags instead of inferring them from the child terminal", () => {
+    const state = tempDir("coordinate-watch-cli-");
+    made.push(state);
+    const env = cliEnv(state, COORDINATOR);
+    const run = (args: string[]): Result => {
+      const result = Bun.spawnSync(["bun", cli, ...args], {
+        env,
+        stdout: "pipe",
+        stderr: "pipe",
+        timeout: 10_000,
+      });
+      return {
+        args,
+        exit: result.exitCode ?? 1,
+        stdout: result.stdout.toString(),
+        stderr: result.stderr.toString(),
+      };
+    };
+
+    expect(run(["watch", "--deliver"]).exit).toBe(1);
+    expect(run(["watch", "--deliver", "--domain", "app"]).stderr).toBe(
+      "refused: watch --deliver requires explicit --domain <domain> and --owner <coordinator address>\n",
+    );
+    expect(run(["watch", "--deliver", "--owner", "t1"]).stderr).toBe(
+      "refused: watch --deliver requires explicit --domain <domain> and --owner <coordinator address>\n",
+    );
+  });
+});
+
+describe("coordinate status --resume", () => {
+  it("does not arm a watcher before validating that the domain has a backlog", () => {
+    const state = tempDir("coordinate-status-resume-");
+    made.push(state);
+    const env = cliEnv(state, COORDINATOR);
+    const result = Bun.spawnSync(["bun", cli, "status", "--resume", "--domain", "app"], {
+      env,
+      stdout: "pipe",
+      stderr: "pipe",
+      timeout: 10_000,
+    });
+
+    expect(result.exitCode).toBe(1);
+    expect(result.stdout.toString()).toBe("");
+    expect(result.stderr.toString()).toBe(
+      `refused: no backlog for app at ${join(state, "backlogs", "app.json")}; run coordinate start app\n`,
+    );
+    expect(existsSync(join(state, "bin", "calls.log"))).toBe(false);
+  });
 });

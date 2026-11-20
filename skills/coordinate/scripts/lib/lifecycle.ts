@@ -50,6 +50,7 @@ import {
   PI_THINKING,
 } from "./harness.ts";
 import * as hc from "./herdr.ts";
+import { armWatcher, watcherInfoLine } from "./watch-terminal.ts";
 
 const loginShell = (): string => {
   try {
@@ -92,6 +93,7 @@ export const start = Effect.fn("start")(function* (
     if (made.legacy)
       lines.push(`recorded legacy Markdown backlog ${made.legacy} (reference only, not read)`);
   }
+  lines.push(watcherInfoLine(yield* armWatcher(config, domain, address)));
   return lines;
 });
 
@@ -159,6 +161,8 @@ const launch = Effect.fn("launch")(function* (spec: {
       cwd: spec.cwd,
       labels,
       parent: spec.parent,
+      outliveParent: true,
+      notifyParent: false,
       argv,
     });
     const tab = (yield* hc.get(address).pipe(Effect.catch(() => Effect.succeed(undefined))))
@@ -178,6 +182,8 @@ const launch = Effect.fn("launch")(function* (spec: {
         ...spec.labels,
       },
       parent: spec.parent,
+      outliveParent: true,
+      notifyParent: false,
       argv,
     })
     .pipe(Effect.tapError(() => hc.closeSpace(made.space).pipe(Effect.ignore)));

@@ -2,7 +2,7 @@ import { Effect } from "effect";
 import type { Config } from "./config.ts";
 import { L } from "./fleet.ts";
 import * as hc from "./herdr.ts";
-import { watcherAlive } from "./watch-lock.ts";
+import { watcherInfo } from "./watch-terminal.ts";
 
 /**
  * The line a coordinator's command shows when its domain has live delegates and no watcher, or
@@ -19,11 +19,11 @@ export const watcherBanner = Effect.fn("watcherBanner")(
     const own = yield* hc.get(address);
     const domain = own?.labels[L.role] === "coordinator" ? own.labels[L.domain] : undefined;
     if (!domain) return undefined;
-    if ((yield* watcherAlive(config.stateDir, domain)) !== undefined) return undefined;
+    if ((yield* watcherInfo(config, domain)).state !== "missing") return undefined;
     const listed = yield* hc.list([`${L.domain}=${domain}`]);
     const live = listed.filter((terminal) => terminal.live && terminal.address !== address);
     if (live.length === 0) return undefined;
-    return `watcher for ${domain} is down; arm it (coordinate watch --follow)`;
+    return `watcher for ${domain} is down; arm it (coordinate watch --arm)`;
   },
   // Defects too: the banner must never change a command's exit code.
   Effect.catchCause(() => Effect.succeed(undefined)),

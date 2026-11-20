@@ -56,6 +56,7 @@ const answers =
     if (argv[0] !== "hc") throw new Error(`unexpected command: ${argv.join(" ")}`);
     if (argv[1] === "ls") return ok('{"terminals":[]}');
     if (argv[1] === "label") return ok("{}");
+    if (argv[1] === "run") return ok('{"address":"t-watch","state":"live"}');
     if (argv[1] === "get" && argv[2] === "t1")
       return ok(JSON.stringify({ address: "t1", state: "live", labels: COORDINATOR }));
     if (argv[1] === "get" && target && (argv[2] === "t4" || argv[2] === target.name))

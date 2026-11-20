@@ -65,6 +65,8 @@ describe("run", () => {
         cwd: "/w",
         labels: { "fleet.domain": "app" },
         parent: "t1",
+        outliveParent: true,
+        notifyParent: false,
         argv: ["pi", "go"],
       }),
       fake.layer,

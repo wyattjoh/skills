@@ -10,6 +10,7 @@ import { cliEnv, runWith, tempDir } from "./fixture.ts";
 import { fakeProc, ok, type RunOutput } from "./proc.ts";
 import {
   delegateEvents,
+  emptyState,
   idleEvents,
   prEvents,
   statusBeat,
@@ -86,7 +87,7 @@ describe("idleEvents", () => {
 
   it("fires immediately and backs off 15, 30, then 60 minutes per unchanged delegate", () => {
     const reminders: Record<string, IdleReminder> = {};
-    expect(idleEvents(delegates, details, [], reminders, start, true)).toEqual([
+    expect(idleEvents(delegates, details, [], reminders, start)).toEqual([
       "idle fix-a (t1) 20m: read its REPORT.md and give it a next step or end it",
     ]);
     expect(idleEvents(delegates, details, [], reminders, start + 14 * 60_000)).toEqual([]);
@@ -103,9 +104,9 @@ describe("idleEvents", () => {
     ]);
   });
 
-  it("resets the schedule when state or turn changes and on the first tick after arming", () => {
+  it("resets on status or turn changes and honors the saved deadline after re-arming", () => {
     const reminders: Record<string, IdleReminder> = {};
-    idleEvents(delegates, details, [], reminders, start, true);
+    idleEvents(delegates, details, [], reminders, start);
     const changed = { t1: { ...delegates.t1, status: "blocked" } };
     const changedDetails = { t1: { session: "s1", statusMs: start + 60_000 } };
     expect(idleEvents(changed, changedDetails, [], reminders, start + 60_000)).toEqual([
@@ -121,12 +122,22 @@ describe("idleEvents", () => {
         start + 120_000,
       ),
     ).toEqual(["idle fix-a (t1) 0m: read its terminal with hc read t1"]);
-    const armedDetails = { t1: { session: "s1", statusMs: start + 180_000 } };
-    expect(idleEvents(delegates, armedDetails, [], reminders, start + 180_000, true)).toEqual([
-      "idle fix-a (t1) 0m: read its REPORT.md and give it a next step or end it",
+
+    const saved = {
+      t1: {
+        status: "idle",
+        turn: 1,
+        since: start,
+        next: start + 15 * 60_000,
+        interval: 30,
+      },
+    };
+    expect(idleEvents(delegates, details, [], saved, start + 60_000)).toEqual([]);
+    expect(idleEvents(delegates, details, [], saved, start + 15 * 60_000)).toEqual([
+      "idle fix-a (t1) 15m: read its REPORT.md and give it a next step or end it",
     ]);
-    expect(reminders.t1?.interval).toBe(30);
-    expect(reminders.t1?.next).toBe(start + 180_000 + 15 * 60_000);
+    expect(saved.t1?.interval).toBe(60);
+    expect(saved.t1?.next).toBe(start + 45 * 60_000);
   });
 
   it("suppresses parked and asked waiting-user items, but not waiting-user without an ask", () => {
@@ -159,7 +170,6 @@ describe("idleEvents", () => {
         ],
         {},
         start,
-        true,
       ),
     ).toEqual(["idle unasked (t3) 0m: read its REPORT.md and give it a next step or end it"]);
   });
@@ -224,6 +234,8 @@ describe("watch lock", () => {
   });
 });
 
+const eventText = (line: string): string => line.replace(/ \[e[0-9a-z]+\]$/u, "");
+
 const watchAnswer = (argv: readonly string[]): RunOutput => {
   if (argv[1] === "ls" && argv.includes("fleet.role=coordinator")) return ok('{"terminals":[]}');
   if (argv[1] === "ls")
@@ -274,6 +286,7 @@ describe("watch", () => {
       }),
     );
     const fake = fakeProc(watchAnswer);
+    const emitted: string[] = [];
     const lines = await runWith(
       watch(config, {
         domain: "app",
@@ -282,13 +295,17 @@ describe("watch", () => {
         maxMs: 60_000,
         owner: undefined,
         replace: false,
+        deliver: false,
         today: () => "2026-11-16",
         follow: false,
-        emit: () => undefined,
+        emit: (line) => {
+          emitted.push(line);
+        },
       }),
       fake.layer,
     );
-    expect(lines).toEqual([
+    expect(lines).toEqual([]);
+    expect(emitted.map(eventText)).toEqual([
       "settled fix-a (t2): read its REPORT.md, verify, then report",
       "status: 1 idle; give the user a short status in your next reply",
       "idle fix-a (t2) 0m: read its REPORT.md and give it a next step or end it",
@@ -346,8 +363,9 @@ const dueDomain = async () => {
       now: NOW,
     }),
   );
-  const arm = (today: string) =>
-    runWith(
+  const arm = async (today: string) => {
+    const emitted: string[] = [];
+    const returned = await runWith(
       watch(config, {
         domain: "app",
         intervalMs: 5,
@@ -355,12 +373,17 @@ const dueDomain = async () => {
         maxMs: 20,
         owner: undefined,
         replace: false,
+        deliver: false,
         today: () => today,
         follow: false,
-        emit: () => undefined,
+        emit: (line) => {
+          emitted.push(line);
+        },
       }),
       fakeProc(quietHc).layer,
     );
+    return [...returned, ...emitted.map(eventText)];
+  };
   const documentFile = join(state, "backlogs", "app.json");
   const stateFile = join(state, "watch", "app.json");
   return { config, arm, documentFile, stateFile };
@@ -411,6 +434,8 @@ describe("watch due events", () => {
       answered: [],
       discussed: [],
       idle: {},
+      outbox: [],
+      nextEventId: 2,
     });
     writeFileSync(stateFile, JSON.stringify({ delegates: {}, prs: {} }));
     expect(await arm("2026-11-12")).toEqual(["due 2026-11-12: i1 Fix login"]);
@@ -474,27 +499,44 @@ describe("watch answered events", () => {
     expect(await arm("2026-11-10")).toEqual(['answered i2 Ship later: Re "Now or later?": later']);
   });
 
-  it("fires a repeated answer on the same day, and one recorded while the watch runs", async () => {
-    const { config, arm } = await dueDomain();
+  it("fires a repeated answer on the same day and sees one recorded during its poll", async () => {
+    const { config, arm, documentFile } = await dueDomain();
     await runWith(itemUpdate(config, "app", ask("Retry now?")));
     expect(await arm("2026-11-10")).toEqual(alive);
-    const watching = runWith(
+    const waiting = readFileSync(documentFile, "utf8");
+    await runWith(itemUpdate(config, "app", update("i1", { answer: "yes" })));
+    const answered = readFileSync(documentFile, "utf8");
+    writeFileSync(documentFile, waiting);
+
+    let recordedDuringPoll = false;
+    const fake = fakeProc((argv) => {
+      if (argv[1] === "ls" && !recordedDuringPoll) {
+        recordedDuringPoll = true;
+        writeFileSync(documentFile, answered);
+      }
+      return quietHc(argv);
+    });
+    const emitted: string[] = [];
+    const returned = await runWith(
       watch(config, {
         domain: "app",
-        intervalMs: 5,
+        intervalMs: 0,
         forgeIntervalMs: 60_000,
-        maxMs: 5_000,
+        maxMs: 0,
         owner: undefined,
         replace: false,
+        deliver: false,
         today: () => "2026-11-10",
+        now: () => 1_000_000,
         follow: false,
-        emit: () => undefined,
+        emit: (line) => {
+          emitted.push(line);
+        },
       }),
-      fakeProc(quietHc).layer,
+      fake.layer,
     );
-    await Bun.sleep(50);
-    await runWith(itemUpdate(config, "app", update("i1", { answer: "yes" })));
-    expect(await watching).toEqual(['answered i1 Fix login: Re "Retry now?": yes']);
+    expect(returned).toEqual([]);
+    expect(emitted.map(eventText)).toEqual(['answered i1 Fix login: Re "Retry now?": yes']);
     await runWith(itemUpdate(config, "app", ask("Retry now?")));
     await runWith(itemUpdate(config, "app", update("i1", { answer: "yes" })));
     expect(await arm("2026-11-10")).toEqual(['answered i1 Fix login: Re "Retry now?": yes']);
@@ -534,6 +576,150 @@ describe("watch discussion events", () => {
     await runWith(itemUpdate(config, "app", ask("Which session store?")));
     await runWith(itemUpdate(config, "app", update("i1", { answer: "Discuss" })));
     expect(await arm("2026-11-10")).toEqual(['discuss i1 Fix login: "Which session store?"']);
+  });
+});
+
+describe("watch --deliver outbox", () => {
+  const liveCoordinator = JSON.stringify({
+    address: "t1",
+    name: "coordinator",
+    state: "live",
+    labels: { "fleet.role": "coordinator", "fleet.domain": "app" },
+  });
+  const goneCoordinator = {
+    exitCode: 3,
+    stdout: "",
+    stderr: '{"error":{"kind":"not_found","message":"gone"}}',
+  };
+  const options = {
+    domain: "app",
+    intervalMs: 0,
+    forgeIntervalMs: 60_000,
+    maxMs: 0,
+    owner: "t1",
+    replace: false,
+    deliver: true,
+    today: () => "2026-11-12",
+    now: () => 1_000_000,
+    follow: true,
+    emit: () => undefined,
+  };
+
+  it("retries a refused tick with the same event id and sends one batch per tick", async () => {
+    const { config, stateFile } = await dueDomain();
+    let ownerReads = 0;
+    let sends = 0;
+    const fake = fakeProc((argv) => {
+      if (argv[1] === "ls") return ok('{"terminals":[]}');
+      if (argv[1] === "get" && argv[2] === "t1") {
+        ownerReads += 1;
+        return ownerReads <= 3 ? ok(liveCoordinator) : goneCoordinator;
+      }
+      if (argv[1] === "send") {
+        sends += 1;
+        return sends === 1
+          ? {
+              exitCode: 1,
+              stdout: "",
+              stderr: '{"error":{"kind":"blocked","message":"dialog"}}',
+            }
+          : ok();
+      }
+      throw new Error(`unexpected command: ${argv.join(" ")}`);
+    });
+
+    expect(await runWith(watch(config, options), fake.layer)).toEqual([]);
+    const messages = fake.calls
+      .filter((call) => call.argv[1] === "send")
+      .map((call) => call.argv[3]);
+    expect(messages).toEqual([
+      "due 2026-11-12: i1 Fix login [e1]",
+      "due 2026-11-12: i1 Fix login [e1]",
+    ]);
+    const saved = JSON.parse(readFileSync(stateFile, "utf8"));
+    expect(saved.due).toEqual(["i1 2026-11-12"]);
+    expect(saved.nextEventId).toBe(2);
+    expect(saved.outbox).toEqual([]);
+  });
+
+  it("keeps stdout events pending when the writer rejects, then removes them after a successful write", async () => {
+    const { config, stateFile } = await dueDomain();
+    const failedWrite: string[] = [];
+    const failed = {
+      ...options,
+      deliver: false,
+      owner: undefined,
+      follow: false,
+      emit: (line: string) => {
+        failedWrite.push(line);
+        throw new Error("stdout unavailable");
+      },
+    };
+    const fake = fakeProc((argv) => {
+      if (argv[1] === "ls") return ok('{"terminals":[]}');
+      throw new Error(`unexpected command: ${argv.join(" ")}`);
+    });
+
+    await expect(runWith(watch(config, failed), fake.layer)).rejects.toThrow("stdout unavailable");
+    expect(failedWrite).toEqual(["due 2026-11-12: i1 Fix login [e1]"]);
+    expect(JSON.parse(readFileSync(stateFile, "utf8")).outbox).toEqual([
+      { id: "1", line: "due 2026-11-12: i1 Fix login" },
+    ]);
+
+    const delivered: string[] = [];
+    const recovered = {
+      ...failed,
+      emit: (line: string) => {
+        delivered.push(line);
+      },
+    };
+    expect(await runWith(watch(config, recovered), fake.layer)).toEqual([]);
+    expect(delivered).toEqual(["due 2026-11-12: i1 Fix login [e1]"]);
+    const saved = JSON.parse(readFileSync(stateFile, "utf8"));
+    expect(saved.due).toEqual(["i1 2026-11-12"]);
+    expect(saved.outbox).toEqual([]);
+    expect(saved.nextEventId).toBe(2);
+  });
+
+  it("recovers a staged outbox on the next start without creating another event", async () => {
+    const { config, stateFile } = await dueDomain();
+    const initial = emptyState();
+    mkdirSync(join(stateFile, ".."), { recursive: true });
+    writeFileSync(
+      stateFile,
+      JSON.stringify({
+        ...initial,
+        outbox: [{ id: "1", line: "due 2026-11-12: i1 Fix login" }],
+        nextEventId: 2,
+        staged: {
+          delegates: {},
+          prs: {},
+          due: ["i1 2026-11-12"],
+          answered: null,
+          discussed: null,
+          idle: {},
+        },
+      }),
+    );
+    let ownerReads = 0;
+    const fake = fakeProc((argv) => {
+      if (argv[1] === "ls") return ok('{"terminals":[]}');
+      if (argv[1] === "get" && argv[2] === "t1") {
+        ownerReads += 1;
+        return ownerReads <= 2 ? ok(liveCoordinator) : goneCoordinator;
+      }
+      if (argv[1] === "send") return ok();
+      throw new Error(`unexpected command: ${argv.join(" ")}`);
+    });
+
+    expect(await runWith(watch(config, options), fake.layer)).toEqual([]);
+    expect(
+      fake.calls.filter((call) => call.argv[1] === "send").map((call) => call.argv[3]),
+    ).toEqual(["due 2026-11-12: i1 Fix login [e1]"]);
+    const saved = JSON.parse(readFileSync(stateFile, "utf8"));
+    expect(saved.due).toEqual(["i1 2026-11-12"]);
+    expect(saved.outbox).toEqual([]);
+    expect(saved.nextEventId).toBe(2);
   });
 });
 
@@ -591,14 +777,17 @@ describe("watch --follow", () => {
         maxMs: 0,
         owner: "t1",
         replace: false,
+        deliver: false,
         today: () => "2026-11-16",
         follow: true,
-        emit: (line) => emitted.push(line),
+        emit: (line) => {
+          emitted.push(line);
+        },
       }),
       fake.layer,
     );
     expect(returned).toEqual([]);
-    expect(emitted).toEqual([
+    expect(emitted.map(eventText)).toEqual([
       "settled fix-a (t2): read its REPORT.md, verify, then report",
       "status: 1 idle; give the user a short status in your next reply",
       "idle fix-a (t2) 0m: read its REPORT.md and give it a next step or end it",
@@ -626,9 +815,12 @@ describe("watch --follow", () => {
           maxMs: 0,
           owner: undefined,
           replace: false,
+          deliver: false,
           today: () => "2026-11-10",
           follow: true,
-          emit: (line) => emitted.push(line),
+          emit: (line) => {
+            emitted.push(line);
+          },
         }),
         fake.layer,
       ),
@@ -667,7 +859,7 @@ describe("watch --follow", () => {
       }
       reader.releaseLock();
       expect(text).toBe(
-        'due 2026-11-12: i1 Fix login\nanswered i1 Fix login: Re "Which login provider?": B\n',
+        'due 2026-11-12: i1 Fix login [e1]\nanswered i1 Fix login: Re "Which login provider?": B [e2]\n',
       );
       expect(child.exitCode).toBe(null);
     } finally {

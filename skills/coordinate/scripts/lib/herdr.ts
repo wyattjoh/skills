@@ -279,6 +279,8 @@ export type RunSpec = {
   cwd: string;
   labels: Record<string, string>;
   parent: string | undefined;
+  outliveParent: boolean;
+  notifyParent: boolean;
   argv: readonly string[];
 };
 
@@ -289,7 +291,12 @@ export type RunSpec = {
  */
 export const run = Effect.fn("hc.run")(function* (spec: RunSpec) {
   const lineage = spec.parent
-    ? ["--parent", spec.parent, "--outlive-parent", "--no-notify"]
+    ? [
+        "--parent",
+        spec.parent,
+        ...(spec.outliveParent ? ["--outlive-parent"] : []),
+        ...(spec.notifyParent ? [] : ["--no-notify"]),
+      ]
     : ["--no-parent"];
   const argv = [
     "hc",

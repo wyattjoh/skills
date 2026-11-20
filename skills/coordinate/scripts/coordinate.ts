@@ -15,6 +15,7 @@ import {
   policyLs,
   policyReplace,
   policyRm,
+  readDocument,
   showBacklog,
 } from "./lib/backlog-doc.ts";
 import { ITEM_STATUSES, type ItemStatus } from "./lib/backlog-store/schema.ts";
@@ -43,6 +44,7 @@ import { Proc } from "./lib/proc.ts";
 import { domainRepos, domainStatus } from "./lib/status.ts";
 import { renameDomain } from "./lib/rename.ts";
 import { watch } from "./lib/watch.ts";
+import { armWatcher, stopWatcher, watcherInfoLine } from "./lib/watch-terminal.ts";
 import { context, pruneBranches, pruneEnded, removeMany, renderRows, report } from "./lib/sweep.ts";
 import { mainCheckout } from "./lib/git.ts";
 import { resolve } from "node:path";
@@ -95,6 +97,14 @@ const execute = <E extends { message: string }>(
   build: (config: Config) => Effect.Effect<readonly string[], E, Proc>,
   banner = true,
 ) => Effect.promise(() => main(build, banner));
+
+const writeWatchLine = (line: string): Promise<void> =>
+  new Promise((resolve, reject) => {
+    process.stdout.write(`${line}\n`, (error?: Error | null) => {
+      if (error) reject(error);
+      else resolve();
+    });
+  });
 
 const argument = (name: string, description: string) =>
   Argument.String(name).pipe(Argument.withDescription(description));
@@ -162,6 +172,7 @@ const valueOptions = new Set([
   "--path",
   "--from",
   "--interval",
+  "--owner",
   "--forge-interval",
   "--max-minutes",
   "--keep",
@@ -173,6 +184,8 @@ const switchOptions = new Set([
   "--clear",
   "--dismissed",
   "--done",
+  "--arm",
+  "--deliver",
   "--follow",
   "--json",
   "--list",
@@ -185,6 +198,7 @@ const switchOptions = new Set([
   "--resume",
   "--sizes",
   "--space",
+  "--stop",
 ]);
 const knownOptions = new Set([...valueOptions, ...switchOptions, "--help", "-h"]);
 const isKnownOption = (token: string) =>
@@ -491,7 +505,7 @@ const statusCommand = Command.make(
   "status",
   {
     domain: optionalStringFlag("domain", "domain (default: this coordinator's label)"),
-    resume: booleanFlag("resume", "also print the rendered backlog and the watcher state"),
+    resume: booleanFlag("resume", "also print the rendered backlog and arm or report the watcher"),
     done: booleanFlag("done", "include closed items in the rendered backlog (with --resume)"),
   },
   (options) =>
@@ -499,21 +513,26 @@ const statusCommand = Command.make(
       (config) =>
         Effect.gen(function* () {
           const domain = yield* resolveDomain(Option.getOrUndefined(options.domain));
+          const owner = process.env.HC_TERMINAL_ID;
+          if (options.resume && owner) yield* readDocument(config, domain);
+          const watcher =
+            options.resume && owner ? yield* armWatcher(config, domain, owner) : undefined;
           const lines = yield* domainStatus(
             config,
             domain,
             options.resume,
             Date.now(),
             options.done,
+            watcher,
           );
-          const line = yield* watcherBanner(config);
+          const line = watcher ? undefined : yield* watcherBanner(config);
           return line ? [line, ...lines] : lines;
         }),
       false,
     ),
 ).pipe(
   Command.withDescription(
-    "delegates, ended delegates and PRs (GitHub and Forgejo), with who acts next; --resume renders the backlog and --done includes closed items",
+    "delegates, ended delegates and PRs (GitHub and Forgejo), with who acts next; --resume renders the backlog and arms or reports the watcher, and --done includes closed items",
   ),
 );
 
@@ -1016,6 +1035,7 @@ const watchCommand = Command.make(
   "watch",
   {
     domain: optionalStringFlag("domain", "domain (default: this coordinator's label)"),
+    owner: optionalStringFlag("owner", "coordinator terminal address (required with --deliver)"),
     interval: stringFlag("interval", "herdr-core poll interval").pipe(Flag.withDefault("5")),
     forgeInterval: stringFlag("forge-interval", "GitHub/Forgejo and due-date poll interval").pipe(
       Flag.withDefault("90"),
@@ -1025,32 +1045,64 @@ const watchCommand = Command.make(
       "exit with an alive line after this long without events",
     ).pipe(Flag.withDefault("110")),
     replace: booleanFlag("replace", "stop a running watcher for the domain and take over"),
+    deliver: booleanFlag("deliver", "send each tick's event batch to the explicit owner address"),
+    arm: booleanFlag("arm", "launch the domain watcher in its own Herdr terminal"),
+    stop: booleanFlag("stop", "stop the domain's Herdr watcher terminal"),
     follow: booleanFlag(
       "follow",
-      "keep running and print each event line as it happens (no alive line, no time limit); exits after blind or owner gone",
+      "keep running and write event lines to stdout (no alive line or time limit)",
     ),
   },
   (options) =>
     execute(
       (config) =>
-        Effect.flatMap(resolveDomain(Option.getOrUndefined(options.domain)), (domain) =>
-          watch(config, {
+        Effect.gen(function* () {
+          const domainFlag = Option.getOrUndefined(options.domain);
+          const ownerFlag = Option.getOrUndefined(options.owner);
+          if (options.arm && options.stop)
+            return yield* new Refused({ message: "choose either --arm or --stop" });
+          if ((options.arm || options.stop) && (options.deliver || options.follow))
+            return yield* new Refused({ message: "--arm and --stop cannot run a watch loop" });
+          if (options.deliver && (!domainFlag || !ownerFlag))
+            return yield* new Refused({
+              message:
+                "watch --deliver requires explicit --domain <domain> and --owner <coordinator address>",
+            });
+          const domain = yield* resolveDomain(domainFlag);
+          const owner = ownerFlag ?? process.env.HC_TERMINAL_ID;
+          if (options.arm) {
+            if (!owner)
+              return yield* new Refused({
+                message: "HC_TERMINAL_ID is unset: run this in the coordinator terminal",
+              });
+            return [watcherInfoLine(yield* armWatcher(config, domain, owner, options.replace))];
+          }
+          if (options.stop) {
+            if (!owner)
+              return yield* new Refused({
+                message: "HC_TERMINAL_ID is unset: run this in the coordinator terminal",
+              });
+            return yield* stopWatcher(config, domain, owner);
+          }
+          return yield* watch(config, {
             domain,
             intervalMs: Number(options.interval) * 1000,
             forgeIntervalMs: Number(options.forgeInterval) * 1000,
             maxMs: Number(options.maxMinutes) * 60_000,
-            owner: process.env.HC_TERMINAL_ID,
+            owner,
             replace: options.replace,
+            deliver: options.deliver,
             today: () => new Date().toISOString().slice(0, 10),
-            follow: options.follow,
-            emit: (line) => console.log(line),
-          }),
-        ),
+            now: () => Date.now(),
+            follow: options.follow || options.deliver,
+            emit: writeWatchLine,
+          });
+        }),
       false,
     ),
 ).pipe(
   Command.withDescription(
-    "wait until a delegate settles, blocks, errors or goes, a PR merges, closes, fails checks or gets a review, a due date arrives or an ask is answered; print one line per event and exit (or keep printing with --follow)",
+    "watch a domain's delegates, PRs and backlog events; use --deliver with explicit --domain and --owner in the dedicated Herdr watcher terminal",
   ),
 );
 

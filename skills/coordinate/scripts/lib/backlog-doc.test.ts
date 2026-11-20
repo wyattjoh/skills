@@ -35,6 +35,15 @@ const hcFake = () =>
   fakeProc((argv) => {
     if (argv[0] === "hc" && argv[1] === "ls") return ok('{"terminals":[]}');
     if (argv[0] === "hc" && argv[1] === "label") return ok("{}");
+    if (argv[0] === "hc" && argv[1] === "get")
+      return ok(
+        JSON.stringify({
+          address: "t9",
+          state: "live",
+          labels: { "fleet.role": "coordinator", "fleet.domain": "app" },
+        }),
+      );
+    if (argv[0] === "hc" && argv[1] === "run") return ok('{"address":"t-watch"}');
     throw new Error(`unexpected command: ${argv.join(" ")}`);
   });
 const NOW = "2026-11-17T10:00:00.000Z";
@@ -64,6 +73,7 @@ describe("start", () => {
     expect(lines.slice(1)).toEqual([
       `created backlog ${path}`,
       `recorded legacy Markdown backlog ${join(state, "md", "app-backlog.md")} (reference only, not read)`,
+      "watcher starting (t-watch)",
     ]);
     expect(read(path).legacy).toBe(join(state, "md", "app-backlog.md"));
     expect(read(path).items).toEqual([]);
@@ -73,7 +83,7 @@ describe("start", () => {
     const { cfg, path } = await started();
     await runWith(itemAdd(cfg, "app", { title: "keep me", json: false, now: NOW }));
     const lines = await runWith(start(cfg, "app", { HC_TERMINAL_ID: "t9" }), hcFake().layer);
-    expect(lines.slice(1)).toEqual([`backlog ${path}`]);
+    expect(lines.slice(1)).toEqual([`backlog ${path}`, "watcher starting (t-watch)"]);
     expect(read(path).items.map((item: { title: string }) => item.title)).toEqual(["keep me"]);
   });
 
@@ -917,7 +927,7 @@ describe("status --resume", () => {
       "",
       ...(await runWith(showBacklog(cfg, "app", false))),
       "",
-      "no watcher running: arm coordinate watch --follow",
+      "no watcher running",
     ]);
     expect(lines[2]?.split("\n").slice(0, 1)).toEqual(["# app backlog"]);
     expect(lines[2]).toContain("    - discussion requested (2026-11-18): compare options");
@@ -958,7 +968,7 @@ describe("status --resume", () => {
       "",
       `no backlog for app at ${join(state, "backlogs", "app.json")}; run coordinate start app`,
       "",
-      "no watcher running: arm coordinate watch --follow",
+      "no watcher running",
     ]);
   });
 });

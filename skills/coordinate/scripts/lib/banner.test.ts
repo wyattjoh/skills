@@ -15,7 +15,7 @@ afterAll(() => {
 
 const cli = join(import.meta.dir, "..", "coordinate.ts");
 const COORDINATOR = { "fleet.role": "coordinator", "fleet.domain": "app" };
-const BANNER = "watcher for app is down; arm it (coordinate watch --follow)\n";
+const BANNER = "watcher for app is down; arm it (coordinate watch --arm)\n";
 const self = { address: "t1", state: "live", name: "coord" };
 const delegate = { address: "t2", state: "live", name: "fix-a", status: "working", turn: 1 };
 
@@ -86,7 +86,9 @@ describe("watcher-down banner", () => {
     const env = cliEnv(state, COORDINATOR, undefined, {}, members([self, delegate]));
     expect(run(env, SHOW).stderr).toBe("");
     const calls = await Bun.file(join(state, "bin", "calls.log")).text();
-    expect(calls.split("\n").filter((line) => line.startsWith("ls "))).toEqual([]);
+    expect(calls.split("\n").filter((line) => line.startsWith("ls "))).toEqual([
+      "ls --json --label coordinate.watch-domain=app",
+    ]);
   });
 
   it("is absent from a delegate terminal, item answer and watch", async () => {

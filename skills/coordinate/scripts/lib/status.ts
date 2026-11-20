@@ -7,7 +7,7 @@ import { L, type Delegate, members, readEnded } from "./fleet.ts";
 import { currentBranch, defaultBases, mainCheckout } from "./git.ts";
 import { requireBacklog } from "./lifecycle.ts";
 import { branchState, type RepoPrs, repoPullRequests } from "./prs.ts";
-import { watcherAlive } from "./watch-lock.ts";
+import { watcherInfo, watcherInfoLine, type WatcherInfo } from "./watch-terminal.ts";
 
 const age = (fromMs: number | undefined, nowMs: number): string => {
   if (fromMs === undefined) return "?";
@@ -74,6 +74,7 @@ export const domainRepos = Effect.fn("domainRepos")(function* (config: Config, d
  * @param withResume Also print the rendered backlog and the watcher state.
  * @param nowMs Current time.
  * @param showDone Include closed items in the rendered backlog.
+ * @param watcher A watcher state already resolved by `status --resume`.
  * @returns Lines to print.
  */
 export const domainStatus = Effect.fn("domainStatus")(function* (
@@ -82,6 +83,7 @@ export const domainStatus = Effect.fn("domainStatus")(function* (
   withResume: boolean,
   nowMs: number,
   showDone = false,
+  watcherOverride: WatcherInfo | undefined = undefined,
 ) {
   // Status still reports delegates when the document is missing or invalid; --resume names why.
   const ownedOrProblem = yield* domainRepos(config, domain).pipe(
@@ -234,13 +236,8 @@ export const domainStatus = Effect.fn("domainStatus")(function* (
       }),
     );
     lines.push("", ...rendered);
-    const watcher = yield* watcherAlive(config.stateDir, domain);
-    lines.push(
-      "",
-      watcher
-        ? `watcher running (pid ${watcher})`
-        : "no watcher running: arm coordinate watch --follow",
-    );
+    const watcher = watcherOverride ?? (yield* watcherInfo(config, domain));
+    lines.push("", watcherInfoLine(watcher));
   }
   return lines;
 });

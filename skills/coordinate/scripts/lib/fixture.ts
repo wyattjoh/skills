@@ -154,7 +154,8 @@ export const cliEnv = (
     .join("");
   writeFileSync(
     join(bin, "hc"),
-    `#!/bin/sh\nprintf '%s\\n' "$*" >> '${join(bin, "calls.log")}'\ncase "$1" in\n  get) ${known}${got} ;;\n  ls) ${listed}printf '{"terminals":[]}' ;;\n  *) printf '{}' ;;\nesac\n`,
+    `#!/bin/sh\nprintf '%s\\n' "$*" >> '${join(bin, "calls.log")}'\ncase "$1" in\n  get) ${known}${got} ;;\n  ls) ${listed}printf '{"terminals":[]}' ;;\n  run) printf '{"address":"t-watch"}' ;;
+  *) printf '{}' ;;\nesac\n`,
   );
   chmodSync(join(bin, "hc"), 0o755);
   return {

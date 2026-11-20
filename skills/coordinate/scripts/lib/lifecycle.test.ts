@@ -57,7 +57,19 @@ describe("sendTo", () => {
 describe("start", () => {
   it("labels the terminal and creates the backlog document", async () => {
     const state = dir();
-    const fake = fakeProc((argv) => (argv[1] === "ls" ? ok('{"terminals":[]}') : ok("{}")));
+    const fake = fakeProc((argv) => {
+      if (argv[1] === "ls") return ok('{"terminals":[]}');
+      if (argv[1] === "get" && argv[2] === "t9")
+        return ok(
+          terminal({
+            address: "t9",
+            name: "coordinator",
+            labels: { "fleet.role": "coordinator", "fleet.domain": "app" },
+          }),
+        );
+      if (argv[1] === "run") return ok('{"address":"t10"}');
+      return ok("{}");
+    });
     const lines = await runWith(
       start(await config(state), "app", { HC_TERMINAL_ID: "t9" }),
       fake.layer,
@@ -66,6 +78,7 @@ describe("start", () => {
     expect(lines).toEqual([
       "labelled t9: fleet.role=coordinator fleet.domain=app",
       `created backlog ${path}`,
+      "watcher starting (t10)",
     ]);
     expect(JSON.parse(readFileSync(path, "utf8"))).toEqual({
       schemaVersion: 1,
@@ -92,9 +105,21 @@ describe("start", () => {
 
   it("warns about a second coordinator of the same domain", async () => {
     const state = dir();
-    const fake = fakeProc((argv) =>
-      argv[1] === "ls" ? ok('{"terminals":[{"address":"t3","state":"live"}]}') : ok("{}"),
-    );
+    const fake = fakeProc((argv) => {
+      if (argv[1] === "ls" && argv.includes("fleet.role=coordinator"))
+        return ok('{"terminals":[{"address":"t3","state":"live"}]}');
+      if (argv[1] === "ls") return ok('{"terminals":[]}');
+      if (argv[1] === "get" && argv[2] === "t9")
+        return ok(
+          terminal({
+            address: "t9",
+            name: "coordinator",
+            labels: { "fleet.role": "coordinator", "fleet.domain": "app" },
+          }),
+        );
+      if (argv[1] === "run") return ok('{"address":"t10"}');
+      return ok("{}");
+    });
     const lines = await runWith(
       start(await config(state), "app", { HC_TERMINAL_ID: "t9" }),
       fake.layer,
