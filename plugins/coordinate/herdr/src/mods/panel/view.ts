@@ -199,9 +199,10 @@ const trailBand = (t: Theme, trail: Crumb[], go: (screen: Screen, cx: Context) =
     ),
   );
 
+// A detail row gives the focus text the card's inner padding, like every other card row.
 const focusHeader = (t: Theme, focus: string | null): Element =>
-  div()
-    .id("focus")
+  detailRow(t, "focus")
+    .border_t(0)
     .text_size(TEXT.body)
     .text_color(focus === null ? t.dim : t.foreground)
     .child(focus ?? "No focus set");
