@@ -115,36 +115,46 @@ test("readDocument migrates legacy standing approvals to ordered policy ids", ()
   });
 });
 
-test("trailOf links domain pages and record details back to their parent screens", () => {
+test("trailOf links the home icon and domain, then leaves the current page or record inert", () => {
+  const domains = { kind: "domains" } as const;
   const lists = { kind: "domain", domain: "skills" } as const;
   const findings = { kind: "findings", domain: "skills" } as const;
-  expect(trailOf({ kind: "domains" })).toEqual([
-    { id: "crumb-domains", label: "Domains", to: undefined },
-  ]);
+  const home = { id: "crumb-home", label: "", to: domains, icon: "home" };
+  expect(trailOf(domains)).toEqual([{ ...home, to: undefined }]);
   expect(trailOf(lists)).toEqual([
-    { id: "crumb-domains", label: "Domains", to: { kind: "domains" } },
-    { id: "crumb-domain-skills", label: "skills", to: undefined },
+    home,
+    { id: "crumb-domain-skills", label: "skills", to: undefined, icon: undefined },
   ]);
   expect(
     [{ kind: "policies", domain: "skills" }, findings, { kind: "boundary", domain: "skills" }].map(
-      (screen) => trailOf(screen).at(-1),
+      (screen) => trailOf(screen),
     ),
   ).toEqual([
-    { id: "crumb-policies", label: "Policies", to: undefined },
-    { id: "crumb-findings", label: "Findings", to: undefined },
-    { id: "crumb-boundary", label: "Boundary", to: undefined },
+    [
+      home,
+      { id: "crumb-domain-skills", label: "skills", to: lists, icon: undefined },
+      { id: "crumb-policies", label: "Policies", to: undefined, icon: undefined },
+    ],
+    [
+      home,
+      { id: "crumb-domain-skills", label: "skills", to: lists, icon: undefined },
+      { id: "crumb-findings", label: "Findings", to: undefined, icon: undefined },
+    ],
+    [
+      home,
+      { id: "crumb-domain-skills", label: "skills", to: lists, icon: undefined },
+      { id: "crumb-boundary", label: "Boundary", to: undefined, icon: undefined },
+    ],
   ]);
   expect(trailOf({ kind: "item", domain: "skills", id: "i4" })).toEqual([
-    { id: "crumb-domains", label: "Domains", to: { kind: "domains" } },
-    { id: "crumb-domain-skills", label: "skills", to: lists },
-    { id: "crumb-items", label: "Items", to: lists },
-    { id: "crumb-item-i4", label: "i4", to: undefined },
+    home,
+    { id: "crumb-domain-skills", label: "skills", to: lists, icon: undefined },
+    { id: "crumb-item-i4", label: "i4", to: undefined, icon: undefined },
   ]);
   expect(trailOf({ kind: "finding", domain: "skills", id: "f5" })).toEqual([
-    { id: "crumb-domains", label: "Domains", to: { kind: "domains" } },
-    { id: "crumb-domain-skills", label: "skills", to: lists },
-    { id: "crumb-findings", label: "Findings", to: findings },
-    { id: "crumb-finding-f5", label: "f5", to: undefined },
+    home,
+    { id: "crumb-domain-skills", label: "skills", to: lists, icon: undefined },
+    { id: "crumb-finding-f5", label: "f5", to: undefined, icon: undefined },
   ]);
 });
 

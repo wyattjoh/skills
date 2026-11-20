@@ -1,5 +1,5 @@
 // The panel's regions as element functions: everything it draws, from data the View hands in.
-import { div } from "gpui-kit";
+import { div, svg } from "gpui-kit";
 import type { Color, Context, Element } from "gpui-kit";
 import { Input, InputState, h_flex, v_flex } from "gpui-base";
 import { answerInputElement } from "./textarea.ts";
@@ -13,6 +13,7 @@ import {
   TEXT,
   brand,
   button,
+  bundledIconPaths,
   card,
   cardHeader,
   cardItem,
@@ -79,6 +80,9 @@ export type { Theme } from "@wyattjoh/herdr-ui";
 const WAITING_PULSE_PERIOD = 1_100;
 const WAITING_PULSE_FROM = 0.4;
 const WAITING_PULSE_TO = 1;
+// Herdr-ui's house glyph is pending, so keep the globe stand-in behind this one-line switch.
+const HOME_CRUMB_ICON = bundledIconPaths("coordinate-panel").globe;
+const HOME_CRUMB_LABEL = "All domains";
 
 /**
  * What the panel draws: the followed domain, its document, and which groups are open.
@@ -195,14 +199,18 @@ const toolbar = (t: Theme, domain: string | undefined): Element =>
 const trailBand = (t: Theme, trail: Crumb[], go: (screen: Screen, cx: Context) => void): Element =>
   crumbBand(
     t,
-    trail.map(({ id, label, to }) =>
-      crumb(t, {
+    trail.map(({ id, label, to, icon }) => {
+      const isHome = icon === "home";
+      const element = crumb(t, {
         id,
         label,
+        icon: isHome ? svg(HOME_CRUMB_ICON).size(BUTTON_STYLE.iconSize).flex_none() : undefined,
         current: to === undefined,
         onClick: to === undefined ? undefined : (cx) => go(to, cx),
-      }),
-    ),
+        tooltip: isHome ? HOME_CRUMB_LABEL : undefined,
+      });
+      return isHome ? element.accessibility_label(HOME_CRUMB_LABEL) : element;
+    }),
   );
 
 // A detail row gives the focus text the card's inner padding, like every other card row.

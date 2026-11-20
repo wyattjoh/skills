@@ -99,20 +99,25 @@ export type Screen =
   | { kind: "finding"; domain: string; id: string };
 
 /**
- * One step of the breadcrumb trail: its element id, its label, and the screen it opens, which
- * only the last step (where the trail ends) has none of.
+ * One step of the breadcrumb trail: its element id, label, semantic icon marker, and target screen.
+ * Only the last step (where the trail ends) has no target.
  */
-export type Crumb = { id: string; label: string; to: Screen | undefined };
+export type Crumb = {
+  id: string;
+  label: string;
+  to: Screen | undefined;
+  icon: "home" | undefined;
+};
 
 /**
- * The breadcrumb trail down to a screen, root first: Domains, then the domain, then its page
- * or the item/finding list and record detail.
+ * The breadcrumb trail down to a screen, root first: a home icon, then the domain, then its page
+ * or record detail.
  * @param screen The screen shown.
  * @returns The crumbs.
  */
 export const trailOf = (screen: Screen): Crumb[] => {
   const steps: { id: string; label: string; screen: Screen }[] = [
-    { id: "crumb-domains", label: "Domains", screen: { kind: "domains" } },
+    { id: "crumb-home", label: "", screen: { kind: "domains" } },
   ];
   if (screen.kind !== "domains") {
     const lists: Screen = { kind: "domain", domain: screen.domain };
@@ -121,24 +126,15 @@ export const trailOf = (screen: Screen): Crumb[] => {
     if (screen.kind === "findings") steps.push({ id: "crumb-findings", label: "Findings", screen });
     if (screen.kind === "boundary") steps.push({ id: "crumb-boundary", label: "Boundary", screen });
     if (screen.kind === "item")
-      steps.push(
-        { id: "crumb-items", label: "Items", screen: lists },
-        { id: `crumb-item-${screen.id}`, label: screen.id, screen },
-      );
+      steps.push({ id: `crumb-item-${screen.id}`, label: screen.id, screen });
     if (screen.kind === "finding")
-      steps.push(
-        {
-          id: "crumb-findings",
-          label: "Findings",
-          screen: { kind: "findings", domain: screen.domain },
-        },
-        { id: `crumb-finding-${screen.id}`, label: screen.id, screen },
-      );
+      steps.push({ id: `crumb-finding-${screen.id}`, label: screen.id, screen });
   }
   return steps.map((step, index) => ({
     id: step.id,
     label: step.label,
     to: index === steps.length - 1 ? undefined : step.screen,
+    icon: index === 0 ? "home" : undefined,
   }));
 };
 
