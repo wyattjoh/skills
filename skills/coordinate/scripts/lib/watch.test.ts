@@ -4,10 +4,18 @@ import { join } from "node:path";
 import { Effect } from "effect";
 import { createDocument, itemAdd, itemClose, itemUpdate } from "./backlog-doc.ts";
 import { emptyBacklog, type ItemUpdate } from "./backlog-store/ops.ts";
+import type { Item } from "./backlog-store/schema.ts";
 import { resolveConfig } from "./config.ts";
 import { cliEnv, runWith, tempDir } from "./fixture.ts";
 import { fakeProc, ok, type RunOutput } from "./proc.ts";
-import { delegateEvents, prEvents, statusBeat, watch } from "./watch.ts";
+import {
+  delegateEvents,
+  idleEvents,
+  prEvents,
+  statusBeat,
+  watch,
+  type IdleReminder,
+} from "./watch.ts";
 import { acquireLock, lockPath, releaseLock } from "./watch-lock.ts";
 
 const made: string[] = [];
@@ -55,6 +63,106 @@ const seenPr = (state: string, checks = "pass", review = "none") => ({
   checks,
   review,
   url: "u",
+});
+
+describe("idleEvents", () => {
+  const start = 1_000_000;
+  const delegates = { t1: { name: "fix-a", status: "idle", turn: 1 } };
+  const details = { t1: { session: "s1", statusMs: start - 20 * 60_000 } };
+  const tracked = (status: Item["status"], ask: Item["ask"] = null, session = "s1"): Item => ({
+    id: "i1",
+    title: "Fix login",
+    status,
+    touches: [],
+    decided: [],
+    ask,
+    answered: [],
+    due: null,
+    delegates: [{ name: "fix-a", session, branch: null, worktree: null, brief: "", report: "" }],
+    createdAt: "2026-11-20T00:00:00.000Z",
+    closedAt: null,
+    outcome: null,
+  });
+
+  it("fires immediately and backs off 15, 30, then 60 minutes per unchanged delegate", () => {
+    const reminders: Record<string, IdleReminder> = {};
+    expect(idleEvents(delegates, details, [], reminders, start, true)).toEqual([
+      "idle fix-a (t1) 20m: read its REPORT.md and give it a next step or end it",
+    ]);
+    expect(idleEvents(delegates, details, [], reminders, start + 14 * 60_000)).toEqual([]);
+    expect(idleEvents(delegates, details, [], reminders, start + 15 * 60_000)).toEqual([
+      "idle fix-a (t1) 35m: read its REPORT.md and give it a next step or end it",
+    ]);
+    expect(idleEvents(delegates, details, [], reminders, start + 44 * 60_000)).toEqual([]);
+    expect(idleEvents(delegates, details, [], reminders, start + 45 * 60_000)).toEqual([
+      "idle fix-a (t1) 1h: read its REPORT.md and give it a next step or end it",
+    ]);
+    expect(idleEvents(delegates, details, [], reminders, start + 104 * 60_000)).toEqual([]);
+    expect(idleEvents(delegates, details, [], reminders, start + 105 * 60_000)).toEqual([
+      "idle fix-a (t1) 2h: read its REPORT.md and give it a next step or end it",
+    ]);
+  });
+
+  it("resets the schedule when state or turn changes and on the first tick after arming", () => {
+    const reminders: Record<string, IdleReminder> = {};
+    idleEvents(delegates, details, [], reminders, start, true);
+    const changed = { t1: { ...delegates.t1, status: "blocked" } };
+    const changedDetails = { t1: { session: "s1", statusMs: start + 60_000 } };
+    expect(idleEvents(changed, changedDetails, [], reminders, start + 60_000)).toEqual([
+      "idle fix-a (t1) 0m: read its terminal with hc read t1",
+    ]);
+    const newTurnDetails = { t1: { session: "s1", statusMs: start + 120_000 } };
+    expect(
+      idleEvents(
+        { t1: { ...changed.t1, turn: 2 } },
+        newTurnDetails,
+        [],
+        reminders,
+        start + 120_000,
+      ),
+    ).toEqual(["idle fix-a (t1) 0m: read its terminal with hc read t1"]);
+    const armedDetails = { t1: { session: "s1", statusMs: start + 180_000 } };
+    expect(idleEvents(delegates, armedDetails, [], reminders, start + 180_000, true)).toEqual([
+      "idle fix-a (t1) 0m: read its REPORT.md and give it a next step or end it",
+    ]);
+    expect(reminders.t1?.interval).toBe(30);
+    expect(reminders.t1?.next).toBe(start + 180_000 + 15 * 60_000);
+  });
+
+  it("suppresses parked and asked waiting-user items, but not waiting-user without an ask", () => {
+    const current = {
+      t1: { name: "parked", status: "idle", turn: 1 },
+      t2: { name: "asked", status: "done", turn: 1 },
+      t3: { name: "unasked", status: "idle", turn: 1 },
+    };
+    const refs = {
+      t1: { session: "s1", statusMs: start },
+      t2: { session: "s2", statusMs: start },
+      t3: { session: "s3", statusMs: start },
+    };
+    const ask = {
+      question: "Which option?",
+      context: null,
+      options: [],
+      rec: null,
+      recReason: null,
+      discuss: null,
+    };
+    expect(
+      idleEvents(
+        current,
+        refs,
+        [
+          tracked("parked", null, "s1"),
+          tracked("waiting-user", ask, "s2"),
+          tracked("waiting-user", null, "s3"),
+        ],
+        {},
+        start,
+        true,
+      ),
+    ).toEqual(["idle unasked (t3) 0m: read its REPORT.md and give it a next step or end it"]);
+  });
 });
 
 describe("prEvents", () => {
@@ -183,6 +291,7 @@ describe("watch", () => {
     expect(lines).toEqual([
       "settled fix-a (t2): read its REPORT.md, verify, then report",
       "status: 1 idle; give the user a short status in your next reply",
+      "idle fix-a (t2) 0m: read its REPORT.md and give it a next step or end it",
     ]);
     expect(
       JSON.parse(readFileSync(join(state, "watch", "app.json"), "utf8")).delegates.t2.turn,
@@ -301,6 +410,7 @@ describe("watch due events", () => {
       due: ["2026-11-01 **Fix** due: 2026-11-01", "i1 2026-11-12"],
       answered: [],
       discussed: [],
+      idle: {},
     });
     writeFileSync(stateFile, JSON.stringify({ delegates: {}, prs: {} }));
     expect(await arm("2026-11-12")).toEqual(["due 2026-11-12: i1 Fix login"]);
@@ -491,7 +601,10 @@ describe("watch --follow", () => {
     expect(emitted).toEqual([
       "settled fix-a (t2): read its REPORT.md, verify, then report",
       "status: 1 idle; give the user a short status in your next reply",
+      "idle fix-a (t2) 0m: read its REPORT.md and give it a next step or end it",
       "blocked fix-a (t2): a dialog or question; read it with hc read t2",
+      "idle fix-a (t2) 0m: read its terminal with hc read t2",
+      "status: 1 blocked; give the user a short status in your next reply",
       "owner gone: t1 no longer runs; nothing will read these events",
     ]);
     expect(JSON.parse(readFileSync(join(state, "watch", "app.json"), "utf8")).delegates).toEqual({

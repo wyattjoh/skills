@@ -7,7 +7,7 @@ import { isAnswer } from "./backlog-store/ops.ts";
 import { isDiscussion } from "./backlog-store/schema.ts";
 import type { Item } from "./backlog-store/schema.ts";
 import type { Config } from "./config.ts";
-import { L, Refused } from "./fleet.ts";
+import { L, Refused, sessionOf } from "./fleet.ts";
 import * as hc from "./herdr.ts";
 import { repoPullRequests } from "./prs.ts";
 import { domainRepos } from "./status.ts";
@@ -22,6 +22,15 @@ export type SeenDelegate = { name: string; status: string | undefined; turn: num
  * What the watcher remembers about one pull request.
  */
 export type SeenPr = { state: string; checks: string; review: string; url: string };
+
+/** A reminder schedule belongs to one uninterrupted delegate state and turn. */
+export type IdleReminder = {
+  status: string;
+  turn: number;
+  since: number;
+  next: number;
+  interval: number;
+};
 
 /**
  * The watcher's state file: the last snapshot, so changes while it was not running fire on re-arm.
@@ -43,6 +52,7 @@ export type WatchState = {
    * Discussion requests already fired, keyed like answers.
    */
   discussed: string[] | null;
+  idle: Record<string, IdleReminder>;
 };
 
 /**
@@ -54,6 +64,7 @@ export const emptyState = (): WatchState => ({
   due: [],
   answered: null,
   discussed: null,
+  idle: {},
 });
 
 /**
@@ -91,6 +102,71 @@ export const delegateEvents = (
       lines.push(
         `gone ${before.name} (${address}): resume with coordinate resume ${before.name}, or record it ended`,
       );
+  return lines;
+};
+
+/** Calculate idle reminders with an injected clock. */
+export const idleEvents = (
+  delegates: Readonly<Record<string, SeenDelegate>>,
+  details: Readonly<Record<string, { session: string; statusMs: number | undefined }>>,
+  items: readonly Item[],
+  reminders: Record<string, IdleReminder>,
+  now: number,
+  force = false,
+): string[] => {
+  const lines: string[] = [];
+  for (const address of Object.keys(reminders))
+    if (delegates[address] === undefined) delete reminders[address];
+  for (const [address, delegate] of Object.entries(delegates)) {
+    if (delegate.status !== "idle" && delegate.status !== "done" && delegate.status !== "blocked") {
+      delete reminders[address];
+      continue;
+    }
+    const detail = details[address];
+    const associated = detail?.session
+      ? items.filter((item) => item.delegates.some((ref) => ref.session === detail.session))
+      : [];
+    const suppressed =
+      associated.length > 0 &&
+      associated.every(
+        (item) => item.status === "parked" || (item.status === "waiting-user" && item.ask !== null),
+      );
+    if (suppressed) {
+      delete reminders[address];
+      continue;
+    }
+    let reminder = reminders[address];
+    if (
+      force ||
+      !reminder ||
+      reminder.status !== delegate.status ||
+      reminder.turn !== delegate.turn
+    ) {
+      reminder = {
+        status: delegate.status,
+        turn: delegate.turn,
+        since: detail?.statusMs ?? now,
+        next: now,
+        interval: 15,
+      };
+      reminders[address] = reminder;
+    }
+    if (!force && now < reminder.next) continue;
+    const minutes = Math.max(0, now - reminder.since) / 60_000;
+    const age =
+      minutes < 60
+        ? `${Math.round(minutes)}m`
+        : minutes < 60 * 48
+          ? `${Math.round(minutes / 60)}h`
+          : `${Math.round(minutes / 1440)}d`;
+    const next =
+      delegate.status === "blocked"
+        ? `read its terminal with hc read ${address}`
+        : "read its REPORT.md and give it a next step or end it";
+    lines.push(`idle ${delegate.name} (${address}) ${age}: ${next}`);
+    reminder.next = now + reminder.interval * 60_000;
+    reminder.interval = Math.min(reminder.interval * 2, 60);
+  }
   return lines;
 };
 
@@ -238,6 +314,7 @@ const readState = (path: string) =>
         due: parsed.due ?? [],
         answered: parsed.answered ?? null,
         discussed: parsed.discussed ?? null,
+        idle: parsed.idle ?? {},
       };
     } catch {
       return undefined;
@@ -318,6 +395,7 @@ export type WatchOptions = {
   owner: string | undefined;
   replace: boolean;
   today: () => string;
+  now?: () => number;
   /**
    * Keep running and hand each event line to `emit` as it happens, instead of returning on the first
    * events. No `alive` line and no time limit; `blind` and `owner gone` are emitted, then it returns.
@@ -367,6 +445,7 @@ export const watch = Effect.fn("watch")(function* (config: Config, options: Watc
     let lastForge = 0;
     let failures = 0;
     let first = saved === undefined;
+    let firstTick = true;
     for (;;) {
       const lines: string[] = [];
       const polled = yield* snapshotDelegates(options.domain).pipe(Effect.result);
@@ -399,6 +478,33 @@ export const watch = Effect.fn("watch")(function* (config: Config, options: Watc
       // The document is a local file, so it is read every tick: an answer wakes the coordinator
       // within one interval, not at forge cadence.
       const document = yield* readDocument(config, options.domain).pipe(Effect.option);
+      if (Result.isSuccess(polled)) {
+        const details: Record<string, { session: string; statusMs: number | undefined }> = {};
+        for (const [address, delegate] of Object.entries(polled.success)) {
+          if (
+            delegate.status !== "idle" &&
+            delegate.status !== "done" &&
+            delegate.status !== "blocked"
+          )
+            continue;
+          const terminal = yield* hc
+            .get(address)
+            .pipe(Effect.catch(() => Effect.succeed(undefined)));
+          if (terminal)
+            details[address] = { session: sessionOf(terminal), statusMs: terminal.statusMs };
+        }
+        const idle = idleEvents(
+          polled.success,
+          details,
+          Option.isSome(document) ? document.value.backlog.items : [],
+          state.idle,
+          options.now?.() ?? Date.now(),
+          firstTick,
+        );
+        lines.push(...idle);
+        if (idle.length > 0 && !lines.some((line) => line.startsWith("status: ")))
+          lines.push(statusBeat(polled.success));
+      }
       if (Option.isSome(document)) {
         const due = dueEvents(document.value.backlog.items, options.today(), state.due);
         lines.push(...due.lines);
@@ -411,6 +517,7 @@ export const watch = Effect.fn("watch")(function* (config: Config, options: Watc
         state.discussed = discussed.fired;
       }
       first = false;
+      firstTick = false;
       let ownerGone = false;
       if (options.owner) {
         const owner = yield* hc

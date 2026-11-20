@@ -57,7 +57,7 @@ Each ask is self-contained in the reply and on its item: `coordinate item update
 
 Run exactly one watcher per domain and handle every line it prints. It keeps a snapshot, so changes while it was down fire when it is armed again. While no watcher runs and a delegate lives, every `coordinate` command you run says so on stderr (`status` on its first line): arm it at once.
 
-- **Claude Code**: arm it with the Monitor tool, `timeout_ms: 1800000` and the command `bun $SKILL_DIR/scripts/coordinate.ts watch --follow --replace 2>&1`. Each event arrives as its own notification while it keeps running. Monitor stops it after 30 minutes: arm it again on the expiry notice, after `blind` or `owner gone`, and after an exit with no line. `stopped` means it was replaced or stopped on purpose: arm it again only when `coordinate status --resume` shows no watcher.
+- **Claude Code**: arm it with the Monitor tool, `timeout_ms: 1800000` and the command `bun $SKILL_DIR/scripts/coordinate.ts watch --follow --replace 2>&1`. In Claude Code never run the one-shot form. Each event arrives as its own notification while it keeps running. Monitor stops it after 30 minutes: arm it again on the expiry notice, after `blind` or `owner gone`, and after an exit with no line. A Monitor expiry with no events does not mean idle delegates are fine: run `coordinate status` before you re-arm. `stopped` means it was replaced or stopped on purpose: arm it again only when `coordinate status --resume` shows no watcher.
 - **Elsewhere** (pi): run one-shot `watch` unawaited and act on its output when it arrives; it exits on the first events, so arm it again after handling them:
 
   ```js
@@ -67,11 +67,11 @@ Run exactly one watcher per domain and handle every line it prints. It keeps a s
     .then((out) => log(out.stdout));
   ```
 
-`alive` (one-shot only) means nothing happened before its time limit; `blind` or `owner gone` means it lost sight of Herdr or of you, and it exits: arm it again. A `settled` line comes with a status beat: give the user a two-line status in your next reply. A `discuss <id>` line is a conversation request, not an answer: address its note and keep the item waiting-user. An `answered <id>` line carries an answer recorded since the last check, by you or by the user outside this chat: read the item's decisions, set its next status, and unblock whoever waited on it.
+`alive` (one-shot only) means nothing happened before its time limit; `blind` or `owner gone` means it lost sight of Herdr or of you, and it exits: arm it again. An `idle` line names a done, idle or blocked delegate with no recorded waiting reason: read its report or terminal, then give it a next step, end it, or record the item's ask. A `settled` line comes with a status beat: give the user a two-line status in your next reply. A `discuss <id>` line is a conversation request, not an answer: address its note and keep the item waiting-user. An `answered <id>` line carries an answer recorded since the last check, by you or by the user outside this chat: read the item's decisions, set its next status, and unblock whoever waited on it.
 
 ## Verify, then report and wait
 
-When a delegate settles, read its `REPORT.md` and verify before you tell the user: the diff stays inside the brief, the checks ran (a log and its exit status), no stop point was crossed. Every count, cause and PR state in a reply comes from a command run this turn, or is marked unverified. Then give the outcome and what waits on them, and wait for the user to name the integration (land locally, push, open a PR). Do that integration exactly as named.
+When a delegate settles, read its `REPORT.md` and verify before you tell the user: the diff stays inside the brief, the checks ran (a log and its exit status), no stop point was crossed. Every count, cause and PR state in a reply comes from a command run this turn, or is marked unverified. Then give the outcome and what waits on them, and wait for the user to name the integration (land locally, push, open a PR). Do that integration exactly as named. Before you end a turn, run `coordinate status`. Every live delegate that is done or idle gets a next step, an `end`, or an item at `waiting-user` carrying the ask. A chat ask blocks only its own item: take the reversible in-worktree step you recommend, say so in one line, and let the user overrule. Then apply the domain's policies for open items.
 
 A status question ("sitrep", "where are we") gets `coordinate status` and at most three lines of yours.
 
