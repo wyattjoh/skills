@@ -305,19 +305,50 @@ test("tones each group header by its status with the fixture's colors", async ()
   expect([title("item-i7"), title("item-i8")]).toEqual(["#f5f5f5", "#737373"]);
 });
 
-test("rereads the document when the watched backlogs folder changes", async () => {
+test("refreshes a same-size replacement when the watch reports the document path", async () => {
   focusDomain("alpha");
-  host.files.set(DOC, JSON.stringify(everyStatus()));
+  const oldBacklog = { ...emptyBacklog("alpha", null), focus: "Old focus" };
+  const newBacklog = { ...oldBacklog, focus: "New focus" };
+  const oldText = JSON.stringify(oldBacklog);
+  const newText = JSON.stringify(newBacklog);
+  expect(newText).toHaveLength(oldText.length);
+  host.files.set(DOC, oldText);
   const { render } = await mount();
   expect(host.watches.map((watch) => watch.path)).toEqual([`${STATE}/backlogs`]);
-  host.files.set(DOC, JSON.stringify({ ...everyStatus(), focus: "Watched change" }));
+  host.files.set(DOC, newText);
   host.watches[0]!.fire([DOC]);
   await settle();
-  expect(text(get(render(), "focus"))).toBe("Watched change");
+  expect(text(get(render(), "focus"))).toBe("New focus");
+  expect(host.reads.filter((path) => path === DOC)).toHaveLength(2);
   expect(host.watches.map((watch) => watch.path)).toEqual([
     `${STATE}/backlogs`,
     `${STATE}/backlogs`,
   ]);
+});
+
+test("ignores archive and other-domain watch events until that domain is selected", async () => {
+  focusDomain("alpha");
+  const betaPath = `${STATE}/backlogs/beta.json`;
+  host.files.set(DOC, JSON.stringify(everyStatus()));
+  host.files.set(betaPath, JSON.stringify({ ...emptyBacklog("beta", null), focus: "Old beta" }));
+  const { ctx, render } = await mount();
+  const archive = `${STATE}/backlogs/alpha.archive.jsonl`;
+  host.watches[0]!.fire([archive]);
+  await settle();
+  expect(host.reads.filter((path) => path === DOC)).toHaveLength(1);
+  expect(host.watches).toHaveLength(2);
+
+  host.files.set(betaPath, JSON.stringify({ ...emptyBacklog("beta", null), focus: "New beta" }));
+  host.watches[1]!.fire([betaPath]);
+  await settle();
+  expect(host.reads.filter((path) => path === DOC)).toHaveLength(1);
+  expect(host.reads.filter((path) => path === betaPath)).toHaveLength(0);
+
+  focusDomain("beta");
+  ctx.tick(1_000);
+  await settle();
+  expect(text(get(render(), "focus"))).toBe("New beta");
+  expect(host.reads.filter((path) => path === betaPath)).toHaveLength(1);
 });
 
 test("rereads the document on the slow timer and rearms a reclaimed watch", async () => {
@@ -332,6 +363,17 @@ test("rereads the document on the slow timer and rearms a reclaimed watch", asyn
   await settle();
   expect(text(get(render(), "focus"))).toBe("Timer change");
   expect(host.watches).toHaveLength(2);
+});
+
+test("the slow timer checks file text but reuses parsed state when it is unchanged", async () => {
+  focusDomain("alpha");
+  host.files.set(DOC, JSON.stringify(everyStatus()));
+  const { ctx, view } = await mount();
+  const previous = view.doc;
+  ctx.tick(30_000);
+  await settle();
+  expect(host.reads.filter((path) => path === DOC)).toHaveLength(2);
+  expect(view.doc).toBe(previous);
 });
 
 test("follows focus to another domain's document", async () => {
@@ -353,7 +395,7 @@ test("follows focus to another domain's document", async () => {
   expect(text(get(root, "items-empty"))).toBe("No items");
 });
 
-test("shows a domain's last read at once on returning to it, then its reread", async () => {
+test("reuses a cached domain on focus return until the timer catches an unseen change", async () => {
   focusDomain("alpha");
   host.files.set(DOC, JSON.stringify(everyStatus()));
   host.files.set(
@@ -369,22 +411,21 @@ test("shows a domain's last read at once on returning to it, then its reread", a
   focusDomain("alpha");
   expect(text(get(render(), "focus"))).toBe("Ship the panel tracer");
   ctx.tick(1_000);
+  await settle();
   expect(text(get(render(), "focus"))).toBe("Ship the panel tracer");
+  expect(host.reads.filter((path) => path === DOC)).toHaveLength(1);
+  ctx.tick(30_000);
   await settle();
   expect(text(get(render(), "focus"))).toBe("Fresh alpha focus");
+  expect(host.reads.filter((path) => path === DOC)).toHaveLength(2);
 });
 
-test("a failed reread replaces the domain's last read", async () => {
+test("a failed watched reread replaces the domain's last read", async () => {
   focusDomain("alpha");
   host.files.set(DOC, JSON.stringify(everyStatus()));
-  const { ctx, render } = await mount();
-  focusPlain();
-  ctx.tick(1_000);
-  await settle();
+  const { render } = await mount();
   host.files.set(DOC, JSON.stringify({ ...everyStatus(), items: "none" }));
-  focusDomain("alpha");
-  expect(text(get(render(), "focus"))).toBe("Ship the panel tracer");
-  ctx.tick(1_000);
+  host.watches[0]!.fire([DOC]);
   await settle();
   expect(text(get(render(), "invalid"))).toBe("alpha's backlog is invalid items must be a list");
 });
@@ -454,6 +495,40 @@ test("lists every domain with only its nonzero waiting, delegated and open count
   expect(ids(root, "domain-")).toEqual(["domain-alpha", "domain-beta"]);
   expect(text(get(root, "domain-alpha"))).toBe("alpha 1 waiting 1 delegated 2 open");
   expect(text(get(root, "domain-beta"))).toBe("beta 1 open");
+});
+
+test("refreshes the changed domain summary while the listing is shown", async () => {
+  focusPlain();
+  const betaPath = `${STATE}/backlogs/beta.json`;
+  host.files.set(DOC, JSON.stringify(everyStatus()));
+  host.files.set(betaPath, JSON.stringify(betaBacklog()));
+  const { render } = await mount();
+  expect(text(get(render(), "domain-beta"))).toBe("beta 1 open");
+  host.files.set(betaPath, JSON.stringify(add(betaBacklog(), "Another beta item")));
+  host.watches[0]!.fire([betaPath]);
+  await settle();
+  expect(text(get(render(), "domain-beta"))).toBe("beta 2 open");
+  expect(host.reads.filter((path) => path === DOC)).toHaveLength(1);
+  expect(host.reads.filter((path) => path === betaPath)).toHaveLength(2);
+});
+
+test("refreshes every listed summary when the watcher reports the folder root", async () => {
+  focusPlain();
+  const betaPath = `${STATE}/backlogs/beta.json`;
+  host.files.set(DOC, JSON.stringify(emptyBacklog("alpha", null)));
+  host.files.set(betaPath, JSON.stringify(emptyBacklog("beta", null)));
+  const { render } = await mount();
+  host.files.set(DOC, JSON.stringify(add(emptyBacklog("alpha", null), "Alpha work")));
+  host.files.set(
+    betaPath,
+    JSON.stringify(add(add(emptyBacklog("beta", null), "Beta one"), "Beta two")),
+  );
+  host.watches[0]!.fire([`${STATE}/backlogs`]);
+  await settle();
+  expect(text(get(render(), "domain-alpha"))).toBe("alpha 1 open");
+  expect(text(get(render(), "domain-beta"))).toBe("beta 2 open");
+  expect(host.reads.filter((path) => path === DOC)).toHaveLength(2);
+  expect(host.reads.filter((path) => path === betaPath)).toHaveLength(2);
 });
 
 test("hides count notes when a domain has no counts", async () => {

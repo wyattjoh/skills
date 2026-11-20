@@ -3,6 +3,7 @@ import { emptyBacklog } from "../../lib/store.ts";
 import {
   boundaryOutput,
   cachedDocument,
+  changedBacklogDocuments,
   chosenAnswer,
   delegateLabel,
   delegateLine,
@@ -63,6 +64,27 @@ test("cachedDocument draws a domain's last read state, whatever its kind", () =>
 test("cachedDocument draws loading for a domain not read yet and for the listing", () => {
   expect(cachedDocument(shown, "gamma")).toEqual({ kind: "loading" });
   expect(cachedDocument(shown, undefined)).toEqual({ kind: "loading" });
+});
+
+test("changedBacklogDocuments selects direct JSON files and recognizes a full-refresh path", () => {
+  expect(
+    changedBacklogDocuments(
+      [
+        "/state/backlogs/alpha.json",
+        "/state/backlogs/alpha.archive.jsonl",
+        "/state/backlogs/nested/beta.json",
+        "/else/gamma.json",
+      ],
+      "/state/backlogs",
+    ),
+  ).toEqual({ all: false, domains: ["alpha"] });
+  expect(changedBacklogDocuments(["/state/backlogs"], "/state/backlogs")).toEqual({
+    all: true,
+    domains: [],
+  });
+  expect(
+    changedBacklogDocuments(["C:\\state\\backlogs\\beta.json"], "C:\\state\\backlogs"),
+  ).toEqual({ all: false, domains: ["beta"] });
 });
 
 test("readDocument migrates legacy standing approvals to ordered policy ids", () => {

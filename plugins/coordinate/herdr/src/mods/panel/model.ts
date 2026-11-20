@@ -270,6 +270,43 @@ export const parseListing = (stdout: string): string[] =>
     .sort((a, b) => a.localeCompare(b));
 
 /**
+ * The backlog JSON documents named in a folder-watch batch.
+ */
+export type ChangedBacklogs = {
+  all: boolean;
+  domains: string[];
+};
+
+/**
+ * Select direct-child backlog JSON paths from a folder-watch batch.
+ * @param paths The absolute paths reported by Herdr.
+ * @param directory The watched backlogs folder.
+ * @returns The domains changed, or `all` when Herdr asks for a full refresh.
+ */
+export const changedBacklogDocuments = (
+  paths: readonly string[],
+  directory: string,
+): ChangedBacklogs => {
+  const root = directory.replace(/\\/g, "/").replace(/\/+$/, "");
+  const prefix = `${root}/`;
+  const domains = new Set<string>();
+  let all = false;
+  for (const path of paths) {
+    const normalized = path.replace(/\\/g, "/").replace(/\/+$/, "");
+    if (normalized === root) {
+      all = true;
+      continue;
+    }
+    if (!normalized.startsWith(prefix)) continue;
+    const name = normalized.slice(prefix.length);
+    if (name.includes("/") || !name.endsWith(".json")) continue;
+    const domain = name.slice(0, -".json".length);
+    if (DOMAIN_NAME.test(domain)) domains.add(domain);
+  }
+  return { all, domains: [...domains] };
+};
+
+/**
  * The counts a listing row shows: live agents and items waiting on the user, delegated and open.
  */
 export type DomainCounts = { agents: number; waiting: number; delegated: number; open: number };

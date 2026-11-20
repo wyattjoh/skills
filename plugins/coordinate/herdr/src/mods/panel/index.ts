@@ -14,6 +14,7 @@ import {
   boundaryCommand,
   boundaryOutput,
   cachedDocument,
+  changedBacklogDocuments,
   chosenAnswer,
   configPath,
   countLiveDelegates,
@@ -55,6 +56,11 @@ const FOLLOW_MS = 1_000;
 const REFRESH_MS = 30_000;
 const ROW_PAGE_SIZE = 10;
 
+type DomainRead = {
+  document: DocumentState;
+  text: string | null | undefined;
+};
+
 /**
  * The Backlog panel.
  */
@@ -64,6 +70,10 @@ export default class Panel extends View {
   doc: DocumentState = { kind: "loading" };
   // The last state read for each domain this session, drawn while a reread of it runs.
   docs = new Map<string, DocumentState>();
+  // Raw snapshots let timer refreshes catch same-size rewrites and skip parsing unchanged text.
+  rawDocs = new Map<string, string | null>();
+  // Path events mark cached domain states stale; unrelated domains do not trigger a reload.
+  dirtyDocs = new Set<string>();
   // The domain focus last named, kept while a pane with no terminal (the panel) has focus.
   followed: string | undefined;
   // The domain opened from the listing or the trail, shown over the one focus names until
@@ -120,7 +130,7 @@ export default class Panel extends View {
     if (checking()) return;
     this.load(cx);
     cx.timer.every(FOLLOW_MS, (tick) => this.follow(tick));
-    cx.timer.every(REFRESH_MS, (tick) => this.load(tick));
+    cx.timer.every(REFRESH_MS, (tick) => this.load(tick, true));
   }
 
   // The domain focus names now.
@@ -222,7 +232,7 @@ export default class Panel extends View {
     this.load(cx);
   }
 
-  load(cx: Context) {
+  load(cx: Context, refresh = false) {
     const generation = ++this.generation;
     this.track();
     const domain = this.target();
@@ -233,6 +243,11 @@ export default class Panel extends View {
     cx.spawn(async (task) => {
       const stateDir = stateDirOf(await this.read(configPath(home())), home());
       if (generation !== this.generation) return;
+      if (this.stateDir !== undefined && this.stateDir !== stateDir) {
+        this.docs.clear();
+        this.rawDocs.clear();
+        this.dirtyDocs.clear();
+      }
       this.stateDir = stateDir;
       this.watchBacklogs(backlogsDir(stateDir), task);
       if (domain !== this.domain) {
@@ -242,34 +257,47 @@ export default class Panel extends View {
         task.notify();
       }
       if (domain === undefined) {
-        const listing = await this.list(stateDir);
+        const listing = await this.list(stateDir, refresh, generation);
         if (generation !== this.generation) return;
         this.listing = listing;
         task.notify();
         return;
       }
-      const doc = await this.readDomain(stateDir, domain);
+      const read = await this.readDomain(stateDir, domain, refresh);
       if (generation !== this.generation) return;
-      this.doc = doc;
-      this.docs.set(domain, doc);
+      this.cacheDomain(domain, read);
+      this.doc = read.document;
       task.notify();
-      if (doc.kind === "loaded")
-        this.lookUpEnded(stateDir, missingSessions(doc.backlog, terminals()), task);
+      if (read.document.kind === "loaded")
+        this.lookUpEnded(stateDir, missingSessions(read.document.backlog, terminals()), task);
     });
   }
 
-  // One domain's document. A read that rejects (permissions, too large) is unreadable.
-  async readDomain(stateDir: string, domain: string): Promise<DocumentState> {
+  // One domain's document. A rejected read (permissions, too large) is unreadable.
+  async readDomain(stateDir: string, domain: string, refresh: boolean): Promise<DomainRead> {
+    const cached = this.docs.get(domain);
+    if (!refresh && !this.dirtyDocs.has(domain) && cached !== undefined)
+      return { document: cached, text: this.rawDocs.get(domain) };
     try {
-      return readDocument(await readTextFile(documentPath(stateDir, domain)));
+      const text = await readTextFile(documentPath(stateDir, domain));
+      if (cached !== undefined && this.rawDocs.has(domain) && this.rawDocs.get(domain) === text)
+        return { document: cached, text };
+      return { document: readDocument(text), text };
     } catch (error) {
-      return { kind: "unreadable", reason: String(error) };
+      return { document: { kind: "unreadable", reason: String(error) }, text: undefined };
     }
+  }
+
+  cacheDomain(domain: string, read: DomainRead) {
+    this.docs.set(domain, read.document);
+    if (read.text === undefined) this.rawDocs.delete(domain);
+    else this.rawDocs.set(domain, read.text);
+    this.dirtyDocs.delete(domain);
   }
 
   // Every domain document, listed through the shell, each read and summarized on its own so
   // one bad document only marks its own row.
-  async list(stateDir: string): Promise<ListingState> {
+  async list(stateDir: string, refresh: boolean, generation: number): Promise<ListingState> {
     let names: string[];
     try {
       const listed = await exec("sh", [
@@ -287,12 +315,13 @@ export default class Panel extends View {
     const live = terminals();
     const rows = await Promise.all(
       names.map(async (name) => {
-        const doc = await this.readDomain(stateDir, name);
+        const read = await this.readDomain(stateDir, name, refresh);
+        if (generation === this.generation) this.cacheDomain(name, read);
         const agents =
-          doc.kind === "loaded"
-            ? countLiveDelegates(joinDelegates(doc.backlog, live, this.ended, name))
+          read.document.kind === "loaded"
+            ? countLiveDelegates(joinDelegates(read.document.backlog, live, this.ended, name))
             : 0;
-        return summarize(name, doc, agents);
+        return summarize(name, read.document, agents);
       }),
     );
     return {
@@ -301,8 +330,8 @@ export default class Panel extends View {
     };
   }
 
-  // Reload on every change under the backlogs folder. A watch that is released or reclaimed
-  // (an empty batch) or fails (no folder yet) ends the loop; the slow timer arms it again.
+  // Reload relevant JSON changes. A released/reclaimed watch or failure ends the loop; the timer
+  // refreshes the current view and re-arms the watch.
   watchBacklogs(dir: string, cx: AsyncContext) {
     if (this.watched === dir) return;
     this.watch?.cancel();
@@ -316,7 +345,18 @@ export default class Panel extends View {
           if (this.watch !== current || changed.length === 0) break;
           current = watchFolder(dir);
           this.watch = current;
-          this.load(task);
+          const changes = changedBacklogDocuments(changed, dir);
+          if (changes.all) {
+            for (const domain of this.docs.keys()) this.dirtyDocs.add(domain);
+            if (this.domain !== undefined) this.dirtyDocs.add(this.domain);
+          }
+          for (const domain of changes.domains) this.dirtyDocs.add(domain);
+          const domain = this.target();
+          if (
+            changes.all ||
+            (domain === undefined ? changes.domains.length > 0 : changes.domains.includes(domain))
+          )
+            this.load(task);
         }
       } catch {
         // Fall through: the watch is gone either way.
@@ -445,7 +485,7 @@ export default class Panel extends View {
       if (this.draft?.key !== key) return;
       if (error === undefined) {
         this.clearDraft();
-        this.load(task);
+        this.load(task, true);
       } else this.draft = { ...this.draft, busy: false, error };
       task.notify();
     });
@@ -556,7 +596,7 @@ export default class Panel extends View {
           this.boundaryEditing = undefined;
           this.boundaryInput?.set_value("");
         }
-        this.load(task);
+        this.load(task, true);
       } else {
         this.boundaryError = { domain, list, path, message: error };
       }
