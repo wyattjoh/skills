@@ -24,10 +24,19 @@ const askLines = (ask: Ask, header: string): string[] => {
   return lines;
 };
 
-const answeredLines = (item: Item): string[] => {
+const oneLine = (text: string): string => text.replace(/[\r\n]+/g, " ").trim();
+
+const answeredLines = (item: Item, verbose: boolean): string[] => {
   const lines: string[] = [];
   for (let index = item.answered.length - 1; index >= 0; index -= 1) {
     const answered = item.answered[index]!;
+    if (!verbose) {
+      const note = answered.note === null ? "" : oneLine(answered.note);
+      lines.push(
+        `  - answered (${answered.answeredAt}): ${oneLine(answered.question)} → ${oneLine(answered.answer)}${note ? `. Note: ${note}` : ""}`,
+      );
+      continue;
+    }
     lines.push(
       ...askLines(answered, `  - answered ask (${answered.answeredAt}): ${answered.question}`),
       `    - answer: ${answered.answer}`,
@@ -37,7 +46,7 @@ const answeredLines = (item: Item): string[] => {
   return lines;
 };
 
-const itemLines = (item: Item, idle: ReadonlySet<string>): string[] => {
+const itemLines = (item: Item, idle: ReadonlySet<string>, verbose: boolean): string[] => {
   const facts = [
     ...(item.due ? [`due ${item.due}`] : []),
     ...(item.touches.length > 0 ? [`touches ${item.touches.join(", ")}`] : []),
@@ -46,7 +55,7 @@ const itemLines = (item: Item, idle: ReadonlySet<string>): string[] => {
     `- ${item.id} [${item.status}${idle.has(item.id) ? ", none live" : ""}] ${item.title}${facts.map((fact) => ` · ${fact}`).join("")}`,
   ];
   if (item.ask) lines.push(...askLines(item.ask, `  - ask: ${item.ask.question}`));
-  lines.push(...answeredLines(item));
+  lines.push(...answeredLines(item, verbose));
   for (const entry of item.decided)
     lines.push(
       isDiscussion(entry.text)
@@ -63,7 +72,10 @@ const itemLines = (item: Item, idle: ReadonlySet<string>): string[] => {
 const closedLine = (item: Item): string =>
   `- ${item.id} [${item.status} ${(item.closedAt ?? "").slice(0, 10)}] ${item.title}: ${item.outcome ?? ""}`;
 
-const closedLines = (item: Item): string[] => [closedLine(item), ...answeredLines(item)];
+const closedLines = (item: Item, verbose: boolean): string[] => [
+  closedLine(item),
+  ...answeredLines(item, verbose),
+];
 
 const closed = (item: Item): boolean => item.status === "done" || item.status === "dismissed";
 
@@ -74,12 +86,14 @@ const list = (paths: string[]): string => (paths.length > 0 ? paths.join(", ") :
  * @param backlog Document.
  * @param idle Ids of delegated items with no live delegate, marked `[delegated, none live]`.
  * @param showDone Include closed items instead of the hidden-count line.
+ * @param verbose Render full context, options and recommendations for answered asks.
  * @returns Markdown, ending in a newline.
  */
 export const renderBacklog = (
   backlog: Backlog,
   idle: ReadonlySet<string> = new Set(),
   showDone = false,
+  verbose = false,
 ): string => {
   const open = ITEM_STATUSES.flatMap((status) =>
     backlog.items.filter((item) => item.status === status && !closed(item)),
@@ -106,7 +120,7 @@ export const renderBacklog = (
     "",
     "## Open",
     "",
-    ...(open.length > 0 ? open.flatMap((item) => itemLines(item, idle)) : ["(none)"]),
+    ...(open.length > 0 ? open.flatMap((item) => itemLines(item, idle, verbose)) : ["(none)"]),
     "",
     "## Findings",
     "",
@@ -121,7 +135,7 @@ export const renderBacklog = (
     "",
     ...(showDone
       ? done.length > 0
-        ? done.flatMap(closedLines)
+        ? done.flatMap((item) => closedLines(item, verbose))
         : ["(none)"]
       : done.length > 0
         ? [`${done.length} closed items hidden (coordinate backlog show --done)`]

@@ -48,6 +48,16 @@ describe("coordinate CLI answer notes", () => {
         "waiting-user",
         "--ask",
         "Which?",
+        "--context",
+        "Need to choose a store",
+        "--option",
+        "sqlite :: embedded",
+        "--option",
+        "json :: already installed",
+        "--rec",
+        "json",
+        "--why",
+        "already in use",
         "--domain",
         "app",
       ]).exit,
@@ -55,7 +65,26 @@ describe("coordinate CLI answer notes", () => {
     expect(run(["item", "answer", "i1", "yes", "--note", "one\ntwo", "--domain", "app"]).exit).toBe(
       0,
     );
-    expect(run(["backlog", "show", "--domain", "app"]).stdout).toContain("answer note: one\ntwo");
+    const compact = run(["backlog", "show", "--domain", "app"]).stdout;
+    expect(compact).toMatch(/  - answered \(\d{4}-\d{2}-\d{2}\): Which\? → yes\. Note: one two/);
+    const verbose = run(["backlog", "show", "--verbose", "--domain", "app"]).stdout;
+    expect(verbose).toContain("  - answered ask (");
+    expect(verbose).toContain("    - context: Need to choose a store");
+    expect(verbose).toContain("    - json (recommended: already in use): already installed");
+    expect(verbose).toContain("    - sqlite: embedded");
+    expect(verbose).toContain("    - answer: yes");
+    expect(verbose).toContain("    - answer note: one\ntwo");
+    expect(run(["backlog", "show", "--json", "--domain", "app"]).stdout).toBe(
+      run(["backlog", "show", "--json", "--verbose", "--domain", "app"]).stdout,
+    );
+
+    const compactStatus = run(["status", "--resume", "--domain", "app"]).stdout;
+    expect(compactStatus).toMatch(
+      /  - answered \(\d{4}-\d{2}-\d{2}\): Which\? → yes\. Note: one two/,
+    );
+    const verboseStatus = run(["status", "--resume", "--verbose", "--domain", "app"]).stdout;
+    expect(verboseStatus).toContain("  - answered ask (");
+    expect(verboseStatus).toContain("    - context: Need to choose a store");
     expect(run(["item", "update", "i1", "--ask", "Again?", "--domain", "app"]).exit).toBe(0);
     expect(
       run(["item", "update", "i1", "--answer", "Discuss", "--note", "talk more", "--domain", "app"])
@@ -435,10 +464,10 @@ describe("coordinate CLI parity", () => {
       [["notify"], ["text", "one line"]],
       [["end"], ["target", "--now", "--item-status", "--list-idle"]],
       [["resume"], ["name", "--space", "--no-space"]],
-      [["status"], ["--domain", "--resume"]],
+      [["status"], ["--domain", "--resume", "--verbose"]],
       [
         ["backlog", "show"],
-        ["--domain", "--json"],
+        ["--domain", "--json", "--verbose"],
       ],
       [
         ["backlog", "rename"],

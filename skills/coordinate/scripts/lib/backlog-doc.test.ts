@@ -744,7 +744,9 @@ describe("item update", () => {
       'Re "Proceed?": yes. Note: because it is safe',
     );
     const shown = (await runWith(showBacklog(cfg, "app", false))).join("\n");
-    expect(shown).toContain("    - answer note: because\nit is safe");
+    expect(shown).toContain(
+      `  - answered (${answered.answeredAt}): Proceed? → yes. Note: because it is safe`,
+    );
   });
 
   it("answering an ask keeps its details in history and records the answer as a dated decision", async () => {
@@ -757,7 +759,10 @@ describe("item update", () => {
         update({
           status: "waiting-user",
           ask: "Which store?",
-          options: ["sqlite", "json"],
+          context: "Both options work",
+          options: ["sqlite :: embedded", "json :: already installed"],
+          rec: "json",
+          why: "Already in use",
           now: NOW,
         }),
       ),
@@ -775,10 +780,11 @@ describe("item update", () => {
       answered: [
         {
           question: "Which store?",
-          context: null,
+          context: "Both options work",
           options: ["sqlite", "json"],
-          rec: null,
-          recReason: null,
+          optionDetails: ["embedded", "already installed"],
+          rec: "json",
+          recReason: "Already in use",
           discuss: null,
           answer: "json, but keep it small",
           note: null,
@@ -798,11 +804,33 @@ describe("item update", () => {
     );
     const shown = (await runWith(showBacklog(cfg, "app", false))).join("\n");
     const item = shown.split("## Open\n\n")[1]?.split("\n\n")[0] ?? "";
-    expect(item.indexOf("  - ask: Where next?")).toBeLessThan(
-      item.indexOf("  - answered ask (2026-11-18): Which store?"),
+    expect(item).toBe(
+      [
+        "- i1 [waiting-user] a",
+        "  - ask: Where next?",
+        "    - cache (recommended)",
+        "  - answered (2026-11-18): Which store? → json, but keep it small",
+        '  - decided 2026-11-18: Re "Which store?": json, but keep it small',
+      ].join("\n"),
     );
-    expect(item).toContain("    - answer: json, but keep it small");
-    expect(item).not.toContain("answer note:");
+
+    const verbose = (await runWith(showBacklog(cfg, "app", false, undefined, false, true))).join(
+      "\n",
+    );
+    const verboseItem = verbose.split("## Open\n\n")[1]?.split("\n\n")[0] ?? "";
+    expect(verboseItem).toBe(
+      [
+        "- i1 [waiting-user] a",
+        "  - ask: Where next?",
+        "    - cache (recommended)",
+        "  - answered ask (2026-11-18): Which store?",
+        "    - context: Both options work",
+        "    - json (recommended: Already in use): already installed",
+        "    - sqlite: embedded",
+        "    - answer: json, but keep it small",
+        '  - decided 2026-11-18: Re "Which store?": json, but keep it small',
+      ].join("\n"),
+    );
 
     await runWith(
       itemClose(cfg, "app", {
@@ -816,8 +844,12 @@ describe("item update", () => {
     const done = (await runWith(showBacklog(cfg, "app", false, undefined, true)))
       .join("\n")
       .split("## Done\n\n")[1];
-    expect(done).toContain("  - answered ask (2026-11-18): Which store?");
-    expect(done).toContain("    - answer: json, but keep it small");
+    expect(done).toContain("  - answered (2026-11-18): Which store? → json, but keep it small");
+    const verboseDone = (await runWith(showBacklog(cfg, "app", false, undefined, true, true)))
+      .join("\n")
+      .split("## Done\n\n")[1];
+    expect(verboseDone).toContain("  - answered ask (2026-11-18): Which store?");
+    expect(verboseDone).toContain("    - answer: json, but keep it small");
   });
 
   it.each([

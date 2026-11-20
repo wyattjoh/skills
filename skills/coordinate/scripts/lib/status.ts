@@ -75,6 +75,7 @@ export const domainRepos = Effect.fn("domainRepos")(function* (config: Config, d
  * @param nowMs Current time.
  * @param showDone Include closed items in the rendered backlog.
  * @param watcher A watcher state already resolved by `status --resume`.
+ * @param verbose Render full context, options and recommendations for answered asks.
  * @returns Lines to print.
  */
 export const domainStatus = Effect.fn("domainStatus")(function* (
@@ -84,6 +85,7 @@ export const domainStatus = Effect.fn("domainStatus")(function* (
   nowMs: number,
   showDone = false,
   watcherOverride: WatcherInfo | undefined = undefined,
+  verbose = false,
 ) {
   // Status still reports delegates when the document is missing or invalid; --resume names why.
   const ownedOrProblem = yield* domainRepos(config, domain).pipe(
@@ -229,7 +231,7 @@ export const domainStatus = Effect.fn("domainStatus")(function* (
   if (typeof ownedOrProblem === "string" && !withResume)
     lines.push(`no repos polled: ${ownedOrProblem}`);
   if (withResume) {
-    const rendered = yield* showBacklog(config, domain, false, live, showDone).pipe(
+    const rendered = yield* showBacklog(config, domain, false, live, showDone, verbose).pipe(
       Effect.catchTags({
         Refused: (refused) => Effect.succeed([refused.message]),
         BacklogError: (error) => Effect.succeed([`could not read the backlog: ${error.message}`]),
