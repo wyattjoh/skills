@@ -386,7 +386,13 @@ export default class Panel extends View {
   choose(option: string, cx: Context) {
     const open = this.answering();
     if (open === undefined || open.draft.busy) return;
-    this.draft = { ...open.draft, choice: option, discuss: false, text: "", error: undefined };
+    this.draft = {
+      ...open.draft,
+      choice: open.draft.choice === option ? undefined : option,
+      discuss: false,
+      text: "",
+      error: undefined,
+    };
     this.input?.set_value("");
     cx.notify();
   }
@@ -394,9 +400,15 @@ export default class Panel extends View {
   discuss(cx: Context) {
     const open = this.answering();
     if (open === undefined || open.draft.busy) return;
-    this.draft = { ...open.draft, choice: undefined, discuss: true, text: "", error: undefined };
+    this.draft = {
+      ...open.draft,
+      choice: undefined,
+      discuss: !open.draft.discuss,
+      text: "",
+      error: undefined,
+    };
     this.input?.set_value("");
-    this.input?.focus();
+    if (this.draft.discuss) this.input?.focus();
     cx.notify();
   }
 
@@ -414,7 +426,10 @@ export default class Panel extends View {
     if (open === undefined || open.draft.busy || this.domain === undefined) return;
     const answer = chosenAnswer(open.draft);
     if (answer === undefined) return;
-    const note = open.draft.text.trim() || undefined;
+    const note =
+      open.draft.choice !== undefined || open.draft.discuss
+        ? open.draft.text.trim() || undefined
+        : undefined;
     const { key } = open.draft;
     const { command, args } = answerCommand(home(), this.domain, open.item.id, answer, note);
     this.draft = { ...open.draft, busy: true, error: undefined };

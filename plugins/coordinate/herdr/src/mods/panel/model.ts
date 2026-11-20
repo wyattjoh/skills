@@ -761,7 +761,8 @@ export const draftFor = (key: string, ask: Ask, kept: AnswerDraft | undefined): 
     : { key, choice: undefined, discuss: false, text: "", busy: false, error: undefined };
 
 /**
- * What Answer records: typed text when there is any, else the picked option.
+ * What Answer records: Discuss, the picked option, or typed text when no option is picked.
+ * Typed text is a note when an option or Discuss is picked.
  * @param draft The draft.
  * @returns The answer, or undefined when there is none yet.
  */

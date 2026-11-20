@@ -520,15 +520,15 @@ const askCard = (
   completed: AnsweredAsk | undefined,
   itemTouches: string[] | undefined,
 ): Element[] => {
-  // Typed text answers instead of the picked option; completed cards have no active draft.
+  // Notes do not replace the picked option; completed cards have no active draft.
   const picked =
     completed !== undefined
       ? completed.answer
       : answer === undefined
         ? ask.rec
-        : answer.draft.text.trim() === ""
-          ? answer.draft.choice
-          : null;
+        : answer.draft.discuss
+          ? undefined
+          : answer.draft.choice;
   const question = detailRow(t, `${id}-question`)
     .bg(t.popover)
     .rounded_t(CARD.innerRadius)

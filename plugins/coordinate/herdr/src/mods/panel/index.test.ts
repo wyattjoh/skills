@@ -995,6 +995,7 @@ test("answers with a picked option through the CLI, then keeps the answered ask 
     get(render(), "ask-answer-submit").styles.bg,
   ]).toEqual(["Answer", "#404040"]);
   get(render(), "ask-option-0").click!({}, ctx.cx);
+  typeInto(host.inputs[0]!, "Keep the existing title", ctx.cx);
   expect(get(render(), "ask-answer-submit").styles.bg).toBe("#ffffff");
   const picked = render();
   expect([get(picked, "ask-option-0").styles.bg, get(picked, "ask-option-1").styles.bg]).toEqual([
@@ -1002,18 +1003,24 @@ test("answers with a picked option through the CLI, then keeps the answered ask 
     "#141414",
   ]);
   expect(host.execs).toEqual([]);
-  host.files.set(DOC, JSON.stringify(answered("Coordinate backlog")));
+  const recorded = answered("Coordinate backlog");
+  recorded.items[0]!.answered[0]!.note = "Keep the existing title";
+  host.files.set(DOC, JSON.stringify(recorded));
   get(picked, "ask-answer-submit").click!({}, ctx.cx);
   expect(text(get(render(), "ask-answer-submit"))).toBe("Answering…");
   await settle();
   expect(host.execs).toEqual([
-    { command: "/usr/bin/env", args: answerArgs("i1", "Coordinate backlog") },
+    {
+      command: "/usr/bin/env",
+      args: answerArgs("i1", "Coordinate backlog", "Keep the existing title"),
+    },
   ]);
   const root = render();
   expect(text(get(root, "ask-answered-0-question"))).toBe("Which title?");
   expect(text(get(root, "ask-answered-0-option-0"))).toContain("Answered");
   expect(get(root, "ask-answered-0-option-0").styles.bg).toBe("#2563eb");
   expect(text(get(root, "ask-answered-0-answered-at"))).toBe("Answered 2026-11-17");
+  expect(text(get(root, "ask-answered-0-answer-note"))).toBe("Note Keep the existing title");
   expect(ids(root, "ask-answer-submit")).toEqual([]);
   expect(get(root, "ask-answered-0-option-0").click).toBe(undefined);
   expect(text(get(root, "decided-1"))).toBe('Re "Which title?": Coordinate backlog 2026-11-17');
@@ -1062,7 +1069,7 @@ test("submits Discuss without a note when the discussion row is selected", async
   expect(ids(render(), "ask-discuss-note")).toEqual([]);
 });
 
-test("answers with typed text over the picked option, a leading dash kept as one argument", async () => {
+test("answers with free text only, without duplicating it as a note", async () => {
   focusDomain("alpha");
   host.files.set(DOC, JSON.stringify(withAsk()));
   const { ctx, render } = await mount();
@@ -1078,11 +1085,51 @@ test("answers with typed text over the picked option, a leading dash kept as one
   get(typed, "ask-answer-submit").click!({}, ctx.cx);
   await settle();
   expect(host.execs).toEqual([
-    { command: "/usr/bin/env", args: answerArgs("i1", "-call it Board", "-call it Board") },
+    { command: "/usr/bin/env", args: answerArgs("i1", "-call it Board") },
   ]);
   const root = render();
   expect(text(get(root, "ask-answered-0-answer"))).toBe("Answer -call it Board 2026-11-17");
   expect(ids(root, "ask-answer-submit")).toEqual([]);
+});
+
+test("unselects a picked option so typed text becomes a free-text answer", async () => {
+  focusDomain("alpha");
+  host.files.set(DOC, JSON.stringify(withAsk()));
+  const { ctx, render } = await mount();
+  get(render(), "item-i1").click!({}, ctx.cx);
+  get(render(), "ask-option-0").click!({}, ctx.cx);
+  expect(get(render(), "ask-option-0").styles.bg).toBe("#2563eb");
+  get(render(), "ask-option-0").click!({}, ctx.cx);
+  expect(get(render(), "ask-option-0").styles.bg).toBe("#141414");
+  typeInto(host.inputs[0]!, "Custom answer", ctx.cx);
+  const draft = render();
+  expect(get(draft, "ask-answer-submit").click).toBeDefined();
+  host.files.set(DOC, JSON.stringify(answered("Custom answer")));
+  get(draft, "ask-answer-submit").click!({}, ctx.cx);
+  await settle();
+  expect(host.execs).toEqual([
+    { command: "/usr/bin/env", args: answerArgs("i1", "Custom answer") },
+  ]);
+});
+
+test("unselects Discuss so typed text becomes a free-text answer", async () => {
+  focusDomain("alpha");
+  host.files.set(DOC, JSON.stringify(withAsk()));
+  const { ctx, render } = await mount();
+  get(render(), "item-i1").click!({}, ctx.cx);
+  get(render(), "ask-discuss").click!({}, ctx.cx);
+  expect(get(render(), "ask-discuss").styles.bg).toBe("#2563eb");
+  get(render(), "ask-discuss").click!({}, ctx.cx);
+  expect(get(render(), "ask-discuss").styles.bg).toBe("#141414");
+  typeInto(host.inputs[0]!, "Custom answer after Discuss", ctx.cx);
+  const draft = render();
+  expect(text(get(draft, "ask-answer-submit"))).toBe("Answer");
+  host.files.set(DOC, JSON.stringify(answered("Custom answer after Discuss")));
+  get(draft, "ask-answer-submit").click!({}, ctx.cx);
+  await settle();
+  expect(host.execs).toEqual([
+    { command: "/usr/bin/env", args: answerArgs("i1", "Custom answer after Discuss") },
+  ]);
 });
 
 test("shows the CLI's message and keeps the draft when recording fails or cannot start", async () => {
