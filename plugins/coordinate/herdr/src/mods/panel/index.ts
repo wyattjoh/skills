@@ -3,8 +3,19 @@
 import { View } from "gpui-kit";
 import { InputState } from "gpui-base";
 import { createAnswerInput } from "./textarea.ts";
-import type { AsyncContext, Context, Element } from "gpui-kit";
-import { checking, exec, focused, home, readTextFile, terminals, theme, watchFolder } from "herdr";
+import type { AsyncContext, Context, Element, FocusHandle } from "gpui-kit";
+import {
+  checking,
+  exec,
+  focused,
+  home,
+  readTextFile,
+  setShared,
+  shared,
+  terminals,
+  theme,
+  watchFolder,
+} from "herdr";
 import type { FolderWatch } from "herdr";
 import {
   FOLDED_BY_DEFAULT,
@@ -28,6 +39,7 @@ import {
   missingSessions,
   openFindings,
   parseListing,
+  rankedOptions,
   readDocument,
   stateDirOf,
   summarize,
@@ -45,16 +57,26 @@ import type {
   ListingState,
   Screen,
 } from "./model.ts";
+import { advanceAnswerFlow, startAnswerFlow, storedFlowVariation } from "./answer-flow.ts";
+import type { AnswerFlow, FlowVariation } from "./answer-flow.ts";
 import { backlogsDir, documentPath } from "../../lib/store.ts";
 import type { Finding, Item } from "../../lib/store.ts";
 import { panel } from "./view.ts";
-import type { AnswerModel, BoundaryList, BoundaryModel, Theme } from "./view.ts";
+import type {
+  AnswerFlowModel,
+  AnswerModel,
+  BoundaryList,
+  BoundaryModel,
+  FlowPickerModel,
+  Theme,
+} from "./view.ts";
 
 // How often the panel checks whether focus moved to another domain, and how often it rereads
 // the document in case a folder watch was reclaimed.
 const FOLLOW_MS = 1_000;
 const REFRESH_MS = 30_000;
 const ROW_PAGE_SIZE = 10;
+const FLOW_PREFERENCES_KEY = "coordinate-panel.answer-flow.v1";
 
 type DomainRead = {
   document: DocumentState;
@@ -109,8 +131,13 @@ export default class Panel extends View {
   // The answer field's retained text state, whether it has the keyboard, and the draft being
   // written on the open item's ask.
   input: ReturnType<typeof createAnswerInput> | undefined;
+  noteInput: ReturnType<typeof createAnswerInput> | undefined;
   typing = false;
+  noteTyping = false;
   draft: AnswerDraft | undefined;
+  answerFlow: AnswerFlow | undefined;
+  flowPickerOpen = false;
+  flowFocus: FocusHandle | undefined;
   boundaryInput: InputState | undefined;
   boundaryEditing: { domain: string; list: BoundaryList } | undefined;
   boundaryBusy = false;
@@ -124,6 +151,11 @@ export default class Panel extends View {
     input.on("focus", (_event, gained) => this.setTyping(true, gained));
     input.on("blur", (_event, lost) => this.setTyping(false, lost));
     this.input = input;
+    const noteInput = createAnswerInput("Optional note");
+    noteInput.on("change", (_event, changed) => this.typeNote(noteInput.value(), changed));
+    noteInput.on("focus", (_event, gained) => this.setNoteTyping(true, gained));
+    noteInput.on("blur", (_event, lost) => this.setNoteTyping(false, lost));
+    this.noteInput = noteInput;
     const boundaryInput = InputState.new({ placeholder: "Path" });
     boundaryInput.on("submit", (_event, submitted) => this.addBoundary(submitted));
     this.boundaryInput = boundaryInput;
@@ -148,6 +180,7 @@ export default class Panel extends View {
     const followed = this.focusDomain();
     if (followed === this.followed) return;
     this.followed = followed;
+    this.answerFlow = undefined;
     this.page = undefined;
     this.selected = undefined;
     if (followed === undefined) return;
@@ -186,6 +219,7 @@ export default class Panel extends View {
   }
 
   openDomain(domain: string, cx: Context) {
+    this.answerFlow = undefined;
     this.picked = domain;
     this.listed = false;
     this.page = undefined;
@@ -196,6 +230,7 @@ export default class Panel extends View {
   // Open a screen the trail or a link names. Details open over their list, pages open over the
   // domain's main list, and Domains shows the listing.
   go(screen: Screen, cx: Context) {
+    this.answerFlow = undefined;
     if (screen.kind === "item" || screen.kind === "finding") {
       this.selected = { kind: screen.kind, domain: screen.domain, id: screen.id };
       this.page =
@@ -267,10 +302,23 @@ export default class Panel extends View {
       if (generation !== this.generation) return;
       this.cacheDomain(domain, read);
       this.doc = read.document;
+      this.reconcileAnswerFlow(domain, read.document);
       task.notify();
       if (read.document.kind === "loaded")
         this.lookUpEnded(stateDir, missingSessions(read.document.backlog, terminals()), task);
     });
+  }
+
+  reconcileAnswerFlow(domain: string, document: DocumentState) {
+    const flow = this.answerFlow;
+    if (flow === undefined || flow.domain !== domain || document.kind !== "loaded") return;
+    const currentId = flow.ids[flow.current];
+    if (currentId === undefined || flow.answered.includes(currentId)) return;
+    const item = document.backlog.items.find((candidate) => candidate.id === currentId);
+    if (item !== undefined && item.ask !== null) return;
+    this.answerFlow = advanceAnswerFlow(flow, item === undefined ? "skipped" : "answered");
+    const next = this.answerFlow.ids[this.answerFlow.current];
+    if (next !== undefined) this.selected = { kind: "item", domain, id: next };
   }
 
   // One domain's document. A rejected read (permissions, too large) is unreadable.
@@ -398,6 +446,109 @@ export default class Panel extends View {
     this.go({ kind: "item", domain: this.domain, id: item.id }, cx);
   }
 
+  openWaiting(item: Item, cx: Context) {
+    const domain = this.target();
+    if (domain === undefined || item.ask === null) return;
+    const doc = domain === this.domain ? this.doc : cachedDocument(this.docs, domain);
+    if (doc.kind !== "loaded") return;
+    const ids = doc.backlog.items
+      .filter((candidate) => candidate.ask !== null)
+      .map((candidate) => candidate.id);
+    this.answerFlow = startAnswerFlow(domain, ids, item.id);
+    this.selected = { kind: "item", domain, id: item.id };
+    this.page = undefined;
+    this.clearDraft();
+    if (this.flowFocus === undefined && typeof cx.focus_handle === "function")
+      this.flowFocus = cx.focus_handle();
+    this.flowFocus?.focus();
+    cx.notify();
+  }
+
+  moveAnswerFlow(position: number, cx: Context) {
+    const flow = this.answerFlow;
+    if (
+      flow === undefined ||
+      this.draft?.busy === true ||
+      position < 0 ||
+      position > flow.ids.length
+    )
+      return;
+    this.answerFlow = { ...flow, current: position };
+    const id = flow.ids[position];
+    if (id !== undefined) {
+      this.selected = { kind: "item", domain: flow.domain, id };
+      this.clearDraft();
+    }
+    cx.notify();
+  }
+
+  backAnswerFlow(cx: Context) {
+    const flow = this.answerFlow;
+    if (flow === undefined || this.draft?.busy === true) return;
+    if (flow.current <= 0) {
+      this.exitAnswerFlow(cx);
+      return;
+    }
+    this.moveAnswerFlow(flow.current - 1, cx);
+  }
+
+  skipAnswerFlow(cx: Context) {
+    if (this.draft?.busy) return;
+    const flow = this.answerFlow;
+    if (flow === undefined) return;
+    this.answerFlow = advanceAnswerFlow(flow, "skipped");
+    this.clearDraft();
+    const id = this.answerFlow.ids[this.answerFlow.current];
+    if (id !== undefined) this.selected = { kind: "item", domain: flow.domain, id };
+    cx.notify();
+  }
+
+  exitAnswerFlow(cx: Context) {
+    const flow = this.answerFlow;
+    if (flow === undefined || this.draft?.busy === true) return;
+    this.answerFlow = undefined;
+    this.clearDraft();
+    this.selected = undefined;
+    this.page = undefined;
+    this.picked = flow.domain;
+    this.listed = false;
+    cx.notify();
+  }
+
+  flowKey(key: string, cx: Context) {
+    const open = this.answering();
+    if (open === undefined) return;
+    if (key === "enter") {
+      this.answer(cx);
+      return;
+    }
+    if (!/^[1-9]$/.test(key)) return;
+    const index = Number(key) - 1;
+    const options = rankedOptions(open.item.ask!);
+    if (index < options.length) {
+      const option = options[index]?.option;
+      if (option !== undefined) this.choose(option, cx);
+      return;
+    }
+    if (index === options.length) this.discuss(cx);
+  }
+
+  setFlowPickerOpen(open: boolean, cx: Context) {
+    this.flowPickerOpen = open;
+    cx.notify();
+  }
+
+  selectFlowVariation(variation: FlowVariation, cx: Context) {
+    if (storedFlowVariation(variation) !== variation) return;
+    setShared(FLOW_PREFERENCES_KEY, variation);
+    this.flowPickerOpen = false;
+    cx.notify();
+  }
+
+  flowVariation(): FlowVariation {
+    return storedFlowVariation(shared(FLOW_PREFERENCES_KEY));
+  }
+
   openFinding(finding: Finding, cx: Context) {
     if (this.domain === undefined) return;
     this.go({ kind: "finding", domain: this.domain, id: finding.id }, cx);
@@ -407,10 +558,18 @@ export default class Panel extends View {
   clearDraft() {
     this.draft = undefined;
     this.input?.set_value("");
+    this.noteInput?.set_value("");
+    this.typing = false;
+    this.noteTyping = false;
   }
 
   setTyping(typing: boolean, cx: Context) {
     this.typing = typing;
+    cx.notify();
+  }
+
+  setNoteTyping(typing: boolean, cx: Context) {
+    this.noteTyping = typing;
     cx.notify();
   }
 
@@ -431,9 +590,12 @@ export default class Panel extends View {
       choice: open.draft.choice === option ? undefined : option,
       discuss: false,
       text: "",
+      note: "",
       error: undefined,
     };
     this.input?.set_value("");
+    this.noteInput?.set_value("");
+    this.noteTyping = false;
     cx.notify();
   }
 
@@ -445,9 +607,12 @@ export default class Panel extends View {
       choice: undefined,
       discuss: !open.draft.discuss,
       text: "",
+      note: "",
       error: undefined,
     };
     this.input?.set_value("");
+    this.noteInput?.set_value("");
+    this.noteTyping = false;
     if (this.draft.discuss) this.input?.focus();
     cx.notify();
   }
@@ -459,6 +624,19 @@ export default class Panel extends View {
     cx.notify();
   }
 
+  typeNote(value: string, cx: Context) {
+    const open = this.answering();
+    if (
+      open === undefined ||
+      open.draft.choice !== undefined ||
+      open.draft.discuss ||
+      open.draft.note === value
+    )
+      return;
+    this.draft = { ...open.draft, note: value, error: undefined };
+    cx.notify();
+  }
+
   // Record the draft's answer with the coordinate CLI. Success is exit 0 and nothing less: the
   // draft clears and the document is read again; any other end shows the CLI's message.
   answer(cx: Context) {
@@ -466,10 +644,9 @@ export default class Panel extends View {
     if (open === undefined || open.draft.busy || this.domain === undefined) return;
     const answer = chosenAnswer(open.draft);
     if (answer === undefined) return;
-    const note =
-      open.draft.choice !== undefined || open.draft.discuss
-        ? open.draft.text.trim() || undefined
-        : undefined;
+    const noteText =
+      open.draft.choice !== undefined || open.draft.discuss ? open.draft.text : open.draft.note;
+    const note = noteText.trim() || undefined;
     const { key } = open.draft;
     const { command, args } = answerCommand(home(), this.domain, open.item.id, answer, note);
     this.draft = { ...open.draft, busy: true, error: undefined };
@@ -485,6 +662,12 @@ export default class Panel extends View {
       if (this.draft?.key !== key) return;
       if (error === undefined) {
         this.clearDraft();
+        const flow = this.answerFlow;
+        if (flow !== undefined && flow.domain === this.domain)
+          this.answerFlow = advanceAnswerFlow(flow, "answered");
+        const next = this.answerFlow?.ids[this.answerFlow.current];
+        if (next !== undefined && this.answerFlow !== undefined)
+          this.selected = { kind: "item", domain: this.answerFlow.domain, id: next };
         this.load(task, true);
       } else this.draft = { ...this.draft, busy: false, error };
       task.notify();
@@ -499,9 +682,57 @@ export default class Panel extends View {
       draft: open.draft,
       input: this.input,
       typing: this.typing,
+      noteInput: this.noteInput,
+      noteTyping: this.noteTyping,
       choose: (option, cx) => this.choose(option, cx),
       discuss: (cx) => this.discuss(cx),
       submit: (cx) => this.answer(cx),
+    };
+  }
+
+  answerFlowModel(): AnswerFlowModel | undefined {
+    const flow = this.answerFlow;
+    if (flow === undefined || flow.domain !== this.target()) return undefined;
+    const doc = flow.domain === this.domain ? this.doc : cachedDocument(this.docs, flow.domain);
+    const backlog = doc.kind === "loaded" ? doc.backlog : undefined;
+    const lookup = (ids: string[]) =>
+      ids.flatMap((id) => {
+        const record = backlog?.items.find((candidate) => candidate.id === id);
+        return record === undefined ? [] : [record];
+      });
+    const questions = lookup(flow.ids);
+    const item =
+      flow.current < flow.ids.length
+        ? questions.find((candidate) => candidate.id === flow.ids[flow.current])
+        : undefined;
+    return {
+      domain: flow.domain,
+      questions,
+      item,
+      position: Math.min(flow.current + 1, flow.ids.length),
+      total: flow.ids.length,
+      done: flow.current >= flow.ids.length,
+      answered: lookup(flow.answered),
+      answeredCount: flow.answered.length,
+      skipped: lookup(flow.skipped),
+      skippedCount: flow.skipped.length,
+      answer: this.answerModel(),
+      focus: this.flowFocus,
+      key: (value, cx) => this.flowKey(value, cx),
+      back: (cx) => this.backAnswerFlow(cx),
+      skip: (cx) => this.skipAnswerFlow(cx),
+      exit: (cx) => this.exitAnswerFlow(cx),
+      goTo: (position, cx) => this.moveAnswerFlow(position, cx),
+      variation: this.flowVariation(),
+    };
+  }
+
+  flowPickerModel(): FlowPickerModel {
+    return {
+      selected: this.flowVariation(),
+      open: this.flowPickerOpen,
+      setOpen: (open, cx) => this.setFlowPickerOpen(open, cx),
+      select: (variation, cx) => this.selectFlowVariation(variation, cx),
     };
   }
 
@@ -685,11 +916,27 @@ export default class Panel extends View {
       finding?.from === null || finding === undefined || doc.kind !== "loaded"
         ? undefined
         : doc.backlog.items.find((item) => item.id === finding.from);
+    const flow = this.answerFlowModel();
+    const trail =
+      flow === undefined
+        ? trailOf(this.screen(domain, detail, finding, this.page))
+        : (() => {
+            const flowTrail = trailOf({
+              kind: "item",
+              domain: flow.domain,
+              id: flow.item?.id ?? "answer-flow",
+            });
+            const questionCrumb = flowTrail[flowTrail.length - 1]!;
+            return [
+              ...flowTrail.slice(0, -1),
+              { ...questionCrumb, id: "crumb-answer-flow", label: "Questions", to: undefined },
+            ];
+          })();
     return panel(theme() as Theme, {
       domain,
       doc,
       listing: this.listing,
-      trail: trailOf(this.screen(domain, detail, finding, this.page)),
+      trail,
       go: (screen, cx) => this.go(screen, cx),
       groups: doc.kind === "loaded" ? groupItems(doc.backlog) : [],
       findings: doc.kind === "loaded" ? openFindings(doc.backlog) : [],
@@ -705,7 +952,10 @@ export default class Panel extends View {
       loadMore: (group, cx) => this.revealMore(domain, group, cx),
       detail,
       open: (item, cx) => this.open(item, cx),
+      openWaiting: (item, cx) => this.openWaiting(item, cx),
       answer: this.answerModel(),
+      flow,
+      flowPicker: this.flowPickerModel(),
       boundary: this.boundaryModel(domain),
     });
   }

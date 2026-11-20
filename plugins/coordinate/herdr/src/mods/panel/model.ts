@@ -758,14 +758,15 @@ export const answerCommand = (
 });
 
 /**
- * An answer being written on an item's detail: the option picked, the text typed, and the run
- * recording it. `key` names the domain, item and question, so a new ask starts a fresh draft.
+ * An answer being written on an item's detail: the option picked, a text answer or note, and the
+ * run recording it. `key` names the domain, item and question, so a new ask starts a fresh draft.
  */
 export type AnswerDraft = {
   key: string;
   choice: string | undefined;
   discuss: boolean;
   text: string;
+  note: string;
   busy: boolean;
   error: string | undefined;
 };
@@ -791,7 +792,15 @@ export const draftKey = (domain: string, item: Item, ask: Ask): string =>
 export const draftFor = (key: string, ask: Ask, kept: AnswerDraft | undefined): AnswerDraft =>
   kept?.key === key
     ? kept
-    : { key, choice: undefined, discuss: false, text: "", busy: false, error: undefined };
+    : {
+        key,
+        choice: undefined,
+        discuss: false,
+        text: "",
+        note: "",
+        busy: false,
+        error: undefined,
+      };
 
 /**
  * What Answer records: Discuss, the picked option, or typed text when no option is picked.

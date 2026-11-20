@@ -48,8 +48,8 @@ const textareaApi = (): TextareaApi => {
  * Create a retained, auto-growing multiline answer state.
  * @returns The state used by the panel's answer field.
  */
-export const createAnswerInput = (): AnswerInputState => {
-  const input = textareaApi().createState({ placeholder: "Or type an answer", rows: 1 });
+export const createAnswerInput = (placeholder = "Or type an answer"): AnswerInputState => {
+  const input = textareaApi().createState({ placeholder, rows: 1 });
   input.set_auto_grow(1, 100);
   return input;
 };

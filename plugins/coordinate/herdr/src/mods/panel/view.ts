@@ -1,8 +1,10 @@
 // The panel's regions as element functions: everything it draws, from data the View hands in.
 import { div, svg } from "gpui-kit";
-import type { Color, Context, Element } from "gpui-kit";
-import { Input, InputState, h_flex, v_flex } from "gpui-base";
+import type { Color, Context, Element, FocusHandle } from "gpui-kit";
+import { Input, InputState, Popover, h_flex, v_flex } from "gpui-base";
 import { answerInputElement } from "./textarea.ts";
+import { FLOW_VARIATIONS } from "./answer-flow.ts";
+import type { FlowVariation } from "./answer-flow.ts";
 import type { AnswerInputState } from "./textarea.ts";
 import {
   BUTTON_STYLE,
@@ -26,6 +28,8 @@ import {
   labelChip,
   listRow,
   loadingState,
+  menuPanel,
+  menuRow,
   paneScrollRegion,
   panelBody,
   panelFrame,
@@ -113,6 +117,9 @@ export type PanelModel = {
   open: (item: Item, cx: Context) => void;
   // The answer being written on the open item's ask, when it has one.
   answer: AnswerModel | undefined;
+  flow: AnswerFlowModel | undefined;
+  flowPicker: FlowPickerModel;
+  openWaiting: (item: Item, cx: Context) => void;
   // Boundary paths can be edited on either card.
   boundary: BoundaryModel;
   openDomain: (domain: string, cx: Context) => void;
@@ -126,9 +133,50 @@ export type AnswerModel = {
   // The text field's retained state, absent until the View's init made it.
   input: AnswerInputState | undefined;
   typing: boolean;
+  noteInput: AnswerInputState | undefined;
+  noteTyping: boolean;
   choose: (option: string, cx: Context) => void;
   discuss: (cx: Context) => void;
   submit: (cx: Context) => void;
+};
+
+export { FLOW_VARIATIONS };
+export type { FlowVariation };
+
+export const FLOW_VARIATION_LABELS: Readonly<Record<FlowVariation, string>> = {
+  queue: "Queue page",
+  stepper: "Item stepper",
+  stack: "Card stack",
+  "list-detail": "List and detail",
+  focus: "Focus mode",
+};
+
+export type AnswerFlowModel = {
+  domain: string;
+  questions: Item[];
+  item: Item | undefined;
+  position: number;
+  total: number;
+  done: boolean;
+  answered: Item[];
+  answeredCount: number;
+  skipped: Item[];
+  skippedCount: number;
+  answer: AnswerModel | undefined;
+  focus: FocusHandle | undefined;
+  key: (value: string, cx: Context) => void;
+  back: (cx: Context) => void;
+  skip: (cx: Context) => void;
+  exit: (cx: Context) => void;
+  goTo: (position: number, cx: Context) => void;
+  variation: FlowVariation;
+};
+
+export type FlowPickerModel = {
+  selected: FlowVariation;
+  open: boolean;
+  setOpen: (open: boolean, cx: Context) => void;
+  select: (variation: FlowVariation, cx: Context) => void;
 };
 
 export type BoundaryList = "owned" | "adjacent";
@@ -307,7 +355,54 @@ const statusGroup = (
   });
 };
 
-const waitingHeader = (t: Theme): Element => cardHeader(t, "waiting-header", "Waiting on you");
+const FLOW_PICKER_MENU_WIDTH = 208;
+const FLOW_PICKER_MENU_HEIGHT = 220;
+const FLOW_CHECK_WIDTH = 20;
+const FLOW_STACK_OPACITY = [0.65, 0.4] as const;
+
+const flowPicker = (t: Theme, picker: FlowPickerModel, id: string): Element => {
+  const trigger = h_flex()
+    .id(`${id}-trigger`)
+    .h(BUTTON_STYLE.height)
+    .px(BUTTON_STYLE.paddingX)
+    .gap(BUTTON_STYLE.gap)
+    .items_center()
+    .rounded(BUTTON_STYLE.radius)
+    .bg(t.raised)
+    .text_color(t.foreground)
+    .cursor_pointer()
+    .hover((style) => style.bg(t.hover))
+    .child(div().flex_none().text_size(TEXT.label).child(FLOW_VARIATION_LABELS[picker.selected]));
+  if (!picker.open) return trigger.on_click((_event, cx) => picker.setOpen(true, cx));
+  return Popover.new(id)
+    .open(true)
+    .anchor("top_left")
+    .on_open_change(picker.setOpen)
+    .trigger(trigger)
+    .content(
+      menuPanel(t, FLOW_PICKER_MENU_WIDTH)
+        .id(`${id}-menu`)
+        .max_h(FLOW_PICKER_MENU_HEIGHT)
+        .overflow_y_scroll()
+        .children(
+          FLOW_VARIATIONS.map((variation) =>
+            menuRow(t, {
+              id: `${id}-option-${variation}`,
+              label: FLOW_VARIATION_LABELS[variation],
+              checked: variation === picker.selected,
+              onClick: (cx) => picker.select(variation, cx),
+            }),
+          ),
+        ),
+    );
+};
+
+const waitingHeader = (t: Theme, model: PanelModel): Element =>
+  cardHeader(t, "waiting-header", "Waiting on you")
+    .child(div().flex_1())
+    .when(model.flow === undefined, (header) =>
+      header.child(flowPicker(t, model.flowPicker, `flow-picker-${model.domain ?? "domain"}`)),
+    );
 
 const waitingAccentMark = (t: Theme, id: string): Element =>
   div()
@@ -329,7 +424,7 @@ const waitingItemRow = (t: Theme, item: Item, model: PanelModel): Element =>
     t,
     item,
     model.delegates.byItem.get(item.id) ?? [],
-    model.open,
+    model.openWaiting,
     waitingAccentMark(t, `waiting-accent-${item.id}`),
   );
 
@@ -339,7 +434,7 @@ const waitingCard = (t: Theme, model: PanelModel): Element[] => {
   if (items.length === 0) return [];
   return [
     cardSection(
-      waitingHeader(t),
+      waitingHeader(t, model),
       card(t, "waiting").children(
         pagedRows(t, "waiting", items, model, ROW.compact, (item) =>
           waitingItemRow(t, item, model),
@@ -497,11 +592,14 @@ const ANSWER_BUTTON_STYLE: ButtonStyle = {
 // The answer field is app-specific; the package owns its surrounding card item and button.
 const askBodyRow = (t: Theme, id: string): Element => detailRow(t, id).bg(t.surface);
 
-const answerRows = (t: Theme, answer: AnswerModel, prefix = "ask"): Element[] => {
-  const { draft } = answer;
-  const enabled = chosenAnswer(draft) !== undefined && !draft.busy;
-  const field = div()
-    .id(`${prefix}-answer-field`)
+const answerField = (
+  t: Theme,
+  id: string,
+  input: AnswerInputState | undefined,
+  typing: boolean,
+): Element =>
+  div()
+    .id(id)
     .flex_1()
     .min_w(0)
     .min_h(ANSWER.height)
@@ -510,13 +608,32 @@ const answerRows = (t: Theme, answer: AnswerModel, prefix = "ask"): Element[] =>
     .items_start()
     .rounded(ANSWER.radius)
     .border_1()
-    .border_color(answer.typing ? t.accent : t.border)
+    .border_color(typing ? t.accent : t.border)
     .cursor_text()
-    .when(answer.input !== undefined, (el) =>
-      el.child(
-        answerInputElement(answer.input!).h_full().text_size(TEXT.body).text_color(t.foreground),
-      ),
+    .when(input !== undefined, (el) =>
+      el.child(answerInputElement(input!).h_full().text_size(TEXT.body).text_color(t.foreground)),
     );
+
+const answerRows = (t: Theme, answer: AnswerModel, prefix = "ask"): Element[] => {
+  const { draft } = answer;
+  const enabled = chosenAnswer(draft) !== undefined && !draft.busy;
+  const field = answerField(t, `${prefix}-answer-field`, answer.input, answer.typing);
+  const noteField =
+    draft.choice === undefined &&
+    !draft.discuss &&
+    draft.text.trim() !== "" &&
+    answer.noteInput !== undefined
+      ? [
+          askBodyRow(t, `${prefix}-answer-note-field`).child(
+            h_flex()
+              .gap(ANSWER.gap)
+              .child(small(t, t.muted, "Optional note"))
+              .child(
+                answerField(t, `${prefix}-answer-note-input`, answer.noteInput, answer.noteTyping),
+              ),
+          ),
+        ]
+      : [];
   const submit = button(t, {
     id: `${prefix}-answer-submit`,
     label: draft.busy
@@ -531,6 +648,7 @@ const answerRows = (t: Theme, answer: AnswerModel, prefix = "ask"): Element[] =>
   });
   return [
     askBodyRow(t, `${prefix}-answer`).child(h_flex().gap(ANSWER.gap).child(field).child(submit)),
+    ...noteField,
     ...(draft.error === undefined
       ? []
       : [
@@ -898,6 +1016,309 @@ const detailScreen = (
     .children(decidedCard(t, item))
     .children(delegatesCard(t, item, delegates.byItem.get(item.id) ?? []));
 
+const flowButton = (
+  t: Theme,
+  id: string,
+  label: string,
+  onClick: (cx: Context) => void,
+  disabled = false,
+): Element =>
+  button(t, {
+    id,
+    label,
+    style: BUTTON_STYLE,
+    onClick: disabled ? undefined : onClick,
+  });
+
+const flowHeader = (t: Theme, flow: AnswerFlowModel, picker: FlowPickerModel): Element =>
+  h_flex()
+    .id(`answer-flow-header-${flow.domain}`)
+    .h(CARD.headerHeight)
+    .gap(CARD.headerGap)
+    .items_center()
+    .child(
+      div()
+        .id("answer-flow-progress")
+        .flex_1()
+        .font_semibold()
+        .text_size(TEXT.body)
+        .text_color(t.foreground)
+        .child(flow.done ? "Done" : `Question ${flow.position} of ${flow.total}`),
+    )
+    .child(flowPicker(t, picker, `flow-picker-page-${flow.domain}`));
+
+const flowControls = (
+  t: Theme,
+  flow: AnswerFlowModel,
+  options: { next?: boolean; skip?: boolean } = {},
+): Element => {
+  const busy = flow.answer?.draft.busy === true;
+  return h_flex()
+    .id("answer-flow-controls")
+    .gap(BUTTON_STYLE.gap)
+    .children([
+      flowButton(t, "answer-flow-back", "Back", flow.back, busy),
+      ...(options.skip === false ||
+      flow.done ||
+      flow.item?.ask === null ||
+      flow.answered.some((item) => item.id === flow.item?.id)
+        ? []
+        : [flowButton(t, "answer-flow-skip", "Skip", flow.skip, busy)]),
+      ...(options.next !== true || flow.done || flow.position >= flow.total
+        ? []
+        : [flowButton(t, "answer-flow-next", "Next", (cx) => flow.goTo(flow.position, cx), busy)]),
+      ...(flow.done ? [flowButton(t, "answer-flow-exit", "Back to domain", flow.exit, busy)] : []),
+    ]);
+};
+
+const flowAskCard = (t: Theme, flow: AnswerFlowModel, prefix = "ask"): Element[] => {
+  const item = flow.item;
+  if (item === undefined)
+    return [message(t, "answer-flow-missing", "Question unavailable", "Go back to the domain.")];
+  if (item.ask === null)
+    return [
+      detailCard(t, `${prefix}-completed`, item.title, [
+        detailRow(t, `${prefix}-already-answered`)
+          .text_color(t.muted)
+          .child("This question was answered outside this flow."),
+      ]),
+    ];
+  return [
+    detailHead(
+      t,
+      prefix === "ask" ? "detail" : prefix,
+      item.id,
+      item.title,
+      GROUP_LABELS[item.status],
+      role(t, STATUS_TONES[item.status]),
+    ),
+    ...askCard(
+      t,
+      prefix === "ask" ? prefix : `${prefix}-${item.id}`,
+      item.ask,
+      flow.answer,
+      undefined,
+      item.touches,
+    ),
+  ];
+};
+
+const flowDone = (t: Theme, flow: AnswerFlowModel): Element =>
+  v_flex()
+    .id("answer-flow-done")
+    .gap(PANEL.sectionGap)
+    .child(
+      detailCard(t, "answer-flow-summary", "All caught up", [
+        detailRow(t, "answer-flow-summary-count").child(
+          `${flow.answeredCount} answered, ${flow.skippedCount} skipped.`,
+        ),
+        ...(flow.variation === "focus"
+          ? flow.answered.map((item) =>
+              detailRow(t, `answer-flow-summary-${item.id}`)
+                .child(div().flex_none().text_color(t.done).child("✓"))
+                .child(div().flex_1().min_w(0).child(item.title)),
+            )
+          : []),
+      ]),
+    )
+    .child(flowControls(t, flow, { skip: false }));
+
+const flowQuestionPage = (t: Theme, flow: AnswerFlowModel, model: PanelModel): Element =>
+  v_flex()
+    .id("answer-flow-queue-page")
+    .gap(PANEL.sectionGap)
+    .child(flowHeader(t, flow, model.flowPicker))
+    .children(flowAskCard(t, flow))
+    .child(flowControls(t, flow));
+
+const flowStepper = (t: Theme, flow: AnswerFlowModel, model: PanelModel): Element => {
+  const content =
+    flow.item === undefined
+      ? flowAskCard(t, flow)[0]!
+      : detailScreen(t, flow.item, model.delegates, flow.answer);
+  return v_flex()
+    .id("answer-flow-item-stepper")
+    .gap(PANEL.sectionGap)
+    .child(flowHeader(t, flow, model.flowPicker))
+    .child(flowControls(t, flow, { next: true }))
+    .child(content)
+    .child(flowControls(t, flow, { next: true }));
+};
+
+const flowStack = (t: Theme, flow: AnswerFlowModel, model: PanelModel): Element => {
+  const upcoming = flow.questions.slice(flow.position, flow.position + FLOW_STACK_OPACITY.length);
+  return v_flex()
+    .id("answer-flow-card-stack")
+    .gap(PANEL.sectionGap)
+    .child(flowHeader(t, flow, model.flowPicker))
+    .children(
+      upcoming.map((item, index) =>
+        detailRow(t, `answer-flow-stack-${item.id}`)
+          .bg(t.raised)
+          .opacity(FLOW_STACK_OPACITY[index] ?? FLOW_STACK_OPACITY[1])
+          .child(
+            h_flex()
+              .gap(BUTTON_STYLE.gap)
+              .child(small(t, t.muted, index === 0 ? "Up next" : "In the stack"))
+              .child(div().flex_1().min_w_0().child(item.title)),
+          ),
+      ),
+    )
+    .children(flowAskCard(t, flow, "answer-flow-stack-active"))
+    .child(flowControls(t, flow));
+};
+
+const flowListDetail = (t: Theme, flow: AnswerFlowModel, model: PanelModel): Element => {
+  const rows = flow.questions.map((item, index) => {
+    const answered = flow.answered.some((candidate) => candidate.id === item.id);
+    const skipped = flow.skipped.some((candidate) => candidate.id === item.id);
+    const current = index === flow.position - 1 && !flow.done;
+    return detailRow(t, `answer-flow-list-${item.id}`)
+      .when(current, (row) => row.bg(t.selected))
+      .when(!answered, (row) =>
+        row
+          .cursor_pointer()
+          .hover((style) => style.bg(current ? t.selected : t.hover))
+          .on_click((_event, cx) => flow.goTo(index, cx)),
+      )
+      .child(
+        div()
+          .w(FLOW_CHECK_WIDTH)
+          .flex_none()
+          .text_color(answered ? t.done : t.muted)
+          .child(answered ? "✓" : skipped ? "–" : String(index + 1)),
+      )
+      .child(div().flex_1().min_w(0).child(item.title))
+      .child(
+        small(
+          t,
+          answered ? t.done : skipped ? t.muted : current ? t.accent : t.dim,
+          answered ? "Answered" : skipped ? "Skipped" : current ? "Current" : "Waiting",
+        ),
+      );
+  });
+  return v_flex()
+    .id("answer-flow-list-detail")
+    .gap(PANEL.sectionGap)
+    .child(flowHeader(t, flow, model.flowPicker))
+    .child(detailCard(t, "answer-flow-question-list", "Questions", rows))
+    .children(flow.done ? [] : flowAskCard(t, flow, "answer-flow-list-selected"))
+    .child(flowControls(t, flow));
+};
+
+const focusOptions = (t: Theme, flow: AnswerFlowModel): Element[] => {
+  const item = flow.item;
+  if (item?.ask === null || item?.ask === undefined || flow.answer === undefined) return [];
+  const { ask } = item;
+  const picked = flow.answer.draft.discuss ? undefined : flow.answer.draft.choice;
+  const options = rankedOptions(ask).map(({ option, index, rec }, displayIndex) =>
+    detailRow(t, `answer-flow-focus-option-${index}`)
+      .min_h(ROW.list)
+      .cursor_pointer()
+      .when(option === picked, (row) => row.bg(t.selected))
+      .hover((style) => style.bg(option === picked ? t.selected : t.hover))
+      .on_click((_event, cx) => flow.answer!.choose(option, cx))
+      .child(
+        div()
+          .w(ASK_OPTION_NUMBER_WIDTH)
+          .flex_none()
+          .font_semibold()
+          .text_color(t.accent)
+          .child(`${displayIndex + 1}`),
+      )
+      .child(
+        v_flex()
+          .flex_1()
+          .min_w(0)
+          .gap(BUTTON_STYLE.gap)
+          .child(
+            h_flex()
+              .gap(BUTTON_STYLE.gap)
+              .child(div().flex_1().child(option))
+              .when(rec, (row) => row.child(small(t, t.accent, "Recommended"))),
+          )
+          .when(Boolean(ask.optionDetails?.[index]), (row) =>
+            row.child(small(t, t.muted, ask.optionDetails![index]!)),
+          ),
+      ),
+  );
+  return [
+    detailCard(t, "answer-flow-focus-options", "Choose an answer", options),
+    detailRow(t, "answer-flow-focus-shortcuts")
+      .text_size(TEXT.label)
+      .text_color(t.muted)
+      .child("Use 1-9 to choose, Enter to submit."),
+    detailRow(t, "answer-flow-focus-discuss")
+      .min_h(ROW.list)
+      .cursor_pointer()
+      .when(flow.answer.draft.discuss, (row) => row.bg(t.selected))
+      .on_click((_event, cx) => flow.answer!.discuss(cx))
+      .child(
+        div()
+          .w(ASK_OPTION_NUMBER_WIDTH)
+          .flex_none()
+          .font_semibold()
+          .text_color(t.accent)
+          .child(String(ask.options.length + 1)),
+      )
+      .child(div().flex_1().child("Discuss")),
+    ...answerRows(t, flow.answer, "answer-flow-focus"),
+  ];
+};
+
+const flowFocus = (t: Theme, flow: AnswerFlowModel, model: PanelModel): Element =>
+  v_flex()
+    .id("answer-flow-focus")
+    .track_focus(flow.focus!)
+    .on_key_down((event, cx) => {
+      if (flow.answer?.typing !== true && flow.answer?.noteTyping !== true)
+        flow.key(event.keystroke, cx);
+    })
+    .gap(PANEL.sectionGap)
+    .child(flowHeader(t, flow, model.flowPicker))
+    .children(
+      flow.done
+        ? [flowDone(t, flow)]
+        : flow.item === undefined
+          ? flowAskCard(t, flow)
+          : [
+              detailRow(t, "answer-flow-focus-question")
+                .text_size(TEXT.title)
+                .font_semibold()
+                .child(flow.item.ask?.question ?? flow.item.title),
+              ...(flow.item.ask?.context === null || flow.item.ask === null
+                ? []
+                : [
+                    detailRow(t, "answer-flow-focus-context")
+                      .text_color(t.muted)
+                      .child(flow.item.ask.context),
+                  ]),
+              ...focusOptions(t, flow),
+              flowControls(t, flow),
+            ],
+    );
+
+const answerFlowScreen = (t: Theme, flow: AnswerFlowModel, model: PanelModel): Element => {
+  if (flow.done)
+    return v_flex()
+      .id("answer-flow-finished")
+      .gap(PANEL.sectionGap)
+      .child(flowHeader(t, flow, model.flowPicker))
+      .child(flowDone(t, flow));
+  switch (flow.variation) {
+    case "queue":
+      return flowQuestionPage(t, flow, model);
+    case "stepper":
+      return flowStepper(t, flow, model);
+    case "stack":
+      return flowStack(t, flow, model);
+    case "list-detail":
+      return flowListDetail(t, flow, model);
+    case "focus":
+      return flowFocus(t, flow, model);
+  }
+};
+
 // Policy text wraps, so use the package's card pieces instead of fixed-height groupBlock.
 const policiesPage = (t: Theme, backlog: Backlog, model: PanelModel): Element => {
   const entries = backlog.policies;
@@ -1160,7 +1581,10 @@ const domainScreens = (t: Theme, model: PanelModel): Element =>
         .absolute()
         .inset_0()
         .when(
-          model.page !== undefined || model.detail !== undefined || model.finding !== undefined,
+          model.page !== undefined ||
+            model.detail !== undefined ||
+            model.finding !== undefined ||
+            model.flow !== undefined,
           (list) => list.invisible(),
         )
         .child(
@@ -1178,8 +1602,9 @@ const domainScreens = (t: Theme, model: PanelModel): Element =>
           .absolute()
           .inset_0()
           .bg(t.surface)
-          .when(model.detail !== undefined || model.finding !== undefined, (page) =>
-            page.invisible(),
+          .when(
+            model.detail !== undefined || model.finding !== undefined || model.flow !== undefined,
+            (page) => page.invisible(),
           )
           .child(
             paneScrollRegion(
@@ -1192,13 +1617,14 @@ const domainScreens = (t: Theme, model: PanelModel): Element =>
           ),
       ),
     )
-    .when(model.detail !== undefined, (screens) =>
+    .when(model.detail !== undefined && model.flow === undefined, (screens) =>
       screens.child(
         v_flex()
           .id("screen-item")
           .absolute()
           .inset_0()
           .bg(t.surface)
+          .when(model.flow !== undefined, (detail) => detail.invisible())
           .child(
             paneScrollRegion(
               "detail-scroll",
@@ -1215,10 +1641,27 @@ const domainScreens = (t: Theme, model: PanelModel): Element =>
           .absolute()
           .inset_0()
           .bg(t.surface)
+          .when(model.flow !== undefined, (finding) => finding.invisible())
           .child(
             paneScrollRegion(
               "finding-scroll",
               findingScreen(t, model.finding!, model),
+              PANEL.padding,
+            ),
+          ),
+      ),
+    )
+    .when(model.flow !== undefined, (screens) =>
+      screens.child(
+        v_flex()
+          .id("screen-answer-flow")
+          .absolute()
+          .inset_0()
+          .bg(t.surface)
+          .child(
+            paneScrollRegion(
+              "answer-flow-scroll",
+              answerFlowScreen(t, model.flow!, model),
               PANEL.padding,
             ),
           ),

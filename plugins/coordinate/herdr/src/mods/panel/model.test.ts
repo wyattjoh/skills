@@ -37,6 +37,7 @@ test("draftFor and chosenAnswer encode an optional Discuss note without changing
     choice: undefined,
     discuss: false,
     text: "",
+    note: "",
     busy: false,
     error: undefined,
   });

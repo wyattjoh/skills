@@ -175,6 +175,13 @@ const mount = async () => {
   return { ctx, view, render: () => view.render(ctx.cx as never) as never };
 };
 
+const openDetail = (view: InstanceType<typeof Panel>, id: string, cx: unknown) => {
+  if (view.doc.kind !== "loaded") throw new Error("domain document is not loaded");
+  const item = view.doc.backlog.items.find((candidate) => candidate.id === id);
+  if (item === undefined) throw new Error(`missing item ${id}`);
+  view.open(item, cx as never);
+};
+
 test("renders the Files-style toolbar header", async () => {
   focusDomain("alpha");
   host.files.set(DOC, JSON.stringify(emptyBacklog("alpha", null)));
@@ -294,13 +301,113 @@ test("Waiting on you rows use a pulsing accent bar", async () => {
   host.files.set(DOC, JSON.stringify(withAsk()));
   const { render } = await mount();
   const root = render();
-  expect(text(get(root, "waiting-header"))).toBe("Waiting on you");
-  expect(ids(root, "waiting-treatment-")).toEqual([]);
+  expect(text(get(root, "waiting-header"))).toBe("Waiting on you Queue page");
+  expect(ids(root, "flow-picker-alpha-trigger")).toEqual(["flow-picker-alpha-trigger"]);
   expect(get(root, "waiting-accent-i1").styles.opacity).toBe(0.4);
   expect(get(root, "waiting-accent-i1").styles.loop).toEqual([
     "opacity",
     { from: 0.4, to: 1, period: 1_100 },
   ]);
+});
+
+test("opens the variation picker and persists the selected flow", async () => {
+  focusDomain("alpha");
+  host.files.set(DOC, JSON.stringify(withAsk()));
+  const { ctx, render } = await mount();
+  get(render(), "flow-picker-alpha-trigger").click!({}, ctx.cx);
+  const open = render();
+  expect(ids(open, "flow-picker-alpha-option-")).toEqual([
+    "flow-picker-alpha-option-queue",
+    "flow-picker-alpha-option-stepper",
+    "flow-picker-alpha-option-stack",
+    "flow-picker-alpha-option-list-detail",
+    "flow-picker-alpha-option-focus",
+  ]);
+  get(open, "flow-picker-alpha-option-focus").click!({}, ctx.cx);
+  expect(host.shared.get("coordinate-panel.answer-flow.v1")).toBe("focus");
+  expect(text(get(render(), "flow-picker-alpha-trigger"))).toBe("Focus mode");
+});
+
+test("the flow picker switches among all five named layouts", async () => {
+  focusDomain("alpha");
+  host.files.set(DOC, JSON.stringify(withAsk()));
+  const { ctx, render } = await mount();
+  get(render(), "item-i1").click!({}, ctx.cx);
+  const variants = [
+    ["queue", "answer-flow-queue-page"],
+    ["stepper", "answer-flow-item-stepper"],
+    ["stack", "answer-flow-card-stack"],
+    ["list-detail", "answer-flow-list-detail"],
+    ["focus", "answer-flow-focus"],
+  ] as const;
+  for (const [variant, screen] of variants) {
+    get(render(), "flow-picker-page-alpha-trigger").click!({}, ctx.cx);
+    get(render(), `flow-picker-page-alpha-option-${variant}`).click!({}, ctx.cx);
+    expect(ids(render(), "answer-flow-").filter((id) => id === screen)).toEqual([screen]);
+  }
+});
+
+test("opens the selected question, skips to the next and returns with Back", async () => {
+  focusDomain("alpha");
+  host.files.set(DOC, JSON.stringify(withAsk()));
+  const { ctx, render } = await mount();
+  get(render(), "item-i1").click!({}, ctx.cx);
+  let root = render();
+  expect(ids(root, "screen-answer-flow")).toEqual(["screen-answer-flow"]);
+  expect(text(get(root, "answer-flow-progress"))).toBe("Question 1 of 2");
+  expect(text(get(root, "ask-question"))).toBe("Which title?");
+  get(root, "answer-flow-skip").click!({}, ctx.cx);
+  root = render();
+  expect(text(get(root, "answer-flow-progress"))).toBe("Question 2 of 2");
+  expect(text(get(root, "ask-question"))).toBe("Which tone?");
+  get(root, "answer-flow-back").click!({}, ctx.cx);
+  root = render();
+  expect(text(get(root, "answer-flow-progress"))).toBe("Question 1 of 2");
+  expect(text(get(root, "ask-question"))).toBe("Which title?");
+  get(root, "answer-flow-back").click!({}, ctx.cx);
+  root = render();
+  expect(ids(root, "screen-answer-flow")).toEqual([]);
+  expect(get(root, "screen-list").styles.invisible).toBe(undefined);
+});
+
+test("a failed flow answer shows the CLI error and stays on its question", async () => {
+  focusDomain("alpha");
+  host.files.set(DOC, JSON.stringify(withAsk()));
+  const { ctx, render } = await mount();
+  get(render(), "item-i1").click!({}, ctx.cx);
+  get(render(), "ask-option-1").click!({}, ctx.cx);
+  host.execExit = { code: 1, stderr: "refused: i1 has no ask to answer\n" };
+  get(render(), "ask-answer-submit").click!({}, ctx.cx);
+  await settle();
+  const root = render();
+  expect(text(get(root, "answer-flow-progress"))).toBe("Question 1 of 2");
+  expect(text(get(root, "ask-answer-error"))).toBe("refused: i1 has no ask to answer");
+  expect(text(get(root, "ask-question"))).toBe("Which title?");
+  expect(host.execs).toEqual([{ command: "/usr/bin/env", args: answerArgs("i1", "Backlog") }]);
+});
+
+test("focus mode uses number keys to choose and submit through the CLI, then advances", async () => {
+  focusDomain("alpha");
+  host.files.set(DOC, JSON.stringify(withAsk()));
+  host.shared.set("coordinate-panel.answer-flow.v1", "focus");
+  const { ctx, view, render } = await mount();
+  get(render(), "item-i1").click!({}, ctx.cx);
+  let root = render();
+  expect(text(get(root, "answer-flow-progress"))).toBe("Question 1 of 2");
+  expect(get(root, "answer-flow-focus").calls).toEqual(
+    expect.arrayContaining(["track_focus", "on_key_down"]),
+  );
+  view.flowKey("1", ctx.cx as never);
+  root = render();
+  expect(get(root, "answer-flow-focus-option-1").styles.bg).toBe("#2563eb");
+  const recorded = answered("Backlog");
+  host.files.set(DOC, JSON.stringify(recorded));
+  view.flowKey("enter", ctx.cx as never);
+  await settle();
+  root = render();
+  expect(host.execs).toEqual([{ command: "/usr/bin/env", args: answerArgs("i1", "Backlog") }]);
+  expect(text(get(root, "answer-flow-progress"))).toBe("Question 2 of 2");
+  expect(text(get(root, "answer-flow-focus-question"))).toBe("Which tone?");
 });
 
 test("folds Done and Dismissed by default and toggles a group from its header", async () => {
@@ -715,11 +822,11 @@ test("a focused domain terminal wins over a domain opened from the listing", asy
 test("the home and domain crumbs return from an item to the listing and domain", async () => {
   focusPlain();
   host.files.set(DOC, JSON.stringify(everyStatus()));
-  const { ctx, render } = await mount();
+  const { ctx, view, render } = await mount();
   focusPanel();
   get(render(), "domain-alpha").click!({}, ctx.cx);
   await settle();
-  get(render(), "item-i1").click!({}, ctx.cx);
+  openDetail(view, "i1", ctx.cx);
   expect(ids(render(), "screen-item")).toEqual(["screen-item"]);
   expect(trail(render())).toBe("⌂ › alpha › i1");
   press(render(), "crumb-domain-alpha", ctx.cx);
@@ -885,8 +992,8 @@ const withAsk = (): Backlog => {
 test("ask detail rows use the surface token and put the recommended option first", async () => {
   focusDomain("alpha");
   host.files.set(DOC, JSON.stringify(withAsk()));
-  const { ctx, render } = await mount();
-  get(render(), "item-i1").click!({}, ctx.cx);
+  const { ctx, view, render } = await mount();
+  openDetail(view, "i1", ctx.cx);
   const root = render();
   expect(text(get(root, "detail-title"))).toBe("i1 Name the panel Waiting on you");
   expect(text(get(root, "detail-status"))).toBe("Waiting on you");
@@ -938,8 +1045,8 @@ test("ask detail rows use the surface token and put the recommended option first
 test("shows a pending discussion with its marker and note in the ask card", async () => {
   focusDomain("alpha");
   host.files.set(DOC, JSON.stringify(withDiscussion()));
-  const { ctx, render } = await mount();
-  get(render(), "item-i1").click!({}, ctx.cx);
+  const { ctx, view, render } = await mount();
+  openDetail(view, "i1", ctx.cx);
   const root = render();
 
   expect(text(get(root, "ask-discuss-number"))).toBe("4.");
@@ -958,8 +1065,8 @@ test("shows a pending discussion with its marker and note in the ask card", asyn
 test("keeps an ask without a recommendation in its own order, with nothing highlighted", async () => {
   focusDomain("alpha");
   host.files.set(DOC, JSON.stringify(withAsk()));
-  const { ctx, render } = await mount();
-  get(render(), "item-i2").click!({}, ctx.cx);
+  const { ctx, view, render } = await mount();
+  openDetail(view, "i2", ctx.cx);
   const root = render();
   expect(ids(root, "ask-option-")).toEqual(["ask-option-0", "ask-option-1"]);
   expect([text(get(root, "ask-number-0")), text(get(root, "ask-number-1"))]).toEqual(["1.", "2."]);
@@ -1022,8 +1129,8 @@ const withAskHistory = (): Backlog => {
 test("shows the open ask first and earlier answered asks read-only, newest first", async () => {
   focusDomain("alpha");
   host.files.set(DOC, JSON.stringify(withAskHistory()));
-  const { ctx, render } = await mount();
-  get(render(), "item-i1").click!({}, ctx.cx);
+  const { ctx, view, render } = await mount();
+  openDetail(view, "i1", ctx.cx);
   const root = render();
 
   expect(ids(root, "ask-").filter((id) => id.endsWith("-header"))).toEqual([
@@ -1080,8 +1187,8 @@ test("shows a recorded note beneath completed answers and discussions", async ()
     ),
   };
   host.files.set(DOC, JSON.stringify(withNote));
-  const { ctx, render } = await mount();
-  get(render(), "item-i1").click!({}, ctx.cx);
+  const { ctx, view, render } = await mount();
+  openDetail(view, "i1", ctx.cx);
   expect(text(get(render(), "ask-answered-0-answer-note"))).toContain("Use the shared config");
   const discussion = {
     ...withNote,
@@ -1132,8 +1239,8 @@ const answerArgs = (id: string, answer: string, note?: string) => [
 test("answers with a picked option through the CLI, then keeps the answered ask on reload", async () => {
   focusDomain("alpha");
   host.files.set(DOC, JSON.stringify(withAsk()));
-  const { ctx, render } = await mount();
-  get(render(), "item-i1").click!({}, ctx.cx);
+  const { ctx, view, render } = await mount();
+  openDetail(view, "i1", ctx.cx);
   expect([
     text(get(render(), "ask-answer-submit")),
     get(render(), "ask-answer-submit").styles.bg,
@@ -1178,8 +1285,8 @@ test("answers with a picked option through the CLI, then keeps the answered ask 
 test("selects Discuss, accepts an optional note, and submits it through the CLI", async () => {
   focusDomain("alpha");
   host.files.set(DOC, JSON.stringify(withAsk()));
-  const { ctx, render } = await mount();
-  get(render(), "item-i1").click!({}, ctx.cx);
+  const { ctx, view, render } = await mount();
+  openDetail(view, "i1", ctx.cx);
   get(render(), "ask-discuss").click!({}, ctx.cx);
   typeInto(host.inputs[0]!, "compare migration support", ctx.cx);
   const typed = render();
@@ -1202,8 +1309,8 @@ test("selects Discuss, accepts an optional note, and submits it through the CLI"
 test("submits Discuss without a note when the discussion row is selected", async () => {
   focusDomain("alpha");
   host.files.set(DOC, JSON.stringify(withAsk()));
-  const { ctx, render } = await mount();
-  get(render(), "item-i1").click!({}, ctx.cx);
+  const { ctx, view, render } = await mount();
+  openDetail(view, "i1", ctx.cx);
   get(render(), "ask-discuss").click!({}, ctx.cx);
   expect(text(get(render(), "ask-answer-submit"))).toBe("Discuss");
   host.files.set(DOC, JSON.stringify(withDiscussion("")));
@@ -1216,8 +1323,8 @@ test("submits Discuss without a note when the discussion row is selected", async
 test("answers with free text only, without duplicating it as a note", async () => {
   focusDomain("alpha");
   host.files.set(DOC, JSON.stringify(withAsk()));
-  const { ctx, render } = await mount();
-  get(render(), "item-i1").click!({}, ctx.cx);
+  const { ctx, view, render } = await mount();
+  openDetail(view, "i1", ctx.cx);
   typeInto(host.inputs[0]!, "  -call it Board ", ctx.cx);
   const typed = render();
   expect(ids(typed, "ask-option-").map((id) => get(typed, id).styles.bg)).toEqual([
@@ -1236,11 +1343,33 @@ test("answers with free text only, without duplicating it as a note", async () =
   expect(ids(root, "ask-answer-submit")).toEqual([]);
 });
 
-test("unselects a picked option so typed text becomes a free-text answer", async () => {
+test("free-text answers accept a separate optional note through the CLI", async () => {
   focusDomain("alpha");
   host.files.set(DOC, JSON.stringify(withAsk()));
   const { ctx, render } = await mount();
   get(render(), "item-i1").click!({}, ctx.cx);
+  typeInto(host.inputs[0]!, "Custom answer", ctx.cx);
+  expect(ids(render(), "ask-answer-note-field")).toEqual(["ask-answer-note-field"]);
+  expect(host.inputs[1]?.placeholder).toBe("Optional note");
+  typeInto(host.inputs[1]!, "Why this is the answer", ctx.cx);
+  const recorded = answered("Custom answer");
+  recorded.items[0]!.answered[0]!.note = "Why this is the answer";
+  host.files.set(DOC, JSON.stringify(recorded));
+  get(render(), "ask-answer-submit").click!({}, ctx.cx);
+  await settle();
+  expect(host.execs).toEqual([
+    {
+      command: "/usr/bin/env",
+      args: answerArgs("i1", "Custom answer", "Why this is the answer"),
+    },
+  ]);
+});
+
+test("unselects a picked option so typed text becomes a free-text answer", async () => {
+  focusDomain("alpha");
+  host.files.set(DOC, JSON.stringify(withAsk()));
+  const { ctx, view, render } = await mount();
+  openDetail(view, "i1", ctx.cx);
   get(render(), "ask-option-0").click!({}, ctx.cx);
   expect(get(render(), "ask-option-0").styles.bg).toBe("#2563eb");
   get(render(), "ask-option-0").click!({}, ctx.cx);
@@ -1259,8 +1388,8 @@ test("unselects a picked option so typed text becomes a free-text answer", async
 test("unselects Discuss so typed text becomes a free-text answer", async () => {
   focusDomain("alpha");
   host.files.set(DOC, JSON.stringify(withAsk()));
-  const { ctx, render } = await mount();
-  get(render(), "item-i1").click!({}, ctx.cx);
+  const { ctx, view, render } = await mount();
+  openDetail(view, "i1", ctx.cx);
   get(render(), "ask-discuss").click!({}, ctx.cx);
   expect(get(render(), "ask-discuss").styles.bg).toBe("#2563eb");
   get(render(), "ask-discuss").click!({}, ctx.cx);
@@ -1279,8 +1408,8 @@ test("unselects Discuss so typed text becomes a free-text answer", async () => {
 test("shows the CLI's message and keeps the draft when recording fails or cannot start", async () => {
   focusDomain("alpha");
   host.files.set(DOC, JSON.stringify(withAsk()));
-  const { ctx, render } = await mount();
-  get(render(), "item-i1").click!({}, ctx.cx);
+  const { ctx, view, render } = await mount();
+  openDetail(view, "i1", ctx.cx);
   get(render(), "ask-option-1").click!({}, ctx.cx);
   host.execExit = { code: 1, stderr: "refused: i1 has no ask to answer\n" };
   get(render(), "ask-answer-submit").click!({}, ctx.cx);
@@ -1304,8 +1433,8 @@ test("shows the CLI's message and keeps the draft when recording fails or cannot
 test("keeps Answer inert until an option is picked or text typed", async () => {
   focusDomain("alpha");
   host.files.set(DOC, JSON.stringify(withAsk()));
-  const { ctx, render } = await mount();
-  get(render(), "item-i2").click!({}, ctx.cx);
+  const { ctx, view, render } = await mount();
+  openDetail(view, "i2", ctx.cx);
   const empty = get(render(), "ask-answer-submit");
   expect([empty.styles.bg, empty.click]).toEqual(["#404040", undefined]);
   host.inputs[0]!.handlers.get("submit")!({}, ctx.cx);
@@ -1318,10 +1447,10 @@ test("the domain crumb returns to the list, which stayed mounted under detail to
   focusDomain("alpha");
   const original = JSON.stringify(withAsk());
   host.files.set(DOC, original);
-  const { ctx, render } = await mount();
+  const { ctx, view, render } = await mount();
   let root = render();
   expect(get(root, "screen-list").styles.invisible).toBe(undefined);
-  get(root, "item-i1").click!({}, ctx.cx);
+  openDetail(view, "i1", ctx.cx);
   root = render();
   expect(get(root, "screen-list").styles.invisible).toBe(true);
   expect(ids(get(root, "screen-list"), "panel-scroll")).toEqual([
@@ -1341,8 +1470,8 @@ test("falls back to the list when the open item leaves the document or focus cha
   focusDomain("alpha");
   host.files.set(DOC, JSON.stringify(withAsk()));
   host.files.set(`${STATE}/backlogs/beta.json`, JSON.stringify(withAsk()));
-  const { ctx, render } = await mount();
-  get(render(), "item-i1").click!({}, ctx.cx);
+  const { ctx, view, render } = await mount();
+  openDetail(view, "i1", ctx.cx);
   focusDomain("beta");
   ctx.tick(1_000);
   await settle();
@@ -1351,7 +1480,7 @@ test("falls back to the list when the open item leaves the document or focus cha
   ctx.tick(1_000);
   await settle();
   expect(ids(render(), "screen-item")).toEqual([]);
-  get(render(), "item-i2").click!({}, ctx.cx);
+  openDetail(view, "i2", ctx.cx);
   host.files.set(DOC, JSON.stringify({ ...withAsk(), items: withAsk().items.slice(0, 1) }));
   host.watches.at(-1)!.fire([DOC]);
   await settle();
