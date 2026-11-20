@@ -114,7 +114,7 @@ export const gitAndFake = (
 
 /**
  * An environment for spawning the coordinate CLI against `state`: a config file naming it, a stub
- * `hc` first on PATH, and `HC_TERMINAL_ID=t1`. The stub's `hc get` answers t1 with `labels`,
+ * `hc` and a stub `lsof` first on PATH, and `HC_TERMINAL_ID=t1`. The stub's `hc get` answers t1 with `labels`,
  * or, given `getError`, fails the way herdr-core reports an error; `hc get` answers each address in
  * `terminals` with its document; `hc ls` lists the first entry of `lists` whose `key=value` label
  * filter the call passes, else nothing. Every call's arguments are appended to `<state>/bin/calls.log`.
@@ -158,6 +158,10 @@ export const cliEnv = (
   *) printf '{}' ;;\nesac\n`,
   );
   chmodSync(join(bin, "hc"), 0o755);
+  // The sweep reads every process's folders through lsof; answer with one process outside `state`
+  // so the CLI never depends on the host's lsof or its live process table.
+  writeFileSync(join(bin, "lsof"), `#!/bin/sh\nprintf 'p1\\ncinit\\nn/\\n'\n`);
+  chmodSync(join(bin, "lsof"), 0o755);
   return {
     ...(process.env as Record<string, string>),
     COORDINATE_CONFIG: configFile,
