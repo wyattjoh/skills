@@ -426,8 +426,14 @@ const small = (t: Theme, tone: Color, value: string): Element =>
   div().text_size(TEXT.label).text_color(tone).child(value);
 
 // A labelled fact: a muted label, then its values, or None in dim.
-const fact = (t: Theme, id: string, label: string, values: string[]): Element =>
-  detailRow(t, id)
+const fact = (
+  t: Theme,
+  id: string,
+  label: string,
+  values: string[],
+  row: (t: Theme, id: string) => Element = detailRow,
+): Element =>
+  row(t, id)
     .child(small(t, t.muted, label))
     .child(
       values.length === 0
@@ -495,6 +501,7 @@ const askCard = (
   ask: Ask,
   answer: AnswerModel | undefined,
   completed: AnsweredAsk | undefined,
+  itemTouches: string[] | undefined,
 ): Element[] => {
   // Typed text answers instead of the picked option; completed cards have no active draft.
   const picked =
@@ -514,6 +521,10 @@ const askCard = (
     ask.context === null
       ? []
       : [askBodyRow(t, `${id}-context`).text_color(t.muted).child(ask.context)];
+  const touches =
+    itemTouches === undefined || itemTouches.length === 0
+      ? []
+      : [fact(t, `${id}-touches`, "Touches", itemTouches, askBodyRow)];
   const options = rankedOptions(ask).map(({ option, index, rec }) => {
     const selected = option === picked;
     const chosen = completed !== undefined && option === completed.answer;
@@ -548,7 +559,12 @@ const askCard = (
             .id(`${id}-rec-reason`)
             .text_size(TEXT.label)
             .text_color(t.muted)
-            .child(ask.recReason!),
+            .child(
+              v_flex()
+                .gap(BUTTON_STYLE.gap)
+                .child(small(t, t.muted, "Why recommended").id(`${id}-rec-reason-label`))
+                .child(div().min_w(0).child(ask.recReason!)),
+            ),
         ),
       );
   });
@@ -573,6 +589,7 @@ const askCard = (
     detailCard(t, id, completed === undefined ? "Ask" : "Answered ask", [
       question,
       ...context,
+      ...touches,
       ...options,
       ...completion,
     ]),
@@ -580,10 +597,11 @@ const askCard = (
 };
 
 const askCards = (t: Theme, item: Item, answer: AnswerModel | undefined): Element[] => {
-  const cards = item.ask === null ? [] : askCard(t, "ask", item.ask, answer, undefined);
+  const cards =
+    item.ask === null ? [] : askCard(t, "ask", item.ask, answer, undefined, item.touches);
   for (let index = item.answered.length - 1; index >= 0; index -= 1) {
     const answered = item.answered[index]!;
-    cards.push(...askCard(t, `ask-answered-${index}`, answered, undefined, answered));
+    cards.push(...askCard(t, `ask-answered-${index}`, answered, undefined, answered, undefined));
   }
   return cards;
 };
@@ -739,7 +757,9 @@ const detailScreen = (
     .child(
       detailCard(t, "facts", "Details", [
         fact(t, "fact-due", "Due", item.due === null ? [] : [item.due]),
-        fact(t, "fact-touches", "Touches", item.touches),
+        ...(item.ask === null || item.touches.length === 0
+          ? [fact(t, "fact-touches", "Touches", item.touches)]
+          : []),
         fact(t, "fact-created", "Created", [item.createdAt.slice(0, 10)]),
         ...((item.status === "done" || item.status === "dismissed") && item.closedAt !== null
           ? [fact(t, "fact-closed", "Closed", [item.closedAt.slice(0, 10)])]

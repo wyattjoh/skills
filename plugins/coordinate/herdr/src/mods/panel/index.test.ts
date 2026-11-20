@@ -723,7 +723,9 @@ test("opens an item's detail with the recommended option first, labelled and not
   expect(text(get(root, "ask-question"))).toBe("Which title?");
   expect(text(get(root, "ask-context"))).toBe("It shows in the tab row");
   expect(ids(root, "ask-option-")).toEqual(["ask-option-1", "ask-option-0", "ask-option-2"]);
-  expect(text(get(root, "ask-option-1"))).toBe("Backlog Recommended Short and clear fits the pill");
+  expect(text(get(root, "ask-option-1"))).toBe(
+    "Backlog Recommended Short and clear Why recommended fits the pill",
+  );
   expect(text(get(root, "ask-detail-1"))).toBe("Short and clear");
   expect(get(root, "ask-detail-1").styles.text_color).toBe("#a3a3a3");
   expect(text(get(root, "ask-detail-0"))).toBe("Long form for the tab");
@@ -737,9 +739,12 @@ test("opens an item's detail with the recommended option first, labelled and not
     "#111111",
   ]);
   expect(get(root, "ask-option-0").hoverStyles.bg).toBe("#404040");
-  expect(text(get(root, "ask-rec-reason"))).toBe("fits the pill");
+  expect(text(get(root, "ask-rec-reason"))).toBe("Why recommended fits the pill");
+  expect(text(get(root, "ask-rec-reason-label"))).toBe("Why recommended");
+  expect(text(get(root, "ask-touches"))).toBe("Touches skills herdr-finbar");
+  expect(get(root, "ask-touches").styles.bg).toBe("#111111");
+  expect(ids(root, "fact-touches")).toEqual([]);
   expect(text(get(root, "decided-0"))).toBe("Keep it read-only 2026-11-16");
-  expect(text(get(root, "fact-touches"))).toBe("Touches skills herdr-finbar");
   expect(text(get(root, "fact-due"))).toBe("Due 2026-11-20");
   expect(text(get(root, "delegate-s-9"))).toBe(
     "impl-name gone Brief /briefs/name.md Report /reports/name.md",
@@ -834,7 +839,8 @@ test("shows the open ask first and earlier answered asks read-only, newest first
   expect(get(root, "ask-answered-0-option-1").styles.bg).toBe("#2563eb");
   expect(text(get(root, "ask-answered-0-option-1"))).toContain("Recommended Answered");
   expect(text(get(root, "ask-answered-0-detail-1"))).toBe("Easy to inspect");
-  expect(text(get(root, "ask-answered-0-rec-reason"))).toBe("existing tooling");
+  expect(text(get(root, "ask-answered-0-rec-reason"))).toBe("Why recommended existing tooling");
+  expect(text(get(root, "ask-answered-0-rec-reason-label"))).toBe("Why recommended");
   expect(text(get(root, "ask-answered-0-answered-at"))).toBe("Answered 2026-11-15");
   expect(text(get(root, "ask-answered-1-answer"))).toBe(
     "Answer keep it beside the docs 2026-11-16",
