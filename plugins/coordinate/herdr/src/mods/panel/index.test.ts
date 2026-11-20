@@ -14,13 +14,14 @@ import {
   get,
   host,
   ids,
+  nodeOf,
   resetHost,
   settle,
   text,
   typeInto,
 } from "@wyattjoh/herdr-dev/test/renderer";
 import type { Node } from "@wyattjoh/herdr-dev/test/renderer";
-
+import { backlogBrandText } from "./view.ts";
 const { setAnswerTextareaTestApi } = await import("./textarea.ts");
 let textareaAutoGrow: { minRows: number; maxRows: number } | undefined;
 setAnswerTextareaTestApi({
@@ -186,6 +187,18 @@ test("renders the toolbar brand without an icon", async () => {
   expect(brand.styles.text_size).toBe(13);
   expect(brand.styles.text_color).toBe("#f5f5f5");
   expect((brand.children[0] as Node).styles.font_semibold).toBe(true);
+});
+
+test("uses ui_font for the Backlog brand only when it is a string", () => {
+  const configured = nodeOf(backlogBrandText("JetBrains Mono"));
+  expect(configured.styles.font_family).toBe("JetBrains Mono");
+  expect(configured.styles.font_semibold).toBe(true);
+  expect(text(configured)).toBe("Backlog");
+
+  const unset = nodeOf(backlogBrandText(13));
+  expect(unset.styles.font_family).toBeUndefined();
+  expect(unset.styles.font_semibold).toBe(true);
+  expect(text(unset)).toBe("Backlog");
 });
 
 test("uses a multiline textarea configured to grow through 100 rows", async () => {

@@ -1,6 +1,7 @@
 // The panel's regions as element functions: everything it draws, from data the View hands in.
 import { div, svg } from "gpui-kit";
 import type { Color, Context, Element } from "gpui-kit";
+import * as herdr from "herdr";
 import { Input, InputState, h_flex, v_flex } from "gpui-base";
 import { answerInputElement } from "./textarea.ts";
 import type { AnswerInputState } from "./textarea.ts";
@@ -170,9 +171,20 @@ export const message = (
   return emptyState(t, { id, title, detail });
 };
 
-// Keep the shared chrome and tool row, while matching the Files panel's header text size.
-const toolbar = (t: Theme, domain: string | undefined): Element =>
-  topBar(t, {
+/**
+ * Build the Backlog brand text, applying the configured mod UI font when it is a string.
+ * @param uiFont The configured `ui_font` setting.
+ * @returns The semibold Backlog label.
+ */
+export const backlogBrandText = (uiFont: unknown): Element => {
+  const label = div().font_semibold();
+  return (typeof uiFont === "string" ? label.font_family(uiFont) : label).child("Backlog");
+};
+
+// Keep the shared chrome and tool row, while matching the Files panel's header typography.
+const toolbar = (t: Theme, domain: string | undefined): Element => {
+  const uiFont = typeof herdr.settings === "function" ? herdr.settings().ui_font : undefined;
+  return topBar(t, {
     content: toolRow({
       id: "toolbar",
       brand: h_flex()
@@ -182,7 +194,7 @@ const toolbar = (t: Theme, domain: string | undefined): Element =>
         .items_center()
         .text_size(13)
         .text_color(t.foreground)
-        .child(div().font_semibold().child("Backlog")),
+        .child(backlogBrandText(uiFont)),
       leading: [],
       trailing:
         domain === undefined
@@ -199,6 +211,7 @@ const toolbar = (t: Theme, domain: string | undefined): Element =>
             ],
     }),
   });
+};
 
 // The breadcrumb band from @wyattjoh/herdr-ui: every crumb but the last opens its screen.
 const trailBand = (t: Theme, trail: Crumb[], go: (screen: Screen, cx: Context) => void): Element =>
