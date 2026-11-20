@@ -3,19 +3,8 @@
 import { View } from "gpui-kit";
 import { InputState } from "gpui-base";
 import { createAnswerInput } from "./textarea.ts";
-import type { AsyncContext, Context, Element, FocusHandle } from "gpui-kit";
-import {
-  checking,
-  exec,
-  focused,
-  home,
-  readTextFile,
-  setShared,
-  shared,
-  terminals,
-  theme,
-  watchFolder,
-} from "herdr";
+import type { AsyncContext, Context, Element } from "gpui-kit";
+import { checking, exec, focused, home, readTextFile, terminals, theme, watchFolder } from "herdr";
 import type { FolderWatch } from "herdr";
 import {
   FOLDED_BY_DEFAULT,
@@ -39,7 +28,6 @@ import {
   missingSessions,
   openFindings,
   parseListing,
-  rankedOptions,
   readDocument,
   stateDirOf,
   summarize,
@@ -57,27 +45,18 @@ import type {
   ListingState,
   Screen,
 } from "./model.ts";
-import { advanceAnswerFlow, startAnswerFlow, storedFlowVariation } from "./answer-flow.ts";
-import type { AnswerFlow, FlowVariation } from "./answer-flow.ts";
+import { advanceAnswerFlow, startAnswerFlow } from "./answer-flow.ts";
+import type { AnswerFlow } from "./answer-flow.ts";
 import { backlogsDir, documentPath } from "../../lib/store.ts";
 import type { Finding, Item } from "../../lib/store.ts";
 import { panel } from "./view.ts";
-import type {
-  AnswerFlowModel,
-  AnswerModel,
-  BoundaryList,
-  BoundaryModel,
-  FlowPickerModel,
-  Theme,
-} from "./view.ts";
+import type { AnswerFlowModel, AnswerModel, BoundaryList, BoundaryModel, Theme } from "./view.ts";
 
 // How often the panel checks whether focus moved to another domain, and how often it rereads
 // the document in case a folder watch was reclaimed.
 const FOLLOW_MS = 1_000;
 const REFRESH_MS = 30_000;
 const ROW_PAGE_SIZE = 10;
-const FLOW_PREFERENCES_KEY = "coordinate-panel.answer-flow.v1";
-
 type DomainRead = {
   document: DocumentState;
   text: string | null | undefined;
@@ -136,8 +115,6 @@ export default class Panel extends View {
   noteTyping = false;
   draft: AnswerDraft | undefined;
   answerFlow: AnswerFlow | undefined;
-  flowPickerOpen = false;
-  flowFocus: FocusHandle | undefined;
   boundaryInput: InputState | undefined;
   boundaryEditing: { domain: string; list: BoundaryList } | undefined;
   boundaryBusy = false;
@@ -458,27 +435,6 @@ export default class Panel extends View {
     this.selected = { kind: "item", domain, id: item.id };
     this.page = undefined;
     this.clearDraft();
-    if (this.flowFocus === undefined && typeof cx.focus_handle === "function")
-      this.flowFocus = cx.focus_handle();
-    this.flowFocus?.focus();
-    cx.notify();
-  }
-
-  moveAnswerFlow(position: number, cx: Context) {
-    const flow = this.answerFlow;
-    if (
-      flow === undefined ||
-      this.draft?.busy === true ||
-      position < 0 ||
-      position > flow.ids.length
-    )
-      return;
-    this.answerFlow = { ...flow, current: position };
-    const id = flow.ids[position];
-    if (id !== undefined) {
-      this.selected = { kind: "item", domain: flow.domain, id };
-      this.clearDraft();
-    }
     cx.notify();
   }
 
@@ -489,7 +445,12 @@ export default class Panel extends View {
       this.exitAnswerFlow(cx);
       return;
     }
-    this.moveAnswerFlow(flow.current - 1, cx);
+    const current = flow.current - 1;
+    this.answerFlow = { ...flow, current };
+    const id = flow.ids[current];
+    if (id !== undefined) this.selected = { kind: "item", domain: flow.domain, id };
+    this.clearDraft();
+    cx.notify();
   }
 
   skipAnswerFlow(cx: Context) {
@@ -513,40 +474,6 @@ export default class Panel extends View {
     this.picked = flow.domain;
     this.listed = false;
     cx.notify();
-  }
-
-  flowKey(key: string, cx: Context) {
-    const open = this.answering();
-    if (open === undefined) return;
-    if (key === "enter") {
-      this.answer(cx);
-      return;
-    }
-    if (!/^[1-9]$/.test(key)) return;
-    const index = Number(key) - 1;
-    const options = rankedOptions(open.item.ask!);
-    if (index < options.length) {
-      const option = options[index]?.option;
-      if (option !== undefined) this.choose(option, cx);
-      return;
-    }
-    if (index === options.length) this.discuss(cx);
-  }
-
-  setFlowPickerOpen(open: boolean, cx: Context) {
-    this.flowPickerOpen = open;
-    cx.notify();
-  }
-
-  selectFlowVariation(variation: FlowVariation, cx: Context) {
-    if (storedFlowVariation(variation) !== variation) return;
-    setShared(FLOW_PREFERENCES_KEY, variation);
-    this.flowPickerOpen = false;
-    cx.notify();
-  }
-
-  flowVariation(): FlowVariation {
-    return storedFlowVariation(shared(FLOW_PREFERENCES_KEY));
   }
 
   openFinding(finding: Finding, cx: Context) {
@@ -695,44 +622,23 @@ export default class Panel extends View {
     if (flow === undefined || flow.domain !== this.target()) return undefined;
     const doc = flow.domain === this.domain ? this.doc : cachedDocument(this.docs, flow.domain);
     const backlog = doc.kind === "loaded" ? doc.backlog : undefined;
-    const lookup = (ids: string[]) =>
-      ids.flatMap((id) => {
-        const record = backlog?.items.find((candidate) => candidate.id === id);
-        return record === undefined ? [] : [record];
-      });
-    const questions = lookup(flow.ids);
+    const currentId = flow.ids[flow.current];
     const item =
-      flow.current < flow.ids.length
-        ? questions.find((candidate) => candidate.id === flow.ids[flow.current])
-        : undefined;
+      currentId === undefined
+        ? undefined
+        : backlog?.items.find((candidate) => candidate.id === currentId);
     return {
       domain: flow.domain,
-      questions,
       item,
       position: Math.min(flow.current + 1, flow.ids.length),
       total: flow.ids.length,
       done: flow.current >= flow.ids.length,
-      answered: lookup(flow.answered),
       answeredCount: flow.answered.length,
-      skipped: lookup(flow.skipped),
       skippedCount: flow.skipped.length,
       answer: this.answerModel(),
-      focus: this.flowFocus,
-      key: (value, cx) => this.flowKey(value, cx),
       back: (cx) => this.backAnswerFlow(cx),
       skip: (cx) => this.skipAnswerFlow(cx),
       exit: (cx) => this.exitAnswerFlow(cx),
-      goTo: (position, cx) => this.moveAnswerFlow(position, cx),
-      variation: this.flowVariation(),
-    };
-  }
-
-  flowPickerModel(): FlowPickerModel {
-    return {
-      selected: this.flowVariation(),
-      open: this.flowPickerOpen,
-      setOpen: (open, cx) => this.setFlowPickerOpen(open, cx),
-      select: (variation, cx) => this.selectFlowVariation(variation, cx),
     };
   }
 
@@ -955,7 +861,6 @@ export default class Panel extends View {
       openWaiting: (item, cx) => this.openWaiting(item, cx),
       answer: this.answerModel(),
       flow,
-      flowPicker: this.flowPickerModel(),
       boundary: this.boundaryModel(domain),
     });
   }

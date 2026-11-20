@@ -301,50 +301,12 @@ test("Waiting on you rows use a pulsing accent bar", async () => {
   host.files.set(DOC, JSON.stringify(withAsk()));
   const { render } = await mount();
   const root = render();
-  expect(text(get(root, "waiting-header"))).toBe("Waiting on you Queue page");
-  expect(ids(root, "flow-picker-alpha-trigger")).toEqual(["flow-picker-alpha-trigger"]);
+  expect(text(get(root, "waiting-header"))).toBe("Waiting on you");
   expect(get(root, "waiting-accent-i1").styles.opacity).toBe(0.4);
   expect(get(root, "waiting-accent-i1").styles.loop).toEqual([
     "opacity",
     { from: 0.4, to: 1, period: 1_100 },
   ]);
-});
-
-test("opens the variation picker and persists the selected flow", async () => {
-  focusDomain("alpha");
-  host.files.set(DOC, JSON.stringify(withAsk()));
-  const { ctx, render } = await mount();
-  get(render(), "flow-picker-alpha-trigger").click!({}, ctx.cx);
-  const open = render();
-  expect(ids(open, "flow-picker-alpha-option-")).toEqual([
-    "flow-picker-alpha-option-queue",
-    "flow-picker-alpha-option-stepper",
-    "flow-picker-alpha-option-stack",
-    "flow-picker-alpha-option-list-detail",
-    "flow-picker-alpha-option-focus",
-  ]);
-  get(open, "flow-picker-alpha-option-focus").click!({}, ctx.cx);
-  expect(host.shared.get("coordinate-panel.answer-flow.v1")).toBe("focus");
-  expect(text(get(render(), "flow-picker-alpha-trigger"))).toBe("Focus mode");
-});
-
-test("the flow picker switches among all five named layouts", async () => {
-  focusDomain("alpha");
-  host.files.set(DOC, JSON.stringify(withAsk()));
-  const { ctx, render } = await mount();
-  get(render(), "item-i1").click!({}, ctx.cx);
-  const variants = [
-    ["queue", "answer-flow-queue-page"],
-    ["stepper", "answer-flow-item-stepper"],
-    ["stack", "answer-flow-card-stack"],
-    ["list-detail", "answer-flow-list-detail"],
-    ["focus", "answer-flow-focus"],
-  ] as const;
-  for (const [variant, screen] of variants) {
-    get(render(), "flow-picker-page-alpha-trigger").click!({}, ctx.cx);
-    get(render(), `flow-picker-page-alpha-option-${variant}`).click!({}, ctx.cx);
-    expect(ids(render(), "answer-flow-").filter((id) => id === screen)).toEqual([screen]);
-  }
 });
 
 test("opens the selected question, skips to the next and returns with Back", async () => {
@@ -356,6 +318,19 @@ test("opens the selected question, skips to the next and returns with Back", asy
   expect(ids(root, "screen-answer-flow")).toEqual(["screen-answer-flow"]);
   expect(text(get(root, "answer-flow-progress"))).toBe("Question 1 of 2");
   expect(text(get(root, "ask-question"))).toBe("Which title?");
+  const queue = get(root, "answer-flow-queue-page");
+  const scrollFrame = get(queue, "answer-flow-scroll-frame");
+  const footer = get(queue, "answer-flow-footer");
+  expect(queue.children.indexOf(scrollFrame)).toBeLessThan(queue.children.indexOf(footer));
+  expect(ids(footer, "answer-flow-")).toEqual([
+    "answer-flow-footer",
+    "answer-flow-back",
+    "answer-flow-skip",
+  ]);
+  expect([
+    get(footer, "answer-flow-back").styles.h,
+    get(footer, "answer-flow-skip").styles.h,
+  ]).toEqual([32, 32]);
   get(root, "answer-flow-skip").click!({}, ctx.cx);
   root = render();
   expect(text(get(root, "answer-flow-progress"))).toBe("Question 2 of 2");
@@ -386,28 +361,19 @@ test("a failed flow answer shows the CLI error and stays on its question", async
   expect(host.execs).toEqual([{ command: "/usr/bin/env", args: answerArgs("i1", "Backlog") }]);
 });
 
-test("focus mode uses number keys to choose and submit through the CLI, then advances", async () => {
+test("Queue page submits an answer through the CLI, then advances", async () => {
   focusDomain("alpha");
   host.files.set(DOC, JSON.stringify(withAsk()));
-  host.shared.set("coordinate-panel.answer-flow.v1", "focus");
-  const { ctx, view, render } = await mount();
+  const { ctx, render } = await mount();
   get(render(), "item-i1").click!({}, ctx.cx);
-  let root = render();
-  expect(text(get(root, "answer-flow-progress"))).toBe("Question 1 of 2");
-  expect(get(root, "answer-flow-focus").calls).toEqual(
-    expect.arrayContaining(["track_focus", "on_key_down"]),
-  );
-  view.flowKey("1", ctx.cx as never);
-  root = render();
-  expect(get(root, "answer-flow-focus-option-1").styles.bg).toBe("#2563eb");
-  const recorded = answered("Backlog");
-  host.files.set(DOC, JSON.stringify(recorded));
-  view.flowKey("enter", ctx.cx as never);
+  get(render(), "ask-option-1").click!({}, ctx.cx);
+  host.files.set(DOC, JSON.stringify(answered("Backlog")));
+  get(render(), "ask-answer-submit").click!({}, ctx.cx);
   await settle();
-  root = render();
+  const root = render();
   expect(host.execs).toEqual([{ command: "/usr/bin/env", args: answerArgs("i1", "Backlog") }]);
   expect(text(get(root, "answer-flow-progress"))).toBe("Question 2 of 2");
-  expect(text(get(root, "answer-flow-focus-question"))).toBe("Which tone?");
+  expect(text(get(root, "ask-question"))).toBe("Which tone?");
 });
 
 test("folds Done and Dismissed by default and toggles a group from its header", async () => {

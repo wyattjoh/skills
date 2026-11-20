@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { advanceAnswerFlow, startAnswerFlow, storedFlowVariation } from "./answer-flow.ts";
+import { advanceAnswerFlow, startAnswerFlow } from "./answer-flow.ts";
 
 describe("answer flow", () => {
   test("starts at the selected question and preserves domain order", () => {
@@ -32,12 +32,6 @@ describe("answer flow", () => {
 
     expect(advanced.current).toBe(0);
     expect(advanced.answered).toEqual(["i3"]);
-  });
-
-  test("falls back to the first variation for an invalid persisted preference", () => {
-    expect(storedFlowVariation(undefined)).toBe("queue");
-    expect(storedFlowVariation("focus")).toBe("focus");
-    expect(storedFlowVariation("unsupported")).toBe("queue");
   });
 
   test("returns the same flow when its current question no longer exists", () => {

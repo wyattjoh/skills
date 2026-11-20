@@ -1,9 +1,4 @@
-// Pure preference validation and navigation, without Herdr state or view dependencies.
-export const FLOW_VARIATIONS = ["queue", "stepper", "stack", "list-detail", "focus"] as const;
-export type FlowVariation = (typeof FLOW_VARIATIONS)[number];
-
-export const storedFlowVariation = (value: unknown): FlowVariation =>
-  FLOW_VARIATIONS.find((variation) => variation === value) ?? "queue";
+// Pure answer-flow navigation, without Herdr state or view dependencies.
 
 export type AnswerFlow = {
   domain: string;
