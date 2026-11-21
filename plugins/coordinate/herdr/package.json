@@ -9,7 +9,7 @@
     "build": "bun scripts/build.ts"
   },
   "dependencies": {
-    "@wyattjoh/herdr-ui": "0.6.0"
+    "@wyattjoh/herdr-ui": "0.8.0"
   },
   "devDependencies": {
     "@wyattjoh/herdr-dev": "0.2.0"
