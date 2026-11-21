@@ -133,6 +133,7 @@ Restart Claude Code after adding or changing an agent definition.
 
 | Skill                         | Description                                                                        |
 | ----------------------------- | ---------------------------------------------------------------------------------- |
+| 1password                     | Batch 1Password reads and writes through the SDK with one biometric prompt         |
 | alchemy                       | Answer Alchemy (alchemy.run) questions from an indexed local copy of the docs      |
 | beam-me-up                    | Move a Claude Code session, or a bare worktree, to another machine over SSH        |
 | catppuccin-interfaces         | Apply Catppuccin colors with semantic, accessible interface tokens                 |
