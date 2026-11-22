@@ -148,6 +148,8 @@ describe("delegate", () => {
         domain: "app",
         item: undefined,
         overBudget: false,
+        queueIfFull: false,
+        retryQueued: false,
       }),
       fake.layer,
     );
@@ -187,6 +189,8 @@ describe("delegate", () => {
           domain: "app",
           item: undefined,
           overBudget: false,
+          queueIfFull: false,
+          retryQueued: false,
         }),
         fake.layer,
       );
@@ -215,6 +219,8 @@ describe("delegate", () => {
         domain: "app",
         item: undefined,
         overBudget: false,
+        queueIfFull: false,
+        retryQueued: false,
       }),
       fake.layer,
     );
@@ -308,6 +314,8 @@ describe("launch parent", () => {
                 domain: caller.role === "coordinator" ? undefined : "app",
                 item: caller.role === "coordinator" ? "i1" : undefined,
                 overBudget: false,
+                queueIfFull: false,
+                retryQueued: false,
               }),
               fake.layer,
             );

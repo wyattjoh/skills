@@ -2,6 +2,7 @@ import { existsSync } from "node:fs";
 import { randomUUID } from "node:crypto";
 import { mkdir, open, readFile, rename, unlink } from "node:fs/promises";
 import { dirname, join } from "node:path";
+import { hostname } from "node:os";
 import { Effect, Option, Result } from "effect";
 import { readDocument } from "./backlog-doc.ts";
 import { isAnswer } from "./backlog-store/ops.ts";
@@ -14,6 +15,13 @@ import { repoPullRequests } from "./prs.ts";
 import { domainRepos } from "./status.ts";
 import { acquireLock, releaseLock, releaseLockSync } from "./watch-lock.ts";
 import type { WatchLogEntry, WatchView } from "./watch-terminal.ts";
+import {
+  capacityItemEligible,
+  pruneCapacityWaits,
+  readCapacityQueue,
+  type CapacityWait,
+} from "./capacity-queue.ts";
+import { liveDelegateCount, machineDelegateBudget } from "./delegate-capacity.ts";
 
 /**
  * What the watcher remembers about one delegate terminal.
@@ -56,6 +64,7 @@ export type WatchSnapshot = {
    */
   discussed: string[] | null;
   idle: Record<string, IdleReminder>;
+  capacity: Record<string, { order: number; ready: boolean }>;
 };
 
 /** The watcher's committed snapshot, pending events, and recovery point. */
@@ -75,6 +84,7 @@ export const emptyState = (): WatchState => ({
   answered: null,
   discussed: null,
   idle: {},
+  capacity: {},
   outbox: [],
   nextEventId: 1,
   staged: undefined,
@@ -227,6 +237,39 @@ export const statusBeat = (delegates: Readonly<Record<string, SeenDelegate>>): s
 const CLOSED: ReadonlySet<Item["status"]> = new Set(["done", "dismissed"]);
 
 /**
+ * Produce one coalesced wake for the oldest eligible queued launch per target machine.
+ * @param entries Current capacity queue entries.
+ * @param observations Live and budget counts by machine; missing entries mean the machine could not be checked.
+ * @param previous Previously committed readiness state.
+ * @returns Wake lines and the next durable readiness snapshot.
+ */
+export const capacityWakeEvents = (
+  entries: readonly CapacityWait[],
+  observations: Readonly<Record<string, { live: number; budget: number } | undefined>>,
+  previous: Readonly<Record<string, { order: number; ready: boolean }>>,
+): { lines: string[]; capacity: Record<string, { order: number; ready: boolean }> } => {
+  const oldestByMachine = new Map<string, CapacityWait>();
+  for (const entry of entries.toSorted((left, right) => left.order - right.order))
+    if (!oldestByMachine.has(entry.machine)) oldestByMachine.set(entry.machine, entry);
+  const capacity: Record<string, { order: number; ready: boolean }> = {};
+  const lines: string[] = [];
+  for (const [machine, entry] of oldestByMachine) {
+    const observed = observations[machine];
+    if (observed === undefined) {
+      if (previous[machine] !== undefined) capacity[machine] = previous[machine];
+      continue;
+    }
+    const ready = observed.live < observed.budget;
+    capacity[machine] = { order: entry.order, ready };
+    if (ready && (previous[machine]?.order !== entry.order || previous[machine]?.ready !== true))
+      lines.push(
+        `capacity available on ${machine}: retry queued item ${entry.item} (order ${entry.order}) with coordinate delegate --retry-queued; the regular budget gate still applies`,
+      );
+  }
+  return { lines, capacity };
+};
+
+/**
  * Due events for open items due on or before `today`, oldest first, skipping keys already fired.
  * The key is the item id plus its date, so a title edit never re-fires and a new date fires once.
  * Fired keys are only ever added, so a date that fired once never fires again.
@@ -322,6 +365,7 @@ const readState = (path: string) =>
         answered: parsed.answered ?? null,
         discussed: parsed.discussed ?? null,
         idle: parsed.idle ?? {},
+        capacity: parsed.capacity ?? {},
         outbox: parsed.outbox ?? [],
         nextEventId: parsed.nextEventId ?? 1,
         staged: parsed.staged,
@@ -591,6 +635,9 @@ export const watch = Effect.fn("watch")(function* (config: Config, options: Watc
         idle: Object.fromEntries(
           Object.entries(state.idle).map(([address, reminder]) => [address, { ...reminder }]),
         ),
+        capacity: Object.fromEntries(
+          Object.entries(state.capacity).map(([machine, ready]) => [machine, { ...ready }]),
+        ),
       };
       const lines: string[] = [];
       const latestRepos = yield* domainRepos(config, options.domain);
@@ -660,6 +707,57 @@ export const watch = Effect.fn("watch")(function* (config: Config, options: Watc
         const discussed = discussionEvents(document.value.backlog.items, snapshot.discussed);
         lines.push(...discussed.lines);
         snapshot.discussed = discussed.fired;
+      }
+      const readQueue = yield* readCapacityQueue(config, options.domain).pipe(Effect.result);
+      if (Result.isFailure(readQueue)) {
+        lines.push(
+          `capacity queue unavailable: ${readQueue.failure.message}; capacity was not checked`,
+        );
+      } else {
+        let waits = readQueue.success.entries;
+        if (waits.length > 0 && Option.isSome(document)) {
+          const keep = new Set(
+            document.value.backlog.items
+              .filter((item) => !CLOSED.has(item.status))
+              .map((item) => item.id),
+          );
+          const removed = yield* pruneCapacityWaits(config, options.domain, keep);
+          lines.push(
+            ...removed.map(
+              (entry) =>
+                `removed queued delegate for ${entry.item}: its backlog item is closed or missing`,
+            ),
+          );
+          if (removed.length > 0)
+            waits = (yield* readCapacityQueue(config, options.domain)).entries;
+          const eligibleItems = new Set(
+            document.value.backlog.items
+              .filter((item) => capacityItemEligible(item.status))
+              .map((item) => item.id),
+          );
+          waits = waits.filter((entry) => eligibleItems.has(entry.item));
+        }
+        const observations: Record<string, { live: number; budget: number } | undefined> = {};
+        if (waits.length > 0) {
+          const listed = yield* hc.list().pipe(Effect.result);
+          if (Result.isFailure(listed)) {
+            lines.push(`capacity check unavailable: ${listed.failure.message}`);
+          } else {
+            const machines = [...new Set(waits.map((entry) => entry.machine))];
+            for (const machine of machines) {
+              const count = yield* liveDelegateCount(machine, listed.success).pipe(Effect.result);
+              if (Result.isFailure(count)) {
+                lines.push(`capacity check unavailable for ${machine}: ${count.failure.message}`);
+                continue;
+              }
+              const budget = yield* machineDelegateBudget(config, machine, machine === hostname());
+              observations[machine] = { live: count.success, budget: budget.budget };
+            }
+          }
+        }
+        const wakes = capacityWakeEvents(waits, observations, snapshot.capacity);
+        lines.push(...wakes.lines);
+        snapshot.capacity = wakes.capacity;
       }
       first = false;
 

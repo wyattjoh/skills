@@ -1,6 +1,6 @@
 import { existsSync } from "node:fs";
 import { copyFile, mkdir, readFile, rename } from "node:fs/promises";
-import { hostname, loadavg, userInfo } from "node:os";
+import { loadavg, userInfo } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { Effect, Option } from "effect";
 import {
@@ -51,6 +51,14 @@ import {
 } from "./harness.ts";
 import * as hc from "./herdr.ts";
 import { armWatcher, watcherInfoLine } from "./watch-terminal.ts";
+import {
+  capacityItemEligible,
+  enqueueCapacityWait,
+  readCapacityQueue,
+  removeCapacityWait,
+  withCapacityClaim,
+} from "./capacity-queue.ts";
+import { liveDelegateCount, machineDelegateBudget, machineOfAddress } from "./delegate-capacity.ts";
 
 const loginShell = (): string => {
   try {
@@ -58,11 +66,6 @@ const loginShell = (): string => {
   } catch {
     return process.env.SHELL ?? "/bin/sh";
   }
-};
-
-const machineOfAddress = (address: string): string => {
-  const separator = address.indexOf("/");
-  return separator === -1 ? hostname() : address.slice(0, separator);
 };
 
 /**
@@ -122,6 +125,8 @@ export type DelegateOptions = {
    */
   item: string | undefined;
   overBudget: boolean;
+  queueIfFull: boolean;
+  retryQueued: boolean;
 };
 
 /**
@@ -245,187 +250,256 @@ export const delegate = Effect.fn("delegate")(function* (
     options.domain ??
     coordinator?.domain ??
     (yield* new Refused({ message: "no coordinator label on this terminal; pass --domain" }));
+  yield* checkDomainName(domain);
   if (options.item !== undefined) yield* checkFileable(config, domain, options.item);
-  const terminals = yield* hc.list();
-  const taken = terminals.find((terminal) => terminal.name === options.name);
-  if (taken)
+  if (options.retryQueued && coordinator === undefined)
+    return yield* new Refused({ message: "--retry-queued is for the coordinator" });
+  if (options.queueIfFull && coordinator === undefined)
+    return yield* new Refused({ message: "--queue-if-full is for the coordinator" });
+  if ((options.retryQueued || options.queueIfFull) && options.overBudget)
     return yield* new Refused({
-      message: `a live terminal is already named ${options.name} (${taken.address})`,
+      message: "--over-budget cannot be combined with a capacity queue",
     });
+  if (options.retryQueued && options.item === undefined)
+    return yield* new Refused({ message: "--retry-queued needs --item <id>" });
 
   const targetMachine = machineOfAddress(caller.address);
-  let liveDelegates = 0;
-  for (const listed of terminals) {
-    if (!listed.live || machineOfAddress(listed.address) !== targetMachine) continue;
-    const terminal = yield* hc.get(listed.address);
-    if (terminal?.live && terminal.labels[L.domain] && terminal.labels[L.role] !== "coordinator")
-      liveDelegates += 1;
-  }
-
-  const configuredMachineBudget = (machine: string): number | undefined =>
-    Object.hasOwn(config.maxFleetDelegatesByMachine, machine)
-      ? config.maxFleetDelegatesByMachine[machine]
-      : undefined;
-  const machineBudget =
-    configuredMachineBudget(targetMachine) ??
-    (coordinator?.address.includes("/") === false ? configuredMachineBudget("local") : undefined);
-  let budget = machineBudget ?? config.maxFleetDelegates;
-  let budgetWarning: string | undefined;
-  if (
-    coordinator !== undefined &&
-    !options.overBudget &&
-    machineBudget === undefined &&
-    config.maxFleetDelegatesOverride === undefined &&
-    coordinator.address.includes("/")
-  ) {
-    const cores = yield* hc
-      .coresOn(targetMachine)
-      .pipe(Effect.catch(() => Effect.succeed(undefined)));
-    if (cores === undefined)
-      budgetWarning = `warning: could not read core count for machine ${targetMachine}; using configured max_fleet_delegates default ${budget}`;
-    else budget = Math.max(2, Math.floor(cores / 4));
-  }
-
-  const load = readLoadAverage();
-  const lines: string[] = [];
-  if (load > config.cores)
-    lines.push(
-      `warning: 1-minute load average ${load} exceeds ${config.cores} cores; native gates may be slow`,
-    );
-  if (budgetWarning && liveDelegates < budget) lines.push(budgetWarning);
-  if (coordinator !== undefined && liveDelegates >= budget && !options.overBudget)
-    return yield* new Refused({
-      message: `machine ${targetMachine} has ${liveDelegates} live delegates (budget ${budget}); refusing ${options.name} for item ${options.item ?? "?"}; pass --over-budget to start anyway${budgetWarning ? `; ${budgetWarning}` : ""}`,
-    });
-  let cwd: string;
-  let branch: string | undefined;
-  let baseSha: string | undefined;
-  if (options.repo !== undefined) {
-    const repo = yield* mainCheckout(resolve(options.repo));
-    if (!repo) return yield* new Refused({ message: `${options.repo} is not a Git checkout` });
-    branch = `${config.branchPrefix}${options.name}`;
-    cwd = join(repo, ".claude", "worktrees", options.name);
-    if (existsSync(cwd)) return yield* new Refused({ message: `${cwd} already exists` });
-    if (yield* refExists(repo, `refs/heads/${branch}`))
-      return yield* new Refused({ message: `branch ${branch} already exists in ${repo}` });
-    const base = options.base ?? (yield* currentBranch(repo)) ?? "HEAD";
-    baseSha = yield* gitTry(repo, ["rev-parse", "--verify", `${base}^{commit}`]);
-    if (!baseSha) return yield* new Refused({ message: `${base} is not a commit in ${repo}` });
-    yield* gitOk(repo, ["worktree", "add", cwd, "-b", branch, baseSha]);
-    lines.push(`worktree ${cwd} on ${branch} from ${base}`);
-    // After the name and collision checks, so a refused start changes nothing in the repo.
-    if (yield* excludeScratch(cwd)) lines.push("added .scratch/ to the repo's info/exclude");
-  } else {
-    cwd = real(resolve(options.cwd ?? "."));
-    if (!existsSync(cwd)) return yield* new Refused({ message: `${cwd} does not exist` });
-  }
-
-  let brief: string | undefined;
-  let message = options.message;
-  if (message.kind === "brief") {
-    const source = resolve(message.path);
-    if (!existsSync(source)) return yield* new Refused({ message: `no brief at ${source}` });
-    brief = join(cwd, ".scratch", "BRIEF.md");
-    const destination = brief;
-    if (real(source) !== real(destination)) {
-      const preserved = yield* Effect.promise(async () => {
-        await mkdir(dirname(destination), { recursive: true });
-        if (existsSync(destination)) {
-          const [incoming, existing] = await Promise.all([readFile(source), readFile(destination)]);
-          if (incoming.equals(existing)) return undefined;
-          const backup = join(
-            dirname(destination),
-            `BRIEF.${Date.now()}.${crypto.randomUUID()}.md`,
-          );
-          await rename(destination, backup);
-          try {
-            await copyFile(source, destination);
-          } catch (error) {
-            await rename(backup, destination);
-            throw error;
-          }
-          return backup;
-        }
-        await copyFile(source, destination);
-        return undefined;
+  const perform = Effect.gen(function* () {
+    const queue = options.retryQueued ? yield* readCapacityQueue(config, domain) : undefined;
+    const queued = queue?.entries.find((entry) => entry.item === options.item);
+    if (options.retryQueued && queued === undefined)
+      return yield* new Refused({
+        message: `item ${options.item} is not in the capacity queue for ${domain}; ignore this stale wake`,
       });
-      if (preserved) lines.push(`preserved existing brief at ${preserved}`);
+    if (queued && queued.machine !== targetMachine)
+      return yield* new Refused({
+        message: `item ${queued.item} is queued for machine ${queued.machine}, not ${targetMachine}; retry it from its target machine`,
+      });
+    if (queued && queue) {
+      const { backlog } = yield* readDocument(config, domain);
+      const item = backlog.items.find((candidate) => candidate.id === queued.item);
+      if (item && !capacityItemEligible(item.status))
+        return yield* new Refused({
+          message: `queued item ${item.id} is ${item.status}; resolve or resume it before retrying`,
+        });
+      const eligibleItems = new Set(
+        backlog.items
+          .filter((candidate) => capacityItemEligible(candidate.status))
+          .map((candidate) => candidate.id),
+      );
+      const oldest = queue.entries
+        .filter((entry) => entry.machine === targetMachine && eligibleItems.has(entry.item))
+        .toSorted((left, right) => left.order - right.order)[0];
+      if (oldest?.item !== queued.item)
+        return yield* new Refused({
+          message: `item ${queued.item} is queued but is not the oldest eligible launch for machine ${targetMachine}; retry ${oldest?.item ?? "the queue's oldest item"} first`,
+        });
     }
-    message = { kind: "brief", path: brief };
-  }
-  const report = brief ? join(cwd, ".scratch", "REPORT.md") : undefined;
-  const session = crypto.randomUUID();
-  const tabLabel = options.task;
-  const labels: Record<string, string> = {
-    [L.domain]: domain,
-    [L.task]: options.task,
-    [L.session]: session,
-    [L.harness]: options.harness,
-    [L.worktree]: cwd,
-    ...(options.model ? { [L.model]: options.model } : {}),
-    ...(options.effort ? { [L.effort]: options.effort } : {}),
-    ...(branch ? { [L.branch]: branch } : {}),
-    ...(baseSha ? { [L.base]: baseSha } : {}),
-  };
-  const argv = agentArgv({
-    harness: options.harness,
-    name: options.name,
-    session,
-    model: options.model,
-    effort: options.effort,
-    extraArgs: options.harness === "pi" ? config.delegatePiArgs : config.delegateClaudeArgs,
-    message: firstMessage(options.harness, message),
-    resume: false,
-  });
-  const coordinatorTerminal = coordinator?.terminal;
-  const launched = yield* launch({
-    name: options.name,
-    cwd,
-    tabLabel,
-    spaceName: `${domain} [${options.task}]`,
-    labels,
-    parent: coordinatorTerminal?.address ?? process.env.HC_TERMINAL_ID,
-    argv,
-    ownSpace: options.space,
-    coordinatorSpace: coordinatorTerminal?.labels["herdr.space"],
-  });
-  const unfiled = (why: string): string =>
-    `started ${options.name} (${launched.address}, session ${session}) but could not file it under ${options.item}: ${why}`;
-  // Filed before the status wait, so a slow start is still on the item.
-  const filed =
-    options.item === undefined
-      ? undefined
-      : yield* recordDelegate(config, domain, {
-          id: options.item,
-          ref: {
-            name: options.name,
-            session,
-            branch: branch ?? null,
-            worktree: cwd,
-            brief: brief ?? "",
-            report: report ?? "",
-          },
-        }).pipe(
-          Effect.catchTags({
-            Refused: (error) => Effect.fail(new Refused({ message: `${unfiled(error.message)}` })),
-            BacklogError: (error) =>
-              Effect.fail(new BacklogError({ path: error.path, message: unfiled(error.message) })),
-          }),
-        );
-  const showed = yield* agentShowed(launched.address, 60);
-  if (!showed) {
-    const text = yield* hc.read(launched.address, 40).pipe(Effect.catch(() => Effect.succeed("")));
-    lines.push(
-      `warning: no agent status in ${launched.address} within 60s; it shows:\n${text.trim().slice(-1500)}`,
+
+    const terminals = yield* hc.list([], queued !== undefined);
+    if (queued) {
+      const marker = `${domain}:${queued.item}:${queued.order}`;
+      for (const listed of terminals) {
+        if (machineOfAddress(listed.address) !== targetMachine) continue;
+        const terminal = yield* hc.get(listed.address);
+        if (terminal?.labels[L.queue] !== marker) continue;
+        yield* removeCapacityWait(config, domain, queued.item);
+        return [
+          `already started queued delegate ${terminal.name ?? terminal.address} (${terminal.address}) for ${queued.item} order ${queued.order}; no duplicate launch; verify it is filed under the item`,
+        ];
+      }
+    }
+    const taken = terminals.find((terminal) => terminal.live && terminal.name === options.name);
+    if (taken)
+      return yield* new Refused({
+        message: `a live terminal is already named ${options.name} (${taken.address})`,
+      });
+
+    const liveDelegates = yield* liveDelegateCount(targetMachine, terminals);
+    const { budget, warning: budgetWarning } = yield* machineDelegateBudget(
+      config,
+      targetMachine,
+      coordinator?.address.includes("/") === false,
+      coordinator !== undefined && !options.overBudget,
     );
-  }
-  lines.push(
-    `started ${options.name} (${launched.address})${launched.space ? ` in its own space ${launched.space}` : ""}`,
-    filed
-      ? `filed ${options.name} under ${filed.id} [${filed.status}]`
-      : `session ${session}${report ? ` report ${report}` : ""}`,
-  );
-  return lines;
+
+    const load = readLoadAverage();
+    const lines: string[] = [];
+    if (load > config.cores)
+      lines.push(
+        `warning: 1-minute load average ${load} exceeds ${config.cores} cores; native gates may be slow`,
+      );
+    if (budgetWarning && liveDelegates < budget) lines.push(budgetWarning);
+    if (coordinator !== undefined && liveDelegates >= budget && !options.overBudget) {
+      if (options.queueIfFull || options.retryQueued) {
+        if (!queued) {
+          const { backlog } = yield* readDocument(config, domain);
+          const item = backlog.items.find((candidate) => candidate.id === options.item);
+          if (item && !capacityItemEligible(item.status))
+            return yield* new Refused({
+              message: `item ${item.id} is ${item.status}; resolve or resume it before queueing a delegate`,
+            });
+        }
+        const entry =
+          queued ??
+          (yield* enqueueCapacityWait(config, domain, {
+            item: options.item ?? "",
+            machine: targetMachine,
+          }));
+        lines.push(
+          `queued delegate for item ${entry.item} on machine ${entry.machine} (order ${entry.order}); no launch was started; the domain watcher will wake this coordinator when capacity is available`,
+        );
+        if (budgetWarning) lines.push(budgetWarning);
+        return lines;
+      }
+      return yield* new Refused({
+        message: `machine ${targetMachine} has ${liveDelegates} live delegates (budget ${budget}); refusing ${options.name} for item ${options.item ?? "?"}; pass --over-budget to start anyway${budgetWarning ? `; ${budgetWarning}` : ""}`,
+      });
+    }
+    let cwd: string;
+    let branch: string | undefined;
+    let baseSha: string | undefined;
+    if (options.repo !== undefined) {
+      const repo = yield* mainCheckout(resolve(options.repo));
+      if (!repo) return yield* new Refused({ message: `${options.repo} is not a Git checkout` });
+      branch = `${config.branchPrefix}${options.name}`;
+      cwd = join(repo, ".claude", "worktrees", options.name);
+      if (existsSync(cwd)) return yield* new Refused({ message: `${cwd} already exists` });
+      if (yield* refExists(repo, `refs/heads/${branch}`))
+        return yield* new Refused({ message: `branch ${branch} already exists in ${repo}` });
+      const base = options.base ?? (yield* currentBranch(repo)) ?? "HEAD";
+      baseSha = yield* gitTry(repo, ["rev-parse", "--verify", `${base}^{commit}`]);
+      if (!baseSha) return yield* new Refused({ message: `${base} is not a commit in ${repo}` });
+      yield* gitOk(repo, ["worktree", "add", cwd, "-b", branch, baseSha]);
+      lines.push(`worktree ${cwd} on ${branch} from ${base}`);
+      // After the name and collision checks, so a refused start changes nothing in the repo.
+      if (yield* excludeScratch(cwd)) lines.push("added .scratch/ to the repo's info/exclude");
+    } else {
+      cwd = real(resolve(options.cwd ?? "."));
+      if (!existsSync(cwd)) return yield* new Refused({ message: `${cwd} does not exist` });
+    }
+
+    let brief: string | undefined;
+    let message = options.message;
+    if (message.kind === "brief") {
+      const source = resolve(message.path);
+      if (!existsSync(source)) return yield* new Refused({ message: `no brief at ${source}` });
+      brief = join(cwd, ".scratch", "BRIEF.md");
+      const destination = brief;
+      if (real(source) !== real(destination)) {
+        const preserved = yield* Effect.promise(async () => {
+          await mkdir(dirname(destination), { recursive: true });
+          if (existsSync(destination)) {
+            const [incoming, existing] = await Promise.all([
+              readFile(source),
+              readFile(destination),
+            ]);
+            if (incoming.equals(existing)) return undefined;
+            const backup = join(
+              dirname(destination),
+              `BRIEF.${Date.now()}.${crypto.randomUUID()}.md`,
+            );
+            await rename(destination, backup);
+            try {
+              await copyFile(source, destination);
+            } catch (error) {
+              await rename(backup, destination);
+              throw error;
+            }
+            return backup;
+          }
+          await copyFile(source, destination);
+          return undefined;
+        });
+        if (preserved) lines.push(`preserved existing brief at ${preserved}`);
+      }
+      message = { kind: "brief", path: brief };
+    }
+    const report = brief ? join(cwd, ".scratch", "REPORT.md") : undefined;
+    const session = crypto.randomUUID();
+    const tabLabel = options.task;
+    const labels: Record<string, string> = {
+      [L.domain]: domain,
+      [L.task]: options.task,
+      [L.session]: session,
+      [L.harness]: options.harness,
+      [L.worktree]: cwd,
+      ...(queued ? { [L.queue]: `${domain}:${queued.item}:${queued.order}` } : {}),
+      ...(options.model ? { [L.model]: options.model } : {}),
+      ...(options.effort ? { [L.effort]: options.effort } : {}),
+      ...(branch ? { [L.branch]: branch } : {}),
+      ...(baseSha ? { [L.base]: baseSha } : {}),
+    };
+    const argv = agentArgv({
+      harness: options.harness,
+      name: options.name,
+      session,
+      model: options.model,
+      effort: options.effort,
+      extraArgs: options.harness === "pi" ? config.delegatePiArgs : config.delegateClaudeArgs,
+      message: firstMessage(options.harness, message),
+      resume: false,
+    });
+    const coordinatorTerminal = coordinator?.terminal;
+    const launched = yield* launch({
+      name: options.name,
+      cwd,
+      tabLabel,
+      spaceName: `${domain} [${options.task}]`,
+      labels,
+      parent: coordinatorTerminal?.address ?? process.env.HC_TERMINAL_ID,
+      argv,
+      ownSpace: options.space,
+      coordinatorSpace: coordinatorTerminal?.labels["herdr.space"],
+    });
+    if (coordinator !== undefined && options.item !== undefined)
+      yield* removeCapacityWait(config, domain, options.item);
+    const unfiled = (why: string): string =>
+      `started ${options.name} (${launched.address}, session ${session}) but could not file it under ${options.item}: ${why}`;
+    // Filed before the status wait, so a slow start is still on the item.
+    const filed =
+      options.item === undefined
+        ? undefined
+        : yield* recordDelegate(config, domain, {
+            id: options.item,
+            ref: {
+              name: options.name,
+              session,
+              branch: branch ?? null,
+              worktree: cwd,
+              brief: brief ?? "",
+              report: report ?? "",
+            },
+          }).pipe(
+            Effect.catchTags({
+              Refused: (error) =>
+                Effect.fail(new Refused({ message: `${unfiled(error.message)}` })),
+              BacklogError: (error) =>
+                Effect.fail(
+                  new BacklogError({ path: error.path, message: unfiled(error.message) }),
+                ),
+            }),
+          );
+    const showed = yield* agentShowed(launched.address, 60);
+    if (!showed) {
+      const text = yield* hc
+        .read(launched.address, 40)
+        .pipe(Effect.catch(() => Effect.succeed("")));
+      lines.push(
+        `warning: no agent status in ${launched.address} within 60s; it shows:\n${text.trim().slice(-1500)}`,
+      );
+    }
+    lines.push(
+      `started ${options.name} (${launched.address})${launched.space ? ` in its own space ${launched.space}` : ""}`,
+      filed
+        ? `filed ${options.name} under ${filed.id} [${filed.status}]`
+        : `session ${session}${report ? ` report ${report}` : ""}`,
+    );
+    return lines;
+  });
+  return options.retryQueued && options.item !== undefined
+    ? yield* withCapacityClaim(config, domain, options.item, perform)
+    : yield* perform;
 });
 
 /**

@@ -1,5 +1,6 @@
 import { existsSync } from "node:fs";
-import { readFile, rm } from "node:fs/promises";
+import { mkdir, readFile, rm } from "node:fs/promises";
+import { dirname } from "node:path";
 import { Effect, Result } from "effect";
 import {
   archivePath,
@@ -15,6 +16,7 @@ import { checkDomainName, L, members, readEnded, Refused, resolveDomain } from "
 import * as hc from "./herdr.ts";
 import { lockPath, watcherAlive } from "./watch-lock.ts";
 import { statePath } from "./watch.ts";
+import { capacityQueuePath } from "./capacity-queue.ts";
 
 /**
  * Options for `coordinate backlog rename`.
@@ -40,6 +42,7 @@ export type RenameResult = {
   backlog: string;
   archive: string | null;
   snapshot: string | null;
+  capacityQueue: string | undefined;
   stalePid: string | null;
   ended: string[];
   endedSkipped: string[];
@@ -68,6 +71,7 @@ const refuseExisting = (config: Config, from: string, to: string) =>
     for (const [what, path] of [
       ["a backlog", documentPath(config.stateDir, to)],
       ["an archive", archivePath(config.stateDir, to)],
+      ["a capacity queue", capacityQueuePath(config.stateDir, to)],
     ] as const)
       if (existsSync(path))
         return yield* new Refused({ message: `${what} for ${to} already exists at ${path}` });
@@ -80,6 +84,7 @@ const refuseExisting = (config: Config, from: string, to: string) =>
 const copyIfPresent = Effect.fn("copyIfPresent")(function* (source: string, target: string) {
   if (!existsSync(source)) return null;
   const text = yield* Effect.promise(() => readFile(source, "utf8"));
+  yield* Effect.promise(() => mkdir(dirname(target), { recursive: true }));
   yield* writeAtomic(target, text);
   return target;
 });
@@ -88,6 +93,7 @@ const lines = (result: RenameResult): string[] => [
   `renamed ${result.from} to ${result.to}: backlog ${result.backlog}`,
   ...(result.archive ? [`  archive ${result.archive}`] : []),
   ...(result.snapshot ? [`  watcher snapshot ${result.snapshot}`] : []),
+  ...(result.capacityQueue ? [`  capacity queue ${result.capacityQueue}`] : []),
   ...(result.stalePid ? [`  removed stale watcher pid file ${result.stalePid}`] : []),
   ...(result.ended.length > 0 ? [`  ended records now ${result.to}: ${result.ended.length}`] : []),
   ...(result.endedSkipped.length > 0
@@ -103,7 +109,7 @@ const lines = (result: RenameResult): string[] => [
 
 /**
  * `coordinate backlog rename`: give a domain a new name. Under both domains' backlog locks it writes
- * the new backlog (domain field set), archive and watcher snapshot, points ended-delegate records
+ * the new backlog (domain field set), archive, watcher snapshot and capacity queue, points ended-delegate records
  * at the new name, relabels the domain's terminals, then removes the old files. A crash before the
  * old backlog is removed leaves the old domain whole beside a partial new one.
  * @param config Config.
@@ -141,6 +147,10 @@ export const renameDomain = Effect.fn("renameDomain")(function* (
       yield* writeDocument(backlogPath, { ...backlog, domain: to });
       const archive = yield* copyIfPresent(archivePath(state, from), archivePath(state, to));
       const snapshot = yield* copyIfPresent(statePath(state, from), statePath(state, to));
+      const capacityQueue = yield* copyIfPresent(
+        capacityQueuePath(state, from),
+        capacityQueuePath(state, to),
+      );
 
       // In place: each ended record is rewritten whole, keeping fields this CLI does not read.
       const { records, skipped } = yield* readEnded(state);
@@ -166,7 +176,11 @@ export const renameDomain = Effect.fn("renameDomain")(function* (
 
       // The old backlog goes first: once it is gone the rename is done, and what follows is cleanup.
       yield* Effect.promise(() => rm(documentPath(state, from), { force: true }));
-      for (const path of [archivePath(state, from), statePath(state, from)])
+      for (const path of [
+        archivePath(state, from),
+        statePath(state, from),
+        capacityQueuePath(state, from),
+      ])
         yield* Effect.promise(() => rm(path, { force: true }));
       const pidFile = lockPath(state, from);
       const stalePid = existsSync(pidFile) ? pidFile : null;
@@ -178,6 +192,7 @@ export const renameDomain = Effect.fn("renameDomain")(function* (
         backlog: backlogPath,
         archive,
         snapshot,
+        capacityQueue: capacityQueue ?? undefined,
         stalePid,
         ended,
         endedSkipped: skipped,

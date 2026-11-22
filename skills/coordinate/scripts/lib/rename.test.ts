@@ -1,11 +1,12 @@
 import { afterAll, describe, expect, it } from "bun:test";
-import { mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { Effect } from "effect";
 import { createDocument, itemAdd, readDocument } from "./backlog-doc.ts";
 import { configPath, resolveConfig } from "./config.ts";
 import { cliEnv, failureOf, runWith, tempDir } from "./fixture.ts";
 import { Refused } from "./fleet.ts";
+import { capacityQueuePath, enqueueCapacityWait, readCapacityQueue } from "./capacity-queue.ts";
 import { fakeProc, ok, type RunOutput } from "./proc.ts";
 import { type RenameOptions, renameDomain } from "./rename.ts";
 
@@ -167,6 +168,20 @@ describe("backlog rename", () => {
     expect(fake.calls.filter(({ argv }) => argv[1] === "label").map(({ argv }) => argv)).toEqual([
       ["hc", "label", "t1", "fleet.domain=clerk", "--json"],
     ]);
+  });
+
+  it("moves a durable capacity queue with the renamed domain", async () => {
+    const { state, cfg } = await populated();
+    await runWith(enqueueCapacityWait(cfg, "tracked-prs", { item: "i1", machine: "worker" }));
+    const original = capacityQueuePath(state, "tracked-prs");
+    const lines = await runWith(renameDomain(cfg, options()), fakeProc(answers()).layer);
+    expect(lines).toContain(`  capacity queue ${capacityQueuePath(state, "clerk")}`);
+    expect(existsSync(original)).toBe(false);
+    expect(await runWith(readCapacityQueue(cfg, "clerk"))).toEqual({
+      version: 1,
+      nextOrder: 2,
+      entries: [{ item: "i1", machine: "worker", order: 1 }],
+    });
   });
 
   it("prints what moved as JSON and warns when keep_running names the old domain", async () => {

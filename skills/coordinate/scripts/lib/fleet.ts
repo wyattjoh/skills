@@ -19,6 +19,7 @@ export const L = {
   branch: "fleet.branch",
   base: "fleet.base",
   space: "fleet.space",
+  queue: "fleet.queue",
 } as const;
 
 /**

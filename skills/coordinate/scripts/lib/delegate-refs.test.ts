@@ -96,6 +96,8 @@ const options = (fields: Partial<DelegateOptions>): DelegateOptions => ({
   domain: undefined,
   item: undefined,
   overBudget: false,
+  queueIfFull: false,
+  retryQueued: false,
   ...fields,
 });
 

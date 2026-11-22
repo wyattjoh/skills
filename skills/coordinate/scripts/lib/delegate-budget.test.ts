@@ -8,6 +8,9 @@ import { resolveConfig } from "./config.ts";
 import { failureOf, g, initRepo, runWith, tempDir } from "./fixture.ts";
 import { delegate, start, type DelegateOptions } from "./lifecycle.ts";
 import { fakeProc, ok, type RunOutput } from "./proc.ts";
+import { capacityQueuePath, enqueueCapacityWait, readCapacityQueue } from "./capacity-queue.ts";
+import { liveDelegateCount } from "./delegate-capacity.ts";
+import type { ListedTerminal } from "./herdr.ts";
 
 const dirs: string[] = [];
 const dir = () => {
@@ -65,6 +68,8 @@ const options = (fields: Partial<DelegateOptions> = {}): DelegateOptions => ({
   domain: undefined,
   item: undefined,
   overBudget: false,
+  queueIfFull: false,
+  retryQueued: false,
   ...fields,
 });
 
@@ -293,6 +298,183 @@ describe("fleet delegate budget", () => {
       "machine strix has 2 live delegates (budget 2); refusing new-delegate for item i1; pass --over-budget to start anyway; warning: could not read core count for machine strix; using configured max_fleet_delegates default 2",
     );
     expect(fake.calls.filter(({ argv }) => argv[1] === "run").length).toBe(0);
+  });
+
+  it("queues a full-pool launch with only item, machine and order metadata", async () => {
+    const state = dir();
+    const { cfg } = await withItem(state);
+    const fake = fleet(COORDINATOR, [
+      { address: "t2", domain: "app" },
+      { address: "t3", domain: "infra" },
+    ]);
+    const sensitive = "inline launch context: never persist this";
+    const lines = await runWith(
+      delegate(
+        cfg,
+        options({
+          cwd: state,
+          item: "i1",
+          queueIfFull: true,
+          message: { kind: "skill", skill: "implement", args: sensitive },
+        }),
+        () => 3,
+      ),
+      fake.layer,
+    );
+    expect(lines).toEqual([
+      `queued delegate for item i1 on machine ${hostname()} (order 1); no launch was started; the domain watcher will wake this coordinator when capacity is available`,
+    ]);
+    expect(fake.calls.filter(({ argv }) => argv[1] === "run").length).toBe(0);
+    const path = capacityQueuePath(state, "app");
+    const stored = readFileSync(path, "utf8");
+    expect(stored.includes(sensitive)).toBe(false);
+    expect(JSON.parse(stored)).toEqual({
+      version: 1,
+      nextOrder: 2,
+      entries: [{ item: "i1", machine: hostname(), order: 1 }],
+    });
+    expect(await runWith(readCapacityQueue(cfg, "app"))).toEqual({
+      version: 1,
+      nextOrder: 2,
+      entries: [{ item: "i1", machine: hostname(), order: 1 }],
+    });
+    const retry = await runWith(
+      delegate(
+        cfg,
+        options({
+          cwd: state,
+          item: "i1",
+          retryQueued: true,
+          message: { kind: "skill", skill: "implement", args: sensitive },
+        }),
+        () => 3,
+      ),
+      fake.layer,
+    );
+    expect(retry).toEqual(lines);
+    expect(fake.calls.filter(({ argv }) => argv[1] === "run").length).toBe(0);
+    expect((await runWith(readCapacityQueue(cfg, "app"))).entries).toEqual([
+      { item: "i1", machine: hostname(), order: 1 },
+    ]);
+  });
+
+  it("refuses to retry past the oldest eligible item", async () => {
+    const state = dir();
+    const { cfg } = await withItem(state);
+    await runWith(itemAdd(cfg, "app", { title: "Second queued task", json: false, now: NOW }));
+    await runWith(enqueueCapacityWait(cfg, "app", { item: "i1", machine: hostname() }));
+    await runWith(enqueueCapacityWait(cfg, "app", { item: "i2", machine: hostname() }));
+    const fake = fleet(COORDINATOR, []);
+    const error = await failureOf(
+      delegate(cfg, options({ cwd: state, item: "i2", retryQueued: true }), () => 3),
+      fake.layer,
+    );
+    expect(error instanceof Error ? error.message : String(error)).toBe(
+      `item i2 is queued but is not the oldest eligible launch for machine ${hostname()}; retry i1 first`,
+    );
+    expect(fake.calls.filter(({ argv }) => argv[1] === "run").length).toBe(0);
+    expect((await runWith(readCapacityQueue(cfg, "app"))).entries).toEqual([
+      { item: "i1", machine: hostname(), order: 1 },
+      { item: "i2", machine: hostname(), order: 2 },
+    ]);
+  });
+
+  it("launches a queued retry only after the regular budget gate passes", async () => {
+    const state = dir();
+    const { cfg } = await withItem(state);
+    const full = fleet(COORDINATOR, [
+      { address: "t2", domain: "app" },
+      { address: "t3", domain: "infra" },
+    ]);
+    await runWith(
+      delegate(cfg, options({ cwd: state, item: "i1", queueIfFull: true }), () => 3),
+      full.layer,
+    );
+    const available = fleet(COORDINATOR, []);
+    const lines = await runWith(
+      delegate(cfg, options({ cwd: state, item: "i1", retryQueued: true }), () => 3),
+      available.layer,
+    );
+    expect(lines).toEqual([
+      "started new-delegate (t-new)",
+      "filed new-delegate under i1 [delegated]",
+    ]);
+    const run = available.calls.find(({ argv }) => argv[1] === "run");
+    expect(run?.argv).toContain("fleet.queue=app:i1:1");
+    expect((await runWith(readCapacityQueue(cfg, "app"))).entries).toEqual([]);
+  });
+
+  it("does not relaunch a queued delegate whose terminal ended before acknowledgement", async () => {
+    const state = dir();
+    const { cfg } = await withItem(state);
+    await runWith(enqueueCapacityWait(cfg, "app", { item: "i1", machine: hostname() }));
+    const terminal = {
+      ...terminalDoc("t2", {
+        "fleet.domain": "app",
+        "fleet.queue": "app:i1:1",
+      }),
+      state: "ended",
+    };
+    let listedAll = false;
+    const fake = fakeProc((argv) => {
+      if (argv[1] === "ls") {
+        listedAll = argv.includes("--all");
+        return ok(
+          JSON.stringify({
+            terminals: [
+              { address: "t1", name: "caller", state: "live" },
+              { address: "t2", name: "t2", state: "ended" },
+            ],
+          }),
+        );
+      }
+      if (argv[1] === "get")
+        return argv[2] === "t2"
+          ? ok(JSON.stringify(terminal))
+          : ok(JSON.stringify(terminalDoc("t1", COORDINATOR)));
+      throw new Error(`unexpected command: ${argv.join(" ")}`);
+    });
+    const lines = await runWith(
+      delegate(cfg, options({ cwd: state, item: "i1", retryQueued: true }), () => 3),
+      fake.layer,
+    );
+    expect(listedAll).toBe(true);
+    expect(lines).toEqual([
+      "already started queued delegate t2 (t2) for i1 order 1; no duplicate launch; verify it is filed under the item",
+    ]);
+    expect(fake.calls.filter(({ argv }) => argv[1] === "run").length).toBe(0);
+    expect((await runWith(readCapacityQueue(cfg, "app"))).entries).toEqual([]);
+  });
+
+  it("counts live settled delegates across domains on the same machine", async () => {
+    const terminals: ListedTerminal[] = ["t2", "t3", "elsewhere/t4"].map((address) => ({
+      address,
+      agent: "pi",
+      cwd: "/tmp",
+      live: true,
+      status: "idle",
+      turn: 1,
+      name: address,
+      parent: undefined,
+      where: "",
+    }));
+    const fake = fakeProc((argv) => {
+      if (argv[1] === "get")
+        return ok(
+          JSON.stringify({
+            address: argv[2],
+            state: "live",
+            status: { state: "idle" },
+            labels: { "fleet.domain": argv[2] === "t2" ? "infra" : "app" },
+          }),
+        );
+      throw new Error(`unexpected command: ${argv.join(" ")}`);
+    });
+    expect(await runWith(liveDelegateCount(hostname(), terminals), fake.layer)).toBe(2);
+    expect(fake.calls.filter(({ argv }) => argv[1] === "get").map(({ argv }) => argv[2])).toEqual([
+      "t2",
+      "t3",
+    ]);
   });
 
   it("starts at budget with --over-budget", async () => {

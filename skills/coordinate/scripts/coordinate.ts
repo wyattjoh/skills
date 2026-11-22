@@ -219,6 +219,8 @@ const switchOptions = new Set([
   "--no-space",
   "--now",
   "--over-budget",
+  "--queue-if-full",
+  "--retry-queued",
   "--replace",
   "--resume",
   "--sizes",
@@ -405,6 +407,14 @@ const delegateCommand = Command.make(
       "over-budget",
       "start even when this machine's per-machine delegate budget is reached",
     ),
+    queueIfFull: booleanFlag(
+      "queue-if-full",
+      "retain only item, machine and enqueue order when the budget is full",
+    ),
+    retryQueued: booleanFlag(
+      "retry-queued",
+      "recheck and launch an existing queued item through the regular budget gate",
+    ),
     item: optionalStringFlag(
       "item",
       "item to file the delegate under (required from a coordinator, refused from a delegate)",
@@ -438,6 +448,8 @@ const delegateCommand = Command.make(
         domain: Option.getOrUndefined(options.domain),
         item: Option.getOrUndefined(options.item),
         overBudget: options.overBudget,
+        queueIfFull: options.queueIfFull,
+        retryQueued: options.retryQueued,
       }),
     );
   },

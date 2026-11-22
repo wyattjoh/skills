@@ -1,6 +1,7 @@
 import { afterAll, describe, expect, it } from "bun:test";
 import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
+import { hostname } from "node:os";
 import { Effect } from "effect";
 import { createDocument, itemAdd, itemClose, itemUpdate } from "./backlog-doc.ts";
 import { emptyBacklog, type ItemUpdate } from "./backlog-store/ops.ts";
@@ -8,7 +9,9 @@ import type { Item } from "./backlog-store/schema.ts";
 import { resolveConfig } from "./config.ts";
 import { cliEnv, runWith, tempDir } from "./fixture.ts";
 import { fakeProc, ok, type RunOutput } from "./proc.ts";
+import { enqueueCapacityWait } from "./capacity-queue.ts";
 import {
+  capacityWakeEvents,
   delegateEvents,
   emptyState,
   idleEvents,
@@ -203,6 +206,53 @@ describe("prEvents", () => {
   });
 });
 
+describe("capacityWakeEvents", () => {
+  const queued = [
+    { item: "i1", machine: "worker", order: 1 },
+    { item: "i2", machine: "worker", order: 2 },
+    { item: "i3", machine: "remote", order: 3 },
+  ];
+  const available = {
+    worker: { live: 0, budget: 1 },
+    remote: { live: 4, budget: 4 },
+  };
+
+  it("coalesces by machine, persists a wake across restart, and rearms after a competing launch", () => {
+    const first = capacityWakeEvents(queued, available, {});
+    expect(first.lines).toEqual([
+      "capacity available on worker: retry queued item i1 (order 1) with coordinate delegate --retry-queued; the regular budget gate still applies",
+    ]);
+    expect(first.capacity).toEqual({
+      worker: { order: 1, ready: true },
+      remote: { order: 3, ready: false },
+    });
+
+    const afterRestart = capacityWakeEvents(queued, available, first.capacity);
+    expect(afterRestart.lines).toEqual([]);
+    expect(afterRestart.capacity).toEqual(first.capacity);
+
+    const raced = capacityWakeEvents(
+      queued,
+      { worker: { live: 1, budget: 1 }, remote: { live: 4, budget: 4 } },
+      afterRestart.capacity,
+    );
+    expect(raced.lines).toEqual([]);
+    expect(raced.capacity.worker).toEqual({ order: 1, ready: false });
+
+    const freed = capacityWakeEvents(queued, available, raced.capacity);
+    expect(freed.lines).toEqual([first.lines[0]]);
+
+    const next = capacityWakeEvents(queued.slice(1), available, {
+      worker: { order: 1, ready: true },
+      remote: { order: 3, ready: false },
+    });
+    expect(next.lines).toEqual([
+      "capacity available on worker: retry queued item i2 (order 2) with coordinate delegate --retry-queued; the regular budget gate still applies",
+    ]);
+    expect(capacityWakeEvents([], {}, next.capacity)).toEqual({ lines: [], capacity: {} });
+  });
+});
+
 describe("statusBeat", () => {
   it("counts delegates by status", () => {
     expect(
@@ -390,6 +440,149 @@ const dueDomain = async () => {
 };
 const alive = ["alive: no events in 0m; re-arm the watcher"];
 
+const queuedDomain = async (budget = 1) => {
+  const state = tempDir();
+  made.push(state);
+  const config = await Effect.runPromise(
+    resolveConfig(
+      {
+        state_dir: state,
+        backlog_dir: join(state, "backlogs"),
+        max_fleet_delegates: budget,
+      },
+      "/c",
+    ),
+  );
+  await runWith(createDocument(config, "app"));
+  await runWith(itemAdd(config, "app", { title: "Queued work", json: false, now: NOW }));
+  await runWith(enqueueCapacityWait(config, "app", { item: "i1", machine: hostname() }));
+  return { config, state };
+};
+
+describe("watch capacity queue", () => {
+  it("does not list machine capacity while the queue is empty", async () => {
+    const { config } = await dueDomain();
+    const fake = fakeProc((argv) => {
+      if (argv[1] === "ls") return ok('{"terminals":[]}');
+      throw new Error(`unexpected command: ${argv.join(" ")}`);
+    });
+    const lines = await runWith(
+      watch(config, {
+        domain: "app",
+        intervalMs: 1,
+        forgeIntervalMs: 60_000,
+        maxMs: 0,
+        owner: undefined,
+        replace: false,
+        deliver: false,
+        today: () => "2026-11-10",
+        follow: false,
+        emit: () => undefined,
+      }),
+      fake.layer,
+    );
+    expect(lines).toEqual(alive);
+    expect(
+      fake.calls.filter((call) => call.argv[1] === "ls" && !call.argv.includes("--label")),
+    ).toEqual([]);
+  });
+
+  it("wakes when a live delegate in another domain exits the target machine's pool", async () => {
+    const { config } = await queuedDomain();
+    let capacityPolls = 0;
+    let ownerReads = 0;
+    const fake = fakeProc((argv) => {
+      if (argv[1] === "ls" && argv.includes("--label")) return ok('{"terminals":[]}');
+      if (argv[1] === "ls") {
+        capacityPolls += 1;
+        const terminals =
+          capacityPolls === 1 ? [{ address: "t-infra", name: "infra-work", state: "live" }] : [];
+        return ok(JSON.stringify({ terminals }));
+      }
+      if (argv[1] === "get" && argv[2] === "t-infra")
+        return ok(
+          JSON.stringify({
+            address: "t-infra",
+            state: "live",
+            status: { state: "idle" },
+            labels: { "fleet.domain": "infra" },
+          }),
+        );
+      if (argv[1] === "get" && argv[2] === "t-owner") {
+        ownerReads += 1;
+        return ownerReads < 3
+          ? ok(
+              JSON.stringify({
+                address: "t-owner",
+                state: "live",
+                labels: { "fleet.role": "coordinator", "fleet.domain": "app" },
+              }),
+            )
+          : { exitCode: 1, stdout: "", stderr: '{"error":{"kind":"not_found","message":"gone"}}' };
+      }
+      throw new Error(`unexpected command: ${argv.join(" ")}`);
+    });
+    const emitted: string[] = [];
+    expect(
+      await runWith(
+        watch(config, {
+          domain: "app",
+          intervalMs: 1,
+          forgeIntervalMs: 60_000,
+          maxMs: 0,
+          owner: "t-owner",
+          replace: false,
+          deliver: false,
+          today: () => "2026-11-10",
+          follow: true,
+          emit: (line) => {
+            emitted.push(eventText(line));
+          },
+        }),
+        fake.layer,
+      ),
+    ).toEqual([]);
+    expect(emitted).toEqual([
+      `capacity available on ${hostname()}: retry queued item i1 (order 1) with coordinate delegate --retry-queued; the regular budget gate still applies`,
+      "owner gone: t-owner no longer runs; nothing will read these events",
+    ]);
+    expect(capacityPolls).toBe(3);
+  });
+
+  it("persists a wake across watcher restarts without delivering duplicates", async () => {
+    const { config, state } = await queuedDomain();
+    const fake = fakeProc((argv) => {
+      if (argv[1] === "ls") return ok('{"terminals":[]}');
+      throw new Error(`unexpected command: ${argv.join(" ")}`);
+    });
+    const emitted: string[] = [];
+    const options = {
+      domain: "app",
+      intervalMs: 1,
+      forgeIntervalMs: 60_000,
+      maxMs: 0,
+      owner: undefined,
+      replace: false,
+      deliver: false,
+      today: () => "2026-11-10",
+      follow: false,
+      emit: (line: string) => {
+        emitted.push(eventText(line));
+      },
+    };
+    expect(await runWith(watch(config, options), fake.layer)).toEqual([]);
+    expect(emitted).toEqual([
+      `capacity available on ${hostname()}: retry queued item i1 (order 1) with coordinate delegate --retry-queued; the regular budget gate still applies`,
+    ]);
+    emitted.length = 0;
+    expect(await runWith(watch(config, options), fake.layer)).toEqual(alive);
+    expect(emitted).toEqual([]);
+    expect(JSON.parse(readFileSync(join(state, "watch", "app.json"), "utf8")).capacity).toEqual({
+      [hostname()]: { order: 1, ready: true },
+    });
+  });
+});
+
 describe("watch due events", () => {
   it("fires a due open item once per id and date across re-arms, never a closed one", async () => {
     const { config, arm, stateFile } = await dueDomain();
@@ -434,6 +627,7 @@ describe("watch due events", () => {
       answered: [],
       discussed: [],
       idle: {},
+      capacity: {},
       outbox: [],
       nextEventId: 2,
     });
