@@ -464,8 +464,8 @@ test("separates asked items from status groups and keeps each item row unique", 
   expect(ids(get(root, "items"), "item-")).toEqual([
     "item-i2",
     "item-i3",
-    "item-i4",
     "item-i5",
+    "item-i4",
     "item-i6",
     "item-i7",
     "item-i8",
@@ -490,8 +490,8 @@ test("separates asked items from status groups and keeps each item row unique", 
     "item-i1",
     "item-i2",
     "item-i3",
-    "item-i4",
     "item-i5",
+    "item-i4",
     "item-i6",
     "item-i7",
     "item-i8",
@@ -509,8 +509,8 @@ test("hides the Waiting on you card when no items have open asks", async () => {
     "item-i1",
     "item-i2",
     "item-i3",
-    "item-i4",
     "item-i5",
+    "item-i4",
     "item-i6",
     "item-i7",
     "item-i8",
@@ -1550,6 +1550,64 @@ test("folds Done and Dismissed by default and toggles a group from its header", 
   root = render();
   expect(get(root, "alpha-group-done-body").styles.h).toBe(32);
   expect(get(root, "alpha-group-open-body").styles.h).toBe(0);
+  expect(ctx.notified - before).toBe(2);
+});
+
+// everyStatus plus a second parked item and an open one created before the rest.
+const sortable = (): Backlog => {
+  let backlog = add(everyStatus(), "Plan more", { status: "parked" });
+  backlog = add(backlog, "Old open", { createdAt: "2026-01-01T00:00:00.000Z" });
+  return backlog;
+};
+
+test("lists every Items group newest first, ties by id number, behind a header order button", async () => {
+  focusDomain("alpha");
+  host.files.set(DOC, JSON.stringify(sortable()));
+  const { render } = await mount();
+  const root = render();
+  expect(ids(get(root, "items"), "item-")).toEqual([
+    "item-i2",
+    "item-i3",
+    "item-i5",
+    "item-i4",
+    "item-i10",
+    "item-i9",
+    "item-i6",
+    "item-i7",
+    "item-i8",
+  ]);
+  expect(ids(get(root, "items-header"), "items-")).toEqual(["items-header", "items-order"]);
+  expect([text(get(root, "items-order")), get(root, "items-order").styles.tooltip]).toEqual([
+    "↓",
+    "Newest first",
+  ]);
+});
+
+test("the Items order button flips every group to oldest first and back", async () => {
+  focusDomain("alpha");
+  host.files.set(DOC, JSON.stringify(sortable()));
+  const { ctx, render } = await mount();
+  const before = ctx.notified;
+  get(render(), "items-order").click!({}, ctx.cx);
+  let root = render();
+  expect(ids(get(root, "items"), "item-")).toEqual([
+    "item-i2",
+    "item-i3",
+    "item-i10",
+    "item-i4",
+    "item-i5",
+    "item-i6",
+    "item-i9",
+    "item-i7",
+    "item-i8",
+  ]);
+  expect([text(get(root, "items-order")), get(root, "items-order").styles.tooltip]).toEqual([
+    "↑",
+    "Oldest first",
+  ]);
+  get(root, "items-order").click!({}, ctx.cx);
+  root = render();
+  expect(ids(get(root, "items"), "item-").slice(2, 5)).toEqual(["item-i5", "item-i4", "item-i10"]);
   expect(ctx.notified - before).toBe(2);
 });
 
@@ -5294,7 +5352,7 @@ test("shows no Queued group and an empty Outbox when the reads fail or return an
   const { render } = await mount();
   const root = render();
   expect(ids(root, "group-queued")).toEqual([]);
-  expect(ids(root, "item-")).toEqual(["item-i3", "item-i1", "item-i2", "item-i4"]);
+  expect(ids(root, "item-")).toEqual(["item-i3", "item-i2", "item-i1", "item-i4"]);
   expect(text(get(root, "page-outbox"))).toBe("Outbox 0");
 });
 

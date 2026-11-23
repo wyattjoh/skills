@@ -100,6 +100,7 @@ import type {
   DocumentState,
   DomainSummary,
   ItemGroup,
+  ItemOrder,
   ListingState,
   OutboxEvent,
   QueuedEntry,
@@ -128,6 +129,9 @@ export type PanelModel = {
   trail: Crumb[];
   go: (screen: Screen, cx: Context) => void;
   groups: ItemGroup[];
+  // The order within every group, and what flips it.
+  itemOrder: ItemOrder;
+  toggleItemOrder: (cx: Context) => void;
   // The domain's capacity queue, which the Queued group's rows read their machine and place from,
   // and its watcher events not yet delivered, for the Outbox row and page.
   queued: QueuedEntry[];
@@ -527,9 +531,29 @@ const waitingCard = (t: Theme, model: PanelModel): Element[] => {
   ];
 };
 
+// Herdr ships no sort or arrow icon, so the order button is a text glyph, like Boundary's "+".
+const ITEM_ORDER_BUTTONS: Readonly<Record<ItemOrder, { glyph: string; label: string }>> = {
+  newest: { glyph: "↓", label: "Newest first" },
+  oldest: { glyph: "↑", label: "Oldest first" },
+};
+
+const itemsHeader = (t: Theme, model: PanelModel): Element => {
+  const { glyph, label } = ITEM_ORDER_BUTTONS[model.itemOrder];
+  return cardHeader(t, "items-header", "Items")
+    .child(div().flex_1())
+    .child(
+      button(t, {
+        id: "items-order",
+        label: glyph,
+        tooltip: label,
+        onClick: (cx) => model.toggleItemOrder(cx),
+      }).accessibility_label(label),
+    );
+};
+
 const itemsCard = (t: Theme, model: PanelModel): Element =>
   cardSection(
-    cardHeader(t, "items-header", "Items"),
+    itemsHeader(t, model),
     card(t, "items").children(
       model.groups.length === 0
         ? [emptyRow(t, "items-empty", "No items")]

@@ -42,6 +42,7 @@ import {
   endedDate,
   endedPath,
   groupItems,
+  DEFAULT_ITEM_ORDER,
   harnessPolicyFailure,
   harnessPolicyOutput,
   harnessPolicyDraftDirty,
@@ -87,6 +88,7 @@ import type {
   HarnessPolicyDraft,
   HarnessPolicyDraftEntry,
   ItemGroup,
+  ItemOrder,
   ListingState,
   OutboxEvent,
   PolicyDialogProps,
@@ -169,6 +171,8 @@ export default class Panel extends View {
   generation = 0;
   // Fold state per domain and status, for groups the user has folded or opened.
   folds = new Map<string, boolean>();
+  // The order within every Items group, across domains while the panel lives.
+  itemOrder: ItemOrder = DEFAULT_ITEM_ORDER;
   // Rows revealed per group in the current domain.
   paginationDomain: string | undefined;
   revealedRows = new Map<string, number>();
@@ -871,6 +875,11 @@ export default class Panel extends View {
 
   isOpen(group: ItemGroup): boolean {
     return this.folds.get(this.foldKey(group)) ?? !FOLDED_BY_DEFAULT.has(group.status);
+  }
+
+  toggleItemOrder(cx: Context) {
+    this.itemOrder = this.itemOrder === "newest" ? "oldest" : "newest";
+    cx.notify();
   }
 
   toggleFold(group: ItemGroup, cx: Context) {
@@ -2114,7 +2123,12 @@ export default class Panel extends View {
       listing: this.listing,
       trail,
       go: (screen, cx) => this.go(screen, cx),
-      groups: doc.kind === "loaded" ? groupItems(doc.backlog, this.queuedFor(domain)) : [],
+      groups:
+        doc.kind === "loaded"
+          ? groupItems(doc.backlog, this.queuedFor(domain), this.itemOrder)
+          : [],
+      itemOrder: this.itemOrder,
+      toggleItemOrder: (cx) => this.toggleItemOrder(cx),
       queued: this.queuedFor(domain),
       outbox: domain === undefined ? [] : (this.outboxes.get(domain) ?? []),
       wiki: domain === undefined ? [] : (this.wikis.get(domain) ?? []),

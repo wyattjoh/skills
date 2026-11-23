@@ -739,7 +739,7 @@ test("outboxOutput keeps each event's attrs, string and list fields, and text", 
   ).toEqual([undefined, undefined, undefined, undefined]);
 });
 
-test("groupItems moves open queued items into Queued, in queue order, right after Delegated", () => {
+test("groupItems moves open queued items into Queued, right after Delegated", () => {
   let backlog: Backlog = emptyBacklog("alpha", null);
   for (const title of ["One", "Two", "Three"]) {
     const added = addItem(backlog, { title, now: "2026-11-23T00:00:00.000Z" });
@@ -762,6 +762,44 @@ test("groupItems moves open queued items into Queued, in queue order, right afte
     ["open", "Open", ["i2"]],
   ]);
   expect(groupItems(backlog).map((group) => group.status)).toEqual(["open"]);
+});
+
+const order = (groups: ReturnType<typeof groupItems>) =>
+  groups.map((group) => [group.status, group.items.map((item) => item.id)]);
+
+test("groupItems sorts every group newest first by default, or oldest first, ties by id number", () => {
+  let backlog: Backlog = emptyBacklog("alpha", null);
+  const created = [
+    "2026-11-02T00:00:00.000Z",
+    "2026-11-01T00:00:00.000Z",
+    "2026-11-03T00:00:00.000Z",
+    "2026-11-01T00:00:00.000Z",
+    "2026-11-01T00:00:00.000Z",
+    "2026-11-01T00:00:00.000Z",
+    "2026-11-01T00:00:00.000Z",
+    "2026-11-01T00:00:00.000Z",
+    "2026-11-01T00:00:00.000Z",
+    "2026-11-01T00:00:00.000Z",
+  ];
+  for (const [index, now] of created.entries()) {
+    const added = addItem(backlog, { title: `Item ${index + 1}`, now });
+    if (!added.ok) throw new Error(added.reason);
+    backlog = added.backlog;
+  }
+  backlog = {
+    ...backlog,
+    items: backlog.items.map((item) =>
+      item.id === "i3" || item.id === "i5" ? { ...item, status: "parked" } : item,
+    ),
+  };
+  expect(order(groupItems(backlog))).toEqual([
+    ["open", ["i1", "i10", "i9", "i8", "i7", "i6", "i4", "i2"]],
+    ["parked", ["i3", "i5"]],
+  ]);
+  expect(order(groupItems(backlog, [], "oldest"))).toEqual([
+    ["open", ["i2", "i4", "i6", "i7", "i8", "i9", "i10", "i1"]],
+    ["parked", ["i5", "i3"]],
+  ]);
 });
 
 test("keeps inline Markdown on one line by joining lines and escaping a leading block marker", () => {

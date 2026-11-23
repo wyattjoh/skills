@@ -59,14 +59,48 @@ const GROUP_ORDER: readonly GroupKey[] = ITEM_STATUSES.flatMap((status): GroupKe
 );
 
 /**
- * The document's items grouped by status in routing order, leaving out empty groups. An item
- * with an ask shows only under Waiting on you; an open item in the capacity queue shows only
- * under Queued, in queue order; a closed one stays in its Done or Dismissed group.
+ * The order of the items within each group of the Items card: newest first (descending) or
+ * oldest first (ascending).
+ */
+export type ItemOrder = "newest" | "oldest";
+
+/**
+ * Items start newest first.
+ */
+export const DEFAULT_ITEM_ORDER: ItemOrder = "newest";
+
+// An item id's number, so i9 sorts before i10.
+const itemNumber = (id: string): number => Number(/^i(\d+)$/.exec(id)?.[1] ?? Number.NaN);
+
+/**
+ * Items by when they were created, ties broken by their id's number.
+ * @param items The items.
+ * @param order Newest or oldest first.
+ * @returns A sorted copy.
+ */
+export const sortItems = (items: readonly Item[], order: ItemOrder): Item[] => {
+  const sign = order === "oldest" ? 1 : -1;
+  return [...items].sort((a, b) => {
+    if (a.createdAt !== b.createdAt) return (a.createdAt < b.createdAt ? -1 : 1) * sign;
+    return (itemNumber(a.id) - itemNumber(b.id) || a.id.localeCompare(b.id)) * sign;
+  });
+};
+
+/**
+ * The document's items grouped by status in routing order, leaving out empty groups, each
+ * group's items sorted by {@link sortItems}. An item with an ask shows only under Waiting on you;
+ * an open item in the capacity queue shows only under Queued; a closed one stays in its Done or
+ * Dismissed group.
  * @param backlog A validated document.
  * @param queued The domain's capacity queue, empty when it could not be read.
+ * @param order The order within each group.
  * @returns The non-empty groups.
  */
-export const groupItems = (backlog: Backlog, queued: readonly QueuedEntry[] = []): ItemGroup[] => {
+export const groupItems = (
+  backlog: Backlog,
+  queued: readonly QueuedEntry[] = [],
+  order: ItemOrder = DEFAULT_ITEM_ORDER,
+): ItemGroup[] => {
   const shown = backlog.items.filter((item) => item.ask === null);
   const byId = new Map(shown.map((item) => [item.id, item] as const));
   const queuedItems = queued.flatMap((entry) => {
@@ -82,10 +116,12 @@ export const groupItems = (backlog: Backlog, queued: readonly QueuedEntry[] = []
         : status === "waiting-user"
           ? "Answered, waiting for coordinator"
           : GROUP_LABELS[status],
-    items:
+    items: sortItems(
       status === "queued"
         ? queuedItems
         : shown.filter((item) => item.status === status && !inQueue.has(item.id)),
+      order,
+    ),
   })).filter((group) => group.items.length > 0);
 };
 
