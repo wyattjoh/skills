@@ -2109,6 +2109,56 @@ test("shows page buttons on the main list and lists only open findings on the Fi
   expect([glyph("finding-f2"), glyph("finding-f3")]).toEqual(["#ef4444", "#f97316"]);
 });
 
+test("a Findings page row wraps a long title to at most two lines and keeps a short one compact", async () => {
+  focusDomain("alpha");
+  const title =
+    "A long finding title that wraps onto a second line of the Findings page row and then clips";
+  const original = withFindings();
+  const backlog: Backlog = {
+    ...original,
+    findings: original.findings.map((finding) =>
+      finding.id === "f2" ? { ...finding, title } : finding,
+    ),
+  };
+  host.files.set(DOC, JSON.stringify(backlog));
+  const { ctx, render } = await mount();
+  openPage(render(), "findings", ctx.cx);
+  const root = render();
+  const parts = (id: string) => (get(root, id).nodes as Node[]).map((node) => ({ ...node.styles }));
+  const row = {
+    items_start: true,
+    min_h: 32,
+    py: 7,
+  };
+  const mark = { flex_none: true, line_height: "18px" };
+  const titleStyles = {
+    flex_1: true,
+    min_w_0: true,
+    whitespace_normal: true,
+    line_height: "18px",
+    max_h: 36,
+    overflow_hidden: true,
+    text_ellipsis: true,
+  };
+
+  expect([text(get(root, "finding-f2")), text(get(root, "finding-f3"))]).toEqual([
+    `▲ f2 ${title}`,
+    "✦ f3 Share the validator",
+  ]);
+  expect([get(root, "finding-f2").styles, get(root, "finding-f3").styles]).toMatchObject([
+    row,
+    row,
+  ]);
+  expect([parts("finding-f2"), parts("finding-f3")]).toMatchObject([
+    [mark, mark, titleStyles],
+    [mark, mark, titleStyles],
+  ]);
+  expect([get(root, "finding-f2").styles.h, get(root, "finding-f3").styles.h]).toEqual([
+    undefined,
+    undefined,
+  ]);
+});
+
 test("omits finding-kind cards with no findings and shows an empty state when none are open", async () => {
   focusDomain("alpha");
   host.files.set(DOC, JSON.stringify(find(emptyBacklog("alpha", null), "issue", "One issue")));

@@ -56,7 +56,9 @@ import {
   DELEGATE_ROW_HEIGHT,
   DELEGATE_TONES,
   FINDING_GLYPHS,
+  FINDING_LINE_HEIGHT,
   FINDING_STATUS_TONES,
+  FINDING_TITLE_MAX_LINES,
   GLOBE_ICON,
   QUEUED_TONE,
   STATUS_MENU_WIDTH,
@@ -539,26 +541,48 @@ const pagedRows = <T>(
   ];
 };
 
+// listRow fixes its height and truncates its title to one line, so a finding row is a card row
+// whose title wraps to FINDING_TITLE_MAX_LINES and clips. A one-line row keeps ROW.compact.
 const findingRow = (
   t: Theme,
   finding: Finding,
   open: (finding: Finding, cx: Context) => void,
   first = false,
 ): Element =>
-  listRow(t, {
-    id: `finding-${finding.id}`,
-    mark: div()
-      .flex_none()
-      .text_size(TEXT.label)
-      .text_color(role(t, FINDING_GLYPHS[finding.kind].tone))
-      .child(FINDING_GLYPHS[finding.kind].glyph),
-    label: finding.id,
-    title: finding.title,
-    titleRole: finding.status === "dismissed" ? "dim" : "foreground",
-    height: ROW.compact,
-    first,
-    onClick: (cx) => open(finding, cx),
-  });
+  cardRow(t, `finding-${finding.id}`, t.hover, first)
+    .items_start()
+    .min_h(ROW.compact)
+    .py((ROW.compact - FINDING_LINE_HEIGHT) / 2)
+    .on_click((_event, cx) => open(finding, cx))
+    .child(
+      div()
+        .flex_none()
+        .text_size(TEXT.label)
+        .line_height(`${FINDING_LINE_HEIGHT}px`)
+        .text_color(role(t, FINDING_GLYPHS[finding.kind].tone))
+        .child(FINDING_GLYPHS[finding.kind].glyph),
+    )
+    .child(
+      div()
+        .flex_none()
+        .text_size(TEXT.label)
+        .line_height(`${FINDING_LINE_HEIGHT}px`)
+        .text_color(t.muted)
+        .child(finding.id),
+    )
+    .child(
+      div()
+        .flex_1()
+        .min_w_0()
+        .whitespace_normal()
+        .text_size(TEXT.body)
+        .line_height(`${FINDING_LINE_HEIGHT}px`)
+        .max_h(FINDING_LINE_HEIGHT * FINDING_TITLE_MAX_LINES)
+        .overflow_hidden()
+        .text_ellipsis()
+        .text_color(role(t, finding.status === "dismissed" ? "dim" : "foreground"))
+        .child(finding.title),
+    );
 
 // Live domain terminals with no item name, shown with their domain-specific nesting.
 const unfiledCard = (t: Theme, rows: DelegateRow[], model: PanelModel): Element[] =>
