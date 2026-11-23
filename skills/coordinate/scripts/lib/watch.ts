@@ -23,6 +23,7 @@ import {
 } from "./capacity-queue.ts";
 import { liveDelegateCount, machineDelegateBudget } from "./delegate-capacity.ts";
 import { resolveEffectiveHarnessPolicy } from "./harness-policy.ts";
+import { settledWikiPages } from "./wiki.ts";
 
 /**
  * What the watcher remembers about one delegate terminal.
@@ -45,12 +46,13 @@ export type IdleReminder = {
 
 /**
  * One watcher event before it is queued: its kind, identifying attributes, free-text fields (titles,
- * answers, errors) rendered as child elements, and the action text for the coordinator.
+ * answers, errors) rendered as child elements, and the action text for the coordinator. A field
+ * holding a list renders one child element per entry, such as a settled event's `<wiki>` pages.
  */
 export type WatchEventData = {
   kind: string;
   attrs: Record<string, string>;
-  fields: Record<string, string>;
+  fields: Record<string, string | readonly string[]>;
   text: string;
 };
 
@@ -63,7 +65,7 @@ const watchEvent = (
   kind: string,
   attrs: Record<string, string>,
   text = "",
-  fields: Record<string, string> = {},
+  fields: WatchEventData["fields"] = {},
 ): WatchEventData => ({ kind, attrs, fields, text });
 
 const oneLine = (value: string): string => value.replace(/[\r\n]+/gu, " ").trim();
@@ -82,8 +84,10 @@ export const renderEvent = (event: WatchEvent): string => {
     .map(([name, value]) => ` ${name}="${escapeAttr(value)}"`)
     .join("");
   const body = [
-    ...Object.entries(event.fields).map(
-      ([name, value]) => `<${name}>${escapeText(value)}</${name}>`,
+    ...Object.entries(event.fields).flatMap(([name, value]) =>
+      (typeof value === "string" ? [value] : value).map(
+        (entry) => `<${name}>${escapeText(entry)}</${name}>`,
+      ),
     ),
     escapeText(event.text),
   ].join("");
@@ -96,7 +100,7 @@ export const renderEvent = (event: WatchEvent): string => {
  * @returns Kind, attribute and field values, then the action text.
  */
 export const eventSummary = (event: WatchEvent): string => {
-  const head = [event.kind, ...Object.values(event.attrs), ...Object.values(event.fields)]
+  const head = [event.kind, ...Object.values(event.attrs), ...Object.values(event.fields).flat()]
     .map(oneLine)
     .join(" ");
   const text = oneLine(event.text);
@@ -800,6 +804,21 @@ export const watch = Effect.fn("watch")(function* (config: Config, options: Watc
                   "read its terminal",
                 ),
               );
+        for (const [index, event] of events.entries()) {
+          if (event.kind !== "settled") continue;
+          const terminal = yield* hc
+            .get(event.attrs.address ?? "")
+            .pipe(Effect.catch(() => Effect.succeed(undefined)));
+          if (!terminal) continue;
+          const pages = yield* settledWikiPages(
+            config,
+            options.domain,
+            terminal.cwd,
+            terminal.labels[L.base],
+          );
+          if (pages.length > 0)
+            events[index] = { ...event, fields: { ...event.fields, wiki: pages } };
+        }
         if (events.some((event) => event.kind === "settled"))
           events.push(statusBeat(polled.success));
         lines.push(...events);

@@ -7,7 +7,7 @@ import { createDocument, itemAdd, itemClose, itemUpdate } from "./backlog-doc.ts
 import { emptyBacklog, type ItemUpdate } from "./backlog-store/ops.ts";
 import type { Item } from "./backlog-store/schema.ts";
 import { resolveConfig } from "./config.ts";
-import { cliEnv, runWith, tempDir } from "./fixture.ts";
+import { cliEnv, commitFile, g, gitAndFake, initRepo, runWith, tempDir } from "./fixture.ts";
 import { fakeProc, ok, type RunOutput } from "./proc.ts";
 import { enqueueCapacityWait } from "./capacity-queue.ts";
 import { setHarnessPolicy } from "./harness-policy.ts";
@@ -35,7 +35,7 @@ const ev = (
   kind: string,
   attrs: Record<string, string>,
   text = "",
-  fields: Record<string, string> = {},
+  fields: WatchEventData["fields"] = {},
 ): WatchEventData => ({ kind, attrs, fields, text });
 
 describe("renderEvent", () => {
@@ -58,6 +58,21 @@ describe("renderEvent", () => {
     ).toBe(
       '<event id="e2" kind="due" item="i&quot;1" due="2026-11-12"><title>a &amp; b&lt;/title&gt;&lt;/event&gt; &lt;event id="e9" kind="settled"&gt;</title></event>',
     );
+  });
+});
+
+describe("renderEvent list fields", () => {
+  it("renders one child element per entry of a list field, escaped", () => {
+    const event = {
+      id: "d",
+      ...ev("settled", { delegate: "fix-a", address: "t2" }, "read it", {
+        wiki: ["/w/app/a.md", "/w/_shared/b<c>.md"],
+      }),
+    };
+    expect(renderEvent(event)).toBe(
+      '<event id="ed" kind="settled" delegate="fix-a" address="t2"><wiki>/w/app/a.md</wiki><wiki>/w/_shared/b&lt;c&gt;.md</wiki>read it</event>',
+    );
+    expect(eventSummary(event)).toBe("settled fix-a t2 /w/app/a.md /w/_shared/b<c>.md: read it");
   });
 });
 
@@ -624,6 +639,141 @@ describe("watch", () => {
       JSON.parse(readFileSync(join(state, "watch", "app.json"), "utf8")).delegates.t2.turn,
     ).toBe(5);
     expect(existsSync(lockPath(state, "app"))).toBe(false);
+  });
+});
+
+const coverPage = (name: string, covers: unknown[] | undefined): string =>
+  [
+    "---",
+    `name: ${name}`,
+    `description: ${name} notes`,
+    "type: subsystem",
+    ...(covers === undefined ? [] : [`covers: ${JSON.stringify(covers)}`]),
+    "created: 2026-11-20",
+    "updated: 2026-11-20",
+    "sources: []",
+    "supersedes: []",
+    "---",
+    "",
+    `# ${name}`,
+    "",
+  ].join("\n");
+
+const settleWikiDomain = async (
+  pagesFor: (repo: string) => Record<string, Record<string, unknown[] | undefined>>,
+) => {
+  const state = tempDir();
+  made.push(state);
+  const config = await Effect.runPromise(
+    resolveConfig({ state_dir: state, backlog_dir: join(state, "backlogs") }, "/c"),
+  );
+  await runWith(createDocument(config, "app"));
+  const repo = initRepo();
+  made.push(repo);
+  for (const [wiki, entries] of Object.entries(pagesFor(repo))) {
+    mkdirSync(join(state, "wiki", wiki), { recursive: true });
+    writeFileSync(join(state, "wiki", wiki, "index.md"), "# wiki\n");
+    for (const [name, covers] of Object.entries(entries))
+      writeFileSync(join(state, "wiki", wiki, `${name}.md`), coverPage(name, covers));
+  }
+  g(repo, "remote", "add", "origin", "git@github.com:acme/app.git");
+  mkdirSync(join(repo, "src"));
+  commitFile(repo, "src/old.ts", "old\n");
+  const base = g(repo, "rev-parse", "HEAD");
+  commitFile(repo, "src/watch.ts", "export {};\n");
+  g(repo, "mv", "src/old.ts", "src/renamed.ts");
+  g(repo, "-c", "user.name=Test", "commit", "-q", "-m", "rename");
+  writeFileSync(join(repo, "README.md"), "changed\n");
+  mkdirSync(join(repo, "docs"));
+  writeFileSync(join(repo, "docs", "new.md"), "new\n");
+  mkdirSync(join(state, "watch"), { recursive: true });
+  writeFileSync(
+    join(state, "watch", "app.json"),
+    JSON.stringify({
+      delegates: { t2: { name: "fix-a", status: "working", turn: 4 } },
+      prs: {},
+      due: [],
+    }),
+  );
+  const listed = {
+    address: "t2",
+    name: "fix-a",
+    status: "idle",
+    turn: 5,
+    state: "live",
+    cwd: repo,
+  };
+  const got = {
+    address: "t2",
+    name: "fix-a",
+    state: "live",
+    cwd: repo,
+    labels: { "fleet.domain": "app", "fleet.base": base },
+  };
+  const fake = gitAndFake((argv) => {
+    if (argv[1] === "ls" && argv.includes("fleet.role=coordinator")) return ok('{"terminals":[]}');
+    if (argv[1] === "ls") return ok(JSON.stringify({ terminals: [listed] }));
+    if (argv[1] === "get") return ok(JSON.stringify(got));
+    return ok("");
+  });
+  const emitted: string[] = [];
+  const lines = await runWith(
+    watch(config, {
+      domain: "app",
+      intervalMs: 10,
+      forgeIntervalMs: 60_000,
+      maxMs: 60_000,
+      owner: undefined,
+      replace: false,
+      deliver: false,
+      today: () => "2026-11-23",
+      follow: false,
+      emit: (line) => {
+        emitted.push(line);
+      },
+    }),
+    fake.layer,
+  );
+  return { state, lines, events: emitted.map(eventText) };
+};
+
+describe("watch settled wiki pages", () => {
+  it("lists each domain and shared page whose covers match the delegate's changes", async () => {
+    const repo = "github.com/acme/app";
+    const { state, lines, events } = await settleWikiDomain((checkout) => ({
+      app: {
+        "root-docs": [{ root: checkout, globs: ["docs/*.md"] }],
+        "root-elsewhere": [{ root: "/nonexistent-root", globs: ["**"] }],
+        "watch-loop": [{ repo, globs: ["src/watch*.ts"] }],
+        "readme-notes": [{ repo: "https://github.com/Acme/app.git", globs: ["README.md"] }],
+        "old-module": [{ repo, globs: ["src/old.ts"] }],
+        "lib-notes": [{ repo, globs: ["lib/**"] }],
+        "no-covers": undefined,
+      },
+      _shared: {
+        docs: [{ repo, globs: ["docs/**"] }],
+        "other-repo": [{ repo: "github.com/acme/other", globs: ["**"] }],
+      },
+    }));
+    const wiki = join(state, "wiki");
+    expect(lines).toEqual([]);
+    expect(events).toEqual([
+      `<event kind="settled" delegate="fix-a" address="t2"><wiki>${join(wiki, "app", "old-module.md")}</wiki><wiki>${join(wiki, "app", "readme-notes.md")}</wiki><wiki>${join(wiki, "app", "root-docs.md")}</wiki><wiki>${join(wiki, "app", "watch-loop.md")}</wiki><wiki>${join(wiki, "_shared", "docs.md")}</wiki>read its REPORT.md, verify, then report</event>`,
+      '<event kind="status" fleet="1 idle">give the user a short status in your next reply</event>',
+      '<event kind="idle" delegate="fix-a" address="t2" age="0m">read its REPORT.md and give it a next step or end it</event>',
+    ]);
+  });
+
+  it("adds no wiki elements when no page's covers match", async () => {
+    const { lines, events } = await settleWikiDomain(() => ({
+      app: { "lib-notes": [{ repo: "github.com/acme/app", globs: ["lib/**"] }] },
+    }));
+    expect(lines).toEqual([]);
+    expect(events).toEqual([
+      '<event kind="settled" delegate="fix-a" address="t2">read its REPORT.md, verify, then report</event>',
+      '<event kind="status" fleet="1 idle">give the user a short status in your next reply</event>',
+      '<event kind="idle" delegate="fix-a" address="t2" age="0m">read its REPORT.md and give it a next step or end it</event>',
+    ]);
   });
 });
 

@@ -367,6 +367,29 @@ export const deleteBranch = Effect.fn("deleteBranch")(function* (repo: string, b
 });
 
 /**
+ * The files a checkout changed since `base`: committed since it, staged, unstaged and untracked
+ * (ignored files left out), with a rename listed as both its old and new path.
+ * @param dir Any folder inside the checkout.
+ * @param base Base commit, or undefined to list only uncommitted changes.
+ * @returns The checkout's real top folder and its changed paths relative to it, sorted, or
+ * undefined outside Git.
+ */
+export const changedFiles = Effect.fn("changedFiles")(function* (
+  dir: string,
+  base: string | undefined,
+) {
+  const top = yield* gitTry(dir, ["rev-parse", "--show-toplevel"]);
+  if (!top) return undefined;
+  const from = base !== undefined && (yield* refExists(top, `${base}^{commit}`)) ? base : "HEAD";
+  const diffed = yield* gitTry(top, ["diff", "--name-only", "--no-renames", "-z", from]);
+  const untracked = yield* gitTry(top, ["ls-files", "--others", "--exclude-standard", "-z"]);
+  const files = [...(diffed ?? "").split("\0"), ...(untracked ?? "").split("\0")].filter(
+    (file) => file !== "",
+  );
+  return { top: real(top), files: [...new Set(files)].toSorted() };
+});
+
+/**
  * The fetch URL of `origin`, else of the first remote.
  * @param dir Checkout.
  * @returns URL, or undefined with no remote.

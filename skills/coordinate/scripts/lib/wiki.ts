@@ -1,6 +1,6 @@
 import { existsSync } from "node:fs";
 import { mkdir, readdir, readFile, writeFile } from "node:fs/promises";
-import { isAbsolute, join } from "node:path";
+import { isAbsolute, join, relative } from "node:path";
 import { Effect, Option } from "effect";
 import { readDocument } from "./backlog-doc.ts";
 import { backlogsDir } from "./backlog-store/paths.ts";
@@ -8,7 +8,7 @@ import type { Backlog } from "./backlog-store/schema.ts";
 import { expandHome, type Config } from "./config.ts";
 import { Refused } from "./fleet.ts";
 import { parseRemote } from "./forge.ts";
-import { git, gitOk, gitTry, real, remoteUrl } from "./git.ts";
+import { changedFiles, git, gitOk, gitTry, inside, real, remoteUrl } from "./git.ts";
 
 /**
  * The only domain whose coordinator writes the shared wiki.
@@ -544,6 +544,49 @@ export const lintWiki = Effect.fn("lintWiki")(function* (
         );
   }
   return { path: target.path, pages: pages.length, problems };
+});
+
+/**
+ * The wiki pages a settled delegate's changes may have made stale: every valid page in the domain
+ * wiki, then the shared wiki, with a `covers` entry whose globs match a file the delegate changed
+ * since its base commit or left uncommitted. A `repo` entry matches the delegate's checkout by
+ * origin remote slug (or by path), and a `root` entry matches changed files inside it.
+ * @param config Config.
+ * @param domain The delegate's domain.
+ * @param cwd The delegate's working folder.
+ * @param base Its base commit, from its terminal labels, when it has one.
+ * @returns The matching pages' file paths, domain pages first, each wiki sorted by name.
+ */
+export const settledWikiPages = Effect.fn("settledWikiPages")(function* (
+  config: Config,
+  domain: string,
+  cwd: string,
+  base: string | undefined,
+) {
+  const changed = yield* changedFiles(cwd, base);
+  if (changed === undefined || changed.files.length === 0) return [];
+  const url = yield* remoteUrl(changed.top);
+  const remote = url === undefined ? undefined : parseRemote(url);
+  const checkouts = new Map([[changed.top, changed.top]]);
+  if (remote) checkouts.set(normalizeSlug(`${remote.host}/${remote.slug}`), changed.top);
+  const absolute = changed.files.map((file) => join(changed.top, file));
+  const matches = (cover: Cover): boolean => {
+    const { folder } = coverFolder(cover, checkouts);
+    if (folder === undefined) return false;
+    const globs = cover.globs.map((glob) => new Bun.Glob(glob));
+    return absolute.some(
+      (path) => inside(path, folder) && globs.some((glob) => glob.match(relative(folder, path))),
+    );
+  };
+  const found: string[] = [];
+  for (const wiki of [domain, SHARED_WIKI]) {
+    const path = wikiDir(config.stateDir, wiki);
+    if (!existsSync(path)) continue;
+    const { pages } = yield* readWiki(path);
+    for (const page of pages)
+      if ((page.meta?.covers ?? []).some(matches)) found.push(join(path, page.file));
+  }
+  return found;
 });
 
 /**
