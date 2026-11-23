@@ -243,7 +243,7 @@ export const remoteProc = (machine: string, local: Proc["Service"]): Proc["Servi
       if (parsed.timed_out || parsed.code === null)
         return yield* failed(`${argv[0]} timed out on ${machine} after ${timeoutS}s`);
       const stderr = Buffer.from(parsed.stderr, "base64").toString("utf8");
-      if (parsed.code === MISSING_CWD_EXIT && stderr === `${MISSING_CWD_MARKER}\n`)
+      if (parsed.code === MISSING_CWD_EXIT && stderr.endsWith(`${MISSING_CWD_MARKER}\n`))
         return yield* failed(`working folder ${options?.cwd ?? ""} does not exist on ${machine}`);
       return {
         exitCode: parsed.code,
