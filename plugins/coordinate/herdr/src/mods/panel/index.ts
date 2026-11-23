@@ -276,8 +276,8 @@ export default class Panel extends View {
     this.loadPolicyDomains(this.stateDir, cx);
   }
 
-  // The dialog copy reads only the state folder, the domain names for its picker, and the policy
-  // the CLI reports for its scope.
+  // The dialog copy reads only the state folder, the domain names for its picker, the policy the
+  // CLI reports for its scope, and each listed domain's scoped policy for the override tags.
   loadPolicyDialog(cx: Context) {
     cx.spawn(async (task) => {
       const stateDir = stateDirOf(await this.read(configPath(home())), home());

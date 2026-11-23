@@ -3863,6 +3863,15 @@ test("the scope menu marks Global with the globe and each domain with its own po
     "harness-policy-scope-override-beta",
   ]);
   expect(text(get(root, "harness-policy-scope-domain-alpha"))).toBe("alpha Override");
+
+  // A change written elsewhere refreshes the tags through the policy watch.
+  modes.set("beta", "inherit");
+  revision += 1;
+  policyWatch()!.fire([`${STATE}/delegate-harness-policy.json`]);
+  await settle();
+  expect(ids(render(), "harness-policy-scope-override-")).toEqual([
+    "harness-policy-scope-override-alpha",
+  ]);
 });
 
 test("one click opens the scope dropdown and it stays open until a choice, Escape or a click outside", async () => {
