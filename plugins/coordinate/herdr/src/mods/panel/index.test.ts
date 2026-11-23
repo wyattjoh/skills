@@ -18,6 +18,7 @@ import {
   settle,
   text,
   typeInto,
+  useRenderer,
 } from "@wyattjoh/herdr-dev/test/renderer";
 import type { Node } from "@wyattjoh/herdr-dev/test/renderer";
 import { CARD, HERDR_ICONS, PANEL } from "@wyattjoh/herdr-ui";
@@ -54,10 +55,12 @@ mock.module("./overlay.ts", () => ({
     return null;
   },
 }));
+const { theme } = await import("herdr");
 const { default: Panel } = await import("./index.ts");
 const {
   LIST_SCRIPT,
   changedHarnessPolicy,
+  policyDialogSpec,
   harnessPolicyFailure,
   harnessPolicyOutput,
   harnessPolicyResetCommand,
@@ -113,6 +116,7 @@ const policyWatch = () => latestWatch(STATE);
 
 beforeEach(() => {
   resetHost();
+  useRenderer({});
   overlays.length = 0;
   closedOverlays.length = 0;
   textareaAutoGrow = undefined;
@@ -242,7 +246,7 @@ const press = (root: Node, id: string, cx: unknown) => get(root, id).click!({}, 
 const openPage = (root: Node, page: string, cx: unknown) =>
   get(root, `page-${page}`).click!({}, cx);
 
-const mount = async (preservePolicyReads = false, initProps: unknown = undefined) => {
+const mount = async (preservePolicyReads = false) => {
   const ctx = context();
   const focusHandles: Array<{
     focused: boolean;
@@ -290,7 +294,7 @@ const mount = async (preservePolicyReads = false, initProps: unknown = undefined
     };
   };
   const view = new Panel();
-  view.init(initProps, ctx.cx as never);
+  view.init(undefined, ctx.cx as never);
   await settle();
   if (!preservePolicyReads)
     host.execs.splice(
@@ -374,7 +378,7 @@ test("renders the Files-style toolbar header", async () => {
   const container = get(root, "coordinate-panel");
   const header = get(root, "toolbar");
   const brand = header.children[0] as Node;
-  const domain = header.children[1] as Node;
+  const spacer = header.children[1] as Node;
 
   expect([container.styles.text_color, container.styles.text_size]).toEqual(["#f5f5f5", 13]);
   expect(header.styles).toEqual({
@@ -387,17 +391,10 @@ test("renders the Files-style toolbar header", async () => {
     border_b: 1,
     border_color: "#525252",
   });
-  expect(header.children).toHaveLength(2);
+  expect(header.children).toHaveLength(3);
   expect([text(brand), brand.styles]).toEqual(["Backlog", { font_semibold: true }]);
-  expect(domain.styles).toEqual({
-    flex_1: true,
-    min_w_0: true,
-    truncate: true,
-    text_right: true,
-    text_size: 12,
-    text_color: "#737373",
-  });
-  expect(text(domain)).toBe("alpha");
+  expect([text(spacer), spacer.styles]).toEqual(["", { flex_1: true }]);
+  expect(ids(header, "harness-policy-")).toEqual(["harness-policy-open"]);
 });
 
 test("uses a multiline textarea configured to grow through 100 rows", async () => {
@@ -1888,7 +1885,7 @@ test("follows focus to another domain's document", async () => {
   await settle();
   const root = render();
   expect(trail(root)).toBe("⌂ › beta");
-  expect(text(get(root, "toolbar"))).toBe("Backlog beta");
+  expect(text(get(root, "toolbar"))).toBe("Backlog");
   expect(text(get(root, "focus"))).toBe("Beta focus");
   expect(text(get(root, "items-empty"))).toBe("No items");
 });
@@ -2128,8 +2125,8 @@ test("opens a domain from the listing and the home crumb returns to it", async (
   expect(trail(root)).toBe("⌂");
   expect(get(root, "crumb-home").click).toBe(undefined);
   const toolbar = get(root, "toolbar");
-  expect(toolbar.children).toHaveLength(2);
-  expect(toolbar.children.map((child) => text(child))).toEqual(["Backlog", ""]);
+  expect(toolbar.children).toHaveLength(3);
+  expect(toolbar.children.map((child) => text(child))).toEqual(["Backlog", "", ""]);
 });
 
 test("the home crumb lists every domain while focus names one, until focus moves", async () => {
@@ -3492,22 +3489,6 @@ test("keeps a domain's ended records while another domain's are looked up", asyn
   expect(lineOf(render(), "i1")).toEqual(["ended", "#737373"]);
 });
 
-test("names the shown domain at the right end of the toolbar, dim and truncating", async () => {
-  focusDomain("alpha");
-  host.files.set(DOC, JSON.stringify(everyStatus()));
-  const { render } = await mount();
-  const name = get(render(), "toolbar").children[1] as Node;
-  expect(name.styles).toEqual({
-    flex_1: true,
-    min_w_0: true,
-    truncate: true,
-    text_right: true,
-    text_size: 12,
-    text_color: "#737373",
-  });
-  expect(text(name)).toBe("alpha");
-});
-
 test("reveals item rows ten at a time and resets pagination when the domain changes", async () => {
   const manyItems = (domain: string, count: number) => {
     let backlog = emptyBacklog(domain, null);
@@ -3655,9 +3636,16 @@ test("paginates the Done status group ten rows at a time", async () => {
   expect([ids(root, "item-").length, ids(root, "load-more-")]).toEqual([12, []]);
 });
 
-// The copy Herdr opens for the harness policy dialog: it is told its scope and overlay id.
-const mountDialog = (domain: string | undefined) =>
-  mount(true, { harnessPolicy: { domain: domain ?? null }, overlay: "overlay-1" });
+// Herdr hands an overlay's props to its copy of the mod through props(), not through init: what
+// the opener passed, plus the overlay's own id. Mount the copy the way the app starts it.
+const dialogPropsFor = (spec: unknown, overlay: string) => ({
+  ...(spec as { props: Record<string, unknown> }).props,
+  overlay,
+});
+const mountDialog = (domain: string | undefined) => {
+  useRenderer({ herdr: { props: () => dialogPropsFor(policyDialogSpec(domain), "overlay-1") } });
+  return mount(true);
+};
 const harnessPolicyCalls = () => host.execs.filter(({ args }) => args.includes("harness-policy"));
 const policyCommandArgs = (args: string[]) => args.slice(args.indexOf("harness-policy"));
 
@@ -3906,7 +3894,7 @@ const POLICY_SPEC = {
   height: HARNESS_DIALOG.height,
 };
 
-test("Domains shows one muted button, even with no backlogs, that opens the global policy dialog", async () => {
+test("the header cog replaces the domain label and opens the global policy on Domains", async () => {
   focusPlain();
   const { ctx, render } = await mount();
   const root = render();
@@ -3915,7 +3903,9 @@ test("Domains shows one muted button, even with no backlogs, that opens the glob
     "No backlogs yet Run coordinate start <domain> to create one.",
   ]);
   expect(ids(root, "harness-policy-")).toEqual(["harness-policy-open"]);
-  expect(text(get(root, "harness-policy-open"))).toBe("Delegate harness policy");
+  expect(text(get(root, "toolbar"))).toBe("Backlog");
+  expect(get(root, "harness-policy-open").styles.tooltip).toBe("Delegate harness policy");
+  expect(get(root, "harness-policy-open").styles.bg).toBe(theme().chrome);
   get(root, "harness-policy-open").click!({}, ctx.cx);
   expect(overlays).toEqual([
     {
@@ -3926,28 +3916,61 @@ test("Domains shows one muted button, even with no backlogs, that opens the glob
   expect(harnessPolicyCalls()).toEqual([]);
 });
 
-test("the domain overview ends with the policy button, which opens that domain's dialog", async () => {
+test("on a domain page the cog opens that domain's policy, from the overview, a subpage and a detail", async () => {
   focusDomain("alpha");
   host.files.set(DOC, JSON.stringify(add(emptyBacklog("alpha", null), "A work item")));
   const { ctx, render } = await mount();
-  const root = render();
-  expect(ids(get(root, "domain"), "").at(-1)).toBe("harness-policy-open");
-  get(root, "harness-policy-open").click!({}, ctx.cx);
-  expect(overlays).toEqual([
-    { id: "overlay-1", spec: { ...POLICY_SPEC, props: { harnessPolicy: { domain: "alpha" } } } },
-  ]);
-  expect(harnessPolicyCalls()).toEqual([]);
-});
-
-test("domain subpages and item details do not offer the policy button", async () => {
-  focusDomain("alpha");
-  host.files.set(DOC, JSON.stringify(add(emptyBacklog("alpha", null), "A work item")));
-  const { ctx, render } = await mount();
+  expect(text(get(render(), "toolbar"))).toBe("Backlog");
+  expect(ids(render(), "harness-policy-")).toEqual(["harness-policy-open"]);
   openPage(render(), "policies", ctx.cx);
-  expect(ids(render(), "harness-policy-")).toEqual([]);
+  get(render(), "harness-policy-open").click!({}, ctx.cx);
   press(render(), "crumb-domain-alpha", ctx.cx);
   get(render(), "item-i1").click!({}, ctx.cx);
-  expect(ids(render(), "harness-policy-")).toEqual([]);
+  get(render(), "harness-policy-open").click!({}, ctx.cx);
+  const domains = overlays.map(
+    ({ spec }) =>
+      (spec as { props: { harnessPolicy: { domain: string | null } } }).props.harnessPolicy.domain,
+  );
+  expect(domains).toEqual(["alpha", "alpha"]);
+});
+
+test("the Domains listing and the domain overview carry no policy button", async () => {
+  focusDomain("alpha");
+  host.files.set(DOC, JSON.stringify(add(emptyBacklog("alpha", null), "A work item")));
+  const { ctx, render } = await mount();
+  expect(ids(get(render(), "domain"), "harness-policy-")).toEqual([]);
+  press(render(), "crumb-home", ctx.cx);
+  await settle();
+  expect(ids(get(render(), "panel-scroll"), "harness-policy-")).toEqual([]);
+});
+
+test("the opener's spec round-trips through props() into the dialog copy", async () => {
+  focusDomain("alpha");
+  host.files.set(DOC, JSON.stringify(emptyBacklog("alpha", null)));
+  const opener = await mount();
+  get(opener.render(), "harness-policy-open").click!({}, opener.ctx.cx);
+  const [opened] = overlays;
+  resetHost();
+  setPolicyOutput(policyOutput({ revision: 3, domain: "alpha" }));
+  useRenderer({ herdr: { props: () => dialogPropsFor(opened!.spec, opened!.id) } });
+  const dialog = await mount(true);
+  const root = dialog.render();
+  expect(ids(root, "harness-policy-dialog")).toEqual(["harness-policy-dialog"]);
+  expect(ids(root, "toolbar")).toEqual([]);
+  expect(text(get(root, "harness-policy-domain-alpha-source"))).toBe(
+    "Source Inherited from legacy defaults",
+  );
+  expect(text(get(root, "harness-policy-domain-alpha-header"))).toBe(
+    "Delegate harness policy alpha",
+  );
+});
+
+test("a copy given the panel's own props shows the panel, not the dialog", async () => {
+  useRenderer({ herdr: { props: () => ({ tab: "pane", overlay: "overlay-9" }) } });
+  focusPlain();
+  const { render } = await mount();
+  expect(ids(render(), "harness-policy-dialog")).toEqual([]);
+  expect(ids(render(), "toolbar")).toEqual(["toolbar"]);
 });
 
 test("the dialog copy reads only its policy and starts nothing under herdr-app check", async () => {
@@ -3994,7 +4017,6 @@ test("a save failure keeps the dialog open and Cancel stays muted while Save is 
   const editing = render();
   const primaryBackground = get(editing, "harness-policy-domain-alpha-save").styles.bg;
   expect(get(editing, "harness-policy-domain-alpha-cancel").styles.bg).toBe(mutedBackground);
-  const { theme } = await import("herdr");
   expect(primaryBackground).toBe(theme().solid);
   expect(mutedBackground).toBe(theme().raised);
   setPolicyOutput("", 1, "refused: nope");
@@ -4035,7 +4057,41 @@ test("a card's remeasured size is kept when it arrives during an answer motion",
   get(root, "answer-flow-card-i1").click!({}, ctx.cx);
   root = render();
   expect(get(root, "answer-flow-card-i1").styles.h).toBe(100);
-  expect(ids(root, "answer-flow-detail-i1-already-answered")).toEqual([
-    "answer-flow-detail-i1-already-answered",
+  expect(text(get(root, "answer-flow-detail-i1-answered"))).toBe("Answered: No");
+});
+
+test("Escape closes the dialog like Cancel and the dialog takes the keyboard on open", async () => {
+  setPolicyOutput(policyOutput({ revision: 2 }));
+  const { ctx, view, focusHandles, render } = await mountDialog(undefined);
+  expect(view.policyDialogFocus?.is_focused()).toBe(true);
+  expect(focusHandles.length).toBe(1);
+  get(render(), "harness-policy-global-enabled-pi").click!({}, ctx.cx);
+  const keyDown = get(render(), "harness-policy-dialog").styles.on_key_down as (
+    event: { key: string },
+    cx: unknown,
+  ) => void;
+  keyDown({ key: "a" }, ctx.cx);
+  expect(closedOverlays).toEqual([]);
+  keyDown({ key: "escape" }, ctx.cx);
+  expect(closedOverlays).toEqual(["overlay-1"]);
+  expect(view.harnessPolicyDraft).toBe(undefined);
+});
+
+test("the dialog follows finbar's structure: header, labelled rows, then a footer with Cancel", async () => {
+  setPolicyOutput(policyOutput({ revision: 2, domain: "alpha" }));
+  const { render } = await mountDialog("alpha");
+  const root = render();
+  expect(
+    ids(root, "harness-policy-domain-alpha-").filter((id) =>
+      ["header", "source", "enabled", "default", "footer"].some((part) => id.endsWith(`-${part}`)),
+    ),
+  ).toEqual([
+    "harness-policy-domain-alpha-header",
+    "harness-policy-domain-alpha-source",
+    "harness-policy-domain-alpha-enabled",
+    "harness-policy-domain-alpha-default",
+    "harness-policy-domain-alpha-footer",
   ]);
+  expect(get(root, "harness-policy-dialog").styles.bg).toBe(theme().popover);
+  expect(get(root, "harness-policy-domain-alpha-cancel").styles.bg).toBe(theme().raised);
 });

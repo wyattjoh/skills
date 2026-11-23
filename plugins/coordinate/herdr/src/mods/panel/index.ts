@@ -5,7 +5,17 @@ import { InputState } from "gpui-base";
 import { PANEL } from "@wyattjoh/herdr-ui";
 import { createAnswerInput } from "./textarea.ts";
 import type { AsyncContext, Context, Element, FocusHandle } from "gpui-kit";
-import { checking, exec, focused, home, readTextFile, terminals, theme, watchFolder } from "herdr";
+import {
+  checking,
+  exec,
+  focused,
+  home,
+  props,
+  readTextFile,
+  terminals,
+  theme,
+  watchFolder,
+} from "herdr";
 import { closeOverlay, openOverlay } from "./overlay.ts";
 import type { FolderWatch } from "herdr";
 import {
@@ -73,14 +83,15 @@ import {
 import type { AnswerFlowLayoutId } from "./look.ts";
 import { backlogsDir, documentPath } from "../../lib/store.ts";
 import type { Finding, Item } from "../../lib/store.ts";
-import { harnessPolicyDialog, panel } from "./view.ts";
+import { harnessPolicyDialog } from "./policy-dialog.ts";
+import type { HarnessPolicyEditorModel } from "./policy-dialog.ts";
+import { panel } from "./view.ts";
 import type {
   AnswerFlowModel,
   AnswerFlowMotion,
   AnswerModel,
   BoundaryList,
   BoundaryModel,
-  HarnessPolicyEditorModel,
   Theme,
 } from "./view.ts";
 
@@ -145,6 +156,7 @@ export default class Panel extends View {
   // Set in the copy Herdr opens as the harness policy dialog: that copy shows only the editor,
   // for one scope, and never follows focus or reads a backlog.
   policyDialog: PolicyDialogProps | undefined;
+  policyDialogFocus: FocusHandle | undefined;
   policyScope: string | null = null;
   policyStateDir: string | undefined;
   policyGeneration = 0;
@@ -200,10 +212,14 @@ export default class Panel extends View {
   boundaryHovered: string | undefined;
   boundaryError: BoundaryModel["error"];
 
-  init(props: unknown, cx: AsyncContext) {
-    this.policyDialog = policyDialogProps(props);
+  init(_props: unknown, cx: AsyncContext) {
+    // Herdr delivers an overlay's props through props(), not init's argument: the object the
+    // opener passed, plus the overlay's own id.
+    this.policyDialog = policyDialogProps(props());
     if (this.policyDialog !== undefined) {
+      this.policyDialogFocus = cx.focus_handle();
       if (checking()) return;
+      this.policyDialogFocus.focus();
       this.loadPolicyDialog(cx);
       cx.timer.every(REFRESH_MS, (tick) => this.refresh(tick));
       return;
@@ -1591,6 +1607,7 @@ export default class Panel extends View {
       state,
       draft,
       busy: inScope && this.harnessPolicyBusy,
+      focus: this.policyDialogFocus!,
       failure,
       conflict,
       beginOverride: (cx) => this.beginHarnessPolicyOverride(domain, cx),

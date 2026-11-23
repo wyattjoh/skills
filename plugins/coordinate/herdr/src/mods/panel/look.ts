@@ -214,9 +214,15 @@ export const ANSWER_FLOW_LAYOUT_GEOMETRY = {
  * tallest editor state: failure and reload rows above the action row.
  */
 export const HARNESS_DIALOG = {
-  width: 420,
-  height: 480,
+  width: 400,
+  height: 300,
 } as const;
+
+/**
+ * Herdr's own settings icon, as an `svg()` path into its shipped workspace-chrome mod. It is never
+ * copied, like the icons herdr-ui lists; herdr-ui has no entry for it.
+ */
+export const HERDR_SETTINGS_ICON = "mods/workspace-chrome/settings.svg";
 
 /**
  * The answer queue's approximated vertical-carousel geometry and motion.
