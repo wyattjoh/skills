@@ -42,7 +42,7 @@ import {
 } from "@wyattjoh/herdr-ui";
 import type { ButtonStyle, Theme } from "@wyattjoh/herdr-ui";
 import { isDiscussion } from "../../lib/store.ts";
-import type { AnsweredAsk, Ask, Backlog, Finding, Item } from "../../lib/store.ts";
+import type { AnsweredAsk, Ask, Backlog, Finding, Item, ItemStatus } from "../../lib/store.ts";
 import {
   ANSWER,
   ANSWER_CAROUSEL,
@@ -59,6 +59,7 @@ import {
   FINDING_STATUS_TONES,
   GLOBE_ICON,
   QUEUED_TONE,
+  STATUS_MENU_WIDTH,
   STATUS_TONES,
 } from "./look.ts";
 import {
@@ -136,6 +137,8 @@ export type PanelModel = {
   // The item whose detail screen is on top of the list, if any.
   detail: Item | undefined;
   open: (item: Item, cx: Context) => void;
+  // The open item's Change status control, absent when the item takes no other status.
+  statusChange: StatusChangeModel | undefined;
   // The answer being written on the open item's ask, when it has one.
   answer: AnswerModel | undefined;
   flow: AnswerFlowModel | undefined;
@@ -157,6 +160,21 @@ export type FindingActionsModel = {
   error: string | undefined;
   approve: (cx: Context) => void;
   dismiss: (cx: Context) => void;
+};
+
+/**
+ * An item detail's Change status control: the statuses it offers, whether its menu is open, which
+ * status is being set, the CLI's last refusal, and what the button and each choice do.
+ */
+export type StatusChangeModel = {
+  targets: ItemStatus[];
+  open: boolean;
+  running: ItemStatus | undefined;
+  // Whether any item's status change is running; the control stays inert until it ends.
+  busy: boolean;
+  error: string | undefined;
+  toggle: (cx: Context) => void;
+  change: (status: ItemStatus, cx: Context) => void;
 };
 
 /**
@@ -1199,11 +1217,69 @@ const findingActionRows = (t: Theme, actions: FindingActionsModel): Element[] =>
   ];
 };
 
+// Change status, right-aligned like a finding's actions. Its menu is plain state drawn in the
+// flow below the button (not a Popover, which also reacts to its trigger's press), then any refusal.
+const statusChangeRows = (t: Theme, change: StatusChangeModel): Element[] => {
+  const { busy } = change;
+  return [
+    h_flex()
+      .id("item-actions")
+      .gap(ANSWER.gap)
+      .justify_end()
+      .child(
+        button(t, {
+          id: "item-actions-status",
+          label:
+            change.running === undefined
+              ? "Change status"
+              : `Moving to ${GROUP_LABELS[change.running]}…`,
+          icon: HERDR_ICONS.chevronDown,
+          style: ANSWER_SECONDARY_BUTTON_STYLE,
+          onClick: busy ? undefined : (cx) => change.toggle(cx),
+        }),
+      ),
+    ...(change.open && !busy
+      ? [
+          h_flex()
+            .id("item-status-menu")
+            .justify_end()
+            .child(
+              menuPanel(t, STATUS_MENU_WIDTH, MENU.padding)
+                .id("item-status-options")
+                .role("menu")
+                .accessibility_label("Change status")
+                .children(
+                  change.targets.map((status, index) =>
+                    menuRow(t, {
+                      id: `item-status-option-${status}`,
+                      label: GROUP_LABELS[status],
+                      onClick: (cx) => change.change(status, cx),
+                    })
+                      .role("menu_item")
+                      .set_position(index + 1, change.targets.length),
+                  ),
+                ),
+            ),
+        ]
+      : []),
+    ...(change.error === undefined
+      ? []
+      : [
+          div()
+            .id("item-status-error")
+            .text_size(TEXT.label)
+            .text_color(role(t, "ansi1"))
+            .child(change.error),
+        ]),
+  ];
+};
+
 const detailScreen = (
   t: Theme,
   item: Item,
   delegates: DelegateJoin,
   answer: AnswerModel | undefined,
+  statusChange: StatusChangeModel | undefined,
 ): Element =>
   v_flex()
     .id("detail")
@@ -1233,7 +1309,8 @@ const detailScreen = (
       ]),
     )
     .children(decidedCard(t, item))
-    .children(delegatesCard(t, item, delegates.byItem.get(item.id) ?? []));
+    .children(delegatesCard(t, item, delegates.byItem.get(item.id) ?? []))
+    .when(statusChange !== undefined, (el) => el.children(statusChangeRows(t, statusChange!)));
 
 const answerFlowKey = (
   event: { key: string; keystroke: string },
@@ -2127,7 +2204,7 @@ const domainScreens = (t: Theme, model: PanelModel): Element =>
           .child(
             paneScrollRegion(
               "detail-scroll",
-              detailScreen(t, model.detail!, model.delegates, model.answer),
+              detailScreen(t, model.detail!, model.delegates, model.answer, model.statusChange),
               PANEL.padding,
             ),
           ),

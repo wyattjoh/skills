@@ -33,6 +33,7 @@ import {
 import {
   answerDomain,
   coordinatorDomain,
+  statusDomain,
   domainOfCaller,
   Refused,
   resolveDomain,
@@ -1176,35 +1177,59 @@ const itemUpdateCommand = Command.make(
       "answer",
       "the user's answer clears the ask; Discuss or Discuss: <note> keeps it open for conversation",
     ),
-    domain: optionalStringFlag("domain", "domain (default: this coordinator's label)"),
+    domain: optionalStringFlag(
+      "domain",
+      "domain (default: this coordinator's label; required outside a terminal)",
+    ),
     json: booleanFlag("json", "print the updated item as JSON"),
   },
-  (options) =>
-    execute((config) =>
-      Effect.flatMap(coordinatorDomain(Option.getOrUndefined(options.domain)), (domain) =>
-        itemUpdate(config, domain, {
-          id: options.id,
-          status: Option.getOrUndefined(options.status) as ItemStatus | undefined,
-          outcome: Option.getOrUndefined(options.outcome),
-          decided: [...options.decided],
-          touch: [...options.touch],
-          untouch: [...options.untouch],
-          due: options.noDue ? null : Option.getOrUndefined(options.due),
-          ask: Option.getOrUndefined(options.ask),
-          context: Option.getOrUndefined(options.context),
-          options: [...options.option],
-          rec: Option.getOrUndefined(options.rec),
-          why: Option.getOrUndefined(options.why),
-          answer: Option.getOrUndefined(options.answer),
-          note: Option.getOrUndefined(options.note),
-          json: options.json,
-          now: new Date().toISOString(),
-        }),
+  (options) => {
+    const status = Option.getOrUndefined(options.status) as ItemStatus | undefined;
+    // A change of status alone is the one item update the Backlog panel may run outside a terminal.
+    const statusOnly =
+      status !== undefined &&
+      Option.isNone(options.outcome) &&
+      options.decided.length === 0 &&
+      options.touch.length === 0 &&
+      options.untouch.length === 0 &&
+      Option.isNone(options.due) &&
+      !options.noDue &&
+      Option.isNone(options.ask) &&
+      Option.isNone(options.context) &&
+      options.option.length === 0 &&
+      Option.isNone(options.rec) &&
+      Option.isNone(options.why) &&
+      Option.isNone(options.note) &&
+      Option.isNone(options.answer);
+    const domainFlag = Option.getOrUndefined(options.domain);
+    return execute((config) =>
+      Effect.flatMap(
+        statusOnly ? statusDomain(domainFlag, status) : coordinatorDomain(domainFlag),
+        (domain) =>
+          itemUpdate(config, domain, {
+            id: options.id,
+            status,
+            outcome: Option.getOrUndefined(options.outcome),
+            decided: [...options.decided],
+            touch: [...options.touch],
+            untouch: [...options.untouch],
+            due: options.noDue ? null : Option.getOrUndefined(options.due),
+            ask: Option.getOrUndefined(options.ask),
+            context: Option.getOrUndefined(options.context),
+            options: [...options.option],
+            rec: Option.getOrUndefined(options.rec),
+            why: Option.getOrUndefined(options.why),
+            answer: Option.getOrUndefined(options.answer),
+            note: Option.getOrUndefined(options.note),
+            json: options.json,
+            now: new Date().toISOString(),
+          }),
       ),
-    ),
+    );
+  },
 ).pipe(
   Command.withDescription(
-    "change an item's status, decisions, touched repos, due date or ask; Discuss keeps an ask open for conversation; waiting-user needs an ask or a decision, delegated needs a delegate",
+    "change an item's status, decisions, touched repos, due date or ask; Discuss keeps an ask open for conversation; waiting-user needs an ask or a decision, delegated needs a delegate; --status open, building, in-review or parked alone is allowed outside a Herdr terminal with --domain",
   ),
 );
 

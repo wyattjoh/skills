@@ -9,6 +9,8 @@ import {
   dismissFindingCommand,
   promoteFindingCommand,
   canTriageFinding,
+  statusCommand,
+  statusTargets,
   cachedDocument,
   changedBacklogDocuments,
   chosenAnswer,
@@ -400,6 +402,53 @@ test("builds the dismiss call and says which items can be dismissed", () => {
       canDismissItem({ ...emptyItem, status } as Parameters<typeof canDismissItem>[0]),
     ),
   ).toEqual([true, true, true, true, true, true, false, false]);
+});
+
+test("offers open, building, in-review and parked minus the item's own, on items not closed", () => {
+  const statuses = [
+    "waiting-user",
+    "building",
+    "delegated",
+    "in-review",
+    "open",
+    "parked",
+    "done",
+    "dismissed",
+  ] as const;
+  expect(
+    statuses.map((status) =>
+      statusTargets({ ...emptyItem, status } as Parameters<typeof statusTargets>[0]),
+    ),
+  ).toEqual([
+    ["open", "building", "in-review", "parked"],
+    ["open", "in-review", "parked"],
+    ["open", "building", "in-review", "parked"],
+    ["open", "building", "parked"],
+    ["building", "in-review", "parked"],
+    ["open", "building", "in-review"],
+    [],
+    [],
+  ]);
+});
+
+test("builds the status change call", () => {
+  expect(statusCommand("/Users/test", "alpha", "i6", "open")).toEqual({
+    command: "/usr/bin/env",
+    args: [
+      "-u",
+      "HC_TERMINAL_ID",
+      "bun",
+      "/Users/test/.claude/skills/coordinate/scripts/coordinate.ts",
+      "item",
+      "update",
+      "--domain",
+      "alpha",
+      "--status",
+      "open",
+      "--",
+      "i6",
+    ],
+  });
 });
 
 test("builds the finding promote and dismiss calls and says which findings can be triaged", () => {

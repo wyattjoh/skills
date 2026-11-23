@@ -2101,6 +2101,73 @@ describe("coordinator-only mutations", () => {
     ]);
   });
 
+  it("changes only an item's status from outside a terminal with --domain", async () => {
+    const { state, path } = await prepared();
+    const { HC_TERMINAL_ID: _unset, ...outside } = cliEnv(state, COORDINATOR);
+    const before = readFileSync(path, "utf8");
+    expect([
+      spawn(outside, ["item", "update", "--status", "parked", "--", "i1"]),
+      spawn(outside, [
+        "item",
+        "update",
+        "--status",
+        "parked",
+        "--decided",
+        "on hold",
+        "--domain",
+        "app",
+        "--",
+        "i1",
+      ]),
+      spawn(outside, ["item", "update", "--status", "delegated", "--domain", "app", "--", "i1"]),
+      spawn(outside, ["item", "update", "--status", "waiting-user", "--domain", "app", "--", "i1"]),
+      spawn(outside, ["item", "update", "--status", "done", "--domain", "app", "--", "i1"]),
+    ]).toEqual([
+      [
+        1,
+        "refused: a backlog change from outside a Herdr terminal names its domain: pass --domain\n",
+      ],
+      [
+        2,
+        "could not check: Unchecked: HC_TERMINAL_ID is unset, so this terminal's role cannot be checked: run this inside a Herdr terminal\n",
+      ],
+      ...["delegated", "waiting-user", "done"].map(() => [
+        1,
+        "refused: from outside a Herdr terminal, item update sets only --status open, building, in-review, parked; close an item with item close\n",
+      ]),
+    ]);
+    expect(readFileSync(path, "utf8")).toBe(before);
+    expect(
+      spawn(outside, ["item", "update", "--status", "parked", "--domain", "app", "--", "i1"]),
+    ).toEqual([0, "updated i1 [parked] fix login\n"]);
+    expect(read(path).items[0].status).toBe("parked");
+    expect(
+      spawn(outside, ["item", "update", "--status", "open", "--domain", "app", "--", "i1"]),
+    ).toEqual([0, "updated i1 [open] fix login\n"]);
+    expect(read(path).items[0].status).toBe("open");
+  });
+
+  it("refuses a status change from a delegate terminal, even with --domain", async () => {
+    const { state, path } = await prepared();
+    const before = readFileSync(path, "utf8");
+    expect(
+      spawn(cliEnv(state, { "fleet.domain": "app", "fleet.session": "s-parent" }), [
+        "item",
+        "update",
+        "--status",
+        "parked",
+        "--domain",
+        "app",
+        "--",
+        "i1",
+      ]),
+    ).toEqual([
+      1,
+      "refused: only a coordinator changes the backlog, and terminal t1 is not labelled as one; a delegate records what it notices with coordinate finding add\n",
+    ]);
+    expect(readFileSync(path, "utf8")).toBe(before);
+  });
+
   it("refuses every other mutation from outside a terminal", async () => {
     const { state, path } = await prepared();
     const { HC_TERMINAL_ID: _unset, ...outside } = cliEnv(state, COORDINATOR);

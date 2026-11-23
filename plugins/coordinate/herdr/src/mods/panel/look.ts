@@ -107,6 +107,11 @@ export const ANSWER_FLOW_OUTLINE = {
 export const ANSWER_FLOW_MENU_WIDTH = 216;
 
 /**
+ * The width of an item detail's Change status menu, which lists at most four statuses.
+ */
+export const STATUS_MENU_WIDTH = 160;
+
+/**
  * The harness policy dialog Herdr opens over the window. A height is a maximum, so it covers the
  * tallest editor state: failure and reload rows above the action row.
  */

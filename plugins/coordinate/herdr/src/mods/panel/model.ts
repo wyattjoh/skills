@@ -1,6 +1,11 @@
 // What the panel shows, decided without Herdr: which domain it follows, whether that domain's
 // document is usable, and how its items group. Where the document lives is the store's paths.
-import { ITEM_STATUSES, isRecord, validateBacklog } from "../../lib/store.ts";
+import {
+  ITEM_STATUSES,
+  OUTSIDE_TERMINAL_STATUSES,
+  isRecord,
+  validateBacklog,
+} from "../../lib/store.ts";
 import type { Ask, Backlog, DelegateRef, Finding, Item, ItemStatus } from "../../lib/store.ts";
 
 /**
@@ -1308,6 +1313,33 @@ export const dismissCommand = (
     "--",
     id,
   ]);
+
+/**
+ * The statuses an item's Change status menu offers: open, building, in-review and parked, minus
+ * the item's own, on an item that is not done or dismissed. Delegated, waiting-user and the
+ * closed statuses each need more than a status (a delegate, an ask, an outcome).
+ * @param item The item.
+ * @returns The statuses to offer, in menu order; empty when the item takes none.
+ */
+export const statusTargets = (item: Item): ItemStatus[] =>
+  canDismissItem(item) ? OUTSIDE_TERMINAL_STATUSES.filter((status) => status !== item.status) : [];
+
+/**
+ * Build the `coordinate item update --status` call behind a Change status choice. It runs as
+ * `dismissCommand` does.
+ * @param home The user's home directory.
+ * @param domain The item's domain.
+ * @param id The item id.
+ * @param status The status to set.
+ * @returns The program and its arguments for exec.
+ */
+export const statusCommand = (
+  home: string,
+  domain: string,
+  id: string,
+  status: ItemStatus,
+): { command: string; args: string[] } =>
+  panelCli(home, ["item", "update", "--domain", domain, "--status", status, "--", id]);
 
 /**
  * The one-line outcome recorded when a finding is dismissed from its detail screen.

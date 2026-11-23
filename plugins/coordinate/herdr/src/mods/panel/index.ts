@@ -28,6 +28,8 @@ import {
   dismissFindingCommand,
   promoteFindingCommand,
   canTriageFinding,
+  statusCommand,
+  statusTargets,
   boundaryCommand,
   boundaryOutput,
   cachedDocument,
@@ -97,7 +99,7 @@ import {
 import type { AnswerFlow, FlowAskState, QueuedAnswer } from "./answer-flow.ts";
 import { ANSWER_CAROUSEL, ANSWER_FLOW_SPEED_OPTIONS } from "./look.ts";
 import { backlogsDir, documentPath } from "../../lib/store.ts";
-import type { Finding, Item } from "../../lib/store.ts";
+import type { Finding, Item, ItemStatus } from "../../lib/store.ts";
 import { harnessPolicyDialog } from "./policy-dialog.ts";
 import type { HarnessPolicyEditorModel } from "./policy-dialog.ts";
 import { panel } from "./view.ts";
@@ -108,6 +110,7 @@ import type {
   BoundaryList,
   BoundaryModel,
   FindingActionsModel,
+  StatusChangeModel,
   Theme,
 } from "./view.ts";
 
@@ -246,6 +249,18 @@ export default class Panel extends View {
         domain: string;
         id: string;
         running: "approve" | "dismiss" | undefined;
+        error: string | undefined;
+      }
+    | undefined;
+
+  // The item whose Change status was last used: its menu is open, a status is being set, or the
+  // CLI refused one.
+  statusChange:
+    | {
+        domain: string;
+        id: string;
+        open: boolean;
+        running: ItemStatus | undefined;
         error: string | undefined;
       }
     | undefined;
@@ -1573,6 +1588,71 @@ export default class Panel extends View {
     };
   }
 
+  // Open or close an item's Change status menu. Another item's menu or refusal is dropped.
+  toggleStatusMenu(domain: string, item: Item, cx: Context) {
+    if (this.statusChange?.running !== undefined) return;
+    const state =
+      this.statusChange?.domain === domain && this.statusChange.id === item.id
+        ? this.statusChange
+        : undefined;
+    this.statusChange = {
+      domain,
+      id: item.id,
+      open: !(state?.open ?? false),
+      running: undefined,
+      error: state?.error,
+    };
+    cx.notify();
+  }
+
+  // Set an item's status with the coordinate CLI, as a finding's actions do: a reload after exit 0
+  // shows the new status, and a refusal shows inline and leaves the item as it was.
+  changeStatus(domain: string, item: Item, status: ItemStatus, cx: Context) {
+    if (this.statusChange?.running !== undefined || !statusTargets(item).includes(status)) return;
+    const { command, args } = statusCommand(home(), domain, item.id, status);
+    const running = { domain, id: item.id, open: false, running: status, error: undefined };
+    this.statusChange = running;
+    cx.notify();
+    cx.spawn(async (task) => {
+      let error: string | undefined;
+      try {
+        const ran = await exec(command, args);
+        if (ran.code !== 0) error = answerFailure(ran);
+      } catch (failure) {
+        error = `could not run coordinate: ${String(failure)}`;
+      }
+      if (this.statusChange !== running) return;
+      this.statusChange =
+        error === undefined
+          ? undefined
+          : { domain, id: item.id, open: false, running: undefined, error };
+      if (error === undefined) this.load(task, true);
+      task.notify();
+    });
+  }
+
+  statusChangeModel(
+    domain: string | undefined,
+    item: Item | undefined,
+  ): StatusChangeModel | undefined {
+    if (domain === undefined || item === undefined) return undefined;
+    const targets = statusTargets(item);
+    if (targets.length === 0) return undefined;
+    const state =
+      this.statusChange?.domain === domain && this.statusChange.id === item.id
+        ? this.statusChange
+        : undefined;
+    return {
+      targets,
+      open: state?.open ?? false,
+      running: state?.running,
+      busy: this.statusChange?.running !== undefined,
+      error: state?.error,
+      toggle: (cx) => this.toggleStatusMenu(domain, item, cx),
+      change: (status, cx) => this.changeStatus(domain, item, status, cx),
+    };
+  }
+
   boundaryModel(domain: string | undefined): BoundaryModel {
     const editing = this.boundaryEditing;
     const error = this.boundaryError;
@@ -1988,6 +2068,7 @@ export default class Panel extends View {
       visibleRows: (group, total) => this.visibleRows(domain, group, total),
       loadMore: (group, cx) => this.revealMore(domain, group, cx),
       detail,
+      statusChange: this.statusChangeModel(domain, detail),
       open: (item, cx) => this.open(item, cx),
       openWaiting: (item, cx) => this.openWaiting(item, cx),
       answer: this.answerModel(),

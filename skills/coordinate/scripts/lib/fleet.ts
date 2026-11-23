@@ -3,6 +3,7 @@ import { mkdir, readdir, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { Effect, Option, Schema } from "effect";
 import { type Harness, harnessOf } from "./harness.ts";
+import { OUTSIDE_TERMINAL_STATUSES, type ItemStatus } from "./backlog-store/schema.ts";
 import * as hc from "./herdr.ts";
 
 /**
@@ -191,10 +192,10 @@ export const coordinatorDomain = Effect.fn("coordinatorDomain")(function* (
 });
 
 /**
- * The domain for recording an answer or editing a Boundary. A coordinator does either as it
- * changes anything else. A caller outside every Herdr terminal (`HC_TERMINAL_ID` unset, such as
- * the Backlog panel's `exec`) may record an answer or edit a Boundary, and must name the domain
- * with `--domain`. Any terminal not labelled coordinator, delegates included, is still refused.
+ * The domain for recording an answer, closing an item or finding, changing only an item's status,
+ * or editing a Boundary. A coordinator does each as it changes anything else. A caller outside
+ * every Herdr terminal (`HC_TERMINAL_ID` unset, such as the Backlog panel's `exec`) may do these,
+ * and must name the domain with `--domain`. Any terminal not labelled coordinator, delegates included, is still refused.
  * @param flag `--domain` value.
  * @param env Environment (`HC_TERMINAL_ID`).
  * @returns Domain.
@@ -209,6 +210,28 @@ export const answerDomain = Effect.fn("answerDomain")(function* (
       message: "a backlog change from outside a Herdr terminal names its domain: pass --domain",
     });
   return flag;
+});
+
+/**
+ * The domain for an `item update` that changes only the status. Inside a Herdr terminal only a
+ * coordinator may run it, as `coordinatorDomain` decides. Outside every terminal it goes as
+ * `answerDomain` does, for a status in `OUTSIDE_TERMINAL_STATUSES` only.
+ * @param flag `--domain` value.
+ * @param status The `--status` value.
+ * @param env Environment (`HC_TERMINAL_ID`).
+ * @returns Domain.
+ */
+export const statusDomain = Effect.fn("statusDomain")(function* (
+  flag: string | undefined,
+  status: ItemStatus,
+  env: Record<string, string | undefined> = process.env,
+) {
+  if (env.HC_TERMINAL_ID) return yield* coordinatorDomain(flag, env);
+  if (!OUTSIDE_TERMINAL_STATUSES.some((allowed) => allowed === status))
+    return yield* new Refused({
+      message: `from outside a Herdr terminal, item update sets only --status ${OUTSIDE_TERMINAL_STATUSES.join(", ")}; close an item with item close`,
+    });
+  return yield* answerDomain(flag, env);
 });
 
 /**

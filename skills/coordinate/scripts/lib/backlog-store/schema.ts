@@ -23,6 +23,18 @@ export const ITEM_STATUSES = [
 export type ItemStatus = (typeof ITEM_STATUSES)[number];
 
 /**
+ * The statuses `item update --status` may set from outside every Herdr terminal, as the Backlog
+ * panel runs it, in the order the panel offers them. Delegated needs a delegate, waiting-user an
+ * ask, and done and dismissed close through `item close`, so none of those is here.
+ */
+export const OUTSIDE_TERMINAL_STATUSES = [
+  "open",
+  "building",
+  "in-review",
+  "parked",
+] as const satisfies readonly ItemStatus[];
+
+/**
  * A dated item event, such as a decision or a discussion request.
  */
 export type Dated = { text: string; at: string };

@@ -14,7 +14,7 @@ running build.
 ## Exception: `plugins/coordinate`
 
 `plugins/coordinate/herdr/` builds `coordinate-panel`, a Herdr mod for the coordinate skill's
-backlog. The backlog is read-only except for answering an ask and dismissing an item; the separate delegate-harness
+backlog. The backlog is read-only except for answering an ask, dismissing an item, changing an item's status, and triaging a finding; the separate delegate-harness
 policy editor delegates all policy writes to the Coordinate CLI. The panel follows the focused
 terminal. It is not a Claude Code plugin: no `.claude-plugin/`, no marketplace entry, no mod or pi
 extension. It is its own project with its own `package.json`, `bunfig.toml` and `justfile`. Root
@@ -32,9 +32,9 @@ person's `keys.json` when the plugin defines any, refusing a key they already bi
 Point `HERDR_APP_HOME` at a scratch folder to exercise it.
 
 The mods never write the backlog document or message a terminal: the coordinate CLI is the
-document's only writer. The panel's backlog writes are answers and Dismiss. The Answer button on an item's detail
-screen runs `coordinate item answer --domain <d> -- <id> <answer>` at once; in the answer flow, Answer only queues (per domain, kept while the panel lives) and "Send all and back" runs that command once per queued answer in order, stopping at the first failure with the rest still queued. Dismiss runs `coordinate item close --domain <d> --dismissed --outcome ...`. Both are mutations the CLI accepts
-from outside a Herdr terminal. Delegate-harness policy reads and edits also go through the CLI:
+document's only writer. The panel's backlog writes are answers, Dismiss, and Change status. The Answer button on an item's detail
+screen runs `coordinate item answer --domain <d> -- <id> <answer>` at once; in the answer flow, Answer only queues (per domain, kept while the panel lives) and "Send all and back" runs that command once per queued answer in order, stopping at the first failure with the rest still queued. Dismiss runs `coordinate item close --domain <d> --dismissed --outcome ...`. Change status, at the bottom of an item's detail screen (not on a done or dismissed item), opens a menu drawn in the flow below it (plain state, not a Popover) of open, building, in-review and parked minus the item's own (`OUTSIDE_TERMINAL_STATUSES`); a choice runs `coordinate item update --domain <d> --status <s> -- <id>`, shows "Moving to ..." while it runs, shows the CLI's message on failure and reloads after exit 0. Each is a mutation the CLI accepts
+from outside a Herdr terminal; for `item update` only a lone `--status` from that list is. Delegate-harness policy reads and edits also go through the CLI:
 `harness-policy show --json [--domain <d>]`, `global-set`, `domain-set`, and `domain-reset`, with
 `--expected-revision` on every mutation. Never read or write the policy JSON from the mod. The domain
 page also reads `queue show --domain <d> --json` (the Queued item group: an open item in the

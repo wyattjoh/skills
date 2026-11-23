@@ -3190,6 +3190,116 @@ test("a finding action's error stays on its finding", async () => {
   expect(ids(render(), "finding-action-error")).toEqual([]);
 });
 
+const statusExecs = () =>
+  host.execs
+    .filter(({ args }) => args.includes("update"))
+    .map(({ command, args }) => [command, ...args]);
+const withStatus = (backlog: Backlog, id: string, status: Item["status"]): Backlog => {
+  const updated = updateItem(backlog, {
+    id,
+    status,
+    outcome: undefined,
+    decided: [],
+    touch: [],
+    untouch: [],
+    due: undefined,
+    ask: undefined,
+    context: undefined,
+    options: [],
+    rec: undefined,
+    why: undefined,
+    answer: undefined,
+    now: NOW,
+  });
+  if (!updated.ok) throw new Error(updated.reason);
+  return updated.backlog;
+};
+const openStatusDetail = async (id: string) => {
+  focusDomain("alpha");
+  host.files.set(DOC, JSON.stringify(everyStatus()));
+  const mounted = await mount();
+  openDetail(mounted.view, id, mounted.ctx.cx);
+  return mounted;
+};
+
+test("a parked item's detail ends with Change status, whose menu offers the other statuses", async () => {
+  const { ctx, render } = await openStatusDetail("i6");
+  const root = render();
+  expect(ids(root, "item-actions")).toEqual(["item-actions", "item-actions-status"]);
+  expect([
+    text(get(root, "item-actions-status")),
+    get(root, "item-actions").styles.justify_end,
+    get(root, "item-actions-status").styles.bg,
+    ids(root, "item-status-"),
+  ]).toEqual(["Change status", true, theme().raised, []]);
+  get(root, "item-actions-status").click!({}, ctx.cx);
+  const open = render();
+  expect(ids(open, "item-status-option-")).toEqual([
+    "item-status-option-open",
+    "item-status-option-building",
+    "item-status-option-in-review",
+  ]);
+  expect(
+    ["open", "building", "in-review"].map((status) =>
+      text(get(open, `item-status-option-${status}`)),
+    ),
+  ).toEqual(["Open", "Building", "In review"]);
+  get(open, "item-actions-status").click!({}, ctx.cx);
+  expect(ids(render(), "item-status-")).toEqual([]);
+});
+
+test("a done or dismissed item's detail has no Change status", async () => {
+  const { ctx, view, render } = await openStatusDetail("i7");
+  expect(ids(render(), "item-actions")).toEqual([]);
+  openDetail(view, "i8", ctx.cx);
+  expect(ids(render(), "item-actions")).toEqual([]);
+});
+
+test("choosing a status runs item update with the exact arguments, then reloads to show it", async () => {
+  const { ctx, render } = await openStatusDetail("i6");
+  get(render(), "item-actions-status").click!({}, ctx.cx);
+  host.files.set(DOC, JSON.stringify(withStatus(everyStatus(), "i6", "open")));
+  get(render(), "item-status-option-open").click!({}, ctx.cx);
+  const busy = render();
+  expect([
+    text(get(busy, "item-actions-status")),
+    get(busy, "item-actions-status").click,
+    ids(busy, "item-status-option-"),
+  ]).toEqual(["Moving to Open…", undefined, []]);
+  await settle();
+  expect(statusExecs()).toEqual([
+    [...cliPrefix, "item", "update", "--domain", "alpha", "--status", "open", "--", "i6"],
+  ]);
+  const root = render();
+  expect([
+    text(get(root, "detail-status")),
+    text(get(root, "item-actions-status")),
+    ids(root, "item-status-error"),
+  ]).toEqual(["Open", "Change status", []]);
+  get(root, "item-actions-status").click!({}, ctx.cx);
+  expect(ids(render(), "item-status-option-")).toEqual([
+    "item-status-option-building",
+    "item-status-option-in-review",
+    "item-status-option-parked",
+  ]);
+});
+
+test("a refused status change shows the CLI's message below the control and keeps the item", async () => {
+  const { ctx, render } = await openStatusDetail("i6");
+  host.execExit = { code: 1, stdout: "", stderr: "refused: no item i6 in alpha" };
+  get(render(), "item-actions-status").click!({}, ctx.cx);
+  get(render(), "item-status-option-building").click!({}, ctx.cx);
+  await settle();
+  host.execExit = undefined;
+  const root = render();
+  expect([
+    text(get(root, "item-status-error")),
+    text(get(root, "detail-status")),
+    text(get(root, "item-actions-status")),
+    typeof get(root, "item-actions-status").click,
+  ]).toEqual(["refused: no item i6 in alpha", "Parked", "Change status", "function"]);
+});
+
 test("a finding that leaves the document falls back to the lists", async () => {
   focusDomain("alpha");
   host.files.set(DOC, JSON.stringify(withFindings()));
