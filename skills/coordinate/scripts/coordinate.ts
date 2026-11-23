@@ -446,11 +446,14 @@ const delegateCommand = Command.make(
     ),
     model: optionalStringFlag("model", "model (pi: provider/id; claude: opus, sonnet, ... )"),
     effort: optionalStringFlag("effort", "claude --effort, or pi --thinking"),
-    brief: optionalStringFlag("brief", "brief to copy to <worktree>/.scratch/BRIEF.md"),
+    brief: optionalStringFlag(
+      "brief",
+      "brief to copy to <worktree>/.scratch/BRIEF.md (with --skill: its boundary, stop points and report)",
+    ),
     skill: optionalChoiceFlag(
       "skill",
       ["implement", "implement-spec"],
-      "start with an implement skill instead of a brief",
+      "start with an implement skill; --brief may accompany it",
     ),
     args: stringFlag("args", "arguments after the skill prefix").pipe(Flag.withDefault("")),
     noSpace: booleanFlag(
@@ -478,16 +481,14 @@ const delegateCommand = Command.make(
   (options) => {
     const brief = Option.getOrUndefined(options.brief);
     const skill = Option.getOrUndefined(options.skill);
-    if ((brief === undefined) === (skill === undefined)) {
-      console.error(
-        "refused: pass exactly one of --brief <path> or --skill <implement|implement-spec>",
-      );
+    if (brief === undefined && skill === undefined) {
+      console.error("refused: pass --brief <path>, --skill <implement|implement-spec>, or both");
       process.exit(1);
     }
     const message: FirstMessage =
       skill === undefined
         ? { kind: "brief", path: brief ?? "" }
-        : { kind: "skill", skill: skill as ImplementSkill, args: options.args };
+        : { kind: "skill", skill: skill as ImplementSkill, args: options.args, brief };
     return execute((config) =>
       delegate(config, {
         name: options.name,

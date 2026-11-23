@@ -405,8 +405,9 @@ export const delegate = Effect.fn("delegate")(function* (
 
     let brief: string | undefined;
     let message = options.message;
-    if (message.kind === "brief") {
-      const source = resolve(message.path);
+    const briefSource = message.kind === "brief" ? message.path : message.brief;
+    if (briefSource !== undefined) {
+      const source = resolve(briefSource);
       if (!existsSync(source)) return yield* new Refused({ message: `no brief at ${source}` });
       brief = join(cwd, ".scratch", "BRIEF.md");
       const destination = brief;
@@ -437,7 +438,7 @@ export const delegate = Effect.fn("delegate")(function* (
         });
         if (preserved) lines.push(`preserved existing brief at ${preserved}`);
       }
-      message = { kind: "brief", path: brief };
+      message = message.kind === "brief" ? { kind: "brief", path: brief } : { ...message, brief };
     }
     const report = brief ? join(cwd, ".scratch", "REPORT.md") : undefined;
     const session = crypto.randomUUID();

@@ -8,6 +8,16 @@ describe("skill prefix", () => {
     expect(
       firstMessage("pi", { kind: "skill", skill: "implement", args: ".scratch/spec.md" }),
     ).toBe("/skill:implement .scratch/spec.md");
+    expect(
+      firstMessage("claude", {
+        kind: "skill",
+        skill: "implement-spec",
+        args: "3f2a via Tasks MCP. Keep one integration branch.",
+        brief: "/w/.scratch/BRIEF.md",
+      }),
+    ).toBe(
+      "/implement-spec 3f2a via Tasks MCP. Keep one integration branch. Also read /w/.scratch/BRIEF.md and follow its Boundary, Stop points and Report sections.",
+    );
     expect(firstMessage("claude", { kind: "brief", path: "/w/.scratch/BRIEF.md" })).toBe(
       "Read /w/.scratch/BRIEF.md and do what it says.",
     );

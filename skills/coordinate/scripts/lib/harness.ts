@@ -19,11 +19,12 @@ export const skillPrefix = (harness: Harness, skill: string): string =>
   harness === "pi" ? `/skill:${skill}` : `/${skill}`;
 
 /**
- * What a delegate is told first: read its brief, or run a skill with arguments.
+ * What a delegate is told first: read its brief, or run a skill with arguments. A skill start
+ * may carry a brief too, for the boundary, stop points and report the skill does not know.
  */
 export type FirstMessage =
   | { kind: "brief"; path: string }
-  | { kind: "skill"; skill: ImplementSkill; args: string };
+  | { kind: "skill"; skill: ImplementSkill; args: string; brief?: string };
 
 /**
  * Render the first message.
@@ -31,10 +32,15 @@ export type FirstMessage =
  * @param message Brief or skill.
  * @returns Text sent as the agent's initial prompt.
  */
-export const firstMessage = (harness: Harness, message: FirstMessage): string =>
-  message.kind === "brief"
-    ? `Read ${message.path} and do what it says.`
-    : `${skillPrefix(harness, message.skill)} ${message.args}`.trim();
+export const firstMessage = (harness: Harness, message: FirstMessage): string => {
+  if (message.kind === "brief") return `Read ${message.path} and do what it says.`;
+  const brief = message.brief
+    ? `Also read ${message.brief} and follow its Boundary, Stop points and Report sections.`
+    : "";
+  return [skillPrefix(harness, message.skill), message.args.trim(), brief]
+    .filter((part) => part !== "")
+    .join(" ");
+};
 
 /**
  * How to start or resume one delegate.

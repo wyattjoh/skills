@@ -1,5 +1,5 @@
 import { afterAll, afterEach, beforeEach, describe, expect, it } from "bun:test";
-import { existsSync, readdirSync, readFileSync, rmSync } from "node:fs";
+import { existsSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { createDocument, itemAdd } from "./backlog-doc.ts";
 import { resolveConfig } from "./config.ts";
@@ -204,6 +204,59 @@ describe("delegate", () => {
     }
     const run = fake.calls.find((call) => call[0] === "hc" && call[1] === "run");
     expect(run?.includes(`fleet.base=${baseSha}`)).toBe(true);
+  });
+
+  it("starts a skill delegate with its brief copied and named after the skill arguments", async () => {
+    const work = dir();
+    const source = join(dir(), "brief.md");
+    writeFileSync(source, "# Brief: spec\n");
+    const fake = fakeProc((argv) => {
+      if (argv[1] === "ls") return ok('{"terminals":[]}');
+      if (argv[1] === "run") return ok('{"address":"t2"}');
+      if (argv[1] === "get" && argv[2] === "t1")
+        return ok(terminal({ address: "t1", labels: { "fleet.domain": "app" } }));
+      if (argv[1] === "get" && argv[2] === "t2")
+        return ok(terminal({ status: { state: "working" } }));
+      return ok("{}");
+    });
+    const saved = process.env.HC_TERMINAL_ID;
+    process.env.HC_TERMINAL_ID = "t1";
+    try {
+      await runWith(
+        delegate(await config(dir()), {
+          name: "spec-a",
+          task: "spec a",
+          repo: undefined,
+          cwd: work,
+          base: undefined,
+          harness: "claude",
+          model: undefined,
+          effort: undefined,
+          message: {
+            kind: "skill",
+            skill: "implement-spec",
+            args: "3f2a via Tasks MCP. Keep one integration branch.",
+            brief: source,
+          },
+          space: false,
+          domain: "app",
+          item: undefined,
+          overBudget: false,
+          queueIfFull: false,
+          retryQueued: false,
+        }),
+        fake.layer,
+      );
+    } finally {
+      if (saved === undefined) delete process.env.HC_TERMINAL_ID;
+      else process.env.HC_TERMINAL_ID = saved;
+    }
+    const copied = join(work, ".scratch", "BRIEF.md");
+    expect(readFileSync(copied, "utf8")).toBe("# Brief: spec\n");
+    const run = fake.calls.find((call) => call.argv[1] === "run");
+    expect(run?.argv.at(-1)).toBe(
+      `/implement-spec 3f2a via Tasks MCP. Keep one integration branch. Also read ${copied} and follow its Boundary, Stop points and Report sections.`,
+    );
   });
 
   it("refuses an unknown effort for the harness", async () => {
