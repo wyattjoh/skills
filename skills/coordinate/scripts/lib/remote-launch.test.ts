@@ -4,7 +4,7 @@ import { join } from "node:path";
 import { Effect } from "effect";
 import { cleanGitEnv } from "./git-env.ts";
 import { failureOf, initRepo, tempDir } from "./fixture.ts";
-import { fakeProc, Proc, type RunOutput } from "./proc.ts";
+import { fakeProc, Proc, type RunOutput, SpawnError } from "./proc.ts";
 import { preflightRemote, remoteProc } from "./remote-launch.ts";
 
 // A local Proc that answers `hc exec --on <m> --json ... -- argv` by running argv here, as hc does
@@ -57,8 +57,8 @@ describe("remoteProc", () => {
           .run(["git", "status"], { cwd: missing, env: undefined, timeoutMs: 10_000 })
           .pipe(Effect.flip),
       );
-      expect([failure._tag, failure.message]).toEqual([
-        "SpawnError",
+      expect([failure instanceof SpawnError, failure.message]).toEqual([
+        true,
         `working folder ${missing} does not exist on strix`,
       ]);
     } finally {
