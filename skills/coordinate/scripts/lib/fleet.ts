@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { mkdir, readdir, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { Effect, Option, Schema } from "effect";
@@ -37,6 +38,21 @@ export const checkDomainName = Effect.fn("checkDomainName")(function* (domain: s
       message: `${domain} is not a domain name: lowercase letters, digits, . _ -`,
     });
 });
+
+/**
+ * Fit a domain into a terminal name: `.` becomes `-`, and a domain longer than `room` keeps its
+ * first `keep` characters and a hash of the whole, so every name `checkDomainName` accepts fits.
+ * @param domain Domain.
+ * @param room The most characters the name has for the domain.
+ * @param keep Characters kept before the hash when the domain does not fit; at most `room - 9`.
+ * @returns The domain part of the terminal name.
+ */
+export const domainNamePart = (domain: string, room: number, keep: number): string => {
+  const safe = domain.replaceAll(".", "-");
+  if (safe.length <= room) return safe;
+  const hash = createHash("sha256").update(domain).digest("hex").slice(0, 8);
+  return `${safe.slice(0, keep)}-${hash}`;
+};
 
 /**
  * One delegate: a live agent terminal the domain owns.

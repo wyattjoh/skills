@@ -1,7 +1,15 @@
 import { afterAll, afterEach, beforeEach, describe, expect, it } from "bun:test";
-import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import {
+  existsSync,
+  mkdirSync,
+  readdirSync,
+  readFileSync,
+  rmSync,
+  symlinkSync,
+  writeFileSync,
+} from "node:fs";
 import { join } from "node:path";
-import { boundaryAdd, createDocument, itemAdd } from "./backlog-doc.ts";
+import { boundaryAdd, createDocument, itemAdd, itemClose } from "./backlog-doc.ts";
 import { resolveConfig } from "./config.ts";
 import { Effect } from "effect";
 import { failureOf, g, gitAndFake, initRepo, runWith, tempDir } from "./fixture.ts";
@@ -488,26 +496,29 @@ const MANAGER = { "fleet.role": "coordinator", "fleet.domain": "manager" };
 
 /**
  * A fake Herdr: `hc get t1` answers the caller, `hc ls` filtered on the coordinator role answers
- * `coordinatorsLive`, the tasks watcher query answers `watchers`, any other `hc ls` answers
- * `live`, a launch goes into space sp9 as t7, and `hc get t7` answers `launched`.
+ * `coordinatorsLive`, the domain's watcher query answers `watchers` (by default one started by
+ * t7), any other `hc ls` answers `live`, a launch goes into space sp9 as t7 (or answers
+ * `launch`), and `hc get t7` answers `launched`.
  */
 const spawnFake = (
   callerLabels: Record<string, string>,
   coordinatorsLive: readonly Record<string, unknown>[] = [],
   live: readonly Record<string, unknown>[] = [],
-  watchers: readonly Record<string, unknown>[] = [{ address: "t-w", state: "live" }],
+  watchers: readonly Record<string, unknown>[] = [{ address: "t-w", state: "live", parent: "t7" }],
   launched: Record<string, unknown> = { address: "t7", state: "live" },
+  domain = "tasks",
+  launch: RunOutput = ok('{"address":"t7"}'),
 ) =>
   fakeProc((argv) => {
     if (argv[0] === "hc") {
       if (argv[1] === "get" && argv[2] === "t1") return ok(spawnCaller(callerLabels));
       if (argv[1] === "get" && argv[2] === "t7") return ok(JSON.stringify(launched));
-      if (argv[1] === "ls" && argv.includes("coordinate.watch-domain=tasks"))
+      if (argv[1] === "ls" && argv.includes(`coordinate.watch-domain=${domain}`))
         return ok(JSON.stringify({ terminals: watchers }));
       if (argv[1] === "ls" && argv.includes("fleet.role=coordinator"))
         return ok(JSON.stringify({ terminals: coordinatorsLive }));
       if (argv[1] === "ls") return ok(JSON.stringify({ terminals: live }));
-      if (argv[1] === "run") return ok('{"address":"t7"}');
+      if (argv[1] === "run") return launch;
       if (argv[1] === "kill" || argv[1] === "rm") return ok("{}");
     }
     if (argv[0] === "herdr-app") {
@@ -520,7 +531,8 @@ const spawnFake = (
           }),
         );
       if (argv[2] === "space.new") return ok('{"space":"sp9","tab":"tab9","terminal":"t6"}');
-      if (argv[2] === "pane.close" || argv[2] === "tab.rename") return ok("{}");
+      if (argv[2] === "pane.close" || argv[2] === "tab.rename" || argv[2] === "space.close")
+        return ok("{}");
     }
     throw new Error(`unexpected command: ${argv.join(" ")}`);
   });
@@ -681,22 +693,47 @@ describe("spawn", () => {
     expect(fake.calls.map((call) => call.argv)).toEqual([["hc", "get", "t1", "--json"]]);
   });
 
-  it("refuses a domain that cannot form a terminal name", async () => {
+  it("refuses from a plain shell with no Herdr terminal, touching nothing", async () => {
     const state = dir();
     const fake = spawnFake(MANAGER);
     const error = await failureOf(
-      spawn(
-        await withDefaultHarness(state, "claude"),
-        spawnOptions({ domain: "web.app", cwd: state }),
-        ENV,
-      ),
+      spawn(await withDefaultHarness(state, "claude"), spawnOptions({ cwd: state }), {}),
       fake.layer,
     );
     expect(messageOf(error)).toBe(
-      "web.app-coordinator is not a terminal name: 1 to 32 of a-z, 0-9, - and _; spawn needs a domain of 20 or fewer of a-z, 0-9, - and _",
+      "spawn runs from a coordinator terminal, and HC_TERMINAL_ID is unset: this is not a Herdr terminal",
     );
-    expect(fake.calls.map((call) => call.argv)).toEqual([["hc", "get", "t1", "--json"]]);
+    expect(fake.calls).toEqual([]);
   });
+
+  it.each([
+    { domain: "web.app", name: "web-app-coordinator" },
+    { domain: "a-very-long-domain-name", name: "a-very-long-c7b86402-coordinator" },
+  ])(
+    "names a $domain coordinator $name, keeping the domain elsewhere",
+    async ({ domain, name }) => {
+      const state = dir();
+      const fake = spawnFake(
+        MANAGER,
+        [],
+        [],
+        [{ address: "t-w", state: "live", parent: "t7" }],
+        { address: "t7", state: "live" },
+        domain,
+      );
+      const result = await runWith(
+        spawn(await withDefaultHarness(state, "claude"), spawnOptions({ domain, cwd: state }), ENV),
+        fake.layer,
+      );
+      const run = fake.calls.map((call) => call.argv).find((argv) => argv[1] === "run") ?? [];
+      expect([result.name, result.status]).toEqual([name, "ready"]);
+      expect(run.slice(4, 6)).toEqual(["--name", name]);
+      expect(run.filter((arg) => arg.startsWith("fleet.domain="))).toEqual([
+        `fleet.domain=${domain}`,
+      ]);
+      expect(run.at(-1)).toBe(`/coordinate ${domain}`);
+    },
+  );
 
   it("refuses without --cwd, and with a folder that does not exist", async () => {
     const state = dir();
@@ -808,11 +845,9 @@ describe("spawn", () => {
       space: "sp9",
       harness: "claude",
       session,
-      backlog: { path: tasksDocument(state), created: true, owned: state, items: [] },
+      backlog: { path: tasksDocument(state), created: true, owned: state, items: [], present: [] },
       watcher: "t-w",
       status: "ready",
-      agentStatus: null,
-      tab: null,
       timeoutMs: 120_000,
     });
   });
@@ -915,6 +950,71 @@ describe("spawn", () => {
     expect(lines.slice(0, 2)).toEqual([`backlog ${tasksDocument(state)}`, "added i2: new"]);
   });
 
+  it("does not add an --item again on a retry after a failed launch, reporting it as already present", async () => {
+    const state = dir();
+    const cfg = await withDefaultHarness(state, "claude");
+    // A done item with the same title does not count: "first" is added again.
+    await Effect.runPromise(createDocument(cfg, "tasks"));
+    await Effect.runPromise(itemAdd(cfg, "tasks", { title: "first", json: false, now: SPAWN_NOW }));
+    await Effect.runPromise(
+      itemClose(cfg, "tasks", {
+        id: "i1",
+        outcome: "shipped",
+        dismissed: false,
+        json: false,
+        now: SPAWN_NOW,
+      }),
+    );
+    const failed = await failureOf(
+      spawn(cfg, spawnOptions({ cwd: state, items: ["first", "second"] }), ENV),
+      spawnFake(MANAGER, [], [], undefined, undefined, "tasks", {
+        exitCode: 1,
+        stdout: "",
+        stderr: "boom",
+      }).layer,
+    );
+    expect(messageOf(failed)).toBe("boom");
+    const lines = spawnOutput(
+      await runWith(
+        spawn(cfg, spawnOptions({ cwd: state, items: ["first", "third"] }), ENV),
+        spawnFake(MANAGER).layer,
+      ),
+    );
+    expect(
+      readJson(tasksDocument(state)).items.map(
+        (item: { id: string; title: string; status: string }) => [item.id, item.title, item.status],
+      ),
+    ).toEqual([
+      ["i1", "first", "done"],
+      ["i2", "first", "open"],
+      ["i3", "second", "open"],
+      ["i4", "third", "open"],
+    ]);
+    expect(lines.slice(0, 3)).toEqual([
+      `backlog ${tasksDocument(state)}`,
+      "added i4: third",
+      "already present i2: first",
+    ]);
+  });
+
+  it("stores a symlinked --cwd as backlog boundary add does and starts there", async () => {
+    const state = dir();
+    const cfg = await withDefaultHarness(state, "claude");
+    const target = join(state, "target");
+    const link = join(state, "link");
+    mkdirSync(target);
+    symlinkSync(target, link);
+    await ownedBy(cfg, "tasks", [link]);
+    const fake = spawnFake(MANAGER);
+    const lines = spawnOutput(
+      await runWith(spawn(cfg, spawnOptions({ cwd: `${link}/` }), ENV), fake.layer),
+    );
+    const run = fake.calls.map((call) => call.argv).find((argv) => argv[1] === "run") ?? [];
+    expect(readJson(tasksDocument(state)).boundary).toEqual({ owned: [link], adjacent: [] });
+    expect(run.slice(6, 8)).toEqual(["--cwd", link]);
+    expect(lines[1]?.startsWith("started coordinator")).toBe(true);
+  });
+
   it("starts pi with /skill:coordinate and passes only the model and effort given", async () => {
     const state = dir();
     const fake = spawnFake(MANAGER);
@@ -959,9 +1059,7 @@ describe("spawn", () => {
         },
         listed: [{ address: "t7", state: "live", where: "tasks / Tasks · No active focus" }],
         polls: [watcherList, t7Get, ["hc", "ls", "--json"]],
-        status: "blocked",
-        agentStatus: "blocked",
-        tab: "tasks / Tasks · No active focus",
+        fields: { status: "blocked", tab: "tasks / Tasks · No active focus" },
         line: 'not ready after 0s: tasks-coordinator (t7) is blocked on a dialog, which is the user\'s to answer in "tasks / Tasks · No active focus" (hc read t7); left running',
       },
       {
@@ -969,14 +1067,12 @@ describe("spawn", () => {
         launched: { address: "t7", state: "live", status: { state: "working" } },
         listed: [],
         polls: [watcherList, t7Get],
-        status: "working",
-        agentStatus: "working",
-        tab: null,
+        fields: { status: "working", agentStatus: "working" },
         line: "not ready after 0s: tasks-coordinator (t7) is still working with no watcher armed; left running",
       },
     ])(
       "times out $state, reports the last state and leaves the terminal running",
-      async ({ launched, listed, polls, status, agentStatus, tab, line }) => {
+      async ({ launched, listed, polls, fields, line }) => {
         const state = dir();
         const fake = spawnFake(MANAGER, [], listed, [], launched);
         const sleeps: number[] = [];
@@ -996,11 +1092,15 @@ describe("spawn", () => {
           space: "sp9",
           harness: "claude",
           session: "",
-          backlog: { path: tasksDocument(state), created: true, owned: state, items: [] },
+          backlog: {
+            path: tasksDocument(state),
+            created: true,
+            owned: state,
+            items: [],
+            present: [],
+          },
           watcher: null,
-          status,
-          agentStatus,
-          tab,
+          ...fields,
           timeoutMs: 3,
         });
         expect(spawnOutput(result).at(-1)).toBe(line);
@@ -1012,6 +1112,36 @@ describe("spawn", () => {
         ]);
       },
     );
+
+    it("counts only a watcher the new terminal started, not a stale one of another owner", async () => {
+      const state = dir();
+      const stale = { address: "t-old", state: "live", parent: "t3" };
+      const onlyStale = await runWith(
+        spawn(
+          await withDefaultHarness(state, "claude"),
+          spawnOptions({ cwd: state }),
+          ENV,
+          fastWait([]),
+        ),
+        spawnFake(MANAGER, [], [], [stale], {
+          address: "t7",
+          state: "live",
+          status: { state: "working" },
+        }).layer,
+      );
+      expect([onlyStale.status, onlyStale.watcher]).toEqual(["working", null]);
+      const both = await runWith(
+        spawn(
+          await withDefaultHarness(dir(), "claude"),
+          spawnOptions({ cwd: state }),
+          ENV,
+          fastWait([]),
+        ),
+        spawnFake(MANAGER, [], [], [stale, { address: "t-new", state: "live", parent: "t7" }])
+          .layer,
+      );
+      expect([both.status, both.watcher]).toEqual(["ready", "t-new"]);
+    });
 
     it("stops waiting once the new terminal is gone", async () => {
       const state = dir();

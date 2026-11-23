@@ -8,19 +8,13 @@ import {
   checkFileable,
   createDocument,
   itemUpdate,
+  normalizeBoundary,
   readDocument,
   recordDelegate,
   refSessions,
   seedDocument,
 } from "./backlog-doc.ts";
-import {
-  addItem,
-  emptyBacklog,
-  filedUnder,
-  idleDelegated,
-  updateItem,
-  type ItemUpdate,
-} from "./backlog-store/ops.ts";
+import { filedUnder, idleDelegated, updateItem, type ItemUpdate } from "./backlog-store/ops.ts";
 import type { ItemStatus } from "./backlog-store/schema.ts";
 import { documentPath } from "./backlog-store/paths.ts";
 import type { Config } from "./config.ts";
@@ -28,6 +22,7 @@ import {
   backlogPath,
   checkDomainName,
   coordinators,
+  domainNamePart,
   L,
   callerRole,
   members,
@@ -58,7 +53,7 @@ import {
   PI_THINKING,
 } from "./harness.ts";
 import * as hc from "./herdr.ts";
-import { armWatcher, watcherInfo, watcherInfoLine } from "./watch-terminal.ts";
+import { armWatcher, WATCHER_DOMAIN_LABEL, watcherInfoLine } from "./watch-terminal.ts";
 import {
   capacityItemEligible,
   enqueueCapacityWait,
@@ -231,6 +226,30 @@ export type SpawnOptions = {
 };
 
 /**
+ * Refuse an effort the harness does not have: a pi `--thinking` level or a Claude `--effort`.
+ * @param harness Harness.
+ * @param effort Effort, when given.
+ */
+const checkEffort = Effect.fn("checkEffort")(function* (
+  harness: Harness,
+  effort: string | undefined,
+) {
+  const efforts = harness === "pi" ? PI_THINKING : CLAUDE_EFFORTS;
+  if (effort !== undefined && !efforts.has(effort))
+    return yield* new Refused({
+      message: `${effort} is not a ${harness} ${harness === "pi" ? "thinking level" : "effort"}: ${[...efforts].join(", ")}`,
+    });
+});
+
+/**
+ * A spawned coordinator's terminal name, `<domain>-coordinator`, with the domain fitted the way a
+ * watcher's name fits it, so every valid domain has one.
+ * @param domain Domain.
+ * @returns Terminal name.
+ */
+const coordinatorName = (domain: string): string => `${domainNamePart(domain, 20, 11)}-coordinator`;
+
+/**
  * The tab title a coordinator starts with, per the manager's tab-title convention.
  * @param domain Domain.
  * @returns `<Domain> · No active focus`.
@@ -243,7 +262,7 @@ const idleTabTitle = (domain: string): string =>
  * `--cwd`, or else the first owned Boundary path of the domain's existing backlog.
  * @param config Config.
  * @param options Spawn options.
- * @returns The real path of an existing folder, and the path to keep in the owned Boundary.
+ * @returns An existing folder, spelled as the owned Boundary stores it.
  */
 const spawnFolder = Effect.fn("spawnFolder")(function* (config: Config, options: SpawnOptions) {
   const { domain } = options;
@@ -262,44 +281,57 @@ const spawnFolder = Effect.fn("spawnFolder")(function* (config: Config, options:
           );
         })
       : undefined;
-  const cwd = owned ?? resolve(options.cwd ?? "");
-  if (!existsSync(cwd)) return yield* new Refused({ message: `${cwd} does not exist` });
-  // Kept in the resolved spelling `backlog boundary add` stores, so an owned path is not listed twice.
-  return { folder: real(cwd), owned: owned ?? cwd };
+  // The spelling `backlog boundary add` stores (a symlink kept), so a path is not listed twice
+  // and the coordinator starts in the folder its Boundary names.
+  const folder = owned ?? normalizeBoundary(options.cwd ?? "");
+  if (!existsSync(folder)) return yield* new Refused({ message: `${folder} does not exist` });
+  return folder;
 });
 
+type SeedItem = { id: string; title: string };
+
 /**
- * Refuse an item title the backlog would refuse, before anything is written.
- * @param options Spawn options.
+ * What spawn seeded before the launch: the backlog, the owned folder when it added one, the items
+ * it added, and the `--item` titles an item not yet closed already had.
  */
-const checkSpawnItems = Effect.fn("checkSpawnItems")(function* (options: SpawnOptions) {
-  const blank = emptyBacklog(options.domain, null);
-  for (const title of options.items) {
-    const added = addItem(blank, { title, now: options.now });
-    if (!added.ok) return yield* new Refused({ message: `--item: ${added.reason}` });
-  }
-});
+type SpawnSeed = {
+  path: string;
+  created: boolean;
+  owned: string | null;
+  items: readonly SeedItem[];
+  present: readonly SeedItem[];
+};
 
 /**
  * Turn a seeded backlog into the lines spawn prints before the launch.
- * @param seeded What `seedDocument` wrote.
+ * @param seeded What spawn seeded.
  * @returns Lines to print.
  */
-const seedLines = (seeded: {
-  path: string;
-  created: boolean;
-  added: boolean;
-  owned: string;
-  items: readonly { id: string; title: string }[];
-}): string[] => [
+const seedLines = (seeded: SpawnSeed): string[] => [
   seeded.created ? `created backlog ${seeded.path}` : `backlog ${seeded.path}`,
-  ...(seeded.added ? [`owned: added ${seeded.owned}`] : []),
+  ...(seeded.owned === null ? [] : [`owned: added ${seeded.owned}`]),
   ...seeded.items.map((item) => `added ${item.id}: ${item.title}`),
+  ...seeded.present.map((item) => `already present ${item.id}: ${item.title}`),
 ];
 
 /**
- * What `coordinate spawn` started and whether it became ready: `ready` once the domain's watcher
- * terminal is live, otherwise the new terminal's last observed state.
+ * Whether the new coordinator became ready: `ready` once a live watcher terminal it started is
+ * found, otherwise its last observed state. `watcher` is on every outcome, null when not ready.
+ */
+type SpawnReadiness =
+  | { status: "ready"; watcher: string }
+  /**
+   * `agentStatus`: the agent status Herdr last reported for the new terminal.
+   */
+  | { status: "working"; watcher: null; agentStatus: string | null }
+  /**
+   * `tab`: where the blocking dialog is.
+   */
+  | { status: "blocked"; watcher: null; tab: string }
+  | { status: "gone"; watcher: null };
+
+/**
+ * What `coordinate spawn` started and whether it became ready.
  */
 type SpawnResult = {
   name: string;
@@ -308,30 +340,12 @@ type SpawnResult = {
   space: string;
   harness: Harness;
   session: string;
-  /**
-   * What spawn seeded before the launch: the backlog, the owned folder when it added one, and the items.
-   */
-  backlog: {
-    path: string;
-    created: boolean;
-    owned: string | null;
-    items: readonly { id: string; title: string }[];
-  };
-  watcher: string | null;
-  status: "ready" | "working" | "blocked" | "gone";
-  /**
-   * The agent status Herdr last reported for the new terminal, when not ready.
-   */
-  agentStatus: string | null;
-  /**
-   * Where the blocking dialog is, when blocked.
-   */
-  tab: string | null;
+  backlog: SpawnSeed;
   /**
    * The readiness bound spawn waited within.
    */
   timeoutMs: number;
-};
+} & SpawnReadiness;
 
 /**
  * How long and how often spawn polls for the new coordinator's watcher.
@@ -353,13 +367,13 @@ const SPAWN_WAIT: SpawnWait = {
  * @param result A result whose status is not `ready`.
  * @returns One line.
  */
-const notReadyLine = (result: SpawnResult): string => {
+const notReadyLine = (result: SpawnResult & { status: "working" | "blocked" | "gone" }): string => {
   const who = `${result.name} (${result.terminal})`;
   if (result.status === "gone")
     return `not ready: ${who} is gone, it ended before arming its watcher`;
   const after = `not ready after ${Math.round(result.timeoutMs / 1000)}s: ${who}`;
   if (result.status === "blocked")
-    return `${after} is blocked on a dialog, which is the user's to answer in "${result.tab ?? result.terminal}" (hc read ${result.terminal}); left running`;
+    return `${after} is blocked on a dialog, which is the user's to answer in "${result.tab}" (hc read ${result.terminal}); left running`;
   return `${after} is still ${result.agentStatus ?? "starting"} with no watcher armed; left running`;
 };
 
@@ -370,11 +384,7 @@ const notReadyLine = (result: SpawnResult): string => {
  * @returns Lines to print.
  */
 export const spawnOutput = (result: SpawnResult): string[] => [
-  ...seedLines({
-    ...result.backlog,
-    added: result.backlog.owned !== null,
-    owned: result.backlog.owned ?? "",
-  }),
+  ...seedLines(result.backlog),
   `started coordinator ${result.name} for ${result.domain} (${result.terminal}) in its own space ${result.space}, ${result.harness} session ${result.session}`,
   result.status === "ready"
     ? `ready: ${result.name} (${result.terminal}) armed watcher ${result.watcher}`
@@ -382,34 +392,28 @@ export const spawnOutput = (result: SpawnResult): string[] => [
 ];
 
 /**
- * Poll until the domain's watcher terminal is live, which the new coordinator's own
- * `coordinate start` arms. Stops early when the new terminal is gone; never ends it.
- * @param config Config.
+ * Poll until a live watcher terminal for the domain is found whose parent is the new coordinator:
+ * its own `coordinate start` arms it as its child, so a leftover watcher of another owner does not
+ * count. Stops early when the new terminal is gone; never ends it.
  * @param domain Domain.
  * @param address The new coordinator's terminal.
  * @param wait Bound, interval and sleep.
  * @returns The readiness fields of the result.
  */
 const awaitWatcher = Effect.fn("awaitWatcher")(function* (
-  config: Config,
   domain: string,
   address: string,
   wait: SpawnWait,
 ) {
   const attempts = Math.max(1, Math.ceil(wait.timeoutMs / wait.intervalMs));
-  let last: Pick<SpawnResult, "watcher" | "status" | "agentStatus" | "tab"> = {
-    watcher: null,
-    status: "working",
-    agentStatus: null,
-    tab: null,
-  };
+  let last: SpawnReadiness = { status: "working", watcher: null, agentStatus: null };
   for (let attempt = 0; attempt < attempts; attempt += 1) {
     if (attempt > 0) yield* wait.sleep(wait.intervalMs);
-    const info = yield* watcherInfo(config, domain).pipe(
-      Effect.catch(() => Effect.succeed(undefined)),
-    );
-    if (info?.terminal !== undefined)
-      return { watcher: info.terminal, status: "ready", agentStatus: null, tab: null } as const;
+    const watchers = yield* hc
+      .list([`${WATCHER_DOMAIN_LABEL}=${domain}`])
+      .pipe(Effect.catch(() => Effect.succeed([])));
+    const watcher = watchers.find((candidate) => candidate.live && candidate.parent === address);
+    if (watcher) return { status: "ready", watcher: watcher.address } satisfies SpawnReadiness;
     // A transient hc failure keeps the last observation; only a missing or ended terminal is gone.
     const terminal = yield* hc.get(address).pipe(
       Effect.map((got) => ({ got })),
@@ -417,25 +421,15 @@ const awaitWatcher = Effect.fn("awaitWatcher")(function* (
     );
     if (terminal === undefined) continue;
     if (terminal.got === undefined || !terminal.got.live)
-      return { watcher: null, status: "gone", agentStatus: null, tab: null } as const;
+      return { status: "gone", watcher: null } satisfies SpawnReadiness;
     if (terminal.got.status !== "blocked") {
-      last = {
-        watcher: null,
-        status: "working",
-        agentStatus: terminal.got.status ?? null,
-        tab: null,
-      };
+      last = { status: "working", watcher: null, agentStatus: terminal.got.status ?? null };
       continue;
     }
     // `hc ls` carries the terminal's space and tab; the title spawn set is the fallback.
     const listed = yield* hc.list().pipe(Effect.catch(() => Effect.succeed([])));
     const where = listed.find((candidate) => candidate.address === address)?.where;
-    last = {
-      watcher: null,
-      status: "blocked",
-      agentStatus: "blocked",
-      tab: where || idleTabTitle(domain),
-    };
+    last = { status: "blocked", watcher: null, tab: where || idleTabTitle(domain) };
   }
   return last;
 });
@@ -461,24 +455,20 @@ export const spawn = Effect.fn("spawn")(function* (
 ) {
   const { domain } = options;
   yield* checkDomainName(domain);
+  if (!env.HC_TERMINAL_ID)
+    return yield* new Refused({
+      message:
+        "spawn runs from a coordinator terminal, and HC_TERMINAL_ID is unset: this is not a Herdr terminal",
+    });
   const caller = yield* callerRole(env);
   if (caller.kind !== "coordinator")
     return yield* new Refused({
       message: `spawn runs from a coordinator terminal, and ${caller.address} is not labelled as one (fleet.role=coordinator)`,
     });
   const harness = yield* resolveHarnessForLaunch(config, domain, options.harness, false);
-  const efforts = harness === "pi" ? PI_THINKING : CLAUDE_EFFORTS;
-  if (options.effort && !efforts.has(options.effort))
-    return yield* new Refused({
-      message: `${options.effort} is not a ${harness} ${harness === "pi" ? "thinking level" : "effort"}: ${[...efforts].join(", ")}`,
-    });
-  const name = `${domain}-coordinator`;
-  if (!hc.TERMINAL_NAME.test(name))
-    return yield* new Refused({
-      message: `${name} is not a terminal name: 1 to 32 of a-z, 0-9, - and _; spawn needs a domain of 20 or fewer of a-z, 0-9, - and _`,
-    });
-  const { folder: cwd, owned } = yield* spawnFolder(config, options);
-  yield* checkSpawnItems(options);
+  yield* checkEffort(harness, options.effort);
+  const name = coordinatorName(domain);
+  const cwd = yield* spawnFolder(config, options);
   const running = (yield* coordinators(domain)).find((terminal) => terminal.live);
   if (running)
     return yield* new Refused({
@@ -491,7 +481,7 @@ export const spawn = Effect.fn("spawn")(function* (
     });
 
   const seeded = yield* seedDocument(config, domain, {
-    owned,
+    owned: cwd,
     titles: options.items,
     now: options.now,
   });
@@ -520,7 +510,7 @@ export const spawn = Effect.fn("spawn")(function* (
     }),
     recordSpace: false,
   });
-  const ready = yield* awaitWatcher(config, domain, launched.address, wait);
+  const ready = yield* awaitWatcher(domain, launched.address, wait);
   const result: SpawnResult = {
     name,
     domain,
@@ -531,8 +521,9 @@ export const spawn = Effect.fn("spawn")(function* (
     backlog: {
       path: seeded.path,
       created: seeded.created,
-      owned: seeded.added ? owned : null,
+      owned: seeded.added ? cwd : null,
       items: seeded.items.map((item) => ({ id: item.id, title: item.title })),
+      present: seeded.present.map((item) => ({ id: item.id, title: item.title })),
     },
     ...ready,
     timeoutMs: wait.timeoutMs,
@@ -606,13 +597,7 @@ export const delegate = Effect.fn("delegate")(function* (
     return yield* new Refused({
       message: "pass exactly one of --repo (new worktree) or --cwd (a folder with no repo work)",
     });
-  if (options.harness !== undefined && options.effort !== undefined) {
-    const efforts = options.harness === "pi" ? PI_THINKING : CLAUDE_EFFORTS;
-    if (!efforts.has(options.effort))
-      return yield* new Refused({
-        message: `${options.effort} is not a ${options.harness} ${options.harness === "pi" ? "thinking level" : "effort"}: ${[...efforts].join(", ")}`,
-      });
-  }
+  if (options.harness !== undefined) yield* checkEffort(options.harness, options.effort);
   // Fails closed: a caller whose role cannot be checked is neither filed nor exempt.
   const caller = yield* callerRole();
   const coordinator = caller.kind === "coordinator" ? caller : undefined;
@@ -698,11 +683,7 @@ export const delegate = Effect.fn("delegate")(function* (
       options.harness,
       options.retryQueued,
     );
-    const efforts = harness === "pi" ? PI_THINKING : CLAUDE_EFFORTS;
-    if (options.effort && !efforts.has(options.effort))
-      return yield* new Refused({
-        message: `${options.effort} is not a ${harness} ${harness === "pi" ? "thinking level" : "effort"}: ${[...efforts].join(", ")}`,
-      });
+    yield* checkEffort(harness, options.effort);
 
     const taken = terminals.find((terminal) => terminal.live && terminal.name === options.name);
     if (taken)

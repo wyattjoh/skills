@@ -32,7 +32,7 @@ export type DelegateFirstMessage =
  */
 export type FirstMessage =
   | DelegateFirstMessage
-  | { kind: "skill"; skill: "coordinate"; args: string; brief?: string };
+  | { kind: "skill"; skill: "coordinate"; args: string };
 
 /**
  * Render the first message.
@@ -42,9 +42,10 @@ export type FirstMessage =
  */
 export const firstMessage = (harness: Harness, message: FirstMessage): string => {
   if (message.kind === "brief") return `Read ${message.path} and do what it says.`;
-  const brief = message.brief
-    ? `Also read ${message.brief} and follow its Boundary, Stop points and Report sections.`
-    : "";
+  const brief =
+    "brief" in message && message.brief
+      ? `Also read ${message.brief} and follow its Boundary, Stop points and Report sections.`
+      : "";
   return [skillPrefix(harness, message.skill), message.args.trim(), brief]
     .filter((part) => part !== "")
     .join(" ");

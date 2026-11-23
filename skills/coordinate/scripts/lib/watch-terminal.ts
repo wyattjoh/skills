@@ -1,8 +1,7 @@
-import { createHash } from "node:crypto";
 import { basename, join } from "node:path";
 import { Effect } from "effect";
 import type { Config } from "./config.ts";
-import { checkDomainName, L } from "./fleet.ts";
+import { checkDomainName, domainNamePart, L } from "./fleet.ts";
 import * as hc from "./herdr.ts";
 import { watcherAlive } from "./watch-lock.ts";
 import type { Item } from "./backlog-store/schema.ts";
@@ -245,12 +244,7 @@ export const watcherInfo = Effect.fn("watcherInfo")(function* (config: Config, d
   } satisfies WatcherInfo;
 });
 
-const watcherName = (domain: string): string => {
-  const safe = domain.replaceAll(".", "-");
-  if (safe.length <= 26) return `watch-${safe}`;
-  const hash = createHash("sha256").update(domain).digest("hex").slice(0, 8);
-  return `watch-${safe.slice(0, 14)}-${hash}`;
-};
+const watcherName = (domain: string): string => `watch-${domainNamePart(domain, 26, 14)}`;
 
 /**
  * Ensure the domain has one long-lived child terminal delivering watcher events to its coordinator.

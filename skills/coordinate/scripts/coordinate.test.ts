@@ -216,7 +216,9 @@ describe("coordinate CLI delegate --skill", () => {
 });
 
 describe("coordinate CLI spawn", () => {
-  const watcherLive = { "coordinate.watch-domain=tasks": [{ address: "t-w", state: "live" }] };
+  const watcherLive = {
+    "coordinate.watch-domain=tasks": [{ address: "t-w", state: "live", parent: "t-watch" }],
+  };
   const MANAGER = { "fleet.role": "coordinator", "fleet.domain": "manager" };
 
   it("passes the domain and flags through and prints the started and ready lines", () => {
@@ -319,13 +321,29 @@ describe("coordinate CLI spawn", () => {
         created: true,
         owned: state,
         items: [],
+        present: [],
       },
       watcher: "t-w",
       status: "ready",
-      agentStatus: null,
-      tab: null,
       timeoutMs: 120_000,
     });
+  });
+
+  it("refuses with exit 1 from a plain shell, launching nothing", () => {
+    const state = tempDir("coordinate-spawn-cli-shell-");
+    made.push(state);
+    const env = cliEnv(state, MANAGER);
+    delete env.HC_TERMINAL_ID;
+    const result = Bun.spawnSync(
+      ["bun", cli, "spawn", "tasks", "--cwd", state, "--harness", "claude"],
+      { env, stdout: "pipe", stderr: "pipe", timeout: 10_000 },
+    );
+    expect({ exit: result.exitCode, stderr: result.stderr.toString() }).toEqual({
+      exit: 1,
+      stderr:
+        "refused: spawn runs from a coordinator terminal, and HC_TERMINAL_ID is unset: this is not a Herdr terminal\n",
+    });
+    expect(existsSync(join(state, "bin", "calls.log"))).toBe(false);
   });
 
   it("exits 1 with the last state when the new terminal ends before its watcher is armed", () => {

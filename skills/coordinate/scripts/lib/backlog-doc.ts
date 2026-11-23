@@ -286,11 +286,13 @@ export const createDocument = Effect.fn("createDocument")(function* (
 /**
  * Seed the backlog of a coordinator about to start, in one write under the lock: create the
  * document when missing, add the folder to the owned Boundary when absent, and add each title as an
- * open item. A refused step writes nothing, and an unchanged document is not rewritten.
+ * open item unless an item not yet closed already has it, so a retry adds nothing twice. A refused
+ * step writes nothing, and an unchanged document is not rewritten.
  * @param config Config.
  * @param domain Domain.
  * @param input The owned folder, the item titles, and the time as an ISO string.
- * @returns The path, whether the document was created, whether the folder was added, and the items.
+ * @returns The path, whether the document was created, whether the folder was added, the items
+ *   added, and the items already present.
  */
 export const seedDocument = Effect.fn("seedDocument")(function* (
   config: Config,
@@ -308,18 +310,33 @@ export const seedDocument = Effect.fn("seedDocument")(function* (
           : parse(path, await readFile(path, "utf8"));
         const bounded = addBoundary(current, { path: input.owned, list: "owned" });
         if (!bounded.ok) return { ok: false as const, reason: bounded.reason };
-        const seeded = input.titles.reduce<OpResult<Item[]>>(
+        const seeded = input.titles.reduce<OpResult<{ items: Item[]; present: Item[] }>>(
           (previous, title) => {
             if (!previous.ok) return previous;
+            const present = previous.backlog.items.find(
+              (item) =>
+                item.title === title.trim() &&
+                item.status !== "done" &&
+                item.status !== "dismissed",
+            );
+            if (present)
+              return {
+                ...previous,
+                value: { ...previous.value, present: [...previous.value.present, present] },
+              };
             const added = addItem(previous.backlog, { title, now: input.now });
-            if (!added.ok) return added;
-            return { ok: true, backlog: added.backlog, value: [...previous.value, added.value] };
+            if (!added.ok) return { ok: false, reason: `--item: ${added.reason}` };
+            return {
+              ok: true,
+              backlog: added.backlog,
+              value: { ...previous.value, items: [...previous.value.items, added.value] },
+            };
           },
-          { ok: true, backlog: bounded.backlog, value: [] },
+          { ok: true, backlog: bounded.backlog, value: { items: [], present: [] } },
         );
         if (!seeded.ok) return { ok: false as const, reason: seeded.reason };
-        const value = { path, created, added: bounded.value.added, items: seeded.value };
-        if (!created && !bounded.value.added && seeded.value.length === 0)
+        const value = { path, created, added: bounded.value.added, ...seeded.value };
+        if (!created && !bounded.value.added && seeded.value.items.length === 0)
           return { ok: true as const, value };
         const checked = validateBacklog(seeded.backlog);
         if (!checked.ok) return { ok: false as const, reason: checked.errors.join("; ") };
@@ -536,7 +553,7 @@ export const itemUpdate = Effect.fn("itemUpdate")(function* (
  * @param home Home directory for `~`.
  * @returns The stored form; an empty or multi-line path is returned as given, for the op to refuse.
  */
-const normalizeBoundary = (path: string, home: string = homedir()): string => {
+export const normalizeBoundary = (path: string, home: string = homedir()): string => {
   if (path.trim() === "" || /[\r\n]/.test(path)) return path.trim() === "" ? "" : path;
   const expanded = path === "~" ? home : path.startsWith("~/") ? join(home, path.slice(2)) : path;
   const absolute = resolve(expanded);
