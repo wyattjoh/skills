@@ -21,6 +21,8 @@ const readiness = strixReadiness();
 if (!readiness.ready) console.log(`strix suite skipped: ${readiness.reason}`);
 const ready = readiness.ready;
 
+const blockedEvent = (event: string) => event.includes(' kind="blocked"');
+
 describe.skipIf(!ready)("strix: Boundary checkout map", () => {
   let run: StrixRun | undefined;
   let local = "";
@@ -493,17 +495,15 @@ describe.skipIf(!ready)("strix: watching a remote delegate", () => {
         stdout: "pipe",
         timeout: 15_000,
       }).stdout.toString();
-    const blocked = (event: string) => event.includes(' kind="blocked"');
-    const events = watchEvents(run, (event) => event === settled || blocked(event), 300_000);
+    const events = watchEvents(run, (event) => event === settled || blockedEvent(event), 300_000);
     // Claude Code asks once whether to trust a folder strix has never seen; this throwaway one is
     // the suite's own, so the suite answers yes in its own terminal.
     if (
       !events.includes(settled) &&
-      events.some(blocked) &&
-      screen().includes("trust this folder")
+      events.some(blockedEvent) &&
+      answerTrustDialog(address, `${remote}/.claude/worktrees/${name}`)
     ) {
       console.log(`answered Claude Code's trust dialog in ${address}`);
-      Bun.spawnSync(["hc", "keys", address, "down", "enter"], { env: run.env, timeout: 15_000 });
       events.push(...watchEvents(run, (event) => event === settled, 300_000));
     }
     // Name what the watcher saw and what the delegate shows, so a miss is diagnosable.
@@ -924,19 +924,17 @@ describe.skipIf(!ready)("strix: draining a remote delegate's outbox", () => {
         stdout: "pipe",
         timeout: 15_000,
       }).stdout.toString();
-    const blocked = (event: string) => event.includes(' kind="blocked"');
     const events: string[] = [];
     const both = () => events.includes(settled) && events.includes(notified);
-    events.push(...watchEvents(run, (event) => event === settled || blocked(event), 300_000));
+    events.push(...watchEvents(run, (event) => event === settled || blockedEvent(event), 300_000));
     // Claude Code asks once whether to trust a folder strix has never seen; this throwaway one is
     // the suite's own, so the suite answers yes in its own terminal.
     if (
       !events.includes(settled) &&
-      events.some(blocked) &&
-      screen().includes("trust this folder")
+      events.some(blockedEvent) &&
+      answerTrustDialog(address, worktree)
     ) {
       console.log(`answered Claude Code's trust dialog in ${address}`);
-      Bun.spawnSync(["hc", "keys", address, "down", "enter"], { env: run.env, timeout: 15_000 });
       events.push(...watchEvents(run, (event) => event === settled, 300_000));
     }
     if (!both()) events.push(...watchEvents(run, () => both(), 60_000, 5));
@@ -988,8 +986,6 @@ describe.skipIf(!ready)("strix: draining a remote delegate's outbox", () => {
     expect(findings()).toEqual([applied]);
   }, 600_000);
 });
-
-const blockedEvent = (event: string) => event.includes(' kind="blocked"');
 
 describe.skipIf(!ready)("strix: copy-back and bundle fetch", () => {
   let run: StrixRun | undefined;
@@ -1070,10 +1066,9 @@ describe.skipIf(!ready)("strix: copy-back and bundle fetch", () => {
     if (
       !events.includes(settled) &&
       events.some(blockedEvent) &&
-      screen().includes("trust this folder")
+      answerTrustDialog(address, worktree)
     ) {
       console.log(`answered Claude Code's trust dialog in ${address}`);
-      Bun.spawnSync(["hc", "keys", address, "down", "enter"], { env: run.env, timeout: 15_000 });
       events.push(...watchEvents(run, (event) => event === settled, 300_000));
     }
     if (!events.includes(settled))
