@@ -501,8 +501,8 @@ const coverBoundaries = Effect.fn("coverBoundaries")(function* (
 
 /**
  * Lint one wiki mechanically: invalid frontmatter, orphan pages, pages missing from index.md,
- * broken `[[links]]`, undated present-tense claims about code, covers globs matching no files,
- * and, for a domain wiki, findings open longer than 14 days. Contradictions stay a coordinator
+ * broken `[[links]]`, undated present-tense claims about code, covers globs matching no files
+ * (a `repo` cover naming no Boundary checkout is skipped), and, for a domain wiki, findings open longer than 14 days. Contradictions stay a coordinator
  * judgment.
  * @param config Config.
  * @param domain The caller's domain.
@@ -557,10 +557,9 @@ export const lintWiki = Effect.fn("lintWiki")(function* (
   for (const page of pages)
     for (const cover of page.meta?.covers ?? []) {
       const { label, folder } = coverFolder(cover, checkouts);
-      if (folder === undefined) {
-        add("covers", `${page.file}: ${label} names no Boundary checkout`);
-        continue;
-      }
+      // A repo outside every Boundary (a shared page covering another domain's repo) has no
+      // checkout here to check its globs against, so it is skipped rather than flagged.
+      if (folder === undefined) continue;
       for (const glob of cover.globs)
         if (!(yield* Effect.promise(() => globMatches(folder, glob))))
           add("covers", `${page.file}: ${label} ${glob} matches no files`);

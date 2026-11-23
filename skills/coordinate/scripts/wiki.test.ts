@@ -193,7 +193,6 @@ describe("coordinate wiki lint", () => {
       "broken link: index.md: [[ghost]] names no page",
       `undated claim: alpha.md:${claimLine}: date it or cite a commit: The watcher in \`watch.ts\` uses a 5s interval.`,
       "covers: alpha.md: github.com/acme/widgets lib/*.ts matches no files",
-      "covers: alpha.md: github.com/acme/missing names no Boundary checkout",
       `covers: alpha.md: ${root} nix/*.nix matches no files`,
       `stale finding: f1 has been open since ${old.slice(0, 10)}, over 14 days: close or promote it`,
     ];
