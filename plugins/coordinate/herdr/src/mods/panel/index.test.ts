@@ -1283,18 +1283,25 @@ test("the last answer queues and stays on the summary; Send all and back records
 
 test("a failed send stops there, keeps that answer and the rest queued, and stays on the flow", async () => {
   focusDomain("alpha");
-  host.files.set(DOC, JSON.stringify(withManyAsks(3)));
-  let answers = 0;
+  let backlog = withManyAsks(3);
+  host.files.set(DOC, JSON.stringify(backlog));
+  let refuseI2 = true;
+  // Records each accepted answer in the document, as the CLI does, and refuses i2 once.
   const exec = (command: string, args: string[] = []) => {
     host.execs.push({ command, args });
     if (!args.includes("answer")) return { code: 0, stdout: "alpha\0", stderr: "" };
-    answers += 1;
-    return answers === 2
-      ? { code: 1, stdout: "", stderr: "refused: i2 has no ask to answer\n" }
-      : { code: 0, stdout: "", stderr: "" };
+    const [id, answer] = args.slice(-2) as [string, string];
+    if (id === "i2" && refuseI2) {
+      refuseI2 = false;
+      return { code: 1, stdout: "", stderr: "refused: i2 has no ask to answer\n" };
+    }
+    backlog = recordAnswer(backlog, id, answer);
+    host.files.set(DOC, JSON.stringify(backlog));
+    return { code: 0, stdout: "", stderr: "" };
   };
   useRenderer({ herdr: { exec } });
   const { ctx, view, render } = await mount();
+  const answerExecs = () => host.execs.filter(({ args }) => args.includes("answer"));
   get(render(), "item-i1").click!({}, ctx.cx);
   measureFlow(render(), ctx.cx, render, [
     { id: "i1", expandedHeight: 248 },
@@ -1307,23 +1314,39 @@ test("a failed send stops there, keeps that answer and the rest queued, and stay
     ctx.tick(600);
     await settle();
   }
-  expect(host.execs).toEqual([]);
+  expect(answerExecs()).toEqual([]);
   expect(text(get(render(), "answer-flow-send-row"))).toBe("3 queued Send all and back");
 
   get(render(), "answer-flow-send").click!({}, ctx.cx);
   await settle();
-  const root = render();
-  expect(host.execs.filter(({ args }) => args.includes("answer"))).toEqual([
+  let root = render();
+  expect(answerExecs()).toEqual([
     { command: "/usr/bin/env", args: answerArgs("i1", "No") },
     { command: "/usr/bin/env", args: answerArgs("i2", "No") },
   ]);
   expect(view.answerQueues.get("alpha")?.map((entry) => entry.id)).toEqual(["i2", "i3"]);
   expect(text(get(root, "answer-flow-send-error"))).toBe("refused: i2 has no ask to answer");
   expect(text(get(root, "answer-flow-send-row"))).toBe("2 queued Send all and back");
+  expect(text(get(root, "answer-flow-detail-done-count"))).toBe("2 queued, 1 answered, 0 skipped.");
+  expect(text(get(root, "answer-flow-detail-i1-answered"))).toBe("Answered: No");
   expect(view.answerFlowMotion).toBe(undefined);
-  expect(view.answerFlow?.domain).toBe("alpha");
+  expect(view.answerFlow?.ids).toEqual(["i1", "i2", "i3"]);
   expect(ids(root, "screen-answer-flow")).toEqual(["screen-answer-flow"]);
-  expect(typeof get(root, "answer-flow-send").click).toBe("function");
+
+  get(root, "answer-flow-send").click!({}, ctx.cx);
+  await settle();
+  expect(answerExecs().slice(2)).toEqual([
+    { command: "/usr/bin/env", args: answerArgs("i2", "No") },
+    { command: "/usr/bin/env", args: answerArgs("i3", "No") },
+  ]);
+  expect(view.answerQueues.size).toBe(0);
+  expect(view.answerFlowMotion?.action).toBe("exit");
+  ctx.tick(600);
+  await settle();
+  root = render();
+  expect(view.answerFlow).toBe(undefined);
+  expect(ids(root, "answer-flow-send-error")).toEqual([]);
+  expect(trail(root)).toBe("⌂ › alpha");
 });
 
 const wheelHandlerIds = (node: Node): string[] => [
@@ -4372,8 +4395,8 @@ test("answering the current question keeps it, even when the document already sh
   const answeredBacklog = recordAnswer(backlog, "i1", "No");
   host.files.set(DOC, JSON.stringify(answeredBacklog));
   get(render(), "answer-flow-ask-i1-answer-submit").click!({}, ctx.cx);
-  // The read that follows the CLI's write lands first: while the answer is in flight the flow
-  // leaves its own question alone, then keeps it when it moves on.
+  // A read that already shows the question answered lands during the motion: the flow leaves
+  // its own question alone, then keeps it when it moves on.
   view.reconcileAnswerFlow("alpha", { kind: "loaded", backlog: answeredBacklog });
   expect([view.answerFlow?.ids, view.answerFlow?.current]).toEqual([["i1", "i2", "i3"], 0]);
   view.doc = { kind: "loaded", backlog: answeredBacklog };
