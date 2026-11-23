@@ -6,6 +6,7 @@ import { PANEL } from "@wyattjoh/herdr-ui";
 import { createAnswerInput } from "./textarea.ts";
 import type { AsyncContext, Context, Element, FocusHandle } from "gpui-kit";
 import { checking, exec, focused, home, readTextFile, terminals, theme, watchFolder } from "herdr";
+import { closeOverlay, openOverlay } from "./overlay.ts";
 import type { FolderWatch } from "herdr";
 import {
   FOLDED_BY_DEFAULT,
@@ -35,6 +36,8 @@ import {
   missingSessions,
   openFindings,
   parseListing,
+  policyDialogProps,
+  policyDialogSpec,
   readDocument,
   sameHarnessSelection,
   stateDirOf,
@@ -55,6 +58,7 @@ import type {
   HarnessSelection,
   ItemGroup,
   ListingState,
+  PolicyDialogProps,
   Screen,
 } from "./model.ts";
 import { advanceAnswerFlow, startAnswerFlow } from "./answer-flow.ts";
@@ -69,7 +73,7 @@ import {
 import type { AnswerFlowLayoutId } from "./look.ts";
 import { backlogsDir, documentPath } from "../../lib/store.ts";
 import type { Finding, Item } from "../../lib/store.ts";
-import { panel } from "./view.ts";
+import { harnessPolicyDialog, panel } from "./view.ts";
 import type {
   AnswerFlowModel,
   AnswerFlowMotion,
@@ -138,6 +142,9 @@ export default class Panel extends View {
   // The Coordinate state folder is also watched for policy writes from another panel or CLI.
   policyWatched: string | undefined;
   policyWatch: FolderWatch | undefined;
+  // Set in the copy Herdr opens as the harness policy dialog: that copy shows only the editor,
+  // for one scope, and never follows focus or reads a backlog.
+  policyDialog: PolicyDialogProps | undefined;
   policyScope: string | null = null;
   policyStateDir: string | undefined;
   policyGeneration = 0;
@@ -193,7 +200,14 @@ export default class Panel extends View {
   boundaryHovered: string | undefined;
   boundaryError: BoundaryModel["error"];
 
-  init(_props: unknown, cx: AsyncContext) {
+  init(props: unknown, cx: AsyncContext) {
+    this.policyDialog = policyDialogProps(props);
+    if (this.policyDialog !== undefined) {
+      if (checking()) return;
+      this.loadPolicyDialog(cx);
+      cx.timer.every(REFRESH_MS, (tick) => this.refresh(tick));
+      return;
+    }
     const input = createAnswerInput();
     input.on("change", (_event, changed) => this.type(input.value(), changed));
     input.on("submit", (_event, submitted) => this.answer(submitted));
@@ -225,6 +239,7 @@ export default class Panel extends View {
 
   // The domain the panel should show now, or undefined for the listing.
   target(): string | undefined {
+    if (this.policyDialog !== undefined) return this.policyDialog.domain;
     return this.listed ? undefined : (this.picked ?? this.focusDomain());
   }
 
@@ -244,8 +259,27 @@ export default class Panel extends View {
 
   // The slow refresh checks both the visible document and CLI-owned policy state.
   refresh(cx: AsyncContext) {
-    this.load(cx, true);
+    if (this.policyDialog === undefined) {
+      this.load(cx, true);
+      return;
+    }
     if (this.stateDir !== undefined) this.loadHarnessPolicy(this.stateDir, this.target(), cx, true);
+  }
+
+  // The dialog copy reads only the state folder and the policy the CLI reports for its scope.
+  loadPolicyDialog(cx: Context) {
+    cx.spawn(async (task) => {
+      const stateDir = stateDirOf(await this.read(configPath(home())), home());
+      this.stateDir = stateDir;
+      this.watchHarnessPolicy(stateDir, task);
+      this.loadHarnessPolicy(stateDir, this.target(), task);
+    });
+  }
+
+  // Open the editor as Herdr's centered dialog: a fresh copy of this mod, so its draft is gone
+  // when the dialog closes.
+  openHarnessPolicyDialog(domain: string | undefined) {
+    openOverlay(policyDialogSpec(domain));
   }
 
   // Load again only when focus moved to another domain.
@@ -347,9 +381,6 @@ export default class Panel extends View {
       }
       this.stateDir = stateDir;
       this.watchBacklogs(backlogsDir(stateDir), task);
-      this.watchHarnessPolicy(stateDir, task);
-      if (this.policyScope !== (domain ?? "") || this.policyStateDir !== stateDir)
-        this.loadHarnessPolicy(stateDir, domain, task);
       if (domain !== this.domain) {
         this.domain = domain;
         this.selected = undefined;
@@ -1467,6 +1498,7 @@ export default class Panel extends View {
     this.harnessPolicyDraft = undefined;
     this.policyFailure = undefined;
     cx.notify();
+    if (this.policyDialog !== undefined) closeOverlay(this.policyDialog.overlay);
   }
 
   reloadHarnessPolicy(domain: string | undefined, cx: Context) {
@@ -1625,6 +1657,11 @@ export default class Panel extends View {
   }
 
   render(): Element {
+    if (this.policyDialog !== undefined)
+      return harnessPolicyDialog(
+        theme() as Theme,
+        this.harnessPolicyModel(this.policyDialog.domain),
+      );
     const domain = this.target();
     const doc = domain === this.domain ? this.doc : cachedDocument(this.docs, domain);
     const detail = this.detail(domain, doc);
@@ -1676,7 +1713,7 @@ export default class Panel extends View {
       answer: this.answerModel(),
       flow,
       boundary: this.boundaryModel(domain),
-      harnessPolicy: this.harnessPolicyModel(domain),
+      openHarnessPolicy: () => this.openHarnessPolicyDialog(domain),
     });
   }
 }

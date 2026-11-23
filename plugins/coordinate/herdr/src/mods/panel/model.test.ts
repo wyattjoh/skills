@@ -13,6 +13,8 @@ import {
   formatFindingCounts,
   groupFindings,
   mergeEnded,
+  policyDialogProps,
+  policyDialogSpec,
   readDocument,
   trailOf,
 } from "./model.ts";
@@ -299,4 +301,40 @@ test("delegateLine shows one state without a count, or counts refs by the most u
     text: "ended ×2",
     state: { kind: "ended", at: null },
   });
+});
+
+test("reads the harness policy dialog's props and rejects everything else", () => {
+  expect(policyDialogProps({ harnessPolicy: { domain: null }, overlay: "o1" })).toEqual({
+    domain: undefined,
+    overlay: "o1",
+  });
+  expect(policyDialogProps({ harnessPolicy: { domain: "alpha" }, overlay: "o1" })).toEqual({
+    domain: "alpha",
+    overlay: "o1",
+  });
+  const rejected = [
+    undefined,
+    null,
+    "alpha",
+    {},
+    { overlay: "o1" },
+    { harnessPolicy: { domain: null } },
+    { harnessPolicy: { domain: null }, overlay: "" },
+    { harnessPolicy: { domain: null }, overlay: 3 },
+    { harnessPolicy: { domain: "../escape" }, overlay: "o1" },
+    { harnessPolicy: { domain: 7 }, overlay: "o1" },
+    { harnessPolicy: { domain: undefined }, overlay: "o1" },
+  ].map((props) => policyDialogProps(props));
+  expect(rejected).toEqual(Array.from({ length: 11 }, () => undefined));
+});
+
+test("opens the harness policy editor as a centered dialog of this mod", () => {
+  expect(policyDialogSpec(undefined)).toEqual({
+    mod: "coordinate-panel",
+    kind: "dialog",
+    width: 420,
+    height: 480,
+    props: { harnessPolicy: { domain: null } },
+  });
+  expect(policyDialogSpec("alpha").props).toEqual({ harnessPolicy: { domain: "alpha" } });
 });

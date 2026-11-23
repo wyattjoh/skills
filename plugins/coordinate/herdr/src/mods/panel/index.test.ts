@@ -1,4 +1,4 @@
-import { beforeEach, expect, test } from "bun:test";
+import { beforeEach, expect, mock, test } from "bun:test";
 import { Input, InputState } from "gpui-base";
 import {
   addFinding,
@@ -27,6 +27,7 @@ import {
   ANSWER_FLOW_LAYOUT_BASELINE,
   ANSWER_FLOW_LAYOUT_PROPOSALS,
   ANSWER_FLOW_OUTLINE,
+  HARNESS_DIALOG,
 } from "./look.ts";
 const { setAnswerTextareaTestApi } = await import("./textarea.ts");
 let textareaAutoGrow: { minRows: number; maxRows: number } | undefined;
@@ -39,6 +40,20 @@ setAnswerTextareaTestApi({
     }),
   render: (state) => Input.new(state as ReturnType<typeof InputState.new>),
 });
+// The shared renderer's herdr mock has no overlays, so record them through the overlay module.
+const overlays: { spec: unknown; id: string }[] = [];
+const closedOverlays: string[] = [];
+mock.module("./overlay.ts", () => ({
+  openOverlay: (spec: unknown) => {
+    const id = `overlay-${overlays.length + 1}`;
+    overlays.push({ spec, id });
+    return id;
+  },
+  closeOverlay: (id: string) => {
+    closedOverlays.push(id);
+    return null;
+  },
+}));
 const { default: Panel } = await import("./index.ts");
 const {
   LIST_SCRIPT,
@@ -98,6 +113,8 @@ const policyWatch = () => latestWatch(STATE);
 
 beforeEach(() => {
   resetHost();
+  overlays.length = 0;
+  closedOverlays.length = 0;
   textareaAutoGrow = undefined;
 });
 
@@ -225,7 +242,7 @@ const press = (root: Node, id: string, cx: unknown) => get(root, id).click!({}, 
 const openPage = (root: Node, page: string, cx: unknown) =>
   get(root, `page-${page}`).click!({}, cx);
 
-const mount = async (preservePolicyReads = false) => {
+const mount = async (preservePolicyReads = false, initProps: unknown = undefined) => {
   const ctx = context();
   const focusHandles: Array<{
     focused: boolean;
@@ -273,7 +290,7 @@ const mount = async (preservePolicyReads = false) => {
     };
   };
   const view = new Panel();
-  view.init(undefined, ctx.cx as never);
+  view.init(initProps, ctx.cx as never);
   await settle();
   if (!preservePolicyReads)
     host.execs.splice(
@@ -1795,7 +1812,7 @@ test("refreshes a same-size replacement when the watch reports the document path
   expect(newText).toHaveLength(oldText.length);
   host.files.set(DOC, oldText);
   const { render } = await mount();
-  expect(host.watches.map((watch) => watch.path)).toEqual([`${STATE}/backlogs`, STATE]);
+  expect(host.watches.map((watch) => watch.path)).toEqual([`${STATE}/backlogs`]);
   host.files.set(DOC, newText);
   backlogWatch()!.fire([DOC]);
   await settle();
@@ -1803,7 +1820,6 @@ test("refreshes a same-size replacement when the watch reports the document path
   expect(host.reads.filter((path) => path === DOC)).toHaveLength(2);
   expect(host.watches.map((watch) => watch.path)).toEqual([
     `${STATE}/backlogs`,
-    STATE,
     `${STATE}/backlogs`,
   ]);
 });
@@ -1818,7 +1834,7 @@ test("ignores archive and other-domain watch events until that domain is selecte
   backlogWatch()!.fire([archive]);
   await settle();
   expect(host.reads.filter((path) => path === DOC)).toHaveLength(1);
-  expect(host.watches).toHaveLength(3);
+  expect(host.watches).toHaveLength(2);
 
   host.files.set(betaPath, JSON.stringify({ ...emptyBacklog("beta", null), focus: "New beta" }));
   backlogWatch()!.fire([betaPath]);
@@ -1839,12 +1855,12 @@ test("rereads the document on the slow timer and rearms a reclaimed watch", asyn
   const { ctx, render } = await mount();
   backlogWatch()!.fire([]);
   await settle();
-  expect(host.watches).toHaveLength(2);
+  expect(host.watches).toHaveLength(1);
   host.files.set(DOC, JSON.stringify({ ...everyStatus(), focus: "Timer change" }));
   ctx.tick(30_000);
   await settle();
   expect(text(get(render(), "focus"))).toBe("Timer change");
-  expect(host.watches).toHaveLength(3);
+  expect(host.watches).toHaveLength(2);
 });
 
 test("the slow timer checks file text but reuses parsed state when it is unchanged", async () => {
@@ -1929,10 +1945,7 @@ test("reads the state folder from the coordinate config", async () => {
   host.files.set("/Users/test/state/backlogs/alpha.json", JSON.stringify(everyStatus()));
   const { render } = await mount();
   expect(text(get(render(), "focus"))).toBe("Ship the panel tracer");
-  expect(host.watches.map((watch) => watch.path)).toEqual([
-    "/Users/test/state/backlogs",
-    "/Users/test/state",
-  ]);
+  expect(host.watches.map((watch) => watch.path)).toEqual(["/Users/test/state/backlogs"]);
 });
 
 // A focused terminal with no fleet.domain label.
@@ -3642,6 +3655,9 @@ test("paginates the Done status group ten rows at a time", async () => {
   expect([ids(root, "item-").length, ids(root, "load-more-")]).toEqual([12, []]);
 });
 
+// The copy Herdr opens for the harness policy dialog: it is told its scope and overlay id.
+const mountDialog = (domain: string | undefined) =>
+  mount(true, { harnessPolicy: { domain: domain ?? null }, overlay: "overlay-1" });
 const harnessPolicyCalls = () => host.execs.filter(({ args }) => args.includes("harness-policy"));
 const policyCommandArgs = (args: string[]) => args.slice(args.indexOf("harness-policy"));
 
@@ -3722,15 +3738,10 @@ test("validates canonical policy views and classifies stale and older CLI errors
   );
 });
 
-test("edits global defaults on Domains with no entries and persists an explicit empty policy", async () => {
-  focusPlain();
+test("edits global defaults in the dialog and persists an explicit empty policy", async () => {
   setPolicyOutput(policyOutput({ revision: 4 }));
-  const { ctx, render } = await mount(true);
+  const { ctx, render } = await mountDialog(undefined);
   let root = render();
-  expect([ids(root, "domain-"), text(get(root, "no-backlogs"))]).toEqual([
-    [],
-    "No backlogs yet Run coordinate start <domain> to create one.",
-  ]);
   expect(text(get(root, "harness-policy-global-source"))).toBe("Source Legacy defaults");
   expect(text(get(root, "harness-policy-global-codex-unavailable"))).toBe("Codex");
   expect(text(get(root, "harness-policy-global-enabled"))).toContain("Unavailable");
@@ -3767,10 +3778,8 @@ test("edits global defaults on Domains with no entries and persists an explicit 
 });
 
 test("creates a domain override and reloads canonical state after save", async () => {
-  focusDomain("alpha");
-  host.files.set(DOC, JSON.stringify(emptyBacklog("alpha", null)));
   setPolicyOutput(policyOutput({ revision: 7, domain: "alpha" }));
-  const { ctx, render } = await mount(true);
+  const { ctx, render } = await mountDialog("alpha");
   let root = render();
   expect(text(get(root, "harness-policy-domain-alpha-source"))).toBe(
     "Source Inherited from legacy defaults",
@@ -3815,8 +3824,6 @@ test("creates a domain override and reloads canonical state after save", async (
 });
 
 test("resets a domain override to inherited global policy", async () => {
-  focusDomain("alpha");
-  host.files.set(DOC, JSON.stringify(emptyBacklog("alpha", null)));
   setPolicyOutput(
     policyOutput({
       revision: 10,
@@ -3826,7 +3833,7 @@ test("resets a domain override to inherited global policy", async () => {
       override: { enabled: ["claude"], default: "claude" },
     }),
   );
-  const { ctx, render } = await mount(true);
+  const { ctx, render } = await mountDialog("alpha");
   get(render(), "harness-policy-domain-alpha-reset-button").click!({}, ctx.cx);
   setPolicyOutput(policyOutput({ revision: 11, source: "configured", domain: "alpha" }));
   await settle();
@@ -3844,9 +3851,8 @@ test("resets a domain override to inherited global policy", async () => {
 });
 
 test("keeps a validation error actionable and preserves the policy draft", async () => {
-  focusPlain();
   setPolicyOutput(policyOutput({ revision: 2 }));
-  const { ctx, render } = await mount(true);
+  const { ctx, render } = await mountDialog(undefined);
   get(render(), "harness-policy-global-default-pi").click!({}, ctx.cx);
   setPolicyOutput("", 1, "refused: policy default must be enabled");
   get(render(), "harness-policy-global-save").click!({}, ctx.cx);
@@ -3858,9 +3864,8 @@ test("keeps a validation error actionable and preserves the policy draft", async
 });
 
 test("turns a stale save into a reloadable conflict and explains an older CLI", async () => {
-  focusPlain();
   setPolicyOutput(policyOutput({ revision: 3 }));
-  const { ctx, render } = await mount(true);
+  const { ctx, render } = await mountDialog(undefined);
   get(render(), "harness-policy-global-enabled-pi").click!({}, ctx.cx);
   setPolicyOutput("", 1, "stale harness policy revision: expected 3, current 4");
   get(render(), "harness-policy-global-save").click!({}, ctx.cx);
@@ -3871,18 +3876,16 @@ test("turns a stale save into a reloadable conflict and explains an older CLI", 
   );
   expect(get(render(), "harness-policy-global-reload-button").click).toBeDefined();
 
-  focusPlain();
   setPolicyOutput("", 1, "Unknown command: harness-policy");
-  const older = await mount(true);
+  const older = await mountDialog(undefined);
   expect(text(get(older.render(), "harness-policy-global-error"))).toBe(
     "The installed Coordinate CLI is too old for harness policy. Update the Coordinate skill, then reopen this panel.",
   );
 });
 
-test("reloads the policy card when the state-directory watcher sees the policy file", async () => {
-  focusPlain();
+test("reloads the dialog when the state-directory watcher sees the policy file", async () => {
   setPolicyOutput(policyOutput({ revision: 1 }));
-  const { render } = await mount(true);
+  const { render } = await mountDialog(undefined);
   setPolicyOutput(
     policyOutput({
       revision: 2,
@@ -3896,16 +3899,109 @@ test("reloads the policy card when the state-directory watcher sees the policy f
   expect(text(get(render(), "harness-policy-global-default-claude"))).toBe("Claude Code");
 });
 
-test("keeps policy editors out of domain subpages and item details", async () => {
+const POLICY_SPEC = {
+  mod: "coordinate-panel",
+  kind: "dialog",
+  width: HARNESS_DIALOG.width,
+  height: HARNESS_DIALOG.height,
+};
+
+test("Domains shows one muted button, even with no backlogs, that opens the global policy dialog", async () => {
+  focusPlain();
+  const { ctx, render } = await mount();
+  const root = render();
+  expect([ids(root, "domain-"), text(get(root, "no-backlogs"))]).toEqual([
+    [],
+    "No backlogs yet Run coordinate start <domain> to create one.",
+  ]);
+  expect(ids(root, "harness-policy-")).toEqual(["harness-policy-open"]);
+  expect(text(get(root, "harness-policy-open"))).toBe("Delegate harness policy");
+  get(root, "harness-policy-open").click!({}, ctx.cx);
+  expect(overlays).toEqual([
+    {
+      id: "overlay-1",
+      spec: { ...POLICY_SPEC, props: { harnessPolicy: { domain: null } } },
+    },
+  ]);
+  expect(harnessPolicyCalls()).toEqual([]);
+});
+
+test("the domain overview ends with the policy button, which opens that domain's dialog", async () => {
   focusDomain("alpha");
   host.files.set(DOC, JSON.stringify(add(emptyBacklog("alpha", null), "A work item")));
-  setPolicyOutput(policyOutput({ revision: 1, domain: "alpha" }));
+  const { ctx, render } = await mount();
+  const root = render();
+  expect(ids(get(root, "domain"), "").at(-1)).toBe("harness-policy-open");
+  get(root, "harness-policy-open").click!({}, ctx.cx);
+  expect(overlays).toEqual([
+    { id: "overlay-1", spec: { ...POLICY_SPEC, props: { harnessPolicy: { domain: "alpha" } } } },
+  ]);
+  expect(harnessPolicyCalls()).toEqual([]);
+});
+
+test("domain subpages and item details do not offer the policy button", async () => {
+  focusDomain("alpha");
+  host.files.set(DOC, JSON.stringify(add(emptyBacklog("alpha", null), "A work item")));
   const { ctx, render } = await mount();
   openPage(render(), "policies", ctx.cx);
-  expect(ids(render(), "harness-policy-domain-alpha")).toEqual([]);
+  expect(ids(render(), "harness-policy-")).toEqual([]);
   press(render(), "crumb-domain-alpha", ctx.cx);
   get(render(), "item-i1").click!({}, ctx.cx);
-  expect(ids(render(), "harness-policy-domain-alpha")).toEqual([]);
+  expect(ids(render(), "harness-policy-")).toEqual([]);
+});
+
+test("the dialog copy reads only its policy and starts nothing under herdr-app check", async () => {
+  setPolicyOutput(policyOutput({ revision: 1, domain: "alpha" }));
+  const { ctx, render } = await mountDialog("alpha");
+  expect(ids(render(), "harness-policy-domain-alpha-source")).toEqual([
+    "harness-policy-domain-alpha-source",
+  ]);
+  expect(host.reads.filter((path) => path === DOC)).toEqual([]);
+  expect(host.watches.map((watch) => watch.path)).toEqual([STATE]);
+  expect(ctx.timers.map((timer) => timer.ms)).toEqual([30_000]);
+
+  resetHost();
+  host.checking = true;
+  const checked = await mountDialog("alpha");
+  expect([
+    checked.ctx.timers.length,
+    host.reads.length,
+    host.watches.length,
+    host.execs.length,
+  ]).toEqual([0, 0, 0, 0]);
+});
+
+test("Cancel closes the dialog and its draft goes with it", async () => {
+  setPolicyOutput(policyOutput({ revision: 2 }));
+  const { ctx, view, render } = await mountDialog(undefined);
+  get(render(), "harness-policy-global-enabled-pi").click!({}, ctx.cx);
+  expect(view.harnessPolicyDraft?.selection).toEqual({ enabled: ["claude"], default: null });
+  get(render(), "harness-policy-global-cancel").click!({}, ctx.cx);
+  expect(closedOverlays).toEqual(["overlay-1"]);
+  expect(view.harnessPolicyDraft).toBe(undefined);
+  expect(harnessPolicyCalls().map(({ args }) => policyCommandArgs(args))).toEqual([
+    ["harness-policy", "show", "--json"],
+  ]);
+});
+
+test("a save failure keeps the dialog open and Cancel stays muted while Save is primary", async () => {
+  setPolicyOutput(policyOutput({ revision: 2, domain: "alpha" }));
+  const { ctx, render } = await mountDialog("alpha");
+  const root = render();
+  const mutedBackground = get(root, "harness-policy-domain-alpha-override-button").styles.bg;
+  get(root, "harness-policy-domain-alpha-override-button").click!({}, ctx.cx);
+  get(render(), "harness-policy-domain-alpha-enabled-claude").click!({}, ctx.cx);
+  const editing = render();
+  const primaryBackground = get(editing, "harness-policy-domain-alpha-save").styles.bg;
+  expect(get(editing, "harness-policy-domain-alpha-cancel").styles.bg).toBe(mutedBackground);
+  const { theme } = await import("herdr");
+  expect(primaryBackground).toBe(theme().solid);
+  expect(mutedBackground).toBe(theme().raised);
+  setPolicyOutput("", 1, "refused: nope");
+  get(editing, "harness-policy-domain-alpha-save").click!({}, ctx.cx);
+  await settle();
+  expect(closedOverlays).toEqual([]);
+  expect(text(get(render(), "harness-policy-domain-alpha-failure"))).toBe("refused: nope");
 });
 
 test("a card's remeasured size is kept when it arrives during an answer motion", async () => {

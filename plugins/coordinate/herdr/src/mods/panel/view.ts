@@ -136,7 +136,7 @@ export type PanelModel = {
   openWaiting: (item: Item, cx: Context) => void;
   // Boundary paths can be edited on either card.
   boundary: BoundaryModel;
-  harnessPolicy: HarnessPolicyEditorModel;
+  openHarnessPolicy: (cx: Context) => void;
   openDomain: (domain: string, cx: Context) => void;
 };
 
@@ -632,12 +632,21 @@ const ANSWER_BUTTON_STYLE: ButtonStyle = {
   hover: "accent",
 };
 
+// A raised, quiet button for the secondary actions. The bright ANSWER_BUTTON_STYLE fill is for the
+// primary action only, and its solid_foreground ink would sit unreadably on a raised surface.
+const MUTED_BUTTON_STYLE: ButtonStyle = {
+  ...ANSWER_BUTTON_STYLE,
+  background: "raised",
+  text: "foreground",
+  hover: "hover",
+};
+
 const HARNESS_LABELS: Readonly<Record<DelegateHarness, string>> = {
   pi: "Pi",
   claude: "Claude Code",
 };
 
-const harnessPolicyCard = (t: Theme, model: HarnessPolicyEditorModel): Element => {
+const harnessPolicyEditor = (t: Theme, model: HarnessPolicyEditorModel): Element => {
   const id =
     model.scope === "global" ? "harness-policy-global" : `harness-policy-domain-${model.domain}`;
   const title = model.scope === "global" ? "Delegate harness defaults" : "Delegate harness policy";
@@ -651,7 +660,7 @@ const harnessPolicyCard = (t: Theme, model: HarnessPolicyEditorModel): Element =
         button(t, {
           id: `${id}-reload-button`,
           label: "Reload policy",
-          style: { ...ANSWER_BUTTON_STYLE, background: "raised" },
+          style: MUTED_BUTTON_STYLE,
           onClick: model.busy ? undefined : (cx) => model.reload(cx),
         }),
       ),
@@ -670,7 +679,7 @@ const harnessPolicyCard = (t: Theme, model: HarnessPolicyEditorModel): Element =
           button(t, {
             id: `${id}-reload-button`,
             label: "Reload policy",
-            style: { ...ANSWER_BUTTON_STYLE, background: "raised" },
+            style: MUTED_BUTTON_STYLE,
             onClick: model.busy ? undefined : (cx) => model.reload(cx),
           }),
         ),
@@ -770,7 +779,7 @@ const harnessPolicyCard = (t: Theme, model: HarnessPolicyEditorModel): Element =
             button(t, {
               id: `${id}-reload-button`,
               label: "Reload policy",
-              style: { ...ANSWER_BUTTON_STYLE, background: "raised" },
+              style: MUTED_BUTTON_STYLE,
               onClick: model.busy ? undefined : (cx) => model.reload(cx),
             }),
           ),
@@ -782,7 +791,7 @@ const harnessPolicyCard = (t: Theme, model: HarnessPolicyEditorModel): Element =
             button(t, {
               id: `${id}-override-button`,
               label: "Override global",
-              style: ANSWER_BUTTON_STYLE,
+              style: MUTED_BUTTON_STYLE,
               onClick: model.busy ? undefined : (cx) => model.beginOverride(cx),
             }),
           ),
@@ -807,16 +816,13 @@ const harnessPolicyCard = (t: Theme, model: HarnessPolicyEditorModel): Element =
                 button(t, {
                   id: `${id}-save`,
                   label: saveLabel,
-                  style:
-                    dirty && canEdit
-                      ? ANSWER_BUTTON_STYLE
-                      : { ...ANSWER_BUTTON_STYLE, background: "raised" },
+                  style: dirty && canEdit ? ANSWER_BUTTON_STYLE : MUTED_BUTTON_STYLE,
                   onClick: dirty && canEdit ? (cx) => model.save(cx) : undefined,
                 }),
                 button(t, {
                   id: `${id}-cancel`,
                   label: "Cancel",
-                  style: { ...ANSWER_BUTTON_STYLE, background: "raised" },
+                  style: MUTED_BUTTON_STYLE,
                   onClick: model.busy ? undefined : (cx) => model.cancel(cx),
                 }),
                 ...(model.scope === "domain" && domainPolicy?.mode === "replace"
@@ -824,7 +830,7 @@ const harnessPolicyCard = (t: Theme, model: HarnessPolicyEditorModel): Element =
                       button(t, {
                         id: `${id}-reset`,
                         label: "Reset to global",
-                        style: { ...ANSWER_BUTTON_STYLE, background: "raised" },
+                        style: MUTED_BUTTON_STYLE,
                         onClick: model.busy || model.conflict ? undefined : (cx) => model.reset(cx),
                       }),
                     ]
@@ -838,7 +844,7 @@ const harnessPolicyCard = (t: Theme, model: HarnessPolicyEditorModel): Element =
             button(t, {
               id: `${id}-reset-button`,
               label: "Reset to global",
-              style: { ...ANSWER_BUTTON_STYLE, background: "raised" },
+              style: MUTED_BUTTON_STYLE,
               onClick: model.busy ? undefined : (cx) => model.reset(cx),
             }),
           ),
@@ -848,6 +854,44 @@ const harnessPolicyCard = (t: Theme, model: HarnessPolicyEditorModel): Element =
   }
   return detailCard(t, id, title, rows);
 };
+
+/**
+ * The muted button that opens the harness policy dialog.
+ * @param t The theme.
+ * @param open Opens the dialog.
+ * @returns The button, sized to its label.
+ */
+const harnessPolicyButton = (t: Theme, open: (cx: Context) => void): Element =>
+  h_flex().child(
+    button(t, {
+      id: "harness-policy-open",
+      label: "Delegate harness policy",
+      style: MUTED_BUTTON_STYLE,
+      onClick: open,
+    }),
+  );
+
+/**
+ * The dialog's whole surface: the harness policy editor in a scrolling panel frame, drawn by the
+ * dialog copy of the panel mod.
+ * @param t The theme.
+ * @param model The editor's state and handlers.
+ * @returns The element.
+ */
+export const harnessPolicyDialog = (t: Theme, model: HarnessPolicyEditorModel): Element =>
+  panelFrame(t, "harness-policy-dialog")
+    .text_color(t.foreground)
+    .text_size(13)
+    .child(
+      panelBody({
+        hold: letThrough,
+        content: paneScrollRegion(
+          "harness-policy-scroll",
+          harnessPolicyEditor(t, model),
+          PANEL.padding,
+        ),
+      }),
+    );
 
 // The answer field is app-specific; the package owns its surrounding card item and button.
 const askBodyRow = (t: Theme, id: string): Element => detailRow(t, id).bg(t.surface);
@@ -2523,7 +2567,7 @@ const domainBody = (t: Theme, domain: string, doc: DocumentState, model: PanelMo
         model.detail === undefined &&
         model.finding === undefined &&
         model.flow === undefined,
-      (body) => body.child(harnessPolicyCard(t, model.harnessPolicy)),
+      (body) => body.child(harnessPolicyButton(t, model.openHarnessPolicy)),
     );
 };
 
@@ -2583,7 +2627,7 @@ const listingBody = (t: Theme, listing: ListingState, model: PanelModel): Elemen
   }
   return v_flex()
     .gap(PANEL.sectionGap)
-    .child(harnessPolicyCard(t, model.harnessPolicy))
+    .child(harnessPolicyButton(t, model.openHarnessPolicy))
     .child(domains);
 };
 

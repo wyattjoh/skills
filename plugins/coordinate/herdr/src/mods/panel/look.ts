@@ -210,6 +210,15 @@ export const ANSWER_FLOW_LAYOUT_GEOMETRY = {
 } as const;
 
 /**
+ * The harness policy dialog Herdr opens over the window. A height is a maximum, so it covers the
+ * tallest editor state: failure and reload rows above the action row.
+ */
+export const HARNESS_DIALOG = {
+  width: 420,
+  height: 480,
+} as const;
+
+/**
  * The answer queue's approximated vertical-carousel geometry and motion.
  */
 export const ANSWER_CAROUSEL = {

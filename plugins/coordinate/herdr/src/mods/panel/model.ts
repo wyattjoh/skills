@@ -2,6 +2,7 @@
 // document is usable, and how its items group. Where the document lives is the store's paths.
 import { ITEM_STATUSES, isRecord, validateBacklog } from "../../lib/store.ts";
 import type { Ask, Backlog, DelegateRef, Finding, Item, ItemStatus } from "../../lib/store.ts";
+import { HARNESS_DIALOG } from "./look.ts";
 
 /**
  * The terminal label naming the coordinate domain a coordinator or delegate belongs to.
@@ -706,6 +707,45 @@ declare const COORDINATE_BUN: string | undefined;
  */
 export const coordinateCli = (home: string): string =>
   `${home}/.claude/skills/coordinate/scripts/coordinate.ts`;
+
+// The deployed mod's folder name: the harness policy dialog opens another copy of this same mod.
+const PANEL_MOD = "coordinate-panel";
+
+/**
+ * What a dialog copy of the panel is told: the scope its editor shows and the overlay to close.
+ */
+export type PolicyDialogProps = {
+  domain: string | undefined;
+  overlay: string;
+};
+
+/**
+ * Read the props Herdr gives a copy of the mod, deciding whether it is the harness policy dialog.
+ * @param props What `init` received.
+ * @returns The dialog's scope and overlay id, or undefined for the panel itself.
+ */
+export const policyDialogProps = (props: unknown): PolicyDialogProps | undefined => {
+  if (!isRecord(props)) return undefined;
+  const policy = props.harnessPolicy;
+  const overlay = props.overlay;
+  if (!isRecord(policy) || typeof overlay !== "string" || overlay === "") return undefined;
+  const domain = policy.domain;
+  if (domain === null) return { domain: undefined, overlay };
+  return typeof domain === "string" && DOMAIN_NAME.test(domain) ? { domain, overlay } : undefined;
+};
+
+/**
+ * The overlay that opens the harness policy editor as a centered dialog.
+ * @param domain The domain whose policy to edit, or undefined for the global defaults.
+ * @returns The spec for `openOverlay`.
+ */
+export const policyDialogSpec = (domain: string | undefined) => ({
+  mod: PANEL_MOD,
+  kind: "dialog" as const,
+  width: HARNESS_DIALOG.width,
+  height: HARNESS_DIALOG.height,
+  props: { harnessPolicy: { domain: domain ?? null } },
+});
 
 export type DelegateHarness = "pi" | "claude";
 
