@@ -47,6 +47,7 @@ import {
   resumeDelegate,
   sendTo,
   spawn,
+  spawnOutput,
   start,
 } from "./lib/lifecycle.ts";
 import { Proc } from "./lib/proc.ts";
@@ -535,6 +536,7 @@ const spawnCommand = Command.make(
       "item",
       "title added as an open item to the new coordinator's backlog (repeatable)",
     ),
+    json: booleanFlag("json", "print terminal, space, watcher and status as JSON"),
   },
   (options) =>
     execute((config) =>
@@ -546,11 +548,17 @@ const spawnCommand = Command.make(
         effort: Option.getOrUndefined(options.effort),
         items: options.item,
         now: new Date().toISOString(),
-      }),
+      }).pipe(
+        Effect.map((result) => {
+          // Not ready within the bound exits 1; the terminal is left running.
+          if (result.status !== "ready") process.exitCode = 1;
+          return options.json ? [JSON.stringify(result, null, 2)] : spawnOutput(result);
+        }),
+      ),
     ),
 ).pipe(
   Command.withDescription(
-    "from a coordinator: seed the domain's backlog, then start its coordinator in its own unfocused Herdr space, labelled at launch with no parent; refused while the domain has a live coordinator",
+    "from a coordinator: seed the domain's backlog, then start its coordinator in its own unfocused Herdr space, labelled at launch with no parent; refused while the domain has a live coordinator; waits about 120s for its watcher, exit 1 if not ready",
   ),
 );
 

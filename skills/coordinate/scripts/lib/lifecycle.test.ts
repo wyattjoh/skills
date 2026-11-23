@@ -16,6 +16,7 @@ import {
   sendTo,
   spawn,
   type SpawnOptions,
+  spawnOutput,
   start,
 } from "./lifecycle.ts";
 import { fakeProc, ok, type RunOutput } from "./proc.ts";
@@ -487,16 +488,22 @@ const MANAGER = { "fleet.role": "coordinator", "fleet.domain": "manager" };
 
 /**
  * A fake Herdr: `hc get t1` answers the caller, `hc ls` filtered on the coordinator role answers
- * `coordinatorsLive`, any other `hc ls` answers `live`, and a launch goes into space sp9.
+ * `coordinatorsLive`, the tasks watcher query answers `watchers`, any other `hc ls` answers
+ * `live`, a launch goes into space sp9 as t7, and `hc get t7` answers `launched`.
  */
 const spawnFake = (
   callerLabels: Record<string, string>,
   coordinatorsLive: readonly Record<string, unknown>[] = [],
   live: readonly Record<string, unknown>[] = [],
+  watchers: readonly Record<string, unknown>[] = [{ address: "t-w", state: "live" }],
+  launched: Record<string, unknown> = { address: "t7", state: "live" },
 ) =>
   fakeProc((argv) => {
     if (argv[0] === "hc") {
       if (argv[1] === "get" && argv[2] === "t1") return ok(spawnCaller(callerLabels));
+      if (argv[1] === "get" && argv[2] === "t7") return ok(JSON.stringify(launched));
+      if (argv[1] === "ls" && argv.includes("coordinate.watch-domain=tasks"))
+        return ok(JSON.stringify({ terminals: watchers }));
       if (argv[1] === "ls" && argv.includes("fleet.role=coordinator"))
         return ok(JSON.stringify({ terminals: coordinatorsLive }));
       if (argv[1] === "ls") return ok(JSON.stringify({ terminals: live }));
@@ -573,6 +580,17 @@ const withDefaultHarness = async (state: string, harness: "pi" | "claude") => {
 };
 
 const ENV = { HC_TERMINAL_ID: "t1" };
+/** The calls after the launch's tab rename: what spawn did while waiting for readiness. */
+const tailAfterRename = (calls: readonly (readonly string[])[]) =>
+  calls.slice(calls.findIndex((argv) => argv[2] === "tab.rename") + 1);
+/** A readiness wait of three polls that records each sleep instead of sleeping. */
+const fastWait = (sleeps: number[]) => ({
+  timeoutMs: 3,
+  intervalMs: 1,
+  sleep: (ms: number) => Effect.sync(() => void sleeps.push(ms)),
+});
+const t7Get = ["hc", "get", "t7", "--json"];
+const watcherList = ["hc", "ls", "--json", "--label", "coordinate.watch-domain=tasks"];
 const coordinatorList = [
   "hc",
   "ls",
@@ -718,7 +736,7 @@ describe("spawn", () => {
   it("starts the policy's default harness in its own space with coordinator labels, no parent and /coordinate", async () => {
     const state = dir();
     const fake = spawnFake(MANAGER);
-    const lines = await runWith(
+    const result = await runWith(
       spawn(await withDefaultHarness(state, "claude"), spawnOptions({ cwd: state }), ENV),
       fake.layer,
     );
@@ -775,12 +793,28 @@ describe("spawn", () => {
       ["hc", "kill", "t6"],
       ["hc", "rm", "t6"],
       ["herdr-app", "do", "tab.rename", '{"id":"tab9","name":"Tasks · No active focus"}'],
+      watcherList,
     ]);
-    expect(lines).toEqual([
+    expect(spawnOutput(result)).toEqual([
       `created backlog ${tasksDocument(state)}`,
       `owned: added ${state}`,
       `started coordinator tasks-coordinator for tasks (t7) in its own space sp9, claude session ${session}`,
+      "ready: tasks-coordinator (t7) armed watcher t-w",
     ]);
+    expect(result).toEqual({
+      name: "tasks-coordinator",
+      domain: "tasks",
+      terminal: "t7",
+      space: "sp9",
+      harness: "claude",
+      session,
+      backlog: { path: tasksDocument(state), created: true, owned: state, items: [] },
+      watcher: "t-w",
+      status: "ready",
+      agentStatus: null,
+      tab: null,
+      timeoutMs: 120_000,
+    });
   });
 
   it("refuses an existing domain with no owned Boundary path and no --cwd, writing nothing", async () => {
@@ -821,9 +855,11 @@ describe("spawn", () => {
       itemAdd(cfg, "manager", { title: "spawn tasks", json: false, now: SPAWN_NOW }),
     );
     const caller = readFileSync(join(state, "backlogs", "manager.json"), "utf8");
-    const lines = await runWith(
-      spawn(cfg, spawnOptions({ cwd: state, items: ["first", "second"] }), ENV),
-      spawnFake(MANAGER).layer,
+    const lines = spawnOutput(
+      await runWith(
+        spawn(cfg, spawnOptions({ cwd: state, items: ["first", "second"] }), ENV),
+        spawnFake(MANAGER).layer,
+      ),
     );
     const document = readJson(tasksDocument(state));
     expect(document.boundary).toEqual({ owned: [state], adjacent: [] });
@@ -848,7 +884,7 @@ describe("spawn", () => {
     await ownedBy(cfg, "tasks", [first, second]);
     const before = readFileSync(tasksDocument(state), "utf8");
     const fake = spawnFake(MANAGER);
-    const lines = await runWith(spawn(cfg, spawnOptions(), ENV), fake.layer);
+    const lines = spawnOutput(await runWith(spawn(cfg, spawnOptions(), ENV), fake.layer));
     const calls = fake.calls.map((call) => call.argv);
     const run = calls.find((argv) => argv[1] === "run") ?? [];
     expect(calls[3]).toEqual([
@@ -867,9 +903,11 @@ describe("spawn", () => {
     const cfg = await withDefaultHarness(state, "claude");
     await ownedBy(cfg, "tasks", [state]);
     await Effect.runPromise(itemAdd(cfg, "tasks", { title: "old", json: false, now: SPAWN_NOW }));
-    const lines = await runWith(
-      spawn(cfg, spawnOptions({ cwd: state, items: ["new"] }), ENV),
-      spawnFake(MANAGER).layer,
+    const lines = spawnOutput(
+      await runWith(
+        spawn(cfg, spawnOptions({ cwd: state, items: ["new"] }), ENV),
+        spawnFake(MANAGER).layer,
+      ),
     );
     const document = readJson(tasksDocument(state));
     expect(document.boundary).toEqual({ owned: [state], adjacent: [] });
@@ -908,6 +946,93 @@ describe("spawn", () => {
       `fleet.session=${agent[2] ?? ""}`,
       "fleet.harness=pi",
     ]);
+  });
+
+  describe("readiness", () => {
+    it.each([
+      {
+        state: "blocked on a dialog",
+        launched: {
+          address: "t7",
+          state: "live",
+          status: { state: "blocked" },
+        },
+        listed: [{ address: "t7", state: "live", where: "tasks / Tasks · No active focus" }],
+        polls: [watcherList, t7Get, ["hc", "ls", "--json"]],
+        status: "blocked",
+        agentStatus: "blocked",
+        tab: "tasks / Tasks · No active focus",
+        line: 'not ready after 0s: tasks-coordinator (t7) is blocked on a dialog, which is the user\'s to answer in "tasks / Tasks · No active focus" (hc read t7); left running',
+      },
+      {
+        state: "still working",
+        launched: { address: "t7", state: "live", status: { state: "working" } },
+        listed: [],
+        polls: [watcherList, t7Get],
+        status: "working",
+        agentStatus: "working",
+        tab: null,
+        line: "not ready after 0s: tasks-coordinator (t7) is still working with no watcher armed; left running",
+      },
+    ])(
+      "times out $state, reports the last state and leaves the terminal running",
+      async ({ launched, listed, polls, status, agentStatus, tab, line }) => {
+        const state = dir();
+        const fake = spawnFake(MANAGER, [], listed, [], launched);
+        const sleeps: number[] = [];
+        const result = await runWith(
+          spawn(
+            await withDefaultHarness(state, "claude"),
+            spawnOptions({ cwd: state }),
+            ENV,
+            fastWait(sleeps),
+          ),
+          fake.layer,
+        );
+        expect({ ...result, session: "" }).toEqual({
+          name: "tasks-coordinator",
+          domain: "tasks",
+          terminal: "t7",
+          space: "sp9",
+          harness: "claude",
+          session: "",
+          backlog: { path: tasksDocument(state), created: true, owned: state, items: [] },
+          watcher: null,
+          status,
+          agentStatus,
+          tab,
+          timeoutMs: 3,
+        });
+        expect(spawnOutput(result).at(-1)).toBe(line);
+        expect(sleeps).toEqual([1, 1]);
+        expect(tailAfterRename(fake.calls.map((call) => call.argv))).toEqual([
+          ...polls,
+          ...polls,
+          ...polls,
+        ]);
+      },
+    );
+
+    it("stops waiting once the new terminal is gone", async () => {
+      const state = dir();
+      const fake = spawnFake(MANAGER, [], [], [], { address: "t7", state: "exited" });
+      const sleeps: number[] = [];
+      const result = await runWith(
+        spawn(
+          await withDefaultHarness(state, "claude"),
+          spawnOptions({ cwd: state }),
+          ENV,
+          fastWait(sleeps),
+        ),
+        fake.layer,
+      );
+      expect([result.status, result.watcher]).toEqual(["gone", null]);
+      expect(spawnOutput(result).at(-1)).toBe(
+        "not ready: tasks-coordinator (t7) is gone, it ended before arming its watcher",
+      );
+      expect(sleeps).toEqual([]);
+      expect(tailAfterRename(fake.calls.map((call) => call.argv))).toEqual([watcherList, t7Get]);
+    });
   });
 });
 

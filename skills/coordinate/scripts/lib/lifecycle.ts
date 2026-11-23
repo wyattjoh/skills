@@ -58,7 +58,7 @@ import {
   PI_THINKING,
 } from "./harness.ts";
 import * as hc from "./herdr.ts";
-import { armWatcher, watcherInfoLine } from "./watch-terminal.ts";
+import { armWatcher, watcherInfo, watcherInfoLine } from "./watch-terminal.ts";
 import {
   capacityItemEligible,
   enqueueCapacityWait,
@@ -298,36 +298,166 @@ const seedLines = (seeded: {
 ];
 
 /**
- * Turn a finished launch into the lines spawn prints.
- * @param launched What started.
- * @returns Lines to print.
+ * What `coordinate spawn` started and whether it became ready: `ready` once the domain's watcher
+ * terminal is live, otherwise the new terminal's last observed state.
  */
-const spawnOutput = (launched: {
+type SpawnResult = {
   name: string;
   domain: string;
-  address: string;
+  terminal: string;
   space: string;
   harness: Harness;
   session: string;
-}): string[] => [
-  `started coordinator ${launched.name} for ${launched.domain} (${launched.address}) in its own space ${launched.space}, ${launched.harness} session ${launched.session}`,
+  /**
+   * What spawn seeded before the launch: the backlog, the owned folder when it added one, and the items.
+   */
+  backlog: {
+    path: string;
+    created: boolean;
+    owned: string | null;
+    items: readonly { id: string; title: string }[];
+  };
+  watcher: string | null;
+  status: "ready" | "working" | "blocked" | "gone";
+  /**
+   * The agent status Herdr last reported for the new terminal, when not ready.
+   */
+  agentStatus: string | null;
+  /**
+   * Where the blocking dialog is, when blocked.
+   */
+  tab: string | null;
+  /**
+   * The readiness bound spawn waited within.
+   */
+  timeoutMs: number;
+};
+
+/**
+ * How long and how often spawn polls for the new coordinator's watcher.
+ */
+type SpawnWait = {
+  timeoutMs: number;
+  intervalMs: number;
+  sleep: (ms: number) => Effect.Effect<void>;
+};
+
+const SPAWN_WAIT: SpawnWait = {
+  timeoutMs: 120_000,
+  intervalMs: 2_000,
+  sleep: (ms) => Effect.sleep(ms),
+};
+
+/**
+ * Describe why a spawned coordinator is not ready.
+ * @param result A result whose status is not `ready`.
+ * @returns One line.
+ */
+const notReadyLine = (result: SpawnResult): string => {
+  const who = `${result.name} (${result.terminal})`;
+  if (result.status === "gone")
+    return `not ready: ${who} is gone, it ended before arming its watcher`;
+  const after = `not ready after ${Math.round(result.timeoutMs / 1000)}s: ${who}`;
+  if (result.status === "blocked")
+    return `${after} is blocked on a dialog, which is the user's to answer in "${result.tab ?? result.terminal}" (hc read ${result.terminal}); left running`;
+  return `${after} is still ${result.agentStatus ?? "starting"} with no watcher armed; left running`;
+};
+
+/**
+ * Turn a spawn result into the lines spawn prints: what it seeded, the started line, then ready or
+ * the last state.
+ * @param result What started.
+ * @returns Lines to print.
+ */
+export const spawnOutput = (result: SpawnResult): string[] => [
+  ...seedLines({
+    ...result.backlog,
+    added: result.backlog.owned !== null,
+    owned: result.backlog.owned ?? "",
+  }),
+  `started coordinator ${result.name} for ${result.domain} (${result.terminal}) in its own space ${result.space}, ${result.harness} session ${result.session}`,
+  result.status === "ready"
+    ? `ready: ${result.name} (${result.terminal}) armed watcher ${result.watcher}`
+    : notReadyLine(result),
 ];
+
+/**
+ * Poll until the domain's watcher terminal is live, which the new coordinator's own
+ * `coordinate start` arms. Stops early when the new terminal is gone; never ends it.
+ * @param config Config.
+ * @param domain Domain.
+ * @param address The new coordinator's terminal.
+ * @param wait Bound, interval and sleep.
+ * @returns The readiness fields of the result.
+ */
+const awaitWatcher = Effect.fn("awaitWatcher")(function* (
+  config: Config,
+  domain: string,
+  address: string,
+  wait: SpawnWait,
+) {
+  const attempts = Math.max(1, Math.ceil(wait.timeoutMs / wait.intervalMs));
+  let last: Pick<SpawnResult, "watcher" | "status" | "agentStatus" | "tab"> = {
+    watcher: null,
+    status: "working",
+    agentStatus: null,
+    tab: null,
+  };
+  for (let attempt = 0; attempt < attempts; attempt += 1) {
+    if (attempt > 0) yield* wait.sleep(wait.intervalMs);
+    const info = yield* watcherInfo(config, domain).pipe(
+      Effect.catch(() => Effect.succeed(undefined)),
+    );
+    if (info?.terminal !== undefined)
+      return { watcher: info.terminal, status: "ready", agentStatus: null, tab: null } as const;
+    // A transient hc failure keeps the last observation; only a missing or ended terminal is gone.
+    const terminal = yield* hc.get(address).pipe(
+      Effect.map((got) => ({ got })),
+      Effect.catch(() => Effect.succeed(undefined)),
+    );
+    if (terminal === undefined) continue;
+    if (terminal.got === undefined || !terminal.got.live)
+      return { watcher: null, status: "gone", agentStatus: null, tab: null } as const;
+    if (terminal.got.status !== "blocked") {
+      last = {
+        watcher: null,
+        status: "working",
+        agentStatus: terminal.got.status ?? null,
+        tab: null,
+      };
+      continue;
+    }
+    // `hc ls` carries the terminal's space and tab; the title spawn set is the fallback.
+    const listed = yield* hc.list().pipe(Effect.catch(() => Effect.succeed([])));
+    const where = listed.find((candidate) => candidate.address === address)?.where;
+    last = {
+      watcher: null,
+      status: "blocked",
+      agentStatus: "blocked",
+      tab: where || idleTabTitle(domain),
+    };
+  }
+  return last;
+});
 
 /**
  * Start a new coordinator for a domain in its own unfocused Herdr space, from a coordinator.
  * Every refusal comes before anything is written or launched; then the domain's backlog is seeded
  * with the folder and `--item` titles, and the coordinator launched. The new terminal has no parent, so
  * it outlives the caller, and is labelled as the domain's coordinator at launch, so a second spawn
- * for the domain is refused even before the first has started.
+ * for the domain is refused even before the first has started. After launch it waits, bounded, for
+ * the new coordinator to arm the domain's watcher, and leaves the terminal running either way.
  * @param config Config.
  * @param options Spawn options.
  * @param env Environment (`HC_TERMINAL_ID`).
- * @returns Lines to print.
+ * @param wait Readiness bound, poll interval and sleep, injectable for tests.
+ * @returns What started and whether it became ready.
  */
 export const spawn = Effect.fn("spawn")(function* (
   config: Config,
   options: SpawnOptions,
   env: Record<string, string | undefined> = process.env,
+  wait: SpawnWait = SPAWN_WAIT,
 ) {
   const { domain } = options;
   yield* checkDomainName(domain);
@@ -390,10 +520,24 @@ export const spawn = Effect.fn("spawn")(function* (
     }),
     recordSpace: false,
   });
-  return [
-    ...seedLines({ ...seeded, owned }),
-    ...spawnOutput({ name, domain, harness, session, ...launched }),
-  ];
+  const ready = yield* awaitWatcher(config, domain, launched.address, wait);
+  const result: SpawnResult = {
+    name,
+    domain,
+    terminal: launched.address,
+    space: launched.space,
+    harness,
+    session,
+    backlog: {
+      path: seeded.path,
+      created: seeded.created,
+      owned: seeded.added ? owned : null,
+      items: seeded.items.map((item) => ({ id: item.id, title: item.title })),
+    },
+    ...ready,
+    timeoutMs: wait.timeoutMs,
+  };
+  return result;
 });
 
 /**

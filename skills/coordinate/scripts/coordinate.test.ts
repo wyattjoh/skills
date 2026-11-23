@@ -216,7 +216,10 @@ describe("coordinate CLI delegate --skill", () => {
 });
 
 describe("coordinate CLI spawn", () => {
-  it("passes the domain and flags through and prints the started line", () => {
+  const watcherLive = { "coordinate.watch-domain=tasks": [{ address: "t-w", state: "live" }] };
+  const MANAGER = { "fleet.role": "coordinator", "fleet.domain": "manager" };
+
+  it("passes the domain and flags through and prints the started and ready lines", () => {
     const state = tempDir("coordinate-spawn-cli-");
     made.push(state);
     const cwd = join(state, "work");
@@ -242,17 +245,17 @@ describe("coordinate CLI spawn", () => {
         "second",
       ],
       {
-        env: cliEnv(state, { "fleet.role": "coordinator", "fleet.domain": "manager" }),
+        env: cliEnv(state, MANAGER, undefined, {}, watcherLive),
         stdout: "pipe",
         stderr: "pipe",
         timeout: 10_000,
       },
     );
     const stdout = result.stdout.toString();
-    const session = /session (\S+)\n$/.exec(stdout)?.[1] ?? "";
+    const session = /session (\S+)\n/.exec(stdout)?.[1] ?? "";
     expect({ exit: result.exitCode, stdout, stderr: result.stderr.toString() }).toEqual({
       exit: 0,
-      stdout: `created backlog ${document}\nowned: added ${cwd}\nadded i1: first\nadded i2: second\nstarted coordinator tasks-coordinator for tasks (t-watch) in its own space sp9, claude session ${session}\n`,
+      stdout: `created backlog ${document}\nowned: added ${cwd}\nadded i1: first\nadded i2: second\nstarted coordinator tasks-coordinator for tasks (t-watch) in its own space sp9, claude session ${session}\nready: tasks-coordinator (t-watch) armed watcher t-w\n`,
       stderr: "",
     });
     const seeded = JSON.parse(readFileSync(document, "utf8"));
@@ -285,6 +288,67 @@ describe("coordinate CLI spawn", () => {
     expect(readFileSync(join(state, "bin", "app-calls.log"), "utf8")).toBe(
       `do space.new {"name":"tasks","folder":"${cwd}","focus":false}\nls\ndo tab.rename {"id":"tab9","name":"Tasks · No active focus"}\n`,
     );
+  });
+
+  it("prints the same fields as JSON with --json", () => {
+    const state = tempDir("coordinate-spawn-cli-json-");
+    made.push(state);
+    const result = Bun.spawnSync(
+      ["bun", cli, "spawn", "tasks", "--cwd", state, "--harness", "claude", "--json"],
+      {
+        env: cliEnv(state, MANAGER, undefined, {}, watcherLive),
+        stdout: "pipe",
+        stderr: "pipe",
+        timeout: 10_000,
+      },
+    );
+    const printed = JSON.parse(result.stdout.toString()) as Record<string, unknown>;
+    expect({ exit: result.exitCode, stderr: result.stderr.toString() }).toEqual({
+      exit: 0,
+      stderr: "",
+    });
+    expect(printed).toEqual({
+      name: "tasks-coordinator",
+      domain: "tasks",
+      terminal: "t-watch",
+      space: "sp9",
+      harness: "claude",
+      session: printed.session,
+      backlog: {
+        path: join(state, "backlogs", "tasks.json"),
+        created: true,
+        owned: state,
+        items: [],
+      },
+      watcher: "t-w",
+      status: "ready",
+      agentStatus: null,
+      tab: null,
+      timeoutMs: 120_000,
+    });
+  });
+
+  it("exits 1 with the last state when the new terminal ends before its watcher is armed", () => {
+    const state = tempDir("coordinate-spawn-cli-gone-");
+    made.push(state);
+    const result = Bun.spawnSync(
+      ["bun", cli, "spawn", "tasks", "--cwd", state, "--harness", "claude"],
+      {
+        env: cliEnv(state, MANAGER, undefined, {
+          "t-watch": { address: "t-watch", state: "exited" },
+        }),
+        stdout: "pipe",
+        stderr: "pipe",
+        timeout: 10_000,
+      },
+    );
+    const stdout = result.stdout.toString();
+    const session = /session (\S+)\n/.exec(stdout)?.[1] ?? "";
+    expect({ exit: result.exitCode, stdout, stderr: result.stderr.toString() }).toEqual({
+      exit: 1,
+      stdout: `created backlog ${join(state, "backlogs", "tasks.json")}\nowned: added ${state}\nstarted coordinator tasks-coordinator for tasks (t-watch) in its own space sp9, claude session ${session}\nnot ready: tasks-coordinator (t-watch) is gone, it ended before arming its watcher\n`,
+      stderr: "",
+    });
   });
 });
 
@@ -614,7 +678,16 @@ describe("coordinate CLI parity", () => {
       [["delegate"], ["name", "--task", "--harness", "--no-space"]],
       [
         ["spawn"],
-        ["domain", "--cwd", "--harness", "--model", "--effort", "--item", "from a coordinator"],
+        [
+          "domain",
+          "--cwd",
+          "--harness",
+          "--model",
+          "--effort",
+          "--item",
+          "--json",
+          "from a coordinator",
+        ],
       ],
       [["send"], ["target", "text"]],
       [["notify"], ["text", "one line"]],
