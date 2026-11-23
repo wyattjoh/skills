@@ -18,9 +18,11 @@ import {
   delegateLine,
   delegateUrgency,
   draftFor,
+  findingStatusLabel,
   formatFindingCounts,
   groupFindings,
   groupItems,
+  promotedItemId,
   mergeEnded,
   outboxOutput,
   outboxShowCommand,
@@ -483,6 +485,39 @@ test("builds the finding promote and dismiss calls and says which findings can b
       canTriageFinding({ id: "f1", status } as Parameters<typeof canTriageFinding>[0]),
     ),
   ).toEqual([true, false, false]);
+});
+
+const closed = (status: Finding["status"], outcome: string | null): Finding => ({
+  ...finding("f1", "issue"),
+  status,
+  outcome,
+});
+
+test("a finding acted on with the CLI's promote outcome is Promoted into that item; others keep their label", () => {
+  const findings = [
+    closed("acted", "promoted to i5"),
+    closed("acted", "fixed"),
+    closed("acted", "promoted to i5 and fixed"),
+    closed("acted", null),
+    closed("dismissed", "promoted to i5"),
+    closed("open", null),
+  ];
+  expect(findings.map(promotedItemId)).toEqual([
+    "i5",
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+  ]);
+  expect(findings.map(findingStatusLabel)).toEqual([
+    "Promoted",
+    "Acted on",
+    "Acted on",
+    "Acted on",
+    "Dismissed",
+    "Open",
+  ]);
 });
 
 const LEGACY: HarnessSelection = { enabled: ["pi", "claude"], default: null };

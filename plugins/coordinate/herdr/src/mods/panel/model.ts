@@ -150,6 +150,26 @@ export const FINDING_STATUS_LABELS: Readonly<Record<Finding["status"], string>> 
 };
 
 /**
+ * The item a finding was promoted into, read from the outcome the CLI's promote writes
+ * ("promoted to <item id>").
+ * @param finding A finding.
+ * @returns The item id, or undefined for a finding that was not promoted.
+ */
+export const promotedItemId = (finding: Finding): string | undefined => {
+  if (finding.status !== "acted" || finding.outcome === null) return undefined;
+  return /^promoted to (i\d+)$/.exec(finding.outcome)?.[1];
+};
+
+/**
+ * A finding's status name on its detail screen: "Promoted" for one promoted into an item,
+ * else its status label.
+ * @param finding A finding.
+ * @returns The label.
+ */
+export const findingStatusLabel = (finding: Finding): string =>
+  promotedItemId(finding) === undefined ? FINDING_STATUS_LABELS[finding.status] : "Promoted";
+
+/**
  * Each finding kind's name on its detail screen.
  */
 export const FINDING_KIND_LABELS: Readonly<Record<Finding["kind"], string>> = {

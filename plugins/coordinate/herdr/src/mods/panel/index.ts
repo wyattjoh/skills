@@ -55,6 +55,7 @@ import {
   outboxOutput,
   outboxShowCommand,
   parseListing,
+  promotedItemId,
   queueOutput,
   queueShowCommand,
   policyDialogProps,
@@ -2027,6 +2028,11 @@ export default class Panel extends View {
       finding?.from === null || finding === undefined || doc.kind !== "loaded"
         ? undefined
         : doc.backlog.items.find((item) => item.id === finding.from);
+    const promotedId = finding === undefined ? undefined : promotedItemId(finding);
+    const promoted =
+      promotedId === undefined || doc.kind !== "loaded"
+        ? undefined
+        : doc.backlog.items.find((item) => item.id === promotedId);
     const flow = this.answerFlowModel();
     const trail =
       flow === undefined
@@ -2059,6 +2065,7 @@ export default class Panel extends View {
       page: this.page === undefined || this.page.domain !== domain ? undefined : this.page.kind,
       finding,
       origin,
+      promoted,
       openFinding: (record, cx) => this.openFinding(record, cx),
       findingActions: this.findingActionsModel(domain, finding),
       delegates: this.delegates(domain, doc),

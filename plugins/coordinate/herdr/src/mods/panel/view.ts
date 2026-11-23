@@ -60,21 +60,23 @@ import {
   FINDING_STATUS_TONES,
   FINDING_TITLE_MAX_LINES,
   GLOBE_ICON,
+  PROMOTED_TONE,
   QUEUED_TONE,
   STATUS_MENU_WIDTH,
   STATUS_TONES,
 } from "./look.ts";
 import {
   FINDING_KIND_LABELS,
-  FINDING_STATUS_LABELS,
   GROUP_LABELS,
   OUTBOX_LABEL,
   canDismissItem,
   chosenAnswer,
   delegateLabel,
   delegateLine,
+  findingStatusLabel,
   formatFindingCounts,
   groupFindings,
+  promotedItemId,
   rankedOptions,
 } from "./model.ts";
 import type {
@@ -122,10 +124,11 @@ export type PanelModel = {
   page: DomainPage["kind"] | undefined;
   // The open findings.
   findings: Finding[];
-  // The finding whose detail screen is on top of the lists, if any, and the item it came from
-  // when the document still has it.
+  // The finding whose detail screen is on top of the lists, if any, the item it came from and
+  // the item it was promoted into, each while the document still has it.
   finding: Finding | undefined;
   origin: Item | undefined;
+  promoted: Item | undefined;
   openFinding: (finding: Finding, cx: Context) => void;
   // Approve and Dismiss on the open finding's detail, absent once it is closed.
   findingActions: FindingActionsModel | undefined;
@@ -1145,36 +1148,40 @@ const detailHead = (
     trailing: div().id(`${prefix}-status`).text_size(TEXT.label).text_color(tone).child(status),
   });
 
-// The item a finding came from: a link to its detail while the document has it, else its id
-// as the finding names it, or None.
-const originFact = (
+// An item a finding names (the one it came from, or the one it was promoted into): a link to
+// its detail while the document has it, else its id as the finding names it, or None.
+const itemFact = (
   t: Theme,
-  from: string | null,
-  origin: Item | undefined,
+  key: string,
+  label: string,
+  id: string | null,
+  linked: Item | undefined,
   open: (item: Item, cx: Context) => void,
 ): Element =>
-  detailRow(t, "fact-origin")
-    .child(small(t, t.muted, "Origin"))
+  detailRow(t, `fact-${key}`)
+    .child(small(t, t.muted, label))
     .child(
-      from === null
+      id === null
         ? div().text_color(t.dim).child("None")
-        : origin === undefined
-          ? div().child(from)
+        : linked === undefined
+          ? div().child(id)
           : h_flex()
-              .id("fact-origin-link")
+              .id(`fact-${key}-link`)
               .gap(CARD.rowGap)
               .cursor_pointer()
               .text_color(t.accent)
               .hover((s) => s.text_color(t.foreground))
-              .on_click((_event, cx) => open(origin, cx))
-              .child(div().flex_none().child(origin.id))
-              .child(div().flex_1().min_w_0().child(origin.title)),
+              .on_click((_event, cx) => open(linked, cx))
+              .child(div().flex_none().child(linked.id))
+              .child(div().flex_1().min_w_0().child(linked.title)),
     );
 
 // The scroll viewport is supplied by herdr-ui at the screen boundary. This content stays
 // mounted below the list so its own viewport retains position while the user navigates back.
-const findingScreen = (t: Theme, finding: Finding, model: PanelModel): Element =>
-  v_flex()
+// A promoted finding's outcome is its Promoted to row, so it shows no Outcome row as well.
+const findingScreen = (t: Theme, finding: Finding, model: PanelModel): Element => {
+  const promotedId = promotedItemId(finding);
+  return v_flex()
     .id("finding")
     .gap(PANEL.sectionGap)
     .child(
@@ -1183,8 +1190,8 @@ const findingScreen = (t: Theme, finding: Finding, model: PanelModel): Element =
         "finding",
         finding.id,
         finding.title,
-        FINDING_STATUS_LABELS[finding.status],
-        role(t, FINDING_STATUS_TONES[finding.status]),
+        findingStatusLabel(finding),
+        role(t, promotedId === undefined ? FINDING_STATUS_TONES[finding.status] : PROMOTED_TONE),
       ),
     )
     .child(
@@ -1192,11 +1199,14 @@ const findingScreen = (t: Theme, finding: Finding, model: PanelModel): Element =
         fact(t, "fact-kind", "Kind", [FINDING_KIND_LABELS[finding.kind]]),
         fact(t, "fact-detail", "Detail", finding.detail === null ? [] : [finding.detail]),
         fact(t, "fact-path", "Path", finding.path === null ? [] : [finding.path]),
-        originFact(t, finding.from, model.origin, model.open),
+        itemFact(t, "origin", "Origin", finding.from, model.origin, model.open),
         ...(finding.closedAt === null
           ? []
           : [fact(t, "fact-closed", "Closed", [finding.closedAt.slice(0, 10)])]),
-        ...(finding.status === "open" || finding.outcome === null
+        ...(promotedId === undefined
+          ? []
+          : [itemFact(t, "promoted", "Promoted to", promotedId, model.promoted, model.open)]),
+        ...(finding.status === "open" || finding.outcome === null || promotedId !== undefined
           ? []
           : [fact(t, "fact-outcome", "Outcome", [finding.outcome])]),
       ]),
@@ -1204,6 +1214,7 @@ const findingScreen = (t: Theme, finding: Finding, model: PanelModel): Element =
     .when(model.findingActions !== undefined, (el) =>
       el.children(findingActionRows(t, model.findingActions!)),
     );
+};
 
 // Approve and Dismiss, right-aligned like the answer flow's actions, then any refusal.
 const findingActionRows = (t: Theme, actions: FindingActionsModel): Element[] => {

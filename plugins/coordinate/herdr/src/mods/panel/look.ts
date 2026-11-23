@@ -69,6 +69,11 @@ export const FINDING_STATUS_TONES: Readonly<Record<Finding["status"], string>> =
 };
 
 /**
+ * A promoted finding's status tone, the delegated tone: its work moved on into an open item.
+ */
+export const PROMOTED_TONE = "ansi4";
+
+/**
  * Each listing count's tone, used only while the count is nonzero so a domain that needs nothing
  * reads quiet.
  */

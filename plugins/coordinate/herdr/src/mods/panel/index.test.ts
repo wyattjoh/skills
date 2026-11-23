@@ -3143,7 +3143,7 @@ test("an open finding's detail has Approve then Dismiss in one right-aligned row
   expect(ids(root, "finding-action-error")).toEqual([]);
 });
 
-test("Approve promotes the finding through the CLI with the exact arguments, then shows it acted with its outcome", async () => {
+test("Approve promotes the finding through the CLI with the exact arguments, then shows it promoted with a link to the new item", async () => {
   const { ctx, render } = await openFindingDetail("f3");
   const promoted = promoteFinding(withFindings(), { id: "f3", title: undefined, now: NOW });
   if (!promoted.ok) throw new Error(promoted.reason);
@@ -3159,12 +3159,51 @@ test("Approve promotes the finding through the CLI with the exact arguments, the
   expect(findingExecs()).toEqual([
     [...cliPrefix, "finding", "promote", "--domain", "alpha", "--", "f3"],
   ]);
+  let root = render();
+  expect([
+    text(get(root, "finding-status")),
+    get(root, "finding-status").styles.text_color,
+    text(get(root, "fact-promoted")),
+    ids(root, "fact-outcome"),
+    ids(root, "finding-actions"),
+  ]).toEqual(["Promoted", theme().ansi4, "Promoted to i5 Share the validator", [], []]);
+  get(root, "fact-promoted-link").click!({}, ctx.cx);
+  root = render();
+  expect([ids(root, "screen-finding"), ids(root, "screen-item")]).toEqual([[], ["screen-item"]]);
+  expect(trail(root)).toBe("⌂ › alpha › i5");
+});
+
+// Open a finding's detail, then close it in the document the watcher reports changed.
+const closeOpenFinding = async (id: string, outcome: string) => {
+  const mounted = await openFindingDetail(id);
+  const closed = closeFinding(withFindings(), { id, outcome, dismissed: false, now: NOW });
+  if (!closed.ok) throw new Error(closed.reason);
+  host.files.set(DOC, JSON.stringify(closed.backlog));
+  backlogWatch()!.fire([DOC]);
+  await settle();
+  return mounted;
+};
+
+test("a finding acted on another way keeps Acted on with its Outcome and no Promoted to row", async () => {
+  const { render } = await closeOpenFinding("f2", "fixed");
   const root = render();
   expect([
     text(get(root, "finding-status")),
+    get(root, "finding-status").styles.text_color,
     text(get(root, "fact-outcome")),
-    ids(root, "finding-actions"),
-  ]).toEqual(["Acted on", "Outcome promoted to i5", []]);
+    ids(root, "fact-promoted"),
+  ]).toEqual(["Acted on", theme().ansi2, "Outcome fixed", []]);
+});
+
+test("a finding promoted into an item the document no longer has shows the bare item id", async () => {
+  const { render } = await closeOpenFinding("f2", "promoted to i9");
+  const root = render();
+  expect([
+    text(get(root, "finding-status")),
+    text(get(root, "fact-promoted")),
+    ids(root, "fact-promoted-link"),
+    ids(root, "fact-outcome"),
+  ]).toEqual(["Promoted", "Promoted to i9", [], []]);
 });
 
 test("Dismiss closes the finding as dismissed through the CLI with the exact arguments", async () => {
