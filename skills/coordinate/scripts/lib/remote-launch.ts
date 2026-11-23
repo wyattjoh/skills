@@ -7,7 +7,8 @@ import { shellWord as word, UNSET_GIT } from "./git-env.ts";
 import { DEFAULT_TIMEOUT_MS, type Proc, SpawnError } from "./proc.ts";
 
 // A remote launch on another Herdr machine: everything there goes through `hc exec --on` and
-// `hc file write --on`, so the machine needs only the harness and git.
+// `hc file write --on`, so the machine needs the harness, git and a few base tools (see
+// preflightRemote), never the coordinate CLI.
 
 /**
  * The recorded checkout of a repo on another machine, or a refusal naming the missing entry.
@@ -29,8 +30,21 @@ export const remoteCheckout = Effect.fn("remoteCheckout")(function* (
 });
 
 /**
- * Confirm the harness and git are on the machine's login PATH and the checkout is a Git
- * repository there. A missing piece refuses the launch; an unreachable machine fails the check.
+ * A list as prose: "a", "a and b", "a, b, and c".
+ * @param items Items.
+ * @returns The list.
+ */
+const spoken = (items: readonly string[]): string =>
+  items.length < 3 ? items.join(" and ") : `${items.slice(0, -1).join(", ")}, and ${items.at(-1)}`;
+
+// What copy-back, fetch and the process scan run on a remote, besides git and sha256sum or shasum.
+const BASE_TOOLS = ["tar", "gzip", "base64", "fold", "mktemp", "ps"] as const;
+
+/**
+ * Confirm the harness, git and the base tools copy-back, fetch and the process scan need (tar,
+ * gzip, base64, fold, mktemp, sha256sum or shasum, ps, and Linux /proc) are on the machine, and
+ * the checkout is a Git repository there. A missing piece refuses the launch; an unreachable
+ * machine fails the check.
  * @param machine Herdr machine name.
  * @param harness Harness to launch.
  * @param checkout Recorded checkout on that machine.
@@ -45,7 +59,11 @@ export const preflightRemote = Effect.fn("preflightRemote")(function* (
     machine,
     [
       UNSET_GIT,
-      `for tool in ${harness} git; do command -v "$tool" >/dev/null 2>&1 || echo "missing $tool"; done`,
+      // Copy-back and fetch need the archive and encoding tools; end and sweep scan processes
+      // with ps and Linux /proc.
+      `for tool in ${harness} git ${BASE_TOOLS.join(" ")}; do command -v "$tool" >/dev/null 2>&1 || echo "missing $tool"; done`,
+      'command -v sha256sum >/dev/null 2>&1 || command -v shasum >/dev/null 2>&1 || echo "missing sha256sum or shasum"',
+      "if [ ! -d /proc/self ]; then echo no-proc; fi",
       `if git -C ${word(checkout)} rev-parse --git-dir >/dev/null 2>&1; then echo repo; fi`,
       'echo "shell $SHELL"',
     ].join("\n"),
@@ -53,9 +71,13 @@ export const preflightRemote = Effect.fn("preflightRemote")(function* (
   );
   const lines = out.split("\n");
   const missing = lines.flatMap((line) => (line.startsWith("missing ") ? [line.slice(8)] : []));
-  if (missing.length > 0)
+  const lacks = [
+    ...(missing.length > 0 ? [`${spoken(missing)} on its login PATH`] : []),
+    ...(lines.includes("no-proc") ? ["Linux /proc, which the process scan reads"] : []),
+  ];
+  if (lacks.length > 0)
     return yield* new Refused({
-      message: `${machine} lacks ${missing.join(" and ")} on its login PATH; setting up ${machine} belongs to ${machine}'s own domain, so file it there`,
+      message: `${machine} lacks ${lacks.join(", and ")}; setting up ${machine} belongs to ${machine}'s own domain, so file it there`,
     });
   if (!lines.includes("repo"))
     return yield* new Refused({

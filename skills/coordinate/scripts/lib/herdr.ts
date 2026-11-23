@@ -312,8 +312,8 @@ export const coresOn = Effect.fn("hc.coresOn")(function* (machine: string) {
 
 /**
  * Run a POSIX shell script on another Herdr machine through `hc exec`, in a login shell so the
- * harness and git are on its PATH. A non-zero exit is a `HerdrError`, so scripts that report a
- * finding print it and exit 0.
+ * harness, git and the base tools are on its PATH. A non-zero exit is a `HerdrError`, so
+ * scripts that report a finding print it and exit 0.
  * @param machine Herdr machine name.
  * @param script Shell script.
  * @param timeoutS Remote timeout in seconds (at most 600).
