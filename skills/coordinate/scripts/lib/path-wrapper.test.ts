@@ -45,9 +45,9 @@ const sandbox = (onPath: boolean) => {
       "/bin",
     ].join(":"),
   };
-  const run = (args: string[]) => {
+  const run = (args: string[], extraDir?: string) => {
     const result = Bun.spawnSync([bun, cli, ...args], {
-      env,
+      env: extraDir === undefined ? env : { ...env, PATH: `${extraDir}:${env.PATH}` },
       stdout: "pipe",
       stderr: "pipe",
       timeout: 10_000,
@@ -97,6 +97,30 @@ describe("coordinate PATH wrapper", () => {
       `short name coordinate unavailable: ${target} exists and is not this wrapper; left it alone`,
     );
     expect(readFileSync(target, "utf8")).toBe("#!/bin/sh\necho mine\n");
+  });
+
+  it("leaves the short name alone when another coordinate is on PATH", () => {
+    const { home, target, run } = sandbox(true);
+    const other = join(home, "other-bin");
+    mkdirSync(other, { recursive: true });
+    writeFileSync(join(other, "coordinate"), "#!/bin/sh\necho other\n", { mode: 0o755 });
+    const result = run(["start", "app"], other);
+    expect(result.exit).toBe(0);
+    expect(result.last).toBe(
+      `short name coordinate unavailable: ${join(other, "coordinate")} is another coordinate on PATH; left it alone`,
+    );
+    expect(existsSync(target)).toBe(false);
+  });
+
+  it("keeps an existing wrapper even when it names another link", () => {
+    const { localBin, target, start } = sandbox(true);
+    mkdirSync(localBin, { recursive: true });
+    const stale = wrapperScript("/old/bun", "/old/link");
+    writeFileSync(target, stale, { mode: 0o755 });
+    const result = start();
+    expect(result.exit).toBe(0);
+    expect(result.last).toBe("no delegate of app has been quiet for 24h");
+    expect(readFileSync(target, "utf8")).toBe(stale);
   });
 
   it("skips writing when ~/.local/bin is not on PATH", () => {

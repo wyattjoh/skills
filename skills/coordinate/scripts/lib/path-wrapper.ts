@@ -92,8 +92,7 @@ const trimSlash = (dir: string): string => (dir.length > 1 ? dir.replace(/\/+$/,
 
 /**
  * Put `coordinate` on PATH as `~/.local/bin/coordinate` when no `coordinate` is there yet and
- * `~/.local/bin` is on PATH. Never replaces a file that is not this wrapper; refreshes this
- * wrapper when its bun or link changed.
+ * `~/.local/bin` is on PATH. Never replaces an existing file, this wrapper included.
  * @param env Environment (HOME and PATH are read from it).
  * @param skillDir The running skill's folder.
  * @returns At most one line to print: what was written, or why the short name is unavailable.
@@ -107,12 +106,7 @@ export const ensurePathWrapper = (
   const bin = join(home, ".local", "bin");
   const target = join(bin, "coordinate");
   const dirs = (env.PATH ?? "").split(":").filter((dir) => dir !== "");
-  const found = dirs.map((dir) => join(dir, "coordinate")).find(executable);
   const ours = isWrapper(target);
-  if (found !== undefined && real(found) !== real(target))
-    return [
-      `short name coordinate unavailable: ${found} is another coordinate on PATH; left it alone`,
-    ];
   if (existsSync(target) && !ours)
     return [
       `short name coordinate unavailable: ${target} exists and is not this wrapper; left it alone`,
@@ -121,6 +115,12 @@ export const ensurePathWrapper = (
     return [
       `short name coordinate unavailable: ${bin} is not on PATH; add it and run coordinate start again`,
     ];
+  if (ours) return [];
+  const found = dirs.map((dir) => join(dir, "coordinate")).find(executable);
+  if (found !== undefined)
+    return [
+      `short name coordinate unavailable: ${found} is another coordinate on PATH; left it alone`,
+    ];
   const loaded = loadingLink(home, skillDir);
   if (!loaded)
     return [
@@ -128,7 +128,6 @@ export const ensurePathWrapper = (
     ];
   const bun = Bun.which("bun", { PATH: env.PATH ?? "" }) ?? process.execPath;
   const script = wrapperScript(bun, loaded.link);
-  if (ours && readFileSync(target, "utf8") === script) return [];
   try {
     mkdirSync(bin, { recursive: true });
     const temp = `${target}.${process.pid}.tmp`;
@@ -139,7 +138,7 @@ export const ensurePathWrapper = (
   }
   const fallback = loaded.matched ? "" : " (could not tell which link loaded this script)";
   return [
-    `${ours ? "updated" : "wrote"} ${target}: coordinate now runs ${loaded.link}/scripts/coordinate.ts${fallback}; allowlist prefix: coordinate *`,
+    `wrote ${target}: coordinate now runs ${loaded.link}/scripts/coordinate.ts${fallback}; allowlist prefix: coordinate *`,
   ];
 };
 
