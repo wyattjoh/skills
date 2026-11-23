@@ -246,6 +246,23 @@ export const coreName = Effect.fn("hc.coreName")(function* () {
   return status.core.name;
 });
 
+const MachineList = Schema.Struct({
+  machines: Schema.Array(Schema.Struct({ name: Schema.String })),
+});
+
+/**
+ * The other Herdr machines this core knows, connected or not.
+ * @returns Their Herdr machine names, as `hc machine ls` lists them.
+ */
+export const machineNames = Effect.fn("hc.machineNames")(function* () {
+  const listed = yield* decodeJson(
+    MachineList,
+    "hc machine ls",
+    yield* herdr(["hc", "machine", "ls", "--json"], 10_000),
+  );
+  return listed.machines.map((machine) => machine.name);
+});
+
 /**
  * Read the online processor count from another Herdr machine.
  * @param machine Herdr machine name.

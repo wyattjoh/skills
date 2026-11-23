@@ -1979,6 +1979,14 @@ const boundaryCard = (t: Theme, boundary: Backlog["boundary"], model: BoundaryMo
     const id = `boundary-${list}`;
     const rows = paths.map((path, index) => {
       const hovered = model.hovered === `${model.domain}\\0${list}\\0${path}`;
+      // An owned repo's checkouts on other machines, by machine name, beside its path.
+      const checkouts = Object.entries(list === "owned" ? (boundary.checkouts?.[path] ?? {}) : {})
+        .sort(([a], [b]) => a.localeCompare(b))
+        .map(([machine, checkout]) =>
+          rowNote(t, `${machine}: ${checkout}`).id(
+            `boundary-${model.domain}-${list}-${path}-on-${machine}`,
+          ),
+        );
       const row = listRow(t, {
         id: `boundary-${model.domain}-${list}-${path}`,
         title: path,
@@ -1986,6 +1994,7 @@ const boundaryCard = (t: Theme, boundary: Backlog["boundary"], model: BoundaryMo
         height: ROW.list,
         trailing: hovered
           ? [
+              ...checkouts,
               button(t, {
                 id: `boundary-${model.domain}-${list}-remove-${path}`,
                 label: "Remove path",
@@ -1995,7 +2004,7 @@ const boundaryCard = (t: Theme, boundary: Backlog["boundary"], model: BoundaryMo
                 onClick: model.busy ? undefined : (cx) => model.remove(list, path, cx),
               }),
             ]
-          : [],
+          : checkouts,
       });
       return row.on_hover((hovering, cx) => model.hover(list, path, hovering, cx));
     });

@@ -7,6 +7,8 @@ import {
   BacklogError,
   boundaryAdd,
   boundaryRm,
+  checkoutAdd,
+  checkoutRm,
   focusSet,
   showBacklog,
   policyAdd,
@@ -24,7 +26,7 @@ import {
 } from "./fixture.ts";
 import { Refused, writeEnded } from "./fleet.ts";
 import { start } from "./lifecycle.ts";
-import { fakeProc, ok, type RunOutput } from "./proc.ts";
+import { FAKE_CORE, fakeProc, ok, type RunOutput } from "./proc.ts";
 import { domainRepos, domainStatus } from "./status.ts";
 import { report } from "./sweep.ts";
 
@@ -234,6 +236,193 @@ describe("backlog policy add", () => {
   });
 });
 
+// `hc machine ls --json` as this core sees it: strix connected, nigelsheldon offline.
+const machines = () =>
+  fakeProc((argv) =>
+    argv[0] === "hc" && argv[1] === "machine" && argv[2] === "ls"
+      ? ok(
+          JSON.stringify({
+            machines: [
+              { name: "strix", state: "connected" },
+              { name: "nigelsheldon", state: "disconnected" },
+            ],
+          }),
+        )
+      : ok("{}"),
+  ).layer;
+const addCheckout = (
+  cfg: Awaited<ReturnType<typeof config>>,
+  path: string,
+  machine: string,
+  checkout: string,
+  options: { json: boolean; outsideTerminal: boolean } = { json: false, outsideTerminal: false },
+) => runWith(checkoutAdd(cfg, "app", { path, machine, checkout, ...options }), machines());
+
+describe("backlog boundary checkouts", () => {
+  it("records, shows and removes a checkout per machine on an owned path", async () => {
+    const { cfg, path } = await started();
+    const owned = dir();
+    await add(cfg, owned);
+    expect(await addCheckout(cfg, owned, "strix", "/home/me/code/app/")).toEqual([
+      `owned: added checkout of ${owned} on strix: /home/me/code/app`,
+    ]);
+    expect(
+      JSON.parse(
+        (
+          await addCheckout(cfg, owned, "nigelsheldon", "/Users/me/app", {
+            json: true,
+            outsideTerminal: false,
+          })
+        ).join("\n"),
+      ),
+    ).toEqual({
+      owned: [owned],
+      adjacent: [],
+      checkouts: { [owned]: { strix: "/home/me/code/app", nigelsheldon: "/Users/me/app" } },
+    });
+    expect(await addCheckout(cfg, owned, "strix", "/home/me/code/app")).toEqual([
+      `owned: checkout of ${owned} on strix is already listed`,
+    ]);
+    expect(JSON.parse((await runWith(showBacklog(cfg, "app", true))).join("\n")).boundary).toEqual({
+      owned: [owned],
+      adjacent: [],
+      checkouts: { [owned]: { strix: "/home/me/code/app", nigelsheldon: "/Users/me/app" } },
+    });
+    expect((await runWith(showBacklog(cfg, "app", false)))[0]?.split("\n").slice(2, 10)).toEqual([
+      "## Boundary",
+      "",
+      `- Owned: ${owned}`,
+      `  - ${owned} on nigelsheldon: /Users/me/app`,
+      `  - ${owned} on strix: /home/me/code/app`,
+      "- Adjacent: (none)",
+      "",
+      "## Policies",
+    ]);
+    expect(
+      await runWith(checkoutRm(cfg, "app", { path: owned, machine: "strix", json: false })),
+    ).toEqual([`owned: removed checkout of ${owned} on strix`]);
+    expect(read(path).boundary).toEqual({
+      owned: [owned],
+      adjacent: [],
+      checkouts: { [owned]: { nigelsheldon: "/Users/me/app" } },
+    });
+    expect(
+      await runWith(checkoutRm(cfg, "app", { path: owned, machine: "nigelsheldon", json: false })),
+    ).toEqual([`owned: removed checkout of ${owned} on nigelsheldon`]);
+    expect(read(path).boundary).toEqual({ owned: [owned], adjacent: [] });
+  });
+
+  it("drops a path's checkouts when the path leaves the owned Boundary", async () => {
+    const { cfg, path } = await started();
+    const owned = dir();
+    await add(cfg, owned);
+    await addCheckout(cfg, owned, "strix", "/srv/app");
+    await runWith(
+      boundaryRm(cfg, "app", { path: owned, adjacent: false, json: false, outsideTerminal: false }),
+    );
+    expect(read(path).boundary).toEqual({ owned: [], adjacent: [] });
+  });
+
+  it.each([
+    [
+      "an unknown machine",
+      "mars",
+      "/srv/app",
+      "unknown Herdr machine mars; known machines: strix, nigelsheldon",
+    ],
+    [
+      "the local key",
+      "local",
+      "/srv/app",
+      `local is this machine (${FAKE_CORE}); its checkout is the owned path itself`,
+    ],
+    [
+      "this core's name",
+      FAKE_CORE,
+      "/srv/app",
+      `${FAKE_CORE} is this machine (${FAKE_CORE}); its checkout is the owned path itself`,
+    ],
+    [
+      "a malformed machine name",
+      "a b",
+      "/srv/app",
+      "machine name a b must be letters, digits, . _ or -",
+    ],
+    ["a relative checkout", "strix", "srv/app", "srv/app is not an absolute path"],
+    ["a two-line checkout", "strix", "/srv\napp", "checkout path must be one line"],
+  ])("refuses %s and leaves the file unchanged", async (_name, machine, checkout, message) => {
+    const { cfg, path } = await started();
+    const owned = dir();
+    await add(cfg, owned);
+    const before = readFileSync(path, "utf8");
+    const error = await failureOf(
+      checkoutAdd(cfg, "app", {
+        path: owned,
+        machine,
+        checkout,
+        json: false,
+        outsideTerminal: false,
+      }),
+      machines(),
+    );
+    expect(tagged(error)).toEqual({ tag: "Refused", message });
+    expect(readFileSync(path, "utf8")).toBe(before);
+  });
+
+  it("refuses a path outside the owned list, a second checkout and a missing entry", async () => {
+    const { cfg } = await started();
+    const owned = dir();
+    const adjacent = dir();
+    await add(cfg, owned);
+    await add(cfg, adjacent, true);
+    const refusal = async (effect: Parameters<typeof failureOf>[0]) =>
+      tagged(await failureOf(effect, machines()));
+    expect(
+      await refusal(
+        checkoutAdd(cfg, "app", {
+          path: adjacent,
+          machine: "strix",
+          checkout: "/srv/app",
+          json: false,
+          outsideTerminal: false,
+        }),
+      ),
+    ).toEqual({
+      tag: "Refused",
+      message: `${adjacent} is not in the owned Boundary; checkouts are recorded only on owned paths`,
+    });
+    await addCheckout(cfg, owned, "strix", "/srv/app");
+    expect(
+      await refusal(
+        checkoutAdd(cfg, "app", {
+          path: owned,
+          machine: "strix",
+          checkout: "/srv/other",
+          json: false,
+          outsideTerminal: false,
+        }),
+      ),
+    ).toEqual({
+      tag: "Refused",
+      message: `${owned} already has a checkout on strix at /srv/app; remove it first: coordinate backlog boundary rm ${owned} --machine strix`,
+    });
+    expect(
+      await refusal(
+        checkoutAdd(cfg, "app", {
+          path: owned,
+          machine: "strix",
+          checkout: "/srv/app",
+          json: false,
+          outsideTerminal: true,
+        }),
+      ),
+    ).toEqual({ tag: "Refused", message: `checkout of ${owned} on strix is already listed` });
+    expect(
+      await refusal(checkoutRm(cfg, "app", { path: owned, machine: "nigelsheldon", json: false })),
+    ).toEqual({ tag: "Refused", message: `${owned} has no checkout on nigelsheldon` });
+  });
+});
+
 describe("backlog focus", () => {
   it("sets, replaces and clears the focus line", async () => {
     const { cfg, path } = await started();
@@ -437,6 +626,48 @@ describe("coordinate CLI", () => {
     expect(run("backlog", "boundary", "rm", state)).toEqual([
       1,
       `refused: ${state} is not in the owned Boundary\n`,
+    ]);
+    expect(run("backlog", "boundary", "rm", state, "--adjacent")).toEqual([
+      0,
+      `adjacent: removed ${state}\n`,
+    ]);
+    expect(run("backlog", "boundary", "add", state)).toEqual([0, `owned: added ${state}\n`]);
+    expect(run("backlog", "boundary", "add", state, "--machine", "strix")).toEqual([
+      1,
+      "refused: pass --machine and --checkout together\n",
+    ]);
+    expect(
+      run(
+        "backlog",
+        "boundary",
+        "add",
+        state,
+        "--machine",
+        "strix",
+        "--checkout",
+        "/srv/app",
+        "--adjacent",
+      ),
+    ).toEqual([1, "refused: checkouts are recorded only on owned paths; drop --adjacent\n"]);
+    expect(
+      run("backlog", "boundary", "add", state, "--machine", "mars", "--checkout", "/srv/app"),
+    ).toEqual([1, "refused: unknown Herdr machine mars; known machines: strix\n"]);
+    expect(
+      run("backlog", "boundary", "add", state, "--machine", "strix", "--checkout", "/srv/app"),
+    ).toEqual([0, `owned: added checkout of ${state} on strix: /srv/app\n`]);
+    expect(read(path).boundary).toEqual({
+      owned: [state],
+      adjacent: [],
+      checkouts: { [state]: { strix: "/srv/app" } },
+    });
+    expect(run("backlog", "boundary", "rm", state, "--machine", "strix")).toEqual([
+      0,
+      `owned: removed checkout of ${state} on strix\n`,
+    ]);
+    expect(run("backlog", "boundary", "rm", state)).toEqual([0, `owned: removed ${state}\n`]);
+    expect(run("backlog", "boundary", "add", state, "--adjacent")).toEqual([
+      0,
+      `adjacent: added ${state}\n`,
     ]);
     expect(read(path)).toEqual({
       ...read(path),

@@ -119,7 +119,8 @@ export const gitAndFake = (
  * `hc`, a stub `herdr-app`, and stub `lsof`, `ps` and `kill` first on PATH, and `HC_TERMINAL_ID=t1`. The stub's `hc get` answers t1 with `labels`,
  * or, given `getError`, fails the way herdr-core reports an error; `hc get` answers each address in
  * `terminals` with its document; `hc ls` lists the first entry of `lists` whose `key=value` label
- * filter the call passes, else nothing; `hc server status` names the core `FAKE_CORE`. Every call's arguments are appended to `<state>/bin/calls.log`.
+ * filter the call passes, else nothing; `hc server status` names the core `FAKE_CORE`; `hc machine ls`
+ * lists one other machine, strix. Every call's arguments are appended to `<state>/bin/calls.log`.
  * The `herdr-app` stub makes space sp9 (tab tab9, shell t6) on `space.new`, lists no spaces, answers
  * anything else with `{}`, and appends its arguments to `<state>/bin/app-calls.log`, so no test
  * reaches the real Herdr app. HOME is `<state>/home`, whose `.local/bin` is not on PATH.
@@ -161,6 +162,7 @@ export const cliEnv = (
     join(bin, "hc"),
     `#!/bin/sh\nprintf '%s\\n' "$*" >> '${join(bin, "calls.log")}'\ncase "$1" in\n  get) ${known}${got} ;;\n  ls) ${listed}printf '{"terminals":[]}' ;;\n  run) printf '{"address":"t-watch"}' ;;
   server) printf '%s' '${JSON.stringify({ core: { id: "0", name: FAKE_CORE } })}' ;;
+  machine) printf '%s' '${JSON.stringify({ machines: [{ name: "strix", state: "connected" }] })}' ;;
   *) printf '{}' ;;\nesac\n`,
   );
   chmodSync(join(bin, "hc"), 0o755);

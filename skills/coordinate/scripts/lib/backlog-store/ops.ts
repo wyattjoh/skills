@@ -1,4 +1,14 @@
-import type { Ask, Backlog, DelegateRef, Finding, Item, ItemStatus, Policy } from "./schema.ts";
+import type {
+  Ask,
+  Backlog,
+  Boundary,
+  Checkouts,
+  DelegateRef,
+  Finding,
+  Item,
+  ItemStatus,
+  Policy,
+} from "./schema.ts";
 
 /**
  * An operation's result: the next document and a value, or why the input was refused.
@@ -543,6 +553,78 @@ export const addBoundary = (
   };
 };
 
+// A Boundary with its checkout map, the key dropped while the map is empty.
+const withCheckouts = (boundary: Boundary, checkouts: Checkouts): Boundary => {
+  const { checkouts: _dropped, ...rest } = boundary;
+  return Object.keys(checkouts).length === 0 ? rest : { ...rest, checkouts };
+};
+
+/**
+ * Record where an owned path's repo is checked out on another machine. The caller validates the
+ * machine name against Herdr; a second, different checkout on the same machine is refused.
+ * @param backlog Current document.
+ * @param input The owned path, the Herdr machine name and the absolute path on that machine.
+ * @returns The next document and whether the entry was added.
+ */
+export const addCheckout = (
+  backlog: Backlog,
+  input: { path: string; machine: string; checkout: string },
+): OpResult<{ added: boolean }> => {
+  if (!backlog.boundary.owned.includes(input.path))
+    return {
+      ok: false,
+      reason: `${input.path} is not in the owned Boundary; checkouts are recorded only on owned paths`,
+    };
+  if (input.checkout === "") return { ok: false, reason: "checkout path is empty" };
+  if (/[\r\n]/.test(input.checkout)) return { ok: false, reason: "checkout path must be one line" };
+  if (!input.checkout.startsWith("/"))
+    return { ok: false, reason: `${input.checkout} is not an absolute path` };
+  const current = backlog.boundary.checkouts?.[input.path] ?? {};
+  const existing = current[input.machine];
+  if (existing === input.checkout) return { ok: true, backlog, value: { added: false } };
+  if (existing !== undefined)
+    return {
+      ok: false,
+      reason: `${input.path} already has a checkout on ${input.machine} at ${existing}; remove it first: coordinate backlog boundary rm ${input.path} --machine ${input.machine}`,
+    };
+  return {
+    ok: true,
+    backlog: {
+      ...backlog,
+      boundary: withCheckouts(backlog.boundary, {
+        ...backlog.boundary.checkouts,
+        [input.path]: { ...current, [input.machine]: input.checkout },
+      }),
+    },
+    value: { added: true },
+  };
+};
+
+/**
+ * Remove an owned path's checkout on one machine.
+ * @param backlog Current document.
+ * @param input The owned path and the Herdr machine name.
+ * @returns The next document; refused when no such entry is recorded.
+ */
+export const removeCheckout = (
+  backlog: Backlog,
+  input: { path: string; machine: string },
+): OpResult<null> => {
+  const current = backlog.boundary.checkouts?.[input.path] ?? {};
+  if (current[input.machine] === undefined)
+    return { ok: false, reason: `${input.path} has no checkout on ${input.machine}` };
+  const remaining = { ...current };
+  delete remaining[input.machine];
+  const checkouts = { ...backlog.boundary.checkouts };
+  if (Object.keys(remaining).length === 0) delete checkouts[input.path];
+  else checkouts[input.path] = remaining;
+  return {
+    ok: true,
+    backlog: { ...backlog, boundary: withCheckouts(backlog.boundary, checkouts) },
+    value: null,
+  };
+};
+
 /**
  * Remove a path from the owned or adjacent Boundary.
  * @param backlog Current document.
@@ -555,14 +637,19 @@ export const removeBoundary = (
 ): OpResult<null> => {
   if (!backlog.boundary[input.list].includes(input.path))
     return { ok: false, reason: `${input.path} is not in the ${input.list} Boundary` };
+  const rest = { ...backlog.boundary.checkouts };
+  delete rest[input.path];
   return {
     ok: true,
     backlog: {
       ...backlog,
-      boundary: {
-        ...backlog.boundary,
-        [input.list]: backlog.boundary[input.list].filter((path) => path !== input.path),
-      },
+      boundary: withCheckouts(
+        {
+          ...backlog.boundary,
+          [input.list]: backlog.boundary[input.list].filter((path) => path !== input.path),
+        },
+        rest,
+      ),
     },
     value: null,
   };

@@ -97,6 +97,14 @@ test("boundaryOutput accepts the CLI's Boundary JSON and rejects malformed outpu
     owned: ["/repo"],
     adjacent: ["/nearby"],
   });
+  expect(
+    boundaryOutput(
+      '{"owned":["/repo"],"adjacent":[],"checkouts":{"/repo":{"strix":"/home/me/repo"}}}',
+    ),
+  ).toEqual({ owned: ["/repo"], adjacent: [], checkouts: { "/repo": { strix: "/home/me/repo" } } });
+  expect(
+    boundaryOutput('{"owned":["/repo"],"adjacent":[],"checkouts":{"/repo":{"strix":1}}}'),
+  ).toBeUndefined();
   expect(boundaryOutput('{"owned":[1],"adjacent":[]}')).toBeUndefined();
   expect(boundaryOutput("refused: duplicate path")).toBeUndefined();
 });

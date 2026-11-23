@@ -1,6 +1,7 @@
 // What the panel shows, decided without Herdr: which domain it follows, whether that domain's
 // document is usable, and how its items group. Where the document lives is the store's paths.
 import {
+  emptyBacklog,
   ITEM_STATUSES,
   OUTSIDE_TERMINAL_STATUSES,
   isRecord,
@@ -1208,7 +1209,13 @@ export const boundaryOutput = (text: string): Backlog["boundary"] | undefined =>
       !boundary.adjacent.every((path) => typeof path === "string")
     )
       return undefined;
-    return { owned: boundary.owned, adjacent: boundary.adjacent };
+    const paths = { owned: boundary.owned, adjacent: boundary.adjacent };
+    if (boundary.checkouts === undefined) return paths;
+    const checked = validateBacklog({
+      ...emptyBacklog("panel", null),
+      boundary: { ...paths, checkouts: boundary.checkouts },
+    });
+    return checked.ok ? checked.backlog.boundary : undefined;
   } catch {
     return undefined;
   }

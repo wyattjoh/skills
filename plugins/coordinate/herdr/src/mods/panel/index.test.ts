@@ -3509,6 +3509,43 @@ test("migrates legacy approvals and opens Policies and Boundary from count rows"
   ).toEqual(["skills/coordinate", "plugins/coordinate", "None"]);
 });
 
+test("shows each owned path's machine checkouts beside it", async () => {
+  focusDomain("alpha");
+  host.files.set(
+    DOC,
+    JSON.stringify({
+      ...emptyBacklog("alpha", null),
+      boundary: {
+        owned: ["/repo", "/docs"],
+        adjacent: [],
+        checkouts: { "/repo": { strix: "/home/me/repo", nigelsheldon: "/Users/me/repo" } },
+      },
+    }),
+  );
+  const { ctx, render } = await mount();
+  openPage(render(), "boundary", ctx.cx);
+  const root = render();
+  expect(ids(root, "boundary-alpha-owned-/")).toEqual([
+    "boundary-alpha-owned-/repo",
+    "boundary-alpha-owned-/repo-on-nigelsheldon",
+    "boundary-alpha-owned-/repo-on-strix",
+    "boundary-alpha-owned-/docs",
+  ]);
+  expect(
+    [
+      "boundary-alpha-owned-/repo",
+      "boundary-alpha-owned-/repo-on-nigelsheldon",
+      "boundary-alpha-owned-/repo-on-strix",
+      "boundary-alpha-owned-/docs",
+    ].map((id) => text(get(root, id))),
+  ).toEqual([
+    "/repo nigelsheldon: /Users/me/repo strix: /home/me/repo",
+    "nigelsheldon: /Users/me/repo",
+    "strix: /home/me/repo",
+    "/docs",
+  ]);
+});
+
 test("shows a hovered X on boundary rows and runs rm with the row path and domain", async () => {
   focusDomain("alpha");
   host.files.set(

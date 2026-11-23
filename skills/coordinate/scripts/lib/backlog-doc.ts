@@ -7,6 +7,7 @@ import { setTimeout as sleep } from "node:timers/promises";
 import { Effect, Option, Schema } from "effect";
 import {
   addBoundary,
+  addCheckout,
   addFinding,
   addItem,
   addPolicy,
@@ -20,6 +21,7 @@ import {
   type ItemUpdate,
   type OpResult,
   removeBoundary,
+  removeCheckout,
   removePolicy,
   replacePolicy,
   RETAINED_CLOSED,
@@ -39,7 +41,9 @@ import {
   validateBacklog,
 } from "./backlog-store/schema.ts";
 import { absolutePath, type Config } from "./config.ts";
+import { canonicalMachine, localMachine } from "./delegate-capacity.ts";
 import { backlogPath, members, Refused } from "./fleet.ts";
+import { machineNames } from "./herdr.ts";
 
 /**
  * The backlog document could not be read, locked or written (exit 2, not a refusal).
@@ -643,6 +647,95 @@ export const boundaryRm = Effect.fn("boundaryRm")(function* (
     return applied;
   });
   return input.json ? json(boundary) : [`${list}: removed ${path}`];
+});
+
+const MACHINE_NAME = /^[A-Za-z0-9][A-Za-z0-9._-]*$/;
+
+const machineProblem = (machine: string): string | undefined =>
+  MACHINE_NAME.test(machine)
+    ? undefined
+    : `machine name ${machine} must be letters, digits, . _ or -`;
+
+/**
+ * `coordinate backlog boundary add <path> --machine <m> --checkout <p>`: record where an owned
+ * path's repo is checked out on another Herdr machine. The machine must be one `hc machine ls`
+ * lists; this machine (`local`, its hostname or its Herdr name) is refused, since its checkout is
+ * the owned path itself. The checkout path is stored as given (trailing slashes dropped), never
+ * checked against this machine's disk.
+ * @param config Config.
+ * @param domain Domain.
+ * @param input Owned path, machine, checkout path, `--json`, and whether the caller is outside a
+ * Herdr terminal.
+ * @returns Lines to print.
+ */
+export const checkoutAdd = Effect.fn("checkoutAdd")(function* (
+  config: Config,
+  domain: string,
+  input: {
+    path: string;
+    machine: string;
+    checkout: string;
+    json: boolean;
+    outsideTerminal: boolean;
+  },
+) {
+  const path = normalizeBoundary(input.path);
+  const problem = machineProblem(input.machine);
+  if (problem) return yield* new Refused({ message: problem });
+  const core = yield* localMachine();
+  if (canonicalMachine(input.machine, core) === core)
+    return yield* new Refused({
+      message: `${input.machine} is this machine (${core}); its checkout is the owned path itself`,
+    });
+  const known = yield* machineNames();
+  if (!known.includes(input.machine))
+    return yield* new Refused({
+      message: `unknown Herdr machine ${input.machine}; known machines: ${known.length > 0 ? known.join(", ") : "(none)"}`,
+    });
+  const checkout = input.checkout.length > 1 ? input.checkout.replace(/\/+$/, "") : input.checkout;
+  let boundary: Backlog["boundary"] | undefined;
+  const result = yield* change(config, domain, (backlog) => {
+    const applied = addCheckout(backlog, { path, machine: input.machine, checkout });
+    if (!applied.ok) return applied;
+    if (input.outsideTerminal && !applied.value.added)
+      return {
+        ok: false as const,
+        reason: `checkout of ${path} on ${input.machine} is already listed`,
+      };
+    boundary = applied.backlog.boundary;
+    return applied;
+  });
+  if (input.json) return json(boundary);
+  return [
+    result.added
+      ? `owned: added checkout of ${path} on ${input.machine}: ${checkout}`
+      : `owned: checkout of ${path} on ${input.machine} is already listed`,
+  ];
+});
+
+/**
+ * `coordinate backlog boundary rm <path> --machine <m>`: remove an owned path's checkout on one
+ * machine. The machine need not still be registered with Herdr.
+ * @param config Config.
+ * @param domain Domain.
+ * @param input Owned path, machine and `--json`.
+ * @returns Lines to print.
+ */
+export const checkoutRm = Effect.fn("checkoutRm")(function* (
+  config: Config,
+  domain: string,
+  input: { path: string; machine: string; json: boolean },
+) {
+  const path = normalizeBoundary(input.path);
+  const problem = machineProblem(input.machine);
+  if (problem) return yield* new Refused({ message: problem });
+  let boundary: Backlog["boundary"] | undefined;
+  yield* change(config, domain, (backlog) => {
+    const applied = removeCheckout(backlog, { path, machine: input.machine });
+    if (applied.ok) boundary = applied.backlog.boundary;
+    return applied;
+  });
+  return input.json ? json(boundary) : [`owned: removed checkout of ${path} on ${input.machine}`];
 });
 
 /**

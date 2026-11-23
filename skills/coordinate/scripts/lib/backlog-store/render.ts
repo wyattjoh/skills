@@ -103,6 +103,14 @@ const findingOrigin = (finding: Finding): string => {
   return parts.length > 0 ? ` (${parts.join(", ")})` : "";
 };
 
+// Each owned path's checkouts on other machines, by machine name, under the Owned line.
+const checkoutLines = (backlog: Backlog): string[] =>
+  backlog.boundary.owned.flatMap((path) =>
+    Object.entries(backlog.boundary.checkouts?.[path] ?? {})
+      .toSorted(([a], [b]) => a.localeCompare(b))
+      .map(([machine, checkout]) => `  - ${path} on ${machine}: ${checkout}`),
+  );
+
 const list = (paths: string[]): string => (paths.length > 0 ? paths.join(", ") : "(none)");
 
 /**
@@ -134,6 +142,7 @@ export const renderBacklog = (
     "## Boundary",
     "",
     `- Owned: ${list(backlog.boundary.owned)}`,
+    ...checkoutLines(backlog),
     `- Adjacent: ${list(backlog.boundary.adjacent)}`,
     "",
     "## Policies",

@@ -127,6 +127,18 @@ export type Finding = {
 };
 
 /**
+ * Where an owned path's repo is checked out on each remote machine: owned path, then Herdr machine
+ * name, to the absolute path on that machine.
+ */
+export type Checkouts = Record<string, Record<string, string>>;
+
+/**
+ * The paths a domain owns and those next to it. `checkouts` is absent while no owned path records
+ * a checkout on another machine.
+ */
+export type Boundary = { owned: string[]; adjacent: string[]; checkouts?: Checkouts };
+
+/**
  * One domain's backlog document.
  */
 export type Backlog = {
@@ -134,7 +146,7 @@ export type Backlog = {
   domain: string;
   focus: string | null;
   legacy: string | null;
-  boundary: { owned: string[]; adjacent: string[] };
+  boundary: Boundary;
   policies: Policy[];
   items: Item[];
   findings: Finding[];
@@ -251,6 +263,23 @@ export const validateBacklog = (value: unknown): Validated => {
   else {
     strings("boundary.owned", candidate.boundary.owned);
     strings("boundary.adjacent", candidate.boundary.adjacent);
+    const { checkouts, owned } = candidate.boundary;
+    if ("checkouts" in candidate.boundary) {
+      if (!isRecord(checkouts)) errors.push("boundary.checkouts must be an object");
+      else
+        for (const [path, byMachine] of Object.entries(checkouts)) {
+          const where = `boundary.checkouts[${JSON.stringify(path)}]`;
+          if (!Array.isArray(owned) || !owned.includes(path))
+            errors.push(`${where} must name an owned path`);
+          if (!isRecord(byMachine) || Object.keys(byMachine).length === 0) {
+            errors.push(`${where} must be a non-empty object`);
+            continue;
+          }
+          for (const [machine, checkout] of Object.entries(byMachine))
+            if (typeof checkout !== "string" || !checkout.startsWith("/"))
+              errors.push(`${where}.${machine} must be an absolute path`);
+        }
+    }
   }
   const policies = list("policies", candidate.policies);
   policies.forEach((policy: unknown, index) => {

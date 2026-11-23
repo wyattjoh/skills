@@ -6,6 +6,8 @@ import { join } from "node:path";
 import {
   boundaryAdd,
   boundaryRm,
+  checkoutAdd,
+  checkoutRm,
   findingAdd,
   findingClose,
   findingPromote,
@@ -825,7 +827,7 @@ const backlogRenameCommand = Command.make(
 );
 
 const boundaryDescription =
-  "owned and adjacent repos and folders; only owned ones feed status, watch and sweep";
+  "owned and adjacent repos and folders, and where each owned repo is checked out on other machines; only owned ones feed status, watch and sweep";
 const boundaryAddCommand = Command.make(
   "add",
   {
@@ -834,22 +836,50 @@ const boundaryAddCommand = Command.make(
       "adjacent",
       "the adjacent list: read freely, change only with the user's yes",
     ),
+    machine: optionalStringFlag(
+      "machine",
+      "with --checkout: record the owned path's checkout on this Herdr machine",
+    ),
+    checkout: optionalStringFlag(
+      "checkout",
+      "with --machine: the absolute path of the repo's checkout on that machine",
+    ),
     domain: optionalStringFlag("domain", "domain (default: this coordinator's label)"),
     json: booleanFlag("json", "print the Boundary as JSON"),
   },
   (options) =>
     execute((config) =>
-      Effect.flatMap(answerDomain(Option.getOrUndefined(options.domain)), (domain) =>
-        boundaryAdd(config, domain, {
+      Effect.gen(function* () {
+        const machine = Option.getOrUndefined(options.machine);
+        const checkout = Option.getOrUndefined(options.checkout);
+        if ((machine === undefined) !== (checkout === undefined))
+          return yield* new Refused({ message: "pass --machine and --checkout together" });
+        if (machine !== undefined && options.adjacent)
+          return yield* new Refused({
+            message: "checkouts are recorded only on owned paths; drop --adjacent",
+          });
+        const domain = yield* answerDomain(Option.getOrUndefined(options.domain));
+        const outsideTerminal = !process.env.HC_TERMINAL_ID;
+        if (machine !== undefined && checkout !== undefined)
+          return yield* checkoutAdd(config, domain, {
+            path: options.path,
+            machine,
+            checkout,
+            json: options.json,
+            outsideTerminal,
+          });
+        return yield* boundaryAdd(config, domain, {
           path: options.path,
           adjacent: options.adjacent,
           json: options.json,
-          outsideTerminal: !process.env.HC_TERMINAL_ID,
-        }),
-      ),
+          outsideTerminal,
+        });
+      }),
     ),
 ).pipe(
-  Command.withDescription("add an existing path (~ expands) to the owned Boundary, or --adjacent"),
+  Command.withDescription(
+    "add an existing path (~ expands) to the owned Boundary, or --adjacent; with --machine and --checkout, record an owned path's checkout on another Herdr machine",
+  ),
 );
 
 const boundaryRmCommand = Command.make(
@@ -860,21 +890,41 @@ const boundaryRmCommand = Command.make(
       "adjacent",
       "the adjacent list: read freely, change only with the user's yes",
     ),
+    machine: optionalStringFlag(
+      "machine",
+      "remove only the owned path's checkout on this Herdr machine",
+    ),
     domain: optionalStringFlag("domain", "domain (default: this coordinator's label)"),
     json: booleanFlag("json", "print the Boundary as JSON"),
   },
   (options) =>
     execute((config) =>
-      Effect.flatMap(answerDomain(Option.getOrUndefined(options.domain)), (domain) =>
-        boundaryRm(config, domain, {
+      Effect.gen(function* () {
+        const machine = Option.getOrUndefined(options.machine);
+        if (machine !== undefined && options.adjacent)
+          return yield* new Refused({
+            message: "checkouts are recorded only on owned paths; drop --adjacent",
+          });
+        const domain = yield* answerDomain(Option.getOrUndefined(options.domain));
+        if (machine !== undefined)
+          return yield* checkoutRm(config, domain, {
+            path: options.path,
+            machine,
+            json: options.json,
+          });
+        return yield* boundaryRm(config, domain, {
           path: options.path,
           adjacent: options.adjacent,
           json: options.json,
           outsideTerminal: !process.env.HC_TERMINAL_ID,
-        }),
-      ),
+        });
+      }),
     ),
-).pipe(Command.withDescription("remove a path from the owned Boundary, or --adjacent"));
+).pipe(
+  Command.withDescription(
+    "remove a path (and its checkouts) from the owned Boundary, or --adjacent; with --machine, remove only that machine's checkout",
+  ),
+);
 
 const boundaryCommand = Command.make("boundary").pipe(
   Command.withDescription(boundaryDescription),
