@@ -210,8 +210,48 @@ describe("coordinate CLI delegate --skill", () => {
     );
     expect(result.exitCode).toBe(1);
     expect(result.stderr.toString()).toBe(
-      '\nERROR\n  Invalid value for flag --skill: "coordinate". Expected: "implement" | "implement-spec" | "retro"\n',
+      "refused: --skill coordinate starts a coordinator, which only coordinate spawn does\n",
     );
+    expect(existsSync(join(state, "bin", "calls.log"))).toBe(false);
+  });
+
+  it("refuses a name with a leading slash or a space before any launch", () => {
+    const state = tempDir("coordinate-skill-name-cli-");
+    made.push(state);
+    const refused = ["/pr-review", "pr review"].map((skill) => {
+      const result = Bun.spawnSync(
+        [
+          "bun",
+          cli,
+          "delegate",
+          "fix-a",
+          "--task",
+          "t",
+          "--cwd",
+          state,
+          "--harness",
+          "claude",
+          "--skill",
+          skill,
+          "--domain",
+          "app",
+          "--item",
+          "i1",
+        ],
+        { env: cliEnv(state, COORDINATOR), stdout: "pipe", stderr: "pipe", timeout: 10_000 },
+      );
+      return [result.exitCode, result.stderr.toString()];
+    });
+    expect(refused).toEqual([
+      [
+        1,
+        'refused: --skill takes a bare skill name such as implement or pr-review, not "/pr-review" (no spaces, no leading /; the script adds the prefix)\n',
+      ],
+      [
+        1,
+        'refused: --skill takes a bare skill name such as implement or pr-review, not "pr review" (no spaces, no leading /; the script adds the prefix)\n',
+      ],
+    ]);
     expect(existsSync(join(state, "bin", "calls.log"))).toBe(false);
   });
 });

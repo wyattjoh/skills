@@ -545,6 +545,32 @@ describe("coordinate delegate WIKI.md", () => {
       `/implement-spec spec 1 Also read ${join(scratch, "BRIEF.md")} and follow its Boundary, Stop points and Report sections.`,
     );
   }, 30_000);
+
+  it("starts a delegate with any skill name, such as pr-review", () => {
+    const { state, run, firstMessage } = launching();
+    const cwd = join(state, "review");
+    mkdirSync(cwd);
+    const started = run([
+      "delegate",
+      "fix-d",
+      "--task",
+      "review pr",
+      "--cwd",
+      cwd,
+      "--harness",
+      "claude",
+      "--skill",
+      "pr-review",
+      "--args",
+      "42",
+      "--item",
+      "i1",
+      "--no-space",
+    ]);
+    expect([started.exit, started.stderr]).toEqual([0, ""]);
+    const launched = firstMessage();
+    expect(launched.slice(launched.indexOf("/pr-review"))).toBe("/pr-review 42");
+  }, 30_000);
 });
 
 describe("coordinate backlog policy add --wiki", () => {

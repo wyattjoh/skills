@@ -36,7 +36,7 @@ import {
   Refused,
   resolveDomain,
 } from "./lib/fleet.ts";
-import type { DelegateFirstMessage, Harness, ImplementSkill } from "./lib/harness.ts";
+import type { DelegateFirstMessage, Harness } from "./lib/harness.ts";
 import { attachDelegate, detachDelegate } from "./lib/attach.ts";
 import { watcherBanner } from "./lib/banner.ts";
 import {
@@ -488,10 +488,9 @@ const delegateCommand = Command.make(
       "brief",
       "brief to copy to <worktree>/.scratch/BRIEF.md, or <cwd>/.scratch/<name>/BRIEF.md (with --skill: its boundary, stop points and report)",
     ),
-    skill: optionalChoiceFlag(
+    skill: optionalStringFlag(
       "skill",
-      ["implement", "implement-spec", "retro"],
-      "start with an implement skill, or retro for a read-only retro; --brief may accompany it",
+      "start with any skill installed for the harness (implement, implement-spec, retro, pr-review, ...); the harness itself reports a missing one; --brief may accompany it",
     ),
     args: stringFlag("args", "arguments after the skill prefix").pipe(Flag.withDefault("")),
     noSpace: booleanFlag(
@@ -521,14 +520,26 @@ const delegateCommand = Command.make(
     const skill = Option.getOrUndefined(options.skill);
     if (brief === undefined && skill === undefined) {
       console.error(
-        "refused: pass --brief <path>, --skill <implement|implement-spec|retro>, or both",
+        "refused: pass --brief <path>, --skill <name> (an installed skill such as implement, implement-spec or retro), or both",
+      );
+      process.exit(1);
+    }
+    if (skill !== undefined && (skill === "" || /\s/.test(skill) || skill.startsWith("/"))) {
+      console.error(
+        `refused: --skill takes a bare skill name such as implement or pr-review, not "${skill}" (no spaces, no leading /; the script adds the prefix)`,
+      );
+      process.exit(1);
+    }
+    if (skill === "coordinate") {
+      console.error(
+        "refused: --skill coordinate starts a coordinator, which only coordinate spawn does",
       );
       process.exit(1);
     }
     const message: DelegateFirstMessage =
       skill === undefined
         ? { kind: "brief", path: brief ?? "" }
-        : { kind: "skill", skill: skill as ImplementSkill, args: options.args, brief };
+        : { kind: "skill", skill, args: options.args, brief };
     return execute((config) =>
       delegate(config, {
         name: options.name,

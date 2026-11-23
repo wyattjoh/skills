@@ -18,6 +18,12 @@ describe("skill prefix", () => {
     ).toBe(
       "/implement-spec 3f2a via Tasks MCP. Keep one integration branch. Also read /w/.scratch/BRIEF.md and follow its Boundary, Stop points and Report sections.",
     );
+    expect(firstMessage("claude", { kind: "skill", skill: "pr-review", args: "42" })).toBe(
+      "/pr-review 42",
+    );
+    expect(firstMessage("pi", { kind: "skill", skill: "pr-review", args: "42" })).toBe(
+      "/skill:pr-review 42",
+    );
     expect(firstMessage("claude", { kind: "brief", path: "/w/.scratch/BRIEF.md" })).toBe(
       "Read /w/.scratch/BRIEF.md and do what it says.",
     );

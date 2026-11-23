@@ -72,6 +72,6 @@ to wake the coordinator, and end your turn with the same summary. A refused or f
 stop you ending the turn: the coordinator's watcher still fires.
 ```
 
-With `--skill`, the spec or ticket carries the goal: point Goal at it and keep Decided, Boundary, Stop points and Report. `implement-spec` builds on an integration branch of its own, with a worktree per ticket and ticket updates in the tracker: name the delegate's branch as that branch, let Boundary allow those ticket worktrees and tracker updates, and say in Stop points that they override the skill's draft PR step unless the user named a PR.
+With `--skill`, the skill and its `--args` carry the task (for an implement skill, the spec or ticket carries the goal): point Goal at them and keep Decided, Boundary, Stop points and Report. `implement-spec` builds on an integration branch of its own, with a worktree per ticket and ticket updates in the tracker: name the delegate's branch as that branch, let Boundary allow those ticket worktrees and tracker updates, and say in Stop points that they override the skill's draft PR step unless the user named a PR.
 
 When the user named an integration for this task up front (say, "push and open a PR when green"), replace the first stop-point paragraph with that instruction in their words.

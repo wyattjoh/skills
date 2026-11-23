@@ -4,12 +4,6 @@
 export type Harness = "pi" | "claude";
 
 /**
- * Skills a delegate can be started with: an implement skill for a spec, or `retro` for a
- * read-only retro in the wiki folder.
- */
-export type ImplementSkill = "implement" | "implement-spec" | "retro";
-
-/**
  * The first-message prefix that invokes a user-invoked skill: `/name` in Claude Code,
  * `/skill:name` in pi.
  * @param harness Harness.
@@ -20,13 +14,13 @@ export const skillPrefix = (harness: Harness, skill: string): string =>
   harness === "pi" ? `/skill:${skill}` : `/${skill}`;
 
 /**
- * What a new delegate is told first: read its brief, or run an implement skill with arguments. A
+ * What a new delegate is told first: read its brief, or run an installed skill with arguments. A
  * skill start may carry a brief too, for the boundary, stop points and report the skill does not know.
  * `wiki` is the WIKI.md listing the wiki pages that cover its work, when any do.
  */
 export type DelegateFirstMessage =
   | { kind: "brief"; path: string; wiki?: string }
-  | { kind: "skill"; skill: ImplementSkill; args: string; brief?: string; wiki?: string };
+  | { kind: "skill"; skill: string; args: string; brief?: string; wiki?: string };
 
 /**
  * What a new agent is told first: a delegate's message, or `coordinate` (args: the domain), which
