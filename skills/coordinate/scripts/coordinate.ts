@@ -57,6 +57,7 @@ import {
 } from "./lib/lifecycle.ts";
 import { Proc } from "./lib/proc.ts";
 import { domainRepos, domainStatus, domainStatusJson } from "./lib/status.ts";
+import { fetchRemoteBranch } from "./lib/remote-fetch.ts";
 import { verifyDelegate } from "./lib/sessions.ts";
 import { renameDomain } from "./lib/rename.ts";
 import { showOutbox, watch } from "./lib/watch.ts";
@@ -705,6 +706,20 @@ const resumeCommand = Command.make(
 ).pipe(
   Command.withDescription(
     "start an ended delegate's session again, same name, labels and session id",
+  ),
+);
+
+const fetchCommand = Command.make(
+  "fetch",
+  {
+    target: argument("delegate", "remote delegate's name or machine/tN address, live or ended"),
+    domain: optionalStringFlag("domain", "only a delegate of this domain (default: any)"),
+  },
+  ({ target, domain }) =>
+    execute((config) => fetchRemoteBranch(config, target, Option.getOrUndefined(domain))),
+).pipe(
+  Command.withDescription(
+    "fetch a remote delegate's branch into its repo here as a git bundle read over Herdr, and copy back its .scratch",
   ),
 );
 
@@ -1950,6 +1965,7 @@ const program = Command.make("coordinate")
       endCommand,
       resumeCommand,
       verifyCommand,
+      fetchCommand,
       statusCommand,
       backlogCommand,
       harnessPolicyCommand,

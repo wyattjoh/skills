@@ -1,7 +1,8 @@
 import { afterAll, beforeAll, describe, expect, it } from "bun:test";
-import { existsSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { createHash } from "node:crypto";
+import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { initRepo } from "./lib/fixture.ts";
+import { g, initRepo } from "./lib/fixture.ts";
 import {
   answerTrustDialog,
   onStrix,
@@ -985,5 +986,209 @@ describe.skipIf(!ready)("strix: draining a remote delegate's outbox", () => {
     expect(outboxEvents()).toEqual([]);
     expect(outboxEvents()).toEqual([]);
     expect(findings()).toEqual([applied]);
+  }, 600_000);
+});
+
+const blockedEvent = (event: string) => event.includes(' kind="blocked"');
+
+describe.skipIf(!ready)("strix: copy-back and bundle fetch", () => {
+  let run: StrixRun | undefined;
+  let local = "";
+  let remote = "";
+  let brief = "";
+  let item = "";
+  beforeAll(() => {
+    run = strixRun();
+    local = initRepo();
+    remote = run.remoteClone(local, "app");
+    brief = join(run.stateDir, "brief.md");
+    writeFileSync(brief, run.brief);
+    run.seed({ owned: [local], adjacent: [] });
+    run.becomeCoordinator();
+    run.configure({ max_fleet_delegates_by_machine: { strix: 99 } });
+    const added = run.cli(["item", "add", "strix fetch"]);
+    expect(added.exitCode).toBe(0);
+    item = /\bi\d+\b/.exec(added.output)?.[0] ?? "";
+    expect(
+      run.cli(["backlog", "boundary", "add", local, "--machine", STRIX, "--checkout", remote])
+        .exitCode,
+    ).toBe(0);
+  }, 120_000);
+  afterAll(() => {
+    if (local !== "") rmSync(local, { recursive: true, force: true });
+    const left = run?.teardown() ?? [];
+    expect(left).toEqual([]);
+  }, 180_000);
+
+  it("copies the settled delegate's .scratch here and fetches its branch as a bundle", () => {
+    if (!run) return;
+    expect(watchEvents(run, () => true, 0, 3)).toEqual([]);
+    const name = `sf-${run.id}`;
+    const branch = `wyattjoh/${name}`;
+    const worktree = `${remote}/.claude/worktrees/${name}`;
+    const launched = run.cli(
+      [
+        "delegate",
+        name,
+        "--task",
+        "strix fetch",
+        "--repo",
+        local,
+        "--brief",
+        brief,
+        "--item",
+        item,
+        "--machine",
+        STRIX,
+        "--harness",
+        "claude",
+      ],
+      150_000,
+    );
+    const address = /\((strix\/t[0-9a-z]+)\)/.exec(launched.output)?.[1] ?? "";
+    const space = / in its own space (strix\/\S+)/.exec(launched.output)?.[1] ?? "";
+    if (address !== "") run.trackTerminal(address);
+    if (space !== "") run.trackSpace(space);
+    expect([launched.exitCode, address.startsWith("strix/t")]).toEqual([0, true]);
+    // A binary file deeper in .scratch: the copy-back must carry exact bytes, not text.
+    expect(
+      onStrix(
+        `mkdir -p ${shellWord(`${worktree}/.scratch/nested`)} && printf '\\000\\377bin\\n' > ${shellWord(`${worktree}/.scratch/nested/blob.bin`)}`,
+        20,
+      ).exitCode,
+    ).toBe(0);
+
+    const settled = `<event kind="settled" delegate="${name}" address="${address}">read its REPORT.md, verify, then report</event>`;
+    const { env } = run;
+    const screen = () =>
+      Bun.spawnSync(["hc", "read", address, "--lines", "40"], {
+        env,
+        stdout: "pipe",
+        timeout: 15_000,
+      }).stdout.toString();
+    const events = watchEvents(run, (event) => event === settled || blockedEvent(event), 300_000);
+    if (
+      !events.includes(settled) &&
+      events.some(blockedEvent) &&
+      screen().includes("trust this folder")
+    ) {
+      console.log(`answered Claude Code's trust dialog in ${address}`);
+      Bun.spawnSync(["hc", "keys", address, "down", "enter"], { env: run.env, timeout: 15_000 });
+      events.push(...watchEvents(run, (event) => event === settled, 300_000));
+    }
+    if (!events.includes(settled))
+      console.log(`events: ${JSON.stringify(events)}\nscreen:\n${screen()}`);
+    expect(events.filter((event) => event.includes(' kind="settled"'))).toEqual([settled]);
+
+    // At settle the watcher copied the remote .scratch into this Mac's parked folder for it.
+    const parked = join(local, ".scratch", "parked", name);
+    expect(readFileSync(join(parked, ".scratch", "REPORT.md"), "utf8")).toBe("done\n");
+    expect([...readFileSync(join(parked, ".scratch", "nested", "blob.bin"))]).toEqual([
+      0, 255, 98, 105, 110, 10,
+    ]);
+    expect(g(local, "status", "--porcelain")).toBe("");
+
+    const base = g(local, "rev-parse", "main").trim();
+    const there = onStrix(
+      `cd ${shellWord(worktree)} && git rev-list --count ${base}..HEAD && git rev-parse HEAD`,
+      20,
+    );
+    const [count, tip] = there.output.trim().split("\n");
+    expect([there.exitCode, count]).toEqual([0, "1"]);
+
+    const fetched = run.cli(["fetch", name], 180_000);
+    expect(fetched).toEqual({
+      exitCode: 0,
+      output: [
+        `copied .scratch of ${name} from strix to ${parked}`,
+        `fetched ${branch} from ${name} on strix into ${local}: 1 commit past ${base.slice(0, 7)}, tip ${(tip ?? "").slice(0, 7)}`,
+        "land it as a local branch; nothing was pushed",
+        // The suite's coordinator has no watcher armed, so the CLI's stderr banner says so.
+        `watcher for ${run.domain} is down; arm it (coordinate watch --arm)`,
+        "",
+      ].join("\n"),
+    });
+    expect(g(local, "rev-parse", branch).trim()).toBe(tip ?? "");
+    expect(g(local, "log", "--format=%s", `main..${branch}`)).toBe("test: hello");
+    expect(g(local, "show", `${branch}:hello.txt`)).toBe("hello");
+    // Nothing here or there has a remote to push to, and the fetch came from a bundle file.
+    expect([g(local, "remote"), onStrix(`git -C ${shellWord(remote)} remote`, 20)]).toEqual([
+      "",
+      { exitCode: 0, output: "" },
+    ]);
+
+    // Fetching again is a no-op fast-forward with the same tip.
+    expect(run.cli(["fetch", name], 180_000).exitCode).toBe(0);
+    expect(g(local, "rev-parse", branch).trim()).toBe(tip ?? "");
+
+    expect(run.cli(["fetch", `nobody-${run.id}`], 60_000)).toEqual({
+      exitCode: 1,
+      output: `watcher for ${run.domain} is down; arm it (coordinate watch --arm)\nrefused: no delegate nobody-${run.id}: no live terminal or ended record has that name\n`,
+    });
+  }, 900_000);
+
+  it("fetches an ended remote delegate's branch and a .scratch larger than one read chunk", () => {
+    if (!run) return;
+    // No session: a hand-made worktree on strix and its ended record stand in for an ended delegate.
+    const base = g(local, "rev-parse", "main").trim();
+    const made = (name: string, commit: boolean) => {
+      const worktree = `${remote}/.claude/worktrees/${name}`;
+      const ran = onStrix(
+        [
+          `cd ${shellWord(remote)}`,
+          `git worktree add -q -b ${shellWord(`wyattjoh/${name}`)} ${shellWord(worktree)} main`,
+          `cd ${shellWord(worktree)}`,
+          "mkdir -p .scratch",
+          // About 6 MB of random bytes: over 100 000 base64 lines, so more than one read chunk.
+          "head -c 6000000 /dev/urandom > .scratch/big.bin",
+          ...(commit
+            ? ["printf 'x\\n' > x.txt", "git add x.txt", "git commit -q -m 'test: x'"]
+            : []),
+          "sha256sum .scratch/big.bin | cut -d ' ' -f 1",
+          "git rev-parse HEAD",
+        ].join(" && "),
+        60,
+      );
+      expect(ran.exitCode).toBe(0);
+      const [sha, tip] = ran.output.trim().split("\n");
+      const session = crypto.randomUUID();
+      writeFileSync(
+        join(run?.stateDir ?? "", "ended", `${session}.json`),
+        `${JSON.stringify({ name, domain: run?.domain, session, cwd: worktree, branch: `wyattjoh/${name}`, base_sha: base, ended_at: new Date().toISOString(), machine: STRIX })}\n`,
+      );
+      return { sha: sha ?? "", tip: tip ?? "" };
+    };
+    mkdirSync(join(run.stateDir, "ended"), { recursive: true });
+    // Whether the CLI prints the watcher-down banner depends on what ran before; leave it out.
+    const banner = `watcher for ${run.domain} is down; arm it (coordinate watch --arm)\n`;
+    const fetch = (target: string) => {
+      const ran = run?.cli(["fetch", target], 300_000) ?? { exitCode: null, output: "" };
+      return { exitCode: ran.exitCode, output: ran.output.replace(banner, "") };
+    };
+    const name = `se-${run.id}`;
+    const ended = made(name, true);
+    const parked = join(local, ".scratch", "parked", name);
+    expect(fetch(name)).toEqual({
+      exitCode: 0,
+      output: [
+        `copied .scratch of ${name} from strix to ${parked}`,
+        `fetched wyattjoh/${name} from ${name} on strix into ${local}: 1 commit past ${base.slice(0, 7)}, tip ${ended.tip.slice(0, 7)}`,
+        "land it as a local branch; nothing was pushed",
+        "",
+      ].join("\n"),
+    });
+    expect(g(local, "rev-parse", `wyattjoh/${name}`).trim()).toBe(ended.tip);
+    expect(
+      createHash("sha256")
+        .update(readFileSync(join(parked, ".scratch", "big.bin")))
+        .digest("hex"),
+    ).toBe(ended.sha);
+
+    const still = `sb-${run.id}`;
+    made(still, false);
+    expect(fetch(still)).toEqual({
+      exitCode: 1,
+      output: `refused: wyattjoh/${still} has no commits past ${base.slice(0, 7)} on strix; nothing to fetch\n`,
+    });
   }, 600_000);
 });

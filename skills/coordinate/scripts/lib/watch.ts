@@ -11,6 +11,7 @@ import type { Config } from "./config.ts";
 import { checkDomainName, L, Refused, sessionOf } from "./fleet.ts";
 import * as hc from "./herdr.ts";
 import { repoPullRequests } from "./prs.ts";
+import { copyBackSettled } from "./remote-fetch.ts";
 import { domainRepos } from "./status.ts";
 import { acquireLock, releaseLock, releaseLockSync } from "./watch-lock.ts";
 import type { WatchLogEntry, WatchView } from "./watch-terminal.ts";
@@ -1224,8 +1225,20 @@ export const watch = Effect.fn("watch")(function* (config: Config, options: Watc
           const terminal = yield* hc
             .get(event.attrs.address ?? "")
             .pipe(Effect.catch(() => Effect.succeed(undefined)));
-          // A remote delegate's folder is a path on its own machine, not one to read git in here.
-          if (!terminal || remoteMachine(terminal.address) !== undefined) continue;
+          if (!terminal) continue;
+          // A remote delegate's folder is a path on its own machine, not one to read git in here;
+          // its .scratch is copied into the repo's parked folder on this Mac instead.
+          if (remoteMachine(terminal.address) !== undefined) {
+            const copied = yield* copyBackSettled(config, options.domain, terminal).pipe(
+              Effect.result,
+            );
+            if (Result.isFailure(copied))
+              events[index] = {
+                ...event,
+                fields: { ...event.fields, "copy-back": `failed: ${copied.failure.message}` },
+              };
+            continue;
+          }
           const pages = yield* settledWikiPages(
             config,
             options.domain,

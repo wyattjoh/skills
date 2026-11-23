@@ -1,11 +1,11 @@
 import { randomBytes } from "node:crypto";
-import { mkdirSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { emptyBacklog } from "./backlog-store/ops.ts";
 import { documentPath } from "./backlog-store/paths.ts";
 import type { Backlog } from "./backlog-store/schema.ts";
 import { tempDir } from "./fixture.ts";
-import { cleanGitEnv } from "./git-env.ts";
+import { cleanGitEnv, spawnGit } from "./git-env.ts";
 
 // Helpers for the real-strix integration suite. Every remote call has an explicit timeout, every
 // run owns a unique domain, state dir and strix folder, and teardown removes what the run made.
@@ -248,6 +248,12 @@ export type StrixRun = {
    */
   remoteRepo: (name: string) => string;
   /**
+   * Copy a local repository's history to a new repository under the strix folder (moved as a
+   * base64 bundle through `hc file write`), checked out on main with no remote, its own commit
+   * identity and signing off, so a bundle relative to its commits fetches back into the original.
+   */
+  remoteClone: (local: string, name: string) => string;
+  /**
    * Record a terminal (a `strix/tN` address) or a Herdr space id the run made, for teardown.
    */
   trackTerminal: (address: string) => void;
@@ -352,6 +358,39 @@ export const strixRun = (): StrixRun => {
         30,
       );
       if (ran.exitCode !== 0) throw new Error(`could not make ${repo} on strix: ${ran.output}`);
+      return repo;
+    },
+    remoteClone: (local, name) => {
+      const repo = `${remoteRoot}/${name}`;
+      const bundle = join(stateDir, `${name}.bundle`);
+      const bundled = spawnGit(["-C", local, "bundle", "create", "-q", bundle, "--all"]);
+      if (bundled.exitCode !== 0) throw new Error(`could not bundle ${local}: ${bundled.stderr}`);
+      const encoded = `${repo}.b64`;
+      const wrote = Bun.spawnSync(["hc", "file", "write", "--on", STRIX, encoded], {
+        env: hostEnv(),
+        stdin: Buffer.from(readFileSync(bundle).toString("base64")),
+        stdout: "pipe",
+        stderr: "pipe",
+        timeout: 30_000,
+      });
+      if (wrote.exitCode !== 0)
+        throw new Error(`could not write ${encoded} on strix: ${wrote.stderr.toString()}`);
+      const ran = onStrix(
+        [
+          `base64 -d ${shellWord(encoded)} > ${shellWord(`${repo}.bundle`)}`,
+          `git clone -q -b main ${shellWord(`${repo}.bundle`)} ${shellWord(repo)}`,
+          `cd ${shellWord(repo)}`,
+          "git remote remove origin",
+          "git config core.excludesFile /dev/null",
+          "git config user.name Test",
+          "git config user.email test@example.com",
+          "git config commit.gpgsign false",
+          `rm -f ${shellWord(encoded)} ${shellWord(`${repo}.bundle`)}`,
+        ].join(" && "),
+        60,
+      );
+      if (ran.exitCode !== 0)
+        throw new Error(`could not clone into ${repo} on strix: ${ran.output}`);
       return repo;
     },
     trackTerminal: (address) => {

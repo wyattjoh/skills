@@ -2028,8 +2028,9 @@ describe("watch remote machines", () => {
     expect(await tick()).toEqual(alive);
     strix = "connected";
     terminals = [local, remote];
+    // The domain records no checkout on strix, so the settle copy-back says why it copied nothing.
     expect(await tick()).toEqual([
-      '<event kind="settled" delegate="rem-a" address="strix/t5">read its REPORT.md, verify, then report</event>',
+      '<event kind="settled" delegate="rem-a" address="strix/t5"><copy-back>failed: /remote/app/.claude/worktrees/rem-a on strix is in no checkout the app Boundary records; record one with coordinate backlog boundary add &lt;repo&gt; --machine strix --checkout &lt;path&gt;</copy-back>read its REPORT.md, verify, then report</event>',
       '<event kind="status" fleet="2 idle">give the user a short status in your next reply</event>',
       '<event kind="idle" delegate="rem-a" address="strix/t5" age="0m">read its REPORT.md and give it a next step or end it</event>',
     ]);
