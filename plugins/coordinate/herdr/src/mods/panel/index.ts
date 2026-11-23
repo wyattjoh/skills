@@ -50,7 +50,11 @@ import {
   mergeEnded,
   missingSessions,
   openFindings,
+  outboxOutput,
+  outboxShowCommand,
   parseListing,
+  queueOutput,
+  queueShowCommand,
   policyDialogProps,
   policyDialogSpec,
   readDocument,
@@ -77,7 +81,9 @@ import type {
   HarnessPolicyDraftEntry,
   ItemGroup,
   ListingState,
+  OutboxEvent,
   PolicyDialogProps,
+  QueuedEntry,
   Screen,
 } from "./model.ts";
 import {
@@ -195,6 +201,11 @@ export default class Panel extends View {
   // no live terminal then, and which sessions those were, so a delegate that loses its terminal
   // between document changes is looked up again.
   stateDir: string | undefined;
+  // Each domain's capacity queue and undelivered watcher events, read through the CLI after each
+  // backlog load. A failed or invalid read leaves the domain with none.
+  queues = new Map<string, QueuedEntry[]>();
+  outboxes = new Map<string, OutboxEvent[]>();
+  watchDataGeneration = 0;
   ended: EndedRecords = new Map();
   endedFor: string | undefined;
   endedGeneration = 0;
@@ -457,6 +468,8 @@ export default class Panel extends View {
         this.docs.clear();
         this.rawDocs.clear();
         this.dirtyDocs.clear();
+        this.queues.clear();
+        this.outboxes.clear();
       }
       this.stateDir = stateDir;
       this.watchBacklogs(backlogsDir(stateDir), task);
@@ -480,9 +493,39 @@ export default class Panel extends View {
       this.pruneAnswerQueue(domain, read.document);
       this.reconcileAnswerFlow(domain, read.document);
       task.notify();
-      if (read.document.kind === "loaded")
-        this.lookUpEnded(stateDir, missingSessions(read.document.backlog, terminals()), task);
+      if (read.document.kind !== "loaded") return;
+      this.lookUpEnded(stateDir, missingSessions(read.document.backlog, terminals()), task);
+      this.loadWatchData(stateDir, domain, task);
     });
+  }
+
+  // Read the domain's capacity queue and watcher outbox through the CLI, side by side. A newer
+  // load, a moved state folder or another domain on screen drops the result.
+  loadWatchData(stateDir: string, domain: string, cx: Context) {
+    const generation = ++this.watchDataGeneration;
+    cx.spawn(async (task) => {
+      const [queue, outbox] = await Promise.all([
+        this.readCli(queueShowCommand(home(), domain), (text) => queueOutput(text, domain)),
+        this.readCli(outboxShowCommand(home(), domain), (text) => outboxOutput(text, domain)),
+      ]);
+      if (generation !== this.watchDataGeneration || this.stateDir !== stateDir) return;
+      this.queues.set(domain, queue);
+      this.outboxes.set(domain, outbox);
+      if (this.target() === domain) task.notify();
+    });
+  }
+
+  // One read-only CLI call whose JSON lists records; any failure reads as an empty list.
+  async readCli<T>(
+    { command, args }: { command: string; args: string[] },
+    parse: (text: string) => T[] | undefined,
+  ): Promise<T[]> {
+    try {
+      const ran = await exec(command, args);
+      return ran.code === 0 ? (parse(ran.stdout) ?? []) : [];
+    } catch {
+      return [];
+    }
   }
 
   // Repair the flow against the live document: a question answered outside the flow is dropped,
@@ -1880,6 +1923,10 @@ export default class Panel extends View {
     cx.notify();
   }
 
+  queuedFor(domain: string | undefined): QueuedEntry[] {
+    return domain === undefined ? [] : (this.queues.get(domain) ?? []);
+  }
+
   // The document's delegates joined to the terminals live now.
   delegates(domain: string | undefined, doc: DocumentState): DelegateJoin {
     if (domain === undefined || doc.kind !== "loaded") return { byItem: new Map(), unfiled: [] };
@@ -1925,7 +1972,9 @@ export default class Panel extends View {
       listing: this.listing,
       trail,
       go: (screen, cx) => this.go(screen, cx),
-      groups: doc.kind === "loaded" ? groupItems(doc.backlog) : [],
+      groups: doc.kind === "loaded" ? groupItems(doc.backlog, this.queuedFor(domain)) : [],
+      queued: this.queuedFor(domain),
+      outbox: domain === undefined ? [] : (this.outboxes.get(domain) ?? []),
       findings: doc.kind === "loaded" ? openFindings(doc.backlog) : [],
       page: this.page === undefined || this.page.domain !== domain ? undefined : this.page.kind,
       finding,

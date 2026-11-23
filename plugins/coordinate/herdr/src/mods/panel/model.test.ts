@@ -1,5 +1,6 @@
 import { expect, test } from "bun:test";
-import { emptyBacklog } from "../../lib/store.ts";
+import { addItem, emptyBacklog } from "../../lib/store.ts";
+import type { Backlog } from "../../lib/store.ts";
 import type { Finding } from "../../lib/store.ts";
 import {
   boundaryOutput,
@@ -17,7 +18,12 @@ import {
   draftFor,
   formatFindingCounts,
   groupFindings,
+  groupItems,
   mergeEnded,
+  outboxOutput,
+  outboxShowCommand,
+  queueOutput,
+  queueShowCommand,
   overridingDomains,
   domainOverrides,
   harnessPolicyNotices,
@@ -581,4 +587,81 @@ test("readDocument keeps a policy's wiki citation and rejects an empty one", () 
     kind: "invalid",
     reason: "policies[0].wiki must be a non-empty string",
   });
+});
+
+test("builds the read-only queue and outbox reads as the panel, outside a Herdr terminal", () => {
+  const prefix = [
+    "-u",
+    "HC_TERMINAL_ID",
+    "bun",
+    "/home/me/.claude/skills/coordinate/scripts/coordinate.ts",
+  ];
+  expect([queueShowCommand("/home/me", "alpha"), outboxShowCommand("/home/me", "alpha")]).toEqual([
+    { command: "/usr/bin/env", args: [...prefix, "queue", "show", "--domain", "alpha", "--json"] },
+    {
+      command: "/usr/bin/env",
+      args: [...prefix, "watch", "outbox", "--domain", "alpha", "--json"],
+    },
+  ]);
+});
+
+test("queueOutput accepts the CLI's queue JSON for the asked domain and rejects anything else", () => {
+  const entry = { item: "i2", machine: "local", order: 1, position: 1 };
+  const json = (value: unknown) => JSON.stringify(value);
+  expect(queueOutput(json({ domain: "alpha", entries: [entry] }), "alpha")).toEqual([entry]);
+  expect(
+    [
+      json({ domain: "beta", entries: [entry] }),
+      json({ domain: "alpha", events: [] }),
+      json({ domain: "alpha", entries: [{ ...entry, item: "f1" }] }),
+      json({ domain: "alpha", entries: [{ ...entry, position: 0 }] }),
+      json({ schemaVersion: 1, revision: 1 }),
+      "not json",
+    ].map((text) => queueOutput(text, "alpha")),
+  ).toEqual([undefined, undefined, undefined, undefined, undefined, undefined]);
+});
+
+test("outboxOutput keeps each event's attrs, string and list fields, and text", () => {
+  const event = {
+    id: "4",
+    kind: "settled",
+    attrs: { delegate: "fix" },
+    fields: { title: "Fix it", wiki: ["a", "b"] },
+    text: "verify",
+  };
+  const json = (value: unknown) => JSON.stringify(value);
+  expect(outboxOutput(json({ domain: "alpha", events: [event] }), "alpha")).toEqual([event]);
+  expect(
+    [
+      json({ domain: "beta", events: [event] }),
+      json({ domain: "alpha", events: [{ ...event, attrs: { n: 1 } }] }),
+      json({ domain: "alpha", events: [{ ...event, fields: { wiki: [1] } }] }),
+      json({ domain: "alpha", events: [{ ...event, kind: "" }] }),
+    ].map((text) => outboxOutput(text, "alpha")),
+  ).toEqual([undefined, undefined, undefined, undefined]);
+});
+
+test("groupItems moves open queued items into Queued, in queue order, right after Delegated", () => {
+  let backlog: Backlog = emptyBacklog("alpha", null);
+  for (const title of ["One", "Two", "Three"]) {
+    const added = addItem(backlog, { title, now: "2026-11-23T00:00:00.000Z" });
+    if (!added.ok) throw new Error(added.reason);
+    backlog = added.backlog;
+  }
+  const queued = [
+    { item: "i3", machine: "local", order: 1, position: 1 },
+    { item: "i1", machine: "box", order: 2, position: 1 },
+    { item: "i7", machine: "local", order: 3, position: 2 },
+  ];
+  expect(
+    groupItems(backlog, queued).map((group) => [
+      group.status,
+      group.label,
+      group.items.map((item) => item.id),
+    ]),
+  ).toEqual([
+    ["queued", "Queued", ["i3", "i1"]],
+    ["open", "Open", ["i2"]],
+  ]);
+  expect(groupItems(backlog).map((group) => group.status)).toEqual(["open"]);
 });

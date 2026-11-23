@@ -26,26 +26,61 @@ export const GROUP_LABELS: Readonly<Record<ItemStatus, string>> = {
 };
 
 /**
+ * What keys a group of the Items card: an item status, or the panel-only Queued group of items
+ * waiting in the capacity queue for a free delegate slot.
+ */
+export type GroupKey = ItemStatus | "queued";
+
+/**
+ * The Queued group's heading.
+ */
+export const QUEUED_LABEL = "Queued";
+
+/**
  * Closed groups start folded; everything else starts open.
  */
-export const FOLDED_BY_DEFAULT: ReadonlySet<ItemStatus> = new Set(["done", "dismissed"]);
+export const FOLDED_BY_DEFAULT: ReadonlySet<GroupKey> = new Set(["done", "dismissed"]);
 
 /**
- * One status group of the Items card, in routing order.
+ * One group of the Items card, in routing order.
  */
-export type ItemGroup = { status: ItemStatus; label: string; items: Item[] };
+export type ItemGroup = { status: GroupKey; label: string; items: Item[] };
+
+// The Queued group sits right after Delegated: its items are next in line for a delegate.
+const GROUP_ORDER: readonly GroupKey[] = ITEM_STATUSES.flatMap((status): GroupKey[] =>
+  status === "delegated" ? [status, "queued"] : [status],
+);
 
 /**
- * The document's items grouped by status in routing order, leaving out empty groups.
+ * The document's items grouped by status in routing order, leaving out empty groups. An item
+ * with an ask shows only under Waiting on you; an open item in the capacity queue shows only
+ * under Queued, in queue order; a closed one stays in its Done or Dismissed group.
  * @param backlog A validated document.
+ * @param queued The domain's capacity queue, empty when it could not be read.
  * @returns The non-empty groups.
  */
-export const groupItems = (backlog: Backlog): ItemGroup[] =>
-  ITEM_STATUSES.map((status) => ({
+export const groupItems = (backlog: Backlog, queued: readonly QueuedEntry[] = []): ItemGroup[] => {
+  const shown = backlog.items.filter((item) => item.ask === null);
+  const byId = new Map(shown.map((item) => [item.id, item] as const));
+  const queuedItems = queued.flatMap((entry) => {
+    const item = byId.get(entry.item);
+    return item === undefined || !canDismissItem(item) ? [] : [item];
+  });
+  const inQueue = new Set(queuedItems.map((item) => item.id));
+  return GROUP_ORDER.map((status) => ({
     status,
-    label: status === "waiting-user" ? "Answered, waiting for coordinator" : GROUP_LABELS[status],
-    items: backlog.items.filter((item) => item.status === status && item.ask === null),
+    label:
+      status === "queued"
+        ? QUEUED_LABEL
+        : status === "waiting-user"
+          ? "Answered, waiting for coordinator"
+          : GROUP_LABELS[status],
+    items:
+      status === "queued"
+        ? queuedItems
+        : shown.filter((item) => item.status === status && !inQueue.has(item.id)),
   })).filter((group) => group.items.length > 0);
+};
 
 /**
  * The findings still open, in document order.
@@ -123,7 +158,8 @@ export const FINDING_KIND_LABELS: Readonly<Record<Finding["kind"], string>> = {
 export type DomainPage =
   | { kind: "policies"; domain: string }
   | { kind: "findings"; domain: string }
-  | { kind: "boundary"; domain: string };
+  | { kind: "boundary"; domain: string }
+  | { kind: "outbox"; domain: string };
 
 /**
  * A screen of the panel: the all-domains listing, one domain's main list or page, or a record's
@@ -163,6 +199,7 @@ export const trailOf = (screen: Screen): Crumb[] => {
     if (screen.kind === "policies") steps.push({ id: "crumb-policies", label: "Policies", screen });
     if (screen.kind === "findings") steps.push({ id: "crumb-findings", label: "Findings", screen });
     if (screen.kind === "boundary") steps.push({ id: "crumb-boundary", label: "Boundary", screen });
+    if (screen.kind === "outbox") steps.push({ id: "crumb-outbox", label: OUTBOX_LABEL, screen });
     if (screen.kind === "finding")
       steps.push({
         id: "crumb-findings",
@@ -1388,3 +1425,133 @@ export const chosenAnswer = (draft: AnswerDraft): string | undefined => {
  */
 export const answerFailure = (result: { code: number; stdout: string; stderr: string }): string =>
   result.stderr.trim() || result.stdout.trim() || `coordinate exited ${result.code}`;
+
+/**
+ * The Lists row and page name for the watcher events not yet delivered to the coordinator.
+ */
+export const OUTBOX_LABEL = "Outbox";
+
+/**
+ * One item waiting in a domain's capacity queue, as `coordinate queue show --json` reports it:
+ * its target machine, enqueue order, and 1-based place in that machine's queue.
+ */
+export type QueuedEntry = { item: string; machine: string; order: number; position: number };
+
+/**
+ * One watcher event queued for the coordinator but not yet delivered, as
+ * `coordinate watch outbox --json` reports it. A field holds one string or a list of them.
+ */
+export type OutboxEvent = {
+  id: string;
+  kind: string;
+  attrs: Record<string, string>;
+  fields: Record<string, string | string[]>;
+  text: string;
+};
+
+/**
+ * Build the read of a domain's capacity queue through the Coordinate CLI.
+ * @param home The user's home directory.
+ * @param domain The domain shown.
+ * @returns The program and its arguments for exec.
+ */
+export const queueShowCommand = (home: string, domain: string) =>
+  panelCli(home, ["queue", "show", "--domain", domain, "--json"]);
+
+/**
+ * Build the read of a domain's undelivered watcher events through the Coordinate CLI.
+ * @param home The user's home directory.
+ * @param domain The domain shown.
+ * @returns The program and its arguments for exec.
+ */
+export const outboxShowCommand = (home: string, domain: string) =>
+  panelCli(home, ["watch", "outbox", "--domain", domain, "--json"]);
+
+const ITEM_ID = /^i[1-9][0-9]*$/;
+const isPositive = (value: unknown): value is number =>
+  Number.isSafeInteger(value) && (value as number) >= 1;
+const isStringRecord = (value: unknown): value is Record<string, string> =>
+  isRecord(value) && Object.values(value).every((entry) => typeof entry === "string");
+
+// The CLI's JSON for one domain: an object naming that domain, with its list under `key`.
+const domainList = (text: string, domain: string, key: string): unknown[] | undefined => {
+  try {
+    const parsed: unknown = JSON.parse(text);
+    if (!isRecord(parsed) || parsed.domain !== domain || !Array.isArray(parsed[key]))
+      return undefined;
+    return parsed[key] as unknown[];
+  } catch {
+    return undefined;
+  }
+};
+
+/**
+ * Parse and validate the JSON printed by `coordinate queue show --json`.
+ * @param text The CLI's stdout.
+ * @param domain The domain that was asked for.
+ * @returns The entries in enqueue order, or undefined when the output is invalid or another domain's.
+ */
+export const queueOutput = (text: string, domain: string): QueuedEntry[] | undefined => {
+  const entries = domainList(text, domain, "entries");
+  if (entries === undefined) return undefined;
+  const parsed: QueuedEntry[] = [];
+  for (const entry of entries) {
+    if (
+      !isRecord(entry) ||
+      typeof entry.item !== "string" ||
+      !ITEM_ID.test(entry.item) ||
+      typeof entry.machine !== "string" ||
+      entry.machine === "" ||
+      !isPositive(entry.order) ||
+      !isPositive(entry.position)
+    )
+      return undefined;
+    parsed.push({
+      item: entry.item,
+      machine: entry.machine,
+      order: entry.order,
+      position: entry.position,
+    });
+  }
+  return parsed;
+};
+
+/**
+ * Parse and validate the JSON printed by `coordinate watch outbox --json`.
+ * @param text The CLI's stdout.
+ * @param domain The domain that was asked for.
+ * @returns The pending events, oldest first, or undefined when the output is invalid or another domain's.
+ */
+export const outboxOutput = (text: string, domain: string): OutboxEvent[] | undefined => {
+  const events = domainList(text, domain, "events");
+  if (events === undefined) return undefined;
+  const parsed: OutboxEvent[] = [];
+  for (const event of events) {
+    if (
+      !isRecord(event) ||
+      typeof event.id !== "string" ||
+      event.id === "" ||
+      typeof event.kind !== "string" ||
+      event.kind === "" ||
+      typeof event.text !== "string" ||
+      !isStringRecord(event.attrs) ||
+      !isRecord(event.fields)
+    )
+      return undefined;
+    const fields: Record<string, string | string[]> = {};
+    for (const [name, value] of Object.entries(event.fields)) {
+      if (typeof value === "string") fields[name] = value;
+      else if (Array.isArray(value) && value.every((entry) => typeof entry === "string"))
+        fields[name] = [...value];
+      else return undefined;
+    }
+    parsed.push({
+      id: event.id,
+      kind: event.kind,
+      attrs: { ...event.attrs },
+      fields,
+      text: event.text,
+    });
+  }
+  return parsed;
+};

@@ -35,6 +35,11 @@ export const STATUS_TONES: Readonly<Record<ItemStatus, string>> = {
 };
 
 /**
+ * The Queued group's header tone: the terminal palette's cyan, which no item status uses.
+ */
+export const QUEUED_TONE = "ansi6";
+
+/**
  * Each finding kind's domain glyph and its tone. herdr-ui has no generic issue/opportunity mark.
  */
 export const FINDING_GLYPHS: Readonly<Record<Finding["kind"], { glyph: string; tone: string }>> = {

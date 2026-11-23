@@ -113,9 +113,43 @@ const latestWatch = (path: string) => host.watches.filter((watch) => watch.path 
 const backlogWatch = () => latestWatch(`${STATE}/backlogs`);
 const policyWatch = () => latestWatch(STATE);
 
+// The panel reads each shown domain's capacity queue and watcher outbox through the CLI after
+// every load. Those reads are answered from watchData (empty lists by default) and recorded in
+// watchReads, so host.execs keeps only the calls a test is about.
+const watchReads: string[][] = [];
+const watchData = new Map<string, string>();
+const watchReadKey = (args: string[]): string | undefined => {
+  const domain = args[args.indexOf("--domain") + 1];
+  if (args.includes("queue") && args.includes("show")) return `queue:${domain}`;
+  if (args.includes("watch") && args.includes("outbox")) return `outbox:${domain}`;
+  return undefined;
+};
+// The shared renderer's own exec, for every other call: record it, then answer from the host.
+const hostExec = (command: string, args: string[]) => {
+  host.execs.push({ command, args });
+  if (host.execRejects !== undefined) throw host.execRejects;
+  if (host.execExit !== undefined) return { stdout: "", ...host.execExit };
+  const folder = args.at(-1) ?? "";
+  const names = [...host.files.keys()]
+    .filter((path) => path.startsWith(`${folder}/`) && path.endsWith(".json"))
+    .map((path) => path.slice(folder.length + 1, -".json".length))
+    .filter((name) => !name.includes("/"));
+  return { code: 0, stdout: names.map((name) => `${name}\0`).join(""), stderr: "" };
+};
+const watchAwareExec = (command: string, args: string[] = []) => {
+  const key = watchReadKey(args);
+  if (key === undefined) return hostExec(command, args);
+  watchReads.push(args);
+  const [kind, domain] = key.split(":");
+  const empty = JSON.stringify(kind === "queue" ? { domain, entries: [] } : { domain, events: [] });
+  return { code: 0, stdout: watchData.get(key) ?? empty, stderr: "" };
+};
+
 beforeEach(() => {
   resetHost();
-  useRenderer({});
+  useRenderer({ herdr: { exec: watchAwareExec } });
+  watchReads.length = 0;
+  watchData.clear();
   overlays.length = 0;
   closedOverlays.length = 0;
   textareaAutoGrow = undefined;
@@ -2045,10 +2079,17 @@ test("shows page buttons on the main list and lists only open findings on the Fi
   host.files.set(DOC, JSON.stringify(withFindings()));
   const { ctx, render } = await mount();
   let root = render();
-  expect(ids(root, "page-")).toEqual(["page-policies", "page-findings", "page-boundary"]);
+  expect(ids(root, "page-")).toEqual([
+    "page-policies",
+    "page-findings",
+    "page-boundary",
+    "page-outbox",
+  ]);
   expect(
-    ["page-policies", "page-findings", "page-boundary"].map((id) => text(get(root, id))),
-  ).toEqual(["Policies 0", "Findings 1 issue · 1 opportunity", "Boundary 0"]);
+    ["page-policies", "page-findings", "page-boundary", "page-outbox"].map((id) =>
+      text(get(root, id)),
+    ),
+  ).toEqual(["Policies 0", "Findings 1 issue · 1 opportunity", "Boundary 0", "Outbox 0"]);
   expect(ids(root, "finding-")).toEqual([]);
 
   openPage(root, "findings", ctx.cx);
@@ -4863,4 +4904,111 @@ test("the detail page's answer row is unchanged: the field and Answer on one row
   openDetail(view, "i1", ctx.cx);
   const root = render();
   expect(ids(root, "ask-answer")).toEqual(["ask-answer", "ask-answer-field", "ask-answer-submit"]);
+});
+
+// i1 and i2 open, i3 building, i4 done; the queue holds i2 and i1 (on two machines), the closed
+// i4, and an id the document no longer has.
+const withQueue = (): Backlog => {
+  let backlog = add(emptyBacklog("alpha", null), "First");
+  backlog = add(backlog, "Second");
+  backlog = add(backlog, "Third", { status: "building" });
+  backlog = add(backlog, "Fourth");
+  return close(backlog, "i4", false);
+};
+const QUEUE = JSON.stringify({
+  domain: "alpha",
+  entries: [
+    { item: "i2", machine: "local", order: 1, position: 1 },
+    { item: "i4", machine: "local", order: 2, position: 2 },
+    { item: "i1", machine: "box", order: 3, position: 1 },
+    { item: "i9", machine: "local", order: 4, position: 3 },
+  ],
+});
+const OUTBOX = JSON.stringify({
+  domain: "alpha",
+  events: [
+    {
+      id: "4",
+      kind: "settled",
+      attrs: { delegate: "fix", address: "t9" },
+      fields: { title: "Fix it", wiki: ["a", "b"] },
+      text: "verify the report",
+    },
+    { id: "5", kind: "legacy", attrs: {}, fields: {}, text: "an old line" },
+  ],
+});
+
+test("reads the capacity queue and outbox through the CLI after each load of the shown domain", async () => {
+  focusDomain("alpha");
+  host.files.set(DOC, JSON.stringify(withQueue()));
+  await mount();
+  const cliArgs = (...args: string[]) => [
+    "-u",
+    "HC_TERMINAL_ID",
+    "bun",
+    "/Users/test/.claude/skills/coordinate/scripts/coordinate.ts",
+    ...args,
+  ];
+  expect(watchReads).toEqual([
+    cliArgs("queue", "show", "--domain", "alpha", "--json"),
+    cliArgs("watch", "outbox", "--domain", "alpha", "--json"),
+  ]);
+  backlogWatch()!.fire([DOC]);
+  await settle();
+  expect(watchReads.length).toBe(4);
+});
+
+test("lists queued items only in a Queued group in routing order, with machine and position", async () => {
+  focusDomain("alpha");
+  host.files.set(DOC, JSON.stringify(withQueue()));
+  watchData.set("queue:alpha", QUEUE);
+  const { render } = await mount();
+  const root = render();
+  expect(ids(root, "group-").filter((id) => !id.includes("-", "group-".length))).toEqual([
+    "group-building",
+    "group-queued",
+    "group-done",
+  ]);
+  expect(ids(root, "item-")).toEqual(["item-i3", "item-i2", "item-i1", "item-i4"]);
+  expect([text(get(root, "queued-i2")), text(get(root, "queued-i1"))]).toEqual([
+    "local · #1",
+    "box · #1",
+  ]);
+  expect(ids(root, "queued-")).toEqual(["queued-i2", "queued-i1"]);
+});
+
+test("shows no Queued group and an empty Outbox when the reads fail or return another domain", async () => {
+  focusDomain("alpha");
+  host.files.set(DOC, JSON.stringify(withQueue()));
+  watchData.set("queue:alpha", QUEUE.replace('"alpha"', '"beta"'));
+  watchData.set("outbox:alpha", "not json");
+  const { render } = await mount();
+  const root = render();
+  expect(ids(root, "group-queued")).toEqual([]);
+  expect(ids(root, "item-")).toEqual(["item-i3", "item-i1", "item-i2", "item-i4"]);
+  expect(text(get(root, "page-outbox"))).toBe("Outbox 0");
+});
+
+test("opens the Outbox page from the Lists card, listing each undelivered event", async () => {
+  focusDomain("alpha");
+  host.files.set(DOC, JSON.stringify(withQueue()));
+  watchData.set("outbox:alpha", OUTBOX);
+  const { ctx, render } = await mount();
+  expect(text(get(render(), "page-outbox"))).toBe("Outbox 2");
+  openPage(render(), "outbox", ctx.cx);
+  const root = render();
+  expect(trail(root)).toBe("⌂ › alpha › Outbox");
+  expect(text(get(root, "outbox-header"))).toBe("Undelivered watcher events");
+  expect(text(get(root, "outbox-4"))).toBe(
+    "e4 settled delegate=fix address=t9 title: Fix it wiki: a wiki: b verify the report",
+  );
+  expect(text(get(root, "outbox-5"))).toBe("e5 legacy an old line");
+});
+
+test("shows None on the Outbox page when nothing waits for delivery", async () => {
+  focusDomain("alpha");
+  host.files.set(DOC, JSON.stringify(withQueue()));
+  const { ctx, render } = await mount();
+  openPage(render(), "outbox", ctx.cx);
+  expect(text(get(render(), "outbox-empty"))).toBe("None");
 });

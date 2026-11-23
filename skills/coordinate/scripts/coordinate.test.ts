@@ -1496,3 +1496,109 @@ describe("coordinate CLI finding add --source", () => {
     expect([empty.exit, empty.stdout, empty.stderr]).toEqual([1, "", "refused: source is empty\n"]);
   });
 });
+
+describe("coordinate CLI read-only queue and outbox views", () => {
+  it("shows capacity entries with per-machine positions and undelivered events, writing nothing", () => {
+    const state = tempDir("coordinate-queue-outbox-cli-");
+    made.push(state);
+    const env = cliEnv(state, COORDINATOR);
+    delete env.HC_TERMINAL_ID;
+    const run = (args: string[]): Result => {
+      const result = Bun.spawnSync(["bun", cli, ...args], {
+        env,
+        stdout: "pipe",
+        stderr: "pipe",
+        timeout: 10_000,
+      });
+      return {
+        args,
+        exit: result.exitCode ?? 1,
+        stdout: result.stdout.toString(),
+        stderr: result.stderr.toString(),
+      };
+    };
+    const empty = [
+      run(["queue", "show", "--domain", "app", "--json"]),
+      run(["watch", "outbox", "--domain", "app", "--json"]),
+      run(["queue", "show", "--domain", "app"]),
+      run(["watch", "outbox", "--domain", "app"]),
+    ].map((result) => [result.exit, result.stdout]);
+    expect(empty).toEqual([
+      [0, '{"domain":"app","entries":[]}\n'],
+      [0, '{"domain":"app","events":[]}\n'],
+      [0, "no items queued for capacity in app\n"],
+      [0, "no undelivered watcher events in app\n"],
+    ]);
+    expect([existsSync(join(state, "capacity")), existsSync(join(state, "watch"))]).toEqual([
+      false,
+      false,
+    ]);
+
+    mkdirSync(join(state, "capacity"));
+    const queue = JSON.stringify({
+      version: 1,
+      nextOrder: 4,
+      entries: [
+        { item: "i3", machine: "local", order: 1 },
+        { item: "i5", machine: "box", order: 2 },
+        { item: "i7", machine: "local", order: 3 },
+      ],
+    });
+    writeFileSync(join(state, "capacity", "app.json"), queue);
+    mkdirSync(join(state, "watch"));
+    const watchState = JSON.stringify({
+      outbox: [
+        {
+          id: "4",
+          kind: "settled",
+          attrs: { delegate: "fix", address: "t9" },
+          fields: { title: "Fix it", wiki: ["a", "b"] },
+          text: "verify the report",
+        },
+        { id: "5", line: "an old line" },
+      ],
+      nextEventId: 6,
+    });
+    writeFileSync(join(state, "watch", "app.json"), watchState);
+
+    expect(JSON.parse(run(["queue", "show", "--domain", "app", "--json"]).stdout)).toEqual({
+      domain: "app",
+      entries: [
+        { item: "i3", machine: "local", order: 1, position: 1 },
+        { item: "i5", machine: "box", order: 2, position: 1 },
+        { item: "i7", machine: "local", order: 3, position: 2 },
+      ],
+    });
+    expect(run(["queue", "show", "--domain", "app"]).stdout).toBe(
+      [
+        "i3 on local, #1 in that machine's queue",
+        "i5 on box, #1 in that machine's queue",
+        "i7 on local, #2 in that machine's queue",
+        "",
+      ].join("\n"),
+    );
+    expect(JSON.parse(run(["watch", "outbox", "--domain", "app", "--json"]).stdout)).toEqual({
+      domain: "app",
+      events: [
+        {
+          id: "4",
+          kind: "settled",
+          attrs: { delegate: "fix", address: "t9" },
+          fields: { title: "Fix it", wiki: ["a", "b"] },
+          text: "verify the report",
+        },
+        { id: "5", kind: "legacy", attrs: {}, fields: {}, text: "an old line" },
+      ],
+    });
+    expect(run(["watch", "outbox", "--domain", "app"]).stdout).toBe(
+      "e4 settled fix t9 Fix it a b: verify the report\ne5 legacy: an old line\n",
+    );
+    expect([
+      readFileSync(join(state, "capacity", "app.json"), "utf8"),
+      readFileSync(join(state, "watch", "app.json"), "utf8"),
+    ]).toEqual([queue, watchState]);
+
+    const bad = run(["queue", "show", "--domain", "../x", "--json"]);
+    expect(bad.exit).toBe(1);
+  });
+});

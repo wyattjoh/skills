@@ -130,6 +130,48 @@ export const readCapacityQueue = Effect.fn("readCapacityQueue")(function* (
 });
 
 /**
+ * One queued item as `queue show` reports it: its target machine, its enqueue order, and its
+ * 1-based place among the entries waiting for that same machine.
+ */
+export type QueuedItem = CapacityWait & { position: number };
+
+/**
+ * Number each entry by its place in its machine's queue, oldest first.
+ * @param queue Queue in any order.
+ * @returns Entries in enqueue order, each with its per-machine position.
+ */
+export const queuePositions = (queue: CapacityQueue): QueuedItem[] => {
+  const seen = new Map<string, number>();
+  return [...queue.entries]
+    .sort((left, right) => left.order - right.order)
+    .map((entry) => {
+      const position = (seen.get(entry.machine) ?? 0) + 1;
+      seen.set(entry.machine, position);
+      return { ...entry, position };
+    });
+};
+
+/**
+ * Show a domain's capacity queue without changing it: no lock is taken and nothing is written.
+ * @param config Coordinate config.
+ * @param domain Domain name.
+ * @param json Print `{ domain, entries }` as JSON instead of one line per entry.
+ * @returns Output lines.
+ */
+export const showCapacityQueue = Effect.fn("showCapacityQueue")(function* (
+  config: Config,
+  domain: string,
+  json: boolean,
+) {
+  const entries = queuePositions(yield* readCapacityQueue(config, domain));
+  if (json) return [JSON.stringify({ domain, entries })];
+  if (entries.length === 0) return [`no items queued for capacity in ${domain}`];
+  return entries.map(
+    (entry) => `${entry.item} on ${entry.machine}, #${entry.position} in that machine's queue`,
+  );
+});
+
+/**
  * Add or retain one metadata-only wait record, preserving its original FIFO order on retries.
  * @param config Coordinate config.
  * @param domain Domain name.

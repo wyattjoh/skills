@@ -589,6 +589,33 @@ const readState = (path: string) =>
     }
   });
 
+/**
+ * Show the events the watcher has queued but not yet delivered to the coordinator. Read-only: no
+ * lock is taken and nothing is written, so a missing or unreadable state file shows no events.
+ * @param config Coordinate config.
+ * @param domain Domain name.
+ * @param json Print `{ domain, events }` as JSON, each event's kind, attributes, fields and text.
+ * @returns Output lines.
+ */
+export const showOutbox = Effect.fn("showOutbox")(function* (
+  config: Config,
+  domain: string,
+  json: boolean,
+) {
+  yield* checkDomainName(domain);
+  const state = yield* readState(statePath(config.stateDir, domain));
+  const events = (state?.outbox ?? []).map(({ id, kind, attrs, fields, text }) => ({
+    id,
+    kind,
+    attrs,
+    fields,
+    text,
+  }));
+  if (json) return [JSON.stringify({ domain, events })];
+  if (events.length === 0) return [`no undelivered watcher events in ${domain}`];
+  return events.map((event) => `e${event.id} ${eventSummary(event)}`);
+});
+
 const writeState = (path: string, state: WatchState) =>
   Effect.promise(async () => {
     const directory = dirname(path);

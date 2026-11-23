@@ -56,7 +56,8 @@ import { Proc } from "./lib/proc.ts";
 import { domainRepos, domainStatus, domainStatusJson } from "./lib/status.ts";
 import { verifyDelegate } from "./lib/sessions.ts";
 import { renameDomain } from "./lib/rename.ts";
-import { watch } from "./lib/watch.ts";
+import { showOutbox, watch } from "./lib/watch.ts";
+import { showCapacityQueue } from "./lib/capacity-queue.ts";
 import {
   armWatcher,
   createWatchViewWriter,
@@ -1574,6 +1575,55 @@ const wikiCommand = Command.make("wiki").pipe(
   Command.withSubcommands([wikiPathCommand, wikiLintCommand, wikiCommitCommand]),
 );
 
+const watchOutboxCommand = Command.make(
+  "outbox",
+  {
+    domain: optionalStringFlag("domain", "domain (default: the calling terminal's label)"),
+    json: booleanFlag(
+      "json",
+      "print { domain, events } with each event's kind, attrs, fields and text",
+    ),
+  },
+  (options) =>
+    execute((config) =>
+      Effect.gen(function* () {
+        const domain = yield* domainOfCaller(Option.getOrUndefined(options.domain));
+        return yield* showOutbox(config, domain, options.json);
+      }),
+    ),
+).pipe(
+  Command.withDescription(
+    "show the watcher events queued for the coordinator but not yet delivered; read-only",
+  ),
+);
+
+const queueShowCommand = Command.make(
+  "show",
+  {
+    domain: optionalStringFlag("domain", "domain (default: the calling terminal's label)"),
+    json: booleanFlag(
+      "json",
+      "print { domain, entries } with each entry's item, machine, order and per-machine position",
+    ),
+  },
+  (options) =>
+    execute((config) =>
+      Effect.gen(function* () {
+        const domain = yield* domainOfCaller(Option.getOrUndefined(options.domain));
+        return yield* showCapacityQueue(config, domain, options.json);
+      }),
+    ),
+).pipe(
+  Command.withDescription(
+    "show the items waiting for a free delegate slot, with each one's machine and place in that machine's queue; read-only",
+  ),
+);
+
+const queueCommand = Command.make("queue").pipe(
+  Command.withDescription("read the capacity queue that delegate --queue-if-full writes"),
+  Command.withSubcommands([queueShowCommand]),
+);
+
 const watchCommand = Command.make(
   "watch",
   {
@@ -1648,6 +1698,7 @@ const watchCommand = Command.make(
   Command.withDescription(
     "watch a domain's delegates, PRs and backlog events; use --deliver with explicit --domain and --owner in the dedicated Herdr watcher terminal",
   ),
+  Command.withSubcommands([watchOutboxCommand]),
 );
 
 /**
@@ -1826,6 +1877,7 @@ const program = Command.make("coordinate")
       findingCommand,
       wikiCommand,
       watchCommand,
+      queueCommand,
       sweepCommand,
     ]),
   );

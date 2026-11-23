@@ -58,12 +58,14 @@ import {
   FINDING_GLYPHS,
   FINDING_STATUS_TONES,
   GLOBE_ICON,
+  QUEUED_TONE,
   STATUS_TONES,
 } from "./look.ts";
 import {
   FINDING_KIND_LABELS,
   FINDING_STATUS_LABELS,
   GROUP_LABELS,
+  OUTBOX_LABEL,
   canDismissItem,
   chosenAnswer,
   delegateLabel,
@@ -83,6 +85,8 @@ import type {
   DomainSummary,
   ItemGroup,
   ListingState,
+  OutboxEvent,
+  QueuedEntry,
   Screen,
 } from "./model.ts";
 import { layoutAnswerFlowCards } from "./answer-flow.ts";
@@ -107,6 +111,10 @@ export type PanelModel = {
   trail: Crumb[];
   go: (screen: Screen, cx: Context) => void;
   groups: ItemGroup[];
+  // The domain's capacity queue, which the Queued group's rows read their machine and place from,
+  // and its watcher events not yet delivered, for the Outbox row and page.
+  queued: QueuedEntry[];
+  outbox: OutboxEvent[];
   // The active list page, or undefined while the domain's main list is shown.
   page: DomainPage["kind"] | undefined;
   // The open findings.
@@ -358,6 +366,7 @@ const itemRow = (
   rows: DelegateRow[],
   open: (item: Item, cx: Context) => void,
   mark: Element | undefined = undefined,
+  note: Element | undefined = undefined,
 ): Element => {
   const line = delegateLine(rows);
   const row = listRow(t, {
@@ -367,7 +376,10 @@ const itemRow = (
     titleRole: item.status === "dismissed" ? "dim" : "foreground",
     ...(mark === undefined ? {} : { mark }),
     height: ROW.compact,
-    trailing: line === undefined ? [] : [delegateChip(t, item, line)],
+    trailing: [
+      ...(note === undefined ? [] : [note]),
+      ...(line === undefined ? [] : [delegateChip(t, item, line)]),
+    ],
     onClick: (cx) => open(item, cx),
   });
   return row;
@@ -386,14 +398,23 @@ const statusGroup = (
   model: PanelModel,
 ): Element => {
   const id = `group-${group.status}`;
+  const queued = new Map(model.queued.map((entry) => [entry.item, entry] as const));
   return groupBlock(t, motionScope, {
     id,
     label: group.label,
-    tone: STATUS_TONES[group.status],
+    tone: group.status === "queued" ? QUEUED_TONE : STATUS_TONES[group.status],
     count: group.items.length,
-    rows: pagedRows(t, id, group.items, model, ROW.compact, (item) =>
-      itemRow(t, item, delegates.byItem.get(item.id) ?? [], openItem),
-    ),
+    rows: pagedRows(t, id, group.items, model, ROW.compact, (item) => {
+      const entry = group.status === "queued" ? queued.get(item.id) : undefined;
+      return itemRow(
+        t,
+        item,
+        delegates.byItem.get(item.id) ?? [],
+        openItem,
+        undefined,
+        entry === undefined ? undefined : queuedNote(t, entry),
+      );
+    }),
     rowHeight: ROW.compact,
     open,
     first,
@@ -401,6 +422,10 @@ const statusGroup = (
     toggle,
   });
 };
+
+// A Queued row's target machine and its place in that machine's queue.
+const queuedNote = (t: Theme, entry: QueuedEntry): Element =>
+  rowNote(t, `${entry.machine} · #${entry.position}`).id(`queued-${entry.item}`);
 
 const waitingHeader = (t: Theme): Element => cardHeader(t, "waiting-header", "Waiting on you");
 
@@ -1764,6 +1789,40 @@ const policiesPage = (t: Theme, backlog: Backlog, model: PanelModel): Element =>
   );
 };
 
+// Each event's kind and attributes head its row; its fields and action text wrap beneath.
+const outboxRow = (t: Theme, event: OutboxEvent, first: boolean): Element => {
+  const attrs = Object.entries(event.attrs).map(([name, value]) => `${name}=${value}`);
+  const fields = Object.entries(event.fields).flatMap(([name, value]) =>
+    (typeof value === "string" ? [value] : value).map((entry) => `${name}: ${entry}`),
+  );
+  return detailRow(t, `outbox-${event.id}`)
+    .when(first, (row) => row.border_t(0))
+    .child(div().child(`e${event.id} ${event.kind}`))
+    .when(attrs.length > 0, (row) =>
+      row.child(small(t, t.dim, attrs.join(" ")).id(`outbox-attrs-${event.id}`)),
+    )
+    .children(
+      fields.map((field, index) => small(t, t.dim, field).id(`outbox-field-${event.id}-${index}`)),
+    )
+    .when(event.text !== "", (row) =>
+      row.child(div().id(`outbox-text-${event.id}`).child(event.text)),
+    );
+};
+
+// The watcher's events not yet delivered to the coordinator, oldest first. Event text wraps, so
+// this uses the card pieces as Policies does.
+const outboxPage = (t: Theme, model: PanelModel): Element =>
+  cardSection(
+    cardHeader(t, "outbox-header", "Undelivered watcher events"),
+    card(t, "outbox").children(
+      model.outbox.length === 0
+        ? [emptyRow(t, "outbox-empty", "None")]
+        : pagedRows(t, "outbox", model.outbox, model, ROW.list, (event, index) =>
+            outboxRow(t, event, index === 0),
+          ),
+    ),
+  );
+
 // The paths the domain owns and those next to it, in separate editable cards.
 const boundaryCard = (t: Theme, boundary: Backlog["boundary"], model: BoundaryModel): Element[] => {
   const section = (list: BoundaryList, label: string, paths: string[]) => {
@@ -1899,6 +1958,14 @@ const sectionLinks = (t: Theme, domain: string, backlog: Backlog, model: PanelMo
         { kind: "boundary", domain },
         model,
       ),
+      sectionRow(
+        t,
+        "page-outbox",
+        OUTBOX_LABEL,
+        model.outbox.length,
+        { kind: "outbox", domain },
+        model,
+      ),
     ]),
   );
 
@@ -1915,6 +1982,9 @@ const domainPage = (t: Theme, backlog: Backlog, model: PanelModel): Element => {
       content = v_flex()
         .gap(PANEL.sectionGap)
         .children(boundaryCard(t, backlog.boundary, model.boundary));
+      break;
+    case "outbox":
+      content = outboxPage(t, model);
       break;
     default:
       content = message(t, "page-unavailable", "Page unavailable", "Return to the domain list.");

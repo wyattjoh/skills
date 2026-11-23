@@ -36,8 +36,13 @@ document's only writer. The panel's backlog writes are answers and Dismiss. The 
 screen runs `coordinate item answer --domain <d> -- <id> <answer>` at once; in the answer flow, Answer only queues (per domain, kept while the panel lives) and "Send all and back" runs that command once per queued answer in order, stopping at the first failure with the rest still queued. Dismiss runs `coordinate item close --domain <d> --dismissed --outcome ...`. Both are mutations the CLI accepts
 from outside a Herdr terminal. Delegate-harness policy reads and edits also go through the CLI:
 `harness-policy show --json [--domain <d>]`, `global-set`, `domain-set`, and `domain-reset`, with
-`--expected-revision` on every mutation. Never read or write the policy JSON from the mod. Both
-write paths run as `/usr/bin/env -u HC_TERMINAL_ID <bun>
+`--expected-revision` on every mutation. Never read or write the policy JSON from the mod. The domain
+page also reads `queue show --domain <d> --json` (the Queued item group: an open item in the
+capacity queue shows only there, with its machine and place in that machine's queue, unless it
+has an ask) and `watch outbox --domain <d> --json` (the Lists card's Outbox row and page of
+undelivered watcher events) after each load of the shown domain's backlog; a failed or invalid
+read shows nothing, never an error. Never read the capacity or watch JSON from the mod. Every CLI
+call runs as `/usr/bin/env -u HC_TERMINAL_ID <bun>
 ~/.claude/skills/coordinate/scripts/coordinate.ts`. Unsetting the variable keeps the panel that
 caller even in an app started from a terminal. A mod's `exec` runs with the app's environment,
 whose PATH has no bun, so `scripts/build.ts` bakes `<bun>` from the build's own PATH as
