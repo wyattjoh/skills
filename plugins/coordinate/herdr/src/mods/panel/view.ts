@@ -116,6 +116,8 @@ export type PanelModel = {
   finding: Finding | undefined;
   origin: Item | undefined;
   openFinding: (finding: Finding, cx: Context) => void;
+  // Approve and Dismiss on the open finding's detail, absent once it is closed.
+  findingActions: FindingActionsModel | undefined;
   // Each item's delegates joined to the live terminals, and the domain's unfiled delegates.
   delegates: DelegateJoin;
   isOpen: (group: ItemGroup) => boolean;
@@ -134,6 +136,19 @@ export type PanelModel = {
   boundary: BoundaryModel;
   openHarnessPolicy: (cx: Context) => void;
   openDomain: (domain: string, cx: Context) => void;
+};
+
+/**
+ * A finding detail's Approve and Dismiss: which one is running, the CLI's last refusal, and what
+ * each button does.
+ */
+export type FindingActionsModel = {
+  running: "approve" | "dismiss" | undefined;
+  // Whether any finding's action is running; the buttons stay inert until it ends.
+  busy: boolean;
+  error: string | undefined;
+  approve: (cx: Context) => void;
+  dismiss: (cx: Context) => void;
 };
 
 /**
@@ -1118,7 +1133,46 @@ const findingScreen = (t: Theme, finding: Finding, model: PanelModel): Element =
           ? []
           : [fact(t, "fact-outcome", "Outcome", [finding.outcome])]),
       ]),
+    )
+    .when(model.findingActions !== undefined, (el) =>
+      el.children(findingActionRows(t, model.findingActions!)),
     );
+
+// Approve and Dismiss, right-aligned like the answer flow's actions, then any refusal.
+const findingActionRows = (t: Theme, actions: FindingActionsModel): Element[] => {
+  const { busy } = actions;
+  return [
+    h_flex()
+      .id("finding-actions")
+      .gap(ANSWER.gap)
+      .justify_end()
+      .child(
+        button(t, {
+          id: "finding-actions-approve",
+          label: actions.running === "approve" ? "Approving…" : "Approve",
+          style: ANSWER_BUTTON_STYLE,
+          onClick: busy ? undefined : (cx) => actions.approve(cx),
+        }),
+      )
+      .child(
+        button(t, {
+          id: "finding-actions-dismiss",
+          label: actions.running === "dismiss" ? "Dismissing…" : "Dismiss",
+          style: ANSWER_SECONDARY_BUTTON_STYLE,
+          onClick: busy ? undefined : (cx) => actions.dismiss(cx),
+        }),
+      ),
+    ...(actions.error === undefined
+      ? []
+      : [
+          div()
+            .id("finding-action-error")
+            .text_size(TEXT.label)
+            .text_color(role(t, "ansi1"))
+            .child(actions.error),
+        ]),
+  ];
+};
 
 const detailScreen = (
   t: Theme,

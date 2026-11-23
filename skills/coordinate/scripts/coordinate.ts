@@ -7,6 +7,7 @@ import {
   boundaryRm,
   findingAdd,
   findingClose,
+  findingPromote,
   focusSet,
   itemAdd,
   itemClose,
@@ -1308,12 +1309,15 @@ const findingCloseCommand = Command.make(
       Flag.withDefault(""),
     ),
     dismissed: booleanFlag("dismissed", "close as dismissed instead of acted"),
-    domain: optionalStringFlag("domain", "domain (default: this coordinator's label)"),
+    domain: optionalStringFlag(
+      "domain",
+      "domain (default: this coordinator's label; required outside a terminal)",
+    ),
     json: booleanFlag("json", "print the closed finding as JSON"),
   },
   (options) =>
     execute((config) =>
-      Effect.flatMap(coordinatorDomain(Option.getOrUndefined(options.domain)), (domain) =>
+      Effect.flatMap(answerDomain(Option.getOrUndefined(options.domain)), (domain) =>
         findingClose(config, domain, {
           id: options.id,
           outcome: options.outcome,
@@ -1323,13 +1327,45 @@ const findingCloseCommand = Command.make(
         }),
       ),
     ),
-).pipe(Command.withDescription("close a finding as acted (or dismissed) with an outcome"));
+).pipe(
+  Command.withDescription(
+    "close a finding as acted (or dismissed) with an outcome; allowed outside a Herdr terminal with --domain, as item close is",
+  ),
+);
+
+const findingPromoteCommand = Command.make(
+  "promote",
+  {
+    id: argument("id", "finding id, such as f2"),
+    title: optionalStringFlag("title", "the new item's title (default: the finding's title)"),
+    domain: optionalStringFlag(
+      "domain",
+      "domain (default: this coordinator's label; required outside a terminal)",
+    ),
+    json: booleanFlag("json", "print the new item and the closed finding as JSON"),
+  },
+  (options) =>
+    execute((config) =>
+      Effect.flatMap(answerDomain(Option.getOrUndefined(options.domain)), (domain) =>
+        findingPromote(config, domain, {
+          id: options.id,
+          title: Option.getOrUndefined(options.title),
+          json: options.json,
+          now: new Date().toISOString(),
+        }),
+      ),
+    ),
+).pipe(
+  Command.withDescription(
+    'turn an open finding into an open item in the same domain and close it as acted with the outcome "promoted to <item id>"; allowed outside a Herdr terminal with --domain',
+  ),
+);
 
 const findingCommand = Command.make("finding").pipe(
   Command.withDescription(
-    "record and close issues and opportunities noticed outside an item's scope",
+    "record, promote and close issues and opportunities noticed outside an item's scope",
   ),
-  Command.withSubcommands([findingAddCommand, findingCloseCommand]),
+  Command.withSubcommands([findingAddCommand, findingCloseCommand, findingPromoteCommand]),
 );
 
 const watchCommand = Command.make(

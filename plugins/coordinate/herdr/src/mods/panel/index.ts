@@ -25,6 +25,9 @@ import {
   answerFailure,
   canDismissItem,
   dismissCommand,
+  dismissFindingCommand,
+  promoteFindingCommand,
+  canTriageFinding,
   boundaryCommand,
   boundaryOutput,
   cachedDocument,
@@ -98,6 +101,7 @@ import type {
   AnswerModel,
   BoundaryList,
   BoundaryModel,
+  FindingActionsModel,
   Theme,
 } from "./view.ts";
 
@@ -225,6 +229,15 @@ export default class Panel extends View {
   boundaryBusy = false;
   boundaryHovered: string | undefined;
   boundaryError: BoundaryModel["error"];
+  // The finding Approve or Dismiss last ran on: which one is still running, or the CLI's refusal.
+  findingAction:
+    | {
+        domain: string;
+        id: string;
+        running: "approve" | "dismiss" | undefined;
+        error: string | undefined;
+      }
+    | undefined;
 
   init(_props: unknown, cx: AsyncContext) {
     // Herdr delivers an overlay's props through props(), not init's argument: the object the
@@ -1473,6 +1486,50 @@ export default class Panel extends View {
     });
   }
 
+  // Approve or Dismiss a finding with the coordinate CLI: promote makes it an item, dismiss closes
+  // it as dismissed. A reload then shows it closed; a refusal shows inline and leaves it open.
+  runFindingAction(action: "approve" | "dismiss", domain: string, finding: Finding, cx: Context) {
+    if (this.findingAction?.running !== undefined || !canTriageFinding(finding)) return;
+    const build = action === "approve" ? promoteFindingCommand : dismissFindingCommand;
+    const { command, args } = build(home(), domain, finding.id);
+    const running = { domain, id: finding.id, running: action, error: undefined };
+    this.findingAction = running;
+    cx.notify();
+    cx.spawn(async (task) => {
+      let error: string | undefined;
+      try {
+        const ran = await exec(command, args);
+        if (ran.code !== 0) error = answerFailure(ran);
+      } catch (failure) {
+        error = `could not run coordinate: ${String(failure)}`;
+      }
+      if (this.findingAction !== running) return;
+      this.findingAction =
+        error === undefined ? undefined : { domain, id: finding.id, running: undefined, error };
+      if (error === undefined) this.load(task, true);
+      task.notify();
+    });
+  }
+
+  findingActionsModel(
+    domain: string | undefined,
+    finding: Finding | undefined,
+  ): FindingActionsModel | undefined {
+    if (domain === undefined || finding === undefined || !canTriageFinding(finding))
+      return undefined;
+    const state =
+      this.findingAction?.domain === domain && this.findingAction.id === finding.id
+        ? this.findingAction
+        : undefined;
+    return {
+      running: state?.running,
+      busy: this.findingAction?.running !== undefined,
+      error: state?.error,
+      approve: (cx) => this.runFindingAction("approve", domain, finding, cx),
+      dismiss: (cx) => this.runFindingAction("dismiss", domain, finding, cx),
+    };
+  }
+
   boundaryModel(domain: string | undefined): BoundaryModel {
     const editing = this.boundaryEditing;
     const error = this.boundaryError;
@@ -1874,6 +1931,7 @@ export default class Panel extends View {
       finding,
       origin,
       openFinding: (record, cx) => this.openFinding(record, cx),
+      findingActions: this.findingActionsModel(domain, finding),
       delegates: this.delegates(domain, doc),
       openDomain: (name, cx) => this.openDomain(name, cx),
       isOpen: (group) => this.isOpen(group),

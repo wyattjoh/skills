@@ -177,6 +177,33 @@ export const closeFinding = (
 };
 
 /**
+ * Promote an open finding: add an open item titled after it (or the override), then close the
+ * finding as acted with the outcome "promoted to <item id>".
+ * @param backlog Current document.
+ * @param input Finding id, optional one-line title override, and the time as an ISO string.
+ * @returns The next document, the new item and the closed finding.
+ */
+export const promoteFinding = (
+  backlog: Backlog,
+  input: { id: string; title: string | undefined; now: string },
+): OpResult<{ item: Item; finding: Finding }> => {
+  const found = backlog.findings.find((entry) => entry.id === input.id);
+  if (!found) return { ok: false, reason: `no finding ${input.id} in ${backlog.domain}` };
+  if (found.status !== "open")
+    return { ok: false, reason: `${input.id} is already ${found.status}` };
+  const added = addItem(backlog, { title: input.title ?? found.title, now: input.now });
+  if (!added.ok) return added;
+  const closed = closeFinding(added.backlog, {
+    id: found.id,
+    outcome: `promoted to ${added.value.id}`,
+    dismissed: false,
+    now: input.now,
+  });
+  if (!closed.ok) return closed;
+  return { ok: true, backlog: closed.backlog, value: { item: added.value, finding: closed.value } };
+};
+
+/**
  * The changes one `item update` applies. Unset fields, and empty lists, leave the item as it is.
  */
 export type ItemUpdate = {

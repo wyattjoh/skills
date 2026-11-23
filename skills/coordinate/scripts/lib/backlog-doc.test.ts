@@ -6,6 +6,7 @@ import {
   BacklogError,
   findingAdd,
   findingClose,
+  findingPromote,
   itemAdd,
   itemClose,
   itemUpdate,
@@ -443,6 +444,105 @@ describe("finding close", () => {
       message: "f1 is already dismissed",
     });
   });
+});
+
+describe("finding promote", () => {
+  it("adds an open item titled after the finding and closes it as promoted, in one write", async () => {
+    const { cfg, path } = await started();
+    await runWith(itemAdd(cfg, "app", { title: "fix login", json: false, now: NOW }));
+    await runWith(findingAdd(cfg, "app", finding({ title: "share the validator", from: "i1" })));
+    expect(
+      await runWith(
+        findingPromote(cfg, "app", { id: "f2", title: undefined, json: false, now: LATER }),
+      ),
+    ).toEqual(["promoted f2 to i3: share the validator"]);
+    const after = read(path);
+    expect(
+      after.items.map((item: { id: string; title: string; status: string }) => [
+        item.id,
+        item.title,
+        item.status,
+      ]),
+    ).toEqual([
+      ["i1", "fix login", "open"],
+      ["i3", "share the validator", "open"],
+    ]);
+    expect(after.items[1].createdAt).toBe(LATER);
+    expect(after.findings).toEqual([
+      {
+        id: "f2",
+        kind: "issue",
+        title: "share the validator",
+        detail: null,
+        path: null,
+        from: "i1",
+        status: "acted",
+        closedAt: LATER,
+        outcome: "promoted to i3",
+      },
+    ]);
+    expect(after.nextId).toBe(4);
+  });
+
+  it("uses a title override and prints both records as JSON", async () => {
+    const { cfg } = await started();
+    await runWith(findingAdd(cfg, "app", finding({ title: "flaky test" })));
+    const printed = await runWith(
+      findingPromote(cfg, "app", {
+        id: "f1",
+        title: " stabilize the watcher test ",
+        json: true,
+        now: LATER,
+      }),
+    );
+    const parsed = JSON.parse(printed.join("\n"));
+    expect([parsed.item.id, parsed.item.title, parsed.item.status]).toEqual([
+      "i2",
+      "stabilize the watcher test",
+      "open",
+    ]);
+    expect([parsed.finding.id, parsed.finding.status, parsed.finding.outcome]).toEqual([
+      "f1",
+      "acted",
+      "promoted to i2",
+    ]);
+  });
+
+  it.each([
+    ["f7", undefined, "no finding f7 in app"],
+    ["i1", undefined, "no finding i1 in app"],
+    ["f1", "a\nb", "title must be one line"],
+    ["f1", " ", "title is empty"],
+  ])("refuses %s with title %j and leaves the file unchanged", async (id, title, message) => {
+    const { cfg, path } = await started();
+    await runWith(findingAdd(cfg, "app", finding({})));
+    const before = readFileSync(path, "utf8");
+    const error = await failureOf(
+      findingPromote(cfg, "app", { id, title, json: false, now: LATER }),
+    );
+    expect(tagged(error)).toEqual({ tag: "Refused", message });
+    expect(readFileSync(path, "utf8")).toBe(before);
+  });
+
+  it.each([
+    [false, "f1 is already acted"],
+    [true, "f1 is already dismissed"],
+  ])(
+    "refuses a closed finding (dismissed %p) before checking the title",
+    async (dismissed, message) => {
+      const { cfg, path } = await started();
+      await runWith(findingAdd(cfg, "app", finding({})));
+      await runWith(
+        findingClose(cfg, "app", { id: "f1", outcome: "ok", dismissed, json: false, now: LATER }),
+      );
+      const before = readFileSync(path, "utf8");
+      const error = await failureOf(
+        findingPromote(cfg, "app", { id: "f1", title: "a\nb", json: false, now: LATER }),
+      );
+      expect(tagged(error)).toEqual({ tag: "Refused", message });
+      expect(readFileSync(path, "utf8")).toBe(before);
+    },
+  );
 });
 
 const update = (fields: Partial<Parameters<typeof itemUpdate>[2]>) => ({
@@ -1706,6 +1806,7 @@ const mutations = (): string[][] => [
   ["item", "update", "i1", "--decided", "scope is api only"],
   ["item", "close", "i1", "--outcome", "shipped"],
   ["finding", "close", "f2", "--outcome", "fixed"],
+  ["finding", "promote", "f2"],
 ];
 
 describe("coordinator-only mutations", () => {
@@ -1804,6 +1905,84 @@ describe("coordinator-only mutations", () => {
       read(path).items[0].ask,
       read(path).items[0].decided.map((d: { text: string }) => d.text),
     ]).toEqual([null, ['Re "Which provider?": -none-']]);
+  });
+
+  it("promotes and closes findings from outside a terminal with --domain", async () => {
+    const { state, path } = await prepared();
+    await runWith(findingAdd(await config(state), "app", finding({ title: "old crash" })));
+    const { HC_TERMINAL_ID: _unset, ...outside } = cliEnv(state, COORDINATOR);
+    const before = readFileSync(path, "utf8");
+    expect([
+      spawn(outside, ["finding", "promote", "f2"]),
+      spawn(outside, ["finding", "close", "f3", "--outcome", "duplicate", "--dismissed"]),
+    ]).toEqual([
+      [
+        1,
+        "refused: a backlog change from outside a Herdr terminal names its domain: pass --domain\n",
+      ],
+      [
+        1,
+        "refused: a backlog change from outside a Herdr terminal names its domain: pass --domain\n",
+      ],
+    ]);
+    expect(readFileSync(path, "utf8")).toBe(before);
+    expect([
+      spawn(outside, ["finding", "promote", "--domain", "app", "--", "f2"]),
+      spawn(outside, [
+        "finding",
+        "close",
+        "--domain",
+        "app",
+        "--dismissed",
+        "--outcome",
+        "Dismissed from the Backlog panel",
+        "--",
+        "f3",
+      ]),
+    ]).toEqual([
+      [0, "promoted f2 to i4: flaky test\n"],
+      [0, "dismissed f3: Dismissed from the Backlog panel\n"],
+    ]);
+    expect(
+      read(path).findings.map((entry: { id: string; status: string; outcome: string }) => [
+        entry.id,
+        entry.status,
+        entry.outcome,
+      ]),
+    ).toEqual([
+      ["f2", "acted", "promoted to i4"],
+      ["f3", "dismissed", "Dismissed from the Backlog panel"],
+    ]);
+  });
+
+  it("runs finding promote with --title and --json, and refuses unknown or closed findings with no write", async () => {
+    const { state, path } = await prepared();
+    const env = cliEnv(state, COORDINATOR);
+    const promoted = Bun.spawnSync(
+      ["bun", cli, "finding", "promote", "f2", "--title", "stabilize the test", "--json"],
+      { env, stdout: "pipe", stderr: "pipe", timeout: 10_000 },
+    );
+    const after = read(path);
+    expect([promoted.exitCode, JSON.parse(promoted.stdout.toString())]).toEqual([
+      0,
+      { item: after.items[1], finding: after.findings[0] },
+    ]);
+    expect([after.items[1].id, after.items[1].title, after.findings[0].outcome]).toEqual([
+      "i3",
+      "stabilize the test",
+      "promoted to i3",
+    ]);
+    const before = readFileSync(path, "utf8");
+    expect([
+      spawn(env, ["finding", "promote", "f2"]),
+      spawn(env, ["finding", "promote", "f9"]),
+      spawn(env, ["finding", "promote", "i1"]),
+    ]).toEqual([
+      [1, "refused: f2 is already acted\n"],
+      [1, "refused: no finding f9 in app\n"],
+      [1, "refused: no finding i1 in app\n"],
+    ]);
+    expect(readFileSync(path, "utf8")).toBe(before);
   });
 
   it("allows boundary edits from outside a terminal with --domain", async () => {
@@ -1923,7 +2102,11 @@ describe("coordinator-only mutations", () => {
     const { state, path } = await prepared();
     const { HC_TERMINAL_ID: _unset, ...outside } = cliEnv(state, COORDINATOR);
     const before = readFileSync(path, "utf8");
-    const others = mutations().filter(([group, verb]) => !(group === "item" && verb === "close"));
+    const others = mutations().filter(
+      ([group, verb]) =>
+        !(group === "item" && verb === "close") &&
+        !(group === "finding" && (verb === "close" || verb === "promote")),
+    );
     expect(others.map((args) => spawn(outside, [...args, "--domain", "app"])[0])).toEqual(
       others.map(() => 2),
     );

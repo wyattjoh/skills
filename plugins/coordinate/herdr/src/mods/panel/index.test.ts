@@ -6,6 +6,7 @@ import {
   closeFinding,
   closeItem,
   emptyBacklog,
+  promoteFinding,
   updateItem,
 } from "../../lib/store.ts";
 import type { Backlog, Item } from "../../lib/store.ts";
@@ -2962,6 +2963,140 @@ test("the domain crumb returns from a finding detail to the domain list", async 
     trail(root),
   ]).toEqual([[], [], ["item-i1"], "⌂ › alpha"]);
   expect(ids(root, "finding-")).toEqual([]);
+});
+
+const cliPrefix = [
+  "/usr/bin/env",
+  "-u",
+  "HC_TERMINAL_ID",
+  "bun",
+  "/Users/test/.claude/skills/coordinate/scripts/coordinate.ts",
+];
+const findingExecs = () =>
+  host.execs
+    .filter(({ args }) => args.includes("finding"))
+    .map(({ command, args }) => [command, ...args]);
+const openFindingDetail = async (id: string) => {
+  focusDomain("alpha");
+  host.files.set(DOC, JSON.stringify(withFindings()));
+  const mounted = await mount();
+  openPage(mounted.render(), "findings", mounted.ctx.cx);
+  get(mounted.render(), `finding-${id}`).click!({}, mounted.ctx.cx);
+  return mounted;
+};
+
+test("an open finding's detail has Approve then Dismiss in one right-aligned row below its facts", async () => {
+  const { render } = await openFindingDetail("f3");
+  const root = render();
+  expect(ids(root, "finding-actions")).toEqual([
+    "finding-actions",
+    "finding-actions-approve",
+    "finding-actions-dismiss",
+  ]);
+  expect([
+    text(get(root, "finding-actions-approve")),
+    text(get(root, "finding-actions-dismiss")),
+  ]).toEqual(["Approve", "Dismiss"]);
+  expect(get(root, "finding-actions").styles.justify_end).toBe(true);
+  expect(get(root, "finding-actions-dismiss").styles.bg).toBe(theme().raised);
+  expect(ids(root, "finding-action-error")).toEqual([]);
+});
+
+test("Approve promotes the finding through the CLI with the exact arguments, then shows it acted with its outcome", async () => {
+  const { ctx, render } = await openFindingDetail("f3");
+  const promoted = promoteFinding(withFindings(), { id: "f3", title: undefined, now: NOW });
+  if (!promoted.ok) throw new Error(promoted.reason);
+  host.files.set(DOC, JSON.stringify(promoted.backlog));
+  get(render(), "finding-actions-approve").click!({}, ctx.cx);
+  const busy = render();
+  expect([
+    text(get(busy, "finding-actions-approve")),
+    get(busy, "finding-actions-approve").click,
+    get(busy, "finding-actions-dismiss").click,
+  ]).toEqual(["Approving…", undefined, undefined]);
+  await settle();
+  expect(findingExecs()).toEqual([
+    [...cliPrefix, "finding", "promote", "--domain", "alpha", "--", "f3"],
+  ]);
+  const root = render();
+  expect([
+    text(get(root, "finding-status")),
+    text(get(root, "fact-outcome")),
+    ids(root, "finding-actions"),
+  ]).toEqual(["Acted on", "Outcome promoted to i5", []]);
+});
+
+test("Dismiss closes the finding as dismissed through the CLI with the exact arguments", async () => {
+  const { ctx, render } = await openFindingDetail("f2");
+  const dismissed = closeFinding(withFindings(), {
+    id: "f2",
+    outcome: "Dismissed from the Backlog panel",
+    dismissed: true,
+    now: NOW,
+  });
+  if (!dismissed.ok) throw new Error(dismissed.reason);
+  host.files.set(DOC, JSON.stringify(dismissed.backlog));
+  get(render(), "finding-actions-dismiss").click!({}, ctx.cx);
+  expect(text(get(render(), "finding-actions-dismiss"))).toBe("Dismissing…");
+  await settle();
+  expect(findingExecs()).toEqual([
+    [
+      ...cliPrefix,
+      "finding",
+      "close",
+      "--domain",
+      "alpha",
+      "--dismissed",
+      "--outcome",
+      "Dismissed from the Backlog panel",
+      "--",
+      "f2",
+    ],
+  ]);
+  const root = render();
+  expect([
+    text(get(root, "finding-status")),
+    text(get(root, "fact-outcome")),
+    ids(root, "finding-actions"),
+  ]).toEqual(["Dismissed", "Outcome Dismissed from the Backlog panel", []]);
+});
+
+test("a refused Approve shows the CLI's message below the actions and keeps both enabled", async () => {
+  const { ctx, render } = await openFindingDetail("f3");
+  host.execExit = { code: 1, stdout: "", stderr: "refused: f3 is already acted" };
+  get(render(), "finding-actions-approve").click!({}, ctx.cx);
+  await settle();
+  const root = render();
+  expect(text(get(root, "finding-action-error"))).toBe("refused: f3 is already acted");
+  expect([
+    text(get(root, "finding-actions-approve")),
+    typeof get(root, "finding-actions-approve").click,
+    typeof get(root, "finding-actions-dismiss").click,
+  ]).toEqual(["Approve", "function", "function"]);
+});
+
+test("while one finding's action runs, another finding's Approve and Dismiss are inert", async () => {
+  const { ctx, render } = await openFindingDetail("f3");
+  get(render(), "finding-actions-approve").click!({}, ctx.cx);
+  press(render(), "crumb-findings", ctx.cx);
+  get(render(), "finding-f2").click!({}, ctx.cx);
+  const root = render();
+  expect([
+    text(get(root, "finding-actions-approve")),
+    get(root, "finding-actions-approve").click,
+    get(root, "finding-actions-dismiss").click,
+  ]).toEqual(["Approve", undefined, undefined]);
+  await settle();
+});
+
+test("a finding action's error stays on its finding", async () => {
+  const { ctx, render } = await openFindingDetail("f3");
+  host.execExit = { code: 1, stdout: "", stderr: "refused: f3 is already acted" };
+  get(render(), "finding-actions-dismiss").click!({}, ctx.cx);
+  await settle();
+  press(render(), "crumb-findings", ctx.cx);
+  get(render(), "finding-f2").click!({}, ctx.cx);
+  expect(ids(render(), "finding-action-error")).toEqual([]);
 });
 
 test("a finding that leaves the document falls back to the lists", async () => {

@@ -1235,6 +1235,18 @@ export const DISMISS_OUTCOME = "Dismissed from the answer flow";
 export const canDismissItem = (item: Item): boolean =>
   item.status !== "done" && item.status !== "dismissed";
 
+// The coordinate CLI as the panel runs it: outside any Herdr terminal, so HC_TERMINAL_ID is unset.
+const panelCli = (home: string, args: string[]): { command: string; args: string[] } => ({
+  command: "/usr/bin/env",
+  args: [
+    "-u",
+    "HC_TERMINAL_ID",
+    typeof COORDINATE_BUN === "string" ? COORDINATE_BUN : "bun",
+    coordinateCli(home),
+    ...args,
+  ],
+});
+
 /**
  * Build the `coordinate item close --dismissed` call that closes an item as dismissed from the
  * answer flow. It runs the way `answerCommand` does: as the panel, outside any Herdr terminal.
@@ -1247,13 +1259,8 @@ export const dismissCommand = (
   home: string,
   domain: string,
   id: string,
-): { command: string; args: string[] } => ({
-  command: "/usr/bin/env",
-  args: [
-    "-u",
-    "HC_TERMINAL_ID",
-    typeof COORDINATE_BUN === "string" ? COORDINATE_BUN : "bun",
-    coordinateCli(home),
+): { command: string; args: string[] } =>
+  panelCli(home, [
     "item",
     "close",
     "--domain",
@@ -1263,8 +1270,59 @@ export const dismissCommand = (
     DISMISS_OUTCOME,
     "--",
     id,
-  ],
-});
+  ]);
+
+/**
+ * The one-line outcome recorded when a finding is dismissed from its detail screen.
+ */
+export const DISMISS_FINDING_OUTCOME = "Dismissed from the Backlog panel";
+
+/**
+ * Whether a finding can still be approved or dismissed: only an open one.
+ * @param finding The finding.
+ * @returns Whether `finding promote` and `finding close` would accept it.
+ */
+export const canTriageFinding = (finding: Finding): boolean => finding.status === "open";
+
+/**
+ * Build the `coordinate finding promote` call behind a finding's Approve: the CLI adds an open item
+ * in the domain and closes the finding as promoted. It runs as `dismissCommand` does.
+ * @param home The user's home directory.
+ * @param domain The finding's domain.
+ * @param id The finding id.
+ * @returns The program and its arguments for exec.
+ */
+export const promoteFindingCommand = (
+  home: string,
+  domain: string,
+  id: string,
+): { command: string; args: string[] } =>
+  panelCli(home, ["finding", "promote", "--domain", domain, "--", id]);
+
+/**
+ * Build the `coordinate finding close --dismissed` call behind a finding's Dismiss. It runs as
+ * `dismissCommand` does.
+ * @param home The user's home directory.
+ * @param domain The finding's domain.
+ * @param id The finding id.
+ * @returns The program and its arguments for exec.
+ */
+export const dismissFindingCommand = (
+  home: string,
+  domain: string,
+  id: string,
+): { command: string; args: string[] } =>
+  panelCli(home, [
+    "finding",
+    "close",
+    "--domain",
+    domain,
+    "--dismissed",
+    "--outcome",
+    DISMISS_FINDING_OUTCOME,
+    "--",
+    id,
+  ]);
 
 /**
  * An answer being written on an item's detail: the option picked, a text answer or note, and the

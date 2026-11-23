@@ -12,6 +12,7 @@ import {
   addPolicy,
   type BoundaryList,
   closeFinding,
+  promoteFinding,
   closeItem,
   emptyBacklog,
   fileDelegate,
@@ -529,6 +530,27 @@ export const findingClose = Effect.fn("findingClose")(function* (
     }),
   );
   return input.json ? json(finding) : [`${finding.status} ${finding.id}: ${finding.outcome ?? ""}`];
+});
+
+/**
+ * `coordinate finding promote`: turn an open finding into an open item in the same domain and
+ * close the finding with the outcome "promoted to <item id>", in one locked write.
+ * @param config Config.
+ * @param domain Domain.
+ * @param input Finding id, optional title override, `--json`, and the time.
+ * @returns Lines to print.
+ */
+export const findingPromote = Effect.fn("findingPromote")(function* (
+  config: Config,
+  domain: string,
+  input: { id: string; title: string | undefined; json: boolean; now: string },
+) {
+  const promoted = yield* change(config, domain, (backlog) =>
+    promoteFinding(backlog, { id: input.id, title: input.title, now: input.now }),
+  );
+  return input.json
+    ? json(promoted)
+    : [`promoted ${promoted.finding.id} to ${promoted.item.id}: ${promoted.item.title}`];
 });
 
 /**

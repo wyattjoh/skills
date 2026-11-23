@@ -792,6 +792,10 @@ describe("coordinate CLI parity", () => {
         ["finding", "close"],
         ["id", "--outcome", "--dismissed", "--json"],
       ],
+      [
+        ["finding", "promote"],
+        ["id", "--title", "--domain", "--json", "promoted to"],
+      ],
       [["watch"], ["--interval", "--forge-interval", "--max-minutes", "--follow", "--replace"]],
       [
         ["sweep", "report"],

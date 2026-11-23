@@ -5,6 +5,9 @@ import {
   boundaryOutput,
   canDismissItem,
   dismissCommand,
+  dismissFindingCommand,
+  promoteFindingCommand,
+  canTriageFinding,
   cachedDocument,
   changedBacklogDocuments,
   chosenAnswer,
@@ -391,6 +394,40 @@ test("builds the dismiss call and says which items can be dismissed", () => {
       canDismissItem({ ...emptyItem, status } as Parameters<typeof canDismissItem>[0]),
     ),
   ).toEqual([true, true, true, true, true, true, false, false]);
+});
+
+test("builds the finding promote and dismiss calls and says which findings can be triaged", () => {
+  const cli = [
+    "-u",
+    "HC_TERMINAL_ID",
+    "bun",
+    "/Users/test/.claude/skills/coordinate/scripts/coordinate.ts",
+  ];
+  expect(promoteFindingCommand("/Users/test", "alpha", "f3")).toEqual({
+    command: "/usr/bin/env",
+    args: [...cli, "finding", "promote", "--domain", "alpha", "--", "f3"],
+  });
+  expect(dismissFindingCommand("/Users/test", "alpha", "f3")).toEqual({
+    command: "/usr/bin/env",
+    args: [
+      ...cli,
+      "finding",
+      "close",
+      "--domain",
+      "alpha",
+      "--dismissed",
+      "--outcome",
+      "Dismissed from the Backlog panel",
+      "--",
+      "f3",
+    ],
+  });
+  const statuses = ["open", "acted", "dismissed"] as const;
+  expect(
+    statuses.map((status) =>
+      canTriageFinding({ id: "f1", status } as Parameters<typeof canTriageFinding>[0]),
+    ),
+  ).toEqual([true, false, false]);
 });
 
 const LEGACY: HarnessSelection = { enabled: ["pi", "claude"], default: null };
