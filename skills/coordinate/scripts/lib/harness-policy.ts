@@ -51,6 +51,18 @@ export type EffectiveHarnessPolicy = {
   revision: number;
   source: "legacy" | "global" | "domain";
   selection: HarnessSelection;
+  /**
+   * Harnesses the domain replacement enables that the global selection disables.
+   */
+  reenabled: DelegateHarness[];
+};
+
+/**
+ * A domain whose replacement keeps harnesses enabled that the global selection disables.
+ */
+export type HarnessReenable = {
+  domain: string;
+  harnesses: DelegateHarness[];
 };
 
 /**
@@ -63,12 +75,20 @@ export type HarnessPolicyView = {
   global: {
     source: "legacy" | "configured";
     policy: HarnessSelection;
+    /**
+     * Every domain whose replacement enables a harness this global selection disables.
+     */
+    reenabledBy: HarnessReenable[];
   };
   domain: {
     name: string;
     mode: "inherit" | "replace";
     override: HarnessSelection | null;
     effective: HarnessSelection;
+    /**
+     * Harnesses the replacement enables that global disables; empty when inheriting.
+     */
+    reenabled: DelegateHarness[];
   } | null;
 };
 
@@ -207,6 +227,28 @@ const readDocument = Effect.fn("readHarnessPolicyDocument")(function* (config: C
   }
 });
 
+/**
+ * The harnesses a domain replacement enables that the global selection disables.
+ * @param override The domain's replacement selection.
+ * @param global The effective global selection.
+ * @returns The re-enabled harnesses in canonical order, empty when none.
+ */
+export const reenabledHarnesses = (
+  override: HarnessSelection,
+  global: HarnessSelection,
+): DelegateHarness[] => override.enabled.filter((harness) => !global.enabled.includes(harness));
+
+const reenabledByOf = (state: HarnessPolicyDocument): HarnessReenable[] => {
+  const globalPolicy = state.global ?? LEGACY_HARNESS_SELECTION;
+  return Object.entries(state.domains)
+    .toSorted(([left], [right]) => left.localeCompare(right))
+    .map(([domain, override]) => ({
+      domain,
+      harnesses: reenabledHarnesses(override, globalPolicy),
+    }))
+    .filter((entry) => entry.harnesses.length > 0);
+};
+
 const policyOf = (state: HarnessPolicyDocument, domain: string): EffectiveHarnessPolicy => {
   const domainPolicy = Object.hasOwn(state.domains, domain) ? state.domains[domain] : undefined;
   const globalPolicy = state.global ?? LEGACY_HARNESS_SELECTION;
@@ -216,6 +258,7 @@ const policyOf = (state: HarnessPolicyDocument, domain: string): EffectiveHarnes
     source:
       domainPolicy === undefined ? (state.global === undefined ? "legacy" : "global") : "domain",
     selection: domainPolicy ?? globalPolicy,
+    reenabled: domainPolicy === undefined ? [] : reenabledHarnesses(domainPolicy, globalPolicy),
   };
 };
 
@@ -234,6 +277,7 @@ const viewOf = (
     global: {
       source: state.global === undefined ? "legacy" : "configured",
       policy: globalPolicy,
+      reenabledBy: reenabledByOf(state),
     },
     domain:
       domain === undefined
@@ -243,12 +287,16 @@ const viewOf = (
             mode: domainPolicy === undefined ? "inherit" : "replace",
             override: domainPolicy ?? null,
             effective: effective?.selection ?? globalPolicy,
+            reenabled: effective?.reenabled ?? [],
           },
   };
 };
 
 const selectionText = (selection: HarnessSelection): string =>
   `enabled ${selection.enabled.length > 0 ? selection.enabled.join(", ") : "none"}; default ${selection.default ?? "none"}`;
+
+const resetCommand = (domain: string, revision: number): string =>
+  `coordinate harness-policy domain-reset ${domain} --expected-revision ${revision}`;
 
 const renderView = (view: HarnessPolicyView, json: boolean): string[] => {
   if (json) return [JSON.stringify(view, null, 2)];
@@ -261,7 +309,16 @@ const renderView = (view: HarnessPolicyView, json: boolean): string[] => {
       `domain ${view.domain.name} (${view.domain.mode}): ${selectionText(view.domain.effective)}`,
     );
     if (view.domain.override) lines.push(`  replacement: ${selectionText(view.domain.override)}`);
+    if (view.domain.reenabled.length > 0)
+      lines.push(
+        `  warning: domain override enables ${view.domain.reenabled.join(", ")}, which global policy disables; reset with ${resetCommand(view.domain.name, view.revision)}`,
+      );
+    return lines;
   }
+  for (const entry of view.global.reenabledBy)
+    lines.push(
+      `note: ${entry.domain} keeps ${entry.harnesses.join(", ")} via its replacement; reset with ${resetCommand(entry.domain, view.revision)}`,
+    );
   return lines;
 };
 

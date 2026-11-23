@@ -788,10 +788,67 @@ export type HarnessPolicyState =
  */
 export const overridingDomains = (
   reads: readonly (readonly [string, HarnessPolicyState])[],
-): string[] =>
-  reads
-    .filter(([, state]) => state.kind === "loaded" && state.view.domain?.mode === "replace")
-    .map(([domain]) => domain);
+): string[] => domainOverrides(reads).map(([domain]) => domain);
+
+/**
+ * Each domain the CLI reports as having its own override, with that override, from one scoped
+ * read per domain. A read that failed or is invalid counts as no override.
+ * @param reads Each domain with the state its scoped read produced.
+ * @returns The overriding domains and their saved selections, in the order given.
+ */
+export const domainOverrides = (
+  reads: readonly (readonly [string, HarnessPolicyState])[],
+): [string, HarnessSelection][] =>
+  reads.flatMap(([domain, state]): [string, HarnessSelection][] =>
+    state.kind === "loaded" && state.view.domain?.mode === "replace" && state.view.domain.override
+      ? [[domain, state.view.domain.override]]
+      : [],
+  );
+
+/**
+ * The harnesses a domain override enables that the global selection disables.
+ * @param override The domain's own selection.
+ * @param global The global selection.
+ * @returns The re-enabled harnesses, in the override's order; empty when none.
+ */
+export const reenabledHarnesses = (
+  override: HarnessSelection,
+  global: HarnessSelection,
+): DelegateHarness[] => override.enabled.filter((harness) => !global.enabled.includes(harness));
+
+/**
+ * A note the policy pane shows under its rows: a domain override that enables a harness global
+ * disables, an override that only copies global today and so stops following it, or (on the
+ * global scope) a domain whose override keeps a harness this global disables.
+ */
+export type HarnessPolicyNotice =
+  | { kind: "reenabled"; harnesses: DelegateHarness[] }
+  | { kind: "frozen" }
+  | { kind: "kept"; domain: string; harnesses: DelegateHarness[] };
+
+/**
+ * The notes for a scope's draft, measured against the global policy as read (for a domain) or
+ * against the draft itself (for global), so they show before Save as well as after it.
+ * @param view The policy as read for the scope.
+ * @param draft The edit in progress for the scope.
+ * @param overrides The listed domains' saved overrides.
+ * @returns The notes, in display order.
+ */
+export const harnessPolicyNotices = (
+  view: HarnessPolicyView,
+  draft: HarnessPolicyDraft,
+  overrides: readonly (readonly [string, HarnessSelection])[],
+): HarnessPolicyNotice[] => {
+  if (draft.domain === undefined)
+    return overrides.flatMap(([domain, override]): HarnessPolicyNotice[] => {
+      const harnesses = reenabledHarnesses(override, draft.selection);
+      return harnesses.length === 0 ? [] : [{ kind: "kept", domain, harnesses }];
+    });
+  if (draft.inherit) return [];
+  const harnesses = reenabledHarnesses(draft.selection, view.global.policy);
+  if (harnesses.length > 0) return [{ kind: "reenabled", harnesses }];
+  return sameHarnessSelection(draft.selection, view.global.policy) ? [{ kind: "frozen" }] : [];
+};
 
 const runner = (home: string, args: string[]) => ({
   command: "/usr/bin/env",

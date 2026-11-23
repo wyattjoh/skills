@@ -55,7 +55,7 @@ describe("delegate harness policy store", () => {
       schemaVersion: 1,
       revision: 0,
       path,
-      global: { source: "legacy", policy: LEGACY_HARNESS_SELECTION },
+      global: { source: "legacy", policy: LEGACY_HARNESS_SELECTION, reenabledBy: [] },
       domain: null,
     });
     expect(await readView(config, "app")).toEqual({
@@ -65,6 +65,7 @@ describe("delegate harness policy store", () => {
         mode: "inherit",
         override: null,
         effective: LEGACY_HARNESS_SELECTION,
+        reenabled: [],
       },
     });
   });
@@ -117,12 +118,13 @@ describe("delegate harness policy store", () => {
       schemaVersion: 1,
       revision: 1,
       path,
-      global: { source: "configured", policy: globalSelection },
+      global: { source: "configured", policy: globalSelection, reenabledBy: [] },
       domain: {
         name: "app",
         mode: "inherit",
         override: null,
         effective: globalSelection,
+        reenabled: [],
       },
     });
 
@@ -143,7 +145,9 @@ describe("delegate harness policy store", () => {
       mode: "replace",
       override,
       effective: override,
+      reenabled: ["pi"],
     });
+    expect(replaced.global.reenabledBy).toEqual([{ domain: "app", harnesses: ["pi"] }]);
 
     await Effect.runPromise(resetHarnessPolicy(config, "app", 2, true));
     expect((await readView(config, "app")).domain).toEqual({
@@ -151,9 +155,67 @@ describe("delegate harness policy store", () => {
       mode: "inherit",
       override: null,
       effective: globalSelection,
+      reenabled: [],
     });
     expect((await readView(config)).revision).toBe(3);
     expect(statSync(path).mode & 0o777).toBe(0o600);
+  });
+
+  it("warns when a domain replacement enables a harness global disables, and names it on a global save", async () => {
+    const { config, path } = await setup();
+    await Effect.runPromise(createDocument(config, "app"));
+    await Effect.runPromise(createDocument(config, "web"));
+    await Effect.runPromise(
+      setHarnessPolicy(config, {
+        scope: "domain",
+        domain: "app",
+        selection: selection(["pi", "claude"], "pi"),
+        expectedRevision: 0,
+        json: true,
+      }),
+    );
+    await Effect.runPromise(
+      setHarnessPolicy(config, {
+        scope: "domain",
+        domain: "web",
+        selection: selection(["claude"], "claude"),
+        expectedRevision: 1,
+        json: true,
+      }),
+    );
+
+    const globalSave = await Effect.runPromise(
+      setHarnessPolicy(config, {
+        scope: "global",
+        domain: undefined,
+        selection: selection(["claude"], "claude"),
+        expectedRevision: 2,
+        json: false,
+      }),
+    );
+    expect(globalSave).toEqual([
+      `harness policy revision 3 (${path})`,
+      "global (configured): enabled claude; default claude",
+      "note: app keeps pi via its replacement; reset with coordinate harness-policy domain-reset app --expected-revision 3",
+    ]);
+
+    expect(await Effect.runPromise(showHarnessPolicy(config, "app", false))).toEqual([
+      `harness policy revision 3 (${path})`,
+      "global (configured): enabled claude; default claude",
+      "domain app (replace): enabled pi, claude; default pi",
+      "  replacement: enabled pi, claude; default pi",
+      "  warning: domain override enables pi, which global policy disables; reset with coordinate harness-policy domain-reset app --expected-revision 3",
+    ]);
+    expect(await Effect.runPromise(showHarnessPolicy(config, "web", false))).toEqual([
+      `harness policy revision 3 (${path})`,
+      "global (configured): enabled claude; default claude",
+      "domain web (replace): enabled claude; default claude",
+      "  replacement: enabled claude; default claude",
+    ]);
+    expect((await readView(config, "app")).domain.reenabled).toEqual(["pi"]);
+    expect(
+      (await Effect.runPromise(resolveEffectiveHarnessPolicy(config, "app"))).reenabled,
+    ).toEqual(["pi"]);
   });
 
   it("rejects stale revisions without overwriting newer state", async () => {

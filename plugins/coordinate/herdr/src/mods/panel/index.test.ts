@@ -3885,6 +3885,77 @@ test("the sidebar has the title and one Harness section, and the pane's scope dr
   expect(text(get(render(), "harness-policy-pane-head"))).toBe("HARNESS Global");
 });
 
+test("a domain override that enables a harness global disables shows a warning", async () => {
+  setPolicyOutput(
+    policyOutput({
+      revision: 4,
+      source: "configured",
+      global: { enabled: ["claude"], default: "claude" },
+      domain: "alpha",
+      mode: "replace",
+      override: LEGACY_POLICY,
+    }),
+  );
+  const { render } = await mountDialog("alpha");
+  const root = render();
+  expect(ids(root, "harness-policy-notice-")).toEqual(["harness-policy-notice-reenabled"]);
+  expect(text(get(root, "harness-policy-notice-reenabled"))).toBe(
+    "This override enables Pi, which the global policy disables. Turn on Inherit global to follow it.",
+  );
+  expect(get(root, "harness-policy-notice-reenabled").styles.text_color).toBe(theme().blocked);
+});
+
+test("turning Inherit global off on a copy of global notes that the override stops following it", async () => {
+  setPolicyOutput(policyOutput({ revision: 7, domain: "alpha" }));
+  const { ctx, render } = await mountDialog("alpha");
+  expect(ids(render(), "harness-policy-notice-")).toEqual([]);
+  get(render(), "harness-policy-inherit-toggle").click!({}, ctx.cx);
+  const root = render();
+  expect(ids(root, "harness-policy-notice-")).toEqual(["harness-policy-notice-frozen"]);
+  expect(text(get(root, "harness-policy-notice-frozen"))).toBe(
+    "This override matches the global policy now, but it will not follow later global changes.",
+  );
+  get(root, "harness-policy-enabled-pi").click!({}, ctx.cx);
+  expect(ids(render(), "harness-policy-notice-")).toEqual([]);
+});
+
+test("the global scope lists each domain whose override keeps a harness the draft disables", async () => {
+  host.files.set(DOC, JSON.stringify(emptyBacklog("alpha", null)));
+  host.files.set(`${STATE}/backlogs/beta.json`, JSON.stringify(emptyBacklog("beta", null)));
+  const global: PolicySelection = { enabled: ["pi", "claude"], default: "claude" };
+  const exec = (command: string, args: string[] = []) => {
+    host.execs.push({ command, args });
+    const at = args.indexOf("harness-policy");
+    if (at === -1) return { code: 0, stdout: "alpha\0beta\0", stderr: "" };
+    const domainAt = args.indexOf("--domain");
+    const domain = domainAt === -1 ? undefined : args[domainAt + 1];
+    const replace = domain === "beta";
+    return {
+      code: 0,
+      stderr: "",
+      stdout: policyOutput({
+        revision: 5,
+        source: "configured",
+        global,
+        domain,
+        mode: replace ? "replace" : "inherit",
+        override: replace ? { enabled: ["pi"], default: "pi" } : null,
+      }),
+    };
+  };
+  useRenderer({
+    herdr: { props: () => dialogPropsFor(policyDialogSpec(undefined), "overlay-1"), exec },
+  });
+  const { ctx, render } = await mount(true);
+  expect(ids(render(), "harness-policy-notice-")).toEqual([]);
+  get(render(), "harness-policy-enabled-pi").click!({}, ctx.cx);
+  const root = render();
+  expect(ids(root, "harness-policy-notice-")).toEqual(["harness-policy-notice-kept-beta"]);
+  expect(text(get(root, "harness-policy-notice-kept-beta"))).toBe(
+    "beta keeps Pi enabled through its own override.",
+  );
+});
+
 test("the scope menu marks Global with the globe and each domain with its own policy with an Override tag, refreshed after a save", async () => {
   host.files.set(DOC, JSON.stringify(emptyBacklog("alpha", null)));
   host.files.set(`${STATE}/backlogs/beta.json`, JSON.stringify(emptyBacklog("beta", null)));

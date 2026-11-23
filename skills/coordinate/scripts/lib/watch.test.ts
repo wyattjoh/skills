@@ -439,7 +439,7 @@ describe("watch", () => {
       setHarnessPolicy(config, {
         scope: "global",
         domain: undefined,
-        selection: { enabled: ["pi"], default: "pi" },
+        selection: { enabled: ["pi", "claude"], default: "pi" },
         expectedRevision: 0,
         json: true,
       }),
@@ -504,6 +504,75 @@ describe("watch", () => {
     expect(JSON.parse(readFileSync(join(state, "watch", "stable.json"), "utf8")).nextEventId).toBe(
       1,
     );
+  });
+
+  it("notifies a domain whose replacement keeps a harness a global edit disables", async () => {
+    const state = tempDir();
+    made.push(state);
+    const config = await Effect.runPromise(
+      resolveConfig({ state_dir: state, backlog_dir: join(state, "backlogs") }, "/c"),
+    );
+    await runWith(createDocument(config, "app"));
+    await runWith(createDocument(config, "stable"));
+    await Effect.runPromise(
+      setHarnessPolicy(config, {
+        scope: "global",
+        domain: undefined,
+        selection: { enabled: ["pi", "claude"], default: "pi" },
+        expectedRevision: 0,
+        json: true,
+      }),
+    );
+    await Effect.runPromise(
+      setHarnessPolicy(config, {
+        scope: "domain",
+        domain: "stable",
+        selection: { enabled: ["pi", "claude"], default: "pi" },
+        expectedRevision: 1,
+        json: true,
+      }),
+    );
+    const arm = async (domain: string) => {
+      const emitted: string[] = [];
+      const lines = await runWith(
+        watch(config, {
+          domain,
+          intervalMs: 5,
+          forgeIntervalMs: 60_000,
+          maxMs: 20,
+          owner: undefined,
+          replace: false,
+          deliver: false,
+          today: () => "2026-11-16",
+          follow: false,
+          emit: (line) => {
+            emitted.push(line);
+          },
+        }),
+        fakeProc((argv) => (argv[1] === "ls" ? ok('{"terminals":[]}') : ok("{}"))).layer,
+      );
+      return [...lines, ...emitted.map(eventText)];
+    };
+
+    expect(await arm("app")).toEqual(alive);
+    expect(await arm("stable")).toEqual(alive);
+    await Effect.runPromise(
+      setHarnessPolicy(config, {
+        scope: "global",
+        domain: undefined,
+        selection: { enabled: ["claude"], default: "claude" },
+        expectedRevision: 2,
+        json: true,
+      }),
+    );
+
+    expect(await arm("app")).toEqual([
+      '<event kind="harness-policy" domain="app" enabled="claude" default="claude"/>',
+    ]);
+    expect(await arm("stable")).toEqual([
+      '<event kind="harness-policy" domain="stable" enabled="pi, claude" default="pi" reenabled="pi"/>',
+    ]);
+    expect(await arm("stable")).toEqual(alive);
   });
 
   it("exits with a settle event and a status beat against its saved state", async () => {

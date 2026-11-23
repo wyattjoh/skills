@@ -984,6 +984,7 @@ describe("coordinate CLI harness policy", () => {
     expect(legacy.global).toEqual({
       source: "legacy",
       policy: { enabled: ["pi", "claude"], default: null },
+      reenabledBy: [],
     });
 
     const global = run(
@@ -1023,6 +1024,7 @@ describe("coordinate CLI harness policy", () => {
       mode: "replace",
       override: { enabled: ["claude"], default: "claude" },
       effective: { enabled: ["claude"], default: "claude" },
+      reenabled: [],
     });
 
     const stale = run(

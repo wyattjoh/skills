@@ -16,6 +16,8 @@ import {
   groupFindings,
   mergeEnded,
   overridingDomains,
+  domainOverrides,
+  harnessPolicyNotices,
   rebaseHarnessPolicyDraft,
   policyDialogProps,
   policyDialogSpec,
@@ -451,6 +453,54 @@ test("overridingDomains keeps the domains read as replace, in order, and drops f
     ],
   ];
   expect(overridingDomains(reads)).toEqual(["alpha", "delta"]);
+  expect(domainOverrides(reads)).toEqual([
+    ["alpha", LEGACY],
+    ["delta", LEGACY],
+  ]);
+});
+
+const domainDraft = (selection: HarnessSelection, inherit = false): HarnessPolicyDraft => ({
+  domain: "alpha",
+  revision: 4,
+  inherit,
+  selection,
+});
+
+test("harnessPolicyNotices warns on a re-enable, notes a frozen copy of global, and lists kept harnesses on global", () => {
+  const claudeOnly: HarnessSelection = { enabled: ["claude"], default: "claude" };
+  const view: HarnessPolicyView = {
+    schemaVersion: 1,
+    revision: 4,
+    path: "/s/delegate-harness-policy.json",
+    global: { source: "configured", policy: claudeOnly },
+    domain: { name: "alpha", mode: "replace", override: LEGACY, effective: LEGACY },
+  };
+  expect(harnessPolicyNotices(view, domainDraft(LEGACY), [])).toEqual([
+    { kind: "reenabled", harnesses: ["pi"] },
+  ]);
+  expect(harnessPolicyNotices(view, domainDraft(claudeOnly), [])).toEqual([{ kind: "frozen" }]);
+  expect(
+    harnessPolicyNotices(view, domainDraft({ enabled: ["claude"], default: null }), []),
+  ).toEqual([]);
+  expect(harnessPolicyNotices(view, domainDraft(LEGACY, true), [])).toEqual([]);
+
+  const globalDraft: HarnessPolicyDraft = {
+    domain: undefined,
+    revision: 4,
+    inherit: false,
+    selection: claudeOnly,
+  };
+  expect(
+    harnessPolicyNotices({ ...view, domain: null }, globalDraft, [
+      ["alpha", LEGACY],
+      ["beta", claudeOnly],
+    ]),
+  ).toEqual([{ kind: "kept", domain: "alpha", harnesses: ["pi"] }]);
+  expect(
+    harnessPolicyNotices({ ...view, domain: null }, { ...globalDraft, selection: LEGACY }, [
+      ["alpha", LEGACY],
+    ]),
+  ).toEqual([]);
 });
 
 const globalView = (revision: number, policy: HarnessSelection): HarnessPolicyView => ({

@@ -745,6 +745,10 @@ export const watch = Effect.fn("watch")(function* (config: Config, options: Watc
         ? JSON.stringify({
             enabled: policy.success.selection.enabled,
             default: policy.success.selection.default,
+            // A global change that a domain replacement keeps re-enabled leaves the effective
+            // selection alone, so the re-enable list is part of the signature too. An empty list
+            // is left out so signatures saved before it existed still match.
+            ...(policy.success.reenabled.length > 0 ? { reenabled: policy.success.reenabled } : {}),
           })
         : `error:${policy.failure.message}`;
       if (snapshot.harnessPolicy !== undefined && snapshot.harnessPolicy !== policySignature) {
@@ -755,6 +759,9 @@ export const watch = Effect.fn("watch")(function* (config: Config, options: Watc
               domain: options.domain,
               enabled,
               default: policy.success.selection.default ?? "none",
+              ...(policy.success.source === "domain"
+                ? { reenabled: policy.success.reenabled.join(", ") || "none" }
+                : {}),
             }),
           );
         } else {

@@ -9,7 +9,14 @@ import { h_flex, v_flex } from "gpui-base";
 import { HERDR_ICONS, MENU, TEXT, menuPanel, menuRow } from "@wyattjoh/herdr-ui";
 import type { Theme } from "@wyattjoh/herdr-ui";
 import { GLOBE_ICON, HARNESS_DIALOG } from "./look.ts";
-import type { DelegateHarness, HarnessPolicyDraft, HarnessPolicyState } from "./model.ts";
+import { harnessPolicyNotices } from "./model.ts";
+import type {
+  DelegateHarness,
+  HarnessPolicyDraft,
+  HarnessPolicyNotice,
+  HarnessPolicyState,
+  HarnessSelection,
+} from "./model.ts";
 
 /**
  * What the window draws and calls: the editor's state for the selected scope, and its actions.
@@ -22,6 +29,8 @@ export type HarnessPolicyEditorModel = {
   domains: string[];
   // The listed domains with their own saved override (Inherit global off), badged in the menu.
   overrides: string[];
+  // Those domains' saved overrides, for the global scope's notes on what each keeps enabled.
+  overrideSelections: readonly (readonly [string, HarnessSelection])[];
   domainMenuOpen: boolean;
   state: HarnessPolicyState;
   busy: boolean;
@@ -488,6 +497,39 @@ const sidebar = (t: Theme): Element =>
     )
     .child(navEntry(t, "harness-policy-nav-harness", HERDR_ICONS.terminal, "Harness", true));
 
+const harnessList = (harnesses: readonly DelegateHarness[]): string =>
+  harnesses.map((harness) => HARNESS_LABELS[harness]).join(" and ");
+
+// A note under the rows: what an override does against the global policy, or which domains keep
+// a harness the global policy disables. A re-enable is a warning, in the failure color.
+const noticeRow = (t: Theme, notice: HarnessPolicyNotice): Element => {
+  const [id, message, warning] =
+    notice.kind === "reenabled"
+      ? [
+          "harness-policy-notice-reenabled",
+          `This override enables ${harnessList(notice.harnesses)}, which the global policy disables. Turn on Inherit global to follow it.`,
+          true,
+        ]
+      : notice.kind === "frozen"
+        ? [
+            "harness-policy-notice-frozen",
+            "This override matches the global policy now, but it will not follow later global changes.",
+            false,
+          ]
+        : [
+            `harness-policy-notice-kept-${notice.domain}`,
+            `${notice.domain} keeps ${harnessList(notice.harnesses)} enabled through its own override.`,
+            true,
+          ];
+  return div()
+    .id(id)
+    .py(SETTINGS.rowPaddingY)
+    .text_size(SETTINGS.rowAbout)
+    .line_height(SETTINGS.rowAboutLine)
+    .text_color(warning ? t.blocked : t.dim)
+    .child(message);
+};
+
 // The failure line and its Reload button, inline in the pane.
 const failureRows = (t: Theme, message: string, model: HarnessPolicyEditorModel): Element[] => [
   div()
@@ -625,6 +667,11 @@ const paneRows = (t: Theme, model: HarnessPolicyEditorModel): Element[] => {
             ),
           ),
         ]),
+    ),
+  );
+  rows.push(
+    ...harnessPolicyNotices(view, draft, model.overrideSelections).map((notice) =>
+      noticeRow(t, notice),
     ),
   );
   if (model.conflict)

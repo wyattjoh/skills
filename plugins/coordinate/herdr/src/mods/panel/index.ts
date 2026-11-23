@@ -53,6 +53,7 @@ import {
   readDocument,
   seedHarnessPolicyDraft,
   overridingDomains,
+  domainOverrides,
   rebaseHarnessPolicyDraft,
   stateDirOf,
   summarize,
@@ -68,6 +69,7 @@ import type {
   DomainSummary,
   EndedRecords,
   HarnessPolicyState,
+  HarnessSelection,
   HarnessPolicyDraft,
   HarnessPolicyDraftEntry,
   ItemGroup,
@@ -162,6 +164,8 @@ export default class Panel extends View {
   // whether that menu is open.
   policyDomains: string[] = [];
   policyOverrides: string[] = [];
+  // Those domains' saved overrides, for the global scope's notes on what each keeps enabled.
+  policyOverrideSelections: [string, HarnessSelection][] = [];
   policyOverridesGeneration = 0;
   policyDomainMenuOpen = false;
   // The edit in progress, and the way out it is waiting on a Discard confirm for.
@@ -319,6 +323,7 @@ export default class Panel extends View {
         domains.map(async (domain) => [domain, await this.readHarnessPolicy(domain)] as const),
       );
       if (generation !== this.policyOverridesGeneration) return;
+      this.policyOverrideSelections = domainOverrides(reads);
       this.policyOverrides = overridingDomains(reads);
       task.notify();
     });
@@ -1597,6 +1602,7 @@ export default class Panel extends View {
       domain,
       domains: this.policyDomains,
       overrides: this.policyOverrides,
+      overrideSelections: this.policyOverrideSelections,
       domainMenuOpen: this.policyDomainMenuOpen,
       state: inScope ? this.harnessPolicyState : { kind: "loading" as const },
       busy: inScope && this.harnessPolicyBusy,
