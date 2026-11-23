@@ -221,6 +221,7 @@ describe("coordinate CLI spawn", () => {
     made.push(state);
     const cwd = join(state, "work");
     mkdirSync(cwd);
+    const document = join(state, "backlogs", "tasks.json");
     const result = Bun.spawnSync(
       [
         "bun",
@@ -235,6 +236,10 @@ describe("coordinate CLI spawn", () => {
         "opus",
         "--effort",
         "high",
+        "--item",
+        "first",
+        "--item",
+        "second",
       ],
       {
         env: cliEnv(state, { "fleet.role": "coordinator", "fleet.domain": "manager" }),
@@ -247,8 +252,23 @@ describe("coordinate CLI spawn", () => {
     const session = /session (\S+)\n$/.exec(stdout)?.[1] ?? "";
     expect({ exit: result.exitCode, stdout, stderr: result.stderr.toString() }).toEqual({
       exit: 0,
-      stdout: `started coordinator tasks-coordinator for tasks (t-watch) in its own space sp9, claude session ${session}\n`,
+      stdout: `created backlog ${document}\nowned: added ${cwd}\nadded i1: first\nadded i2: second\nstarted coordinator tasks-coordinator for tasks (t-watch) in its own space sp9, claude session ${session}\n`,
       stderr: "",
+    });
+    const seeded = JSON.parse(readFileSync(document, "utf8"));
+    expect({
+      owned: seeded.boundary.owned,
+      items: seeded.items.map((item: { id: string; title: string; status: string }) => [
+        item.id,
+        item.title,
+        item.status,
+      ]),
+    }).toEqual({
+      owned: [cwd],
+      items: [
+        ["i1", "first", "open"],
+        ["i2", "second", "open"],
+      ],
     });
     const calls = readFileSync(join(state, "bin", "calls.log"), "utf8")
       .trim()
@@ -592,7 +612,10 @@ describe("coordinate CLI parity", () => {
     const helpCases: Array<[string[], string[]]> = [
       [["start"], ["domain", "label this terminal"]],
       [["delegate"], ["name", "--task", "--harness", "--no-space"]],
-      [["spawn"], ["domain", "--cwd", "--harness", "--model", "--effort", "from a coordinator"]],
+      [
+        ["spawn"],
+        ["domain", "--cwd", "--harness", "--model", "--effort", "--item", "from a coordinator"],
+      ],
       [["send"], ["target", "text"]],
       [["notify"], ["text", "one line"]],
       [["end"], ["target", "--now", "--item-status", "--list-idle"]],

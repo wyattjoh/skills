@@ -520,7 +520,10 @@ const spawnCommand = Command.make(
   "spawn",
   {
     domain: argument("domain", "domain the new coordinator owns"),
-    cwd: optionalStringFlag("cwd", "folder the new coordinator starts in"),
+    cwd: optionalStringFlag(
+      "cwd",
+      "folder the new coordinator starts in, added to its owned Boundary (default: an existing backlog's first owned path)",
+    ),
     harness: optionalChoiceFlag(
       "harness",
       ["pi", "claude"],
@@ -528,6 +531,10 @@ const spawnCommand = Command.make(
     ),
     model: optionalStringFlag("model", "model (pi: provider/id; claude: opus, sonnet, ... )"),
     effort: optionalStringFlag("effort", "claude --effort, or pi --thinking"),
+    item: repeatedStringFlag(
+      "item",
+      "title added as an open item to the new coordinator's backlog (repeatable)",
+    ),
   },
   (options) =>
     execute((config) =>
@@ -537,11 +544,13 @@ const spawnCommand = Command.make(
         harness: Option.getOrUndefined(options.harness) as Harness | undefined,
         model: Option.getOrUndefined(options.model),
         effort: Option.getOrUndefined(options.effort),
+        items: options.item,
+        now: new Date().toISOString(),
       }),
     ),
 ).pipe(
   Command.withDescription(
-    "from a coordinator: start a coordinator for a domain in its own unfocused Herdr space, labelled at launch with no parent; refused while the domain has a live coordinator",
+    "from a coordinator: seed the domain's backlog, then start its coordinator in its own unfocused Herdr space, labelled at launch with no parent; refused while the domain has a live coordinator",
   ),
 );
 

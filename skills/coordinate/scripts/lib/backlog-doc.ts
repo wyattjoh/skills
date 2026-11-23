@@ -34,6 +34,7 @@ import {
   type Backlog,
   type DelegateRef,
   type Finding,
+  type Item,
   validateBacklog,
 } from "./backlog-store/schema.ts";
 import type { Config } from "./config.ts";
@@ -280,6 +281,55 @@ export const createDocument = Effect.fn("createDocument")(function* (
       }),
     catch: failure(path),
   });
+});
+
+/**
+ * Seed the backlog of a coordinator about to start, in one write under the lock: create the
+ * document when missing, add the folder to the owned Boundary when absent, and add each title as an
+ * open item. A refused step writes nothing, and an unchanged document is not rewritten.
+ * @param config Config.
+ * @param domain Domain.
+ * @param input The owned folder, the item titles, and the time as an ISO string.
+ * @returns The path, whether the document was created, whether the folder was added, and the items.
+ */
+export const seedDocument = Effect.fn("seedDocument")(function* (
+  config: Config,
+  domain: string,
+  input: { owned: string; titles: readonly string[]; now: string },
+) {
+  const path = documentPath(config.stateDir, domain);
+  const markdown = backlogPath(config.backlogDir, domain);
+  const result = yield* Effect.tryPromise({
+    try: () =>
+      locked(path, LOCK_TIMEOUT_MS, async () => {
+        const created = !existsSync(path);
+        const current = created
+          ? emptyBacklog(domain, existsSync(markdown) ? markdown : null)
+          : parse(path, await readFile(path, "utf8"));
+        const bounded = addBoundary(current, { path: input.owned, list: "owned" });
+        if (!bounded.ok) return { ok: false as const, reason: bounded.reason };
+        const seeded = input.titles.reduce<OpResult<Item[]>>(
+          (previous, title) => {
+            if (!previous.ok) return previous;
+            const added = addItem(previous.backlog, { title, now: input.now });
+            if (!added.ok) return added;
+            return { ok: true, backlog: added.backlog, value: [...previous.value, added.value] };
+          },
+          { ok: true, backlog: bounded.backlog, value: [] },
+        );
+        if (!seeded.ok) return { ok: false as const, reason: seeded.reason };
+        const value = { path, created, added: bounded.value.added, items: seeded.value };
+        if (!created && !bounded.value.added && seeded.value.length === 0)
+          return { ok: true as const, value };
+        const checked = validateBacklog(seeded.backlog);
+        if (!checked.ok) return { ok: false as const, reason: checked.errors.join("; ") };
+        await commit(path, checked.backlog);
+        return { ok: true as const, value };
+      }),
+    catch: failure(path),
+  });
+  if (!result.ok) return yield* new Refused({ message: result.reason });
+  return result.value;
 });
 
 /**

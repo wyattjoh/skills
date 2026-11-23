@@ -11,8 +11,16 @@ import {
   readDocument,
   recordDelegate,
   refSessions,
+  seedDocument,
 } from "./backlog-doc.ts";
-import { filedUnder, idleDelegated, updateItem, type ItemUpdate } from "./backlog-store/ops.ts";
+import {
+  addItem,
+  emptyBacklog,
+  filedUnder,
+  idleDelegated,
+  updateItem,
+  type ItemUpdate,
+} from "./backlog-store/ops.ts";
 import type { ItemStatus } from "./backlog-store/schema.ts";
 import { documentPath } from "./backlog-store/paths.ts";
 import type { Config } from "./config.ts";
@@ -212,6 +220,14 @@ export type SpawnOptions = {
    * pi `--thinking` level or Claude `--effort`.
    */
   effort: string | undefined;
+  /**
+   * Titles added to the domain's backlog as open items before launch.
+   */
+  items: readonly string[];
+  /**
+   * The time as an ISO string, for the seeded items.
+   */
+  now: string;
 };
 
 /**
@@ -223,19 +239,63 @@ const idleTabTitle = (domain: string): string =>
   `${domain.charAt(0).toUpperCase()}${domain.slice(1)} · No active focus`;
 
 /**
- * Decide the folder a spawned coordinator starts in, before anything is written or launched.
+ * Decide the folder a spawned coordinator starts in, before anything is written or launched:
+ * `--cwd`, or else the first owned Boundary path of the domain's existing backlog.
+ * @param config Config.
  * @param options Spawn options.
- * @returns The real path of an existing folder.
+ * @returns The real path of an existing folder, and the path to keep in the owned Boundary.
  */
-const spawnFolder = Effect.fn("spawnFolder")(function* (options: SpawnOptions) {
-  if (options.cwd === undefined)
-    return yield* new Refused({
-      message: `pass --cwd <dir>: the folder the ${options.domain} coordinator starts in`,
-    });
-  const cwd = resolve(options.cwd);
+const spawnFolder = Effect.fn("spawnFolder")(function* (config: Config, options: SpawnOptions) {
+  const { domain } = options;
+  const passCwd = `pass --cwd <dir>: the folder the ${domain} coordinator starts in`;
+  const owned =
+    options.cwd === undefined
+      ? yield* Effect.gen(function* () {
+          if (!existsSync(documentPath(config.stateDir, domain)))
+            return yield* new Refused({ message: `${domain} has no backlog yet; ${passCwd}` });
+          const { backlog } = yield* readDocument(config, domain);
+          return (
+            backlog.boundary.owned[0] ??
+            (yield* new Refused({
+              message: `the ${domain} backlog has no owned Boundary path; ${passCwd}`,
+            }))
+          );
+        })
+      : undefined;
+  const cwd = owned ?? resolve(options.cwd ?? "");
   if (!existsSync(cwd)) return yield* new Refused({ message: `${cwd} does not exist` });
-  return real(cwd);
+  // Kept in the resolved spelling `backlog boundary add` stores, so an owned path is not listed twice.
+  return { folder: real(cwd), owned: owned ?? cwd };
 });
+
+/**
+ * Refuse an item title the backlog would refuse, before anything is written.
+ * @param options Spawn options.
+ */
+const checkSpawnItems = Effect.fn("checkSpawnItems")(function* (options: SpawnOptions) {
+  const blank = emptyBacklog(options.domain, null);
+  for (const title of options.items) {
+    const added = addItem(blank, { title, now: options.now });
+    if (!added.ok) return yield* new Refused({ message: `--item: ${added.reason}` });
+  }
+});
+
+/**
+ * Turn a seeded backlog into the lines spawn prints before the launch.
+ * @param seeded What `seedDocument` wrote.
+ * @returns Lines to print.
+ */
+const seedLines = (seeded: {
+  path: string;
+  created: boolean;
+  added: boolean;
+  owned: string;
+  items: readonly { id: string; title: string }[];
+}): string[] => [
+  seeded.created ? `created backlog ${seeded.path}` : `backlog ${seeded.path}`,
+  ...(seeded.added ? [`owned: added ${seeded.owned}`] : []),
+  ...seeded.items.map((item) => `added ${item.id}: ${item.title}`),
+];
 
 /**
  * Turn a finished launch into the lines spawn prints.
@@ -255,7 +315,8 @@ const spawnOutput = (launched: {
 
 /**
  * Start a new coordinator for a domain in its own unfocused Herdr space, from a coordinator.
- * Every refusal comes before anything is written or launched. The new terminal has no parent, so
+ * Every refusal comes before anything is written or launched; then the domain's backlog is seeded
+ * with the folder and `--item` titles, and the coordinator launched. The new terminal has no parent, so
  * it outlives the caller, and is labelled as the domain's coordinator at launch, so a second spawn
  * for the domain is refused even before the first has started.
  * @param config Config.
@@ -286,7 +347,8 @@ export const spawn = Effect.fn("spawn")(function* (
     return yield* new Refused({
       message: `${name} is not a terminal name: 1 to 32 of a-z, 0-9, - and _; spawn needs a domain of 20 or fewer of a-z, 0-9, - and _`,
     });
-  const cwd = yield* spawnFolder(options);
+  const { folder: cwd, owned } = yield* spawnFolder(config, options);
+  yield* checkSpawnItems(options);
   const running = (yield* coordinators(domain)).find((terminal) => terminal.live);
   if (running)
     return yield* new Refused({
@@ -298,6 +360,11 @@ export const spawn = Effect.fn("spawn")(function* (
       message: `a live terminal is already named ${name} (${taken.address})`,
     });
 
+  const seeded = yield* seedDocument(config, domain, {
+    owned,
+    titles: options.items,
+    now: options.now,
+  });
   const session = crypto.randomUUID();
   const launched = yield* launchInOwnSpace({
     name,
@@ -323,7 +390,10 @@ export const spawn = Effect.fn("spawn")(function* (
     }),
     recordSpace: false,
   });
-  return spawnOutput({ name, domain, harness, session, ...launched });
+  return [
+    ...seedLines({ ...seeded, owned }),
+    ...spawnOutput({ name, domain, harness, session, ...launched }),
+  ];
 });
 
 /**

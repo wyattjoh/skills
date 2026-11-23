@@ -1,7 +1,7 @@
 import { afterAll, afterEach, beforeEach, describe, expect, it } from "bun:test";
-import { existsSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { createDocument, itemAdd } from "./backlog-doc.ts";
+import { boundaryAdd, createDocument, itemAdd } from "./backlog-doc.ts";
 import { resolveConfig } from "./config.ts";
 import { Effect } from "effect";
 import { failureOf, g, gitAndFake, initRepo, runWith, tempDir } from "./fixture.ts";
@@ -524,8 +524,39 @@ const spawnOptions = (fields: Partial<SpawnOptions> = {}): SpawnOptions => ({
   harness: undefined,
   model: undefined,
   effort: undefined,
+  items: [],
+  now: SPAWN_NOW,
   ...fields,
 });
+
+const SPAWN_NOW = "2026-11-23T00:00:00.000Z";
+const tasksDocument = (state: string) => join(state, "backlogs", "tasks.json");
+const readJson = (path: string) => JSON.parse(readFileSync(path, "utf8"));
+const openItem = (id: string, title: string) => ({
+  id,
+  title,
+  status: "open",
+  touches: [],
+  decided: [],
+  ask: null,
+  answered: [],
+  due: null,
+  delegates: [],
+  createdAt: SPAWN_NOW,
+  closedAt: null,
+  outcome: null,
+});
+const ownedBy = async (
+  cfg: Awaited<ReturnType<typeof config>>,
+  domain: string,
+  paths: string[],
+) => {
+  await Effect.runPromise(createDocument(cfg, domain));
+  for (const path of paths)
+    await Effect.runPromise(
+      boundaryAdd(cfg, domain, { path, adjacent: false, json: false, outsideTerminal: false }),
+    );
+};
 
 const withDefaultHarness = async (state: string, harness: "pi" | "claude") => {
   const cfg = await config(state);
@@ -653,7 +684,10 @@ describe("spawn", () => {
     const state = dir();
     const cfg = await withDefaultHarness(state, "claude");
     const missing = await failureOf(spawn(cfg, spawnOptions(), ENV), spawnFake(MANAGER).layer);
-    expect(messageOf(missing)).toBe("pass --cwd <dir>: the folder the tasks coordinator starts in");
+    expect(messageOf(missing)).toBe(
+      "tasks has no backlog yet; pass --cwd <dir>: the folder the tasks coordinator starts in",
+    );
+    expect(existsSync(tasksDocument(state))).toBe(false);
     const gone = join(state, "gone");
     const absent = await failureOf(
       spawn(cfg, spawnOptions({ cwd: gone }), ENV),
@@ -743,8 +777,104 @@ describe("spawn", () => {
       ["herdr-app", "do", "tab.rename", '{"id":"tab9","name":"Tasks · No active focus"}'],
     ]);
     expect(lines).toEqual([
+      `created backlog ${tasksDocument(state)}`,
+      `owned: added ${state}`,
       `started coordinator tasks-coordinator for tasks (t7) in its own space sp9, claude session ${session}`,
     ]);
+  });
+
+  it("refuses an existing domain with no owned Boundary path and no --cwd, writing nothing", async () => {
+    const state = dir();
+    const cfg = await withDefaultHarness(state, "claude");
+    await ownedBy(cfg, "tasks", []);
+    const before = readFileSync(tasksDocument(state), "utf8");
+    const fake = spawnFake(MANAGER);
+    const error = await failureOf(spawn(cfg, spawnOptions({ items: ["first"] }), ENV), fake.layer);
+    expect(messageOf(error)).toBe(
+      "the tasks backlog has no owned Boundary path; pass --cwd <dir>: the folder the tasks coordinator starts in",
+    );
+    expect(readFileSync(tasksDocument(state), "utf8")).toBe(before);
+    expect(fake.calls.map((call) => call.argv)).toEqual([["hc", "get", "t1", "--json"]]);
+  });
+
+  it("leaves no backlog document when refused after every other check", async () => {
+    const state = dir();
+    const cfg = await withDefaultHarness(state, "claude");
+    const taken = await failureOf(
+      spawn(cfg, spawnOptions({ cwd: state, items: ["first"] }), ENV),
+      spawnFake(MANAGER, [], [{ address: "t8", name: "tasks-coordinator", state: "live" }]).layer,
+    );
+    expect(messageOf(taken)).toBe("a live terminal is already named tasks-coordinator (t8)");
+    const blank = await failureOf(
+      spawn(cfg, spawnOptions({ cwd: state, items: ["first", " "] }), ENV),
+      spawnFake(MANAGER).layer,
+    );
+    expect(messageOf(blank)).toBe("--item: title is empty");
+    expect(existsSync(tasksDocument(state))).toBe(false);
+  });
+
+  it("seeds a new domain's backlog with the folder owned and each --item open, leaving the caller's alone", async () => {
+    const state = dir();
+    const cfg = await withDefaultHarness(state, "claude");
+    await Effect.runPromise(createDocument(cfg, "manager"));
+    await Effect.runPromise(
+      itemAdd(cfg, "manager", { title: "spawn tasks", json: false, now: SPAWN_NOW }),
+    );
+    const caller = readFileSync(join(state, "backlogs", "manager.json"), "utf8");
+    const lines = await runWith(
+      spawn(cfg, spawnOptions({ cwd: state, items: ["first", "second"] }), ENV),
+      spawnFake(MANAGER).layer,
+    );
+    const document = readJson(tasksDocument(state));
+    expect(document.boundary).toEqual({ owned: [state], adjacent: [] });
+    expect(document.items).toEqual([openItem("i1", "first"), openItem("i2", "second")]);
+    expect(document.nextId).toBe(3);
+    expect(lines.slice(0, 4)).toEqual([
+      `created backlog ${tasksDocument(state)}`,
+      `owned: added ${state}`,
+      "added i1: first",
+      "added i2: second",
+    ]);
+    expect(readFileSync(join(state, "backlogs", "manager.json"), "utf8")).toBe(caller);
+  });
+
+  it("starts an existing domain without --cwd in its first owned Boundary path, rewriting nothing", async () => {
+    const state = dir();
+    const cfg = await withDefaultHarness(state, "claude");
+    const first = join(state, "first");
+    const second = join(state, "second");
+    mkdirSync(first);
+    mkdirSync(second);
+    await ownedBy(cfg, "tasks", [first, second]);
+    const before = readFileSync(tasksDocument(state), "utf8");
+    const fake = spawnFake(MANAGER);
+    const lines = await runWith(spawn(cfg, spawnOptions(), ENV), fake.layer);
+    const calls = fake.calls.map((call) => call.argv);
+    const run = calls.find((argv) => argv[1] === "run") ?? [];
+    expect(calls[3]).toEqual([
+      "herdr-app",
+      "do",
+      "space.new",
+      JSON.stringify({ name: "tasks", folder: first, focus: false }),
+    ]);
+    expect(run.slice(6, 8)).toEqual(["--cwd", first]);
+    expect(lines[0]).toBe(`backlog ${tasksDocument(state)}`);
+    expect(readFileSync(tasksDocument(state), "utf8")).toBe(before);
+  });
+
+  it("keeps an already owned --cwd once and appends --item after the existing items", async () => {
+    const state = dir();
+    const cfg = await withDefaultHarness(state, "claude");
+    await ownedBy(cfg, "tasks", [state]);
+    await Effect.runPromise(itemAdd(cfg, "tasks", { title: "old", json: false, now: SPAWN_NOW }));
+    const lines = await runWith(
+      spawn(cfg, spawnOptions({ cwd: state, items: ["new"] }), ENV),
+      spawnFake(MANAGER).layer,
+    );
+    const document = readJson(tasksDocument(state));
+    expect(document.boundary).toEqual({ owned: [state], adjacent: [] });
+    expect(document.items).toEqual([openItem("i1", "old"), openItem("i2", "new")]);
+    expect(lines.slice(0, 2)).toEqual([`backlog ${tasksDocument(state)}`, "added i2: new"]);
   });
 
   it("starts pi with /skill:coordinate and passes only the model and effort given", async () => {
