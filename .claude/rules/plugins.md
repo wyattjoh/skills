@@ -40,8 +40,13 @@ from outside a Herdr terminal; for `item update` only a lone `--status` from tha
 page also reads `queue show --domain <d> --json` (the Queued item group: an open item in the
 capacity queue shows only there, with its machine and place in that machine's queue, unless it
 has an ask) and `watch outbox --domain <d> --json` (the Lists card's Outbox row and page of
-undelivered watcher events) after each load of the shown domain's backlog; a failed or invalid
-read shows nothing, never an error. Never read the capacity or watch JSON from the mod. Every CLI
+undelivered watcher events) and `wiki list --domain <d> --json` (the Lists card's Wiki row and page:
+the domain wiki's pages in index order, never the shared wiki) after each load of the shown domain's
+backlog, and `wiki show --domain <d> --json -- <name>` when a wiki page opens (its frontmatter
+facts from the list, its body as `TextView.markdown`). A policy's `wiki: [[name]]` on the Policies
+page links to that page while the list has it, and stays plain text otherwise. A failed or invalid
+read shows nothing (a 0 count, no body), never an error. Never read the capacity or watch JSON, or
+the wiki folder, from the mod. Every CLI
 call runs as `/usr/bin/env -u HC_TERMINAL_ID <bun>
 ~/.claude/skills/coordinate/scripts/coordinate.ts`. Unsetting the variable keeps the panel that
 caller even in an app started from a terminal. A mod's `exec` runs with the app's environment,

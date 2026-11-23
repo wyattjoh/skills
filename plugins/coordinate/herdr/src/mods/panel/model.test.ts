@@ -38,6 +38,10 @@ import {
   policyDialogSpec,
   readDocument,
   trailOf,
+  wikiListCommand,
+  wikiListOutput,
+  wikiShowCommand,
+  wikiShowOutput,
 } from "./model.ts";
 import type {
   DelegateRow,
@@ -800,4 +804,99 @@ test("reads inline Markdown as plain text for a truncated caption", () => {
   expect(markdownPlain("Use `json` **now**, see [docs](https://x.test) or *this* snake_case")).toBe(
     "Use json now, see docs or this snake_case",
   );
+});
+
+test("wikiListOutput keeps each page's frontmatter, with a cover's repo or root as its place", () => {
+  const meta = {
+    name: "poll-interval",
+    description: "Why 5s",
+    type: "decision",
+    covers: [
+      { repo: "github.com/acme/widgets", globs: ["src/*.ts"] },
+      { root: "~/.config/herdr", globs: ["*.toml"] },
+    ],
+    created: "2026-11-20",
+    updated: "2026-11-21",
+    sources: ["item:i1"],
+    supersedes: [],
+  };
+  const json = (value: unknown) => JSON.stringify(value);
+  const listing = (pages: unknown[]) =>
+    json({ domain: "alpha", path: "/s/wiki/alpha", lastLint: null, pages, invalid: [] });
+  expect(wikiListOutput(listing([meta]), "alpha")).toEqual([
+    {
+      ...meta,
+      covers: [
+        { place: "github.com/acme/widgets", globs: ["src/*.ts"] },
+        { place: "~/.config/herdr", globs: ["*.toml"] },
+      ],
+    },
+  ]);
+  expect(wikiListOutput(listing([]), "alpha")).toEqual([]);
+  expect(
+    [
+      json({ domain: "beta", pages: [meta] }),
+      json({ domain: "alpha", events: [] }),
+      listing([{ ...meta, name: "" }]),
+      listing([{ ...meta, sources: [1] }]),
+      listing([{ ...meta, covers: [{ globs: ["x"] }] }]),
+      listing([{ ...meta, covers: [{ repo: "r", globs: "x" }] }]),
+      "not json",
+    ].map((text) => wikiListOutput(text, "alpha")),
+  ).toEqual([undefined, undefined, undefined, undefined, undefined, undefined, undefined]);
+});
+
+test("wikiShowOutput returns the asked page's body and rejects anything else", () => {
+  const page = {
+    domain: "alpha",
+    name: "a",
+    file: "/s/a.md",
+    meta: null,
+    errors: [],
+    body: "# A\n",
+  };
+  const json = (value: unknown) => JSON.stringify(value);
+  expect(wikiShowOutput(json(page), "alpha", "a")).toBe("# A\n");
+  expect(
+    [
+      json({ ...page, domain: "beta" }),
+      json({ ...page, name: "b" }),
+      json({ ...page, body: null }),
+      "not json",
+    ].map((text) => wikiShowOutput(text, "alpha", "a")),
+  ).toEqual([undefined, undefined, undefined, undefined]);
+});
+
+test("the wiki reads run the CLI's read-only wiki list and show for the domain", () => {
+  expect(wikiListCommand("/Users/test", "alpha").args.slice(-5)).toEqual([
+    "wiki",
+    "list",
+    "--domain",
+    "alpha",
+    "--json",
+  ]);
+  expect(wikiShowCommand("/Users/test", "alpha", "-odd").args.slice(-7)).toEqual([
+    "wiki",
+    "show",
+    "--domain",
+    "alpha",
+    "--json",
+    "--",
+    "-odd",
+  ]);
+});
+
+test("trailOf runs through the Wiki page to an open wiki page", () => {
+  expect(
+    trailOf({ kind: "wiki-page", domain: "alpha", name: "poll-interval" }).map((crumb) => [
+      crumb.id,
+      crumb.label,
+      crumb.to,
+    ]),
+  ).toEqual([
+    ["crumb-home", "", { kind: "domains" }],
+    ["crumb-domain-alpha", "alpha", { kind: "domain", domain: "alpha" }],
+    ["crumb-wiki", "Wiki", { kind: "wiki", domain: "alpha" }],
+    ["crumb-wiki-page-poll-interval", "poll-interval", undefined],
+  ]);
 });

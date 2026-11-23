@@ -186,7 +186,8 @@ export type DomainPage =
   | { kind: "policies"; domain: string }
   | { kind: "findings"; domain: string }
   | { kind: "boundary"; domain: string }
-  | { kind: "outbox"; domain: string };
+  | { kind: "outbox"; domain: string }
+  | { kind: "wiki"; domain: string };
 
 /**
  * A screen of the panel: the all-domains listing, one domain's main list or page, or a record's
@@ -197,7 +198,8 @@ export type Screen =
   | { kind: "domain"; domain: string }
   | DomainPage
   | { kind: "item"; domain: string; id: string }
-  | { kind: "finding"; domain: string; id: string };
+  | { kind: "finding"; domain: string; id: string }
+  | { kind: "wiki-page"; domain: string; name: string };
 
 /**
  * One step of the breadcrumb trail: its element id, label, semantic icon marker, and target screen.
@@ -227,6 +229,16 @@ export const trailOf = (screen: Screen): Crumb[] => {
     if (screen.kind === "findings") steps.push({ id: "crumb-findings", label: "Findings", screen });
     if (screen.kind === "boundary") steps.push({ id: "crumb-boundary", label: "Boundary", screen });
     if (screen.kind === "outbox") steps.push({ id: "crumb-outbox", label: OUTBOX_LABEL, screen });
+    if (screen.kind === "wiki") steps.push({ id: "crumb-wiki", label: WIKI_LABEL, screen });
+    if (screen.kind === "wiki-page")
+      steps.push(
+        {
+          id: "crumb-wiki",
+          label: WIKI_LABEL,
+          screen: { kind: "wiki", domain: screen.domain },
+        },
+        { id: `crumb-wiki-page-${screen.name}`, label: screen.name, screen },
+      );
     if (screen.kind === "finding")
       steps.push({
         id: "crumb-findings",
@@ -1542,6 +1554,26 @@ export const answerFailure = (result: { code: number; stdout: string; stderr: st
 export const OUTBOX_LABEL = "Outbox";
 
 /**
+ * The Lists row and page name for the domain wiki's pages.
+ */
+export const WIKI_LABEL = "Wiki";
+
+/**
+ * One domain wiki page as `coordinate wiki list --json` reports it: its frontmatter, with each
+ * cover's repo slug or root folder as `place`.
+ */
+export type WikiPage = {
+  name: string;
+  description: string;
+  type: string;
+  created: string;
+  updated: string;
+  covers: { place: string; globs: string[] }[];
+  sources: string[];
+  supersedes: string[];
+};
+
+/**
  * One item waiting in a domain's capacity queue, as `coordinate queue show --json` reports it:
  * its target machine, enqueue order, and 1-based place in that machine's queue.
  */
@@ -1576,6 +1608,25 @@ export const queueShowCommand = (home: string, domain: string) =>
  */
 export const outboxShowCommand = (home: string, domain: string) =>
   panelCli(home, ["watch", "outbox", "--domain", domain, "--json"]);
+
+/**
+ * Build the read of a domain wiki's pages through the Coordinate CLI.
+ * @param home The user's home directory.
+ * @param domain The domain shown.
+ * @returns The program and its arguments for exec.
+ */
+export const wikiListCommand = (home: string, domain: string) =>
+  panelCli(home, ["wiki", "list", "--domain", domain, "--json"]);
+
+/**
+ * Build the read of one domain wiki page's body through the Coordinate CLI.
+ * @param home The user's home directory.
+ * @param domain The domain shown.
+ * @param name The page.
+ * @returns The program and its arguments for exec.
+ */
+export const wikiShowCommand = (home: string, domain: string, name: string) =>
+  panelCli(home, ["wiki", "show", "--domain", domain, "--json", "--", name]);
 
 const ITEM_ID = /^i[1-9][0-9]*$/;
 const isPositive = (value: unknown): value is number =>
@@ -1664,4 +1715,77 @@ export const outboxOutput = (text: string, domain: string): OutboxEvent[] | unde
     });
   }
   return parsed;
+};
+
+const isStrings = (value: unknown): value is string[] =>
+  Array.isArray(value) && value.every((entry) => typeof entry === "string");
+const isText = (value: unknown): value is string => typeof value === "string" && value !== "";
+
+// One cover as the CLI writes it: a repo slug or a root folder, and its globs.
+const coverOf = (value: unknown): WikiPage["covers"][number] | undefined => {
+  if (!isRecord(value) || !isStrings(value.globs)) return undefined;
+  const place = isText(value.repo) ? value.repo : isText(value.root) ? value.root : undefined;
+  return place === undefined ? undefined : { place, globs: [...value.globs] };
+};
+
+/**
+ * Parse and validate the JSON printed by `coordinate wiki list --json`.
+ * @param text The CLI's stdout.
+ * @param domain The domain that was asked for.
+ * @returns The pages in index order, or undefined when the output is invalid or another domain's.
+ */
+export const wikiListOutput = (text: string, domain: string): WikiPage[] | undefined => {
+  const pages = domainList(text, domain, "pages");
+  if (pages === undefined) return undefined;
+  const parsed: WikiPage[] = [];
+  for (const page of pages) {
+    if (
+      !isRecord(page) ||
+      !isText(page.name) ||
+      !isText(page.description) ||
+      !isText(page.type) ||
+      !isText(page.created) ||
+      !isText(page.updated) ||
+      !Array.isArray(page.covers) ||
+      !isStrings(page.sources) ||
+      !isStrings(page.supersedes)
+    )
+      return undefined;
+    const covers = page.covers.map(coverOf);
+    if (covers.some((cover) => cover === undefined)) return undefined;
+    parsed.push({
+      name: page.name,
+      description: page.description,
+      type: page.type,
+      created: page.created,
+      updated: page.updated,
+      covers: covers as WikiPage["covers"],
+      sources: [...page.sources],
+      supersedes: [...page.supersedes],
+    });
+  }
+  return parsed;
+};
+
+/**
+ * Parse and validate the JSON printed by `coordinate wiki show --json`.
+ * @param text The CLI's stdout.
+ * @param domain The domain that was asked for.
+ * @param name The page that was asked for.
+ * @returns The page's Markdown body, or undefined when the output is invalid or another page's.
+ */
+export const wikiShowOutput = (text: string, domain: string, name: string): string | undefined => {
+  try {
+    const parsed: unknown = JSON.parse(text);
+    if (
+      !isRecord(parsed) ||
+      parsed.domain !== domain ||
+      parsed.name !== name ||
+      typeof parsed.body !== "string"
+    )
+      return undefined;
+    return parsed.body;
+  } catch {
+    return undefined;
+  }
 };

@@ -113,8 +113,8 @@ const latestWatch = (path: string) => host.watches.filter((watch) => watch.path 
 const backlogWatch = () => latestWatch(`${STATE}/backlogs`);
 const policyWatch = () => latestWatch(STATE);
 
-// The panel reads each shown domain's capacity queue and watcher outbox through the CLI after
-// every load. Those reads are answered from watchData (empty lists by default) and recorded in
+// The panel reads each shown domain's capacity queue, watcher outbox and wiki pages through the
+// CLI after every load, and a wiki page's body when it opens. Those reads are answered from watchData (empty lists by default) and recorded in
 // watchReads, so host.execs keeps only the calls a test is about.
 const watchReads: string[][] = [];
 const watchData = new Map<string, string>();
@@ -122,6 +122,8 @@ const watchReadKey = (args: string[]): string | undefined => {
   const domain = args[args.indexOf("--domain") + 1];
   if (args.includes("queue") && args.includes("show")) return `queue:${domain}`;
   if (args.includes("watch") && args.includes("outbox")) return `outbox:${domain}`;
+  if (args.includes("wiki") && args.includes("list")) return `wiki:${domain}`;
+  if (args.includes("wiki") && args.includes("show")) return `wiki-show:${domain}:${args.at(-1)}`;
   return undefined;
 };
 // The shared renderer's own exec, for every other call: record it, then answer from the host.
@@ -140,9 +142,20 @@ const watchAwareExec = (command: string, args: string[] = []) => {
   const key = watchReadKey(args);
   if (key === undefined) return hostExec(command, args);
   watchReads.push(args);
-  const [kind, domain] = key.split(":");
-  const empty = JSON.stringify(kind === "queue" ? { domain, entries: [] } : { domain, events: [] });
-  return { code: 0, stdout: watchData.get(key) ?? empty, stderr: "" };
+  const [kind, domain, name] = key.split(":");
+  const stored = watchData.get(key);
+  if (kind === "wiki-show")
+    return stored === undefined
+      ? { code: 1, stdout: "", stderr: `refused: no page [[${name}]] in the ${domain} wiki` }
+      : { code: 0, stdout: stored, stderr: "" };
+  const empty = JSON.stringify(
+    kind === "queue"
+      ? { domain, entries: [] }
+      : kind === "wiki"
+        ? { domain, path: `${STATE}/wiki/${domain}`, lastLint: null, pages: [], invalid: [] }
+        : { domain, events: [] },
+  );
+  return { code: 0, stdout: stored ?? empty, stderr: "" };
 };
 
 beforeEach(() => {
@@ -2084,12 +2097,13 @@ test("shows page buttons on the main list and lists only open findings on the Fi
     "page-findings",
     "page-boundary",
     "page-outbox",
+    "page-wiki",
   ]);
   expect(
-    ["page-policies", "page-findings", "page-boundary", "page-outbox"].map((id) =>
+    ["page-policies", "page-findings", "page-boundary", "page-outbox", "page-wiki"].map((id) =>
       text(get(root, id)),
     ),
-  ).toEqual(["Policies 0", "Findings 1 issue · 1 opportunity", "Boundary 0", "Outbox 0"]);
+  ).toEqual(["Policies 0", "Findings 1 issue · 1 opportunity", "Boundary 0", "Outbox 0", "Wiki 0"]);
   expect(ids(root, "finding-")).toEqual([]);
 
   openPage(root, "findings", ctx.cx);
@@ -5239,17 +5253,18 @@ const OUTBOX = JSON.stringify({
   ],
 });
 
-test("reads the capacity queue and outbox through the CLI after each load of the shown domain", async () => {
+test("reads the capacity queue, outbox and wiki through the CLI after each load of the shown domain", async () => {
   focusDomain("alpha");
   host.files.set(DOC, JSON.stringify(withQueue()));
   await mount();
   expect(watchReads).toEqual([
     [...cliPrefix.slice(1), "queue", "show", "--domain", "alpha", "--json"],
     [...cliPrefix.slice(1), "watch", "outbox", "--domain", "alpha", "--json"],
+    [...cliPrefix.slice(1), "wiki", "list", "--domain", "alpha", "--json"],
   ]);
   backlogWatch()!.fire([DOC]);
   await settle();
-  expect(watchReads.length).toBe(4);
+  expect(watchReads.length).toBe(6);
 });
 
 test("lists queued items only in a Queued group in routing order, with machine and position", async () => {
@@ -5475,4 +5490,162 @@ test("renders a finding's Markdown outcome natively", async () => {
   if (closed === undefined) throw new Error("missing finding f4");
   view.openFinding(closed, ctx.cx as never);
   expect(markdownOf(render(), "fact-outcome-markdown")).toBe("Fixed in `abc`");
+});
+
+const WIKI = JSON.stringify({
+  domain: "alpha",
+  path: `${STATE}/wiki/alpha`,
+  lastLint: "2026-11-22",
+  pages: [
+    {
+      name: "poll-interval",
+      description: "Why the watcher polls every 5s",
+      type: "decision",
+      covers: [{ repo: "github.com/acme/widgets", globs: ["src/*.ts", "lib/**"] }],
+      created: "2026-11-20",
+      updated: "2026-11-21",
+      sources: ["item:i1", "policy:p1"],
+      supersedes: [],
+    },
+    {
+      name: "flaky-ci",
+      description: "CI times out under load",
+      type: "problem",
+      covers: [],
+      created: "2026-11-19",
+      updated: "2026-11-19",
+      sources: [],
+      supersedes: ["old-ci"],
+    },
+  ],
+  invalid: [],
+});
+const wikiShow = (name: string, body: string) =>
+  JSON.stringify({
+    domain: "alpha",
+    name,
+    file: `${STATE}/wiki/alpha/${name}.md`,
+    meta: null,
+    errors: [],
+    body,
+  });
+const withPolicies = (): Backlog => ({
+  ...withQueue(),
+  policies: [
+    { id: "p1", text: "poll every 5s", at: "2026-11-23", wiki: "poll-interval" },
+    { id: "p2", text: "never push", at: "2026-11-23", wiki: "no-push" },
+  ],
+  nextPolicyId: 3,
+});
+
+test("opens the Wiki page from the Lists card, listing each page in index order", async () => {
+  focusDomain("alpha");
+  host.files.set(DOC, JSON.stringify(withQueue()));
+  watchData.set("wiki:alpha", WIKI);
+  const { ctx, render } = await mount();
+  expect(text(get(render(), "page-wiki"))).toBe("Wiki 2");
+  openPage(render(), "wiki", ctx.cx);
+  const root = render();
+  expect(trail(root)).toBe("⌂ › alpha › Wiki");
+  expect(text(get(root, "wiki-header"))).toBe("Wiki pages");
+  expect(ids(root, "wiki-row-")).toEqual(["wiki-row-poll-interval", "wiki-row-flaky-ci"]);
+  expect(text(get(root, "wiki-row-poll-interval"))).toBe(
+    "poll-interval decision Why the watcher polls every 5s",
+  );
+  expect(text(get(root, "wiki-row-flaky-ci"))).toBe("flaky-ci problem CI times out under load");
+});
+
+test("shows None on the Wiki page and a 0 count when the wiki read fails", async () => {
+  focusDomain("alpha");
+  host.files.set(DOC, JSON.stringify(withQueue()));
+  watchData.set("wiki:alpha", "not json");
+  const { ctx, render } = await mount();
+  expect(text(get(render(), "page-wiki"))).toBe("Wiki 0");
+  openPage(render(), "wiki", ctx.cx);
+  expect(text(get(render(), "wiki-empty"))).toBe("None");
+});
+
+test("opens a wiki page with its frontmatter facts and its body as Markdown", async () => {
+  focusDomain("alpha");
+  host.files.set(DOC, JSON.stringify(withQueue()));
+  watchData.set("wiki:alpha", WIKI);
+  watchData.set(
+    "wiki-show:alpha:poll-interval",
+    wikiShow("poll-interval", "# Poll\n\nWhy **5s**.\n"),
+  );
+  const { ctx, render } = await mount();
+  openPage(render(), "wiki", ctx.cx);
+  press(render(), "wiki-row-poll-interval", ctx.cx);
+  await settle();
+  expect(watchReads.at(-1)).toEqual([
+    ...cliPrefix.slice(1),
+    "wiki",
+    "show",
+    "--domain",
+    "alpha",
+    "--json",
+    "--",
+    "poll-interval",
+  ]);
+  const root = render();
+  expect(trail(root)).toBe("⌂ › alpha › Wiki › poll-interval");
+  expect(
+    [
+      "wiki-fact-description",
+      "wiki-fact-type",
+      "wiki-fact-created",
+      "wiki-fact-updated",
+      "wiki-fact-covers",
+      "wiki-fact-sources",
+      "wiki-fact-supersedes",
+    ].map((id) => text(get(root, id))),
+  ).toEqual([
+    "Description Why the watcher polls every 5s",
+    "Type decision",
+    "Created 2026-11-20",
+    "Updated 2026-11-21",
+    "Covers github.com/acme/widgets: src/*.ts, lib/**",
+    "Sources item:i1 policy:p1",
+    "Supersedes None",
+  ]);
+  expect(get(root, "wiki-page-markdown-poll-interval").styles.markdown).toBe(
+    "# Poll\n\nWhy **5s**.\n",
+  );
+  press(root, "crumb-wiki", ctx.cx);
+  expect(trail(render())).toBe("⌂ › alpha › Wiki");
+});
+
+test("shows a wiki page's facts and no body when its read fails", async () => {
+  focusDomain("alpha");
+  host.files.set(DOC, JSON.stringify(withQueue()));
+  watchData.set("wiki:alpha", WIKI);
+  const { ctx, render } = await mount();
+  openPage(render(), "wiki", ctx.cx);
+  press(render(), "wiki-row-flaky-ci", ctx.cx);
+  await settle();
+  const root = render();
+  expect(trail(root)).toBe("⌂ › alpha › Wiki › flaky-ci");
+  expect(text(get(root, "wiki-fact-supersedes"))).toBe("Supersedes old-ci");
+  expect(ids(root, "wiki-page-body")).toEqual([]);
+});
+
+test("links a policy's wiki citation to the page the domain wiki lists, else leaves it plain", async () => {
+  focusDomain("alpha");
+  host.files.set(DOC, JSON.stringify(withPolicies()));
+  watchData.set("wiki:alpha", WIKI);
+  watchData.set("wiki-show:alpha:poll-interval", wikiShow("poll-interval", "Why.\n"));
+  const { ctx, render } = await mount();
+  openPage(render(), "policies", ctx.cx);
+  let root = render();
+  expect([text(get(root, "policy-wiki-p1")), text(get(root, "policy-wiki-p2"))]).toEqual([
+    "wiki: [[poll-interval]]",
+    "wiki: [[no-push]]",
+  ]);
+  expect(get(root, "policy-wiki-p1").styles.text_color).toBe(theme().accent);
+  expect(get(root, "policy-wiki-p2").click).toBe(undefined);
+  press(root, "policy-wiki-p1", ctx.cx);
+  await settle();
+  root = render();
+  expect(trail(root)).toBe("⌂ › alpha › Wiki › poll-interval");
+  expect(get(root, "wiki-page-markdown-poll-interval").styles.markdown).toBe("Why.\n");
 });

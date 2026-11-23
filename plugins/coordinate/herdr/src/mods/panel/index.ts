@@ -58,6 +58,10 @@ import {
   promotedItemId,
   queueOutput,
   queueShowCommand,
+  wikiListCommand,
+  wikiListOutput,
+  wikiShowCommand,
+  wikiShowOutput,
   policyDialogProps,
   policyDialogSpec,
   readDocument,
@@ -88,6 +92,7 @@ import type {
   PolicyDialogProps,
   QueuedEntry,
   Screen,
+  WikiPage,
 } from "./model.ts";
 import {
   advanceAnswerFlow,
@@ -198,7 +203,8 @@ export default class Panel extends View {
   policyFailure: { domain: string | undefined; message: string } | undefined;
   // The item or finding whose detail is open, by domain and id, so a reload shows its latest
   // copy and a vanished record falls back to the lists.
-  selected: { kind: "item" | "finding"; domain: string; id: string } | undefined;
+  // A wiki page's id is its name.
+  selected: { kind: "item" | "finding" | "wiki-page"; domain: string; id: string } | undefined;
   // A domain page remains mounted beneath a finding detail so its scroll position is retained.
   page: DomainPage | undefined;
   // The state folder the last load found, the ended records read for the delegate refs that had
@@ -209,7 +215,12 @@ export default class Panel extends View {
   // backlog load. A failed or invalid read leaves the domain with none.
   queues = new Map<string, QueuedEntry[]>();
   outboxes = new Map<string, OutboxEvent[]>();
+  // Each domain's wiki pages, read with the queue and outbox, and the body of each page opened,
+  // keyed by domain and name, read when it opens; a failed read leaves no body.
+  wikis = new Map<string, WikiPage[]>();
+  wikiBodies = new Map<string, string>();
   watchDataGeneration = 0;
+  wikiBodyGeneration = 0;
   ended: EndedRecords = new Map();
   endedFor: string | undefined;
   endedGeneration = 0;
@@ -433,6 +444,14 @@ export default class Panel extends View {
   go(screen: Screen, cx: Context) {
     this.invalidateAnswerFlowMotion();
     this.answerFlow = undefined;
+    if (screen.kind === "wiki-page") {
+      this.selected = { kind: "wiki-page", domain: screen.domain, id: screen.name };
+      this.page = { kind: "wiki", domain: screen.domain };
+      this.clearDraft();
+      this.loadWikiBody(screen.domain, screen.name, cx);
+      cx.notify();
+      return;
+    }
     if (screen.kind === "item" || screen.kind === "finding") {
       this.selected = { kind: screen.kind, domain: screen.domain, id: screen.id };
       this.page =
@@ -486,6 +505,8 @@ export default class Panel extends View {
         this.dirtyDocs.clear();
         this.queues.clear();
         this.outboxes.clear();
+        this.wikis.clear();
+        this.wikiBodies.clear();
       }
       this.stateDir = stateDir;
       this.watchBacklogs(backlogsDir(stateDir), task);
@@ -515,19 +536,39 @@ export default class Panel extends View {
     });
   }
 
-  // Read the domain's capacity queue and watcher outbox through the CLI, side by side. A newer
-  // load, a moved state folder or another domain on screen drops the result.
+  // Read the domain's capacity queue, watcher outbox and wiki pages through the CLI, side by
+  // side. A newer load, a moved state folder or another domain on screen drops the result.
   loadWatchData(stateDir: string, domain: string, cx: Context) {
     const generation = ++this.watchDataGeneration;
     cx.spawn(async (task) => {
-      const [queue, outbox] = await Promise.all([
+      const [queue, outbox, wiki] = await Promise.all([
         this.readCli(queueShowCommand(home(), domain), (text) => queueOutput(text, domain)),
         this.readCli(outboxShowCommand(home(), domain), (text) => outboxOutput(text, domain)),
+        this.readCli(wikiListCommand(home(), domain), (text) => wikiListOutput(text, domain)),
       ]);
       if (generation !== this.watchDataGeneration || this.stateDir !== stateDir) return;
       this.queues.set(domain, queue);
       this.outboxes.set(domain, outbox);
+      this.wikis.set(domain, wiki);
       if (this.target() === domain) task.notify();
+    });
+  }
+
+  // Read an opened wiki page's body through the CLI. Only the latest open's read lands, and a
+  // failed or invalid read leaves the page with no body.
+  loadWikiBody(domain: string, name: string, cx: Context) {
+    const generation = ++this.wikiBodyGeneration;
+    const stateDir = this.stateDir;
+    const key = `${domain}\0${name}`;
+    cx.spawn(async (task) => {
+      const [body] = await this.readCli(wikiShowCommand(home(), domain, name), (text) => {
+        const read = wikiShowOutput(text, domain, name);
+        return read === undefined ? undefined : [read];
+      });
+      if (generation !== this.wikiBodyGeneration || this.stateDir !== stateDir) return;
+      if (body === undefined) this.wikiBodies.delete(key);
+      else this.wikiBodies.set(key, body);
+      task.notify();
     });
   }
 
@@ -1973,16 +2014,30 @@ export default class Panel extends View {
     return doc.backlog.findings.find((finding) => finding.id === selected.id);
   }
 
-  // The screen drawn: a detail only while its record is still in the document.
+  // The open wiki page while the domain's wiki still lists it, with its body once read.
+  wikiPageDetail(
+    domain: string | undefined,
+  ): { page: WikiPage; body: string | undefined } | undefined {
+    const selected = this.selected;
+    if (selected?.kind !== "wiki-page" || selected.domain !== domain) return undefined;
+    const page = this.wikis.get(selected.domain)?.find((entry) => entry.name === selected.id);
+    if (page === undefined) return undefined;
+    return { page, body: this.wikiBodies.get(`${selected.domain}\0${page.name}`) };
+  }
+
+  // The screen drawn: a detail only while its record is still in the document (or, for a wiki
+  // page, in the domain's wiki list).
   screen(
     domain: string | undefined,
     item: Item | undefined,
     finding: Finding | undefined,
     page: DomainPage | undefined,
+    wikiPage: WikiPage | undefined = undefined,
   ): Screen {
     if (domain === undefined) return { kind: "domains" };
     if (item !== undefined) return { kind: "item", domain, id: item.id };
     if (finding !== undefined) return { kind: "finding", domain, id: finding.id };
+    if (wikiPage !== undefined) return { kind: "wiki-page", domain, name: wikiPage.name };
     if (page?.domain === domain) return page;
     return { kind: "domain", domain };
   }
@@ -2024,6 +2079,7 @@ export default class Panel extends View {
     const doc = domain === this.domain ? this.doc : cachedDocument(this.docs, domain);
     const detail = this.detail(domain, doc);
     const finding = this.findingDetail(domain, doc);
+    const wikiPage = this.wikiPageDetail(domain);
     const origin =
       finding?.from === null || finding === undefined || doc.kind !== "loaded"
         ? undefined
@@ -2036,7 +2092,7 @@ export default class Panel extends View {
     const flow = this.answerFlowModel();
     const trail =
       flow === undefined
-        ? trailOf(this.screen(domain, detail, finding, this.page))
+        ? trailOf(this.screen(domain, detail, finding, this.page, wikiPage?.page))
         : (() => {
             const flowTrail = trailOf({
               kind: "item",
@@ -2061,6 +2117,11 @@ export default class Panel extends View {
       groups: doc.kind === "loaded" ? groupItems(doc.backlog, this.queuedFor(domain)) : [],
       queued: this.queuedFor(domain),
       outbox: domain === undefined ? [] : (this.outboxes.get(domain) ?? []),
+      wiki: domain === undefined ? [] : (this.wikis.get(domain) ?? []),
+      wikiPage,
+      openWikiPage: (name, cx) => {
+        if (domain !== undefined) this.go({ kind: "wiki-page", domain, name }, cx);
+      },
       findings: doc.kind === "loaded" ? openFindings(doc.backlog) : [],
       page: this.page === undefined || this.page.domain !== domain ? undefined : this.page.kind,
       finding,

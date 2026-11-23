@@ -77,6 +77,7 @@ import {
   FINDING_KIND_LABELS,
   GROUP_LABELS,
   OUTBOX_LABEL,
+  WIKI_LABEL,
   canDismissItem,
   chosenAnswer,
   delegateLabel,
@@ -103,6 +104,7 @@ import type {
   OutboxEvent,
   QueuedEntry,
   Screen,
+  WikiPage,
 } from "./model.ts";
 import { layoutAnswerFlowCards } from "./answer-flow.ts";
 
@@ -130,6 +132,11 @@ export type PanelModel = {
   // and its watcher events not yet delivered, for the Outbox row and page.
   queued: QueuedEntry[];
   outbox: OutboxEvent[];
+  // The domain wiki's pages in index order, for the Wiki row and page; the open page, while the
+  // list still has it, with its Markdown body once read; and what opens a page.
+  wiki: WikiPage[];
+  wikiPage: { page: WikiPage; body: string | undefined } | undefined;
+  openWikiPage: (name: string, cx: Context) => void;
   // The active list page, or undefined while the domain's main list is shown.
   page: DomainPage["kind"] | undefined;
   // The open findings.
@@ -2101,12 +2108,102 @@ const policiesPage = (t: Theme, backlog: Backlog, model: PanelModel): Element =>
                 ),
               )
               .when(entry.wiki !== undefined, (row) =>
-                row.child(small(t, t.dim, `wiki: [[${entry.wiki}]]`).id(`policy-wiki-${entry.id}`)),
+                row.child(policyWiki(t, entry.id, entry.wiki!, model)),
               )
               .child(small(t, t.dim, entry.at.slice(0, 10))),
           ),
     ),
   );
+};
+
+// A policy's wiki citation: a link to the page while the domain wiki lists it, else plain text
+// (a shared-wiki page, or a failed read).
+const policyWiki = (t: Theme, id: string, name: string, model: PanelModel): Element => {
+  const label = `wiki: [[${name}]]`;
+  if (!model.wiki.some((page) => page.name === name))
+    return small(t, t.dim, label).id(`policy-wiki-${id}`);
+  return div()
+    .id(`policy-wiki-${id}`)
+    .text_size(TEXT.label)
+    .cursor_pointer()
+    .text_color(t.accent)
+    .hover((s) => s.text_color(t.foreground))
+    .on_click((_event, cx) => model.openWikiPage(name, cx))
+    .child(label);
+};
+
+// One wiki page in the list: its name and type on a line, its description wrapping beneath.
+const wikiRow = (t: Theme, page: WikiPage, model: PanelModel, first: boolean): Element =>
+  cardRow(t, `wiki-row-${page.name}`, t.hover, first)
+    .items_start()
+    .min_h(ROW.list)
+    .on_click((_event, cx) => model.openWikiPage(page.name, cx))
+    .child(
+      v_flex()
+        .flex_1()
+        .min_w_0()
+        .py(CARD.rowGap)
+        .child(
+          h_flex()
+            .gap(CARD.rowGap)
+            .child(div().flex_none().text_size(TEXT.body).text_color(t.foreground).child(page.name))
+            .child(rowNote(t, page.type)),
+        )
+        .child(small(t, t.muted, page.description).whitespace_normal()),
+    );
+
+// The domain wiki's pages in index order; each opens its page.
+const wikiListPage = (t: Theme, model: PanelModel): Element =>
+  cardSection(
+    cardHeader(t, "wiki-header", "Wiki pages"),
+    card(t, "wiki").children(
+      model.wiki.length === 0
+        ? [emptyRow(t, "wiki-empty", "None")]
+        : pagedRows(t, "wiki", model.wiki, model, ROW.list, (page, index) =>
+            wikiRow(t, page, model, index === 0),
+          ),
+    ),
+  );
+
+// A wiki page: its frontmatter as facts, then its body as native Markdown once read. A body
+// that failed to read, or is empty, shows no card.
+const wikiPageScreen = (
+  t: Theme,
+  wikiPage: { page: WikiPage; body: string | undefined },
+): Element => {
+  const { page, body } = wikiPage;
+  return v_flex()
+    .id("wiki-page")
+    .gap(PANEL.sectionGap)
+    .child(titleRow(t, { id: "wiki-page-title", identifier: page.type, title: page.name }))
+    .child(
+      detailCard(t, "wiki-page-facts", "Details", [
+        fact(t, "wiki-fact-description", "Description", [page.description]),
+        fact(t, "wiki-fact-type", "Type", [page.type]),
+        fact(t, "wiki-fact-created", "Created", [page.created]),
+        fact(t, "wiki-fact-updated", "Updated", [page.updated]),
+        fact(
+          t,
+          "wiki-fact-covers",
+          "Covers",
+          page.covers.map((cover) => `${cover.place}: ${cover.globs.join(", ")}`),
+        ),
+        fact(t, "wiki-fact-sources", "Sources", page.sources),
+        fact(t, "wiki-fact-supersedes", "Supersedes", page.supersedes),
+      ]),
+    )
+    .when(body !== undefined && body.trim() !== "", (el) =>
+      el.child(
+        detailCard(t, "wiki-page-body", "Page", [
+          detailRow(t, "wiki-page-body-row").child(
+            TextView.markdown(`wiki-page-markdown-${page.name}`, body!)
+              .selectable()
+              .text_size(TEXT.body)
+              .text_color(t.foreground),
+          ),
+        ]),
+      ),
+    );
 };
 
 // Each event's kind and attributes head its row; its fields and action text wrap beneath.
@@ -2295,6 +2392,7 @@ const sectionLinks = (t: Theme, domain: string, backlog: Backlog, model: PanelMo
         { kind: "outbox", domain },
         model,
       ),
+      sectionRow(t, "page-wiki", WIKI_LABEL, model.wiki.length, { kind: "wiki", domain }, model),
     ]),
   );
 
@@ -2314,6 +2412,9 @@ const domainPage = (t: Theme, backlog: Backlog, model: PanelModel): Element => {
       break;
     case "outbox":
       content = outboxPage(t, model);
+      break;
+    case "wiki":
+      content = wikiListPage(t, model);
       break;
     default:
       content = message(t, "page-unavailable", "Page unavailable", "Return to the domain list.");
@@ -2412,6 +2513,7 @@ const domainScreens = (t: Theme, model: PanelModel): Element =>
           model.page !== undefined ||
             model.detail !== undefined ||
             model.finding !== undefined ||
+            model.wikiPage !== undefined ||
             model.flow !== undefined,
           (list) => list.invisible(),
         )
@@ -2431,7 +2533,10 @@ const domainScreens = (t: Theme, model: PanelModel): Element =>
           .inset_0()
           .bg(t.surface)
           .when(
-            model.detail !== undefined || model.finding !== undefined || model.flow !== undefined,
+            model.detail !== undefined ||
+              model.finding !== undefined ||
+              model.wikiPage !== undefined ||
+              model.flow !== undefined,
             (page) => page.invisible(),
           )
           .child(
@@ -2476,6 +2581,19 @@ const domainScreens = (t: Theme, model: PanelModel): Element =>
               findingScreen(t, model.finding!, model),
               PANEL.padding,
             ),
+          ),
+      ),
+    )
+    .when(model.wikiPage !== undefined, (screens) =>
+      screens.child(
+        v_flex()
+          .id("screen-wiki-page")
+          .absolute()
+          .inset_0()
+          .bg(t.surface)
+          .when(model.flow !== undefined, (page) => page.invisible())
+          .child(
+            paneScrollRegion("wiki-page-scroll", wikiPageScreen(t, model.wikiPage!), PANEL.padding),
           ),
       ),
     )
