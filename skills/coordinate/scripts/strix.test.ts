@@ -9,6 +9,7 @@ import {
   strixReadiness,
   strixRun,
   type StrixRun,
+  watchEvents,
 } from "./lib/strix-fixture.ts";
 
 // The real-strix integration suite. It runs only with COORDINATE_STRIX=1 and a connected strix
@@ -417,4 +418,125 @@ describe.skipIf(!ready)("strix: remote delegate launch", () => {
       onStrix(`test -e ${shellWord(`${remote}/.claude/worktrees/${name}`)} || echo absent`, 20),
     ).toEqual({ exitCode: 0, output: "absent\n" });
   }, 180_000);
+});
+
+describe.skipIf(!ready)("strix: watching a remote delegate", () => {
+  let run: StrixRun | undefined;
+  let local = "";
+  let remote = "";
+  let brief = "";
+  let item = "";
+  beforeAll(() => {
+    run = strixRun();
+    local = initRepo();
+    remote = run.remoteRepo("app");
+    brief = join(run.stateDir, "brief.md");
+    writeFileSync(brief, run.brief);
+    run.seed({ owned: [local], adjacent: [] });
+    run.becomeCoordinator();
+    run.configure({ max_fleet_delegates_by_machine: { strix: 99 } });
+    const added = run.cli(["item", "add", "strix watch"]);
+    expect(added.exitCode).toBe(0);
+    item = /\bi\d+\b/.exec(added.output)?.[0] ?? "";
+    expect(
+      run.cli(["backlog", "boundary", "add", local, "--machine", STRIX, "--checkout", remote])
+        .exitCode,
+    ).toBe(0);
+  }, 90_000);
+  afterAll(() => {
+    if (local !== "") rmSync(local, { recursive: true, force: true });
+    const left = run?.teardown() ?? [];
+    expect(left).toEqual([]);
+  }, 180_000);
+
+  it("fires settled and gone for Claude Code on strix, and status names its machine", () => {
+    if (!run) return;
+    // A first pass seeds the watcher's snapshot, so the launch below is a change it sees.
+    expect(watchEvents(run, () => true, 0, 3)).toEqual([]);
+    const name = `sw-${run.id}`;
+    const launched = run.cli(
+      [
+        "delegate",
+        name,
+        "--task",
+        "strix watch",
+        "--repo",
+        local,
+        "--brief",
+        brief,
+        "--item",
+        item,
+        "--machine",
+        STRIX,
+        "--harness",
+        "claude",
+      ],
+      150_000,
+    );
+    const address = /\((strix\/t[0-9a-z]+)\)/.exec(launched.output)?.[1] ?? "";
+    const space = / in its own space (strix\/\S+)/.exec(launched.output)?.[1] ?? "";
+    if (address !== "") run.trackTerminal(address);
+    if (space !== "") run.trackSpace(space);
+    expect([launched.exitCode, address.startsWith("strix/t")]).toEqual([0, true]);
+
+    const settled = `<event kind="settled" delegate="${name}" address="${address}">read its REPORT.md, verify, then report</event>`;
+    const { env } = run;
+    const screen = () =>
+      Bun.spawnSync(["hc", "read", address, "--lines", "40"], {
+        env,
+        stdout: "pipe",
+        timeout: 15_000,
+      }).stdout.toString();
+    const blocked = (event: string) => event.includes(' kind="blocked"');
+    const events = watchEvents(run, (event) => event === settled || blocked(event), 300_000);
+    // Claude Code asks once whether to trust a folder strix has never seen; this throwaway one is
+    // the suite's own, so the suite answers yes in its own terminal.
+    if (
+      !events.includes(settled) &&
+      events.some(blocked) &&
+      screen().includes("trust this folder")
+    ) {
+      console.log(`answered Claude Code's trust dialog in ${address}`);
+      Bun.spawnSync(["hc", "keys", address, "down", "enter"], { env: run.env, timeout: 15_000 });
+      events.push(...watchEvents(run, (event) => event === settled, 300_000));
+    }
+    // Name what the watcher saw and what the delegate shows, so a miss is diagnosable.
+    if (!events.includes(settled))
+      console.log(`events: ${JSON.stringify(events)}\nscreen:\n${screen()}`);
+    expect(events.filter((event) => event.includes(' kind="settled"'))).toEqual([settled]);
+    expect(
+      onStrix(`cat ${shellWord(`${remote}/.claude/worktrees/${name}/.scratch/REPORT.md`)}`, 20),
+    ).toEqual({ exitCode: 0, output: "done\n" });
+
+    const status = run.cli(["status"], 60_000);
+    const line = status.output.split("\n").find((entry) => entry.startsWith(`  ${name} `)) ?? "";
+    expect([status.exitCode, line]).toEqual([
+      0,
+      expect.stringMatching(
+        new RegExp(
+          `^  ${name} \\[strix\\] ${address} (idle|done) \\d+m · wyattjoh/${name} · next: coordinator: read its REPORT\\.md$`,
+        ),
+      ),
+    ]);
+    const json = run.cli(["status", "--json"], 60_000);
+    const listed = (
+      JSON.parse(json.output.slice(json.output.indexOf("{"), json.output.lastIndexOf("}") + 1)) as {
+        delegates: { name: string; address: string; machine: string | null }[];
+      }
+    ).delegates.map((entry) => [entry.name, entry.address, entry.machine]);
+    expect(listed).toEqual([[name, address, "strix"]]);
+
+    // Closing its space ends the terminal on strix; the next pass reports it gone.
+    const closed = Bun.spawnSync(
+      ["herdr-app", "do", "space.close", JSON.stringify({ id: space, confirmed: true })],
+      { env: run.env, stdout: "pipe", timeout: 15_000 },
+    );
+    expect(closed.exitCode).toBe(0);
+    const gone = `<event kind="gone" delegate="${name}" address="${address}">resume with coordinate resume ${name}, or record it ended</event>`;
+    expect(
+      watchEvents(run, (event) => event === gone, 60_000).filter((event) =>
+        event.includes(' kind="gone"'),
+      ),
+    ).toEqual([gone]);
+  }, 600_000);
 });

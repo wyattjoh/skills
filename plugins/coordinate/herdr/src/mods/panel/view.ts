@@ -360,6 +360,7 @@ const delegateRow = (t: Theme, row: DelegateRow, indent: number, first: boolean)
     height: DELEGATE_ROW_HEIGHT,
     first,
     trailing: [
+      ...(row.machine === undefined ? [] : [small(t, t.muted, row.machine).flex_none()]),
       div()
         .flex_none()
         .text_size(TEXT.label)
@@ -1108,6 +1109,7 @@ const delegatesCard = (t: Theme, item: Item, rows: DelegateRow[]): Element[] =>
                   .gap(BUTTON_STYLE.gap)
                   .items_center()
                   .child(div().font_medium().child(ref.name))
+                  .children(ref.machine === undefined ? [] : [small(t, t.muted, ref.machine)])
                   .children(
                     rows
                       .filter((row) => row.source === "ref" && row.key === ref.session)

@@ -508,6 +508,10 @@ export type DelegateRow = {
   name: string;
   depth: number;
   state: DelegateState;
+  /**
+   * The other Herdr machine it runs on; absent for this machine.
+   */
+  machine?: string;
 };
 
 /**
@@ -538,6 +542,15 @@ const liveStatus = (terminal: Terminal): LiveStatus => {
   const status = terminal.status;
   return LIVE_STATUSES.find((known) => known === status) ?? "unknown";
 };
+
+// The machine a `machine/tN` address names; this core's own addresses name none.
+const machineOfAddress = (address: string): string | undefined => {
+  const slash = address.indexOf("/");
+  return slash === -1 ? undefined : address.slice(0, slash);
+};
+
+const onMachine = (machine: string | undefined): { machine?: string } =>
+  machine === undefined ? {} : { machine };
 
 const terminalName = (terminal: Terminal): string =>
   typeof terminal.name === "string" && terminal.name !== ""
@@ -668,6 +681,7 @@ export const joinDelegates = (
     name: terminalName(terminal),
     depth,
     state: { kind: "live", status: liveStatus(terminal) },
+    ...onMachine(machineOfAddress(String(terminal.address))),
   });
   const refRows = (ref: DelegateRef): DelegateRow[] => {
     const terminal = bySession.get(ref.session);
@@ -678,7 +692,14 @@ export const joinDelegates = (
         : at !== undefined
           ? { kind: "ended", at }
           : { kind: "gone" };
-    const row: DelegateRow = { source: "ref", key: ref.session, name: ref.name, depth: 0, state };
+    const row: DelegateRow = {
+      source: "ref",
+      key: ref.session,
+      name: ref.name,
+      depth: 0,
+      state,
+      ...onMachine(ref.machine),
+    };
     return terminal === undefined ? [row] : [row, ...nested(terminal.address, 1)];
   };
   const byItem = new Map<string, DelegateRow[]>();

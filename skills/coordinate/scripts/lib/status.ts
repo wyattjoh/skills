@@ -5,6 +5,7 @@ import { idleDelegated } from "./backlog-store/ops.ts";
 import type { Config } from "./config.ts";
 import { L, type Delegate, members, readEnded } from "./fleet.ts";
 import { harnessPolicyStatus } from "./harness-policy.ts";
+import { canonicalMachine, localMachine } from "./delegate-capacity.ts";
 import { currentBranch, defaultBases, mainCheckout } from "./git.ts";
 import { requireBacklog } from "./lifecycle.ts";
 import { readSession, type SessionState } from "./sessions.ts";
@@ -18,6 +19,38 @@ const age = (fromMs: number | undefined, nowMs: number): string => {
   if (minutes < 60 * 48) return `${Math.round(minutes / 60)}h`;
   return `${Math.round(minutes / 1440)}d`;
 };
+
+/**
+ * The other machine a live delegate runs on, from its `machine/tN` address; undefined for this one.
+ * @param delegate Live delegate.
+ * @returns Herdr machine name.
+ */
+const remoteOf = (delegate: Delegate): string | undefined => {
+  const slash = delegate.address.indexOf("/");
+  return slash === -1 ? undefined : delegate.address.slice(0, slash);
+};
+
+/**
+ * The machine an ended record names when it is not this one. Records of local delegates name this
+ * core too, so this core's name is read once, and only when some record names a machine.
+ * @param records Ended records.
+ * @returns A lookup by record, undefined for this machine.
+ */
+const endedMachines = Effect.fn("endedMachines")(function* (
+  records: readonly { record: { machine?: string | null } }[],
+) {
+  const named = records.some(({ record }) => record.machine);
+  // Without this core's name a record's machine cannot be told apart from this one: show none.
+  const core = named
+    ? yield* localMachine().pipe(Effect.catch(() => Effect.succeed(undefined)))
+    : undefined;
+  return (record: { machine?: string | null }): string | undefined =>
+    record.machine && core !== undefined && canonicalMachine(record.machine, core) !== core
+      ? record.machine
+      : undefined;
+});
+
+const badge = (machine: string | undefined): string => (machine ? ` [${machine}]` : "");
 
 /**
  * Who acts next for one delegate.
@@ -106,20 +139,25 @@ export const domainStatusJson = Effect.fn("domainStatusJson")(function* (
       session: delegate.session,
       task: delegate.task,
       cwd: delegate.cwd,
+      machine: remoteOf(delegate) ?? null,
       branch: delegate.labels[L.branch] ?? null,
       verdict: state.verdict,
       resumes: state.resumes,
     });
   }
   const ended = [];
-  for (const { record } of (yield* readEnded(config.stateDir)).records) {
-    if (record.domain !== domain) continue;
+  const records = (yield* readEnded(config.stateDir)).records.filter(
+    ({ record }) => record.domain === domain,
+  );
+  const remoteRecord = yield* endedMachines(records);
+  for (const { record } of records) {
     const state = yield* readSession(config.stateDir, record.session);
     ended.push({
       name: record.name,
       session: record.session,
       task: record.task ?? null,
       cwd: record.cwd,
+      machine: remoteRecord(record) ?? null,
       branch: record.branch ?? null,
       ended_at: record.ended_at,
       verdict: state.verdict,
@@ -168,8 +206,15 @@ export const domainStatus = Effect.fn("domainStatus")(function* (
     if (!path || !existsSync(path)) return undefined;
     return yield* mainCheckout(path);
   });
+  // A remote delegate's folder is a path on its own machine, never one to look up here.
+  const machineOf = remoteOf;
+  const remoteRecord = yield* endedMachines(ended);
   const delegateRepos = new Map<Delegate, string | undefined>();
-  for (const delegate of delegates) delegateRepos.set(delegate, yield* repoOf(delegate.cwd));
+  for (const delegate of delegates)
+    delegateRepos.set(
+      delegate,
+      machineOf(delegate) === undefined ? yield* repoOf(delegate.cwd) : undefined,
+    );
 
   const prsByRepo = new Map<string, RepoPrs>();
   const basesByRepo = new Map<string, string[]>();
@@ -238,11 +283,26 @@ export const domainStatus = Effect.fn("domainStatus")(function* (
   });
   for (const delegate of delegates) {
     const repo = delegateRepos.get(delegate);
-    const branch = delegate.labels["fleet.branch"] ?? (yield* currentBranch(delegate.cwd));
-    const info = yield* describe(repo, branch, delegate.status, delegate.labels[L.base]);
+    const machine = machineOf(delegate);
+    const branch =
+      delegate.labels["fleet.branch"] ??
+      (machine === undefined ? yield* currentBranch(delegate.cwd) : undefined);
+    // Its branch lives on its own machine until it is fetched, so there is no PR or landing state.
+    const info =
+      machine === undefined
+        ? yield* describe(repo, branch, delegate.status, delegate.labels[L.base])
+        : {
+            text: branch ?? "no branch",
+            next: waitsOn(delegate.status, {
+              state: undefined,
+              checks: undefined,
+              review: undefined,
+              landed: undefined,
+            }),
+          };
     const note = sessionNote(yield* readSession(config.stateDir, delegate.session));
     lines.push(
-      `  ${delegate.name} ${delegate.address} ${delegate.status ?? "no status"} ${age(delegate.statusMs, nowMs)}${delegate.byLabel ? "" : " (by item ref)"} · ${info.text}${note} · next: ${info.next}`,
+      `  ${delegate.name}${badge(machine)} ${delegate.address} ${delegate.status ?? "no status"} ${age(delegate.statusMs, nowMs)}${delegate.byLabel ? "" : " (by item ref)"} · ${info.text}${note} · next: ${info.next}`,
     );
   }
   for (const { record } of ended) {
@@ -253,10 +313,14 @@ export const domainStatus = Effect.fn("domainStatus")(function* (
       "ended",
       record.base_sha ?? undefined,
     );
-    const gone = existsSync(record.cwd) ? "" : " · folder gone (coordinate sweep prune-ended)";
+    const machine = remoteRecord(record);
+    const gone =
+      machine !== undefined || existsSync(record.cwd)
+        ? ""
+        : " · folder gone (coordinate sweep prune-ended)";
     const note = sessionNote(yield* readSession(config.stateDir, record.session));
     lines.push(
-      `  ${record.name} ended ${record.ended_at.slice(0, 10)} · ${info.text}${note}${gone} · resume: coordinate resume ${record.name}`,
+      `  ${record.name}${badge(machine)} ended ${record.ended_at.slice(0, 10)} · ${info.text}${note}${gone} · resume: coordinate resume ${record.name}`,
     );
   }
   const live = new Set(delegates.map((delegate) => delegate.session));

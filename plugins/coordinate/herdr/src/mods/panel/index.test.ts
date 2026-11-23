@@ -3011,6 +3011,43 @@ test("shows each delegate's live status on the item's detail screen", async () =
   );
 });
 
+test("shows the machine beside a remote delegate on the detail screen and under Unfiled", async () => {
+  focusDomain("alpha");
+  host.terminals.push(
+    agent("strix/t2", "s-w", "working"),
+    agent("strix/t7", "s-loose", "idle", { name: "loose-impl", parent: undefined }),
+    agent("t3", "s-here", "idle", { name: "here-impl", parent: undefined }),
+  );
+  host.files.set(
+    DOC,
+    JSON.stringify(
+      add(emptyBacklog("alpha", null), "Remote work", {
+        status: "delegated",
+        delegates: [
+          { ...ref("runner", "s-w"), machine: "strix" },
+          { ...ref("parked", "s-gone"), machine: "nigelsheldon" },
+          ref("local", "s-local"),
+        ],
+      }),
+    ),
+  );
+  const { ctx, render } = await mount();
+  const listing = render();
+  expect([text(get(listing, "term-strix/t7")), text(get(listing, "term-t3"))]).toEqual([
+    "loose-impl strix idle",
+    "here-impl idle",
+  ]);
+  get(listing, "item-i1").click!({}, ctx.cx);
+  const detail = render();
+  expect(
+    ["delegate-s-w", "delegate-s-gone", "delegate-s-local"].map((id) => text(get(detail, id))),
+  ).toEqual([
+    "runner strix working Brief /briefs/runner.md Report /reports/runner.md",
+    "parked nigelsheldon gone Brief /briefs/parked.md Report /reports/parked.md",
+    "local gone Brief /briefs/local.md Report /reports/local.md",
+  ]);
+});
+
 test("wraps long finding metadata values within the panel width", async () => {
   focusDomain("alpha");
   const title = "A long finding title that wraps instead of pushing beyond the panel width";

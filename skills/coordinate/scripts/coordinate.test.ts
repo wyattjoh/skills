@@ -1356,6 +1356,7 @@ describe("coordinate CLI verify verdicts and resume counts", () => {
         session: "s-2",
         task: "fix b",
         cwd: "/nonexistent/wt",
+        machine: null,
         branch: "wyattjoh/fix-b",
         verdict: { result: "ok", reason: null, at: "<iso>" },
         resumes: 0,
@@ -1419,6 +1420,32 @@ describe("coordinate CLI verify verdicts and resume counts", () => {
     expect(text.split("\n")[1]).toBe(
       `  fix-a ended ${record.ended_at.slice(0, 10)} · no branch · problem: needed a second resume · resumed 2x · resume: coordinate resume fix-a`,
     );
+  }, 60_000);
+
+  it("names another machine beside an ended remote delegate, never this one", () => {
+    const { state, worktree, run } = setup("coordinate-status-machine-");
+    seedEnded(state, { ...ENDED(worktree), machine: "fake-core" });
+    seedEnded(state, {
+      ...ENDED("/home/someone/app/.claude/worktrees/fix-r"),
+      name: "fix-r",
+      session: "s-2",
+      machine: "strix",
+    });
+    const text = run(["status", "--domain", "app"]).stdout;
+    expect(text.split("\n").slice(1, 3)).toEqual([
+      "  fix-a ended 2026-11-20 · no branch · resume: coordinate resume fix-a",
+      "  fix-r [strix] ended 2026-11-20 · no branch · resume: coordinate resume fix-r",
+    ]);
+    const parsed = JSON.parse(run(["status", "--domain", "app", "--json"]).stdout);
+    expect(
+      parsed.ended.map((entry: { name: string; machine: string | null }) => [
+        entry.name,
+        entry.machine,
+      ]),
+    ).toEqual([
+      ["fix-a", null],
+      ["fix-r", "strix"],
+    ]);
   }, 60_000);
 });
 

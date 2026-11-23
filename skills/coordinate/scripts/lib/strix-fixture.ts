@@ -150,6 +150,45 @@ export const strixReadiness = (): { ready: true } | { ready: false; reason: stri
 };
 
 /**
+ * One watch event line as `coordinate watch` prints it, without its delivery id.
+ * @param line A printed line.
+ * @returns The event text.
+ */
+const eventText = (line: string): string => line.replace(/ id="e[0-9a-z]+"/u, "");
+
+/**
+ * Run one-shot `coordinate watch` passes for the run's domain until an event matches or the
+ * deadline passes. Each pass returns at its first tick with events, or after `passSeconds`.
+ * @param run The suite run.
+ * @param until Stop once an event text satisfies this.
+ * @param deadlineMs Give up after this long.
+ * @param passSeconds How long one pass waits for events.
+ * @returns Every event seen, without ids, in order.
+ */
+export const watchEvents = (
+  run: StrixRun,
+  until: (event: string) => boolean,
+  deadlineMs: number,
+  passSeconds = 20,
+): string[] => {
+  const seen: string[] = [];
+  const stop = Date.now() + deadlineMs;
+  for (;;) {
+    const ran = run.cli(
+      ["watch", "--interval", "2", "--max-minutes", String(passSeconds / 60)],
+      (passSeconds + 40) * 1000,
+    );
+    seen.push(
+      ...ran.output
+        .split("\n")
+        .filter((line) => line.startsWith("<event "))
+        .map(eventText),
+    );
+    if (seen.some(until) || Date.now() >= stop) return seen;
+  }
+};
+
+/**
  * A trivial brief for a real Claude Code delegate on strix: one report line, one outbox line, one
  * commit, then stop.
  */

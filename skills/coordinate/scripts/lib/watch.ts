@@ -145,6 +145,10 @@ export type WatchSnapshot = {
   lintDue: string | undefined;
   /** Delegate sessions settled in the domain, each counted once, for every-5th retro sampling. */
   settled: number;
+  /**
+   * Machines already reported unreachable in their current outage, so each outage fires once.
+   */
+  unreachable: string[];
 };
 
 /** The watcher's committed snapshot, pending events, and recovery point. */
@@ -168,6 +172,7 @@ export const emptyState = (): WatchState => ({
   harnessPolicy: undefined,
   lintDue: undefined,
   settled: 0,
+  unreachable: [],
   outbox: [],
   nextEventId: 1,
   staged: undefined,
@@ -584,6 +589,7 @@ const readState = (path: string) =>
         harnessPolicy: parsed.harnessPolicy,
         lintDue: parsed.lintDue,
         settled: parsed.settled ?? 0,
+        unreachable: parsed.unreachable ?? [],
         outbox: (parsed.outbox ?? []).map(persistedEvent),
         nextEventId: parsed.nextEventId ?? 1,
         staged: parsed.staged,
@@ -650,15 +656,63 @@ const writeState = (path: string, state: WatchState) =>
   });
 
 /**
+ * The machine a remote terminal address names (`strix/t5`), or undefined for this core's own.
+ * @param address Terminal address.
+ * @returns Machine name.
+ */
+const remoteMachine = (address: string): string | undefined => {
+  const slash = address.indexOf("/");
+  return slash === -1 ? undefined : address.slice(0, slash);
+};
+
+/**
+ * Carry a remote delegate through its machine's outage: a machine that is not connected lists none
+ * of its terminals, so its delegates keep their last state instead of reading as gone. Each machine
+ * hosting a delegate fires one `machine-unreachable` event per outage.
+ * @param previous Last delegate snapshot.
+ * @param listed Delegates listed now.
+ * @param down Machines Herdr lists as not connected.
+ * @param reported Machines already reported in their current outage.
+ * @returns The delegate snapshot, the outage events, and the machines now reported.
+ */
+export const outageEvents = (
+  previous: Readonly<Record<string, SeenDelegate>>,
+  listed: Readonly<Record<string, SeenDelegate>>,
+  down: readonly string[],
+  reported: readonly string[],
+) => {
+  const delegates: Record<string, SeenDelegate> = { ...listed };
+  for (const [address, seen] of Object.entries(previous)) {
+    const machine = remoteMachine(address);
+    if (machine !== undefined && down.includes(machine) && delegates[address] === undefined)
+      delegates[address] = seen;
+  }
+  const hosting = new Set(Object.keys(delegates).map(remoteMachine));
+  const unreachable = down.filter((machine) => hosting.has(machine)).toSorted();
+  const events = unreachable
+    .filter((machine) => !reported.includes(machine))
+    .map((machine) =>
+      watchEvent(
+        "machine-unreachable",
+        { machine },
+        "its delegates keep their last state until it reconnects",
+      ),
+    );
+  return { delegates, events, unreachable };
+};
+
+/**
  * One delegate snapshot: two `hc ls --label` calls (domain members, minus coordinators), no `hc get` per terminal.
+ * Connected machines' terminals come back as `machine/tN`.
  * @param domain Domain.
- * @returns Snapshot by address.
+ * @returns Snapshot by address, and the machines Herdr lists as not connected.
  */
 export const snapshotDelegates = Effect.fn("snapshotDelegates")(function* (domain: string) {
-  const [members, coordinators] = yield* Effect.all([
-    hc.list([`${L.domain}=${domain}`]),
+  const [listing, coordinators] = yield* Effect.all([
+    hc.listing([`${L.domain}=${domain}`]),
     hc.list([`${L.role}=coordinator`]),
   ]);
+  const members = listing.terminals;
   const skip = new Set(coordinators.map((terminal) => terminal.address));
   const snapshot: Record<string, SeenDelegate> = {};
   for (const terminal of members)
@@ -668,7 +722,10 @@ export const snapshotDelegates = Effect.fn("snapshotDelegates")(function* (domai
         status: terminal.status,
         turn: terminal.turn,
       };
-  return snapshot;
+  const down = listing.machines
+    .filter((machine) => machine.state !== "connected")
+    .map((machine) => machine.name);
+  return { delegates: snapshot, down };
 });
 
 /**
@@ -888,6 +945,7 @@ export const watch = Effect.fn("watch")(function* (config: Config, options: Watc
         harnessPolicy: state.harnessPolicy,
         lintDue: state.lintDue,
         settled: state.settled,
+        unreachable: [...state.unreachable],
       };
       const lines: WatchEventData[] = [];
       let marks: SettleMark[] = [];
@@ -939,9 +997,18 @@ export const watch = Effect.fn("watch")(function* (config: Config, options: Watc
       } else {
         failures = 0;
         failureMessage = "";
-        const events = first ? [] : delegateEvents(snapshot.delegates, polled.success);
+        const outage = outageEvents(
+          snapshot.delegates,
+          polled.success.delegates,
+          polled.success.down,
+          snapshot.unreachable,
+        );
+        const seen = outage.delegates;
+        snapshot.unreachable = outage.unreachable;
+        lines.push(...outage.events);
+        const events = first ? [] : delegateEvents(snapshot.delegates, seen);
         if (first)
-          for (const [address, current] of Object.entries(polled.success))
+          for (const [address, current] of Object.entries(seen))
             if (current.status === "blocked" || current.status === "error")
               events.push(
                 watchEvent(
@@ -955,7 +1022,8 @@ export const watch = Effect.fn("watch")(function* (config: Config, options: Watc
           const terminal = yield* hc
             .get(event.attrs.address ?? "")
             .pipe(Effect.catch(() => Effect.succeed(undefined)));
-          if (!terminal) continue;
+          // A remote delegate's folder is a path on its own machine, not one to read git in here.
+          if (!terminal || remoteMachine(terminal.address) !== undefined) continue;
           const pages = yield* settledWikiPages(
             config,
             options.domain,
@@ -968,16 +1036,15 @@ export const watch = Effect.fn("watch")(function* (config: Config, options: Watc
         const sampled = yield* sampleRetros(
           config.stateDir,
           events,
-          polled.success,
+          seen,
           snapshot.settled,
           clock(),
         );
         snapshot.settled = sampled.settled;
         marks = sampled.marks;
-        if (events.some((event) => event.kind === "settled"))
-          sampled.events.push(statusBeat(polled.success));
+        if (events.some((event) => event.kind === "settled")) sampled.events.push(statusBeat(seen));
         lines.push(...sampled.events);
-        snapshot.delegates = polled.success;
+        snapshot.delegates = seen;
       }
       if (clock() - lastForge >= options.forgeIntervalMs) {
         lastForge = clock();
@@ -989,7 +1056,15 @@ export const watch = Effect.fn("watch")(function* (config: Config, options: Watc
       const document = yield* readDocument(config, options.domain).pipe(Effect.option);
       if (Result.isSuccess(polled)) {
         const details: Record<string, { session: string; statusMs: number | undefined }> = {};
-        for (const [address, delegate] of Object.entries(polled.success)) {
+        // A delegate on a machine that is down is neither asked about nor reminded of; its
+        // reminder waits for the machine to reconnect.
+        const down = (address: string) =>
+          snapshot.unreachable.includes(remoteMachine(address) ?? "");
+        const reachable = Object.fromEntries(
+          Object.entries(snapshot.delegates).filter(([address]) => !down(address)),
+        );
+        const waiting = Object.entries(snapshot.idle).filter(([address]) => down(address));
+        for (const [address, delegate] of Object.entries(reachable)) {
           if (
             delegate.status !== "idle" &&
             delegate.status !== "done" &&
@@ -1003,15 +1078,16 @@ export const watch = Effect.fn("watch")(function* (config: Config, options: Watc
             details[address] = { session: sessionOf(terminal), statusMs: terminal.statusMs };
         }
         const idle = idleEvents(
-          polled.success,
+          reachable,
           details,
           Option.isSome(document) ? document.value.backlog.items : [],
           snapshot.idle,
           clock(),
         );
+        for (const [address, reminder] of waiting) snapshot.idle[address] = reminder;
         lines.push(...idle);
         if (idle.length > 0 && !lines.some((event) => event.kind === "status"))
-          lines.push(statusBeat(polled.success));
+          lines.push(statusBeat(snapshot.delegates));
       }
       if (Option.isSome(document)) {
         const due = dueEvents(document.value.backlog.items, options.today(), snapshot.due);

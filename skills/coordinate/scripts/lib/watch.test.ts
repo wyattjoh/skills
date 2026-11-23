@@ -1144,6 +1144,7 @@ describe("watch due events", () => {
       capacity: {},
       harnessPolicy: JSON.stringify({ enabled: ["pi", "claude"], default: null }),
       settled: 0,
+      unreachable: [],
       outbox: [],
       nextEventId: 2,
     });
@@ -1911,5 +1912,176 @@ describe("watch retro sampling", () => {
       2,
       problem("2026-11-20T09:00:00.000Z"),
     ]);
+  });
+});
+
+describe("watch remote machines", () => {
+  it("keeps a remote delegate through its machine's outage, reports each outage once, and keeps local events", async () => {
+    const state = tempDir();
+    made.push(state);
+    const config = await Effect.runPromise(
+      resolveConfig({ state_dir: state, backlog_dir: join(state, "backlogs") }, "/c"),
+    );
+    mkdirSync(join(state, "backlogs"), { recursive: true });
+    writeFileSync(join(state, "backlogs", "app.json"), JSON.stringify(emptyBacklog("app", null)));
+    mkdirSync(join(state, "watch"), { recursive: true });
+    writeFileSync(
+      join(state, "watch", "app.json"),
+      JSON.stringify({
+        delegates: {
+          "strix/t5": { name: "rem-a", status: "working", turn: 2 },
+          t2: { name: "fix-a", status: "working", turn: 4 },
+        },
+        prs: {},
+        due: [],
+      }),
+    );
+    const local = {
+      address: "t2",
+      name: "fix-a",
+      agent: "pi",
+      status: "idle",
+      turn: 5,
+      state: "live",
+      cwd: "/nonexistent",
+    };
+    const remote = {
+      address: "strix/t5",
+      name: "rem-a",
+      agent: "claude-code",
+      status: "idle",
+      turn: 3,
+      state: "live",
+      cwd: "/remote/app/.claude/worktrees/rem-a",
+    };
+    let strix = "disconnected";
+    let terminals: Record<string, unknown>[] = [local];
+    const remoteGets: string[] = [];
+    const fake = fakeProc((argv) => {
+      if (argv[1] === "ls" && argv.includes("fleet.role=coordinator"))
+        return ok(JSON.stringify({ terminals: [], machines: [{ name: "strix", state: strix }] }));
+      if (argv[1] === "ls")
+        return ok(JSON.stringify({ terminals, machines: [{ name: "strix", state: strix }] }));
+      if (argv[1] === "get" && argv[2] === "t2")
+        return ok(
+          JSON.stringify({
+            address: "t2",
+            name: "fix-a",
+            state: "live",
+            labels: { "fleet.domain": "app" },
+            cwd: "/nonexistent",
+          }),
+        );
+      if (argv[1] === "get" && argv[2] === "strix/t5") {
+        remoteGets.push(strix);
+        if (terminals.includes(remote))
+          return ok(
+            JSON.stringify({
+              address: "strix/t5",
+              name: "rem-a",
+              state: "live",
+              labels: { "fleet.domain": "app", "fleet.machine": "strix" },
+              cwd: "/remote/app/.claude/worktrees/rem-a",
+            }),
+          );
+      }
+      if (argv[1] === "get")
+        return {
+          exitCode: 1,
+          stdout: "",
+          stderr: '{"error":{"kind":"not_found","message":"gone"}}',
+        };
+      return ok("");
+    });
+    const tick = async () => {
+      const emitted: string[] = [];
+      const lines = await runWith(
+        watch(config, {
+          domain: "app",
+          intervalMs: 10,
+          forgeIntervalMs: 60_000,
+          maxMs: 30,
+          owner: undefined,
+          replace: false,
+          deliver: false,
+          today: () => "2026-11-23",
+          follow: false,
+          emit: (line) => {
+            emitted.push(line);
+          },
+        }),
+        fake.layer,
+      );
+      return [...emitted.map(eventText), ...lines];
+    };
+    const unreachable =
+      '<event kind="machine-unreachable" machine="strix">its delegates keep their last state until it reconnects</event>';
+    const alive = ["alive: no events in 0m; re-arm the watcher"];
+    expect(await tick()).toEqual([
+      unreachable,
+      '<event kind="settled" delegate="fix-a" address="t2">read its REPORT.md, verify, then report</event>',
+      '<event kind="status" fleet="1 idle, 1 working">give the user a short status in your next reply</event>',
+      '<event kind="idle" delegate="fix-a" address="t2" age="0m">read its REPORT.md and give it a next step or end it</event>',
+    ]);
+    expect(await tick()).toEqual(alive);
+    strix = "connected";
+    terminals = [local, remote];
+    expect(await tick()).toEqual([
+      '<event kind="settled" delegate="rem-a" address="strix/t5">read its REPORT.md, verify, then report</event>',
+      '<event kind="status" fleet="2 idle">give the user a short status in your next reply</event>',
+      '<event kind="idle" delegate="rem-a" address="strix/t5" age="0m">read its REPORT.md and give it a next step or end it</event>',
+    ]);
+    expect(await tick()).toEqual(alive);
+    strix = "disconnected";
+    terminals = [local];
+    expect(await tick()).toEqual([unreachable]);
+    expect(await tick()).toEqual(alive);
+    strix = "connected";
+    expect(await tick()).toEqual([
+      '<event kind="gone" delegate="rem-a" address="strix/t5">resume with coordinate resume rem-a, or record it ended</event>',
+    ]);
+    // A machine that is down is never asked about its terminals.
+    expect(remoteGets.filter((seen) => seen !== "connected")).toEqual([]);
+  });
+
+  it("reports nothing for a disconnected machine that hosts none of the domain's delegates", async () => {
+    const state = tempDir();
+    made.push(state);
+    const config = await Effect.runPromise(
+      resolveConfig({ state_dir: state, backlog_dir: join(state, "backlogs") }, "/c"),
+    );
+    mkdirSync(join(state, "backlogs"), { recursive: true });
+    writeFileSync(join(state, "backlogs", "app.json"), JSON.stringify(emptyBacklog("app", null)));
+    mkdirSync(join(state, "watch"), { recursive: true });
+    writeFileSync(
+      join(state, "watch", "app.json"),
+      JSON.stringify({ delegates: {}, prs: {}, due: [] }),
+    );
+    const fake = fakeProc((argv) =>
+      argv[1] === "ls"
+        ? ok(
+            JSON.stringify({
+              terminals: [],
+              machines: [{ name: "nigelsheldon", state: "disconnected" }],
+            }),
+          )
+        : ok(""),
+    );
+    const lines = await runWith(
+      watch(config, {
+        domain: "app",
+        intervalMs: 10,
+        forgeIntervalMs: 60_000,
+        maxMs: 30,
+        owner: undefined,
+        replace: false,
+        deliver: false,
+        today: () => "2026-11-23",
+        follow: false,
+        emit: () => undefined,
+      }),
+      fake.layer,
+    );
+    expect(lines).toEqual(["alive: no events in 0m; re-arm the watcher"]);
   });
 });

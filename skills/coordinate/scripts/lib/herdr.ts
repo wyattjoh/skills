@@ -32,7 +32,12 @@ const Listed = Schema.Struct({
   where: Schema.optionalKey(Schema.NullOr(Schema.String)),
 });
 
-const ListDocument = Schema.Struct({ terminals: Schema.Array(Listed) });
+const ListDocument = Schema.Struct({
+  terminals: Schema.Array(Listed),
+  machines: Schema.optionalKey(
+    Schema.NullOr(Schema.Array(Schema.Struct({ name: Schema.String, state: Schema.String }))),
+  ),
+});
 
 const Got = Schema.Struct({
   address: Schema.String,
@@ -160,8 +165,17 @@ export const herdr = Effect.fn("herdr")(function* (
  * @returns Terminals.
  */
 export const parseList = (text: string) =>
-  Effect.map(decodeJson(ListDocument, "hc ls", text), (document) =>
-    document.terminals.map((terminal): ListedTerminal => ({
+  Effect.map(parseListing(text), (listing) => listing.terminals);
+
+/**
+ * Parse `hc ls --json` with the other machines it lists and their connection state.
+ * @param text JSON text.
+ * @returns Terminals (this core's, then each connected machine's) and machines.
+ */
+export const parseListing = (text: string) =>
+  Effect.map(decodeJson(ListDocument, "hc ls", text), (document) => ({
+    machines: (document.machines ?? []).map((machine) => ({ ...machine })),
+    terminals: document.terminals.map((terminal): ListedTerminal => ({
       address: terminal.address,
       agent: terminal.agent ?? undefined,
       cwd: terminal.cwd ?? "",
@@ -172,7 +186,7 @@ export const parseList = (text: string) =>
       parent: terminal.parent ?? undefined,
       where: terminal.where ?? "",
     })),
-  );
+  }));
 
 /**
  * Parse `hc get --json`.
@@ -210,6 +224,20 @@ export const isAgent = (terminal: ListedTerminal): boolean =>
  * @returns Terminals.
  */
 export const list = Effect.fn("hc.list")(function* (labels: readonly string[] = [], all = false) {
+  return (yield* listing(labels, all)).terminals;
+});
+
+/**
+ * List terminals like `list`, with the other machines Herdr knows and whether each is connected.
+ * A machine that is not connected lists none of its terminals.
+ * @param labels `key=value` filters.
+ * @param all Include finished terminals.
+ * @returns Terminals and machines.
+ */
+export const listing = Effect.fn("hc.listing")(function* (
+  labels: readonly string[] = [],
+  all = false,
+) {
   const argv = [
     "hc",
     "ls",
@@ -217,7 +245,7 @@ export const list = Effect.fn("hc.list")(function* (labels: readonly string[] = 
     ...(all ? ["--all"] : []),
     ...labels.flatMap((label) => ["--label", label]),
   ];
-  return yield* parseList(yield* herdr(argv));
+  return yield* parseListing(yield* herdr(argv));
 });
 
 /**
