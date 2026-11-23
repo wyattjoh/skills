@@ -3,9 +3,56 @@ import {
   advanceAnswerFlow,
   dropClearedQuestions,
   layoutAnswerFlowCards,
+  queueAnswer,
+  staleQueuedAnswers,
   startAnswerFlow,
+  stepAnswerFlow,
 } from "./answer-flow.ts";
-import type { FlowAskState } from "./answer-flow.ts";
+import type { FlowAskState, QueuedAnswer } from "./answer-flow.ts";
+
+const queued = (id: string, answer: string, key = `demo\0${id}\0Q?`): QueuedAnswer => ({
+  id,
+  key,
+  answer,
+  note: undefined,
+  draft: { choice: answer, discuss: false, text: "", note: "" },
+});
+
+describe("answer queue", () => {
+  test("a new answer goes last and a repeated one replaces its entry in place", () => {
+    const first = queueAnswer([], queued("i1", "Yes"));
+    const both = queueAnswer(first, queued("i2", "No"));
+    const replaced = queueAnswer(both, queued("i1", "No"));
+
+    expect(replaced.map(({ id, answer }) => [id, answer])).toEqual([
+      ["i1", "No"],
+      ["i2", "No"],
+    ]);
+  });
+
+  test("an entry is stale when its question is gone or now asks something else", () => {
+    const queue = [queued("i1", "Yes"), queued("i2", "No"), queued("i3", "Yes")];
+    const live = new Map([
+      ["i1", "demo\0i1\0Q?"],
+      ["i2", "demo\0i2\0Another?"],
+    ]);
+
+    expect(staleQueuedAnswers(queue, (id) => live.get(id))).toEqual(["i2", "i3"]);
+  });
+
+  test("a flow started with queued questions counts them as answered", () => {
+    expect(startAnswerFlow("demo", ["i1", "i2", "i3"], "i2", ["i3", "i9"]).answered).toEqual([
+      "i3",
+    ]);
+  });
+
+  test("stepping moves one card on without touching answered or skipped, and stops at done", () => {
+    const flow = { ...startAnswerFlow("demo", ["i1", "i2"], "i1", ["i1"]), skipped: ["i2"] };
+
+    expect(stepAnswerFlow(flow)).toEqual({ ...flow, current: 1 });
+    expect(stepAnswerFlow({ ...flow, current: 2 }).current).toBe(2);
+  });
+});
 
 describe("answer flow", () => {
   test("starts at the selected question and preserves domain order", () => {

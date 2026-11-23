@@ -199,6 +199,11 @@ export type AnswerFlowModel = {
   done: boolean;
   answeredCount: number;
   skippedCount: number;
+  // Answers waiting for Send all and back, whether it is running, and why it last failed.
+  queuedCount: number;
+  sending: boolean;
+  sendError: string | undefined;
+  send: (cx: Context) => void;
   answer: AnswerModel | undefined;
   answerFor: (id: string) => AnswerModel | undefined;
   back: (cx: Context) => void;
@@ -1303,10 +1308,17 @@ const flowAskCard = (
   );
 };
 
+const flowCounts = (flow: AnswerFlowModel): string =>
+  [
+    ...(flow.queuedCount > 0 ? [`${flow.queuedCount} queued`] : []),
+    `${flow.answeredCount} answered`,
+    `${flow.skippedCount} skipped`,
+  ].join(", ");
+
 const flowDoneRows = (t: Theme, flow: AnswerFlowModel, prefix: string): Element[] => [
   detailRow(t, `${prefix}-count`)
     .border_t(0)
-    .child(`${flow.answeredCount} answered, ${flow.skippedCount} skipped.`),
+    .child(`${flowCounts(flow)}.`),
 ];
 
 const flowPreviewBody = (
@@ -1317,7 +1329,7 @@ const flowPreviewBody = (
 ): Element => {
   const subtitle =
     cardModel.kind === "summary"
-      ? `${flow.answeredCount} answered, ${flow.skippedCount} skipped`
+      ? flowCounts(flow)
       : (cardModel.item?.ask?.question ?? cardModel.item?.answered.at(-1)?.question ?? "Answered");
   return v_flex()
     .id(id)
@@ -1504,11 +1516,12 @@ const flowCarouselCard = (
   placement: ReturnType<typeof layoutAnswerFlowCards>[number],
 ): Element => {
   const transition = flowTransition(flow);
-  const busy = flow.answer?.draft.busy === true && placement.expanded;
+  const busy = (flow.answer?.draft.busy === true || flow.sending) && placement.expanded;
   const canNavigate =
     flow.ready &&
     flow.motion === undefined &&
     flow.answer?.draft.busy !== true &&
+    !flow.sending &&
     Math.abs(placement.index - flow.currentIndex) === 1;
   const navigate = placement.index < flow.currentIndex ? flow.back : flow.skip;
   const wasExpanded =
@@ -1630,6 +1643,40 @@ const answerFlowCarousel = (t: Theme, flow: AnswerFlowModel): Element => {
     );
 };
 
+// Shown while answers are queued: the send's error over the count and Send all and back.
+const flowFooter = (t: Theme, flow: AnswerFlowModel): Element =>
+  v_flex()
+    .id("answer-flow-footer")
+    .flex_none()
+    .px(PANEL.padding)
+    .pb(PANEL.sectionGap)
+    .gap(ANSWER.gap)
+    .when(flow.sendError !== undefined, (el) =>
+      el.child(
+        div()
+          .id("answer-flow-send-error")
+          .text_size(TEXT.label)
+          .text_color(role(t, "ansi1"))
+          .child(flow.sendError!),
+      ),
+    )
+    .child(
+      h_flex()
+        .id("answer-flow-send-row")
+        .gap(ANSWER.gap)
+        .items_center()
+        .justify_end()
+        .child(small(t, t.muted, `${flow.queuedCount} queued`))
+        .child(
+          button(t, {
+            id: "answer-flow-send",
+            label: flow.sending ? "Sending…" : "Send all and back",
+            style: ANSWER_BUTTON_STYLE,
+            onClick: flow.sending || flow.motion !== undefined ? undefined : (cx) => flow.send(cx),
+          }),
+        ),
+    );
+
 const answerFlowScreen = (t: Theme, flow: AnswerFlowModel): Element =>
   v_flex()
     .id("answer-flow-queue-page")
@@ -1637,7 +1684,8 @@ const answerFlowScreen = (t: Theme, flow: AnswerFlowModel): Element =>
     .min_h_0()
     .min_w_0()
     .child(flowHeader(t, flow))
-    .child(answerFlowCarousel(t, flow));
+    .child(answerFlowCarousel(t, flow))
+    .when(flow.queuedCount > 0, (el) => el.child(flowFooter(t, flow)));
 
 // Policy text wraps, so use the package's card pieces instead of fixed-height groupBlock.
 const policiesPage = (t: Theme, backlog: Backlog, model: PanelModel): Element => {

@@ -77,8 +77,15 @@ import type {
   PolicyDialogProps,
   Screen,
 } from "./model.ts";
-import { advanceAnswerFlow, dropClearedQuestions, startAnswerFlow } from "./answer-flow.ts";
-import type { AnswerFlow, FlowAskState } from "./answer-flow.ts";
+import {
+  advanceAnswerFlow,
+  dropClearedQuestions,
+  queueAnswer,
+  staleQueuedAnswers,
+  startAnswerFlow,
+  stepAnswerFlow,
+} from "./answer-flow.ts";
+import type { AnswerFlow, FlowAskState, QueuedAnswer } from "./answer-flow.ts";
 import { ANSWER_CAROUSEL, ANSWER_FLOW_SPEED_OPTIONS } from "./look.ts";
 import { backlogsDir, documentPath } from "../../lib/store.ts";
 import type { Finding, Item } from "../../lib/store.ts";
@@ -207,6 +214,12 @@ export default class Panel extends View {
   // here: a size callback fires only when the size changes, so a dropped report is never repeated.
   answerFlowDeferredSizes = new Map<string, FlowCardSize>();
   answerFlowViewport: { domain: string; width: number; height: number } | undefined;
+  // Answers queued in the flow, per domain, until Send all and back records them. They outlive the
+  // flow, so leaving the questions page and coming back finds them again. While a send runs, the
+  // domain it sends for, and the message of the send that last failed.
+  answerQueues = new Map<string, QueuedAnswer[]>();
+  answerSending: string | undefined;
+  answerSendError: { domain: string; message: string } | undefined;
   boundaryInput: InputState | undefined;
   boundaryEditing: { domain: string; list: BoundaryList } | undefined;
   boundaryBusy = false;
@@ -451,6 +464,7 @@ export default class Panel extends View {
       if (generation !== this.generation) return;
       this.cacheDomain(domain, read);
       this.doc = read.document;
+      this.pruneAnswerQueue(domain, read.document);
       this.reconcileAnswerFlow(domain, read.document);
       task.notify();
       if (read.document.kind === "loaded")
@@ -490,6 +504,56 @@ export default class Panel extends View {
     for (const id of dropped) this.forgetAnswerFlowCard(domain, id);
     const id = next.ids[next.current];
     if (id !== undefined) this.selected = { kind: "item", domain, id };
+  }
+
+  queueFor(domain: string | undefined): QueuedAnswer[] {
+    return domain === undefined ? [] : (this.answerQueues.get(domain) ?? []);
+  }
+
+  setQueue(domain: string, queue: QueuedAnswer[]) {
+    if (queue.length === 0) this.answerQueues.delete(domain);
+    else this.answerQueues.set(domain, queue);
+  }
+
+  // Unqueue answers and stop counting their questions as answered in the flow, the running motion's
+  // target included, so the next reconcile treats them like any other question.
+  forgetQueued(domain: string, ids: readonly string[]) {
+    this.setQueue(
+      domain,
+      this.queueFor(domain).filter((entry) => !ids.includes(entry.id)),
+    );
+    const strip = (flow: AnswerFlow | undefined) =>
+      flow === undefined || flow.domain !== domain
+        ? flow
+        : { ...flow, answered: flow.answered.filter((id) => !ids.includes(id)) };
+    this.answerFlow = strip(this.answerFlow);
+    const motion = this.answerFlowMotion;
+    if (motion !== undefined)
+      this.answerFlowMotion = { ...motion, targetFlow: strip(motion.targetFlow) };
+  }
+
+  // Drop queued answers whose question is gone (answered elsewhere, closed, or asked again), since
+  // the CLI would refuse them. Waits while that domain's queue is being sent.
+  pruneAnswerQueue(domain: string, document: DocumentState) {
+    const queue = this.queueFor(domain);
+    if (this.answerSending === domain || document.kind !== "loaded" || queue.length === 0) return;
+    const items = new Map(document.backlog.items.map((item) => [item.id, item] as const));
+    const stale = staleQueuedAnswers(queue, (id) => {
+      const item = items.get(id);
+      return item === undefined || item.ask === null ? undefined : draftKey(domain, item, item.ask);
+    });
+    if (stale.length > 0) this.forgetQueued(domain, stale);
+  }
+
+  // Start the shown question's draft clean, or from its queued answer so it can be changed.
+  restoreQueuedDraft() {
+    this.clearDraft();
+    const open = this.answering();
+    const queued = this.queueFor(this.target()).find((entry) => entry.key === open?.draft.key);
+    if (open === undefined || queued === undefined) return;
+    this.draft = { ...open.draft, ...queued.draft };
+    this.input?.set_value(queued.draft.text);
+    this.noteInput?.set_value(queued.draft.note);
   }
 
   // Release what a dropped question held: its measured sizes and any size reported mid-motion.
@@ -717,10 +781,15 @@ export default class Panel extends View {
     this.invalidateAnswerFlowMotion();
     this.answerFlowCardSizes.clear();
     this.answerFlowViewport = undefined;
-    this.answerFlow = startAnswerFlow(domain, ids, item.id);
+    this.answerFlow = startAnswerFlow(
+      domain,
+      ids,
+      item.id,
+      this.queueFor(domain).map((entry) => entry.id),
+    );
     this.selected = { kind: "item", domain, id: item.id };
     this.page = undefined;
-    this.clearDraft();
+    this.restoreQueuedDraft();
     cx.notify();
   }
 
@@ -879,18 +948,12 @@ export default class Panel extends View {
       const next = motion.targetFlow;
       if (next === undefined) return;
       this.answerFlow = next;
-      if (motion.action === "answered" && next.answered.length === next.ids.length) {
-        this.finishAnswerFlowExit({ ...motion, action: "exit" }, tick);
-        this.load(tick, true);
-        return;
-      }
       const id = next.ids[next.current];
       this.selected = id === undefined ? undefined : { kind: "item", domain: next.domain, id };
-      this.clearDraft();
+      this.restoreQueuedDraft();
       this.answerFlowMotion = undefined;
       this.applyDeferredAnswerFlowSizes();
-      if (motion.action === "answered") this.load(tick, true);
-      else this.reconcileAnswerFlow(next.domain, this.doc);
+      this.reconcileAnswerFlow(next.domain, this.doc);
       tick.notify();
     });
   }
@@ -902,7 +965,12 @@ export default class Panel extends View {
 
   transitionAnswerFlow(action: AnswerFlowTransitionAction, cx: Context) {
     let flow = this.answerFlow;
-    if (flow === undefined || this.answerFlowMotion !== undefined || this.draft?.busy === true)
+    if (
+      flow === undefined ||
+      this.answerFlowMotion !== undefined ||
+      this.answerSending !== undefined ||
+      this.draft?.busy === true
+    )
       return;
     // Repair the flow before choosing a target, so a question answered elsewhere is never the
     // card the motion lands on. The question being answered here is not one of those.
@@ -920,7 +988,11 @@ export default class Panel extends View {
     if (!this.answerFlowReady(flow.domain, flow.ids)) return;
     let nextAction = action;
     let targetFlow: AnswerFlow | undefined;
-    if (action === "answered" || action === "skipped") targetFlow = advanceAnswerFlow(flow, action);
+    // Moving on from a question with a queued answer leaves it queued rather than skipping it.
+    const queued = this.queueFor(flow.domain).some((entry) => entry.id === flow.ids[flow.current]);
+    if (action === "skipped" && queued) targetFlow = stepAnswerFlow(flow);
+    else if (action === "answered" || action === "skipped")
+      targetFlow = advanceAnswerFlow(flow, action);
     else if (action === "back") {
       if (flow.current <= 0) nextAction = "exit";
       else targetFlow = { ...flow, current: flow.current - 1 };
@@ -943,6 +1015,16 @@ export default class Panel extends View {
 
   finishAnswerFlowExit(motion: AnswerFlowTransition, cx: Context) {
     if (this.answerFlowMotion?.generation !== motion.generation) return;
+    this.closeAnswerFlow(cx);
+  }
+
+  // Leave the flow for its domain's page, with the exit motion when the carousel can run one.
+  leaveAnswerFlow(cx: Context) {
+    this.transitionAnswerFlow("exit", cx);
+    if (this.answerFlowMotion === undefined) this.closeAnswerFlow(cx);
+  }
+
+  closeAnswerFlow(cx: Context) {
     const domain = this.answerFlow?.domain;
     this.answerFlowMotion = undefined;
     this.answerFlowDeferredSizes.clear();
@@ -1076,7 +1158,26 @@ export default class Panel extends View {
       open.draft.choice !== undefined || open.draft.discuss ? open.draft.text : open.draft.note;
     const note = noteText.trim() || undefined;
     const { key } = open.draft;
-    const { command, args } = answerCommand(home(), this.domain, open.item.id, answer, note);
+    // In the flow, Answer queues the answer and moves on; Send all and back records the queue.
+    const domain = this.domain;
+    if (this.answerFlow?.domain === domain) {
+      if (this.answerSending !== undefined) return;
+      const { choice, discuss, text, note: draftNote } = open.draft;
+      this.setQueue(
+        domain,
+        queueAnswer(this.queueFor(domain), {
+          id: open.item.id,
+          key,
+          answer,
+          note,
+          draft: { choice, discuss, text, note: draftNote },
+        }),
+      );
+      this.transitionAnswerFlow("answered", cx);
+      cx.notify();
+      return;
+    }
+    const { command, args } = answerCommand(home(), domain, open.item.id, answer, note);
     this.draft = { ...open.draft, busy: true, error: undefined };
     cx.notify();
     cx.spawn(async (task) => {
@@ -1089,12 +1190,6 @@ export default class Panel extends View {
       }
       if (this.draft?.key !== key) return;
       if (error === undefined) {
-        const flow = this.answerFlow;
-        if (flow !== undefined && flow.domain === this.domain) {
-          this.draft = { ...open.draft, busy: false, error: undefined };
-          this.transitionAnswerFlow("answered", task);
-          return;
-        }
         this.clearDraft();
         this.load(task, true);
       } else this.draft = { ...this.draft, busy: false, error };
@@ -1109,6 +1204,7 @@ export default class Panel extends View {
     if (
       this.answerFlow === undefined ||
       this.answerFlowMotion !== undefined ||
+      this.answerSending !== undefined ||
       open === undefined ||
       open.draft.busy ||
       this.domain === undefined ||
@@ -1116,6 +1212,7 @@ export default class Panel extends View {
     )
       return;
     const { key } = open.draft;
+    const domain = this.domain;
     const { command, args } = dismissCommand(home(), this.domain, open.item.id);
     this.draft = { ...open.draft, busy: true, error: undefined };
     cx.notify();
@@ -1129,9 +1226,53 @@ export default class Panel extends View {
       }
       if (this.draft?.key !== key) return;
       if (error === undefined) {
+        this.forgetQueued(domain, [open.item.id]);
         this.clearDraft();
         this.load(task, true);
       } else this.draft = { ...this.draft, busy: false, error };
+      task.notify();
+    });
+  }
+
+  // Record every queued answer for the flow's domain with the coordinate CLI, one at a time in queue
+  // order. Each recorded answer leaves the queue; the first failure stops the send, keeps it and the
+  // rest queued, and shows the CLI's message. When all are recorded the flow returns to the domain.
+  sendAnswerQueue(cx: Context) {
+    const flow = this.answerFlow;
+    if (
+      flow === undefined ||
+      this.answerSending !== undefined ||
+      this.answerFlowMotion !== undefined ||
+      this.draft?.busy === true
+    )
+      return;
+    const { domain } = flow;
+    const entries = this.queueFor(domain);
+    if (entries.length === 0) return;
+    this.answerSending = domain;
+    this.answerSendError = undefined;
+    cx.notify();
+    cx.spawn(async (task) => {
+      let error: string | undefined;
+      for (const entry of entries) {
+        const { command, args } = answerCommand(home(), domain, entry.id, entry.answer, entry.note);
+        try {
+          const ran = await exec(command, args);
+          if (ran.code !== 0) error = answerFailure(ran);
+        } catch (failure) {
+          error = `could not run coordinate: ${String(failure)}`;
+        }
+        if (error !== undefined) break;
+        this.setQueue(
+          domain,
+          this.queueFor(domain).filter((queued) => queued !== entry),
+        );
+      }
+      this.answerSending = undefined;
+      if (error !== undefined) this.answerSendError = { domain, message: error };
+      else if (this.answerFlow?.domain === domain && this.target() === domain)
+        this.leaveAnswerFlow(task);
+      this.load(task, true);
       task.notify();
     });
   }
@@ -1182,6 +1323,7 @@ export default class Panel extends View {
     });
     const motion = this.answerFlowMotion;
     const counts = motion?.targetFlow ?? flow;
+    const queue = this.queueFor(flow.domain);
     return {
       domain: flow.domain,
       cards,
@@ -1213,8 +1355,13 @@ export default class Panel extends View {
       position: Math.min(flow.current + 1, flow.ids.length),
       total: flow.ids.length,
       done: flow.current >= flow.ids.length,
-      answeredCount: counts.answered.length,
+      answeredCount: counts.answered.filter((id) => !queue.some((entry) => entry.id === id)).length,
       skippedCount: counts.skipped.length,
+      queuedCount: queue.length,
+      sending: this.answerSending === flow.domain,
+      sendError:
+        this.answerSendError?.domain === flow.domain ? this.answerSendError.message : undefined,
+      send: (cx) => this.sendAnswerQueue(cx),
       answer: this.answerModel(),
       answerFor: (id) => {
         const selected = this.selected;

@@ -37,13 +37,83 @@ export type AnswerFlowLayoutOptions = {
   exiting?: boolean;
 };
 
-export const startAnswerFlow = (domain: string, ids: string[], selected: string): AnswerFlow => ({
+/**
+ * A draft's own fields, kept with a queued answer so the question shows it again when revisited.
+ */
+export type QueuedDraft = {
+  choice: string | undefined;
+  discuss: boolean;
+  text: string;
+  note: string;
+};
+
+/**
+ * An answer queued in the flow and not yet recorded. `key` is the draft key, which names the
+ * domain, item and question, so an entry for a question that changed is recognisably stale.
+ */
+export type QueuedAnswer = {
+  id: string;
+  key: string;
+  answer: string;
+  note: string | undefined;
+  draft: QueuedDraft;
+};
+
+/**
+ * Start a flow at the selected question.
+ * @param domain The domain whose questions the flow visits.
+ * @param ids The open questions, in domain order.
+ * @param selected The question to show first.
+ * @param queued Questions that already have a queued answer, counted as answered in the flow.
+ * @returns The flow.
+ */
+export const startAnswerFlow = (
+  domain: string,
+  ids: string[],
+  selected: string,
+  queued: readonly string[] = [],
+): AnswerFlow => ({
   domain,
   ids: [...ids],
   current: Math.max(0, ids.indexOf(selected)),
-  answered: [],
+  answered: ids.filter((id) => queued.includes(id)),
   skipped: [],
 });
+
+/**
+ * Step to the next card without changing what is answered or skipped, as moving on from a question
+ * that already has a queued answer does.
+ * @param flow The flow.
+ * @returns The flow on the next card, the summary after the last question.
+ */
+export const stepAnswerFlow = (flow: AnswerFlow): AnswerFlow => ({
+  ...flow,
+  current: Math.min(flow.current + 1, flow.ids.length),
+});
+
+/**
+ * Queue an answer: a question answered again replaces its entry where it stands, a new one goes
+ * last, so the queue keeps the order questions were first answered in.
+ * @param queue The queue.
+ * @param entry The answer to queue.
+ * @returns The new queue.
+ */
+export const queueAnswer = (queue: readonly QueuedAnswer[], entry: QueuedAnswer): QueuedAnswer[] =>
+  queue.some((queued) => queued.id === entry.id)
+    ? queue.map((queued) => (queued.id === entry.id ? entry : queued))
+    : [...queue, entry];
+
+/**
+ * Find the queued answers whose question is gone: the item vanished, its ask cleared, or it now
+ * asks something else.
+ * @param queue The queue.
+ * @param liveKey The draft key of each id's open question now, undefined when it has none.
+ * @returns The ids of the stale entries, in queue order.
+ */
+export const staleQueuedAnswers = (
+  queue: readonly QueuedAnswer[],
+  liveKey: (id: string) => string | undefined,
+): string[] => queue.filter((entry) => liveKey(entry.id) !== entry.key).map((entry) => entry.id);
 
 // Visit the remaining questions in order after the selected question.
 export const advanceAnswerFlow = (flow: AnswerFlow, result: "answered" | "skipped"): AnswerFlow => {

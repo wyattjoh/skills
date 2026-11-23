@@ -1210,26 +1210,42 @@ test("the done summary follows adjacent cards without reserving footer space", a
   expect(trail(root)).toBe("⌂ › alpha › Questions");
 });
 
-test("the final successful answer returns to the domain and a new flow can start", async () => {
+test("the last answer queues and stays on the summary; Send all and back records it and returns", async () => {
   focusDomain("alpha");
   let backlog = withManyAsks(1);
   host.files.set(DOC, JSON.stringify(backlog));
   const { ctx, view, render } = await mount();
   get(render(), "item-i1").click!({}, ctx.cx);
   let root = measureFlow(render(), ctx.cx, render, [{ id: "i1", expandedHeight: 248 }]);
+  expect(ids(root, "answer-flow-footer")).toEqual([]);
   get(root, "answer-flow-ask-i1-option-1").click!({}, ctx.cx);
-  backlog = recordAnswer(backlog, "i1", "No");
-  host.files.set(DOC, JSON.stringify(backlog));
   get(render(), "answer-flow-ask-i1-answer-submit").click!({}, ctx.cx);
   await settle();
   root = render();
+  expect(host.execs).toEqual([]);
   expect(view.answerFlowMotion?.action).toBe("answered");
-  expect(text(get(root, "answer-flow-progress"))).toBe("Question 1 of 1");
-  expect(ids(root, "screen-answer-flow")).toEqual(["screen-answer-flow"]);
   expect(ctx.timers.at(-1)?.ms).toBe(600);
+  expect(get(root, "answer-flow-send").click).toBe(undefined);
 
-  ctx.tick(599);
-  expect(ids(render(), "screen-answer-flow")).toEqual(["screen-answer-flow"]);
+  ctx.tick(600);
+  await settle();
+  root = render();
+  expect(ids(root, "screen-answer-flow")).toEqual(["screen-answer-flow"]);
+  expect(text(get(root, "answer-flow-progress"))).toBe("Done");
+  expect(text(get(root, "answer-flow-detail-done-count"))).toBe("1 queued, 0 answered, 0 skipped.");
+  expect(
+    get(root, "answer-flow-queue-page").children.map((child) => (child as Node).styles.id),
+  ).toEqual(["answer-flow-header-alpha", "answer-flow-carousel", "answer-flow-footer"]);
+  expect(text(get(root, "answer-flow-send-row"))).toBe("1 queued Send all and back");
+  expect(text(get(root, "answer-flow-send"))).toBe("Send all and back");
+
+  backlog = recordAnswer(backlog, "i1", "No");
+  host.files.set(DOC, JSON.stringify(backlog));
+  get(root, "answer-flow-send").click!({}, ctx.cx);
+  await settle();
+  expect(host.execs).toEqual([{ command: "/usr/bin/env", args: answerArgs("i1", "No") }]);
+  expect(view.answerQueues.size).toBe(0);
+  expect(view.answerFlowMotion?.action).toBe("exit");
   ctx.tick(600);
   await settle();
   root = render();
@@ -1265,27 +1281,49 @@ test("the final successful answer returns to the domain and a new flow can start
   expect(ids(root, "answer-flow-footer")).toEqual([]);
 });
 
-test("a failed final flow answer stays on the question", async () => {
+test("a failed send stops there, keeps that answer and the rest queued, and stays on the flow", async () => {
   focusDomain("alpha");
-  host.files.set(DOC, JSON.stringify(withManyAsks(1)));
+  host.files.set(DOC, JSON.stringify(withManyAsks(3)));
+  let answers = 0;
+  const exec = (command: string, args: string[] = []) => {
+    host.execs.push({ command, args });
+    if (!args.includes("answer")) return { code: 0, stdout: "alpha\0", stderr: "" };
+    answers += 1;
+    return answers === 2
+      ? { code: 1, stdout: "", stderr: "refused: i2 has no ask to answer\n" }
+      : { code: 0, stdout: "", stderr: "" };
+  };
+  useRenderer({ herdr: { exec } });
   const { ctx, view, render } = await mount();
   get(render(), "item-i1").click!({}, ctx.cx);
-  let root = measureFlow(render(), ctx.cx, render, [{ id: "i1", expandedHeight: 248 }]);
-  get(root, "answer-flow-ask-i1-option-1").click!({}, ctx.cx);
-  host.execExit = { code: 1, stderr: "refused: i1 has no ask to answer\n" };
-  get(render(), "answer-flow-ask-i1-answer-submit").click!({}, ctx.cx);
+  measureFlow(render(), ctx.cx, render, [
+    { id: "i1", expandedHeight: 248 },
+    { id: "i2", expandedHeight: 248 },
+    { id: "i3", expandedHeight: 248 },
+  ]);
+  for (const id of ["i1", "i2", "i3"]) {
+    get(render(), `answer-flow-ask-${id}-option-1`).click!({}, ctx.cx);
+    get(render(), `answer-flow-ask-${id}-answer-submit`).click!({}, ctx.cx);
+    ctx.tick(600);
+    await settle();
+  }
+  expect(host.execs).toEqual([]);
+  expect(text(get(render(), "answer-flow-send-row"))).toBe("3 queued Send all and back");
+
+  get(render(), "answer-flow-send").click!({}, ctx.cx);
   await settle();
-  root = render();
-  expect(text(get(root, "answer-flow-progress"))).toBe("Question 1 of 1");
-  expect(text(get(root, "answer-flow-ask-i1-answer-error"))).toBe(
-    "refused: i1 has no ask to answer",
-  );
-  expect(text(get(root, "answer-flow-ask-i1-question"))).toBe("Question 1?");
-  expect(view.answerFlow?.current).toBe(0);
+  const root = render();
+  expect(host.execs.filter(({ args }) => args.includes("answer"))).toEqual([
+    { command: "/usr/bin/env", args: answerArgs("i1", "No") },
+    { command: "/usr/bin/env", args: answerArgs("i2", "No") },
+  ]);
+  expect(view.answerQueues.get("alpha")?.map((entry) => entry.id)).toEqual(["i2", "i3"]);
+  expect(text(get(root, "answer-flow-send-error"))).toBe("refused: i2 has no ask to answer");
+  expect(text(get(root, "answer-flow-send-row"))).toBe("2 queued Send all and back");
   expect(view.answerFlowMotion).toBe(undefined);
+  expect(view.answerFlow?.domain).toBe("alpha");
   expect(ids(root, "screen-answer-flow")).toEqual(["screen-answer-flow"]);
-  expect(ids(root, "answer-flow-footer")).toEqual([]);
-  expect(host.execs).toEqual([{ command: "/usr/bin/env", args: answerArgs("i1", "No") }]);
+  expect(typeof get(root, "answer-flow-send").click).toBe("function");
 });
 
 const wheelHandlerIds = (node: Node): string[] => [
@@ -1321,13 +1359,12 @@ test("the carousel ignores the wheel and keeps click navigation and answer auto-
   expect(wheelHandlerIds(get(root, "screen-answer-flow"))).toEqual([]);
 
   get(root, "answer-flow-ask-i1-option-1").click!({}, ctx.cx);
-  host.files.set(DOC, JSON.stringify(answered("Backlog")));
   get(render(), "answer-flow-ask-i1-answer-submit").click!({}, ctx.cx);
   await settle();
   ctx.tick(600);
   await settle();
   root = render();
-  expect(host.execs).toEqual([{ command: "/usr/bin/env", args: answerArgs("i1", "Backlog") }]);
+  expect(host.execs).toEqual([]);
   expect(text(get(root, "answer-flow-progress"))).toBe("Question 2 of 2");
   expect(view.answerFlow?.current).toBe(1);
 });
@@ -1346,11 +1383,13 @@ test("an intermediate flow answer advances without returning to the domain", asy
   get(root, "answer-flow-speed-option-fast-5").click!({}, ctx.cx);
   root = render();
   get(root, "answer-flow-ask-i1-option-1").click!({}, ctx.cx);
-  host.files.set(DOC, JSON.stringify(answered("Backlog")));
   get(render(), "answer-flow-ask-i1-answer-submit").click!({}, ctx.cx);
   await settle();
   root = render();
-  expect(host.execs).toEqual([{ command: "/usr/bin/env", args: answerArgs("i1", "Backlog") }]);
+  expect(host.execs).toEqual([]);
+  expect(view.answerQueues.get("alpha")?.map(({ id, answer }) => [id, answer])).toEqual([
+    ["i1", "Backlog"],
+  ]);
   expect(text(get(root, "answer-flow-progress"))).toBe("Question 1 of 2");
   expect(text(get(root, "answer-flow-ask-i1-question"))).toBe("Which title?");
   expect(get(root, "answer-flow-card-i1").styles).toMatchObject({
@@ -2404,10 +2443,14 @@ test("free-text answers accept a separate optional note through the CLI", async 
   ]);
   expect(host.inputs[1]?.placeholder).toBe("Optional note");
   typeInto(host.inputs[1]!, "Why this is the answer", ctx.cx);
+  get(render(), "answer-flow-ask-i1-answer-submit").click!({}, ctx.cx);
+  ctx.tick(600);
+  await settle();
+  expect(host.execs).toEqual([]);
   const recorded = answered("Custom answer");
   recorded.items[0]!.answered[0]!.note = "Why this is the answer";
   host.files.set(DOC, JSON.stringify(recorded));
-  get(render(), "answer-flow-ask-i1-answer-submit").click!({}, ctx.cx);
+  get(render(), "answer-flow-send").click!({}, ctx.cx);
   await settle();
   expect(host.execs).toEqual([
     {
@@ -4203,7 +4246,7 @@ test("a copy given the panel's own props shows the panel, not the dialog", async
 
 test("a card's remeasured size is kept when it arrives during an answer motion", async () => {
   focusDomain("alpha");
-  let backlog = withManyAsks(2);
+  const backlog = withManyAsks(2);
   host.files.set(DOC, JSON.stringify(backlog));
   const { ctx, view, render } = await mount();
   get(render(), "item-i1").click!({}, ctx.cx);
@@ -4214,13 +4257,11 @@ test("a card's remeasured size is kept when it arrives during an answer motion",
   const expandedWidth = 360 * ANSWER_CAROUSEL.compactWidthRatio;
   const key = view.flowCardSizeKey("alpha", "i1");
   get(root, "answer-flow-ask-i1-option-1").click!({}, ctx.cx);
-  backlog = recordAnswer(backlog, "i1", "No");
-  host.files.set(DOC, JSON.stringify(backlog));
   get(render(), "answer-flow-ask-i1-answer-submit").click!({}, ctx.cx);
   await settle();
   expect(view.answerFlowMotion?.action).toBe("answered");
 
-  // The answered card is now one line, and its hidden measurement reports that mid-motion.
+  // The card remeasures mid-motion, and that size waits for the motion to end.
   reportSize(render(), "answer-flow-measure-expanded-i1", ctx.cx, 100, expandedWidth);
   expect(view.answerFlowCardSizes.get(key)?.expanded?.height).toBe(300);
 
@@ -4232,7 +4273,6 @@ test("a card's remeasured size is kept when it arrives during an answer motion",
   get(root, "answer-flow-card-i1").click!({}, ctx.cx);
   root = render();
   expect(get(root, "answer-flow-card-i1").styles.h).toBe(100);
-  expect(text(get(root, "answer-flow-detail-i1-answered"))).toBe("Answered: No");
 });
 
 const flowSetup = async (count: number) => {
@@ -4344,25 +4384,104 @@ test("answering the current question keeps it, even when the document already sh
   expect(view.answerFlow?.ids).toEqual(["i1", "i2", "i3"]);
 });
 
-test("a question answered in the flow is read-only on Back: the answer on record, sized to its content", async () => {
-  const { ctx, view, render, root: measured, backlog } = await flowSetup(2);
-  const expandedWidth = 360 * ANSWER_CAROUSEL.compactWidthRatio;
+test("a queued question stays editable on Back, and answering it again replaces the queued answer", async () => {
+  const { ctx, view, render, root: measured } = await flowSetup(2);
 
   get(measured, "answer-flow-ask-i1-option-1").click!({}, ctx.cx);
-  const answeredBacklog = recordAnswer(backlog, "i1", "No");
-  host.files.set(DOC, JSON.stringify(answeredBacklog));
   get(render(), "answer-flow-ask-i1-answer-submit").click!({}, ctx.cx);
-  await settle();
-  reportSize(render(), "answer-flow-measure-expanded-i1", ctx.cx, 100, expandedWidth);
   ctx.tick(600);
   await settle();
-  expect(view.answerFlow?.ids).toEqual(["i1", "i2"]);
+  expect([view.answerFlow?.current, view.draft?.choice]).toEqual([1, undefined]);
   get(render(), "answer-flow-card-i1").click!({}, ctx.cx);
-  const root = render();
+  ctx.tick(600);
+  await settle();
+  let root = render();
 
-  expect(text(get(root, "answer-flow-detail-i1-answered"))).toBe("Answered: No");
-  expect(get(root, "answer-flow-card-i1").styles.h).toBe(100);
-  expect(text(get(root, "answer-flow-preview-i1"))).toContain("Question 1?");
+  expect(view.answerFlow?.current).toBe(0);
+  expect(view.draft?.choice).toBe("No");
+  expect(get(root, "answer-flow-ask-i1-option-1-selection-marker").styles.asset).toBe(
+    HERDR_ICONS.circleCheck,
+  );
+  expect(typeof get(root, "answer-flow-ask-i1-answer-submit").click).toBe("function");
+
+  get(root, "answer-flow-ask-i1-option-0").click!({}, ctx.cx);
+  get(render(), "answer-flow-ask-i1-answer-submit").click!({}, ctx.cx);
+  ctx.tick(600);
+  await settle();
+  root = render();
+  expect(view.answerQueues.get("alpha")?.map(({ id, answer }) => [id, answer])).toEqual([
+    ["i1", "Yes"],
+  ]);
+  expect(view.answerFlow?.current).toBe(1);
+  expect(text(get(root, "answer-flow-send-row"))).toBe("1 queued Send all and back");
+  expect(host.execs).toEqual([]);
+});
+
+test("moving on from a queued question keeps it queued, and leaving the flow keeps the queue", async () => {
+  const { ctx, view, render, root: measured } = await flowSetup(3);
+
+  get(measured, "answer-flow-ask-i1-option-1").click!({}, ctx.cx);
+  get(render(), "answer-flow-ask-i1-answer-submit").click!({}, ctx.cx);
+  ctx.tick(600);
+  await settle();
+  get(render(), "answer-flow-card-i1").click!({}, ctx.cx);
+  ctx.tick(600);
+  await settle();
+  get(render(), "answer-flow-ask-i1-answer-skip").click!({}, ctx.cx);
+  ctx.tick(600);
+  await settle();
+  expect([view.answerFlow?.current, view.answerFlow?.answered, view.answerFlow?.skipped]).toEqual([
+    1,
+    ["i1"],
+    [],
+  ]);
+
+  view.go({ kind: "domain", domain: "alpha" }, ctx.cx as never);
+  await settle();
+  let root = render();
+  expect(view.answerFlow).toBe(undefined);
+  expect(view.answerQueues.get("alpha")?.map(({ id }) => id)).toEqual(["i1"]);
+
+  get(root, "item-i1").click!({}, ctx.cx);
+  root = measureFlow(render(), ctx.cx, render, [
+    { id: "i1", expandedHeight: 300 },
+    { id: "i2", expandedHeight: 300 },
+    { id: "i3", expandedHeight: 300 },
+  ]);
+  expect(view.answerFlow?.answered).toEqual(["i1"]);
+  expect(view.draft?.choice).toBe("No");
+  expect(text(get(root, "answer-flow-send-row"))).toBe("1 queued Send all and back");
+});
+
+test("Discuss queues like any other answer and sends as Discuss", async () => {
+  const { ctx, view, render, root } = await flowSetup(2);
+
+  get(root, "answer-flow-ask-i1-discuss").click!({}, ctx.cx);
+  get(render(), "answer-flow-ask-i1-answer-submit").click!({}, ctx.cx);
+  ctx.tick(600);
+  await settle();
+  expect(view.answerQueues.get("alpha")?.map(({ id, answer }) => [id, answer])).toEqual([
+    ["i1", "Discuss"],
+  ]);
+  get(render(), "answer-flow-send").click!({}, ctx.cx);
+  await settle();
+  expect(host.execs).toEqual([{ command: "/usr/bin/env", args: answerArgs("i1", "Discuss") }]);
+});
+
+test("a queued question answered outside the flow leaves the queue and the flow", async () => {
+  const { ctx, view, render, root, backlog } = await flowSetup(3);
+
+  get(root, "answer-flow-ask-i1-option-1").click!({}, ctx.cx);
+  get(render(), "answer-flow-ask-i1-answer-submit").click!({}, ctx.cx);
+  ctx.tick(600);
+  await settle();
+  host.files.set(DOC, JSON.stringify(recordAnswer(backlog, "i1", "Yes")));
+  backlogWatch()!.fire([DOC]);
+  await settle();
+
+  expect(view.answerQueues.size).toBe(0);
+  expect(view.answerFlow?.ids).toEqual(["i2", "i3"]);
+  expect(ids(render(), "answer-flow-footer")).toEqual([]);
 });
 
 test("a missing item's card still says the question is unavailable", async () => {
