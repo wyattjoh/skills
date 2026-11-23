@@ -406,6 +406,10 @@ const openDetail = (view: InstanceType<typeof Panel>, id: string, cx: unknown) =
   view.open(item, cx as never);
 };
 
+// Presses an answered ask's Show all / Show less row on the item detail screen.
+const toggleAnswered = (render: () => Node, index: number, cx: unknown) =>
+  get(render(), `ask-answered-${index}-reveal`).click!({}, cx as never);
+
 test("renders the Files-style toolbar header", async () => {
   focusDomain("alpha");
   host.files.set(DOC, JSON.stringify(emptyBacklog("alpha", null)));
@@ -2467,6 +2471,8 @@ test("shows the open ask first and earlier answered asks read-only, newest first
   host.files.set(DOC, JSON.stringify(withAskHistory()));
   const { ctx, view, render } = await mount();
   openDetail(view, "i1", ctx.cx);
+  toggleAnswered(render, 0, ctx.cx);
+  toggleAnswered(render, 1, ctx.cx);
   const root = render();
 
   expect(ids(root, "ask-").filter((id) => id.endsWith("-header"))).toEqual([
@@ -2510,6 +2516,46 @@ test("shows the open ask first and earlier answered asks read-only, newest first
   expect(get(root, "ask-option-0").click).toBeDefined();
 });
 
+test("shows answered asks compact, question and context only, until Show all", async () => {
+  focusDomain("alpha");
+  host.files.set(DOC, JSON.stringify(withAskHistory()));
+  const { ctx, view, render } = await mount();
+  openDetail(view, "i1", ctx.cx);
+  const compact = render();
+
+  expect(text(get(compact, "ask-answered-0-question"))).toBe("Which format?");
+  expect(text(get(compact, "ask-answered-0-context"))).toBe("Used in CI");
+  expect(text(get(compact, "ask-answered-1-question"))).toBe("Which folder?");
+  expect(ids(compact, "ask-answered-1-context")).toEqual([]);
+  expect(ids(compact, "ask-answered-0-option-")).toEqual([]);
+  expect(ids(compact, "ask-answered-0-answered-at")).toEqual([]);
+  expect(ids(compact, "ask-answered-0-rec-reason")).toEqual([]);
+  expect(ids(compact, "ask-answered-1-answer")).toEqual([]);
+  expect([
+    text(get(compact, "ask-answered-0-reveal")),
+    text(get(compact, "ask-answered-1-reveal")),
+  ]).toEqual(["Show all", "Show all"]);
+  expect(ids(compact, "ask-option-")).toEqual(["ask-option-1", "ask-option-0", "ask-option-2"]);
+  expect(ids(compact, "ask-reveal")).toEqual([]);
+
+  toggleAnswered(render, 0, ctx.cx);
+  const expanded = render();
+  expect(ids(expanded, "ask-answered-0-option-")).toEqual([
+    "ask-answered-0-option-1",
+    "ask-answered-0-option-0",
+  ]);
+  expect(text(get(expanded, "ask-answered-0-answered-at"))).toBe("Answered 2026-11-15");
+  expect(text(get(expanded, "ask-answered-0-reveal"))).toBe("Show less");
+  expect(ids(expanded, "ask-answered-1-option-")).toEqual([]);
+  expect(text(get(expanded, "ask-answered-1-reveal"))).toBe("Show all");
+
+  toggleAnswered(render, 0, ctx.cx);
+  const collapsed = render();
+  expect(ids(collapsed, "ask-answered-0-option-")).toEqual([]);
+  expect(text(get(collapsed, "ask-answered-0-context"))).toBe("Used in CI");
+  expect(text(get(collapsed, "ask-answered-0-reveal"))).toBe("Show all");
+});
+
 test("shows a recorded note beneath completed answers and discussions", async () => {
   focusDomain("alpha");
   const backlog = answered("json");
@@ -2531,6 +2577,7 @@ test("shows a recorded note beneath completed answers and discussions", async ()
   host.files.set(DOC, JSON.stringify(withNote));
   const { ctx, view, render } = await mount();
   openDetail(view, "i1", ctx.cx);
+  toggleAnswered(render, 0, ctx.cx);
   expect(text(get(render(), "ask-answered-0-answer-note"))).toContain("Use the shared config");
   const discussion = {
     ...withNote,
@@ -2608,6 +2655,7 @@ test("answers with a picked option through the CLI, then keeps the answered ask 
       args: answerArgs("i1", "Coordinate backlog", "Keep the existing title"),
     },
   ]);
+  toggleAnswered(render, 0, ctx.cx);
   const root = render();
   expect(text(get(root, "ask-answered-0-question"))).toBe("Which title?");
   expect(text(get(root, "ask-answered-0-option-0"))).toContain("Answered");
@@ -2680,6 +2728,7 @@ test("answers with free text only, without duplicating it as a note", async () =
   expect(host.execs).toEqual([
     { command: "/usr/bin/env", args: answerArgs("i1", "-call it Board") },
   ]);
+  toggleAnswered(render, 0, ctx.cx);
   const root = render();
   expect(text(get(root, "ask-answered-0-answer"))).toBe("Answer -call it Board 2026-11-17");
   expect(ids(root, "ask-answer-submit")).toEqual([]);
@@ -5417,6 +5466,7 @@ test("renders Markdown siblings natively on the detail screen and keeps text fie
   host.files.set(DOC, JSON.stringify(backlog));
   const { ctx, view, render } = await mount();
   openDetail(view, "i1", ctx.cx);
+  toggleAnswered(render, 0, ctx.cx);
   const root = render();
 
   expect(

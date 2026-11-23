@@ -176,6 +176,9 @@ export default class Panel extends View {
   // Rows revealed per group in the current domain.
   paginationDomain: string | undefined;
   revealedRows = new Map<string, number>();
+  // Answered asks shown in full, by domain, item and index; they start compact while the panel
+  // lives.
+  expandedAsks = new Set<string>();
   // The backlogs folder being watched, and the pending watch on it.
   watched: string | undefined;
   watch: FolderWatch | undefined;
@@ -2060,6 +2063,17 @@ export default class Panel extends View {
     return Math.min(total, revealed);
   }
 
+  askKey(domain: string | undefined, item: Item, index: number): string {
+    return JSON.stringify([domain ?? null, item.id, index]);
+  }
+
+  toggleAsk(domain: string | undefined, item: Item, index: number, cx: Context) {
+    const key = this.askKey(domain, item, index);
+    if (this.expandedAsks.has(key)) this.expandedAsks.delete(key);
+    else this.expandedAsks.add(key);
+    cx.notify();
+  }
+
   revealMore(domain: string | undefined, group: string, cx: Context) {
     if (domain !== this.paginationDomain) {
       this.paginationDomain = domain;
@@ -2156,6 +2170,8 @@ export default class Panel extends View {
       open: (item, cx) => this.open(item, cx),
       openWaiting: (item, cx) => this.openWaiting(item, cx),
       answer: this.answerModel(),
+      askExpanded: (item, index) => this.expandedAsks.has(this.askKey(domain, item, index)),
+      toggleAsk: (item, index, cx) => this.toggleAsk(domain, item, index, cx),
       flow,
       boundary: this.boundaryModel(domain),
       openHarnessPolicy: () => this.openHarnessPolicyDialog(domain),

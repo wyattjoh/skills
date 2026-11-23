@@ -170,6 +170,10 @@ export type PanelModel = {
   statusChange: StatusChangeModel | undefined;
   // The answer being written on the open item's ask, when it has one.
   answer: AnswerModel | undefined;
+  // Whether an answered ask on the open item shows in full, by its index in `answered`, and what
+  // its Show all / Show less control does. Answered asks start compact.
+  askExpanded: (item: Item, index: number) => boolean;
+  toggleAsk: (item: Item, index: number, cx: Context) => void;
   flow: AnswerFlowModel | undefined;
   openWaiting: (item: Item, cx: Context) => void;
   // Boundary paths can be edited on either card.
@@ -1185,6 +1189,29 @@ const askCardRows = (
   return [question, ...context, ...touches, ...optionItems, ...discussion, ...completion];
 };
 
+// A full-width row on an answered ask card's bottom edge that shows or hides the rest of the card,
+// with the document card's chevron and Show less label.
+const askRevealRow = (
+  t: Theme,
+  id: string,
+  expanded: boolean,
+  toggle: (cx: Context) => void,
+): Element =>
+  cardRow(t, `${id}-reveal`)
+    .h(BUTTON_STYLE.height)
+    .justify_center()
+    .gap(BUTTON_STYLE.gap)
+    .rounded_b(CARD.innerRadius)
+    .text_size(BUTTON_STYLE.textSize)
+    .text_color(t.muted)
+    .on_click((_event, cx) => toggle(cx))
+    .child(
+      svg(expanded ? HERDR_ICONS.chevronDown : HERDR_ICONS.chevronRight).size(
+        BUTTON_STYLE.iconSize,
+      ),
+    )
+    .child(expanded ? "Show less" : "Show all");
+
 const askCard = (
   t: Theme,
   id: string,
@@ -1201,17 +1228,37 @@ const askCard = (
   ),
 ];
 
+// An answered ask starts compact, its question and context only, above its reveal row; expanded,
+// it is the full answered card with the same row below.
+const answeredAskCard = (
+  t: Theme,
+  id: string,
+  answered: AnsweredAsk,
+  expanded: boolean,
+  toggle: (cx: Context) => void,
+): Element => {
+  const rows = askCardRows(t, id, answered, undefined, answered, undefined);
+  const contextRows = prose(answered.context, answered.contextMarkdown) === null ? 0 : 1;
+  const shown = expanded ? rows : rows.slice(0, 1 + contextRows);
+  return detailCard(t, id, "Answered ask", [...shown, askRevealRow(t, id, expanded, toggle)]);
+};
+
 const askCards = (
   t: Theme,
   item: Item,
   answer: AnswerModel | undefined,
   home: string,
+  expanded: (index: number) => boolean,
+  toggle: (index: number, cx: Context) => void,
 ): Element[] => {
   const touches = item.touches.map((path) => tildePath(path, home));
   const cards = item.ask === null ? [] : askCard(t, "ask", item.ask, answer, undefined, touches);
   for (let index = item.answered.length - 1; index >= 0; index -= 1) {
-    const answered = item.answered[index]!;
-    cards.push(...askCard(t, `ask-answered-${index}`, answered, undefined, answered, undefined));
+    cards.push(
+      answeredAskCard(t, `ask-answered-${index}`, item.answered[index]!, expanded(index), (cx) =>
+        toggle(index, cx),
+      ),
+    );
   }
   return cards;
 };
@@ -1515,14 +1562,7 @@ const statusChangeRows = (t: Theme, change: StatusChangeModel): Element[] => {
   ];
 };
 
-const detailScreen = (
-  t: Theme,
-  item: Item,
-  delegates: DelegateJoin,
-  answer: AnswerModel | undefined,
-  statusChange: StatusChangeModel | undefined,
-  home: string,
-): Element =>
+const detailScreen = (t: Theme, item: Item, model: PanelModel): Element =>
   v_flex()
     .id("detail")
     .gap(PANEL.sectionGap)
@@ -1536,7 +1576,16 @@ const detailScreen = (
         role(t, STATUS_TONES[item.status]),
       ),
     )
-    .children(askCards(t, item, answer, home))
+    .children(
+      askCards(
+        t,
+        item,
+        model.answer,
+        model.home,
+        (index) => model.askExpanded(item, index),
+        (index, cx) => model.toggleAsk(item, index, cx),
+      ),
+    )
     .child(
       detailCard(t, "facts", "Details", [
         fact(t, "fact-due", "Due", item.due === null ? [] : [item.due]),
@@ -1546,7 +1595,7 @@ const detailScreen = (
                 t,
                 "fact-touches",
                 "Touches",
-                item.touches.map((path) => tildePath(path, home)),
+                item.touches.map((path) => tildePath(path, model.home)),
               ),
             ]
           : []),
@@ -1567,8 +1616,10 @@ const detailScreen = (
       ]),
     )
     .children(decidedCard(t, item))
-    .children(delegatesCard(t, item, delegates.byItem.get(item.id) ?? [], home))
-    .when(statusChange !== undefined, (el) => el.children(statusChangeRows(t, statusChange!)));
+    .children(delegatesCard(t, item, model.delegates.byItem.get(item.id) ?? [], model.home))
+    .when(model.statusChange !== undefined, (el) =>
+      el.children(statusChangeRows(t, model.statusChange!)),
+    );
 
 const answerFlowKey = (
   event: { key: string; keystroke: string },
@@ -2617,18 +2668,7 @@ const domainScreens = (t: Theme, model: PanelModel): Element =>
           .bg(t.surface)
           .when(model.flow !== undefined, (detail) => detail.invisible())
           .child(
-            paneScrollRegion(
-              "detail-scroll",
-              detailScreen(
-                t,
-                model.detail!,
-                model.delegates,
-                model.answer,
-                model.statusChange,
-                model.home,
-              ),
-              PANEL.padding,
-            ),
+            paneScrollRegion("detail-scroll", detailScreen(t, model.detail!, model), PANEL.padding),
           ),
       ),
     )
