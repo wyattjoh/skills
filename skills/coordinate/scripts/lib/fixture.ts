@@ -175,7 +175,7 @@ export const cliEnv = (
   // reads (a watcher's pid check) pass through.
   writeFileSync(
     join(bin, "ps"),
-    '#!/bin/sh\ncase "$*" in *lstart*) exit 0 ;; esac\nexec /bin/ps "$@"\n',
+    `#!/bin/sh\ncase "$*" in *lstart*) exit 0 ;; esac\nexec '${Bun.which("ps") ?? "/bin/ps"}' "$@"\n`,
   );
   chmodSync(join(bin, "ps"), 0o755);
   writeFileSync(

@@ -96,7 +96,7 @@ A status question ("sitrep", "where are we") gets `coordinate status` and at mos
 
 ## Clean up
 
-Sweep at Start, after compaction, when the watcher fires, and in the turn a task finishes (integrated, delivered, dismissed or parked). [sweep.md](references/sweep.md) says what each verdict asks of you. `coordinate end` also stops what the delegate left running, its terminal's process tree and the processes its own worktree holds, and prints each one. End delegates quiet for a day with `coordinate end --list-idle`, passing `--item-status` when the item is not done with it, so no item sits at `delegated` with no live delegate (`status` lists any that does); `coordinate resume <name>` brings one back when a review or answer arrives.
+Sweep at Start, after compaction, when the watcher fires, and in the turn a task finishes (integrated, delivered, dismissed or parked). [sweep.md](references/sweep.md) says what each verdict asks of you. `coordinate end` also stops what the delegate left running, its terminal's process tree and the orphans left in the worktree `delegate --repo` made for it, and prints each one. End delegates quiet for a day with `coordinate end --list-idle`, passing `--item-status` when the item is not done with it, so no item sits at `delegated` with no live delegate (`status` lists any that does); `coordinate resume <name>` brings one back when a review or answer arrives.
 
 ## Backlog
 

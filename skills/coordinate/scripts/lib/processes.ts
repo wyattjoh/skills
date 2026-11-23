@@ -112,14 +112,24 @@ const PS_ARGV = ["ps", "-axww", "-o", "pid=,ppid=,lstart=,args="];
 
 const readPs = Effect.fn("readPs")(function* () {
   const proc = yield* Proc;
-  const ps = yield* proc.run(PS_ARGV, { timeoutMs: 30_000, env: ENV() });
+  // lstart is printed in the locale's words; the C locale keeps it parseable.
+  const ps = yield* proc.run(PS_ARGV, { timeoutMs: 30_000, env: { ...ENV(), LC_ALL: "C" } });
   if (ps.exitCode !== 0)
     return yield* new hc.HerdrError({
       command: "ps",
       kind: "command_failed",
       message: ps.stderr.slice(0, 200),
     });
-  return parsePs(ps.stdout);
+  const rows = parsePs(ps.stdout);
+  // Rows that start with a pid but do not parse would silently empty the table, and with it the
+  // Herdr core exclusion.
+  if (rows.length === 0 && /^\s*\d+\s/m.test(ps.stdout))
+    return yield* new hc.HerdrError({
+      command: "ps",
+      kind: "unreadable_output",
+      message: ps.stdout.slice(0, 200),
+    });
+  return rows;
 });
 
 /**

@@ -93,7 +93,9 @@ export type Terminal = {
   app: string | undefined;
   labels: Record<string, string>;
   argv: string[];
-  /** The terminal's root process. */
+  /**
+   * The terminal's root process.
+   */
   pid: number | undefined;
 };
 

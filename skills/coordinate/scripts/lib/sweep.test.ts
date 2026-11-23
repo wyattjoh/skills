@@ -175,7 +175,10 @@ const deletedFolderRows = async (lsof: string, psText: string, endedName?: strin
   const state = track(tempDir());
   if (endedName) {
     mkdirSync(join(state, "ended"), { recursive: true });
-    writeFileSync(join(state, "ended", `${endedName}.json`), endedRecord(endedName, gone));
+    writeFileSync(
+      join(state, "ended", `${endedName}.json`),
+      endedRecord(endedName, gone, "0123456789abcdef0123456789abcdef01234567"),
+    );
   }
   const fake = gitAndFake((argv) => {
     if (argv[0] === "lsof") return ok(lsof.replaceAll("<gone>", gone));
@@ -408,7 +411,7 @@ describe("pruneBranches", () => {
   });
 });
 
-const endedRecord = (name: string, cwd: string) =>
+const endedRecord = (name: string, cwd: string, baseSha: string | null = null) =>
   JSON.stringify({
     name,
     domain: "app",
@@ -417,6 +420,7 @@ const endedRecord = (name: string, cwd: string) =>
     ended_at: "2026-11-16T00:00:00Z",
     repo: null,
     branch: null,
+    base_sha: baseSha,
   });
 
 describe("pruneEnded", () => {
@@ -431,10 +435,17 @@ describe("pruneEnded", () => {
   });
 });
 
-const endedState = (cwd: string): string => {
+/**
+ * State holding one ended record for `cwd`; with `coordinateMade`, as `delegate --repo` records it (a creation
+ * base), otherwise as for a --cwd or attached delegate (none).
+ */
+const endedState = (cwd: string, coordinateMade = true): string => {
   const state = track(tempDir());
   mkdirSync(join(state, "ended"), { recursive: true });
-  writeFileSync(join(state, "ended", "fix-a.json"), endedRecord("fix-a", cwd));
+  writeFileSync(
+    join(state, "ended", "fix-a.json"),
+    endedRecord("fix-a", cwd, coordinateMade ? g(cwd, "rev-parse", "HEAD~1") : null),
+  );
   return state;
 };
 
@@ -504,6 +515,28 @@ describe("ended delegate processes", () => {
     );
     expect(machine.kills).toEqual([]);
     expect(existsSync(wt)).toBe(true);
+  });
+
+  it("still asks about an orphan unless coordinate made the worktree for a delegate that ended", async () => {
+    for (const state of [() => track(tempDir()), (wt: string) => endedState(wt, false)]) {
+      const { repo, wt } = repoWithWorktree();
+      squashIntoMain(repo);
+      const machine = processMachine(
+        [{ pid: 20, ppid: 1, args: "pnpm dev", cwd: real(wt) }],
+        {},
+        fakes(),
+      );
+      const cfg = await config(state(wt));
+      const fake = gitAndFake(machine.answer);
+      const lines = await runWith(
+        Effect.flatMap(context(cfg, [repo], [], []), (ctx) => removeMany(cfg, [wt], ctx, STOP)),
+        fake.layer,
+      );
+      expect(lines[0]?.startsWith(`kept ${real(wt)}: ASK,`)).toBe(true);
+      expect(lines[0]?.includes("processes: 20 pnpm")).toBe(true);
+      expect(machine.kills).toEqual([]);
+      expect(existsSync(wt)).toBe(true);
+    }
   });
 
   it("keeps the worktree when a process outlives SIGKILL", async () => {

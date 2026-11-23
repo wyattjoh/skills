@@ -1038,10 +1038,13 @@ export const endDelegate = Effect.fn("endDelegate")(function* (
   yield* hc.end(terminal.address).pipe(Effect.tapError(() => removeEnded(path)));
   const space = terminal.labels[L.space];
   if (space) yield* hc.closeSpace(space).pipe(Effect.ignore);
-  // Only a worktree of its own: a shared checkout's processes may be anyone's.
+  // Only a worktree coordinate made for it (`delegate --repo` sets the base label): a --cwd folder or
+  // an attached session's folder may be shared, and its processes anyone's.
   const worktree = terminal.labels[L.worktree];
   const ownWorktree =
-    worktree !== undefined && real(worktree) !== real(record.repo ?? "")
+    worktree !== undefined &&
+    terminal.labels[L.base] !== undefined &&
+    real(worktree) !== real(record.repo ?? "")
       ? real(worktree)
       : undefined;
   const stopped = remote

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "bun:test";
-import { processMachine, runWith } from "./fixture.ts";
+import { failureOf, processMachine, runWith } from "./fixture.ts";
 import { fakeProc } from "./proc.ts";
 import {
   ownedBy,
@@ -24,6 +24,18 @@ describe("parsePs", () => {
         args: "node server.js --port 1",
       },
     ]);
+  });
+});
+
+describe("scanProcesses", () => {
+  it("fails rather than return an empty table when ps rows do not parse", async () => {
+    const fake = fakeProc((argv) =>
+      argv[0] === "lsof"
+        ? { exitCode: 0, stdout: "p5\ncherdr-core\nfcwd\nn/\n", stderr: "" }
+        : { exitCode: 0, stdout: "5 1 lun. 23 nov. 04:50:09 2026 herdr-core hold\n", stderr: "" },
+    );
+    const error = await failureOf(scanProcesses(), fake.layer);
+    expect(String((error as { kind?: string }).kind)).toBe("unreadable_output");
   });
 });
 

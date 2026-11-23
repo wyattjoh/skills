@@ -1308,6 +1308,36 @@ describe("endDelegate", () => {
     expect([...machine.alive].toSorted()).toEqual([5, 60]);
   });
 
+  it("still ends the delegate when the process scan fails", async () => {
+    const fake = fakeProc((argv) =>
+      argv[0] === "lsof" ? { exitCode: 2, stdout: "", stderr: "lsof: boom" } : endAnswers(argv),
+    );
+    const lines = await runWith(endDelegate(await config(dir()), "fix-a", false), fake.layer);
+    expect(lines.slice(1)).toEqual([
+      "worktree, branch and session stay; resume with: coordinate resume fix-a",
+      "stopped no processes: the process scan failed (lsof: boom)",
+    ]);
+  });
+
+  it("leaves the folder's orphans alone for a delegate coordinate made no worktree for", async () => {
+    const attached = Object.fromEntries(
+      Object.entries(endLabels).filter(([key]) => key !== "fleet.base"),
+    );
+    const machine = processMachine(
+      [{ pid: 20, ppid: 1, args: "pnpm dev", cwd: "/nonexistent/wt" }],
+      {},
+      endAnswers,
+    );
+    const fake = fakeProc((argv) =>
+      argv[0] === "hc" && argv[1] === "get"
+        ? ok(terminal({ status: { state: "idle" }, labels: attached, cwd: "/nonexistent/wt" }))
+        : machine.answer(argv),
+    );
+    const lines = await runWith(endDelegate(await config(dir()), "fix-a", false), fake.layer);
+    expect(lines.slice(2)).toEqual(["no processes of fix-a were left running"]);
+    expect(machine.kills).toEqual([]);
+  });
+
   it("leaves a remote delegate's processes alone", async () => {
     const fake = fakeProc((argv) =>
       argv[0] === "hc" && argv[1] === "get"

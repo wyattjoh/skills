@@ -45,8 +45,10 @@ export type Row = {
   verdict: Verdict;
   text: string;
   path: string | undefined;
-  /** Processes of an ended delegate that `sweep remove` stops. */
-  stop?: readonly PsRow[];
+  /**
+   * Processes of an ended delegate that `sweep remove` stops; empty for most rows.
+   */
+  stop: readonly PsRow[];
 };
 
 const ORDER: Record<Verdict, number> = { SAFE: 0, CLOSE: 1, ASK: 2, KEEP: 3, INFO: 4 };
@@ -167,8 +169,9 @@ export const worktreeRow = Effect.fn("worktreeRow")(function* (
   const holding = ctx.processes.filter(
     (held) => inside(held.path, path) && !SELF_EXITING.has(held.command),
   );
-  // Processes an ended delegate provably left here are stopped by remove; only the rest need an ask.
-  const owned = ctx.ended.has(path) ? ownedBy(ctx.table, path) : new Set<string>();
+  // Processes an ended delegate provably left in a worktree coordinate made for it (its record has a
+  // creation base) are stopped by remove; only the rest need an ask.
+  const owned = ctx.creationBases.has(path) ? ownedBy(ctx.table, path) : new Set<string>();
   const allPids = label(holding);
   const pids = label(holding.filter((held) => !owned.has(held.pid)));
   const ownedPids = label(holding.filter((held) => owned.has(held.pid)));
@@ -288,6 +291,7 @@ const scratchRows = (repo: string, nowMs: number): Row[] => {
         {
           verdict: "ASK",
           path: scratch,
+          stop: [],
           text: `scratch ${scratch}: ${stale.length} entries untouched ${SCRATCH_STALE_DAYS}+ days: ${stale.slice(0, 6).join(", ")}`,
         },
       ];
@@ -321,6 +325,7 @@ export const report = Effect.fn("sweepReport")(function* (
       rows.push({
         verdict: "SAFE",
         path: repo,
+        stop: [],
         text: `${landed.length} landed branches in ${repo} · list them: coordinate sweep prune-branches ${repo} --list`,
       });
     rows.push(...scratchRows(repo, options.nowMs));
@@ -329,11 +334,17 @@ export const report = Effect.fn("sweepReport")(function* (
       rows.push({
         verdict: "INFO",
         path: repo,
+        stop: [],
         text: `base ${repo} [${ahead.branch}] is ${ahead.ahead} commits ahead of ${ahead.upstream}`,
       });
     const prs = ctx.repos.get(repo)?.prs;
     if (prs && !prs.ok)
-      rows.push({ verdict: "INFO", path: repo, text: `PRs for ${repo} unknown: ${prs.error}` });
+      rows.push({
+        verdict: "INFO",
+        path: repo,
+        text: `PRs for ${repo} unknown: ${prs.error}`,
+        stop: [],
+      });
     const root = join(repo, ".claude", "worktrees");
     const realRoot = real(root);
     const byFolder = new Map<string, Map<string, string>>();
@@ -346,7 +357,7 @@ export const report = Effect.fn("sweepReport")(function* (
       byFolder.set(folder, pids);
     }
     for (const [folder, pids] of byFolder) {
-      const owned = ctx.ended.has(folder) ? ownedBy(ctx.table, folder) : new Set<string>();
+      const owned = ctx.creationBases.has(folder) ? ownedBy(ctx.table, folder) : new Set<string>();
       rows.push({
         verdict: "SAFE",
         path: undefined,
@@ -477,7 +488,7 @@ export const removeOne = Effect.fn("removeOne")(function* (
       removed: false,
       lines: [`kept ${path}: ${row.verdict}, ${row.text.replace(/^worktree \S+ /, "")}`],
     };
-  const stopped = yield* stopProcesses(row.stop ?? [], options);
+  const stopped = yield* stopProcesses(row.stop, options);
   if (stopped.survivors.length > 0)
     return {
       removed: false,
@@ -578,10 +589,9 @@ export const stopDeletedFolders = Effect.fn("stopDeletedFolders")(function* (
 ) {
   const lines: string[] = [];
   for (const row of rows) {
-    if (!row.text.startsWith("processes in deleted folder ") || (row.stop ?? []).length === 0)
-      continue;
+    if (!row.text.startsWith("processes in deleted folder ") || row.stop.length === 0) continue;
     const folder = row.text.slice("processes in deleted folder ".length).split(":")[0] ?? "";
-    const stopped = yield* stopProcesses(row.stop ?? [], options);
+    const stopped = yield* stopProcesses(row.stop, options);
     lines.push(`ended delegate's processes in deleted folder ${folder}:`);
     lines.push(...stopped.lines.map((line) => `  ${line}`));
   }
