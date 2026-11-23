@@ -3,7 +3,17 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { Effect } from "effect";
 import { failureOf, runWith } from "./fixture.ts";
-import { coreName, coresOn, get, isAgent, newSpace, parseGet, parseList, run } from "./herdr.ts";
+import {
+  coreName,
+  coresOn,
+  get,
+  isAgent,
+  newSpace,
+  parseGet,
+  parseList,
+  readFileOn,
+  run,
+} from "./herdr.ts";
 import { fakeProc, ok } from "./proc.ts";
 
 const testdata = (name: string) =>
@@ -144,5 +154,29 @@ describe("newSpace", () => {
       "space.new",
       '{"name":"app [fix a]","folder":"/w","focus":false}',
     ]);
+  });
+});
+
+describe("readFileOn", () => {
+  it("pages past Herdr's 8 MB read cap so no line is cut", async () => {
+    const pages: Record<string, string> = {
+      "1": JSON.stringify({ first: 1, last: 2, lines: 3, text: "a\nb\n" }),
+      "3": JSON.stringify({ first: 3, last: 3, lines: 3, text: "c\n" }),
+    };
+    const fake = fakeProc((argv) => {
+      const at = argv.indexOf("--offset");
+      return ok(pages[at === -1 ? "1" : (argv[at + 1] ?? "")] ?? "");
+    });
+    expect(await runWith(readFileOn("strix", "/w/OUTBOX.jsonl"), fake.layer)).toBe("a\nb\nc\n");
+    expect(fake.calls.map((call) => call.argv)).toEqual([
+      ["hc", "file", "read", "--on", "strix", "/w/OUTBOX.jsonl", "--json"],
+      ["hc", "file", "read", "--on", "strix", "/w/OUTBOX.jsonl", "--json", "--offset", "3"],
+    ]);
+  });
+
+  it("reads an empty file in one call", async () => {
+    const fake = fakeProc(() => ok(JSON.stringify({ first: 1, last: 0, lines: 0, text: "" })));
+    expect(await runWith(readFileOn("strix", "/w/OUTBOX.jsonl"), fake.layer)).toBe("");
+    expect(fake.calls.length).toBe(1);
   });
 });

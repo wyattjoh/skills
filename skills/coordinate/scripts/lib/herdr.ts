@@ -344,23 +344,33 @@ export const writeFileOn = Effect.fn("hc.writeFileOn")(function* (
   yield* herdr(["hc", "file", "write", "--on", machine, path, "--json"], 30_000, content);
 });
 
-const FileRead = Schema.Struct({ text: Schema.String });
+const FileRead = Schema.Struct({ text: Schema.String, last: Schema.Number, lines: Schema.Number });
 
 /**
- * Read a text file on another Herdr machine (up to Herdr's 8 MB cap).
+ * Read a whole text file on another Herdr machine, in pages when it is over Herdr's 8 MB cap.
  * @param machine Herdr machine name.
  * @param path Absolute path there.
  * @returns The file's text, or undefined when there is no such file.
  */
 export const readFileOn = Effect.fn("hc.readFileOn")(function* (machine: string, path: string) {
-  const result = yield* herdr(["hc", "file", "read", "--on", machine, path, "--json"], 30_000).pipe(
-    Effect.map((text) => ({ text })),
-    Effect.catchTag("HerdrError", (error) =>
-      error.kind === "not_found" ? Effect.succeed(undefined) : Effect.fail(error),
-    ),
-  );
-  if (result === undefined) return undefined;
-  return (yield* decodeJson(FileRead, "hc file read", result.text)).text;
+  const parts: string[] = [];
+  // hc has no line limit by default, but stops at 8 MB on a whole line and says where (`last` of
+  // `lines`): read on from the next line until the last one is in.
+  for (let offset = 1; ;) {
+    const page = ["hc", "file", "read", "--on", machine, path, "--json"];
+    if (offset > 1) page.push("--offset", String(offset));
+    const result = yield* herdr(page, 30_000).pipe(
+      Effect.map((text) => ({ text })),
+      Effect.catchTag("HerdrError", (error) =>
+        error.kind === "not_found" ? Effect.succeed(undefined) : Effect.fail(error),
+      ),
+    );
+    if (result === undefined) return offset === 1 ? undefined : parts.join("");
+    const read = yield* decodeJson(FileRead, "hc file read", result.text);
+    parts.push(read.text);
+    if (read.last >= read.lines || read.last < offset) return parts.join("");
+    offset = read.last + 1;
+  }
 });
 
 /**
