@@ -1,16 +1,19 @@
 // The panel's regions as element functions: everything it draws, from data the View hands in.
 import { div, svg } from "gpui-kit";
-import type { Color, Context, Element } from "gpui-kit";
-import { Input, InputState, h_flex, v_flex } from "gpui-base";
+import type { Color, Context, Element, FocusHandle } from "gpui-kit";
+import { Input, InputState, Popover, h_flex, v_flex } from "gpui-base";
 import { answerInputElement } from "./textarea.ts";
 import type { AnswerInputState } from "./textarea.ts";
 import {
   BUTTON_STYLE,
   CARD,
   HERDR_ICONS,
+  MENU,
   PANEL,
   ROW,
   TEXT,
+  menuPanel,
+  menuRow,
   button,
   bundledIconPaths,
   card,
@@ -26,7 +29,6 @@ import {
   labelChip,
   listRow,
   loadingState,
-  togglePill,
   paneScrollRegion,
   panelBody,
   panelFrame,
@@ -34,6 +36,7 @@ import {
   rowNote,
   staticRow,
   titleRow,
+  togglePill,
   letThrough,
 } from "@wyattjoh/herdr-ui";
 import type { ButtonStyle, Theme } from "@wyattjoh/herdr-ui";
@@ -41,6 +44,12 @@ import { isDiscussion } from "../../lib/store.ts";
 import type { AnsweredAsk, Ask, Backlog, Finding, Item } from "../../lib/store.ts";
 import {
   ANSWER,
+  ANSWER_CAROUSEL,
+  ANSWER_FLOW_SPEED_OPTIONS,
+  ANSWER_FLOW_LAYOUT_BASELINE,
+  ANSWER_FLOW_LAYOUT_GEOMETRY,
+  ANSWER_FLOW_LAYOUT_PROPOSALS,
+  ANSWER_FLOW_OUTLINE,
   ASK_OPTION_NUMBER_WIDTH,
   COUNT_TONES,
   DELEGATE_INDENT,
@@ -50,6 +59,7 @@ import {
   FINDING_STATUS_TONES,
   STATUS_TONES,
 } from "./look.ts";
+import type { AnswerFlowLayout, AnswerFlowLayoutId } from "./look.ts";
 import {
   FINDING_KIND_LABELS,
   FINDING_STATUS_LABELS,
@@ -58,6 +68,8 @@ import {
   chosenAnswer,
   delegateLabel,
   delegateLine,
+  formatFindingCounts,
+  groupFindings,
   rankedOptions,
 } from "./model.ts";
 import type {
@@ -77,6 +89,7 @@ import type {
   ListingState,
   Screen,
 } from "./model.ts";
+import { layoutAnswerFlowCards } from "./answer-flow.ts";
 
 export type { Theme } from "@wyattjoh/herdr-ui";
 
@@ -142,18 +155,79 @@ export type AnswerModel = {
   submit: (cx: Context) => void;
 };
 
+/** Every question card and the terminal summary mounted by the carousel. */
+export type AnswerFlowCardModel = {
+  id: string;
+  item: Item | undefined;
+  kind: "question" | "summary";
+  compactHeight: number | undefined;
+  expandedHeight: number | undefined;
+};
+
+/** The single native transition target and its matching completion-timer duration. */
+export type AnswerFlowMotion = {
+  targetIndex: number | undefined;
+  duration: number;
+  exiting: boolean;
+};
+
 export type AnswerFlowModel = {
   domain: string;
-  item: Item | undefined;
+  cards: AnswerFlowCardModel[];
+  currentIndex: number;
+  viewport: { width: number; height: number } | undefined;
+  ready: boolean;
+  motion: AnswerFlowMotion | undefined;
+  speedIndex: number;
+  speedMenuOpen: boolean;
+  speedActiveIndex: number;
+  speedTriggerFocus: FocusHandle;
+  speedMenuFocus: FocusHandle;
+  setSpeedMenuOpen: (open: boolean, cx: Context) => void;
+  moveSpeedMenu: (delta: number, cx: Context) => void;
+  setSpeedActiveIndex: (index: number, cx: Context) => void;
+  setSpeed: (index: number, cx: Context) => void;
+  layout: AnswerFlowLayout;
+  layoutSelection: AnswerFlowLayout;
+  layoutPending: boolean;
+  layoutMenuOpen: boolean;
+  layoutActiveIndex: number;
+  layoutTriggerFocus: FocusHandle;
+  layoutMenuFocus: FocusHandle;
+  layoutMeasurement: AnswerFlowLayout | undefined;
+  layoutMeasurementVersion: number;
+  rationaleOpenFor: string | undefined;
+  measureViewport: (size: { width: number; height: number }, cx: Context) => void;
+  measure: (
+    id: string,
+    kind: "compact" | "expanded",
+    size: { width: number; height: number },
+    cx: Context,
+  ) => void;
+  measureLayout: (
+    layoutId: AnswerFlowLayoutId,
+    version: number,
+    id: string,
+    size: { width: number; height: number },
+    cx: Context,
+  ) => void;
+  setLayoutMenuOpen: (open: boolean, cx: Context) => void;
+  moveLayoutMenu: (delta: number, cx: Context) => void;
+  setLayoutActiveIndex: (index: number, cx: Context) => void;
+  activateLayoutMenu: (cx: Context) => void;
+  selectLayout: (id: AnswerFlowLayoutId, cx: Context) => void;
+  resetLayout: (cx: Context) => void;
+  setRationaleOpen: (id: string, open: boolean, cx: Context) => void;
+  rationaleFocusFor: (id: string) => FocusHandle | undefined;
   position: number;
   total: number;
   done: boolean;
   answeredCount: number;
   skippedCount: number;
   answer: AnswerModel | undefined;
+  answerFor: (id: string) => AnswerModel | undefined;
   back: (cx: Context) => void;
   skip: (cx: Context) => void;
-  exit: (cx: Context) => void;
 };
 
 export type BoundaryList = "owned" | "adjacent";
@@ -479,18 +553,33 @@ const unfiledCard = (t: Theme, rows: DelegateRow[], model: PanelModel): Element[
         ),
       ];
 
-// Open findings, one package row each. Closed findings stay off this page.
+// Open findings in one card per non-empty kind, with each kind paged on its own.
 const findingsPage = (t: Theme, model: PanelModel): Element => {
-  const rows =
-    model.findings.length === 0
-      ? [emptyRow(t, "findings-empty", "No open findings")]
-      : pagedRows(t, "findings-open", model.findings, model, ROW.compact, (finding, index) =>
-          findingRow(t, finding, model.openFinding, index === 0),
-        );
-  return cardSection(
-    cardHeader(t, "findings-header", "Findings"),
-    card(t, "findings").children(rows),
-  );
+  const groups = groupFindings(model.findings);
+  if (groups.length === 0)
+    return v_flex()
+      .id("findings-page")
+      .child(emptyRow(t, "findings-empty", "No open findings"));
+  return v_flex()
+    .id("findings-page")
+    .gap(PANEL.sectionGap)
+    .children(
+      groups.map((group) =>
+        cardSection(
+          cardHeader(t, `findings-${group.kind}-header`, group.label),
+          card(t, `findings-${group.kind}`).children(
+            pagedRows(
+              t,
+              `findings-${group.kind}`,
+              group.findings,
+              model,
+              ROW.compact,
+              (finding, index) => findingRow(t, finding, model.openFinding, index === 0),
+            ),
+          ),
+        ),
+      ),
+    );
 };
 
 // A detail card item wraps naturally; herdr-ui owns its padding, gap and separator.
@@ -520,9 +609,16 @@ const fact = (
       values.length === 0
         ? div().text_color(t.dim).child("None")
         : h_flex()
+            .id(`${id}-values`)
+            .w_full()
+            .min_w_0()
             .flex_wrap()
             .gap(BUTTON_STYLE.gap)
-            .children(values.map((value) => div().child(value))),
+            .children(
+              values.map((value, index) =>
+                div().id(`${id}-value-${index}`).flex_1().min_w_0().child(value),
+              ),
+            ),
     );
 
 const ANSWER_BUTTON_STYLE: ButtonStyle = {
@@ -824,14 +920,331 @@ const answerRows = (t: Theme, answer: AnswerModel, prefix = "ask"): Element[] =>
   ];
 };
 
-const askCard = (
+type AnswerFlowAskPresentation = {
+  layout: AnswerFlowLayout;
+  width: number;
+  rationaleKey: string;
+  rationaleOpenFor: string | undefined;
+  rationaleFocus: FocusHandle | undefined;
+  setRationaleOpen: ((open: boolean, cx: Context) => void) | undefined;
+};
+
+const answerFlowPrompt = (
+  t: Theme,
+  id: string,
+  ask: Ask,
+  layout: AnswerFlowLayout,
+  width: number,
+): Element => {
+  const promptId =
+    layout.id === ANSWER_FLOW_LAYOUT_BASELINE.id
+      ? `${id}-question-block`
+      : `${id}-prompt-${layout.prompt}`;
+  const question = div()
+    .id(`${id}-question`)
+    .min_w_0()
+    .font_medium()
+    .text_size(TEXT.body)
+    .text_color(t.foreground)
+    .child(ask.question);
+  const context =
+    ask.context === null
+      ? undefined
+      : div()
+          .id(`${id}-context`)
+          .min_w_0()
+          .text_size(
+            layout.prompt === "caption" || layout.prompt === "compact" ? TEXT.label : TEXT.body,
+          )
+          .text_color(t.muted)
+          .child(ask.context);
+  if (layout.prompt === "block")
+    return v_flex()
+      .id(promptId)
+      .min_w_0()
+      .bg(t.popover)
+      .rounded(CARD.innerRadius)
+      .px(CARD.paddingX)
+      .py(CARD.paddingY)
+      .child(question)
+      .when(context !== undefined, (el) => el.child(context!));
+  if (layout.prompt === "split") {
+    if (context === undefined || width < ANSWER_FLOW_LAYOUT_GEOMETRY.splitPromptMinWidth)
+      return v_flex()
+        .id(promptId)
+        .min_w_0()
+        .px(CARD.paddingX)
+        .py(CARD.paddingY)
+        .gap(BUTTON_STYLE.gap)
+        .child(question)
+        .when(context !== undefined, (el) => el.child(context!));
+    return h_flex()
+      .id(promptId)
+      .w_full()
+      .min_w_0()
+      .items_start()
+      .gap(ANSWER_FLOW_LAYOUT_GEOMETRY.choiceGap)
+      .px(CARD.paddingX)
+      .py(CARD.paddingY)
+      .child(div().id(`${id}-question-column`).flex_1().min_w_0().child(question))
+      .child(div().id(`${id}-context-column`).flex_1().min_w_0().child(context));
+  }
+  if (layout.prompt === "context-first")
+    return v_flex()
+      .id(promptId)
+      .min_w_0()
+      .px(CARD.paddingX)
+      .py(CARD.paddingY)
+      .gap(BUTTON_STYLE.gap)
+      .when(context !== undefined, (el) => el.child(context!))
+      .child(question);
+  if (layout.prompt === "band")
+    return v_flex()
+      .id(promptId)
+      .min_w_0()
+      .bg(role(t, "surface"))
+      .rounded(CARD.innerRadius)
+      .px(CARD.paddingX)
+      .py(CARD.paddingY)
+      .gap(BUTTON_STYLE.gap)
+      .child(question)
+      .when(context !== undefined, (el) => el.child(context!));
+  return v_flex()
+    .id(promptId)
+    .min_w_0()
+    .px(CARD.paddingX)
+    .py(CARD.paddingY)
+    .gap(layout.prompt === "compact" ? 2 : BUTTON_STYLE.gap)
+    .child(question)
+    .when(context !== undefined, (el) => el.child(context!));
+};
+
+const answerFlowOptionStyle = (
+  row: Element,
+  t: Theme,
+  selected: boolean,
+  layout: AnswerFlowLayout,
+): Element => {
+  if (layout.choices === "outline")
+    return row
+      .w_full()
+      .min_w_0()
+      .px(ANSWER_FLOW_OUTLINE.paddingX)
+      .py(ANSWER_FLOW_OUTLINE.paddingY)
+      .gap(BUTTON_STYLE.gap)
+      .bg(role(t, ANSWER_FLOW_OUTLINE.optionSurface))
+      .text_color(t.foreground)
+      .border_1()
+      .border_color(selected ? t.accent : t.border)
+      .rounded(CARD.innerRadius)
+      .when(selected, (el) =>
+        el.border(ANSWER_FLOW_OUTLINE.selectedBorderWidth).border_color(t.accent).font_semibold(),
+      );
+
+  const cell = layout.choices === "tiles" || layout.choices === "grid";
+  const compact = layout.choices === "compact";
+  const sized = cell ? row.flex_1() : row.w_full();
+  const styled = sized
+    .min_w_0()
+    .px(compact ? 8 : CARD.paddingX)
+    .py(compact ? 6 : CARD.paddingY)
+    .gap(BUTTON_STYLE.gap)
+    .text_color(t.foreground);
+  if (layout.choices === "tiles" || layout.choices === "grid")
+    return styled
+      .bg(role(t, "surface"))
+      .border_1()
+      .border_color(selected ? t.accent : t.border)
+      .rounded(CARD.innerRadius)
+      .when(selected, (el) =>
+        el.border(ANSWER_FLOW_OUTLINE.selectedBorderWidth).border_color(t.accent).font_semibold(),
+      );
+  if (layout.choices === "spaced")
+    return styled
+      .bg(role(t, "surface"))
+      .rounded(CARD.innerRadius)
+      .when(selected, (el) =>
+        el.border(ANSWER_FLOW_OUTLINE.selectedBorderWidth).border_color(t.accent).font_semibold(),
+      );
+  return styled.when(selected, (el) =>
+    el
+      .bg(role(t, "selected"))
+      .border(ANSWER_FLOW_OUTLINE.selectedBorderWidth)
+      .border_color(t.accent)
+      .rounded(CARD.innerRadius)
+      .font_semibold(),
+  );
+};
+
+const answerFlowGrid = (
+  id: string,
+  items: Element[],
+  width: number,
+  minimumWidth: number,
+  maximumColumns: number,
+  rowPrefix: "tile" | "grid",
+): Element => {
+  const gap = ANSWER_FLOW_LAYOUT_GEOMETRY.choiceGap;
+  const columns = Math.max(
+    1,
+    Math.min(maximumColumns, Math.floor((width + gap) / (minimumWidth + gap))),
+  );
+  const rows: Element[] = [];
+  for (let start = 0; start < items.length; start += columns) {
+    rows.push(
+      h_flex()
+        .id(`${id}-option-${rowPrefix}-row-${rows.length}`)
+        .w_full()
+        .min_w_0()
+        .items_stretch()
+        .gap(gap)
+        .children(items.slice(start, start + columns)),
+    );
+  }
+  return v_flex()
+    .id(`${id}-options-${rowPrefix === "tile" ? "tiles" : "grid"}`)
+    .w_full()
+    .min_w_0()
+    .gap(gap)
+    .children(rows);
+};
+
+const answerFlowOptions = (
+  t: Theme,
+  id: string,
+  items: Element[],
+  layout: AnswerFlowLayout,
+  width: number,
+): Element[] => {
+  if (layout.choices === "outline") return items;
+  if (layout.choices === "tiles")
+    return [answerFlowGrid(id, items, width, ANSWER_FLOW_LAYOUT_GEOMETRY.tileMinWidth, 3, "tile")];
+  if (layout.choices === "grid")
+    return [answerFlowGrid(id, items, width, ANSWER_FLOW_LAYOUT_GEOMETRY.gridMinWidth, 2, "grid")];
+  if (layout.choices === "grouped")
+    return [
+      v_flex()
+        .id(`${id}-options-grouped`)
+        .w_full()
+        .min_w_0()
+        .bg(role(t, "surface"))
+        .rounded(CARD.innerRadius)
+        .border_1()
+        .border_color(t.border)
+        .overflow_hidden()
+        .children(
+          items.map((item, index) =>
+            index === 0 ? item : item.border_t(1).border_color(t.border),
+          ),
+        ),
+    ];
+  if (layout.choices === "rows")
+    return [
+      v_flex()
+        .id(`${id}-options-rows`)
+        .w_full()
+        .min_w_0()
+        .gap(ANSWER_FLOW_LAYOUT_GEOMETRY.choiceGap)
+        .children(items),
+    ];
+  const rows = items.map((item, index) =>
+    index === 0 ? item : item.border_t(1).border_color(t.border),
+  );
+  if (layout.choices === "spaced")
+    return [
+      v_flex()
+        .id(`${id}-options-spaced`)
+        .w_full()
+        .min_w_0()
+        .gap(ANSWER_FLOW_LAYOUT_GEOMETRY.choiceGap)
+        .children(items),
+    ];
+  if (layout.choices === "compact")
+    return [v_flex().id(`${id}-options-compact`).w_full().min_w_0().children(rows)];
+  if (layout.choices === "quiet")
+    return [
+      v_flex().id(`${id}-options-quiet`).w_full().min_w_0().gap(BUTTON_STYLE.gap).children(items),
+    ];
+  return [v_flex().id(`${id}-options-${layout.choices}`).w_full().min_w_0().children(rows)];
+};
+
+const answerFlowRationaleShelf = (t: Theme, id: string, reason: string): Element =>
+  v_flex()
+    .id(`${id}-rec-reason-shelf`)
+    .w_full()
+    .min_w_0()
+    .gap(BUTTON_STYLE.gap)
+    .bg(t.popover)
+    .rounded(CARD.innerRadius)
+    .px(CARD.paddingX)
+    .py(CARD.paddingY)
+    .text_size(TEXT.label)
+    .text_color(t.muted)
+    .child(small(t, t.muted, "Why recommended").id(`${id}-rec-reason-shelf-label`))
+    .child(div().min_w_0().child(reason));
+
+const answerFlowRationalePopover = (
+  t: Theme,
+  id: string,
+  reason: string,
+  open: boolean,
+  focus: FocusHandle | undefined,
+  onOpenChange: ((open: boolean, cx: Context) => void) | undefined,
+): Element => {
+  const trigger = togglePill(t, {
+    id: `${id}-rec-reason-disclosure-trigger`,
+    label: "Why recommended",
+    icon: HERDR_ICONS.chevronDown,
+    lit: open,
+    tooltip: open ? "Hide recommendation rationale" : "Show recommendation rationale",
+    onClick: onOpenChange === undefined ? undefined : (cx) => onOpenChange(!open, cx),
+  })
+    .role("button")
+    .accessibility_label(open ? "Hide recommendation rationale" : "Show recommendation rationale")
+    .when(focus !== undefined, (el) => el.tab_index(0).track_focus(focus!))
+    .on_key_down((event, cx) => {
+      if (answerFlowKey(event, "enter") || answerFlowKey(event, "space")) {
+        onOpenChange?.(!open, cx);
+        cx.stop_propagation();
+      } else if (open && answerFlowKey(event, "escape")) {
+        onOpenChange?.(false, cx);
+        cx.stop_propagation();
+      }
+    });
+  const content = v_flex()
+    .id(`${id}-rec-reason-popover-content`)
+    .w(ANSWER_FLOW_LAYOUT_GEOMETRY.rationaleWidth)
+    .min_w_0()
+    .gap(BUTTON_STYLE.gap)
+    .bg(t.popover)
+    .rounded(CARD.innerRadius)
+    .border_1()
+    .border_color(t.border)
+    .px(CARD.paddingX)
+    .py(CARD.paddingY)
+    .text_size(TEXT.label)
+    .text_color(t.muted)
+    .child(small(t, t.muted, "Why recommended"))
+    .child(div().min_w_0().text_color(t.foreground).child(reason));
+  return Popover.new(`${id}-rec-reason-popover`)
+    .id(`${id}-rec-reason-disclosure`)
+    .open(open)
+    .on_open_change((next, cx) => onOpenChange?.(next, cx))
+    .trigger(trigger)
+    .when(open, (el) => el.content(content));
+};
+
+const askCardRows = (
   t: Theme,
   id: string,
   ask: Ask,
   answer: AnswerModel | undefined,
   completed: AnsweredAsk | undefined,
   itemTouches: string[] | undefined,
+  presentation?: AnswerFlowAskPresentation,
 ): Element[] => {
+  const flowHeader = presentation !== undefined;
+  const layout = presentation?.layout ?? ANSWER_FLOW_LAYOUT_BASELINE;
   // Notes do not replace the picked option; completed cards have no active draft.
   const picked =
     completed !== undefined
@@ -841,15 +1254,18 @@ const askCard = (
         : answer.draft.discuss
           ? undefined
           : answer.draft.choice;
-  const question = detailRow(t, `${id}-question`)
-    .bg(t.popover)
-    .rounded_t(CARD.innerRadius)
-    .font_medium()
-    .child(ask.question);
+  const question =
+    presentation === undefined
+      ? detailRow(t, `${id}-question`)
+          .bg(t.popover)
+          .rounded_t(CARD.innerRadius)
+          .font_medium()
+          .child(ask.question)
+      : answerFlowPrompt(t, id, ask, layout, presentation.width);
   const context =
-    ask.context === null
-      ? []
-      : [askBodyRow(t, `${id}-context`).text_color(t.muted).child(ask.context)];
+    presentation === undefined && ask.context !== null
+      ? [askBodyRow(t, `${id}-context`).text_color(t.muted).child(ask.context)]
+      : [];
   const touches =
     itemTouches === undefined || itemTouches.length === 0
       ? []
@@ -858,34 +1274,42 @@ const askCard = (
             askBodyRow(theme, rowId),
           ),
         ];
-  const options = rankedOptions(ask).map(({ option, index, rec }, displayIndex) => {
+  const optionItems = rankedOptions(ask).map(({ option, index, rec }, displayIndex) => {
+    const optionId = `${id}-option-${index}`;
     const selected = option === picked;
     const chosen = completed !== undefined && option === completed.answer;
+    const selectedText = flowHeader && selected ? t.foreground : t.muted;
+    const tagTone = selected && flowHeader ? selectedText : undefined;
     const heading = h_flex()
       .gap(BUTTON_STYLE.gap)
       .items_center()
       .child(div().flex_1().min_w_0().child(option))
-      .when(rec, (el) => el.child(small(t, t.accent, "Recommended")))
-      .when(chosen, (el) => el.child(small(t, t.done, "Answered")));
-    const content = v_flex()
-      .id(`${id}-content-${index}`)
-      .flex_1()
-      .min_w_0()
-      .gap(BUTTON_STYLE.gap)
-      .child(heading)
-      .when(Boolean(ask.optionDetails?.[index]), (el) =>
-        el.child(
-          div()
+      .when(rec, (el) => el.child(small(t, tagTone ?? t.accent, "Recommended")))
+      .when(chosen, (el) => el.child(small(t, tagTone ?? t.done, "Answered")));
+    const detailText = ask.optionDetails?.[index];
+    const detail =
+      detailText === undefined || detailText === ""
+        ? undefined
+        : div()
             .id(`${id}-detail-${index}`)
+            .min_w_0()
             .text_size(TEXT.label)
-            .text_color(t.muted)
-            .child(ask.optionDetails![index]!),
-        ),
-      )
-      .when(rec && ask.recReason !== null, (el) =>
-        el.child(
-          div()
+            .text_color(tagTone ?? t.muted)
+            .child(detailText);
+    const detailSideBySide =
+      presentation !== undefined &&
+      layout.choices === "side-details" &&
+      presentation.width >= ANSWER_FLOW_LAYOUT_GEOMETRY.sideDetailsMinWidth &&
+      detail !== undefined;
+    const inlineReason =
+      rec && ask.recReason !== null && (presentation === undefined || layout.rationale === "inline")
+        ? div()
             .id(`${id}-rec-reason`)
+            .min_w_0()
+            .bg(t.popover)
+            .rounded(CARD.innerRadius)
+            .px(CARD.paddingX)
+            .py(CARD.paddingY)
             .text_size(TEXT.label)
             .text_color(t.muted)
             .child(
@@ -893,15 +1317,66 @@ const askCard = (
                 .gap(BUTTON_STYLE.gap)
                 .child(small(t, t.muted, "Why recommended").id(`${id}-rec-reason-label`))
                 .child(div().min_w_0().child(ask.recReason!)),
-            ),
+            )
+        : undefined;
+    const content = v_flex()
+      .id(`${id}-content-${index}`)
+      .flex_1()
+      .min_w_0()
+      .gap(BUTTON_STYLE.gap)
+      .when(detailSideBySide, (el) =>
+        el.child(
+          h_flex()
+            .id(`${id}-detail-side-by-side-${index}`)
+            .w_full()
+            .min_w_0()
+            .items_start()
+            .gap(ANSWER_FLOW_LAYOUT_GEOMETRY.choiceGap)
+            .child(v_flex().flex_1().min_w_0().child(heading))
+            .child(detail!.flex_1().min_w_0()),
         ),
-      );
-    return askBodyRow(t, `${id}-option-${index}`)
-      .when(selected, (el) => el.bg(t.selected))
+      )
+      .when(!detailSideBySide, (el) =>
+        el.child(heading).when(detail !== undefined, (nested) => nested.child(detail!)),
+      )
+      .when(inlineReason !== undefined, (el) => el.child(inlineReason!));
+    const row = flowHeader ? v_flex().id(optionId) : askBodyRow(t, optionId);
+    const styled = flowHeader
+      ? answerFlowOptionStyle(row, t, selected, layout)
+      : row.when(selected, (el) => el.bg(t.selected));
+    const selectionCue = flowHeader
+      ? selected
+        ? svg(HERDR_ICONS.circleCheck)
+            .id(`${optionId}-selection-marker`)
+            .size(ANSWER_FLOW_OUTLINE.markerSize)
+            .flex_none()
+            .text_color(t.accent)
+        : div()
+            .id(`${optionId}-selection-marker`)
+            .w(ANSWER_FLOW_OUTLINE.markerSize)
+            .h(ANSWER_FLOW_OUTLINE.markerSize)
+            .flex_none()
+      : undefined;
+    return styled
       .when(answer !== undefined && completed === undefined, (el) =>
         el
           .cursor_pointer()
-          .hover((s) => s.bg(selected ? t.selected : t.hover))
+          .hover((style) =>
+            style.bg(
+              flowHeader
+                ? selected
+                  ? layout.choices === "outline" ||
+                    layout.choices === "tiles" ||
+                    layout.choices === "grid" ||
+                    layout.choices === "spaced"
+                    ? role(t, "surface")
+                    : role(t, "selected")
+                  : t.hover
+                : selected
+                  ? t.selected
+                  : t.hover,
+            ),
+          )
           .on_click((_event, cx) => answer!.choose(option, cx)),
       )
       .child(
@@ -913,12 +1388,34 @@ const askCard = (
               .id(`${id}-number-${index}`)
               .w(ASK_OPTION_NUMBER_WIDTH)
               .flex_shrink_0()
-              .text_color(t.muted)
+              .text_color(selected && flowHeader ? selectedText : t.muted)
               .child(`${displayIndex + 1}.`),
           )
+          .when(flowHeader, (el) => el.child(selectionCue!))
           .child(content),
       );
   });
+  const options =
+    presentation === undefined
+      ? optionItems
+      : answerFlowOptions(t, id, optionItems, layout, presentation.width);
+  const rationale =
+    presentation === undefined || ask.rec === null || ask.recReason === null
+      ? []
+      : layout.rationale === "shelf"
+        ? [answerFlowRationaleShelf(t, id, ask.recReason)]
+        : layout.rationale === "popover"
+          ? [
+              answerFlowRationalePopover(
+                t,
+                id,
+                ask.recReason,
+                presentation.rationaleOpenFor === presentation.rationaleKey,
+                presentation.rationaleFocus,
+                presentation.setRationaleOpen,
+              ),
+            ]
+          : [];
   const discussion =
     completed === undefined
       ? [
@@ -992,17 +1489,24 @@ const askCard = (
         .child(small(t, t.muted, "Note"))
         .child(div().flex_1().min_w_0().child(completed.note)),
     );
-  return [
-    detailCard(t, id, completed === undefined ? "Ask" : "Answered ask", [
-      question,
-      ...context,
-      ...touches,
-      ...options,
-      ...discussion,
-      ...completion,
-    ]),
-  ];
+  return [question, ...context, ...touches, ...options, ...rationale, ...discussion, ...completion];
 };
+
+const askCard = (
+  t: Theme,
+  id: string,
+  ask: Ask,
+  answer: AnswerModel | undefined,
+  completed: AnsweredAsk | undefined,
+  itemTouches: string[] | undefined,
+): Element[] => [
+  detailCard(
+    t,
+    id,
+    completed === undefined ? "Ask" : "Answered ask",
+    askCardRows(t, id, ask, answer, completed, itemTouches),
+  ),
+];
 
 const askCards = (t: Theme, item: Item, answer: AnswerModel | undefined): Element[] => {
   const cards =
@@ -1110,7 +1614,7 @@ const originFact = (
               .hover((s) => s.text_color(t.foreground))
               .on_click((_event, cx) => open(origin, cx))
               .child(div().flex_none().child(origin.id))
-              .child(div().min_w_0().child(origin.title)),
+              .child(div().flex_1().min_w_0().child(origin.title)),
     );
 
 // The scroll viewport is supplied by herdr-ui at the screen boundary. This content stays
@@ -1180,21 +1684,183 @@ const detailScreen = (
     .children(decidedCard(t, item))
     .children(delegatesCard(t, item, delegates.byItem.get(item.id) ?? []));
 
-const flowButton = (
-  t: Theme,
-  id: string,
-  label: string,
-  onClick: (cx: Context) => void,
-  disabled = false,
-): Element =>
-  button(t, {
-    id,
-    label,
-    style: ANSWER_BUTTON_STYLE,
-    onClick: disabled ? undefined : onClick,
+const answerFlowKey = (
+  event: { key: string; keystroke: string },
+  key: "down" | "up" | "enter" | "space" | "escape",
+) => {
+  const pressed = [event.key.toLowerCase(), event.keystroke.toLowerCase()];
+  return pressed.some(
+    (value) => value === key || value === `arrow${key}` || (key === "space" && value === " "),
+  );
+};
+
+const flowLayoutMenu = (t: Theme, flow: AnswerFlowModel): Element => {
+  const resetIndex = ANSWER_FLOW_LAYOUT_PROPOSALS.length;
+  const menuCount = resetIndex + 1;
+  const proposalRows = ANSWER_FLOW_LAYOUT_PROPOSALS.map((layout, index) =>
+    menuRow(t, {
+      id: `answer-flow-layout-option-${layout.id}`,
+      label: layout.name,
+      selected: index === flow.layoutActiveIndex,
+      checked: layout.id === flow.layoutSelection.id,
+      tooltip: layout.description,
+      onClick: (cx) => flow.selectLayout(layout.id, cx),
+    })
+      .role("menu_item")
+      .accessibility_label(`${layout.name}: ${layout.description}`)
+      .set_position(index + 1, menuCount)
+      .when(index === flow.layoutActiveIndex, (el) =>
+        el.aria_active_descendant().border_1().border_color(t.accent),
+      )
+      .on_hover((hovered, cx) => {
+        if (hovered) flow.setLayoutActiveIndex(index, cx);
+      }),
+  );
+  const reset = menuRow(t, {
+    id: "answer-flow-layout-reset",
+    label: "Reset to Outline",
+    selected: flow.layoutActiveIndex === resetIndex,
+    tooltip: "Restore the initial Outline layout",
+    onClick: flow.resetLayout,
   })
-    .flex_1()
-    .justify_center();
+    .role("menu_item")
+    .set_position(menuCount, menuCount)
+    .when(flow.layoutActiveIndex === resetIndex, (el) =>
+      el.aria_active_descendant().border_1().border_color(t.accent),
+    )
+    .on_hover((hovered, cx) => {
+      if (hovered) flow.setLayoutActiveIndex(resetIndex, cx);
+    });
+  return menuPanel(t, ANSWER_FLOW_LAYOUT_GEOMETRY.menuWidth, MENU.padding)
+    .id("answer-flow-layout-options")
+    .role("menu")
+    .accessibility_label("Answer card layout")
+    .tab_index(0)
+    .track_focus(flow.layoutMenuFocus)
+    .on_key_down((event, cx) => {
+      if (answerFlowKey(event, "down")) flow.moveLayoutMenu(1, cx);
+      else if (answerFlowKey(event, "up")) flow.moveLayoutMenu(-1, cx);
+      else if (answerFlowKey(event, "enter") || answerFlowKey(event, "space"))
+        flow.activateLayoutMenu(cx);
+      else if (answerFlowKey(event, "escape")) flow.setLayoutMenuOpen(false, cx);
+      else return;
+      cx.stop_propagation();
+    })
+    .children([
+      ...proposalRows,
+      div().id("answer-flow-layout-separator").h(1).flex_none().bg(t.border),
+      reset,
+    ]);
+};
+
+const flowLayoutSelector = (t: Theme, flow: AnswerFlowModel): Element => {
+  const selection = flow.layoutSelection;
+  const trigger = togglePill(t, {
+    id: "answer-flow-layout-trigger",
+    label: "Layout",
+    icon: HERDR_ICONS.chevronDown,
+    lit:
+      flow.layoutMenuOpen ||
+      flow.layout.id !== ANSWER_FLOW_LAYOUT_BASELINE.id ||
+      selection.id !== ANSWER_FLOW_LAYOUT_BASELINE.id,
+    tooltip: `Answer card layout: ${selection.name}${flow.layoutPending ? " (applying)" : ""}`,
+    onClick: (cx) => {
+      if (!flow.layoutMenuOpen) flow.setLayoutMenuOpen(true, cx);
+    },
+  })
+    .role("button")
+    .accessibility_label(`Answer card layout: ${selection.name}`)
+    .tab_index(0)
+    .track_focus(flow.layoutTriggerFocus)
+    .on_key_down((event, cx) => {
+      if (
+        answerFlowKey(event, "down") ||
+        answerFlowKey(event, "enter") ||
+        answerFlowKey(event, "space")
+      ) {
+        flow.setLayoutMenuOpen(true, cx);
+        cx.stop_propagation();
+      }
+    });
+  return Popover.new("answer-flow-layout-popover")
+    .id("answer-flow-layout-popover")
+    .open(flow.layoutMenuOpen)
+    .on_open_change((open, cx) => flow.setLayoutMenuOpen(open, cx))
+    .trigger(trigger)
+    .when(flow.layoutMenuOpen, (el) => el.content(flowLayoutMenu(t, flow)));
+};
+
+const ANSWER_FLOW_SPEED_MENU_MAX_HEIGHT = 200;
+
+const flowSpeedMenu = (t: Theme, flow: AnswerFlowModel): Element =>
+  menuPanel(t, ANSWER_FLOW_LAYOUT_GEOMETRY.menuWidth, MENU.padding)
+    .id("answer-flow-speed-options")
+    .role("menu")
+    .accessibility_label("Animation speed")
+    .tab_index(0)
+    .max_h(ANSWER_FLOW_SPEED_MENU_MAX_HEIGHT)
+    .overflow_y_scroll()
+    .track_focus(flow.speedMenuFocus)
+    .on_key_down((event, cx) => {
+      if (answerFlowKey(event, "down")) flow.moveSpeedMenu(1, cx);
+      else if (answerFlowKey(event, "up")) flow.moveSpeedMenu(-1, cx);
+      else if (answerFlowKey(event, "enter") || answerFlowKey(event, "space"))
+        flow.setSpeed(flow.speedActiveIndex, cx);
+      else if (answerFlowKey(event, "escape")) flow.setSpeedMenuOpen(false, cx);
+      else return;
+      cx.stop_propagation();
+    })
+    .children(
+      ANSWER_FLOW_SPEED_OPTIONS.map((option, index) =>
+        menuRow(t, {
+          id: `answer-flow-speed-option-${option.id}`,
+          label: option.name,
+          selected: flow.speedActiveIndex === index,
+          checked: flow.speedIndex === index,
+          onClick: (cx) => flow.setSpeed(index, cx),
+        })
+          .role("menu_item")
+          .set_position(index + 1, ANSWER_FLOW_SPEED_OPTIONS.length)
+          .when(flow.speedActiveIndex === index, (el) =>
+            el.aria_active_descendant().border_1().border_color(t.accent),
+          )
+          .on_hover((hovered, cx) => {
+            if (hovered) flow.setSpeedActiveIndex(index, cx);
+          }),
+      ),
+    );
+
+const flowSpeedSelector = (t: Theme, flow: AnswerFlowModel): Element => {
+  const name = ANSWER_FLOW_SPEED_OPTIONS[flow.speedIndex]?.name ?? "Normal";
+  const trigger = togglePill(t, {
+    id: "answer-flow-speed-trigger",
+    label: `Speed: ${name}`,
+    icon: HERDR_ICONS.chevronDown,
+    lit: flow.speedMenuOpen || flow.speedIndex !== 0,
+    tooltip: `Animation speed: ${name}`,
+    onClick: (cx) => flow.setSpeedMenuOpen(!flow.speedMenuOpen, cx),
+  })
+    .role("button")
+    .accessibility_label(`Animation speed: ${name}`)
+    .tab_index(0)
+    .track_focus(flow.speedTriggerFocus)
+    .on_key_down((event, cx) => {
+      if (
+        answerFlowKey(event, "down") ||
+        answerFlowKey(event, "enter") ||
+        answerFlowKey(event, "space")
+      ) {
+        flow.setSpeedMenuOpen(true, cx);
+        cx.stop_propagation();
+      }
+    });
+  return Popover.new("answer-flow-speed-popover")
+    .id("answer-flow-speed-popover")
+    .open(flow.speedMenuOpen)
+    .on_open_change((open, cx) => flow.setSpeedMenuOpen(open, cx))
+    .trigger(trigger)
+    .when(flow.speedMenuOpen, (el) => el.content(flowSpeedMenu(t, flow)));
+};
 
 const flowHeader = (t: Theme, flow: AnswerFlowModel): Element =>
   h_flex()
@@ -1208,80 +1874,454 @@ const flowHeader = (t: Theme, flow: AnswerFlowModel): Element =>
       div()
         .id("answer-flow-progress")
         .flex_1()
+        .min_w_0()
         .font_semibold()
         .text_size(TEXT.body)
         .text_color(t.foreground)
         .child(flow.done ? "Done" : `Question ${flow.position} of ${flow.total}`),
-    );
+    )
+    .child(flowLayoutSelector(t, flow))
+    .child(flowSpeedSelector(t, flow));
 
-const flowFooter = (t: Theme, flow: AnswerFlowModel): Element => {
-  const busy = flow.answer?.draft.busy === true;
-  const actions = flow.done
-    ? [flowButton(t, "answer-flow-exit", "Back to domain", flow.exit, busy)]
-    : [
-        flowButton(t, "answer-flow-back", "Back", flow.back, busy),
-        flowButton(t, "answer-flow-skip", "Skip", flow.skip, busy),
-      ];
-  return h_flex()
-    .id("answer-flow-footer")
-    .flex_none()
-    .gap(CARD.headerGap)
-    .items_center()
-    .border_t(1)
-    .border_color(t.border)
-    .bg(t.surface)
-    .px(PANEL.padding)
-    .py(BUTTON_STYLE.gap)
-    .children(actions);
-};
+const flowCardHeader = (
+  t: Theme,
+  cardModel: AnswerFlowModel["cards"][number],
+  id: string,
+): Element =>
+  titleRow(t, {
+    id,
+    identifier: cardModel.kind === "question" ? cardModel.id : undefined,
+    title:
+      cardModel.item?.title ??
+      (cardModel.kind === "summary" ? "All caught up" : "Question unavailable"),
+  }).px(CARD.paddingX);
 
-const flowAskCard = (t: Theme, flow: AnswerFlowModel): Element[] => {
-  const item = flow.item;
+const flowAskCard = (
+  t: Theme,
+  flow: AnswerFlowModel,
+  layout: AnswerFlowLayout,
+  width: number,
+  item: Item | undefined,
+  answer: AnswerModel | undefined,
+  detailPrefix: string,
+  askPrefix: string,
+  measurement: boolean,
+  interactive: boolean,
+): Element[] => {
   if (item === undefined)
-    return [message(t, "answer-flow-missing", "Question unavailable", "Go back to the domain.")];
+    return [
+      detailRow(t, `${detailPrefix}-missing`)
+        .border_t(0)
+        .text_color(t.muted)
+        .child("Question unavailable. Go back to the domain."),
+    ];
   if (item.ask === null)
     return [
-      detailCard(t, "ask-completed", item.title, [
-        detailRow(t, "ask-already-answered")
-          .text_color(t.muted)
-          .child("This question was answered outside this flow."),
-      ]),
+      detailRow(t, `${detailPrefix}-already-answered`)
+        .border_t(0)
+        .text_color(t.muted)
+        .child("This question was answered outside this flow."),
     ];
-  return [
-    detailHead(
-      t,
-      "detail",
-      item.id,
-      item.title,
-      GROUP_LABELS[item.status],
-      role(t, STATUS_TONES[item.status]),
-    ),
-    ...askCard(t, "ask", item.ask, flow.answer, undefined, item.touches),
-  ];
+  return askCardRows(t, askPrefix, item.ask, answer, undefined, item.touches, {
+    layout,
+    width,
+    rationaleKey: item.id,
+    rationaleOpenFor: measurement || !interactive ? undefined : flow.rationaleOpenFor,
+    rationaleFocus: interactive ? flow.rationaleFocusFor(item.id) : undefined,
+    setRationaleOpen: interactive
+      ? (open, cx) => flow.setRationaleOpen(item.id, open, cx)
+      : undefined,
+  }).map((row, index) => (index === 0 ? row.border_t(0) : row));
 };
 
-const flowDone = (t: Theme, flow: AnswerFlowModel): Element =>
-  detailCard(t, "answer-flow-summary", "All caught up", [
-    detailRow(t, "answer-flow-summary-count").child(
-      `${flow.answeredCount} answered, ${flow.skippedCount} skipped.`,
-    ),
-  ]);
+const flowDoneRows = (t: Theme, flow: AnswerFlowModel, prefix: string): Element[] => [
+  detailRow(t, `${prefix}-count`)
+    .border_t(0)
+    .child(`${flow.answeredCount} answered, ${flow.skippedCount} skipped.`),
+];
 
-const answerFlowScreen = (t: Theme, flow: AnswerFlowModel): Element => {
-  const content = v_flex()
+const flowPreviewBody = (
+  t: Theme,
+  flow: AnswerFlowModel,
+  cardModel: AnswerFlowModel["cards"][number],
+  id: string,
+): Element => {
+  const subtitle =
+    cardModel.kind === "summary"
+      ? `${flow.answeredCount} answered, ${flow.skippedCount} skipped`
+      : (cardModel.item?.ask?.question ?? "Already answered");
+  return v_flex()
+    .id(id)
+    .w_full()
+    .min_w_0()
+    .px(CARD.paddingX)
+    .py(CARD.paddingY)
+    .gap(ANSWER_CAROUSEL.previewGap)
+    .child(
+      div()
+        .id(`${id}-question`)
+        .text_size(TEXT.caption)
+        .text_color(t.muted)
+        .truncate()
+        .child(subtitle),
+    );
+};
+
+const flowPreviewCard = (
+  t: Theme,
+  flow: AnswerFlowModel,
+  cardModel: AnswerFlowModel["cards"][number],
+  id: string,
+): Element =>
+  card(t, id)
+    .w_full()
+    .min_h(ANSWER_CAROUSEL.compactMinHeight)
+    .child(flowCardHeader(t, cardModel, `${id}-header`))
+    .child(flowPreviewBody(t, flow, cardModel, `${id}-body`));
+
+const flowTransition = (flow: AnswerFlowModel) => ({
+  duration: flow.motion?.duration ?? 0,
+  easing: ANSWER_CAROUSEL.easing,
+});
+
+// Crossfade compact and full content during the box resize, with a small overlap to avoid a blank card.
+const flowContentTransition = (flow: AnswerFlowModel, incoming: boolean, expanding: boolean) => {
+  const duration = flow.motion?.duration;
+  if (duration === undefined) return flowTransition(flow);
+  if (expanding) {
+    return incoming
+      ? {
+          duration: Math.max(1, Math.round(duration * ANSWER_CAROUSEL.expandedContentFadeInRatio)),
+          delay: Math.round(duration * ANSWER_CAROUSEL.expandedContentFadeInStartRatio),
+          easing: ANSWER_CAROUSEL.easing,
+        }
+      : {
+          duration: Math.max(1, Math.round(duration * ANSWER_CAROUSEL.compactContentFadeOutRatio)),
+          easing: "ease-in" as const,
+        };
+  }
+  return incoming
+    ? {
+        duration: Math.max(1, Math.round(duration * ANSWER_CAROUSEL.compactContentFadeInRatio)),
+        delay: Math.round(duration * ANSWER_CAROUSEL.compactContentFadeInStartRatio),
+        easing: "ease-out" as const,
+      }
+    : {
+        duration: Math.max(1, Math.round(duration * ANSWER_CAROUSEL.expandedContentFadeOutRatio)),
+        easing: "ease-in" as const,
+      };
+};
+
+const flowMeasurementAnswer = (item: Item): AnswerModel => ({
+  draft: {
+    key: `answer-flow-measure-${item.id}`,
+    choice: undefined,
+    discuss: false,
+    text: "",
+    note: "",
+    busy: false,
+    error: undefined,
+  },
+  input: undefined,
+  typing: false,
+  noteInput: undefined,
+  noteTyping: false,
+  choose: () => {},
+  discuss: () => {},
+  submit: () => {},
+});
+
+const flowExpandedBody = (
+  t: Theme,
+  flow: AnswerFlowModel,
+  layout: AnswerFlowLayout,
+  width: number,
+  cardModel: AnswerFlowModel["cards"][number],
+  contentId: string,
+  detailPrefix: string,
+  askPrefix: string,
+  measurement: boolean,
+  interactive: boolean,
+): Element => {
+  const item = cardModel.item;
+  const answer =
+    cardModel.kind === "question" && item !== undefined && item.ask !== null
+      ? measurement
+        ? flowMeasurementAnswer(item)
+        : (flow.answerFor(cardModel.id) ?? flowMeasurementAnswer(item))
+      : undefined;
+  return v_flex()
+    .id(contentId)
+    .w_full()
+    .min_w_0()
+    .children(
+      cardModel.kind === "summary"
+        ? flowDoneRows(t, flow, detailPrefix)
+        : flowAskCard(
+            t,
+            flow,
+            layout,
+            width,
+            item,
+            answer,
+            detailPrefix,
+            askPrefix,
+            measurement,
+            interactive,
+          ),
+    );
+};
+
+const flowExpandedContent = (
+  t: Theme,
+  flow: AnswerFlowModel,
+  layout: AnswerFlowLayout,
+  width: number,
+  cardModel: AnswerFlowModel["cards"][number],
+  contentId: string,
+  detailPrefix: string,
+  askPrefix: string,
+  measurement: boolean,
+): Element =>
+  card(t, contentId)
+    .bg(role(t, ANSWER_FLOW_OUTLINE.cardSurface))
+    .w_full()
+    .min_w_0()
+    .child(flowCardHeader(t, cardModel, `${contentId}-header`))
+    .child(
+      flowExpandedBody(
+        t,
+        flow,
+        layout,
+        width,
+        cardModel,
+        `${contentId}-body`,
+        detailPrefix,
+        askPrefix,
+        measurement,
+        false,
+      ),
+    );
+
+const flowMeasurementCards = (t: Theme, flow: AnswerFlowModel): Element[] => {
+  if (flow.viewport === undefined) return [];
+  const expandedWidth = flow.viewport.width * ANSWER_CAROUSEL.compactWidthRatio;
+  const compactWidth = Math.max(1, expandedWidth - 2 * PANEL.padding);
+  const activeIndex = flow.motion?.targetIndex ?? flow.currentIndex;
+  const activeId = flow.cards[activeIndex]?.id;
+  const measurementPrefix = "answer-flow-measure";
+  return flow.cards.flatMap((cardModel) => {
+    const compactId = `${measurementPrefix}-compact-${cardModel.id}`;
+    const expandedId = `${measurementPrefix}-expanded-${cardModel.id}`;
+    const compact = div()
+      .id(compactId)
+      .absolute()
+      .top(0)
+      .left(-10_000)
+      .w(compactWidth)
+      .opacity(0)
+      .on_size_change((size, cx) => flow.measure(cardModel.id, "compact", size, cx))
+      .child(flowPreviewCard(t, flow, cardModel, `${compactId}-preview`));
+    const expanded = div()
+      .id(expandedId)
+      .absolute()
+      .top(0)
+      .left(-10_000)
+      .w(expandedWidth)
+      .opacity(0)
+      .on_size_change((size, cx) => flow.measure(cardModel.id, "expanded", size, cx))
+      .child(
+        flowExpandedContent(
+          t,
+          flow,
+          flow.layout,
+          expandedWidth,
+          cardModel,
+          `${expandedId}-content`,
+          `${expandedId}-detail`,
+          `${expandedId}-ask`,
+          flow.motion !== undefined || cardModel.id !== activeId,
+        ),
+      );
+    const measurements: Element[] = [compact, expanded];
+    const candidateLayout = flow.layoutMeasurement;
+    if (candidateLayout !== undefined && cardModel.kind === "question") {
+      const version = flow.layoutMeasurementVersion;
+      const candidateId = `answer-flow-layout-measure-${version}-expanded-${cardModel.id}`;
+      measurements.push(
+        div()
+          .id(candidateId)
+          .absolute()
+          .top(0)
+          .left(-10_000)
+          .w(expandedWidth)
+          .opacity(0)
+          .on_size_change((size, cx) =>
+            flow.measureLayout(candidateLayout.id, version, cardModel.id, size, cx),
+          )
+          .child(
+            flowExpandedContent(
+              t,
+              flow,
+              candidateLayout,
+              expandedWidth,
+              cardModel,
+              `${candidateId}-content`,
+              `${candidateId}-detail`,
+              `${candidateId}-ask`,
+              cardModel.id !== activeId,
+            ),
+          ),
+      );
+    }
+    return measurements;
+  });
+};
+
+const flowCarouselCard = (
+  t: Theme,
+  flow: AnswerFlowModel,
+  cardModel: AnswerFlowModel["cards"][number],
+  placement: ReturnType<typeof layoutAnswerFlowCards>[number],
+): Element => {
+  const transition = flowTransition(flow);
+  const busy = flow.answer?.draft.busy === true && placement.expanded;
+  const canNavigate =
+    flow.ready &&
+    flow.motion === undefined &&
+    flow.answer?.draft.busy !== true &&
+    Math.abs(placement.index - flow.currentIndex) === 1;
+  const navigate = placement.index < flow.currentIndex ? flow.back : flow.skip;
+  const wasExpanded =
+    flow.motion === undefined ? placement.expanded : placement.index === flow.currentIndex;
+  const changesFocus = wasExpanded !== placement.expanded;
+  const compactId = `answer-flow-preview-${cardModel.id}`;
+  const compactLayer = div()
+    .id(`answer-flow-compact-layer-${cardModel.id}`)
+    .absolute()
+    .top(0)
+    .left(0)
+    .w_full()
+    .overflow_hidden()
+    .opacity(placement.expanded ? 0 : 1)
+    .transition(
+      "opacity",
+      changesFocus
+        ? flowContentTransition(flow, !placement.expanded, placement.expanded)
+        : transition,
+    )
+    .child(flowPreviewBody(t, flow, cardModel, compactId));
+  const expandedLayer = div()
+    .id(`answer-flow-expanded-layer-${cardModel.id}`)
+    .relative()
+    .w_full()
+    .min_w_0()
+    .opacity(placement.expanded ? 1 : 0)
+    .transition(
+      "opacity",
+      changesFocus
+        ? flowContentTransition(flow, placement.expanded, placement.expanded)
+        : transition,
+    )
+    .child(
+      flowExpandedBody(
+        t,
+        flow,
+        flow.layout,
+        placement.width,
+        cardModel,
+        `answer-flow-expanded-content-${cardModel.id}`,
+        `answer-flow-detail-${cardModel.id}`,
+        `answer-flow-ask-${cardModel.id}`,
+        false,
+        true,
+      ),
+    );
+  return card(t, `answer-flow-card-${cardModel.id}`)
+    .absolute()
+    .left(placement.left)
+    .top(placement.top)
+    .w(placement.width)
+    .h(placement.height)
+    .min_w_0()
+    .when(placement.expanded, (el) => el.bg(role(t, ANSWER_FLOW_OUTLINE.cardSurface)))
+    .opacity(busy ? ANSWER_CAROUSEL.disabledOpacity : placement.opacity)
+    .transition("left", transition)
+    .transition("top", transition)
+    .transition("width", transition)
+    .transition("height", transition)
+    .transition("opacity", transition)
+    .when(canNavigate, (el) =>
+      el
+        .cursor_pointer()
+        .hover((style) => style.bg(t.hover))
+        .on_click((_event, cx) => navigate(cx)),
+    )
+    .child(flowCardHeader(t, cardModel, `answer-flow-header-${cardModel.id}`))
+    .child(
+      v_flex()
+        .id(`answer-flow-body-${cardModel.id}`)
+        .relative()
+        .w_full()
+        .min_w_0()
+        .children([compactLayer, expandedLayer]),
+    );
+};
+
+const answerFlowCarousel = (t: Theme, flow: AnswerFlowModel): Element => {
+  let cards: Element[] = [];
+  if (flow.ready && flow.viewport !== undefined) {
+    const activeIndex = flow.motion?.targetIndex ?? flow.currentIndex;
+    const placements = layoutAnswerFlowCards(
+      flow.cards.map((cardModel) => ({
+        id: cardModel.id,
+        compactHeight: cardModel.compactHeight!,
+        expandedHeight: cardModel.expandedHeight!,
+      })),
+      {
+        activeIndex,
+        viewportWidth: flow.viewport.width,
+        viewportHeight: flow.viewport.height,
+        gap: ANSWER_CAROUSEL.gap,
+        compactWidthRatio: ANSWER_CAROUSEL.compactWidthRatio,
+        compactNeighborInset: PANEL.padding,
+        neighborOpacity: ANSWER_CAROUSEL.neighborOpacity,
+        distanceOpacityFalloff: ANSWER_CAROUSEL.distanceOpacityFalloff,
+        exiting: flow.motion?.exiting ?? false,
+      },
+    );
+    cards = placements.map((placement) =>
+      flowCarouselCard(t, flow, flow.cards[placement.index]!, placement),
+    );
+  }
+  return v_flex()
+    .id("answer-flow-carousel")
+    .flex_1()
+    .min_h_0()
+    .min_w_0()
     .px(PANEL.padding)
     .py(PANEL.sectionGap)
-    .gap(PANEL.sectionGap)
-    .children(flow.done ? [flowDone(t, flow)] : flowAskCard(t, flow));
-  return v_flex()
+    .child(
+      div()
+        .id("answer-flow-track")
+        .relative()
+        .flex_1()
+        .min_h_0()
+        .min_w_0()
+        .overflow_hidden()
+        .on_size_change((size, cx) => flow.measureViewport(size, cx))
+        .children([...cards, ...flowMeasurementCards(t, flow)]),
+    );
+};
+
+const answerFlowScreen = (t: Theme, flow: AnswerFlowModel): Element =>
+  v_flex()
     .id("answer-flow-queue-page")
     .flex_1()
     .min_h_0()
     .min_w_0()
     .child(flowHeader(t, flow))
-    .child(paneScrollRegion("answer-flow-scroll", content, PANEL.padding))
-    .child(flowFooter(t, flow));
-};
+    .child(answerFlowCarousel(t, flow));
 
 // Policy text wraps, so use the package's card pieces instead of fixed-height groupBlock.
 const policiesPage = (t: Theme, backlog: Backlog, model: PanelModel): Element => {
@@ -1394,7 +2434,7 @@ const sectionRow = (
   t: Theme,
   id: string,
   label: string,
-  count: number,
+  count: number | string,
   screen: DomainPage,
   model: PanelModel,
 ): Element =>
@@ -1422,7 +2462,7 @@ const sectionLinks = (t: Theme, domain: string, backlog: Backlog, model: PanelMo
         t,
         "page-findings",
         "Findings",
-        model.findings.length,
+        formatFindingCounts(model.findings),
         { kind: "findings", domain },
         model,
       ),
@@ -1535,7 +2575,7 @@ const listingBody = (t: Theme, listing: ListingState, model: PanelModel): Elemen
     domains = cardSection(
       cardHeader(t, "domains-header", "Domains"),
       card(t, "domains").children(
-        pagedRows(t, "domains", listing.domains, model, ROW.list, (row, index) =>
+        listing.domains.map((row, index) =>
           domainRow(t, row, (cx) => model.openDomain(row.domain, cx), index === 0),
         ),
       ),

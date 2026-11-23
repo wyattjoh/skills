@@ -2,8 +2,9 @@
 // answers and delegate-harness policy edits go through the coordinate CLI.
 import { View } from "gpui-kit";
 import { InputState } from "gpui-base";
+import { PANEL } from "@wyattjoh/herdr-ui";
 import { createAnswerInput } from "./textarea.ts";
-import type { AsyncContext, Context, Element } from "gpui-kit";
+import type { AsyncContext, Context, Element, FocusHandle } from "gpui-kit";
 import { checking, exec, focused, home, readTextFile, terminals, theme, watchFolder } from "herdr";
 import type { FolderWatch } from "herdr";
 import {
@@ -58,11 +59,20 @@ import type {
 } from "./model.ts";
 import { advanceAnswerFlow, startAnswerFlow } from "./answer-flow.ts";
 import type { AnswerFlow } from "./answer-flow.ts";
+import {
+  ANSWER_CAROUSEL,
+  ANSWER_FLOW_SPEED_OPTIONS,
+  ANSWER_FLOW_LAYOUT_BASELINE,
+  ANSWER_FLOW_LAYOUT_PROPOSALS,
+  answerFlowLayoutFor,
+} from "./look.ts";
+import type { AnswerFlowLayoutId } from "./look.ts";
 import { backlogsDir, documentPath } from "../../lib/store.ts";
 import type { Finding, Item } from "../../lib/store.ts";
 import { panel } from "./view.ts";
 import type {
   AnswerFlowModel,
+  AnswerFlowMotion,
   AnswerModel,
   BoundaryList,
   BoundaryModel,
@@ -78,6 +88,18 @@ const ROW_PAGE_SIZE = 10;
 type DomainRead = {
   document: DocumentState;
   text: string | null | undefined;
+};
+
+type AnswerFlowTransitionAction = "answered" | "skipped" | "back" | "exit";
+type AnswerFlowTransition = AnswerFlowMotion & {
+  generation: number;
+  action: AnswerFlowTransitionAction;
+  targetFlow: AnswerFlow | undefined;
+};
+type FlowCardMeasurement = { width: number; height: number };
+type FlowCardSize = {
+  compact: FlowCardMeasurement | undefined;
+  expanded: FlowCardMeasurement | undefined;
 };
 
 /**
@@ -143,6 +165,25 @@ export default class Panel extends View {
   noteTyping = false;
   draft: AnswerDraft | undefined;
   answerFlow: AnswerFlow | undefined;
+  answerFlowSpeed = 0;
+  answerFlowLayoutId: AnswerFlowLayoutId = ANSWER_FLOW_LAYOUT_BASELINE.id;
+  answerFlowPendingLayout: AnswerFlowLayoutId | undefined;
+  answerFlowLayoutMenuOpen = false;
+  answerFlowLayoutActiveIndex = 0;
+  answerFlowLayoutTriggerFocus!: FocusHandle;
+  answerFlowLayoutMenuFocus!: FocusHandle;
+  answerFlowLayoutMeasurementVersion = 0;
+  answerFlowSpeedMenuOpen = false;
+  answerFlowSpeedActiveIndex = 0;
+  answerFlowSpeedTriggerFocus!: FocusHandle;
+  answerFlowSpeedMenuFocus!: FocusHandle;
+  answerFlowPendingExpandedSizes = new Map<string, FlowCardMeasurement>();
+  answerFlowRationaleOpenFor: string | undefined;
+  answerFlowRationaleFocus = new Map<string, FocusHandle>();
+  answerFlowMotion: AnswerFlowTransition | undefined;
+  answerFlowMotionGeneration = 0;
+  answerFlowCardSizes = new Map<string, FlowCardSize>();
+  answerFlowViewport: { domain: string; width: number; height: number } | undefined;
   boundaryInput: InputState | undefined;
   boundaryEditing: { domain: string; list: BoundaryList } | undefined;
   boundaryBusy = false;
@@ -164,6 +205,10 @@ export default class Panel extends View {
     const boundaryInput = InputState.new({ placeholder: "Path" });
     boundaryInput.on("submit", (_event, submitted) => this.addBoundary(submitted));
     this.boundaryInput = boundaryInput;
+    this.answerFlowLayoutTriggerFocus = cx.focus_handle();
+    this.answerFlowLayoutMenuFocus = cx.focus_handle();
+    this.answerFlowSpeedTriggerFocus = cx.focus_handle();
+    this.answerFlowSpeedMenuFocus = cx.focus_handle();
     if (checking()) return;
     this.load(cx);
     cx.timer.every(FOLLOW_MS, (tick) => this.follow(tick));
@@ -185,6 +230,7 @@ export default class Panel extends View {
     const followed = this.focusDomain();
     if (followed === this.followed) return;
     this.followed = followed;
+    this.invalidateAnswerFlowMotion();
     this.answerFlow = undefined;
     this.page = undefined;
     this.selected = undefined;
@@ -230,6 +276,7 @@ export default class Panel extends View {
   }
 
   openDomain(domain: string, cx: Context) {
+    this.invalidateAnswerFlowMotion();
     this.answerFlow = undefined;
     this.picked = domain;
     this.listed = false;
@@ -241,6 +288,7 @@ export default class Panel extends View {
   // Open a screen the trail or a link names. Details open over their list, pages open over the
   // domain's main list, and Domains shows the listing.
   go(screen: Screen, cx: Context) {
+    this.invalidateAnswerFlowMotion();
     this.answerFlow = undefined;
     if (screen.kind === "item" || screen.kind === "finding") {
       this.selected = { kind: screen.kind, domain: screen.domain, id: screen.id };
@@ -325,7 +373,13 @@ export default class Panel extends View {
 
   reconcileAnswerFlow(domain: string, document: DocumentState) {
     const flow = this.answerFlow;
-    if (flow === undefined || flow.domain !== domain || document.kind !== "loaded") return;
+    if (
+      this.answerFlowMotion !== undefined ||
+      flow === undefined ||
+      flow.domain !== domain ||
+      document.kind !== "loaded"
+    )
+      return;
     const currentId = flow.ids[flow.current];
     if (currentId === undefined || flow.answered.includes(currentId)) return;
     const item = document.backlog.items.find((candidate) => candidate.id === currentId);
@@ -548,49 +602,380 @@ export default class Panel extends View {
     const ids = doc.backlog.items
       .filter((candidate) => candidate.ask !== null)
       .map((candidate) => candidate.id);
+    this.invalidateAnswerFlowMotion();
+    this.answerFlowCardSizes.clear();
+    this.answerFlowViewport = undefined;
     this.answerFlow = startAnswerFlow(domain, ids, item.id);
+    this.answerFlowRationaleFocus = new Map(ids.map((id) => [id, cx.focus_handle()] as const));
     this.selected = { kind: "item", domain, id: item.id };
     this.page = undefined;
     this.clearDraft();
     cx.notify();
   }
 
-  backAnswerFlow(cx: Context) {
+  invalidateAnswerFlowMotion() {
+    this.answerFlowMotionGeneration += 1;
+    this.answerFlowMotion = undefined;
+    this.clearAnswerFlowLayoutPending();
+  }
+
+  clearAnswerFlowLayoutPending() {
+    this.answerFlowPendingLayout = undefined;
+    this.answerFlowPendingExpandedSizes.clear();
+    this.answerFlowLayoutMeasurementVersion += 1;
+    this.answerFlowLayoutMenuOpen = false;
+    this.answerFlowSpeedMenuOpen = false;
+    this.answerFlowRationaleOpenFor = undefined;
+    this.answerFlowRationaleFocus.clear();
+  }
+
+  restartAnswerFlowLayoutMeasurement() {
+    if (this.answerFlowPendingLayout === undefined) return;
+    this.answerFlowPendingExpandedSizes.clear();
+    this.answerFlowLayoutMeasurementVersion += 1;
+  }
+
+  flowCardSizeKey(domain: string, id: string) {
+    return `${domain}\\0${id}`;
+  }
+
+  answerFlowCardMeasurement(domain: string, id: string, kind: "compact" | "expanded") {
+    return this.answerFlowCardSizes.get(this.flowCardSizeKey(domain, id))?.[kind];
+  }
+
+  answerFlowReady(domain: string, ids: readonly string[]) {
+    const viewport = this.answerFlowViewport;
+    if (
+      viewport === undefined ||
+      viewport.domain !== domain ||
+      viewport.width <= 0 ||
+      viewport.height <= 0
+    )
+      return false;
+    const tolerance = Math.max(1, viewport.width * 0.01);
+    const expandedWidth = viewport.width * ANSWER_CAROUSEL.compactWidthRatio;
+    const compactWidth = Math.max(1, expandedWidth - 2 * PANEL.padding);
+    return [...ids, "done"].every((id) => {
+      const compact = this.answerFlowCardMeasurement(domain, id, "compact");
+      const expanded = this.answerFlowCardMeasurement(domain, id, "expanded");
+      return (
+        compact !== undefined &&
+        expanded !== undefined &&
+        Math.abs(compact.width - compactWidth) < tolerance &&
+        Math.abs(expanded.width - expandedWidth) < tolerance
+      );
+    });
+  }
+
+  measureAnswerFlowViewport(domain: string, size: FlowCardMeasurement, cx: Context) {
+    if (size.width <= 0 || size.height <= 0) return;
+    const previous = this.answerFlowViewport;
+    if (
+      previous !== undefined &&
+      previous.domain === domain &&
+      Math.abs(previous.width - size.width) < 1 &&
+      Math.abs(previous.height - size.height) < 1
+    )
+      return;
+    const widthChanged =
+      previous !== undefined &&
+      previous.domain === domain &&
+      Math.abs(previous.width - size.width) >= 1;
+    this.answerFlowViewport = { domain, ...size };
+    if (widthChanged) this.restartAnswerFlowLayoutMeasurement();
+    cx.notify();
+  }
+
+  measureAnswerFlowCard(
+    domain: string,
+    id: string,
+    kind: "compact" | "expanded",
+    size: FlowCardMeasurement,
+    cx: Context,
+  ) {
+    if (this.answerFlowMotion !== undefined || size.width <= 0 || size.height <= 0) return;
+    const key = this.flowCardSizeKey(domain, id);
+    const previous = this.answerFlowCardSizes.get(key) ?? {
+      compact: undefined,
+      expanded: undefined,
+    };
+    const priorMeasurement = previous[kind];
+    if (
+      priorMeasurement !== undefined &&
+      Math.abs(priorMeasurement.width - size.width) < 1 &&
+      Math.abs(priorMeasurement.height - size.height) < 1
+    )
+      return;
+    this.answerFlowCardSizes.set(key, { ...previous, [kind]: size });
+    cx.notify();
+  }
+
+  measureAnswerFlowLayoutCard(
+    domain: string,
+    layoutId: AnswerFlowLayoutId,
+    version: number,
+    id: string,
+    size: FlowCardMeasurement,
+    cx: Context,
+  ) {
     const flow = this.answerFlow;
-    if (flow === undefined || this.draft?.busy === true) return;
-    if (flow.current <= 0) {
-      this.exitAnswerFlow(cx);
+    const viewport = this.answerFlowViewport;
+    if (
+      flow === undefined ||
+      flow.domain !== domain ||
+      this.answerFlowMotion !== undefined ||
+      this.answerFlowPendingLayout !== layoutId ||
+      this.answerFlowLayoutMeasurementVersion !== version ||
+      !flow.ids.includes(id) ||
+      viewport?.domain !== domain ||
+      size.width <= 0 ||
+      size.height <= 0
+    )
+      return;
+    const expectedWidth = viewport.width * ANSWER_CAROUSEL.compactWidthRatio;
+    const tolerance = Math.max(1, viewport.width * 0.01);
+    if (Math.abs(size.width - expectedWidth) >= tolerance) return;
+    const previous = this.answerFlowPendingExpandedSizes.get(id);
+    if (
+      previous !== undefined &&
+      Math.abs(previous.width - size.width) < 1 &&
+      Math.abs(previous.height - size.height) < 1
+    )
+      return;
+    this.answerFlowPendingExpandedSizes.set(id, size);
+    if (flow.ids.some((flowId) => !this.answerFlowPendingExpandedSizes.has(flowId))) return;
+
+    const nextSizes = new Map(this.answerFlowCardSizes);
+    for (const flowId of flow.ids) {
+      const key = this.flowCardSizeKey(domain, flowId);
+      const previousSize = nextSizes.get(key) ?? { compact: undefined, expanded: undefined };
+      nextSizes.set(key, {
+        ...previousSize,
+        expanded: this.answerFlowPendingExpandedSizes.get(flowId),
+      });
+    }
+    this.answerFlowCardSizes = nextSizes;
+    this.answerFlowLayoutId = layoutId;
+    this.answerFlowPendingLayout = undefined;
+    this.answerFlowPendingExpandedSizes.clear();
+    cx.notify();
+  }
+
+  setAnswerFlowSpeedMenuOpen(open: boolean, cx: Context) {
+    if (this.answerFlow === undefined || this.answerFlowSpeedMenuOpen === open) return;
+    this.answerFlowSpeedMenuOpen = open;
+    if (open) {
+      this.answerFlowLayoutMenuOpen = false;
+      this.answerFlowSpeedActiveIndex = this.answerFlowSpeed;
+      this.answerFlowSpeedMenuFocus.focus();
+    } else this.answerFlowSpeedTriggerFocus.focus();
+    cx.notify();
+  }
+
+  setAnswerFlowSpeed(index: number, cx: Context) {
+    if (
+      this.answerFlow === undefined ||
+      !Number.isInteger(index) ||
+      index < 0 ||
+      index >= ANSWER_FLOW_SPEED_OPTIONS.length
+    )
+      return;
+    this.answerFlowSpeed = index;
+    this.answerFlowSpeedMenuOpen = false;
+    this.answerFlowSpeedTriggerFocus.focus();
+    cx.notify();
+  }
+
+  moveAnswerFlowSpeedMenu(delta: number, cx: Context) {
+    if (!this.answerFlowSpeedMenuOpen) return;
+    const count = ANSWER_FLOW_SPEED_OPTIONS.length;
+    this.answerFlowSpeedActiveIndex = (this.answerFlowSpeedActiveIndex + delta + count) % count;
+    cx.notify();
+  }
+
+  setAnswerFlowSpeedActiveIndex(index: number, cx: Context) {
+    const count = ANSWER_FLOW_SPEED_OPTIONS.length;
+    if (
+      !this.answerFlowSpeedMenuOpen ||
+      !Number.isInteger(index) ||
+      index < 0 ||
+      index >= count ||
+      this.answerFlowSpeedActiveIndex === index
+    )
+      return;
+    this.answerFlowSpeedActiveIndex = index;
+    cx.notify();
+  }
+
+  setAnswerFlowLayoutMenuOpen(open: boolean, cx: Context) {
+    if (this.answerFlow === undefined || this.answerFlowLayoutMenuOpen === open) return;
+    this.answerFlowLayoutMenuOpen = open;
+    if (open) {
+      this.answerFlowSpeedMenuOpen = false;
+      const selectedId = this.answerFlowPendingLayout ?? this.answerFlowLayoutId;
+      const selectedIndex = ANSWER_FLOW_LAYOUT_PROPOSALS.findIndex(({ id }) => id === selectedId);
+      this.answerFlowLayoutActiveIndex = selectedIndex >= 0 ? selectedIndex : 0;
+      this.answerFlowLayoutMenuFocus.focus();
+    } else this.answerFlowLayoutTriggerFocus.focus();
+    cx.notify();
+  }
+
+  moveAnswerFlowLayoutMenu(delta: number, cx: Context) {
+    if (!this.answerFlowLayoutMenuOpen) return;
+    const count = ANSWER_FLOW_LAYOUT_PROPOSALS.length + 1;
+    this.answerFlowLayoutActiveIndex = (this.answerFlowLayoutActiveIndex + delta + count) % count;
+    cx.notify();
+  }
+
+  setAnswerFlowLayoutActiveIndex(index: number, cx: Context) {
+    const count = ANSWER_FLOW_LAYOUT_PROPOSALS.length + 1;
+    if (
+      !this.answerFlowLayoutMenuOpen ||
+      !Number.isInteger(index) ||
+      index < 0 ||
+      index >= count ||
+      this.answerFlowLayoutActiveIndex === index
+    )
+      return;
+    this.answerFlowLayoutActiveIndex = index;
+    cx.notify();
+  }
+
+  activateAnswerFlowLayoutMenu(cx: Context) {
+    if (!this.answerFlowLayoutMenuOpen) return;
+    const resetIndex = ANSWER_FLOW_LAYOUT_PROPOSALS.length;
+    if (this.answerFlowLayoutActiveIndex === resetIndex) {
+      this.resetAnswerFlowLayout(cx);
       return;
     }
-    const current = flow.current - 1;
-    this.answerFlow = { ...flow, current };
-    const id = flow.ids[current];
-    if (id !== undefined) this.selected = { kind: "item", domain: flow.domain, id };
-    this.clearDraft();
+    const layout = ANSWER_FLOW_LAYOUT_PROPOSALS[this.answerFlowLayoutActiveIndex];
+    if (layout !== undefined) this.selectAnswerFlowLayout(layout.id, cx);
+  }
+
+  requestAnswerFlowLayout(id: AnswerFlowLayoutId, cx: Context) {
+    if (this.answerFlow === undefined) return;
+    if (
+      id !== ANSWER_FLOW_LAYOUT_BASELINE.id &&
+      !ANSWER_FLOW_LAYOUT_PROPOSALS.some((layout) => layout.id === id)
+    )
+      return;
+    this.answerFlowRationaleOpenFor = undefined;
+    const next = id === this.answerFlowLayoutId ? undefined : id;
+    if (next !== this.answerFlowPendingLayout) {
+      this.answerFlowPendingLayout = next;
+      this.answerFlowPendingExpandedSizes.clear();
+      this.answerFlowLayoutMeasurementVersion += 1;
+    }
+    this.answerFlowLayoutMenuOpen = false;
+    this.answerFlowLayoutTriggerFocus.focus();
     cx.notify();
   }
 
-  skipAnswerFlow(cx: Context) {
-    if (this.draft?.busy) return;
+  selectAnswerFlowLayout(id: AnswerFlowLayoutId, cx: Context) {
+    if (!ANSWER_FLOW_LAYOUT_PROPOSALS.some((layout) => layout.id === id)) return;
+    this.requestAnswerFlowLayout(id, cx);
+  }
+
+  resetAnswerFlowLayout(cx: Context) {
+    this.requestAnswerFlowLayout(ANSWER_FLOW_LAYOUT_BASELINE.id, cx);
+  }
+
+  setAnswerFlowRationaleOpen(id: string, open: boolean, cx: Context) {
     const flow = this.answerFlow;
-    if (flow === undefined) return;
-    this.answerFlow = advanceAnswerFlow(flow, "skipped");
-    this.clearDraft();
-    const id = this.answerFlow.ids[this.answerFlow.current];
-    if (id !== undefined) this.selected = { kind: "item", domain: flow.domain, id };
+    if (
+      flow === undefined ||
+      this.answerFlowMotion !== undefined ||
+      answerFlowLayoutFor(this.answerFlowLayoutId).rationale !== "popover" ||
+      !flow.ids.includes(id) ||
+      (open && this.answerFlowRationaleOpenFor === id) ||
+      (!open && this.answerFlowRationaleOpenFor !== id)
+    )
+      return;
+    this.answerFlowRationaleOpenFor = open ? id : undefined;
     cx.notify();
   }
 
-  exitAnswerFlow(cx: Context) {
+  scheduleAnswerFlowTransition(cx: Context, duration: number, generation: number) {
+    cx.timer.after(duration, (tick) => {
+      const motion = this.answerFlowMotion;
+      if (motion === undefined || motion.generation !== generation) return;
+      if (motion.action === "exit") {
+        this.finishAnswerFlowExit(motion, tick);
+        return;
+      }
+      const next = motion.targetFlow;
+      if (next === undefined) return;
+      this.answerFlow = next;
+      if (motion.action === "answered" && next.answered.length === next.ids.length) {
+        this.finishAnswerFlowExit({ ...motion, action: "exit" }, tick);
+        this.load(tick, true);
+        return;
+      }
+      const id = next.ids[next.current];
+      this.selected = id === undefined ? undefined : { kind: "item", domain: next.domain, id };
+      this.clearDraft();
+      this.answerFlowMotion = undefined;
+      if (motion.action === "answered") this.load(tick, true);
+      else this.reconcileAnswerFlow(next.domain, this.doc);
+      tick.notify();
+    });
+  }
+
+  transitionAnswerFlow(action: AnswerFlowTransitionAction, cx: Context) {
     const flow = this.answerFlow;
-    if (flow === undefined || this.draft?.busy === true) return;
+    if (
+      flow === undefined ||
+      this.answerFlowMotion !== undefined ||
+      this.draft?.busy === true ||
+      !this.answerFlowReady(flow.domain, flow.ids)
+    )
+      return;
+    let nextAction = action;
+    let targetFlow: AnswerFlow | undefined;
+    if (action === "answered" || action === "skipped") targetFlow = advanceAnswerFlow(flow, action);
+    else if (action === "back") {
+      if (flow.current <= 0) nextAction = "exit";
+      else targetFlow = { ...flow, current: flow.current - 1 };
+    }
+    if (nextAction !== "exit" && (targetFlow === undefined || targetFlow === flow)) return;
+    if (this.answerFlowLayoutMenuOpen) this.setAnswerFlowLayoutMenuOpen(false, cx);
+    this.answerFlowRationaleOpenFor = undefined;
+    this.restartAnswerFlowLayoutMeasurement();
+    const generation = ++this.answerFlowMotionGeneration;
+    const durationMultiplier = ANSWER_FLOW_SPEED_OPTIONS[this.answerFlowSpeed]?.durationFactor ?? 1;
+    const duration = ANSWER_CAROUSEL.transitionDuration * durationMultiplier;
+    this.answerFlowMotion = {
+      action: nextAction,
+      generation,
+      targetFlow,
+      targetIndex: targetFlow?.current,
+      duration,
+      exiting: nextAction === "exit",
+    };
+    cx.notify();
+    this.scheduleAnswerFlowTransition(cx, duration, generation);
+  }
+
+  finishAnswerFlowExit(motion: AnswerFlowTransition, cx: Context) {
+    if (this.answerFlowMotion?.generation !== motion.generation) return;
+    const domain = this.answerFlow?.domain;
+    this.answerFlowMotion = undefined;
     this.answerFlow = undefined;
+    this.clearAnswerFlowLayoutPending();
     this.clearDraft();
     this.selected = undefined;
     this.page = undefined;
-    this.picked = flow.domain;
+    this.picked = domain;
     this.listed = false;
     cx.notify();
+  }
+
+  backAnswerFlow(cx: Context) {
+    this.transitionAnswerFlow("back", cx);
+  }
+
+  skipAnswerFlow(cx: Context) {
+    this.transitionAnswerFlow("skipped", cx);
   }
 
   openFinding(finding: Finding, cx: Context) {
@@ -628,7 +1013,7 @@ export default class Panel extends View {
 
   choose(option: string, cx: Context) {
     const open = this.answering();
-    if (open === undefined || open.draft.busy) return;
+    if (this.answerFlowMotion !== undefined || open === undefined || open.draft.busy) return;
     this.draft = {
       ...open.draft,
       choice: open.draft.choice === option ? undefined : option,
@@ -645,7 +1030,7 @@ export default class Panel extends View {
 
   discuss(cx: Context) {
     const open = this.answering();
-    if (open === undefined || open.draft.busy) return;
+    if (this.answerFlowMotion !== undefined || open === undefined || open.draft.busy) return;
     this.draft = {
       ...open.draft,
       choice: undefined,
@@ -663,7 +1048,13 @@ export default class Panel extends View {
 
   type(value: string, cx: Context) {
     const open = this.answering();
-    if (open === undefined || open.draft.text === value) return;
+    if (
+      this.answerFlowMotion !== undefined ||
+      open === undefined ||
+      open.draft.busy ||
+      open.draft.text === value
+    )
+      return;
     this.draft = { ...open.draft, text: value, error: undefined };
     cx.notify();
   }
@@ -671,7 +1062,9 @@ export default class Panel extends View {
   typeNote(value: string, cx: Context) {
     const open = this.answering();
     if (
+      this.answerFlowMotion !== undefined ||
       open === undefined ||
+      open.draft.busy ||
       open.draft.choice !== undefined ||
       open.draft.discuss ||
       open.draft.note === value
@@ -685,7 +1078,13 @@ export default class Panel extends View {
   // draft clears and the document is read again; any other end shows the CLI's message.
   answer(cx: Context) {
     const open = this.answering();
-    if (open === undefined || open.draft.busy || this.domain === undefined) return;
+    if (
+      this.answerFlowMotion !== undefined ||
+      open === undefined ||
+      open.draft.busy ||
+      this.domain === undefined
+    )
+      return;
     const answer = chosenAnswer(open.draft);
     if (answer === undefined) return;
     const noteText =
@@ -705,13 +1104,13 @@ export default class Panel extends View {
       }
       if (this.draft?.key !== key) return;
       if (error === undefined) {
-        this.clearDraft();
         const flow = this.answerFlow;
-        if (flow !== undefined && flow.domain === this.domain)
-          this.answerFlow = advanceAnswerFlow(flow, "answered");
-        const next = this.answerFlow?.ids[this.answerFlow.current];
-        if (next !== undefined && this.answerFlow !== undefined)
-          this.selected = { kind: "item", domain: this.answerFlow.domain, id: next };
+        if (flow !== undefined && flow.domain === this.domain) {
+          this.draft = { ...open.draft, busy: false, error: undefined };
+          this.transitionAnswerFlow("answered", task);
+          return;
+        }
+        this.clearDraft();
         this.load(task, true);
       } else this.draft = { ...this.draft, busy: false, error };
       task.notify();
@@ -739,23 +1138,92 @@ export default class Panel extends View {
     if (flow === undefined || flow.domain !== this.target()) return undefined;
     const doc = flow.domain === this.domain ? this.doc : cachedDocument(this.docs, flow.domain);
     const backlog = doc.kind === "loaded" ? doc.backlog : undefined;
-    const currentId = flow.ids[flow.current];
-    const item =
-      currentId === undefined
-        ? undefined
-        : backlog?.items.find((candidate) => candidate.id === currentId);
+    const itemFor = (id: string) => backlog?.items.find((candidate) => candidate.id === id);
+    const cards: AnswerFlowModel["cards"] = flow.ids.map((id) => {
+      const sizes = this.answerFlowCardSizes.get(this.flowCardSizeKey(flow.domain, id));
+      return {
+        id,
+        item: itemFor(id),
+        kind: "question" as const,
+        compactHeight: sizes?.compact?.height,
+        expandedHeight: sizes?.expanded?.height,
+      };
+    });
+    const summarySizes = this.answerFlowCardSizes.get(this.flowCardSizeKey(flow.domain, "done"));
+    cards.push({
+      id: "done",
+      item: undefined,
+      kind: "summary" as const,
+      compactHeight: summarySizes?.compact?.height,
+      expandedHeight: summarySizes?.expanded?.height,
+    });
+    const motion = this.answerFlowMotion;
+    const counts = motion?.targetFlow ?? flow;
     return {
       domain: flow.domain,
-      item,
+      cards,
+      currentIndex: flow.current,
+      layout: answerFlowLayoutFor(this.answerFlowLayoutId),
+      layoutSelection: answerFlowLayoutFor(this.answerFlowPendingLayout ?? this.answerFlowLayoutId),
+      layoutPending: this.answerFlowPendingLayout !== undefined,
+      layoutMenuOpen: this.answerFlowLayoutMenuOpen,
+      layoutActiveIndex: this.answerFlowLayoutActiveIndex,
+      layoutTriggerFocus: this.answerFlowLayoutTriggerFocus,
+      layoutMenuFocus: this.answerFlowLayoutMenuFocus,
+      layoutMeasurement:
+        this.answerFlowPendingLayout !== undefined && motion === undefined
+          ? answerFlowLayoutFor(this.answerFlowPendingLayout)
+          : undefined,
+      layoutMeasurementVersion: this.answerFlowLayoutMeasurementVersion,
+      rationaleOpenFor: this.answerFlowRationaleOpenFor,
+      viewport:
+        this.answerFlowViewport?.domain === flow.domain
+          ? { width: this.answerFlowViewport.width, height: this.answerFlowViewport.height }
+          : undefined,
+      ready: this.answerFlowReady(flow.domain, flow.ids),
+      motion:
+        motion === undefined
+          ? undefined
+          : {
+              targetIndex: motion.targetIndex,
+              duration: motion.duration,
+              exiting: motion.exiting,
+            },
+      speedIndex: this.answerFlowSpeed,
+      speedMenuOpen: this.answerFlowSpeedMenuOpen,
+      speedActiveIndex: this.answerFlowSpeedActiveIndex,
+      speedTriggerFocus: this.answerFlowSpeedTriggerFocus,
+      speedMenuFocus: this.answerFlowSpeedMenuFocus,
+      setSpeedMenuOpen: (open, cx) => this.setAnswerFlowSpeedMenuOpen(open, cx),
+      moveSpeedMenu: (delta, cx) => this.moveAnswerFlowSpeedMenu(delta, cx),
+      setSpeedActiveIndex: (index, cx) => this.setAnswerFlowSpeedActiveIndex(index, cx),
+      setSpeed: (index, cx) => this.setAnswerFlowSpeed(index, cx),
+      measureViewport: (size, cx) => this.measureAnswerFlowViewport(flow.domain, size, cx),
+      measure: (id, kind, size, cx) => this.measureAnswerFlowCard(flow.domain, id, kind, size, cx),
+      measureLayout: (layoutId, version, id, size, cx) =>
+        this.measureAnswerFlowLayoutCard(flow.domain, layoutId, version, id, size, cx),
+      setLayoutMenuOpen: (open, cx) => this.setAnswerFlowLayoutMenuOpen(open, cx),
+      moveLayoutMenu: (delta, cx) => this.moveAnswerFlowLayoutMenu(delta, cx),
+      setLayoutActiveIndex: (index, cx) => this.setAnswerFlowLayoutActiveIndex(index, cx),
+      activateLayoutMenu: (cx) => this.activateAnswerFlowLayoutMenu(cx),
+      selectLayout: (id, cx) => this.selectAnswerFlowLayout(id, cx),
+      resetLayout: (cx) => this.resetAnswerFlowLayout(cx),
+      setRationaleOpen: (id, open, cx) => this.setAnswerFlowRationaleOpen(id, open, cx),
+      rationaleFocusFor: (id) => this.answerFlowRationaleFocus.get(id),
       position: Math.min(flow.current + 1, flow.ids.length),
       total: flow.ids.length,
       done: flow.current >= flow.ids.length,
-      answeredCount: flow.answered.length,
-      skippedCount: flow.skipped.length,
+      answeredCount: counts.answered.length,
+      skippedCount: counts.skipped.length,
       answer: this.answerModel(),
+      answerFor: (id) => {
+        const selected = this.selected;
+        if (selected?.kind !== "item" || selected.domain !== flow.domain || selected.id !== id)
+          return undefined;
+        return this.answerModel();
+      },
       back: (cx) => this.backAnswerFlow(cx),
       skip: (cx) => this.skipAnswerFlow(cx),
-      exit: (cx) => this.exitAnswerFlow(cx),
     };
   }
 
@@ -1144,7 +1612,10 @@ export default class Panel extends View {
             const flowTrail = trailOf({
               kind: "item",
               domain: flow.domain,
-              id: flow.item?.id ?? "answer-flow",
+              id:
+                flow.cards[flow.currentIndex]?.item?.id ??
+                flow.cards[flow.currentIndex]?.id ??
+                "answer-flow",
             });
             const questionCrumb = flowTrail[flowTrail.length - 1]!;
             return [

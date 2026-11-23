@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { advanceAnswerFlow, startAnswerFlow } from "./answer-flow.ts";
+import { advanceAnswerFlow, layoutAnswerFlowCards, startAnswerFlow } from "./answer-flow.ts";
 
 describe("answer flow", () => {
   test("starts at the selected question and preserves domain order", () => {
@@ -38,5 +38,171 @@ describe("answer flow", () => {
     const flow = { ...startAnswerFlow("demo", ["i1"], "i1"), current: 3 };
 
     expect(advanceAnswerFlow(flow, "answered")).toBe(flow);
+  });
+
+  test("lays out every card around a fixed focus center with a continuous vertical gap", () => {
+    const cards = [
+      { id: "i1", compactHeight: 72, expandedHeight: 100 },
+      { id: "i2", compactHeight: 80, expandedHeight: 120 },
+      { id: "i3", compactHeight: 88, expandedHeight: 140 },
+      { id: "i4", compactHeight: 96, expandedHeight: 160 },
+      { id: "i5", compactHeight: 104, expandedHeight: 180 },
+      { id: "done", compactHeight: 72, expandedHeight: 100 },
+    ];
+    const options = {
+      activeIndex: 2,
+      viewportWidth: 360,
+      viewportHeight: 600,
+      gap: 10,
+      compactWidthRatio: 0.9,
+      compactNeighborInset: 12,
+      neighborOpacity: 0.58,
+      distanceOpacityFalloff: 0.12,
+    };
+    const current = layoutAnswerFlowCards(cards, options);
+    const next = layoutAnswerFlowCards(cards, { ...options, activeIndex: 3 });
+
+    expect(current.map(({ id }) => id)).toEqual(["i1", "i2", "i3", "i4", "i5", "done"]);
+    expect(current.map(({ top }) => top)).toEqual([58, 140, 230, 380, 486, 600]);
+    expect(current[2]).toMatchObject({ top: 230, left: 18, width: 324, height: 140, opacity: 1 });
+    expect(current[1]).toMatchObject({ left: 30, width: 300, height: 80, opacity: 0.58 });
+    expect(current.map(({ left, width }, index) => ({ left, width, index }))).toEqual(
+      cards.map((_card, index) => ({
+        index,
+        left: index === 2 ? 18 : 30,
+        width: index === 2 ? 324 : 300,
+      })),
+    );
+    expect(current[0]?.opacity).toBeCloseTo(0.5104);
+    expect(current[3]?.opacity).toBe(0.58);
+    expect(current[4]?.opacity).toBeCloseTo(0.5104);
+    expect(current[5]?.opacity).toBe(0);
+    expect(next.map(({ top }) => top)).toEqual([-50, 32, 122, 220, 390, 504]);
+    expect(next[3]).toMatchObject({ left: 18, width: 324, height: 160, expanded: true });
+    expect(next[2]).toMatchObject({ left: 30, width: 300 });
+    expect(next[0]?.opacity).toBeCloseTo(0.58 * 0.76 * (22 / 72));
+    expect(next[1]?.opacity).toBeCloseTo(0.5104);
+    expect(next[5]?.opacity).toBeCloseTo(0.5104);
+    expect(next.filter(({ opacity }) => opacity > 0).map(({ id }) => id)).toEqual([
+      "i1",
+      "i2",
+      "i3",
+      "i4",
+      "i5",
+      "done",
+    ]);
+    expect(
+      next.map(({ top }, index) => ({
+        index,
+        moved: top !== current[index]?.top,
+      })),
+    ).toEqual(cards.map((_card, index) => ({ index, moved: true })));
+
+    for (const placements of [current, next]) {
+      const active = placements.find((placement) => placement.expanded);
+      expect(active?.top + active!.height / 2).toBe(300);
+      expect(
+        placements
+          .slice(0, -1)
+          .map((placement, index) => placements[index + 1]!.top - placement.top - placement.height),
+      ).toEqual([10, 10, 10, 10, 10]);
+    }
+  });
+
+  test("centers narrower neighbor cards around the focus at narrow and wide widths", () => {
+    const cards = Array.from({ length: 4 }, (_, index) => ({
+      id: `i${index}`,
+      compactHeight: 72,
+      expandedHeight: 160,
+    }));
+    for (const viewportWidth of [280, 720]) {
+      const focusWidth = viewportWidth * 0.9;
+      const previewWidth = focusWidth - 24;
+      for (const activeIndex of [1, 2, 1]) {
+        const placements = layoutAnswerFlowCards(cards, {
+          activeIndex,
+          viewportWidth,
+          viewportHeight: 600,
+          gap: 10,
+          compactWidthRatio: 0.9,
+          compactNeighborInset: 12,
+          neighborOpacity: 0.58,
+          distanceOpacityFalloff: 0.12,
+        });
+        const focus = placements[activeIndex]!;
+        const neighbors = [placements[activeIndex - 1]!, placements[activeIndex + 1]!];
+
+        expect(focus).toMatchObject({
+          left: (viewportWidth - focusWidth) / 2,
+          width: focusWidth,
+          expanded: true,
+        });
+        expect(neighbors.map(({ left, width }) => ({ left, width }))).toEqual([
+          { left: (viewportWidth - previewWidth) / 2, width: previewWidth },
+          { left: (viewportWidth - previewWidth) / 2, width: previewWidth },
+        ]);
+        expect(neighbors.map(({ left, width }) => left + width / 2)).toEqual([
+          viewportWidth / 2,
+          viewportWidth / 2,
+        ]);
+      }
+    }
+  });
+
+  test("shows every compact card that fits the measured viewport and fades cards at its edges", () => {
+    const cards = Array.from({ length: 13 }, (_, index) => ({
+      id: `i${index}`,
+      compactHeight: 72,
+      expandedHeight: 200,
+    }));
+    const options = {
+      activeIndex: 6,
+      viewportWidth: 360,
+      gap: 10,
+      compactWidthRatio: 0.9,
+      compactNeighborInset: 12,
+      neighborOpacity: 0.58,
+      distanceOpacityFalloff: 0.12,
+    };
+    const short = layoutAnswerFlowCards(cards, { ...options, viewportHeight: 360 });
+    const tall = layoutAnswerFlowCards(cards, { ...options, viewportHeight: 960 });
+
+    expect(short.filter(({ opacity }) => opacity > 0).map(({ id }) => id)).toEqual([
+      "i5",
+      "i6",
+      "i7",
+    ]);
+    expect(short.find(({ id }) => id === "i5")?.opacity).toBeCloseTo(0.58 * (70 / 72));
+    expect(short.find(({ id }) => id === "i7")?.opacity).toBeCloseTo(0.58 * (70 / 72));
+    expect(tall.filter(({ opacity }) => opacity > 0).map(({ id }) => id)).toEqual(
+      cards.slice(1, 12).map(({ id }) => id),
+    );
+    const active = tall.find(({ id }) => id === "i6");
+    expect(active === undefined ? undefined : active.top + active.height / 2).toBe(480);
+  });
+
+  test("fades and compacts the stack when leaving the flow", () => {
+    const placements = layoutAnswerFlowCards(
+      [
+        { id: "i1", compactHeight: 72, expandedHeight: 120 },
+        { id: "i2", compactHeight: 80, expandedHeight: 160 },
+        { id: "done", compactHeight: 72, expandedHeight: 100 },
+      ],
+      {
+        activeIndex: 1,
+        viewportWidth: 360,
+        viewportHeight: 600,
+        gap: 10,
+        compactWidthRatio: 0.9,
+        compactNeighborInset: 12,
+        neighborOpacity: 0.58,
+        distanceOpacityFalloff: 0.12,
+        exiting: true,
+      },
+    );
+
+    expect(placements.map(({ opacity }) => opacity)).toEqual([0, 0, 0]);
+    expect(placements.map(({ expanded }) => expanded)).toEqual([false, false, false]);
+    expect(placements[1]).toMatchObject({ top: 260, height: 80, left: 30, width: 300 });
   });
 });

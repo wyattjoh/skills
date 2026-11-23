@@ -55,6 +55,43 @@ export const openFindings = (backlog: Backlog): Finding[] =>
   backlog.findings.filter((finding) => finding.status === "open");
 
 /**
+ * A non-empty group of open findings sharing one kind.
+ */
+export type FindingGroup = {
+  kind: Finding["kind"];
+  label: string;
+  findings: Finding[];
+};
+
+const FINDING_GROUPS = [
+  { kind: "issue", label: "Issues" },
+  { kind: "opportunity", label: "Opportunities" },
+] as const;
+
+/**
+ * Group open findings by kind, in Issues then Opportunities order, omitting empty groups.
+ * @param findings The open findings.
+ * @returns The non-empty groups, preserving document order within each kind.
+ */
+export const groupFindings = (findings: readonly Finding[]): FindingGroup[] =>
+  FINDING_GROUPS.map(({ kind, label }) => ({
+    kind,
+    label,
+    findings: findings.filter((finding) => finding.kind === kind),
+  })).filter((group) => group.findings.length > 0);
+
+/**
+ * Format the open issue and opportunity counts for the domain's Findings row.
+ * @param findings The open findings.
+ * @returns Both counts, using singular labels for one and plural labels otherwise.
+ */
+export const formatFindingCounts = (findings: readonly Finding[]): string => {
+  const issues = findings.filter((finding) => finding.kind === "issue").length;
+  const opportunities = findings.filter((finding) => finding.kind === "opportunity").length;
+  return `${issues} ${issues === 1 ? "issue" : "issues"} · ${opportunities} ${opportunities === 1 ? "opportunity" : "opportunities"}`;
+};
+
+/**
  * The findings already acted on or dismissed, in document order.
  * @param backlog A validated document.
  * @returns The closed findings.
@@ -110,8 +147,8 @@ export type Crumb = {
 };
 
 /**
- * The breadcrumb trail down to a screen, root first: a home icon, then the domain, then its page
- * or record detail.
+ * The breadcrumb trail down to a screen, root first: a home icon, then the domain, then its page,
+ * Findings page, or record detail.
  * @param screen The screen shown.
  * @returns The crumbs.
  */
@@ -125,6 +162,12 @@ export const trailOf = (screen: Screen): Crumb[] => {
     if (screen.kind === "policies") steps.push({ id: "crumb-policies", label: "Policies", screen });
     if (screen.kind === "findings") steps.push({ id: "crumb-findings", label: "Findings", screen });
     if (screen.kind === "boundary") steps.push({ id: "crumb-boundary", label: "Boundary", screen });
+    if (screen.kind === "finding")
+      steps.push({
+        id: "crumb-findings",
+        label: "Findings",
+        screen: { kind: "findings", domain: screen.domain },
+      });
     if (screen.kind === "item")
       steps.push({ id: `crumb-item-${screen.id}`, label: screen.id, screen });
     if (screen.kind === "finding")

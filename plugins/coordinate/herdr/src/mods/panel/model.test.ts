@@ -1,5 +1,6 @@
 import { expect, test } from "bun:test";
 import { emptyBacklog } from "../../lib/store.ts";
+import type { Finding } from "../../lib/store.ts";
 import {
   boundaryOutput,
   cachedDocument,
@@ -9,6 +10,8 @@ import {
   delegateLine,
   delegateUrgency,
   draftFor,
+  formatFindingCounts,
+  groupFindings,
   mergeEnded,
   readDocument,
   trailOf,
@@ -21,6 +24,18 @@ const shown = new Map<string, DocumentState>([
   ["alpha", loaded],
   ["beta", invalid],
 ]);
+
+const finding = (id: string, kind: Finding["kind"]): Finding => ({
+  id,
+  kind,
+  title: id,
+  detail: null,
+  path: null,
+  from: null,
+  status: "open",
+  closedAt: null,
+  outcome: null,
+});
 
 test("draftFor and chosenAnswer encode an optional Discuss note without changing real answers", () => {
   const ask = {
@@ -155,8 +170,39 @@ test("trailOf links the home icon and domain, then leaves the current page or re
   expect(trailOf({ kind: "finding", domain: "skills", id: "f5" })).toEqual([
     home,
     { id: "crumb-domain-skills", label: "skills", to: lists, icon: undefined },
+    {
+      id: "crumb-findings",
+      label: "Findings",
+      to: { kind: "findings", domain: "skills" },
+      icon: undefined,
+    },
     { id: "crumb-finding-f5", label: "f5", to: undefined, icon: undefined },
   ]);
+});
+
+test("groups open findings by kind and formats singular and plural counts", () => {
+  const findings = [
+    ...Array.from({ length: 5 }, (_, index) => finding(`i${index + 1}`, "issue")),
+    ...Array.from({ length: 2 }, (_, index) => finding(`o${index + 1}`, "opportunity")),
+  ];
+  expect(
+    groupFindings(findings).map((group) => [
+      group.kind,
+      group.label,
+      group.findings.map((record) => record.id),
+    ]),
+  ).toEqual([
+    ["issue", "Issues", ["i1", "i2", "i3", "i4", "i5"]],
+    ["opportunity", "Opportunities", ["o1", "o2"]],
+  ]);
+  expect(groupFindings([finding("i1", "issue")])).toEqual([
+    { kind: "issue", label: "Issues", findings: [finding("i1", "issue")] },
+  ]);
+  expect(formatFindingCounts(findings)).toBe("5 issues · 2 opportunities");
+  expect(formatFindingCounts([finding("i1", "issue"), finding("o1", "opportunity")])).toBe(
+    "1 issue · 1 opportunity",
+  );
+  expect(formatFindingCounts([])).toBe("0 issues · 0 opportunities");
 });
 
 test("mergeEnded keeps known records, lays each lookup over them and drops a vanished one", () => {

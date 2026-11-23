@@ -20,6 +20,14 @@ import {
   typeInto,
 } from "@wyattjoh/herdr-dev/test/renderer";
 import type { Node } from "@wyattjoh/herdr-dev/test/renderer";
+import { CARD, HERDR_ICONS, PANEL } from "@wyattjoh/herdr-ui";
+import {
+  ANSWER_CAROUSEL,
+  ANSWER_FLOW_SPEED_OPTIONS,
+  ANSWER_FLOW_LAYOUT_BASELINE,
+  ANSWER_FLOW_LAYOUT_PROPOSALS,
+  ANSWER_FLOW_OUTLINE,
+} from "./look.ts";
 const { setAnswerTextareaTestApi } = await import("./textarea.ts");
 let textareaAutoGrow: { minRows: number; maxRows: number } | undefined;
 setAnswerTextareaTestApi({
@@ -219,6 +227,51 @@ const openPage = (root: Node, page: string, cx: unknown) =>
 
 const mount = async (preservePolicyReads = false) => {
   const ctx = context();
+  const focusHandles: Array<{
+    focused: boolean;
+    focus: () => void;
+    is_focused: () => boolean;
+    release: () => boolean;
+  }> = [];
+  Object.assign(ctx.cx, {
+    focus_handle: () => {
+      const handle = {
+        focused: false,
+        focus: () => {
+          for (const candidate of focusHandles) candidate.focused = false;
+          handle.focused = true;
+        },
+        is_focused: () => handle.focused,
+        release: () => true,
+      };
+      focusHandles.push(handle);
+      return handle;
+    },
+  });
+  const timer = (
+    ctx.cx as unknown as {
+      timer: {
+        after: (
+          ms: number,
+          handler: (cx: unknown) => void,
+        ) => { cancel: () => void; is_done: () => boolean };
+      };
+    }
+  ).timer;
+  timer.after = (ms, handler) => {
+    const pending = { ms, cancelled: false, handler: (_cx: unknown) => {} };
+    pending.handler = (tick) => {
+      pending.cancelled = true;
+      handler(tick);
+    };
+    ctx.timers.push(pending);
+    return {
+      cancel: () => {
+        pending.cancelled = true;
+      },
+      is_done: () => pending.cancelled,
+    };
+  };
   const view = new Panel();
   view.init(undefined, ctx.cx as never);
   await settle();
@@ -228,7 +281,65 @@ const mount = async (preservePolicyReads = false) => {
       host.execs.length,
       ...host.execs.filter(({ args }) => args[args.indexOf("harness-policy") + 1] !== "show"),
     );
-  return { ctx, view, render: () => view.render(ctx.cx as never) as never };
+  return { ctx, view, focusHandles, render: () => view.render(ctx.cx as never) as never };
+};
+
+const reportSize = (root: Node, id: string, cx: unknown, height: number, width = 360) => {
+  const onSizeChange = get(root, id).styles.on_size_change;
+  if (typeof onSizeChange !== "function") throw new Error(`${id} has no size callback`);
+  onSizeChange({ width, height }, cx);
+};
+
+const measureFlow = (
+  root: Node,
+  cx: unknown,
+  render: () => Node,
+  items: { id: string; expandedHeight: number }[],
+  viewportHeight = 600,
+  viewportWidth = 360,
+) => {
+  reportSize(root, "answer-flow-track", cx, viewportHeight, viewportWidth);
+  const measuredRoot = render();
+  const expandedWidth = viewportWidth * ANSWER_CAROUSEL.compactWidthRatio;
+  const compactWidth = Math.max(1, expandedWidth - 2 * PANEL.padding);
+  const measurementId = (kind: "compact" | "expanded", id: string) => {
+    const match = ids(measuredRoot, "answer-flow-measure-").find((candidate) =>
+      candidate.endsWith(`-${kind}-${id}`),
+    );
+    if (match === undefined) throw new Error(`No ${kind} measurement for ${id}`);
+    return match;
+  };
+  for (const item of items) {
+    reportSize(measuredRoot, measurementId("compact", item.id), cx, 72, compactWidth);
+    reportSize(
+      measuredRoot,
+      measurementId("expanded", item.id),
+      cx,
+      item.expandedHeight,
+      expandedWidth,
+    );
+  }
+  reportSize(measuredRoot, measurementId("compact", "done"), cx, 72, compactWidth);
+  reportSize(measuredRoot, measurementId("expanded", "done"), cx, 120, expandedWidth);
+  return render();
+};
+
+const measurePendingLayout = (
+  root: Node,
+  cx: unknown,
+  render: () => Node,
+  items: { id: string; expandedHeight: number }[],
+  viewportWidth = 360,
+) => {
+  const expandedWidth = viewportWidth * ANSWER_CAROUSEL.compactWidthRatio;
+  for (const item of items) {
+    const id = ids(root, "answer-flow-layout-measure-").find((candidate) =>
+      candidate.endsWith(`-expanded-${item.id}`),
+    );
+    if (id === undefined) throw new Error(`No pending expanded measurement for ${item.id}`);
+    reportSize(root, id, cx, item.expandedHeight, expandedWidth);
+  }
+  return render();
 };
 
 const openDetail = (view: InstanceType<typeof Panel>, id: string, cx: unknown) => {
@@ -278,7 +389,11 @@ test("uses a multiline textarea configured to grow through 100 rows", async () =
   const { ctx, render } = await mount();
   expect(textareaAutoGrow).toEqual({ minRows: 1, maxRows: 100 });
   get(render(), "item-i1").click!({}, ctx.cx);
-  expect(get(render(), "ask-answer-field")).toBeDefined();
+  const root = measureFlow(render(), ctx.cx, render, [
+    { id: "i1", expandedHeight: 248 },
+    { id: "i2", expandedHeight: 176 },
+  ]);
+  expect(get(root, "answer-flow-ask-i1-answer-field")).toBeDefined();
 });
 
 test("separates asked items from status groups and keeps each item row unique", async () => {
@@ -365,71 +480,1277 @@ test("Waiting on you rows use a pulsing accent bar", async () => {
   ]);
 });
 
-test("opens the selected question, skips to the next and returns with Back", async () => {
+test("answer-flow cards share an item header while the body expands beneath it", async () => {
   focusDomain("alpha");
-  host.files.set(DOC, JSON.stringify(withAsk()));
+  const title = "A long answer-flow item title that needs the entire card width to wrap naturally";
+  const backlog = withManyAsks(2);
+  host.files.set(
+    DOC,
+    JSON.stringify({
+      ...backlog,
+      items: backlog.items.map((item) =>
+        item.id === "i1" && item.ask !== null
+          ? {
+              ...item,
+              title,
+              ask: { ...item.ask, context: "Additional details for the question." },
+            }
+          : item,
+      ),
+    }),
+  );
+  const { ctx, view, render } = await mount();
+  get(render(), "item-i1").click!({}, ctx.cx);
+  let root = measureFlow(render(), ctx.cx, render, [
+    { id: "i1", expandedHeight: 300 },
+    { id: "i2", expandedHeight: 176 },
+  ]);
+  const panelRoot = get(root, "coordinate-panel");
+  const header = get(root, "answer-flow-header-i1");
+  const compactHeader = get(root, "answer-flow-header-i2");
+  const measuredCompactHeader = get(root, "answer-flow-measure-compact-i1-preview-header");
+  const measuredExpandedHeader = get(root, "answer-flow-measure-expanded-i1-content-header");
+  const panelChildren = panelRoot.children.map((child) =>
+    typeof child === "string" ? child : (child as Node).styles.id,
+  );
+
+  expect(panelChildren).toEqual(["toolbar", "breadcrumb", "panel-body"]);
+  expect(ids(root, "answer-flow-item-title")).toEqual([]);
+  expect(get(root, "panel-body").styles.p).toBe(PANEL.padding);
+  expect(header.children.map((child) => text(child as Node))).toEqual(["i1", title]);
+  expect(compactHeader.children.map((child) => text(child as Node))).toEqual(["i2", "Question 2"]);
+  expect(header.children[1]!.styles).toMatchObject({ flex_1: true, min_w_0: true });
+  expect(header.children[1]!.styles.truncate).toBe(undefined);
+  expect([header.styles.px, header.styles.py, header.styles.gap, header.styles.border_b]).toEqual([
+    compactHeader.styles.px,
+    compactHeader.styles.py,
+    compactHeader.styles.gap,
+    compactHeader.styles.border_b,
+  ]);
+  expect(header.styles).toMatchObject({ px: CARD.paddingX, border_b: 1 });
+  expect(measuredCompactHeader.children.map((child) => text(child as Node))).toEqual(["i1", title]);
+  expect(measuredExpandedHeader.children.map((child) => text(child as Node))).toEqual([
+    "i1",
+    title,
+  ]);
+  expect(
+    get(root, "answer-flow-card-i1").children.map((child) =>
+      typeof child === "string" ? child : (child as Node).styles.id,
+    ),
+  ).toEqual(["answer-flow-header-i1", "answer-flow-body-i1"]);
+  expect(
+    get(root, "answer-flow-body-i1").children.map((child) =>
+      typeof child === "string" ? child : (child as Node).styles.id,
+    ),
+  ).toEqual(["answer-flow-compact-layer-i1", "answer-flow-expanded-layer-i1"]);
+  expect(text(get(root, "answer-flow-ask-i1-question"))).toBe("Question 1?");
+  expect(text(get(root, "answer-flow-ask-i1-context"))).toBe(
+    "Additional details for the question.",
+  );
+  const questionBlock = get(root, "answer-flow-ask-i1-question-block");
+  expect(questionBlock.styles).toMatchObject({
+    bg: "#292929",
+    rounded: CARD.innerRadius,
+    px: CARD.paddingX,
+    py: CARD.paddingY,
+    min_w_0: true,
+  });
+  expect(questionBlock.children.map((child) => (child as Node).styles.id)).toEqual([
+    "answer-flow-ask-i1-question",
+    "answer-flow-ask-i1-context",
+  ]);
+  expect(get(root, "answer-flow-ask-i1-question").styles).toMatchObject({
+    font_medium: true,
+    text_color: "#f5f5f5",
+  });
+  expect(get(root, "answer-flow-ask-i1-context").styles).toMatchObject({
+    text_color: "#a3a3a3",
+    min_w_0: true,
+  });
+  expect(get(root, "answer-flow-ask-i1-question").styles.bg).toBe(undefined);
+  expect(get(root, "answer-flow-ask-i1-context").styles.bg).toBe(undefined);
+  expect(ids(questionBlock, "answer-flow-ask-i1-option-")).toEqual([]);
+  expect(ids(questionBlock, "answer-flow-ask-i1-rec-reason")).toEqual([]);
+  expect(text(get(root, "answer-flow-preview-i2-question"))).toBe("Question 2?");
+  expect(get(root, "answer-flow-measure-compact-i1").styles.w).toBe(300);
+  expect(get(root, "answer-flow-measure-expanded-i1").styles.w).toBe(324);
+
+  reportSize(root, "answer-flow-measure-compact-i1", ctx.cx, 96, 300);
+  reportSize(root, "answer-flow-measure-expanded-i1", ctx.cx, 300, 324);
+  root = render();
+  expect(get(root, "answer-flow-card-i1").styles.h).toBe(300);
+  expect(view.answerFlowCardMeasurement("alpha", "i1", "compact")).toEqual({
+    width: 300,
+    height: 96,
+  });
+  expect(view.answerFlowCardMeasurement("alpha", "i1", "expanded")).toEqual({
+    width: 324,
+    height: 300,
+  });
+});
+
+test("compact previews are centered around the focus at narrow and wide widths", async () => {
+  focusDomain("alpha");
+  const backlog = withManyAsks(5);
+  host.files.set(
+    DOC,
+    JSON.stringify({
+      ...backlog,
+      items: backlog.items.map((item) =>
+        item.id === "i2"
+          ? { ...item, title: "A preview title that wraps at the narrow measured card width" }
+          : item,
+      ),
+    }),
+  );
+  const { ctx, view, render } = await mount();
+  get(render(), "item-i3").click!({}, ctx.cx);
+  let root = render();
+  const items = Array.from({ length: 5 }, (_, index) => ({
+    id: `i${index + 1}`,
+    expandedHeight: 200,
+  }));
+
+  for (const viewportWidth of [280, 640]) {
+    root = measureFlow(root, ctx.cx, render, items, 600, viewportWidth);
+    const focusWidth = viewportWidth * ANSWER_CAROUSEL.compactWidthRatio;
+    const previewWidth = focusWidth - 2 * PANEL.padding;
+    const compactTitleHeight = viewportWidth < 400 ? 96 : 72;
+    reportSize(root, "answer-flow-measure-compact-i2", ctx.cx, compactTitleHeight, previewWidth);
+    root = render();
+    const focusLeft = (viewportWidth - focusWidth) / 2;
+    const previewLeft = (viewportWidth - previewWidth) / 2;
+    const checkPlacement = (focusId: string, previousId: string, nextId: string) => {
+      const focus = get(root, `answer-flow-card-${focusId}`).styles;
+      const neighbors = [
+        get(root, `answer-flow-card-${previousId}`).styles,
+        get(root, `answer-flow-card-${nextId}`).styles,
+      ];
+      expect([focus.left, focus.w, focus.opacity]).toEqual([focusLeft, focusWidth, 1]);
+      expect(neighbors.map(({ left, w, opacity }) => ({ left, w, opacity }))).toEqual([
+        { left: previewLeft, w: previewWidth, opacity: 0.58 },
+        { left: previewLeft, w: previewWidth, opacity: 0.58 },
+      ]);
+      expect(neighbors.map(({ left, w }) => left + w / 2)).toEqual([
+        viewportWidth / 2,
+        viewportWidth / 2,
+      ]);
+    };
+
+    checkPlacement("i3", "i2", "i4");
+    expect(get(root, "answer-flow-measure-compact-i2").styles.w).toBe(previewWidth);
+    expect(get(root, "answer-flow-measure-expanded-i2").styles.w).toBe(focusWidth);
+    expect(view.answerFlowCardMeasurement("alpha", "i2", "compact")).toEqual({
+      width: previewWidth,
+      height: compactTitleHeight,
+    });
+    expect(
+      get(root, "answer-flow-card-i2").styles.top +
+        get(root, "answer-flow-card-i2").styles.h +
+        ANSWER_CAROUSEL.gap,
+    ).toBe(get(root, "answer-flow-card-i3").styles.top);
+
+    get(root, "answer-flow-card-i4").click!({}, ctx.cx);
+    root = render();
+    checkPlacement("i4", "i3", "i5");
+    expect(get(root, "answer-flow-header-i4").children.map((child) => text(child as Node))).toEqual(
+      ["i4", "Question 4"],
+    );
+    ctx.tick(600);
+    root = render();
+    get(root, "answer-flow-card-i3").click!({}, ctx.cx);
+    root = render();
+    checkPlacement("i3", "i2", "i4");
+    ctx.tick(600);
+    root = render();
+  }
+});
+
+test("the carousel keeps every question mounted and moves the stack in one fixed-center transition", async () => {
+  focusDomain("alpha");
+  host.files.set(DOC, JSON.stringify(withManyAsks(5, "fits this choice")));
   const { ctx, render } = await mount();
   get(render(), "item-i1").click!({}, ctx.cx);
   let root = render();
-  expect(ids(root, "screen-answer-flow")).toEqual(["screen-answer-flow"]);
-  expect(text(get(root, "answer-flow-progress"))).toBe("Question 1 of 2");
-  expect(text(get(root, "ask-question"))).toBe("Which title?");
-  const queue = get(root, "answer-flow-queue-page");
-  const scrollFrame = get(queue, "answer-flow-scroll-frame");
-  const footer = get(queue, "answer-flow-footer");
-  expect(queue.children.indexOf(scrollFrame)).toBeLessThan(queue.children.indexOf(footer));
-  expect(ids(footer, "answer-flow-")).toEqual([
-    "answer-flow-footer",
-    "answer-flow-back",
-    "answer-flow-skip",
+  const cardIds = ["i1", "i2", "i3", "i4", "i5"];
+  expect(text(get(root, "answer-flow-progress"))).toBe("Question 1 of 5");
+  expect(ids(root, "answer-flow-card-i")).toEqual([]);
+  root = measureFlow(
+    root,
+    ctx.cx,
+    render,
+    cardIds.map((id, index) => ({ id, expandedHeight: [248, 176, 180, 200, 220][index]! })),
+  );
+  expect(ids(root, "answer-flow-card-i")).toEqual(cardIds.map((id) => `answer-flow-card-${id}`));
+  expect(ids(root, "answer-flow-compact-layer-")).toEqual([
+    ...cardIds.map((id) => `answer-flow-compact-layer-${id}`),
+    "answer-flow-compact-layer-done",
   ]);
-  expect([
-    get(footer, "answer-flow-back").styles.h,
-    get(footer, "answer-flow-skip").styles.h,
-  ]).toEqual([32, 32]);
-  get(root, "answer-flow-skip").click!({}, ctx.cx);
+  expect(ids(root, "answer-flow-expanded-layer-")).toEqual([
+    ...cardIds.map((id) => `answer-flow-expanded-layer-${id}`),
+    "answer-flow-expanded-layer-done",
+  ]);
+  expect(text(get(root, "answer-flow-ask-i1-question"))).toBe("Question 1?");
+  expect(text(get(root, "answer-flow-ask-i1-rec-reason"))).toBe("Why recommended fits this choice");
+  expect(get(root, "answer-flow-ask-i1-rec-reason").styles).toMatchObject({
+    bg: "#292929",
+    rounded: CARD.innerRadius,
+    px: CARD.paddingX,
+    py: CARD.paddingY,
+    min_w_0: true,
+  });
+  expect(ANSWER_CAROUSEL.transitionDuration).toBe(600);
+  expect(ANSWER_CAROUSEL.easing).toBe("ease-in-out");
+  expect(get(root, "answer-flow-card-i1").styles).toMatchObject({
+    left: 18,
+    top: 176,
+    w: 324,
+    h: 248,
+    opacity: 1,
+  });
+  expect(get(root, "answer-flow-card-i2").styles).toMatchObject({
+    left: 30,
+    top: 434,
+    w: 300,
+    h: 72,
+    opacity: 0.58,
+  });
+  expect(get(root, "answer-flow-card-i4").styles.opacity).toBeCloseTo(0.58 * (2 / 72));
+  expect(get(root, "answer-flow-card-i5").styles.opacity).toBe(0);
+  expect(get(root, "answer-flow-expanded-layer-i1").styles).toMatchObject({
+    w_full: true,
+    opacity: 1,
+  });
+  expect(get(root, "answer-flow-expanded-layer-i1").styles.top).toBe(undefined);
+  expect(get(root, "answer-flow-card-done")).toBeDefined();
+
+  const queue = get(root, "answer-flow-queue-page");
+  expect(
+    queue.children.map((child) => (typeof child === "string" ? child : (child as Node).styles.id)),
+  ).toEqual(["answer-flow-header-alpha", "answer-flow-carousel"]);
+  expect(ids(root, "answer-flow-footer")).toEqual([]);
+  expect(ids(root, "answer-flow-back")).toEqual([]);
+  expect(ids(root, "answer-flow-skip")).toEqual([]);
+  expect(text(get(root, "answer-flow-speed-trigger"))).toBe("Speed: Normal");
+  expect(typeof get(root, "answer-flow-card-i2").click).toBe("function");
+  expect(get(root, "answer-flow-card-i1").click).toBe(undefined);
+
+  const beforeTops = cardIds.map((id) => get(root, `answer-flow-card-${id}`).styles.top);
+  get(root, "answer-flow-card-i2").click!({}, ctx.cx);
   root = render();
-  expect(text(get(root, "answer-flow-progress"))).toBe("Question 2 of 2");
-  expect(text(get(root, "ask-question"))).toBe("Which tone?");
-  get(root, "answer-flow-back").click!({}, ctx.cx);
+  const targetTops = cardIds.map((id) => get(root, `answer-flow-card-${id}`).styles.top);
+  expect(text(get(root, "answer-flow-progress"))).toBe("Question 1 of 5");
+  expect(get(root, "answer-flow-header-i1").children.map((child) => text(child as Node))).toEqual([
+    "i1",
+    "Question 1",
+  ]);
+  expect(get(root, "answer-flow-header-i2").children.map((child) => text(child as Node))).toEqual([
+    "i2",
+    "Question 2",
+  ]);
+  expect(ids(root, "answer-flow-item-title")).toEqual([]);
+  expect(
+    get(root, "answer-flow-card-i2").children.map((child) =>
+      typeof child === "string" ? child : (child as Node).styles.id,
+    ),
+  ).toEqual(["answer-flow-header-i2", "answer-flow-body-i2"]);
+  expect(beforeTops).toEqual([176, 434, 516, 598, 680]);
+  expect(targetTops).toEqual([130, 212, 398, 480, 562]);
+  expect(targetTops.every((top, index) => top !== beforeTops[index])).toBe(true);
+  expect(ctx.timers.at(-1)?.ms).toBe(600);
+  expect(get(root, "answer-flow-card-i1").styles).toMatchObject({
+    left: 30,
+    top: 130,
+    w: 300,
+    h: 72,
+    opacity: 0.58,
+    transition: ["opacity", { duration: 600, easing: "ease-in-out" }],
+  });
+  expect(get(root, "answer-flow-card-i2").styles).toMatchObject({
+    left: 18,
+    top: 212,
+    w: 324,
+    h: 176,
+    opacity: 1,
+  });
+  expect(get(root, "answer-flow-compact-layer-i1").styles.opacity).toBe(1);
+  expect(get(root, "answer-flow-expanded-layer-i1").styles.opacity).toBe(0);
+  expect(get(root, "answer-flow-compact-layer-i2").styles.opacity).toBe(0);
+  expect(get(root, "answer-flow-card-i1").styles).toMatchObject({ left: 30, w: 300 });
+  expect(get(root, "answer-flow-expanded-layer-i1").styles).toMatchObject({
+    w_full: true,
+    opacity: 0,
+  });
+  expect(get(root, "answer-flow-expanded-layer-i1").styles.top).toBe(undefined);
+  expect(get(root, "answer-flow-expanded-layer-i2").styles).toMatchObject({
+    w_full: true,
+    opacity: 1,
+    transition: ["opacity", { duration: 180, delay: 420, easing: "ease-in-out" }],
+  });
+  expect(get(root, "answer-flow-expanded-layer-i2").styles.top).toBe(undefined);
+  expect(get(root, "answer-flow-compact-layer-i1").styles).toMatchObject({
+    top: 0,
+    left: 0,
+    w_full: true,
+  });
+  expect(get(root, "answer-flow-compact-layer-i1").styles.transition).toEqual([
+    "opacity",
+    { duration: 270, delay: 150, easing: "ease-out" },
+  ]);
+  expect(get(root, "answer-flow-expanded-layer-i1").styles.transition).toEqual([
+    "opacity",
+    { duration: 180, easing: "ease-in" },
+  ]);
+  expect(get(root, "answer-flow-compact-layer-i2").styles.transition).toEqual([
+    "opacity",
+    { duration: 480, easing: "ease-in" },
+  ]);
+  expect(get(root, "answer-flow-preview-i2").styles).toMatchObject({ py: 8 });
+  expect(get(root, "answer-flow-preview-i2").styles.justify_center).toBe(undefined);
+  expect(typeof get(root, "answer-flow-speed-trigger").click).toBe("function");
+  ctx.tick(599);
+  expect(text(get(render(), "answer-flow-progress"))).toBe("Question 1 of 5");
+  ctx.tick(600);
   root = render();
-  expect(text(get(root, "answer-flow-progress"))).toBe("Question 1 of 2");
-  expect(text(get(root, "ask-question"))).toBe("Which title?");
-  get(root, "answer-flow-back").click!({}, ctx.cx);
+  expect(text(get(root, "answer-flow-progress"))).toBe("Question 2 of 5");
+  expect(cardIds.map((id) => get(root, `answer-flow-card-${id}`).styles.top)).toEqual(targetTops);
+
+  get(root, "answer-flow-card-i1").click!({}, ctx.cx);
+  root = render();
+  expect(text(get(root, "answer-flow-progress"))).toBe("Question 2 of 5");
+  expect(ctx.timers.at(-1)?.ms).toBe(600);
+  ctx.tick(600);
+  root = render();
+  expect(text(get(root, "answer-flow-progress"))).toBe("Question 1 of 5");
+
+  get(root, "answer-flow-card-i2").click!({}, ctx.cx);
+  ctx.tick(600);
+  root = render();
+  expect(text(get(root, "answer-flow-progress"))).toBe("Question 2 of 5");
+  get(root, "answer-flow-card-i1").click!({}, ctx.cx);
+  ctx.tick(600);
+  root = render();
+  expect(text(get(root, "answer-flow-progress"))).toBe("Question 1 of 5");
+  expect(trail(root)).toBe("⌂ › alpha › Questions");
+  press(root, "crumb-domain-alpha", ctx.cx);
   root = render();
   expect(ids(root, "screen-answer-flow")).toEqual([]);
   expect(get(root, "screen-list").styles.invisible).toBe(undefined);
 });
 
-test("a failed flow answer shows the CLI error and stays on its question", async () => {
+test("Slow 5 scales one whole transition and remains live during motion", async () => {
   focusDomain("alpha");
   host.files.set(DOC, JSON.stringify(withAsk()));
-  const { ctx, render } = await mount();
+  const { ctx, view, render } = await mount();
   get(render(), "item-i1").click!({}, ctx.cx);
-  get(render(), "ask-option-1").click!({}, ctx.cx);
-  host.execExit = { code: 1, stderr: "refused: i1 has no ask to answer\n" };
-  get(render(), "ask-answer-submit").click!({}, ctx.cx);
-  await settle();
-  const root = render();
-  expect(text(get(root, "answer-flow-progress"))).toBe("Question 1 of 2");
-  expect(text(get(root, "ask-answer-error"))).toBe("refused: i1 has no ask to answer");
-  expect(text(get(root, "ask-question"))).toBe("Which title?");
-  expect(host.execs).toEqual([{ command: "/usr/bin/env", args: answerArgs("i1", "Backlog") }]);
+  let root = measureFlow(render(), ctx.cx, render, [
+    { id: "i1", expandedHeight: 248 },
+    { id: "i2", expandedHeight: 176 },
+  ]);
+  const toggle = get(root, "answer-flow-speed-trigger");
+  expect(text(toggle)).toBe("Speed: Normal");
+  toggle.click!({}, ctx.cx);
+  root = render();
+  get(root, "answer-flow-speed-option-slow-5").click!({}, ctx.cx);
+  root = render();
+  expect(view.answerFlowSpeed).toBe(5);
+  get(root, "answer-flow-card-i2").click!({}, ctx.cx);
+  root = render();
+  expect([
+    ctx.timers.at(-1)?.ms,
+    get(root, "answer-flow-card-i1").styles.transition,
+    get(root, "answer-flow-expanded-layer-i2").styles.transition,
+    get(root, "answer-flow-compact-layer-i2").styles.transition,
+    text(get(root, "answer-flow-speed-trigger")),
+  ]).toEqual([
+    3_000,
+    ["opacity", { duration: 3_000, easing: "ease-in-out" }],
+    ["opacity", { duration: 900, delay: 2_100, easing: "ease-in-out" }],
+    ["opacity", { duration: 2_400, easing: "ease-in" }],
+    "Speed: Slow 5",
+  ]);
+
+  expect(view.answerFlowSpeed).toBe(5);
+  expect(ctx.timers.at(-1)?.ms).toBe(3_000);
+  get(root, "answer-flow-speed-trigger").click!({}, ctx.cx);
+  root = render();
+  get(root, "answer-flow-speed-option-normal").click!({}, ctx.cx);
+  root = render();
+  expect([
+    view.answerFlowSpeed,
+    ctx.timers.at(-1)?.ms,
+    get(root, "answer-flow-card-i1").styles.transition,
+  ]).toEqual([0, 3_000, ["opacity", { duration: 3_000, easing: "ease-in-out" }]]);
+  ctx.tick(2_999);
+  expect(text(get(render(), "answer-flow-progress"))).toBe("Question 1 of 2");
+  ctx.tick(3_000);
+  root = render();
+  expect(text(get(root, "answer-flow-progress"))).toBe("Question 2 of 2");
+  get(root, "answer-flow-card-done").click!({}, ctx.cx);
+  root = render();
+  expect(ctx.timers.at(-1)?.ms).toBe(600);
+  ctx.tick(600);
+  root = render();
+  expect(text(get(root, "answer-flow-progress"))).toBe("Done");
+  expect(ids(root, "answer-flow-footer")).toEqual([]);
 });
 
-test("Queue page submits an answer through the CLI, then advances", async () => {
+test("offers eleven named speeds and keeps menu focus and drafts intact", async () => {
   focusDomain("alpha");
   host.files.set(DOC, JSON.stringify(withAsk()));
+  const { ctx, view, render } = await mount();
+  get(render(), "item-i1").click!({}, ctx.cx);
+  let root = measureFlow(
+    render(),
+    ctx.cx,
+    render,
+    [
+      { id: "i1", expandedHeight: 248 },
+      { id: "i2", expandedHeight: 176 },
+    ],
+    220,
+    280,
+  );
+  get(root, "answer-flow-ask-i1-option-0").click!({}, ctx.cx);
+  root = render();
+
+  expect(
+    ANSWER_FLOW_SPEED_OPTIONS.map(({ name, durationFactor }) => [name, durationFactor]),
+  ).toEqual([
+    ["Normal", 1],
+    ["Slow 1", 1.25],
+    ["Slow 2", 1.5],
+    ["Slow 3", 2],
+    ["Slow 4", 3],
+    ["Slow 5", 5],
+    ["Fast 1", 1 / 1.25],
+    ["Fast 2", 1 / 1.5],
+    ["Fast 3", 1 / 2],
+    ["Fast 4", 1 / 3],
+    ["Fast 5", 1 / 5],
+  ]);
+  expect(view.answerFlowSpeed).toBe(0);
+  expect(text(get(root, "answer-flow-speed-trigger"))).toBe("Speed: Normal");
+  get(root, "answer-flow-layout-trigger").click!({}, ctx.cx);
+  root = render();
+  get(root, "answer-flow-speed-trigger").click!({}, ctx.cx);
+  root = render();
+  expect([view.answerFlowLayoutMenuOpen, view.answerFlowSpeedMenuOpen]).toEqual([false, true]);
+  expect(ids(root, "answer-flow-speed-option-")).toEqual(
+    ANSWER_FLOW_SPEED_OPTIONS.map(({ id }) => `answer-flow-speed-option-${id}`),
+  );
+  expect(
+    ANSWER_FLOW_SPEED_OPTIONS.map(({ id }) => text(get(root, `answer-flow-speed-option-${id}`))),
+  ).toEqual(ANSWER_FLOW_SPEED_OPTIONS.map(({ name }) => name));
+  expect(get(root, "answer-flow-speed-options").styles).toMatchObject({
+    role: "menu",
+    tab_index: 0,
+    w: 216,
+    max_h: 200,
+    overflow_y_scroll: true,
+  });
+  expect(view.answerFlowSpeedMenuFocus.is_focused()).toBe(true);
+
+  let keyDown = get(root, "answer-flow-speed-options").styles.on_key_down as (
+    event: { key: string; keystroke: string },
+    cx: unknown,
+  ) => void;
+  const hoverSlowTwo = get(root, "answer-flow-speed-option-slow-2").styles.on_hover as (
+    hovered: boolean,
+    cx: unknown,
+  ) => void;
+  hoverSlowTwo(true, ctx.cx);
+  root = render();
+  expect([view.answerFlowSpeed, view.answerFlowSpeedActiveIndex]).toEqual([0, 2]);
+  keyDown = get(root, "answer-flow-speed-options").styles.on_key_down as typeof keyDown;
+  keyDown({ key: "ArrowUp", keystroke: "ArrowUp" }, ctx.cx);
+  root = render();
+  expect(view.answerFlowSpeedActiveIndex).toBe(1);
+  expect(get(root, "answer-flow-speed-option-slow-1").styles.border_color).toBe("#3b82f6");
+  keyDown = get(root, "answer-flow-speed-options").styles.on_key_down as typeof keyDown;
+  keyDown({ key: "Enter", keystroke: "Enter" }, ctx.cx);
+  root = render();
+  expect([
+    view.answerFlowSpeed,
+    view.answerFlowSpeedMenuOpen,
+    view.answerFlow?.current,
+    view.draft?.choice,
+    view.answerFlowSpeedTriggerFocus.is_focused(),
+  ]).toEqual([1, false, 0, "Coordinate backlog", true]);
+
+  get(root, "answer-flow-speed-trigger").click!({}, ctx.cx);
+  root = render();
+  keyDown = get(root, "answer-flow-speed-options").styles.on_key_down as typeof keyDown;
+  keyDown({ key: "Escape", keystroke: "Escape" }, ctx.cx);
+  root = render();
+  expect([view.answerFlowSpeedMenuOpen, view.answerFlowSpeedTriggerFocus.is_focused()]).toEqual([
+    false,
+    true,
+  ]);
+
+  get(root, "answer-flow-speed-trigger").click!({}, ctx.cx);
+  root = render();
+  get(root, "answer-flow-layout-trigger").click!({}, ctx.cx);
+  root = render();
+  expect([view.answerFlowSpeedMenuOpen, view.answerFlowLayoutMenuOpen]).toEqual([false, true]);
+  expect(view.answerFlowLayoutMenuFocus.is_focused()).toBe(true);
+  expect([view.answerFlow?.current, view.draft?.choice]).toEqual([0, "Coordinate backlog"]);
+});
+
+test("each named speed uses one captured duration for rendering and completion", async () => {
+  focusDomain("alpha");
+  host.files.set(DOC, JSON.stringify(withAsk()));
+  const { ctx, view, render } = await mount();
+  get(render(), "item-i1").click!({}, ctx.cx);
+  let root = measureFlow(render(), ctx.cx, render, [
+    { id: "i1", expandedHeight: 248 },
+    { id: "i2", expandedHeight: 176 },
+  ]);
+
+  for (const [index, speed] of ANSWER_FLOW_SPEED_OPTIONS.entries()) {
+    get(root, "answer-flow-speed-trigger").click!({}, ctx.cx);
+    root = render();
+    get(root, `answer-flow-speed-option-${speed.id}`).click!({}, ctx.cx);
+    root = render();
+    expect([view.answerFlowSpeed, text(get(root, "answer-flow-speed-trigger"))]).toEqual([
+      index,
+      `Speed: ${speed.name}`,
+    ]);
+
+    const targetId = view.answerFlow?.current === 0 ? "i2" : "i1";
+    get(root, `answer-flow-card-${targetId}`).click!({}, ctx.cx);
+    root = render();
+    const duration = ANSWER_CAROUSEL.transitionDuration * speed.durationFactor;
+    expect([
+      view.answerFlowMotion?.duration,
+      ctx.timers.at(-1)?.ms,
+      get(root, "answer-flow-card-i1").styles.transition,
+    ]).toEqual([duration, duration, ["opacity", { duration, easing: "ease-in-out" }]]);
+    ctx.tick(duration);
+    root = render();
+    expect(view.answerFlowMotion).toBe(undefined);
+  }
+});
+
+test("answer-flow questions use the Outline treatment without a bottom action bar", async () => {
+  focusDomain("alpha");
+  const backlog = withManyAsks(2, "fits the choice");
+  host.files.set(
+    DOC,
+    JSON.stringify({
+      ...backlog,
+      items: backlog.items.map((item) =>
+        item.id === "i1" && item.ask !== null
+          ? { ...item, ask: { ...item.ask, optionDetails: ["Yes detail", "No detail"] } }
+          : item,
+      ),
+    }),
+  );
+  const { ctx, view, render } = await mount();
+  get(render(), "item-i1").click!({}, ctx.cx);
+  let root = measureFlow(
+    render(),
+    ctx.cx,
+    render,
+    [
+      { id: "i1", expandedHeight: 248 },
+      { id: "i2", expandedHeight: 176 },
+    ],
+    600,
+    280,
+  );
+  get(root, "answer-flow-ask-i1-option-1").click!({}, ctx.cx);
+  root = render();
+
+  const queue = get(root, "answer-flow-queue-page");
+  const selected = get(root, "answer-flow-ask-i1-option-1");
+  const unselected = get(root, "answer-flow-ask-i1-option-0");
+  expect(view.draft?.choice).toBe("No");
+  expect(text(get(root, "answer-flow-progress"))).toBe("Question 1 of 2");
+  const questionBlock = get(root, "answer-flow-ask-i1-question-block");
+  expect(questionBlock.styles.bg).toBe("#292929");
+  expect(questionBlock.children.map((child) => (child as Node).styles.id)).toEqual([
+    "answer-flow-ask-i1-question",
+  ]);
+  expect(ids(questionBlock, "answer-flow-ask-i1-context")).toEqual([]);
+  expect(ids(questionBlock, "answer-flow-ask-i1-rec-reason")).toEqual([]);
+  expect(selected.styles).toMatchObject({
+    w_full: true,
+    min_w_0: true,
+    px: ANSWER_FLOW_OUTLINE.paddingX,
+    py: ANSWER_FLOW_OUTLINE.paddingY,
+    bg: "#171717",
+    border: ANSWER_FLOW_OUTLINE.selectedBorderWidth,
+    border_color: "#3b82f6",
+    rounded: CARD.innerRadius,
+    text_color: "#f5f5f5",
+    font_semibold: true,
+  });
+  expect(selected.hoverStyles.bg).toBe("#171717");
+  expect(unselected.styles).toMatchObject({
+    w_full: true,
+    min_w_0: true,
+    px: ANSWER_FLOW_OUTLINE.paddingX,
+    py: ANSWER_FLOW_OUTLINE.paddingY,
+    bg: "#171717",
+    border_1: true,
+    border_color: "#525252",
+  });
+  expect(unselected.hoverStyles.bg).toBe("#404040");
+  expect(get(root, "answer-flow-ask-i1-option-1-selection-marker").styles.asset).toBe(
+    HERDR_ICONS.circleCheck,
+  );
+  expect(get(root, "answer-flow-ask-i1-option-0-selection-marker").styles.asset).toBe(undefined);
+  expect(text(unselected)).toContain("Recommended");
+  expect(get(root, "answer-flow-card-i1").styles.w).toBe(252);
+  expect(text(get(root, "answer-flow-ask-i1-rec-reason"))).toBe("Why recommended fits the choice");
+  expect(get(root, "answer-flow-ask-i1-rec-reason").styles.bg).toBe("#292929");
+  expect(ids(get(root, "answer-flow-ask-i1-rec-reason"), "answer-flow-ask-i1-detail-")).toEqual([]);
+  expect(get(root, "answer-flow-ask-i1-content-1").styles.min_w_0).toBe(true);
+  expect(text(get(root, "answer-flow-ask-i1-detail-1"))).toBe("No detail");
+  expect(text(get(root, "answer-flow-speed-trigger"))).toBe("Speed: Normal");
+  expect(queue.children.map((child) => (child as Node).styles.id)).toEqual([
+    "answer-flow-header-alpha",
+    "answer-flow-carousel",
+  ]);
+  expect(ids(root, "answer-flow-treatment-")).toEqual([]);
+  expect(ids(root, "answer-flow-footer")).toEqual([]);
+  expect(ids(root, "answer-flow-back")).toEqual([]);
+  expect(ids(root, "answer-flow-skip")).toEqual([]);
+});
+
+test("offers ten named layouts and a separate keyboard-accessible Outline reset", async () => {
+  focusDomain("alpha");
+  host.files.set(DOC, JSON.stringify(withAsk()));
+  const { ctx, view, render } = await mount();
+  get(render(), "item-i1").click!({}, ctx.cx);
+  let root = measureFlow(render(), ctx.cx, render, [
+    { id: "i1", expandedHeight: 248 },
+    { id: "i2", expandedHeight: 176 },
+  ]);
+
+  expect(view.answerFlowLayoutId).toBe(ANSWER_FLOW_LAYOUT_BASELINE.id);
+  expect(ANSWER_FLOW_LAYOUT_PROPOSALS.map(({ name }) => name)).toEqual([
+    "Quiet Lines",
+    "Soft Tiles",
+    "Split Prompt",
+    "Shared Set",
+    "Two-Up",
+    "Context First",
+    "Editorial",
+    "Side Notes",
+    "Rationale Shelf",
+    "Why on Demand",
+  ]);
+  expect(new Set(ANSWER_FLOW_LAYOUT_PROPOSALS.map(({ id }) => id)).size).toBe(10);
+  expect(ANSWER_FLOW_LAYOUT_PROPOSALS.some(({ id }) => id === ANSWER_FLOW_LAYOUT_BASELINE.id)).toBe(
+    false,
+  );
+
+  get(root, "answer-flow-layout-trigger").click!({}, ctx.cx);
+  root = render();
+  const proposalIds = ANSWER_FLOW_LAYOUT_PROPOSALS.map(
+    ({ id }) => `answer-flow-layout-option-${id}`,
+  );
+  expect(ids(root, "answer-flow-layout-option-")).toEqual(proposalIds);
+  expect(proposalIds.map((id) => text(get(root, id)))).toEqual(
+    ANSWER_FLOW_LAYOUT_PROPOSALS.map(({ name }) => name),
+  );
+  expect(text(get(root, "answer-flow-layout-reset"))).toBe("Reset to Outline");
+  expect(get(root, "answer-flow-layout-options").styles).toMatchObject({
+    role: "menu",
+    tab_index: 0,
+  });
+  expect(get(root, "answer-flow-layout-options").calls).toContain("on_key_down");
+  expect(get(root, "answer-flow-layout-trigger").calls).toContain("on_key_down");
+
+  view.moveAnswerFlowLayoutMenu(1, ctx.cx as never);
+  root = render();
+  expect(view.answerFlowLayoutActiveIndex).toBe(1);
+  expect(get(root, "answer-flow-layout-option-soft-tiles").styles.border_color).toBe("#3b82f6");
+  view.activateAnswerFlowLayoutMenu(ctx.cx as never);
+  root = render();
+  expect([view.answerFlowLayoutId, view.answerFlowPendingLayout]).toEqual([
+    ANSWER_FLOW_LAYOUT_BASELINE.id,
+    "soft-tiles",
+  ]);
+  root = measurePendingLayout(root, ctx.cx, render, [
+    { id: "i1", expandedHeight: 264 },
+    { id: "i2", expandedHeight: 184 },
+  ]);
+  expect(view.answerFlowLayoutId).toBe("soft-tiles");
+
+  get(root, "answer-flow-layout-trigger").click!({}, ctx.cx);
+  root = render();
+  expect(
+    get(root, "answer-flow-layout-option-soft-tiles").children.some(
+      (child) => typeof child !== "string" && child.styles.asset === HERDR_ICONS.check,
+    ),
+  ).toBe(true);
+  view.moveAnswerFlowLayoutMenu(9, ctx.cx as never);
+  root = render();
+  expect(view.answerFlowLayoutActiveIndex).toBe(ANSWER_FLOW_LAYOUT_PROPOSALS.length);
+  expect(get(root, "answer-flow-layout-reset").styles.border_color).toBe("#3b82f6");
+  view.activateAnswerFlowLayoutMenu(ctx.cx as never);
+  root = render();
+  expect([view.answerFlowLayoutId, view.answerFlowPendingLayout]).toEqual([
+    "soft-tiles",
+    ANSWER_FLOW_LAYOUT_BASELINE.id,
+  ]);
+  root = measurePendingLayout(root, ctx.cx, render, [
+    { id: "i1", expandedHeight: 248 },
+    { id: "i2", expandedHeight: 176 },
+  ]);
+  expect(view.answerFlowLayoutId).toBe(ANSWER_FLOW_LAYOUT_BASELINE.id);
+});
+
+test("all layout proposals compose long content and preserve the current draft", async () => {
+  focusDomain("alpha");
+  const question = "Which of these directions best fits the backlog panel?";
+  const questionContext = "Additional context for the choice. ".repeat(8);
+  const rationale = "This option is recommended because it stays short and clear. ".repeat(8);
+  const backlog = withAsk();
+  host.files.set(
+    DOC,
+    JSON.stringify({
+      ...backlog,
+      items: backlog.items.map((item) =>
+        item.id === "i1" && item.ask !== null
+          ? {
+              ...item,
+              ask: {
+                ...item.ask,
+                question,
+                context: questionContext,
+                options: ["Coordinate backlog", "Backlog", "Queue", "Task list"],
+                optionDetails: [
+                  "Full wording for an interface label. ".repeat(3),
+                  "Shorter wording with enough context. ".repeat(3),
+                  "A neutral alternative. ".repeat(3),
+                  "Another option for comparison. ".repeat(3),
+                ],
+                rec: "Backlog",
+                recReason: rationale,
+              },
+            }
+          : item,
+      ),
+    }),
+  );
+  const { ctx, view, render } = await mount();
+  get(render(), "item-i1").click!({}, ctx.cx);
+  let root = measureFlow(
+    render(),
+    ctx.cx,
+    render,
+    [
+      { id: "i1", expandedHeight: 460 },
+      { id: "i2", expandedHeight: 220 },
+    ],
+    600,
+    280,
+  );
+  typeInto(host.inputs[0]!, "draft text to keep", ctx.cx);
+  root = render();
+
+  const fingerprints = new Set<string>();
+  for (const [index, layout] of ANSWER_FLOW_LAYOUT_PROPOSALS.entries()) {
+    const previousCenter =
+      get(root, "answer-flow-card-i1").styles.top + get(root, "answer-flow-card-i1").styles.h / 2;
+    view.selectAnswerFlowLayout(layout.id, ctx.cx as never);
+    root = render();
+    expect([view.answerFlowLayoutId, view.answerFlowPendingLayout]).toEqual([
+      index === 0 ? ANSWER_FLOW_LAYOUT_BASELINE.id : ANSWER_FLOW_LAYOUT_PROPOSALS[index - 1]!.id,
+      layout.id,
+    ]);
+    expect([view.answerFlow?.current, view.draft?.text]).toEqual([0, "draft text to keep"]);
+    expect(
+      get(
+        root,
+        `answer-flow-layout-measure-${view.answerFlowLayoutMeasurementVersion}-expanded-i1`,
+      ),
+    ).toBeDefined();
+
+    root = measurePendingLayout(
+      root,
+      ctx.cx,
+      render,
+      [
+        { id: "i1", expandedHeight: 310 + index * 8 },
+        { id: "i2", expandedHeight: 200 + index * 4 },
+      ],
+      280,
+    );
+    expect([view.answerFlowLayoutId, view.answerFlowPendingLayout]).toEqual([layout.id, undefined]);
+    expect([view.answerFlow?.current, view.draft?.text]).toEqual([0, "draft text to keep"]);
+    const activeCard = get(root, "answer-flow-card-i1");
+    expect(activeCard.styles.top + activeCard.styles.h / 2).toBe(previousCenter);
+    const prompt = get(root, `answer-flow-ask-i1-prompt-${layout.prompt}`);
+    const options = get(root, `answer-flow-ask-i1-options-${layout.choices}`);
+    expect(text(prompt)).toContain(question);
+    expect(text(prompt)).toContain(questionContext);
+    expect(text(options)).toContain("Another option for comparison.");
+    expect(get(root, "answer-flow-ask-i1-answer-field")).toBeDefined();
+    expect(
+      view.answerFlowCardSizes.get(view.flowCardSizeKey("alpha", "i1"))?.expanded?.height,
+    ).toBe(310 + index * 8);
+    fingerprints.add(
+      JSON.stringify({
+        prompt: prompt.styles.id,
+        promptChildren: prompt.children.map((child) =>
+          typeof child === "string" ? child : (child as Node).styles.id,
+        ),
+        options: options.styles.id,
+        optionChildren: options.children.map((child) =>
+          typeof child === "string" ? child : (child as Node).styles.id,
+        ),
+        rationale: layout.rationale,
+      }),
+    );
+
+    if (layout.rationale === "popover") {
+      const trigger = get(root, "answer-flow-ask-i1-rec-reason-disclosure-trigger");
+      expect(text(trigger)).toBe("Why recommended");
+      expect(trigger.styles.tab_index).toBe(0);
+      expect(trigger.calls).toContain("track_focus");
+      expect(trigger.calls).toContain("on_key_down");
+      trigger.click!({}, ctx.cx);
+      root = render();
+      expect(text(get(root, "answer-flow-ask-i1-rec-reason-popover-content"))).toContain(rationale);
+    } else {
+      expect(text(get(root, "answer-flow-expanded-layer-i1"))).toContain(rationale);
+      expect(
+        get(
+          root,
+          layout.rationale === "shelf"
+            ? "answer-flow-ask-i1-rec-reason-shelf"
+            : "answer-flow-ask-i1-rec-reason",
+        ),
+      ).toBeDefined();
+    }
+    if (layout.prompt === "split")
+      expect(ids(root, "answer-flow-ask-i1-question-column")).toEqual([]);
+    if (layout.choices === "tiles")
+      expect(
+        get(root, "answer-flow-ask-i1-option-tile-row-0").children.filter(
+          (child) =>
+            typeof child !== "string" &&
+            (child as Node).styles.id.startsWith("answer-flow-ask-i1-option-"),
+        ),
+      ).toHaveLength(1);
+    if (layout.id === "side-notes")
+      expect(ids(root, "answer-flow-ask-i1-detail-side-by-side-")).toEqual([]);
+    if (layout.prompt === "context-first")
+      expect(text(prompt).indexOf(questionContext) < text(prompt).indexOf(question)).toBe(true);
+    if (layout.choices === "grid") {
+      const firstRow = get(root, "answer-flow-ask-i1-option-grid-row-0");
+      expect(
+        firstRow.children.filter(
+          (child) =>
+            typeof child !== "string" &&
+            (child as Node).styles.id.startsWith("answer-flow-ask-i1-option-"),
+        ),
+      ).toHaveLength(1);
+    }
+  }
+  expect(fingerprints.size).toBe(10);
+  expect(view.answerFlow?.current).toBe(0);
+  expect(view.draft?.text).toBe("draft text to keep");
+
+  root = measureFlow(
+    root,
+    ctx.cx,
+    render,
+    [
+      { id: "i1", expandedHeight: 500 },
+      { id: "i2", expandedHeight: 260 },
+    ],
+    700,
+    720,
+  );
+  view.selectAnswerFlowLayout("two-up", ctx.cx as never);
+  root = measurePendingLayout(
+    render(),
+    ctx.cx,
+    render,
+    [
+      { id: "i1", expandedHeight: 500 },
+      { id: "i2", expandedHeight: 260 },
+    ],
+    720,
+  );
+  expect(
+    get(root, "answer-flow-ask-i1-option-grid-row-0").children.filter(
+      (child) =>
+        typeof child !== "string" &&
+        (child as Node).styles.id.startsWith("answer-flow-ask-i1-option-"),
+    ),
+  ).toHaveLength(2);
+  expect([view.answerFlow?.current, view.draft?.text]).toEqual([0, "draft text to keep"]);
+
+  view.selectAnswerFlowLayout("soft-tiles", ctx.cx as never);
+  root = measurePendingLayout(
+    render(),
+    ctx.cx,
+    render,
+    [
+      { id: "i1", expandedHeight: 500 },
+      { id: "i2", expandedHeight: 260 },
+    ],
+    720,
+  );
+  expect(
+    get(root, "answer-flow-ask-i1-option-tile-row-0").children.filter(
+      (child) =>
+        typeof child !== "string" &&
+        (child as Node).styles.id.startsWith("answer-flow-ask-i1-option-"),
+    ),
+  ).toHaveLength(3);
+  expect(view.draft?.text).toBe("draft text to keep");
+
+  get(root, "answer-flow-ask-i1-option-0").click!({}, ctx.cx);
+  root = render();
+  const selected = get(root, "answer-flow-ask-i1-option-0");
+  expect(view.draft?.choice).toBe("Coordinate backlog");
+  expect(selected.styles.border_color).toBe("#3b82f6");
+  expect(get(root, "answer-flow-ask-i1-option-0-selection-marker").styles.asset).toBe(
+    HERDR_ICONS.circleCheck,
+  );
+
+  view.selectAnswerFlowLayout("split-prompt", ctx.cx as never);
+  root = measurePendingLayout(
+    render(),
+    ctx.cx,
+    render,
+    [
+      { id: "i1", expandedHeight: 500 },
+      { id: "i2", expandedHeight: 260 },
+    ],
+    720,
+  );
+  expect(get(root, "answer-flow-ask-i1-question-column")).toBeDefined();
+  expect(get(root, "answer-flow-ask-i1-context-column")).toBeDefined();
+  expect(view.draft?.choice).toBe("Coordinate backlog");
+
+  view.selectAnswerFlowLayout("side-notes", ctx.cx as never);
+  root = measurePendingLayout(
+    render(),
+    ctx.cx,
+    render,
+    [
+      { id: "i1", expandedHeight: 500 },
+      { id: "i2", expandedHeight: 260 },
+    ],
+    720,
+  );
+  expect(get(root, "answer-flow-ask-i1-detail-side-by-side-1")).toBeDefined();
+  expect(view.draft?.choice).toBe("Coordinate backlog");
+});
+
+test("layout changes during focus motion wait for its completion and do not schedule another transition", async () => {
+  focusDomain("alpha");
+  host.files.set(DOC, JSON.stringify(withAsk()));
+  const { ctx, view, render } = await mount();
+  get(render(), "item-i1").click!({}, ctx.cx);
+  let root = measureFlow(render(), ctx.cx, render, [
+    { id: "i1", expandedHeight: 248 },
+    { id: "i2", expandedHeight: 176 },
+  ]);
+
+  get(root, "answer-flow-card-i2").click!({}, ctx.cx);
+  root = render();
+  const motion = view.answerFlowMotion;
+  const timerCount = ctx.timers.length;
+  expect(motion?.targetIndex).toBe(1);
+  get(root, "answer-flow-layout-trigger").click!({}, ctx.cx);
+  root = render();
+  get(root, "answer-flow-layout-option-rationale-shelf").click!({}, ctx.cx);
+  root = render();
+  expect([view.answerFlowLayoutId, view.answerFlowPendingLayout]).toEqual([
+    ANSWER_FLOW_LAYOUT_BASELINE.id,
+    "rationale-shelf",
+  ]);
+  expect(view.answerFlowMotion?.generation).toBe(motion?.generation);
+  expect(ids(root, "answer-flow-layout-measure-")).toEqual([]);
+  expect(ctx.timers.length).toBe(timerCount);
+
+  ctx.tick(ANSWER_CAROUSEL.transitionDuration);
+  root = render();
+  expect([view.answerFlow?.current, view.answerFlowMotion, view.answerFlowLayoutId]).toEqual([
+    1,
+    undefined,
+    ANSWER_FLOW_LAYOUT_BASELINE.id,
+  ]);
+  expect(
+    ids(root, "answer-flow-layout-measure-").filter(
+      (id) => id.endsWith("-expanded-i1") || id.endsWith("-expanded-i2"),
+    ),
+  ).toHaveLength(2);
+  const measurementTimerCount = ctx.timers.length;
+  root = measurePendingLayout(root, ctx.cx, render, [
+    { id: "i1", expandedHeight: 300 },
+    { id: "i2", expandedHeight: 240 },
+  ]);
+  expect([view.answerFlowLayoutId, view.answerFlowPendingLayout, view.answerFlow?.current]).toEqual(
+    ["rationale-shelf", undefined, 1],
+  );
+  expect(get(root, "answer-flow-card-i2").styles.h).toBe(240);
+  expect(ctx.timers.length).toBe(measurementTimerCount);
+  expect(view.answerFlowMotion).toBe(undefined);
+});
+
+test("measured viewport resizing reveals more cards without unmounting the queue", async () => {
+  focusDomain("alpha");
+  host.files.set(DOC, JSON.stringify(withManyAsks(8)));
   const { ctx, render } = await mount();
   get(render(), "item-i1").click!({}, ctx.cx);
-  get(render(), "ask-option-1").click!({}, ctx.cx);
-  host.files.set(DOC, JSON.stringify(answered("Backlog")));
-  get(render(), "ask-answer-submit").click!({}, ctx.cx);
+  const questionIds = Array.from({ length: 8 }, (_, index) => `i${index + 1}`);
+  let root = measureFlow(
+    render(),
+    ctx.cx,
+    render,
+    questionIds.map((id) => ({ id, expandedHeight: 300 })),
+    360,
+  );
+  const cardIds = [...questionIds.map((id) => `answer-flow-card-${id}`), "answer-flow-card-done"];
+  const shortVisible = ids(root, "answer-flow-card-")
+    .filter((id) => !id.includes("-content-"))
+    .filter((id) => get(root, id).styles.opacity > 0);
+
+  reportSize(root, "answer-flow-track", ctx.cx, 960);
+  root = render();
+  const mountedCards = ids(root, "answer-flow-card-").filter((id) => !id.includes("-content-"));
+  const tallVisible = mountedCards.filter((id) => get(root, id).styles.opacity > 0);
+
+  expect(mountedCards).toEqual(cardIds);
+  expect(shortVisible).toEqual(["answer-flow-card-i1", "answer-flow-card-i2"]);
+  expect(tallVisible.length).toBeGreaterThan(shortVisible.length);
+  expect(get(root, "answer-flow-card-i1").styles.top + 300 / 2).toBe(480);
+});
+
+test("the done summary follows adjacent cards without reserving footer space", async () => {
+  focusDomain("alpha");
+  host.files.set(DOC, JSON.stringify(withManyAsks(2)));
+  const { ctx, render } = await mount();
+  get(render(), "item-i1").click!({}, ctx.cx);
+  let root = measureFlow(render(), ctx.cx, render, [
+    { id: "i1", expandedHeight: 248 },
+    { id: "i2", expandedHeight: 176 },
+  ]);
+  get(root, "answer-flow-card-i2").click!({}, ctx.cx);
+  ctx.tick(600);
+  root = render();
+  expect(text(get(root, "answer-flow-progress"))).toBe("Question 2 of 2");
+
+  const sourceLast = get(root, "answer-flow-card-i2").styles;
+  const sourceSummary = get(root, "answer-flow-card-done").styles;
+  get(root, "answer-flow-card-done").click!({}, ctx.cx);
+  root = render();
+
+  expect(ctx.timers.at(-1)?.ms).toBe(600);
+  expect(text(get(root, "answer-flow-progress"))).toBe("Question 2 of 2");
+  expect(ids(root, "answer-flow-footer")).toEqual([]);
+  expect(ids(root, "answer-flow-back")).toEqual([]);
+  expect(ids(root, "answer-flow-skip")).toEqual([]);
+  const targetLast = get(root, "answer-flow-card-i2").styles;
+  const targetSummary = get(root, "answer-flow-card-done").styles;
+  expect(targetLast).toMatchObject({ top: 158, left: 30, w: 300, h: 72, opacity: 0.58 });
+  expect(targetSummary).toMatchObject({ top: 240, left: 18, w: 324, h: 120, opacity: 1 });
+  expect(
+    (sourceSummary.top + targetSummary.top) / 2 -
+      (sourceLast.top + targetLast.top) / 2 -
+      (sourceLast.h + targetLast.h) / 2,
+  ).toBe(10);
+  expect(get(root, "answer-flow-compact-layer-i2").styles.transition).toEqual([
+    "opacity",
+    { duration: 270, delay: 150, easing: "ease-out" },
+  ]);
+  expect(get(root, "answer-flow-expanded-layer-done").styles.transition).toEqual([
+    "opacity",
+    { duration: 180, delay: 420, easing: "ease-in-out" },
+  ]);
+  expect(get(root, "answer-flow-compact-layer-done").styles.transition).toEqual([
+    "opacity",
+    { duration: 480, easing: "ease-in" },
+  ]);
+
+  ctx.tick(599);
+  root = render();
+  expect(text(get(root, "answer-flow-progress"))).toBe("Question 2 of 2");
+  expect(ids(root, "answer-flow-footer")).toEqual([]);
+  ctx.tick(600);
+  root = render();
+  expect(text(get(root, "answer-flow-progress"))).toBe("Done");
+  expect(ids(root, "answer-flow-footer")).toEqual([]);
+  expect(trail(root)).toBe("⌂ › alpha › Questions");
+});
+
+test("the final successful answer returns to the domain and a new flow can start", async () => {
+  focusDomain("alpha");
+  let backlog = withManyAsks(1);
+  host.files.set(DOC, JSON.stringify(backlog));
+  const { ctx, view, render } = await mount();
+  get(render(), "item-i1").click!({}, ctx.cx);
+  let root = measureFlow(render(), ctx.cx, render, [{ id: "i1", expandedHeight: 248 }]);
+  get(root, "answer-flow-ask-i1-option-1").click!({}, ctx.cx);
+  backlog = recordAnswer(backlog, "i1", "No");
+  host.files.set(DOC, JSON.stringify(backlog));
+  get(render(), "answer-flow-ask-i1-answer-submit").click!({}, ctx.cx);
   await settle();
-  const root = render();
+  root = render();
+  expect(view.answerFlowMotion?.action).toBe("answered");
+  expect(text(get(root, "answer-flow-progress"))).toBe("Question 1 of 1");
+  expect(ids(root, "screen-answer-flow")).toEqual(["screen-answer-flow"]);
+  expect(ctx.timers.at(-1)?.ms).toBe(600);
+
+  ctx.tick(599);
+  expect(ids(render(), "screen-answer-flow")).toEqual(["screen-answer-flow"]);
+  ctx.tick(600);
+  await settle();
+  root = render();
+  expect(view.answerFlow).toBe(undefined);
+  expect(ids(root, "screen-answer-flow")).toEqual([]);
+  expect(get(root, "screen-list").styles.invisible).toBe(undefined);
+  expect(trail(root)).toBe("⌂ › alpha");
+  expect(view.doc.kind).toBe("loaded");
+  if (view.doc.kind !== "loaded") throw new Error("domain document did not reload");
+  const answeredItem = view.doc.backlog.items.find((item) => item.id === "i1");
+  expect([answeredItem?.ask, answeredItem?.answered[0]?.answer]).toEqual([null, "No"]);
+
+  const nextBacklog = add(view.doc.backlog, "Another question", {
+    status: "waiting-user",
+    ask: {
+      question: "Which direction?",
+      context: null,
+      options: ["North", "South"],
+      optionDetails: ["", ""],
+      rec: "North",
+      recReason: null,
+      discuss: null,
+    },
+  });
+  host.files.set(DOC, JSON.stringify(nextBacklog));
+  view.load(ctx.cx as never, true);
+  await settle();
+  root = render();
+  get(root, "item-i2").click!({}, ctx.cx);
+  root = measureFlow(render(), ctx.cx, render, [{ id: "i2", expandedHeight: 176 }]);
+  expect(text(get(root, "answer-flow-progress"))).toBe("Question 1 of 1");
+  expect(view.answerFlow?.answered).toEqual([]);
+  expect(ids(root, "answer-flow-footer")).toEqual([]);
+});
+
+test("a failed final flow answer stays on the question", async () => {
+  focusDomain("alpha");
+  host.files.set(DOC, JSON.stringify(withManyAsks(1)));
+  const { ctx, view, render } = await mount();
+  get(render(), "item-i1").click!({}, ctx.cx);
+  let root = measureFlow(render(), ctx.cx, render, [{ id: "i1", expandedHeight: 248 }]);
+  get(root, "answer-flow-ask-i1-option-1").click!({}, ctx.cx);
+  host.execExit = { code: 1, stderr: "refused: i1 has no ask to answer\n" };
+  get(render(), "answer-flow-ask-i1-answer-submit").click!({}, ctx.cx);
+  await settle();
+  root = render();
+  expect(text(get(root, "answer-flow-progress"))).toBe("Question 1 of 1");
+  expect(text(get(root, "answer-flow-ask-i1-answer-error"))).toBe(
+    "refused: i1 has no ask to answer",
+  );
+  expect(text(get(root, "answer-flow-ask-i1-question"))).toBe("Question 1?");
+  expect(view.answerFlow?.current).toBe(0);
+  expect(view.answerFlowMotion).toBe(undefined);
+  expect(ids(root, "screen-answer-flow")).toEqual(["screen-answer-flow"]);
+  expect(ids(root, "answer-flow-footer")).toEqual([]);
+  expect(host.execs).toEqual([{ command: "/usr/bin/env", args: answerArgs("i1", "No") }]);
+});
+
+const wheelHandlerIds = (node: Node): string[] => [
+  ...(typeof node.styles.on_scroll_wheel === "function" ? [String(node.styles.id)] : []),
+  ...node.children.flatMap((child) =>
+    typeof child === "string" ? [] : wheelHandlerIds(child as Node),
+  ),
+];
+
+test("the carousel ignores the wheel and keeps click navigation and answer auto-advance", async () => {
+  focusDomain("alpha");
+  host.files.set(DOC, JSON.stringify(withAsk()));
+  const { ctx, view, render } = await mount();
+  get(render(), "item-i1").click!({}, ctx.cx);
+  let root = measureFlow(render(), ctx.cx, render, [
+    { id: "i1", expandedHeight: 248 },
+    { id: "i2", expandedHeight: 176 },
+  ]);
+  expect(wheelHandlerIds(get(root, "screen-answer-flow"))).toEqual([]);
+  expect("scrollWheel" in view.answerFlowModel()!).toBe(false);
+  expect("handleAnswerFlowScrollWheel" in view).toBe(false);
+
+  get(root, "answer-flow-card-i2").click!({}, ctx.cx);
+  ctx.tick(600);
+  await settle();
+  root = render();
+  expect(text(get(root, "answer-flow-progress"))).toBe("Question 2 of 2");
+  get(root, "answer-flow-card-i1").click!({}, ctx.cx);
+  ctx.tick(600);
+  await settle();
+  root = render();
+  expect(text(get(root, "answer-flow-progress"))).toBe("Question 1 of 2");
+  expect(wheelHandlerIds(get(root, "screen-answer-flow"))).toEqual([]);
+
+  get(root, "answer-flow-ask-i1-option-1").click!({}, ctx.cx);
+  host.files.set(DOC, JSON.stringify(answered("Backlog")));
+  get(render(), "answer-flow-ask-i1-answer-submit").click!({}, ctx.cx);
+  await settle();
+  ctx.tick(600);
+  await settle();
+  root = render();
   expect(host.execs).toEqual([{ command: "/usr/bin/env", args: answerArgs("i1", "Backlog") }]);
   expect(text(get(root, "answer-flow-progress"))).toBe("Question 2 of 2");
-  expect(text(get(root, "ask-question"))).toBe("Which tone?");
+  expect(view.answerFlow?.current).toBe(1);
+});
+
+test("an intermediate flow answer advances without returning to the domain", async () => {
+  focusDomain("alpha");
+  host.files.set(DOC, JSON.stringify(withAsk()));
+  const { ctx, view, render } = await mount();
+  get(render(), "item-i1").click!({}, ctx.cx);
+  let root = measureFlow(render(), ctx.cx, render, [
+    { id: "i1", expandedHeight: 248 },
+    { id: "i2", expandedHeight: 176 },
+  ]);
+  get(root, "answer-flow-speed-trigger").click!({}, ctx.cx);
+  root = render();
+  get(root, "answer-flow-speed-option-fast-5").click!({}, ctx.cx);
+  root = render();
+  get(root, "answer-flow-ask-i1-option-1").click!({}, ctx.cx);
+  host.files.set(DOC, JSON.stringify(answered("Backlog")));
+  get(render(), "answer-flow-ask-i1-answer-submit").click!({}, ctx.cx);
+  await settle();
+  root = render();
+  expect(host.execs).toEqual([{ command: "/usr/bin/env", args: answerArgs("i1", "Backlog") }]);
+  expect(text(get(root, "answer-flow-progress"))).toBe("Question 1 of 2");
+  expect(text(get(root, "answer-flow-ask-i1-question"))).toBe("Which title?");
+  expect(get(root, "answer-flow-card-i1").styles).toMatchObject({
+    h: 72,
+    opacity: 0.58,
+    left: 30,
+    w: 300,
+  });
+  expect(get(root, "answer-flow-card-i2").styles).toMatchObject({
+    h: 176,
+    opacity: 1,
+    left: 18,
+    w: 324,
+  });
+  expect(ctx.timers.at(-1)?.ms).toBe(120);
+  ctx.tick(119);
+  expect(text(get(render(), "answer-flow-progress"))).toBe("Question 1 of 2");
+  ctx.tick(120);
+  await settle();
+  root = render();
+  expect(text(get(root, "answer-flow-progress"))).toBe("Question 2 of 2");
+  expect(text(get(root, "answer-flow-ask-i2-question"))).toBe("Which tone?");
+  expect(view.answerFlow?.current).toBe(1);
+  expect(ids(root, "screen-answer-flow")).toEqual(["screen-answer-flow"]);
+  expect(get(root, "screen-list").styles.invisible).toBe(true);
 });
 
 test("folds Done and Dismissed by default and toggles a group from its header", async () => {
@@ -950,13 +2271,18 @@ test("shows page buttons on the main list and lists only open findings on the Fi
   expect(ids(root, "page-")).toEqual(["page-policies", "page-findings", "page-boundary"]);
   expect(
     ["page-policies", "page-findings", "page-boundary"].map((id) => text(get(root, id))),
-  ).toEqual(["Policies 0", "Findings 2", "Boundary 0"]);
+  ).toEqual(["Policies 0", "Findings 1 issue · 1 opportunity", "Boundary 0"]);
   expect(ids(root, "finding-")).toEqual([]);
 
   openPage(root, "findings", ctx.cx);
   root = render();
   expect(trail(root)).toBe("⌂ › alpha › Findings");
-  expect(text(get(root, "findings-header"))).toBe("Findings");
+  expect([ids(root, "findings-issue"), ids(root, "findings-opportunity")]).toEqual([
+    ["findings-issue-header", "findings-issue"],
+    ["findings-opportunity-header", "findings-opportunity"],
+  ]);
+  expect(text(get(root, "findings-issue-header"))).toBe("Issues");
+  expect(text(get(root, "findings-opportunity-header"))).toBe("Opportunities");
   expect(ids(root, "finding-")).toEqual(["finding-f2", "finding-f3"]);
   expect(text(get(root, "finding-f2"))).toBe("▲ f2 Flaky watcher test");
   expect(text(get(root, "finding-f3"))).toBe("✦ f3 Share the validator");
@@ -965,12 +2291,23 @@ test("shows page buttons on the main list and lists only open findings on the Fi
   expect([glyph("finding-f2"), glyph("finding-f3")]).toEqual(["#ef4444", "#f97316"]);
 });
 
-test("says so on the Findings page when no finding is open", async () => {
+test("omits finding-kind cards with no findings and shows an empty state when none are open", async () => {
   focusDomain("alpha");
-  host.files.set(DOC, JSON.stringify(everyStatus()));
+  host.files.set(DOC, JSON.stringify(find(emptyBacklog("alpha", null), "issue", "One issue")));
   const { ctx, render } = await mount();
   openPage(render(), "findings", ctx.cx);
-  expect(text(get(render(), "findings-empty"))).toBe("No open findings");
+  let root = render();
+  expect([ids(root, "findings-issue"), ids(root, "findings-opportunity")]).toEqual([
+    ["findings-issue-header", "findings-issue"],
+    [],
+  ]);
+
+  host.files.set(DOC, JSON.stringify(everyStatus()));
+  backlogWatch()!.fire([DOC]);
+  await settle();
+  root = render();
+  expect([ids(root, "findings-issue"), ids(root, "findings-opportunity")]).toEqual([[], []]);
+  expect(text(get(root, "findings-empty"))).toBe("No open findings");
 });
 
 // i1 waits on the user with an ask whose recommended option is not listed first; i2 has no rec.
@@ -1015,6 +2352,25 @@ const withAsk = (): Backlog => {
   return backlog;
 };
 
+const withManyAsks = (count: number, recReason: string | null = null): Backlog => {
+  let backlog: Backlog = emptyBacklog("alpha", null);
+  for (let index = 1; index <= count; index += 1) {
+    backlog = add(backlog, `Question ${index}`, {
+      status: "waiting-user",
+      ask: {
+        question: `Question ${index}?`,
+        context: null,
+        options: ["Yes", "No"],
+        optionDetails: ["", ""],
+        rec: "Yes",
+        recReason: index === 1 ? recReason : null,
+        discuss: null,
+      },
+    });
+  }
+  return backlog;
+};
+
 test("ask detail rows use the surface token and put the recommended option first", async () => {
   focusDomain("alpha");
   host.files.set(DOC, JSON.stringify(withAsk()));
@@ -1054,6 +2410,20 @@ test("ask detail rows use the surface token and put the recommended option first
   expect(get(root, "ask-option-0").hoverStyles.bg).toBe("#404040");
   expect(text(get(root, "ask-rec-reason"))).toBe("Why recommended fits the pill");
   expect(text(get(root, "ask-rec-reason-label"))).toBe("Why recommended");
+  expect(get(root, "ask-rec-reason").styles).toMatchObject({
+    bg: "#292929",
+    rounded: CARD.innerRadius,
+    px: CARD.paddingX,
+    py: CARD.paddingY,
+    min_w_0: true,
+  });
+  expect(
+    get(root, "ask-content-1").children.map((child) =>
+      typeof child === "string" ? child : child.styles.id,
+    ),
+  ).toEqual([undefined, "ask-detail-1", "ask-rec-reason"]);
+  expect(text(get(root, "ask-detail-1"))).toBe("Short and clear");
+  expect(get(root, "ask-detail-1").styles.bg).toBe(undefined);
   expect(text(get(root, "ask-touches"))).toBe("Touches skills herdr-finbar");
   expect(get(root, "ask-touches").styles.bg).toBe("#171717");
   expect(ids(root, "fact-touches")).toEqual([]);
@@ -1184,6 +2554,12 @@ test("shows the open ask first and earlier answered asks read-only, newest first
   expect(text(get(root, "ask-answered-0-detail-1"))).toBe("Easy to inspect");
   expect(text(get(root, "ask-answered-0-rec-reason"))).toBe("Why recommended existing tooling");
   expect(text(get(root, "ask-answered-0-rec-reason-label"))).toBe("Why recommended");
+  expect(get(root, "ask-answered-0-rec-reason").styles).toMatchObject({
+    bg: "#292929",
+    rounded: CARD.innerRadius,
+    px: CARD.paddingX,
+    py: CARD.paddingY,
+  });
   expect(text(get(root, "ask-answered-0-answered-at"))).toBe("Answered 2026-11-15");
   expect(text(get(root, "ask-answered-1-answer"))).toBe(
     "Answer keep it beside the docs 2026-11-16",
@@ -1374,14 +2750,21 @@ test("free-text answers accept a separate optional note through the CLI", async 
   host.files.set(DOC, JSON.stringify(withAsk()));
   const { ctx, render } = await mount();
   get(render(), "item-i1").click!({}, ctx.cx);
+  let root = measureFlow(render(), ctx.cx, render, [
+    { id: "i1", expandedHeight: 248 },
+    { id: "i2", expandedHeight: 176 },
+  ]);
   typeInto(host.inputs[0]!, "Custom answer", ctx.cx);
-  expect(ids(render(), "ask-answer-note-field")).toEqual(["ask-answer-note-field"]);
+  root = render();
+  expect(ids(root, "answer-flow-ask-i1-answer-note-field")).toEqual([
+    "answer-flow-ask-i1-answer-note-field",
+  ]);
   expect(host.inputs[1]?.placeholder).toBe("Optional note");
   typeInto(host.inputs[1]!, "Why this is the answer", ctx.cx);
   const recorded = answered("Custom answer");
   recorded.items[0]!.answered[0]!.note = "Why this is the answer";
   host.files.set(DOC, JSON.stringify(recorded));
-  get(render(), "ask-answer-submit").click!({}, ctx.cx);
+  get(render(), "answer-flow-ask-i1-answer-submit").click!({}, ctx.cx);
   await settle();
   expect(host.execs).toEqual([
     {
@@ -1756,7 +3139,47 @@ test("shows each delegate's live status on the item's detail screen", async () =
   );
 });
 
-test("opens an open finding's detail with its fields, and its origin opens the item", async () => {
+test("wraps long finding metadata values within the panel width", async () => {
+  focusDomain("alpha");
+  const title = "A long finding title that wraps instead of pushing beyond the panel width";
+  const detail =
+    "The failure only appears after the coordinator reloads a large document while another panel is open";
+  const path =
+    "plugins/coordinate/herdr/src/mods/panel/src/mods/panel/a-long-path-that-should-wrap.ts";
+  const original = withFindings();
+  const backlog: Backlog = {
+    ...original,
+    findings: original.findings.map((finding) =>
+      finding.id === "f3" ? { ...finding, title, detail, path } : finding,
+    ),
+  };
+  host.files.set(DOC, JSON.stringify(backlog));
+  const { ctx, render } = await mount();
+  openPage(render(), "findings", ctx.cx);
+  get(render(), "finding-f3").click!({}, ctx.cx);
+  const root = render();
+
+  expect([
+    text(get(root, "finding-title")),
+    text(get(root, "fact-detail")),
+    text(get(root, "fact-path")),
+  ]).toEqual([`f3 ${title} Open`, `Detail ${detail}`, `Path ${path}`]);
+  expect(get(root, "fact-detail-values").styles).toMatchObject({ w_full: true, min_w_0: true });
+  expect(get(root, "fact-detail-value-0").styles).toMatchObject({
+    flex_1: true,
+    min_w_0: true,
+  });
+  expect(get(root, "fact-path-value-0").styles).toMatchObject({
+    flex_1: true,
+    min_w_0: true,
+  });
+  expect((get(root, "finding-title").nodes[1] as Node).styles).toMatchObject({
+    flex_1: true,
+    min_w_0: true,
+  });
+});
+
+test("finding detail links back to Findings, and its origin opens the item", async () => {
   focusDomain("alpha");
   host.files.set(DOC, JSON.stringify(withFindings()));
   const { ctx, render } = await mount();
@@ -1765,7 +3188,7 @@ test("opens an open finding's detail with its fields, and its origin opens the i
   let root = render();
   expect(ids(root, "screen-finding")).toEqual(["screen-finding"]);
   expect(get(root, "screen-list").styles.invisible).toBe(true);
-  expect(trail(root)).toBe("⌂ › alpha › f3");
+  expect(trail(root)).toBe("⌂ › alpha › Findings › f3");
   expect(text(get(root, "finding-title"))).toBe("f3 Share the validator Open");
   expect([
     text(get(root, "finding-status")),
@@ -1775,6 +3198,17 @@ test("opens an open finding's detail with its fields, and its origin opens the i
     ["fact-kind", "fact-detail", "fact-path", "fact-origin"].map((id) => text(get(root, id))),
   ).toEqual(["Kind Opportunity", "Detail None", "Path None", "Origin i1 Base work"]);
   expect([ids(root, "fact-outcome"), ids(root, "fact-closed")]).toEqual([[], []]);
+  press(root, "crumb-findings", ctx.cx);
+  root = render();
+  expect([ids(root, "screen-finding"), ids(root, "screen-page"), trail(root)]).toEqual([
+    [],
+    ["screen-page"],
+    "⌂ › alpha › Findings",
+  ]);
+  expect(text(get(root, "findings-opportunity"))).toContain("f3 Share the validator");
+  get(root, "finding-f3").click!({}, ctx.cx);
+  root = render();
+  expect(trail(root)).toBe("⌂ › alpha › Findings › f3");
   get(root, "fact-origin-link").click!({}, ctx.cx);
   root = render();
   expect([ids(root, "screen-finding"), ids(root, "screen-item")]).toEqual([[], ["screen-item"]]);
@@ -1788,7 +3222,7 @@ test("the domain crumb returns from a finding detail to the domain list", async 
   openPage(render(), "findings", ctx.cx);
   get(render(), "finding-f3").click!({}, ctx.cx);
   let root = render();
-  expect(trail(root)).toBe("⌂ › alpha › f3");
+  expect(trail(root)).toBe("⌂ › alpha › Findings › f3");
   press(root, "crumb-domain-alpha", ctx.cx);
   root = render();
   expect([
@@ -2124,10 +3558,10 @@ test("paginates open findings while leaving closed findings off the Findings pag
   let root = render();
   expect([ids(root, "finding-"), ids(root, "load-more-")]).toEqual([
     openIds.slice(0, 10),
-    ["load-more-findings-open"],
+    ["load-more-findings-issue"],
   ]);
 
-  get(root, "load-more-findings-open").click!({}, ctx.cx);
+  get(root, "load-more-findings-issue").click!({}, ctx.cx);
   root = render();
   expect([ids(root, "finding-"), ids(root, "load-more-")]).toEqual([openIds, []]);
 });
@@ -2175,20 +3609,17 @@ test("paginates Policies ten at a time", async () => {
   expect([policyRows().length, ids(root, "load-more-")]).toEqual([12, []]);
 });
 
-test("paginates the Domains listing ten rows at a time", async () => {
-  for (let index = 1; index <= 12; index++) {
-    const domain = `domain-${index}`;
+test("shows every domain in listing order without Load more", async () => {
+  for (let index = 11; index >= 0; index--) {
+    const domain = `domain-${String.fromCharCode(97 + index)}`;
     host.files.set(`${STATE}/backlogs/${domain}.json`, JSON.stringify(emptyBacklog(domain, null)));
   }
-  const { ctx, render } = await mount();
-  let root = render();
-  expect([ids(root, "domain-").length, ids(root, "load-more-")]).toEqual([
-    10,
-    ["load-more-domains"],
-  ]);
-  get(root, "load-more-domains").click!({}, ctx.cx);
-  root = render();
-  expect([ids(root, "domain-").length, ids(root, "load-more-")]).toEqual([12, []]);
+  const { render } = await mount();
+  const root = render();
+  expect(ids(root, "domain-")).toEqual(
+    Array.from({ length: 12 }, (_, index) => `domain-domain-${String.fromCharCode(97 + index)}`),
+  );
+  expect(ids(root, "load-more-")).toEqual([]);
 });
 
 test("paginates the Done status group ten rows at a time", async () => {
