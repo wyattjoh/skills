@@ -8,7 +8,7 @@ import { emptyBacklog, type ItemUpdate } from "./backlog-store/ops.ts";
 import type { Item } from "./backlog-store/schema.ts";
 import { resolveConfig } from "./config.ts";
 import { cliEnv, commitFile, g, gitAndFake, initRepo, runWith, tempDir } from "./fixture.ts";
-import { fakeProc, ok, type RunOutput } from "./proc.ts";
+import { FAKE_CORE, fakeProc, ok, type RunOutput } from "./proc.ts";
 import { enqueueCapacityWait } from "./capacity-queue.ts";
 import { setHarnessPolicy } from "./harness-policy.ts";
 import {
@@ -866,6 +866,7 @@ const queuedDomain = async (budget = 1) => {
   );
   await runWith(createDocument(config, "app"));
   await runWith(itemAdd(config, "app", { title: "Queued work", json: false, now: NOW }));
+  // Keyed by the OS hostname, as entries written before machine names were canonical are.
   await runWith(enqueueCapacityWait(config, "app", { item: "i1", machine: hostname() }));
   return { config, state };
 };
@@ -954,7 +955,7 @@ describe("watch capacity queue", () => {
       ),
     ).toEqual([]);
     expect(emitted).toEqual([
-      `<event kind="capacity" machine="${hostname()}" item="i1" order="1">retry it with coordinate delegate --retry-queued; the regular budget gate still applies</event>`,
+      `<event kind="capacity" machine="${FAKE_CORE}" item="i1" order="1">retry it with coordinate delegate --retry-queued; the regular budget gate still applies</event>`,
       "owner gone: t-owner no longer runs; nothing will read these events",
     ]);
     expect(capacityPolls).toBe(3);
@@ -983,14 +984,50 @@ describe("watch capacity queue", () => {
     };
     expect(await runWith(watch(config, options), fake.layer)).toEqual([]);
     expect(emitted).toEqual([
-      `<event kind="capacity" machine="${hostname()}" item="i1" order="1">retry it with coordinate delegate --retry-queued; the regular budget gate still applies</event>`,
+      `<event kind="capacity" machine="${FAKE_CORE}" item="i1" order="1">retry it with coordinate delegate --retry-queued; the regular budget gate still applies</event>`,
     ]);
     emitted.length = 0;
     expect(await runWith(watch(config, options), fake.layer)).toEqual(alive);
     expect(emitted).toEqual([]);
     expect(JSON.parse(readFileSync(join(state, "watch", "app.json"), "utf8")).capacity).toEqual({
-      [hostname()]: { order: 1, ready: true },
+      [FAKE_CORE]: { order: 1, ready: true },
     });
+  });
+
+  it("reports capacity unavailable when this core's Herdr machine name cannot be read", async () => {
+    const { config } = await queuedDomain();
+    const fake = fakeProc(
+      (argv) => {
+        if (argv[1] === "server")
+          return { exitCode: 1, stdout: "", stderr: "herdr-core is not answering" };
+        if (argv[1] === "ls") return ok('{"terminals":[]}');
+        throw new Error(`unexpected command: ${argv.join(" ")}`);
+      },
+      { core: undefined },
+    );
+    const emitted: string[] = [];
+    expect(
+      await runWith(
+        watch(config, {
+          domain: "app",
+          intervalMs: 1,
+          forgeIntervalMs: 60_000,
+          maxMs: 0,
+          owner: undefined,
+          replace: false,
+          deliver: false,
+          today: () => "2026-11-10",
+          follow: false,
+          emit: (line) => {
+            emitted.push(eventText(line));
+          },
+        }),
+        fake.layer,
+      ),
+    ).toEqual([]);
+    expect(emitted).toEqual([
+      '<event kind="capacity-unavailable"><error>herdr-core is not answering</error></event>',
+    ]);
   });
 });
 

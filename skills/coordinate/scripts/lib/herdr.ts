@@ -231,6 +231,21 @@ export const get = Effect.fn("hc.get")(function* (target: string) {
   return yield* parseGet(result.text);
 });
 
+const ServerStatus = Schema.Struct({ core: Schema.Struct({ name: Schema.String }) });
+
+/**
+ * This core's Herdr machine name, the name coordinate uses for this machine everywhere.
+ * @returns The name from `hc server status --json`.
+ */
+export const coreName = Effect.fn("hc.coreName")(function* () {
+  const status = yield* decodeJson(
+    ServerStatus,
+    "hc server status",
+    yield* herdr(["hc", "server", "status", "--json"], 10_000),
+  );
+  return status.core.name;
+});
+
 /**
  * Read the online processor count from another Herdr machine.
  * @param machine Herdr machine name.

@@ -7,7 +7,7 @@ import { itemAdd } from "./backlog-doc.ts";
 import { resolveConfig } from "./config.ts";
 import { failureOf, g, initRepo, runWith, tempDir } from "./fixture.ts";
 import { delegate, start, type DelegateOptions } from "./lifecycle.ts";
-import { fakeProc, ok, type RunOutput } from "./proc.ts";
+import { FAKE_CORE, fakeProc, ok, type RunOutput } from "./proc.ts";
 import { capacityQueuePath, enqueueCapacityWait, readCapacityQueue } from "./capacity-queue.ts";
 import { HarnessPolicyError, harnessPolicyPath, setHarnessPolicy } from "./harness-policy.ts";
 import { liveDelegateCount } from "./delegate-capacity.ts";
@@ -197,7 +197,7 @@ describe("fleet delegate budget", () => {
       fake.layer,
     );
     expect(error instanceof Error ? error.message : String(error)).toBe(
-      `machine ${hostname()} has 2 live delegates (budget 2); refusing new-delegate for item i1; pass --over-budget to start anyway`,
+      `machine ${FAKE_CORE} has 2 live delegates (budget 2); refusing new-delegate for item i1; pass --over-budget to start anyway`,
     );
     expect(readFileSync(path, "utf8")).toBe(before);
     expect(existsSync(join(repo, ".claude", "worktrees", "new-delegate"))).toBe(false);
@@ -233,17 +233,86 @@ describe("fleet delegate budget", () => {
     expect(fake.calls.filter(({ argv }) => argv[1] === "run").length).toBe(1);
   });
 
-  it("accepts the local alias for a per-machine budget override", async () => {
+  it.each(["local", hostname(), FAKE_CORE])(
+    "applies a per-machine budget keyed by %s to this core's Herdr machine name",
+    async (key) => {
+      const state = dir();
+      const { cfg } = await withItem(state, 2, 8, { [key]: 1 });
+      const fake = fleet(COORDINATOR, [{ address: "t2", domain: "app" }]);
+      const error = await failureOf(
+        delegate(cfg, options({ cwd: state, item: "i1" }), () => 3),
+        fake.layer,
+      );
+      expect(error instanceof Error ? error.message : String(error)).toBe(
+        `machine ${FAKE_CORE} has 1 live delegates (budget 1); refusing new-delegate for item i1; pass --over-budget to start anyway`,
+      );
+    },
+  );
+
+  it.each([
+    [{ local: 5, [hostname()]: 4, [FAKE_CORE]: 1 }, 1],
+    [{ local: 5, [hostname()]: 1 }, 1],
+  ])("prefers the Herdr name, then the hostname, then local (%o)", async (budgets, expected) => {
     const state = dir();
-    const { cfg } = await withItem(state, 2, 8, { local: 1 });
+    const { cfg } = await withItem(state, 2, 8, budgets);
     const fake = fleet(COORDINATOR, [{ address: "t2", domain: "app" }]);
     const error = await failureOf(
       delegate(cfg, options({ cwd: state, item: "i1" }), () => 3),
       fake.layer,
     );
     expect(error instanceof Error ? error.message : String(error)).toBe(
-      `machine ${hostname()} has 1 live delegates (budget 1); refusing new-delegate for item i1; pass --over-budget to start anyway`,
+      `machine ${FAKE_CORE} has 1 live delegates (budget ${expected}); refusing new-delegate for item i1; pass --over-budget to start anyway`,
     );
+  });
+
+  it("labels a new delegate with this core's Herdr machine name", async () => {
+    const state = dir();
+    const { cfg } = await withItem(state);
+    const fake = fleet(COORDINATOR, []);
+    await runWith(
+      delegate(cfg, options({ cwd: state, item: "i1" }), () => 3),
+      fake.layer,
+    );
+    const run = fake.calls.find(({ argv }) => argv[1] === "run");
+    expect(run?.argv).toContain(`fleet.machine=${FAKE_CORE}`);
+  });
+
+  it("retries a queue entry keyed by the OS hostname as this core's entry", async () => {
+    const state = dir();
+    const { cfg } = await withItem(state);
+    await runWith(enqueueCapacityWait(cfg, "app", { item: "i1", machine: hostname() }));
+    const available = fleet(COORDINATOR, []);
+    const lines = await runWith(
+      delegate(cfg, options({ cwd: state, item: "i1", retryQueued: true }), () => 3),
+      available.layer,
+    );
+    expect(lines).toEqual([
+      "started new-delegate (t-new)",
+      "filed new-delegate under i1 [delegated]",
+    ]);
+    expect((await runWith(readCapacityQueue(cfg, "app"))).entries).toEqual([]);
+  });
+
+  it("refuses a delegate launch when this core's Herdr machine name cannot be read", async () => {
+    const state = dir();
+    const { cfg } = await withItem(state);
+    const fake = fakeProc(
+      (argv) => {
+        if (argv[1] === "get") return ok(JSON.stringify(terminalDoc("t1", COORDINATOR)));
+        if (argv[1] === "server")
+          return { exitCode: 1, stdout: "", stderr: "herdr-core is not answering" };
+        throw new Error(`unexpected command: ${argv.join(" ")}`);
+      },
+      { core: undefined },
+    );
+    const error = await failureOf(
+      delegate(cfg, options({ cwd: state, item: "i1" }), () => 3),
+      fake.layer,
+    );
+    expect(error instanceof Error ? error.message : String(error)).toBe(
+      "herdr-core is not answering",
+    );
+    expect(fake.calls.filter(({ argv }) => argv[1] === "run").length).toBe(0);
   });
 
   it("uses a configured target-machine override instead of reading remote cores", async () => {
@@ -416,7 +485,7 @@ describe("fleet delegate budget", () => {
       fake.layer,
     );
     expect(lines).toEqual([
-      `queued delegate for item i1 on machine ${hostname()} (order 1); no launch was started; the domain watcher will wake this coordinator when capacity is available`,
+      `queued delegate for item i1 on machine ${FAKE_CORE} (order 1); no launch was started; the domain watcher will wake this coordinator when capacity is available`,
     ]);
     expect(fake.calls.filter(({ argv }) => argv[1] === "run").length).toBe(0);
     const path = capacityQueuePath(state, "app");
@@ -425,12 +494,12 @@ describe("fleet delegate budget", () => {
     expect(JSON.parse(stored)).toEqual({
       version: 1,
       nextOrder: 2,
-      entries: [{ item: "i1", machine: hostname(), order: 1 }],
+      entries: [{ item: "i1", machine: FAKE_CORE, order: 1 }],
     });
     expect(await runWith(readCapacityQueue(cfg, "app"))).toEqual({
       version: 1,
       nextOrder: 2,
-      entries: [{ item: "i1", machine: hostname(), order: 1 }],
+      entries: [{ item: "i1", machine: FAKE_CORE, order: 1 }],
     });
     const retry = await runWith(
       delegate(
@@ -448,11 +517,11 @@ describe("fleet delegate budget", () => {
     expect(retry).toEqual(lines);
     expect(fake.calls.filter(({ argv }) => argv[1] === "run").length).toBe(0);
     expect((await runWith(readCapacityQueue(cfg, "app"))).entries).toEqual([
-      { item: "i1", machine: hostname(), order: 1 },
+      { item: "i1", machine: FAKE_CORE, order: 1 },
     ]);
   });
 
-  it("refuses to retry past the oldest eligible item", async () => {
+  it("refuses to retry past the oldest eligible item, reading hostname-keyed entries as this core", async () => {
     const state = dir();
     const { cfg } = await withItem(state);
     await runWith(itemAdd(cfg, "app", { title: "Second queued task", json: false, now: NOW }));
@@ -464,7 +533,7 @@ describe("fleet delegate budget", () => {
       fake.layer,
     );
     expect(error instanceof Error ? error.message : String(error)).toBe(
-      `item i2 is queued but is not the oldest eligible launch for machine ${hostname()}; retry i1 first`,
+      `item i2 is queued but is not the oldest eligible launch for machine ${FAKE_CORE}; retry i1 first`,
     );
     expect(fake.calls.filter(({ argv }) => argv[1] === "run").length).toBe(0);
     expect((await runWith(readCapacityQueue(cfg, "app"))).entries).toEqual([
@@ -523,7 +592,7 @@ describe("fleet delegate budget", () => {
     );
     expect(retry.calls.filter(({ argv }) => argv[1] === "run")).toEqual([]);
     expect((await runWith(readCapacityQueue(cfg, "app"))).entries).toEqual([
-      { item: "i1", machine: hostname(), order: 1 },
+      { item: "i1", machine: FAKE_CORE, order: 1 },
     ]);
   });
 
@@ -557,7 +626,7 @@ describe("fleet delegate budget", () => {
     );
     expect(retry.calls.filter(({ argv }) => argv[1] === "run")).toEqual([]);
     expect((await runWith(readCapacityQueue(cfg, "app"))).entries).toEqual([
-      { item: "i1", machine: hostname(), order: 1 },
+      { item: "i1", machine: FAKE_CORE, order: 1 },
     ]);
   });
 
@@ -627,7 +696,7 @@ describe("fleet delegate budget", () => {
         );
       throw new Error(`unexpected command: ${argv.join(" ")}`);
     });
-    expect(await runWith(liveDelegateCount(hostname(), terminals), fake.layer)).toBe(2);
+    expect(await runWith(liveDelegateCount(FAKE_CORE, terminals, FAKE_CORE), fake.layer)).toBe(2);
     expect(fake.calls.filter(({ argv }) => argv[1] === "get").map(({ argv }) => argv[2])).toEqual([
       "t2",
       "t3",

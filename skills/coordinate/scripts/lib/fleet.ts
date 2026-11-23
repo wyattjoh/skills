@@ -22,6 +22,7 @@ export const L = {
   base: "fleet.base",
   space: "fleet.space",
   queue: "fleet.queue",
+  machine: "fleet.machine",
 } as const;
 
 /**
@@ -327,6 +328,7 @@ const EndedRecordSchema = Schema.Struct({
   space: Schema.optionalKey(Schema.NullOr(Schema.Boolean)),
   verdict: Schema.optionalKey(Schema.NullOr(VerdictSchema)),
   resumes: Schema.optionalKey(Schema.Number),
+  machine: Schema.optionalKey(Schema.NullOr(Schema.String)),
 });
 
 /**

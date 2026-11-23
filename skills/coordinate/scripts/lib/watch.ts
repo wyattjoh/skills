@@ -2,7 +2,6 @@ import { existsSync } from "node:fs";
 import { randomUUID } from "node:crypto";
 import { mkdir, open, readFile, rename, unlink } from "node:fs/promises";
 import { dirname, join } from "node:path";
-import { hostname } from "node:os";
 import { Effect, Option, Result } from "effect";
 import { readDocument } from "./backlog-doc.ts";
 import { isAnswer } from "./backlog-store/ops.ts";
@@ -21,7 +20,12 @@ import {
   readCapacityQueue,
   type CapacityWait,
 } from "./capacity-queue.ts";
-import { liveDelegateCount, machineDelegateBudget } from "./delegate-capacity.ts";
+import {
+  canonicalMachine,
+  liveDelegateCount,
+  localMachine,
+  machineDelegateBudget,
+} from "./delegate-capacity.ts";
 import { resolveEffectiveHarnessPolicy } from "./harness-policy.ts";
 import { lastLint, LINT_INTERVAL_DAYS, settledWikiPages, wikiCreated } from "./wiki.ts";
 import { markSettled, readSession, retroDue, type RetroMarker } from "./sessions.ts";
@@ -1068,15 +1072,19 @@ export const watch = Effect.fn("watch")(function* (config: Config, options: Watc
         }
         const observations: Record<string, { live: number; budget: number } | undefined> = {};
         if (waits.length > 0) {
-          const listed = yield* hc.list().pipe(Effect.result);
-          if (Result.isFailure(listed)) {
-            lines.push(
-              watchEvent("capacity-unavailable", {}, "", { error: listed.failure.message }),
-            );
+          const read = yield* Effect.all([localMachine(), hc.list()]).pipe(Effect.result);
+          if (Result.isFailure(read)) {
+            lines.push(watchEvent("capacity-unavailable", {}, "", { error: read.failure.message }));
           } else {
+            const [core, listed] = read.success;
+            // Entries written under `local` or the OS hostname name this core.
+            waits = waits.map((entry) => ({
+              ...entry,
+              machine: canonicalMachine(entry.machine, core),
+            }));
             const machines = [...new Set(waits.map((entry) => entry.machine))];
             for (const machine of machines) {
-              const count = yield* liveDelegateCount(machine, listed.success).pipe(Effect.result);
+              const count = yield* liveDelegateCount(machine, listed, core).pipe(Effect.result);
               if (Result.isFailure(count)) {
                 lines.push(
                   watchEvent("capacity-unavailable", { machine }, "", {
@@ -1085,7 +1093,7 @@ export const watch = Effect.fn("watch")(function* (config: Config, options: Watc
                 );
                 continue;
               }
-              const budget = yield* machineDelegateBudget(config, machine, machine === hostname());
+              const budget = yield* machineDelegateBudget(config, machine, core);
               observations[machine] = { live: count.success, budget: budget.budget };
             }
           }

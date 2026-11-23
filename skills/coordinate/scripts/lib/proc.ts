@@ -97,21 +97,51 @@ const bunRun = async (
 };
 
 /**
- * A scripted `Proc` for tests: each call is answered by `answer`, and recorded.
+ * The Herdr machine name fakes give this core: never this host's OS hostname, so a test that
+ * passes only because the two agree cannot pass.
+ */
+export const FAKE_CORE = "fake-core";
+
+/**
+ * Whether argv reads this core's identity (`hc server status --json`).
+ * @param argv Program and arguments.
+ * @returns True for the core-name read.
+ */
+export const isCoreNameRead = (argv: readonly string[]): boolean =>
+  argv[0] === "hc" && argv[1] === "server" && argv[2] === "status";
+
+/**
+ * The `hc server status --json` answer naming a core.
+ * @param name Herdr machine name.
+ * @returns The output.
+ */
+export const coreStatus = (name: string): RunOutput => ({
+  exitCode: 0,
+  stdout: JSON.stringify({ core: { id: "0", name }, version: "0" }),
+  stderr: "",
+});
+
+/**
+ * A scripted `Proc` for tests: each call is answered by `answer`, and recorded. The core-name
+ * read is answered with `core` (default `FAKE_CORE`) before `answer` sees it; pass
+ * `core: undefined` to let `answer` handle it.
  * @param answer Maps argv (and cwd) to an output.
+ * @param options `core`: this core's Herdr machine name, or undefined to pass the read through.
  * @returns The layer and the recorded calls.
  */
 export const fakeProc = (
   answer: (argv: readonly string[], cwd: string | undefined) => RunOutput,
+  options: { core: string | undefined } = { core: FAKE_CORE },
 ): { layer: Layer.Layer<Proc>; calls: Array<{ argv: string[]; cwd: string | undefined }> } => {
   const calls: Array<{ argv: string[]; cwd: string | undefined }> = [];
   const layer = Layer.succeed(
     Proc,
     Proc.of({
-      run: (argv, options) =>
+      run: (argv, runOptions) =>
         Effect.sync(() => {
-          calls.push({ argv: [...argv], cwd: options?.cwd });
-          return answer(argv, options?.cwd);
+          calls.push({ argv: [...argv], cwd: runOptions?.cwd });
+          if (options.core !== undefined && isCoreNameRead(argv)) return coreStatus(options.core);
+          return answer(argv, runOptions?.cwd);
         }),
     }),
   );

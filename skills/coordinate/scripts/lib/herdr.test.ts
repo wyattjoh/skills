@@ -3,7 +3,7 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { Effect } from "effect";
 import { failureOf, runWith } from "./fixture.ts";
-import { coresOn, get, isAgent, newSpace, parseGet, parseList, run } from "./herdr.ts";
+import { coreName, coresOn, get, isAgent, newSpace, parseGet, parseList, run } from "./herdr.ts";
 import { fakeProc, ok } from "./proc.ts";
 
 const testdata = (name: string) =>
@@ -53,6 +53,19 @@ describe("get", () => {
     }));
     const error = await failureOf(get("t9"), fake.layer);
     expect(error === "no failure" ? "" : error.kind).toBe("unavailable");
+  });
+});
+
+describe("coreName", () => {
+  it("reads this core's Herdr machine name from hc server status", async () => {
+    const status = {
+      core: { id: "40feaceb425315c41846705a3a0c71fd", name: "finbar" },
+      live: 16,
+      version: "0.1.22",
+    };
+    const fake = fakeProc(() => ok(JSON.stringify(status)), { core: undefined });
+    expect(await runWith(coreName(), fake.layer)).toBe("finbar");
+    expect(fake.calls.map((call) => call.argv)).toEqual([["hc", "server", "status", "--json"]]);
   });
 });
 

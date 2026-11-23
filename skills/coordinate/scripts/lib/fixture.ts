@@ -3,7 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { Effect, Layer } from "effect";
 import { spawnGit } from "./git-env.ts";
-import { Proc, realProc, type RunOutput } from "./proc.ts";
+import { coreStatus, FAKE_CORE, isCoreNameRead, Proc, realProc, type RunOutput } from "./proc.ts";
 
 /**
  * A fresh temporary directory (real path).
@@ -92,7 +92,8 @@ export const failureOf = <A, E>(
 
 /**
  * A `Proc` that runs git for real and answers every other program with `answer`.
- * @param answer Answers for hc, herdr-app, lsof, gh, forgejo, du.
+ * @param answer Answers for hc, herdr-app, lsof, gh, forgejo, du. The core-name read
+ * (`hc server status`) is answered with `FAKE_CORE` before `answer` sees it.
  * @returns The layer and the non-git calls.
  */
 export const gitAndFake = (
@@ -105,6 +106,7 @@ export const gitAndFake = (
       run: (argv, options) => {
         if (argv[0] === "git") return realProc.run(argv, options);
         calls.push([...argv]);
+        if (isCoreNameRead(argv)) return Effect.succeed(coreStatus(FAKE_CORE));
         return Effect.succeed(answer(argv));
       },
     }),
@@ -117,7 +119,7 @@ export const gitAndFake = (
  * `hc`, a stub `herdr-app`, and stub `lsof`, `ps` and `kill` first on PATH, and `HC_TERMINAL_ID=t1`. The stub's `hc get` answers t1 with `labels`,
  * or, given `getError`, fails the way herdr-core reports an error; `hc get` answers each address in
  * `terminals` with its document; `hc ls` lists the first entry of `lists` whose `key=value` label
- * filter the call passes, else nothing. Every call's arguments are appended to `<state>/bin/calls.log`.
+ * filter the call passes, else nothing; `hc server status` names the core `FAKE_CORE`. Every call's arguments are appended to `<state>/bin/calls.log`.
  * The `herdr-app` stub makes space sp9 (tab tab9, shell t6) on `space.new`, lists no spaces, answers
  * anything else with `{}`, and appends its arguments to `<state>/bin/app-calls.log`, so no test
  * reaches the real Herdr app. HOME is `<state>/home`, whose `.local/bin` is not on PATH.
@@ -158,6 +160,7 @@ export const cliEnv = (
   writeFileSync(
     join(bin, "hc"),
     `#!/bin/sh\nprintf '%s\\n' "$*" >> '${join(bin, "calls.log")}'\ncase "$1" in\n  get) ${known}${got} ;;\n  ls) ${listed}printf '{"terminals":[]}' ;;\n  run) printf '{"address":"t-watch"}' ;;
+  server) printf '%s' '${JSON.stringify({ core: { id: "0", name: FAKE_CORE } })}' ;;
   *) printf '{}' ;;\nesac\n`,
   );
   chmodSync(join(bin, "hc"), 0o755);

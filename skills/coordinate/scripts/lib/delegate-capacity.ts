@@ -6,28 +6,54 @@ import type { Config } from "./config.ts";
 import { L } from "./fleet.ts";
 
 /**
- * The machine that owns a terminal address, using the local hostname for unqualified addresses.
- * @param address Herdr terminal address.
- * @returns Machine name.
+ * The config key that names this machine whatever its Herdr name.
  */
-export const machineOfAddress = (address: string): string => {
+const LOCAL_MACHINE_KEY = "local";
+
+/**
+ * This core's Herdr machine name, the canonical name of this machine.
+ * @returns The name.
+ */
+export const localMachine = Effect.fn("localMachine")(function* () {
+  return yield* hc.coreName();
+});
+
+/**
+ * Resolve a machine name to its Herdr machine name: `local` and this host's OS hostname name this
+ * core; any other name is already a Herdr machine name.
+ * @param name Machine name as written in a config key, queue entry or record.
+ * @param core This core's Herdr machine name.
+ * @returns The canonical name.
+ */
+export const canonicalMachine = (name: string, core: string): string =>
+  name === LOCAL_MACHINE_KEY || name === hostname() ? core : name;
+
+/**
+ * The machine that owns a terminal address: an unqualified address is on this core.
+ * @param address Herdr terminal address.
+ * @param core This core's Herdr machine name.
+ * @returns Herdr machine name.
+ */
+export const machineOfAddress = (address: string, core: string): string => {
   const separator = address.indexOf("/");
-  return separator === -1 ? hostname() : address.slice(0, separator);
+  return separator === -1 ? core : address.slice(0, separator);
 };
 
 /**
  * Count the target machine's live delegates, including settled delegates that still have live terminals.
- * @param machine Target machine name.
+ * @param machine Target Herdr machine name.
  * @param terminals Herdr's current live-terminal listing.
+ * @param core This core's Herdr machine name.
  * @returns Number of live delegates on the target machine, across all domains.
  */
 export const liveDelegateCount = Effect.fn("liveDelegateCount")(function* (
   machine: string,
   terminals: readonly ListedTerminal[],
+  core: string,
 ) {
   let count = 0;
   for (const listed of terminals) {
-    if (!listed.live || machineOfAddress(listed.address) !== machine) continue;
+    if (!listed.live || machineOfAddress(listed.address, core) !== machine) continue;
     const terminal = yield* hc.get(listed.address);
     if (terminal?.live && terminal.labels[L.domain] && terminal.labels[L.role] !== "coordinator")
       count += 1;
@@ -36,24 +62,28 @@ export const liveDelegateCount = Effect.fn("liveDelegateCount")(function* (
 });
 
 /**
- * Resolve the same per-machine limit used by the delegate launch gate.
+ * Resolve the same per-machine limit used by the delegate launch gate. For this core, a key naming
+ * its Herdr machine name wins over one naming the OS hostname, which wins over `local`.
  * @param config Coordinate config.
- * @param machine Target machine.
- * @param local Whether the target is the local Herdr machine.
+ * @param machine Target Herdr machine name.
+ * @param core This core's Herdr machine name.
  * @param readRemoteCores Whether to use the default remote core-based budget when no override exists.
  * @returns Budget and optional fallback warning.
  */
 export const machineDelegateBudget = Effect.fn("machineDelegateBudget")(function* (
   config: Config,
   machine: string,
-  local: boolean,
+  core: string,
   readRemoteCores = true,
 ) {
+  const local = machine === core;
   const configured = (name: string): number | undefined =>
     Object.hasOwn(config.maxFleetDelegatesByMachine, name)
       ? config.maxFleetDelegatesByMachine[name]
       : undefined;
-  const machineBudget = configured(machine) ?? (local ? configured("local") : undefined);
+  const machineBudget = local
+    ? (configured(core) ?? configured(hostname()) ?? configured(LOCAL_MACHINE_KEY))
+    : configured(machine);
   if (machineBudget !== undefined) return { budget: machineBudget, warning: undefined };
 
   let budget = config.maxFleetDelegates;

@@ -27,7 +27,7 @@ import {
   spawnOutput,
   start,
 } from "./lifecycle.ts";
-import { fakeProc, ok, type RunOutput } from "./proc.ts";
+import { FAKE_CORE, fakeProc, ok, type RunOutput } from "./proc.ts";
 
 const dirs: string[] = [];
 const dir = () => {
@@ -450,6 +450,9 @@ describe("launch parent", () => {
           expect(argv.filter((arg) => arg.startsWith("fleet.space="))).toEqual(
             ownSpace ? ["fleet.space=child-space"] : [],
           );
+          expect(argv.filter((arg) => arg.startsWith("fleet.machine="))).toEqual([
+            `fleet.machine=${FAKE_CORE}`,
+          ]);
           const spaceLabels = argv.filter((arg) => arg.startsWith("herdr.space="));
           expect(spaceLabels).toEqual(
             ownSpace
@@ -1284,15 +1287,24 @@ describe("endDelegate", () => {
     const files = readdirSync(join(state, "ended"));
     expect(files).toEqual(["s-1.json"]);
     const record = JSON.parse(readFileSync(join(state, "ended", "s-1.json"), "utf8"));
-    expect([record.program, record.cwd, record.branch, record.base_sha, record.space]).toEqual([
+    expect([
+      record.program,
+      record.cwd,
+      record.branch,
+      record.base_sha,
+      record.space,
+      record.machine,
+    ]).toEqual([
       "pi",
       "/nonexistent/wt",
       "wyattjoh/fix-a",
       endLabels["fleet.base"],
       true,
+      FAKE_CORE,
     ]);
     expect(fake.calls.map((call) => call.argv.slice(0, 3).join(" "))).toEqual([
       "hc get fix-a",
+      "hc server status",
       "git -c commit.gpgsign=false",
       "lsof -d cwd,txt",
       "ps -axww -o",
@@ -1396,8 +1408,11 @@ describe("endDelegate", () => {
           )
         : ok("{}"),
     );
-    const lines = await runWith(endDelegate(await config(dir()), "fix-a", false), fake.layer);
+    const state = dir();
+    const lines = await runWith(endDelegate(await config(state), "fix-a", false), fake.layer);
     expect(lines.slice(2)).toEqual(["stopped no processes: fix-a ran on strix"]);
+    const record = JSON.parse(readFileSync(join(state, "ended", "s-1.json"), "utf8"));
+    expect(record.machine).toBe("strix");
     expect(
       fake.calls.filter((call) => ["lsof", "ps", "kill"].includes(call.argv[0] ?? "")),
     ).toEqual([]);

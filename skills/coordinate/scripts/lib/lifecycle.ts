@@ -64,7 +64,13 @@ import {
   removeCapacityWait,
   withCapacityClaim,
 } from "./capacity-queue.ts";
-import { liveDelegateCount, machineDelegateBudget, machineOfAddress } from "./delegate-capacity.ts";
+import {
+  canonicalMachine,
+  liveDelegateCount,
+  localMachine,
+  machineDelegateBudget,
+  machineOfAddress,
+} from "./delegate-capacity.ts";
 import {
   harnessPolicyStatus,
   requireRecordedHarnessEnabled,
@@ -634,7 +640,8 @@ export const delegate = Effect.fn("delegate")(function* (
       message: `--retry-queued requires the original authorized harness explicitly: pass --harness pi|claude when retrying ${domain}'s queued item`,
     });
 
-  const targetMachine = machineOfAddress(caller.address);
+  const core = yield* localMachine();
+  const targetMachine = machineOfAddress(caller.address, core);
   const perform = Effect.gen(function* () {
     const queue = options.retryQueued ? yield* readCapacityQueue(config, domain) : undefined;
     const queued = queue?.entries.find((entry) => entry.item === options.item);
@@ -642,7 +649,7 @@ export const delegate = Effect.fn("delegate")(function* (
       return yield* new Refused({
         message: `item ${options.item} is not in the capacity queue for ${domain}; ignore this stale wake`,
       });
-    if (queued && queued.machine !== targetMachine)
+    if (queued && canonicalMachine(queued.machine, core) !== targetMachine)
       return yield* new Refused({
         message: `item ${queued.item} is queued for machine ${queued.machine}, not ${targetMachine}; retry it from its target machine`,
       });
@@ -659,7 +666,11 @@ export const delegate = Effect.fn("delegate")(function* (
           .map((candidate) => candidate.id),
       );
       const oldest = queue.entries
-        .filter((entry) => entry.machine === targetMachine && eligibleItems.has(entry.item))
+        .filter(
+          (entry) =>
+            canonicalMachine(entry.machine, core) === targetMachine &&
+            eligibleItems.has(entry.item),
+        )
         .toSorted((left, right) => left.order - right.order)[0];
       if (oldest?.item !== queued.item)
         return yield* new Refused({
@@ -671,7 +682,7 @@ export const delegate = Effect.fn("delegate")(function* (
     if (queued) {
       const marker = `${domain}:${queued.item}:${queued.order}`;
       for (const listed of terminals) {
-        if (machineOfAddress(listed.address) !== targetMachine) continue;
+        if (machineOfAddress(listed.address, core) !== targetMachine) continue;
         const terminal = yield* hc.get(listed.address);
         if (terminal?.labels[L.queue] !== marker) continue;
         yield* removeCapacityWait(config, domain, queued.item);
@@ -694,11 +705,11 @@ export const delegate = Effect.fn("delegate")(function* (
         message: `a live terminal is already named ${options.name} (${taken.address})`,
       });
 
-    const liveDelegates = yield* liveDelegateCount(targetMachine, terminals);
+    const liveDelegates = yield* liveDelegateCount(targetMachine, terminals, core);
     const { budget, warning: budgetWarning } = yield* machineDelegateBudget(
       config,
       targetMachine,
-      coordinator?.address.includes("/") === false,
+      core,
       coordinator !== undefined && !options.overBudget,
     );
 
@@ -815,6 +826,7 @@ export const delegate = Effect.fn("delegate")(function* (
       [L.session]: session,
       [L.harness]: harness,
       [L.worktree]: cwd,
+      [L.machine]: core,
       ...(queued ? { [L.queue]: `${domain}:${queued.item}:${queued.order}` } : {}),
       ...(options.model ? { [L.model]: options.model } : {}),
       ...(options.effort ? { [L.effort]: options.effort } : {}),
@@ -1022,6 +1034,7 @@ export const endDelegate = Effect.fn("endDelegate")(function* (
     }
   }
   const sessionState = yield* readSession(config.stateDir, session);
+  const machine = machineOfAddress(terminal.address, yield* localMachine());
   const record: EndedRecord = {
     name: terminal.name ?? terminal.address,
     task: terminal.labels[L.task] ?? null,
@@ -1042,6 +1055,7 @@ export const endDelegate = Effect.fn("endDelegate")(function* (
     space: terminal.labels[L.space] !== undefined,
     verdict: sessionState.verdict,
     resumes: sessionState.resumes,
+    machine,
   };
   const path = yield* writeEnded(config.stateDir, record);
   // Read the terminal's process tree while it still has one: once it ends, survivors move to launchd.
@@ -1061,7 +1075,7 @@ export const endDelegate = Effect.fn("endDelegate")(function* (
       ? real(worktree)
       : undefined;
   const stopped = remote
-    ? [`stopped no processes: ${record.name} ran on ${machineOfAddress(terminal.address)}`]
+    ? [`stopped no processes: ${record.name} ran on ${machine}`]
     : yield* teardownEnded(
         { name: record.name, rootPid: terminal.pid, worktree: ownWorktree },
         Option.getOrUndefined(before),
@@ -1169,6 +1183,7 @@ export const resumeDelegate = Effect.fn("resumeDelegate")(function* (
     [L.session]: record.session,
     [L.harness]: harness,
     [L.worktree]: record.cwd,
+    [L.machine]: yield* localMachine(),
     ...(record.model ? { [L.model]: record.model } : {}),
     ...(record.effort ? { [L.effort]: record.effort } : {}),
     ...(record.branch ? { [L.branch]: record.branch } : {}),
