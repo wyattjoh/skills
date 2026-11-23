@@ -30,7 +30,7 @@ A question gets an answer: read what it needs and reply. A change is an item:
 2. Decide or ask (below), then route it: **answer**; **build** here when it fits one turn with no worktree, branch, running app or render to check; otherwise **delegate**.
 3. Record what outlives the turn in the same turn (commands in [Backlog](#backlog)): `item add` for anything not finished this turn, then its status, decisions, ask or close.
 
-**Drift test**, before each action: does it change something outside the boundary, or go past the item? Either yes: say "This moves into <X>, outside <domain>" and route it. Adjacent work is a delegated task with the user's yes for that repo. Another domain of the user's gets an item in that domain's backlog: `coordinate item add "<title> (from <domain>)" --domain <other>` (refused until that domain has run `coordinate start`). Other people's work stays theirs; raise it only when it blocks the domain.
+**Drift test**, before each action: does it change something outside the boundary, or go past the item? Either yes: say "This moves into <X>, outside <domain>" and route it. Adjacent work is a delegated task with the user's yes for that repo. Another domain of the user's gets an item in that domain's backlog: `coordinate item add "<title> (from <domain>)" --domain <other>` (refused until that domain has a backlog, which `coordinate start` or `coordinate spawn` creates). Other people's work stays theirs; raise it only when it blocks the domain.
 
 ## Decide or ask
 
@@ -61,6 +61,12 @@ Batch questions, most consequential first, five at most; the rest wait as backlo
 - Send follow-ups with `coordinate send`, not `hc send`. Send no progress check-ins; the watcher tells you when a delegate settles, and the delegate's `coordinate notify` line (from its brief's Report) wakes you too. A permission dialog is the user's to answer in that tab: name the tab.
 - A review session runs only when the user asks for one. For a delegate's own review, give it the optional [Child review brief](references/brief.md): it runs `coordinate delegate` from its own terminal, so `HC_TERMINAL_ID` nests the read-only reviewer under that delegate, with its own brief.
 - The delegate uses bounded `hc wait`, caps review rounds (default two), reads the child's report, then ends it with `coordinate end`; authorized integration waits for a ready verdict. When the delegate settles, the coordinator verifies the child's verdict too.
+
+## Spawn
+
+`coordinate spawn <domain>` starts a coordinator for a domain, where `delegate` starts a worker on one item. Any coordinator may run it, for example to give work outside its boundary its own owner; the manager runs it only on the user's explicit ask ([manage.md](references/manage.md)). It is refused from a delegate or an unlabelled terminal. Before launching, it seeds that domain's backlog: it creates the backlog if missing, adds `--cwd` to its owned Boundary, and adds each `--item "<title>"` (repeatable) as an open item. Without `--cwd` it starts in the existing backlog's first owned Boundary path, and refuses when there is none. It launches `<domain>-coordinator` in its own unfocused space, tab `<Domain> · No active focus`, with no parent so it outlives you, and its first message is `/coordinate <domain>` (`/skill:coordinate <domain>` for pi). `--harness`, `--model` and `--effort` follow the Delegate rules, checked against the new domain's harness policy. It refuses (exit 1) while the domain has a live coordinator: go to that one instead.
+
+It then waits about 120s for the new coordinator to arm the domain's watcher. `ready` exits 0 and names the watcher. `not ready` exits 1 after the backlog is seeded and the coordinator launched, so do not run spawn again: when it is still starting or blocked on a dialog (the user answers it in the named tab), the terminal is left running; when it is gone, it ended before arming its watcher, so report that and ask. `--json` prints terminal, space, watcher and status. Done when spawn prints `ready`, or you have given the user its not-ready line.
 
 ## Watch
 
@@ -115,7 +121,7 @@ The Backlog panel may edit Boundary paths from outside a Herdr terminal with `ba
 
 ## Manage the fleet
 
-The `manager` domain coordinates the other coordinators instead of a repo: it watches the fleet, relays their asks and results, keeps tab titles aligned with each focus, and tells harness handoffs from crashes. When the user names that role, read [manage.md](references/manage.md) and run its fleet monitor, `bun $SKILL_DIR/scripts/fleet-monitor.ts`.
+The `manager` domain coordinates the other coordinators instead of a repo: it watches the fleet, relays their asks and results, keeps tab titles aligned with each focus, tells harness handoffs from crashes, and spawns a coordinator only when the user asks for it. When the user names that role, read [manage.md](references/manage.md) and run its fleet monitor, `bun $SKILL_DIR/scripts/fleet-monitor.ts`.
 
 ## Restart
 
