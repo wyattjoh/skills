@@ -1,6 +1,6 @@
 # Sweep verdicts
 
-`coordinate sweep report` reads every linked worktree of the domain's repos (`.claude/worktrees` included), landed branches, processes in deleted worktree folders, stale `.scratch` entries, and base checkouts ahead of their remote. It changes nothing.
+`coordinate sweep report` reads every linked worktree of the domain's repos (`.claude/worktrees` included), landed branches, processes in deleted worktree folders, stale `.scratch` entries, and base checkouts ahead of their remote. It changes nothing. Herdr core's own processes (`hc` or `herdr-core` run with `--hc-launchd`, `hold` or `connect`, and the launchd server's ssh children) hold live terminals, so the report never counts or lists them.
 
 | Verdict | Meaning                                                                                                                 | What you do                                                                                                                                                                               |
 | ------- | ----------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |

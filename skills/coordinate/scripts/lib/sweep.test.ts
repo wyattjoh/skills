@@ -5,7 +5,17 @@ import { Effect } from "effect";
 import { resolveConfig } from "./config.ts";
 import { commitFile, g, gitAndFake, initRepo, runWith, tempDir } from "./fixture.ts";
 import { ok, type RunOutput } from "./proc.ts";
-import { context, parseLsof, pruneBranches, pruneEnded, removeMany, report } from "./sweep.ts";
+import { real } from "./git.ts";
+import {
+  context,
+  herdrCorePids,
+  parseLsof,
+  parsePs,
+  pruneBranches,
+  pruneEnded,
+  removeMany,
+  report,
+} from "./sweep.ts";
 
 const made: string[] = [];
 const track = (path: string): string => {
@@ -112,6 +122,84 @@ describe("parseLsof", () => {
       { pid: "12", command: "node", path: "/b" },
       { pid: "13", command: "sh", path: "/c" },
     ]);
+  });
+});
+
+const LAUNCHD = "/Users/u/.local/bin/hc --hc-launchd /tmp/hc-launchd-54939-17954-72c8/ready";
+const HOLD =
+  "/Users/u/.local/share/herdr-core/active/Herdr Core.app/Contents/MacOS/herdr-core hold --socket /Users/u/.local/state/herdr-core/default/default.holder.21004f95.sock";
+
+describe("herdrCorePids", () => {
+  it("names the launchd server, its ssh children, hold and connect, and leaves the rest", () => {
+    const held = [
+      { pid: "10", command: "hc", path: "/gone" },
+      { pid: "11", command: "ssh", path: "/gone" },
+      { pid: "12", command: "herdr-core", path: "/gone" },
+      { pid: "13", command: "herdr-core", path: "/gone" },
+      { pid: "14", command: "zsh", path: "/gone" },
+      { pid: "15", command: "hc", path: "/gone" },
+      { pid: "16", command: "node", path: "/gone" },
+    ];
+    const ps = parsePs(
+      [
+        `   10     1 ${LAUNCHD}`,
+        "   11    10 ssh -T strix sh -c 'exec herdr-core connect'",
+        `   12    10 ${HOLD}`,
+        "   13     9 /Users/u/.local/bin/herdr-core connect",
+        "   14    12 /bin/zsh",
+        "   15    14 hc wait t1 --timeout 60",
+        "   16    14 node server.js --hc-launchd",
+        "",
+      ].join("\n"),
+    );
+    expect([...herdrCorePids(held, ps)].toSorted()).toEqual(["10", "11", "12", "13"]);
+  });
+});
+
+const deletedFolderRows = async (lsof: string, ps: string) => {
+  const repo = track(initRepo());
+  const root = join(repo, ".claude", "worktrees");
+  mkdirSync(root, { recursive: true });
+  const gone = join(real(root), "gone");
+  const fake = gitAndFake((argv) => {
+    if (argv[0] === "lsof") return ok(lsof.replaceAll("<gone>", gone));
+    if (argv[0] === "ps") return ok(ps);
+    return fakes()(argv);
+  });
+  const rows = await runWith(
+    report(await config(track(tempDir())), [repo], {
+      bases: [],
+      keep: [],
+      sizes: false,
+      nowMs: Date.now(),
+    }),
+    fake.layer,
+  );
+  return {
+    gone,
+    rows: rows
+      .filter((row) => row.text.startsWith("processes in deleted folder"))
+      .map((row) => [row.verdict, row.text]),
+  };
+};
+
+describe("report processes in deleted folders", () => {
+  it("offers to kill a stray dev server but never Herdr core", async () => {
+    const { gone, rows } = await deletedFolderRows(
+      "p10\nchc\nn<gone>\np11\ncssh\nn<gone>\np12\ncherdr-core\nn<gone>\np16\ncnode\nn<gone>/web\n",
+      `10 1 ${LAUNCHD}\n11 10 ssh -T strix\n12 10 ${HOLD}\n16 12 node server.js\n`,
+    );
+    expect(rows).toEqual([
+      ["SAFE", `processes in deleted folder ${gone}: 16 node · stop them: kill 16`],
+    ]);
+  });
+
+  it("lists no row when only Herdr core holds the deleted folder", async () => {
+    const { rows } = await deletedFolderRows(
+      "p10\nchc\nn<gone>\np12\ncherdr-core\nn<gone>\n",
+      `10 1 ${LAUNCHD}\n12 10 ${HOLD}\n`,
+    );
+    expect(rows).toEqual([]);
   });
 });
 

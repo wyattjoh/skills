@@ -37,6 +37,9 @@ export type Row = { verdict: Verdict; text: string; path: string | undefined };
 const ORDER: Record<Verdict, number> = { SAFE: 0, CLOSE: 1, ASK: 2, KEEP: 3, INFO: 4 };
 const SELF_EXITING = new Set(["caffeinate"]);
 const SCRATCH_STALE_DAYS = 7;
+const HERDR_CORE = new Set(["hc", "herdr-core"]);
+const HERDR_CORE_ARGS = /(?:^|\/)(?:hc|herdr-core) (?:hold|connect)(?:\s|$)/;
+const HERDR_LAUNCHD = /(?:^|\/)(?:hc|herdr-core)(?:\s.*)?\s--hc-launchd(?:\s|$)/;
 
 /**
  * A live agent session, by the folder it runs in.
@@ -79,6 +82,45 @@ export const parseLsof = (text: string): Held[] => {
   return rows;
 };
 
+/**
+ * One line of `ps -axww -o pid=,ppid=,args=`.
+ */
+export type PsRow = { pid: string; ppid: string; args: string };
+
+/**
+ * Parse `ps -axww -o pid=,ppid=,args=`.
+ * @param text ps output.
+ * @returns One row per process.
+ */
+export const parsePs = (text: string): PsRow[] =>
+  text.split("\n").flatMap((line) => {
+    const match = /^\s*(\d+)\s+(\d+)\s+(.*)$/.exec(line);
+    return match ? [{ pid: match[1] ?? "", ppid: match[2] ?? "", args: match[3] ?? "" }] : [];
+  });
+
+/**
+ * Herdr core's own processes, which hold live terminals and must never be offered for killing:
+ * an `hc` or `herdr-core` executable run with `--hc-launchd`, `hold` or `connect`, plus the
+ * direct children of a `--hc-launchd` server (its ssh connections to remote cores).
+ * The basename comes from lsof's command field, because the executable path can hold spaces.
+ * @param held Processes from lsof.
+ * @param ps Processes from ps.
+ * @returns Their pids.
+ */
+export const herdrCorePids = (held: readonly Held[], ps: readonly PsRow[]): Set<string> => {
+  const named = new Set(
+    held.filter((entry) => HERDR_CORE.has(entry.command)).map((entry) => entry.pid),
+  );
+  const core = ps.filter(
+    (row) => named.has(row.pid) && (HERDR_CORE_ARGS.test(row.args) || HERDR_LAUNCHD.test(row.args)),
+  );
+  const servers = new Set(core.filter((row) => HERDR_LAUNCHD.test(row.args)).map((row) => row.pid));
+  return new Set([
+    ...core.map((row) => row.pid),
+    ...ps.filter((row) => servers.has(row.ppid)).map((row) => row.pid),
+  ]);
+};
+
 const ENV = (): Record<string, string> => ({ ...process.env }) as Record<string, string>;
 
 /**
@@ -106,7 +148,20 @@ export const observe = Effect.fn("observe")(function* () {
       kind: "command_failed",
       message: lsof.stderr.slice(0, 200),
     });
-  return { sessions, processes: parseLsof(lsof.stdout) };
+  const held = parseLsof(lsof.stdout);
+  if (!held.some((entry) => HERDR_CORE.has(entry.command))) return { sessions, processes: held };
+  const ps = yield* proc.run(["ps", "-axww", "-o", "pid=,ppid=,args="], {
+    timeoutMs: 30_000,
+    env: ENV(),
+  });
+  if (ps.exitCode !== 0)
+    return yield* new hc.HerdrError({
+      command: "ps",
+      kind: "command_failed",
+      message: ps.stderr.slice(0, 200),
+    });
+  const core = herdrCorePids(held, parsePs(ps.stdout));
+  return { sessions, processes: held.filter((entry) => !core.has(entry.pid)) };
 });
 
 /**
