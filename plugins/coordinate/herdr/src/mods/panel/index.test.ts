@@ -4942,16 +4942,9 @@ test("reads the capacity queue and outbox through the CLI after each load of the
   focusDomain("alpha");
   host.files.set(DOC, JSON.stringify(withQueue()));
   await mount();
-  const cliArgs = (...args: string[]) => [
-    "-u",
-    "HC_TERMINAL_ID",
-    "bun",
-    "/Users/test/.claude/skills/coordinate/scripts/coordinate.ts",
-    ...args,
-  ];
   expect(watchReads).toEqual([
-    cliArgs("queue", "show", "--domain", "alpha", "--json"),
-    cliArgs("watch", "outbox", "--domain", "alpha", "--json"),
+    [...cliPrefix.slice(1), "queue", "show", "--domain", "alpha", "--json"],
+    [...cliPrefix.slice(1), "watch", "outbox", "--domain", "alpha", "--json"],
   ]);
   backlogWatch()!.fire([DOC]);
   await settle();

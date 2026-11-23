@@ -1600,5 +1600,17 @@ describe("coordinate CLI read-only queue and outbox views", () => {
 
     const bad = run(["queue", "show", "--domain", "../x", "--json"]);
     expect(bad.exit).toBe(1);
+
+    // The outbox subcommand leaves the watch loop's own flags reaching its handler.
+    const deliver = run(["watch", "--deliver", "--domain", "app"]);
+    expect([deliver.exit, deliver.stderr]).toEqual([
+      1,
+      "refused: watch --deliver requires explicit --domain <domain> and --owner <coordinator address>\n",
+    ]);
+    const arm = run(["watch", "--arm", "--domain", "app"]);
+    expect([arm.exit, arm.stderr]).toEqual([
+      1,
+      "refused: HC_TERMINAL_ID is unset: run this in the coordinator terminal\n",
+    ]);
   });
 });
