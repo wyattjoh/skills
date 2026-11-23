@@ -22,6 +22,15 @@ describe("skill prefix", () => {
       "Read /w/.scratch/BRIEF.md and do what it says.",
     );
   });
+
+  it("starts a coordinator with the domain as the coordinate skill's argument", () => {
+    expect(firstMessage("claude", { kind: "skill", skill: "coordinate", args: "tasks" })).toBe(
+      "/coordinate tasks",
+    );
+    expect(firstMessage("pi", { kind: "skill", skill: "coordinate", args: "tasks" })).toBe(
+      "/skill:coordinate tasks",
+    );
+  });
 });
 
 describe("agentArgv", () => {

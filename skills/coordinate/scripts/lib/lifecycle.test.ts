@@ -7,7 +7,15 @@ import { Effect } from "effect";
 import { failureOf, g, gitAndFake, initRepo, runWith, tempDir } from "./fixture.ts";
 import { writeEnded } from "./fleet.ts";
 import { setHarnessPolicy } from "./harness-policy.ts";
-import { delegate, endDelegate, listIdle, resumeDelegate, sendTo, start } from "./lifecycle.ts";
+import {
+  delegate,
+  endDelegate,
+  launchInOwnSpace,
+  listIdle,
+  resumeDelegate,
+  sendTo,
+  start,
+} from "./lifecycle.ts";
 import { fakeProc, ok, type RunOutput } from "./proc.ts";
 
 const dirs: string[] = [];
@@ -385,6 +393,9 @@ describe("launch parent", () => {
               ? ["--no-parent"]
               : ["--parent", caller.address, "--outlive-parent", "--no-notify"],
           );
+          expect(argv.filter((arg) => arg.startsWith("fleet.space="))).toEqual(
+            ownSpace ? ["fleet.space=child-space"] : [],
+          );
           const spaceLabels = argv.filter((arg) => arg.startsWith("herdr.space="));
           expect(spaceLabels).toEqual(
             ownSpace
@@ -398,6 +409,74 @@ describe("launch parent", () => {
       );
     }
   }
+});
+
+describe("launchInOwnSpace", () => {
+  it("starts a terminal in its own unfocused space with only the caller's labels and no parent", async () => {
+    const fake = fakeProc((argv) => {
+      if (argv[0] === "hc" && argv[1] === "run") return ok('{"address":"t7"}');
+      if (argv[0] === "hc") return ok("{}");
+      if (argv[1] === "ls")
+        return ok(
+          JSON.stringify({
+            spaces: [
+              { id: "sp9", tabs: [{ id: "tab9", terminals: [{ terminal: "t6", pane: "p6" }] }] },
+            ],
+          }),
+        );
+      if (argv[2] === "space.new") return ok('{"space":"sp9","tab":"tab9","terminal":"t6"}');
+      return ok("{}");
+    });
+    const launched = await runWith(
+      launchInOwnSpace({
+        name: "tasks-coordinator",
+        cwd: "/w/tasks",
+        tabLabel: "Tasks · No active focus",
+        spaceName: "tasks",
+        labels: { "fleet.role": "coordinator", "fleet.domain": "tasks" },
+        parent: undefined,
+        argv: ["claude", "/coordinate tasks"],
+        recordSpace: false,
+      }),
+      fake.layer,
+    );
+    expect(launched).toEqual({ address: "t7", space: "sp9" });
+    const calls = fake.calls.map((call) => call.argv);
+    const run = calls[1] ?? [];
+    expect(calls[0]).toEqual([
+      "herdr-app",
+      "do",
+      "space.new",
+      '{"name":"tasks","folder":"/w/tasks","focus":false}',
+    ]);
+    expect(run.slice(0, run.indexOf("--"))).toEqual([
+      "hc",
+      "run",
+      "--bg",
+      "--json",
+      "--name",
+      "tasks-coordinator",
+      "--cwd",
+      "/w/tasks",
+      "--no-parent",
+      "--label",
+      "herdr.space=sp9",
+      "--label",
+      "herdr.tab=tab9",
+      "--label",
+      "fleet.role=coordinator",
+      "--label",
+      "fleet.domain=tasks",
+    ]);
+    expect(run.slice(-2)).toEqual(["claude", "/coordinate tasks"]);
+    expect(calls.slice(2)).toEqual([
+      ["herdr-app", "ls"],
+      ["herdr-app", "do", "pane.close", '{"pane":"p6"}'],
+      ["hc", "kill", "t6"],
+      ["hc", "rm", "t6"],
+      ["herdr-app", "do", "tab.rename", '{"id":"tab9","name":"Tasks · No active focus"}'],
+    ]);
+  });
 });
 
 const endLabels = {

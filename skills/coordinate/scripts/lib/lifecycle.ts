@@ -152,7 +152,53 @@ const agentShowed = Effect.fn("agentShowed")(function* (address: string, seconds
 });
 
 /**
- * Launch an agent terminal, in its own space or as a tab in the coordinator's space.
+ * Start a terminal in a new unfocused space of its own: the space's placeholder shell is closed
+ * and its tab renamed. Assumes no worktree, delegate labels or parent; the caller supplies them.
+ * @param spec What to run and where. `parent` undefined starts it with no parent link;
+ *   `recordSpace` adds `fleet.space` so `coordinate end` closes the space with the terminal.
+ * @returns Address and the new space id.
+ */
+export const launchInOwnSpace = Effect.fn("launchInOwnSpace")(function* (spec: {
+  name: string;
+  cwd: string;
+  tabLabel: string;
+  spaceName: string;
+  labels: Record<string, string>;
+  parent: string | undefined;
+  argv: string[];
+  recordSpace: boolean;
+}) {
+  const made = yield* hc.newSpace(spec.spaceName, spec.cwd);
+  const address = yield* hc
+    .run({
+      name: spec.name,
+      cwd: spec.cwd,
+      labels: {
+        "herdr.space": made.space,
+        "herdr.tab": made.tab,
+        ...(spec.recordSpace ? { [L.space]: made.space } : {}),
+        ...spec.labels,
+      },
+      parent: spec.parent,
+      outliveParent: true,
+      notifyParent: false,
+      argv: inLoginShell(loginShell(), spec.argv),
+    })
+    .pipe(Effect.tapError(() => hc.closeSpace(made.space).pipe(Effect.ignore)));
+  // The space came with a placeholder shell; close its pane so the agent has the tab to itself.
+  const spaces = yield* hc.appSpaces().pipe(Effect.catch(() => Effect.succeed([])));
+  const pane = spaces
+    .find((space) => space.id === made.space)
+    ?.tabs.flatMap((tab) => tab.terminals)
+    .find((terminal) => terminal.terminal === made.terminal)?.pane;
+  if (pane) yield* hc.appDo("pane.close", { pane }).pipe(Effect.ignore);
+  yield* hc.end(made.terminal).pipe(Effect.ignore);
+  yield* hc.appDo("tab.rename", { id: made.tab, name: spec.tabLabel }).pipe(Effect.ignore);
+  return { address, space: made.space };
+});
+
+/**
+ * Launch a delegate terminal, in its own space or as a tab in the coordinator's space.
  * @param spec What to run and where.
  * @returns Address, tab label, and the space id when one was made.
  */
@@ -167,52 +213,34 @@ const launch = Effect.fn("launch")(function* (spec: {
   ownSpace: boolean;
   coordinatorSpace: string | undefined;
 }) {
-  const argv = inLoginShell(loginShell(), spec.argv);
-  if (!spec.ownSpace) {
-    const labels = spec.coordinatorSpace
-      ? { "herdr.space": spec.coordinatorSpace, ...spec.labels }
-      : spec.labels;
-    const address = yield* hc.run({
+  if (spec.ownSpace)
+    return yield* launchInOwnSpace({
       name: spec.name,
       cwd: spec.cwd,
-      labels,
+      tabLabel: spec.tabLabel,
+      spaceName: spec.spaceName,
+      labels: spec.labels,
       parent: spec.parent,
-      outliveParent: true,
-      notifyParent: false,
-      argv,
+      argv: spec.argv,
+      recordSpace: true,
     });
-    const tab = (yield* hc.get(address).pipe(Effect.catch(() => Effect.succeed(undefined))))
-      ?.labels["herdr.tab"];
-    if (tab) yield* hc.appDo("tab.rename", { id: tab, name: spec.tabLabel }).pipe(Effect.ignore);
-    return { address, space: undefined };
-  }
-  const made = yield* hc.newSpace(spec.spaceName, spec.cwd);
-  const address = yield* hc
-    .run({
-      name: spec.name,
-      cwd: spec.cwd,
-      labels: {
-        "herdr.space": made.space,
-        "herdr.tab": made.tab,
-        [L.space]: made.space,
-        ...spec.labels,
-      },
-      parent: spec.parent,
-      outliveParent: true,
-      notifyParent: false,
-      argv,
-    })
-    .pipe(Effect.tapError(() => hc.closeSpace(made.space).pipe(Effect.ignore)));
-  // The space came with a placeholder shell; close its pane so the agent has the tab to itself.
-  const spaces = yield* hc.appSpaces().pipe(Effect.catch(() => Effect.succeed([])));
-  const pane = spaces
-    .find((space) => space.id === made.space)
-    ?.tabs.flatMap((tab) => tab.terminals)
-    .find((terminal) => terminal.terminal === made.terminal)?.pane;
-  if (pane) yield* hc.appDo("pane.close", { pane }).pipe(Effect.ignore);
-  yield* hc.end(made.terminal).pipe(Effect.ignore);
-  yield* hc.appDo("tab.rename", { id: made.tab, name: spec.tabLabel }).pipe(Effect.ignore);
-  return { address, space: made.space };
+  const labels = spec.coordinatorSpace
+    ? { "herdr.space": spec.coordinatorSpace, ...spec.labels }
+    : spec.labels;
+  const address = yield* hc.run({
+    name: spec.name,
+    cwd: spec.cwd,
+    labels,
+    parent: spec.parent,
+    outliveParent: true,
+    notifyParent: false,
+    argv: inLoginShell(loginShell(), spec.argv),
+  });
+  const tab = (yield* hc.get(address).pipe(Effect.catch(() => Effect.succeed(undefined))))?.labels[
+    "herdr.tab"
+  ];
+  if (tab) yield* hc.appDo("tab.rename", { id: tab, name: spec.tabLabel }).pipe(Effect.ignore);
+  return { address, space: undefined };
 });
 
 /**

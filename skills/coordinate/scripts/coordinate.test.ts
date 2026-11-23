@@ -180,6 +180,41 @@ describe("coordinate CLI harness policy", () => {
   });
 });
 
+describe("coordinate CLI delegate --skill", () => {
+  it("refuses coordinate, which only spawn starts with", () => {
+    const state = tempDir("coordinate-skill-cli-");
+    made.push(state);
+    const result = Bun.spawnSync(
+      [
+        "bun",
+        cli,
+        "delegate",
+        "fix-a",
+        "--task",
+        "t",
+        "--cwd",
+        state,
+        "--harness",
+        "claude",
+        "--skill",
+        "coordinate",
+        "--args",
+        "tasks",
+        "--domain",
+        "app",
+        "--item",
+        "i1",
+      ],
+      { env: cliEnv(state, COORDINATOR), stdout: "pipe", stderr: "pipe", timeout: 10_000 },
+    );
+    expect(result.exitCode).toBe(1);
+    expect(result.stderr.toString()).toBe(
+      '\nERROR\n  Invalid value for flag --skill: "coordinate". Expected: "implement" | "implement-spec"\n',
+    );
+    expect(existsSync(join(state, "bin", "calls.log"))).toBe(false);
+  });
+});
+
 describe("coordinate CLI parity", () => {
   it("records representative invocations across every command", () => {
     const state = tempDir("coordinate-cli-parity-");
