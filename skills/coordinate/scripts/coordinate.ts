@@ -74,6 +74,8 @@ import {
   context,
   pruneBranches,
   pruneEnded,
+  remoteCheckouts,
+  remoteTarget,
   removeMany,
   renderRows,
   report,
@@ -455,11 +457,14 @@ const startCommand = Command.make(
           "",
           "sweep:",
           ...renderRows(
-            yield* report(config, yield* domainRepos(config, domain), {
-              bases: [],
-              keep: [],
-              sizes: false,
-              nowMs: Date.now(),
+            yield* Effect.gen(function* () {
+              const repos = yield* domainRepos(config, domain);
+              return yield* report(
+                config,
+                repos,
+                { bases: [], keep: [], sizes: false, nowMs: Date.now() },
+                yield* domainRemotes(config, domain, repos),
+              );
             }),
           ),
         );
@@ -1815,6 +1820,24 @@ const reposFor = (paths: readonly string[], domain: string | undefined, config: 
     return repos;
   });
 
+/**
+ * The checkouts on other machines the domain's Boundary records for these repos (all of them when
+ * repos is undefined), or none when the domain or its backlog cannot be read.
+ * @param config Config.
+ * @param domain `--domain`, else this coordinator's label.
+ * @param repos Main checkouts here.
+ * @returns Remote checkouts.
+ */
+const domainRemotes = (
+  config: Config,
+  domain: string | undefined,
+  repos: readonly string[] | undefined,
+) =>
+  resolveDomain(domain).pipe(
+    Effect.flatMap((resolved) => remoteCheckouts(config, resolved, repos)),
+    Effect.catch(() => Effect.succeed([])),
+  );
+
 const sweepReportCommand = Command.make(
   "report",
   {
@@ -1829,14 +1852,15 @@ const sweepReportCommand = Command.make(
   (options) =>
     execute((config) =>
       Effect.gen(function* () {
-        const found = yield* reposFor(options.repos, Option.getOrUndefined(options.domain), config);
+        const domain = Option.getOrUndefined(options.domain);
+        const found = yield* reposFor(options.repos, domain, config);
         return renderRows(
-          yield* report(config, found, {
-            bases: options.base,
-            keep: options.keep,
-            sizes: options.sizes,
-            nowMs: Date.now(),
-          }),
+          yield* report(
+            config,
+            found,
+            { bases: options.base, keep: options.keep, sizes: options.sizes, nowMs: Date.now() },
+            yield* domainRemotes(config, domain, found),
+          ),
         );
       }),
     ),
@@ -1855,34 +1879,47 @@ const sweepRemoveCommand = Command.make(
       "remove every SAFE worktree of the domain's repos (or --repo)",
     ),
     repo: repeatedStringFlag("repo", "repo for --all-safe (repeatable)"),
-    domain: optionalStringFlag("domain", "domain for --all-safe"),
+    domain: optionalStringFlag(
+      "domain",
+      "domain for --all-safe and for machine:/path worktrees (its Boundary's checkouts)",
+    ),
     base: repeatedStringFlag("base", "extra base ref (repeatable)"),
   },
   (options) =>
     execute((config) =>
       Effect.gen(function* () {
-        const targets = options.worktrees.map((path) => absolutePath(path));
+        const domain = Option.getOrUndefined(options.domain);
+        // A machine:/path worktree lives on another machine; only paths here are resolved here.
+        const targets = options.worktrees.map((path) =>
+          remoteTarget(path) === undefined ? absolutePath(path) : path,
+        );
         const repos: string[] = [];
         for (const path of targets) {
+          if (remoteTarget(path) !== undefined) continue;
           const repo = yield* mainCheckout(path);
           if (repo && !repos.includes(repo)) repos.push(repo);
         }
-        if (options.allSafe)
-          for (const repo of yield* reposFor(
-            options.repo,
-            Option.getOrUndefined(options.domain),
-            config,
-          ))
-            if (!repos.includes(repo)) repos.push(repo);
-        const ctx = yield* context(config, repos, options.base, []);
+        const allSafeRepos = options.allSafe ? yield* reposFor(options.repo, domain, config) : [];
+        for (const repo of allSafeRepos) if (!repos.includes(repo)) repos.push(repo);
+        const remoteTargets = targets.flatMap((path) => remoteTarget(path) ?? []);
+        const remotes = (yield* domainRemotes(config, domain, undefined)).filter(
+          (remote) =>
+            allSafeRepos.includes(remote.repo) ||
+            remoteTargets.some(
+              (target) =>
+                target.machine === remote.machine && target.path.startsWith(`${remote.checkout}/`),
+            ),
+        );
+        for (const remote of remotes) if (!repos.includes(remote.repo)) repos.push(remote.repo);
+        const ctx = yield* context(config, repos, options.base, [], remotes);
         let rows: readonly Row[] = [];
         if (options.allSafe) {
-          rows = yield* report(config, repos, {
-            bases: options.base,
-            keep: [],
-            sizes: false,
-            nowMs: Date.now(),
-          });
+          rows = yield* report(
+            config,
+            repos,
+            { bases: options.base, keep: [], sizes: false, nowMs: Date.now() },
+            remotes,
+          );
           for (const row of rows)
             if (
               row.verdict === "SAFE" &&

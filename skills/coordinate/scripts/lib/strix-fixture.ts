@@ -228,6 +228,10 @@ export type StrixRun = {
    */
   cli: (args: readonly string[], timeoutMs?: number) => Ran;
   /**
+   * Run the coordinate CLI as given, without `--domain`, for commands that take none.
+   */
+  bare: (args: readonly string[], timeoutMs?: number) => Ran;
+  /**
    * Merge keys into the sandbox config file (`state_dir` and `backlog_dir` stay).
    */
   configure: (extra: Record<string, unknown>) => void;
@@ -330,6 +334,7 @@ export const strixRun = (): StrixRun => {
     },
     cli: (args, timeoutMs = 30_000) =>
       spawn(["bun", script, ...args, "--domain", domain], env, timeoutMs),
+    bare: (args, timeoutMs = 30_000) => spawn(["bun", script, ...args], env, timeoutMs),
     configure: (extra) => {
       config = { ...config, ...extra };
       writeFileSync(configFile, JSON.stringify(config));

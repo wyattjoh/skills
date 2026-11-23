@@ -1080,6 +1080,14 @@ describe.skipIf(!ready)("strix: copy-back and bundle fetch", () => {
       console.log(`events: ${JSON.stringify(events)}\nscreen:\n${screen()}`);
     expect(events.filter((event) => event.includes(' kind="settled"'))).toEqual([settled]);
 
+    // Sweep sees the live delegate's session in its worktree on strix: KEEP, never ASK or SAFE.
+    const swept = run.cli(["sweep", "report"], 300_000);
+    const row = swept.output.split("\n").find((line) => line.includes(`strix:${worktree} `)) ?? "";
+    expect([swept.exitCode, row.replace(/ in "[^"]*"$/, "")]).toEqual([
+      0,
+      `KEEP  worktree strix:${worktree} [${branch}] PRs unknown: no remote · 1 commit on no remote or base · session ${name}`,
+    ]);
+
     // At settle the watcher copied the remote .scratch into this Mac's parked folder for it.
     const parked = join(local, ".scratch", "parked", name);
     expect(readFileSync(join(parked, ".scratch", "REPORT.md"), "utf8")).toBe("done\n");
@@ -1190,5 +1198,138 @@ describe.skipIf(!ready)("strix: copy-back and bundle fetch", () => {
       exitCode: 1,
       output: `refused: wyattjoh/${still} has no commits past ${base.slice(0, 7)} on strix; nothing to fetch\n`,
     });
+  }, 600_000);
+});
+
+describe.skipIf(!ready)("strix: sweep remote worktrees", () => {
+  let run: StrixRun | undefined;
+  let local = "";
+  let remote = "";
+  beforeAll(() => {
+    run = strixRun();
+    local = initRepo();
+    remote = run.remoteClone(local, "app");
+    // A remote launch adds .scratch/ to the checkout's info/exclude; the fixture does it by hand.
+    expect(
+      onStrix(`printf '.scratch/\\n' >> ${shellWord(`${remote}/.git/info/exclude`)}`, 20).exitCode,
+    ).toBe(0);
+    run.seed({ owned: [local], adjacent: [] });
+    expect(
+      run.cli(["backlog", "boundary", "add", local, "--machine", STRIX, "--checkout", remote])
+        .exitCode,
+    ).toBe(0);
+    mkdirSync(join(run.stateDir, "ended"), { recursive: true });
+  }, 120_000);
+  afterAll(() => {
+    if (local !== "") rmSync(local, { recursive: true, force: true });
+    const left = run?.teardown() ?? [];
+    expect(left).toEqual([]);
+  }, 180_000);
+
+  it("reports remote worktrees by git on strix, removes the SAFE one there, and keeps live records", () => {
+    if (!run) return;
+    const banner = `watcher for ${run.domain} is down; arm it (coordinate watch --arm)\n`;
+    const cli = (args: readonly string[]) => {
+      const ran = run?.cli(args, 300_000) ?? { exitCode: null, output: "" };
+      return { exitCode: ran.exitCode, output: ran.output.replace(banner, "") };
+    };
+    const base = g(local, "rev-parse", "main").trim();
+    const worktree = (name: string) => `${remote}/.claude/worktrees/${name}`;
+    const record = (name: string, cwd: string) => {
+      const session = crypto.randomUUID();
+      const path = join(run?.stateDir ?? "", "ended", `${session}.json`);
+      writeFileSync(
+        path,
+        `${JSON.stringify({ name, domain: run?.domain, session, cwd, branch: `wyattjoh/${name}`, base_sha: base, ended_at: new Date().toISOString(), machine: STRIX })}\n`,
+      );
+      return path;
+    };
+    const safe = `ss-${run.id}`;
+    const ask = `sa-${run.id}`;
+    const keep = `sk-${run.id}`;
+    const gone = `sg-${run.id}`;
+    // SAFE: one commit, fast-forwarded into main there, its ended record, a report in .scratch.
+    // ASK: an uncommitted file. KEEP: no commits and no record.
+    const made = onStrix(
+      [
+        `cd ${shellWord(remote)}`,
+        ...[safe, ask, keep].map(
+          (name) =>
+            `git worktree add -q -b ${shellWord(`wyattjoh/${name}`)} ${shellWord(worktree(name))} main`,
+        ),
+        `cd ${shellWord(worktree(safe))}`,
+        "mkdir -p .scratch",
+        "printf 'done\\n' > .scratch/REPORT.md",
+        "printf 'x\\n' > x.txt",
+        "git add x.txt",
+        "git commit -q -m 'test: x'",
+        `cd ${shellWord(remote)}`,
+        `git merge -q --ff-only ${shellWord(`wyattjoh/${safe}`)}`,
+        `printf 'wip\\n' > ${shellWord(`${worktree(ask)}/wip.txt`)}`,
+        `git rev-parse --short ${shellWord(`wyattjoh/${safe}`)}`,
+      ].join(" && "),
+      60,
+    );
+    expect(made.exitCode).toBe(0);
+    const sha = made.output.trim();
+    const safeRecord = record(safe, worktree(safe));
+
+    const rows = [
+      `SAFE  worktree strix:${worktree(safe)} [wyattjoh/${safe}] PRs unknown: no remote · on base (ancestor) · ended delegate record`,
+      `ASK   worktree strix:${worktree(ask)} [wyattjoh/${ask}] PRs unknown: no remote · no commits yet · 1 uncommitted`,
+      `KEEP  worktree strix:${worktree(keep)} [wyattjoh/${keep}] PRs unknown: no remote · no commits yet`,
+      `INFO  PRs for ${local} unknown: no remote`,
+    ];
+    expect(cli(["sweep", "report"])).toEqual({ exitCode: 0, output: `${rows.join("\n")}\n` });
+
+    // Every remove target is under this run's own folder on strix.
+    const targets = [safe, ask].map((name) => `strix:${worktree(name)}`);
+    const outside = `strix:${run.remoteRoot}/elsewhere/.claude/worktrees/x`;
+    expect(
+      [...targets, outside].map((target) => target.startsWith(`strix:${run?.remoteRoot}/`)),
+    ).toEqual([true, true, true]);
+    const parked = join(local, ".scratch", "parked", safe);
+    const askKept = `strix:${worktree(ask)}: ASK, [wyattjoh/${ask}] PRs unknown: no remote · no commits yet · 1 uncommitted`;
+    const outsideKept = `${outside}: in no checkout the Boundary records on strix`;
+    expect(cli(["sweep", "remove", ...targets, outside])).toEqual({
+      exitCode: 0,
+      output: [
+        `removed worktree strix:${worktree(safe)}`,
+        `  copied .scratch of ${safe} from strix to ${parked}`,
+        `  deleted branch wyattjoh/${safe} ${sha}`,
+        `  pruned ended record ${safe}`,
+        `kept ${askKept}`,
+        `kept ${outsideKept}`,
+        `removed 1 of 3; 2 kept because: ${askKept}; ${outsideKept}`,
+        "",
+      ].join("\n"),
+    });
+    expect(readFileSync(join(parked, ".scratch", "REPORT.md"), "utf8")).toBe("done\n");
+    expect(existsSync(safeRecord)).toBe(false);
+    expect(
+      onStrix(
+        [
+          `cd ${shellWord(remote)}`,
+          `if [ -e ${shellWord(worktree(safe))} ]; then echo present; else echo absent; fi`,
+          `git branch --list --format='%(refname:short)' | sort`,
+          `git -C ${shellWord(worktree(ask))} status --porcelain`,
+        ].join(" && "),
+        30,
+      ),
+    ).toEqual({
+      exitCode: 0,
+      output: ["absent", "main", `wyattjoh/${ask}`, `wyattjoh/${keep}`, "?? wip.txt", ""].join(
+        "\n",
+      ),
+    });
+
+    // prune-ended judges a remote record by its folder on strix, never on this Mac.
+    const keepRecord = record(keep, worktree(keep));
+    const goneRecord = record(gone, worktree(gone));
+    expect(run.bare(["sweep", "prune-ended"], 120_000)).toEqual({
+      exitCode: 0,
+      output: `pruned 1 of 2 ended records whose folder is gone\n  ${gone}\n`,
+    });
+    expect([existsSync(keepRecord), existsSync(goneRecord)]).toEqual([true, false]);
   }, 600_000);
 });

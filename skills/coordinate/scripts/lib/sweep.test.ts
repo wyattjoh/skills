@@ -423,6 +423,9 @@ const endedRecord = (name: string, cwd: string, baseSha: string | null = null) =
     base_sha: baseSha,
   });
 
+const named = (name: string, cwd: string, machine: string) =>
+  JSON.stringify({ ...JSON.parse(endedRecord(name, cwd)), machine });
+
 describe("pruneEnded", () => {
   it("prunes records whose folder is gone, PRs or not", async () => {
     const state = track(tempDir());
@@ -432,6 +435,32 @@ describe("pruneEnded", () => {
     const lines = await runWith(pruneEnded(await config(state)));
     expect(lines).toEqual(["pruned 1 of 2 ended records whose folder is gone", "  gone"]);
     expect(existsSync(join(state, "ended", "here.json"))).toBe(true);
+  });
+
+  it("keeps a remote record whose machine does not answer, and judges this core's by its disk", async () => {
+    const state = track(tempDir());
+    mkdirSync(join(state, "ended"), { recursive: true });
+    writeFileSync(
+      join(state, "ended", "local.json"),
+      named("local", "/nonexistent/a", "fake-core"),
+    );
+    writeFileSync(join(state, "ended", "r1.json"), named("r1", "/nonexistent/b", "strix"));
+    writeFileSync(join(state, "ended", "r2.json"), named("r2", "/nonexistent/c", "strix"));
+    const fake = gitAndFake((argv) =>
+      argv[1] === "exec"
+        ? { exitCode: 1, stdout: "", stderr: "machine strix is not connected" }
+        : ok(""),
+    );
+    const lines = await runWith(pruneEnded(await config(state)), fake.layer);
+    expect(lines).toEqual([
+      "pruned 1 of 3 ended records whose folder is gone",
+      "  local",
+      "  folder unknown, left in place: r1 (strix did not answer), r2 (strix did not answer)",
+    ]);
+    expect(fake.calls.filter((argv) => argv[1] === "exec").length).toBe(1);
+    expect(
+      ["local", "r1", "r2"].map((name) => existsSync(join(state, "ended", `${name}.json`))),
+    ).toEqual([false, true, true]);
   });
 });
 

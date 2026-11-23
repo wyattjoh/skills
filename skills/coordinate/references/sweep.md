@@ -14,4 +14,12 @@
 
 When `git branch -d` refuses (a squash or rebase merge), the output prints the `git branch -D` command: give it to the user to run, and run nothing stronger yourself.
 
-`coordinate sweep prune-ended` deletes ended-delegate records whose worktree is gone. Run `remove --all-safe` first: without its record, a delegate's processes in a deleted folder are no longer tied to it.
+## Remote worktrees
+
+The report also judges the linked worktrees of each checkout the domain's Boundary records on another machine (`backlog boundary add <repo> --machine <m> --checkout <path>`). Git, sessions and processes are read on that machine through `hc exec`, against that checkout's own bases, and rows carry machine-qualified paths such as `strix:/home/me/app/.claude/worktrees/fix-a`. A machine that does not answer gets one INFO row and none of its worktrees are judged; a worktree whose processes cannot be read there is never SAFE. Landed-branch, stale-scratch, ahead-of-remote and deleted-folder rows cover checkouts on this machine only.
+
+A branch you fetched and landed on this Mac is not on the remote checkout's bases, so its remote worktree stays ASK (commits on no remote or base) until that checkout has the work.
+
+`coordinate sweep remove <machine>:<path> [--domain d]` removes a SAFE remote worktree on its machine, only when it is a linked worktree of a checkout that Boundary records there. It stops the ended delegate's tied processes there, copies the worktree's `.scratch/` to `<repo>/.scratch/parked/<name>/` on this Mac (and keeps the worktree when that copy fails), runs `git worktree remove` and `git branch -d` on the machine, closes the delegate's space and prunes its ended record. When `-d` refuses, the printed `git branch -D` command names the machine to run it on. `--all-safe` includes remote SAFE rows.
+
+`coordinate sweep prune-ended` deletes ended-delegate records whose worktree is gone: a remote record's folder is checked on its own machine, and a record whose machine does not answer (or whose machine is unknown because this core's Herdr name is unreadable) is left in place and listed. Run `remove --all-safe` first: without its record, a delegate's processes in a deleted folder are no longer tied to it.

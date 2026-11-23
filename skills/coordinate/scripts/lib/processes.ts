@@ -376,6 +376,14 @@ export const remoteHost = (machine: string): ProcessHost => ({
         kind: "unreadable_output",
         message: `no processes read on ${machine}`,
       });
+    // The scanning shell itself holds `/`, so no folder read means no /proc there (not Linux):
+    // which processes hold a worktree is then unknown, never "none".
+    if (table.held.length === 0)
+      return yield* new hc.HerdrError({
+        command: "ls /proc",
+        kind: "unreadable_output",
+        message: `no process folders read on ${machine} (needs Linux /proc)`,
+      });
     return table;
   }),
   stop: Effect.fn("remoteStop")(function* (targets, options) {

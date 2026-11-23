@@ -1,8 +1,9 @@
-import { Effect } from "effect";
+import { Effect, Schema } from "effect";
 import type { Backlog } from "./backlog-store/schema.ts";
 import { Refused } from "./fleet.ts";
 import type { Harness } from "./harness.ts";
 import * as hc from "./herdr.ts";
+import { DEFAULT_TIMEOUT_MS, type Proc, SpawnError } from "./proc.ts";
 
 // A remote launch on another Herdr machine: everything there goes through `hc exec --on` and
 // `hc file write --on`, so the machine needs only the harness and git.
@@ -168,6 +169,67 @@ export const remoteFolderExists = Effect.fn("remoteFolderExists")(function* (
 ) {
   const out = yield* hc.execOn(machine, `if [ -d ${word(path)} ]; then echo present; fi`, 30);
   return out.split("\n").includes("present");
+});
+
+const Executed = Schema.Struct({
+  code: Schema.NullOr(Schema.Number),
+  stdout: Schema.String,
+  stderr: Schema.String,
+  timed_out: Schema.Boolean,
+});
+
+/**
+ * A `Proc` that runs every program on another Herdr machine through `hc exec --on`, in its login
+ * shell and the given working folder there, with git's repository-location variables unset. Its
+ * exit code and output come back exactly, so the git helpers judge a remote checkout as they judge
+ * a local one. When the machine does not answer, the run fails with a `SpawnError`.
+ * @param machine Herdr machine name.
+ * @param local The `Proc` that runs `hc` here.
+ * @returns The remote runner.
+ */
+export const remoteProc = (machine: string, local: Proc["Service"]): Proc["Service"] => ({
+  run: (argv, options) =>
+    Effect.gen(function* () {
+      const timeoutS = Math.min(
+        600,
+        Math.max(1, Math.ceil((options?.timeoutMs ?? DEFAULT_TIMEOUT_MS) / 1000)),
+      );
+      const failed = (message: string) => new SpawnError({ argv: [...argv], message });
+      const out = yield* local.run(
+        [
+          "hc",
+          "exec",
+          "--on",
+          machine,
+          "--json",
+          "--timeout",
+          String(timeoutS),
+          "--",
+          "sh",
+          "-lc",
+          `${UNSET_GIT}; if [ -n "$1" ]; then cd "$1" || exit 128; fi; shift; exec "$@"`,
+          "sh",
+          options?.cwd ?? "",
+          ...argv,
+        ],
+        { timeoutMs: (timeoutS + 10) * 1000, env: options?.env },
+      );
+      if (out.exitCode !== 0)
+        return yield* failed(
+          `hc exec on ${machine} failed: ${(out.stderr || out.stdout).trim().slice(0, 300)}`,
+        );
+      const parsed = yield* Effect.try({
+        try: () => Schema.decodeUnknownSync(Executed)(JSON.parse(out.stdout)),
+        catch: () => failed(`hc exec on ${machine} printed no result`),
+      });
+      if (parsed.timed_out || parsed.code === null)
+        return yield* failed(`${argv[0]} timed out on ${machine} after ${timeoutS}s`);
+      return {
+        exitCode: parsed.code,
+        stdout: Buffer.from(parsed.stdout, "base64").toString("utf8"),
+        stderr: Buffer.from(parsed.stderr, "base64").toString("utf8"),
+      };
+    }),
 });
 
 /**

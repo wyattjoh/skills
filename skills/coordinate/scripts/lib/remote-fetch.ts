@@ -148,7 +148,10 @@ type RemoteDelegate = {
  * @param delegate The remote delegate.
  * @returns Lines to print.
  */
-const copyScratch = Effect.fn("copyScratch")(function* (repo: string, delegate: RemoteDelegate) {
+export const copyScratch = Effect.fn("copyScratch")(function* (
+  repo: string,
+  delegate: Pick<RemoteDelegate, "name" | "machine" | "worktree">,
+) {
   const pulled = yield* pullArtifact(
     delegate.machine,
     [

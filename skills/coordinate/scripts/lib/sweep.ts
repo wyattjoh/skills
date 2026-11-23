@@ -2,8 +2,10 @@ import { existsSync, lstatSync, readdirSync } from "node:fs";
 import { mkdir, rename, writeFile } from "node:fs/promises";
 import { basename, dirname, join } from "node:path";
 import { Effect } from "effect";
+import { readDocument } from "./backlog-doc.ts";
 import type { Config } from "./config.ts";
-import { readEnded, removeEnded } from "./fleet.ts";
+import { canonicalMachine, localMachine } from "./delegate-capacity.ts";
+import { type EndedRecord, readEnded, removeEnded } from "./fleet.ts";
 import {
   aheadOfUpstream,
   defaultBases,
@@ -25,12 +27,15 @@ import {
   ownedBy,
   type ProcessTable,
   type PsRow,
+  remoteHost,
   scanProcesses,
   type StopOptions,
   stopProcesses,
 } from "./processes.ts";
 import { Proc } from "./proc.ts";
 import { branchState, repoPullRequests, type RepoPrs } from "./prs.ts";
+import { copyScratch } from "./remote-fetch.ts";
+import { remoteFolderExists, remoteProc } from "./remote-launch.ts";
 
 /**
  * SAFE: remove now. CLOSE: finished but a session still runs there. ASK: work would be lost.
@@ -44,11 +49,31 @@ export type Verdict = "SAFE" | "CLOSE" | "ASK" | "KEEP" | "INFO";
 export type Row = {
   verdict: Verdict;
   text: string;
+  /**
+   * The row's folder; on another machine, qualified as `machine:/path`.
+   */
   path: string | undefined;
   /**
    * Processes of an ended delegate that `sweep remove` stops; empty for most rows.
    */
   stop: readonly PsRow[];
+};
+
+/**
+ * A checkout of a domain repo on another Herdr machine, as its Boundary records it.
+ */
+export type RemoteCheckout = { repo: string; machine: string; checkout: string };
+
+/**
+ * A remote checkout as sweep reads it: git there runs through `proc`, and `down` says why the
+ * machine did not answer.
+ */
+export type RemotePlace = RemoteCheckout & {
+  proc: Proc["Service"];
+  bases: string[];
+  down: string | undefined;
+  table: ProcessTable | undefined;
+  tableError: string | undefined;
 };
 
 const ORDER: Record<Verdict, number> = { SAFE: 0, CLOSE: 1, ASK: 2, KEEP: 3, INFO: 4 };
@@ -58,7 +83,12 @@ const SCRATCH_STALE_DAYS = 7;
 /**
  * A live agent session, by the folder it runs in.
  */
-export type Session = { name: string; where: string; cwd: string };
+export type Session = {
+  name: string;
+  where: string;
+  cwd: string;
+  machine: string | undefined;
+};
 
 /**
  * What every verdict reads: sessions, processes, and per repo its bases and PRs.
@@ -71,7 +101,119 @@ export type SweepContext = {
   keep: string[];
   ended: Set<string>;
   creationBases: Map<string, string>;
+  remotes: RemotePlace[];
 };
+
+/**
+ * A folder's sweep identity: its path here, or `machine:/path` on another machine.
+ * @param machine Herdr machine, undefined for this one.
+ * @param path Folder.
+ * @returns The key.
+ */
+export const placeKey = (machine: string | undefined, path: string): string =>
+  machine === undefined ? path : `${machine}:${path}`;
+
+/**
+ * Split a `machine:/path` worktree argument.
+ * @param target A command-line worktree.
+ * @returns Machine and path, or undefined for a path on this machine.
+ */
+export const remoteTarget = (target: string): { machine: string; path: string } | undefined => {
+  const match = /^([A-Za-z0-9_.-]+):(\/.*)$/.exec(target);
+  return match
+    ? { machine: match[1] ?? "", path: (match[2] ?? "").replace(/\/+$/, "") }
+    : undefined;
+};
+
+/**
+ * Which machine each ended record's folder is on. Records of local delegates name this core too,
+ * so its name is read once, when some record names a machine. Without it a named record's machine
+ * is unknown.
+ * @param records Ended records.
+ * @returns A lookup: the other machine, undefined for this one, or "unknown".
+ */
+const recordMachines = Effect.fn("recordMachines")(function* (
+  records: readonly { record: EndedRecord }[],
+) {
+  const named = records.some(({ record }) => record.machine);
+  const core = named
+    ? yield* localMachine().pipe(Effect.catch(() => Effect.succeed(undefined)))
+    : undefined;
+  return (record: EndedRecord): string | undefined | "unknown" => {
+    if (!record.machine) return undefined;
+    if (core === undefined) return "unknown";
+    const machine = canonicalMachine(record.machine, core);
+    return machine === core ? undefined : machine;
+  };
+});
+
+/**
+ * The remote checkouts the domain's Boundary records for these repos.
+ * @param config Config.
+ * @param domain Domain, or undefined for none.
+ * @param repos Main checkouts on this machine; undefined takes every one recorded.
+ * @returns Remote checkouts.
+ */
+export const remoteCheckouts = Effect.fn("remoteCheckouts")(function* (
+  config: Config,
+  domain: string | undefined,
+  repos: readonly string[] | undefined,
+) {
+  if (domain === undefined) return [];
+  const { backlog } = yield* readDocument(config, domain);
+  const found: RemoteCheckout[] = [];
+  for (const [owned, byMachine] of Object.entries(backlog.boundary.checkouts ?? {})) {
+    const repo = (yield* mainCheckout(owned)) ?? owned;
+    if (repos !== undefined && !repos.includes(repo)) continue;
+    for (const [machine, checkout] of Object.entries(byMachine))
+      found.push({ repo, machine, checkout: checkout.replace(/\/+$/, "") });
+  }
+  return found;
+});
+
+const onPlace = <A, E, R>(
+  remote: RemotePlace | undefined,
+  effect: Effect.Effect<A, E, R>,
+): Effect.Effect<A, E, R> =>
+  remote === undefined
+    ? effect
+    : (effect.pipe(Effect.provideService(Proc, remote.proc)) as Effect.Effect<A, E, R>);
+
+/**
+ * Read one remote checkout: whether its machine answers, its bases and its process table.
+ * @param remote The checkout.
+ * @param extraBases Extra base refs.
+ * @returns The place.
+ */
+const readRemote = Effect.fn("readRemote")(function* (
+  remote: RemoteCheckout,
+  extraBases: readonly string[],
+) {
+  const proc = remoteProc(remote.machine, yield* Proc);
+  const down = yield* hc.execOn(remote.machine, "true", 15).pipe(
+    Effect.map(() => undefined),
+    Effect.catch((error) => Effect.succeed(error.message)),
+  );
+  const place: RemotePlace = {
+    ...remote,
+    proc,
+    bases: [],
+    down,
+    table: undefined,
+    tableError: "not read",
+  };
+  if (down !== undefined) return place;
+  place.bases = yield* onPlace(place, defaultBases(remote.checkout, extraBases));
+  const scanned = yield* remoteHost(remote.machine)
+    .scan()
+    .pipe(
+      Effect.map((table) => ({ table, error: undefined })),
+      Effect.catch((error) => Effect.succeed({ table: undefined, error: error.message })),
+    );
+  place.table = scanned.table;
+  place.tableError = scanned.error;
+  return place;
+});
 
 const ENV = (): Record<string, string> => ({ ...process.env }) as Record<string, string>;
 
@@ -92,11 +234,17 @@ export const observe = Effect.fn("observe")(function* () {
   const listed = yield* hc.list();
   const sessions = listed
     .filter((terminal) => terminal.live && hc.isAgent(terminal))
-    .map((terminal) => ({
-      name: terminal.name ?? terminal.address,
-      where: terminal.where || "no tab",
-      cwd: terminal.cwd ? real(terminal.cwd) : "",
-    }));
+    .map((terminal) => {
+      const slash = terminal.address.indexOf("/");
+      // A terminal on another machine runs in a folder there, never one to resolve here.
+      const machine = slash === -1 ? undefined : terminal.address.slice(0, slash);
+      return {
+        name: terminal.name ?? terminal.address,
+        where: terminal.where || "no tab",
+        cwd: terminal.cwd ? (machine === undefined ? real(terminal.cwd) : terminal.cwd) : "",
+        machine,
+      };
+    });
   const table = yield* scanProcesses();
   return {
     sessions,
@@ -111,6 +259,7 @@ export const observe = Effect.fn("observe")(function* () {
  * @param repos Main checkouts.
  * @param extraBases Extra base refs.
  * @param keep Folders never removed.
+ * @param remotes Checkouts of these repos on other machines.
  * @returns The sweep context.
  */
 export const context = Effect.fn("sweepContext")(function* (
@@ -118,6 +267,7 @@ export const context = Effect.fn("sweepContext")(function* (
   repos: readonly string[],
   extraBases: readonly string[],
   keep: readonly string[],
+  remotes: readonly RemoteCheckout[] = [],
 ) {
   const seen = yield* observe();
   const map = new Map<string, { bases: string[]; prs: RepoPrs }>();
@@ -128,13 +278,29 @@ export const context = Effect.fn("sweepContext")(function* (
     });
   }
   const endedRecords = (yield* readEnded(config.stateDir)).records;
-  const ended = new Set(endedRecords.map((entry) => canonical(entry.record.cwd)));
+  const machineOf = yield* recordMachines(endedRecords);
+  const keyOf = (record: EndedRecord): string => {
+    const machine = machineOf(record);
+    return machine === undefined || machine === "unknown"
+      ? canonical(record.cwd)
+      : placeKey(machine, record.cwd);
+  };
+  const ended = new Set(endedRecords.map((entry) => keyOf(entry.record)));
   const creationBases = new Map(
     endedRecords
       .filter((entry) => entry.record.base_sha)
-      .map((entry) => [canonical(entry.record.cwd), entry.record.base_sha ?? ""]),
+      .map((entry) => [keyOf(entry.record), entry.record.base_sha ?? ""]),
   );
-  return { ...seen, repos: map, keep: keep.map(real), ended, creationBases } satisfies SweepContext;
+  const places: RemotePlace[] = [];
+  for (const remote of remotes) places.push(yield* readRemote(remote, extraBases));
+  return {
+    ...seen,
+    repos: map,
+    keep: keep.map(real),
+    ended,
+    creationBases,
+    remotes: places,
+  } satisfies SweepContext;
 });
 
 const label = (entries: readonly Held[]): string[] =>
@@ -145,41 +311,60 @@ const label = (entries: readonly Held[]): string[] =>
  * @param repo Main checkout.
  * @param worktree The worktree.
  * @param ctx Sweep context.
+ * @param remote The checkout on another machine it belongs to; its git and processes are read there.
  * @returns Its row.
  */
 export const worktreeRow = Effect.fn("worktreeRow")(function* (
   repo: string,
   worktree: Worktree,
   ctx: SweepContext,
+  remote: RemotePlace | undefined = undefined,
 ) {
-  const info = ctx.repos.get(repo) ?? {
-    bases: [],
-    prs: { ok: false, repo, error: "not read" } satisfies RepoPrs,
-  };
-  const path = real(worktree.path);
+  const local = ctx.repos.get(remote?.repo ?? repo);
+  const info =
+    remote === undefined
+      ? (local ?? { bases: [], prs: { ok: false, repo, error: "not read" } satisfies RepoPrs })
+      : {
+          bases: remote.bases,
+          prs: local?.prs ?? ({ ok: false, repo, error: "not read" } satisfies RepoPrs),
+        };
+  const machine = remote?.machine;
+  const path = remote === undefined ? real(worktree.path) : worktree.path.replace(/\/+$/, "");
+  const key = placeKey(machine, path);
+  const there = remote !== undefined || existsSync(path);
   const branch = worktree.branch;
   const prs = info.prs.ok ? info.prs.prs : [];
   const state = branch
-    ? yield* branchState(repo, branch, info.bases, prs, ctx.creationBases.get(path))
+    ? yield* onPlace(remote, branchState(repo, branch, info.bases, prs, ctx.creationBases.get(key)))
     : undefined;
-  const dirty = existsSync(path) ? yield* statusLines(path) : undefined;
-  const unsaved = existsSync(path) ? yield* unsavedCommits(path, info.bases) : undefined;
+  const dirty = there ? yield* onPlace(remote, statusLines(path)) : undefined;
+  const unsaved = there ? yield* onPlace(remote, unsavedCommits(path, info.bases)) : undefined;
   const gitFailed = dirty === undefined || unsaved === undefined;
-  const here = ctx.sessions.filter((session) => session.cwd !== "" && inside(session.cwd, path));
-  const holding = ctx.processes.filter(
+  const here = ctx.sessions.filter(
+    (session) => session.machine === machine && session.cwd !== "" && inside(session.cwd, path),
+  );
+  const table = remote === undefined ? ctx.table : remote.table;
+  // A machine whose processes could not be read may hold the worktree: never SAFE.
+  const processesUnknown = table === undefined;
+  const processes =
+    remote === undefined
+      ? ctx.processes
+      : (table?.held ?? []).filter((held) => !(table?.core.has(held.pid) ?? false));
+  const holding = processes.filter(
     (held) => inside(held.path, path) && !SELF_EXITING.has(held.command),
   );
   // Processes an ended delegate provably left in a worktree coordinate made for it (its record has a
   // creation base) are stopped by remove; only the rest need an ask.
-  const owned = ctx.creationBases.has(path) ? ownedBy(ctx.table, path) : new Set<string>();
+  const owned =
+    table !== undefined && ctx.creationBases.has(key) ? ownedBy(table, path) : new Set<string>();
   const allPids = label(holding);
   const pids = label(holding.filter((held) => !owned.has(held.pid)));
   const ownedPids = label(holding.filter((held) => owned.has(held.pid)));
-  const stop = ctx.table.ps.filter((row) => owned.has(row.pid));
+  const stop = (table?.ps ?? []).filter((row) => owned.has(row.pid));
   const baseNames = new Set(info.bases.map((base) => base.split("/").at(-1)));
   const onBase = branch !== undefined && (PROTECTED_BRANCHES.has(branch) || baseNames.has(branch));
   const noOwnCommits = state?.hasCommits === false;
-  const endedNoCommits = noOwnCommits && ctx.ended.has(path);
+  const endedNoCommits = noOwnCommits && ctx.ended.has(key);
   const landed = state?.landed;
   const finished =
     !onBase &&
@@ -192,7 +377,7 @@ export const worktreeRow = Effect.fn("worktreeRow")(function* (
 
   let verdict: Verdict;
   if (onBase || ctx.keep.some((folder) => inside(path, folder))) verdict = "KEEP";
-  else if (!branch || gitFailed) verdict = here.length > 0 ? "KEEP" : "ASK";
+  else if (!branch || gitFailed || processesUnknown) verdict = here.length > 0 ? "KEEP" : "ASK";
   else if (here.length > 0 && ((dirty?.length ?? 0) > 0 || lost > 0)) verdict = "KEEP";
   else if ((dirty?.length ?? 0) > 0 || lost > 0) verdict = "ASK";
   else if (endedNoCommits && (here.length > 0 || allPids.length > 0)) verdict = "KEEP";
@@ -214,7 +399,9 @@ export const worktreeRow = Effect.fn("worktreeRow")(function* (
   ];
   if (landed && landed !== "pr-merged") notes.push(`on base (${landed})`);
   if (noOwnCommits) notes.push(endedNoCommits ? "no commits (nothing to land)" : "no commits yet");
-  if (gitFailed) notes.push("git status or git log failed here");
+  if (gitFailed) notes.push(`git status or git log failed ${machine ? `on ${machine}` : "here"}`);
+  if (processesUnknown)
+    notes.push(`processes on ${machine ?? "this machine"} unreadable: ${remote?.tableError ?? ""}`);
   if (dirty && dirty.length > 0) notes.push(`${dirty.length} uncommitted`);
   if (lost > 0) notes.push(`${lost} ${lost === 1 ? "commit" : "commits"} on no remote or base`);
   for (const session of here) notes.push(`session ${session.name} in "${session.where}"`);
@@ -223,11 +410,11 @@ export const worktreeRow = Effect.fn("worktreeRow")(function* (
     notes.push(
       `ended delegate's processes, sweep remove stops them: ${ownedPids.slice(0, 4).join("; ")}`,
     );
-  if (ctx.ended.has(path)) notes.push("ended delegate record");
+  if (ctx.ended.has(key)) notes.push("ended delegate record");
   return {
     verdict,
-    path,
-    text: `worktree ${path} [${branch ?? "detached"}] ${notes.join(" · ")}`,
+    path: key,
+    text: `worktree ${key} [${branch ?? "detached"}] ${notes.join(" · ")}`,
     stop,
   } satisfies Row;
 });
@@ -303,14 +490,16 @@ const scratchRows = (repo: string, nowMs: number): Row[] => {
  * @param config Config.
  * @param repos Main checkouts.
  * @param options Bases, keep list, sizes.
+ * @param remotes Checkouts of these repos on other machines, judged by git there.
  * @returns Rows, most actionable first.
  */
 export const report = Effect.fn("sweepReport")(function* (
   config: Config,
   repos: readonly string[],
   options: { bases: readonly string[]; keep: readonly string[]; sizes: boolean; nowMs: number },
+  remotes: readonly RemoteCheckout[] = [],
 ) {
-  const ctx = yield* context(config, repos, options.bases, options.keep);
+  const ctx = yield* context(config, repos, options.bases, options.keep, remotes);
   const rows: Row[] = [];
   for (const repo of repos) {
     const listed = yield* worktrees(repo);
@@ -367,8 +556,36 @@ export const report = Effect.fn("sweepReport")(function* (
         stop: ctx.table.ps.filter((row) => owned.has(row.pid)),
       });
     }
+    for (const remote of ctx.remotes.filter((candidate) => candidate.repo === repo))
+      rows.push(...(yield* remoteRows(remote, ctx)));
   }
   return rows.toSorted((a, b) => ORDER[a.verdict] - ORDER[b.verdict]);
+});
+
+const infoRow = (text: string): Row[] => [{ verdict: "INFO", path: undefined, stop: [], text }];
+
+/**
+ * The rows of one checkout on another machine: each linked worktree, judged by git there.
+ * @param remote The checkout.
+ * @param ctx Sweep context.
+ * @returns Rows, or one INFO row when the machine or git there did not answer.
+ */
+const remoteRows = Effect.fn("remoteRows")(function* (remote: RemotePlace, ctx: SweepContext) {
+  if (remote.down !== undefined)
+    return infoRow(
+      `${remote.machine} did not answer, so worktrees of ${placeKey(remote.machine, remote.checkout)} were not judged: ${remote.down}`,
+    );
+  const listed = yield* onPlace(remote, worktrees(remote.checkout)).pipe(
+    Effect.catch((error) => Effect.succeed(error.message)),
+  );
+  if (typeof listed === "string")
+    return infoRow(
+      `git worktree list failed in ${placeKey(remote.machine, remote.checkout)}: ${listed}`,
+    );
+  const rows: Row[] = [];
+  for (const worktree of listed.slice(1))
+    rows.push(yield* worktreeRow(remote.checkout, worktree, ctx, remote));
+  return rows;
 });
 
 /**
@@ -471,6 +688,8 @@ export const removeOne = Effect.fn("removeOne")(function* (
   ctx: SweepContext,
   options: StopOptions,
 ) {
+  const target = remoteTarget(worktreePath);
+  if (target !== undefined) return yield* removeRemote(config, target, ctx, options);
   const path = real(worktreePath);
   const repo = yield* mainCheckout(path);
   if (!repo) return { removed: false, lines: [`kept ${path}: not a git worktree`] };
@@ -540,6 +759,104 @@ export const removeOne = Effect.fn("removeOne")(function* (
   }
   for (const entry of (yield* readEnded(config.stateDir)).records.filter(
     (candidate) => real(candidate.record.cwd) === path,
+  )) {
+    yield* removeEnded(entry.path);
+    lines.push(`  pruned ended record ${entry.record.name}`);
+  }
+  return { removed: true, lines };
+});
+
+/**
+ * Remove one worktree on another machine, with git there, but only when its recomputed verdict is
+ * SAFE and it is a linked worktree of a checkout the Boundary records on that machine. Its
+ * `.scratch` is copied to this Mac's parked folder first, and the branch is deleted with
+ * `git branch -d` there.
+ * @param config Config.
+ * @param target Machine and worktree path there.
+ * @param ctx Sweep context (must include its checkout).
+ * @param options How an ended delegate's processes are stopped.
+ * @returns Removed or kept, with lines.
+ */
+const removeRemote = Effect.fn("removeRemote")(function* (
+  config: Config,
+  target: { machine: string; path: string },
+  ctx: SweepContext,
+  options: StopOptions,
+) {
+  const { machine, path } = target;
+  const key = placeKey(machine, path);
+  const kept = (why: string) => ({ removed: false, lines: [`kept ${key}: ${why}`] });
+  const remote = ctx.remotes.find(
+    (candidate) => candidate.machine === machine && inside(path, candidate.checkout),
+  );
+  if (remote === undefined) return kept(`in no checkout the Boundary records on ${machine}`);
+  if (remote.down !== undefined) return kept(`${machine} did not answer: ${remote.down}`);
+  if (path === remote.checkout) return kept("it is the main checkout");
+  const found = yield* onPlace(remote, worktrees(remote.checkout)).pipe(
+    Effect.catch(() => Effect.succeed(undefined)),
+  );
+  const worktree = found?.slice(1).find((candidate) => candidate.path.replace(/\/+$/, "") === path);
+  if (!worktree)
+    return kept(`git does not list it as a worktree of ${remote.checkout} on ${machine}`);
+  const row = yield* worktreeRow(remote.checkout, worktree, ctx, remote);
+  if (row.verdict !== "SAFE")
+    return kept(`${row.verdict}, ${row.text.replace(/^worktree \S+ /, "")}`);
+  const stopped = yield* remoteHost(machine).stop(row.stop, options);
+  if (stopped.survivors.length > 0)
+    return {
+      removed: false,
+      lines: [
+        `kept ${key}: ${stopped.survivors.length} of its ended delegate's processes still run`,
+        ...stopped.lines.map((line) => `  ${line}`),
+      ],
+    };
+  const ignored = yield* onPlace(remote, ignoredFiles(path, config.buildOutput));
+  if (!ignored) return kept("git ls-files failed, so its ignored files are unknown");
+  // Removing the worktree deletes its ignored .scratch there: keep a copy on this Mac first.
+  const parked =
+    ignored.park.length === 0
+      ? []
+      : yield* copyScratch(remote.repo, { name: basename(path), machine, worktree: path }).pipe(
+          Effect.catch((error) => Effect.succeed(error.message)),
+        );
+  if (typeof parked === "string") return kept(`its .scratch could not be copied here: ${parked}`);
+  const removal = yield* onPlace(remote, git(remote.checkout, ["worktree", "remove", path]));
+  if (removal.exitCode !== 0)
+    return kept(`git worktree remove failed: ${(removal.stderr || removal.stdout).trim()}`);
+  const lines = [
+    `removed worktree ${key}`,
+    ...stopped.lines.map((line) => `  ${line}`),
+    ...parked.map((line) => `  ${line}`),
+  ];
+  if (ignored.drop.length > 0) lines.push(`  dropped build output: ${listed(ignored.drop)}`);
+  if (ignored.discard.length > 0)
+    lines.push(`  discarded ignored files: ${listed(ignored.discard)}`);
+  const branch = worktree.branch;
+  if (branch && !PROTECTED_BRANCHES.has(branch)) {
+    const sha =
+      (yield* onPlace(remote, gitTry(remote.checkout, ["rev-parse", "--short", branch]))) ?? "";
+    const refusal = yield* onPlace(remote, deleteBranch(remote.checkout, branch));
+    if (refusal === undefined) lines.push(`  deleted branch ${branch} ${sha}`);
+    else
+      lines.push(
+        `  kept branch ${branch} ${sha}: git branch -d refused (${refusal.split("\n")[0]}). Its work is on a base by squash or rebase; to delete it, the user runs on ${machine}: cd ${remote.checkout} && git branch -D ${branch}`,
+      );
+  }
+  const spaces = yield* hc.appSpaces().pipe(Effect.catch(() => Effect.succeed([])));
+  for (const space of spaces.filter(
+    (candidate) =>
+      candidate.id.startsWith(`${machine}/`) &&
+      candidate.folder &&
+      inside(candidate.folder.replace(/\/+$/, ""), path),
+  )) {
+    yield* hc.closeSpace(space.id).pipe(Effect.ignore);
+    lines.push(`  closed space ${space.name ?? space.id}`);
+  }
+  const { records } = yield* readEnded(config.stateDir);
+  const machineOf = yield* recordMachines(records);
+  for (const entry of records.filter(
+    (candidate) =>
+      machineOf(candidate.record) === machine && candidate.record.cwd.replace(/\/+$/, "") === path,
   )) {
     yield* removeEnded(entry.path);
     lines.push(`  pruned ended record ${entry.record.name}`);
@@ -643,7 +960,34 @@ export const pruneBranches = Effect.fn("pruneBranches")(function* (
  */
 export const pruneEnded = Effect.fn("pruneEnded")(function* (config: Config) {
   const { records, skipped } = yield* readEnded(config.stateDir);
-  const gone = records.filter((entry) => !existsSync(entry.record.cwd));
+  const machineOf = yield* recordMachines(records);
+  const gone: typeof records = [];
+  const unknown: string[] = [];
+  const down = new Map<string, string>();
+  for (const entry of records) {
+    const machine = machineOf(entry.record);
+    if (machine === undefined) {
+      if (!existsSync(entry.record.cwd)) gone.push(entry);
+      continue;
+    }
+    // A record of another machine is judged by its folder there, never by this Mac's disk.
+    if (machine === "unknown") {
+      if (!existsSync(entry.record.cwd))
+        unknown.push(`${entry.record.name} (this machine's Herdr name is unreadable)`);
+      continue;
+    }
+    const failed = down.get(machine);
+    const exists =
+      failed === undefined
+        ? yield* remoteFolderExists(machine, entry.record.cwd).pipe(
+            Effect.catch((error) => Effect.succeed(error.message)),
+          )
+        : failed;
+    if (typeof exists === "string") {
+      down.set(machine, exists);
+      unknown.push(`${entry.record.name} (${machine} did not answer)`);
+    } else if (!exists) gone.push(entry);
+  }
   for (const entry of gone) yield* removeEnded(entry.path);
   const lines = [`pruned ${gone.length} of ${records.length} ended records whose folder is gone`];
   if (gone.length > 0)
@@ -653,6 +997,7 @@ export const pruneEnded = Effect.fn("pruneEnded")(function* (config: Config) {
         12,
       )}`,
     );
+  if (unknown.length > 0) lines.push(`  folder unknown, left in place: ${listed(unknown, 12)}`);
   if (skipped.length > 0) lines.push(`  unreadable, left in place: ${listed(skipped)}`);
   return lines;
 });
