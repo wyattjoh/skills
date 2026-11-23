@@ -73,14 +73,7 @@ import type {
 } from "./model.ts";
 import { advanceAnswerFlow, dropClearedQuestions, startAnswerFlow } from "./answer-flow.ts";
 import type { AnswerFlow, FlowAskState } from "./answer-flow.ts";
-import {
-  ANSWER_CAROUSEL,
-  ANSWER_FLOW_SPEED_OPTIONS,
-  ANSWER_FLOW_LAYOUT_BASELINE,
-  ANSWER_FLOW_LAYOUT_PROPOSALS,
-  answerFlowLayoutFor,
-} from "./look.ts";
-import type { AnswerFlowLayoutId } from "./look.ts";
+import { ANSWER_CAROUSEL, ANSWER_FLOW_SPEED_OPTIONS } from "./look.ts";
 import { backlogsDir, documentPath } from "../../lib/store.ts";
 import type { Finding, Item } from "../../lib/store.ts";
 import { harnessPolicyDialog } from "./policy-dialog.ts";
@@ -190,20 +183,10 @@ export default class Panel extends View {
   draft: AnswerDraft | undefined;
   answerFlow: AnswerFlow | undefined;
   answerFlowSpeed = 0;
-  answerFlowLayoutId: AnswerFlowLayoutId = ANSWER_FLOW_LAYOUT_BASELINE.id;
-  answerFlowPendingLayout: AnswerFlowLayoutId | undefined;
-  answerFlowLayoutMenuOpen = false;
-  answerFlowLayoutActiveIndex = 0;
-  answerFlowLayoutTriggerFocus!: FocusHandle;
-  answerFlowLayoutMenuFocus!: FocusHandle;
-  answerFlowLayoutMeasurementVersion = 0;
   answerFlowSpeedMenuOpen = false;
   answerFlowSpeedActiveIndex = 0;
   answerFlowSpeedTriggerFocus!: FocusHandle;
   answerFlowSpeedMenuFocus!: FocusHandle;
-  answerFlowPendingExpandedSizes = new Map<string, FlowCardMeasurement>();
-  answerFlowRationaleOpenFor: string | undefined;
-  answerFlowRationaleFocus = new Map<string, FocusHandle>();
   answerFlowMotion: AnswerFlowTransition | undefined;
   answerFlowMotionGeneration = 0;
   answerFlowCardSizes = new Map<string, FlowCardSize>();
@@ -243,8 +226,6 @@ export default class Panel extends View {
     const boundaryInput = InputState.new({ placeholder: "Path" });
     boundaryInput.on("submit", (_event, submitted) => this.addBoundary(submitted));
     this.boundaryInput = boundaryInput;
-    this.answerFlowLayoutTriggerFocus = cx.focus_handle();
-    this.answerFlowLayoutMenuFocus = cx.focus_handle();
     this.answerFlowSpeedTriggerFocus = cx.focus_handle();
     this.answerFlowSpeedMenuFocus = cx.focus_handle();
     if (checking()) return;
@@ -481,16 +462,11 @@ export default class Panel extends View {
     if (id !== undefined) this.selected = { kind: "item", domain, id };
   }
 
-  // Release what a dropped question held: its measured sizes, any size reported mid-motion, its
-  // pending layout measurement, and its rationale focus handle.
+  // Release what a dropped question held: its measured sizes and any size reported mid-motion.
   forgetAnswerFlowCard(domain: string, id: string) {
     const key = this.flowCardSizeKey(domain, id);
     this.answerFlowCardSizes.delete(key);
     this.answerFlowDeferredSizes.delete(key);
-    this.answerFlowPendingExpandedSizes.delete(id);
-    this.answerFlowRationaleFocus.get(id)?.release();
-    this.answerFlowRationaleFocus.delete(id);
-    if (this.answerFlowRationaleOpenFor === id) this.answerFlowRationaleOpenFor = undefined;
   }
 
   // One domain's document. A rejected read (permissions, too large) is unreadable.
@@ -710,7 +686,6 @@ export default class Panel extends View {
     this.answerFlowCardSizes.clear();
     this.answerFlowViewport = undefined;
     this.answerFlow = startAnswerFlow(domain, ids, item.id);
-    this.answerFlowRationaleFocus = new Map(ids.map((id) => [id, cx.focus_handle()] as const));
     this.selected = { kind: "item", domain, id: item.id };
     this.page = undefined;
     this.clearDraft();
@@ -737,23 +712,6 @@ export default class Panel extends View {
     this.answerFlowMotionGeneration += 1;
     this.answerFlowMotion = undefined;
     this.applyDeferredAnswerFlowSizes();
-    this.clearAnswerFlowLayoutPending();
-  }
-
-  clearAnswerFlowLayoutPending() {
-    this.answerFlowPendingLayout = undefined;
-    this.answerFlowPendingExpandedSizes.clear();
-    this.answerFlowLayoutMeasurementVersion += 1;
-    this.answerFlowLayoutMenuOpen = false;
-    this.answerFlowSpeedMenuOpen = false;
-    this.answerFlowRationaleOpenFor = undefined;
-    this.answerFlowRationaleFocus.clear();
-  }
-
-  restartAnswerFlowLayoutMeasurement() {
-    if (this.answerFlowPendingLayout === undefined) return;
-    this.answerFlowPendingExpandedSizes.clear();
-    this.answerFlowLayoutMeasurementVersion += 1;
   }
 
   flowCardSizeKey(domain: string, id: string) {
@@ -798,12 +756,7 @@ export default class Panel extends View {
       Math.abs(previous.height - size.height) < 1
     )
       return;
-    const widthChanged =
-      previous !== undefined &&
-      previous.domain === domain &&
-      Math.abs(previous.width - size.width) >= 1;
     this.answerFlowViewport = { domain, ...size };
-    if (widthChanged) this.restartAnswerFlowLayoutMeasurement();
     cx.notify();
   }
 
@@ -838,62 +791,10 @@ export default class Panel extends View {
     cx.notify();
   }
 
-  measureAnswerFlowLayoutCard(
-    domain: string,
-    layoutId: AnswerFlowLayoutId,
-    version: number,
-    id: string,
-    size: FlowCardMeasurement,
-    cx: Context,
-  ) {
-    const flow = this.answerFlow;
-    const viewport = this.answerFlowViewport;
-    if (
-      flow === undefined ||
-      flow.domain !== domain ||
-      this.answerFlowMotion !== undefined ||
-      this.answerFlowPendingLayout !== layoutId ||
-      this.answerFlowLayoutMeasurementVersion !== version ||
-      !flow.ids.includes(id) ||
-      viewport?.domain !== domain ||
-      size.width <= 0 ||
-      size.height <= 0
-    )
-      return;
-    const expectedWidth = viewport.width * ANSWER_CAROUSEL.compactWidthRatio;
-    const tolerance = Math.max(1, viewport.width * 0.01);
-    if (Math.abs(size.width - expectedWidth) >= tolerance) return;
-    const previous = this.answerFlowPendingExpandedSizes.get(id);
-    if (
-      previous !== undefined &&
-      Math.abs(previous.width - size.width) < 1 &&
-      Math.abs(previous.height - size.height) < 1
-    )
-      return;
-    this.answerFlowPendingExpandedSizes.set(id, size);
-    if (flow.ids.some((flowId) => !this.answerFlowPendingExpandedSizes.has(flowId))) return;
-
-    const nextSizes = new Map(this.answerFlowCardSizes);
-    for (const flowId of flow.ids) {
-      const key = this.flowCardSizeKey(domain, flowId);
-      const previousSize = nextSizes.get(key) ?? { compact: undefined, expanded: undefined };
-      nextSizes.set(key, {
-        ...previousSize,
-        expanded: this.answerFlowPendingExpandedSizes.get(flowId),
-      });
-    }
-    this.answerFlowCardSizes = nextSizes;
-    this.answerFlowLayoutId = layoutId;
-    this.answerFlowPendingLayout = undefined;
-    this.answerFlowPendingExpandedSizes.clear();
-    cx.notify();
-  }
-
   setAnswerFlowSpeedMenuOpen(open: boolean, cx: Context) {
     if (this.answerFlow === undefined || this.answerFlowSpeedMenuOpen === open) return;
     this.answerFlowSpeedMenuOpen = open;
     if (open) {
-      this.answerFlowLayoutMenuOpen = false;
       this.answerFlowSpeedActiveIndex = this.answerFlowSpeed;
       this.answerFlowSpeedMenuFocus.focus();
     } else this.answerFlowSpeedTriggerFocus.focus();
@@ -932,94 +833,6 @@ export default class Panel extends View {
     )
       return;
     this.answerFlowSpeedActiveIndex = index;
-    cx.notify();
-  }
-
-  setAnswerFlowLayoutMenuOpen(open: boolean, cx: Context) {
-    if (this.answerFlow === undefined || this.answerFlowLayoutMenuOpen === open) return;
-    this.answerFlowLayoutMenuOpen = open;
-    if (open) {
-      this.answerFlowSpeedMenuOpen = false;
-      const selectedId = this.answerFlowPendingLayout ?? this.answerFlowLayoutId;
-      const selectedIndex = ANSWER_FLOW_LAYOUT_PROPOSALS.findIndex(({ id }) => id === selectedId);
-      this.answerFlowLayoutActiveIndex = selectedIndex >= 0 ? selectedIndex : 0;
-      this.answerFlowLayoutMenuFocus.focus();
-    } else this.answerFlowLayoutTriggerFocus.focus();
-    cx.notify();
-  }
-
-  moveAnswerFlowLayoutMenu(delta: number, cx: Context) {
-    if (!this.answerFlowLayoutMenuOpen) return;
-    const count = ANSWER_FLOW_LAYOUT_PROPOSALS.length + 1;
-    this.answerFlowLayoutActiveIndex = (this.answerFlowLayoutActiveIndex + delta + count) % count;
-    cx.notify();
-  }
-
-  setAnswerFlowLayoutActiveIndex(index: number, cx: Context) {
-    const count = ANSWER_FLOW_LAYOUT_PROPOSALS.length + 1;
-    if (
-      !this.answerFlowLayoutMenuOpen ||
-      !Number.isInteger(index) ||
-      index < 0 ||
-      index >= count ||
-      this.answerFlowLayoutActiveIndex === index
-    )
-      return;
-    this.answerFlowLayoutActiveIndex = index;
-    cx.notify();
-  }
-
-  activateAnswerFlowLayoutMenu(cx: Context) {
-    if (!this.answerFlowLayoutMenuOpen) return;
-    const resetIndex = ANSWER_FLOW_LAYOUT_PROPOSALS.length;
-    if (this.answerFlowLayoutActiveIndex === resetIndex) {
-      this.resetAnswerFlowLayout(cx);
-      return;
-    }
-    const layout = ANSWER_FLOW_LAYOUT_PROPOSALS[this.answerFlowLayoutActiveIndex];
-    if (layout !== undefined) this.selectAnswerFlowLayout(layout.id, cx);
-  }
-
-  requestAnswerFlowLayout(id: AnswerFlowLayoutId, cx: Context) {
-    if (this.answerFlow === undefined) return;
-    if (
-      id !== ANSWER_FLOW_LAYOUT_BASELINE.id &&
-      !ANSWER_FLOW_LAYOUT_PROPOSALS.some((layout) => layout.id === id)
-    )
-      return;
-    this.answerFlowRationaleOpenFor = undefined;
-    const next = id === this.answerFlowLayoutId ? undefined : id;
-    if (next !== this.answerFlowPendingLayout) {
-      this.answerFlowPendingLayout = next;
-      this.answerFlowPendingExpandedSizes.clear();
-      this.answerFlowLayoutMeasurementVersion += 1;
-    }
-    this.answerFlowLayoutMenuOpen = false;
-    this.answerFlowLayoutTriggerFocus.focus();
-    cx.notify();
-  }
-
-  selectAnswerFlowLayout(id: AnswerFlowLayoutId, cx: Context) {
-    if (!ANSWER_FLOW_LAYOUT_PROPOSALS.some((layout) => layout.id === id)) return;
-    this.requestAnswerFlowLayout(id, cx);
-  }
-
-  resetAnswerFlowLayout(cx: Context) {
-    this.requestAnswerFlowLayout(ANSWER_FLOW_LAYOUT_BASELINE.id, cx);
-  }
-
-  setAnswerFlowRationaleOpen(id: string, open: boolean, cx: Context) {
-    const flow = this.answerFlow;
-    if (
-      flow === undefined ||
-      this.answerFlowMotion !== undefined ||
-      answerFlowLayoutFor(this.answerFlowLayoutId).rationale !== "popover" ||
-      !flow.ids.includes(id) ||
-      (open && this.answerFlowRationaleOpenFor === id) ||
-      (!open && this.answerFlowRationaleOpenFor !== id)
-    )
-      return;
-    this.answerFlowRationaleOpenFor = open ? id : undefined;
     cx.notify();
   }
 
@@ -1081,9 +894,6 @@ export default class Panel extends View {
       else targetFlow = { ...flow, current: flow.current - 1 };
     }
     if (nextAction !== "exit" && (targetFlow === undefined || targetFlow === flow)) return;
-    if (this.answerFlowLayoutMenuOpen) this.setAnswerFlowLayoutMenuOpen(false, cx);
-    this.answerFlowRationaleOpenFor = undefined;
-    this.restartAnswerFlowLayoutMeasurement();
     const generation = ++this.answerFlowMotionGeneration;
     const durationMultiplier = ANSWER_FLOW_SPEED_OPTIONS[this.answerFlowSpeed]?.durationFactor ?? 1;
     const duration = ANSWER_CAROUSEL.transitionDuration * durationMultiplier;
@@ -1105,7 +915,6 @@ export default class Panel extends View {
     this.answerFlowMotion = undefined;
     this.answerFlowDeferredSizes.clear();
     this.answerFlow = undefined;
-    this.clearAnswerFlowLayoutPending();
     this.clearDraft();
     this.selected = undefined;
     this.page = undefined;
@@ -1307,19 +1116,6 @@ export default class Panel extends View {
       domain: flow.domain,
       cards,
       currentIndex: flow.current,
-      layout: answerFlowLayoutFor(this.answerFlowLayoutId),
-      layoutSelection: answerFlowLayoutFor(this.answerFlowPendingLayout ?? this.answerFlowLayoutId),
-      layoutPending: this.answerFlowPendingLayout !== undefined,
-      layoutMenuOpen: this.answerFlowLayoutMenuOpen,
-      layoutActiveIndex: this.answerFlowLayoutActiveIndex,
-      layoutTriggerFocus: this.answerFlowLayoutTriggerFocus,
-      layoutMenuFocus: this.answerFlowLayoutMenuFocus,
-      layoutMeasurement:
-        this.answerFlowPendingLayout !== undefined && motion === undefined
-          ? answerFlowLayoutFor(this.answerFlowPendingLayout)
-          : undefined,
-      layoutMeasurementVersion: this.answerFlowLayoutMeasurementVersion,
-      rationaleOpenFor: this.answerFlowRationaleOpenFor,
       viewport:
         this.answerFlowViewport?.domain === flow.domain
           ? { width: this.answerFlowViewport.width, height: this.answerFlowViewport.height }
@@ -1344,16 +1140,6 @@ export default class Panel extends View {
       setSpeed: (index, cx) => this.setAnswerFlowSpeed(index, cx),
       measureViewport: (size, cx) => this.measureAnswerFlowViewport(flow.domain, size, cx),
       measure: (id, kind, size, cx) => this.measureAnswerFlowCard(flow.domain, id, kind, size, cx),
-      measureLayout: (layoutId, version, id, size, cx) =>
-        this.measureAnswerFlowLayoutCard(flow.domain, layoutId, version, id, size, cx),
-      setLayoutMenuOpen: (open, cx) => this.setAnswerFlowLayoutMenuOpen(open, cx),
-      moveLayoutMenu: (delta, cx) => this.moveAnswerFlowLayoutMenu(delta, cx),
-      setLayoutActiveIndex: (index, cx) => this.setAnswerFlowLayoutActiveIndex(index, cx),
-      activateLayoutMenu: (cx) => this.activateAnswerFlowLayoutMenu(cx),
-      selectLayout: (id, cx) => this.selectAnswerFlowLayout(id, cx),
-      resetLayout: (cx) => this.resetAnswerFlowLayout(cx),
-      setRationaleOpen: (id, open, cx) => this.setAnswerFlowRationaleOpen(id, open, cx),
-      rationaleFocusFor: (id) => this.answerFlowRationaleFocus.get(id),
       position: Math.min(flow.current + 1, flow.ids.length),
       total: flow.ids.length,
       done: flow.current >= flow.ids.length,

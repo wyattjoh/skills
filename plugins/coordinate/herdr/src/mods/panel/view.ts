@@ -46,10 +46,8 @@ import {
   ANSWER,
   ANSWER_CAROUSEL,
   ANSWER_FLOW_SPEED_OPTIONS,
-  ANSWER_FLOW_LAYOUT_BASELINE,
   HERDR_SETTINGS_ICON,
-  ANSWER_FLOW_LAYOUT_GEOMETRY,
-  ANSWER_FLOW_LAYOUT_PROPOSALS,
+  ANSWER_FLOW_MENU_WIDTH,
   ANSWER_FLOW_OUTLINE,
   ASK_OPTION_NUMBER_WIDTH,
   COUNT_TONES,
@@ -60,7 +58,6 @@ import {
   FINDING_STATUS_TONES,
   STATUS_TONES,
 } from "./look.ts";
-import type { AnswerFlowLayout, AnswerFlowLayoutId } from "./look.ts";
 import {
   FINDING_KIND_LABELS,
   FINDING_STATUS_LABELS,
@@ -183,16 +180,6 @@ export type AnswerFlowModel = {
   moveSpeedMenu: (delta: number, cx: Context) => void;
   setSpeedActiveIndex: (index: number, cx: Context) => void;
   setSpeed: (index: number, cx: Context) => void;
-  layout: AnswerFlowLayout;
-  layoutSelection: AnswerFlowLayout;
-  layoutPending: boolean;
-  layoutMenuOpen: boolean;
-  layoutActiveIndex: number;
-  layoutTriggerFocus: FocusHandle;
-  layoutMenuFocus: FocusHandle;
-  layoutMeasurement: AnswerFlowLayout | undefined;
-  layoutMeasurementVersion: number;
-  rationaleOpenFor: string | undefined;
   measureViewport: (size: { width: number; height: number }, cx: Context) => void;
   measure: (
     id: string,
@@ -200,21 +187,6 @@ export type AnswerFlowModel = {
     size: { width: number; height: number },
     cx: Context,
   ) => void;
-  measureLayout: (
-    layoutId: AnswerFlowLayoutId,
-    version: number,
-    id: string,
-    size: { width: number; height: number },
-    cx: Context,
-  ) => void;
-  setLayoutMenuOpen: (open: boolean, cx: Context) => void;
-  moveLayoutMenu: (delta: number, cx: Context) => void;
-  setLayoutActiveIndex: (index: number, cx: Context) => void;
-  activateLayoutMenu: (cx: Context) => void;
-  selectLayout: (id: AnswerFlowLayoutId, cx: Context) => void;
-  resetLayout: (cx: Context) => void;
-  setRationaleOpen: (id: string, open: boolean, cx: Context) => void;
-  rationaleFocusFor: (id: string) => FocusHandle | undefined;
   position: number;
   total: number;
   done: boolean;
@@ -683,26 +655,9 @@ const answerRows = (t: Theme, answer: AnswerModel, prefix = "ask"): Element[] =>
   ];
 };
 
-type AnswerFlowAskPresentation = {
-  layout: AnswerFlowLayout;
-  width: number;
-  rationaleKey: string;
-  rationaleOpenFor: string | undefined;
-  rationaleFocus: FocusHandle | undefined;
-  setRationaleOpen: ((open: boolean, cx: Context) => void) | undefined;
-};
-
-const answerFlowPrompt = (
-  t: Theme,
-  id: string,
-  ask: Ask,
-  layout: AnswerFlowLayout,
-  width: number,
-): Element => {
-  const promptId =
-    layout.id === ANSWER_FLOW_LAYOUT_BASELINE.id
-      ? `${id}-question-block`
-      : `${id}-prompt-${layout.prompt}`;
+// The answer flow's question card is the Outline layout: a block prompt, outlined choices that
+// take an accent border when picked, and the recommendation's reason inline under its choice.
+const answerFlowPrompt = (t: Theme, id: string, ask: Ask): Element => {
   const question = div()
     .id(`${id}-question`)
     .min_w_0()
@@ -716,286 +671,35 @@ const answerFlowPrompt = (
       : div()
           .id(`${id}-context`)
           .min_w_0()
-          .text_size(
-            layout.prompt === "caption" || layout.prompt === "compact" ? TEXT.label : TEXT.body,
-          )
+          .text_size(TEXT.body)
           .text_color(t.muted)
           .child(ask.context);
-  if (layout.prompt === "block")
-    return v_flex()
-      .id(promptId)
-      .min_w_0()
-      .bg(t.popover)
-      .rounded(CARD.innerRadius)
-      .px(CARD.paddingX)
-      .py(CARD.paddingY)
-      .child(question)
-      .when(context !== undefined, (el) => el.child(context!));
-  if (layout.prompt === "split") {
-    if (context === undefined || width < ANSWER_FLOW_LAYOUT_GEOMETRY.splitPromptMinWidth)
-      return v_flex()
-        .id(promptId)
-        .min_w_0()
-        .px(CARD.paddingX)
-        .py(CARD.paddingY)
-        .gap(BUTTON_STYLE.gap)
-        .child(question)
-        .when(context !== undefined, (el) => el.child(context!));
-    return h_flex()
-      .id(promptId)
-      .w_full()
-      .min_w_0()
-      .items_start()
-      .gap(ANSWER_FLOW_LAYOUT_GEOMETRY.choiceGap)
-      .px(CARD.paddingX)
-      .py(CARD.paddingY)
-      .child(div().id(`${id}-question-column`).flex_1().min_w_0().child(question))
-      .child(div().id(`${id}-context-column`).flex_1().min_w_0().child(context));
-  }
-  if (layout.prompt === "context-first")
-    return v_flex()
-      .id(promptId)
-      .min_w_0()
-      .px(CARD.paddingX)
-      .py(CARD.paddingY)
-      .gap(BUTTON_STYLE.gap)
-      .when(context !== undefined, (el) => el.child(context!))
-      .child(question);
-  if (layout.prompt === "band")
-    return v_flex()
-      .id(promptId)
-      .min_w_0()
-      .bg(role(t, "surface"))
-      .rounded(CARD.innerRadius)
-      .px(CARD.paddingX)
-      .py(CARD.paddingY)
-      .gap(BUTTON_STYLE.gap)
-      .child(question)
-      .when(context !== undefined, (el) => el.child(context!));
   return v_flex()
-    .id(promptId)
+    .id(`${id}-question-block`)
     .min_w_0()
+    .bg(t.popover)
+    .rounded(CARD.innerRadius)
     .px(CARD.paddingX)
     .py(CARD.paddingY)
-    .gap(layout.prompt === "compact" ? 2 : BUTTON_STYLE.gap)
     .child(question)
     .when(context !== undefined, (el) => el.child(context!));
 };
 
-const answerFlowOptionStyle = (
-  row: Element,
-  t: Theme,
-  selected: boolean,
-  layout: AnswerFlowLayout,
-): Element => {
-  if (layout.choices === "outline")
-    return row
-      .w_full()
-      .min_w_0()
-      .px(ANSWER_FLOW_OUTLINE.paddingX)
-      .py(ANSWER_FLOW_OUTLINE.paddingY)
-      .gap(BUTTON_STYLE.gap)
-      .bg(role(t, ANSWER_FLOW_OUTLINE.optionSurface))
-      .text_color(t.foreground)
-      .border_1()
-      .border_color(selected ? t.accent : t.border)
-      .rounded(CARD.innerRadius)
-      .when(selected, (el) =>
-        el.border(ANSWER_FLOW_OUTLINE.selectedBorderWidth).border_color(t.accent).font_semibold(),
-      );
-
-  const cell = layout.choices === "tiles" || layout.choices === "grid";
-  const compact = layout.choices === "compact";
-  const sized = cell ? row.flex_1() : row.w_full();
-  const styled = sized
-    .min_w_0()
-    .px(compact ? 8 : CARD.paddingX)
-    .py(compact ? 6 : CARD.paddingY)
-    .gap(BUTTON_STYLE.gap)
-    .text_color(t.foreground);
-  if (layout.choices === "tiles" || layout.choices === "grid")
-    return styled
-      .bg(role(t, "surface"))
-      .border_1()
-      .border_color(selected ? t.accent : t.border)
-      .rounded(CARD.innerRadius)
-      .when(selected, (el) =>
-        el.border(ANSWER_FLOW_OUTLINE.selectedBorderWidth).border_color(t.accent).font_semibold(),
-      );
-  if (layout.choices === "spaced")
-    return styled
-      .bg(role(t, "surface"))
-      .rounded(CARD.innerRadius)
-      .when(selected, (el) =>
-        el.border(ANSWER_FLOW_OUTLINE.selectedBorderWidth).border_color(t.accent).font_semibold(),
-      );
-  return styled.when(selected, (el) =>
-    el
-      .bg(role(t, "selected"))
-      .border(ANSWER_FLOW_OUTLINE.selectedBorderWidth)
-      .border_color(t.accent)
-      .rounded(CARD.innerRadius)
-      .font_semibold(),
-  );
-};
-
-const answerFlowGrid = (
-  id: string,
-  items: Element[],
-  width: number,
-  minimumWidth: number,
-  maximumColumns: number,
-  rowPrefix: "tile" | "grid",
-): Element => {
-  const gap = ANSWER_FLOW_LAYOUT_GEOMETRY.choiceGap;
-  const columns = Math.max(
-    1,
-    Math.min(maximumColumns, Math.floor((width + gap) / (minimumWidth + gap))),
-  );
-  const rows: Element[] = [];
-  for (let start = 0; start < items.length; start += columns) {
-    rows.push(
-      h_flex()
-        .id(`${id}-option-${rowPrefix}-row-${rows.length}`)
-        .w_full()
-        .min_w_0()
-        .items_stretch()
-        .gap(gap)
-        .children(items.slice(start, start + columns)),
-    );
-  }
-  return v_flex()
-    .id(`${id}-options-${rowPrefix === "tile" ? "tiles" : "grid"}`)
+const answerFlowOptionStyle = (row: Element, t: Theme, selected: boolean): Element =>
+  row
     .w_full()
     .min_w_0()
-    .gap(gap)
-    .children(rows);
-};
-
-const answerFlowOptions = (
-  t: Theme,
-  id: string,
-  items: Element[],
-  layout: AnswerFlowLayout,
-  width: number,
-): Element[] => {
-  if (layout.choices === "outline") return items;
-  if (layout.choices === "tiles")
-    return [answerFlowGrid(id, items, width, ANSWER_FLOW_LAYOUT_GEOMETRY.tileMinWidth, 3, "tile")];
-  if (layout.choices === "grid")
-    return [answerFlowGrid(id, items, width, ANSWER_FLOW_LAYOUT_GEOMETRY.gridMinWidth, 2, "grid")];
-  if (layout.choices === "grouped")
-    return [
-      v_flex()
-        .id(`${id}-options-grouped`)
-        .w_full()
-        .min_w_0()
-        .bg(role(t, "surface"))
-        .rounded(CARD.innerRadius)
-        .border_1()
-        .border_color(t.border)
-        .overflow_hidden()
-        .children(
-          items.map((item, index) =>
-            index === 0 ? item : item.border_t(1).border_color(t.border),
-          ),
-        ),
-    ];
-  if (layout.choices === "rows")
-    return [
-      v_flex()
-        .id(`${id}-options-rows`)
-        .w_full()
-        .min_w_0()
-        .gap(ANSWER_FLOW_LAYOUT_GEOMETRY.choiceGap)
-        .children(items),
-    ];
-  const rows = items.map((item, index) =>
-    index === 0 ? item : item.border_t(1).border_color(t.border),
-  );
-  if (layout.choices === "spaced")
-    return [
-      v_flex()
-        .id(`${id}-options-spaced`)
-        .w_full()
-        .min_w_0()
-        .gap(ANSWER_FLOW_LAYOUT_GEOMETRY.choiceGap)
-        .children(items),
-    ];
-  if (layout.choices === "compact")
-    return [v_flex().id(`${id}-options-compact`).w_full().min_w_0().children(rows)];
-  if (layout.choices === "quiet")
-    return [
-      v_flex().id(`${id}-options-quiet`).w_full().min_w_0().gap(BUTTON_STYLE.gap).children(items),
-    ];
-  return [v_flex().id(`${id}-options-${layout.choices}`).w_full().min_w_0().children(rows)];
-};
-
-const answerFlowRationaleShelf = (t: Theme, id: string, reason: string): Element =>
-  v_flex()
-    .id(`${id}-rec-reason-shelf`)
-    .w_full()
-    .min_w_0()
+    .px(ANSWER_FLOW_OUTLINE.paddingX)
+    .py(ANSWER_FLOW_OUTLINE.paddingY)
     .gap(BUTTON_STYLE.gap)
-    .bg(t.popover)
-    .rounded(CARD.innerRadius)
-    .px(CARD.paddingX)
-    .py(CARD.paddingY)
-    .text_size(TEXT.label)
-    .text_color(t.muted)
-    .child(small(t, t.muted, "Why recommended").id(`${id}-rec-reason-shelf-label`))
-    .child(div().min_w_0().child(reason));
-
-const answerFlowRationalePopover = (
-  t: Theme,
-  id: string,
-  reason: string,
-  open: boolean,
-  focus: FocusHandle | undefined,
-  onOpenChange: ((open: boolean, cx: Context) => void) | undefined,
-): Element => {
-  const trigger = togglePill(t, {
-    id: `${id}-rec-reason-disclosure-trigger`,
-    label: "Why recommended",
-    icon: HERDR_ICONS.chevronDown,
-    lit: open,
-    tooltip: open ? "Hide recommendation rationale" : "Show recommendation rationale",
-    onClick: onOpenChange === undefined ? undefined : (cx) => onOpenChange(!open, cx),
-  })
-    .role("button")
-    .accessibility_label(open ? "Hide recommendation rationale" : "Show recommendation rationale")
-    .when(focus !== undefined, (el) => el.tab_index(0).track_focus(focus!))
-    .on_key_down((event, cx) => {
-      if (answerFlowKey(event, "enter") || answerFlowKey(event, "space")) {
-        onOpenChange?.(!open, cx);
-        cx.stop_propagation();
-      } else if (open && answerFlowKey(event, "escape")) {
-        onOpenChange?.(false, cx);
-        cx.stop_propagation();
-      }
-    });
-  const content = v_flex()
-    .id(`${id}-rec-reason-popover-content`)
-    .w(ANSWER_FLOW_LAYOUT_GEOMETRY.rationaleWidth)
-    .min_w_0()
-    .gap(BUTTON_STYLE.gap)
-    .bg(t.popover)
-    .rounded(CARD.innerRadius)
+    .bg(role(t, ANSWER_FLOW_OUTLINE.optionSurface))
+    .text_color(t.foreground)
     .border_1()
-    .border_color(t.border)
-    .px(CARD.paddingX)
-    .py(CARD.paddingY)
-    .text_size(TEXT.label)
-    .text_color(t.muted)
-    .child(small(t, t.muted, "Why recommended"))
-    .child(div().min_w_0().text_color(t.foreground).child(reason));
-  return Popover.new(`${id}-rec-reason-popover`)
-    .id(`${id}-rec-reason-disclosure`)
-    .open(open)
-    .on_open_change((next, cx) => onOpenChange?.(next, cx))
-    .trigger(trigger)
-    .when(open, (el) => el.content(content));
-};
+    .border_color(selected ? t.accent : t.border)
+    .rounded(CARD.innerRadius)
+    .when(selected, (el) =>
+      el.border(ANSWER_FLOW_OUTLINE.selectedBorderWidth).border_color(t.accent).font_semibold(),
+    );
 
 const askCardRows = (
   t: Theme,
@@ -1004,10 +708,8 @@ const askCardRows = (
   answer: AnswerModel | undefined,
   completed: AnsweredAsk | undefined,
   itemTouches: string[] | undefined,
-  presentation?: AnswerFlowAskPresentation,
+  flowHeader = false,
 ): Element[] => {
-  const flowHeader = presentation !== undefined;
-  const layout = presentation?.layout ?? ANSWER_FLOW_LAYOUT_BASELINE;
   // Notes do not replace the picked option; completed cards have no active draft.
   const picked =
     completed !== undefined
@@ -1017,16 +719,15 @@ const askCardRows = (
         : answer.draft.discuss
           ? undefined
           : answer.draft.choice;
-  const question =
-    presentation === undefined
-      ? detailRow(t, `${id}-question`)
-          .bg(t.popover)
-          .rounded_t(CARD.innerRadius)
-          .font_medium()
-          .child(ask.question)
-      : answerFlowPrompt(t, id, ask, layout, presentation.width);
+  const question = flowHeader
+    ? answerFlowPrompt(t, id, ask)
+    : detailRow(t, `${id}-question`)
+        .bg(t.popover)
+        .rounded_t(CARD.innerRadius)
+        .font_medium()
+        .child(ask.question);
   const context =
-    presentation === undefined && ask.context !== null
+    !flowHeader && ask.context !== null
       ? [askBodyRow(t, `${id}-context`).text_color(t.muted).child(ask.context)]
       : [];
   const touches =
@@ -1059,13 +760,8 @@ const askCardRows = (
             .text_size(TEXT.label)
             .text_color(tagTone ?? t.muted)
             .child(detailText);
-    const detailSideBySide =
-      presentation !== undefined &&
-      layout.choices === "side-details" &&
-      presentation.width >= ANSWER_FLOW_LAYOUT_GEOMETRY.sideDetailsMinWidth &&
-      detail !== undefined;
     const inlineReason =
-      rec && ask.recReason !== null && (presentation === undefined || layout.rationale === "inline")
+      rec && ask.recReason !== null
         ? div()
             .id(`${id}-rec-reason`)
             .min_w_0()
@@ -1087,25 +783,12 @@ const askCardRows = (
       .flex_1()
       .min_w_0()
       .gap(BUTTON_STYLE.gap)
-      .when(detailSideBySide, (el) =>
-        el.child(
-          h_flex()
-            .id(`${id}-detail-side-by-side-${index}`)
-            .w_full()
-            .min_w_0()
-            .items_start()
-            .gap(ANSWER_FLOW_LAYOUT_GEOMETRY.choiceGap)
-            .child(v_flex().flex_1().min_w_0().child(heading))
-            .child(detail!.flex_1().min_w_0()),
-        ),
-      )
-      .when(!detailSideBySide, (el) =>
-        el.child(heading).when(detail !== undefined, (nested) => nested.child(detail!)),
-      )
+      .child(heading)
+      .when(detail !== undefined, (el) => el.child(detail!))
       .when(inlineReason !== undefined, (el) => el.child(inlineReason!));
     const row = flowHeader ? v_flex().id(optionId) : askBodyRow(t, optionId);
     const styled = flowHeader
-      ? answerFlowOptionStyle(row, t, selected, layout)
+      ? answerFlowOptionStyle(row, t, selected)
       : row.when(selected, (el) => el.bg(t.selected));
     const selectionCue = flowHeader
       ? selected
@@ -1128,12 +811,7 @@ const askCardRows = (
             style.bg(
               flowHeader
                 ? selected
-                  ? layout.choices === "outline" ||
-                    layout.choices === "tiles" ||
-                    layout.choices === "grid" ||
-                    layout.choices === "spaced"
-                    ? role(t, "surface")
-                    : role(t, "selected")
+                  ? role(t, "surface")
                   : t.hover
                 : selected
                   ? t.selected
@@ -1158,27 +836,6 @@ const askCardRows = (
           .child(content),
       );
   });
-  const options =
-    presentation === undefined
-      ? optionItems
-      : answerFlowOptions(t, id, optionItems, layout, presentation.width);
-  const rationale =
-    presentation === undefined || ask.rec === null || ask.recReason === null
-      ? []
-      : layout.rationale === "shelf"
-        ? [answerFlowRationaleShelf(t, id, ask.recReason)]
-        : layout.rationale === "popover"
-          ? [
-              answerFlowRationalePopover(
-                t,
-                id,
-                ask.recReason,
-                presentation.rationaleOpenFor === presentation.rationaleKey,
-                presentation.rationaleFocus,
-                presentation.setRationaleOpen,
-              ),
-            ]
-          : [];
   const discussion =
     completed === undefined
       ? [
@@ -1252,7 +909,7 @@ const askCardRows = (
         .child(small(t, t.muted, "Note"))
         .child(div().flex_1().min_w_0().child(completed.note)),
     );
-  return [question, ...context, ...touches, ...options, ...rationale, ...discussion, ...completion];
+  return [question, ...context, ...touches, ...optionItems, ...discussion, ...completion];
 };
 
 const askCard = (
@@ -1457,106 +1114,10 @@ const answerFlowKey = (
   );
 };
 
-const flowLayoutMenu = (t: Theme, flow: AnswerFlowModel): Element => {
-  const resetIndex = ANSWER_FLOW_LAYOUT_PROPOSALS.length;
-  const menuCount = resetIndex + 1;
-  const proposalRows = ANSWER_FLOW_LAYOUT_PROPOSALS.map((layout, index) =>
-    menuRow(t, {
-      id: `answer-flow-layout-option-${layout.id}`,
-      label: layout.name,
-      selected: index === flow.layoutActiveIndex,
-      checked: layout.id === flow.layoutSelection.id,
-      tooltip: layout.description,
-      onClick: (cx) => flow.selectLayout(layout.id, cx),
-    })
-      .role("menu_item")
-      .accessibility_label(`${layout.name}: ${layout.description}`)
-      .set_position(index + 1, menuCount)
-      .when(index === flow.layoutActiveIndex, (el) =>
-        el.aria_active_descendant().border_1().border_color(t.accent),
-      )
-      .on_hover((hovered, cx) => {
-        if (hovered) flow.setLayoutActiveIndex(index, cx);
-      }),
-  );
-  const reset = menuRow(t, {
-    id: "answer-flow-layout-reset",
-    label: "Reset to Outline",
-    selected: flow.layoutActiveIndex === resetIndex,
-    tooltip: "Restore the initial Outline layout",
-    onClick: flow.resetLayout,
-  })
-    .role("menu_item")
-    .set_position(menuCount, menuCount)
-    .when(flow.layoutActiveIndex === resetIndex, (el) =>
-      el.aria_active_descendant().border_1().border_color(t.accent),
-    )
-    .on_hover((hovered, cx) => {
-      if (hovered) flow.setLayoutActiveIndex(resetIndex, cx);
-    });
-  return menuPanel(t, ANSWER_FLOW_LAYOUT_GEOMETRY.menuWidth, MENU.padding)
-    .id("answer-flow-layout-options")
-    .role("menu")
-    .accessibility_label("Answer card layout")
-    .tab_index(0)
-    .track_focus(flow.layoutMenuFocus)
-    .on_key_down((event, cx) => {
-      if (answerFlowKey(event, "down")) flow.moveLayoutMenu(1, cx);
-      else if (answerFlowKey(event, "up")) flow.moveLayoutMenu(-1, cx);
-      else if (answerFlowKey(event, "enter") || answerFlowKey(event, "space"))
-        flow.activateLayoutMenu(cx);
-      else if (answerFlowKey(event, "escape")) flow.setLayoutMenuOpen(false, cx);
-      else return;
-      cx.stop_propagation();
-    })
-    .children([
-      ...proposalRows,
-      div().id("answer-flow-layout-separator").h(1).flex_none().bg(t.border),
-      reset,
-    ]);
-};
-
-const flowLayoutSelector = (t: Theme, flow: AnswerFlowModel): Element => {
-  const selection = flow.layoutSelection;
-  const trigger = togglePill(t, {
-    id: "answer-flow-layout-trigger",
-    label: "Layout",
-    icon: HERDR_ICONS.chevronDown,
-    lit:
-      flow.layoutMenuOpen ||
-      flow.layout.id !== ANSWER_FLOW_LAYOUT_BASELINE.id ||
-      selection.id !== ANSWER_FLOW_LAYOUT_BASELINE.id,
-    tooltip: `Answer card layout: ${selection.name}${flow.layoutPending ? " (applying)" : ""}`,
-    onClick: (cx) => {
-      if (!flow.layoutMenuOpen) flow.setLayoutMenuOpen(true, cx);
-    },
-  })
-    .role("button")
-    .accessibility_label(`Answer card layout: ${selection.name}`)
-    .tab_index(0)
-    .track_focus(flow.layoutTriggerFocus)
-    .on_key_down((event, cx) => {
-      if (
-        answerFlowKey(event, "down") ||
-        answerFlowKey(event, "enter") ||
-        answerFlowKey(event, "space")
-      ) {
-        flow.setLayoutMenuOpen(true, cx);
-        cx.stop_propagation();
-      }
-    });
-  return Popover.new("answer-flow-layout-popover")
-    .id("answer-flow-layout-popover")
-    .open(flow.layoutMenuOpen)
-    .on_open_change((open, cx) => flow.setLayoutMenuOpen(open, cx))
-    .trigger(trigger)
-    .when(flow.layoutMenuOpen, (el) => el.content(flowLayoutMenu(t, flow)));
-};
-
 const ANSWER_FLOW_SPEED_MENU_MAX_HEIGHT = 200;
 
 const flowSpeedMenu = (t: Theme, flow: AnswerFlowModel): Element =>
-  menuPanel(t, ANSWER_FLOW_LAYOUT_GEOMETRY.menuWidth, MENU.padding)
+  menuPanel(t, ANSWER_FLOW_MENU_WIDTH, MENU.padding)
     .id("answer-flow-speed-options")
     .role("menu")
     .accessibility_label("Animation speed")
@@ -1643,7 +1204,6 @@ const flowHeader = (t: Theme, flow: AnswerFlowModel): Element =>
         .text_color(t.foreground)
         .child(flow.done ? "Done" : `Question ${flow.position} of ${flow.total}`),
     )
-    .child(flowLayoutSelector(t, flow))
     .child(flowSpeedSelector(t, flow));
 
 const flowCardHeader = (
@@ -1678,15 +1238,10 @@ const flowAnsweredRows = (t: Theme, item: Item, detailPrefix: string): Element[]
 
 const flowAskCard = (
   t: Theme,
-  flow: AnswerFlowModel,
-  layout: AnswerFlowLayout,
-  width: number,
   item: Item | undefined,
   answer: AnswerModel | undefined,
   detailPrefix: string,
   askPrefix: string,
-  measurement: boolean,
-  interactive: boolean,
 ): Element[] => {
   if (item === undefined)
     return [
@@ -1696,16 +1251,9 @@ const flowAskCard = (
         .child("Question unavailable. Go back to the domain."),
     ];
   if (item.ask === null) return flowAnsweredRows(t, item, detailPrefix);
-  return askCardRows(t, askPrefix, item.ask, answer, undefined, item.touches, {
-    layout,
-    width,
-    rationaleKey: item.id,
-    rationaleOpenFor: measurement || !interactive ? undefined : flow.rationaleOpenFor,
-    rationaleFocus: interactive ? flow.rationaleFocusFor(item.id) : undefined,
-    setRationaleOpen: interactive
-      ? (open, cx) => flow.setRationaleOpen(item.id, open, cx)
-      : undefined,
-  }).map((row, index) => (index === 0 ? row.border_t(0) : row));
+  return askCardRows(t, askPrefix, item.ask, answer, undefined, item.touches, true).map(
+    (row, index) => (index === 0 ? row.border_t(0) : row),
+  );
 };
 
 const flowDoneRows = (t: Theme, flow: AnswerFlowModel, prefix: string): Element[] => [
@@ -1808,14 +1356,11 @@ const flowMeasurementAnswer = (item: Item): AnswerModel => ({
 const flowExpandedBody = (
   t: Theme,
   flow: AnswerFlowModel,
-  layout: AnswerFlowLayout,
-  width: number,
   cardModel: AnswerFlowModel["cards"][number],
   contentId: string,
   detailPrefix: string,
   askPrefix: string,
   measurement: boolean,
-  interactive: boolean,
 ): Element => {
   const item = cardModel.item;
   const answer =
@@ -1831,26 +1376,13 @@ const flowExpandedBody = (
     .children(
       cardModel.kind === "summary"
         ? flowDoneRows(t, flow, detailPrefix)
-        : flowAskCard(
-            t,
-            flow,
-            layout,
-            width,
-            item,
-            answer,
-            detailPrefix,
-            askPrefix,
-            measurement,
-            interactive,
-          ),
+        : flowAskCard(t, item, answer, detailPrefix, askPrefix),
     );
 };
 
 const flowExpandedContent = (
   t: Theme,
   flow: AnswerFlowModel,
-  layout: AnswerFlowLayout,
-  width: number,
   cardModel: AnswerFlowModel["cards"][number],
   contentId: string,
   detailPrefix: string,
@@ -1866,14 +1398,11 @@ const flowExpandedContent = (
       flowExpandedBody(
         t,
         flow,
-        layout,
-        width,
         cardModel,
         `${contentId}-body`,
         detailPrefix,
         askPrefix,
         measurement,
-        false,
       ),
     );
 
@@ -1908,8 +1437,6 @@ const flowMeasurementCards = (t: Theme, flow: AnswerFlowModel): Element[] => {
         flowExpandedContent(
           t,
           flow,
-          flow.layout,
-          expandedWidth,
           cardModel,
           `${expandedId}-content`,
           `${expandedId}-detail`,
@@ -1917,38 +1444,7 @@ const flowMeasurementCards = (t: Theme, flow: AnswerFlowModel): Element[] => {
           flow.motion !== undefined || cardModel.id !== activeId,
         ),
       );
-    const measurements: Element[] = [compact, expanded];
-    const candidateLayout = flow.layoutMeasurement;
-    if (candidateLayout !== undefined && cardModel.kind === "question") {
-      const version = flow.layoutMeasurementVersion;
-      const candidateId = `answer-flow-layout-measure-${version}-expanded-${cardModel.id}`;
-      measurements.push(
-        div()
-          .id(candidateId)
-          .absolute()
-          .top(0)
-          .left(-10_000)
-          .w(expandedWidth)
-          .opacity(0)
-          .on_size_change((size, cx) =>
-            flow.measureLayout(candidateLayout.id, version, cardModel.id, size, cx),
-          )
-          .child(
-            flowExpandedContent(
-              t,
-              flow,
-              candidateLayout,
-              expandedWidth,
-              cardModel,
-              `${candidateId}-content`,
-              `${candidateId}-detail`,
-              `${candidateId}-ask`,
-              cardModel.id !== activeId,
-            ),
-          ),
-      );
-    }
-    return measurements;
+    return [compact, expanded];
   });
 };
 
@@ -2001,14 +1497,11 @@ const flowCarouselCard = (
       flowExpandedBody(
         t,
         flow,
-        flow.layout,
-        placement.width,
         cardModel,
         `answer-flow-expanded-content-${cardModel.id}`,
         `answer-flow-detail-${cardModel.id}`,
         `answer-flow-ask-${cardModel.id}`,
         false,
-        true,
       ),
     );
   return card(t, `answer-flow-card-${cardModel.id}`)

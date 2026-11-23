@@ -25,8 +25,6 @@ import { CARD, HERDR_ICONS, PANEL } from "@wyattjoh/herdr-ui";
 import {
   ANSWER_CAROUSEL,
   ANSWER_FLOW_SPEED_OPTIONS,
-  ANSWER_FLOW_LAYOUT_BASELINE,
-  ANSWER_FLOW_LAYOUT_PROPOSALS,
   ANSWER_FLOW_OUTLINE,
   HARNESS_DIALOG,
 } from "./look.ts";
@@ -342,24 +340,6 @@ const measureFlow = (
   }
   reportSize(measuredRoot, measurementId("compact", "done"), cx, 72, compactWidth);
   reportSize(measuredRoot, measurementId("expanded", "done"), cx, 120, expandedWidth);
-  return render();
-};
-
-const measurePendingLayout = (
-  root: Node,
-  cx: unknown,
-  render: () => Node,
-  items: { id: string; expandedHeight: number }[],
-  viewportWidth = 360,
-) => {
-  const expandedWidth = viewportWidth * ANSWER_CAROUSEL.compactWidthRatio;
-  for (const item of items) {
-    const id = ids(root, "answer-flow-layout-measure-").find((candidate) =>
-      candidate.endsWith(`-expanded-${item.id}`),
-    );
-    if (id === undefined) throw new Error(`No pending expanded measurement for ${item.id}`);
-    reportSize(root, id, cx, item.expandedHeight, expandedWidth);
-  }
   return render();
 };
 
@@ -945,11 +925,9 @@ test("offers eleven named speeds and keeps menu focus and drafts intact", async 
   ]);
   expect(view.answerFlowSpeed).toBe(0);
   expect(text(get(root, "answer-flow-speed-trigger"))).toBe("Speed: Normal");
-  get(root, "answer-flow-layout-trigger").click!({}, ctx.cx);
-  root = render();
   get(root, "answer-flow-speed-trigger").click!({}, ctx.cx);
   root = render();
-  expect([view.answerFlowLayoutMenuOpen, view.answerFlowSpeedMenuOpen]).toEqual([false, true]);
+  expect(view.answerFlowSpeedMenuOpen).toBe(true);
   expect(ids(root, "answer-flow-speed-option-")).toEqual(
     ANSWER_FLOW_SPEED_OPTIONS.map(({ id }) => `answer-flow-speed-option-${id}`),
   );
@@ -1002,12 +980,6 @@ test("offers eleven named speeds and keeps menu focus and drafts intact", async 
     true,
   ]);
 
-  get(root, "answer-flow-speed-trigger").click!({}, ctx.cx);
-  root = render();
-  get(root, "answer-flow-layout-trigger").click!({}, ctx.cx);
-  root = render();
-  expect([view.answerFlowSpeedMenuOpen, view.answerFlowLayoutMenuOpen]).toEqual([false, true]);
-  expect(view.answerFlowLayoutMenuFocus.is_focused()).toBe(true);
   expect([view.answerFlow?.current, view.draft?.choice]).toEqual([0, "Coordinate backlog"]);
 });
 
@@ -1044,6 +1016,25 @@ test("each named speed uses one captured duration for rendering and completion",
     root = render();
     expect(view.answerFlowMotion).toBe(undefined);
   }
+});
+
+test("the answer flow header offers Speed only: the Layout comparison is gone", async () => {
+  focusDomain("alpha");
+  host.files.set(DOC, JSON.stringify(withManyAsks(2, "fits the choice")));
+  const { ctx, render } = await mount();
+  get(render(), "item-i1").click!({}, ctx.cx);
+  const root = measureFlow(render(), ctx.cx, render, [
+    { id: "i1", expandedHeight: 300 },
+    { id: "i2", expandedHeight: 300 },
+  ]);
+  expect(ids(root, "answer-flow-layout")).toEqual([]);
+  expect(ids(root, "answer-flow-speed-trigger")).toEqual(["answer-flow-speed-trigger"]);
+  expect(text(get(root, "answer-flow-speed-trigger"))).toBe("Speed: Normal");
+  expect(text(get(root, "answer-flow-ask-i1-rec-reason"))).toBe("Why recommended fits the choice");
+  expect(ids(root, "answer-flow-ask-i1-question-block")).toEqual([
+    "answer-flow-ask-i1-question-block",
+  ]);
+  expect(ids(root, "answer-flow-ask-i1-options-")).toEqual([]);
 });
 
 test("answer-flow questions use the Outline treatment without a bottom action bar", async () => {
@@ -1131,386 +1122,6 @@ test("answer-flow questions use the Outline treatment without a bottom action ba
   expect(ids(root, "answer-flow-footer")).toEqual([]);
   expect(ids(root, "answer-flow-back")).toEqual([]);
   expect(ids(root, "answer-flow-skip")).toEqual([]);
-});
-
-test("offers ten named layouts and a separate keyboard-accessible Outline reset", async () => {
-  focusDomain("alpha");
-  host.files.set(DOC, JSON.stringify(withAsk()));
-  const { ctx, view, render } = await mount();
-  get(render(), "item-i1").click!({}, ctx.cx);
-  let root = measureFlow(render(), ctx.cx, render, [
-    { id: "i1", expandedHeight: 248 },
-    { id: "i2", expandedHeight: 176 },
-  ]);
-
-  expect(view.answerFlowLayoutId).toBe(ANSWER_FLOW_LAYOUT_BASELINE.id);
-  expect(ANSWER_FLOW_LAYOUT_PROPOSALS.map(({ name }) => name)).toEqual([
-    "Quiet Lines",
-    "Soft Tiles",
-    "Split Prompt",
-    "Shared Set",
-    "Two-Up",
-    "Context First",
-    "Editorial",
-    "Side Notes",
-    "Rationale Shelf",
-    "Why on Demand",
-  ]);
-  expect(new Set(ANSWER_FLOW_LAYOUT_PROPOSALS.map(({ id }) => id)).size).toBe(10);
-  expect(ANSWER_FLOW_LAYOUT_PROPOSALS.some(({ id }) => id === ANSWER_FLOW_LAYOUT_BASELINE.id)).toBe(
-    false,
-  );
-
-  get(root, "answer-flow-layout-trigger").click!({}, ctx.cx);
-  root = render();
-  const proposalIds = ANSWER_FLOW_LAYOUT_PROPOSALS.map(
-    ({ id }) => `answer-flow-layout-option-${id}`,
-  );
-  expect(ids(root, "answer-flow-layout-option-")).toEqual(proposalIds);
-  expect(proposalIds.map((id) => text(get(root, id)))).toEqual(
-    ANSWER_FLOW_LAYOUT_PROPOSALS.map(({ name }) => name),
-  );
-  expect(text(get(root, "answer-flow-layout-reset"))).toBe("Reset to Outline");
-  expect(get(root, "answer-flow-layout-options").styles).toMatchObject({
-    role: "menu",
-    tab_index: 0,
-  });
-  expect(get(root, "answer-flow-layout-options").calls).toContain("on_key_down");
-  expect(get(root, "answer-flow-layout-trigger").calls).toContain("on_key_down");
-
-  view.moveAnswerFlowLayoutMenu(1, ctx.cx as never);
-  root = render();
-  expect(view.answerFlowLayoutActiveIndex).toBe(1);
-  expect(get(root, "answer-flow-layout-option-soft-tiles").styles.border_color).toBe("#3b82f6");
-  view.activateAnswerFlowLayoutMenu(ctx.cx as never);
-  root = render();
-  expect([view.answerFlowLayoutId, view.answerFlowPendingLayout]).toEqual([
-    ANSWER_FLOW_LAYOUT_BASELINE.id,
-    "soft-tiles",
-  ]);
-  root = measurePendingLayout(root, ctx.cx, render, [
-    { id: "i1", expandedHeight: 264 },
-    { id: "i2", expandedHeight: 184 },
-  ]);
-  expect(view.answerFlowLayoutId).toBe("soft-tiles");
-
-  get(root, "answer-flow-layout-trigger").click!({}, ctx.cx);
-  root = render();
-  expect(
-    get(root, "answer-flow-layout-option-soft-tiles").children.some(
-      (child) => typeof child !== "string" && child.styles.asset === HERDR_ICONS.check,
-    ),
-  ).toBe(true);
-  view.moveAnswerFlowLayoutMenu(9, ctx.cx as never);
-  root = render();
-  expect(view.answerFlowLayoutActiveIndex).toBe(ANSWER_FLOW_LAYOUT_PROPOSALS.length);
-  expect(get(root, "answer-flow-layout-reset").styles.border_color).toBe("#3b82f6");
-  view.activateAnswerFlowLayoutMenu(ctx.cx as never);
-  root = render();
-  expect([view.answerFlowLayoutId, view.answerFlowPendingLayout]).toEqual([
-    "soft-tiles",
-    ANSWER_FLOW_LAYOUT_BASELINE.id,
-  ]);
-  root = measurePendingLayout(root, ctx.cx, render, [
-    { id: "i1", expandedHeight: 248 },
-    { id: "i2", expandedHeight: 176 },
-  ]);
-  expect(view.answerFlowLayoutId).toBe(ANSWER_FLOW_LAYOUT_BASELINE.id);
-});
-
-test("all layout proposals compose long content and preserve the current draft", async () => {
-  focusDomain("alpha");
-  const question = "Which of these directions best fits the backlog panel?";
-  const questionContext = "Additional context for the choice. ".repeat(8);
-  const rationale = "This option is recommended because it stays short and clear. ".repeat(8);
-  const backlog = withAsk();
-  host.files.set(
-    DOC,
-    JSON.stringify({
-      ...backlog,
-      items: backlog.items.map((item) =>
-        item.id === "i1" && item.ask !== null
-          ? {
-              ...item,
-              ask: {
-                ...item.ask,
-                question,
-                context: questionContext,
-                options: ["Coordinate backlog", "Backlog", "Queue", "Task list"],
-                optionDetails: [
-                  "Full wording for an interface label. ".repeat(3),
-                  "Shorter wording with enough context. ".repeat(3),
-                  "A neutral alternative. ".repeat(3),
-                  "Another option for comparison. ".repeat(3),
-                ],
-                rec: "Backlog",
-                recReason: rationale,
-              },
-            }
-          : item,
-      ),
-    }),
-  );
-  const { ctx, view, render } = await mount();
-  get(render(), "item-i1").click!({}, ctx.cx);
-  let root = measureFlow(
-    render(),
-    ctx.cx,
-    render,
-    [
-      { id: "i1", expandedHeight: 460 },
-      { id: "i2", expandedHeight: 220 },
-    ],
-    600,
-    280,
-  );
-  typeInto(host.inputs[0]!, "draft text to keep", ctx.cx);
-  root = render();
-
-  const fingerprints = new Set<string>();
-  for (const [index, layout] of ANSWER_FLOW_LAYOUT_PROPOSALS.entries()) {
-    const previousCenter =
-      get(root, "answer-flow-card-i1").styles.top + get(root, "answer-flow-card-i1").styles.h / 2;
-    view.selectAnswerFlowLayout(layout.id, ctx.cx as never);
-    root = render();
-    expect([view.answerFlowLayoutId, view.answerFlowPendingLayout]).toEqual([
-      index === 0 ? ANSWER_FLOW_LAYOUT_BASELINE.id : ANSWER_FLOW_LAYOUT_PROPOSALS[index - 1]!.id,
-      layout.id,
-    ]);
-    expect([view.answerFlow?.current, view.draft?.text]).toEqual([0, "draft text to keep"]);
-    expect(
-      get(
-        root,
-        `answer-flow-layout-measure-${view.answerFlowLayoutMeasurementVersion}-expanded-i1`,
-      ),
-    ).toBeDefined();
-
-    root = measurePendingLayout(
-      root,
-      ctx.cx,
-      render,
-      [
-        { id: "i1", expandedHeight: 310 + index * 8 },
-        { id: "i2", expandedHeight: 200 + index * 4 },
-      ],
-      280,
-    );
-    expect([view.answerFlowLayoutId, view.answerFlowPendingLayout]).toEqual([layout.id, undefined]);
-    expect([view.answerFlow?.current, view.draft?.text]).toEqual([0, "draft text to keep"]);
-    const activeCard = get(root, "answer-flow-card-i1");
-    expect(activeCard.styles.top + activeCard.styles.h / 2).toBe(previousCenter);
-    const prompt = get(root, `answer-flow-ask-i1-prompt-${layout.prompt}`);
-    const options = get(root, `answer-flow-ask-i1-options-${layout.choices}`);
-    expect(text(prompt)).toContain(question);
-    expect(text(prompt)).toContain(questionContext);
-    expect(text(options)).toContain("Another option for comparison.");
-    expect(get(root, "answer-flow-ask-i1-answer-field")).toBeDefined();
-    expect(
-      view.answerFlowCardSizes.get(view.flowCardSizeKey("alpha", "i1"))?.expanded?.height,
-    ).toBe(310 + index * 8);
-    fingerprints.add(
-      JSON.stringify({
-        prompt: prompt.styles.id,
-        promptChildren: prompt.children.map((child) =>
-          typeof child === "string" ? child : (child as Node).styles.id,
-        ),
-        options: options.styles.id,
-        optionChildren: options.children.map((child) =>
-          typeof child === "string" ? child : (child as Node).styles.id,
-        ),
-        rationale: layout.rationale,
-      }),
-    );
-
-    if (layout.rationale === "popover") {
-      const trigger = get(root, "answer-flow-ask-i1-rec-reason-disclosure-trigger");
-      expect(text(trigger)).toBe("Why recommended");
-      expect(trigger.styles.tab_index).toBe(0);
-      expect(trigger.calls).toContain("track_focus");
-      expect(trigger.calls).toContain("on_key_down");
-      trigger.click!({}, ctx.cx);
-      root = render();
-      expect(text(get(root, "answer-flow-ask-i1-rec-reason-popover-content"))).toContain(rationale);
-    } else {
-      expect(text(get(root, "answer-flow-expanded-layer-i1"))).toContain(rationale);
-      expect(
-        get(
-          root,
-          layout.rationale === "shelf"
-            ? "answer-flow-ask-i1-rec-reason-shelf"
-            : "answer-flow-ask-i1-rec-reason",
-        ),
-      ).toBeDefined();
-    }
-    if (layout.prompt === "split")
-      expect(ids(root, "answer-flow-ask-i1-question-column")).toEqual([]);
-    if (layout.choices === "tiles")
-      expect(
-        get(root, "answer-flow-ask-i1-option-tile-row-0").children.filter(
-          (child) =>
-            typeof child !== "string" &&
-            (child as Node).styles.id.startsWith("answer-flow-ask-i1-option-"),
-        ),
-      ).toHaveLength(1);
-    if (layout.id === "side-notes")
-      expect(ids(root, "answer-flow-ask-i1-detail-side-by-side-")).toEqual([]);
-    if (layout.prompt === "context-first")
-      expect(text(prompt).indexOf(questionContext) < text(prompt).indexOf(question)).toBe(true);
-    if (layout.choices === "grid") {
-      const firstRow = get(root, "answer-flow-ask-i1-option-grid-row-0");
-      expect(
-        firstRow.children.filter(
-          (child) =>
-            typeof child !== "string" &&
-            (child as Node).styles.id.startsWith("answer-flow-ask-i1-option-"),
-        ),
-      ).toHaveLength(1);
-    }
-  }
-  expect(fingerprints.size).toBe(10);
-  expect(view.answerFlow?.current).toBe(0);
-  expect(view.draft?.text).toBe("draft text to keep");
-
-  root = measureFlow(
-    root,
-    ctx.cx,
-    render,
-    [
-      { id: "i1", expandedHeight: 500 },
-      { id: "i2", expandedHeight: 260 },
-    ],
-    700,
-    720,
-  );
-  view.selectAnswerFlowLayout("two-up", ctx.cx as never);
-  root = measurePendingLayout(
-    render(),
-    ctx.cx,
-    render,
-    [
-      { id: "i1", expandedHeight: 500 },
-      { id: "i2", expandedHeight: 260 },
-    ],
-    720,
-  );
-  expect(
-    get(root, "answer-flow-ask-i1-option-grid-row-0").children.filter(
-      (child) =>
-        typeof child !== "string" &&
-        (child as Node).styles.id.startsWith("answer-flow-ask-i1-option-"),
-    ),
-  ).toHaveLength(2);
-  expect([view.answerFlow?.current, view.draft?.text]).toEqual([0, "draft text to keep"]);
-
-  view.selectAnswerFlowLayout("soft-tiles", ctx.cx as never);
-  root = measurePendingLayout(
-    render(),
-    ctx.cx,
-    render,
-    [
-      { id: "i1", expandedHeight: 500 },
-      { id: "i2", expandedHeight: 260 },
-    ],
-    720,
-  );
-  expect(
-    get(root, "answer-flow-ask-i1-option-tile-row-0").children.filter(
-      (child) =>
-        typeof child !== "string" &&
-        (child as Node).styles.id.startsWith("answer-flow-ask-i1-option-"),
-    ),
-  ).toHaveLength(3);
-  expect(view.draft?.text).toBe("draft text to keep");
-
-  get(root, "answer-flow-ask-i1-option-0").click!({}, ctx.cx);
-  root = render();
-  const selected = get(root, "answer-flow-ask-i1-option-0");
-  expect(view.draft?.choice).toBe("Coordinate backlog");
-  expect(selected.styles.border_color).toBe("#3b82f6");
-  expect(get(root, "answer-flow-ask-i1-option-0-selection-marker").styles.asset).toBe(
-    HERDR_ICONS.circleCheck,
-  );
-
-  view.selectAnswerFlowLayout("split-prompt", ctx.cx as never);
-  root = measurePendingLayout(
-    render(),
-    ctx.cx,
-    render,
-    [
-      { id: "i1", expandedHeight: 500 },
-      { id: "i2", expandedHeight: 260 },
-    ],
-    720,
-  );
-  expect(get(root, "answer-flow-ask-i1-question-column")).toBeDefined();
-  expect(get(root, "answer-flow-ask-i1-context-column")).toBeDefined();
-  expect(view.draft?.choice).toBe("Coordinate backlog");
-
-  view.selectAnswerFlowLayout("side-notes", ctx.cx as never);
-  root = measurePendingLayout(
-    render(),
-    ctx.cx,
-    render,
-    [
-      { id: "i1", expandedHeight: 500 },
-      { id: "i2", expandedHeight: 260 },
-    ],
-    720,
-  );
-  expect(get(root, "answer-flow-ask-i1-detail-side-by-side-1")).toBeDefined();
-  expect(view.draft?.choice).toBe("Coordinate backlog");
-});
-
-test("layout changes during focus motion wait for its completion and do not schedule another transition", async () => {
-  focusDomain("alpha");
-  host.files.set(DOC, JSON.stringify(withAsk()));
-  const { ctx, view, render } = await mount();
-  get(render(), "item-i1").click!({}, ctx.cx);
-  let root = measureFlow(render(), ctx.cx, render, [
-    { id: "i1", expandedHeight: 248 },
-    { id: "i2", expandedHeight: 176 },
-  ]);
-
-  get(root, "answer-flow-card-i2").click!({}, ctx.cx);
-  root = render();
-  const motion = view.answerFlowMotion;
-  const timerCount = ctx.timers.length;
-  expect(motion?.targetIndex).toBe(1);
-  get(root, "answer-flow-layout-trigger").click!({}, ctx.cx);
-  root = render();
-  get(root, "answer-flow-layout-option-rationale-shelf").click!({}, ctx.cx);
-  root = render();
-  expect([view.answerFlowLayoutId, view.answerFlowPendingLayout]).toEqual([
-    ANSWER_FLOW_LAYOUT_BASELINE.id,
-    "rationale-shelf",
-  ]);
-  expect(view.answerFlowMotion?.generation).toBe(motion?.generation);
-  expect(ids(root, "answer-flow-layout-measure-")).toEqual([]);
-  expect(ctx.timers.length).toBe(timerCount);
-
-  ctx.tick(ANSWER_CAROUSEL.transitionDuration);
-  root = render();
-  expect([view.answerFlow?.current, view.answerFlowMotion, view.answerFlowLayoutId]).toEqual([
-    1,
-    undefined,
-    ANSWER_FLOW_LAYOUT_BASELINE.id,
-  ]);
-  expect(
-    ids(root, "answer-flow-layout-measure-").filter(
-      (id) => id.endsWith("-expanded-i1") || id.endsWith("-expanded-i2"),
-    ),
-  ).toHaveLength(2);
-  const measurementTimerCount = ctx.timers.length;
-  root = measurePendingLayout(root, ctx.cx, render, [
-    { id: "i1", expandedHeight: 300 },
-    { id: "i2", expandedHeight: 240 },
-  ]);
-  expect([view.answerFlowLayoutId, view.answerFlowPendingLayout, view.answerFlow?.current]).toEqual(
-    ["rationale-shelf", undefined, 1],
-  );
-  expect(get(root, "answer-flow-card-i2").styles.h).toBe(240);
-  expect(ctx.timers.length).toBe(measurementTimerCount);
-  expect(view.answerFlowMotion).toBe(undefined);
 });
 
 test("measured viewport resizing reveals more cards without unmounting the queue", async () => {
@@ -4385,11 +3996,10 @@ const flowSetup = async (count: number) => {
 const flowCardIds = (root: Node) =>
   ids(root, "answer-flow-card-").filter((id) => !id.includes("-content-"));
 
-test("a question answered outside the flow is dropped wherever it sits, with its sizes and focus handle", async () => {
+test("a question answered outside the flow is dropped wherever it sits, with its sizes", async () => {
   const { ctx, view, render, backlog } = await flowSetup(3);
   const key = view.flowCardSizeKey("alpha", "i2");
   expect(view.answerFlowCardSizes.has(key)).toBe(true);
-  expect(view.answerFlowRationaleFocus.has("i2")).toBe(true);
 
   host.files.set(DOC, JSON.stringify(recordAnswer(backlog, "i2", "Yes")));
   backlogWatch()!.fire([DOC]);
@@ -4404,7 +4014,6 @@ test("a question answered outside the flow is dropped wherever it sits, with its
   expect(text(get(root, "answer-flow-progress"))).toBe("Question 1 of 2");
   expect(view.answerFlow?.ids).toEqual(["i1", "i3"]);
   expect(view.answerFlowCardSizes.has(key)).toBe(false);
-  expect(view.answerFlowRationaleFocus.has("i2")).toBe(false);
   expect(ids(root, "answer-flow-detail-i2")).toEqual([]);
   expect(ctx.notified > 0).toBe(true);
 });

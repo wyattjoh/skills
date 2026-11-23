@@ -85,7 +85,7 @@ export const ANSWER = {
   gap: 8,
 } as const;
 
-/** Fixed spacing and selection geometry for the initial Outline answer-flow layout. */
+/** Fixed spacing and selection geometry for the answer flow's Outline question card. */
 export const ANSWER_FLOW_OUTLINE = {
   cardSurface: "surface",
   optionSurface: "surface",
@@ -95,119 +95,8 @@ export const ANSWER_FLOW_OUTLINE = {
   selectedBorderWidth: 2,
 } as const;
 
-/** The starting layout, kept separate from the ten selectable proposals. */
-export const ANSWER_FLOW_LAYOUT_BASELINE = {
-  id: "outline",
-  name: "Outline",
-  prompt: "block",
-  choices: "outline",
-  rationale: "inline",
-} as const;
-
-/** Ten new answer-flow arrangements, composed by the shared prompt and choice renderer. */
-export const ANSWER_FLOW_LAYOUT_PROPOSALS = [
-  {
-    id: "quiet-lines",
-    name: "Quiet Lines",
-    description: "Plain prompt with ruled choices and an inline recommendation.",
-    prompt: "plain",
-    choices: "dividers",
-    rationale: "inline",
-  },
-  {
-    id: "soft-tiles",
-    name: "Soft Tiles",
-    description: "Stacked prompt with responsive answer tiles.",
-    prompt: "block",
-    choices: "tiles",
-    rationale: "inline",
-  },
-  {
-    id: "split-prompt",
-    name: "Split Prompt",
-    description: "Question and context split when wide, stacked when narrow.",
-    prompt: "split",
-    choices: "rows",
-    rationale: "shelf",
-  },
-  {
-    id: "shared-set",
-    name: "Shared Set",
-    description: "Choices share one surface with dividers.",
-    prompt: "plain",
-    choices: "grouped",
-    rationale: "inline",
-  },
-  {
-    id: "two-up",
-    name: "Two-Up",
-    description: "Two-column choices when wide, one column when narrow.",
-    prompt: "caption",
-    choices: "grid",
-    rationale: "shelf",
-  },
-  {
-    id: "context-first",
-    name: "Context First",
-    description: "Context leads the question, followed by compact choices.",
-    prompt: "context-first",
-    choices: "compact",
-    rationale: "inline",
-  },
-  {
-    id: "editorial",
-    name: "Editorial",
-    description: "Question band above softly separated answer rows.",
-    prompt: "band",
-    choices: "spaced",
-    rationale: "shelf",
-  },
-  {
-    id: "side-notes",
-    name: "Side Notes",
-    description: "Option details sit beside choices at wide widths.",
-    prompt: "plain",
-    choices: "side-details",
-    rationale: "inline",
-  },
-  {
-    id: "rationale-shelf",
-    name: "Rationale Shelf",
-    description: "A shared choice set followed by a rationale surface.",
-    prompt: "compact",
-    choices: "grouped",
-    rationale: "shelf",
-  },
-  {
-    id: "why-on-demand",
-    name: "Why on Demand",
-    description: "Recommendation rationale opens in a compact popover.",
-    prompt: "block",
-    choices: "quiet",
-    rationale: "popover",
-  },
-] as const;
-
-export type AnswerFlowLayoutProposal = (typeof ANSWER_FLOW_LAYOUT_PROPOSALS)[number];
-export type AnswerFlowLayout = typeof ANSWER_FLOW_LAYOUT_BASELINE | AnswerFlowLayoutProposal;
-export type AnswerFlowLayoutId = AnswerFlowLayout["id"];
-
-export const answerFlowLayoutFor = (id: AnswerFlowLayoutId): AnswerFlowLayout =>
-  id === ANSWER_FLOW_LAYOUT_BASELINE.id
-    ? ANSWER_FLOW_LAYOUT_BASELINE
-    : (ANSWER_FLOW_LAYOUT_PROPOSALS.find((layout) => layout.id === id) ??
-      ANSWER_FLOW_LAYOUT_BASELINE);
-
-/** Geometry shared by the answer-flow layout picker and responsive choice arrangements. */
-export const ANSWER_FLOW_LAYOUT_GEOMETRY = {
-  menuWidth: 216,
-  choiceGap: 8,
-  tileMinWidth: 144,
-  gridMinWidth: 188,
-  splitPromptMinWidth: 440,
-  sideDetailsMinWidth: 460,
-  rationaleWidth: 280,
-} as const;
+/** The width of the answer flow's dropdown menus. */
+export const ANSWER_FLOW_MENU_WIDTH = 216;
 
 /**
  * The harness policy dialog Herdr opens over the window. A height is a maximum, so it covers the
