@@ -4,9 +4,10 @@
 export type Harness = "pi" | "claude";
 
 /**
- * Implement skills a spec delegate can be started with.
+ * Skills a delegate can be started with: an implement skill for a spec, or `retro` for a
+ * read-only retro in the wiki folder.
  */
-export type ImplementSkill = "implement" | "implement-spec";
+export type ImplementSkill = "implement" | "implement-spec" | "retro";
 
 /**
  * The first-message prefix that invokes a user-invoked skill: `/name` in Claude Code,

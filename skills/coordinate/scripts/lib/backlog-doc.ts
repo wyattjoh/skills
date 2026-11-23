@@ -482,7 +482,7 @@ export const itemClose = Effect.fn("itemClose")(function* (
  * `coordinate finding add`: record an open issue or opportunity. Delegates may run it.
  * @param config Config.
  * @param domain Domain.
- * @param input Kind, title, optional detail, path and source item, and `--json`.
+ * @param input Kind, title, optional detail, path, source item and source reference, and `--json`.
  * @returns Lines to print.
  */
 export const findingAdd = Effect.fn("findingAdd")(function* (
@@ -494,6 +494,7 @@ export const findingAdd = Effect.fn("findingAdd")(function* (
     detail: string | undefined;
     path: string | undefined;
     from: string | undefined;
+    source?: string;
     json: boolean;
     now?: string;
   },
@@ -505,6 +506,7 @@ export const findingAdd = Effect.fn("findingAdd")(function* (
       detail: input.detail,
       path: input.path,
       from: input.from,
+      source: input.source,
       now: input.now,
     }),
   );

@@ -278,6 +278,49 @@ describe("delegate", () => {
     );
   });
 
+  it("starts a retro delegate in the wiki folder with the retro skill and the session arguments", async () => {
+    const wiki = dir();
+    const fake = fakeProc((argv) => {
+      if (argv[1] === "ls") return ok('{"terminals":[]}');
+      if (argv[1] === "run") return ok('{"address":"t2"}');
+      if (argv[1] === "get" && argv[2] === "t1")
+        return ok(terminal({ address: "t1", labels: { "fleet.domain": "app" } }));
+      if (argv[1] === "get" && argv[2] === "t2")
+        return ok(terminal({ status: { state: "working" } }));
+      return ok("{}");
+    });
+    const saved = process.env.HC_TERMINAL_ID;
+    process.env.HC_TERMINAL_ID = "t1";
+    try {
+      await runWith(
+        delegate(await config(dir()), {
+          name: "retro-fix-a",
+          task: "retro fix-a",
+          repo: undefined,
+          cwd: wiki,
+          base: undefined,
+          harness: "pi",
+          model: undefined,
+          effort: undefined,
+          message: { kind: "skill", skill: "retro", args: "session s-1 cwd /w/fix-a" },
+          space: false,
+          domain: "app",
+          item: undefined,
+          overBudget: false,
+          queueIfFull: false,
+          retryQueued: false,
+        }),
+        fake.layer,
+      );
+    } finally {
+      if (saved === undefined) delete process.env.HC_TERMINAL_ID;
+      else process.env.HC_TERMINAL_ID = saved;
+    }
+    const run = fake.calls.find((call) => call.argv[1] === "run");
+    expect(run?.argv.at(-1)).toBe("/skill:retro session s-1 cwd /w/fix-a");
+    expect(run?.argv.includes(wiki)).toBe(true);
+  });
+
   it("refuses an unknown effort for the harness", async () => {
     const fake = fakeProc(() => ok());
     const error = await failureOf(

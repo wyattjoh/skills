@@ -24,6 +24,7 @@ import {
 import { liveDelegateCount, machineDelegateBudget } from "./delegate-capacity.ts";
 import { resolveEffectiveHarnessPolicy } from "./harness-policy.ts";
 import { lastLint, LINT_INTERVAL_DAYS, settledWikiPages, wikiCreated } from "./wiki.ts";
+import { markSettled, readSession, retroDue, type RetroMarker } from "./sessions.ts";
 
 /**
  * What the watcher remembers about one delegate terminal.
@@ -138,6 +139,8 @@ export type WatchSnapshot = {
   harnessPolicy: string | undefined;
   /** The last `lint-due` date that fired; absent until the first one. */
   lintDue: string | undefined;
+  /** Delegate sessions settled in the domain, each counted once, for every-5th retro sampling. */
+  settled: number;
 };
 
 /** The watcher's committed snapshot, pending events, and recovery point. */
@@ -160,6 +163,7 @@ export const emptyState = (): WatchState => ({
   capacity: {},
   harnessPolicy: undefined,
   lintDue: undefined,
+  settled: 0,
   outbox: [],
   nextEventId: 1,
   staged: undefined,
@@ -327,6 +331,69 @@ export const statusBeat = (delegates: Readonly<Record<string, SeenDelegate>>): W
     "give the user a short status in your next reply",
   );
 };
+
+type SettleMark = { session: string; retro: RetroMarker | undefined };
+
+/**
+ * Decide retro sampling for each settled event: count each delegate session once toward the
+ * domain's settled counter, and add `retro="due"`, `reason`, `session` and, for a re-retro,
+ * `since-turn` when a retro is due. A terminal with no session is left as it is.
+ * @param stateDir State dir.
+ * @param events Delegate events of this tick.
+ * @param delegates Current snapshot, for each settle's turn.
+ * @param settled The domain's settled-delegate counter before this tick.
+ * @param now Clock, for the marker time.
+ * @returns The events, the new counter, and the session writes to make once the events are committed.
+ */
+const sampleRetros = Effect.fn("sampleRetros")(function* (
+  stateDir: string,
+  events: readonly WatchEventData[],
+  delegates: Readonly<Record<string, SeenDelegate>>,
+  settled: number,
+  now: number,
+) {
+  let count = settled;
+  const marks: SettleMark[] = [];
+  const sampled: WatchEventData[] = [];
+  for (const event of events) {
+    const address = event.attrs.address ?? "";
+    const terminal =
+      event.kind === "settled"
+        ? yield* hc.get(address).pipe(Effect.catch(() => Effect.succeed(undefined)))
+        : undefined;
+    const session = terminal ? sessionOf(terminal) : "";
+    if (session === "") {
+      sampled.push(event);
+      continue;
+    }
+    const state = yield* readSession(stateDir, session);
+    if (state.counted !== true) count += 1;
+    const due = retroDue(state, state.counted !== true && count % 5 === 0);
+    const turn = delegates[address]?.turn ?? 0;
+    marks.push({
+      session,
+      retro:
+        due === undefined
+          ? undefined
+          : { turn, reason: due.reason, at: new Date(now).toISOString() },
+    });
+    sampled.push(
+      due === undefined
+        ? event
+        : {
+            ...event,
+            attrs: {
+              ...event.attrs,
+              retro: "due",
+              reason: due.reason,
+              session,
+              ...(due.since === undefined ? {} : { "since-turn": String(due.since) }),
+            },
+          },
+    );
+  }
+  return { events: sampled, settled: count, marks };
+});
 
 const CLOSED: ReadonlySet<Item["status"]> = new Set(["done", "dismissed"]);
 
@@ -512,6 +579,7 @@ const readState = (path: string) =>
         capacity: parsed.capacity ?? {},
         harnessPolicy: parsed.harnessPolicy,
         lintDue: parsed.lintDue,
+        settled: parsed.settled ?? 0,
         outbox: (parsed.outbox ?? []).map(persistedEvent),
         nextEventId: parsed.nextEventId ?? 1,
         staged: parsed.staged,
@@ -788,8 +856,10 @@ export const watch = Effect.fn("watch")(function* (config: Config, options: Watc
         ),
         harnessPolicy: state.harnessPolicy,
         lintDue: state.lintDue,
+        settled: state.settled,
       };
       const lines: WatchEventData[] = [];
+      let marks: SettleMark[] = [];
       const policy = yield* resolveEffectiveHarnessPolicy(config, options.domain).pipe(
         Effect.result,
       );
@@ -864,9 +934,18 @@ export const watch = Effect.fn("watch")(function* (config: Config, options: Watc
           if (pages.length > 0)
             events[index] = { ...event, fields: { ...event.fields, wiki: pages } };
         }
+        const sampled = yield* sampleRetros(
+          config.stateDir,
+          events,
+          polled.success,
+          snapshot.settled,
+          clock(),
+        );
+        snapshot.settled = sampled.settled;
+        marks = sampled.marks;
         if (events.some((event) => event.kind === "settled"))
-          events.push(statusBeat(polled.success));
-        lines.push(...events);
+          sampled.events.push(statusBeat(polled.success));
+        lines.push(...sampled.events);
         snapshot.delegates = polled.success;
       }
       if (clock() - lastForge >= options.forgeIntervalMs) {
@@ -1011,6 +1090,9 @@ export const watch = Effect.fn("watch")(function* (config: Config, options: Watc
       yield* writeState(path, staged);
       state = { ...staged, ...snapshot, staged: undefined };
       yield* writeState(path, state);
+      // Markers follow the committed events: a crash before them re-samples the session later,
+      // duplicating a retro rather than losing one.
+      for (const mark of marks) yield* markSettled(config.stateDir, mark.session, mark.retro);
 
       const items = Option.isSome(document) ? document.value.backlog.items : [];
       lastTick = clock();

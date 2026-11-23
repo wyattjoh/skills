@@ -210,7 +210,7 @@ describe("coordinate CLI delegate --skill", () => {
     );
     expect(result.exitCode).toBe(1);
     expect(result.stderr.toString()).toBe(
-      '\nERROR\n  Invalid value for flag --skill: "coordinate". Expected: "implement" | "implement-spec"\n',
+      '\nERROR\n  Invalid value for flag --skill: "coordinate". Expected: "implement" | "implement-spec" | "retro"\n',
     );
     expect(existsSync(join(state, "bin", "calls.log"))).toBe(false);
   });
@@ -1381,4 +1381,79 @@ describe("coordinate CLI verify verdicts and resume counts", () => {
       `  fix-a ended ${record.ended_at.slice(0, 10)} · no branch · problem: needed a second resume · resumed 2x · resume: coordinate resume fix-a`,
     );
   }, 60_000);
+});
+
+describe("coordinate CLI finding add --source", () => {
+  it("stores the source and shows it in backlog show and --json", () => {
+    const state = tempDir("coordinate-finding-source-");
+    made.push(state);
+    const run = (args: string[]): Result => {
+      const done = Bun.spawnSync(["bun", cli, ...args], {
+        env: cliEnv(state, COORDINATOR),
+        stdout: "pipe",
+        stderr: "pipe",
+        timeout: 10_000,
+      });
+      return {
+        args,
+        exit: done.exitCode,
+        stdout: done.stdout.toString(),
+        stderr: done.stderr.toString(),
+      };
+    };
+    expect(run(["start", "app"]).exit).toBe(0);
+    const added = run([
+      "finding",
+      "add",
+      "brief the push stop point",
+      "--kind",
+      "opportunity",
+      "--source",
+      "retro:fix-a",
+      "--domain",
+      "app",
+      "--json",
+    ]);
+    expect([added.exit, added.stderr]).toEqual([0, ""]);
+    expect(JSON.parse(added.stdout)).toEqual({
+      id: "f1",
+      kind: "opportunity",
+      title: "brief the push stop point",
+      detail: null,
+      path: null,
+      from: null,
+      source: "retro:fix-a",
+      createdAt: expect.stringMatching(/^\d{4}-\d\d-\d\dT/),
+      status: "open",
+      closedAt: null,
+      outcome: null,
+    });
+    expect(run(["finding", "add", "plain", "--kind", "issue", "--domain", "app"]).stdout).toBe(
+      "added f2: plain\n",
+    );
+    const shown = run(["backlog", "show", "--domain", "app"]);
+    expect(shown.stdout.split("\n").filter((line) => line.startsWith("- f"))).toEqual([
+      "- f1 [opportunity] brief the push stop point (source retro:fix-a)",
+      "- f2 [issue] plain",
+    ]);
+    const json = JSON.parse(run(["backlog", "show", "--domain", "app", "--json"]).stdout);
+    expect(
+      json.findings.map((finding: { id: string; source?: string }) => [finding.id, finding.source]),
+    ).toEqual([
+      ["f1", "retro:fix-a"],
+      ["f2", undefined],
+    ]);
+    const empty = run([
+      "finding",
+      "add",
+      "blank",
+      "--kind",
+      "issue",
+      "--source",
+      " ",
+      "--domain",
+      "app",
+    ]);
+    expect([empty.exit, empty.stdout, empty.stderr]).toEqual([1, "", "refused: source is empty\n"]);
+  });
 });

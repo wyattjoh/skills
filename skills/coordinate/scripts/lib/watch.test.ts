@@ -1050,6 +1050,7 @@ describe("watch due events", () => {
       idle: {},
       capacity: {},
       harnessPolicy: JSON.stringify({ enabled: ["pi", "claude"], default: null }),
+      settled: 0,
       outbox: [],
       nextEventId: 2,
     });
@@ -1635,5 +1636,187 @@ describe("watch --follow", () => {
       await child.exited;
     }
     expect(existsSync(lockPath(state, "app"))).toBe(false);
+  });
+});
+
+const settledLine = (name: string, address: string, retro = "") =>
+  `<event kind="settled" delegate="${name}" address="${address}"${retro}>read its REPORT.md, verify, then report</event>`;
+const problem = (at: string) => ({ result: "problem", reason: "crossed the push stop point", at });
+const fixA = (turn: number) => ({ t2: { name: "fix-a", session: "s-1", turn } });
+
+const retroDomain = async (settled?: number) => {
+  const state = tempDir();
+  made.push(state);
+  const config = await Effect.runPromise(
+    resolveConfig({ state_dir: state, backlog_dir: join(state, "backlogs") }, "/c"),
+  );
+  await runWith(createDocument(config, "app"));
+  const seed = (delegates: Record<string, { name: string; status: string; turn: number }>) => {
+    const path = join(state, "watch", "app.json");
+    const saved = existsSync(path) ? JSON.parse(readFileSync(path, "utf8")) : {};
+    mkdirSync(join(state, "watch"), { recursive: true });
+    writeFileSync(
+      path,
+      JSON.stringify({
+        ...saved,
+        delegates,
+        prs: {},
+        due: [],
+        ...(saved.settled === undefined && settled !== undefined ? { settled } : {}),
+      }),
+    );
+  };
+  const session = (id: string, fields: Record<string, unknown>) => {
+    mkdirSync(join(state, "sessions"), { recursive: true });
+    writeFileSync(
+      join(state, "sessions", `${id}.json`),
+      JSON.stringify({ session: id, ...fields }),
+    );
+  };
+  const readSessionFile = (id: string) =>
+    JSON.parse(readFileSync(join(state, "sessions", `${id}.json`), "utf8"));
+  // One live delegate per address, each running its own session, settling at `turn`.
+  const settle = async (
+    settles: Record<string, { name: string; session: string; turn: number }>,
+    at: string,
+  ) => {
+    seed(
+      Object.fromEntries(
+        Object.entries(settles).map(([address, entry]) => [
+          address,
+          { name: entry.name, status: "working", turn: entry.turn - 1 },
+        ]),
+      ),
+    );
+    const fake = fakeProc((argv) => {
+      if (argv[1] === "ls" && argv.includes("fleet.role=coordinator"))
+        return ok('{"terminals":[]}');
+      if (argv[1] === "ls")
+        return ok(
+          JSON.stringify({
+            terminals: Object.entries(settles).map(([address, entry]) => ({
+              address,
+              name: entry.name,
+              agent: "pi",
+              status: "idle",
+              turn: entry.turn,
+              state: "live",
+              cwd: "/nonexistent",
+            })),
+          }),
+        );
+      const entry = argv[1] === "get" ? settles[argv[2] ?? ""] : undefined;
+      if (entry)
+        return ok(
+          JSON.stringify({
+            address: argv[2],
+            name: entry.name,
+            state: "live",
+            labels: { "fleet.domain": "app", "fleet.session": entry.session },
+            cwd: "/nonexistent",
+          }),
+        );
+      return ok("");
+    });
+    const emitted: string[] = [];
+    await runWith(
+      watch(config, {
+        domain: "app",
+        intervalMs: 10,
+        forgeIntervalMs: 60_000,
+        maxMs: 60_000,
+        owner: undefined,
+        replace: false,
+        deliver: false,
+        today: () => "2026-11-20",
+        now: () => Date.parse(at),
+        follow: false,
+        emit: (line) => {
+          emitted.push(line);
+        },
+      }),
+      fake.layer,
+    );
+    return emitted.map(eventText).filter((line) => line.includes('kind="settled"'));
+  };
+  return { state, session, readSessionFile, settle };
+};
+
+describe("watch retro sampling", () => {
+  it("marks a settle due for a problem verdict and records the retro marker", async () => {
+    const { session, readSessionFile, settle } = await retroDomain();
+    session("s-1", { resumes: 0, verdict: problem("2026-11-20T09:00:00.000Z") });
+    expect(
+      await settle({ t2: { name: "fix-a", session: "s-1", turn: 3 } }, "2026-11-20T10:00:00.000Z"),
+    ).toEqual([settledLine("fix-a", "t2", ' retro="due" reason="problem" session="s-1"')]);
+    expect(readSessionFile("s-1").retro).toEqual({
+      turn: 3,
+      reason: "problem",
+      at: "2026-11-20T10:00:00.000Z",
+    });
+  });
+
+  it("marks a settle due after two resumes", async () => {
+    const { session, settle } = await retroDomain();
+    session("s-1", { resumes: 2, verdict: null });
+    expect(
+      await settle({ t2: { name: "fix-a", session: "s-1", turn: 3 } }, "2026-11-20T10:00:00.000Z"),
+    ).toEqual([settledLine("fix-a", "t2", ' retro="due" reason="resumes" session="s-1"')]);
+  });
+
+  it("marks every fifth settled delegate in the domain due, counting each session once", async () => {
+    const { state, session, settle } = await retroDomain(3);
+    session("s-1", {
+      resumes: 1,
+      verdict: { result: "ok", reason: null, at: "2026-11-20T09:00:00.000Z" },
+    });
+    expect(
+      await settle({ t2: { name: "fix-a", session: "s-1", turn: 3 } }, "2026-11-20T10:00:00.000Z"),
+    ).toEqual([settledLine("fix-a", "t2")]);
+    // A second settle of the same session is not another settled delegate.
+    expect(
+      await settle({ t2: { name: "fix-a", session: "s-1", turn: 5 } }, "2026-11-20T11:00:00.000Z"),
+    ).toEqual([settledLine("fix-a", "t2")]);
+    expect(
+      await settle({ t3: { name: "fix-b", session: "s-2", turn: 2 } }, "2026-11-20T12:00:00.000Z"),
+    ).toEqual([settledLine("fix-b", "t3", ' retro="due" reason="every-5th" session="s-2"')]);
+    expect(JSON.parse(readFileSync(join(state, "watch", "app.json"), "utf8")).settled).toBe(5);
+  });
+
+  it("runs one routine retro per session, and a later problem verdict re-fires since the marker", async () => {
+    const { session, readSessionFile, settle } = await retroDomain();
+    session("s-1", { resumes: 2, verdict: null });
+    expect(await settle(fixA(3), "2026-11-20T10:00:00.000Z")).toEqual([
+      settledLine("fix-a", "t2", ' retro="due" reason="resumes" session="s-1"'),
+    ]);
+    expect(await settle(fixA(4), "2026-11-20T11:00:00.000Z")).toEqual([settledLine("fix-a", "t2")]);
+    session("s-1", {
+      ...readSessionFile("s-1"),
+      resumes: 3,
+      verdict: problem("2026-11-20T11:30:00.000Z"),
+    });
+    expect(await settle(fixA(6), "2026-11-20T12:00:00.000Z")).toEqual([
+      settledLine("fix-a", "t2", ' retro="due" reason="problem" session="s-1" since-turn="3"'),
+    ]);
+    expect(await settle(fixA(7), "2026-11-20T13:00:00.000Z")).toEqual([settledLine("fix-a", "t2")]);
+    expect(readSessionFile("s-1")).toEqual({
+      session: "s-1",
+      resumes: 3,
+      verdict: problem("2026-11-20T11:30:00.000Z"),
+      counted: true,
+      retro: { turn: 6, reason: "problem", at: "2026-11-20T12:00:00.000Z" },
+    });
+  });
+
+  it("reads a session file written before retro markers as unsampled, keeping its counts", async () => {
+    const { session, readSessionFile, settle } = await retroDomain();
+    session("s-1", { resumes: 2, verdict: problem("2026-11-20T09:00:00.000Z") });
+    expect(
+      await settle({ t2: { name: "fix-a", session: "s-1", turn: 3 } }, "2026-11-20T10:00:00.000Z"),
+    ).toEqual([settledLine("fix-a", "t2", ' retro="due" reason="problem" session="s-1"')]);
+    expect([readSessionFile("s-1").resumes, readSessionFile("s-1").verdict]).toEqual([
+      2,
+      problem("2026-11-20T09:00:00.000Z"),
+    ]);
   });
 });

@@ -102,6 +102,10 @@ export type Finding = {
   path: string | null;
   from: string | null;
   /**
+   * Where the finding came from, such as `retro:<delegate>`. Findings without one omit it.
+   */
+  source?: string;
+  /**
    * When it was added. Findings recorded before this field existed have none.
    */
   createdAt?: string;
@@ -378,6 +382,7 @@ export const validateBacklog = (value: unknown): Validated => {
     textOrNull(`${where}.detail`, finding.detail);
     textOrNull(`${where}.path`, finding.path);
     textOrNull(`${where}.from`, finding.from);
+    if ("source" in finding) nonEmpty(`${where}.source`, finding.source);
     if ("createdAt" in finding) nonEmpty(`${where}.createdAt`, finding.createdAt);
     if (!["open", "acted", "dismissed"].includes(String(finding.status)))
       errors.push(`${where}.status must be open, acted or dismissed`);

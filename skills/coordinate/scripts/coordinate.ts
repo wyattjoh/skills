@@ -490,8 +490,8 @@ const delegateCommand = Command.make(
     ),
     skill: optionalChoiceFlag(
       "skill",
-      ["implement", "implement-spec"],
-      "start with an implement skill; --brief may accompany it",
+      ["implement", "implement-spec", "retro"],
+      "start with an implement skill, or retro for a read-only retro; --brief may accompany it",
     ),
     args: stringFlag("args", "arguments after the skill prefix").pipe(Flag.withDefault("")),
     noSpace: booleanFlag(
@@ -520,7 +520,9 @@ const delegateCommand = Command.make(
     const brief = Option.getOrUndefined(options.brief);
     const skill = Option.getOrUndefined(options.skill);
     if (brief === undefined && skill === undefined) {
-      console.error("refused: pass --brief <path>, --skill <implement|implement-spec>, or both");
+      console.error(
+        "refused: pass --brief <path>, --skill <implement|implement-spec|retro>, or both",
+      );
       process.exit(1);
     }
     const message: DelegateFirstMessage =
@@ -1339,6 +1341,7 @@ const findingAddCommand = Command.make(
     detail: optionalStringFlag("detail", "more detail"),
     path: optionalStringFlag("path", "file or folder it concerns"),
     from: optionalStringFlag("from", "item it was noticed while working on, such as i3"),
+    source: optionalStringFlag("source", "where it came from, such as retro:fix-a"),
     domain: optionalStringFlag(
       "domain",
       "domain (default: this terminal's fleet.domain label, coordinator or delegate)",
@@ -1354,6 +1357,7 @@ const findingAddCommand = Command.make(
           detail: Option.getOrUndefined(options.detail),
           path: Option.getOrUndefined(options.path),
           from: Option.getOrUndefined(options.from),
+          source: Option.getOrUndefined(options.source),
           json: options.json,
           now: new Date().toISOString(),
         }),

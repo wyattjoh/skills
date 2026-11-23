@@ -6,17 +6,79 @@ import type { Config } from "./config.ts";
 import { L, readEnded, Refused, sessionOf, VerdictSchema, writeEnded } from "./fleet.ts";
 import * as hc from "./herdr.ts";
 
+/**
+ * Why a retro is due: a problem verdict, two or more resumes, or the domain's fifth settled delegate.
+ */
+export const RETRO_REASONS = ["problem", "resumes", "every-5th"] as const;
+
+const RetroMarkerSchema = Schema.Struct({
+  turn: Schema.Number,
+  reason: Schema.Literals(RETRO_REASONS),
+  at: Schema.String,
+});
+
+/**
+ * The last retro due for a session: the turn it was due at, why, and when.
+ */
+export type RetroMarker = typeof RetroMarkerSchema.Type;
+
 const SessionStateSchema = Schema.Struct({
   session: Schema.String,
   resumes: Schema.Number,
   verdict: Schema.NullOr(VerdictSchema),
+  // Optional, so session files written before retro sampling keep their resumes and verdicts.
+  counted: Schema.optionalKey(Schema.Boolean),
+  retro: Schema.optionalKey(Schema.NullOr(RetroMarkerSchema)),
 });
 
 /**
  * What coordinate keeps about one delegate session across ends, resumes and restarts: how many
- * times it was resumed and the latest verify verdict.
+ * times it was resumed, the latest verify verdict, whether the domain's settled-delegate counter
+ * has counted it, and its last retro marker.
  */
 export type SessionState = typeof SessionStateSchema.Type;
+
+/**
+ * Whether a settle makes a retro due, and why. A problem verdict newer than the last marker always
+ * fires, scoped to the turns since that marker; otherwise a session gets one routine retro at most,
+ * for two or more resumes or for being the domain's fifth (tenth, ...) settled delegate.
+ * @param state The session's state before this settle.
+ * @param fifth This settle counted the session and brought the domain's counter to a multiple of 5.
+ * @returns The reason and the marker turn it is scoped after, or undefined when no retro is due.
+ */
+export const retroDue = (
+  state: SessionState,
+  fifth: boolean,
+): { reason: RetroMarker["reason"]; since: number | undefined } | undefined => {
+  const marker = state.retro ?? undefined;
+  if (state.verdict?.result === "problem" && (marker === undefined || state.verdict.at > marker.at))
+    return { reason: "problem", since: marker?.turn };
+  if (marker !== undefined) return undefined;
+  if (state.resumes >= 2) return { reason: "resumes", since: undefined };
+  if (fifth) return { reason: "every-5th", since: undefined };
+  return undefined;
+};
+
+/**
+ * Record a settle on a session: counted by the domain's settled-delegate counter, and its retro
+ * marker when one came due. Re-reads the file so a verdict recorded meanwhile survives.
+ * @param stateDir State dir.
+ * @param session Session id.
+ * @param retro The new marker, or undefined to keep the old one.
+ * @returns The updated state.
+ */
+export const markSettled = Effect.fn("markSettled")(function* (
+  stateDir: string,
+  session: string,
+  retro: RetroMarker | undefined,
+) {
+  const state = yield* readSession(stateDir, session);
+  return yield* writeSession(stateDir, {
+    ...state,
+    counted: true,
+    ...(retro === undefined ? {} : { retro }),
+  });
+});
 
 /**
  * Folder of per-session state, beside the ended records.

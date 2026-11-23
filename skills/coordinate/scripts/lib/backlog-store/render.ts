@@ -3,6 +3,7 @@ import {
   ITEM_STATUSES,
   type Ask,
   type Backlog,
+  type Finding,
   type Item,
   type Policy,
 } from "./schema.ts";
@@ -94,6 +95,14 @@ const closed = (item: Item): boolean => item.status === "done" || item.status ==
 export const policyCitation = (policy: Policy): string =>
   policy.wiki === undefined ? "" : ` (wiki: [[${policy.wiki}]])`;
 
+const findingOrigin = (finding: Finding): string => {
+  const parts = [
+    ...(finding.from ? [`from ${finding.from}`] : []),
+    ...(finding.source ? [`source ${finding.source}`] : []),
+  ];
+  return parts.length > 0 ? ` (${parts.join(", ")})` : "";
+};
+
 const list = (paths: string[]): string => (paths.length > 0 ? paths.join(", ") : "(none)");
 
 /**
@@ -144,7 +153,7 @@ export const renderBacklog = (
     ...(findings.length > 0
       ? findings.map(
           (finding) =>
-            `- ${finding.id} [${finding.kind}] ${finding.title}${finding.from ? ` (from ${finding.from})` : ""}`,
+            `- ${finding.id} [${finding.kind}] ${finding.title}${findingOrigin(finding)}`,
         )
       : ["(none)"]),
     "",
