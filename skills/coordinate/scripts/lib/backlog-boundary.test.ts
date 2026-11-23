@@ -621,7 +621,7 @@ describe("coordinate CLI", () => {
     expect(run("backlog", "focus", "login v2")).toEqual([0, "focus: login v2\n"]);
     expect(run("backlog", "focus")).toEqual([
       1,
-      "refused: pass exactly one of <text> or --clear\n",
+      "refused: pass exactly one of --md, <text> or --clear\n",
     ]);
     expect(run("backlog", "boundary", "rm", state)).toEqual([
       1,

@@ -2147,6 +2147,34 @@ describe("coordinator-only mutations", () => {
     expect(read(path).items[0].status).toBe("open");
   });
 
+  it("treats a -md flag beside --status as a full update from outside a terminal", async () => {
+    const { state, path } = await prepared();
+    const { HC_TERMINAL_ID: _unset, ...outside } = cliEnv(state, COORDINATOR);
+    const before = readFileSync(path, "utf8");
+    expect(
+      ["--decided-md", "--outcome-md", "--note-md", "--answer-md", "--ask-md"].map((flag) =>
+        spawn(outside, [
+          "item",
+          "update",
+          "--status",
+          "parked",
+          flag,
+          "x",
+          "--domain",
+          "app",
+          "--",
+          "i1",
+        ]),
+      ),
+    ).toEqual(
+      Array.from({ length: 5 }, () => [
+        2,
+        "could not check: Unchecked: HC_TERMINAL_ID is unset, so this terminal's role cannot be checked: run this inside a Herdr terminal\n",
+      ]),
+    );
+    expect(readFileSync(path, "utf8")).toBe(before);
+  });
+
   it("refuses a status change from a delegate terminal, even with --domain", async () => {
     const { state, path } = await prepared();
     const before = readFileSync(path, "utf8");

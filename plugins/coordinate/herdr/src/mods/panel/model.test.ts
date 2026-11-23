@@ -31,6 +31,8 @@ import {
   overridingDomains,
   domainOverrides,
   harnessPolicyNotices,
+  inlineMarkdown,
+  markdownPlain,
   rebaseHarnessPolicyDraft,
   policyDialogProps,
   policyDialogSpec,
@@ -756,4 +758,46 @@ test("groupItems moves open queued items into Queued, in queue order, right afte
     ["open", "Open", ["i2"]],
   ]);
   expect(groupItems(backlog).map((group) => group.status)).toEqual(["open"]);
+});
+
+test("keeps inline Markdown on one line by joining lines and escaping a leading block marker", () => {
+  expect(
+    [
+      "Ship `v2`\nnow",
+      "# heading",
+      "> quote",
+      "- item",
+      "* item",
+      "1. first",
+      "2) second",
+      "***",
+      "```js",
+      "| a | b |",
+      "-1 degrees",
+      "**Ship** now",
+      "__init__ runs",
+      "- - -",
+    ].map(inlineMarkdown),
+  ).toEqual([
+    "Ship `v2` now",
+    "\\# heading",
+    "\\> quote",
+    "\\- item",
+    "\\* item",
+    "1\\. first",
+    "2\\) second",
+    "\\***",
+    "\\```js",
+    "\\| a | b |",
+    "-1 degrees",
+    "**Ship** now",
+    "__init__ runs",
+    "\\- - -",
+  ]);
+});
+
+test("reads inline Markdown as plain text for a truncated caption", () => {
+  expect(markdownPlain("Use `json` **now**, see [docs](https://x.test) or *this* snake_case")).toBe(
+    "Use json now, see docs or this snake_case",
+  );
 });

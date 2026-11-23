@@ -2202,6 +2202,34 @@ describe("watch remote outboxes", () => {
   const notify = (text: string) =>
     `<event kind="notify" delegate="rem-a" address="strix/t5">${text}</event>`;
 
+  it("applies a finding line's detailMarkdown and refuses one with detail beside it", async () => {
+    const run = setup({});
+    expect(await run.tick()).toEqual(alive);
+    run.setOutbox(
+      `${[
+        JSON.stringify({
+          type: "finding",
+          kind: "issue",
+          title: "flaky gate",
+          detailMarkdown: "- it hangs\n- on CI",
+        }),
+        JSON.stringify({
+          type: "finding",
+          kind: "issue",
+          title: "both",
+          detail: "a",
+          detailMarkdown: "b",
+        }),
+      ].join("\n")}\n`,
+    );
+    expect(await run.tick()).toEqual([
+      '<event kind="delegate-outbox-invalid" delegate="rem-a" address="strix/t5" line="2"><error>--detail and --detail-md cannot be combined</error>skipped; ask the delegate to append a corrected line</event>',
+    ]);
+    expect(
+      run.findings().map((finding) => [finding.title, finding.detail, finding.detailMarkdown]),
+    ).toEqual([["flaky gate", null, "- it hangs\n- on CI"]]);
+  });
+
   it("applies each complete finding and notify line once across watcher restarts", async () => {
     const run = setup({});
     expect(await run.tick()).toEqual(alive);

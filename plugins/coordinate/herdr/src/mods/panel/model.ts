@@ -5,6 +5,7 @@ import {
   ITEM_STATUSES,
   OUTSIDE_TERMINAL_STATUSES,
   isRecord,
+  questionOf,
   validateBacklog,
 } from "../../lib/store.ts";
 import type { Ask, Backlog, DelegateRef, Finding, Item, ItemStatus } from "../../lib/store.ts";
@@ -1463,7 +1464,36 @@ export type AnswerDraft = {
  * @returns The key.
  */
 export const draftKey = (domain: string, item: Item, ask: Ask): string =>
-  `${domain}\0${item.id}\0${ask.question}`;
+  `${domain}\0${item.id}\0${questionOf(ask)}`;
+
+/**
+ * Inline Markdown made safe to render as one line: whitespace runs, line breaks included, become
+ * one space, and a leading block marker (heading, quote, list, fence, table, break) is escaped, so
+ * the native Markdown view draws a single paragraph.
+ * @param markdown The inline Markdown source.
+ * @returns The source to render.
+ */
+export const inlineMarkdown = (markdown: string): string => {
+  const line = markdown.replace(/\s+/g, " ").trim();
+  if (/^\d+[.)](?: |$)/.test(line)) return line.replace(/^(\d+)([.)])/, "$1\\$2");
+  const block = /^(?:#|>|[-+*](?: |$)|```|~~~|\|)/.test(line) || /^([-*_])(?: ?\1){2,}$/.test(line);
+  return block ? `\\${line}` : line;
+};
+
+/**
+ * Inline Markdown read as plain text, for a truncated one-line caption that cannot hold rich
+ * text: links keep their text, and code and emphasis marks drop.
+ * @param markdown The inline Markdown source.
+ * @returns Plain text.
+ */
+export const markdownPlain = (markdown: string): string =>
+  markdown
+    .replace(/!?\[([^\]]*)\]\([^)]*\)/g, "$1")
+    .replace(/`+/g, "")
+    .replace(/(\*\*|__|~~)(.+?)\1/g, "$2")
+    .replace(/(^|[^\w*])\*(?!\s)(.+?)\*(?!\w)/g, "$1$2")
+    .replace(/\s+/g, " ")
+    .trim();
 
 /**
  * The draft for a key: the one kept when it matches, else a fresh one with nothing picked, so

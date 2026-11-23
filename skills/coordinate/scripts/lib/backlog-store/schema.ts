@@ -35,43 +35,108 @@ export const OUTSIDE_TERMINAL_STATUSES = [
 ] as const satisfies readonly ItemStatus[];
 
 /**
- * A dated item event, such as a decision or a discussion request.
+ * A prose field as a reader shows it: Markdown when the record has the Markdown sibling, else the
+ * deprecated plain text.
  */
-export type Dated = { text: string; at: string };
+export type Prose = { markdown: boolean; value: string };
+
+/**
+ * A prose field's shown form: its Markdown sibling when present, else its text, else null (also
+ * for an empty discussion note).
+ * @param text The deprecated plain text field.
+ * @param markdown The Markdown sibling.
+ * @returns What to show, or null when the record has neither.
+ */
+export const prose = (
+  text: string | null | undefined,
+  markdown: string | null | undefined,
+): Prose | null => {
+  if (typeof markdown === "string" && markdown !== "") return { markdown: true, value: markdown };
+  if (typeof text === "string" && text !== "") return { markdown: false, value: text };
+  return null;
+};
+
+/**
+ * A prose field's source, Markdown or text, for output that shows Markdown raw.
+ * @param text The deprecated plain text field.
+ * @param markdown The Markdown sibling.
+ * @returns The shown source, or an empty string when the record has neither.
+ */
+export const proseSource = (
+  text: string | null | undefined,
+  markdown: string | null | undefined,
+): string => prose(text, markdown)?.value ?? "";
+
+/**
+ * A dated item event, such as a decision or a discussion request: plain `text` (deprecated for
+ * coordinator decisions, and the form answer and discussion events keep) or `markdown`, never both.
+ */
+export type Dated =
+  | { text: string; markdown?: never; at: string }
+  | { text?: never; markdown: string; at: string };
 
 /**
  * Whether a dated entry records a discussion request rather than a decision or answer.
- * @param text The entry text.
+ * @param text The entry text; a Markdown decision has none.
  * @returns True for the reserved discussion event format.
  */
-export const isDiscussion = (text: string): boolean => text.startsWith('Discuss "');
+export const isDiscussion = (text: string | undefined): text is string =>
+  text !== undefined && text.startsWith('Discuss "');
 
 /**
- * A reusable policy recorded with its stable short id and date. `wiki` names the domain or shared
- * wiki page that explains it, and is absent when the policy cites none.
+ * A reusable policy recorded with its stable short id and date: `markdown`, or the deprecated plain
+ * `text`, never both. `wiki` names the domain or shared wiki page that explains it, and is absent
+ * when the policy cites none.
  */
-export type Policy = { id: string; text: string; at: string; wiki?: string };
+export type Policy = { id: string; at: string; wiki?: string } & (
+  | { text: string; markdown?: never }
+  | { text?: never; markdown: string }
+);
 
 /**
- * A request to discuss an ask before the user decides it.
+ * A request to discuss an ask before the user decides it. `noteMarkdown` replaces `note`, which is
+ * then empty.
  */
-export type DiscussionRequest = { note: string; at: string };
+export type DiscussionRequest = { note: string; noteMarkdown?: string; at: string };
 
 /**
- * A question that waits on the user, with the coordinator's recommendation and optional discussion request.
+ * A question that waits on the user, with the coordinator's recommendation and optional discussion
+ * request. Each `...Markdown` field is the Markdown sibling of the deprecated text field it names;
+ * a record holds one or the other. `questionMarkdown` is inline (one line); the others are blocks.
+ * With `questionMarkdown` the record has no `question`; with another sibling its text is null.
  */
 export type Ask = {
-  question: string;
+  question?: string;
+  questionMarkdown?: string;
   context: string | null;
+  contextMarkdown?: string;
   options: string[];
   optionDetails?: string[];
+  optionDetailsMarkdown?: string[];
   rec: string | null;
   recReason: string | null;
+  recReasonMarkdown?: string;
   discuss: DiscussionRequest | null;
 };
 
-/** A completed ask and the answer recorded at the time it was resolved. */
-export type AnsweredAsk = Ask & { answer: string; note: string | null; answeredAt: string };
+/**
+ * The ask's question as a reader shows it, Markdown (inline) or text.
+ * @param ask The ask.
+ * @returns The question's source.
+ */
+export const questionOf = (ask: Ask): string => proseSource(ask.question, ask.questionMarkdown);
+
+/**
+ * A completed ask and the answer recorded at the time it was resolved. A free-text answer may be
+ * inline `answerMarkdown` instead of `answer`; `noteMarkdown` replaces `note`, which is then null.
+ */
+export type AnsweredAsk = Ask & {
+  answer?: string;
+  answerMarkdown?: string;
+  note: string | null;
+  noteMarkdown?: string;
+  answeredAt: string;
+};
 
 /**
  * A delegate filed under an item. The session id is the stable key; no address is stored.
@@ -106,6 +171,10 @@ export type Item = {
   createdAt: string;
   closedAt: string | null;
   outcome: string | null;
+  /**
+   * The outcome as Markdown; the deprecated `outcome` is then null.
+   */
+  outcomeMarkdown?: string;
 };
 
 /**
@@ -116,6 +185,10 @@ export type Finding = {
   kind: "issue" | "opportunity";
   title: string;
   detail: string | null;
+  /**
+   * The detail as Markdown; the deprecated `detail` is then null.
+   */
+  detailMarkdown?: string;
   path: string | null;
   from: string | null;
   /**
@@ -129,6 +202,10 @@ export type Finding = {
   status: "open" | "acted" | "dismissed";
   closedAt: string | null;
   outcome: string | null;
+  /**
+   * The outcome as Markdown; the deprecated `outcome` is then null.
+   */
+  outcomeMarkdown?: string;
 };
 
 /**
@@ -150,6 +227,10 @@ export type Backlog = {
   schemaVersion: 1;
   domain: string;
   focus: string | null;
+  /**
+   * The focus line as inline Markdown; the deprecated `focus` is then null.
+   */
+  focusMarkdown?: string;
   legacy: string | null;
   boundary: Boundary;
   policies: Policy[];
@@ -205,10 +286,35 @@ export const validateBacklog = (value: unknown): Validated => {
     field.forEach((entry: unknown, index) => {
       if (!isRecord(entry)) errors.push(`${where}[${index}] must be an object`);
       else {
-        nonEmpty(`${where}[${index}].text`, entry.text);
+        textOrMarkdown(`${where}[${index}]`, entry);
         nonEmpty(`${where}[${index}].at`, entry.at);
       }
     });
+  };
+  /**
+   * Check a Markdown sibling when present, and that its text field is not set beside it. A text
+   * field counts as set when it is a non-empty string.
+   */
+  const sibling = (
+    where: string,
+    textName: string,
+    textField: unknown,
+    name: string,
+    field: unknown,
+    inline: boolean,
+  ): boolean => {
+    if (field === undefined) return false;
+    nonEmpty(`${where}.${name}`, field);
+    if (inline && typeof field === "string" && /[\r\n]/.test(field))
+      errors.push(`${where}.${name} must be one line`);
+    if (typeof textField === "string" && textField !== "")
+      errors.push(`${where} cannot have both ${textName} and ${name}`);
+    return true;
+  };
+  const textOrMarkdown = (where: string, record: Record<string, unknown>): void => {
+    if (!sibling(where, "text", record.text, "markdown", record.markdown, false))
+      nonEmpty(`${where}.text`, record.text);
+    else if (record.text !== undefined) text(`${where}.text`, record.text);
   };
   const list = (where: string, field: unknown): unknown[] => {
     if (Array.isArray(field)) return field;
@@ -263,6 +369,7 @@ export const validateBacklog = (value: unknown): Validated => {
   if (value.schemaVersion !== 1) errors.push("schemaVersion must be 1");
   nonEmpty("domain", candidate.domain);
   textOrNull("focus", candidate.focus);
+  sibling("the document", "focus", candidate.focus, "focusMarkdown", candidate.focusMarkdown, true);
   textOrNull("legacy", candidate.legacy);
   if (!isRecord(candidate.boundary)) errors.push("boundary must be an object");
   else {
@@ -293,7 +400,7 @@ export const validateBacklog = (value: unknown): Validated => {
       errors.push(`${where} must be an object`);
       return;
     }
-    nonEmpty(`${where}.text`, policy.text);
+    textOrMarkdown(where, policy);
     nonEmpty(`${where}.at`, policy.at);
     if ("wiki" in policy) nonEmpty(`${where}.wiki`, policy.wiki);
   });
@@ -320,13 +427,22 @@ export const validateBacklog = (value: unknown): Validated => {
   policies.forEach((policy: unknown, index) => {
     if (isRecord(policy)) checkId(`policies[${index}]`, policy.id, "p");
   });
-  const closed = (where: string, closedAt: unknown, outcome: unknown, isClosed: boolean) => {
+  const closed = (where: string, record: Record<string, unknown>, isClosed: boolean) => {
+    const markdown = sibling(
+      where,
+      "outcome",
+      record.outcome,
+      "outcomeMarkdown",
+      record.outcomeMarkdown,
+      false,
+    );
     if (isClosed) {
-      nonEmpty(`${where}.closedAt`, closedAt);
-      nonEmpty(`${where}.outcome`, outcome);
+      nonEmpty(`${where}.closedAt`, record.closedAt);
+      if (markdown) textOrNull(`${where}.outcome`, record.outcome);
+      else nonEmpty(`${where}.outcome`, record.outcome);
     } else {
-      textOrNull(`${where}.closedAt`, closedAt);
-      textOrNull(`${where}.outcome`, outcome);
+      textOrNull(`${where}.closedAt`, record.closedAt);
+      textOrNull(`${where}.outcome`, record.outcome);
     }
   };
 
@@ -348,9 +464,24 @@ export const validateBacklog = (value: unknown): Validated => {
         errors.push(`${askWhere} must be an object`);
         return;
       }
-      nonEmpty(`${askWhere}.question`, ask.question);
+      if (
+        !sibling(askWhere, "question", ask.question, "questionMarkdown", ask.questionMarkdown, true)
+      )
+        nonEmpty(`${askWhere}.question`, ask.question);
       textOrNull(`${askWhere}.context`, ask.context);
+      sibling(askWhere, "context", ask.context, "contextMarkdown", ask.contextMarkdown, false);
       strings(`${askWhere}.options`, ask.options);
+      if (ask.optionDetailsMarkdown !== undefined) {
+        strings(`${askWhere}.optionDetailsMarkdown`, ask.optionDetailsMarkdown);
+        if (
+          Array.isArray(ask.optionDetailsMarkdown) &&
+          Array.isArray(ask.options) &&
+          ask.optionDetailsMarkdown.length !== ask.options.length
+        )
+          errors.push(`${askWhere}.optionDetailsMarkdown must have the same length as options`);
+        if (ask.optionDetails !== undefined)
+          errors.push(`${askWhere} cannot have both optionDetails and optionDetailsMarkdown`);
+      }
       if (ask.optionDetails !== undefined) {
         strings(`${askWhere}.optionDetails`, ask.optionDetails);
         if (
@@ -362,10 +493,26 @@ export const validateBacklog = (value: unknown): Validated => {
       }
       textOrNull(`${askWhere}.rec`, ask.rec);
       textOrNull(`${askWhere}.recReason`, ask.recReason);
+      sibling(
+        askWhere,
+        "recReason",
+        ask.recReason,
+        "recReasonMarkdown",
+        ask.recReasonMarkdown,
+        false,
+      );
       if (ask.discuss !== null) {
         if (!isRecord(ask.discuss)) errors.push(`${askWhere}.discuss must be an object or null`);
         else {
           text(`${askWhere}.discuss.note`, ask.discuss.note);
+          sibling(
+            `${askWhere}.discuss`,
+            "note",
+            ask.discuss.note,
+            "noteMarkdown",
+            ask.discuss.noteMarkdown,
+            false,
+          );
           if (typeof ask.discuss.at !== "string" || !DATE.test(ask.discuss.at))
             errors.push(`${askWhere}.discuss.at must be YYYY-MM-DD`);
         }
@@ -381,8 +528,12 @@ export const validateBacklog = (value: unknown): Validated => {
       const entryWhere = `${where}.answered[${at}]`;
       checkAsk(entryWhere, entry);
       if (isRecord(entry)) {
-        nonEmpty(`${entryWhere}.answer`, entry.answer);
+        if (
+          !sibling(entryWhere, "answer", entry.answer, "answerMarkdown", entry.answerMarkdown, true)
+        )
+          nonEmpty(`${entryWhere}.answer`, entry.answer);
         textOrNull(`${entryWhere}.note`, entry.note);
+        sibling(entryWhere, "note", entry.note, "noteMarkdown", entry.noteMarkdown, false);
         if (typeof entry.answeredAt !== "string" || !DATE.test(entry.answeredAt))
           errors.push(`${entryWhere}.answeredAt must be YYYY-MM-DD`);
       }
@@ -405,7 +556,7 @@ export const validateBacklog = (value: unknown): Validated => {
       if (ref.machine !== undefined) nonEmpty(`${refWhere}.machine`, ref.machine);
     });
     nonEmpty(`${where}.createdAt`, item.createdAt);
-    closed(where, item.closedAt, item.outcome, status === "done" || status === "dismissed");
+    closed(where, item, status === "done" || status === "dismissed");
     if (status === "delegated" && delegates.length === 0)
       errors.push(`${where} is delegated but has no delegate`);
     if (
@@ -427,13 +578,14 @@ export const validateBacklog = (value: unknown): Validated => {
       errors.push(`${where}.kind must be issue or opportunity`);
     nonEmpty(`${where}.title`, finding.title);
     textOrNull(`${where}.detail`, finding.detail);
+    sibling(where, "detail", finding.detail, "detailMarkdown", finding.detailMarkdown, false);
     textOrNull(`${where}.path`, finding.path);
     textOrNull(`${where}.from`, finding.from);
     if ("source" in finding) nonEmpty(`${where}.source`, finding.source);
     if ("createdAt" in finding) nonEmpty(`${where}.createdAt`, finding.createdAt);
     if (!["open", "acted", "dismissed"].includes(String(finding.status)))
       errors.push(`${where}.status must be open, acted or dismissed`);
-    closed(where, finding.closedAt, finding.outcome, finding.status !== "open");
+    closed(where, finding, finding.status !== "open");
   });
 
   return errors.length === 0

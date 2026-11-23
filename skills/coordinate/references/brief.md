@@ -27,7 +27,7 @@ Read first: <repo guides, the plan or spec, by absolute path>.
 
 Change only <files, apps or areas>. Write only inside this worktree. Anything else is a question
 for the coordinator, not a change. Record an issue or opportunity you notice outside this task with
-`coordinate finding add "<title>" --kind issue|opportunity --from <item id> --detail "<what>"`.
+`coordinate finding add "<title>" --kind issue|opportunity --from <item id> --detail-md "<what>"`.
 
 ## Stop points
 
@@ -81,7 +81,7 @@ A delegate started with `--machine` runs where there is no coordinate CLI, so it
 
 This delegate runs on <machine>, which has no coordinate CLI. Do not run `coordinate finding add` or `coordinate notify`: wherever this brief says to run one, append one JSON object on its own line to `<outbox>` instead, and never change earlier lines. Your coordinator's watcher reads the file and applies each line once.
 
-- A finding: `{"type":"finding","kind":"issue","title":"<title>","from":"<item id>","detail":"<what>","path":"<file or folder>"}`. `kind` is `issue` or `opportunity`; `from`, `detail` and `path` are optional.
+- A finding: `{"type":"finding","kind":"issue","title":"<title>","from":"<item id>","detailMarkdown":"<what, as Markdown>","path":"<file or folder>"}`. `kind` is `issue` or `opportunity`; `from`, `detailMarkdown` and `path` are optional; plain-text `detail` is deprecated.
 - The notify: `{"type":"notify","text":"<name>: <status>, report at <absolute report path>"}`.
 ```
 

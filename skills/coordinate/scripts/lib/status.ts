@@ -2,6 +2,7 @@ import { existsSync } from "node:fs";
 import { Effect, Option } from "effect";
 import { readDocument, refSessions, showBacklog } from "./backlog-doc.ts";
 import { idleDelegated } from "./backlog-store/ops.ts";
+import { proseSource, questionOf } from "./backlog-store/schema.ts";
 import type { Config } from "./config.ts";
 import { L, type Delegate, members, readEnded } from "./fleet.ts";
 import { harnessPolicyStatus } from "./harness-policy.ts";
@@ -326,14 +327,16 @@ export const domainStatus = Effect.fn("domainStatus")(function* (
     if (!withResume)
       for (const item of document.value.backlog.items) {
         if (item.ask !== null && item.ask.discuss !== null) {
-          const note = item.ask.discuss.note === "" ? "" : `; ${item.ask.discuss.note}`;
+          const source = proseSource(item.ask.discuss.note, item.ask.discuss.noteMarkdown);
+          const note = source === "" ? "" : `; ${source}`;
           lines.push(
-            `  discuss ${item.id} ${item.title}: "${item.ask.question}" (${item.ask.discuss.at}${note})`,
+            `  discuss ${item.id} ${item.title}: "${questionOf(item.ask)}" (${item.ask.discuss.at}${note})`,
           );
         }
         for (const answered of item.answered) {
-          if (answered.note !== null)
-            lines.push(`  answer note ${item.id} ${item.title}: ${answered.note}`);
+          const note = proseSource(answered.note, answered.noteMarkdown);
+          if (answered.note !== null || note !== "")
+            lines.push(`  answer note ${item.id} ${item.title}: ${note}`);
         }
       }
   }

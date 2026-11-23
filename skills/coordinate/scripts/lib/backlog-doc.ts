@@ -38,8 +38,12 @@ import {
   type DelegateRef,
   type Finding,
   type Item,
+  type Policy,
+  proseSource,
   validateBacklog,
 } from "./backlog-store/schema.ts";
+
+const policyBodyOf = (policy: Policy): string => proseSource(policy.text, policy.markdown);
 import { absolutePath, type Config } from "./config.ts";
 import { canonicalMachine, localMachine } from "./delegate-capacity.ts";
 import { backlogPath, members, Refused } from "./fleet.ts";
@@ -469,17 +473,27 @@ export const itemAdd = Effect.fn("itemAdd")(function* (
 export const itemClose = Effect.fn("itemClose")(function* (
   config: Config,
   domain: string,
-  input: { id: string; outcome: string; dismissed: boolean; json: boolean; now: string },
+  input: {
+    id: string;
+    outcome: string;
+    outcomeMarkdown?: string | undefined;
+    dismissed: boolean;
+    json: boolean;
+    now: string;
+  },
 ) {
   const item = yield* change(config, domain, (backlog) =>
     closeItem(backlog, {
       id: input.id,
       outcome: input.outcome,
+      outcomeMarkdown: input.outcomeMarkdown,
       dismissed: input.dismissed,
       now: input.now,
     }),
   );
-  return input.json ? json(item) : [`${item.status} ${item.id}: ${item.outcome ?? ""}`];
+  return input.json
+    ? json(item)
+    : [`${item.status} ${item.id}: ${proseSource(item.outcome, item.outcomeMarkdown)}`];
 });
 
 /**
@@ -496,6 +510,7 @@ export const findingAdd = Effect.fn("findingAdd")(function* (
     kind: Finding["kind"];
     title: string;
     detail: string | undefined;
+    detailMarkdown?: string | undefined;
     path: string | undefined;
     from: string | undefined;
     source: string | undefined;
@@ -508,6 +523,7 @@ export const findingAdd = Effect.fn("findingAdd")(function* (
       kind: input.kind,
       title: input.title,
       detail: input.detail,
+      detailMarkdown: input.detailMarkdown,
       path: input.path,
       from: input.from,
       source: input.source,
@@ -527,17 +543,27 @@ export const findingAdd = Effect.fn("findingAdd")(function* (
 export const findingClose = Effect.fn("findingClose")(function* (
   config: Config,
   domain: string,
-  input: { id: string; outcome: string; dismissed: boolean; json: boolean; now: string },
+  input: {
+    id: string;
+    outcome: string;
+    outcomeMarkdown?: string | undefined;
+    dismissed: boolean;
+    json: boolean;
+    now: string;
+  },
 ) {
   const finding = yield* change(config, domain, (backlog) =>
     closeFinding(backlog, {
       id: input.id,
       outcome: input.outcome,
+      outcomeMarkdown: input.outcomeMarkdown,
       dismissed: input.dismissed,
       now: input.now,
     }),
   );
-  return input.json ? json(finding) : [`${finding.status} ${finding.id}: ${finding.outcome ?? ""}`];
+  return input.json
+    ? json(finding)
+    : [`${finding.status} ${finding.id}: ${proseSource(finding.outcome, finding.outcomeMarkdown)}`];
 });
 
 /**
@@ -756,7 +782,7 @@ export const policyLs = Effect.fn("policyLs")(function* (
     : backlog.policies.length === 0
       ? ["(none)"]
       : backlog.policies.map(
-          (policy) => `${policy.id} ${policy.at}: ${policy.text}${policyCitation(policy)}`,
+          (policy) => `${policy.id} ${policy.at}: ${policyBodyOf(policy)}${policyCitation(policy)}`,
         );
 });
 
@@ -772,7 +798,8 @@ export const policyAdd = Effect.fn("policyAdd")(function* (
   config: Config,
   domain: string,
   input: {
-    text: string;
+    text: string | undefined;
+    markdown?: string | undefined;
     at: string | undefined;
     wiki: string | undefined;
     json: boolean;
@@ -782,13 +809,14 @@ export const policyAdd = Effect.fn("policyAdd")(function* (
   const policy = yield* change(config, domain, (backlog) =>
     addPolicy(backlog, {
       text: input.text,
+      markdown: input.markdown,
       at: input.at ?? input.now.slice(0, 10),
       wiki: input.wiki,
     }),
   );
   return input.json
     ? json(policy)
-    : [`added policy ${policy.id}: ${policy.text}${policyCitation(policy)}`];
+    : [`added policy ${policy.id}: ${policyBodyOf(policy)}${policyCitation(policy)}`];
 });
 
 /**
@@ -804,7 +832,7 @@ export const policyRm = Effect.fn("policyRm")(function* (
   input: { id: string; json: boolean },
 ) {
   const policy = yield* change(config, domain, (backlog) => removePolicy(backlog, input.id));
-  return input.json ? json(policy) : [`removed policy ${policy.id}: ${policy.text}`];
+  return input.json ? json(policy) : [`removed policy ${policy.id}: ${policyBodyOf(policy)}`];
 });
 
 /**
@@ -817,18 +845,26 @@ export const policyRm = Effect.fn("policyRm")(function* (
 export const policyReplace = Effect.fn("policyReplace")(function* (
   config: Config,
   domain: string,
-  input: { id: string; text: string; at: string | undefined; json: boolean; now: string },
+  input: {
+    id: string;
+    text: string | undefined;
+    markdown?: string | undefined;
+    at: string | undefined;
+    json: boolean;
+    now: string;
+  },
 ) {
   const policy = yield* change(config, domain, (backlog) =>
     replacePolicy(backlog, {
       id: input.id,
       text: input.text,
+      markdown: input.markdown,
       at: input.at ?? input.now.slice(0, 10),
     }),
   );
   return input.json
     ? json(policy)
-    : [`replaced policy ${policy.id}: ${policy.text}${policyCitation(policy)}`];
+    : [`replaced policy ${policy.id}: ${policyBodyOf(policy)}${policyCitation(policy)}`];
 });
 
 /**
@@ -841,10 +877,10 @@ export const policyReplace = Effect.fn("policyReplace")(function* (
 export const focusSet = Effect.fn("focusSet")(function* (
   config: Config,
   domain: string,
-  input: { focus: string | null; json: boolean },
+  input: { focus: string | null; markdown?: string | undefined; json: boolean },
 ) {
   const focus = yield* change(config, domain, (backlog) =>
-    setFocus(backlog, { focus: input.focus }),
+    setFocus(backlog, { focus: input.focus, markdown: input.markdown }),
   );
   if (input.json) return json({ focus });
   return [focus === null ? "focus cleared" : `focus: ${focus}`];

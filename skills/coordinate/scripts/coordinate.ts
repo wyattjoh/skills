@@ -285,6 +285,16 @@ const valueOptions = new Set([
   "--rec",
   "--why",
   "--answer",
+  "--outcome-md",
+  "--decided-md",
+  "--ask-md",
+  "--context-md",
+  "--option-md",
+  "--why-md",
+  "--answer-md",
+  "--note-md",
+  "--detail-md",
+  "--md",
   "--session",
   "--kind",
   "--detail",
@@ -973,7 +983,8 @@ const policyLsCommand = Command.make(
 const policyAddCommand = Command.make(
   "add",
   {
-    text: argument("text", "the policy, on one line"),
+    text: optionalArgument("text", "deprecated: the policy as plain text, on one line; use --md"),
+    md: optionalStringFlag("md", "the policy as Markdown"),
     at: optionalStringFlag("at", "date it was set, YYYY-MM-DD (default: today)"),
     wiki: optionalStringFlag(
       "wiki",
@@ -989,7 +1000,8 @@ const policyAddCommand = Command.make(
         const wiki = Option.getOrUndefined(options.wiki);
         if (wiki !== undefined) yield* citedPage(config, domain, wiki);
         return yield* policyAdd(config, domain, {
-          text: options.text,
+          text: Option.getOrUndefined(options.text),
+          markdown: Option.getOrUndefined(options.md),
           at: Option.getOrUndefined(options.at),
           wiki,
           json: options.json,
@@ -999,7 +1011,7 @@ const policyAddCommand = Command.make(
     ),
 ).pipe(
   Command.withDescription(
-    "add a reusable policy, optionally citing a wiki page; prints its short id",
+    "add a reusable policy (Markdown with --md), optionally citing a wiki page; prints its short id",
   ),
 );
 
@@ -1022,7 +1034,11 @@ const policyReplaceCommand = Command.make(
   "replace",
   {
     id: argument("id", "policy id, such as p1"),
-    text: argument("text", "replacement policy, on one line"),
+    text: optionalArgument(
+      "text",
+      "deprecated: the replacement policy as plain text, on one line; use --md",
+    ),
+    md: optionalStringFlag("md", "the replacement policy as Markdown"),
     at: optionalStringFlag("at", "date it was replaced, YYYY-MM-DD (default: today)"),
     domain: optionalStringFlag("domain", "domain (default: this coordinator's label)"),
     json: booleanFlag("json", "print the replacement policy as JSON"),
@@ -1032,14 +1048,19 @@ const policyReplaceCommand = Command.make(
       Effect.flatMap(coordinatorDomain(Option.getOrUndefined(options.domain)), (domain) =>
         policyReplace(config, domain, {
           id: options.id,
-          text: options.text,
+          text: Option.getOrUndefined(options.text),
+          markdown: Option.getOrUndefined(options.md),
           at: Option.getOrUndefined(options.at),
           json: options.json,
           now: new Date().toISOString(),
         }),
       ),
     ),
-).pipe(Command.withDescription("replace a policy's text and date while keeping its id"));
+).pipe(
+  Command.withDescription(
+    "replace a policy (Markdown with --md) and its date while keeping its id",
+  ),
+);
 
 const policyCommand = Command.make("policy").pipe(
   Command.withDescription("reusable policies, in the user's words"),
@@ -1054,20 +1075,25 @@ const policyCommand = Command.make("policy").pipe(
 const focusCommand = Command.make(
   "focus",
   {
-    text: optionalArgument("text", "one line on what the domain is doing now"),
+    text: optionalArgument(
+      "text",
+      "deprecated: one plain-text line on what the domain is doing now; use --md",
+    ),
+    md: optionalStringFlag("md", "one line of inline Markdown on what the domain is doing now"),
     clear: booleanFlag("clear", "clear the focus line"),
     domain: optionalStringFlag("domain", "domain (default: this coordinator's label)"),
     json: booleanFlag("json", "print the focus as JSON"),
   },
   (options) => {
     const text = Option.getOrUndefined(options.text);
-    if ((text === undefined) === !options.clear) {
-      console.error("refused: pass exactly one of <text> or --clear");
+    const markdown = Option.getOrUndefined(options.md);
+    if ([text !== undefined, markdown !== undefined, options.clear].filter(Boolean).length !== 1) {
+      console.error("refused: pass exactly one of --md, <text> or --clear");
       process.exit(1);
     }
     return execute((config) =>
       Effect.flatMap(coordinatorDomain(Option.getOrUndefined(options.domain)), (domain) =>
-        focusSet(config, domain, { focus: text ?? null, json: options.json }),
+        focusSet(config, domain, { focus: text ?? null, markdown, json: options.json }),
       ),
     );
   },
@@ -1232,25 +1258,57 @@ const itemUpdateCommand = Command.make(
     status: optionalChoiceFlag("status", ITEM_STATUSES, "set the status"),
     outcome: optionalStringFlag(
       "outcome",
-      "one line on how it ended (with --status done or dismissed)",
+      "deprecated: one plain-text line on how it ended; use --outcome-md",
     ),
-    decided: repeatedStringFlag("decided", "append a decision, dated today (repeatable)"),
+    outcomeMd: optionalStringFlag(
+      "outcome-md",
+      "how it ended, as Markdown (with --status done or dismissed)",
+    ),
+    decided: repeatedStringFlag(
+      "decided",
+      "deprecated: append a plain-text decision; use --decided-md (repeatable)",
+    ),
+    decidedMd: repeatedStringFlag(
+      "decided-md",
+      "append a decision as Markdown, dated today (repeatable; after any --decided)",
+    ),
     touch: repeatedStringFlag("touch", "record a repo the item touches (repeatable)"),
     untouch: repeatedStringFlag("untouch", "remove a touched repo (repeatable)"),
     due: optionalStringFlag("due", "due date, YYYY-MM-DD"),
     noDue: booleanFlag("no-due", "clear the due date").pipe(Flag.withoutNegation),
-    ask: optionalStringFlag("ask", "attach a question for the user, replacing any ask"),
-    context: optionalStringFlag("context", "why the ask is asked (with --ask)"),
+    ask: optionalStringFlag("ask", "deprecated: a plain-text question; use --ask-md"),
+    askMd: optionalStringFlag(
+      "ask-md",
+      "attach a question for the user as one line of inline Markdown, replacing any ask",
+    ),
+    context: optionalStringFlag("context", "deprecated: plain-text context; use --context-md"),
+    contextMd: optionalStringFlag(
+      "context-md",
+      "why the ask is asked, as Markdown (with --ask-md)",
+    ),
     option: repeatedStringFlag(
       "option",
-      "an answer choice, optionally '<label> :: <detail>' (with --ask, repeatable)",
+      "deprecated: an answer choice, optionally '<label> :: <detail>' in plain text; use --option-md (repeatable)",
     ),
-    rec: optionalStringFlag("rec", "the recommended option label, one of --option (with --ask)"),
-    why: optionalStringFlag("why", "why the recommended option (with --rec)"),
-    note: optionalStringFlag("note", "a note attached to the answer"),
+    optionMd: repeatedStringFlag(
+      "option-md",
+      "an answer choice, a plain one-line label optionally followed by ' :: <Markdown detail>' (with --ask-md, repeatable)",
+    ),
+    rec: optionalStringFlag(
+      "rec",
+      "the recommended option label, one of the options (with --ask-md)",
+    ),
+    why: optionalStringFlag("why", "deprecated: a plain-text reason; use --why-md"),
+    whyMd: optionalStringFlag("why-md", "why the recommended option, as Markdown (with --rec)"),
+    note: optionalStringFlag("note", "deprecated: a plain-text answer note; use --note-md"),
+    noteMd: optionalStringFlag("note-md", "a note attached to the answer, as Markdown"),
     answer: optionalStringFlag(
       "answer",
-      "the user's answer clears the ask; Discuss or Discuss: <note> keeps it open for conversation",
+      "the user's answer, an option label, clears the ask; Discuss or Discuss: <note> keeps it open for conversation",
+    ),
+    answerMd: optionalStringFlag(
+      "answer-md",
+      "the user's free-text answer as one line of inline Markdown (not an option label), clears the ask",
     ),
     domain: optionalStringFlag(
       "domain",
@@ -1264,18 +1322,26 @@ const itemUpdateCommand = Command.make(
     const statusOnly =
       status !== undefined &&
       Option.isNone(options.outcome) &&
+      Option.isNone(options.outcomeMd) &&
       options.decided.length === 0 &&
+      options.decidedMd.length === 0 &&
       options.touch.length === 0 &&
       options.untouch.length === 0 &&
       Option.isNone(options.due) &&
       !options.noDue &&
       Option.isNone(options.ask) &&
+      Option.isNone(options.askMd) &&
       Option.isNone(options.context) &&
+      Option.isNone(options.contextMd) &&
       options.option.length === 0 &&
+      options.optionMd.length === 0 &&
       Option.isNone(options.rec) &&
       Option.isNone(options.why) &&
+      Option.isNone(options.whyMd) &&
       Option.isNone(options.note) &&
-      Option.isNone(options.answer);
+      Option.isNone(options.noteMd) &&
+      Option.isNone(options.answer) &&
+      Option.isNone(options.answerMd);
     const domainFlag = Option.getOrUndefined(options.domain);
     return execute((config) =>
       Effect.flatMap(
@@ -1285,17 +1351,25 @@ const itemUpdateCommand = Command.make(
             id: options.id,
             status,
             outcome: Option.getOrUndefined(options.outcome),
+            outcomeMarkdown: Option.getOrUndefined(options.outcomeMd),
             decided: [...options.decided],
+            decidedMarkdown: [...options.decidedMd],
             touch: [...options.touch],
             untouch: [...options.untouch],
             due: options.noDue ? null : Option.getOrUndefined(options.due),
             ask: Option.getOrUndefined(options.ask),
+            askMarkdown: Option.getOrUndefined(options.askMd),
             context: Option.getOrUndefined(options.context),
+            contextMarkdown: Option.getOrUndefined(options.contextMd),
             options: [...options.option],
+            optionsMarkdown: [...options.optionMd],
             rec: Option.getOrUndefined(options.rec),
             why: Option.getOrUndefined(options.why),
+            whyMarkdown: Option.getOrUndefined(options.whyMd),
             answer: Option.getOrUndefined(options.answer),
+            answerMarkdown: Option.getOrUndefined(options.answerMd),
             note: Option.getOrUndefined(options.note),
+            noteMarkdown: Option.getOrUndefined(options.noteMd),
             json: options.json,
             now: new Date().toISOString(),
           }),
@@ -1312,19 +1386,28 @@ const itemAnswerCommand = Command.make(
   "answer",
   {
     id: argument("id", "item id, such as i3"),
-    answer: argument(
+    answer: optionalArgument(
       "answer",
-      "the user's answer, Discuss or Discuss: <note> (put -- before the arguments if it starts with -)",
+      "the user's answer as an option label, Discuss or Discuss: <note> (put -- before the arguments if it starts with -)",
     ),
-    note: optionalStringFlag("note", "a note attached to the answer"),
+    md: optionalStringFlag(
+      "md",
+      "the user's free-text answer as one line of inline Markdown, instead of <answer>",
+    ),
+    note: optionalStringFlag("note", "deprecated: a plain-text answer note; use --note-md"),
+    noteMd: optionalStringFlag("note-md", "a note attached to the answer, as Markdown"),
     domain: optionalStringFlag(
       "domain",
       "domain (default: this coordinator's label; required outside a terminal)",
     ),
     json: booleanFlag("json", "print the updated item as JSON"),
   },
-  (options) =>
-    execute(
+  (options) => {
+    if (Option.isSome(options.answer) === Option.isSome(options.md)) {
+      console.error("refused: pass exactly one of <answer> or --md");
+      process.exit(1);
+    }
+    return execute(
       (config) =>
         Effect.flatMap(answerDomain(Option.getOrUndefined(options.domain)), (domain) =>
           itemUpdate(config, domain, {
@@ -1340,17 +1423,20 @@ const itemAnswerCommand = Command.make(
             options: [],
             rec: undefined,
             why: undefined,
-            answer: options.answer,
+            answer: Option.getOrUndefined(options.answer),
+            answerMarkdown: Option.getOrUndefined(options.md),
             note: Option.getOrUndefined(options.note),
+            noteMarkdown: Option.getOrUndefined(options.noteMd),
             json: options.json,
             now: new Date().toISOString(),
           }),
         ),
       false,
-    ),
+    );
+  },
 ).pipe(
   Command.withDescription(
-    "record the user's answer or Discuss request for an item's ask, as item update --answer does; this, item close and backlog boundary add/rm are allowed outside a Herdr terminal with --domain",
+    "record the user's answer (an option label, or free-text inline Markdown with --md) or Discuss request for an item's ask, as item update --answer and --answer-md do; this, item close and backlog boundary add/rm are allowed outside a Herdr terminal with --domain",
   ),
 );
 
@@ -1358,9 +1444,11 @@ const itemCloseCommand = Command.make(
   "close",
   {
     id: argument("id", "item id, such as i3"),
-    outcome: stringFlag("outcome", "one line on how it ended (required)").pipe(
-      Flag.withDefault(""),
-    ),
+    outcome: stringFlag(
+      "outcome",
+      "deprecated: one plain-text line on how it ended; use --outcome-md",
+    ).pipe(Flag.withDefault("")),
+    outcomeMd: optionalStringFlag("outcome-md", "how it ended, as Markdown (required)"),
     dismissed: booleanFlag("dismissed", "close as dismissed instead of done"),
     domain: optionalStringFlag(
       "domain",
@@ -1374,6 +1462,7 @@ const itemCloseCommand = Command.make(
         itemClose(config, domain, {
           id: options.id,
           outcome: options.outcome,
+          outcomeMarkdown: Option.getOrUndefined(options.outcomeMd),
           dismissed: options.dismissed,
           json: options.json,
           now: new Date().toISOString(),
@@ -1457,7 +1546,8 @@ const findingAddCommand = Command.make(
   {
     title: argument("title", "one-line title"),
     kind: choiceFlag("kind", ["issue", "opportunity"], "what was noticed"),
-    detail: optionalStringFlag("detail", "more detail"),
+    detail: optionalStringFlag("detail", "deprecated: plain-text detail; use --detail-md"),
+    detailMd: optionalStringFlag("detail-md", "more detail, as Markdown"),
     path: optionalStringFlag("path", "file or folder it concerns"),
     from: optionalStringFlag("from", "item it was noticed while working on, such as i3"),
     source: optionalStringFlag("source", "where it came from, such as retro:fix-a"),
@@ -1474,6 +1564,7 @@ const findingAddCommand = Command.make(
           kind: options.kind as "issue" | "opportunity",
           title: options.title,
           detail: Option.getOrUndefined(options.detail),
+          detailMarkdown: Option.getOrUndefined(options.detailMd),
           path: Option.getOrUndefined(options.path),
           from: Option.getOrUndefined(options.from),
           source: Option.getOrUndefined(options.source),
@@ -1492,9 +1583,11 @@ const findingCloseCommand = Command.make(
   "close",
   {
     id: argument("id", "finding id, such as f2"),
-    outcome: stringFlag("outcome", "one line on what was done (required)").pipe(
-      Flag.withDefault(""),
-    ),
+    outcome: stringFlag(
+      "outcome",
+      "deprecated: one plain-text line on what was done; use --outcome-md",
+    ).pipe(Flag.withDefault("")),
+    outcomeMd: optionalStringFlag("outcome-md", "what was done, as Markdown (required)"),
     dismissed: booleanFlag("dismissed", "close as dismissed instead of acted"),
     domain: optionalStringFlag(
       "domain",
@@ -1508,6 +1601,7 @@ const findingCloseCommand = Command.make(
         findingClose(config, domain, {
           id: options.id,
           outcome: options.outcome,
+          outcomeMarkdown: Option.getOrUndefined(options.outcomeMd),
           dismissed: options.dismissed,
           json: options.json,
           now: new Date().toISOString(),

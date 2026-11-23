@@ -1,33 +1,69 @@
 import {
   isDiscussion,
   ITEM_STATUSES,
+  prose,
+  proseSource,
+  questionOf,
   type Ask,
+  type Prose,
   type Backlog,
   type Finding,
   type Item,
   type Policy,
 } from "./schema.ts";
 
+const multiLine = (text: string): boolean => /[\r\n]/.test(text);
+
+/**
+ * Markdown as continuation lines inside a list item whose content starts at `indent` columns,
+ * after a blank line, so a list, fence or heading in it stays inside that item.
+ */
+const continuation = (text: string, indent: number): string[] => [
+  "",
+  ...text.split(/\r?\n/).map((line) => (line.trim() === "" ? "" : `${" ".repeat(indent)}${line}`)),
+];
+
+/**
+ * A bullet whose value may be multi-line Markdown: one line stays after the head; more go below it.
+ * Plain text stays after the head as it always has.
+ * @param head The bullet up to the value, such as `  - decided 2026-01-01:`.
+ * @param value The shown prose, or null for none.
+ * @param indent The bullet's content column.
+ */
+const bullet = (head: string, value: Prose | null, indent: number): string[] =>
+  value?.markdown && multiLine(value.value)
+    ? [head, ...continuation(value.value, indent)]
+    : [`${head} ${value?.value ?? ""}`];
+
+const below = (value: Prose | null): boolean => value?.markdown === true && multiLine(value.value);
+
 const askLines = (ask: Ask, header: string): string[] => {
   const lines = [header];
-  if (ask.context) lines.push(`    - context: ${ask.context}`);
-  if (ask.discuss !== null)
-    lines.push(
-      `    - discussion requested (${ask.discuss.at})${ask.discuss.note ? `: ${ask.discuss.note}` : ""}`,
-    );
+  const context = prose(ask.context, ask.contextMarkdown);
+  if (context) lines.push(...bullet("    - context:", context, 6));
+  if (ask.discuss !== null) {
+    const note = prose(ask.discuss.note, ask.discuss.noteMarkdown);
+    const head = `    - discussion requested (${ask.discuss.at})`;
+    lines.push(...(note ? bullet(`${head}:`, note, 6) : [head]));
+  }
   const choices = ask.options.map((option, index) => ({ option, index }));
   const recIndex = ask.rec ? choices.find(({ option }) => option === ask.rec)?.index : undefined;
   const ordered =
     recIndex === undefined
       ? choices
       : [choices[recIndex]!, ...choices.filter(({ index }) => index !== recIndex)];
+  const reason = prose(ask.recReason, ask.recReasonMarkdown);
   for (const { option, index } of ordered) {
     const recommended = option === ask.rec;
-    const detail = ask.optionDetails?.[index];
+    const detail = prose(ask.optionDetails?.[index], ask.optionDetailsMarkdown?.[index]);
     const label = recommended
-      ? `${option} (recommended${ask.recReason ? `: ${ask.recReason}` : ""})`
+      ? `${option} (recommended${reason && !below(reason) ? `: ${reason.value}` : ""})`
       : option;
-    lines.push(`    - ${label}${detail ? `: ${detail}` : ""}`);
+    lines.push(
+      `    - ${label}${detail && !below(detail) ? `: ${detail.value}` : ""}`,
+      ...(recommended && reason && below(reason) ? continuation(reason.value, 6) : []),
+      ...(detail && below(detail) ? continuation(detail.value, 6) : []),
+    );
   }
   return lines;
 };
@@ -38,17 +74,18 @@ const answeredLines = (item: Item, verbose: boolean): string[] => {
   const lines: string[] = [];
   for (let index = item.answered.length - 1; index >= 0; index -= 1) {
     const answered = item.answered[index]!;
+    const answer = proseSource(answered.answer, answered.answerMarkdown);
+    const note = prose(answered.note, answered.noteMarkdown);
     if (!verbose) {
-      const note = answered.note === null ? "" : oneLine(answered.note);
       lines.push(
-        `  - answered (${answered.answeredAt}): ${oneLine(answered.question)} → ${oneLine(answered.answer)}${note ? `. Note: ${note}` : ""}`,
+        `  - answered (${answered.answeredAt}): ${oneLine(questionOf(answered))} → ${oneLine(answer)}${note ? `. Note: ${oneLine(note.value)}` : ""}`,
       );
       continue;
     }
     lines.push(
-      ...askLines(answered, `  - answered ask (${answered.answeredAt}): ${answered.question}`),
-      `    - answer: ${answered.answer}`,
-      ...(answered.note === null ? [] : [`    - answer note: ${answered.note}`]),
+      ...askLines(answered, `  - answered ask (${answered.answeredAt}): ${questionOf(answered)}`),
+      `    - answer: ${answer}`,
+      ...(answered.note === null && note === null ? [] : bullet("    - answer note:", note, 6)),
     );
   }
   return lines;
@@ -62,13 +99,13 @@ const itemLines = (item: Item, idle: ReadonlySet<string>, verbose: boolean): str
   const lines = [
     `- ${item.id} [${item.status}${idle.has(item.id) ? ", none live" : ""}] ${item.title}${facts.map((fact) => ` · ${fact}`).join("")}`,
   ];
-  if (item.ask) lines.push(...askLines(item.ask, `  - ask: ${item.ask.question}`));
+  if (item.ask) lines.push(...askLines(item.ask, `  - ask: ${questionOf(item.ask)}`));
   lines.push(...answeredLines(item, verbose));
   for (const entry of item.decided)
     lines.push(
-      isDiscussion(entry.text)
-        ? `  - discuss ${entry.at}: ${entry.text.slice("Discuss ".length)}`
-        : `  - decided ${entry.at}: ${entry.text}`,
+      ...(isDiscussion(entry.text)
+        ? [`  - discuss ${entry.at}: ${entry.text.slice("Discuss ".length)}`]
+        : bullet(`  - decided ${entry.at}:`, prose(entry.text, entry.markdown), 4)),
     );
   for (const ref of item.delegates)
     lines.push(
@@ -77,11 +114,12 @@ const itemLines = (item: Item, idle: ReadonlySet<string>, verbose: boolean): str
   return lines;
 };
 
-const closedLine = (item: Item): string =>
-  `- ${item.id} [${item.status} ${(item.closedAt ?? "").slice(0, 10)}] ${item.title}: ${item.outcome ?? ""}`;
-
 const closedLines = (item: Item, verbose: boolean): string[] => [
-  closedLine(item),
+  ...bullet(
+    `- ${item.id} [${item.status} ${(item.closedAt ?? "").slice(0, 10)}] ${item.title}:`,
+    prose(item.outcome, item.outcomeMarkdown),
+    2,
+  ),
   ...answeredLines(item, verbose),
 ];
 
@@ -137,7 +175,8 @@ export const renderBacklog = (
   const lines = [`# ${backlog.domain} backlog`, ""];
   if (backlog.legacy)
     lines.push(`Legacy Markdown backlog (reference only, not read): ${backlog.legacy}`, "");
-  if (backlog.focus) lines.push(`Focus: ${backlog.focus}`, "");
+  const focus = proseSource(backlog.focus, backlog.focusMarkdown);
+  if (focus) lines.push(`Focus: ${oneLine(focus)}`, "");
   lines.push(
     "## Boundary",
     "",
@@ -148,9 +187,15 @@ export const renderBacklog = (
     "## Policies",
     "",
     ...(backlog.policies.length > 0
-      ? backlog.policies.map(
-          (policy) => `- ${policy.id} ${policy.at}: ${policy.text}${policyCitation(policy)}`,
-        )
+      ? backlog.policies.flatMap((policy) => {
+          const body = prose(policy.text, policy.markdown);
+          return body?.markdown && multiLine(body.value)
+            ? [
+                `- ${policy.id} ${policy.at}:${policyCitation(policy)}`,
+                ...continuation(body.value, 2),
+              ]
+            : [`- ${policy.id} ${policy.at}: ${body?.value ?? ""}${policyCitation(policy)}`];
+        })
       : ["(none)"]),
     "",
     "## Open",

@@ -519,7 +519,7 @@ const answeredEvents = (items: readonly Item[], fired: readonly string[] | null)
     // Decisions are dated by day, so the same answer twice in a day needs its ordinal to stay distinct.
     const seen = new Map<string, number>();
     return item.decided
-      .filter((decision) => isAnswer(decision.text))
+      .flatMap(({ text, at }) => (isAnswer(text) ? [{ text, at }] : []))
       .map((decision) => {
         const base = `${item.id} ${decision.at} ${decision.text}`;
         const ordinal = (seen.get(base) ?? 0) + 1;
@@ -550,7 +550,7 @@ const discussionEvents = (items: readonly Item[], fired: readonly string[] | nul
   const discussions = items.flatMap((item) => {
     const seen = new Map<string, number>();
     return item.decided
-      .filter((decision) => isDiscussion(decision.text))
+      .flatMap(({ text, at }) => (isDiscussion(text) ? [{ text, at }] : []))
       .map((decision) => {
         const base = `${item.id} ${decision.at} ${decision.text}`;
         const ordinal = (seen.get(base) ?? 0) + 1;
@@ -728,6 +728,7 @@ type OutboxLine =
       kind: "issue" | "opportunity";
       title: string;
       detail: string | undefined;
+      detailMarkdown: string | undefined;
       path: string | undefined;
       from: string | undefined;
     }
@@ -763,6 +764,7 @@ const parseOutboxLine = (line: string): OutboxLine => {
       kind: record.kind,
       title,
       detail: text("detail"),
+      detailMarkdown: text("detailMarkdown"),
       path: text("path"),
       from: text("from"),
     };
@@ -873,6 +875,7 @@ export const drainOutboxes = Effect.fn("drainOutboxes")(function* (
         kind: parsed.kind,
         title: parsed.title,
         detail: parsed.detail,
+        detailMarkdown: parsed.detailMarkdown,
         path: parsed.path,
         from: parsed.from,
         source,

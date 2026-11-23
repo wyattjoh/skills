@@ -5306,3 +5306,173 @@ test("shows None on the Outbox page when nothing waits for delivery", async () =
   openPage(render(), "outbox", ctx.cx);
   expect(text(get(render(), "outbox-empty"))).toBe("None");
 });
+
+// TextView.markdown is the only factory the renderer records `styles.markdown` for.
+const markdownOf = (root: Node, id: string) => get(root, id).styles.markdown;
+
+test("renders Markdown siblings natively on the detail screen and keeps text fields plain", async () => {
+  focusDomain("alpha");
+  const ask = {
+    questionMarkdown: "- Which `store`?",
+    context: null,
+    contextMarkdown: "Two parts:\n\n- speed\n- size",
+    options: ["json", "sqlite"],
+    optionDetailsMarkdown: ["Plain `JSON`", ""],
+    rec: "json",
+    recReason: null,
+    recReasonMarkdown: "**simple**",
+    discuss: { note: "", noteMarkdown: "- why", at: "2026-11-17" },
+  };
+  const backlog = add(emptyBacklog("alpha", null), "Pick a store", {
+    status: "waiting-user",
+    ask,
+    answered: [
+      {
+        ...ask,
+        discuss: null,
+        answerMarkdown: "use `json`",
+        note: null,
+        noteMarkdown: "because\n\n- safe",
+        answeredAt: "2026-11-16",
+      },
+    ],
+    decided: [
+      { markdown: "## Plan\n\n1. a", at: "2026-11-16" },
+      { text: "Keep it read-only", at: "2026-11-16" },
+    ],
+  });
+  host.files.set(DOC, JSON.stringify(backlog));
+  const { ctx, view, render } = await mount();
+  openDetail(view, "i1", ctx.cx);
+  const root = render();
+
+  expect(
+    [
+      "ask-question-markdown",
+      "ask-context-markdown",
+      "ask-detail-0-markdown",
+      "ask-rec-reason-markdown",
+      "ask-discuss-note-markdown",
+      "ask-answered-0-answer-markdown",
+      "ask-answered-0-answer-note-markdown",
+      "decided-0-markdown",
+    ].map((id) => markdownOf(root, id)),
+  ).toEqual([
+    "\\- Which `store`?",
+    "Two parts:\n\n- speed\n- size",
+    "Plain `JSON`",
+    "**simple**",
+    "- why",
+    "use `json`",
+    "because\n\n- safe",
+    "## Plan\n\n1. a",
+  ]);
+  expect(ids(root, "ask-detail-1")).toEqual([]);
+  expect(ids(root, "decided-1-markdown")).toEqual([]);
+  expect(text(get(root, "decided-1"))).toBe("Keep it read-only 2026-11-16");
+});
+
+test("renders Markdown focus, policies and outcomes, and text when there is none", async () => {
+  focusDomain("alpha");
+  const closed = closeItem(add(emptyBacklog("alpha", null), "Ship it"), {
+    id: "i1",
+    outcome: "",
+    outcomeMarkdown: "Shipped:\n\n- green",
+    dismissed: false,
+    now: NOW,
+  });
+  if (!closed.ok) throw new Error(closed.reason);
+  const backlog: Backlog = {
+    ...closed.backlog,
+    focusMarkdown: "Ship `v2`",
+    policies: [
+      { id: "p1", markdown: "Green only:\n\n- lint", at: "2026-11-01" },
+      { id: "p2", text: "Plain policy", at: "2026-11-02" },
+    ],
+    nextPolicyId: 3,
+  };
+  host.files.set(DOC, JSON.stringify(backlog));
+  const { ctx, view, render } = await mount();
+  let root = render();
+  expect(markdownOf(root, "focus-markdown")).toEqual("Ship `v2`");
+
+  openPage(root, "policies", ctx.cx);
+  root = render();
+  expect(markdownOf(root, "policy-p1-markdown")).toEqual("Green only:\n\n- lint");
+  expect(ids(root, "policy-p2-markdown")).toEqual([]);
+  expect(text(get(root, "policy-p2"))).toBe("Plain policy 2026-11-02");
+
+  openDetail(view, "i1", ctx.cx);
+  root = render();
+  expect(markdownOf(root, "fact-outcome-markdown")).toEqual("Shipped:\n\n- green");
+});
+
+test("renders a finding's Markdown detail natively", async () => {
+  focusDomain("alpha");
+  const original = withFindings();
+  host.files.set(
+    DOC,
+    JSON.stringify({
+      ...original,
+      findings: original.findings.map((finding) =>
+        finding.id === "f3" ? { ...finding, detail: null, detailMarkdown: "- step one" } : finding,
+      ),
+    }),
+  );
+  const { ctx, render } = await mount();
+  openPage(render(), "findings", ctx.cx);
+  get(render(), "finding-f3").click!({}, ctx.cx);
+  expect(markdownOf(render(), "fact-detail-markdown")).toEqual("- step one");
+});
+
+test("renders a Markdown question in the answer flow and a plain caption on its preview", async () => {
+  focusDomain("alpha");
+  const markdownAsk = (questionMarkdown: string) => ({
+    questionMarkdown,
+    context: null,
+    contextMarkdown: "Because **speed**",
+    options: ["A", "B"],
+    rec: null,
+    recReason: null,
+    discuss: null,
+  });
+  let backlog = add(emptyBacklog("alpha", null), "First", {
+    status: "waiting-user",
+    ask: markdownAsk("Pick `one`?"),
+  });
+  backlog = add(backlog, "Second", {
+    status: "waiting-user",
+    ask: markdownAsk("Use **this** one?"),
+  });
+  host.files.set(DOC, JSON.stringify(backlog));
+  const { ctx, render } = await mount();
+  get(render(), "item-i1").click!({}, ctx.cx);
+  const root = measureFlow(render(), ctx.cx, render, [
+    { id: "i1", expandedHeight: 248 },
+    { id: "i2", expandedHeight: 176 },
+  ]);
+  expect([
+    markdownOf(root, "answer-flow-ask-i1-question-markdown"),
+    markdownOf(root, "answer-flow-ask-i1-context-markdown"),
+    text(get(root, "answer-flow-preview-i2-question")),
+  ]).toEqual(["Pick `one`?", "Because **speed**", "Use this one?"]);
+});
+
+test("renders a finding's Markdown outcome natively", async () => {
+  focusDomain("alpha");
+  const original = withFindings();
+  const backlog: Backlog = {
+    ...original,
+    findings: original.findings.map((finding) =>
+      finding.id === "f4"
+        ? { ...finding, outcome: null, outcomeMarkdown: "Fixed in `abc`" }
+        : finding,
+    ),
+  };
+  host.files.set(DOC, JSON.stringify(backlog));
+  const { ctx, view, render } = await mount();
+  const closed = backlog.findings.find((finding) => finding.id === "f4");
+  if (closed === undefined) throw new Error("missing finding f4");
+  view.openFinding(closed, ctx.cx as never);
+  expect(markdownOf(render(), "fact-outcome-markdown")).toBe("Fixed in `abc`");
+});

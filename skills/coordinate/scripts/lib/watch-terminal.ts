@@ -5,7 +5,7 @@ import { currentFolder, type Config } from "./config.ts";
 import { checkDomainName, domainNamePart, L } from "./fleet.ts";
 import * as hc from "./herdr.ts";
 import { watcherAlive } from "./watch-lock.ts";
-import type { Item } from "./backlog-store/schema.ts";
+import { questionOf, type Item } from "./backlog-store/schema.ts";
 import { eventSummary, type SeenDelegate, type SeenPr, type WatchEvent } from "./watch.ts";
 
 /**
@@ -100,7 +100,9 @@ export const watchViewLines = (view: WatchView): string[] => {
     .map((item) => `${item.due} ${item.id} ${item.title}`);
   const asks = view.items
     .filter((item) => item.status === "waiting-user" && item.ask !== null)
-    .map((item) => `${item.id} ${item.title}: ${item.ask?.question ?? "question pending"}`);
+    .map(
+      (item) => `${item.id} ${item.title}: ${item.ask ? questionOf(item.ask) : "question pending"}`,
+    );
   const lines = [
     `coordinate watch: ${view.domain}`,
     `owner: ${view.owner} (${view.ownerState}) | pid ${view.pid} | started ${startedTime(view.started)}`,
