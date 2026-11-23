@@ -9,11 +9,12 @@ import { h_flex, v_flex } from "gpui-base";
 import { HERDR_ICONS, MENU, menuPanel, menuRow } from "@wyattjoh/herdr-ui";
 import type { Theme } from "@wyattjoh/herdr-ui";
 import { HARNESS_DIALOG } from "./look.ts";
-import type { DelegateHarness, HarnessPolicyState } from "./model.ts";
+import type { DelegateHarness, HarnessPolicyDraft, HarnessPolicyState } from "./model.ts";
 
 /**
  * What the window draws and calls: the editor's state for the selected scope, and its actions.
- * Every control applies at once through the Coordinate CLI; there is no draft.
+ * Controls edit a draft; nothing is written until Save, and every way out with unsaved changes
+ * asks first.
  */
 export type HarnessPolicyEditorModel = {
   scope: "global" | "domain";
@@ -23,6 +24,13 @@ export type HarnessPolicyEditorModel = {
   state: HarnessPolicyState;
   busy: boolean;
   failure: string | undefined;
+  // The edit in progress (or what is on disk, before any edit), whether it differs from disk, and
+  // whether the policy changed on disk since it was seeded.
+  draft: HarnessPolicyDraft | undefined;
+  dirty: boolean;
+  conflict: boolean;
+  // Whether the Discard changes? confirm is showing.
+  confirming: boolean;
   focus: FocusHandle;
   selectGlobal: (cx: Context) => void;
   selectDomain: (domain: string, cx: Context) => void;
@@ -31,7 +39,10 @@ export type HarnessPolicyEditorModel = {
   setDefault: (harness: DelegateHarness | null, cx: Context) => void;
   setInherit: (inherit: boolean, cx: Context) => void;
   reload: (cx: Context) => void;
-  close: (cx: Context) => void;
+  save: (cx: Context) => void;
+  cancel: (cx: Context) => void;
+  keepEditing: (cx: Context) => void;
+  discard: (cx: Context) => void;
 };
 
 const HARNESS_LABELS: Readonly<Record<DelegateHarness, string>> = {
@@ -43,6 +54,8 @@ const HARNESS_LABELS: Readonly<Record<DelegateHarness, string>> = {
 const CLEAR = "#00000000";
 // A control that cannot be used right now keeps its place, dimmed.
 const INERT_OPACITY = 0.45;
+// A dim layer over the window behind the confirm.
+const SCRIM = "#00000099";
 
 // Finbar's settings metrics: nav width and padding, entry padding and radius, pane padding, row
 // padding and gap, and its switch and segment sizes.
@@ -78,6 +91,16 @@ const SETTINGS = {
   actionRadius: 7,
   actionText: 13,
   menuMaxHeight: 240,
+  controlHeight: 28,
+  buttonPaddingX: 12,
+  buttonText: 12.5,
+  footerGap: 8,
+  footerPaddingY: 14,
+  confirmWidth: 360,
+  confirmPadding: 18,
+  confirmGap: 12,
+  confirmRadius: 10,
+  confirmTitle: 15,
   scopeMenuWidth: 220,
   scopeMenuTop: 58,
   scopeLabelWidth: 180,
@@ -220,6 +243,99 @@ const settingsAction = (
     )
     .child(div().flex_1().child(label));
 
+// A footer button in Finbar's dialog style: raised, or solid for the one main action, or the
+// blocked color for a destructive one. Without a handler it is inert and dimmed, and an inert
+// main action drops back to the raised look so no bright button sits there doing nothing.
+const dialogButton = (
+  t: Theme,
+  id: string,
+  label: string,
+  onClick: ((cx: Context) => void) | undefined,
+  tone: "plain" | "primary" | "destructive" = "plain",
+): Element =>
+  div()
+    .id(id)
+    .flex_none()
+    .px(SETTINGS.buttonPaddingX)
+    .h(SETTINGS.controlHeight)
+    .flex()
+    .items_center()
+    .rounded(SETTINGS.actionRadius)
+    .text_size(SETTINGS.buttonText)
+    .when(tone === "primary" && onClick !== undefined, (el) =>
+      el.bg(t.solid).text_color(t.solid_foreground),
+    )
+    .when(tone === "destructive", (el) => el.bg(t.blocked).text_color(t.solid_foreground))
+    .when(tone === "plain" || (tone === "primary" && onClick === undefined), (el) =>
+      el.bg(t.raised ?? t.selected).text_color(onClick === undefined ? t.dim : t.foreground),
+    )
+    .when(onClick !== undefined, (el) =>
+      el
+        .cursor_pointer()
+        .hover((style) => style.opacity(0.85))
+        .on_click((_event, cx) => onClick!(cx)),
+    )
+    .child(label);
+
+// The Discard changes? confirm, in the same window: a dim layer over everything, with a card
+// that follows the dialog's surface. Clicks on the layer do nothing.
+const confirmLayer = (t: Theme, model: HarnessPolicyEditorModel): Element =>
+  h_flex()
+    .id("harness-policy-confirm-layer")
+    .absolute()
+    .inset_0()
+    .items_center()
+    .justify_center()
+    .bg(SCRIM)
+    .on_click((_event, cx) => cx.stop_propagation())
+    .child(
+      v_flex()
+        .id("harness-policy-confirm")
+        .w(SETTINGS.confirmWidth)
+        .p(SETTINGS.confirmPadding)
+        .gap(SETTINGS.confirmGap)
+        .rounded(SETTINGS.confirmRadius)
+        .border_1()
+        .border_color(t.border)
+        .bg(t.popover)
+        .child(
+          div()
+            .id("harness-policy-confirm-title")
+            .text_size(SETTINGS.confirmTitle)
+            .font_semibold()
+            .text_color(t.foreground)
+            .child("Discard changes?"),
+        )
+        .child(
+          div()
+            .id("harness-policy-confirm-text")
+            .text_size(SETTINGS.rowAbout)
+            .line_height(SETTINGS.rowAboutLine)
+            .text_color(t.dim)
+            .child("Your harness setting changes will be lost."),
+        )
+        .child(
+          h_flex()
+            .id("harness-policy-confirm-actions")
+            .gap(SETTINGS.footerGap)
+            .justify_end()
+            .child(
+              dialogButton(t, "harness-policy-keep-editing", "Keep editing", (cx) =>
+                model.keepEditing(cx),
+              ),
+            )
+            .child(
+              dialogButton(
+                t,
+                "harness-policy-discard",
+                "Discard",
+                (cx) => model.discard(cx),
+                "destructive",
+              ),
+            ),
+        ),
+    );
+
 // A sidebar entry: an icon and a label, raised when it is the one shown.
 const navEntry = (t: Theme, id: string, icon: string, label: string, on: boolean): Element =>
   h_flex()
@@ -360,7 +476,7 @@ const failureRows = (t: Theme, message: string, model: HarnessPolicyEditorModel)
     ),
 ];
 
-// The pane for the scope shown: rows of switches and segments for its policy.
+// The pane for the scope shown: rows of switches and segments for its draft.
 const paneRows = (t: Theme, model: HarnessPolicyEditorModel): Element[] => {
   if (model.state.kind === "loading")
     return [
@@ -373,11 +489,13 @@ const paneRows = (t: Theme, model: HarnessPolicyEditorModel): Element[] => {
   if (model.state.kind === "error") return failureRows(t, model.state.message, model);
   const view = model.state.view;
   const domainPolicy = view.domain;
-  const selection = model.scope === "global" ? view.global.policy : domainPolicy?.effective;
-  if (selection === undefined || (model.scope === "domain" && domainPolicy === null))
+  const draft = model.draft;
+  if (draft === undefined || (model.scope === "domain" && domainPolicy === null))
     return failureRows(t, "Coordinate returned policy data for the wrong scope.", model);
-  const inheriting = model.scope === "domain" && domainPolicy?.mode === "inherit";
-  const canEdit = !model.busy && !inheriting;
+  const inheriting = model.scope === "domain" && draft.inherit;
+  // An inheriting domain shows the global policy it will use, not the override being dropped.
+  const selection = inheriting ? view.global.policy : draft.selection;
+  const canEdit = !model.busy && !model.conflict;
   const source =
     model.scope === "global"
       ? view.global.source === "legacy"
@@ -385,8 +503,8 @@ const paneRows = (t: Theme, model: HarnessPolicyEditorModel): Element[] => {
         : "Global policy"
       : inheriting
         ? view.global.source === "legacy"
-          ? "Inherited from legacy defaults"
-          : "Inherited from global policy"
+          ? "Inherits legacy defaults"
+          : "Inherits global policy"
         : "Domain override";
   const rows: Element[] = [
     div()
@@ -394,7 +512,7 @@ const paneRows = (t: Theme, model: HarnessPolicyEditorModel): Element[] => {
       .pb(SETTINGS.rowPaddingY)
       .text_size(SETTINGS.rowAbout)
       .text_color(t.dim)
-      .child(source),
+      .child(model.dirty ? `${source} · Unsaved changes` : source),
   ];
   if (model.scope === "domain")
     rows.push(
@@ -407,10 +525,11 @@ const paneRows = (t: Theme, model: HarnessPolicyEditorModel): Element[] => {
           t,
           "harness-policy-inherit-toggle",
           inheriting,
-          model.busy ? undefined : (cx) => model.setInherit(!inheriting, cx),
+          canEdit ? (cx) => model.setInherit(!draft.inherit, cx) : undefined,
         ),
       ),
     );
+  const editable = canEdit && !inheriting;
   rows.push(
     row(
       t,
@@ -429,7 +548,7 @@ const paneRows = (t: Theme, model: HarnessPolicyEditorModel): Element[] => {
               `harness-policy-enabled-${harness}`,
               HARNESS_LABELS[harness],
               selection.enabled.includes(harness),
-              canEdit ? (cx) => model.toggle(harness, cx) : undefined,
+              editable ? (cx) => model.toggle(harness, cx) : undefined,
               undefined,
             ),
           ),
@@ -458,7 +577,7 @@ const paneRows = (t: Theme, model: HarnessPolicyEditorModel): Element[] => {
             "harness-policy-default-none",
             "No default",
             selection.default === null,
-            canEdit && selection.default !== null ? (cx) => model.setDefault(null, cx) : undefined,
+            editable && selection.default !== null ? (cx) => model.setDefault(null, cx) : undefined,
           ),
           ...(["pi", "claude"] as const).map((harness) =>
             segment(
@@ -466,7 +585,7 @@ const paneRows = (t: Theme, model: HarnessPolicyEditorModel): Element[] => {
               `harness-policy-default-${harness}`,
               HARNESS_LABELS[harness],
               selection.default === harness,
-              canEdit && selection.enabled.includes(harness) && selection.default !== harness
+              editable && selection.enabled.includes(harness) && selection.default !== harness
                 ? (cx) => model.setDefault(harness, cx)
                 : undefined,
             ),
@@ -474,7 +593,15 @@ const paneRows = (t: Theme, model: HarnessPolicyEditorModel): Element[] => {
         ]),
     ),
   );
-  if (model.failure !== undefined) rows.push(...failureRows(t, model.failure, model));
+  if (model.conflict)
+    rows.push(
+      ...failureRows(
+        t,
+        "Policy changed while you were editing. Reload to discard your changes, then make them again.",
+        model,
+      ),
+    );
+  else if (model.failure !== undefined) rows.push(...failureRows(t, model.failure, model));
   return rows;
 };
 
@@ -498,31 +625,68 @@ export const harnessPolicyDialog = (t: Theme, model: HarnessPolicyEditorModel): 
     .text_color(t.foreground)
     .on_key_down((event, cx) => {
       if (event.key !== "escape") return;
-      if (model.domainMenuOpen) model.setDomainMenuOpen(false, cx);
-      else model.close(cx);
+      cx.stop_propagation();
+      if (model.confirming) model.keepEditing(cx);
+      else if (model.domainMenuOpen) model.setDomainMenuOpen(false, cx);
+      else model.cancel(cx);
     })
     .child(sidebar(t))
     .child(
       v_flex()
-        .id("harness-policy-pane")
+        .id("harness-policy-pane-column")
         .flex_1()
         .min_w(0)
         .h_full()
-        .px(SETTINGS.panePaddingX)
-        .py(SETTINGS.panePaddingY)
-        .overflow_y_scroll()
+        .child(
+          v_flex()
+            .id("harness-policy-pane")
+            .flex_1()
+            .min_h(0)
+            .px(SETTINGS.panePaddingX)
+            .py(SETTINGS.panePaddingY)
+            .overflow_y_scroll()
+            .child(
+              h_flex()
+                .id("harness-policy-pane-head")
+                .items_center()
+                .gap(SETTINGS.rowGap)
+                .child(
+                  div()
+                    .flex_1()
+                    .child(heading(t, "harness-policy-title", "Harness")),
+                )
+                .child(scopeTrigger(t, model)),
+            )
+            .children(paneRows(t, model)),
+        )
         .child(
           h_flex()
-            .id("harness-policy-pane-head")
-            .items_center()
-            .gap(SETTINGS.rowGap)
+            .id("harness-policy-footer")
+            .flex_none()
+            .px(SETTINGS.panePaddingX)
+            .py(SETTINGS.footerPaddingY)
+            .gap(SETTINGS.footerGap)
+            .justify_end()
+            .border_t(1)
+            .border_color(t.border)
             .child(
-              div()
-                .flex_1()
-                .child(heading(t, "harness-policy-title", "Harness")),
+              dialogButton(
+                t,
+                "harness-policy-cancel",
+                "Cancel",
+                model.busy ? undefined : (cx) => model.cancel(cx),
+              ),
             )
-            .child(scopeTrigger(t, model)),
-        )
-        .children(paneRows(t, model)),
+            .child(
+              dialogButton(
+                t,
+                "harness-policy-save",
+                model.busy ? "Saving…" : "Save",
+                model.dirty && !model.busy && !model.conflict ? (cx) => model.save(cx) : undefined,
+                "primary",
+              ),
+            ),
+        ),
     )
-    .when(model.domainMenuOpen, (el) => el.children(scopeMenu(t, model)));
+    .when(model.domainMenuOpen, (el) => el.children(scopeMenu(t, model)))
+    .when(model.confirming, (el) => el.child(confirmLayer(t, model)));

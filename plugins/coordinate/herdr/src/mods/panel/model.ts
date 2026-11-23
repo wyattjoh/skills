@@ -742,6 +742,8 @@ export const policyDialogProps = (props: unknown): PolicyDialogProps | undefined
 export const policyDialogSpec = (domain: string | undefined) => ({
   mod: PANEL_MOD,
   kind: "dialog" as const,
+  // A click beside the dialog does nothing, so unsaved changes are never dropped without asking.
+  modal: true,
   width: HARNESS_DIALOG.width,
   height: HARNESS_DIALOG.height,
   props: { harnessPolicy: { domain: domain ?? null } },
@@ -841,6 +843,76 @@ export const harnessPolicyResetCommand = (home: string, domain: string, revision
     String(revision),
     "--json",
   ]);
+
+/**
+ * A way out of the dialog or the scope that unsaved changes would be lost to.
+ */
+export type PolicyExit = { kind: "close" } | { kind: "scope"; domain: string | undefined };
+
+/**
+ * An edit in progress for one scope, seeded from the policy that was read. Nothing is written
+ * until it is saved.
+ */
+export type HarnessPolicyDraft = {
+  domain: string | undefined;
+  revision: number;
+  inherit: boolean;
+  selection: HarnessSelection;
+};
+
+/**
+ * The draft that matches the policy as read, for a scope.
+ * @param view The policy view the CLI reported for that scope.
+ * @param domain The domain, or undefined for the global defaults.
+ * @returns A draft equal to what is on disk, or undefined when the view is for another scope.
+ */
+export const seedHarnessPolicyDraft = (
+  view: HarnessPolicyView,
+  domain: string | undefined,
+): HarnessPolicyDraft | undefined => {
+  const source = domain === undefined ? view.global.policy : view.domain?.effective;
+  if (source === undefined || (domain !== undefined && view.domain === null)) return undefined;
+  return {
+    domain,
+    revision: view.revision,
+    inherit: domain !== undefined && view.domain?.mode === "inherit",
+    selection: { enabled: [...source.enabled], default: source.default },
+  };
+};
+
+/**
+ * Whether a draft differs from the policy it was seeded from.
+ * @param view The policy as read.
+ * @param draft The edit in progress.
+ * @returns Whether saving it would change anything.
+ */
+export const harnessPolicyDraftDirty = (
+  view: HarnessPolicyView,
+  draft: HarnessPolicyDraft,
+): boolean => {
+  if (draft.domain === undefined) return !sameHarnessSelection(draft.selection, view.global.policy);
+  if (view.domain === null) return false;
+  if (draft.inherit !== (view.domain.mode === "inherit")) return true;
+  return !draft.inherit && !sameHarnessSelection(draft.selection, view.domain.effective);
+};
+
+/**
+ * The CLI call that saves a draft: a global or domain set, or a domain reset when it inherits.
+ * @param home The user's home directory.
+ * @param view The policy as read, which holds the revision to check.
+ * @param draft The edit to save.
+ * @returns The program and arguments, or undefined when there is nothing to write.
+ */
+export const harnessPolicySaveCommand = (
+  home: string,
+  view: HarnessPolicyView,
+  draft: HarnessPolicyDraft,
+): { command: string; args: string[] } | undefined => {
+  if (!harnessPolicyDraftDirty(view, draft)) return undefined;
+  if (draft.domain !== undefined && draft.inherit)
+    return harnessPolicyResetCommand(home, draft.domain, view.revision);
+  return harnessPolicySetCommand(home, draft.domain, draft.selection, view.revision);
+};
 
 const harnessOf = (value: unknown): value is DelegateHarness =>
   value === "pi" || value === "claude";
