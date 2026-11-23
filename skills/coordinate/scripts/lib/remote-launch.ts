@@ -169,3 +169,31 @@ export const remoteFolderExists = Effect.fn("remoteFolderExists")(function* (
   const out = yield* hc.execOn(machine, `if [ -d ${word(path)} ]; then echo present; fi`, 30);
   return out.split("\n").includes("present");
 });
+
+/**
+ * Where a remote delegate appends its finding and notify lines: `OUTBOX.jsonl` in its scratch
+ * folder on its own machine.
+ * @param worktree The delegate's worktree on that machine.
+ * @returns The absolute outbox path there.
+ */
+export const outboxPath = (worktree: string): string => `${worktree}/.scratch/OUTBOX.jsonl`;
+
+/**
+ * The brief a remote delegate reads: the coordinator's brief plus an Outbox section that replaces
+ * the coordinate CLI, which its machine does not have.
+ * @param brief The brief's text.
+ * @param machine The delegate's Herdr machine.
+ * @param outbox Absolute outbox path there.
+ * @returns The brief to write on that machine.
+ */
+export const remoteBrief = (brief: string, machine: string, outbox: string): string =>
+  [
+    brief.endsWith("\n") || brief === "" ? brief : `${brief}\n`,
+    "## Outbox",
+    "",
+    `This delegate runs on ${machine}, which has no coordinate CLI. Do not run \`coordinate finding add\` or \`coordinate notify\`: wherever this brief says to run one, append one JSON object on its own line to \`${outbox}\` instead, and never change earlier lines. Your coordinator's watcher reads the file and applies each line once.`,
+    "",
+    '- A finding: `{"type":"finding","kind":"issue","title":"<title>","from":"<item id>","detail":"<what>","path":"<file or folder>"}`. `kind` is `issue` or `opportunity`; `from`, `detail` and `path` are optional.',
+    '- The notify: `{"type":"notify","text":"<name>: <status>, report at <absolute report path>"}`.',
+    "",
+  ].join("\n");

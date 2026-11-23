@@ -248,7 +248,10 @@ describe.skipIf(!ready)("strix: remote delegate launch", () => {
         `cd ${shellWord(worktree)} && git rev-parse --abbrev-ref HEAD && git rev-parse HEAD && git status --porcelain --untracked-files=all && cat .scratch/BRIEF.md`,
         20,
       ),
-    ).toEqual({ exitCode: 0, output: `${branch}\n${base}\n${run.brief}` });
+    ).toEqual({
+      exitCode: 0,
+      output: `${branch}\n${base}\n${run.brief}${outboxSection(`${worktree}/.scratch/OUTBOX.jsonl`)}`,
+    });
 
     // The CLI prints the watcher banner beside the JSON while the run has live delegates.
     const shown = run.cli(["backlog", "show", "--json"]).output;
@@ -828,4 +831,159 @@ describe.skipIf(!ready)("strix: remote send, end and resume", () => {
     expect(runningOnStrix(session, true)).toBe(true);
     expect(existsSync(join(run.stateDir, "ended", `${session}.json`))).toBe(false);
   }, 400_000);
+});
+
+/**
+ * The section a remote launch appends to the brief it writes on the delegate's machine.
+ * @param outbox Absolute outbox path there.
+ * @returns The section, with the blank line that separates it from the brief.
+ */
+const outboxSection = (outbox: string): string =>
+  [
+    "",
+    "## Outbox",
+    "",
+    `This delegate runs on strix, which has no coordinate CLI. Do not run \`coordinate finding add\` or \`coordinate notify\`: wherever this brief says to run one, append one JSON object on its own line to \`${outbox}\` instead, and never change earlier lines. Your coordinator's watcher reads the file and applies each line once.`,
+    "",
+    '- A finding: `{"type":"finding","kind":"issue","title":"<title>","from":"<item id>","detail":"<what>","path":"<file or folder>"}`. `kind` is `issue` or `opportunity`; `from`, `detail` and `path` are optional.',
+    '- The notify: `{"type":"notify","text":"<name>: <status>, report at <absolute report path>"}`.',
+    "",
+  ].join("\n");
+
+describe.skipIf(!ready)("strix: draining a remote delegate's outbox", () => {
+  let run: StrixRun | undefined;
+  let local = "";
+  let remote = "";
+  let brief = "";
+  let item = "";
+  beforeAll(() => {
+    run = strixRun();
+    local = initRepo();
+    remote = run.remoteRepo("app");
+    brief = join(run.stateDir, "brief.md");
+    writeFileSync(brief, run.brief);
+    run.seed({ owned: [local], adjacent: [] });
+    run.becomeCoordinator();
+    run.configure({ max_fleet_delegates_by_machine: { strix: 99 } });
+    const added = run.cli(["item", "add", "strix outbox"]);
+    expect(added.exitCode).toBe(0);
+    item = /\bi\d+\b/.exec(added.output)?.[0] ?? "";
+    expect(
+      run.cli(["backlog", "boundary", "add", local, "--machine", STRIX, "--checkout", remote])
+        .exitCode,
+    ).toBe(0);
+  }, 90_000);
+  afterAll(() => {
+    if (local !== "") rmSync(local, { recursive: true, force: true });
+    const left = run?.teardown() ?? [];
+    expect(left).toEqual([]);
+  }, 180_000);
+
+  it("briefs the delegate on its outbox and applies each finding and notify line once", () => {
+    if (!run) return;
+    expect(watchEvents(run, () => true, 0, 3)).toEqual([]);
+    const name = `so-${run.id}`;
+    const launched = run.cli(
+      [
+        "delegate",
+        name,
+        "--task",
+        "strix outbox",
+        "--repo",
+        local,
+        "--brief",
+        brief,
+        "--item",
+        item,
+        "--machine",
+        STRIX,
+        "--harness",
+        "claude",
+      ],
+      150_000,
+    );
+    const address = /\((strix\/t[0-9a-z]+)\)/.exec(launched.output)?.[1] ?? "";
+    const space = / in its own space (strix\/\S+)/.exec(launched.output)?.[1] ?? "";
+    if (address !== "") run.trackTerminal(address);
+    if (space !== "") run.trackSpace(space);
+    expect([launched.exitCode, address.startsWith("strix/t")]).toEqual([0, true]);
+    const worktree = `${remote}/.claude/worktrees/${name}`;
+    const outbox = `${worktree}/.scratch/OUTBOX.jsonl`;
+    expect(onStrix(`cat ${shellWord(`${worktree}/.scratch/BRIEF.md`)}`, 20)).toEqual({
+      exitCode: 0,
+      output: `${run.brief}${outboxSection(outbox)}`,
+    });
+
+    const settled = `<event kind="settled" delegate="${name}" address="${address}">read its REPORT.md, verify, then report</event>`;
+    const notified = `<event kind="notify" delegate="${name}" address="${address}">done</event>`;
+    const { env } = run;
+    const screen = () =>
+      Bun.spawnSync(["hc", "read", address, "--lines", "40"], {
+        env,
+        stdout: "pipe",
+        timeout: 15_000,
+      }).stdout.toString();
+    const blocked = (event: string) => event.includes(' kind="blocked"');
+    const events: string[] = [];
+    const both = () => events.includes(settled) && events.includes(notified);
+    events.push(...watchEvents(run, (event) => event === settled || blocked(event), 300_000));
+    // Claude Code asks once whether to trust a folder strix has never seen; this throwaway one is
+    // the suite's own, so the suite answers yes in its own terminal.
+    if (
+      !events.includes(settled) &&
+      events.some(blocked) &&
+      screen().includes("trust this folder")
+    ) {
+      console.log(`answered Claude Code's trust dialog in ${address}`);
+      Bun.spawnSync(["hc", "keys", address, "down", "enter"], { env: run.env, timeout: 15_000 });
+      events.push(...watchEvents(run, (event) => event === settled, 300_000));
+    }
+    if (!both()) events.push(...watchEvents(run, () => both(), 60_000, 5));
+    if (!both()) console.log(`events: ${JSON.stringify(events)}\nscreen:\n${screen()}`);
+    expect(events.filter((event) => event.includes(' kind="notify"'))).toEqual([notified]);
+
+    // A finding line appended by hand, as a remote delegate would, lands with its source delegate.
+    const line = JSON.stringify({
+      type: "finding",
+      kind: "issue",
+      title: "strix outbox finding",
+      from: item,
+      detail: "noticed on strix",
+    });
+    expect(onStrix(`printf '%s\\n' ${shellWord(line)} >> ${shellWord(outbox)}`, 20).exitCode).toBe(
+      0,
+    );
+    const findings = () => {
+      const shown = run?.cli(["backlog", "show", "--json"]).output ?? "";
+      return (
+        JSON.parse(shown.slice(shown.indexOf("{"), shown.lastIndexOf("}") + 1)) as {
+          findings: Record<string, unknown>[];
+        }
+      ).findings;
+    };
+    // Items and findings share one id counter, and the item took the first.
+    const applied = {
+      id: "f2",
+      kind: "issue",
+      title: "strix outbox finding",
+      detail: "noticed on strix",
+      path: null,
+      from: item,
+      source: `delegate:${name}`,
+      createdAt: expect.any(String),
+      status: "open",
+      closedAt: null,
+      outcome: null,
+    };
+    // Each pass is a new watcher process, so later passes are restarts reading the same outbox.
+    const outboxEvents = () =>
+      watchEvents(run as StrixRun, () => true, 0, 5).filter(
+        (event) => event.includes(' kind="notify"') || event.includes(' kind="outbox-invalid"'),
+      );
+    expect(outboxEvents()).toEqual([]);
+    expect(findings()).toEqual([applied]);
+    expect(outboxEvents()).toEqual([]);
+    expect(outboxEvents()).toEqual([]);
+    expect(findings()).toEqual([applied]);
+  }, 600_000);
 });

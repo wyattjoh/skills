@@ -1,5 +1,5 @@
 import { afterAll, describe, expect, it } from "bun:test";
-import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { hostname } from "node:os";
 import { Effect } from "effect";
@@ -1145,7 +1145,9 @@ describe("watch due events", () => {
       harnessPolicy: JSON.stringify({ enabled: ["pi", "claude"], default: null }),
       settled: 0,
       unreachable: [],
+      remoteOutboxes: {},
       outbox: [],
+      outboxIntents: [],
       nextEventId: 2,
     });
     writeFileSync(stateFile, JSON.stringify({ delegates: {}, prs: {} }));
@@ -2083,5 +2085,224 @@ describe("watch remote machines", () => {
       fake.layer,
     );
     expect(lines).toEqual(["alive: no events in 0m; re-arm the watcher"]);
+  });
+});
+
+describe("watch remote outboxes", () => {
+  const worktree = "/remote/app/.claude/worktrees/rem-a";
+  const outboxFile = `${worktree}/.scratch/OUTBOX.jsonl`;
+  const setup = (watchState: Record<string, unknown>, backlog = emptyBacklog("app", null)) => {
+    const state = tempDir();
+    made.push(state);
+    mkdirSync(join(state, "backlogs"), { recursive: true });
+    writeFileSync(join(state, "backlogs", "app.json"), JSON.stringify(backlog));
+    mkdirSync(join(state, "watch"), { recursive: true });
+    writeFileSync(
+      join(state, "watch", "app.json"),
+      JSON.stringify({
+        delegates: { "strix/t5": { name: "rem-a", status: "working", turn: 2 } },
+        prs: {},
+        due: [],
+        ...watchState,
+      }),
+    );
+    let outbox: string | undefined;
+    const reads: string[] = [];
+    const fake = fakeProc((argv) => {
+      if (argv[1] === "ls" && argv.includes("fleet.role=coordinator"))
+        return ok(
+          JSON.stringify({ terminals: [], machines: [{ name: "strix", state: "connected" }] }),
+        );
+      if (argv[1] === "ls")
+        return ok(
+          JSON.stringify({
+            terminals: [
+              {
+                address: "strix/t5",
+                name: "rem-a",
+                agent: "claude-code",
+                status: "working",
+                turn: 2,
+                state: "live",
+                cwd: worktree,
+              },
+            ],
+            machines: [{ name: "strix", state: "connected" }],
+          }),
+        );
+      if (argv[1] === "get" && argv[2] === "strix/t5")
+        return ok(
+          JSON.stringify({
+            address: "strix/t5",
+            name: "rem-a",
+            state: "live",
+            labels: {
+              "fleet.domain": "app",
+              "fleet.machine": "strix",
+              "fleet.session": "s-1",
+              "fleet.worktree": worktree,
+            },
+            cwd: worktree,
+          }),
+        );
+      if (argv[1] === "file" && argv[2] === "read") {
+        reads.push(argv.slice(3).join(" "));
+        if (outbox === undefined)
+          return {
+            exitCode: 3,
+            stdout: "",
+            stderr: `{"error":{"kind":"not_found","message":"no file ${outboxFile}"}}`,
+          };
+        return ok(JSON.stringify({ first: 1, last: 1, lines: 1, text: outbox }));
+      }
+      return ok("");
+    });
+    const tick = async () => {
+      const config = await Effect.runPromise(
+        resolveConfig({ state_dir: state, backlog_dir: join(state, "md") }, "/c"),
+      );
+      const emitted: string[] = [];
+      const lines = await runWith(
+        watch(config, {
+          domain: "app",
+          intervalMs: 10,
+          forgeIntervalMs: 60_000,
+          maxMs: 30,
+          owner: undefined,
+          replace: false,
+          deliver: false,
+          today: () => "2026-11-23",
+          follow: false,
+          emit: (line) => {
+            emitted.push(line);
+          },
+        }),
+        fake.layer,
+      );
+      return [...emitted.map(eventText), ...lines];
+    };
+    const findings = () =>
+      (
+        JSON.parse(readFileSync(join(state, "backlogs", "app.json"), "utf8")) as {
+          findings: Record<string, unknown>[];
+        }
+      ).findings;
+    return {
+      state,
+      tick,
+      findings,
+      reads,
+      setOutbox: (text: string | undefined) => {
+        outbox = text;
+      },
+    };
+  };
+  const alive = ["alive: no events in 0m; re-arm the watcher"];
+  const notify = (text: string) =>
+    `<event kind="notify" delegate="rem-a" address="strix/t5">${text}</event>`;
+
+  it("applies each complete finding and notify line once across watcher restarts", async () => {
+    const run = setup({});
+    expect(await run.tick()).toEqual(alive);
+    const first = [
+      JSON.stringify({ type: "notify", text: "rem-a: done, report at /r" }),
+      JSON.stringify({
+        type: "finding",
+        kind: "issue",
+        title: "flaky gate",
+        detail: "it hangs",
+        path: "src/a.ts",
+      }),
+      JSON.stringify({ type: "nope" }),
+      "not json",
+    ].join("\n");
+    run.setOutbox(`${first}\n{"type":"notify","te`);
+    expect(await run.tick()).toEqual([
+      notify("rem-a: done, report at /r"),
+      '<event kind="outbox-invalid" delegate="rem-a" address="strix/t5" line="3"><error>unknown type nope</error>skipped; ask the delegate to append a corrected line</event>',
+      '<event kind="outbox-invalid" delegate="rem-a" address="strix/t5" line="4"><error>not a JSON object</error>skipped; ask the delegate to append a corrected line</event>',
+    ]);
+    const applied = {
+      id: "f1",
+      kind: "issue",
+      title: "flaky gate",
+      detail: "it hangs",
+      path: "src/a.ts",
+      from: null,
+      source: "delegate:rem-a",
+      createdAt: expect.any(String),
+      status: "open",
+      closedAt: null,
+      outcome: null,
+    };
+    expect(run.findings()).toEqual([applied]);
+    // Every tick is a new watcher, so this is a restart reading the same lines plus a finished one.
+    run.setOutbox(`${first}\n{"type":"notify","text":"second"}\n`);
+    expect(await run.tick()).toEqual([notify("second")]);
+    expect(await run.tick()).toEqual(alive);
+    expect(run.findings()).toEqual([applied]);
+    expect(run.reads.at(-1)).toBe(`--on strix ${outboxFile} --json`);
+  });
+
+  it("keeps a finding line for the next tick when the backlog cannot be written", async () => {
+    const run = setup({});
+    const backlogs = join(run.state, "backlogs");
+    chmodSync(backlogs, 0o555);
+    run.setOutbox(`${JSON.stringify({ type: "finding", kind: "issue", title: "flaky gate" })}\n`);
+    try {
+      expect(await run.tick()).toEqual(alive);
+    } finally {
+      chmodSync(backlogs, 0o755);
+    }
+    expect(await run.tick()).toEqual(alive);
+    expect(await run.tick()).toEqual(alive);
+    expect(run.findings().map((finding) => [finding.id, finding.title, finding.source])).toEqual([
+      ["f1", "flaky gate", "delegate:rem-a"],
+    ]);
+  });
+
+  it("does not apply a finding again when a watcher stopped between adding it and saving its place", async () => {
+    const at = "2026-11-23T10:00:00.000Z";
+    const backlog = emptyBacklog("app", null);
+    const recorded = {
+      id: "f1",
+      kind: "issue" as const,
+      title: "flaky gate",
+      detail: null,
+      path: null,
+      from: null,
+      source: "delegate:rem-a",
+      createdAt: at,
+      status: "open" as const,
+      closedAt: null,
+      outcome: null,
+    };
+    const run = setup(
+      {
+        remoteOutboxes: {
+          "s-1": {
+            delegate: "rem-a",
+            machine: "strix",
+            path: outboxFile,
+            address: "strix/t5",
+            read: 0,
+          },
+        },
+        // Two stopped watchers each recorded the line; the backlog holds the second one's finding.
+        outboxIntents: [
+          { session: "s-1", line: 1, at: "2026-11-23T09:00:00.000Z" },
+          { session: "s-1", line: 1, at },
+        ],
+      },
+      { ...backlog, findings: [recorded], nextId: 2 },
+    );
+    run.setOutbox(
+      `${JSON.stringify({ type: "finding", kind: "issue", title: "flaky gate" })}\n${JSON.stringify({ type: "finding", kind: "opportunity", title: "cache it" })}\n`,
+    );
+    expect(await run.tick()).toEqual(alive);
+    expect(run.findings().map((finding) => [finding.id, finding.title, finding.source])).toEqual([
+      ["f1", "flaky gate", "delegate:rem-a"],
+      ["f2", "cache it", "delegate:rem-a"],
+    ]);
   });
 });

@@ -344,6 +344,25 @@ export const writeFileOn = Effect.fn("hc.writeFileOn")(function* (
   yield* herdr(["hc", "file", "write", "--on", machine, path, "--json"], 30_000, content);
 });
 
+const FileRead = Schema.Struct({ text: Schema.String });
+
+/**
+ * Read a text file on another Herdr machine (up to Herdr's 8 MB cap).
+ * @param machine Herdr machine name.
+ * @param path Absolute path there.
+ * @returns The file's text, or undefined when there is no such file.
+ */
+export const readFileOn = Effect.fn("hc.readFileOn")(function* (machine: string, path: string) {
+  const result = yield* herdr(["hc", "file", "read", "--on", machine, path, "--json"], 30_000).pipe(
+    Effect.map((text) => ({ text })),
+    Effect.catchTag("HerdrError", (error) =>
+      error.kind === "not_found" ? Effect.succeed(undefined) : Effect.fail(error),
+    ),
+  );
+  if (result === undefined) return undefined;
+  return (yield* decodeJson(FileRead, "hc file read", result.text)).text;
+});
+
 /**
  * Set labels; an empty value removes one.
  * @param target Address or name.

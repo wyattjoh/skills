@@ -3,7 +3,7 @@ import { randomUUID } from "node:crypto";
 import { mkdir, open, readFile, rename, unlink } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { Effect, Option, Result } from "effect";
-import { readDocument } from "./backlog-doc.ts";
+import { findingAdd, readDocument } from "./backlog-doc.ts";
 import { isAnswer } from "./backlog-store/ops.ts";
 import { isDiscussion } from "./backlog-store/schema.ts";
 import type { Item } from "./backlog-store/schema.ts";
@@ -27,6 +27,7 @@ import {
   machineDelegateBudget,
 } from "./delegate-capacity.ts";
 import { resolveEffectiveHarnessPolicy } from "./harness-policy.ts";
+import { outboxPath } from "./remote-launch.ts";
 import { lastLint, LINT_INTERVAL_DAYS, settledWikiPages, wikiCreated } from "./wiki.ts";
 import { markSettled, readSession, retroDue, type RetroMarker } from "./sessions.ts";
 
@@ -149,11 +150,15 @@ export type WatchSnapshot = {
    * Machines already reported unreachable in their current outage, so each outage fires once.
    */
   unreachable: string[];
+  /** How far each remote delegate's outbox has been applied, by session. */
+  remoteOutboxes: Record<string, OutboxCursor>;
 };
 
 /** The watcher's committed snapshot, pending events, and recovery point. */
 export type WatchState = WatchSnapshot & {
   outbox: WatchEvent[];
+  /** Finding lines being added this tick; cleared when the tick commits. */
+  outboxIntents: OutboxIntent[];
   nextEventId: number;
   staged: WatchSnapshot | undefined;
 };
@@ -173,7 +178,9 @@ export const emptyState = (): WatchState => ({
   lintDue: undefined,
   settled: 0,
   unreachable: [],
+  remoteOutboxes: {},
   outbox: [],
+  outboxIntents: [],
   nextEventId: 1,
   staged: undefined,
 });
@@ -590,7 +597,9 @@ const readState = (path: string) =>
         lintDue: parsed.lintDue,
         settled: parsed.settled ?? 0,
         unreachable: parsed.unreachable ?? [],
+        remoteOutboxes: parsed.remoteOutboxes ?? {},
         outbox: (parsed.outbox ?? []).map(persistedEvent),
+        outboxIntents: parsed.outboxIntents ?? [],
         nextEventId: parsed.nextEventId ?? 1,
         staged: parsed.staged,
       };
@@ -700,6 +709,198 @@ export const outageEvents = (
     );
   return { delegates, events, unreachable };
 };
+
+/**
+ * How far the watcher has applied one remote delegate's outbox: whole lines read, and where the file
+ * is. `address` is null once the delegate is gone and its outbox was read a last time; a resume
+ * under the same session picks the cursor up again.
+ */
+export type OutboxCursor = {
+  delegate: string;
+  machine: string;
+  path: string;
+  address: string | null;
+  read: number;
+};
+
+/**
+ * A finding line about to be added, saved before the backlog write so a watcher stopped between
+ * that write and committing its cursor recognizes the finding instead of adding it again.
+ */
+export type OutboxIntent = { session: string; line: number; at: string };
+
+type OutboxLine =
+  | { type: "notify"; text: string }
+  | {
+      type: "finding";
+      kind: "issue" | "opportunity";
+      title: string;
+      detail: string | undefined;
+      path: string | undefined;
+      from: string | undefined;
+    }
+  | { type: "invalid"; error: string };
+
+const parseOutboxLine = (line: string): OutboxLine => {
+  let value: unknown;
+  try {
+    value = JSON.parse(line);
+  } catch {
+    return { type: "invalid", error: "not a JSON object" };
+  }
+  if (typeof value !== "object" || value === null || Array.isArray(value))
+    return { type: "invalid", error: "not a JSON object" };
+  const record = value as Record<string, unknown>;
+  const text = (key: string): string | undefined => {
+    const field = record[key];
+    return typeof field === "string" && field.trim() !== "" ? field : undefined;
+  };
+  if (record.type === "notify") {
+    const said = text("text");
+    return said === undefined
+      ? { type: "invalid", error: "a notify line needs text" }
+      : { type: "notify", text: said };
+  }
+  if (record.type === "finding") {
+    if (record.kind !== "issue" && record.kind !== "opportunity")
+      return { type: "invalid", error: "a finding line needs kind issue or opportunity" };
+    const title = text("title");
+    if (title === undefined) return { type: "invalid", error: "a finding line needs a title" };
+    return {
+      type: "finding",
+      kind: record.kind,
+      title,
+      detail: text("detail"),
+      path: text("path"),
+      from: text("from"),
+    };
+  }
+  return {
+    type: "invalid",
+    error: typeof record.type === "string" ? `unknown type ${record.type}` : "a line needs a type",
+  };
+};
+
+/**
+ * Drain each remote delegate's outbox (`OUTBOX.jsonl` in its scratch folder on its machine) into
+ * the backlog: a finding line becomes an open finding whose source is the delegate, a notify line
+ * becomes a `notify` event, and a line that cannot be applied becomes an `outbox-invalid` event.
+ * Only newline-terminated lines count, so a line still being written waits. A machine that is down
+ * or a file that cannot be read keeps its cursor for the next tick.
+ * @param config Config.
+ * @param domain Domain.
+ * @param delegates This tick's delegate snapshot.
+ * @param down Machines Herdr lists as not connected.
+ * @param cursors Cursors by session, from the last committed snapshot.
+ * @param intents Finding lines a stopped watcher may already have added.
+ * @param now Clock, for each new finding's time.
+ * @param recordIntent Save an intent durably before its finding is added.
+ * @returns The new cursors and the events to queue with them.
+ */
+export const drainOutboxes = Effect.fn("drainOutboxes")(function* (
+  config: Config,
+  domain: string,
+  delegates: Readonly<Record<string, SeenDelegate>>,
+  down: readonly string[],
+  cursors: Readonly<Record<string, OutboxCursor>>,
+  intents: readonly OutboxIntent[],
+  now: () => number,
+  recordIntent: (intent: OutboxIntent) => Effect.Effect<void>,
+) {
+  const next: Record<string, OutboxCursor> = Object.fromEntries(
+    Object.entries(cursors).map(([session, cursor]) => [session, { ...cursor }]),
+  );
+  const tracked = new Set(Object.values(next).map((cursor) => cursor.address));
+  for (const [address, seen] of Object.entries(delegates)) {
+    const machine = remoteMachine(address);
+    if (machine === undefined || down.includes(machine) || tracked.has(address)) continue;
+    const terminal = yield* hc.get(address).pipe(Effect.catch(() => Effect.succeed(undefined)));
+    const worktree = terminal?.labels[L.worktree];
+    const session = terminal === undefined ? "" : sessionOf(terminal);
+    if (worktree === undefined || session === "") continue;
+    const known = next[session];
+    next[session] = known
+      ? { ...known, delegate: seen.name, address }
+      : { delegate: seen.name, machine, path: outboxPath(worktree), address, read: 0 };
+  }
+  const events: WatchEventData[] = [];
+  for (const [session, cursor] of Object.entries(next)) {
+    if (cursor.address === null || down.includes(cursor.machine)) continue;
+    const address = cursor.address;
+    const read = yield* hc.readFileOn(cursor.machine, cursor.path).pipe(Effect.result);
+    if (Result.isFailure(read)) continue;
+    const complete = (read.success ?? "").split("\n").slice(0, -1);
+    const attrs = { delegate: cursor.delegate, address };
+    // A backlog that cannot be written stops this outbox at that line, to retry next tick.
+    let stopped: number | undefined;
+    for (let index = cursor.read; index < complete.length; index += 1) {
+      const raw = (complete[index] ?? "").trim();
+      if (raw === "") continue;
+      const line = index + 1;
+      const parsed = parseOutboxLine(raw);
+      const invalid = (error: string) =>
+        watchEvent(
+          "outbox-invalid",
+          { ...attrs, line: String(line) },
+          "skipped; ask the delegate to append a corrected line",
+          { error },
+        );
+      if (parsed.type === "invalid") {
+        events.push(invalid(parsed.error));
+        continue;
+      }
+      if (parsed.type === "notify") {
+        events.push(watchEvent("notify", attrs, parsed.text));
+        continue;
+      }
+      const source = `delegate:${cursor.delegate}`;
+      // Every watcher stopped on this line left an intent; any one of them may have added it.
+      const tried = new Set(
+        intents
+          .filter((entry) => entry.session === session && entry.line === line)
+          .map((entry) => entry.at),
+      );
+      if (tried.size > 0) {
+        const document = yield* readDocument(config, domain).pipe(Effect.option);
+        const added =
+          Option.isSome(document) &&
+          document.value.backlog.findings.some(
+            (finding) =>
+              finding.source === source &&
+              finding.createdAt !== undefined &&
+              tried.has(finding.createdAt) &&
+              finding.title === parsed.title.trim(),
+          );
+        if (added) continue;
+      }
+      const at = new Date(now()).toISOString();
+      yield* recordIntent({ session, line, at });
+      const added = yield* findingAdd(config, domain, {
+        kind: parsed.kind,
+        title: parsed.title,
+        detail: parsed.detail,
+        path: parsed.path,
+        from: parsed.from,
+        source,
+        json: false,
+        now: at,
+      }).pipe(Effect.result);
+      if (Result.isSuccess(added)) continue;
+      if (added.failure._tag === "BacklogError") {
+        stopped = index;
+        break;
+      }
+      events.push(invalid(added.failure.message));
+    }
+    next[session] = {
+      ...cursor,
+      read: stopped ?? Math.max(cursor.read, complete.length),
+      // A gone delegate's outbox was just read a last time.
+      address: delegates[address] === undefined && stopped === undefined ? null : address,
+    };
+  }
+  return { cursors: next, events };
+});
 
 /**
  * One delegate snapshot: two `hc ls --label` calls (domain members, minus coordinators), no `hc get` per terminal.
@@ -946,6 +1147,7 @@ export const watch = Effect.fn("watch")(function* (config: Config, options: Watc
         lintDue: state.lintDue,
         settled: state.settled,
         unreachable: [...state.unreachable],
+        remoteOutboxes: state.remoteOutboxes,
       };
       const lines: WatchEventData[] = [];
       let marks: SettleMark[] = [];
@@ -1045,6 +1247,22 @@ export const watch = Effect.fn("watch")(function* (config: Config, options: Watc
         if (events.some((event) => event.kind === "settled")) sampled.events.push(statusBeat(seen));
         lines.push(...sampled.events);
         snapshot.delegates = seen;
+        const drained = yield* drainOutboxes(
+          config,
+          options.domain,
+          seen,
+          polled.success.down,
+          snapshot.remoteOutboxes,
+          state.outboxIntents,
+          clock,
+          (intent) =>
+            Effect.gen(function* () {
+              state = { ...state, outboxIntents: [...state.outboxIntents, intent] };
+              yield* writeState(path, state);
+            }),
+        );
+        snapshot.remoteOutboxes = drained.cursors;
+        lines.push(...drained.events);
       }
       if (clock() - lastForge >= options.forgeIntervalMs) {
         lastForge = clock();
@@ -1222,7 +1440,7 @@ export const watch = Effect.fn("watch")(function* (config: Config, options: Watc
       // The outbox and staged snapshot are one atomic write. Recovery commits the staged snapshot
       // before another poll, so a crash cannot regenerate and enqueue the same snapshot transition.
       yield* writeState(path, staged);
-      state = { ...staged, ...snapshot, staged: undefined };
+      state = { ...staged, ...snapshot, staged: undefined, outboxIntents: [] };
       yield* writeState(path, state);
       // Markers follow the committed events: a crash before them re-samples the session later,
       // duplicating a retro rather than losing one.

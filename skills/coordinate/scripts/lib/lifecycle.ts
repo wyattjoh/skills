@@ -61,7 +61,9 @@ import {
   teardownEnded,
 } from "./processes.ts";
 import {
+  outboxPath,
   preflightRemote,
+  remoteBrief,
   remoteCheckout,
   remoteFolderExists,
   remoteMainCheckout,
@@ -864,7 +866,11 @@ export const delegate = Effect.fn("delegate")(function* (
       if (!existsSync(source)) return yield* new Refused({ message: `no brief at ${source}` });
       brief = join(scratch, "BRIEF.md");
       const content = yield* Effect.promise(() => readFile(source, "utf8"));
-      yield* hc.writeFileOn(away.machine, brief, content);
+      yield* hc.writeFileOn(
+        away.machine,
+        brief,
+        remoteBrief(content, away.machine, outboxPath(cwd)),
+      );
       message = message.kind === "brief" ? { kind: "brief", path: brief } : { ...message, brief };
     } else if (briefSource !== undefined) {
       const source = absolutePath(briefSource);
