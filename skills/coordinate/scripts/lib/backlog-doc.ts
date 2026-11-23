@@ -495,6 +495,7 @@ export const findingAdd = Effect.fn("findingAdd")(function* (
     path: string | undefined;
     from: string | undefined;
     json: boolean;
+    now?: string;
   },
 ) {
   const finding = yield* change(config, domain, (backlog) =>
@@ -504,6 +505,7 @@ export const findingAdd = Effect.fn("findingAdd")(function* (
       detail: input.detail,
       path: input.path,
       from: input.from,
+      now: input.now,
     }),
   );
   return input.json ? json(finding) : [`added ${finding.id}: ${finding.title}`];

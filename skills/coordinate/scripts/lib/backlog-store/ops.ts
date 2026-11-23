@@ -99,7 +99,8 @@ export const closeItem = (
 /**
  * Add an open finding with the next short id. A `from` item must exist in the document.
  * @param backlog Current document.
- * @param input Kind, one-line title, optional detail and path, and the item it came from.
+ * @param input Kind, one-line title, optional detail and path, the item it came from, and the
+ * time as an ISO string, recorded as `createdAt`.
  * @returns The next document and the new finding.
  */
 export const addFinding = (
@@ -110,6 +111,7 @@ export const addFinding = (
     detail: string | undefined;
     path: string | undefined;
     from: string | undefined;
+    now?: string;
   },
 ): OpResult<Finding> => {
   const problem =
@@ -129,6 +131,7 @@ export const addFinding = (
     detail: input.detail?.trim() ?? null,
     path: input.path?.trim() ?? null,
     from: input.from ?? null,
+    ...(input.now === undefined ? {} : { createdAt: input.now }),
     status: "open",
     closedAt: null,
     outcome: null,

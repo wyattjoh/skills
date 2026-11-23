@@ -74,6 +74,7 @@ import {
   stopDeletedFolders,
 } from "./lib/sweep.ts";
 import { mainCheckout } from "./lib/git.ts";
+import { commitWiki, lintLines, lintWiki, wikiPath } from "./lib/wiki.ts";
 
 /**
  * The failure to report from a cause: its typed error, else a `MissingFolder` thrown while
@@ -276,6 +277,8 @@ const valueOptions = new Set([
   "--forge-interval",
   "--max-minutes",
   "--keep",
+  "--message",
+  "-m",
 ]);
 
 const switchOptions = new Set([
@@ -299,6 +302,7 @@ const switchOptions = new Set([
   "--retry-queued",
   "--replace",
   "--resume",
+  "--shared",
   "--sizes",
   "--space",
   "--stop",
@@ -1292,6 +1296,7 @@ const findingAddCommand = Command.make(
           path: Option.getOrUndefined(options.path),
           from: Option.getOrUndefined(options.from),
           json: options.json,
+          now: new Date().toISOString(),
         }),
       ),
     ),
@@ -1366,6 +1371,107 @@ const findingCommand = Command.make("finding").pipe(
     "record, promote and close issues and opportunities noticed outside an item's scope",
   ),
   Command.withSubcommands([findingAddCommand, findingCloseCommand, findingPromoteCommand]),
+);
+
+const sharedFlag = booleanFlag(
+  "shared",
+  "the shared wiki instead of this domain's (only the manager coordinator writes it)",
+);
+const wikiDomainFlag = optionalStringFlag("domain", "domain (default: this coordinator's label)");
+
+const wikiPathCommand = Command.make(
+  "path",
+  {
+    shared: sharedFlag,
+    domain: wikiDomainFlag,
+    json: booleanFlag("json", "print domain, shared and path as JSON"),
+  },
+  (options) =>
+    execute((config) =>
+      Effect.flatMap(coordinatorDomain(Option.getOrUndefined(options.domain)), (domain) =>
+        wikiPath(config, domain, { shared: options.shared, json: options.json }),
+      ),
+    ),
+).pipe(
+  Command.withDescription(
+    "print the wiki's folder, creating and git-initializing it on first use (--shared: the manager's shared wiki)",
+  ),
+);
+
+const wikiLintCommand = Command.make(
+  "lint",
+  {
+    shared: sharedFlag,
+    domain: wikiDomainFlag,
+    json: booleanFlag("json", "print path, page count and problems as JSON"),
+  },
+  (options) =>
+    execute((config) =>
+      Effect.flatMap(coordinatorDomain(Option.getOrUndefined(options.domain)), (domain) =>
+        lintWiki(config, domain, { shared: options.shared, now: new Date() }).pipe(
+          Effect.map((result) => {
+            // Problems exit 1: fix the pages (or close the findings) and lint again.
+            if (result.problems.length > 0) process.exitCode = 1;
+            return options.json ? [JSON.stringify(result, null, 2)] : lintLines(result);
+          }),
+        ),
+      ),
+    ),
+).pipe(
+  Command.withDescription(
+    "check the wiki: frontmatter, orphans, index.md, [[links]], undated claims about code, covers globs, findings open over 14 days; exit 1 on problems",
+  ),
+);
+
+const wikiCommitCommand = Command.make(
+  "commit",
+  {
+    message: stringFlag("message", "one-line commit message (required)").pipe(Flag.withAlias("m")),
+    shared: sharedFlag,
+    domain: wikiDomainFlag,
+    json: booleanFlag("json", "print path, committed hash and lint problems as JSON"),
+  },
+  (options) =>
+    execute((config) =>
+      Effect.flatMap(coordinatorDomain(Option.getOrUndefined(options.domain)), (domain) =>
+        commitWiki(config, domain, {
+          shared: options.shared,
+          message: options.message,
+          now: new Date(),
+        }).pipe(
+          Effect.map((result) => {
+            if (options.json) {
+              if (result.problems.length > 0) process.exitCode = 1;
+              return [JSON.stringify(result, null, 2)];
+            }
+            if (result.problems.length > 0) {
+              // Lint refuses the commit: exit 1 with the problems, as `wiki lint` prints them.
+              process.exitCode = 1;
+              console.error(
+                `refused: wiki lint found ${result.problems.length} problems in ${result.path}, nothing committed`,
+              );
+              return result.problems.map((problem) => `${problem.kind}: ${problem.message}`);
+            }
+            return [
+              result.committed === null
+                ? `nothing to commit in ${result.path}`
+                : `committed ${result.committed} in ${result.path}: ${options.message.trim()}`,
+            ];
+          }),
+        ),
+      ),
+    ),
+).pipe(
+  Command.withDescription(
+    "lint the wiki, then commit all its changes locally; exit 1 without committing when lint finds problems",
+  ),
+);
+
+const wikiCommand = Command.make("wiki").pipe(
+  Command.withDescription(
+    "locate, lint and commit the domain's wiki of dated knowledge pages (the coordinator is its only writer)",
+  ),
+  Command.withSubcommands([wikiPathCommand, wikiLintCommand, wikiCommitCommand]),
 );
 
 const watchCommand = Command.make(
@@ -1617,6 +1723,7 @@ const program = Command.make("coordinate")
       harnessPolicyCommand,
       itemCommand,
       findingCommand,
+      wikiCommand,
       watchCommand,
       sweepCommand,
     ]),

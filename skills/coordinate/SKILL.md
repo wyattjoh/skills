@@ -116,8 +116,38 @@ The CLI is the backlog's only writer; it validates, locks and writes atomically,
 | Policies, Boundary, focus          | `backlog policy add\|ls\|rm\|replace`, `backlog boundary add\|rm`, `backlog focus`                                                                                                                                                                                |
 | The domain renamed                 | `backlog rename <new>` (`--domain <old>` from any terminal); refused while it has a live delegate or watcher                                                                                                                                                      |
 | A finding opened, promoted, closed | `finding add --kind issue\|opportunity "<title>"`, `finding close <id> --outcome ...`, `finding promote <id> [--title ...]`                                                                                                                                       |
+| Knowledge learned                  | edit pages in `wiki path`, then `wiki commit -m "<one line>"` (refused until `wiki lint` is clean); see [Wiki](#wiki)                                                                                                                                             |
 
 The Backlog panel may edit Boundary paths from outside a Herdr terminal with `backlog boundary add <path> [--adjacent] --domain <d>` and `backlog boundary rm <path> --domain <d>`, dismiss an item with `item close --dismissed --outcome "<line>" --domain <d> -- <id>`, and approve or dismiss a finding with `finding promote --domain <d> -- <id>` or `finding close --dismissed --outcome "<line>" --domain <d> -- <id>`. Every command takes `--json`; `--help` has the flags. Read it back with `coordinate backlog show` (`--json` for the document, `--done` to include closed items). Fields, statuses and invariants: [backlog.md](references/backlog.md).
+
+## Wiki
+
+The backlog holds state; the **wiki** holds knowledge: why a decision was made, what keeps going wrong, how a subsystem behaves, what the user prefers. It is plain Markdown in a local git repository under the coordinate state directory, one per domain plus a shared one. Run `coordinate wiki path` for your domain's folder (created and git-initialized on first use) and `coordinate wiki path --shared` for the shared wiki; never hard-code either. Nothing pushes the wiki or gives it a remote.
+
+- **Single writer.** You are the only writer of your domain's wiki, and only the manager coordinator writes the shared one (`wiki commit --shared` is refused from any other domain). A domain coordinator requests a shared-wiki change with `coordinate item add "<change> (from <domain>)" --domain manager`. Delegates contribute through their REPORT.md and findings, never by editing the wiki.
+- **Pages.** One flat folder: `index.md` links every page as `[[name]]`, and each other `*.md` file is a page you write with your ordinary file tools. Each page starts with YAML frontmatter:
+
+  ```yaml
+  name: watcher-poll-interval # the file's name without .md
+  description: one line, used in index.md and WIKI.md
+  type: decision # decision | problem | subsystem | preference | retro
+  covers: # optional; omitted = index only
+    - repo: github.com/wyattjoh/skills # origin remote slug of a Boundary checkout
+      globs: ["skills/coordinate/scripts/lib/watch*.ts"]
+    - root: ~/infra # absolute or ~ path outside any repo
+      globs: ["herdr/*.toml"]
+  created: 2026-11-23
+  updated: 2026-11-23
+  sources: [item:i4, delegate:fix-watch, commit:wyattjoh/skills@abc1234]
+  supersedes: []
+  ```
+
+  `covers` names the code the page makes claims about. A `repo` slug resolves through the origin remote of each Boundary path (a checkout with no remote is named by its absolute path).
+
+- **History, not present.** A claim about code is dated or tied to a commit ("As of 2026-11-23 (abc1234), `watch.ts` polls every 5s"). When the code changes, add a dated claim that supersedes the old one instead of rewriting it, and keep `sources` naming where each claim came from.
+- **Lint and commit.** `coordinate wiki lint` exits 1 and names each problem: invalid frontmatter, orphan pages (nothing links to them), pages missing from `index.md`, broken `[[links]]`, undated present-tense claims about code (a line naming code with a present-tense verb and no date or commit hash), `covers` globs matching no files, and, for a domain wiki, open findings older than 14 days. Commit with `coordinate wiki commit -m "<one line>"`: it runs lint first and refuses (exit 1, nothing committed) until lint is clean, so fix the pages or close the findings and commit again. Lint is mechanical; contradictions between pages stay your judgment.
+- **Query.** Read `index.md` of both wikis before a decision, and open the pages it points at.
+- **Ingest.** Write or supersede a page, then `wiki commit`, after an answer that sets a policy, after verifying a delegate's report, and after a retro report, citing it in `sources`.
 
 ## Manage the fleet
 

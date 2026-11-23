@@ -1,0 +1,283 @@
+import { afterAll, describe, expect, it } from "bun:test";
+import { mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { join } from "node:path";
+import { cliEnv, g, initRepo, tempDir } from "./lib/fixture.ts";
+
+const made: string[] = [];
+afterAll(() => {
+  for (const path of made) rmSync(path, { recursive: true, force: true });
+});
+
+const cli = process.env.COORDINATE_CLI ?? join(import.meta.dir, "coordinate.ts");
+
+type Result = { exit: number; stdout: string; stderr: string };
+
+const sandbox = (domain = "app") => {
+  const state = tempDir("coordinate-wiki-cli-");
+  made.push(state);
+  const env = cliEnv(state, { "fleet.role": "coordinator", "fleet.domain": domain });
+  const run = (args: string[]): Result => {
+    const result = Bun.spawnSync(["bun", cli, ...args], {
+      env,
+      stdout: "pipe",
+      stderr: "pipe",
+      timeout: 15_000,
+    });
+    return {
+      exit: result.exitCode ?? 1,
+      stdout: result.stdout.toString(),
+      stderr: result.stderr.toString(),
+    };
+  };
+  return { state, env, run };
+};
+
+const log = (dir: string): string[] => g(dir, "log", "--format=%s").split("\n");
+
+describe("coordinate wiki path", () => {
+  it("creates and git-initializes the domain wiki once and prints its path", () => {
+    const { state, run } = sandbox();
+    const first = run(["wiki", "path"]);
+    expect(first).toEqual({ exit: 0, stdout: `${state}/wiki/app\n`, stderr: "" });
+    const wiki = join(state, "wiki", "app");
+    expect(readFileSync(join(wiki, "index.md"), "utf8")).toBe("# app wiki\n");
+    expect(readFileSync(join(wiki, ".gitignore"), "utf8")).toBe(".scratch/\n");
+    expect(log(wiki)).toEqual(["start the app wiki"]);
+    expect(run(["wiki", "path"]).stdout).toBe(`${wiki}\n`);
+    expect(log(wiki)).toEqual(["start the app wiki"]);
+    expect(JSON.parse(run(["wiki", "path", "--json"]).stdout)).toEqual({
+      domain: "app",
+      shared: false,
+      path: wiki,
+    });
+  }, 30_000);
+
+  it("lets only the manager coordinator create the shared wiki", () => {
+    const app = sandbox();
+    const refused = app.run(["wiki", "path", "--shared"]);
+    expect(refused.exit).toBe(1);
+    expect(refused.stderr).toContain(
+      `refused: there is no shared wiki at ${app.state}/wiki/_shared yet; only the manager coordinator creates and writes it\n`,
+    );
+    const manager = sandbox("manager");
+    const shared = join(manager.state, "wiki", "_shared");
+    expect(manager.run(["wiki", "path", "--shared"]).stdout).toBe(`${shared}\n`);
+    expect(log(shared)).toEqual(["start the shared wiki"]);
+    expect(readFileSync(join(shared, "index.md"), "utf8")).toBe("# shared wiki\n");
+  }, 30_000);
+
+  it("prints an existing shared wiki's path to any coordinator for reading", () => {
+    const app = sandbox();
+    mkdirSync(join(app.state, "wiki", "_shared"), { recursive: true });
+    expect(app.run(["wiki", "path", "--shared"])).toEqual({
+      exit: 0,
+      stdout: `${app.state}/wiki/_shared\n`,
+      stderr: "",
+    });
+  }, 30_000);
+});
+
+const page = (fields: Record<string, unknown>, body: string): string =>
+  `---\n${Object.entries(fields)
+    .map(([key, value]) => `${key}: ${JSON.stringify(value)}`)
+    .join("\n")}\n---\n\n${body}`;
+
+const fields = (name: string, extra: Record<string, unknown> = {}) => ({
+  name,
+  description: `about ${name}`,
+  type: "subsystem",
+  created: "2026-11-20",
+  updated: "2026-11-21",
+  sources: ["item:i1"],
+  supersedes: [],
+  ...extra,
+});
+
+/**
+ * A domain whose Boundary owns a repo with an origin remote and `src/a.ts`, and whose wiki exists.
+ */
+const linted = () => {
+  const box = sandbox();
+  const repo = initRepo();
+  made.push(repo);
+  mkdirSync(join(repo, "src"));
+  writeFileSync(join(repo, "src", "a.ts"), "export {};\n");
+  g(repo, "remote", "add", "origin", "git@github.com:Acme/Widgets.git");
+  const root = tempDir("coordinate-wiki-root-");
+  made.push(root);
+  mkdirSync(join(root, "herdr"));
+  writeFileSync(join(root, "herdr", "x.toml"), "");
+  expect(box.run(["start", "app"]).exit).toBe(0);
+  expect(box.run(["backlog", "boundary", "add", repo]).exit).toBe(0);
+  const wiki = box.run(["wiki", "path"]).stdout.trim();
+  return { ...box, repo, root, wiki };
+};
+
+describe("coordinate wiki lint", () => {
+  it("passes a wiki whose pages are indexed, linked, dated and covered", () => {
+    const { run, wiki, root } = linted();
+    writeFileSync(join(wiki, "index.md"), "# app wiki\n\n- [[alpha]]\n- [[beta]]\n");
+    writeFileSync(
+      join(wiki, "alpha.md"),
+      page(
+        fields("alpha", {
+          covers: [
+            { repo: "github.com/acme/widgets", globs: ["src/*.ts"] },
+            { root, globs: ["herdr/*.toml"] },
+          ],
+        }),
+        "As of 2026-11-21 (abc1234), `watch.ts` polls every 5s. See [[beta]].\n\n```ts\nconst x = 1; // this is code\n```\n",
+      ),
+    );
+    writeFileSync(
+      join(wiki, "beta.md"),
+      page(fields("beta", { type: "decision" }), "Back to [[alpha|the subsystem]].\n"),
+    );
+    const clean = run(["wiki", "lint"]);
+    expect(clean).toEqual({
+      exit: 0,
+      stdout: `wiki lint: ${wiki} is clean (2 pages)\n`,
+      stderr: "",
+    });
+    expect(JSON.parse(run(["wiki", "lint", "--json"]).stdout)).toEqual({
+      path: wiki,
+      pages: 2,
+      problems: [],
+    });
+  }, 30_000);
+
+  it("reports each problem with an exact message and exits 1", () => {
+    const { state, run, wiki, root } = linted();
+    writeFileSync(join(wiki, "index.md"), "# app wiki\n\n- [[alpha]]\n- [[bad]]\n- [[ghost]]\n");
+    writeFileSync(
+      join(wiki, "alpha.md"),
+      page(
+        fields("alpha", {
+          covers: [
+            { repo: "github.com/acme/widgets", globs: ["src/*.ts", "lib/*.ts"] },
+            { repo: "github.com/acme/missing", globs: ["*"] },
+            { root, globs: ["nix/*.nix"] },
+          ],
+        }),
+        "# Watcher\n\nThe watcher in `watch.ts` uses a 5s interval.\nSee [[gamma]] and [[nowhere]].\n",
+      ),
+    );
+    writeFileSync(
+      join(wiki, "bad.md"),
+      page(fields("bad", { type: "rumor", description: "" }), "Text.\n"),
+    );
+    writeFileSync(join(wiki, "gamma.md"), page(fields("gamma"), "Linked, not indexed.\n"));
+    writeFileSync(join(wiki, "delta.md"), page(fields("delta"), "Nobody links here.\n"));
+    writeFileSync(join(wiki, "plain.md"), "No frontmatter.\n");
+    const claimLine =
+      readFileSync(join(wiki, "alpha.md"), "utf8")
+        .split("\n")
+        .indexOf("The watcher in `watch.ts` uses a 5s interval.") + 1;
+    expect(run(["finding", "add", "old thing", "--kind", "issue"]).exit).toBe(0);
+    expect(run(["finding", "add", "new thing", "--kind", "opportunity"]).exit).toBe(0);
+    const documentFile = join(state, "backlogs", "app.json");
+    const document = JSON.parse(readFileSync(documentFile, "utf8"));
+    expect(document.findings[1].createdAt).toMatch(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/);
+    const old = new Date(Date.now() - 20 * 86_400_000).toISOString();
+    document.findings[0].createdAt = old;
+    writeFileSync(documentFile, JSON.stringify(document, null, 2));
+
+    const expected = [
+      "invalid frontmatter: bad.md: description must be one non-empty line",
+      "invalid frontmatter: bad.md: type must be one of decision, problem, subsystem, preference, retro",
+      "invalid frontmatter: plain.md: the page does not start with a --- frontmatter block",
+      "orphan: delta.md: no page and no index.md entry links to [[delta]]",
+      "orphan: plain.md: no page and no index.md entry links to [[plain]]",
+      "not in index: gamma.md: index.md does not link to [[gamma]]",
+      "broken link: alpha.md: [[nowhere]] names no page",
+      "broken link: index.md: [[ghost]] names no page",
+      `undated claim: alpha.md:${claimLine}: date it or cite a commit: The watcher in \`watch.ts\` uses a 5s interval.`,
+      "covers: alpha.md: github.com/acme/widgets lib/*.ts matches no files",
+      "covers: alpha.md: github.com/acme/missing names no Boundary checkout",
+      `covers: alpha.md: ${root} nix/*.nix matches no files`,
+      `stale finding: f1 has been open since ${old.slice(0, 10)}, over 14 days: close or promote it`,
+    ];
+    const failed = run(["wiki", "lint"]);
+    expect(failed).toEqual({
+      exit: 1,
+      stdout: `${[...expected, `wiki lint: ${expected.length} problems in ${wiki}`].join("\n")}\n`,
+      stderr: "",
+    });
+    const json = run(["wiki", "lint", "--json"]);
+    expect(json.exit).toBe(1);
+    expect(
+      JSON.parse(json.stdout).problems.map(
+        (problem: { kind: string; message: string }) => `${problem.kind}: ${problem.message}`,
+      ),
+    ).toEqual(expected);
+  }, 30_000);
+});
+
+describe("coordinate wiki commit", () => {
+  it("refuses a commit while lint fails and commits once it passes", () => {
+    const { run, wiki, env } = linted();
+    writeFileSync(join(wiki, "alpha.md"), page(fields("alpha"), "First notes.\n"));
+    const refused = run(["wiki", "commit", "-m", "add alpha"]);
+    expect(refused).toEqual({
+      exit: 1,
+      stdout: "orphan: alpha.md: no page and no index.md entry links to [[alpha]]\n",
+      stderr: `refused: wiki lint found 1 problems in ${wiki}, nothing committed\n`,
+    });
+    expect(log(wiki)).toEqual(["start the app wiki"]);
+
+    writeFileSync(join(wiki, "index.md"), "# app wiki\n\n- [[alpha]]\n");
+    // A hook inside a linked worktree exports GIT_DIR; the wiki commit must not follow it.
+    const decoy = initRepo();
+    made.push(decoy);
+    const committed = Bun.spawnSync(["bun", cli, "wiki", "commit", "-m", "add alpha"], {
+      env: { ...env, GIT_DIR: join(decoy, ".git"), GIT_WORK_TREE: decoy },
+      stdout: "pipe",
+      stderr: "pipe",
+      timeout: 15_000,
+    });
+    const sha = g(wiki, "rev-parse", "--short", "HEAD");
+    expect([committed.exitCode, committed.stdout.toString()]).toEqual([
+      0,
+      `committed ${sha} in ${wiki}: add alpha\n`,
+    ]);
+    expect(log(wiki)).toEqual(["add alpha", "start the app wiki"]);
+    expect(g(wiki, "status", "--porcelain")).toBe("");
+    expect(log(decoy)).toEqual(["init"]);
+
+    expect(run(["wiki", "commit", "--message", "again"])).toEqual({
+      exit: 0,
+      stdout: `nothing to commit in ${wiki}\n`,
+      stderr: "",
+    });
+    writeFileSync(join(wiki, "alpha.md"), page(fields("alpha"), "Second notes.\n"));
+    const json = run(["wiki", "commit", "-m", "revise alpha", "--json"]);
+    expect([json.exit, JSON.parse(json.stdout)]).toEqual([
+      0,
+      { path: wiki, committed: g(wiki, "rev-parse", "--short", "HEAD"), problems: [] },
+    ]);
+  }, 30_000);
+
+  it("prints the problems as JSON when lint refuses the commit", () => {
+    const { run, wiki } = linted();
+    writeFileSync(join(wiki, "index.md"), "# app wiki\n\n- [[ghost]]\n");
+    const refused = run(["wiki", "commit", "-m", "x", "--json"]);
+    expect([refused.exit, JSON.parse(refused.stdout)]).toEqual([
+      1,
+      {
+        path: wiki,
+        committed: null,
+        problems: [{ kind: "broken link", message: "index.md: [[ghost]] names no page" }],
+      },
+    ]);
+  }, 30_000);
+
+  it("refuses the shared wiki to any coordinator but the manager", () => {
+    const { run, state } = linted();
+    mkdirSync(join(state, "wiki", "_shared"), { recursive: true });
+    const refused = run(["wiki", "commit", "--shared", "-m", "x"]);
+    expect([refused.exit, refused.stdout]).toEqual([1, ""]);
+    expect(refused.stderr).toContain(
+      'refused: only the manager coordinator writes the shared wiki; request the change as an item in the manager domain: coordinate item add "<change> (from app)" --domain manager\n',
+    );
+  }, 30_000);
+});

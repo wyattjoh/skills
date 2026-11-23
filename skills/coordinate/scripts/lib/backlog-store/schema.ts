@@ -100,6 +100,10 @@ export type Finding = {
   detail: string | null;
   path: string | null;
   from: string | null;
+  /**
+   * When it was added. Findings recorded before this field existed have none.
+   */
+  createdAt?: string;
   status: "open" | "acted" | "dismissed";
   closedAt: string | null;
   outcome: string | null;
@@ -372,6 +376,7 @@ export const validateBacklog = (value: unknown): Validated => {
     textOrNull(`${where}.detail`, finding.detail);
     textOrNull(`${where}.path`, finding.path);
     textOrNull(`${where}.from`, finding.from);
+    if ("createdAt" in finding) nonEmpty(`${where}.createdAt`, finding.createdAt);
     if (!["open", "acted", "dismissed"].includes(String(finding.status)))
       errors.push(`${where}.status must be open, acted or dismissed`);
     closed(where, finding.closedAt, finding.outcome, finding.status !== "open");
