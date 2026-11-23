@@ -1401,6 +1401,46 @@ test("the carousel ignores the wheel and keeps click navigation and answer auto-
   expect(view.answerFlow?.current).toBe(1);
 });
 
+test("a focused card taller than the window pins to the top and scrolls its body natively", async () => {
+  focusDomain("alpha");
+  host.files.set(DOC, JSON.stringify(withAsk()));
+  const { ctx, render } = await mount();
+  get(render(), "item-i1").click!({}, ctx.cx);
+  let root = measureFlow(render(), ctx.cx, render, [
+    { id: "i1", expandedHeight: 700 },
+    { id: "i2", expandedHeight: 176 },
+  ]);
+  const scrollStyles = (id: string) => {
+    const { flex_1, min_h_0, overflow_y_scroll } = get(root, `answer-flow-body-${id}`).styles;
+    return { flex_1, min_h_0, overflow_y_scroll };
+  };
+  const placement = (id: string) => {
+    const { top, h } = get(root, `answer-flow-card-${id}`).styles;
+    return { top, h };
+  };
+
+  expect(placement("i1")).toEqual({ top: 0, h: 600 });
+  expect(scrollStyles("i1")).toEqual({ flex_1: true, min_h_0: true, overflow_y_scroll: true });
+  expect(scrollStyles("i2")).toEqual({
+    flex_1: undefined,
+    min_h_0: undefined,
+    overflow_y_scroll: undefined,
+  });
+  expect(ids(get(root, "answer-flow-body-i1"), "answer-flow-ask-i1-answer-submit")).toEqual([
+    "answer-flow-ask-i1-answer-submit",
+  ]);
+  expect(wheelHandlerIds(get(root, "screen-answer-flow"))).toEqual([]);
+
+  reportSize(root, "answer-flow-track", ctx.cx, 960);
+  root = render();
+  expect(placement("i1")).toEqual({ top: 130, h: 700 });
+  expect(scrollStyles("i1")).toEqual({
+    flex_1: undefined,
+    min_h_0: undefined,
+    overflow_y_scroll: undefined,
+  });
+});
+
 test("an intermediate flow answer advances without returning to the domain", async () => {
   focusDomain("alpha");
   host.files.set(DOC, JSON.stringify(withAsk()));

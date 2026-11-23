@@ -234,6 +234,58 @@ describe("answer flow", () => {
     expect(active === undefined ? undefined : active.top + active.height / 2).toBe(480);
   });
 
+  test("pins an active card taller than the viewport to its top and lets its body scroll", () => {
+    const options = {
+      viewportWidth: 360,
+      viewportHeight: 600,
+      gap: 10,
+      compactWidthRatio: 0.9,
+      compactNeighborInset: 12,
+      neighborOpacity: 0.58,
+      distanceOpacityFalloff: 0.12,
+    };
+    const placements = (activeIndex: number, expandedHeights: [number, number, number]) =>
+      layoutAnswerFlowCards(
+        [
+          { id: "i1", compactHeight: 72, expandedHeight: expandedHeights[0] },
+          { id: "i2", compactHeight: 80, expandedHeight: expandedHeights[1] },
+          { id: "done", compactHeight: 72, expandedHeight: expandedHeights[2] },
+        ],
+        { ...options, activeIndex },
+      ).map(({ id, top, height, opacity, expanded, scrolls }) => ({
+        id,
+        top,
+        height,
+        opacity,
+        expanded,
+        scrolls,
+      }));
+
+    expect(placements(1, [100, 900, 120])).toEqual([
+      { id: "i1", top: -82, height: 72, opacity: 0, expanded: false, scrolls: false },
+      { id: "i2", top: 0, height: 600, opacity: 1, expanded: true, scrolls: true },
+      { id: "done", top: 610, height: 72, opacity: 0, expanded: false, scrolls: false },
+    ]);
+    expect(placements(2, [100, 160, 700])).toEqual([
+      { id: "i1", top: -172, height: 72, opacity: 0, expanded: false, scrolls: false },
+      { id: "i2", top: -90, height: 80, opacity: 0, expanded: false, scrolls: false },
+      { id: "done", top: 0, height: 600, opacity: 1, expanded: true, scrolls: true },
+    ]);
+    expect(placements(1, [100, 600, 120])).toEqual([
+      { id: "i1", top: -82, height: 72, opacity: 0, expanded: false, scrolls: false },
+      { id: "i2", top: 0, height: 600, opacity: 1, expanded: true, scrolls: false },
+      { id: "done", top: 610, height: 72, opacity: 0, expanded: false, scrolls: false },
+    ]);
+    expect(placements(1, [100, 400, 120])[1]).toEqual({
+      id: "i2",
+      top: 100,
+      height: 400,
+      opacity: 1,
+      expanded: true,
+      scrolls: false,
+    });
+  });
+
   test("fades and compacts the stack when leaving the flow", () => {
     const placements = layoutAnswerFlowCards(
       [

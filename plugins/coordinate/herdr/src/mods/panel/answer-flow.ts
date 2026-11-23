@@ -23,6 +23,11 @@ export type AnswerFlowCardPlacement = {
   height: number;
   opacity: number;
   expanded: boolean;
+  /**
+   * Whether the card is the active one, clamped to the viewport because its expanded height is
+   * taller, so its body scrolls.
+   */
+  scrolls: boolean;
 };
 
 export type AnswerFlowLayoutOptions = {
@@ -183,6 +188,8 @@ export const dropClearedQuestions = (
  * uses the focus width and its measured expanded height. Compact-card opacity follows viewport overlap
  * and distance, so visible cards fill the available height while offscreen cards fade at the edges.
  * Interpolating numeric endpoints together preserves the gap throughout a motion.
+ * An active card taller than the viewport is pinned to its top at the viewport's height instead,
+ * and marked to scroll, so a short window still reaches all of it.
  * @param cards Every question card followed by the completion card.
  * @param options The focus index, viewport dimensions, stack gap, and compact-card appearance.
  * @returns Numeric top, left, width, height, and opacity targets in stable card order.
@@ -196,11 +203,16 @@ export const layoutAnswerFlowCards = (
   const activeIndex = Math.max(0, Math.min(options.activeIndex, cards.length - 1));
   const focusWidth = options.viewportWidth * options.compactWidthRatio;
   const compactWidth = Math.max(1, focusWidth - 2 * options.compactNeighborInset);
+  const scrolls = !options.exiting && cards[activeIndex]!.expandedHeight > options.viewportHeight;
   const heights = cards.map((card, index) =>
-    !options.exiting && index === activeIndex ? card.expandedHeight : card.compactHeight,
+    !options.exiting && index === activeIndex
+      ? scrolls
+        ? options.viewportHeight
+        : card.expandedHeight
+      : card.compactHeight,
   );
   const tops = Array.from({ length: cards.length }, () => 0);
-  tops[activeIndex] = (options.viewportHeight - heights[activeIndex]!) / 2;
+  tops[activeIndex] = scrolls ? 0 : (options.viewportHeight - heights[activeIndex]!) / 2;
 
   for (let index = activeIndex + 1; index < cards.length; index += 1) {
     tops[index] = tops[index - 1]! + heights[index - 1]! + options.gap;
@@ -236,6 +248,7 @@ export const layoutAnswerFlowCards = (
       height: heights[index]!,
       opacity,
       expanded,
+      scrolls: scrolls && index === activeIndex,
     };
   });
 };

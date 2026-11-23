@@ -1647,6 +1647,8 @@ const flowCarouselCard = (
         .relative()
         .w_full()
         .min_w_0()
+        // A card taller than the window scrolls its body natively beneath its header.
+        .when(placement.scrolls, (el) => el.flex_1().min_h_0().overflow_y_scroll())
         .children([compactLayer, expandedLayer]),
     );
 };
