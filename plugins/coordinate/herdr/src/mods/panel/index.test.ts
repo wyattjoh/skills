@@ -214,7 +214,15 @@ const find = (
   title: string,
   from: string | undefined = undefined,
 ): Backlog => {
-  const added = addFinding(backlog, { kind, title, detail: undefined, path: undefined, from });
+  const added = addFinding(backlog, {
+    kind,
+    title,
+    detail: undefined,
+    path: undefined,
+    from,
+    source: undefined,
+    now: undefined,
+  });
   if (!added.ok) throw new Error(added.reason);
   return added.backlog;
 };
@@ -1658,6 +1666,8 @@ const addIssue = (backlog: Backlog, title: string): Backlog => {
     detail: undefined,
     path: undefined,
     from: undefined,
+    source: undefined,
+    now: undefined,
   });
   if (!added.ok) throw new Error(added.reason);
   return added.backlog;

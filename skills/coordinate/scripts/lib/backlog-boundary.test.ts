@@ -193,13 +193,20 @@ describe("backlog policy add", () => {
         policyAdd(cfg, "app", {
           text: "  merge doc PRs, no need to ask ",
           at: undefined,
+          wiki: undefined,
           json: false,
           now: NOW,
         }),
       ),
     ).toEqual(["added policy p1:   merge doc PRs, no need to ask "]);
     const printed = await runWith(
-      policyAdd(cfg, "app", { text: "rebase freely", at: "2026-10-01", json: true, now: NOW }),
+      policyAdd(cfg, "app", {
+        text: "rebase freely",
+        at: "2026-10-01",
+        wiki: undefined,
+        json: true,
+        now: NOW,
+      }),
     );
     expect(JSON.parse(printed.join("\n"))).toEqual({
       id: "p2",
@@ -219,7 +226,9 @@ describe("backlog policy add", () => {
   ])("refuses %j (at %j)", async (text, at, message) => {
     const { cfg, path } = await started();
     const before = readFileSync(path, "utf8");
-    const error = await failureOf(policyAdd(cfg, "app", { text, at, json: false, now: NOW }));
+    const error = await failureOf(
+      policyAdd(cfg, "app", { text, at, wiki: undefined, json: false, now: NOW }),
+    );
     expect(tagged(error)).toEqual({ tag: "Refused", message });
     expect(readFileSync(path, "utf8")).toBe(before);
   });
@@ -263,7 +272,13 @@ describe("backlog show", () => {
     await add(cfg, owned);
     await add(cfg, adjacent, true);
     await runWith(
-      policyAdd(cfg, "app", { text: "merge doc PRs", at: undefined, json: false, now: NOW }),
+      policyAdd(cfg, "app", {
+        text: "merge doc PRs",
+        at: undefined,
+        wiki: undefined,
+        json: false,
+        now: NOW,
+      }),
     );
     await runWith(focusSet(cfg, "app", { focus: "ship login v2", json: false }));
     expect(await runWith(showBacklog(cfg, "app", false))).toEqual([

@@ -494,9 +494,9 @@ export const findingAdd = Effect.fn("findingAdd")(function* (
     detail: string | undefined;
     path: string | undefined;
     from: string | undefined;
-    source?: string;
+    source: string | undefined;
     json: boolean;
-    now?: string;
+    now: string | undefined;
   },
 ) {
   const finding = yield* change(config, domain, (backlog) =>
@@ -681,7 +681,7 @@ export const policyAdd = Effect.fn("policyAdd")(function* (
   input: {
     text: string;
     at: string | undefined;
-    wiki?: string | undefined;
+    wiki: string | undefined;
     json: boolean;
     now: string;
   },

@@ -1,7 +1,7 @@
 import { existsSync } from "node:fs";
 import { mkdir, readdir, readFile, writeFile } from "node:fs/promises";
 import { dirname, isAbsolute, join, relative } from "node:path";
-import { Effect, Option } from "effect";
+import { Effect, Option, Schema } from "effect";
 import { readDocument, writeAtomic } from "./backlog-doc.ts";
 import { backlogsDir } from "./backlog-store/paths.ts";
 import type { Backlog } from "./backlog-store/schema.ts";
@@ -66,12 +66,19 @@ const commitConfig = Effect.fn("commitConfig")(function* (dir: string) {
 });
 
 /**
+ * Whether a wiki folder is git-initialized.
+ * @param path Wiki folder.
+ * @returns True when it holds a `.git`.
+ */
+const isGitWiki = (path: string): boolean => existsSync(join(path, ".git"));
+
+/**
  * Create and git-initialize a wiki on first use: an `index.md`, a `.gitignore` for delegate
  * scratch folders, and a first commit. An existing git wiki is left as it is.
  * @param target The wiki.
  */
 const ensureWiki = Effect.fn("ensureWiki")(function* (target: WikiTarget) {
-  if (existsSync(join(target.path, ".git"))) return;
+  if (isGitWiki(target.path)) return;
   const title = target.shared ? "shared" : target.domain;
   yield* Effect.promise(async () => {
     await mkdir(target.path, { recursive: true });
@@ -377,6 +384,23 @@ const checkoutSlug = Effect.fn("checkoutSlug")(function* (path: string) {
 });
 
 /**
+ * A repo checkout keyed the way `coverFolder` looks it up: by its origin slug, when it has one,
+ * and by its path.
+ * @param path The checkout.
+ * @returns Its label (the slug, else the path) and the checkouts map.
+ */
+const repoCheckouts = Effect.fn("repoCheckouts")(function* (path: string) {
+  const label = (yield* checkoutSlug(path)) ?? path;
+  return {
+    label,
+    checkouts: new Map([
+      [label, path],
+      [path, path],
+    ]),
+  };
+});
+
+/**
  * The local checkout of each repo the Boundary names, keyed by its origin remote's normalized
  * slug (`github.com/owner/name`); a checkout with no remote is keyed by its real path.
  * @param boundaries Boundary paths, owned and adjacent.
@@ -467,6 +491,22 @@ export const citedPage = Effect.fn("citedPage")(function* (
     message: `no page [[${page}]] in the ${domain} wiki (${folders[0]}) or the shared wiki (${folders[1]})`,
   });
 });
+
+/**
+ * The domain wiki, then the shared wiki, each with its pages; a wiki that does not exist is left
+ * out and not created.
+ * @param config Config.
+ * @param domain Domain.
+ * @returns The existing wikis' titles, folders and pages.
+ */
+const existingWikis = (config: Config, domain: string) =>
+  Effect.forEach(
+    [
+      { title: `${domain} wiki`, path: wikiDir(config.stateDir, domain) },
+      { title: "shared wiki", path: wikiDir(config.stateDir, SHARED_WIKI) },
+    ].filter((wiki) => existsSync(wiki.path)),
+    (wiki) => readWiki(wiki.path).pipe(Effect.map(({ pages }) => ({ ...wiki, pages }))),
+  );
 
 /**
  * The Boundary paths covers are resolved against: the domain's owned and adjacent paths, or for
@@ -599,9 +639,7 @@ export const settledWikiPages = Effect.fn("settledWikiPages")(function* (
 ) {
   const changed = yield* changedFiles(cwd, base);
   if (changed === undefined || changed.files.length === 0) return [];
-  const slug = yield* checkoutSlug(changed.top);
-  const checkouts = new Map([[changed.top, changed.top]]);
-  if (slug !== undefined) checkouts.set(slug, changed.top);
+  const { checkouts } = yield* repoCheckouts(changed.top);
   const absolute = changed.files.map((file) => join(changed.top, file));
   const matches = (cover: Cover): boolean => {
     const { folder } = coverFolder(cover, checkouts);
@@ -611,15 +649,11 @@ export const settledWikiPages = Effect.fn("settledWikiPages")(function* (
       (path) => inside(path, folder) && globs.some((glob) => glob.match(relative(folder, path))),
     );
   };
-  const found: string[] = [];
-  for (const wiki of [domain, SHARED_WIKI]) {
-    const path = wikiDir(config.stateDir, wiki);
-    if (!existsSync(path)) continue;
-    const { pages } = yield* readWiki(path);
-    for (const page of pages)
-      if ((page.meta?.covers ?? []).some(matches)) found.push(join(path, page.file));
-  }
-  return found;
+  return (yield* existingWikis(config, domain)).flatMap((wiki) =>
+    wiki.pages
+      .filter((page) => (page.meta?.covers ?? []).some(matches))
+      .map((page) => join(wiki.path, page.file)),
+  );
 });
 
 /**
@@ -634,6 +668,12 @@ export const lintLines = (result: { path: string; pages: number; problems: Probl
         ...result.problems.map((problem) => `${problem.kind}: ${problem.message}`),
         `wiki lint: ${result.problems.length} problems in ${result.path}`,
       ];
+
+/**
+ * What `wiki commit` returns: the wiki's path, the new commit's short hash (null when nothing
+ * changed or lint refused), and the lint problems.
+ */
+type WikiCommit = { path: string; committed: string | null; problems: Problem[] };
 
 /**
  * `coordinate wiki commit`: lint the wiki, then commit every change in it. Lint problems refuse
@@ -658,20 +698,24 @@ export const commitWiki = Effect.fn("commitWiki")(function* (
   const message = input.message.trim();
   if (message === "" || /[\r\n]/.test(message))
     return yield* new Refused({ message: "-m needs a one-line commit message" });
-  if (!existsSync(join(target.path, ".git")))
+  if (!isGitWiki(target.path))
     return yield* new Refused({
       message: `there is no wiki at ${target.path}; run coordinate wiki path${input.shared ? " --shared" : ""}`,
     });
+  const result = (committed: string | null, problems: Problem[]): WikiCommit => ({
+    path: target.path,
+    committed,
+    problems,
+  });
   const lint = yield* lintWiki(config, domain, { shared: input.shared, now: input.now });
-  if (lint.problems.length > 0)
-    return { path: target.path, committed: null, problems: lint.problems };
+  if (lint.problems.length > 0) return result(null, lint.problems);
   yield* gitOk(target.path, ["add", "-A"]);
   const staged = yield* git(target.path, ["diff", "--cached", "--quiet"]);
-  if (staged.exitCode === 0) return { path: target.path, committed: null, problems: [] };
+  if (staged.exitCode === 0) return result(null, []);
   const commitArgs = yield* commitConfig(target.path);
   yield* gitOk(target.path, [...commitArgs, "commit", "-q", "-m", message]);
   const committed = yield* gitOk(target.path, ["rev-parse", "--short", "HEAD"]);
-  return { path: target.path, committed, problems: [] as Problem[] };
+  return result(committed, []);
 });
 
 /**
@@ -724,37 +768,20 @@ export const writeDelegateWiki = Effect.fn("writeDelegateWiki")(function* (
   domain: string,
   input: { name: string; scratch: string; place: DelegatePlace },
 ) {
-  let label: string;
-  let checkouts: Map<string, string> | undefined;
-  let cwd: string | undefined;
-  if ("repo" in input.place) {
-    const path = real(input.place.repo);
-    label = (yield* checkoutSlug(path)) ?? path;
-    checkouts = new Map([
-      [label, path],
-      [path, path],
-    ]);
-  } else {
-    cwd = real(input.place.cwd);
-    label = cwd;
-  }
-  const wikis = [
-    { title: `${domain} wiki`, path: wikiDir(config.stateDir, domain) },
-    { title: "shared wiki", path: wikiDir(config.stateDir, SHARED_WIKI) },
-  ];
-  const sections: { title: string; pages: CoveringPage[] }[] = [];
-  for (const wiki of wikis) {
-    if (!existsSync(wiki.path)) continue;
-    const { pages } = yield* readWiki(wiki.path);
-    const covering = pages.flatMap((page): CoveringPage[] => {
+  const { label, checkouts, cwd } =
+    "repo" in input.place
+      ? { ...(yield* repoCheckouts(real(input.place.repo))), cwd: undefined }
+      : { label: real(input.place.cwd), checkouts: undefined, cwd: real(input.place.cwd) };
+  const sections = (yield* existingWikis(config, domain)).flatMap((wiki) => {
+    const covering = wiki.pages.flatMap((page): CoveringPage[] => {
       if (page.meta === undefined) return [];
       const globs = coveringGlobs(page.meta, checkouts, cwd);
       return globs === undefined
         ? []
         : [{ file: join(wiki.path, page.file), description: page.meta.description, globs }];
     });
-    if (covering.length > 0) sections.push({ title: wiki.title, pages: covering });
-  }
+    return covering.length === 0 ? [] : [{ title: wiki.title, pages: covering }];
+  });
   if (sections.length === 0) return undefined;
   const text = [
     `# Wiki pages for ${input.name}`,
@@ -795,6 +822,8 @@ export const LINT_INTERVAL_DAYS = 7;
 export const lintClockPath = (stateDir: string, domain: string): string =>
   join(stateDir, "wiki-lint", `${domain}.json`);
 
+const LintClockSchema = Schema.Struct({ lastLint: Schema.String });
+
 /**
  * The domain's last recorded passing lint, as `YYYY-MM-DD`; undefined when none is recorded or
  * the file cannot be read.
@@ -803,18 +832,18 @@ export const lintClockPath = (stateDir: string, domain: string): string =>
  * @returns The date.
  */
 export const lastLint = (config: Config, domain: string) =>
-  Effect.promise(async (): Promise<string | undefined> => {
-    try {
-      const parsed = JSON.parse(await readFile(lintClockPath(config.stateDir, domain), "utf8")) as {
-        lastLint?: unknown;
-      };
-      return typeof parsed.lastLint === "string" && DATE.test(parsed.lastLint)
-        ? parsed.lastLint
-        : undefined;
-    } catch {
-      return undefined;
-    }
-  });
+  Effect.tryPromise(async () =>
+    JSON.parse(await readFile(lintClockPath(config.stateDir, domain), "utf8")),
+  ).pipe(
+    Effect.flatMap(Schema.decodeUnknownEffect(LintClockSchema)),
+    Effect.option,
+    Effect.map((decoded) =>
+      Option.match(decoded, {
+        onNone: () => undefined,
+        onSome: (clock) => (DATE.test(clock.lastLint) ? clock.lastLint : undefined),
+      }),
+    ),
+  );
 
 /**
  * Record a passing lint of the domain wiki, which restarts the watcher's `lint-due` clock.
@@ -841,7 +870,7 @@ export const markLint = Effect.fn("markLint")(function* (
  */
 export const wikiCreated = Effect.fn("wikiCreated")(function* (config: Config, domain: string) {
   const path = wikiDir(config.stateDir, domain);
-  if (!existsSync(join(path, ".git"))) return undefined;
+  if (!isGitWiki(path)) return undefined;
   const out = yield* gitTry(path, ["log", "--max-parents=0", "--format=%ct", "-1"]);
   const seconds = Number(out);
   if (out === undefined || out === "" || !Number.isFinite(seconds)) return undefined;

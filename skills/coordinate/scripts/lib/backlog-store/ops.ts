@@ -111,8 +111,8 @@ export const addFinding = (
     detail: string | undefined;
     path: string | undefined;
     from: string | undefined;
-    source?: string;
-    now?: string;
+    source: string | undefined;
+    now: string | undefined;
   },
 ): OpResult<Finding> => {
   const problem =
@@ -576,7 +576,7 @@ export const removeBoundary = (
  */
 export const addPolicy = (
   backlog: Backlog,
-  input: { text: string; at: string; wiki?: string | undefined },
+  input: { text: string; at: string; wiki: string | undefined },
 ): OpResult<Policy> => {
   const problem =
     oneLine("text", input.text) ??

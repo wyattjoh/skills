@@ -270,7 +270,9 @@ const finding = (fields: Partial<Parameters<typeof findingAdd>[2]>) => ({
   detail: undefined,
   path: undefined,
   from: undefined,
+  source: undefined,
   json: false,
+  now: undefined,
   ...fields,
 });
 
@@ -1284,6 +1286,7 @@ describe("backlog policies", () => {
       policyAdd(cfg, "app", {
         text: "future builds use Bun",
         at: undefined,
+        wiki: undefined,
         json: false,
         now: NOW,
       }),

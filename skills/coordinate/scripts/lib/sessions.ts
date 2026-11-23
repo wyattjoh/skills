@@ -1,7 +1,7 @@
-import { randomUUID } from "node:crypto";
-import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
+import { mkdir, readFile } from "node:fs/promises";
 import { join } from "node:path";
 import { Effect, Option, Schema } from "effect";
+import { writeAtomic } from "./backlog-doc.ts";
 import type { Config } from "./config.ts";
 import { L, readEnded, Refused, sessionOf, VerdictSchema, writeEnded } from "./fleet.ts";
 import * as hc from "./herdr.ts";
@@ -105,14 +105,8 @@ export const readSession = Effect.fn("readSession")(function* (stateDir: string,
 });
 
 const writeSession = Effect.fn("writeSession")(function* (stateDir: string, state: SessionState) {
-  const dir = sessionsDir(stateDir);
-  const path = sessionPath(stateDir, state.session);
-  yield* Effect.promise(async () => {
-    await mkdir(dir, { recursive: true });
-    const temp = join(dir, `.${randomUUID()}.tmp`);
-    await writeFile(temp, `${JSON.stringify(state, null, 1)}\n`);
-    await rename(temp, path);
-  });
+  yield* Effect.promise(() => mkdir(sessionsDir(stateDir), { recursive: true }));
+  yield* writeAtomic(sessionPath(stateDir, state.session), `${JSON.stringify(state, null, 1)}\n`);
   return state;
 });
 
