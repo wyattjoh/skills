@@ -871,6 +871,11 @@ const queuedDomain = async (budget = 1) => {
   return { config, state };
 };
 
+const emptyListing = (argv: readonly string[]): RunOutput => {
+  if (argv[1] === "ls") return ok('{"terminals":[]}');
+  throw new Error(`unexpected command: ${argv.join(" ")}`);
+};
+
 describe("watch capacity queue", () => {
   it("does not list machine capacity while the queue is empty", async () => {
     const { config } = await dueDomain();
@@ -996,10 +1001,6 @@ describe("watch capacity queue", () => {
 
   it("keeps a delivered wake across a hostname-keyed snapshot and a tick without the core name", async () => {
     const { config, state } = await queuedDomain();
-    const answer = (argv: readonly string[]): RunOutput => {
-      if (argv[1] === "ls") return ok('{"terminals":[]}');
-      throw new Error(`unexpected command: ${argv.join(" ")}`);
-    };
     const emitted: string[] = [];
     const options = {
       domain: "app",
@@ -1015,7 +1016,7 @@ describe("watch capacity queue", () => {
         emitted.push(eventText(line));
       },
     };
-    const healthy = fakeProc(answer);
+    const healthy = fakeProc(emptyListing);
     await runWith(watch(config, options), healthy.layer);
     expect(emitted).toEqual([
       `<event kind="capacity" machine="${FAKE_CORE}" item="i1" order="1">retry it with coordinate delegate --retry-queued; the regular budget gate still applies</event>`,
@@ -1034,7 +1035,7 @@ describe("watch capacity queue", () => {
       (argv) =>
         argv[1] === "server"
           ? { exitCode: 1, stdout: "", stderr: "herdr-core is not answering" }
-          : answer(argv),
+          : emptyListing(argv),
       { core: undefined },
     );
     await runWith(watch(config, options), blind.layer);
