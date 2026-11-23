@@ -13,6 +13,7 @@ import {
   git,
   gitTry,
   inside,
+  isAncestor,
   mainCheckout,
   PROTECTED_BRANCHES,
   real,
@@ -294,9 +295,10 @@ const label = (entries: readonly Held[]): string[] =>
  * @param worktree The worktree.
  * @param ctx Sweep context.
  * @param remote The checkout on another machine it belongs to; its git and processes are read there.
- * @returns Its row.
+ * @returns Its row, and for a remote worktree whose exact tip is on a base of its repo on this Mac
+ * (fetched and landed here), that base.
  */
-export const worktreeRow = Effect.fn("worktreeRow")(function* (
+const judgeWorktree = Effect.fn("judgeWorktree")(function* (
   repo: string,
   worktree: Worktree,
   ctx: SweepContext,
@@ -313,7 +315,12 @@ export const worktreeRow = Effect.fn("worktreeRow")(function* (
   const machine = remote?.machine;
   const path = remote === undefined ? real(worktree.path) : worktree.path.replace(/\/+$/, "");
   const key = placeKey(machine, path);
-  const there = remote !== undefined || existsSync(path);
+  const there =
+    remote === undefined
+      ? existsSync(path)
+      : yield* remoteFolderExists(remote.machine, path).pipe(
+          Effect.catch(() => Effect.succeed(true)),
+        );
   const branch = worktree.branch;
   const prs = info.prs.ok ? info.prs.prs : [];
   const state = branch
@@ -321,7 +328,14 @@ export const worktreeRow = Effect.fn("worktreeRow")(function* (
     : undefined;
   const dirty = there ? yield* onPlace(remote, statusLines(path)) : undefined;
   const unsaved = there ? yield* onPlace(remote, unsavedCommits(path, info.bases)) : undefined;
-  const gitFailed = dirty === undefined || unsaved === undefined;
+  const gone = !there;
+  const gitFailed = there && (dirty === undefined || unsaved === undefined);
+  // A remote branch fetched and landed here: its exact tip is on a base of the repo on this Mac,
+  // read by git here, so the work is preserved even though the remote's own bases lack it.
+  const landedHere =
+    remote !== undefined && state?.hasCommits === true && state.landed === undefined && state.tip
+      ? yield* tipOnBase(remote.repo, state.tip, local?.bases ?? [])
+      : undefined;
   const here = ctx.sessions.filter(
     (session) => session.machine === machine && session.cwd !== "" && inside(session.cwd, path),
   );
@@ -351,15 +365,17 @@ export const worktreeRow = Effect.fn("worktreeRow")(function* (
   const finished =
     !onBase &&
     (landed !== undefined ||
+      landedHere !== undefined ||
       (state?.hasCommits !== false && state?.prState === "closed") ||
       endedNoCommits);
   // Squash and rebase merges leave the branch's own commits off every base; the base holds the work.
-  const lost = landed === undefined ? (unsaved ?? 0) : 0;
+  const lost = landed === undefined && landedHere === undefined ? (unsaved ?? 0) : 0;
   const openPr = state?.prState === "open";
 
   let verdict: Verdict;
   if (onBase || ctx.keep.some((folder) => inside(path, folder))) verdict = "KEEP";
-  else if (!branch || gitFailed || processesUnknown) verdict = here.length > 0 ? "KEEP" : "ASK";
+  else if (!branch || gitFailed || gone || processesUnknown)
+    verdict = here.length > 0 ? "KEEP" : "ASK";
   else if (here.length > 0 && ((dirty?.length ?? 0) > 0 || lost > 0)) verdict = "KEEP";
   else if ((dirty?.length ?? 0) > 0 || lost > 0) verdict = "ASK";
   else if (endedNoCommits && (here.length > 0 || allPids.length > 0)) verdict = "KEEP";
@@ -380,8 +396,10 @@ export const worktreeRow = Effect.fn("worktreeRow")(function* (
             : `PRs unknown: ${info.prs.error}`),
   ];
   if (landed && landed !== "pr-merged") notes.push(`on base (${landed})`);
+  if (landedHere !== undefined) notes.push(`tip on ${landedHere} on this Mac`);
   if (noOwnCommits) notes.push(endedNoCommits ? "no commits (nothing to land)" : "no commits yet");
   if (gitFailed) notes.push(`git status or git log failed ${machine ? `on ${machine}` : "here"}`);
+  if (gone) notes.push(`folder gone ${machine ? `on ${machine}` : "here"}`);
   if (processesUnknown)
     notes.push(`processes on ${machine ?? "this machine"} unreadable: ${remote?.tableError ?? ""}`);
   if (dirty && dirty.length > 0) notes.push(`${dirty.length} uncommitted`);
@@ -393,13 +411,45 @@ export const worktreeRow = Effect.fn("worktreeRow")(function* (
       `ended delegate's processes, sweep remove stops them: ${ownedPids.slice(0, 4).join("; ")}`,
     );
   if (ctx.ended.has(key)) notes.push("ended delegate record");
-  return {
+  const row = {
     verdict,
     path: key,
     text: `worktree ${key} [${branch ?? "detached"}] ${notes.join(" · ")}`,
     stop,
   } satisfies Row;
+  return { row, landedHere };
 });
+
+/**
+ * The first base on this Mac that holds a commit.
+ * @param repo Main checkout here.
+ * @param tip Full commit SHA.
+ * @param bases Base refs here.
+ * @returns The base, or undefined when none holds it (or this repo lacks the commit).
+ */
+const tipOnBase = Effect.fn("tipOnBase")(function* (
+  repo: string,
+  tip: string,
+  bases: readonly string[],
+) {
+  for (const base of bases) if (yield* isAncestor(repo, tip, base)) return base;
+  return undefined;
+});
+
+/**
+ * Judge one linked worktree.
+ * @param repo Main checkout.
+ * @param worktree The worktree.
+ * @param ctx Sweep context.
+ * @param remote The checkout on another machine it belongs to; its git and processes are read there.
+ * @returns Its row.
+ */
+export const worktreeRow = (
+  repo: string,
+  worktree: Worktree,
+  ctx: SweepContext,
+  remote: RemotePlace | undefined = undefined,
+) => judgeWorktree(repo, worktree, ctx, remote).pipe(Effect.map((judged) => judged.row));
 
 /**
  * Local branches whose work is on a base or whose PR merged, not checked out and with no open PR.
@@ -780,7 +830,7 @@ const removeRemote = Effect.fn("removeRemote")(function* (
   const worktree = found?.slice(1).find((candidate) => candidate.path.replace(/\/+$/, "") === path);
   if (!worktree)
     return kept(`git does not list it as a worktree of ${remote.checkout} on ${machine}`);
-  const row = yield* worktreeRow(remote.checkout, worktree, ctx, remote);
+  const { row, landedHere } = yield* judgeWorktree(remote.checkout, worktree, ctx, remote);
   if (row.verdict !== "SAFE")
     return kept(`${row.verdict}, ${row.text.replace(/^worktree \S+ /, "")}`);
   const stopped = yield* remoteHost(machine).stop(row.stop, options);
@@ -819,10 +869,15 @@ const removeRemote = Effect.fn("removeRemote")(function* (
       (yield* onPlace(remote, gitTry(remote.checkout, ["rev-parse", "--short", branch]))) ?? "";
     const refusal = yield* onPlace(remote, deleteBranch(remote.checkout, branch));
     if (refusal === undefined) lines.push(`  deleted branch ${branch} ${sha}`);
-    else
+    else {
+      const why =
+        landedHere === undefined
+          ? "Its work is on a base by squash or rebase"
+          : `Its tip is on ${landedHere} on this Mac, not on a base on ${machine}`;
       lines.push(
-        `  kept branch ${branch} ${sha}: git branch -d refused (${refusal.split("\n")[0]}). Its work is on a base by squash or rebase; to delete it, the user runs on ${machine}: cd ${remote.checkout} && git branch -D ${branch}`,
+        `  kept branch ${branch} ${sha}: git branch -d refused (${refusal.split("\n")[0]}). ${why}; to delete it, the user runs on ${machine}: cd ${remote.checkout} && git branch -D ${branch}`,
       );
+    }
   }
   const spaces = yield* hc.appSpaces().pipe(Effect.catch(() => Effect.succeed([])));
   for (const space of spaces.filter(

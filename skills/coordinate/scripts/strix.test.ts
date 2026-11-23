@@ -1243,12 +1243,13 @@ describe.skipIf(!ready)("strix: sweep remote worktrees", () => {
     const ask = `sa-${run.id}`;
     const keep = `sk-${run.id}`;
     const gone = `sg-${run.id}`;
+    const vanished = `sx-${run.id}`;
     // SAFE: one commit, fast-forwarded into main there, its ended record, a report in .scratch.
-    // ASK: an uncommitted file. KEEP: no commits and no record.
+    // ASK: an uncommitted file. KEEP: no commits and no record. ASK too: a folder deleted there.
     const made = onStrix(
       [
         `cd ${shellWord(remote)}`,
-        ...[safe, ask, keep].map(
+        ...[safe, ask, keep, vanished].map(
           (name) =>
             `git worktree add -q -b ${shellWord(`wyattjoh/${name}`)} ${shellWord(worktree(name))} main`,
         ),
@@ -1261,6 +1262,7 @@ describe.skipIf(!ready)("strix: sweep remote worktrees", () => {
         `cd ${shellWord(remote)}`,
         `git merge -q --ff-only ${shellWord(`wyattjoh/${safe}`)}`,
         `printf 'wip\\n' > ${shellWord(`${worktree(ask)}/wip.txt`)}`,
+        `rm -rf ${shellWord(worktree(vanished))}`,
         `git rev-parse --short ${shellWord(`wyattjoh/${safe}`)}`,
       ].join(" && "),
       60,
@@ -1275,7 +1277,15 @@ describe.skipIf(!ready)("strix: sweep remote worktrees", () => {
       `KEEP  worktree strix:${worktree(keep)} [wyattjoh/${keep}] PRs unknown: no remote · no commits yet`,
       `INFO  PRs for ${local} unknown: no remote`,
     ];
-    expect(cli(["sweep", "report"])).toEqual({ exitCode: 0, output: `${rows.join("\n")}\n` });
+    // A worktree whose folder is gone there reads as gone, not as a git failure.
+    const vanishedRow = `ASK   worktree strix:${worktree(vanished)} [wyattjoh/${vanished}] PRs unknown: no remote · no commits yet · folder gone on strix`;
+    const reported = cli(["sweep", "report"]);
+    const reportLines = reported.output.split("\n");
+    expect([
+      reported.exitCode,
+      reportLines.filter((line) => !line.includes(vanished)),
+      reportLines.filter((line) => line.includes(vanished)),
+    ]).toEqual([0, [...rows, ""], [vanishedRow]]);
 
     // Every remove target is under this run's own folder on strix.
     const targets = [safe, ask].map((name) => `strix:${worktree(name)}`);
@@ -1313,9 +1323,15 @@ describe.skipIf(!ready)("strix: sweep remote worktrees", () => {
       ),
     ).toEqual({
       exitCode: 0,
-      output: ["absent", "main", `wyattjoh/${ask}`, `wyattjoh/${keep}`, "?? wip.txt", ""].join(
-        "\n",
-      ),
+      output: [
+        "absent",
+        "main",
+        `wyattjoh/${ask}`,
+        `wyattjoh/${keep}`,
+        `wyattjoh/${vanished}`,
+        "?? wip.txt",
+        "",
+      ].join("\n"),
     });
 
     // prune-ended judges a remote record by its folder on strix, never on this Mac.
@@ -1326,5 +1342,109 @@ describe.skipIf(!ready)("strix: sweep remote worktrees", () => {
       output: `pruned 1 of 2 ended records whose folder is gone\n  ${gone}\n`,
     });
     expect([existsSync(keepRecord), existsSync(goneRecord)]).toEqual([true, false]);
+  }, 600_000);
+});
+
+describe.skipIf(!ready)("strix: sweep a remote worktree fetched and landed here", () => {
+  let run: StrixRun | undefined;
+  let local = "";
+  let remote = "";
+  beforeAll(() => {
+    run = strixRun();
+    local = initRepo();
+    remote = run.remoteClone(local, "app");
+    expect(
+      onStrix(`printf '.scratch/\\n' >> ${shellWord(`${remote}/.git/info/exclude`)}`, 20).exitCode,
+    ).toBe(0);
+    run.seed({ owned: [local], adjacent: [] });
+    expect(
+      run.cli(["backlog", "boundary", "add", local, "--machine", STRIX, "--checkout", remote])
+        .exitCode,
+    ).toBe(0);
+    mkdirSync(join(run.stateDir, "ended"), { recursive: true });
+  }, 120_000);
+  afterAll(() => {
+    if (local !== "") rmSync(local, { recursive: true, force: true });
+    const left = run?.teardown() ?? [];
+    expect(left).toEqual([]);
+  }, 180_000);
+
+  it("reports it SAFE once its tip is on main here, removes it on strix and keeps the unmerged branch there", () => {
+    if (!run) return;
+    const banner = `watcher for ${run.domain} is down; arm it (coordinate watch --arm)\n`;
+    const cli = (args: readonly string[]) => {
+      const ran = run?.cli(args, 300_000) ?? { exitCode: null, output: "" };
+      return { exitCode: ran.exitCode, output: ran.output.replace(banner, "") };
+    };
+    const base = g(local, "rev-parse", "main").trim();
+    const name = `sl-${run.id}`;
+    const branch = `wyattjoh/${name}`;
+    const worktree = `${remote}/.claude/worktrees/${name}`;
+    // An ended delegate's worktree on strix: one commit that strix's own main never gets.
+    const made = onStrix(
+      [
+        `cd ${shellWord(remote)}`,
+        `git worktree add -q -b ${shellWord(branch)} ${shellWord(worktree)} main`,
+        `cd ${shellWord(worktree)}`,
+        "mkdir -p .scratch",
+        "printf 'done\\n' > .scratch/REPORT.md",
+        "printf 'x\\n' > x.txt",
+        "git add x.txt",
+        "git commit -q -m 'test: x'",
+        "git rev-parse --short HEAD",
+      ].join(" && "),
+      60,
+    );
+    expect(made.exitCode).toBe(0);
+    const sha = made.output.trim();
+    const session = crypto.randomUUID();
+    const record = join(run.stateDir, "ended", `${session}.json`);
+    writeFileSync(
+      record,
+      `${JSON.stringify({ name, domain: run.domain, session, cwd: worktree, branch, base_sha: base, ended_at: new Date().toISOString(), machine: STRIX })}\n`,
+    );
+    const askRow = `ASK   worktree strix:${worktree} [${branch}] PRs unknown: no remote · 1 commit on no remote or base · ended delegate record`;
+    const info = `INFO  PRs for ${local} unknown: no remote`;
+    // Fetched but not landed: the commit is on no base anywhere yet.
+    expect(cli(["fetch", name]).exitCode).toBe(0);
+    expect(cli(["sweep", "report"])).toEqual({ exitCode: 0, output: `${askRow}\n${info}\n` });
+
+    // Landed on this Mac's main by fast-forward: the exact tip is on a base here.
+    g(local, "merge", "-q", "--ff-only", branch);
+    expect(cli(["sweep", "report"])).toEqual({
+      exitCode: 0,
+      output: [
+        `SAFE  worktree strix:${worktree} [${branch}] PRs unknown: no remote · tip on main on this Mac · ended delegate record`,
+        info,
+        "",
+      ].join("\n"),
+    });
+
+    const parked = join(local, ".scratch", "parked", name);
+    expect(cli(["sweep", "remove", `strix:${worktree}`])).toEqual({
+      exitCode: 0,
+      output: [
+        `removed worktree strix:${worktree}`,
+        `  copied .scratch of ${name} from strix to ${parked}`,
+        `  kept branch ${branch} ${sha}: git branch -d refused (error: the branch '${branch}' is not fully merged). Its tip is on main on this Mac, not on a base on strix; to delete it, the user runs on strix: cd ${remote} && git branch -D ${branch}`,
+        `  pruned ended record ${name}`,
+        "removed 1 of 1",
+        "",
+      ].join("\n"),
+    });
+    expect(existsSync(record)).toBe(false);
+    expect(
+      onStrix(
+        [
+          `cd ${shellWord(remote)}`,
+          `if [ -e ${shellWord(worktree)} ]; then echo present; else echo absent; fi`,
+          `git branch --list --format='%(refname:short) %(objectname:short)' | sort`,
+        ].join(" && "),
+        30,
+      ),
+    ).toEqual({
+      exitCode: 0,
+      output: ["absent", "main " + base.slice(0, 7), `${branch} ${sha}`, ""].join("\n"),
+    });
   }, 600_000);
 });
