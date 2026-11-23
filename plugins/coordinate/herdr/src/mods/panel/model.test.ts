@@ -15,12 +15,19 @@ import {
   formatFindingCounts,
   groupFindings,
   mergeEnded,
+  overridingDomains,
   policyDialogProps,
   policyDialogSpec,
   readDocument,
   trailOf,
 } from "./model.ts";
-import type { DelegateRow, DelegateState, DocumentState } from "./model.ts";
+import type {
+  DelegateRow,
+  DelegateState,
+  DocumentState,
+  HarnessPolicyState,
+  HarnessSelection,
+} from "./model.ts";
 
 const loaded: DocumentState = { kind: "loaded", backlog: emptyBacklog("alpha", null) };
 const invalid: DocumentState = { kind: "invalid", reason: "items must be a list" };
@@ -377,4 +384,67 @@ test("builds the dismiss call and says which items can be dismissed", () => {
       canDismissItem({ ...emptyItem, status } as Parameters<typeof canDismissItem>[0]),
     ),
   ).toEqual([true, true, true, true, true, false, false]);
+});
+
+const LEGACY: HarnessSelection = { enabled: ["pi", "claude"], default: null };
+
+test("overridingDomains keeps the domains read as replace, in order, and drops failed reads", () => {
+  const reads: [string, HarnessPolicyState][] = [
+    [
+      "alpha",
+      {
+        kind: "loaded",
+        view: {
+          schemaVersion: 1,
+          revision: 1,
+          path: "/s/delegate-harness-policy.json",
+          global: { source: "legacy", policy: LEGACY },
+          domain: {
+            name: "alpha",
+            mode: "replace",
+            override: LEGACY,
+            effective: LEGACY,
+          },
+        },
+      },
+    ],
+    [
+      "beta",
+      {
+        kind: "loaded",
+        view: {
+          schemaVersion: 1,
+          revision: 1,
+          path: "/s/delegate-harness-policy.json",
+          global: { source: "legacy", policy: LEGACY },
+          domain: {
+            name: "beta",
+            mode: "inherit",
+            override: null,
+            effective: LEGACY,
+          },
+        },
+      },
+    ],
+    ["gamma", { kind: "error", message: "could not run coordinate" }],
+    [
+      "delta",
+      {
+        kind: "loaded",
+        view: {
+          schemaVersion: 1,
+          revision: 1,
+          path: "/s/delegate-harness-policy.json",
+          global: { source: "legacy", policy: LEGACY },
+          domain: {
+            name: "delta",
+            mode: "replace",
+            override: LEGACY,
+            effective: LEGACY,
+          },
+        },
+      },
+    ],
+  ];
+  expect(overridingDomains(reads)).toEqual(["alpha", "delta"]);
 });

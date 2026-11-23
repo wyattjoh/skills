@@ -3782,6 +3782,8 @@ test("the sidebar has the title and one Harness section, and the pane's scope dr
     "harness-policy-scope-backdrop",
     "harness-policy-scope-options",
     "harness-policy-scope-global",
+    "harness-policy-scope-global-icon",
+    "harness-policy-scope-check-global",
     "harness-policy-scope-domain-alpha",
     "harness-policy-scope-domain-beta",
   ]);
@@ -3797,6 +3799,70 @@ test("the sidebar has the title and one Harness section, and the pane's scope dr
   get(render(), "harness-policy-scope-global").click!({}, ctx.cx);
   await settle();
   expect(text(get(render(), "harness-policy-pane-head"))).toBe("HARNESS Global");
+});
+
+test("the scope menu marks Global with the globe and each domain with its own policy with an Override tag, refreshed after a save", async () => {
+  host.files.set(DOC, JSON.stringify(emptyBacklog("alpha", null)));
+  host.files.set(`${STATE}/backlogs/beta.json`, JSON.stringify(emptyBacklog("beta", null)));
+  // Each domain's saved mode, which a domain-set changes, answered per scoped show.
+  const modes = new Map<string, "inherit" | "replace">([
+    ["alpha", "inherit"],
+    ["beta", "replace"],
+  ]);
+  let revision = 3;
+  const exec = (command: string, args: string[] = []) => {
+    host.execs.push({ command, args });
+    const at = args.indexOf("harness-policy");
+    if (at === -1) return { code: 0, stdout: "alpha\0beta\0", stderr: "" };
+    if (args[at + 1] === "domain-set") {
+      modes.set(args[at + 2]!, "replace");
+      revision += 1;
+      return { code: 0, stdout: "", stderr: "" };
+    }
+    const domainAt = args.indexOf("--domain");
+    const domain = domainAt === -1 ? undefined : args[domainAt + 1];
+    const mode = domain === undefined ? "inherit" : (modes.get(domain) ?? "inherit");
+    return {
+      code: 0,
+      stderr: "",
+      stdout: policyOutput({
+        revision,
+        domain,
+        mode,
+        override: mode === "replace" ? LEGACY_POLICY : null,
+      }),
+    };
+  };
+  useRenderer({
+    herdr: { props: () => dialogPropsFor(policyDialogSpec("alpha"), "overlay-1"), exec },
+  });
+  const { ctx, render } = await mount(true);
+  expect(policyWrites()).toEqual([showArgs("alpha"), showArgs("alpha"), showArgs("beta")]);
+  get(render(), "harness-policy-scope-trigger").click!({}, ctx.cx);
+  let root = render();
+  expect(get(root, "harness-policy-scope-global").children[0]).toMatchObject({
+    kind: "svg",
+    styles: { asset: "mods/coordinate-panel/globe.svg" },
+  });
+  expect(text(get(root, "harness-policy-scope-global"))).toBe("Global");
+  expect(text(get(root, "harness-policy-scope-domain-alpha"))).toBe("alpha");
+  expect(text(get(root, "harness-policy-scope-domain-beta"))).toBe("beta Override");
+  expect(ids(root, "harness-policy-scope-override-")).toEqual([
+    "harness-policy-scope-override-beta",
+  ]);
+  expect(ids(root, "harness-policy-scope-check-")).toEqual(["harness-policy-scope-check-alpha"]);
+
+  get(root, "harness-policy-scope-backdrop").click!({}, ctx.cx);
+  get(render(), "harness-policy-inherit-toggle").click!({}, ctx.cx);
+  get(render(), "harness-policy-save").click!({}, ctx.cx);
+  await settle();
+  get(render(), "harness-policy-scope-trigger").click!({}, ctx.cx);
+  root = render();
+  expect(ids(root, "harness-policy-scope-override-")).toEqual([
+    "harness-policy-scope-override-alpha",
+    "harness-policy-scope-override-beta",
+  ]);
+  expect(text(get(root, "harness-policy-scope-domain-alpha"))).toBe("alpha Override");
 });
 
 test("one click opens the scope dropdown and it stays open until a choice, Escape or a click outside", async () => {

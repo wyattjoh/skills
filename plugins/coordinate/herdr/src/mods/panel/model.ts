@@ -777,6 +777,19 @@ export type HarnessPolicyState =
   | { kind: "loaded"; view: HarnessPolicyView }
   | { kind: "error"; message: string };
 
+/**
+ * The domains whose policy the CLI reports as their own override (Inherit global off), from one
+ * scoped read per domain. A read that failed or is invalid counts as no override.
+ * @param reads Each domain with the state its scoped read produced.
+ * @returns The overriding domains, in the order given.
+ */
+export const overridingDomains = (
+  reads: readonly (readonly [string, HarnessPolicyState])[],
+): string[] =>
+  reads
+    .filter(([, state]) => state.kind === "loaded" && state.view.domain?.mode === "replace")
+    .map(([domain]) => domain);
+
 const runner = (home: string, args: string[]) => ({
   command: "/usr/bin/env",
   args: [

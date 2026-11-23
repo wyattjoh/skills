@@ -1,5 +1,6 @@
 // Coordinate-specific status, glyph and layout data. Shared geometry and rendered look come
 // from @wyattjoh/herdr-ui.
+import { bundledIconPaths } from "@wyattjoh/herdr-ui";
 import type { Finding, ItemStatus } from "../../lib/store.ts";
 import type { LiveStatus } from "./model.ts";
 
@@ -113,6 +114,12 @@ export const HARNESS_DIALOG = {
  * copied, like the icons herdr-ui lists; herdr-ui has no entry for it.
  */
 export const HERDR_SETTINGS_ICON = "mods/workspace-chrome/settings.svg";
+
+/**
+ * herdr-ui's bundled globe, copied into this mod's folder: the policy dialog's Global scope, and
+ * the stand-in for the All domains crumb.
+ */
+export const GLOBE_ICON = bundledIconPaths("coordinate-panel").globe;
 
 /**
  * The answer queue's approximated vertical-carousel geometry and motion.

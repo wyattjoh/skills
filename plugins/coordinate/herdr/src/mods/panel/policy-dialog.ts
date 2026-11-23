@@ -6,9 +6,9 @@
 import { div, svg } from "gpui-kit";
 import type { Context, Element, FocusHandle } from "gpui-kit";
 import { h_flex, v_flex } from "gpui-base";
-import { HERDR_ICONS, MENU, menuPanel, menuRow } from "@wyattjoh/herdr-ui";
+import { HERDR_ICONS, MENU, TEXT, menuPanel, menuRow } from "@wyattjoh/herdr-ui";
 import type { Theme } from "@wyattjoh/herdr-ui";
-import { HARNESS_DIALOG } from "./look.ts";
+import { GLOBE_ICON, HARNESS_DIALOG } from "./look.ts";
 import type { DelegateHarness, HarnessPolicyDraft, HarnessPolicyState } from "./model.ts";
 
 /**
@@ -20,6 +20,8 @@ export type HarnessPolicyEditorModel = {
   scope: "global" | "domain";
   domain: string | undefined;
   domains: string[];
+  // The listed domains with their own saved override (Inherit global off), badged in the menu.
+  overrides: string[];
   domainMenuOpen: boolean;
   state: HarnessPolicyState;
   busy: boolean;
@@ -395,8 +397,15 @@ const scopeTrigger = (t: Theme, model: HarnessPolicyEditorModel): Element =>
         .text_color(t.dim),
     );
 
-// The scope menu, over the pane: Global first, then every backlog domain. A backdrop under it
-// catches a click anywhere else and closes it.
+// The Override tag beside a domain with its own saved policy, in the panel's tag style (the
+// answer cards' Recommended and Answered).
+const overrideBadge = (t: Theme, id: string): Element =>
+  div().id(id).flex_none().text_size(TEXT.label).text_color(t.accent).child("Override");
+
+// The scope menu, over the pane: Global first with the globe, then every backlog domain, each
+// with an Override tag when it has its own policy. The check is drawn here rather than by
+// menuRow, so it stays at the far end after the tag. A backdrop under the menu catches a click
+// anywhere else and closes it.
 const scopeMenu = (t: Theme, model: HarnessPolicyEditorModel): Element[] => [
   div()
     .id("harness-policy-scope-backdrop")
@@ -420,11 +429,35 @@ const scopeMenu = (t: Theme, model: HarnessPolicyEditorModel): Element[] => [
               ? "harness-policy-scope-global"
               : `harness-policy-scope-domain-${name}`,
           label: name ?? "Global",
+          ...(name === undefined
+            ? {
+                leading: svg(GLOBE_ICON)
+                  .id("harness-policy-scope-global-icon")
+                  .size(MENU.icon)
+                  .flex_none()
+                  .text_color(t.muted),
+              }
+            : {}),
           selected: false,
-          checked: model.domain === name,
           onClick: (cx) =>
             name === undefined ? model.selectGlobal(cx) : model.selectDomain(name, cx),
         })
+          .when(name !== undefined && model.overrides.includes(name), (el) =>
+            el.child(overrideBadge(t, `harness-policy-scope-override-${name}`)),
+          )
+          .when(model.domain === name, (el) =>
+            el.child(
+              svg(HERDR_ICONS.check)
+                .id(
+                  name === undefined
+                    ? "harness-policy-scope-check-global"
+                    : `harness-policy-scope-check-${name}`,
+                )
+                .size(MENU.icon)
+                .flex_none()
+                .text_color(t.foreground),
+            ),
+          )
           .role("menu_item")
           .set_position(index + 1, model.domains.length + 1),
       ),

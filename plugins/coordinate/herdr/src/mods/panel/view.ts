@@ -15,7 +15,6 @@ import {
   menuPanel,
   menuRow,
   button,
-  bundledIconPaths,
   card,
   cardHeader,
   cardItem,
@@ -58,6 +57,7 @@ import {
   DELEGATE_TONES,
   FINDING_GLYPHS,
   FINDING_STATUS_TONES,
+  GLOBE_ICON,
   STATUS_TONES,
 } from "./look.ts";
 import {
@@ -93,7 +93,7 @@ const WAITING_PULSE_PERIOD = 1_100;
 const WAITING_PULSE_FROM = 0.4;
 const WAITING_PULSE_TO = 1;
 // Herdr-ui's house glyph is pending, so keep the globe stand-in behind this one-line switch.
-const HOME_CRUMB_ICON = bundledIconPaths("coordinate-panel").globe;
+const HOME_CRUMB_ICON = GLOBE_ICON;
 const HOME_CRUMB_LABEL = "All domains";
 
 /**

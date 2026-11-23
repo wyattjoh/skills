@@ -52,6 +52,7 @@ import {
   policyDialogSpec,
   readDocument,
   seedHarnessPolicyDraft,
+  overridingDomains,
   stateDirOf,
   summarize,
   targetDomain,
@@ -156,8 +157,11 @@ export default class Panel extends View {
   policyStateDir: string | undefined;
   policyGeneration = 0;
   harnessPolicyState: HarnessPolicyState = { kind: "loading" };
-  // The domains the dialog's picker lists, and whether that menu is open.
+  // The domains the dialog's picker lists, which of them have their own saved override, and
+  // whether that menu is open.
   policyDomains: string[] = [];
+  policyOverrides: string[] = [];
+  policyOverridesGeneration = 0;
   policyDomainMenuOpen = false;
   // The edit in progress, and the way out it is waiting on a Discard confirm for.
   harnessPolicyDraft: HarnessPolicyDraft | undefined;
@@ -297,6 +301,22 @@ export default class Panel extends View {
       } catch {
         this.policyDomains = [];
       }
+      task.notify();
+      this.loadPolicyOverrides(task);
+    });
+  }
+
+  // Which listed domains have their own override, for the scope menu's badges. The global view
+  // lists none, so this is one scoped CLI read per domain; a failed read shows no badge.
+  loadPolicyOverrides(cx: Context) {
+    const domains = this.policyDomains;
+    const generation = ++this.policyOverridesGeneration;
+    cx.spawn(async (task) => {
+      const reads = await Promise.all(
+        domains.map(async (domain) => [domain, await this.readHarnessPolicy(domain)] as const),
+      );
+      if (generation !== this.policyOverridesGeneration) return;
+      this.policyOverrides = overridingDomains(reads);
       task.notify();
     });
   }
@@ -580,8 +600,10 @@ export default class Panel extends View {
           if (this.policyWatch !== current || changed.length === 0) break;
           current = watchFolder(stateDir);
           this.policyWatch = current;
-          if (changedHarnessPolicy(changed, stateDir))
+          if (changedHarnessPolicy(changed, stateDir)) {
             this.loadHarnessPolicy(stateDir, this.target(), task, true);
+            this.loadPolicyOverrides(task);
+          }
         }
       } catch {
         // Fall through: the watch is gone either way.
@@ -1536,6 +1558,7 @@ export default class Panel extends View {
       } catch (error) {
         failure = `could not run coordinate: ${String(error)}`;
       }
+      if (failure === undefined) this.loadPolicyOverrides(task);
       if (!current()) return;
       if (failure === undefined) {
         this.harnessPolicyDraft = undefined;
@@ -1558,6 +1581,7 @@ export default class Panel extends View {
       scope: domain === undefined ? "global" : "domain",
       domain,
       domains: this.policyDomains,
+      overrides: this.policyOverrides,
       domainMenuOpen: this.policyDomainMenuOpen,
       state: inScope ? this.harnessPolicyState : { kind: "loading" as const },
       busy: inScope && this.harnessPolicyBusy,
