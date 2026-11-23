@@ -245,6 +245,14 @@ describe("report", () => {
     ]);
   });
 
+  it("asks about a worktree whose folder is gone, naming it gone", async () => {
+    const { repo, wt } = repoWithEmptyWorktree();
+    rmSync(wt, { recursive: true, force: true });
+    expect((await worktreeRows(repo)).map((row) => [row.verdict, row.text])).toEqual([
+      ["ASK", `worktree ${wt} [x] PRs unknown: no remote · no commits yet · folder gone here`],
+    ]);
+  });
+
   it("asks about an unpushed, unlanded commit", async () => {
     const { repo } = repoWithWorktree();
     expect(await verdicts(repo)).toEqual(["ASK"]);
