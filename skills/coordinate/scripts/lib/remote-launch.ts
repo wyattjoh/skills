@@ -161,6 +161,11 @@ export const remoteFolderExists = Effect.fn("remoteFolderExists")(function* (
   return out.split("\n").includes("present");
 });
 
+// The remote shell's exit code when the working folder is missing there: not git's 128, and paired
+// with a marker line on stderr so a program's own exit code is never mistaken for it.
+const MISSING_CWD_EXIT = 97;
+const MISSING_CWD_MARKER = "coordinate: no working folder";
+
 const Executed = Schema.Struct({
   code: Schema.NullOr(Schema.Number),
   stdout: Schema.String,
@@ -172,7 +177,8 @@ const Executed = Schema.Struct({
  * A `Proc` that runs every program on another Herdr machine through `hc exec --on`, in its login
  * shell and the given working folder there, with git's repository-location variables unset. Its
  * exit code and output come back exactly, so the git helpers judge a remote checkout as they judge
- * a local one. When the machine does not answer, the run fails with a `SpawnError`.
+ * a local one. When the machine does not answer, or the working folder is missing there, the run
+ * fails with a `SpawnError` saying which.
  * @param machine Herdr machine name.
  * @param local The `Proc` that runs `hc` here.
  * @returns The remote runner.
@@ -197,7 +203,7 @@ export const remoteProc = (machine: string, local: Proc["Service"]): Proc["Servi
           "--",
           "sh",
           "-lc",
-          `${UNSET_GIT}; if [ -n "$1" ]; then cd "$1" || exit 128; fi; shift; exec "$@"`,
+          `${UNSET_GIT}; if [ -n "$1" ]; then cd "$1" 2>/dev/null || { echo '${MISSING_CWD_MARKER}' >&2; exit ${MISSING_CWD_EXIT}; }; fi; shift; exec "$@"`,
           "sh",
           options?.cwd ?? "",
           ...argv,
@@ -214,10 +220,13 @@ export const remoteProc = (machine: string, local: Proc["Service"]): Proc["Servi
       });
       if (parsed.timed_out || parsed.code === null)
         return yield* failed(`${argv[0]} timed out on ${machine} after ${timeoutS}s`);
+      const stderr = Buffer.from(parsed.stderr, "base64").toString("utf8");
+      if (parsed.code === MISSING_CWD_EXIT && stderr === `${MISSING_CWD_MARKER}\n`)
+        return yield* failed(`working folder ${options?.cwd ?? ""} does not exist on ${machine}`);
       return {
         exitCode: parsed.code,
         stdout: Buffer.from(parsed.stdout, "base64").toString("utf8"),
-        stderr: Buffer.from(parsed.stderr, "base64").toString("utf8"),
+        stderr,
       };
     }),
 });
