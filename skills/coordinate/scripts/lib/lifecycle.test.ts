@@ -1401,7 +1401,7 @@ describe("endDelegate", () => {
     expect(machine.kills).toEqual([]);
   });
 
-  it("leaves a remote delegate's processes alone", async () => {
+  it("still ends a remote delegate when its machine's process scan fails, touching no local process", async () => {
     const fake = fakeProc((argv) =>
       argv[0] === "hc" && argv[1] === "get"
         ? ok(
@@ -1418,7 +1418,9 @@ describe("endDelegate", () => {
     );
     const state = dir();
     const lines = await runWith(endDelegate(await config(state), "fix-a", false), fake.layer);
-    expect(lines.slice(2)).toEqual(["stopped no processes: fix-a ran on strix"]);
+    expect(lines.slice(2)).toEqual([
+      "stopped no processes on strix: the process scan failed (no processes read on strix)",
+    ]);
     const record = JSON.parse(readFileSync(join(state, "ended", "s-1.json"), "utf8"));
     expect(record.machine).toBe("strix");
     expect(

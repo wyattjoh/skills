@@ -53,8 +53,20 @@ import {
   PI_THINKING,
 } from "./harness.ts";
 import * as hc from "./herdr.ts";
-import { defaultStop, scanProcesses, type StopOptions, teardownEnded } from "./processes.ts";
-import { preflightRemote, remoteCheckout, remoteWorktree } from "./remote-launch.ts";
+import {
+  defaultStop,
+  localHost,
+  remoteHost,
+  type StopOptions,
+  teardownEnded,
+} from "./processes.ts";
+import {
+  preflightRemote,
+  remoteCheckout,
+  remoteFolderExists,
+  remoteMainCheckout,
+  remoteWorktree,
+} from "./remote-launch.ts";
 import { countResume, readSession } from "./sessions.ts";
 import { armWatcher, WATCHER_DOMAIN_LABEL, watcherInfoLine } from "./watch-terminal.ts";
 import { writeDelegateWiki } from "./wiki.ts";
@@ -994,13 +1006,32 @@ export const delegate = Effect.fn("delegate")(function* (
 });
 
 /**
+ * A terminal by address or name. `hc get` resolves names on this core only, so a name it does not
+ * know is looked up among every connected machine's live terminals; two with that name are refused
+ * rather than guessed between.
+ * @param target Name or address.
+ * @returns The terminal, or undefined when none has that address or name.
+ */
+const findTerminal = Effect.fn("findTerminal")(function* (target: string) {
+  const here = yield* hc.get(target);
+  if (here !== undefined || target.includes("/")) return here;
+  const named = (yield* hc.list()).filter((listed) => listed.name === target && listed.live);
+  if (named.length > 1)
+    return yield* new Refused({
+      message: `${named.length} live terminals are named ${target} (${named.map((listed) => listed.address).join(", ")}); give its address`,
+    });
+  const only = named[0];
+  return only === undefined ? undefined : yield* hc.get(only.address);
+});
+
+/**
  * Send a message to a delegate. Refuses a terminal blocked on a dialog; hc itself waits for a draft.
  * @param target Name or address.
  * @param text Message.
  * @returns Lines to print.
  */
 export const sendTo = Effect.fn("sendTo")(function* (target: string, text: string) {
-  const terminal = yield* hc.get(target);
+  const terminal = yield* findTerminal(target);
   if (!terminal || !terminal.live)
     return yield* new Refused({ message: `no live terminal ${target}` });
   if (terminal.status === "blocked")
@@ -1089,7 +1120,7 @@ export const endDelegate = Effect.fn("endDelegate")(function* (
     return yield* new Refused({
       message: `--item-status ${itemStatus} is not one of ${NEXT_STATUSES.join(", ")}; close an item with coordinate item close`,
     });
-  const terminal = yield* hc.get(target);
+  const terminal = yield* findTerminal(target);
   if (!terminal) return yield* new Refused({ message: `no terminal ${target}` });
   if (terminal.labels[L.role] === "coordinator")
     return yield* new Refused({ message: `${target} is a coordinator` });
@@ -1123,6 +1154,13 @@ export const endDelegate = Effect.fn("endDelegate")(function* (
   }
   const sessionState = yield* readSession(config.stateDir, session);
   const machine = machineOfAddress(terminal.address, yield* localMachine());
+  // A remote terminal (machine/address) has its folders, git and processes on its own machine.
+  const remote = terminal.address.includes("/");
+  const host = remote ? remoteHost(machine) : localHost;
+  const folder = terminal.labels[L.worktree] ?? terminal.cwd;
+  const repo = remote
+    ? yield* remoteMainCheckout(machine, folder).pipe(Effect.catch(() => Effect.succeed(undefined)))
+    : yield* mainCheckout(terminal.cwd).pipe(Effect.catch(() => Effect.succeed(undefined)));
   const record: EndedRecord = {
     name: terminal.name ?? terminal.address,
     task: terminal.labels[L.task] ?? null,
@@ -1132,10 +1170,8 @@ export const endDelegate = Effect.fn("endDelegate")(function* (
     program: terminal.labels[L.harness] ?? harnessOf(terminal.app) ?? null,
     model: terminal.labels[L.model] ?? null,
     effort: terminal.labels[L.effort] ?? null,
-    cwd: terminal.labels[L.worktree] ?? terminal.cwd,
-    repo:
-      (yield* mainCheckout(terminal.cwd).pipe(Effect.catch(() => Effect.succeed(undefined)))) ??
-      null,
+    cwd: folder,
+    repo: repo ?? null,
     branch: terminal.labels[L.branch] ?? null,
     base_sha: terminal.labels[L.base] ?? null,
     ended_at: new Date().toISOString(),
@@ -1146,33 +1182,39 @@ export const endDelegate = Effect.fn("endDelegate")(function* (
     machine,
   };
   const path = yield* writeEnded(config.stateDir, record);
-  // Read the terminal's process tree while it still has one: once it ends, survivors move to launchd.
-  // A remote terminal (machine/address) has pids and folders on another machine: leave them alone.
-  const remote = terminal.address.includes("/");
-  const before = remote ? Option.none() : yield* scanProcesses().pipe(Effect.option);
+  // Read the terminal's process tree while it still has one: once it ends, survivors are adopted
+  // by launchd (or, on a Linux machine, the user's service manager).
+  const before = yield* host.scan().pipe(Effect.option);
   yield* hc.end(terminal.address).pipe(Effect.tapError(() => removeEnded(path)));
   const space = terminal.labels[L.space];
   if (space) yield* hc.closeSpace(space).pipe(Effect.ignore);
   // Only a worktree coordinate made for it (`delegate --repo` sets the base label): a --cwd folder or
   // an attached session's folder may be shared, and its processes anyone's.
   const worktree = terminal.labels[L.worktree];
+  // On another machine the path is that machine's, and only a known main checkout other than it
+  // shows it is a linked worktree.
   const ownWorktree =
-    worktree !== undefined &&
-    terminal.labels[L.base] !== undefined &&
-    real(worktree) !== real(record.repo ?? "")
-      ? real(worktree)
-      : undefined;
-  const stopped = remote
-    ? [`stopped no processes: ${record.name} ran on ${machine}`]
-    : yield* teardownEnded(
-        { name: record.name, rootPid: terminal.pid, worktree: ownWorktree },
-        Option.getOrUndefined(before),
-        stop,
-      ).pipe(
-        Effect.catch((error) =>
-          Effect.succeed([`stopped no processes: the process scan failed (${error.message})`]),
-        ),
-      );
+    worktree === undefined || terminal.labels[L.base] === undefined
+      ? undefined
+      : remote
+        ? record.repo !== null && record.repo !== undefined && record.repo !== worktree
+          ? worktree
+          : undefined
+        : real(worktree) !== real(record.repo ?? "")
+          ? real(worktree)
+          : undefined;
+  const stopped = yield* teardownEnded(
+    { name: record.name, rootPid: terminal.pid, worktree: ownWorktree },
+    Option.getOrUndefined(before),
+    stop,
+    host,
+  ).pipe(
+    Effect.catch((error) =>
+      Effect.succeed([
+        `stopped no processes${host.where}: the process scan failed (${error.message})`,
+      ]),
+    ),
+  );
   const lines = [
     `ended ${record.name} (${terminal.address}); record ${path}`,
     `worktree, branch and session stay; resume with: coordinate resume ${record.name}`,
@@ -1255,13 +1297,20 @@ export const resumeDelegate = Effect.fn("resumeDelegate")(function* (
       message: `${name} ran ${record.program}, which this skill cannot resume`,
     });
   yield* requireRecordedHarnessEnabled(config, record.domain, harness, name);
-  if (!existsSync(record.cwd))
-    return yield* new Refused({ message: `${name}'s folder is gone: ${record.cwd}` });
+  const core = yield* localMachine();
+  const machine = record.machine ? canonicalMachine(record.machine, core) : core;
+  // A delegate that ran on another machine resumes there, in its worktree on that machine.
+  const away = machine === core ? undefined : machine;
+  if (away === undefined ? !existsSync(record.cwd) : !(yield* remoteFolderExists(away, record.cwd)))
+    return yield* new Refused({
+      message: `${name}'s folder is gone${away === undefined ? "" : ` on ${away}`}: ${record.cwd}`,
+    });
   const taken = (yield* hc.list()).find((terminal) => terminal.name === name);
   if (taken)
     return yield* new Refused({
       message: `a live terminal is already named ${name} (${taken.address})`,
     });
+  const shell = away === undefined ? undefined : yield* preflightRemote(away, harness, record.cwd);
   const coordinator = yield* ownCoordinator().pipe(Effect.option);
   const coordinatorTerminal = Option.isSome(coordinator) ? coordinator.value.terminal : undefined;
   const task = record.task ?? name;
@@ -1271,7 +1320,7 @@ export const resumeDelegate = Effect.fn("resumeDelegate")(function* (
     [L.session]: record.session,
     [L.harness]: harness,
     [L.worktree]: record.cwd,
-    [L.machine]: yield* localMachine(),
+    [L.machine]: machine,
     ...(record.model ? { [L.model]: record.model } : {}),
     ...(record.effort ? { [L.effort]: record.effort } : {}),
     ...(record.branch ? { [L.branch]: record.branch } : {}),
@@ -1283,9 +1332,11 @@ export const resumeDelegate = Effect.fn("resumeDelegate")(function* (
     tabLabel: task,
     spaceName: `${record.domain} [${task}]`,
     labels,
-    parent: coordinatorTerminal?.address ?? process.env.HC_TERMINAL_ID,
-    machine: undefined,
-    shell: undefined,
+    // A terminal's parent must be on its own core, so one on another machine has none.
+    parent:
+      away === undefined ? (coordinatorTerminal?.address ?? process.env.HC_TERMINAL_ID) : undefined,
+    machine: away,
+    shell,
     argv: agentArgv({
       harness,
       name,

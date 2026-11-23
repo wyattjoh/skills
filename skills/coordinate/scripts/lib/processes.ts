@@ -1,7 +1,7 @@
 import { Effect } from "effect";
 import { inside } from "./git.ts";
 import * as hc from "./herdr.ts";
-import { Proc } from "./proc.ts";
+import { Proc, type SpawnError } from "./proc.ts";
 
 const HERDR_CORE = new Set(["hc", "herdr-core"]);
 const HERDR_CORE_ARGS = /(?:^|\/)(?:hc|herdr-core) (?:hold|connect)(?:\s|$)/;
@@ -242,6 +242,24 @@ const signal = Effect.fn("signal")(function* (name: string, rows: readonly PsRow
 });
 
 /**
+ * A line per signalled process: stopped, stopped by SIGKILL, or still running after it.
+ * @param live Processes sent SIGTERM.
+ * @param hard Those still running after the grace period, sent SIGKILL.
+ * @param survivors Those still running after SIGKILL.
+ * @returns Lines.
+ */
+const stopLines = (
+  live: readonly PsRow[],
+  hard: readonly PsRow[],
+  survivors: readonly PsRow[],
+): string[] =>
+  live.map((row) =>
+    survivors.some((survivor) => same(survivor, row))
+      ? `could not stop ${row.pid} ${shown(row)}: still running after SIGKILL`
+      : `stopped ${row.pid} ${shown(row)}${hard.some((other) => same(other, row)) ? " (SIGKILL)" : ""}`,
+  );
+
+/**
  * Stop processes: SIGTERM, up to `graceMs` for them to exit, then SIGKILL for the rest. Each pid is
  * re-read first and signalled only while it is still the same process (same start time), never when it
  * is launchd, this process or one of its ancestors.
@@ -280,30 +298,137 @@ export const stopProcesses = Effect.fn("stopProcesses")(function* (
     yield* Effect.sleep(options.pollMs);
     survivors = alive(hard, yield* readPs());
   }
-  for (const row of live) {
-    if (survivors.some((survivor) => same(survivor, row)))
-      lines.push(`could not stop ${row.pid} ${shown(row)}: still running after SIGKILL`);
-    else
-      lines.push(
-        `stopped ${row.pid} ${shown(row)}${hard.some((other) => same(other, row)) ? " (SIGKILL)" : ""}`,
-      );
-  }
+  lines.push(...stopLines(live, hard, survivors));
   return { lines, survivors };
 });
 
 /**
+ * Where `coordinate end` reads and stops processes: this machine, or another Herdr machine through
+ * `hc exec`. `where` is appended to the lines that name the machine.
+ */
+export type ProcessHost = {
+  where: string;
+  scan: () => Effect.Effect<ProcessTable, hc.HerdrError | SpawnError, Proc>;
+  stop: (
+    targets: readonly PsRow[],
+    options: StopOptions,
+  ) => Effect.Effect<{ lines: string[]; survivors: PsRow[] }, hc.HerdrError | SpawnError, Proc>;
+};
+
+/**
+ * This machine: lsof and ps, signals sent here.
+ */
+export const localHost: ProcessHost = { where: "", scan: scanProcesses, stop: stopProcesses };
+
+const word = (value: string): string => `'${value.replaceAll("'", `'\\''`)}'`;
+
+// A Herdr process on another machine: its server, core and terminal holders.
+const HERDR_REMOTE = /(?:^|\/)(?:herdr|herdr-core|hc)(?:\s|$)/;
+// A Linux user session's service manager, which adopts orphans as a subreaper.
+const USER_REAPER = /(?:^|\/)systemd\s.*--user(?:\s|$)/;
+
+/**
+ * Parse a remote scan: `ps` rows, then `ls -l /proc/*\/cwd` lines. Herdr's own processes form the
+ * core set, never stopped. An orphan adopted by the user's service manager counts as adopted by
+ * init, as on this Mac.
+ * @param text Scan output.
+ * @returns The table.
+ */
+const parseRemoteScan = (text: string): ProcessTable => {
+  const [psText = "", cwdText = ""] = text.split(/^--- .*$/m);
+  const rows = parsePs(psText);
+  const reapers = new Set(rows.filter((row) => USER_REAPER.test(row.args)).map((row) => row.pid));
+  const ps = rows.map((row) => (reapers.has(row.ppid) ? { ...row, ppid: "1" } : row));
+  const held = cwdText.split("\n").flatMap((line): Held[] => {
+    const match = /\/proc\/(\d+)\/cwd -> (.*)$/.exec(line);
+    return match ? [{ pid: match[1] ?? "", command: "", fd: "cwd", path: match[2] ?? "" }] : [];
+  });
+  // Only Herdr's own processes: the scanning shell ran from `/`, so no worktree holds it, and its
+  // ancestry (up to the user manager and init) must not vouch for an adopted process as Herdr's.
+  const core = new Set(rows.filter((row) => HERDR_REMOTE.test(row.args)).map((row) => row.pid));
+  return { held, ps, core };
+};
+
+/**
+ * Another Herdr machine (Linux: `/proc` and procps `ps`), read and signalled through `hc exec`.
+ * Each pid is signalled only while its start time still matches the scan.
+ * @param machine Herdr machine name.
+ * @returns The host.
+ */
+export const remoteHost = (machine: string): ProcessHost => ({
+  where: ` on ${machine}`,
+  scan: Effect.fn("remoteScan")(function* () {
+    const out = yield* hc.execOn(
+      machine,
+      [
+        "cd / || exit 3",
+        "LC_ALL=C ps -eww -o pid=,ppid=,lstart=,args=",
+        "echo '--- cwd'",
+        "ls -l /proc/[0-9]*/cwd 2>/dev/null",
+        "true",
+      ].join("\n"),
+      60,
+    );
+    const table = parseRemoteScan(out);
+    if (table.ps.length === 0)
+      return yield* new hc.HerdrError({
+        command: "ps",
+        kind: "unreadable_output",
+        message: `no processes read on ${machine}`,
+      });
+    return table;
+  }),
+  stop: Effect.fn("remoteStop")(function* (targets, options) {
+    if (targets.length === 0) return { lines: [] as string[], survivors: [] as PsRow[] };
+    const rounds = Math.max(1, Math.ceil(options.graceMs / 250));
+    const out = yield* hc.execOn(
+      machine,
+      [
+        "cd / || exit 3",
+        `targets=${word(targets.map((row) => `${row.pid}|${row.started}`).join("\n"))}`,
+        "started() { LC_ALL=C ps -o lstart= -p \"$1\" 2>/dev/null | tr -s ' ' | sed 's/^ //;s/ $//'; }",
+        'alive() { printf \'%s\\n\' "$targets" | while IFS=\'|\' read -r pid start; do [ -n "$pid" ] && [ "$(started "$pid")" = "$start" ] && echo "$pid"; done; }',
+        "live=$(alive)",
+        'for p in $live; do echo "live $p"; done',
+        '[ -n "$live" ] && kill -TERM $live 2>/dev/null',
+        "i=0",
+        `while [ $i -lt ${rounds} ] && [ -n "$(alive)" ]; do sleep 0.25; i=$((i+1)); done`,
+        "hard=$(alive)",
+        'for p in $hard; do echo "hard $p"; done',
+        '[ -n "$hard" ] && { kill -KILL $hard 2>/dev/null; sleep 0.25; }',
+        'for p in $(alive); do echo "left $p"; done',
+        "true",
+      ].join("\n"),
+      Math.ceil(options.graceMs / 1000) + 30,
+    );
+    const tagged = (tag: string): PsRow[] => {
+      const pids = new Set(
+        out
+          .split("\n")
+          .flatMap((line) => (line.startsWith(`${tag} `) ? [line.slice(tag.length + 1)] : [])),
+      );
+      return targets.filter((row) => pids.has(row.pid));
+    };
+    const survivors = tagged("left");
+    return { lines: stopLines(tagged("live"), tagged("hard"), survivors), survivors };
+  }),
+});
+
+/**
  * What `coordinate end` stops once the terminal has ended: the terminal's process tree as read before
- * it ended (kept only when its root is a local Herdr terminal process, a child of Herdr core), plus
- * processes the delegate's own worktree provably holds (see `ownedBy`).
+ * it ended (kept only when its root is a Herdr terminal process, a child of Herdr core), plus
+ * processes the delegate's own worktree provably holds (see `ownedBy`), on the host it ran on.
  * @param spec The terminal's root pid and the delegate's worktree (undefined when it has none of its own).
  * @param before The process table read before the terminal ended, when it could be read.
  * @param options Stop options.
+ * @param host Where the delegate ran.
  * @returns Lines to print.
  */
 export const teardownEnded = Effect.fn("teardownEnded")(function* (
   spec: { name: string; rootPid: number | undefined; worktree: string | undefined },
   before: ProcessTable | undefined,
   options: StopOptions,
+  host: ProcessHost = localHost,
 ) {
   const notes: string[] = [];
   const targets = new Map<string, PsRow>();
@@ -313,7 +438,11 @@ export const teardownEnded = Effect.fn("teardownEnded")(function* (
   else if (root !== undefined) {
     const row = before.ps.find((candidate) => candidate.pid === root);
     if (row === undefined || !before.core.has(row.ppid))
-      notes.push(`  pid ${root} is not a local Herdr terminal process, so its tree was left alone`);
+      notes.push(
+        host.where === ""
+          ? `  pid ${root} is not a local Herdr terminal process, so its tree was left alone`
+          : `  pid ${root} is not a Herdr terminal process${host.where}, so its tree was left alone`,
+      );
     else
       for (const pid of descendants(before.ps, new Set([root])))
         if (!before.core.has(pid)) {
@@ -322,14 +451,14 @@ export const teardownEnded = Effect.fn("teardownEnded")(function* (
         }
   }
   if (spec.worktree !== undefined) {
-    const after = yield* scanProcesses();
+    const after = yield* host.scan();
     for (const pid of ownedBy(after, spec.worktree)) {
       const found = after.ps.find((candidate) => candidate.pid === pid);
       if (found && !targets.has(pid)) targets.set(pid, found);
     }
   }
-  const { lines } = yield* stopProcesses([...targets.values()], options);
+  const { lines } = yield* host.stop([...targets.values()], options);
   return lines.length === 0
-    ? [`no processes of ${spec.name} were left running`, ...notes]
-    : [`processes of ${spec.name}:`, ...lines.map((line) => `  ${line}`), ...notes];
+    ? [`no processes of ${spec.name} were left running${host.where}`, ...notes]
+    : [`processes of ${spec.name}${host.where}:`, ...lines.map((line) => `  ${line}`), ...notes];
 });

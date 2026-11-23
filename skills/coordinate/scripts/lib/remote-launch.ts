@@ -132,3 +132,40 @@ export const remoteWorktree = Effect.fn("remoteWorktree")(function* (
     excluded: lines.includes("excluded"),
   };
 });
+
+/**
+ * The main checkout a folder on another machine belongs to, read by git there.
+ * @param machine Herdr machine name.
+ * @param folder A worktree or checkout on that machine.
+ * @returns Its main checkout's path there, or undefined when git does not know the folder.
+ */
+export const remoteMainCheckout = Effect.fn("remoteMainCheckout")(function* (
+  machine: string,
+  folder: string,
+) {
+  const out = yield* hc.execOn(
+    machine,
+    [
+      UNSET_GIT,
+      `git -C ${word(folder)} rev-parse --path-format=absolute --git-common-dir 2>/dev/null || true`,
+    ].join("\n"),
+    30,
+  );
+  const common = out.trim();
+  if (common === "") return undefined;
+  return common.endsWith("/.git") ? common.slice(0, -"/.git".length) : common;
+});
+
+/**
+ * Whether a folder exists on another machine.
+ * @param machine Herdr machine name.
+ * @param path Absolute path there.
+ * @returns True when it is a folder there.
+ */
+export const remoteFolderExists = Effect.fn("remoteFolderExists")(function* (
+  machine: string,
+  path: string,
+) {
+  const out = yield* hc.execOn(machine, `if [ -d ${word(path)} ]; then echo present; fi`, 30);
+  return out.split("\n").includes("present");
+});

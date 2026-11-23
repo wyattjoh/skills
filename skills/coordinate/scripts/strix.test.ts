@@ -1,13 +1,15 @@
 import { afterAll, beforeAll, describe, expect, it } from "bun:test";
-import { rmSync, writeFileSync } from "node:fs";
+import { existsSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { initRepo } from "./lib/fixture.ts";
 import {
+  answerTrustDialog,
   onStrix,
   shellWord,
   STRIX,
   strixReadiness,
   strixRun,
+  SUITE_LABEL,
   type StrixRun,
   watchEvents,
 } from "./lib/strix-fixture.ts";
@@ -539,4 +541,291 @@ describe.skipIf(!ready)("strix: watching a remote delegate", () => {
       ),
     ).toEqual([gone]);
   }, 600_000);
+});
+
+// Whether a process running the given command line exists on strix; the pattern is split so the
+// probe's own command line never matches it.
+const runningOnStrix = (text: string, wantRunning: boolean, attempts = 20): boolean => {
+  const half = Math.floor(text.length / 2);
+  const probe = onStrix(
+    [
+      `pattern=${shellWord(text.slice(0, half))}`,
+      `pattern="$pattern"${shellWord(text.slice(half))}`,
+      `for attempt in $(seq 1 ${attempts}); do`,
+      '  count=$(pgrep -f -c -- "$pattern")',
+      `  [ ${wantRunning ? '"$count" -gt 0' : '"$count" = 0'} ] && break`,
+      "  sleep 1",
+      "done",
+      'if [ "$count" -gt 0 ]; then echo running; else echo none; fi',
+    ].join("\n"),
+    attempts + 20,
+  );
+  return probe.output === "running\n";
+};
+
+describe.skipIf(!ready)("strix: remote send, end and resume", () => {
+  let run: StrixRun | undefined;
+  let local = "";
+  let remote = "";
+  let item = "";
+  let name = "";
+  let address = "";
+  let worktree = "";
+  let session = "";
+  let base = "";
+  // Processes planted on strix for the end test, killed in afterAll if end left them.
+  const planted: string[] = [];
+
+  // The coordinate CLI as the run's coordinator, without the --domain flag run.cli appends.
+  const coordinate = (args: readonly string[], timeoutMs = 60_000) => {
+    const done = Bun.spawnSync(["bun", join(import.meta.dir, "coordinate.ts"), ...args], {
+      env: run?.env ?? {},
+      stdout: "pipe",
+      stderr: "pipe",
+      timeout: timeoutMs,
+    });
+    return { exitCode: done.exitCode, output: done.stdout.toString() + done.stderr.toString() };
+  };
+
+  const hcJson = (argv: readonly string[]): Record<string, unknown> => {
+    const done = Bun.spawnSync(["hc", ...argv, "--json"], {
+      env: run?.env ?? {},
+      stdout: "pipe",
+      timeout: 15_000,
+    });
+    return JSON.parse(done.stdout.toString()) as Record<string, unknown>;
+  };
+
+  // The agent status Herdr reports for a terminal once it settles, polled for at most timeoutMs.
+  const settled = (target: string, timeoutMs: number): string => {
+    const until = Date.now() + timeoutMs;
+    let status = "";
+    while (Date.now() < until) {
+      const got = hcJson(["get", target]) as { status?: { state?: string } | null };
+      status = got.status?.state ?? "";
+      if (["idle", "done", "blocked", "error"].includes(status)) return status;
+      Bun.sleepSync(3000);
+    }
+    return `still ${status || "starting"} after ${timeoutMs / 1000}s`;
+  };
+
+  beforeAll(() => {
+    run = strixRun();
+    local = initRepo();
+    remote = run.remoteRepo("app");
+    const brief = join(run.stateDir, "brief.md");
+    writeFileSync(brief, run.brief);
+    run.seed({ owned: [local], adjacent: [], checkouts: { [local]: { [STRIX]: remote } } });
+    run.becomeCoordinator();
+    const added = run.cli(["item", "add", "strix follow-up"]);
+    expect(added.exitCode).toBe(0);
+    item = /\bi\d+\b/.exec(added.output)?.[0] ?? "";
+    name = `sr-${run.id}`;
+    worktree = `${remote}/.claude/worktrees/${name}`;
+    const launched = run.cli(
+      [
+        "delegate",
+        name,
+        "--task",
+        "strix follow-up",
+        "--repo",
+        local,
+        "--brief",
+        brief,
+        "--item",
+        item,
+        "--machine",
+        STRIX,
+        "--harness",
+        "claude",
+      ],
+      150_000,
+    );
+    address = /\((strix\/t[0-9a-z]+)\)/.exec(launched.output)?.[1] ?? "";
+    if (address !== "") run.trackTerminal(address);
+    expect([launched.exitCode, address === ""]).toEqual([0, false]);
+    const labels = (hcJson(["get", address]) as { labels: Record<string, string> }).labels;
+    session = labels["fleet.session"] ?? "";
+    base = labels["fleet.base"] ?? "";
+    // The fresh worktree is not trusted on strix yet: answer the dialog for the suite's own delegate.
+    if (settled(address, 120_000) === "blocked")
+      expect(answerTrustDialog(address, worktree)).toBe(true);
+  }, 300_000);
+  afterAll(() => {
+    if (planted.length > 0) onStrix(`kill -9 ${planted.join(" ")} 2>/dev/null; true`, 20);
+    if (local !== "") rmSync(local, { recursive: true, force: true });
+    const left = run?.teardown() ?? [];
+    expect(left).toEqual([]);
+  }, 180_000);
+
+  it("send delivers a message to a remote delegate by its name", () => {
+    if (!run) return;
+    // Claude Code reports done after its turn, idle once that has been seen.
+    const status = settled(address, 240_000);
+    expect(["done", "idle"]).toContain(status);
+    const text = `Reply with the single word pong-${run.id}, then stop.`;
+    expect(coordinate(["send", name, text], 150_000)).toEqual({
+      exitCode: 0,
+      output: `sent to ${name} (${address}, ${status})\nwatcher for ${run.domain} is down; arm it (coordinate watch --arm)\n`,
+    });
+    const until = Date.now() + 60_000;
+    let screen = "";
+    while (Date.now() < until && !screen.includes(`pong-${run.id}`)) {
+      Bun.sleepSync(3000);
+      screen = Bun.spawnSync(["hc", "read", address, "--lines", "200"], {
+        env: run.env,
+        stdout: "pipe",
+        timeout: 15_000,
+      }).stdout.toString();
+    }
+    expect(screen.includes(`pong-${run.id}`)).toBe(true);
+  }, 400_000);
+
+  it("end stops the remote terminal and its leftover processes on strix, recording machine and worktree", () => {
+    if (!run) return;
+    expect(["done", "idle"]).toContain(settled(address, 240_000));
+    // A leftover in the worktree, and a decoy in a sibling folder whose name extends the worktree's.
+    const seconds = 3000 + Math.floor(Math.random() * 600);
+    // hc exec ends what it started, so each is orphaned from a helper terminal the suite owns, which
+    // stays alive outside both folders (and is removed in teardown); strix's user manager adopts it.
+    const plant = (folder: string, lifetime: number): string => {
+      expect(onStrix(`mkdir -p ${shellWord(folder)}`, 15).exitCode).toBe(0);
+      const started = Bun.spawnSync(
+        [
+          "hc",
+          "run",
+          "--bg",
+          "--json",
+          "--no-parent",
+          "--label",
+          `${SUITE_LABEL}=${run?.id ?? ""}`,
+          "--on",
+          STRIX,
+          "--cwd",
+          run?.remoteRoot ?? "/tmp",
+          "--",
+          "sh",
+          "-c",
+          `(cd ${shellWord(folder)} && setsid sleep ${lifetime} </dev/null >/dev/null 2>&1 &); exec sleep 1800`,
+        ],
+        { env: run?.env ?? {}, stdout: "pipe", timeout: 20_000 },
+      );
+      run?.trackTerminal((JSON.parse(started.stdout.toString()) as { address: string }).address);
+      return onStrix(
+        `for attempt in 1 2 3 4 5 6 7 8 9 10; do pid=$(pgrep -f '^sleep ${lifetime}$') && break; sleep 1; done; echo "$pid"`,
+        30,
+      ).output.trim();
+    };
+    const leftover = plant(worktree, seconds);
+    const decoy = plant(`${worktree}x`, seconds + 1);
+    planted.push(leftover, decoy);
+    expect([/^\d+$/.test(leftover), /^\d+$/.test(decoy)]).toEqual([true, true]);
+
+    const ended = coordinate(["end", name], 120_000);
+    const record = join(run.stateDir, "ended", `${session}.json`);
+    const stoppedLines = ended.output.split("\n").filter((line) => line.startsWith("  stopped "));
+    expect([
+      ended.exitCode,
+      ended.output.split("\n").filter((line) => !line.startsWith("  stopped ")),
+      stoppedLines.filter((line) => line.includes(`sleep ${seconds}`)),
+    ]).toEqual([
+      0,
+      [
+        `ended ${name} (${address}); record ${record}`,
+        `worktree, branch and session stay; resume with: coordinate resume ${name}`,
+        `processes of ${name} on strix:`,
+        `${item} is still delegated with no live delegate; set its next status (coordinate item update ${item} --status ...)`,
+        "",
+      ],
+      [`  stopped ${leftover} sleep ${seconds}`],
+    ]);
+    // The decoy outside the worktree still runs; nothing is left in the worktree.
+    expect(
+      onStrix(
+        [
+          `kill -0 ${decoy} && echo decoy-alive`,
+          `for p in /proc/[0-9]*; do case "$(readlink $p/cwd)" in ${shellWord(worktree)}|${shellWord(worktree)}/*) echo "left ${"$"}{p#/proc/}";; esac; done`,
+          "true",
+        ].join("\n"),
+        20,
+      ),
+    ).toEqual({ exitCode: 0, output: "decoy-alive\n" });
+    expect(runningOnStrix(session, false, 10)).toBe(false);
+    const written = JSON.parse(readFileSync(record, "utf8")) as Record<string, unknown>;
+    expect({
+      name: written.name,
+      domain: written.domain,
+      session: written.session,
+      program: written.program,
+      cwd: written.cwd,
+      repo: written.repo,
+      branch: written.branch,
+      base_sha: written.base_sha,
+      space: written.space,
+      machine: written.machine,
+    }).toEqual({
+      name,
+      domain: run.domain,
+      session,
+      program: "claude",
+      cwd: worktree,
+      repo: remote,
+      branch: `wyattjoh/${name}`,
+      base_sha: base,
+      space: true,
+      machine: "strix",
+    });
+  }, 400_000);
+
+  it("resume restarts the ended remote delegate on strix in its worktree", () => {
+    if (!run) return;
+    const resumed = coordinate(["resume", name], 150_000);
+    const again = /resumed \S+ in (strix\/t[0-9a-z]+)/.exec(resumed.output)?.[1] ?? "";
+    if (again !== "") run.trackTerminal(again);
+    expect(resumed).toEqual({
+      exitCode: 0,
+      output: [
+        `resumed ${name} in ${again} (resume 1 of session ${session})`,
+        `send it what arrived: coordinate send ${name} "<message>"`,
+        `watcher for ${run.domain} is down; arm it (coordinate watch --arm)`,
+        "",
+      ].join("\n"),
+    });
+    const terminal = hcJson(["get", again]) as {
+      name: string;
+      state: string;
+      cwd: string;
+      labels: Record<string, string>;
+    };
+    const space = terminal.labels["fleet.space"] ?? "";
+    if (space !== "") run.trackSpace(space);
+    const fleet = Object.fromEntries(
+      Object.entries(terminal.labels).filter(([key]) => key.startsWith("fleet.")),
+    );
+    expect([
+      terminal.name,
+      terminal.state,
+      terminal.cwd,
+      space.startsWith("strix/"),
+      fleet,
+    ]).toEqual([
+      name,
+      "live",
+      worktree,
+      true,
+      {
+        "fleet.domain": run.domain,
+        "fleet.task": "strix follow-up",
+        "fleet.session": session,
+        "fleet.harness": "claude",
+        "fleet.worktree": worktree,
+        "fleet.machine": "strix",
+        "fleet.branch": `wyattjoh/${name}`,
+        "fleet.base": base,
+        "fleet.space": space,
+      },
+    ]);
+    expect(runningOnStrix(session, true)).toBe(true);
+    expect(existsSync(join(run.stateDir, "ended", `${session}.json`))).toBe(false);
+  }, 400_000);
 });

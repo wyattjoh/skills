@@ -76,7 +76,7 @@ export const onStrix = (script: string, timeoutS = 30): Ran =>
 /**
  * The label every placeholder terminal the suite starts carries, valued with the run id.
  */
-const SUITE_LABEL = "coordinate.strix-suite";
+export const SUITE_LABEL = "coordinate.strix-suite";
 
 // Terminals (here and on connected machines) carrying a label, finished ones included.
 const labelled = (label: string): { address: string }[] => {
@@ -398,4 +398,23 @@ export const strixRun = (): StrixRun => {
       return left;
     },
   };
+};
+
+/**
+ * Answer Claude Code's folder trust dialog in a terminal the suite launched, when its screen shows
+ * that dialog for exactly that folder: a fresh /tmp worktree on strix is never trusted yet, and in
+ * real use the dialog is the user's to answer. Claude Code then records the trust in strix's
+ * ~/.claude.json, which the suite does not edit.
+ * @param address The suite's own terminal (`strix/tN`).
+ * @param folder The folder the dialog must name.
+ * @returns Whether the dialog was there and answered.
+ */
+export const answerTrustDialog = (address: string, folder: string): boolean => {
+  const screen = spawn(["hc", "read", address, "--lines", "60"], hostEnv(), 15_000).output;
+  const asking =
+    screen.includes("Accessing workspace:") &&
+    screen.includes(folder) &&
+    screen.includes("Yes, I trust this folder");
+  if (!asking) return false;
+  return spawn(["hc", "keys", address, "down", "enter"], hostEnv(), 15_000).exitCode === 0;
 };
