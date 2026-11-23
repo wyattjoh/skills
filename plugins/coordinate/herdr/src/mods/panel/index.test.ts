@@ -4236,14 +4236,14 @@ test("answering the current question keeps it, even when the document already sh
   const { ctx, view, render, backlog } = await flowSetup(3);
 
   get(render(), "answer-flow-ask-i1-option-1").click!({}, ctx.cx);
-  const answered = recordAnswer(backlog, "i1", "No");
-  host.files.set(DOC, JSON.stringify(answered));
+  const answeredBacklog = recordAnswer(backlog, "i1", "No");
+  host.files.set(DOC, JSON.stringify(answeredBacklog));
   get(render(), "answer-flow-ask-i1-answer-submit").click!({}, ctx.cx);
   // The read that follows the CLI's write lands first: while the answer is in flight the flow
   // leaves its own question alone, then keeps it when it moves on.
-  view.reconcileAnswerFlow("alpha", { kind: "loaded", backlog: answered });
+  view.reconcileAnswerFlow("alpha", { kind: "loaded", backlog: answeredBacklog });
   expect([view.answerFlow?.ids, view.answerFlow?.current]).toEqual([["i1", "i2", "i3"], 0]);
-  view.doc = { kind: "loaded", backlog: answered };
+  view.doc = { kind: "loaded", backlog: answeredBacklog };
   await settle();
 
   expect(view.answerFlowMotion?.action).toBe("answered");
@@ -4256,8 +4256,8 @@ test("a question answered in the flow is read-only on Back: the answer on record
   const expandedWidth = 360 * ANSWER_CAROUSEL.compactWidthRatio;
 
   get(measured, "answer-flow-ask-i1-option-1").click!({}, ctx.cx);
-  const answered = recordAnswer(backlog, "i1", "No");
-  host.files.set(DOC, JSON.stringify(answered));
+  const answeredBacklog = recordAnswer(backlog, "i1", "No");
+  host.files.set(DOC, JSON.stringify(answeredBacklog));
   get(render(), "answer-flow-ask-i1-answer-submit").click!({}, ctx.cx);
   await settle();
   reportSize(render(), "answer-flow-measure-expanded-i1", ctx.cx, 100, expandedWidth);

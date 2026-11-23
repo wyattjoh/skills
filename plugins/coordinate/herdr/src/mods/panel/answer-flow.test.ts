@@ -213,12 +213,12 @@ describe("answer flow", () => {
   });
 });
 
-describe("dropping questions answered outside the flow", () => {
-  const states =
-    (cleared: string[], missing: string[] = []) =>
-    (id: string): FlowAskState =>
-      cleared.includes(id) ? "cleared" : missing.includes(id) ? "missing" : "open";
+const states =
+  (cleared: string[], missing: string[] = []) =>
+  (id: string): FlowAskState =>
+    cleared.includes(id) ? "cleared" : missing.includes(id) ? "missing" : "open";
 
+describe("dropping questions answered outside the flow", () => {
   test("returns the same flow when nothing cleared", () => {
     const flow = startAnswerFlow("demo", ["i1", "i2", "i3"], "i2");
 
