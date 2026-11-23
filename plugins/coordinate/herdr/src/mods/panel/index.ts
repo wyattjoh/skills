@@ -23,6 +23,8 @@ import {
   LIST_SCRIPT,
   answerCommand,
   answerFailure,
+  canDismissItem,
+  dismissCommand,
   boundaryCommand,
   boundaryOutput,
   cachedDocument,
@@ -1070,10 +1072,45 @@ export default class Panel extends View {
     });
   }
 
+  // Dismiss the open question's item from the answer flow: the CLI closes it as dismissed, and the
+  // flow then drops its card like one answered elsewhere. A refusal shows inline and stays.
+  dismissAnswerFlowItem(cx: Context) {
+    const open = this.answering();
+    if (
+      this.answerFlow === undefined ||
+      this.answerFlowMotion !== undefined ||
+      open === undefined ||
+      open.draft.busy ||
+      this.domain === undefined ||
+      !canDismissItem(open.item)
+    )
+      return;
+    const { key } = open.draft;
+    const { command, args } = dismissCommand(home(), this.domain, open.item.id);
+    this.draft = { ...open.draft, busy: true, error: undefined };
+    cx.notify();
+    cx.spawn(async (task) => {
+      let error: string | undefined;
+      try {
+        const ran = await exec(command, args);
+        if (ran.code !== 0) error = answerFailure(ran);
+      } catch (failure) {
+        error = `could not run coordinate: ${String(failure)}`;
+      }
+      if (this.draft?.key !== key) return;
+      if (error === undefined) {
+        this.clearDraft();
+        this.load(task, true);
+      } else this.draft = { ...this.draft, busy: false, error };
+      task.notify();
+    });
+  }
+
   // The answer row's model for the view, when the open item has an ask.
   answerModel(): AnswerModel | undefined {
     const open = this.answering();
     if (open === undefined) return undefined;
+    const inFlow = this.answerFlow !== undefined && this.answerFlow.domain === this.domain;
     return {
       draft: open.draft,
       input: this.input,
@@ -1083,6 +1120,9 @@ export default class Panel extends View {
       choose: (option, cx) => this.choose(option, cx),
       discuss: (cx) => this.discuss(cx),
       submit: (cx) => this.answer(cx),
+      skip: inFlow ? (cx) => this.skipAnswerFlow(cx) : undefined,
+      dismiss:
+        inFlow && canDismissItem(open.item) ? (cx) => this.dismissAnswerFlowItem(cx) : undefined,
     };
   }
 

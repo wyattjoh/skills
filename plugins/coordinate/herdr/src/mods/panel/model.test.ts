@@ -3,6 +3,8 @@ import { emptyBacklog } from "../../lib/store.ts";
 import type { Finding } from "../../lib/store.ts";
 import {
   boundaryOutput,
+  canDismissItem,
+  dismissCommand,
   cachedDocument,
   changedBacklogDocuments,
   chosenAnswer,
@@ -338,4 +340,41 @@ test("opens the harness policy editor as a centered dialog of this mod", () => {
     props: { harnessPolicy: { domain: null } },
   });
   expect(policyDialogSpec("alpha").props).toEqual({ harnessPolicy: { domain: "alpha" } });
+});
+
+const emptyItem = { id: "i1", title: "t" };
+
+test("builds the dismiss call and says which items can be dismissed", () => {
+  expect(dismissCommand("/Users/test", "alpha", "i3")).toEqual({
+    command: "/usr/bin/env",
+    args: [
+      "-u",
+      "HC_TERMINAL_ID",
+      "bun",
+      "/Users/test/.claude/skills/coordinate/scripts/coordinate.ts",
+      "item",
+      "close",
+      "--domain",
+      "alpha",
+      "--dismissed",
+      "--outcome",
+      "Dismissed from the answer flow",
+      "--",
+      "i3",
+    ],
+  });
+  const statuses = [
+    "waiting-user",
+    "building",
+    "delegated",
+    "open",
+    "parked",
+    "done",
+    "dismissed",
+  ] as const;
+  expect(
+    statuses.map((status) =>
+      canDismissItem({ ...emptyItem, status } as Parameters<typeof canDismissItem>[0]),
+    ),
+  ).toEqual([true, true, true, true, true, false, false]);
 });

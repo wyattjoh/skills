@@ -1123,6 +1123,50 @@ export const answerCommand = (
 });
 
 /**
+ * The one-line outcome recorded when a question is dismissed from the answer flow.
+ */
+export const DISMISS_OUTCOME = "Dismissed from the answer flow";
+
+/**
+ * Whether an item can still be closed as dismissed: any item that is not already finished.
+ * @param item The item.
+ * @returns Whether `item close` would accept it.
+ */
+export const canDismissItem = (item: Item): boolean =>
+  item.status !== "done" && item.status !== "dismissed";
+
+/**
+ * Build the `coordinate item close --dismissed` call that closes an item as dismissed from the
+ * answer flow. It runs the way `answerCommand` does: as the panel, outside any Herdr terminal.
+ * @param home The user's home directory.
+ * @param domain The item's domain.
+ * @param id The item id.
+ * @returns The program and its arguments for exec.
+ */
+export const dismissCommand = (
+  home: string,
+  domain: string,
+  id: string,
+): { command: string; args: string[] } => ({
+  command: "/usr/bin/env",
+  args: [
+    "-u",
+    "HC_TERMINAL_ID",
+    typeof COORDINATE_BUN === "string" ? COORDINATE_BUN : "bun",
+    coordinateCli(home),
+    "item",
+    "close",
+    "--domain",
+    domain,
+    "--dismissed",
+    "--outcome",
+    DISMISS_OUTCOME,
+    "--",
+    id,
+  ],
+});
+
+/**
  * An answer being written on an item's detail: the option picked, a text answer or note, and the
  * run recording it. `key` names the domain, item and question, so a new ask starts a fresh draft.
  */

@@ -4120,3 +4120,118 @@ test("a missing item's card still says the question is unavailable", async () =>
     "Question unavailable. Go back to the domain.",
   );
 });
+
+test("the flow card's input has its own full-width row above one right-aligned row: Answer, Skip, Dismiss", async () => {
+  const { root } = await flowSetup(2);
+  expect(ids(root, "answer-flow-ask-i1-answer")).toEqual([
+    "answer-flow-ask-i1-answer",
+    "answer-flow-ask-i1-answer-field",
+    "answer-flow-ask-i1-answer-actions",
+    "answer-flow-ask-i1-answer-submit",
+    "answer-flow-ask-i1-answer-skip",
+    "answer-flow-ask-i1-answer-dismiss",
+  ]);
+  expect(ids(get(root, "answer-flow-ask-i1-answer"), "answer-flow-ask-i1-answer-")).toEqual([
+    "answer-flow-ask-i1-answer-field",
+  ]);
+  expect(ids(get(root, "answer-flow-ask-i1-answer-actions"), "answer-flow-ask-i1-answer-")).toEqual(
+    [
+      "answer-flow-ask-i1-answer-actions",
+      "answer-flow-ask-i1-answer-submit",
+      "answer-flow-ask-i1-answer-skip",
+      "answer-flow-ask-i1-answer-dismiss",
+    ],
+  );
+  const buttons = get(root, "answer-flow-ask-i1-answer-actions").children[0] as Node;
+  expect(buttons.styles.justify_end).toBe(true);
+  expect(get(root, "answer-flow-ask-i1-answer-skip").styles.bg).toBe(theme().raised);
+  expect(get(root, "answer-flow-ask-i1-answer-dismiss").styles.bg).toBe(theme().raised);
+  expect(get(root, "answer-flow-ask-i1-answer-field").styles.pt).toBe(4);
+});
+
+test("Skip advances to the next question with the skip transition and counts it as skipped", async () => {
+  const { ctx, view, render, root } = await flowSetup(3);
+  get(root, "answer-flow-ask-i1-answer-skip").click!({}, ctx.cx);
+  expect(view.answerFlowMotion?.action).toBe("skipped");
+  ctx.tick(600);
+  await settle();
+  expect([view.answerFlow?.current, view.answerFlow?.skipped, view.answerFlow?.answered]).toEqual([
+    1,
+    ["i1"],
+    [],
+  ]);
+  expect(text(get(render(), "answer-flow-progress"))).toBe("Question 2 of 3");
+  expect(host.execs.filter(({ args }) => args.includes("item"))).toEqual([]);
+});
+
+test("Dismiss closes the item through the CLI with the exact arguments, then the flow drops its card and moves on", async () => {
+  const { ctx, view, render, root, backlog } = await flowSetup(3);
+  host.files.set(DOC, JSON.stringify(close(backlog, "i1", true)));
+  get(root, "answer-flow-ask-i1-answer-dismiss").click!({}, ctx.cx);
+  expect(view.draft?.busy).toBe(true);
+  await settle();
+  expect(
+    host.execs
+      .filter(({ args }) => args.includes("close"))
+      .map(({ command, args }) => [command, ...args]),
+  ).toEqual([
+    [
+      "/usr/bin/env",
+      "-u",
+      "HC_TERMINAL_ID",
+      "bun",
+      "/Users/test/.claude/skills/coordinate/scripts/coordinate.ts",
+      "item",
+      "close",
+      "--domain",
+      "alpha",
+      "--dismissed",
+      "--outcome",
+      "Dismissed from the answer flow",
+      "--",
+      "i1",
+    ],
+  ]);
+  expect(view.answerFlow?.ids).toEqual(["i2", "i3"]);
+  expect(view.answerFlow?.answered).toEqual([]);
+  expect(view.answerFlow?.skipped).toEqual([]);
+  expect(flowCardIds(render())).toEqual([
+    "answer-flow-card-i2",
+    "answer-flow-card-i3",
+    "answer-flow-card-done",
+  ]);
+  expect(text(get(render(), "answer-flow-progress"))).toBe("Question 1 of 2");
+});
+
+test("a refused Dismiss shows the CLI's message inline and stays on the question", async () => {
+  const { ctx, view, render, root } = await flowSetup(2);
+  host.execExit = { code: 1, stderr: "refused: i1 is already dismissed" };
+  get(root, "answer-flow-ask-i1-answer-dismiss").click!({}, ctx.cx);
+  await settle();
+  const after = render();
+  expect(text(get(after, "answer-flow-ask-i1-answer-error"))).toBe(
+    "refused: i1 is already dismissed",
+  );
+  expect(view.answerFlow?.ids).toEqual(["i1", "i2"]);
+  expect(view.draft?.busy).toBe(false);
+  expect(get(after, "answer-flow-ask-i1-answer-dismiss").click).toBeDefined();
+  expect(get(after, "answer-flow-ask-i1-answer-skip").click).toBeDefined();
+});
+
+test("Skip and Dismiss are inert while an answer or dismissal is running", async () => {
+  const { ctx, view, render, root } = await flowSetup(2);
+  get(root, "answer-flow-ask-i1-answer-dismiss").click!({}, ctx.cx);
+  const busy = render();
+  expect(view.draft?.busy).toBe(true);
+  expect(get(busy, "answer-flow-ask-i1-answer-skip").click).toBe(undefined);
+  expect(get(busy, "answer-flow-ask-i1-answer-dismiss").click).toBe(undefined);
+});
+
+test("the detail page's answer row is unchanged: the field and Answer on one row, no Skip or Dismiss", async () => {
+  focusDomain("alpha");
+  host.files.set(DOC, JSON.stringify(withAsk()));
+  const { ctx, view, render } = await mount();
+  openDetail(view, "i1", ctx.cx);
+  const root = render();
+  expect(ids(root, "ask-answer")).toEqual(["ask-answer", "ask-answer-field", "ask-answer-submit"]);
+});

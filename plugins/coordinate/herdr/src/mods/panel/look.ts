@@ -80,6 +80,7 @@ export const DELEGATE_TONES: Readonly<Record<LiveStatus | "ended" | "gone", stri
 export const ANSWER = {
   height: 32,
   fieldPaddingX: 10,
+  fieldPaddingTop: 4,
   buttonPaddingX: 14,
   radius: 8,
   gap: 8,

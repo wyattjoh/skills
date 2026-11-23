@@ -62,6 +62,7 @@ import {
   FINDING_KIND_LABELS,
   FINDING_STATUS_LABELS,
   GROUP_LABELS,
+  canDismissItem,
   chosenAnswer,
   delegateLabel,
   delegateLine,
@@ -146,6 +147,10 @@ export type AnswerModel = {
   choose: (option: string, cx: Context) => void;
   discuss: (cx: Context) => void;
   submit: (cx: Context) => void;
+  // In the answer flow only: leave the question for later, and close its item as dismissed (absent
+  // when the item cannot be closed). Outside the flow both are undefined and the card has neither.
+  skip: ((cx: Context) => void) | undefined;
+  dismiss: ((cx: Context) => void) | undefined;
 };
 
 /** Every question card and the terminal summary mounted by the carousel. */
@@ -587,6 +592,14 @@ const ANSWER_BUTTON_STYLE: ButtonStyle = {
 // The answer field is app-specific; the package owns its surrounding card item and button.
 const askBodyRow = (t: Theme, id: string): Element => detailRow(t, id).bg(t.surface);
 
+// A quieter button for the actions beside Answer: the raised fill with the ordinary ink.
+const ANSWER_SECONDARY_BUTTON_STYLE: ButtonStyle = {
+  ...ANSWER_BUTTON_STYLE,
+  background: "raised",
+  text: "foreground",
+  hover: "hover",
+};
+
 const answerField = (
   t: Theme,
   id: string,
@@ -601,12 +614,15 @@ const answerField = (
     .px(ANSWER.fieldPaddingX)
     .flex()
     .items_start()
+    .pt(ANSWER.fieldPaddingTop)
     .rounded(ANSWER.radius)
     .border_1()
     .border_color(typing ? t.accent : t.border)
     .cursor_text()
+    // The textarea draws its text from its top edge, so the field pads the top by the amount that
+    // centers one line in the field's height, and grows with the text past one row.
     .when(input !== undefined, (el) =>
-      el.child(answerInputElement(input!).h_full().text_size(TEXT.body).text_color(t.foreground)),
+      el.child(answerInputElement(input!).w_full().text_size(TEXT.body).text_color(t.foreground)),
     );
 
 const answerRows = (t: Theme, answer: AnswerModel, prefix = "ask"): Element[] => {
@@ -629,6 +645,7 @@ const answerRows = (t: Theme, answer: AnswerModel, prefix = "ask"): Element[] =>
           ),
         ]
       : [];
+  const inFlow = answer.skip !== undefined;
   const submit = button(t, {
     id: `${prefix}-answer-submit`,
     label: draft.busy
@@ -641,8 +658,36 @@ const answerRows = (t: Theme, answer: AnswerModel, prefix = "ask"): Element[] =>
     style: enabled ? ANSWER_BUTTON_STYLE : { ...ANSWER_BUTTON_STYLE, background: "raised" },
     onClick: enabled ? (cx) => answer.submit(cx) : undefined,
   });
+  const secondary = (id: string, label: string, onClick: ((cx: Context) => void) | undefined) =>
+    button(t, {
+      id: `${prefix}-answer-${id}`,
+      label,
+      style: ANSWER_SECONDARY_BUTTON_STYLE,
+      onClick: draft.busy ? undefined : onClick,
+    });
+  // In the flow the text field has its own full-width row, then one right-aligned row of buttons:
+  // Answer, Skip and, where the item can be closed, Dismiss.
+  const inputRows = inFlow
+    ? [
+        askBodyRow(t, `${prefix}-answer`).child(field),
+        askBodyRow(t, `${prefix}-answer-actions`).child(
+          h_flex()
+            .gap(ANSWER.gap)
+            .justify_end()
+            .child(submit)
+            .child(secondary("skip", "Skip", answer.skip))
+            .when(answer.dismiss !== undefined, (el) =>
+              el.child(secondary("dismiss", "Dismiss", answer.dismiss)),
+            ),
+        ),
+      ]
+    : [
+        askBodyRow(t, `${prefix}-answer`).child(
+          h_flex().gap(ANSWER.gap).child(field).child(submit),
+        ),
+      ];
   return [
-    askBodyRow(t, `${prefix}-answer`).child(h_flex().gap(ANSWER.gap).child(field).child(submit)),
+    ...inputRows,
     ...noteField,
     ...(draft.error === undefined
       ? []
@@ -1351,6 +1396,8 @@ const flowMeasurementAnswer = (item: Item): AnswerModel => ({
   choose: () => {},
   discuss: () => {},
   submit: () => {},
+  skip: () => {},
+  dismiss: canDismissItem(item) ? () => {} : undefined,
 });
 
 const flowExpandedBody = (
