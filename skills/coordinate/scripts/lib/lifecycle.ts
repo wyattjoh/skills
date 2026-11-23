@@ -54,6 +54,7 @@ import {
 } from "./harness.ts";
 import * as hc from "./herdr.ts";
 import { defaultStop, scanProcesses, type StopOptions, teardownEnded } from "./processes.ts";
+import { preflightRemote, remoteCheckout, remoteWorktree } from "./remote-launch.ts";
 import { countResume, readSession } from "./sessions.ts";
 import { armWatcher, WATCHER_DOMAIN_LABEL, watcherInfoLine } from "./watch-terminal.ts";
 import { writeDelegateWiki } from "./wiki.ts";
@@ -145,6 +146,11 @@ export type DelegateOptions = {
   overBudget: boolean;
   queueIfFull: boolean;
   retryQueued: boolean;
+  /**
+   * `--machine`: the Herdr machine to start the delegate on; undefined (or a name for this
+   * machine) starts it here.
+   */
+  machine: string | undefined;
 };
 
 /**
@@ -167,8 +173,9 @@ const agentShowed = Effect.fn("agentShowed")(function* (address: string, seconds
  * Start a terminal in a new unfocused space of its own: the space's placeholder shell is closed
  * and its tab renamed. Assumes no worktree, delegate labels or parent; the caller supplies them.
  * @param spec What to run and where. `parent` undefined starts it with no parent link;
- *   `recordSpace` adds `fleet.space` so `coordinate end` closes the space with the terminal.
- * @returns Address and the new space id.
+ *   `recordSpace` adds `fleet.space` so `coordinate end` closes the space with the terminal;
+ *   `machine` makes the space and terminal on another Herdr machine, whose login `shell` runs it.
+ * @returns Address and the new space id (machine-qualified for another machine).
  */
 export const launchInOwnSpace = Effect.fn("launchInOwnSpace")(function* (spec: {
   name: string;
@@ -179,22 +186,30 @@ export const launchInOwnSpace = Effect.fn("launchInOwnSpace")(function* (spec: {
   parent: string | undefined;
   argv: string[];
   recordSpace: boolean;
+  machine: string | undefined;
+  shell: string | undefined;
 }) {
-  const made = yield* hc.newSpace(spec.spaceName, spec.cwd);
+  const made = yield* hc.newSpace(spec.spaceName, spec.cwd, spec.machine);
+  // Another machine's ids come back as `machine/id`; its own core places terminals by the bare id.
+  const bare = (id: string): string =>
+    spec.machine !== undefined && id.startsWith(`${spec.machine}/`)
+      ? id.slice(spec.machine.length + 1)
+      : id;
   const address = yield* hc
     .run({
       name: spec.name,
       cwd: spec.cwd,
+      machine: spec.machine,
       labels: {
-        "herdr.space": made.space,
-        "herdr.tab": made.tab,
+        "herdr.space": bare(made.space),
+        "herdr.tab": bare(made.tab),
         ...(spec.recordSpace ? { [L.space]: made.space } : {}),
         ...spec.labels,
       },
       parent: spec.parent,
       outliveParent: true,
       notifyParent: false,
-      argv: inLoginShell(loginShell(), spec.argv),
+      argv: inLoginShell(spec.shell ?? loginShell(), spec.argv),
     })
     .pipe(Effect.tapError(() => hc.closeSpace(made.space).pipe(Effect.ignore)));
   // The space came with a placeholder shell; close its pane so the agent has the tab to itself.
@@ -518,6 +533,8 @@ export const spawn = Effect.fn("spawn")(function* (
       resume: false,
     }),
     recordSpace: false,
+    machine: undefined,
+    shell: undefined,
   });
   const ready = yield* awaitWatcher(domain, launched.address, wait);
   const result: SpawnResult = {
@@ -555,8 +572,10 @@ const launch = Effect.fn("launch")(function* (spec: {
   argv: string[];
   ownSpace: boolean;
   coordinatorSpace: string | undefined;
+  machine: string | undefined;
+  shell: string | undefined;
 }) {
-  if (spec.ownSpace)
+  if (spec.ownSpace || spec.machine !== undefined)
     return yield* launchInOwnSpace({
       name: spec.name,
       cwd: spec.cwd,
@@ -566,6 +585,8 @@ const launch = Effect.fn("launch")(function* (spec: {
       parent: spec.parent,
       argv: spec.argv,
       recordSpace: true,
+      machine: spec.machine,
+      shell: spec.shell,
     });
   const labels = spec.coordinatorSpace
     ? { "herdr.space": spec.coordinatorSpace, ...spec.labels }
@@ -578,6 +599,7 @@ const launch = Effect.fn("launch")(function* (spec: {
     outliveParent: true,
     notifyParent: false,
     argv: inLoginShell(loginShell(), spec.argv),
+    machine: undefined,
   });
   const tab = (yield* hc.get(address).pipe(Effect.catch(() => Effect.succeed(undefined))))?.labels[
     "herdr.tab"
@@ -641,7 +663,26 @@ export const delegate = Effect.fn("delegate")(function* (
     });
 
   const core = yield* localMachine();
-  const targetMachine = machineOfAddress(caller.address, core);
+  // `--machine` naming this machine (`local`, its hostname or its Herdr name) is a local launch.
+  const requested =
+    options.machine === undefined ? undefined : canonicalMachine(options.machine, core);
+  const remote = requested !== undefined && requested !== core ? requested : undefined;
+  if (remote !== undefined) {
+    if (options.repo === undefined)
+      return yield* new Refused({
+        message: `--machine starts the delegate in a worktree of the repo's checkout on ${remote}: pass --repo, not --cwd`,
+      });
+    if (!options.space)
+      return yield* new Refused({
+        message: `--no-space opens a tab in this coordinator's space; a delegate on ${remote} gets its own space there`,
+      });
+    const known = yield* hc.machineNames();
+    if (!known.includes(remote))
+      return yield* new Refused({
+        message: `unknown Herdr machine ${remote}; known machines: ${known.length > 0 ? known.join(", ") : "(none)"}`,
+      });
+  }
+  const targetMachine = remote ?? machineOfAddress(caller.address, core);
   const perform = Effect.gen(function* () {
     const queue = options.retryQueued ? yield* readCapacityQueue(config, domain) : undefined;
     const queued = queue?.entries.find((entry) => entry.item === options.item);
@@ -651,7 +692,7 @@ export const delegate = Effect.fn("delegate")(function* (
       });
     if (queued && canonicalMachine(queued.machine, core) !== targetMachine)
       return yield* new Refused({
-        message: `item ${queued.item} is queued for machine ${queued.machine}, not ${targetMachine}; retry it from its target machine`,
+        message: `item ${queued.item} is queued for machine ${queued.machine}, not ${targetMachine}; retry it with --machine ${queued.machine}`,
       });
     if (queued && queue) {
       const { backlog } = yield* readDocument(config, domain);
@@ -705,6 +746,21 @@ export const delegate = Effect.fn("delegate")(function* (
         message: `a live terminal is already named ${options.name} (${taken.address})`,
       });
 
+    // Before the budget gate, so a machine that cannot host the delegate never queues one.
+    let away: { machine: string; checkout: string; shell: string } | undefined;
+    if (remote !== undefined) {
+      const repo = yield* mainCheckout(absolutePath(options.repo ?? "."));
+      if (!repo) return yield* new Refused({ message: `${options.repo} is not a Git checkout` });
+      const { backlog } = yield* readDocument(config, domain);
+      const key =
+        [repo, normalizeBoundary(options.repo ?? ".")].find(
+          (candidate) => backlog.boundary.checkouts?.[candidate]?.[remote] !== undefined,
+        ) ?? repo;
+      const checkoutThere = yield* remoteCheckout(backlog.boundary, key, remote);
+      const shell = yield* preflightRemote(remote, harness, checkoutThere);
+      away = { machine: remote, checkout: checkoutThere, shell };
+    }
+
     const liveDelegates = yield* liveDelegateCount(targetMachine, terminals, core);
     const { budget, warning: budgetWarning } = yield* machineDelegateBudget(
       config,
@@ -715,7 +771,7 @@ export const delegate = Effect.fn("delegate")(function* (
 
     const load = readLoadAverage();
     const lines: string[] = [];
-    if (load > config.cores)
+    if (away === undefined && load > config.cores)
       lines.push(
         `warning: 1-minute load average ${load} exceeds ${config.cores} cores; native gates may be slow`,
       );
@@ -750,7 +806,21 @@ export const delegate = Effect.fn("delegate")(function* (
     let branch: string | undefined;
     let baseSha: string | undefined;
     let checkout: string | undefined;
-    if (options.repo !== undefined) {
+    if (away !== undefined) {
+      branch = `${config.branchPrefix}${options.name}`;
+      const made = yield* remoteWorktree(away.machine, {
+        checkout: away.checkout,
+        name: options.name,
+        branch,
+        base: options.base,
+      });
+      checkout = away.checkout;
+      cwd = made.cwd;
+      baseSha = made.baseSha;
+      lines.push(`worktree ${cwd} on ${branch} from ${made.base} on ${away.machine}`);
+      if (made.excluded)
+        lines.push(`added .scratch/ to the repo's info/exclude on ${away.machine}`);
+    } else if (options.repo !== undefined) {
       const repo = yield* mainCheckout(absolutePath(options.repo));
       if (!repo) return yield* new Refused({ message: `${options.repo} is not a Git checkout` });
       checkout = repo;
@@ -777,7 +847,14 @@ export const delegate = Effect.fn("delegate")(function* (
     let brief: string | undefined;
     let message = options.message;
     const briefSource = message.kind === "brief" ? message.path : message.brief;
-    if (briefSource !== undefined) {
+    if (briefSource !== undefined && away !== undefined) {
+      const source = absolutePath(briefSource);
+      if (!existsSync(source)) return yield* new Refused({ message: `no brief at ${source}` });
+      brief = join(scratch, "BRIEF.md");
+      const content = yield* Effect.promise(() => readFile(source, "utf8"));
+      yield* hc.writeFileOn(away.machine, brief, content);
+      message = message.kind === "brief" ? { kind: "brief", path: brief } : { ...message, brief };
+    } else if (briefSource !== undefined) {
       const source = absolutePath(briefSource);
       if (!existsSync(source)) return yield* new Refused({ message: `no brief at ${source}` });
       brief = join(scratch, "BRIEF.md");
@@ -811,11 +888,15 @@ export const delegate = Effect.fn("delegate")(function* (
       }
       message = message.kind === "brief" ? { kind: "brief", path: brief } : { ...message, brief };
     }
-    const wiki = yield* writeDelegateWiki(config, domain, {
-      name: options.name,
-      scratch,
-      place: checkout !== undefined ? { repo: checkout } : { cwd },
-    });
+    // The wiki pages live on this machine, so a delegate elsewhere gets no WIKI.md.
+    const wiki =
+      away !== undefined
+        ? undefined
+        : yield* writeDelegateWiki(config, domain, {
+            name: options.name,
+            scratch,
+            place: checkout !== undefined ? { repo: checkout } : { cwd },
+          });
     if (wiki !== undefined) message = { ...message, wiki };
     const report = brief ? join(scratch, "REPORT.md") : undefined;
     const session = crypto.randomUUID();
@@ -826,7 +907,7 @@ export const delegate = Effect.fn("delegate")(function* (
       [L.session]: session,
       [L.harness]: harness,
       [L.worktree]: cwd,
-      [L.machine]: core,
+      [L.machine]: away?.machine ?? core,
       ...(queued ? { [L.queue]: `${domain}:${queued.item}:${queued.order}` } : {}),
       ...(options.model ? { [L.model]: options.model } : {}),
       ...(options.effort ? { [L.effort]: options.effort } : {}),
@@ -850,10 +931,16 @@ export const delegate = Effect.fn("delegate")(function* (
       tabLabel,
       spaceName: `${domain} [${options.task}]`,
       labels,
-      parent: coordinatorTerminal?.address ?? process.env.HC_TERMINAL_ID,
+      // A terminal's parent must be on its own core, so one on another machine has none.
+      parent:
+        away !== undefined
+          ? undefined
+          : (coordinatorTerminal?.address ?? process.env.HC_TERMINAL_ID),
       argv,
       ownSpace: options.space,
       coordinatorSpace: coordinatorTerminal?.labels["herdr.space"],
+      machine: away?.machine,
+      shell: away?.shell,
     });
     if (coordinator !== undefined && options.item !== undefined)
       yield* removeCapacityWait(config, domain, options.item);
@@ -872,6 +959,7 @@ export const delegate = Effect.fn("delegate")(function* (
               worktree: cwd,
               brief: brief ?? "",
               report: report ?? "",
+              ...(away !== undefined ? { machine: away.machine } : {}),
             },
           }).pipe(
             Effect.catchTags({
@@ -1196,6 +1284,8 @@ export const resumeDelegate = Effect.fn("resumeDelegate")(function* (
     spaceName: `${record.domain} [${task}]`,
     labels,
     parent: coordinatorTerminal?.address ?? process.env.HC_TERMINAL_ID,
+    machine: undefined,
+    shell: undefined,
     argv: agentArgv({
       harness,
       name,

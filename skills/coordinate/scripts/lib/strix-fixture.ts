@@ -74,6 +74,47 @@ export const onStrix = (script: string, timeoutS = 30): Ran =>
   );
 
 /**
+ * The label every placeholder terminal the suite starts carries, valued with the run id.
+ */
+const SUITE_LABEL = "coordinate.strix-suite";
+
+// Terminals (here and on connected machines) carrying a label, finished ones included.
+const labelled = (label: string): { address: string }[] => {
+  const listed = spawn(["hc", "ls", "--json", "--all", "--label", label], hostEnv(), 20_000);
+  try {
+    return (JSON.parse(listed.output) as { terminals: { address: string }[] }).terminals;
+  } catch {
+    return [];
+  }
+};
+
+// The fleet.space label of each terminal: the Herdr space a launch made for it.
+const suiteSpaces = (addresses: readonly string[]): string[] =>
+  addresses.flatMap((address) => {
+    const got = spawn(["hc", "get", address, "--json"], hostEnv(), 15_000);
+    try {
+      const space = (JSON.parse(got.output) as { labels?: Record<string, string> }).labels?.[
+        "fleet.space"
+      ];
+      return space === undefined ? [] : [space];
+    } catch {
+      return [];
+    }
+  });
+
+// The ids of the spaces open in the Herdr window.
+const openSpaces = (): Set<string> => {
+  const listed = spawn(["herdr-app", "ls"], hostEnv(), 15_000);
+  try {
+    return new Set(
+      (JSON.parse(listed.output) as { spaces: { id: string }[] }).spaces.map((space) => space.id),
+    );
+  } catch {
+    return new Set();
+  }
+};
+
+/**
  * Quote a string as one POSIX shell word.
  * @param value Any string.
  * @returns The quoted word.
@@ -133,8 +174,8 @@ export type StrixRun = {
   remoteRoot: string;
   brief: string;
   /**
-   * Environment for spawning the coordinate CLI: real hc, sandboxed config and state, no
-   * HC_TERMINAL_ID.
+   * Environment for spawning the coordinate CLI: real hc, sandboxed config and state, and no
+   * HC_TERMINAL_ID until `becomeCoordinator` sets the run's own coordinator placeholder.
    */
   env: Record<string, string>;
   /**
@@ -143,9 +184,26 @@ export type StrixRun = {
    */
   seed: (boundary: Backlog["boundary"]) => void;
   /**
-   * Run the coordinate CLI with `--domain` appended.
+   * Run the coordinate CLI with `--domain` appended, as the run's coordinator once
+   * `becomeCoordinator` has made one.
    */
   cli: (args: readonly string[], timeoutMs?: number) => Ran;
+  /**
+   * Merge keys into the sandbox config file (`state_dir` and `backlog_dir` stay).
+   */
+  configure: (extra: Record<string, unknown>) => void;
+  /**
+   * Start a local placeholder terminal labelled as the domain's coordinator, and run the CLI from
+   * it from now on.
+   * @returns Its address.
+   */
+  becomeCoordinator: () => string;
+  /**
+   * Start a placeholder terminal (`sleep`) on this machine (`machine` undefined) or on another one,
+   * with labels; tracked for teardown.
+   * @returns Its address.
+   */
+  placeholder: (machine: string | undefined, labels: Record<string, string>) => string;
   /**
    * Make a git repository with one commit on main under the strix folder.
    */
@@ -172,16 +230,43 @@ export const strixRun = (): StrixRun => {
   const stateDir = tempDir("coordinate-strix-");
   const remoteRoot = `${REMOTE_PREFIX}${id}`;
   const configFile = join(stateDir, "config.json");
-  writeFileSync(
-    configFile,
-    JSON.stringify({ state_dir: stateDir, backlog_dir: join(stateDir, "md") }),
-  );
   // COORDINATE_CONFIG points every coordinate path at the sandbox. XDG_STATE_HOME stays real:
   // hc finds its herdr-core socket under it, and coordinate itself never reads it.
-  const env = { ...hostEnv(), COORDINATE_CONFIG: configFile };
+  const env: Record<string, string> = { ...hostEnv(), COORDINATE_CONFIG: configFile };
+  let config: Record<string, unknown> = { state_dir: stateDir, backlog_dir: join(stateDir, "md") };
   const terminals: string[] = [];
   const spaces: string[] = [];
   const script = join(import.meta.dir, "..", "coordinate.ts");
+  writeFileSync(configFile, JSON.stringify(config));
+  let placeholders = 0;
+  const placeholder = (machine: string | undefined, labels: Record<string, string>): string => {
+    placeholders += 1;
+    const started = spawn(
+      [
+        "hc",
+        "run",
+        "--bg",
+        "--json",
+        "--name",
+        `sx-${id}-${placeholders}`,
+        "--no-parent",
+        ...(machine === undefined ? [] : ["--on", machine]),
+        ...Object.entries({ ...labels, [SUITE_LABEL]: id }).flatMap(([key, value]) => [
+          "--label",
+          `${key}=${value}`,
+        ]),
+        "--",
+        "sleep",
+        "1800",
+      ],
+      hostEnv(),
+      20_000,
+    );
+    if (started.exitCode !== 0) throw new Error(`could not start a placeholder: ${started.output}`);
+    const address = (JSON.parse(started.output) as { address: string }).address;
+    terminals.push(address);
+    return address;
+  };
   const made = onStrix(`mkdir -p ${shellWord(remoteRoot)}`, 15);
   if (made.exitCode !== 0) throw new Error(`could not make ${remoteRoot} on strix: ${made.output}`);
   return {
@@ -200,6 +285,19 @@ export const strixRun = (): StrixRun => {
     },
     cli: (args, timeoutMs = 30_000) =>
       spawn(["bun", script, ...args, "--domain", domain], env, timeoutMs),
+    configure: (extra) => {
+      config = { ...config, ...extra };
+      writeFileSync(configFile, JSON.stringify(config));
+    },
+    becomeCoordinator: () => {
+      const address = placeholder(undefined, {
+        "fleet.role": "coordinator",
+        "fleet.domain": domain,
+      });
+      env.HC_TERMINAL_ID = address;
+      return address;
+    },
+    placeholder,
     remoteRepo: (name) => {
       const repo = `${remoteRoot}/${name}`;
       const ran = onStrix(
@@ -225,13 +323,17 @@ export const strixRun = (): StrixRun => {
     },
     teardown: () => {
       const left: string[] = [];
-      for (const address of terminals) {
-        spawn(["hc", "kill", address], hostEnv(), 15_000);
-        const removed = spawn(["hc", "rm", address], hostEnv(), 15_000);
-        if (removed.exitCode !== 0 && !removed.output.includes("not_found"))
-          left.push(`terminal ${address}: ${removed.output.trim()}`);
-      }
+      // A CLI call that timed out after launching left no address behind: find what it started by
+      // the run's own domain label, here and on strix.
+      for (const listed of labelled(`fleet.domain=${domain}`))
+        if (!terminals.includes(listed.address)) terminals.push(listed.address);
+      for (const listed of labelled(`${SUITE_LABEL}=${id}`))
+        if (!terminals.includes(listed.address)) terminals.push(listed.address);
+      for (const space of suiteSpaces(terminals)) if (!spaces.includes(space)) spaces.push(space);
+      // Spaces first: closing one ends its terminals, which are then removed below.
+      const open = openSpaces();
       for (const space of spaces) {
+        if (!open.has(space)) continue;
         const closed = spawn(
           ["herdr-app", "do", "space.close", JSON.stringify({ id: space, confirmed: true })],
           hostEnv(),
@@ -239,8 +341,18 @@ export const strixRun = (): StrixRun => {
         );
         if (closed.exitCode !== 0) left.push(`space ${space}: ${closed.output.trim()}`);
       }
+      for (const address of terminals) {
+        spawn(["hc", "kill", address], hostEnv(), 15_000);
+        const removed = spawn(["hc", "rm", address], hostEnv(), 15_000);
+        if (removed.exitCode !== 0 && !removed.output.includes("not_found"))
+          left.push(`terminal ${address}: ${removed.output.trim()}`);
+      }
       if (REMOTE_ROOT.test(remoteRoot)) {
-        const removed = onStrix(`rm -rf ${shellWord(remoteRoot)}`, 30);
+        // Claude Code keeps a session folder named after the worktree path, which holds the run id.
+        const removed = onStrix(
+          `rm -rf ${shellWord(remoteRoot)} "$HOME"/.claude/projects/-tmp-coordinate-strix-${id}-*`,
+          30,
+        );
         if (removed.exitCode !== 0) left.push(`strix ${remoteRoot}: ${removed.output.trim()}`);
       } else left.push(`strix ${remoteRoot}: not a suite folder, left in place`);
       rmSync(stateDir, { recursive: true, force: true });

@@ -12,6 +12,10 @@ export type RunOptions = {
   cwd: string | undefined;
   timeoutMs: number | undefined;
   env: Record<string, string> | undefined;
+  /**
+   * Text fed to the program's stdin; undefined gives it none.
+   */
+  stdin: string | undefined;
 };
 
 /**
@@ -74,7 +78,7 @@ const bunRun = async (
   const child = Bun.spawn([...argv], {
     ...(options.cwd === undefined ? {} : { cwd: options.cwd }),
     env: options.env ?? { ...process.env },
-    stdin: "ignore",
+    stdin: options.stdin === undefined ? "ignore" : Buffer.from(options.stdin),
     stdout: "pipe",
     stderr: "pipe",
   });

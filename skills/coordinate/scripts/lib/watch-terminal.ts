@@ -305,6 +305,7 @@ export const armWatcher = Effect.fn("armWatcher")(function* (
       outliveParent: false,
       notifyParent: true,
       argv,
+      machine: undefined,
     })
     .pipe(
       Effect.map((address) => ({ address, detail: undefined as string | undefined })),

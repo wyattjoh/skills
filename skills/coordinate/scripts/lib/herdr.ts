@@ -133,13 +133,18 @@ const ENV = (): Record<string, string> => ({ ...process.env }) as Record<string,
  * Run an `hc` or `herdr-app` command and return stdout, mapping failures to `HerdrError`.
  * @param argv Program and arguments.
  * @param timeoutMs Budget.
+ * @param stdin Text piped to the command, when it reads one.
  * @returns stdout.
  */
-export const herdr = Effect.fn("herdr")(function* (argv: readonly string[], timeoutMs = 30_000) {
+export const herdr = Effect.fn("herdr")(function* (
+  argv: readonly string[],
+  timeoutMs = 30_000,
+  stdin: string | undefined = undefined,
+) {
   const proc = yield* Proc;
   const command = argv.slice(0, 3).join(" ");
   const out = yield* proc
-    .run(argv, { timeoutMs, env: ENV() })
+    .run(argv, { timeoutMs, env: ENV(), ...(stdin === undefined ? {} : { stdin }) })
     .pipe(
       Effect.mapError(
         (error) => new HerdrError({ command, kind: "spawn", message: error.message }),
@@ -278,6 +283,40 @@ export const coresOn = Effect.fn("hc.coresOn")(function* (machine: string) {
 });
 
 /**
+ * Run a POSIX shell script on another Herdr machine through `hc exec`, in a login shell so the
+ * harness and git are on its PATH. A non-zero exit is a `HerdrError`, so scripts that report a
+ * finding print it and exit 0.
+ * @param machine Herdr machine name.
+ * @param script Shell script.
+ * @param timeoutS Remote timeout in seconds (at most 600).
+ * @returns stdout.
+ */
+export const execOn = Effect.fn("hc.execOn")(function* (
+  machine: string,
+  script: string,
+  timeoutS = 60,
+) {
+  return yield* herdr(
+    ["hc", "exec", "--on", machine, "--timeout", String(timeoutS), "--", "sh", "-lc", script],
+    (timeoutS + 10) * 1000,
+  );
+});
+
+/**
+ * Write a text file on another Herdr machine (atomic, missing folders made).
+ * @param machine Herdr machine name.
+ * @param path Absolute path there.
+ * @param content File text.
+ */
+export const writeFileOn = Effect.fn("hc.writeFileOn")(function* (
+  machine: string,
+  path: string,
+  content: string,
+) {
+  yield* herdr(["hc", "file", "write", "--on", machine, path, "--json"], 30_000, content);
+});
+
+/**
  * Set labels; an empty value removes one.
  * @param target Address or name.
  * @param labels Labels to set.
@@ -334,6 +373,10 @@ export type RunSpec = {
   outliveParent: boolean;
   notifyParent: boolean;
   argv: readonly string[];
+  /**
+   * Another Herdr machine to run it on; undefined runs it on this core.
+   */
+  machine: string | undefined;
 };
 
 /**
@@ -359,6 +402,7 @@ export const run = Effect.fn("hc.run")(function* (spec: RunSpec) {
     spec.name,
     "--cwd",
     spec.cwd,
+    ...(spec.machine === undefined ? [] : ["--on", spec.machine]),
     ...lineage,
     ...Object.entries(spec.labels).flatMap(([key, value]) => ["--label", `${key}=${value}`]),
     "--",
@@ -426,13 +470,24 @@ export const appDo = Effect.fn("app.do")(function* (
  * Make a space in the background holding one placeholder shell.
  * @param name Space name.
  * @param folder Folder its terminals start in.
+ * @param machine Another Herdr machine for the space to live on; undefined keeps it on this core.
+ *   Its ids then come back qualified as `machine/id`.
  * @returns Space, tab and placeholder terminal ids.
  */
-export const newSpace = Effect.fn("app.newSpace")(function* (name: string, folder: string) {
+export const newSpace = Effect.fn("app.newSpace")(function* (
+  name: string,
+  folder: string,
+  machine: string | undefined = undefined,
+) {
   return yield* decodeJson(
     Schema.Struct({ space: Schema.String, tab: Schema.String, terminal: Schema.String }),
     "herdr-app space.new",
-    yield* appDo("space.new", { name, folder, focus: false }),
+    yield* appDo("space.new", {
+      name,
+      folder,
+      focus: false,
+      ...(machine === undefined ? {} : { machine }),
+    }),
   );
 });
 

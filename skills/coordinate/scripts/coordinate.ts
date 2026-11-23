@@ -524,6 +524,10 @@ const delegateCommand = Command.make(
       "item",
       "item to file the delegate under (required from a coordinator, refused from a delegate)",
     ),
+    machine: optionalStringFlag(
+      "machine",
+      "Herdr machine to start it on: makes the worktree in the repo's recorded checkout there (with --repo)",
+    ),
   },
   (options) => {
     const brief = Option.getOrUndefined(options.brief);
@@ -567,6 +571,7 @@ const delegateCommand = Command.make(
         overBudget: options.overBudget,
         queueIfFull: options.queueIfFull,
         retryQueued: options.retryQueued,
+        machine: Option.getOrUndefined(options.machine),
       }),
     );
   },

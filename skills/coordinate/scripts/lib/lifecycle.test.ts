@@ -173,6 +173,7 @@ describe("delegate", () => {
         overBudget: false,
         queueIfFull: false,
         retryQueued: false,
+        machine: undefined,
       }),
       fake.layer,
     );
@@ -214,6 +215,7 @@ describe("delegate", () => {
           overBudget: false,
           queueIfFull: false,
           retryQueued: false,
+          machine: undefined,
         }),
         fake.layer,
       );
@@ -263,6 +265,7 @@ describe("delegate", () => {
           overBudget: false,
           queueIfFull: false,
           retryQueued: false,
+          machine: undefined,
         }),
         fake.layer,
       );
@@ -309,6 +312,7 @@ describe("delegate", () => {
           overBudget: false,
           queueIfFull: false,
           retryQueued: false,
+          machine: undefined,
         }),
         fake.layer,
       );
@@ -340,6 +344,7 @@ describe("delegate", () => {
         overBudget: false,
         queueIfFull: false,
         retryQueued: false,
+        machine: undefined,
       }),
       fake.layer,
     );
@@ -435,6 +440,7 @@ describe("launch parent", () => {
                 overBudget: false,
                 queueIfFull: false,
                 retryQueued: false,
+                machine: undefined,
               }),
               fake.layer,
             );
@@ -494,6 +500,8 @@ describe("launchInOwnSpace", () => {
         parent: undefined,
         argv: ["claude", "/coordinate tasks"],
         recordSpace: false,
+        machine: undefined,
+        shell: undefined,
       }),
       fake.layer,
     );

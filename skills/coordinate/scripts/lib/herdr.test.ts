@@ -99,6 +99,7 @@ describe("run", () => {
         name: "fix-a",
         cwd: "/w",
         labels: { "fleet.domain": "app" },
+        machine: undefined,
         parent: "t1",
         outliveParent: true,
         notifyParent: false,

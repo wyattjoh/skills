@@ -83,6 +83,11 @@ export type DelegateRef = {
   worktree: string | null;
   brief: string;
   report: string;
+  /**
+   * The Herdr machine the delegate runs on, absent for this machine; `worktree`, `brief` and
+   * `report` are then paths on that machine.
+   */
+  machine?: string;
 };
 
 /**
@@ -397,6 +402,7 @@ export const validateBacklog = (value: unknown): Validated => {
       textOrNull(`${refWhere}.worktree`, ref.worktree);
       text(`${refWhere}.brief`, ref.brief);
       text(`${refWhere}.report`, ref.report);
+      if (ref.machine !== undefined) nonEmpty(`${refWhere}.machine`, ref.machine);
     });
     nonEmpty(`${where}.createdAt`, item.createdAt);
     closed(where, item.closedAt, item.outcome, status === "done" || status === "dismissed");
