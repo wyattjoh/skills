@@ -251,7 +251,7 @@ describe("delegate", () => {
       if (saved === undefined) delete process.env.HC_TERMINAL_ID;
       else process.env.HC_TERMINAL_ID = saved;
     }
-    const copied = join(work, ".scratch", "BRIEF.md");
+    const copied = join(work, ".scratch", "spec-a", "BRIEF.md");
     expect(readFileSync(copied, "utf8")).toBe("# Brief: spec\n");
     const run = fake.calls.find((call) => call.argv[1] === "run");
     expect(run?.argv.at(-1)).toBe(

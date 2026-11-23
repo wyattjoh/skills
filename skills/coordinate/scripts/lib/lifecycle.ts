@@ -403,13 +403,16 @@ export const delegate = Effect.fn("delegate")(function* (
       if (!existsSync(cwd)) return yield* new Refused({ message: `${cwd} does not exist` });
     }
 
+    // A --repo worktree is the delegate's own; a --cwd folder may host several, so each gets a subfolder.
+    const scratch =
+      options.repo !== undefined ? join(cwd, ".scratch") : join(cwd, ".scratch", options.name);
     let brief: string | undefined;
     let message = options.message;
     const briefSource = message.kind === "brief" ? message.path : message.brief;
     if (briefSource !== undefined) {
       const source = resolve(briefSource);
       if (!existsSync(source)) return yield* new Refused({ message: `no brief at ${source}` });
-      brief = join(cwd, ".scratch", "BRIEF.md");
+      brief = join(scratch, "BRIEF.md");
       const destination = brief;
       if (real(source) !== real(destination)) {
         const preserved = yield* Effect.promise(async () => {
@@ -440,7 +443,7 @@ export const delegate = Effect.fn("delegate")(function* (
       }
       message = message.kind === "brief" ? { kind: "brief", path: brief } : { ...message, brief };
     }
-    const report = brief ? join(cwd, ".scratch", "REPORT.md") : undefined;
+    const report = brief ? join(scratch, "REPORT.md") : undefined;
     const session = crypto.randomUUID();
     const tabLabel = options.task;
     const labels: Record<string, string> = {

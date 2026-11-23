@@ -1,5 +1,5 @@
 import { afterAll, describe, expect, it } from "bun:test";
-import { mkdirSync, readFileSync, rmSync } from "node:fs";
+import { mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { Effect } from "effect";
 import { type AttachOptions, attachDelegate, detachDelegate } from "./attach.ts";
@@ -153,6 +153,33 @@ describe("item attach", () => {
         worktree: "/r/app/.claude/worktrees/fix-a",
         brief: "/r/app/.claude/worktrees/fix-a/.scratch/BRIEF.md",
         report: "/r/app/.claude/worktrees/fix-a/.scratch/REPORT.md",
+      },
+    ]);
+  });
+
+  it("records a --cwd delegate's own brief and report when its subfolder holds one", async () => {
+    const { state, cfg, path } = await started();
+    const work = join(state, "work");
+    const own = join(work, ".scratch", "fix-a");
+    mkdirSync(own, { recursive: true });
+    writeFileSync(join(own, "BRIEF.md"), "# brief\n");
+    const labels = {
+      "fleet.domain": "app",
+      "fleet.task": "fix a",
+      "fleet.session": SESSION,
+      "fleet.harness": "pi",
+      "fleet.worktree": work,
+    };
+    const fake = gitAndFake(answers(handStarted(work, { name: "fix-a", labels })));
+    await runWith(attachDelegate(cfg, options({ target: "fix-a" }), ENV), fake.layer);
+    expect(read(path).items[0].delegates).toEqual([
+      {
+        name: "fix-a",
+        session: SESSION,
+        branch: null,
+        worktree: work,
+        brief: join(own, "BRIEF.md"),
+        report: join(own, "REPORT.md"),
       },
     ]);
   });

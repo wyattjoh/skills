@@ -1,3 +1,4 @@
+import { existsSync } from "node:fs";
 import { join } from "node:path";
 import { Effect } from "effect";
 import { readDocument, recordDelegate, releaseDelegate } from "./backlog-doc.ts";
@@ -101,13 +102,21 @@ export const attachDelegate = Effect.fn("attachDelegate")(function* (
     });
 
   const place = yield* placeOf(terminal);
+  // A `delegate --cwd` start keeps its brief in a per-delegate subfolder; prefer it when present.
+  const own = place.worktree ? join(place.worktree, ".scratch", name) : undefined;
+  const scratch =
+    own && existsSync(join(own, "BRIEF.md"))
+      ? own
+      : place.worktree
+        ? join(place.worktree, ".scratch")
+        : undefined;
   const ref: DelegateRef = {
     name,
     session,
     branch: place.branch,
     worktree: place.worktree,
-    brief: place.worktree ? join(place.worktree, ".scratch", "BRIEF.md") : "",
-    report: place.worktree ? join(place.worktree, ".scratch", "REPORT.md") : "",
+    brief: scratch ? join(scratch, "BRIEF.md") : "",
+    report: scratch ? join(scratch, "REPORT.md") : "",
   };
   const item = yield* recordDelegate(config, domain, { id: options.id, ref });
   const wanted: Record<string, string> = {

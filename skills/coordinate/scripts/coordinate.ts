@@ -448,7 +448,7 @@ const delegateCommand = Command.make(
     effort: optionalStringFlag("effort", "claude --effort, or pi --thinking"),
     brief: optionalStringFlag(
       "brief",
-      "brief to copy to <worktree>/.scratch/BRIEF.md (with --skill: its boundary, stop points and report)",
+      "brief to copy to <worktree>/.scratch/BRIEF.md, or <cwd>/.scratch/<name>/BRIEF.md (with --skill: its boundary, stop points and report)",
     ),
     skill: optionalChoiceFlag(
       "skill",

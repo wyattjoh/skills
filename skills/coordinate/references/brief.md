@@ -1,6 +1,6 @@
 # Brief
 
-The brief is what a delegate reads first and the contract you verify against. Write it anywhere (your own `.scratch/` is fine) and pass it with `--brief`; `coordinate delegate` copies it to `<worktree>/.scratch/BRIEF.md`. A different existing brief there is moved beside it under a unique name and that path is printed; byte-identical briefs need no backup. Git ignores `.scratch/`. The worktree is always `<repo>/.claude/worktrees/<name>`, so you can write its absolute paths before it exists.
+The brief is what a delegate reads first and the contract you verify against. Write it anywhere (your own `.scratch/` is fine) and pass it with `--brief`; `coordinate delegate` copies it to `<worktree>/.scratch/BRIEF.md`, or for a `--cwd` start to `<cwd>/.scratch/<name>/BRIEF.md`, so delegates sharing a folder keep their own brief and report. The report path, `<absolute report path>` below, is `REPORT.md` beside the copied brief. A different existing brief there is moved beside it under a unique name and that path is printed; byte-identical briefs need no backup. Git ignores `.scratch/`. The worktree is always `<repo>/.claude/worktrees/<name>`, so you can write its absolute paths before it exists.
 
 Fill every required heading. Include Child review only when the user requested it. Quote the user where they decided something, so the delegate neither asks again nor widens it.
 
@@ -58,7 +58,7 @@ Include the child's name, terminal address and session id, rounds, final verdict
 
 ## Report
 
-Whenever you stop, write `<absolute worktree path>/.scratch/REPORT.md` with:
+Whenever you stop, write `<absolute report path>` with:
 
 - status: done, waiting on the user's yes, or stopped on a question
 - what changed: files and commits
@@ -67,7 +67,7 @@ Whenever you stop, write `<absolute worktree path>/.scratch/REPORT.md` with:
 - made outside the worktree: processes (PID, port), folders, simulators, other worktrees,
   each with how to remove it, or "nothing"
 
-Then run `bun <absolute coordinate skill path>/scripts/coordinate.ts notify "<name>: <status>, report at <absolute worktree path>/.scratch/REPORT.md"`
+Then run `bun <absolute coordinate skill path>/scripts/coordinate.ts notify "<name>: <status>, report at <absolute report path>"`
 to wake the coordinator, and end your turn with the same summary. A refused or failed notify does not
 stop you ending the turn: the coordinator's watcher still fires.
 ```

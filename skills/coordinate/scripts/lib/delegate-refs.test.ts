@@ -201,7 +201,7 @@ describe("delegate --item", () => {
 
   it("preserves a different existing --cwd brief before copying the new brief", async () => {
     const { state, cfg } = await started();
-    const scratch = join(state, ".scratch");
+    const scratch = join(state, ".scratch", "fix-a");
     mkdirSync(scratch, { recursive: true });
     const existing = join(scratch, "BRIEF.md");
     const incoming = join(state, "incoming-brief.md");
@@ -224,9 +224,53 @@ describe("delegate --item", () => {
     expect(readFileSync(existing, "utf8")).toBe("# incoming\n");
   });
 
+  it("gives two --cwd delegates in one folder their own brief and report", async () => {
+    const { state, cfg, path } = await started();
+    const work = join(state, "work");
+    mkdirSync(work);
+    const briefs = { "fix-a": join(state, "brief-a.md"), "fix-b": join(state, "brief-b.md") };
+    writeFileSync(briefs["fix-a"], "# brief a\n");
+    writeFileSync(briefs["fix-b"], "# brief b\n");
+    const runs: string[][] = [];
+    for (const name of ["fix-a", "fix-b"] as const) {
+      const fake = fakeProc(herdrAnswers(COORDINATOR));
+      const lines = await runWith(
+        delegate(
+          cfg,
+          options({
+            name,
+            cwd: work,
+            item: "i1",
+            message: { kind: "brief", path: briefs[name] },
+          }),
+        ),
+        fake.layer,
+      );
+      expect(lines.filter((line) => line.startsWith("preserved"))).toEqual([]);
+      runs.push(fake.calls.find((call) => call.argv[1] === "run")?.argv ?? []);
+    }
+    const scratch = (name: string, file: string) => join(work, ".scratch", name, file);
+    expect(readFileSync(scratch("fix-a", "BRIEF.md"), "utf8")).toBe("# brief a\n");
+    expect(readFileSync(scratch("fix-b", "BRIEF.md"), "utf8")).toBe("# brief b\n");
+    expect(runs.map((argv) => argv.at(-1))).toEqual([
+      `Read ${scratch("fix-a", "BRIEF.md")} and do what it says.`,
+      `Read ${scratch("fix-b", "BRIEF.md")} and do what it says.`,
+    ]);
+    expect(
+      read(path).items[0].delegates.map((ref: { name: string; brief: string; report: string }) => [
+        ref.name,
+        ref.brief,
+        ref.report,
+      ]),
+    ).toEqual([
+      ["fix-a", scratch("fix-a", "BRIEF.md"), scratch("fix-a", "REPORT.md")],
+      ["fix-b", scratch("fix-b", "BRIEF.md"), scratch("fix-b", "REPORT.md")],
+    ]);
+  });
+
   it("does not move an existing --cwd brief with identical content", async () => {
     const { state, cfg } = await started();
-    const scratch = join(state, ".scratch");
+    const scratch = join(state, ".scratch", "fix-a");
     mkdirSync(scratch, { recursive: true });
     const existing = join(scratch, "BRIEF.md");
     const incoming = join(state, "incoming-brief.md");
@@ -274,7 +318,7 @@ describe("delegate --item", () => {
     );
     expect(lines).toEqual([
       "started fix-a (t7)",
-      `session ${sessionOfRun(fake.calls.map((call) => call.argv))} report ${join(state, ".scratch", "REPORT.md")}`,
+      `session ${sessionOfRun(fake.calls.map((call) => call.argv))} report ${join(state, ".scratch", "fix-a", "REPORT.md")}`,
     ]);
     expect(fake.calls.filter((call) => call.argv[1] === "run").length).toBe(1);
     expect(readFileSync(path, "utf8")).toBe(before);
