@@ -18,6 +18,7 @@ export const GROUP_LABELS: Readonly<Record<ItemStatus, string>> = {
   "waiting-user": "Waiting on you",
   building: "Building",
   delegated: "Delegated",
+  "in-review": "In review",
   open: "Open",
   parked: "Parked",
   done: "Done",

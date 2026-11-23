@@ -46,6 +46,7 @@ Use `--option "<label> :: <detail>"` to store a detail; parsing splits at the fi
 | `open`         | Recorded, not started                                              |
 | `building`     | You are building it in this session                                |
 | `delegated`    | A delegate works on it                                             |
+| `in-review`    | Pushed and waiting for review; `item close` it when review passes  |
 | `waiting-user` | It waits on the user: an ask, or the integration they have to name |
 | `parked`       | Set aside on purpose                                               |
 | `done`         | Finished, with an outcome                                          |

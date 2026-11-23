@@ -27,6 +27,7 @@ export const STATUS_TONES: Readonly<Record<ItemStatus, string>> = {
   "waiting-user": "blocked",
   building: "working",
   delegated: "ansi4",
+  "in-review": "ansi5",
   open: "dim",
   parked: "muted",
   done: "ansi2",

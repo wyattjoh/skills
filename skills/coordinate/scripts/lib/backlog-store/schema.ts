@@ -10,6 +10,7 @@ export const ITEM_STATUSES = [
   "waiting-user",
   "building",
   "delegated",
+  "in-review",
   "open",
   "parked",
   "done",

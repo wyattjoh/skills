@@ -938,7 +938,7 @@ export const notifyCoordinator = Effect.fn("notifyCoordinator")(function* (
  * The statuses `end --item-status` sets: where an item rests when its last delegate is gone.
  * Closing is `item close`, and `delegated` needs a delegate.
  */
-export const NEXT_STATUSES = ["waiting-user", "building", "open", "parked"] as const;
+export const NEXT_STATUSES = ["waiting-user", "building", "in-review", "open", "parked"] as const;
 
 const statusUpdate = (id: string, status: ItemStatus, now: string): ItemUpdate => ({
   id,

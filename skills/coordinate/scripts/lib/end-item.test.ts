@@ -127,7 +127,7 @@ describe("end of an item's last delegate", () => {
     const fake = fakeProc(answers({ t2: "s-1" }));
     const closed = await failureOf(endDelegate(cfg, "fix-a", false, "done"), fake.layer);
     expect(messageOf(closed)).toBe(
-      "--item-status done is not one of waiting-user, building, open, parked; close an item with coordinate item close",
+      "--item-status done is not one of waiting-user, building, in-review, open, parked; close an item with coordinate item close",
     );
     const waiting = await failureOf(endDelegate(cfg, "fix-a", false, "waiting-user"), fake.layer);
     expect(messageOf(waiting)).toBe(

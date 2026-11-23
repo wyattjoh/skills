@@ -232,16 +232,18 @@ describe("idleEvents", () => {
     expect(saved.t1?.next).toBe(start + 45 * 60_000);
   });
 
-  it("suppresses parked and asked waiting-user items, but not waiting-user without an ask", () => {
+  it("suppresses parked, in-review and asked waiting-user items, but not waiting-user without an ask", () => {
     const current = {
       t1: { name: "parked", status: "idle", turn: 1 },
       t2: { name: "asked", status: "done", turn: 1 },
       t3: { name: "unasked", status: "idle", turn: 1 },
+      t4: { name: "reviewed", status: "done", turn: 1 },
     };
     const refs = {
       t1: { session: "s1", statusMs: start },
       t2: { session: "s2", statusMs: start },
       t3: { session: "s3", statusMs: start },
+      t4: { session: "s4", statusMs: start },
     };
     const ask = {
       question: "Which option?",
@@ -259,6 +261,7 @@ describe("idleEvents", () => {
           tracked("parked", null, "s1"),
           tracked("waiting-user", ask, "s2"),
           tracked("waiting-user", null, "s3"),
+          tracked("in-review", null, "s4"),
         ],
         {},
         start,

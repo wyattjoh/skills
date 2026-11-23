@@ -380,6 +380,7 @@ test("builds the dismiss call and says which items can be dismissed", () => {
     "waiting-user",
     "building",
     "delegated",
+    "in-review",
     "open",
     "parked",
     "done",
@@ -389,7 +390,7 @@ test("builds the dismiss call and says which items can be dismissed", () => {
     statuses.map((status) =>
       canDismissItem({ ...emptyItem, status } as Parameters<typeof canDismissItem>[0]),
     ),
-  ).toEqual([true, true, true, true, true, false, false]);
+  ).toEqual([true, true, true, true, true, true, false, false]);
 });
 
 const LEGACY: HarnessSelection = { enabled: ["pi", "claude"], default: null };

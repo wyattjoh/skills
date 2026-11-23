@@ -1473,6 +1473,27 @@ test("tones each group header by its status with the fixture's colors", async ()
   expect([title("item-i7"), title("item-i8")]).toEqual(["#f5f5f5", "#737373"]);
 });
 
+test("groups an in-review item after Delegated, toned ansi5", async () => {
+  focusDomain("alpha");
+  host.files.set(DOC, JSON.stringify(add(everyStatus(), "Await review", { status: "in-review" })));
+  const { render } = await mount();
+  const root = render();
+  expect(ids(root, "group-").filter((id) => !id.endsWith("-toggle"))).toEqual([
+    "group-building",
+    "group-delegated",
+    "group-in-review",
+    "group-open",
+    "group-parked",
+    "group-done",
+    "group-dismissed",
+  ]);
+  const toggle = get(root, "group-in-review-toggle");
+  expect(text(toggle)).toBe("In review 1");
+  expect((toggle.nodes[0] as { styles: Record<string, unknown> }).styles.text_color).toBe(
+    "#f97316",
+  );
+});
+
 test("refreshes a same-size replacement when the watch reports the document path", async () => {
   focusDomain("alpha");
   const oldBacklog = { ...emptyBacklog("alpha", null), focus: "Old focus" };

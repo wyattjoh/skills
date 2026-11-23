@@ -233,7 +233,10 @@ export const idleEvents = (
     const suppressed =
       associated.length > 0 &&
       associated.every(
-        (item) => item.status === "parked" || (item.status === "waiting-user" && item.ask !== null),
+        (item) =>
+          item.status === "parked" ||
+          item.status === "in-review" ||
+          (item.status === "waiting-user" && item.ask !== null),
       );
     if (suppressed) {
       delete reminders[address];

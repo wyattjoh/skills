@@ -30,7 +30,7 @@ const ELIGIBLE_STATUSES: ReadonlySet<ItemStatus> = new Set(["open", "building", 
 /**
  * Whether a backlog item may receive a queued delegate wake.
  * @param status Item status.
- * @returns True for active work, false while waiting on the user or parked.
+ * @returns True for active work, false while waiting on the user, in review or parked.
  */
 export const capacityItemEligible = (status: ItemStatus): boolean => ELIGIBLE_STATUSES.has(status);
 

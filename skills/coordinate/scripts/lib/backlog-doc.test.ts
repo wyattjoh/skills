@@ -465,7 +465,7 @@ const update = (fields: Partial<Parameters<typeof itemUpdate>[2]>) => ({
 });
 
 describe("item update", () => {
-  it("sets open, building and parked, printing the item", async () => {
+  it("sets open, building, in-review and parked, printing the item", async () => {
     const { cfg, path } = await started();
     await runWith(itemAdd(cfg, "app", { title: "a", json: false, now: NOW }));
     expect(await runWith(itemUpdate(cfg, "app", update({ status: "building" })))).toEqual([
@@ -475,8 +475,21 @@ describe("item update", () => {
     const printed = await runWith(itemUpdate(cfg, "app", update({ status: "parked", json: true })));
     expect(JSON.parse(printed.join("\n"))).toEqual(read(path).items[0]);
     expect(read(path).items[0].status).toBe("parked");
+    await runWith(itemUpdate(cfg, "app", update({ status: "in-review" })));
+    expect(read(path).items[0].status).toBe("in-review");
     await runWith(itemUpdate(cfg, "app", update({ status: "open" })));
     expect(read(path).items[0].status).toBe("open");
+  });
+
+  it("lists an in-review item as open, ahead of open items, in backlog show", async () => {
+    const { cfg } = await started();
+    await runWith(itemAdd(cfg, "app", { title: "a", json: false, now: NOW }));
+    await runWith(itemAdd(cfg, "app", { title: "b", json: false, now: NOW }));
+    await runWith(itemUpdate(cfg, "app", update({ id: "i2", status: "in-review" })));
+    const shown = (await runWith(showBacklog(cfg, "app", false))).join("\n");
+    expect(shown.split("## Open\n\n")[1]?.split("\n\n")[0]).toBe(
+      ["- i2 [in-review] b", "- i1 [open] a"].join("\n"),
+    );
   });
 
   it("closes through done or dismissed with an outcome, and reopening clears it", async () => {
