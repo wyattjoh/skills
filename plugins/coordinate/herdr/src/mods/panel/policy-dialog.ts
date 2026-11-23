@@ -5,10 +5,10 @@
 // its pieces rather than importing them. The editor's state and CLI calls live in the panel View.
 import { div, svg } from "gpui-kit";
 import type { Context, Element, FocusHandle } from "gpui-kit";
-import { Popover, h_flex, v_flex } from "gpui-base";
+import { h_flex, v_flex } from "gpui-base";
 import { HERDR_ICONS, MENU, menuPanel, menuRow } from "@wyattjoh/herdr-ui";
 import type { Theme } from "@wyattjoh/herdr-ui";
-import { HARNESS_DIALOG, HERDR_SETTINGS_ICON } from "./look.ts";
+import { HARNESS_DIALOG } from "./look.ts";
 import type { DelegateHarness, HarnessPolicyState } from "./model.ts";
 
 /**
@@ -32,7 +32,6 @@ export type HarnessPolicyEditorModel = {
   setInherit: (inherit: boolean, cx: Context) => void;
   reload: (cx: Context) => void;
   close: (cx: Context) => void;
-  openHerdrSettings: (cx: Context) => void;
 };
 
 const HARNESS_LABELS: Readonly<Record<DelegateHarness, string>> = {
@@ -40,7 +39,6 @@ const HARNESS_LABELS: Readonly<Record<DelegateHarness, string>> = {
   claude: "Claude Code",
 };
 
-const FOLDER_ICON = "mods/workspace-chrome/folder.svg";
 // A transparent fill, so a nav entry that is not selected keeps its layout without a color.
 const CLEAR = "#00000000";
 // A control that cannot be used right now keeps its place, dimmed.
@@ -80,6 +78,9 @@ const SETTINGS = {
   actionRadius: 7,
   actionText: 13,
   menuMaxHeight: 240,
+  scopeMenuWidth: 220,
+  scopeMenuTop: 58,
+  scopeLabelWidth: 180,
 } as const;
 
 // The uppercase dim label that opens the right pane.
@@ -246,55 +247,76 @@ const navEntry = (t: Theme, id: string, icon: string, label: string, on: boolean
         .child(label),
     );
 
-// The domain picker: a sidebar entry that opens a menu of every domain.
-const domainPicker = (t: Theme, model: HarnessPolicyEditorModel): Element => {
-  const trigger = navEntry(
-    t,
-    "harness-policy-domain-trigger",
-    FOLDER_ICON,
-    model.domain ?? "Domain",
-    model.domain !== undefined,
-  )
-    .on_click((_event, cx) => model.setDomainMenuOpen(!model.domainMenuOpen, cx))
+// The scope control: a bordered button at the pane's top right showing the scope shown. One click
+// opens the menu below it. The menu is plain state, not a Popover: a Popover also reacts to the
+// press on its trigger, and a toggle on the click then closed it again on release.
+const scopeTrigger = (t: Theme, model: HarnessPolicyEditorModel): Element =>
+  h_flex()
+    .id("harness-policy-scope-trigger")
+    .flex_none()
+    .gap(8)
+    .items_center()
+    .px(SETTINGS.actionPaddingX)
+    .py(SETTINGS.actionPaddingY)
+    .rounded(SETTINGS.actionRadius)
+    .border_1()
+    .border_color(t.border)
+    .bg(t.raised ?? t.selected)
+    .text_size(SETTINGS.actionText)
+    .text_color(t.foreground)
+    .cursor_pointer()
+    .hover((style) => style.bg(t.hover))
+    .on_click((_event, cx) => model.setDomainMenuOpen(true, cx))
+    .child(
+      div()
+        .max_w(SETTINGS.scopeLabelWidth)
+        .truncate()
+        .child(model.scope === "global" ? "Global" : (model.domain ?? "Global")),
+    )
     .child(
       svg(HERDR_ICONS.chevronDown)
         .size(SETTINGS.entryIcon - 3)
         .text_color(t.dim),
     );
-  return Popover.new("harness-policy-domain-popover")
-    .id("harness-policy-domain-popover")
-    .open(model.domainMenuOpen)
-    .on_open_change((open, cx) => model.setDomainMenuOpen(open, cx))
-    .trigger(trigger)
-    .when(model.domainMenuOpen, (el) =>
-      el.content(
-        menuPanel(t, SETTINGS.navWidth - 2 * SETTINGS.navPadding, MENU.padding)
-          .id("harness-policy-domain-options")
-          .role("menu")
-          .accessibility_label("Domain")
-          .max_h(SETTINGS.menuMaxHeight)
-          .overflow_y_scroll()
-          .children(
-            model.domains.length === 0
-              ? [div().px(SETTINGS.entryPaddingX).py(6).text_color(t.dim).child("No backlogs yet")]
-              : model.domains.map((name, index) =>
-                  menuRow(t, {
-                    id: `harness-policy-domain-${name}`,
-                    label: name,
-                    selected: false,
-                    checked: model.domain === name,
-                    onClick: (cx) => model.selectDomain(name, cx),
-                  })
-                    .role("menu_item")
-                    .set_position(index + 1, model.domains.length),
-                ),
-          ),
-      ),
-    );
-};
 
-// The sidebar: the title, the Global entry, the domain picker, and Herdr Settings at the bottom.
-const sidebar = (t: Theme, model: HarnessPolicyEditorModel): Element =>
+// The scope menu, over the pane: Global first, then every backlog domain. A backdrop under it
+// catches a click anywhere else and closes it.
+const scopeMenu = (t: Theme, model: HarnessPolicyEditorModel): Element[] => [
+  div()
+    .id("harness-policy-scope-backdrop")
+    .absolute()
+    .inset_0()
+    .on_click((_event, cx) => model.setDomainMenuOpen(false, cx)),
+  menuPanel(t, SETTINGS.scopeMenuWidth, MENU.padding)
+    .id("harness-policy-scope-options")
+    .role("menu")
+    .accessibility_label("Scope")
+    .absolute()
+    .top(SETTINGS.scopeMenuTop)
+    .right(SETTINGS.panePaddingX)
+    .max_h(SETTINGS.menuMaxHeight)
+    .overflow_y_scroll()
+    .children(
+      [undefined, ...model.domains].map((name, index) =>
+        menuRow(t, {
+          id:
+            name === undefined
+              ? "harness-policy-scope-global"
+              : `harness-policy-scope-domain-${name}`,
+          label: name ?? "Global",
+          selected: false,
+          checked: model.domain === name,
+          onClick: (cx) =>
+            name === undefined ? model.selectGlobal(cx) : model.selectDomain(name, cx),
+        })
+          .role("menu_item")
+          .set_position(index + 1, model.domains.length + 1),
+      ),
+    ),
+];
+
+// The sidebar: the title and its one section, Harness.
+const sidebar = (t: Theme): Element =>
   v_flex()
     .id("harness-policy-nav")
     .flex_none()
@@ -314,22 +336,7 @@ const sidebar = (t: Theme, model: HarnessPolicyEditorModel): Element =>
         .text_color(t.foreground)
         .child("Backlog"),
     )
-    .child(
-      navEntry(
-        t,
-        "harness-policy-nav-global",
-        HERDR_SETTINGS_ICON,
-        "Global",
-        model.scope === "global",
-      ).on_click((_event, cx) => model.selectGlobal(cx)),
-    )
-    .child(domainPicker(t, model))
-    .child(div().flex_1())
-    .child(
-      settingsAction(t, "harness-policy-herdr-settings", "Herdr Settings", (cx) =>
-        model.openHerdrSettings(cx),
-      ),
-    );
+    .child(navEntry(t, "harness-policy-nav-harness", HERDR_ICONS.terminal, "Harness", true));
 
 // The failure line and its Reload button, inline in the pane.
 const failureRows = (t: Theme, message: string, model: HarnessPolicyEditorModel): Element[] => [
@@ -483,6 +490,7 @@ export const harnessPolicyDialog = (t: Theme, model: HarnessPolicyEditorModel): 
     .id("harness-policy-dialog")
     .key_context("modal")
     .track_focus(model.focus)
+    .relative()
     .w_full()
     .h(HARNESS_DIALOG.height)
     .min_h(0)
@@ -493,7 +501,7 @@ export const harnessPolicyDialog = (t: Theme, model: HarnessPolicyEditorModel): 
       if (model.domainMenuOpen) model.setDomainMenuOpen(false, cx);
       else model.close(cx);
     })
-    .child(sidebar(t, model))
+    .child(sidebar(t))
     .child(
       v_flex()
         .id("harness-policy-pane")
@@ -504,11 +512,17 @@ export const harnessPolicyDialog = (t: Theme, model: HarnessPolicyEditorModel): 
         .py(SETTINGS.panePaddingY)
         .overflow_y_scroll()
         .child(
-          heading(
-            t,
-            "harness-policy-title",
-            model.scope === "global" ? "Global" : (model.domain ?? "Global"),
-          ),
+          h_flex()
+            .id("harness-policy-pane-head")
+            .items_center()
+            .gap(SETTINGS.rowGap)
+            .child(
+              div()
+                .flex_1()
+                .child(heading(t, "harness-policy-title", "Harness")),
+            )
+            .child(scopeTrigger(t, model)),
         )
         .children(paneRows(t, model)),
-    );
+    )
+    .when(model.domainMenuOpen, (el) => el.children(scopeMenu(t, model)));

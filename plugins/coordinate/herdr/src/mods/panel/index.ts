@@ -16,7 +16,7 @@ import {
   theme,
   watchFolder,
 } from "herdr";
-import { closeOverlay, openHerdrSettingsPage, openOverlay } from "./overlay.ts";
+import { closeOverlay, openOverlay } from "./overlay.ts";
 import type { FolderWatch } from "herdr";
 import {
   FOLDED_BY_DEFAULT,
@@ -1599,12 +1599,6 @@ export default class Panel extends View {
     cx.notify();
   }
 
-  // The dialog's Herdr Settings button: close the dialog, then open Herdr's own settings.
-  openHerdrSettings() {
-    this.closePolicyDialog();
-    openHerdrSettingsPage();
-  }
-
   runHarnessPolicyMutation(
     domain: string | undefined,
     command: { command: string; args: string[] },
@@ -1666,7 +1660,6 @@ export default class Panel extends View {
       setInherit: (inherit, cx) => this.setHarnessPolicyInherit(domain, inherit, cx),
       reload: (cx) => this.reloadHarnessPolicy(domain, cx),
       close: () => this.closePolicyDialog(),
-      openHerdrSettings: () => this.openHerdrSettings(),
     };
   }
 

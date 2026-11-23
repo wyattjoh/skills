@@ -44,7 +44,6 @@ setAnswerTextareaTestApi({
 // The shared renderer's herdr mock has no overlays, so record them through the overlay module.
 const overlays: { spec: unknown; id: string }[] = [];
 const closedOverlays: string[] = [];
-const herdrSettingsOpened = { count: 0 };
 mock.module("./overlay.ts", () => ({
   openOverlay: (spec: unknown) => {
     const id = `overlay-${overlays.length + 1}`;
@@ -54,9 +53,6 @@ mock.module("./overlay.ts", () => ({
   closeOverlay: (id: string) => {
     closedOverlays.push(id);
     return null;
-  },
-  openHerdrSettingsPage: () => {
-    herdrSettingsOpened.count += 1;
   },
 }));
 const { theme } = await import("herdr");
@@ -123,7 +119,6 @@ beforeEach(() => {
   useRenderer({});
   overlays.length = 0;
   closedOverlays.length = 0;
-  herdrSettingsOpened.count = 0;
   textareaAutoGrow = undefined;
 });
 
@@ -3744,7 +3739,7 @@ test("the Global pane lists enabled harnesses as switches and the default as a s
   setPolicyOutput(policyOutput({ revision: 4 }));
   const { render } = await mountDialog(undefined);
   const root = render();
-  expect(text(get(root, "harness-policy-title"))).toBe("GLOBAL");
+  expect(text(get(root, "harness-policy-pane-head"))).toBe("HARNESS Global");
   expect(text(get(root, "harness-policy-source"))).toBe("Legacy defaults");
   expect(ids(root, "harness-policy-row-")).toEqual([
     "harness-policy-row-enabled",
@@ -3812,7 +3807,7 @@ test("a domain pane starts inherited: Inherit global is on and the other rows ar
   setPolicyOutput(policyOutput({ revision: 7, domain: "alpha" }));
   const { render } = await mountDialog("alpha");
   const root = render();
-  expect(text(get(root, "harness-policy-title"))).toBe("ALPHA");
+  expect(text(get(root, "harness-policy-pane-head"))).toBe("HARNESS alpha");
   expect(text(get(root, "harness-policy-source"))).toBe("Inherited from legacy defaults");
   expect(ids(root, "harness-policy-row-")).toEqual([
     "harness-policy-row-inherit",
@@ -3933,45 +3928,81 @@ test("the dialog reloads when the state-directory watcher sees the policy file",
   expect(get(root, "harness-policy-default-claude").styles.bg).toBe(theme().accent);
 });
 
-test("the sidebar lists Global and a domain picker with every domain, and selecting one shows its pane", async () => {
+test("the sidebar has the title and one Harness section, and the pane's scope dropdown lists Global then every domain", async () => {
   host.files.set(DOC, JSON.stringify(emptyBacklog("alpha", null)));
   host.files.set(`${STATE}/backlogs/beta.json`, JSON.stringify(emptyBacklog("beta", null)));
   // The fake host answers every exec alike, so the listing is read before any policy output is set.
   const { ctx, render, view } = await mountDialog(undefined);
   expect(view.policyDomains).toEqual(["alpha", "beta"]);
   let root = render();
-  expect(text(get(root, "harness-policy-nav"))).toBe("Backlog Global Domain Herdr Settings");
+  expect(text(get(root, "harness-policy-nav"))).toBe("Backlog Harness");
   expect(get(root, "harness-policy-nav").styles.w).toBe(190);
-  expect(get(root, "harness-policy-nav-global").styles.bg).toBe(theme().raised);
-  get(root, "harness-policy-domain-trigger").click!({}, ctx.cx);
+  expect(get(root, "harness-policy-nav-harness").styles.bg).toBe(theme().raised);
+  expect(text(get(root, "harness-policy-pane-head"))).toBe("HARNESS Global");
+  expect(ids(root, "harness-policy-scope-")).toEqual(["harness-policy-scope-trigger"]);
+  get(root, "harness-policy-scope-trigger").click!({}, ctx.cx);
   root = render();
-  expect(ids(root, "harness-policy-domain-")).toContain("harness-policy-domain-alpha");
-  expect(
-    ids(root, "harness-policy-domain-").filter(
-      (id) => !id.includes("-trigger") && !id.includes("-popover") && !id.includes("-options"),
-    ),
-  ).toEqual(["harness-policy-domain-alpha", "harness-policy-domain-beta"]);
+  expect(ids(root, "harness-policy-scope-")).toEqual([
+    "harness-policy-scope-trigger",
+    "harness-policy-scope-backdrop",
+    "harness-policy-scope-options",
+    "harness-policy-scope-global",
+    "harness-policy-scope-domain-alpha",
+    "harness-policy-scope-domain-beta",
+  ]);
   setPolicyOutput(policyOutput({ revision: 1, domain: "beta" }));
-  get(root, "harness-policy-domain-beta").click!({}, ctx.cx);
+  get(root, "harness-policy-scope-domain-beta").click!({}, ctx.cx);
   await settle();
   root = render();
-  expect(text(get(root, "harness-policy-title"))).toBe("BETA");
-  expect(text(get(root, "harness-policy-domain-trigger"))).toBe("beta");
-  expect(get(root, "harness-policy-nav-global").styles.bg).toBe("#00000000");
+  expect(ids(root, "harness-policy-scope-")).toEqual(["harness-policy-scope-trigger"]);
+  expect(text(get(root, "harness-policy-pane-head"))).toBe("HARNESS beta");
   expect(policyWrites().at(-1)).toEqual(showArgs("beta"));
-  get(root, "harness-policy-nav-global").click!({}, ctx.cx);
+  get(root, "harness-policy-scope-trigger").click!({}, ctx.cx);
   setPolicyOutput(policyOutput({ revision: 1 }));
+  get(render(), "harness-policy-scope-global").click!({}, ctx.cx);
   await settle();
-  expect(text(get(render(), "harness-policy-title"))).toBe("GLOBAL");
+  expect(text(get(render(), "harness-policy-pane-head"))).toBe("HARNESS Global");
 });
 
-test("Escape closes the domain menu first, then the dialog, and the dialog takes the keyboard", async () => {
+test("one click opens the scope dropdown and it stays open until a choice, Escape or a click outside", async () => {
+  host.files.set(DOC, JSON.stringify(emptyBacklog("alpha", null)));
+  setPolicyOutput(policyOutput({ revision: 2 }));
+  const { ctx, view, render } = await mountDialog(undefined);
+  const menuIds = () => ids(render(), "harness-policy-scope-options");
+
+  // The trigger reacts to its click alone. A Popover also reports a change from the press on its
+  // trigger, and that second toggle closed the menu again when the button was released.
+  const trigger = get(render(), "harness-policy-scope-trigger");
+  expect(trigger.styles.on_open_change).toBe(undefined);
+  trigger.click!({}, ctx.cx);
+  expect(view.policyDomainMenuOpen).toBe(true);
+  for (let frame = 0; frame < 3; frame += 1)
+    expect(menuIds()).toEqual(["harness-policy-scope-options"]);
+  ctx.tick(30_000);
+  await settle();
+  expect(menuIds()).toEqual(["harness-policy-scope-options"]);
+  trigger.click!({}, ctx.cx);
+  expect(view.policyDomainMenuOpen).toBe(true);
+
+  get(render(), "harness-policy-scope-backdrop").click!({}, ctx.cx);
+  expect(menuIds()).toEqual([]);
+  expect(closedOverlays).toEqual([]);
+
+  get(render(), "harness-policy-scope-trigger").click!({}, ctx.cx);
+  get(render(), "harness-policy-scope-global").click!({}, ctx.cx);
+  expect(menuIds()).toEqual([]);
+  expect(view.harnessPolicyBusy).toBe(false);
+  // The slow refresh read the policy again; nothing wrote it.
+  expect(policyWrites().map((args) => args[1])).toEqual(["show", "show"]);
+});
+
+test("Escape closes the scope dropdown first, then the dialog, and the dialog takes the keyboard", async () => {
   host.files.set(DOC, JSON.stringify(emptyBacklog("alpha", null)));
   setPolicyOutput(policyOutput({ revision: 2 }));
   const { ctx, view, focusHandles, render } = await mountDialog(undefined);
   expect(view.policyDialogFocus?.is_focused()).toBe(true);
   expect(focusHandles.length).toBe(1);
-  get(render(), "harness-policy-domain-trigger").click!({}, ctx.cx);
+  get(render(), "harness-policy-scope-trigger").click!({}, ctx.cx);
   const escape = () =>
     (
       get(render(), "harness-policy-dialog").styles.on_key_down as (
@@ -3984,14 +4015,6 @@ test("Escape closes the domain menu first, then the dialog, and the dialog takes
   expect(closedOverlays).toEqual([]);
   escape();
   expect(closedOverlays).toEqual(["overlay-1"]);
-});
-
-test("Herdr Settings closes the dialog and opens Herdr's settings", async () => {
-  setPolicyOutput(policyOutput({ revision: 2 }));
-  const { ctx, render } = await mountDialog(undefined);
-  get(render(), "harness-policy-herdr-settings").click!({}, ctx.cx);
-  expect(closedOverlays).toEqual(["overlay-1"]);
-  expect(herdrSettingsOpened.count).toBe(1);
 });
 
 test("the dialog is Finbar-sized and drawn as a sidebar beside a scrolling pane", async () => {
@@ -4094,7 +4117,7 @@ test("the opener's spec round-trips through props() into the dialog copy", async
   const root = dialog.render();
   expect(ids(root, "harness-policy-dialog")).toEqual(["harness-policy-dialog"]);
   expect(ids(root, "toolbar")).toEqual([]);
-  expect(text(get(root, "harness-policy-title"))).toBe("ALPHA");
+  expect(text(get(root, "harness-policy-pane-head"))).toBe("HARNESS alpha");
   expect(text(get(root, "harness-policy-source"))).toBe("Inherited from legacy defaults");
 });
 
