@@ -54,6 +54,7 @@ import {
 } from "./harness.ts";
 import * as hc from "./herdr.ts";
 import { defaultStop, scanProcesses, type StopOptions, teardownEnded } from "./processes.ts";
+import { countResume, readSession } from "./sessions.ts";
 import { armWatcher, WATCHER_DOMAIN_LABEL, watcherInfoLine } from "./watch-terminal.ts";
 import {
   capacityItemEligible,
@@ -1011,6 +1012,7 @@ export const endDelegate = Effect.fn("endDelegate")(function* (
       if (!dry.ok) return yield* new Refused({ message: dry.reason });
     }
   }
+  const sessionState = yield* readSession(config.stateDir, session);
   const record: EndedRecord = {
     name: terminal.name ?? terminal.address,
     task: terminal.labels[L.task] ?? null,
@@ -1029,6 +1031,8 @@ export const endDelegate = Effect.fn("endDelegate")(function* (
     ended_at: new Date().toISOString(),
     quiet_since: terminal.statusMs ? new Date(terminal.statusMs).toISOString() : null,
     space: terminal.labels[L.space] !== undefined,
+    verdict: sessionState.verdict,
+    resumes: sessionState.resumes,
   };
   const path = yield* writeEnded(config.stateDir, record);
   // Read the terminal's process tree while it still has one: once it ends, survivors move to launchd.
@@ -1187,8 +1191,9 @@ export const resumeDelegate = Effect.fn("resumeDelegate")(function* (
       message: `${name} did not show an agent status in ${launched.address} within 60s; read it with hc read ${launched.address}`,
     });
   yield* removeEnded(found.path);
+  const counted = yield* countResume(config.stateDir, record.session);
   return [
-    `resumed ${name} in ${launched.address}`,
+    `resumed ${name} in ${launched.address} (resume ${counted.resumes} of session ${record.session})`,
     `send it what arrived: coordinate send ${name} "<message>"`,
   ];
 });

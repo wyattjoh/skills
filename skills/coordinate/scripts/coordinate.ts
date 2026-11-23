@@ -52,7 +52,8 @@ import {
   start,
 } from "./lib/lifecycle.ts";
 import { Proc } from "./lib/proc.ts";
-import { domainRepos, domainStatus } from "./lib/status.ts";
+import { domainRepos, domainStatus, domainStatusJson } from "./lib/status.ts";
+import { verifyDelegate } from "./lib/sessions.ts";
 import { renameDomain } from "./lib/rename.ts";
 import { watch } from "./lib/watch.ts";
 import {
@@ -671,6 +672,37 @@ const resumeCommand = Command.make(
   ),
 );
 
+const verifyCommand = Command.make(
+  "verify",
+  {
+    target: argument("delegate", "delegate name or address, live or ended"),
+    ok: booleanFlag("ok", "the delegate's work verified clean"),
+    problem: optionalStringFlag(
+      "problem",
+      "why verification found a problem (a crossed stop point, a bad review verdict, work outside the brief)",
+    ),
+    json: booleanFlag("json", "print the session's verdict and resume count as JSON"),
+  },
+  (options) =>
+    execute((config) => {
+      const problem = Option.getOrUndefined(options.problem);
+      if (options.ok === (problem !== undefined))
+        return Effect.fail(
+          new Refused({ message: 'pass exactly one of --ok or --problem "<why>"' }),
+        );
+      return verifyDelegate(
+        config,
+        options.target,
+        problem === undefined ? { result: "ok" } : { result: "problem", reason: problem },
+        options.json,
+      );
+    }),
+).pipe(
+  Command.withDescription(
+    "record the verify verdict for a settled delegate's session: --ok, or --problem with why",
+  ),
+);
+
 const statusCommand = Command.make(
   "status",
   {
@@ -681,12 +713,19 @@ const statusCommand = Command.make(
       "verbose",
       "include full answered-ask details in the rendered backlog (with --resume)",
     ),
+    json: booleanFlag(
+      "json",
+      "print live and ended delegates, with each session's verdict and resume count, as JSON",
+    ),
   },
   (options) =>
     execute(
       (config) =>
         Effect.gen(function* () {
           const domain = yield* resolveDomain(Option.getOrUndefined(options.domain));
+          if (options.json && options.resume)
+            return yield* new Refused({ message: "--json does not combine with --resume" });
+          if (options.json) return yield* domainStatusJson(config, domain);
           const owner = process.env.HC_TERMINAL_ID;
           if (options.resume && owner) yield* readDocument(config, domain);
           const watcher =
@@ -1718,6 +1757,7 @@ const program = Command.make("coordinate")
       notifyCommand,
       endCommand,
       resumeCommand,
+      verifyCommand,
       statusCommand,
       backlogCommand,
       harnessPolicyCommand,

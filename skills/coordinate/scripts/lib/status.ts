@@ -7,6 +7,7 @@ import { L, type Delegate, members, readEnded } from "./fleet.ts";
 import { harnessPolicyStatus } from "./harness-policy.ts";
 import { currentBranch, defaultBases, mainCheckout } from "./git.ts";
 import { requireBacklog } from "./lifecycle.ts";
+import { readSession, type SessionState } from "./sessions.ts";
 import { branchState, type RepoPrs, repoPullRequests } from "./prs.ts";
 import { watcherInfo, watcherInfoLine, type WatcherInfo } from "./watch-terminal.ts";
 
@@ -66,6 +67,66 @@ export const domainRepos = Effect.fn("domainRepos")(function* (config: Config, d
   });
   const adjacent = yield* checkouts(backlog.boundary.adjacent);
   return (yield* checkouts(backlog.boundary.owned)).filter((repo) => !adjacent.includes(repo));
+});
+
+/**
+ * What status adds for a session that was verified or resumed, or "" for neither.
+ * @param state Session state.
+ * @returns Text such as " · problem: why · resumed 2x".
+ */
+const sessionNote = (state: SessionState): string => {
+  const verdict =
+    state.verdict === null
+      ? ""
+      : state.verdict.result === "ok"
+        ? " · verified ok"
+        : ` · problem: ${state.verdict.reason ?? ""}`;
+  return `${verdict}${state.resumes > 0 ? ` · resumed ${state.resumes}x` : ""}`;
+};
+
+/**
+ * The domain's live and ended delegates as JSON, each with its session's verify verdict and resume
+ * count. Polls no forge.
+ * @param config Config.
+ * @param domain Domain.
+ * @returns One line of JSON.
+ */
+export const domainStatusJson = Effect.fn("domainStatusJson")(function* (
+  config: Config,
+  domain: string,
+) {
+  yield* requireBacklog(config, domain);
+  const delegates = [];
+  for (const delegate of yield* members(domain, yield* refSessions(config, domain))) {
+    const state = yield* readSession(config.stateDir, delegate.session);
+    delegates.push({
+      name: delegate.name,
+      address: delegate.address,
+      status: delegate.status ?? null,
+      session: delegate.session,
+      task: delegate.task,
+      cwd: delegate.cwd,
+      branch: delegate.labels[L.branch] ?? null,
+      verdict: state.verdict,
+      resumes: state.resumes,
+    });
+  }
+  const ended = [];
+  for (const { record } of (yield* readEnded(config.stateDir)).records) {
+    if (record.domain !== domain) continue;
+    const state = yield* readSession(config.stateDir, record.session);
+    ended.push({
+      name: record.name,
+      session: record.session,
+      task: record.task ?? null,
+      cwd: record.cwd,
+      branch: record.branch ?? null,
+      ended_at: record.ended_at,
+      verdict: state.verdict,
+      resumes: state.resumes,
+    });
+  }
+  return [JSON.stringify({ domain, delegates, ended }, null, 2)];
 });
 
 /**
@@ -179,8 +240,9 @@ export const domainStatus = Effect.fn("domainStatus")(function* (
     const repo = delegateRepos.get(delegate);
     const branch = delegate.labels["fleet.branch"] ?? (yield* currentBranch(delegate.cwd));
     const info = yield* describe(repo, branch, delegate.status, delegate.labels[L.base]);
+    const note = sessionNote(yield* readSession(config.stateDir, delegate.session));
     lines.push(
-      `  ${delegate.name} ${delegate.address} ${delegate.status ?? "no status"} ${age(delegate.statusMs, nowMs)}${delegate.byLabel ? "" : " (by item ref)"} · ${info.text} · next: ${info.next}`,
+      `  ${delegate.name} ${delegate.address} ${delegate.status ?? "no status"} ${age(delegate.statusMs, nowMs)}${delegate.byLabel ? "" : " (by item ref)"} · ${info.text}${note} · next: ${info.next}`,
     );
   }
   for (const { record } of ended) {
@@ -192,8 +254,9 @@ export const domainStatus = Effect.fn("domainStatus")(function* (
       record.base_sha ?? undefined,
     );
     const gone = existsSync(record.cwd) ? "" : " · folder gone (coordinate sweep prune-ended)";
+    const note = sessionNote(yield* readSession(config.stateDir, record.session));
     lines.push(
-      `  ${record.name} ended ${record.ended_at.slice(0, 10)} · ${info.text}${gone} · resume: coordinate resume ${record.name}`,
+      `  ${record.name} ended ${record.ended_at.slice(0, 10)} · ${info.text}${note}${gone} · resume: coordinate resume ${record.name}`,
     );
   }
   const live = new Set(delegates.map((delegate) => delegate.session));

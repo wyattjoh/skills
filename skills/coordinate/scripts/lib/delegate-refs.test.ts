@@ -405,8 +405,9 @@ describe("delegate --item", () => {
       resumeDelegate(cfg, "fix-a", false),
       fakeProc(herdrAnswers(COORDINATOR)).layer,
     );
+    const session = read(path).items[0].delegates[0].session;
     expect(lines).toEqual([
-      "resumed fix-a in t7",
+      `resumed fix-a in t7 (resume 1 of session ${session})`,
       'send it what arrived: coordinate send fix-a "<message>"',
     ]);
     expect(readFileSync(path, "utf8")).toBe(before);

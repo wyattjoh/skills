@@ -277,6 +277,15 @@ export const members = Effect.fn("members")(function* (
   return found;
 });
 
+/**
+ * A coordinator's verify verdict on a settled delegate: `ok`, or `problem` with why, and when.
+ */
+export const VerdictSchema = Schema.Struct({
+  result: Schema.Literals(["ok", "problem"]),
+  reason: Schema.NullOr(Schema.String),
+  at: Schema.String,
+});
+
 const EndedRecordSchema = Schema.Struct({
   name: Schema.String,
   task: Schema.optionalKey(Schema.NullOr(Schema.String)),
@@ -293,6 +302,8 @@ const EndedRecordSchema = Schema.Struct({
   ended_at: Schema.String,
   quiet_since: Schema.optionalKey(Schema.NullOr(Schema.String)),
   space: Schema.optionalKey(Schema.NullOr(Schema.Boolean)),
+  verdict: Schema.optionalKey(Schema.NullOr(VerdictSchema)),
+  resumes: Schema.optionalKey(Schema.Number),
 });
 
 /**

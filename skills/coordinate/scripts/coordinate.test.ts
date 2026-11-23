@@ -712,7 +712,8 @@ describe("coordinate CLI parity", () => {
       [["notify"], ["text", "one line"]],
       [["end"], ["target", "--now", "--item-status", "--list-idle"]],
       [["resume"], ["name", "--space", "--no-space"]],
-      [["status"], ["--domain", "--resume", "--verbose"]],
+      [["status"], ["--domain", "--resume", "--verbose", "--json"]],
+      [["verify"], ["delegate", "--ok", "--problem", "--json"]],
       [
         ["backlog", "show"],
         ["--domain", "--json", "--verbose"],
@@ -1152,4 +1153,232 @@ describe("coordinate CLI from a removed current folder", () => {
       `could not check: MissingFolder: ${join(state, "removed-2")} no longer exists, so the relative path "relative-state" cannot be resolved: cd to an existing folder or pass an absolute path\n`,
     ]);
   });
+});
+
+describe("coordinate CLI verify verdicts and resume counts", () => {
+  const ENDED = (cwd: string) => ({
+    name: "fix-a",
+    domain: "app",
+    session: "s-1",
+    program: "pi",
+    cwd,
+    ended_at: "2026-11-20T00:00:00.000Z",
+  });
+  const setup = (prefix: string) => {
+    const state = tempDir(prefix);
+    made.push(state);
+    const worktree = join(state, "wt");
+    mkdirSync(worktree);
+    const run = (
+      args: string[],
+      terminals: Record<string, unknown> = {},
+      lists: Record<string, unknown[]> = {},
+    ): Result => {
+      const done = Bun.spawnSync(["bun", cli, ...args], {
+        env: cliEnv(state, COORDINATOR, undefined, terminals, lists),
+        stdout: "pipe",
+        stderr: "pipe",
+        timeout: 20_000,
+      });
+      return {
+        args,
+        exit: done.exitCode,
+        stdout: done.stdout.toString(),
+        stderr: done.stderr.toString(),
+      };
+    };
+    expect(run(["start", "app"]).exit).toBe(0);
+    return { state, worktree, run };
+  };
+  const seedEnded = (state: string, record: Record<string, unknown>) => {
+    mkdirSync(join(state, "ended"), { recursive: true });
+    writeFileSync(join(state, "ended", `${String(record.session)}.json`), JSON.stringify(record));
+  };
+  const readEndedFile = (state: string, session: string) =>
+    JSON.parse(readFileSync(join(state, "ended", `${session}.json`), "utf8"));
+  const stamped = (verdict: { at: string } | null): unknown =>
+    verdict === null
+      ? null
+      : { ...verdict, at: /^\d{4}-\d\d-\d\dT/.test(verdict.at) ? "<iso>" : verdict.at };
+
+  it("records a problem verdict for an ended delegate in its ended record and status --json", () => {
+    const { state, worktree, run } = setup("coordinate-verify-ended-");
+    seedEnded(state, ENDED(worktree));
+
+    const verified = run(["verify", "fix-a", "--problem", "crossed the push stop point"]);
+    expect([verified.exit, verified.stdout, verified.stderr]).toEqual([
+      0,
+      "recorded problem for fix-a (session s-1): crossed the push stop point\n",
+      "",
+    ]);
+    const record = readEndedFile(state, "s-1");
+    expect([stamped(record.verdict), record.resumes]).toEqual([
+      { result: "problem", reason: "crossed the push stop point", at: "<iso>" },
+      0,
+    ]);
+
+    const status = run(["status", "--domain", "app", "--json"]);
+    expect([status.exit, status.stderr]).toEqual([0, ""]);
+    const parsed = JSON.parse(status.stdout);
+    expect(parsed.domain).toBe("app");
+    expect(parsed.delegates).toEqual([]);
+    expect(
+      parsed.ended.map(
+        (entry: {
+          name: string;
+          session: string;
+          verdict: { at: string } | null;
+          resumes: number;
+        }) => [entry.name, entry.session, stamped(entry.verdict), entry.resumes],
+      ),
+    ).toEqual([
+      [
+        "fix-a",
+        "s-1",
+        { result: "problem", reason: "crossed the push stop point", at: "<iso>" },
+        0,
+      ],
+    ]);
+
+    const ok = run(["verify", "fix-a", "--ok", "--json"]);
+    expect(ok.exit).toBe(0);
+    const okJson = JSON.parse(ok.stdout);
+    expect([okJson.session, stamped(okJson.verdict), okJson.resumes]).toEqual([
+      "s-1",
+      { result: "ok", reason: null, at: "<iso>" },
+      0,
+    ]);
+    expect(stamped(readEndedFile(state, "s-1").verdict)).toEqual({
+      result: "ok",
+      reason: null,
+      at: "<iso>",
+    });
+  }, 60_000);
+
+  it("refuses an unknown delegate and a verdict that is not exactly one of --ok or --problem", () => {
+    const { state, worktree, run } = setup("coordinate-verify-refuse-");
+    seedEnded(state, ENDED(worktree));
+    const outcomes = [
+      run(["verify", "nobody", "--ok"]),
+      run(["verify", "fix-a"]),
+      run(["verify", "fix-a", "--ok", "--problem", "both"]),
+      run(["verify", "fix-a", "--problem", " "]),
+    ].map(({ exit, stdout, stderr }) => [exit, stdout, stderr]);
+    expect(outcomes).toEqual([
+      [
+        1,
+        "",
+        "refused: no delegate nobody: no live delegate terminal or ended record has that name\n",
+      ],
+      [1, "", 'refused: pass exactly one of --ok or --problem "<why>"\n'],
+      [1, "", 'refused: pass exactly one of --ok or --problem "<why>"\n'],
+      [1, "", 'refused: --problem needs a reason: --problem "<why>"\n'],
+    ]);
+    expect(existsSync(join(state, "sessions"))).toBe(false);
+  }, 60_000);
+
+  it("records a verdict for a live delegate by name and shows it in status --json", () => {
+    const { run } = setup("coordinate-verify-live-");
+    const live = {
+      address: "t5",
+      name: "fix-b",
+      state: "live",
+      status: { state: "idle" },
+      cwd: "/nonexistent/wt",
+      labels: {
+        "fleet.domain": "app",
+        "fleet.session": "s-2",
+        "fleet.task": "fix b",
+        "fleet.branch": "wyattjoh/fix-b",
+      },
+    };
+    const terminals = { "fix-b": live, t5: live };
+    const verified = run(["verify", "fix-b", "--ok"], terminals);
+    expect([verified.exit, verified.stdout, verified.stderr]).toEqual([
+      0,
+      "recorded ok for fix-b (session s-2)\n",
+      "",
+    ]);
+    const status = run(["status", "--domain", "app", "--json"], terminals, {
+      "fleet.domain=app": [{ address: "t5", name: "fix-b", state: "live", status: "idle" }],
+    });
+    expect([status.exit, status.stderr]).toEqual([0, ""]);
+    const parsed = JSON.parse(status.stdout);
+    expect(
+      parsed.delegates.map((entry: { verdict: { at: string } | null }) => ({
+        ...entry,
+        verdict: stamped(entry.verdict),
+      })),
+    ).toEqual([
+      {
+        name: "fix-b",
+        address: "t5",
+        status: "idle",
+        session: "s-2",
+        task: "fix b",
+        cwd: "/nonexistent/wt",
+        branch: "wyattjoh/fix-b",
+        verdict: { result: "ok", reason: null, at: "<iso>" },
+        resumes: 0,
+      },
+    ]);
+    expect(parsed.ended).toEqual([]);
+  }, 60_000);
+
+  it("counts each resume of a session across end and resume, in ended records and status", () => {
+    const { state, worktree, run } = setup("coordinate-resume-count-");
+    seedEnded(state, ENDED(worktree));
+    const launched = {
+      address: "t-watch",
+      name: "fix-a",
+      state: "live",
+      status: { state: "idle" },
+      labels: {},
+    };
+    const running = {
+      ...launched,
+      cwd: worktree,
+      labels: {
+        "fleet.domain": "app",
+        "fleet.session": "s-1",
+        "fleet.harness": "pi",
+        "fleet.worktree": worktree,
+      },
+    };
+    const resume = () => run(["resume", "fix-a", "--no-space"], { "t-watch": launched });
+    const end = () => run(["end", "fix-a"], { "fix-a": running });
+
+    const first = resume();
+    expect([first.exit, first.stdout, first.stderr]).toEqual([
+      0,
+      'resumed fix-a in t-watch (resume 1 of session s-1)\nsend it what arrived: coordinate send fix-a "<message>"\n',
+      "",
+    ]);
+    expect(end().exit).toBe(0);
+    expect(readEndedFile(state, "s-1").resumes).toBe(1);
+    expect(run(["verify", "fix-a", "--problem", "needed a second resume"]).exit).toBe(0);
+    expect(resume().stdout).toBe(
+      'resumed fix-a in t-watch (resume 2 of session s-1)\nsend it what arrived: coordinate send fix-a "<message>"\n',
+    );
+    expect(end().exit).toBe(0);
+    const record = readEndedFile(state, "s-1");
+    expect([record.resumes, stamped(record.verdict)]).toEqual([
+      2,
+      { result: "problem", reason: "needed a second resume", at: "<iso>" },
+    ]);
+    const parsed = JSON.parse(run(["status", "--domain", "app", "--json"]).stdout);
+    expect(
+      parsed.ended.map(
+        (entry: { name: string; verdict: { at: string } | null; resumes: number }) => [
+          entry.name,
+          stamped(entry.verdict),
+          entry.resumes,
+        ],
+      ),
+    ).toEqual([["fix-a", { result: "problem", reason: "needed a second resume", at: "<iso>" }, 2]]);
+    const text = run(["status", "--domain", "app"]).stdout;
+    expect(text.split("\n")[1]).toBe(
+      `  fix-a ended ${record.ended_at.slice(0, 10)} · no branch · problem: needed a second resume · resumed 2x · resume: coordinate resume fix-a`,
+    );
+  }, 60_000);
 });
