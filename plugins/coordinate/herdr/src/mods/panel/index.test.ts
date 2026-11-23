@@ -3035,7 +3035,7 @@ test("wraps long finding metadata values within the panel width", async () => {
     text(get(root, "finding-title")),
     text(get(root, "fact-detail")),
     text(get(root, "fact-path")),
-  ]).toEqual([`f3 ${title} Open`, `Detail ${detail}`, `Path ${path}`]);
+  ]).toEqual([`f3 ${title}`, `Detail ${detail}`, `Path ${path}`]);
   expect(get(root, "fact-detail-values").styles).toMatchObject({ w_full: true, min_w_0: true });
   expect(get(root, "fact-detail-value-0").styles).toMatchObject({
     flex_1: true,
@@ -3061,11 +3061,17 @@ test("finding detail links back to Findings, and its origin opens the item", asy
   expect(ids(root, "screen-finding")).toEqual(["screen-finding"]);
   expect(get(root, "screen-list").styles.invisible).toBe(true);
   expect(trail(root)).toBe("⌂ › alpha › Findings › f3");
-  expect(text(get(root, "finding-title"))).toBe("f3 Share the validator Open");
+  expect(text(get(root, "finding-title"))).toBe("f3 Share the validator");
+  expect(ids(root, "finding-title-")).toEqual([]);
+  expect(ids(root, "finding-").filter((id) => id.endsWith("-header"))).toEqual([
+    "finding-state-header",
+    "finding-facts-header",
+  ]);
   expect([
-    text(get(root, "finding-status")),
+    text(get(root, "finding-state-header")),
+    text(get(root, "finding-state")),
     get(root, "finding-status").styles.text_color,
-  ]).toEqual(["Open", "#737373"]);
+  ]).toEqual(["Status", "Open", "#737373"]);
   expect(
     ["fact-kind", "fact-detail", "fact-path", "fact-origin"].map((id) => text(get(root, id))),
   ).toEqual(["Kind Opportunity", "Detail None", "Path None", "Origin i1 Base work"]);
@@ -3163,11 +3169,11 @@ test("Approve promotes the finding through the CLI with the exact arguments, the
   expect([
     text(get(root, "finding-status")),
     get(root, "finding-status").styles.text_color,
-    text(get(root, "fact-promoted")),
+    text(get(root, "finding-state")),
     ids(root, "fact-outcome"),
     ids(root, "finding-actions"),
-  ]).toEqual(["Promoted", theme().ansi4, "Promoted to i5 Share the validator", [], []]);
-  get(root, "fact-promoted-link").click!({}, ctx.cx);
+  ]).toEqual(["Promoted", theme().ansi4, "Promoted i5 Share the validator", [], []]);
+  get(root, "finding-promoted-link").click!({}, ctx.cx);
   root = render();
   expect([ids(root, "screen-finding"), ids(root, "screen-item")]).toEqual([[], ["screen-item"]]);
   expect(trail(root)).toBe("⌂ › alpha › i5");
@@ -3184,15 +3190,37 @@ const closeOpenFinding = async (id: string, outcome: string) => {
   return mounted;
 };
 
-test("a finding acted on another way keeps Acted on with its Outcome and no Promoted to row", async () => {
+test("a promoted finding's long item title wraps beside its status", async () => {
+  const title =
+    "A promoted item whose title is long enough to wrap across several lines of the panel";
+  const { render } = await openFindingDetail("f2");
+  const closed = closeFinding(add(withFindings(), title), {
+    id: "f2",
+    outcome: "promoted to i5",
+    dismissed: false,
+    now: NOW,
+  });
+  if (!closed.ok) throw new Error(closed.reason);
+  host.files.set(DOC, JSON.stringify(closed.backlog));
+  backlogWatch()!.fire([DOC]);
+  await settle();
+  const root = render();
+  expect(text(get(root, "finding-state"))).toBe(`Promoted i5 ${title}`);
+  expect(get(root, "finding-state-line").styles).toMatchObject({ w_full: true, min_w_0: true });
+  expect(get(root, "finding-status").styles.flex_none).toBe(true);
+  expect(get(root, "finding-promoted").styles).toMatchObject({ flex_1: true, min_w_0: true });
+});
+
+test("a finding acted on another way keeps Acted on with its Outcome and no item beside its status", async () => {
   const { render } = await closeOpenFinding("f2", "fixed");
   const root = render();
   expect([
     text(get(root, "finding-status")),
     get(root, "finding-status").styles.text_color,
+    text(get(root, "finding-state")),
     text(get(root, "fact-outcome")),
-    ids(root, "fact-promoted"),
-  ]).toEqual(["Acted on", theme().ansi2, "Outcome fixed", []]);
+    ids(root, "finding-promoted-link"),
+  ]).toEqual(["Acted on", theme().ansi2, "Acted on", "Outcome fixed", []]);
 });
 
 test("a finding promoted into an item the document no longer has shows the bare item id", async () => {
@@ -3200,10 +3228,10 @@ test("a finding promoted into an item the document no longer has shows the bare 
   const root = render();
   expect([
     text(get(root, "finding-status")),
-    text(get(root, "fact-promoted")),
-    ids(root, "fact-promoted-link"),
+    text(get(root, "finding-state")),
+    ids(root, "finding-promoted-link"),
     ids(root, "fact-outcome"),
-  ]).toEqual(["Promoted", "Promoted to i9", [], []]);
+  ]).toEqual(["Promoted", "Promoted i9", [], []]);
 });
 
 test("Dismiss closes the finding as dismissed through the CLI with the exact arguments", async () => {

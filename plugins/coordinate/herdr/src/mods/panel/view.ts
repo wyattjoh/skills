@@ -1149,63 +1149,101 @@ const detailHead = (
   });
 
 // An item a finding names (the one it came from, or the one it was promoted into): a link to
-// its detail while the document has it, else its id as the finding names it, or None.
-const itemFact = (
+// its detail while the document has it, else its id as the finding names it.
+const itemLink = (
   t: Theme,
-  key: string,
-  label: string,
-  id: string | null,
+  linkId: string,
+  id: string,
   linked: Item | undefined,
   open: (item: Item, cx: Context) => void,
 ): Element =>
-  detailRow(t, `fact-${key}`)
-    .child(small(t, t.muted, label))
+  linked === undefined
+    ? div().child(id)
+    : h_flex()
+        .id(linkId)
+        .gap(CARD.rowGap)
+        .cursor_pointer()
+        .text_color(t.accent)
+        .hover((s) => s.text_color(t.foreground))
+        .on_click((_event, cx) => open(linked, cx))
+        .child(div().flex_none().child(linked.id))
+        .child(div().flex_1().min_w_0().child(linked.title));
+
+// The item a finding came from, linked as itemLink does, or None.
+const originFact = (
+  t: Theme,
+  from: string | null,
+  origin: Item | undefined,
+  open: (item: Item, cx: Context) => void,
+): Element =>
+  detailRow(t, "fact-origin")
+    .child(small(t, t.muted, "Origin"))
     .child(
-      id === null
+      from === null
         ? div().text_color(t.dim).child("None")
-        : linked === undefined
-          ? div().child(id)
-          : h_flex()
-              .id(`fact-${key}-link`)
-              .gap(CARD.rowGap)
-              .cursor_pointer()
-              .text_color(t.accent)
-              .hover((s) => s.text_color(t.foreground))
-              .on_click((_event, cx) => open(linked, cx))
-              .child(div().flex_none().child(linked.id))
-              .child(div().flex_1().min_w_0().child(linked.title)),
+        : itemLink(t, "fact-origin-link", from, origin, open),
     );
+
+// A finding's status in its own card above Details, in its status tone; a promoted finding's
+// status is followed by the item it was promoted into.
+const findingStatusCard = (
+  t: Theme,
+  finding: Finding,
+  promotedId: string | undefined,
+  model: PanelModel,
+): Element =>
+  detailCard(t, "finding-state", "Status", [
+    detailRow(t, "finding-state-row").child(
+      h_flex()
+        .id("finding-state-line")
+        .w_full()
+        .min_w_0()
+        .gap(CARD.rowGap)
+        .items_center()
+        .child(
+          div()
+            .id("finding-status")
+            .flex_none()
+            .text_color(
+              role(
+                t,
+                promotedId === undefined ? FINDING_STATUS_TONES[finding.status] : PROMOTED_TONE,
+              ),
+            )
+            .child(findingStatusLabel(finding)),
+        )
+        .when(promotedId !== undefined, (el) =>
+          el.child(
+            div()
+              .id("finding-promoted")
+              .flex_1()
+              .min_w_0()
+              .child(itemLink(t, "finding-promoted-link", promotedId!, model.promoted, model.open)),
+          ),
+        ),
+    ),
+  ]);
 
 // The scroll viewport is supplied by herdr-ui at the screen boundary. This content stays
 // mounted below the list so its own viewport retains position while the user navigates back.
-// A promoted finding's outcome is its Promoted to row, so it shows no Outcome row as well.
+// Its status sits in a card of its own, so the title row has no status column. A promoted
+// finding's outcome is the item beside its status, so it shows no Outcome row as well.
 const findingScreen = (t: Theme, finding: Finding, model: PanelModel): Element => {
   const promotedId = promotedItemId(finding);
   return v_flex()
     .id("finding")
     .gap(PANEL.sectionGap)
-    .child(
-      detailHead(
-        t,
-        "finding",
-        finding.id,
-        finding.title,
-        findingStatusLabel(finding),
-        role(t, promotedId === undefined ? FINDING_STATUS_TONES[finding.status] : PROMOTED_TONE),
-      ),
-    )
+    .child(titleRow(t, { id: "finding-title", identifier: finding.id, title: finding.title }))
+    .child(findingStatusCard(t, finding, promotedId, model))
     .child(
       detailCard(t, "finding-facts", "Details", [
         fact(t, "fact-kind", "Kind", [FINDING_KIND_LABELS[finding.kind]]),
         fact(t, "fact-detail", "Detail", finding.detail === null ? [] : [finding.detail]),
         fact(t, "fact-path", "Path", finding.path === null ? [] : [finding.path]),
-        itemFact(t, "origin", "Origin", finding.from, model.origin, model.open),
+        originFact(t, finding.from, model.origin, model.open),
         ...(finding.closedAt === null
           ? []
           : [fact(t, "fact-closed", "Closed", [finding.closedAt.slice(0, 10)])]),
-        ...(promotedId === undefined
-          ? []
-          : [itemFact(t, "promoted", "Promoted to", promotedId, model.promoted, model.open)]),
         ...(finding.status === "open" || finding.outcome === null || promotedId !== undefined
           ? []
           : [fact(t, "fact-outcome", "Outcome", [finding.outcome])]),
