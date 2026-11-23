@@ -401,3 +401,22 @@ export const removeEnded = Effect.fn("removeEnded")(function* (path: string) {
  */
 export const backlogPath = (backlogDir: string, domain: string): string =>
   join(backlogDir, `${domain}-backlog.md`);
+
+/**
+ * A terminal by address or name. `hc get` resolves names on this core only, so a name it does not
+ * know is looked up among every connected machine's live terminals; two with that name are refused
+ * rather than guessed between.
+ * @param target Name or address.
+ * @returns The terminal, or undefined when none has that address or name.
+ */
+export const findTerminal = Effect.fn("findTerminal")(function* (target: string) {
+  const here = yield* hc.get(target);
+  if (here !== undefined || target.includes("/")) return here;
+  const named = (yield* hc.list()).filter((listed) => listed.name === target && listed.live);
+  if (named.length > 1)
+    return yield* new Refused({
+      message: `${named.length} live terminals are named ${target} (${named.map((listed) => listed.address).join(", ")}); give its address`,
+    });
+  const only = named[0];
+  return only === undefined ? undefined : yield* hc.get(only.address);
+});

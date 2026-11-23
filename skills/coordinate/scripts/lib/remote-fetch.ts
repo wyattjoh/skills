@@ -4,9 +4,9 @@ import { join } from "node:path";
 import { Effect } from "effect";
 import { readDocument } from "./backlog-doc.ts";
 import type { Config } from "./config.ts";
-import { canonicalMachine, localMachine } from "./delegate-capacity.ts";
-import { L, readEnded, Refused } from "./fleet.ts";
-import { cleanGitEnv } from "./git-env.ts";
+import { canonicalMachine, localMachine, remoteMachineOf } from "./delegate-capacity.ts";
+import { findTerminal, L, readEnded, Refused } from "./fleet.ts";
+import { cleanGitEnv, shellWord as word, UNSET_GIT } from "./git-env.ts";
 import { excludeScratch, git, mainCheckout } from "./git.ts";
 import * as hc from "./herdr.ts";
 import { Proc } from "./proc.ts";
@@ -16,11 +16,6 @@ import { Proc } from "./proc.ts";
 // there in fixed-width lines, read back in line chunks (under hc's 8 MB read cap), checked against
 // its sha256, and decoded here. Besides git, the remote needs only tar, gzip, base64, fold, mktemp
 // and sha256sum or shasum, which Linux and macOS both ship.
-
-const word = (value: string): string => `'${value.replaceAll("'", `'\\''`)}'`;
-
-const UNSET_GIT =
-  "unset GIT_DIR GIT_WORK_TREE GIT_INDEX_FILE GIT_COMMON_DIR GIT_OBJECT_DIRECTORY GIT_ALTERNATE_OBJECT_DIRECTORIES GIT_CEILING_DIRECTORIES";
 
 // Base64 lines of 76 characters plus a newline: 80 000 of them stay well under 8 MB.
 const CHUNK_LINES = 80_000;
@@ -142,6 +137,26 @@ type RemoteDelegate = {
 };
 
 /**
+ * A remote delegate as its terminal's labels describe it.
+ * @param terminal The delegate's terminal (`machine/tN`).
+ * @param machine Its Herdr machine.
+ * @param domain Its domain.
+ * @returns The delegate.
+ */
+const remoteDelegateOf = (
+  terminal: hc.Terminal,
+  machine: string,
+  domain: string,
+): RemoteDelegate => ({
+  name: terminal.name ?? terminal.address,
+  domain,
+  machine,
+  worktree: terminal.labels[L.worktree] ?? terminal.cwd,
+  branch: terminal.labels[L.branch],
+  base: terminal.labels[L.base],
+});
+
+/**
  * Copy a remote delegate's `.scratch` folder into its repo's parked folder on this Mac,
  * `<repo>/.scratch/parked/<name>/.scratch/`, refreshing what an earlier copy left.
  * @param repo The repo's main checkout on this Mac.
@@ -210,15 +225,8 @@ export const copyBackSettled = Effect.fn("copyBackSettled")(function* (
   domain: string,
   terminal: hc.Terminal,
 ) {
-  const machine = terminal.address.slice(0, terminal.address.indexOf("/"));
-  const delegate: RemoteDelegate = {
-    name: terminal.name ?? terminal.address,
-    domain,
-    machine,
-    worktree: terminal.labels[L.worktree] ?? terminal.cwd,
-    branch: terminal.labels[L.branch],
-    base: terminal.labels[L.base],
-  };
+  const machine = remoteMachineOf(terminal.address) ?? "";
+  const delegate = remoteDelegateOf(terminal, machine, domain);
   const repo = yield* localRepoOf(config, domain, machine, delegate.worktree);
   return yield* copyScratch(repo, delegate);
 });
@@ -237,19 +245,12 @@ const remoteDelegate = Effect.fn("remoteDelegate")(function* (
   only: string | undefined,
 ) {
   const core = yield* localMachine();
-  const live = target.includes("/")
-    ? [yield* hc.get(target)].filter((terminal) => terminal?.live === true)
-    : (yield* hc.list()).filter((terminal) => terminal.live && terminal.name === target);
-  if (live.length > 1)
-    return yield* new Refused({
-      message: `${live.length} live terminals are named ${target} (${live.map((terminal) => terminal?.address).join(", ")}); give its address`,
-    });
-  const listed = live[0];
-  const terminal = listed === undefined ? undefined : yield* hc.get(listed.address);
+  const found = yield* findTerminal(target);
+  const terminal = found?.live === true ? found : undefined;
   if (terminal !== undefined) {
-    const slash = terminal.address.indexOf("/");
+    const machine = remoteMachineOf(terminal.address);
     const domain = terminal.labels[L.domain];
-    if (slash === -1)
+    if (machine === undefined)
       return yield* new Refused({
         message: `${target} runs on this machine; its branch is already in its repo here`,
       });
@@ -257,14 +258,7 @@ const remoteDelegate = Effect.fn("remoteDelegate")(function* (
       return yield* new Refused({ message: `${target} is not a delegate` });
     if (only !== undefined && domain !== only)
       return yield* new Refused({ message: `${target} is a delegate of ${domain}, not ${only}` });
-    return {
-      name: terminal.name ?? terminal.address,
-      domain,
-      machine: terminal.address.slice(0, slash),
-      worktree: terminal.labels[L.worktree] ?? terminal.cwd,
-      branch: terminal.labels[L.branch],
-      base: terminal.labels[L.base],
-    } satisfies RemoteDelegate;
+    return remoteDelegateOf(terminal, machine, domain);
   }
   const ended = (yield* readEnded(config.stateDir)).records
     .filter(

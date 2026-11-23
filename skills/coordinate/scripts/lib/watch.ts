@@ -26,6 +26,7 @@ import {
   liveDelegateCount,
   localMachine,
   machineDelegateBudget,
+  remoteMachineOf,
 } from "./delegate-capacity.ts";
 import { resolveEffectiveHarnessPolicy } from "./harness-policy.ts";
 import { outboxPath } from "./remote-launch.ts";
@@ -666,16 +667,6 @@ const writeState = (path: string, state: WatchState) =>
   });
 
 /**
- * The machine a remote terminal address names (`strix/t5`), or undefined for this core's own.
- * @param address Terminal address.
- * @returns Machine name.
- */
-const remoteMachine = (address: string): string | undefined => {
-  const slash = address.indexOf("/");
-  return slash === -1 ? undefined : address.slice(0, slash);
-};
-
-/**
  * Carry a remote delegate through its machine's outage: a machine that is not connected lists none
  * of its terminals, so its delegates keep their last state instead of reading as gone. Each machine
  * hosting a delegate fires one `machine-unreachable` event per outage.
@@ -693,11 +684,11 @@ export const outageEvents = (
 ) => {
   const delegates: Record<string, SeenDelegate> = { ...listed };
   for (const [address, seen] of Object.entries(previous)) {
-    const machine = remoteMachine(address);
+    const machine = remoteMachineOf(address);
     if (machine !== undefined && down.includes(machine) && delegates[address] === undefined)
       delegates[address] = seen;
   }
-  const hosting = new Set(Object.keys(delegates).map(remoteMachine));
+  const hosting = new Set(Object.keys(delegates).map(remoteMachineOf));
   const unreachable = down.filter((machine) => hosting.has(machine)).toSorted();
   const events = unreachable
     .filter((machine) => !reported.includes(machine))
@@ -813,7 +804,7 @@ export const drainOutboxes = Effect.fn("drainOutboxes")(function* (
   );
   const tracked = new Set(Object.values(next).map((cursor) => cursor.address));
   for (const [address, seen] of Object.entries(delegates)) {
-    const machine = remoteMachine(address);
+    const machine = remoteMachineOf(address);
     if (machine === undefined || down.includes(machine) || tracked.has(address)) continue;
     const terminal = yield* hc.get(address).pipe(Effect.catch(() => Effect.succeed(undefined)));
     const worktree = terminal?.labels[L.worktree];
@@ -1228,7 +1219,7 @@ export const watch = Effect.fn("watch")(function* (config: Config, options: Watc
           if (!terminal) continue;
           // A remote delegate's folder is a path on its own machine, not one to read git in here;
           // its .scratch is copied into the repo's parked folder on this Mac instead.
-          if (remoteMachine(terminal.address) !== undefined) {
+          if (remoteMachineOf(terminal.address) !== undefined) {
             const copied = yield* copyBackSettled(config, options.domain, terminal).pipe(
               Effect.result,
             );
@@ -1290,7 +1281,7 @@ export const watch = Effect.fn("watch")(function* (config: Config, options: Watc
         // A delegate on a machine that is down is neither asked about nor reminded of; its
         // reminder waits for the machine to reconnect.
         const down = (address: string) =>
-          snapshot.unreachable.includes(remoteMachine(address) ?? "");
+          snapshot.unreachable.includes(remoteMachineOf(address) ?? "");
         const reachable = Object.fromEntries(
           Object.entries(snapshot.delegates).filter(([address]) => !down(address)),
         );

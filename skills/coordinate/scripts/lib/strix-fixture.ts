@@ -5,7 +5,7 @@ import { emptyBacklog } from "./backlog-store/ops.ts";
 import { documentPath } from "./backlog-store/paths.ts";
 import type { Backlog } from "./backlog-store/schema.ts";
 import { tempDir } from "./fixture.ts";
-import { cleanGitEnv, spawnGit } from "./git-env.ts";
+import { cleanGitEnv, shellWord, spawnGit, UNSET_GIT } from "./git-env.ts";
 
 // Helpers for the real-strix integration suite. Every remote call has an explicit timeout, every
 // run owns a unique domain, state dir and strix folder, and teardown removes what the run made.
@@ -67,7 +67,7 @@ export const onStrix = (script: string, timeoutS = 30): Ran =>
       "--",
       "sh",
       "-lc",
-      `unset GIT_DIR GIT_WORK_TREE GIT_INDEX_FILE GIT_COMMON_DIR GIT_OBJECT_DIRECTORY GIT_ALTERNATE_OBJECT_DIRECTORIES GIT_CEILING_DIRECTORIES; ${script}`,
+      `${UNSET_GIT}; ${script}`,
     ],
     hostEnv(),
     (timeoutS + 10) * 1000,
@@ -113,13 +113,6 @@ const openSpaces = (): Set<string> => {
     return new Set();
   }
 };
-
-/**
- * Quote a string as one POSIX shell word.
- * @param value Any string.
- * @returns The quoted word.
- */
-export const shellWord = (value: string): string => `'${value.replaceAll("'", `'\\''`)}'`;
 
 /**
  * Whether the suite can run, and why not. Nothing remote is called unless COORDINATE_STRIX=1.

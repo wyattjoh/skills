@@ -4,7 +4,7 @@ import { basename, dirname, join } from "node:path";
 import { Effect } from "effect";
 import { readDocument } from "./backlog-doc.ts";
 import type { Config } from "./config.ts";
-import { canonicalMachine, localMachine } from "./delegate-capacity.ts";
+import { endedRecordMachines, remoteMachineOf } from "./delegate-capacity.ts";
 import { type EndedRecord, readEnded, removeEnded } from "./fleet.ts";
 import {
   aheadOfUpstream,
@@ -126,28 +126,6 @@ export const remoteTarget = (target: string): { machine: string; path: string } 
 };
 
 /**
- * Which machine each ended record's folder is on. Records of local delegates name this core too,
- * so its name is read once, when some record names a machine. Without it a named record's machine
- * is unknown.
- * @param records Ended records.
- * @returns A lookup: the other machine, undefined for this one, or "unknown".
- */
-const recordMachines = Effect.fn("recordMachines")(function* (
-  records: readonly { record: EndedRecord }[],
-) {
-  const named = records.some(({ record }) => record.machine);
-  const core = named
-    ? yield* localMachine().pipe(Effect.catch(() => Effect.succeed(undefined)))
-    : undefined;
-  return (record: EndedRecord): string | undefined | "unknown" => {
-    if (!record.machine) return undefined;
-    if (core === undefined) return "unknown";
-    const machine = canonicalMachine(record.machine, core);
-    return machine === core ? undefined : machine;
-  };
-});
-
-/**
  * The remote checkouts the domain's Boundary records for these repos.
  * @param config Config.
  * @param domain Domain, or undefined for none.
@@ -235,9 +213,8 @@ export const observe = Effect.fn("observe")(function* () {
   const sessions = listed
     .filter((terminal) => terminal.live && hc.isAgent(terminal))
     .map((terminal) => {
-      const slash = terminal.address.indexOf("/");
       // A terminal on another machine runs in a folder there, never one to resolve here.
-      const machine = slash === -1 ? undefined : terminal.address.slice(0, slash);
+      const machine = remoteMachineOf(terminal.address);
       return {
         name: terminal.name ?? terminal.address,
         where: terminal.where || "no tab",
@@ -278,7 +255,7 @@ export const context = Effect.fn("sweepContext")(function* (
     });
   }
   const endedRecords = (yield* readEnded(config.stateDir)).records;
-  const machineOf = yield* recordMachines(endedRecords);
+  const machineOf = yield* endedRecordMachines(endedRecords);
   const keyOf = (record: EndedRecord): string => {
     const machine = machineOf(record);
     return machine === undefined || machine === "unknown"
@@ -853,7 +830,7 @@ const removeRemote = Effect.fn("removeRemote")(function* (
     lines.push(`  closed space ${space.name ?? space.id}`);
   }
   const { records } = yield* readEnded(config.stateDir);
-  const machineOf = yield* recordMachines(records);
+  const machineOf = yield* endedRecordMachines(records);
   for (const entry of records.filter(
     (candidate) =>
       machineOf(candidate.record) === machine && candidate.record.cwd.replace(/\/+$/, "") === path,
@@ -960,7 +937,7 @@ export const pruneBranches = Effect.fn("pruneBranches")(function* (
  */
 export const pruneEnded = Effect.fn("pruneEnded")(function* (config: Config) {
   const { records, skipped } = yield* readEnded(config.stateDir);
-  const machineOf = yield* recordMachines(records);
+  const machineOf = yield* endedRecordMachines(records);
   const gone: typeof records = [];
   const unknown: string[] = [];
   const down = new Map<string, string>();

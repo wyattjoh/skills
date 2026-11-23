@@ -18,6 +18,19 @@ export const GIT_ENV_KEYS = [
 ] as const;
 
 const gitEnvKeys: ReadonlySet<string> = new Set(GIT_ENV_KEYS);
+
+/**
+ * A shell command that unsets the repository-location variables, for scripts run on another
+ * machine, so they never resolve a repository from an inherited environment.
+ */
+export const UNSET_GIT = `unset ${GIT_ENV_KEYS.join(" ")}`;
+
+/**
+ * Quote a string as one POSIX shell word.
+ * @param value Any string.
+ * @returns The quoted word.
+ */
+export const shellWord = (value: string): string => `'${value.replaceAll("'", `'\\''`)}'`;
 const GIT_CONFIG_ENV_PREFIX = "GIT_CONFIG_";
 
 /**

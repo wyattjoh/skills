@@ -1,4 +1,5 @@
 import { Effect } from "effect";
+import { shellWord as word } from "./git-env.ts";
 import { inside } from "./git.ts";
 import * as hc from "./herdr.ts";
 import { Proc, type SpawnError } from "./proc.ts";
@@ -319,8 +320,6 @@ export type ProcessHost = {
  * This machine: lsof and ps, signals sent here.
  */
 export const localHost: ProcessHost = { where: "", scan: scanProcesses, stop: stopProcesses };
-
-const word = (value: string): string => `'${value.replaceAll("'", `'\\''`)}'`;
 
 // A Herdr process on another machine: its server, core and terminal holders.
 const HERDR_REMOTE = /(?:^|\/)(?:herdr|herdr-core|hc)(?:\s|$)/;

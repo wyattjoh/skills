@@ -3,21 +3,11 @@ import type { Backlog } from "./backlog-store/schema.ts";
 import { Refused } from "./fleet.ts";
 import type { Harness } from "./harness.ts";
 import * as hc from "./herdr.ts";
+import { shellWord as word, UNSET_GIT } from "./git-env.ts";
 import { DEFAULT_TIMEOUT_MS, type Proc, SpawnError } from "./proc.ts";
 
 // A remote launch on another Herdr machine: everything there goes through `hc exec --on` and
 // `hc file write --on`, so the machine needs only the harness and git.
-
-/**
- * Quote a string as one POSIX shell word.
- * @param value Any string.
- * @returns The quoted word.
- */
-const word = (value: string): string => `'${value.replaceAll("'", `'\\''`)}'`;
-
-// Remote scripts run without the Mac's repository-location variables.
-const UNSET_GIT =
-  "unset GIT_DIR GIT_WORK_TREE GIT_INDEX_FILE GIT_COMMON_DIR GIT_OBJECT_DIRECTORY GIT_ALTERNATE_OBJECT_DIRECTORIES GIT_CEILING_DIRECTORIES";
 
 /**
  * The recorded checkout of a repo on another machine, or a refusal naming the missing entry.

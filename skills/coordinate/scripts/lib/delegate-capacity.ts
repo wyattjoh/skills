@@ -34,10 +34,41 @@ export const canonicalMachine = (name: string, core: string): string =>
  * @param core This core's Herdr machine name.
  * @returns Herdr machine name.
  */
-export const machineOfAddress = (address: string, core: string): string => {
+export const machineOfAddress = (address: string, core: string): string =>
+  remoteMachineOf(address) ?? core;
+
+/**
+ * The other machine a terminal address names (`strix/t5`), or undefined for this core's own.
+ * @param address Herdr terminal address.
+ * @returns Herdr machine name, or undefined for an unqualified address.
+ */
+export const remoteMachineOf = (address: string): string | undefined => {
   const separator = address.indexOf("/");
-  return separator === -1 ? core : address.slice(0, separator);
+  return separator === -1 ? undefined : address.slice(0, separator);
 };
+
+/**
+ * Which machine each ended record's folder is on. Records of local delegates name this core too,
+ * so its name is read once, and only when some record names a machine. Without it a named
+ * record's machine cannot be told apart from this one, so it is "unknown".
+ * @param records Ended records.
+ * @returns A lookup by record: the other machine's canonical name, undefined for this one, or
+ * "unknown".
+ */
+export const endedRecordMachines = Effect.fn("endedRecordMachines")(function* (
+  records: readonly { record: { machine?: string | null | undefined } }[],
+) {
+  const named = records.some(({ record }) => record.machine);
+  const core = named
+    ? yield* localMachine().pipe(Effect.catch(() => Effect.succeed(undefined)))
+    : undefined;
+  return (record: { machine?: string | null | undefined }): string | undefined => {
+    if (!record.machine) return undefined;
+    if (core === undefined) return "unknown";
+    const machine = canonicalMachine(record.machine, core);
+    return machine === core ? undefined : machine;
+  };
+});
 
 /**
  * Count the target machine's live delegates, including settled delegates that still have live terminals.

@@ -3,10 +3,10 @@ import { createHash } from "node:crypto";
 import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { g, initRepo } from "./lib/fixture.ts";
+import { shellWord } from "./lib/git-env.ts";
 import {
   answerTrustDialog,
   onStrix,
-  shellWord,
   STRIX,
   strixReadiness,
   strixRun,

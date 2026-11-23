@@ -5,7 +5,7 @@ import { idleDelegated } from "./backlog-store/ops.ts";
 import type { Config } from "./config.ts";
 import { L, type Delegate, members, readEnded } from "./fleet.ts";
 import { harnessPolicyStatus } from "./harness-policy.ts";
-import { canonicalMachine, localMachine } from "./delegate-capacity.ts";
+import { endedRecordMachines, remoteMachineOf } from "./delegate-capacity.ts";
 import { currentBranch, defaultBases, mainCheckout } from "./git.ts";
 import { requireBacklog } from "./lifecycle.ts";
 import { readSession, type SessionState } from "./sessions.ts";
@@ -25,31 +25,24 @@ const age = (fromMs: number | undefined, nowMs: number): string => {
  * @param delegate Live delegate.
  * @returns Herdr machine name.
  */
-const remoteOf = (delegate: Delegate): string | undefined => {
-  const slash = delegate.address.indexOf("/");
-  return slash === -1 ? undefined : delegate.address.slice(0, slash);
-};
+const remoteOf = (delegate: Delegate): string | undefined => remoteMachineOf(delegate.address);
 
 /**
- * The machine an ended record names when it is not this one. Records of local delegates name this
- * core too, so this core's name is read once, and only when some record names a machine.
+ * The machine an ended record names when it is not this one, by its canonical name. When this
+ * core's name is unreadable, the record's own machine name is shown, so its folder is never judged
+ * on this Mac's disk.
  * @param records Ended records.
  * @returns A lookup by record, undefined for this machine.
  */
 const endedMachines = Effect.fn("endedMachines")(function* (
   records: readonly { record: { machine?: string | null } }[],
 ) {
-  const named = records.some(({ record }) => record.machine);
-  // Without this core's name a record's machine cannot be told apart from this one: show none.
-  const core = named
-    ? yield* localMachine().pipe(Effect.catch(() => Effect.succeed(undefined)))
-    : undefined;
-  return (record: { machine?: string | null }): string | undefined =>
-    record.machine && core !== undefined && canonicalMachine(record.machine, core) !== core
-      ? record.machine
-      : undefined;
+  const machineOf = yield* endedRecordMachines(records);
+  return (record: { machine?: string | null }): string | undefined => {
+    const machine = machineOf(record);
+    return machine === "unknown" ? (record.machine ?? undefined) : machine;
+  };
 });
-
 const badge = (machine: string | undefined): string => (machine ? ` [${machine}]` : "");
 
 /**
