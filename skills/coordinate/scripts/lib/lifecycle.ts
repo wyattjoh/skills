@@ -42,7 +42,7 @@ import {
 import {
   agentArgv,
   CLAUDE_EFFORTS,
-  type FirstMessage,
+  type DelegateFirstMessage,
   firstMessage,
   type Harness,
   harnessOf,
@@ -123,7 +123,7 @@ export type DelegateOptions = {
   harness: Harness | undefined;
   model: string | undefined;
   effort: string | undefined;
-  message: FirstMessage;
+  message: DelegateFirstMessage;
   space: boolean;
   domain: string | undefined;
   /**
@@ -195,6 +195,135 @@ export const launchInOwnSpace = Effect.fn("launchInOwnSpace")(function* (spec: {
   yield* hc.end(made.terminal).pipe(Effect.ignore);
   yield* hc.appDo("tab.rename", { id: made.tab, name: spec.tabLabel }).pipe(Effect.ignore);
   return { address, space: made.space };
+});
+
+/**
+ * Options for `coordinate spawn`.
+ */
+export type SpawnOptions = {
+  domain: string;
+  /**
+   * Folder the new coordinator starts in.
+   */
+  cwd: string | undefined;
+  harness: Harness | undefined;
+  model: string | undefined;
+  /**
+   * pi `--thinking` level or Claude `--effort`.
+   */
+  effort: string | undefined;
+};
+
+/**
+ * The tab title a coordinator starts with, per the manager's tab-title convention.
+ * @param domain Domain.
+ * @returns `<Domain> · No active focus`.
+ */
+const idleTabTitle = (domain: string): string =>
+  `${domain.charAt(0).toUpperCase()}${domain.slice(1)} · No active focus`;
+
+/**
+ * Decide the folder a spawned coordinator starts in, before anything is written or launched.
+ * @param options Spawn options.
+ * @returns The real path of an existing folder.
+ */
+const spawnFolder = Effect.fn("spawnFolder")(function* (options: SpawnOptions) {
+  if (options.cwd === undefined)
+    return yield* new Refused({
+      message: `pass --cwd <dir>: the folder the ${options.domain} coordinator starts in`,
+    });
+  const cwd = resolve(options.cwd);
+  if (!existsSync(cwd)) return yield* new Refused({ message: `${cwd} does not exist` });
+  return real(cwd);
+});
+
+/**
+ * Turn a finished launch into the lines spawn prints.
+ * @param launched What started.
+ * @returns Lines to print.
+ */
+const spawnOutput = (launched: {
+  name: string;
+  domain: string;
+  address: string;
+  space: string;
+  harness: Harness;
+  session: string;
+}): string[] => [
+  `started coordinator ${launched.name} for ${launched.domain} (${launched.address}) in its own space ${launched.space}, ${launched.harness} session ${launched.session}`,
+];
+
+/**
+ * Start a new coordinator for a domain in its own unfocused Herdr space, from a coordinator.
+ * Every refusal comes before anything is written or launched. The new terminal has no parent, so
+ * it outlives the caller, and is labelled as the domain's coordinator at launch, so a second spawn
+ * for the domain is refused even before the first has started.
+ * @param config Config.
+ * @param options Spawn options.
+ * @param env Environment (`HC_TERMINAL_ID`).
+ * @returns Lines to print.
+ */
+export const spawn = Effect.fn("spawn")(function* (
+  config: Config,
+  options: SpawnOptions,
+  env: Record<string, string | undefined> = process.env,
+) {
+  const { domain } = options;
+  yield* checkDomainName(domain);
+  const caller = yield* callerRole(env);
+  if (caller.kind !== "coordinator")
+    return yield* new Refused({
+      message: `spawn runs from a coordinator terminal, and ${caller.address} is not labelled as one (fleet.role=coordinator)`,
+    });
+  const harness = yield* resolveHarnessForLaunch(config, domain, options.harness, false);
+  const efforts = harness === "pi" ? PI_THINKING : CLAUDE_EFFORTS;
+  if (options.effort && !efforts.has(options.effort))
+    return yield* new Refused({
+      message: `${options.effort} is not a ${harness} ${harness === "pi" ? "thinking level" : "effort"}: ${[...efforts].join(", ")}`,
+    });
+  const name = `${domain}-coordinator`;
+  if (!hc.TERMINAL_NAME.test(name))
+    return yield* new Refused({
+      message: `${name} is not a terminal name: 1 to 32 of a-z, 0-9, - and _; spawn needs a domain of 20 or fewer of a-z, 0-9, - and _`,
+    });
+  const cwd = yield* spawnFolder(options);
+  const running = (yield* coordinators(domain)).find((terminal) => terminal.live);
+  if (running)
+    return yield* new Refused({
+      message: `${domain} already has a live coordinator: ${running.name ?? running.address} (${running.address}); go to it instead of spawning another`,
+    });
+  const taken = (yield* hc.list()).find((terminal) => terminal.live && terminal.name === name);
+  if (taken)
+    return yield* new Refused({
+      message: `a live terminal is already named ${name} (${taken.address})`,
+    });
+
+  const session = crypto.randomUUID();
+  const launched = yield* launchInOwnSpace({
+    name,
+    cwd,
+    tabLabel: idleTabTitle(domain),
+    spaceName: domain,
+    labels: {
+      [L.role]: "coordinator",
+      [L.domain]: domain,
+      [L.session]: session,
+      [L.harness]: harness,
+    },
+    parent: undefined,
+    argv: agentArgv({
+      harness,
+      name,
+      session,
+      model: options.model,
+      effort: options.effort,
+      extraArgs: [],
+      message: firstMessage(harness, { kind: "skill", skill: "coordinate", args: domain }),
+      resume: false,
+    }),
+    recordSpace: false,
+  });
+  return spawnOutput({ name, domain, harness, session, ...launched });
 });
 
 /**

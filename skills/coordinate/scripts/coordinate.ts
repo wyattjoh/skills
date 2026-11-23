@@ -35,7 +35,7 @@ import {
   Refused,
   resolveDomain,
 } from "./lib/fleet.ts";
-import type { FirstMessage, Harness, ImplementSkill } from "./lib/harness.ts";
+import type { DelegateFirstMessage, Harness, ImplementSkill } from "./lib/harness.ts";
 import { attachDelegate, detachDelegate } from "./lib/attach.ts";
 import { watcherBanner } from "./lib/banner.ts";
 import {
@@ -46,6 +46,7 @@ import {
   notifyCoordinator,
   resumeDelegate,
   sendTo,
+  spawn,
   start,
 } from "./lib/lifecycle.ts";
 import { Proc } from "./lib/proc.ts";
@@ -485,7 +486,7 @@ const delegateCommand = Command.make(
       console.error("refused: pass --brief <path>, --skill <implement|implement-spec>, or both");
       process.exit(1);
     }
-    const message: FirstMessage =
+    const message: DelegateFirstMessage =
       skill === undefined
         ? { kind: "brief", path: brief ?? "" }
         : { kind: "skill", skill: skill as ImplementSkill, args: options.args, brief };
@@ -512,6 +513,35 @@ const delegateCommand = Command.make(
 ).pipe(
   Command.withDescription(
     "create the worktree and start an authorized pi or Claude Code delegate in its own Herdr space, recording it on the item",
+  ),
+);
+
+const spawnCommand = Command.make(
+  "spawn",
+  {
+    domain: argument("domain", "domain the new coordinator owns"),
+    cwd: optionalStringFlag("cwd", "folder the new coordinator starts in"),
+    harness: optionalChoiceFlag(
+      "harness",
+      ["pi", "claude"],
+      "agent harness (omitted only when the domain's policy has an enabled default)",
+    ),
+    model: optionalStringFlag("model", "model (pi: provider/id; claude: opus, sonnet, ... )"),
+    effort: optionalStringFlag("effort", "claude --effort, or pi --thinking"),
+  },
+  (options) =>
+    execute((config) =>
+      spawn(config, {
+        domain: options.domain,
+        cwd: Option.getOrUndefined(options.cwd),
+        harness: Option.getOrUndefined(options.harness) as Harness | undefined,
+        model: Option.getOrUndefined(options.model),
+        effort: Option.getOrUndefined(options.effort),
+      }),
+    ),
+).pipe(
+  Command.withDescription(
+    "from a coordinator: start a coordinator for a domain in its own unfocused Herdr space, labelled at launch with no parent; refused while the domain has a live coordinator",
   ),
 );
 
@@ -1492,6 +1522,7 @@ const program = Command.make("coordinate")
     Command.withSubcommands([
       startCommand,
       delegateCommand,
+      spawnCommand,
       sendCommand,
       notifyCommand,
       endCommand,

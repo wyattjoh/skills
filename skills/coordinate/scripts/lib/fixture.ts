@@ -114,10 +114,13 @@ export const gitAndFake = (
 
 /**
  * An environment for spawning the coordinate CLI against `state`: a config file naming it, a stub
- * `hc` and a stub `lsof` first on PATH, and `HC_TERMINAL_ID=t1`. The stub's `hc get` answers t1 with `labels`,
+ * `hc`, a stub `herdr-app` and a stub `lsof` first on PATH, and `HC_TERMINAL_ID=t1`. The stub's `hc get` answers t1 with `labels`,
  * or, given `getError`, fails the way herdr-core reports an error; `hc get` answers each address in
  * `terminals` with its document; `hc ls` lists the first entry of `lists` whose `key=value` label
  * filter the call passes, else nothing. Every call's arguments are appended to `<state>/bin/calls.log`.
+ * The `herdr-app` stub makes space sp9 (tab tab9, shell t6) on `space.new`, lists no spaces, answers
+ * anything else with `{}`, and appends its arguments to `<state>/bin/app-calls.log`, so no test
+ * reaches the real Herdr app.
  * @param state State dir.
  * @param labels The calling terminal's labels.
  * @param getError An error kind for `hc get` to fail with.
@@ -158,6 +161,11 @@ export const cliEnv = (
   *) printf '{}' ;;\nesac\n`,
   );
   chmodSync(join(bin, "hc"), 0o755);
+  writeFileSync(
+    join(bin, "herdr-app"),
+    `#!/bin/sh\nprintf '%s\\n' "$*" >> '${join(bin, "app-calls.log")}'\ncase "$1 $2" in\n  "do space.new") printf '{"space":"sp9","tab":"tab9","terminal":"t6"}' ;;\n  "ls ") printf '{"spaces":[]}' ;;\n  *) printf '{}' ;;\nesac\n`,
+  );
+  chmodSync(join(bin, "herdr-app"), 0o755);
   // The sweep reads every process's folders through lsof; answer with one process outside `state`
   // so the CLI never depends on the host's lsof or its live process table.
   writeFileSync(join(bin, "lsof"), `#!/bin/sh\nprintf 'p1\\ncinit\\nn/\\n'\n`);

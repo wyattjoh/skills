@@ -215,6 +215,59 @@ describe("coordinate CLI delegate --skill", () => {
   });
 });
 
+describe("coordinate CLI spawn", () => {
+  it("passes the domain and flags through and prints the started line", () => {
+    const state = tempDir("coordinate-spawn-cli-");
+    made.push(state);
+    const cwd = join(state, "work");
+    mkdirSync(cwd);
+    const result = Bun.spawnSync(
+      [
+        "bun",
+        cli,
+        "spawn",
+        "tasks",
+        "--cwd",
+        cwd,
+        "--harness",
+        "claude",
+        "--model",
+        "opus",
+        "--effort",
+        "high",
+      ],
+      {
+        env: cliEnv(state, { "fleet.role": "coordinator", "fleet.domain": "manager" }),
+        stdout: "pipe",
+        stderr: "pipe",
+        timeout: 10_000,
+      },
+    );
+    const stdout = result.stdout.toString();
+    const session = /session (\S+)\n$/.exec(stdout)?.[1] ?? "";
+    expect({ exit: result.exitCode, stdout, stderr: result.stderr.toString() }).toEqual({
+      exit: 0,
+      stdout: `started coordinator tasks-coordinator for tasks (t-watch) in its own space sp9, claude session ${session}\n`,
+      stderr: "",
+    });
+    const calls = readFileSync(join(state, "bin", "calls.log"), "utf8")
+      .trim()
+      .split("\n");
+    const run = calls.find((line) => line.startsWith("run ")) ?? "";
+    expect(run.slice(0, run.indexOf(" -- "))).toBe(
+      `run --bg --json --name tasks-coordinator --cwd ${cwd} --no-parent --label herdr.space=sp9 --label herdr.tab=tab9 --label fleet.role=coordinator --label fleet.domain=tasks --label fleet.session=${session} --label fleet.harness=claude`,
+    );
+    expect(
+      run.endsWith(
+        `claude --session-id ${session} --name tasks-coordinator --model opus --effort high /coordinate tasks`,
+      ),
+    ).toBe(true);
+    expect(readFileSync(join(state, "bin", "app-calls.log"), "utf8")).toBe(
+      `do space.new {"name":"tasks","folder":"${cwd}","focus":false}\nls\ndo tab.rename {"id":"tab9","name":"Tasks · No active focus"}\n`,
+    );
+  });
+});
+
 describe("coordinate CLI parity", () => {
   it("records representative invocations across every command", () => {
     const state = tempDir("coordinate-cli-parity-");
@@ -539,6 +592,7 @@ describe("coordinate CLI parity", () => {
     const helpCases: Array<[string[], string[]]> = [
       [["start"], ["domain", "label this terminal"]],
       [["delegate"], ["name", "--task", "--harness", "--no-space"]],
+      [["spawn"], ["domain", "--cwd", "--harness", "--model", "--effort", "from a coordinator"]],
       [["send"], ["target", "text"]],
       [["notify"], ["text", "one line"]],
       [["end"], ["target", "--now", "--item-status", "--list-idle"]],

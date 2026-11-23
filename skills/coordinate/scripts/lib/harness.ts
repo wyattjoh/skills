@@ -19,13 +19,20 @@ export const skillPrefix = (harness: Harness, skill: string): string =>
   harness === "pi" ? `/skill:${skill}` : `/${skill}`;
 
 /**
- * What a new agent is told first: read its brief, or run a skill with arguments. A skill start
- * may carry a brief too, for the boundary, stop points and report the skill does not know.
- * `coordinate` (args: the domain) starts a coordinator; only spawn uses it, never delegate.
+ * What a new delegate is told first: read its brief, or run an implement skill with arguments. A
+ * skill start may carry a brief too, for the boundary, stop points and report the skill does not know.
+ */
+export type DelegateFirstMessage =
+  | { kind: "brief"; path: string }
+  | { kind: "skill"; skill: ImplementSkill; args: string; brief?: string };
+
+/**
+ * What a new agent is told first: a delegate's message, or `coordinate` (args: the domain), which
+ * starts a coordinator; only spawn uses it, never delegate.
  */
 export type FirstMessage =
-  | { kind: "brief"; path: string }
-  | { kind: "skill"; skill: ImplementSkill | "coordinate"; args: string; brief?: string };
+  | DelegateFirstMessage
+  | { kind: "skill"; skill: "coordinate"; args: string; brief?: string };
 
 /**
  * Render the first message.

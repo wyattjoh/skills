@@ -14,6 +14,8 @@ import {
   listIdle,
   resumeDelegate,
   sendTo,
+  spawn,
+  type SpawnOptions,
   start,
 } from "./lifecycle.ts";
 import { fakeProc, ok, type RunOutput } from "./proc.ts";
@@ -475,6 +477,306 @@ describe("launchInOwnSpace", () => {
       ["hc", "kill", "t6"],
       ["hc", "rm", "t6"],
       ["herdr-app", "do", "tab.rename", '{"id":"tab9","name":"Tasks · No active focus"}'],
+    ]);
+  });
+});
+
+const spawnCaller = (labels: Record<string, string>) =>
+  terminal({ address: "t1", name: "manager", labels });
+const MANAGER = { "fleet.role": "coordinator", "fleet.domain": "manager" };
+
+/**
+ * A fake Herdr: `hc get t1` answers the caller, `hc ls` filtered on the coordinator role answers
+ * `coordinatorsLive`, any other `hc ls` answers `live`, and a launch goes into space sp9.
+ */
+const spawnFake = (
+  callerLabels: Record<string, string>,
+  coordinatorsLive: readonly Record<string, unknown>[] = [],
+  live: readonly Record<string, unknown>[] = [],
+) =>
+  fakeProc((argv) => {
+    if (argv[0] === "hc") {
+      if (argv[1] === "get" && argv[2] === "t1") return ok(spawnCaller(callerLabels));
+      if (argv[1] === "ls" && argv.includes("fleet.role=coordinator"))
+        return ok(JSON.stringify({ terminals: coordinatorsLive }));
+      if (argv[1] === "ls") return ok(JSON.stringify({ terminals: live }));
+      if (argv[1] === "run") return ok('{"address":"t7"}');
+      if (argv[1] === "kill" || argv[1] === "rm") return ok("{}");
+    }
+    if (argv[0] === "herdr-app") {
+      if (argv[1] === "ls")
+        return ok(
+          JSON.stringify({
+            spaces: [
+              { id: "sp9", tabs: [{ id: "tab9", terminals: [{ terminal: "t6", pane: "p6" }] }] },
+            ],
+          }),
+        );
+      if (argv[2] === "space.new") return ok('{"space":"sp9","tab":"tab9","terminal":"t6"}');
+      if (argv[2] === "pane.close" || argv[2] === "tab.rename") return ok("{}");
+    }
+    throw new Error(`unexpected command: ${argv.join(" ")}`);
+  });
+
+const spawnOptions = (fields: Partial<SpawnOptions> = {}): SpawnOptions => ({
+  domain: "tasks",
+  cwd: undefined,
+  harness: undefined,
+  model: undefined,
+  effort: undefined,
+  ...fields,
+});
+
+const withDefaultHarness = async (state: string, harness: "pi" | "claude") => {
+  const cfg = await config(state);
+  await Effect.runPromise(
+    setHarnessPolicy(cfg, {
+      scope: "global",
+      domain: undefined,
+      selection: { enabled: ["pi", "claude"], default: harness },
+      expectedRevision: 0,
+      json: true,
+    }),
+  );
+  return cfg;
+};
+
+const ENV = { HC_TERMINAL_ID: "t1" };
+const coordinatorList = [
+  "hc",
+  "ls",
+  "--json",
+  "--label",
+  "fleet.role=coordinator",
+  "--label",
+  "fleet.domain=tasks",
+];
+
+describe("spawn", () => {
+  it.each<{ role: string; labels: Record<string, string> }>([
+    { role: "a delegate", labels: { "fleet.domain": "manager", "fleet.task": "fix a" } },
+    { role: "an unlabelled terminal", labels: {} },
+  ])("refuses from $role before touching anything else", async ({ labels }) => {
+    const state = dir();
+    const fake = spawnFake(labels);
+    const error = await failureOf(
+      spawn(await config(state), spawnOptions({ cwd: state }), ENV),
+      fake.layer,
+    );
+    expect(messageOf(error)).toBe(
+      "spawn runs from a coordinator terminal, and t1 is not labelled as one (fleet.role=coordinator)",
+    );
+    expect(fake.calls.map((call) => call.argv)).toEqual([["hc", "get", "t1", "--json"]]);
+  });
+
+  it.each([
+    {
+      state: "a running coordinator",
+      listed: { address: "t4", name: "tasks-coordinator", state: "live", status: "working" },
+      named: "tasks-coordinator (t4)",
+    },
+    {
+      state: "a coordinator launched seconds ago, labelled but with no status yet",
+      listed: { address: "t5", state: "live" },
+      named: "t5 (t5)",
+    },
+  ])("refuses a domain that already has $state, naming it", async ({ listed, named }) => {
+    const state = dir();
+    const cfg = await withDefaultHarness(state, "claude");
+    const fake = spawnFake(MANAGER, [listed]);
+    const error = await failureOf(spawn(cfg, spawnOptions({ cwd: state }), ENV), fake.layer);
+    expect(messageOf(error)).toBe(
+      `tasks already has a live coordinator: ${named}; go to it instead of spawning another`,
+    );
+    expect(fake.calls.map((call) => call.argv)).toEqual([
+      ["hc", "get", "t1", "--json"],
+      coordinatorList,
+    ]);
+  });
+
+  it("refuses an explicitly requested harness the domain's policy disables", async () => {
+    const state = dir();
+    const cfg = await config(state);
+    await Effect.runPromise(
+      setHarnessPolicy(cfg, {
+        scope: "global",
+        domain: undefined,
+        selection: { enabled: ["claude"], default: "claude" },
+        expectedRevision: 0,
+        json: true,
+      }),
+    );
+    const fake = spawnFake(MANAGER);
+    const error = await failureOf(
+      spawn(cfg, spawnOptions({ cwd: state, harness: "pi" }), ENV),
+      fake.layer,
+    );
+    expect(messageOf(error)).toBe(
+      "harness pi is disabled by global policy for tasks; enabled harnesses: claude",
+    );
+    expect(fake.calls.map((call) => call.argv)).toEqual([["hc", "get", "t1", "--json"]]);
+  });
+
+  it("refuses an effort the resolved harness does not have", async () => {
+    const state = dir();
+    const fake = spawnFake(MANAGER);
+    const error = await failureOf(
+      spawn(
+        await withDefaultHarness(state, "claude"),
+        spawnOptions({ cwd: state, effort: "minimal" }),
+        ENV,
+      ),
+      fake.layer,
+    );
+    expect(messageOf(error)).toBe("minimal is not a claude effort: low, medium, high, xhigh, max");
+    expect(fake.calls.map((call) => call.argv)).toEqual([["hc", "get", "t1", "--json"]]);
+  });
+
+  it("refuses a domain that cannot form a terminal name", async () => {
+    const state = dir();
+    const fake = spawnFake(MANAGER);
+    const error = await failureOf(
+      spawn(
+        await withDefaultHarness(state, "claude"),
+        spawnOptions({ domain: "web.app", cwd: state }),
+        ENV,
+      ),
+      fake.layer,
+    );
+    expect(messageOf(error)).toBe(
+      "web.app-coordinator is not a terminal name: 1 to 32 of a-z, 0-9, - and _; spawn needs a domain of 20 or fewer of a-z, 0-9, - and _",
+    );
+    expect(fake.calls.map((call) => call.argv)).toEqual([["hc", "get", "t1", "--json"]]);
+  });
+
+  it("refuses without --cwd, and with a folder that does not exist", async () => {
+    const state = dir();
+    const cfg = await withDefaultHarness(state, "claude");
+    const missing = await failureOf(spawn(cfg, spawnOptions(), ENV), spawnFake(MANAGER).layer);
+    expect(messageOf(missing)).toBe("pass --cwd <dir>: the folder the tasks coordinator starts in");
+    const gone = join(state, "gone");
+    const absent = await failureOf(
+      spawn(cfg, spawnOptions({ cwd: gone }), ENV),
+      spawnFake(MANAGER).layer,
+    );
+    expect(messageOf(absent)).toBe(`${gone} does not exist`);
+  });
+
+  it("refuses when a live terminal already has the coordinator's name", async () => {
+    const state = dir();
+    const fake = spawnFake(
+      MANAGER,
+      [],
+      [{ address: "t8", name: "tasks-coordinator", state: "live" }],
+    );
+    const error = await failureOf(
+      spawn(await withDefaultHarness(state, "claude"), spawnOptions({ cwd: state }), ENV),
+      fake.layer,
+    );
+    expect(messageOf(error)).toBe("a live terminal is already named tasks-coordinator (t8)");
+    expect(fake.calls.map((call) => call.argv)).toEqual([
+      ["hc", "get", "t1", "--json"],
+      coordinatorList,
+      ["hc", "ls", "--json"],
+    ]);
+  });
+
+  it("starts the policy's default harness in its own space with coordinator labels, no parent and /coordinate", async () => {
+    const state = dir();
+    const fake = spawnFake(MANAGER);
+    const lines = await runWith(
+      spawn(await withDefaultHarness(state, "claude"), spawnOptions({ cwd: state }), ENV),
+      fake.layer,
+    );
+    const calls = fake.calls.map((call) => call.argv);
+    const run = calls.find((argv) => argv[1] === "run") ?? [];
+    const agent = run.slice(run.indexOf("--") + 5);
+    const session = agent[agent.indexOf("--session-id") + 1] ?? "";
+    expect(session).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/);
+    expect(calls.slice(0, 4)).toEqual([
+      ["hc", "get", "t1", "--json"],
+      coordinatorList,
+      ["hc", "ls", "--json"],
+      [
+        "herdr-app",
+        "do",
+        "space.new",
+        JSON.stringify({ name: "tasks", folder: state, focus: false }),
+      ],
+    ]);
+    expect(run.slice(0, run.indexOf("--"))).toEqual([
+      "hc",
+      "run",
+      "--bg",
+      "--json",
+      "--name",
+      "tasks-coordinator",
+      "--cwd",
+      state,
+      "--no-parent",
+      "--label",
+      "herdr.space=sp9",
+      "--label",
+      "herdr.tab=tab9",
+      "--label",
+      "fleet.role=coordinator",
+      "--label",
+      "fleet.domain=tasks",
+      "--label",
+      `fleet.session=${session}`,
+      "--label",
+      "fleet.harness=claude",
+    ]);
+    expect(agent).toEqual([
+      "claude",
+      "--session-id",
+      session,
+      "--name",
+      "tasks-coordinator",
+      "/coordinate tasks",
+    ]);
+    expect(calls.slice(5)).toEqual([
+      ["herdr-app", "ls"],
+      ["herdr-app", "do", "pane.close", '{"pane":"p6"}'],
+      ["hc", "kill", "t6"],
+      ["hc", "rm", "t6"],
+      ["herdr-app", "do", "tab.rename", '{"id":"tab9","name":"Tasks · No active focus"}'],
+    ]);
+    expect(lines).toEqual([
+      `started coordinator tasks-coordinator for tasks (t7) in its own space sp9, claude session ${session}`,
+    ]);
+  });
+
+  it("starts pi with /skill:coordinate and passes only the model and effort given", async () => {
+    const state = dir();
+    const fake = spawnFake(MANAGER);
+    await runWith(
+      spawn(
+        await withDefaultHarness(state, "claude"),
+        spawnOptions({ cwd: state, harness: "pi", model: "anthropic/opus", effort: "high" }),
+        ENV,
+      ),
+      fake.layer,
+    );
+    const run = fake.calls.map((call) => call.argv).find((argv) => argv[1] === "run") ?? [];
+    const agent = run.slice(run.indexOf("--") + 5);
+    expect(agent).toEqual([
+      "pi",
+      "--session-id",
+      agent[2] ?? "",
+      "--name",
+      "tasks-coordinator",
+      "--model",
+      "anthropic/opus",
+      "--thinking",
+      "high",
+      "/skill:coordinate tasks",
+    ]);
+    expect(run.filter((arg) => arg.startsWith("fleet."))).toEqual([
+      "fleet.role=coordinator",
+      "fleet.domain=tasks",
+      `fleet.session=${agent[2] ?? ""}`,
+      "fleet.harness=pi",
     ]);
   });
 });
