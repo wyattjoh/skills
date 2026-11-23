@@ -173,8 +173,12 @@ describe("coordinate wiki lint", () => {
       readFileSync(join(wiki, "alpha.md"), "utf8")
         .split("\n")
         .indexOf("The watcher in `watch.ts` uses a 5s interval.") + 1;
-    expect(run(["finding", "add", "old thing", "--kind", "issue"]).exit).toBe(0);
-    expect(run(["finding", "add", "new thing", "--kind", "opportunity"]).exit).toBe(0);
+    expect(run(["finding", "add", "old thing", "--kind", "issue", "--detail-md", "old"]).exit).toBe(
+      0,
+    );
+    expect(
+      run(["finding", "add", "new thing", "--kind", "opportunity", "--detail-md", "new"]).exit,
+    ).toBe(0);
     const documentFile = join(state, "backlogs", "app.json");
     const document = JSON.parse(readFileSync(documentFile, "utf8"));
     expect(document.findings[1].createdAt).toMatch(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/);

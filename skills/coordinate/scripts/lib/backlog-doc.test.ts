@@ -16,7 +16,7 @@ import {
 import { resolveConfig } from "./config.ts";
 import { cliEnv, failureOf, runWith, tempDir } from "./fixture.ts";
 import { domainOfCaller, Refused } from "./fleet.ts";
-import { validateBacklog } from "./backlog-store/schema.ts";
+import { FINDING_DETAIL_SHAPE, validateBacklog } from "./backlog-store/schema.ts";
 import { start } from "./lifecycle.ts";
 import { fakeProc, ok } from "./proc.ts";
 import { domainStatus } from "./status.ts";
@@ -267,7 +267,7 @@ describe("item close", () => {
 const finding = (fields: Partial<Parameters<typeof findingAdd>[2]>) => ({
   kind: "issue" as const,
   title: "flaky test",
-  detail: undefined,
+  detail: "fails one run in ten",
   path: undefined,
   from: undefined,
   source: undefined,
@@ -329,6 +329,10 @@ describe("finding add", () => {
     [{ path: "a\nb" }, "path must be one line"],
     [{ path: " " }, "path is empty"],
     [{ detail: " " }, "detail is empty"],
+    [
+      { detail: undefined },
+      `a finding needs a detail: pass --detail-md with ${FINDING_DETAIL_SHAPE}`,
+    ],
   ])("refuses %j and leaves the file unchanged", async (fields, message) => {
     const { cfg, path } = await started();
     await runWith(itemAdd(cfg, "app", { title: "fix login", json: false, now: NOW }));
@@ -475,7 +479,7 @@ describe("finding promote", () => {
         id: "f2",
         kind: "issue",
         title: "share the validator",
-        detail: null,
+        detail: "fails one run in ten",
         path: null,
         from: "i1",
         status: "acted",
@@ -1833,6 +1837,8 @@ describe("coordinator-only mutations", () => {
         "issue",
         "--from",
         "i1",
+        "--detail-md",
+        "fails one run in ten",
         "--domain",
         "app",
       ]),

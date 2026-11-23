@@ -2,6 +2,7 @@ import { afterAll, beforeAll, describe, expect, it } from "bun:test";
 import { createHash } from "node:crypto";
 import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
+import { FINDING_DETAIL_SHAPE } from "./lib/backlog-store/schema.ts";
 import { g, initRepo } from "./lib/fixture.ts";
 import { shellWord } from "./lib/git-env.ts";
 import {
@@ -846,7 +847,7 @@ const outboxSection = (outbox: string): string =>
     "",
     `This delegate runs on strix, which has no coordinate CLI. Do not run \`coordinate finding add\` or \`coordinate notify\`: wherever this brief says to run one, append one JSON object on its own line to \`${outbox}\` instead, and never change earlier lines. Your coordinator's watcher reads the file and applies each line once.`,
     "",
-    '- A finding: `{"type":"finding","kind":"issue","title":"<title>","from":"<item id>","detailMarkdown":"<what, as Markdown>","path":"<file or folder>"}`. `kind` is `issue` or `opportunity`; `from`, `detailMarkdown` and `path` are optional; plain-text `detail` is deprecated.',
+    `- A finding: \`{"type":"finding","kind":"issue","title":"<title>","from":"<item id>","detailMarkdown":"<what, where, why it matters, suggested fix>","path":"<file or folder>"}\`. \`kind\` is \`issue\` or \`opportunity\`. \`detailMarkdown\` is required (newlines as \`\\n\`): ${FINDING_DETAIL_SHAPE}; a line without it is skipped. \`from\` and \`path\` are optional; plain-text \`detail\` is deprecated.`,
     '- The notify: `{"type":"notify","text":"<name>: <status>, report at <absolute report path>"}`.',
     "",
   ].join("\n");
@@ -947,7 +948,7 @@ describe.skipIf(!ready)("strix: draining a remote delegate's outbox", () => {
       kind: "issue",
       title: "strix outbox finding",
       from: item,
-      detail: "noticed on strix",
+      detailMarkdown: "noticed on strix",
     });
     expect(onStrix(`printf '%s\\n' ${shellWord(line)} >> ${shellWord(outbox)}`, 20).exitCode).toBe(
       0,
@@ -965,7 +966,8 @@ describe.skipIf(!ready)("strix: draining a remote delegate's outbox", () => {
       id: "f2",
       kind: "issue",
       title: "strix outbox finding",
-      detail: "noticed on strix",
+      detail: null,
+      detailMarkdown: "noticed on strix",
       path: null,
       from: item,
       source: `delegate:${name}`,

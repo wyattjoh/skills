@@ -22,7 +22,11 @@ import {
   readDocument,
   showBacklog,
 } from "./lib/backlog-doc.ts";
-import { ITEM_STATUSES, type ItemStatus } from "./lib/backlog-store/schema.ts";
+import {
+  FINDING_DETAIL_SHAPE,
+  ITEM_STATUSES,
+  type ItemStatus,
+} from "./lib/backlog-store/schema.ts";
 import { absolutePath, loadConfig, MissingFolder, type Config } from "./lib/config.ts";
 import {
   DELEGATE_HARNESSES,
@@ -1557,7 +1561,10 @@ const findingAddCommand = Command.make(
     title: argument("title", "one-line title"),
     kind: choiceFlag("kind", ["issue", "opportunity"], "what was noticed"),
     detail: optionalStringFlag("detail", "deprecated: plain-text detail; use --detail-md"),
-    detailMd: optionalStringFlag("detail-md", "more detail, as Markdown"),
+    detailMd: optionalStringFlag(
+      "detail-md",
+      "the detail (required, or --detail): What, Where, Why it matters, Suggested fix",
+    ),
     path: optionalStringFlag("path", "file or folder it concerns"),
     from: optionalStringFlag("from", "item it was noticed while working on, such as i3"),
     source: optionalStringFlag("source", "where it came from, such as retro:fix-a"),
@@ -1585,7 +1592,7 @@ const findingAddCommand = Command.make(
     ),
 ).pipe(
   Command.withDescription(
-    "add an open finding; delegates may run this. Prints its short id (f1, f2, ... )",
+    `add an open finding; delegates may run this. Prints its short id (f1, f2, ... ). Refused without a detail: --detail-md with ${FINDING_DETAIL_SHAPE}`,
   ),
 );
 

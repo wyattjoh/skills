@@ -5,7 +5,7 @@ import { hostname } from "node:os";
 import { Effect } from "effect";
 import { createDocument, itemAdd, itemClose, itemUpdate } from "./backlog-doc.ts";
 import { emptyBacklog, type ItemUpdate } from "./backlog-store/ops.ts";
-import type { Item } from "./backlog-store/schema.ts";
+import { FINDING_DETAIL_SHAPE, type Item } from "./backlog-store/schema.ts";
 import { resolveConfig } from "./config.ts";
 import { cliEnv, commitFile, g, gitAndFake, initRepo, runWith, tempDir } from "./fixture.ts";
 import { FAKE_CORE, fakeProc, ok, type RunOutput } from "./proc.ts";
@@ -2230,6 +2230,22 @@ describe("watch remote outboxes", () => {
     ).toEqual([["flaky gate", null, "- it hangs\n- on CI"]]);
   });
 
+  it("skips a finding line without detailMarkdown, even with plain-text detail", async () => {
+    const run = setup({});
+    expect(await run.tick()).toEqual(alive);
+    run.setOutbox(
+      `${[
+        JSON.stringify({ type: "finding", kind: "issue", title: "bare" }),
+        JSON.stringify({ type: "finding", kind: "issue", title: "plain", detail: "it hangs" }),
+        JSON.stringify({ type: "finding", kind: "issue", title: "blank", detailMarkdown: " " }),
+      ].join("\n")}\n`,
+    );
+    const skipped = (line: number) =>
+      `<event kind="delegate-outbox-invalid" delegate="rem-a" address="strix/t5" line="${line}"><error>a finding line needs detailMarkdown: ${FINDING_DETAIL_SHAPE}</error>skipped; ask the delegate to append a corrected line</event>`;
+    expect(await run.tick()).toEqual([skipped(1), skipped(2), skipped(3)]);
+    expect(run.findings()).toEqual([]);
+  });
+
   it("applies each complete finding and notify line once across watcher restarts", async () => {
     const run = setup({});
     expect(await run.tick()).toEqual(alive);
@@ -2239,7 +2255,7 @@ describe("watch remote outboxes", () => {
         type: "finding",
         kind: "issue",
         title: "flaky gate",
-        detail: "it hangs",
+        detailMarkdown: "it hangs",
         path: "src/a.ts",
       }),
       JSON.stringify({ type: "nope" }),
@@ -2255,7 +2271,8 @@ describe("watch remote outboxes", () => {
       id: "f1",
       kind: "issue",
       title: "flaky gate",
-      detail: "it hangs",
+      detail: null,
+      detailMarkdown: "it hangs",
       path: "src/a.ts",
       from: null,
       source: "delegate:rem-a",
@@ -2277,7 +2294,9 @@ describe("watch remote outboxes", () => {
     const run = setup({});
     const backlogs = join(run.state, "backlogs");
     chmodSync(backlogs, 0o555);
-    run.setOutbox(`${JSON.stringify({ type: "finding", kind: "issue", title: "flaky gate" })}\n`);
+    run.setOutbox(
+      `${JSON.stringify({ type: "finding", kind: "issue", title: "flaky gate", detailMarkdown: "it hangs" })}\n`,
+    );
     try {
       expect(await run.tick()).toEqual(alive);
     } finally {
@@ -2326,7 +2345,7 @@ describe("watch remote outboxes", () => {
       { ...backlog, findings: [recorded], nextId: 2 },
     );
     run.setOutbox(
-      `${JSON.stringify({ type: "finding", kind: "issue", title: "flaky gate" })}\n${JSON.stringify({ type: "finding", kind: "opportunity", title: "cache it" })}\n`,
+      `${JSON.stringify({ type: "finding", kind: "issue", title: "flaky gate", detailMarkdown: "it hangs" })}\n${JSON.stringify({ type: "finding", kind: "opportunity", title: "cache it", detailMarkdown: "rebuilds every run" })}\n`,
     );
     expect(await run.tick()).toEqual(alive);
     expect(run.findings().map((finding) => [finding.id, finding.title, finding.source])).toEqual([

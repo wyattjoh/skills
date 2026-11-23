@@ -36,6 +36,7 @@ import { policyCitation, renderBacklog } from "./backlog-store/render.ts";
 import {
   type Backlog,
   type DelegateRef,
+  FINDING_DETAIL_SHAPE,
   type Finding,
   type Item,
   type Policy,
@@ -497,10 +498,12 @@ export const itemClose = Effect.fn("itemClose")(function* (
 });
 
 /**
- * `coordinate finding add`: record an open issue or opportunity. Delegates may run it.
+ * `coordinate finding add`: record an open issue or opportunity. Delegates may run it. A new
+ * finding needs a detail (`--detail-md`, or the deprecated `--detail`); findings stored without one
+ * stay valid.
  * @param config Config.
  * @param domain Domain.
- * @param input Kind, title, optional detail, path, source item and source reference, and `--json`.
+ * @param input Kind, title, detail, path, source item and source reference, and `--json`.
  * @returns Lines to print.
  */
 export const findingAdd = Effect.fn("findingAdd")(function* (
@@ -518,6 +521,10 @@ export const findingAdd = Effect.fn("findingAdd")(function* (
     now: string | undefined;
   },
 ) {
+  if (input.detail === undefined && input.detailMarkdown === undefined)
+    return yield* new Refused({
+      message: `a finding needs a detail: pass --detail-md with ${FINDING_DETAIL_SHAPE}`,
+    });
   const finding = yield* change(config, domain, (backlog) =>
     addFinding(backlog, {
       kind: input.kind,

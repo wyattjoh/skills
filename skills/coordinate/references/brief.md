@@ -27,7 +27,8 @@ Read first: <repo guides, the plan or spec, by absolute path>.
 
 Change only <files, apps or areas>. Write only inside this worktree. Anything else is a question
 for the coordinator, not a change. Record an issue or opportunity you notice outside this task with
-`coordinate finding add "<title>" --kind issue|opportunity --from <item id> --detail-md "<what>"`.
+`coordinate finding add "<title>" --kind issue|opportunity --from <item id> --detail-md "<detail>"`.
+The detail is Markdown with **What** (the problem or opportunity), **Where** (files, commands or screens), **Why it matters** and **Suggested fix**, plus evidence (a command, log path or commit) when there is one; keep it short when the finding is small.
 
 ## Stop points
 
@@ -81,11 +82,11 @@ A delegate started with `--machine` runs where there is no coordinate CLI, so it
 
 This delegate runs on <machine>, which has no coordinate CLI. Do not run `coordinate finding add` or `coordinate notify`: wherever this brief says to run one, append one JSON object on its own line to `<outbox>` instead, and never change earlier lines. Your coordinator's watcher reads the file and applies each line once.
 
-- A finding: `{"type":"finding","kind":"issue","title":"<title>","from":"<item id>","detailMarkdown":"<what, as Markdown>","path":"<file or folder>"}`. `kind` is `issue` or `opportunity`; `from`, `detailMarkdown` and `path` are optional; plain-text `detail` is deprecated.
+- A finding: `{"type":"finding","kind":"issue","title":"<title>","from":"<item id>","detailMarkdown":"<what, where, why it matters, suggested fix>","path":"<file or folder>"}`. `kind` is `issue` or `opportunity`. `detailMarkdown` is required (newlines as `\n`): Markdown with **What** (the problem or opportunity), **Where** (files, commands or screens), **Why it matters** and **Suggested fix**, plus evidence (a command, log path or commit) when there is one; keep it short when the finding is small; a line without it is skipped. `from` and `path` are optional; plain-text `detail` is deprecated.
 - The notify: `{"type":"notify","text":"<name>: <status>, report at <absolute report path>"}`.
 ```
 
-The domain watcher reads each remote delegate's delegate outbox every tick through `hc file read --on`, applies only newline-terminated lines, and remembers per session how many it has applied, so a restarted watcher or a resumed delegate never applies a line twice. A finding line becomes an open finding with source `delegate:<name>`; a notify line wakes the coordinator as a `notify` event; a line it cannot apply (not JSON, an unknown `type`, a missing field, or a refused finding) is skipped with a `delegate-outbox-invalid` event naming its line number. A backlog that cannot be written leaves the line for the next tick. A `--skill` launch with no `--brief` writes no brief, so it gets no Delegate outbox section: give a remote skill launch a `--brief`.
+The domain watcher reads each remote delegate's delegate outbox every tick through `hc file read --on`, applies only newline-terminated lines, and remembers per session how many it has applied, so a restarted watcher or a resumed delegate never applies a line twice. A finding line becomes an open finding with source `delegate:<name>`; a notify line wakes the coordinator as a `notify` event; a line it cannot apply (not JSON, an unknown `type`, a missing field such as a finding's `detailMarkdown`, or a refused finding) is skipped with a `delegate-outbox-invalid` event naming its line number. A backlog that cannot be written leaves the line for the next tick. A `--skill` launch with no `--brief` writes no brief, so it gets no Delegate outbox section: give a remote skill launch a `--brief`.
 
 With `--skill`, the skill and its `--args` carry the task (for an implement skill, the spec or ticket carries the goal): point Goal at them and keep Decided, Boundary, Stop points and Report. `implement-spec` builds on an integration branch of its own, with a worktree per ticket and ticket updates in the tracker: name the delegate's branch as that branch, let Boundary allow those ticket worktrees and tracker updates, and say in Stop points that they override the skill's draft PR step unless the user named a PR.
 

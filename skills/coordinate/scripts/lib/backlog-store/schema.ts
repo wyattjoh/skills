@@ -57,6 +57,13 @@ export const prose = (
 };
 
 /**
+ * The shape a new finding's detail takes, named wherever a finding is written (`finding add`,
+ * its help, the delegate outbox) so the Backlog panel's finding detail says enough to act on.
+ */
+export const FINDING_DETAIL_SHAPE =
+  "Markdown with **What** (the problem or opportunity), **Where** (files, commands or screens), **Why it matters** and **Suggested fix**, plus evidence (a command, log path or commit) when there is one; keep it short when the finding is small";
+
+/**
  * A prose field's source, Markdown or text, for output that shows Markdown raw.
  * @param text The deprecated plain text field.
  * @param markdown The Markdown sibling.

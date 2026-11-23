@@ -1,6 +1,7 @@
 import { afterAll, describe, expect, it } from "bun:test";
 import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
+import { FINDING_DETAIL_SHAPE } from "./lib/backlog-store/schema.ts";
 import { cliEnv, tempDir } from "./lib/fixture.ts";
 
 const made: string[] = [];
@@ -1141,9 +1142,9 @@ describe("coordinate CLI from a removed current folder", () => {
     expect(run(["item", "update", "i1", "--decided", "kept"]).stdout).toBe(
       "updated i1 [open] first\n",
     );
-    expect(run(["finding", "add", "noticed", "--kind", "issue"]).stdout).toBe(
-      "added f2: noticed\n",
-    );
+    expect(
+      run(["finding", "add", "noticed", "--kind", "issue", "--detail-md", "seen"]).stdout,
+    ).toBe("added f2: noticed\n");
     expect(run(["finding", "close", "f2", "--outcome", "acted on"]).stdout).toBe(
       "acted f2: acted on\n",
     );
@@ -1476,6 +1477,8 @@ describe("coordinate CLI finding add --source", () => {
       "opportunity",
       "--source",
       "retro:fix-a",
+      "--detail-md",
+      "**What** the brief omits the push stop point",
       "--domain",
       "app",
       "--json",
@@ -1486,6 +1489,7 @@ describe("coordinate CLI finding add --source", () => {
       kind: "opportunity",
       title: "brief the push stop point",
       detail: null,
+      detailMarkdown: "**What** the brief omits the push stop point",
       path: null,
       from: null,
       source: "retro:fix-a",
@@ -1494,9 +1498,10 @@ describe("coordinate CLI finding add --source", () => {
       closedAt: null,
       outcome: null,
     });
-    expect(run(["finding", "add", "plain", "--kind", "issue", "--domain", "app"]).stdout).toBe(
-      "added f2: plain\n",
-    );
+    expect(
+      run(["finding", "add", "plain", "--kind", "issue", "--detail", "text", "--domain", "app"])
+        .stdout,
+    ).toBe("added f2: plain\n");
     const shown = run(["backlog", "show", "--domain", "app"]);
     expect(shown.stdout.split("\n").filter((line) => line.startsWith("- f"))).toEqual([
       "- f1 [opportunity] brief the push stop point (source retro:fix-a)",
@@ -1517,10 +1522,67 @@ describe("coordinate CLI finding add --source", () => {
       "issue",
       "--source",
       " ",
+      "--detail-md",
+      "seen",
       "--domain",
       "app",
     ]);
     expect([empty.exit, empty.stdout, empty.stderr]).toEqual([1, "", "refused: source is empty\n"]);
+  });
+});
+
+describe("coordinate CLI finding add detail", () => {
+  it("refuses a finding without a detail, accepts either form, and names the shape in --help", () => {
+    const state = tempDir("coordinate-finding-detail-");
+    made.push(state);
+    const run = (args: string[]): Result => {
+      const done = Bun.spawnSync(["bun", cli, ...args], {
+        env: cliEnv(state, COORDINATOR),
+        stdout: "pipe",
+        stderr: "pipe",
+        timeout: 10_000,
+      });
+      return {
+        args,
+        exit: done.exitCode,
+        stdout: done.stdout.toString(),
+        stderr: done.stderr.toString(),
+      };
+    };
+    expect(run(["start", "app"]).exit).toBe(0);
+    const bare = run(["finding", "add", "bare", "--kind", "issue", "--domain", "app"]);
+    expect([bare.exit, bare.stdout, bare.stderr]).toEqual([
+      1,
+      "",
+      `refused: a finding needs a detail: pass --detail-md with ${FINDING_DETAIL_SHAPE}\n`,
+    ]);
+    const blank = run(["finding", "add", "blank", "--kind", "issue", "--detail-md", " "]);
+    expect([blank.exit, blank.stderr]).toEqual([1, "refused: --detail-md is empty\n"]);
+    const detail = [
+      "**What** the gate hangs",
+      "**Where** `bun test`",
+      "**Why it matters** blocks landing",
+      "**Suggested fix** add a timeout",
+    ].join("\n");
+    expect(run(["finding", "add", "md", "--kind", "issue", "--detail-md", detail]).stdout).toBe(
+      "added f1: md\n",
+    );
+    expect(run(["finding", "add", "text", "--kind", "issue", "--detail", "it hangs"]).stdout).toBe(
+      "added f2: text\n",
+    );
+    const json = JSON.parse(run(["backlog", "show", "--json"]).stdout);
+    expect(
+      json.findings.map((finding: { detail: string | null; detailMarkdown?: string }) => [
+        finding.detail,
+        finding.detailMarkdown,
+      ]),
+    ).toEqual([
+      [null, detail],
+      ["it hangs", undefined],
+    ]);
+    const help = run(["finding", "add", "--help"]);
+    expect(help.exit).toBe(0);
+    expect(`${help.stdout}\n${help.stderr}`.replace(/\s+/g, " ")).toContain(FINDING_DETAIL_SHAPE);
   });
 });
 

@@ -5,7 +5,7 @@ import { dirname, join } from "node:path";
 import { Effect, Option, Result } from "effect";
 import { findingAdd, readDocument } from "./backlog-doc.ts";
 import { isAnswer } from "./backlog-store/ops.ts";
-import { isDiscussion } from "./backlog-store/schema.ts";
+import { FINDING_DETAIL_SHAPE, isDiscussion } from "./backlog-store/schema.ts";
 import type { Item } from "./backlog-store/schema.ts";
 import type { Config } from "./config.ts";
 import { checkDomainName, L, Refused, sessionOf } from "./fleet.ts";
@@ -728,7 +728,7 @@ type OutboxLine =
       kind: "issue" | "opportunity";
       title: string;
       detail: string | undefined;
-      detailMarkdown: string | undefined;
+      detailMarkdown: string;
       path: string | undefined;
       from: string | undefined;
     }
@@ -759,12 +759,18 @@ const parseOutboxLine = (line: string): OutboxLine => {
       return { type: "invalid", error: "a finding line needs kind issue or opportunity" };
     const title = text("title");
     if (title === undefined) return { type: "invalid", error: "a finding line needs a title" };
+    const detailMarkdown = text("detailMarkdown");
+    if (detailMarkdown === undefined)
+      return {
+        type: "invalid",
+        error: `a finding line needs detailMarkdown: ${FINDING_DETAIL_SHAPE}`,
+      };
     return {
       type: "finding",
       kind: record.kind,
       title,
       detail: text("detail"),
-      detailMarkdown: text("detailMarkdown"),
+      detailMarkdown,
       path: text("path"),
       from: text("from"),
     };
