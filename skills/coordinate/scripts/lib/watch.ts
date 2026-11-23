@@ -1071,36 +1071,59 @@ export const watch = Effect.fn("watch")(function* (config: Config, options: Watc
           waits = waits.filter((entry) => eligibleItems.has(entry.item));
         }
         const observations: Record<string, { live: number; budget: number } | undefined> = {};
+        let previous = snapshot.capacity;
+        // Without this core's name, waits cannot be keyed: keep the snapshot as it is.
+        let keyed = waits.length === 0;
         if (waits.length > 0) {
-          const read = yield* Effect.all([localMachine(), hc.list()]).pipe(Effect.result);
-          if (Result.isFailure(read)) {
-            lines.push(watchEvent("capacity-unavailable", {}, "", { error: read.failure.message }));
+          const resolved = yield* localMachine().pipe(Effect.result);
+          if (Result.isFailure(resolved)) {
+            lines.push(
+              watchEvent("capacity-unavailable", {}, "", { error: resolved.failure.message }),
+            );
           } else {
-            const [core, listed] = read.success;
-            // Entries written under `local` or the OS hostname name this core.
+            const core = resolved.success;
+            keyed = true;
+            // Entries and snapshots written under `local` or the OS hostname name this core.
             waits = waits.map((entry) => ({
               ...entry,
               machine: canonicalMachine(entry.machine, core),
             }));
-            const machines = [...new Set(waits.map((entry) => entry.machine))];
-            for (const machine of machines) {
-              const count = yield* liveDelegateCount(machine, listed, core).pipe(Effect.result);
-              if (Result.isFailure(count)) {
-                lines.push(
-                  watchEvent("capacity-unavailable", { machine }, "", {
-                    error: count.failure.message,
-                  }),
+            previous = Object.fromEntries(
+              Object.entries(previous).map(([machine, seen]) => [
+                canonicalMachine(machine, core),
+                seen,
+              ]),
+            );
+            const listed = yield* hc.list().pipe(Effect.result);
+            if (Result.isFailure(listed)) {
+              lines.push(
+                watchEvent("capacity-unavailable", {}, "", { error: listed.failure.message }),
+              );
+            } else {
+              const machines = [...new Set(waits.map((entry) => entry.machine))];
+              for (const machine of machines) {
+                const count = yield* liveDelegateCount(machine, listed.success, core).pipe(
+                  Effect.result,
                 );
-                continue;
+                if (Result.isFailure(count)) {
+                  lines.push(
+                    watchEvent("capacity-unavailable", { machine }, "", {
+                      error: count.failure.message,
+                    }),
+                  );
+                  continue;
+                }
+                const budget = yield* machineDelegateBudget(config, machine, core);
+                observations[machine] = { live: count.success, budget: budget.budget };
               }
-              const budget = yield* machineDelegateBudget(config, machine, core);
-              observations[machine] = { live: count.success, budget: budget.budget };
             }
           }
         }
-        const wakes = capacityWakeEvents(waits, observations, snapshot.capacity);
-        lines.push(...wakes.events);
-        snapshot.capacity = wakes.capacity;
+        if (keyed) {
+          const wakes = capacityWakeEvents(waits, observations, previous);
+          lines.push(...wakes.events);
+          snapshot.capacity = wakes.capacity;
+        }
       }
       first = false;
 

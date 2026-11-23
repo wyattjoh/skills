@@ -8,6 +8,7 @@ import type { Config } from "./config.ts";
 import { coordinatorDomain, L, Refused, sessionOf } from "./fleet.ts";
 import { currentBranch, gitTry } from "./git.ts";
 import { harnessOf } from "./harness.ts";
+import { localMachine, machineOfAddress } from "./delegate-capacity.ts";
 import * as hc from "./herdr.ts";
 
 const json = (value: unknown): string[] => [JSON.stringify(value, null, 2)];
@@ -127,6 +128,7 @@ export const attachDelegate = Effect.fn("attachDelegate")(function* (
     // The folder the session runs in, as `delegate` labels it, so `end` and `resume` start there.
     [L.worktree]: terminal.cwd,
     ...(place.branch ? { [L.branch]: place.branch } : {}),
+    [L.machine]: machineOfAddress(terminal.address, yield* localMachine()),
   };
   const missing = Object.fromEntries(
     Object.entries(wanted).filter(([key, value]) => value !== "" && !(key in terminal.labels)),

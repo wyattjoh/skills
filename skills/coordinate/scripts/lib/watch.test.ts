@@ -994,6 +994,61 @@ describe("watch capacity queue", () => {
     });
   });
 
+  it("keeps a delivered wake across a hostname-keyed snapshot and a tick without the core name", async () => {
+    const { config, state } = await queuedDomain();
+    const answer = (argv: readonly string[]): RunOutput => {
+      if (argv[1] === "ls") return ok('{"terminals":[]}');
+      throw new Error(`unexpected command: ${argv.join(" ")}`);
+    };
+    const emitted: string[] = [];
+    const options = {
+      domain: "app",
+      intervalMs: 1,
+      forgeIntervalMs: 60_000,
+      maxMs: 0,
+      owner: undefined,
+      replace: false,
+      deliver: false,
+      today: () => "2026-11-10",
+      follow: false,
+      emit: (line: string) => {
+        emitted.push(eventText(line));
+      },
+    };
+    const healthy = fakeProc(answer);
+    await runWith(watch(config, options), healthy.layer);
+    expect(emitted).toEqual([
+      `<event kind="capacity" machine="${FAKE_CORE}" item="i1" order="1">retry it with coordinate delegate --retry-queued; the regular budget gate still applies</event>`,
+    ]);
+    // A snapshot written before machine names were canonical is keyed by the OS hostname.
+    const stateFile = join(state, "watch", "app.json");
+    const saved = JSON.parse(readFileSync(stateFile, "utf8"));
+    writeFileSync(
+      stateFile,
+      JSON.stringify({ ...saved, capacity: { [hostname()]: { order: 1, ready: true } } }),
+    );
+    emitted.length = 0;
+    await runWith(watch(config, options), healthy.layer);
+    expect(emitted).toEqual([]);
+    const blind = fakeProc(
+      (argv) =>
+        argv[1] === "server"
+          ? { exitCode: 1, stdout: "", stderr: "herdr-core is not answering" }
+          : answer(argv),
+      { core: undefined },
+    );
+    await runWith(watch(config, options), blind.layer);
+    expect(emitted).toEqual([
+      '<event kind="capacity-unavailable"><error>herdr-core is not answering</error></event>',
+    ]);
+    emitted.length = 0;
+    await runWith(watch(config, options), healthy.layer);
+    expect(emitted).toEqual([]);
+    expect(JSON.parse(readFileSync(stateFile, "utf8")).capacity).toEqual({
+      [FAKE_CORE]: { order: 1, ready: true },
+    });
+  });
+
   it("reports capacity unavailable when this core's Herdr machine name cannot be read", async () => {
     const { config } = await queuedDomain();
     const fake = fakeProc(

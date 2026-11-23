@@ -9,7 +9,7 @@ import { resolveConfig } from "./config.ts";
 import { cliEnv, failureOf, g, gitAndFake, initRepo, runWith, tempDir } from "./fixture.ts";
 import { HerdrError } from "./herdr.ts";
 import { endDelegate, start } from "./lifecycle.ts";
-import { fakeProc, ok, type RunOutput } from "./proc.ts";
+import { FAKE_CORE, fakeProc, ok, type RunOutput } from "./proc.ts";
 
 const dirs: string[] = [];
 const dir = () => {
@@ -104,6 +104,7 @@ describe("item attach", () => {
       "fleet.harness=claude",
       `fleet.worktree=${join(worktree, "src")}`,
       "fleet.branch=wyattjoh/manual",
+      `fleet.machine=${FAKE_CORE}`,
     ];
     expect(lines).toEqual([
       `filed manual (t4, session ${SESSION}) under i1 [delegated]`,
@@ -135,6 +136,7 @@ describe("item attach", () => {
       "fleet.harness": "pi",
       "fleet.worktree": "/r/app/.claude/worktrees/fix-a",
       "fleet.branch": "wyattjoh/fix-a",
+      "fleet.machine": FAKE_CORE,
     };
     const fake = gitAndFake(
       answers(handStarted("/r/app/.claude/worktrees/fix-a", { name: "fix-a", labels })),
@@ -270,7 +272,7 @@ describe("item attach", () => {
     const error = await failureOf(attachDelegate(cfg, options({}), ENV), fake.layer);
     expect([error instanceof HerdrError, messageOf(error)]).toEqual([
       true,
-      `filed manual under i1 but could not label t4 with fleet.domain=app fleet.task=manual fleet.session=${SESSION} fleet.harness=claude fleet.worktree=${state}: down`,
+      `filed manual under i1 but could not label t4 with fleet.domain=app fleet.task=manual fleet.session=${SESSION} fleet.harness=claude fleet.worktree=${state} fleet.machine=${FAKE_CORE}: down`,
     ]);
     expect(read(path).items[0].delegates.length).toBe(1);
   });
@@ -496,7 +498,7 @@ describe("coordinate item attach and detach CLI", () => {
     ]).toEqual([
       [
         0,
-        `filed manual (t4, session ${SESSION}) under i1 [delegated]\nlabelled t4: fleet.task=manual fleet.harness=claude fleet.worktree=${state}\n`,
+        `filed manual (t4, session ${SESSION}) under i1 [delegated]\nlabelled t4: fleet.task=manual fleet.harness=claude fleet.worktree=${state} fleet.machine=${FAKE_CORE}\n`,
       ],
       [
         1,
