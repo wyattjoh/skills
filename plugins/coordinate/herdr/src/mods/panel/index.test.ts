@@ -3584,7 +3584,9 @@ test("a stale save rereads the policy, marks the draft stale and Reload discards
   get(render(), "harness-policy-enabled-pi").click!({}, ctx.cx);
   setPolicyOutput("", 1, "stale harness policy revision: expected 3, current 4");
   get(render(), "harness-policy-save").click!({}, ctx.cx);
-  setPolicyOutput(policyOutput({ revision: 4, source: "configured" }));
+  setPolicyOutput(
+    policyOutput({ revision: 4, source: "configured", global: { enabled: ["pi"], default: null } }),
+  );
   await settle();
   const root = render();
   expect(text(get(root, "harness-policy-failure"))).toBe(
@@ -3603,7 +3605,9 @@ test("a policy change on disk while the draft is dirty marks the draft stale", a
   setPolicyOutput(policyOutput({ revision: 1 }));
   const { ctx, render } = await mountDialog(undefined);
   get(render(), "harness-policy-enabled-pi").click!({}, ctx.cx);
-  setPolicyOutput(policyOutput({ revision: 2, source: "configured" }));
+  setPolicyOutput(
+    policyOutput({ revision: 2, source: "configured", global: { enabled: ["pi"], default: null } }),
+  );
   policyWatch()!.fire([`${STATE}/delegate-harness-policy.json`]);
   await settle();
   const root = render();
@@ -3635,7 +3639,25 @@ const dismissals = {
         cx: unknown,
       ) => void
     )({ key: "escape" }, ctx.cx),
+  "Click beside": (render: () => Node, ctx: { cx: unknown }) =>
+    get(render(), "harness-policy-backdrop").click!({}, ctx.cx),
 } as const;
+
+test("a click inside the settings window stays there", async () => {
+  setPolicyOutput(policyOutput({ revision: 2 }));
+  const { ctx, render } = await mountDialog(undefined);
+  let stopped = 0;
+  get(render(), "harness-policy-dialog").click!(
+    {},
+    {
+      ...(ctx.cx as object),
+      stop_propagation: () => {
+        stopped += 1;
+      },
+    },
+  );
+  expect([stopped, closedOverlays]).toEqual([1, []]);
+});
 
 for (const [way, dismiss] of Object.entries(dismissals)) {
   test(`${way} closes at once when nothing changed`, async () => {
@@ -3697,31 +3719,93 @@ test("Discard drops the draft and closes the dialog", async () => {
   expect(policyWrites()).toEqual([showArgs()]);
 });
 
-test("switching scope with unsaved changes asks first: Keep editing stays, Discard switches", async () => {
+test("switching scope keeps each scope's draft and asks nothing; a click beside asks while any scope has one", async () => {
   host.files.set(DOC, JSON.stringify(emptyBacklog("alpha", null)));
   const { ctx, view, render } = await mountDialog(undefined);
   setPolicyOutput(policyOutput({ revision: 2 }));
   policyWatch()!.fire([`${STATE}/delegate-harness-policy.json`]);
   await settle();
   get(render(), "harness-policy-enabled-pi").click!({}, ctx.cx);
-  get(render(), "harness-policy-scope-trigger").click!({}, ctx.cx);
-  get(render(), "harness-policy-scope-domain-alpha").click!({}, ctx.cx);
-  expect(text(get(render(), "harness-policy-confirm"))).toContain("Discard changes?");
-  expect(view.policyDialog?.domain).toBe(undefined);
-  get(render(), "harness-policy-keep-editing").click!({}, ctx.cx);
-  expect(view.policyDialog?.domain).toBe(undefined);
-  expect(view.policyDirty(undefined)).toBe(true);
-
-  get(render(), "harness-policy-scope-trigger").click!({}, ctx.cx);
-  get(render(), "harness-policy-scope-domain-alpha").click!({}, ctx.cx);
   setPolicyOutput(policyOutput({ revision: 2, domain: "alpha" }));
-  get(render(), "harness-policy-discard").click!({}, ctx.cx);
+  get(render(), "harness-policy-scope-trigger").click!({}, ctx.cx);
+  get(render(), "harness-policy-scope-domain-alpha").click!({}, ctx.cx);
   await settle();
+  expect(ids(render(), "harness-policy-confirm")).toEqual([]);
   expect(view.policyDialog?.domain).toBe("alpha");
-  expect(view.harnessPolicyDraft).toBe(undefined);
-  expect(text(get(render(), "harness-policy-pane-head"))).toBe("HARNESS alpha");
+  expect(text(get(render(), "harness-policy-source"))).toBe("Inherits legacy defaults");
+  expect([view.policyDirty(undefined), view.policyDirty("alpha")]).toEqual([true, false]);
+
+  dismissals["Click beside"](render, ctx);
+  expect(text(get(render(), "harness-policy-confirm-title"))).toBe("Discard changes?");
+  get(render(), "harness-policy-keep-editing").click!({}, ctx.cx);
+
+  setPolicyOutput(policyOutput({ revision: 2 }));
+  get(render(), "harness-policy-scope-trigger").click!({}, ctx.cx);
+  get(render(), "harness-policy-scope-global").click!({}, ctx.cx);
+  await settle();
+  const root = render();
+  expect(text(get(root, "harness-policy-source"))).toBe("Legacy defaults · Unsaved changes");
+  expect(get(root, "harness-policy-enabled-pi").styles.bg).toBe(theme().hover);
   expect(closedOverlays).toEqual([]);
-  expect(policyWrites().at(-1)).toEqual(showArgs("alpha"));
+});
+
+test("a save on one scope keeps another scope's draft, carried onto the new revision", async () => {
+  host.files.set(DOC, JSON.stringify(emptyBacklog("alpha", null)));
+  const { ctx, view, render } = await mountDialog(undefined);
+  setPolicyOutput(policyOutput({ revision: 2 }));
+  policyWatch()!.fire([`${STATE}/delegate-harness-policy.json`]);
+  await settle();
+  get(render(), "harness-policy-enabled-pi").click!({}, ctx.cx);
+  setPolicyOutput(policyOutput({ revision: 2, domain: "alpha" }));
+  get(render(), "harness-policy-scope-trigger").click!({}, ctx.cx);
+  get(render(), "harness-policy-scope-domain-alpha").click!({}, ctx.cx);
+  await settle();
+  get(render(), "harness-policy-inherit-toggle").click!({}, ctx.cx);
+  setPolicyOutput(
+    policyOutput({ revision: 3, domain: "alpha", mode: "replace", override: LEGACY_POLICY }),
+  );
+  get(render(), "harness-policy-save").click!({}, ctx.cx);
+  await settle();
+  expect(view.policyDirty("alpha")).toBe(false);
+
+  setPolicyOutput(policyOutput({ revision: 3 }));
+  get(render(), "harness-policy-scope-trigger").click!({}, ctx.cx);
+  get(render(), "harness-policy-scope-global").click!({}, ctx.cx);
+  await settle();
+  const root = render();
+  expect(ids(root, "harness-policy-failure")).toEqual([]);
+  expect(view.harnessPolicyDraft?.revision).toBe(3);
+  expect(text(get(root, "harness-policy-source"))).toBe("Legacy defaults · Unsaved changes");
+  get(root, "harness-policy-save").click!({}, ctx.cx);
+  await settle();
+  expect(policyWrites().filter((args) => args[1] === "global-set")).toEqual([
+    setArgs(undefined, { enabled: ["claude"], default: null }, 3),
+  ]);
+});
+
+test("after Save on a domain, switching to another scope goes at once without asking", async () => {
+  host.files.set(DOC, JSON.stringify(emptyBacklog("alpha", null)));
+  host.files.set(`${STATE}/backlogs/beta.json`, JSON.stringify(emptyBacklog("beta", null)));
+  const { ctx, view, render } = await mountDialog(undefined);
+  setPolicyOutput(policyOutput({ revision: 2, domain: "alpha" }));
+  get(render(), "harness-policy-scope-trigger").click!({}, ctx.cx);
+  get(render(), "harness-policy-scope-domain-alpha").click!({}, ctx.cx);
+  await settle();
+  get(render(), "harness-policy-inherit-toggle").click!({}, ctx.cx);
+  expect(view.policyDirty("alpha")).toBe(true);
+  setPolicyOutput(
+    policyOutput({ revision: 3, domain: "alpha", mode: "replace", override: LEGACY_POLICY }),
+  );
+  get(render(), "harness-policy-save").click!({}, ctx.cx);
+  await settle();
+  expect(view.policyDirty("alpha")).toBe(false);
+  setPolicyOutput(policyOutput({ revision: 3, domain: "beta" }));
+  get(render(), "harness-policy-scope-trigger").click!({}, ctx.cx);
+  get(render(), "harness-policy-scope-domain-beta").click!({}, ctx.cx);
+  await settle();
+  expect(ids(render(), "harness-policy-confirm")).toEqual([]);
+  expect(view.policyDialog?.domain).toBe("beta");
+  expect(text(get(render(), "harness-policy-pane-head"))).toBe("HARNESS beta");
 });
 
 test("switching scope with nothing changed goes at once", async () => {
@@ -3931,8 +4015,13 @@ test("the dialog is Finbar-sized and drawn as a sidebar beside a scrolling pane"
   setPolicyOutput(policyOutput({ revision: 2 }));
   const { render } = await mountDialog(undefined);
   const root = render();
-  expect(get(root, "harness-policy-dialog").styles.h).toBe(620);
-  expect(policyDialogSpec(undefined)).toMatchObject({ width: 880, height: 620 });
+  expect(get(root, "harness-policy-dialog").styles).toMatchObject({
+    w: HARNESS_DIALOG.width,
+    h: HARNESS_DIALOG.height,
+    bg: theme().popover,
+    border_color: theme().border,
+  });
+  expect([HARNESS_DIALOG.width, HARNESS_DIALOG.height]).toEqual([880, 620]);
   expect(get(root, "harness-policy-pane").styles.px).toBe(28);
   expect(get(root, "harness-policy-row-enabled").styles.border_b).toBe(1);
 });
@@ -3961,8 +4050,9 @@ const POLICY_SPEC = {
   mod: "coordinate-panel",
   kind: "dialog",
   modal: true,
-  width: HARNESS_DIALOG.width,
-  height: HARNESS_DIALOG.height,
+  frame: "none",
+  width: 1,
+  height: 1,
 };
 
 test("the header cog replaces the domain label and opens the global policy on Domains", async () => {

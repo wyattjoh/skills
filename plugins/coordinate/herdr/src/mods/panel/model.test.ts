@@ -16,6 +16,7 @@ import {
   groupFindings,
   mergeEnded,
   overridingDomains,
+  rebaseHarnessPolicyDraft,
   policyDialogProps,
   policyDialogSpec,
   readDocument,
@@ -25,7 +26,9 @@ import type {
   DelegateRow,
   DelegateState,
   DocumentState,
+  HarnessPolicyDraft,
   HarnessPolicyState,
+  HarnessPolicyView,
   HarnessSelection,
 } from "./model.ts";
 
@@ -337,13 +340,14 @@ test("reads the harness policy dialog's props and rejects everything else", () =
   expect(rejected).toEqual(Array.from({ length: 11 }, () => undefined));
 });
 
-test("opens the harness policy editor as a centered dialog of this mod", () => {
+test("opens the harness policy editor as a frameless, full-window dialog of this mod", () => {
   expect(policyDialogSpec(undefined)).toEqual({
     mod: "coordinate-panel",
     kind: "dialog",
     modal: true,
-    width: 880,
-    height: 620,
+    frame: "none",
+    width: 1,
+    height: 1,
     props: { harnessPolicy: { domain: null } },
   });
   expect(policyDialogSpec("alpha").props).toEqual({ harnessPolicy: { domain: "alpha" } });
@@ -447,4 +451,29 @@ test("overridingDomains keeps the domains read as replace, in order, and drops f
     ],
   ];
   expect(overridingDomains(reads)).toEqual(["alpha", "delta"]);
+});
+
+const globalView = (revision: number, policy: HarnessSelection): HarnessPolicyView => ({
+  schemaVersion: 1,
+  revision,
+  path: "/s/delegate-harness-policy.json",
+  global: { source: "configured", policy },
+  domain: null,
+});
+
+test("rebaseHarnessPolicyDraft carries a draft onto a newer revision only when its scope is unchanged", () => {
+  const base = globalView(2, LEGACY);
+  const draft = {
+    domain: undefined,
+    revision: 2,
+    inherit: false,
+    selection: { enabled: ["claude"], default: null },
+  } satisfies HarnessPolicyDraft;
+  const moved = globalView(3, LEGACY);
+  expect(rebaseHarnessPolicyDraft({ base, draft }, moved)).toEqual({
+    base: moved,
+    draft: { ...draft, revision: 3 },
+  });
+  const changed = globalView(3, { enabled: ["pi"], default: null });
+  expect(rebaseHarnessPolicyDraft({ base, draft }, changed)).toEqual({ base, draft });
 });

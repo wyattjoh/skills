@@ -53,6 +53,7 @@ import {
   readDocument,
   seedHarnessPolicyDraft,
   overridingDomains,
+  rebaseHarnessPolicyDraft,
   stateDirOf,
   summarize,
   targetDomain,
@@ -68,7 +69,7 @@ import type {
   EndedRecords,
   HarnessPolicyState,
   HarnessPolicyDraft,
-  PolicyExit,
+  HarnessPolicyDraftEntry,
   ItemGroup,
   ListingState,
   PolicyDialogProps,
@@ -164,8 +165,10 @@ export default class Panel extends View {
   policyOverridesGeneration = 0;
   policyDomainMenuOpen = false;
   // The edit in progress, and the way out it is waiting on a Discard confirm for.
-  harnessPolicyDraft: HarnessPolicyDraft | undefined;
-  policyConfirm: PolicyExit | undefined;
+  // Keyed by scope ("" for global): switching scope keeps each one.
+  harnessPolicyDrafts = new Map<string, HarnessPolicyDraftEntry>();
+  // Whether the Discard changes? confirm is up, for a close with unsaved changes in any scope.
+  policyConfirm = false;
   harnessPolicyBusy = false;
   policyFailure: { domain: string | undefined; message: string } | undefined;
   // The item or finding whose detail is open, by domain and id, so a reload shows its latest
@@ -625,7 +628,6 @@ export default class Panel extends View {
     const scopeChanged = this.policyScope !== scope || this.policyStateDir !== stateDir;
     if (!refresh && !scopeChanged) return;
     if (scopeChanged) {
-      this.harnessPolicyDraft = undefined;
       this.policyFailure = undefined;
       this.harnessPolicyBusy = false;
       this.harnessPolicyState = { kind: "loading" };
@@ -644,6 +646,7 @@ export default class Panel extends View {
       )
         return;
       this.harnessPolicyState = state;
+      this.rebasePolicyDraft(domain);
       task.notify();
     });
   }
@@ -1349,37 +1352,47 @@ export default class Panel extends View {
     return view.domain?.name === domain ? view : undefined;
   }
 
+  // The shown scope's draft, for the tests and callers that only care about what is on screen.
+  get harnessPolicyDraft(): HarnessPolicyDraft | undefined {
+    return this.harnessPolicyDrafts.get(this.target() ?? "")?.draft;
+  }
+
+  // After a read of a scope, carry its draft onto the new revision when another scope's write
+  // moved it; a change to this scope's own policy leaves the draft stale.
+  rebasePolicyDraft(domain: string | undefined) {
+    const entry = this.harnessPolicyDrafts.get(domain ?? "");
+    const view = this.policyViewFor(domain);
+    if (entry === undefined || view === undefined) return;
+    this.harnessPolicyDrafts.set(domain ?? "", rebaseHarnessPolicyDraft(entry, view));
+  }
+
   // The edit in progress for a scope: the stored draft, or one seeded from the policy as read.
   // Nothing is stored until a control changes it.
   currentPolicyDraft(domain: string | undefined): HarnessPolicyDraft | undefined {
-    const stored = this.harnessPolicyDraft;
-    if (stored !== undefined && stored.domain === domain) return stored;
+    const stored = this.harnessPolicyDrafts.get(domain ?? "");
+    if (stored !== undefined) return stored.draft;
     const view = this.policyViewFor(domain);
     return view === undefined ? undefined : seedHarnessPolicyDraft(view, domain);
   }
 
-  // Whether the draft for a scope differs from the policy as read.
+  // Whether the draft for a scope differs from the policy it was made against.
   policyDirty(domain: string | undefined): boolean {
-    const view = this.policyViewFor(domain);
-    const draft = this.harnessPolicyDraft;
-    return (
-      view !== undefined &&
-      draft !== undefined &&
-      draft.domain === domain &&
-      harnessPolicyDraftDirty(view, draft)
+    const entry = this.harnessPolicyDrafts.get(domain ?? "");
+    return entry !== undefined && harnessPolicyDraftDirty(entry.base, entry.draft);
+  }
+
+  // Whether any scope, shown or not, has unsaved changes.
+  anyPolicyDirty(): boolean {
+    return [...this.harnessPolicyDrafts.values()].some((entry) =>
+      harnessPolicyDraftDirty(entry.base, entry.draft),
     );
   }
 
   // The policy changed on disk since the draft was seeded.
   policyConflict(domain: string | undefined): boolean {
     const view = this.policyViewFor(domain);
-    const draft = this.harnessPolicyDraft;
-    return (
-      view !== undefined &&
-      draft !== undefined &&
-      draft.domain === domain &&
-      draft.revision !== view.revision
-    );
+    const entry = this.harnessPolicyDrafts.get(domain ?? "");
+    return view !== undefined && entry !== undefined && entry.draft.revision !== view.revision;
   }
 
   // A control may change the draft when the scope is loaded, nothing is being saved, the draft
@@ -1394,8 +1407,10 @@ export default class Panel extends View {
   // reported as a conflict with edits that are no longer there.
   storePolicyDraft(draft: HarnessPolicyDraft, cx: Context) {
     const view = this.policyViewFor(draft.domain);
-    this.harnessPolicyDraft =
-      view !== undefined && !harnessPolicyDraftDirty(view, draft) ? undefined : draft;
+    const key = draft.domain ?? "";
+    if (view === undefined || !harnessPolicyDraftDirty(view, draft))
+      this.harnessPolicyDrafts.delete(key);
+    else this.harnessPolicyDrafts.set(key, { base: view, draft });
     this.policyFailure = undefined;
     cx.notify();
   }
@@ -1452,8 +1467,8 @@ export default class Panel extends View {
   saveHarnessPolicy(domain: string | undefined, cx: Context) {
     if (domain !== this.target() || this.harnessPolicyBusy || this.policyConflict(domain)) return;
     const view = this.policyViewFor(domain);
-    const draft = this.harnessPolicyDraft;
-    if (view === undefined || draft === undefined || draft.domain !== domain) return;
+    const draft = this.harnessPolicyDrafts.get(domain ?? "")?.draft;
+    if (view === undefined || draft === undefined) return;
     const command = harnessPolicySaveCommand(home(), view, draft);
     if (command !== undefined) this.runHarnessPolicyMutation(domain, command, cx);
   }
@@ -1461,7 +1476,7 @@ export default class Panel extends View {
   // Throw away the draft and read the policy again, as the Reload button does.
   reloadHarnessPolicy(domain: string | undefined, cx: Context) {
     if (domain !== this.target() || this.harnessPolicyBusy || this.stateDir === undefined) return;
-    this.harnessPolicyDraft = undefined;
+    this.harnessPolicyDrafts.delete(domain ?? "");
     this.policyFailure = undefined;
     this.loadHarnessPolicy(this.stateDir, domain, cx, true, true);
     cx.notify();
@@ -1471,39 +1486,36 @@ export default class Panel extends View {
     if (this.policyDialog !== undefined) closeOverlay(this.policyDialog.overlay);
   }
 
-  // Every way out of the dialog or the scope goes through here: with unsaved changes it asks
-  // first, and otherwise it goes at once. While a save is running it does nothing.
-  requestPolicyExit(exit: PolicyExit, cx: Context) {
+  // Every way out of the dialog (Cancel, Escape, a click beside the window) goes through here:
+  // with unsaved changes in any scope it asks first, and otherwise it closes at once. While a
+  // save is running it does nothing.
+  requestPolicyClose(cx: Context) {
     if (this.policyDialog === undefined || this.harnessPolicyBusy) return;
-    if (this.policyDirty(this.target())) {
+    if (this.anyPolicyDirty()) {
       this.policyDomainMenuOpen = false;
-      this.policyConfirm = exit;
+      this.policyConfirm = true;
       cx.notify();
       return;
     }
-    this.performPolicyExit(exit, cx);
+    this.performPolicyClose();
   }
 
-  performPolicyExit(exit: PolicyExit, cx: Context) {
-    this.policyConfirm = undefined;
-    this.harnessPolicyDraft = undefined;
-    if (exit.kind === "close") {
-      this.closePolicyDialog();
-      return;
-    }
-    this.switchPolicyScope(exit.domain, cx);
+  performPolicyClose() {
+    this.policyConfirm = false;
+    this.harnessPolicyDrafts.clear();
+    this.closePolicyDialog();
   }
 
   keepEditingPolicy(cx: Context) {
-    if (this.policyConfirm === undefined) return;
-    this.policyConfirm = undefined;
+    if (!this.policyConfirm) return;
+    this.policyConfirm = false;
     this.policyDialogFocus?.focus();
     cx.notify();
   }
 
-  discardPolicyChanges(cx: Context) {
-    if (this.policyConfirm === undefined) return;
-    this.performPolicyExit(this.policyConfirm, cx);
+  discardPolicyChanges() {
+    if (!this.policyConfirm) return;
+    this.performPolicyClose();
   }
 
   // Show another scope in the dialog: the global defaults, or one domain.
@@ -1514,7 +1526,7 @@ export default class Panel extends View {
       cx.notify();
       return;
     }
-    this.requestPolicyExit({ kind: "scope", domain }, cx);
+    this.switchPolicyScope(domain, cx);
   }
 
   switchPolicyScope(domain: string | undefined, cx: Context) {
@@ -1561,12 +1573,15 @@ export default class Panel extends View {
       if (failure === undefined) this.loadPolicyOverrides(task);
       if (!current()) return;
       if (failure === undefined) {
-        this.harnessPolicyDraft = undefined;
+        this.harnessPolicyDrafts.delete(scope);
         this.policyFailure = undefined;
         this.harnessPolicyState = await this.readHarnessPolicy(domain);
       } else {
         this.policyFailure = { domain, message: failure };
-        if (stale) this.harnessPolicyState = await this.readHarnessPolicy(domain);
+        if (stale) {
+          this.harnessPolicyState = await this.readHarnessPolicy(domain);
+          this.rebasePolicyDraft(domain);
+        }
       }
       if (!current()) return;
       this.harnessPolicyBusy = false;
@@ -1592,7 +1607,7 @@ export default class Panel extends View {
       draft,
       dirty: inScope && this.policyDirty(domain),
       conflict: inScope && this.policyConflict(domain),
-      confirming: this.policyConfirm !== undefined,
+      confirming: this.policyConfirm,
       focus: this.policyDialogFocus!,
       selectGlobal: (cx) => this.selectPolicyDomain(undefined, cx),
       selectDomain: (name, cx) => this.selectPolicyDomain(name, cx),
@@ -1602,9 +1617,9 @@ export default class Panel extends View {
       setInherit: (inherit, cx) => this.setHarnessPolicyInherit(domain, inherit, cx),
       reload: (cx) => this.reloadHarnessPolicy(domain, cx),
       save: (cx) => this.saveHarnessPolicy(domain, cx),
-      cancel: (cx) => this.requestPolicyExit({ kind: "close" }, cx),
+      cancel: (cx) => this.requestPolicyClose(cx),
       keepEditing: (cx) => this.keepEditingPolicy(cx),
-      discard: (cx) => this.discardPolicyChanges(cx),
+      discard: () => this.discardPolicyChanges(),
     };
   }
 

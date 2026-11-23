@@ -2,7 +2,6 @@
 // document is usable, and how its items group. Where the document lives is the store's paths.
 import { ITEM_STATUSES, isRecord, validateBacklog } from "../../lib/store.ts";
 import type { Ask, Backlog, DelegateRef, Finding, Item, ItemStatus } from "../../lib/store.ts";
-import { HARNESS_DIALOG } from "./look.ts";
 
 /**
  * The terminal label naming the coordinate domain a coordinator or delegate belongs to.
@@ -742,10 +741,14 @@ export const policyDialogProps = (props: unknown): PolicyDialogProps | undefined
 export const policyDialogSpec = (domain: string | undefined) => ({
   mod: PANEL_MOD,
   kind: "dialog" as const,
-  // A click beside the dialog does nothing, so unsaved changes are never dropped without asking.
+  // Herdr would close a plain dialog on a click beside it without asking, so the copy covers the
+  // whole window with no frame of its own, draws the settings window centered in it, and treats
+  // a click on the rest as Cancel: it closes at once, or asks first with unsaved changes. Herdr
+  // still dims the window behind it. Herdr's own win98 mod opens its screens the same way.
   modal: true,
-  width: HARNESS_DIALOG.width,
-  height: HARNESS_DIALOG.height,
+  frame: "none" as const,
+  width: 1,
+  height: 1,
   props: { harnessPolicy: { domain: domain ?? null } },
 });
 
@@ -858,11 +861,6 @@ export const harnessPolicyResetCommand = (home: string, domain: string, revision
   ]);
 
 /**
- * A way out of the dialog or the scope that unsaved changes would be lost to.
- */
-export type PolicyExit = { kind: "close" } | { kind: "scope"; domain: string | undefined };
-
-/**
  * An edit in progress for one scope, seeded from the policy that was read. Nothing is written
  * until it is saved.
  */
@@ -871,6 +869,37 @@ export type HarnessPolicyDraft = {
   revision: number;
   inherit: boolean;
   selection: HarnessSelection;
+};
+
+/**
+ * A scope's unsaved draft, with the policy view it was made against. The dialog keeps one per
+ * scope, so switching scope shows the other scope's draft and asks nothing.
+ */
+export type HarnessPolicyDraftEntry = { base: HarnessPolicyView; draft: HarnessPolicyDraft };
+
+/**
+ * Carry a draft onto a newer read when its own scope's policy did not change. The revision
+ * covers the whole policy file, so a save on another scope moves it too; only a change to this
+ * scope's policy makes the draft stale.
+ * @param entry The draft and the view it was made against.
+ * @param view The newer read for the same scope.
+ * @returns The entry against the newer view, or the entry unchanged when its scope's policy changed.
+ */
+export const rebaseHarnessPolicyDraft = (
+  entry: HarnessPolicyDraftEntry,
+  view: HarnessPolicyView,
+): HarnessPolicyDraftEntry => {
+  if (entry.draft.revision === view.revision) return entry;
+  const before = seedHarnessPolicyDraft(entry.base, entry.draft.domain);
+  const after = seedHarnessPolicyDraft(view, entry.draft.domain);
+  if (
+    before === undefined ||
+    after === undefined ||
+    before.inherit !== after.inherit ||
+    !sameHarnessSelection(before.selection, after.selection)
+  )
+    return entry;
+  return { base: view, draft: { ...entry.draft, revision: view.revision } };
 };
 
 /**

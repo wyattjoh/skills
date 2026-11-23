@@ -103,6 +103,7 @@ const SETTINGS = {
   confirmGap: 12,
   confirmRadius: 10,
   confirmTitle: 15,
+  windowRadius: 10,
   scopeMenuWidth: 220,
   scopeMenuTop: 58,
   scopeLabelWidth: 180,
@@ -638,24 +639,29 @@ const paneRows = (t: Theme, model: HarnessPolicyEditorModel): Element[] => {
   return rows;
 };
 
-/**
- * The whole settings window. Escape closes the domain menu when it is open, and the window
- * otherwise; a click beside the window closes it too, which Herdr handles for a dialog.
- * @param t The theme.
- * @param model The editor's state and actions.
- * @returns The element.
- */
-export const harnessPolicyDialog = (t: Theme, model: HarnessPolicyEditorModel): Element =>
+// The settings window itself, drawn with the frame Herdr's dialog would give it: the dialog's
+// surface, a hairline border, rounded corners and a shadow. A click inside stays inside.
+const settingsWindow = (t: Theme, model: HarnessPolicyEditorModel): Element =>
   h_flex()
     .id("harness-policy-dialog")
     .key_context("modal")
     .track_focus(model.focus)
     .relative()
-    .w_full()
+    .flex_none()
+    .w(HARNESS_DIALOG.width)
+    .max_w_full()
     .h(HARNESS_DIALOG.height)
+    .max_h_full()
     .min_h(0)
     .items_start()
+    .rounded(SETTINGS.windowRadius)
+    .border_1()
+    .border_color(t.border)
+    .bg(t.popover)
+    .shadow_lg()
+    .overflow_hidden()
     .text_color(t.foreground)
+    .on_click((_event, cx) => cx.stop_propagation())
     .on_key_down((event, cx) => {
       if (event.key !== "escape") return;
       cx.stop_propagation();
@@ -723,3 +729,20 @@ export const harnessPolicyDialog = (t: Theme, model: HarnessPolicyEditorModel): 
     )
     .when(model.domainMenuOpen, (el) => el.children(scopeMenu(t, model)))
     .when(model.confirming, (el) => el.child(confirmLayer(t, model)));
+
+/**
+ * The whole overlay: the settings window centered over the dimmed app. Escape closes the domain
+ * menu when it is open, and the window otherwise; a click beside the window is Cancel, so it
+ * closes at once or, with unsaved changes in any scope, asks first.
+ * @param t The theme.
+ * @param model The editor's state and actions.
+ * @returns The element.
+ */
+export const harnessPolicyDialog = (t: Theme, model: HarnessPolicyEditorModel): Element =>
+  h_flex()
+    .id("harness-policy-backdrop")
+    .size_full()
+    .items_center()
+    .justify_center()
+    .on_click((_event, cx) => model.cancel(cx))
+    .child(settingsWindow(t, model));
