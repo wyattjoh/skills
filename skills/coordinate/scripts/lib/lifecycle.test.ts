@@ -6,6 +6,7 @@ import { resolveConfig } from "./config.ts";
 import { Effect } from "effect";
 import { failureOf, g, gitAndFake, initRepo, runWith, tempDir } from "./fixture.ts";
 import { writeEnded } from "./fleet.ts";
+import { setHarnessPolicy } from "./harness-policy.ts";
 import { delegate, endDelegate, listIdle, resumeDelegate, sendTo, start } from "./lifecycle.ts";
 import { fakeProc, ok, type RunOutput } from "./proc.ts";
 
@@ -79,6 +80,9 @@ describe("start", () => {
       "labelled t9: fleet.role=coordinator fleet.domain=app",
       `created backlog ${path}`,
       "watcher starting (t10)",
+      `harness policy revision 0 (${join(state, "delegate-harness-policy.json")})`,
+      "global (legacy): enabled pi, claude; default none",
+      "domain app (inherit): enabled pi, claude; default none",
     ]);
     expect(JSON.parse(readFileSync(path, "utf8"))).toEqual({
       schemaVersion: 1,
@@ -365,6 +369,41 @@ const endAnswers = (argv: readonly string[]): RunOutput =>
         }),
       )
     : ok("{}");
+
+describe("resume policy", () => {
+  it("refuses a disabled recorded harness before touching the ended record or live fleet", async () => {
+    const state = dir();
+    const cfg = await config(state);
+    const recordPath = await Effect.runPromise(
+      writeEnded(state, {
+        name: "fix-a",
+        domain: "app",
+        session: "s-1",
+        program: "pi",
+        cwd: state,
+        ended_at: "2026-11-17T00:00:00.000Z",
+      }),
+    );
+    await Effect.runPromise(
+      setHarnessPolicy(cfg, {
+        scope: "global",
+        domain: undefined,
+        selection: { enabled: ["claude"], default: "claude" },
+        expectedRevision: 0,
+        json: true,
+      }),
+    );
+    const fake = fakeProc(() => {
+      throw new Error("resume must refuse before any Herdr call");
+    });
+    const error = await failureOf(resumeDelegate(cfg, "fix-a", undefined), fake.layer);
+    expect(messageOf(error)).toBe(
+      "cannot resume fix-a: its recorded harness pi is disabled by global policy for app; enable it explicitly before resuming",
+    );
+    expect(fake.calls).toEqual([]);
+    expect(existsSync(recordPath)).toBe(true);
+  });
+});
 
 describe("endDelegate", () => {
   it("refuses a working delegate without --now", async () => {

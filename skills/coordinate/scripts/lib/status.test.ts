@@ -218,6 +218,9 @@ describe("domainStatus resume history", () => {
       domainStatus(config, "app", true, Date.parse("2026-11-19T00:00:00Z")),
       fake.layer,
     );
+    expect(hidden.join("\n")).toContain(
+      `harness policy revision 0 (${join(state, "delegate-harness-policy.json")})`,
+    );
     expect(hidden.join("\n")).toContain("1 closed items hidden (coordinate backlog show --done)");
     expect(hidden.filter((line) => line.includes("closed task"))).toEqual([]);
 

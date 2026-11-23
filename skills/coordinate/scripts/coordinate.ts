@@ -439,7 +439,11 @@ const delegateCommand = Command.make(
       "base",
       "base for the new branch (default: the main checkout's branch)",
     ),
-    harness: choiceFlag("harness", ["pi", "claude"], "agent harness"),
+    harness: optionalChoiceFlag(
+      "harness",
+      ["pi", "claude"],
+      "agent harness (omitted only when policy has an enabled default)",
+    ),
     model: optionalStringFlag("model", "model (pi: provider/id; claude: opus, sonnet, ... )"),
     effort: optionalStringFlag("effort", "claude --effort, or pi --thinking"),
     brief: optionalStringFlag("brief", "brief to copy to <worktree>/.scratch/BRIEF.md"),
@@ -464,7 +468,7 @@ const delegateCommand = Command.make(
     ),
     retryQueued: booleanFlag(
       "retry-queued",
-      "recheck and launch an existing queued item through the regular budget gate",
+      "recheck an existing queued item; requires its original authorized --harness choice",
     ),
     item: optionalStringFlag(
       "item",
@@ -491,7 +495,7 @@ const delegateCommand = Command.make(
         repo: Option.getOrUndefined(options.repo),
         cwd: Option.getOrUndefined(options.cwd),
         base: Option.getOrUndefined(options.base),
-        harness: options.harness as Harness,
+        harness: Option.getOrUndefined(options.harness) as Harness | undefined,
         model: Option.getOrUndefined(options.model),
         effort: Option.getOrUndefined(options.effort),
         message,
@@ -506,7 +510,7 @@ const delegateCommand = Command.make(
   },
 ).pipe(
   Command.withDescription(
-    "create the worktree, start a pi or Claude Code delegate in its own Herdr space, record it on the item",
+    "create the worktree and start an authorized pi or Claude Code delegate in its own Herdr space, recording it on the item",
   ),
 );
 
@@ -961,7 +965,7 @@ const harnessPolicyDomainResetCommand = Command.make(
 
 const harnessPolicyCommand = Command.make("harness-policy").pipe(
   Command.withDescription(
-    "read and edit the local versioned delegate harness policy; edits do not change launch behavior in this phase",
+    "read and edit the local versioned delegate harness policy enforced for new launches, resumes and queued retries",
   ),
   Command.withSubcommands([
     harnessPolicyShowCommand,

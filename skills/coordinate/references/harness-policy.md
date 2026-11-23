@@ -2,11 +2,13 @@
 
 Coordinate stores the user's local delegate-harness choices in `<state_dir>/delegate-harness-policy.json`, where `state_dir` comes from `COORDINATE_CONFIG` or defaults to `~/.local/state/coordinate`. The file is shared by domains using that same state directory. It is not repository policy and does not sync by itself.
 
-## Current behavior
+## Effective behavior
 
-The current `coordinate delegate` parser requires `--harness pi|claude`; the flag has no default. A missing policy file therefore displays the legacy selection, both Pi and Claude enabled and no implicit default, without changing launch behavior. In this phase, policy commands only inspect or edit stored policy. They do not authorize or block delegate launches, resumes, retries, or queue entries. Keep passing `--harness` explicitly.
+Only Pi and Claude are represented. A missing policy file preserves the legacy selection: both are enabled and there is no implicit default. New launches accept an omitted `--harness` only when the effective policy has an enabled default. Otherwise pass `--harness pi|claude`; an explicit harness that is disabled is refused.
 
-Only Pi and Claude are represented. Codex support, model restrictions, launch enforcement, UI editing, watcher notifications, and resume or queue policy behavior are not part of this phase.
+Policy state is checked before launch side effects. Invalid policy files fail closed. A queued retry must pass the same authorized `--harness` explicitly, then rechecks current policy and capacity; a refused retry leaves its queue entry intact. `--over-budget` affects only the capacity limit and never bypasses harness policy.
+
+Resume uses the harness recorded for the ended session and refuses if that harness is currently disabled. It never substitutes the current default. Policy edits affect later launches and resumes only; they do not stop, relabel, or otherwise change running sessions. `coordinate start` and `coordinate status --resume` show effective policy. The existing watcher coalesces policy notifications and sends them only to domains whose effective enabled/default selection changed. There is no panel editor or Codex adapter.
 
 ## Policy document
 

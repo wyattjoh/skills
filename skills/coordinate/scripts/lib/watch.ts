@@ -22,6 +22,7 @@ import {
   type CapacityWait,
 } from "./capacity-queue.ts";
 import { liveDelegateCount, machineDelegateBudget } from "./delegate-capacity.ts";
+import { resolveEffectiveHarnessPolicy } from "./harness-policy.ts";
 
 /**
  * What the watcher remembers about one delegate terminal.
@@ -65,6 +66,8 @@ export type WatchSnapshot = {
   discussed: string[] | null;
   idle: Record<string, IdleReminder>;
   capacity: Record<string, { order: number; ready: boolean }>;
+  /** Last effective policy signature, or its current read error. */
+  harnessPolicy: string | undefined;
 };
 
 /** The watcher's committed snapshot, pending events, and recovery point. */
@@ -85,6 +88,7 @@ export const emptyState = (): WatchState => ({
   discussed: null,
   idle: {},
   capacity: {},
+  harnessPolicy: undefined,
   outbox: [],
   nextEventId: 1,
   staged: undefined,
@@ -366,6 +370,7 @@ const readState = (path: string) =>
         discussed: parsed.discussed ?? null,
         idle: parsed.idle ?? {},
         capacity: parsed.capacity ?? {},
+        harnessPolicy: parsed.harnessPolicy,
         outbox: parsed.outbox ?? [],
         nextEventId: parsed.nextEventId ?? 1,
         staged: parsed.staged,
@@ -638,8 +643,29 @@ export const watch = Effect.fn("watch")(function* (config: Config, options: Watc
         capacity: Object.fromEntries(
           Object.entries(state.capacity).map(([machine, ready]) => [machine, { ...ready }]),
         ),
+        harnessPolicy: state.harnessPolicy,
       };
       const lines: string[] = [];
+      const policy = yield* resolveEffectiveHarnessPolicy(config, options.domain).pipe(
+        Effect.result,
+      );
+      const policySignature = Result.isSuccess(policy)
+        ? JSON.stringify({
+            enabled: policy.success.selection.enabled,
+            default: policy.success.selection.default,
+          })
+        : `error:${policy.failure.message}`;
+      if (snapshot.harnessPolicy !== undefined && snapshot.harnessPolicy !== policySignature) {
+        if (Result.isSuccess(policy)) {
+          const enabled = policy.success.selection.enabled.join(", ") || "none";
+          lines.push(
+            `harness policy changed for ${options.domain}: enabled ${enabled}; default ${policy.success.selection.default ?? "none"}`,
+          );
+        } else {
+          lines.push(`harness policy unavailable for ${options.domain}: ${policy.failure.message}`);
+        }
+      }
+      snapshot.harnessPolicy = policySignature;
       const latestRepos = yield* domainRepos(config, options.domain);
       const reposChanged =
         repos.length !== latestRepos.length ||

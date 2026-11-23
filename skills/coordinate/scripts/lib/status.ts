@@ -4,6 +4,7 @@ import { readDocument, refSessions, showBacklog } from "./backlog-doc.ts";
 import { idleDelegated } from "./backlog-store/ops.ts";
 import type { Config } from "./config.ts";
 import { L, type Delegate, members, readEnded } from "./fleet.ts";
+import { harnessPolicyStatus } from "./harness-policy.ts";
 import { currentBranch, defaultBases, mainCheckout } from "./git.ts";
 import { requireBacklog } from "./lifecycle.ts";
 import { branchState, type RepoPrs, repoPullRequests } from "./prs.ts";
@@ -238,6 +239,7 @@ export const domainStatus = Effect.fn("domainStatus")(function* (
       }),
     );
     lines.push("", ...rendered);
+    if (Option.isSome(document)) lines.push("", ...(yield* harnessPolicyStatus(config, domain)));
     const watcher = watcherOverride ?? (yield* watcherInfo(config, domain));
     lines.push("", watcherInfoLine(watcher));
   }

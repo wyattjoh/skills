@@ -8,7 +8,10 @@ import {
   HarnessPolicyError,
   LEGACY_HARNESS_SELECTION,
   harnessPolicyPath,
+  requireRecordedHarnessEnabled,
   resetHarnessPolicy,
+  resolveEffectiveHarnessPolicy,
+  resolveHarnessForLaunch,
   setHarnessPolicy,
   showHarnessPolicy,
   type HarnessSelection,
@@ -64,6 +67,36 @@ describe("delegate harness policy store", () => {
         effective: LEGACY_HARNESS_SELECTION,
       },
     });
+  });
+
+  it("resolves explicit legacy choices and only defaults an omitted launch when configured", async () => {
+    const { config } = await setup();
+    expect((await Effect.runPromise(resolveEffectiveHarnessPolicy(config, "app"))).source).toBe(
+      "legacy",
+    );
+    expect(await Effect.runPromise(resolveHarnessForLaunch(config, "app", "pi", false))).toBe("pi");
+    const missing = await failureOf(resolveHarnessForLaunch(config, "app", undefined, false));
+    expect(missing instanceof Refused).toBe(true);
+
+    await Effect.runPromise(
+      setHarnessPolicy(config, {
+        scope: "global",
+        domain: undefined,
+        selection: selection(["claude"], "claude"),
+        expectedRevision: 0,
+        json: true,
+      }),
+    );
+    expect(await Effect.runPromise(resolveHarnessForLaunch(config, "app", undefined, false))).toBe(
+      "claude",
+    );
+    const disabled = await failureOf(resolveHarnessForLaunch(config, "app", "pi", false));
+    expect(disabled instanceof Refused).toBe(true);
+    await Effect.runPromise(requireRecordedHarnessEnabled(config, "app", "claude", "review"));
+    const disabledResume = await failureOf(
+      requireRecordedHarnessEnabled(config, "app", "pi", "review"),
+    );
+    expect(disabledResume instanceof Refused).toBe(true);
   });
 
   it("replaces global and domain selections, then resets the domain to inheritance", async () => {

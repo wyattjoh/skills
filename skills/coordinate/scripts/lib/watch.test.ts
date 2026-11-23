@@ -10,6 +10,7 @@ import { resolveConfig } from "./config.ts";
 import { cliEnv, runWith, tempDir } from "./fixture.ts";
 import { fakeProc, ok, type RunOutput } from "./proc.ts";
 import { enqueueCapacityWait } from "./capacity-queue.ts";
+import { setHarnessPolicy } from "./harness-policy.ts";
 import {
   capacityWakeEvents,
   delegateEvents,
@@ -318,6 +319,85 @@ const watchAnswer = (argv: readonly string[]): RunOutput => {
 };
 
 describe("watch", () => {
+  it("coalesces policy edits and notifies only domains whose effective selection changes", async () => {
+    const state = tempDir();
+    made.push(state);
+    const config = await Effect.runPromise(
+      resolveConfig({ state_dir: state, backlog_dir: join(state, "backlogs") }, "/c"),
+    );
+    await runWith(createDocument(config, "app"));
+    await runWith(createDocument(config, "stable"));
+    await Effect.runPromise(
+      setHarnessPolicy(config, {
+        scope: "global",
+        domain: undefined,
+        selection: { enabled: ["pi"], default: "pi" },
+        expectedRevision: 0,
+        json: true,
+      }),
+    );
+    await Effect.runPromise(
+      setHarnessPolicy(config, {
+        scope: "domain",
+        domain: "stable",
+        selection: { enabled: ["claude"], default: null },
+        expectedRevision: 1,
+        json: true,
+      }),
+    );
+    const arm = async (domain: string) => {
+      const emitted: string[] = [];
+      const lines = await runWith(
+        watch(config, {
+          domain,
+          intervalMs: 5,
+          forgeIntervalMs: 60_000,
+          maxMs: 20,
+          owner: undefined,
+          replace: false,
+          deliver: false,
+          today: () => "2026-11-16",
+          follow: false,
+          emit: (line) => {
+            emitted.push(line);
+          },
+        }),
+        fakeProc((argv) => (argv[1] === "ls" ? ok('{"terminals":[]}') : ok("{}"))).layer,
+      );
+      return [...lines, ...emitted.map(eventText)];
+    };
+
+    expect(await arm("app")).toEqual(alive);
+    expect(await arm("stable")).toEqual(alive);
+    await Effect.runPromise(
+      setHarnessPolicy(config, {
+        scope: "global",
+        domain: undefined,
+        selection: { enabled: ["claude"], default: "claude" },
+        expectedRevision: 2,
+        json: true,
+      }),
+    );
+    await Effect.runPromise(
+      setHarnessPolicy(config, {
+        scope: "global",
+        domain: undefined,
+        selection: { enabled: ["pi", "claude"], default: "claude" },
+        expectedRevision: 3,
+        json: true,
+      }),
+    );
+
+    expect(await arm("app")).toEqual([
+      "harness policy changed for app: enabled pi, claude; default claude",
+    ]);
+    expect(await arm("stable")).toEqual(alive);
+    expect(JSON.parse(readFileSync(join(state, "watch", "app.json"), "utf8")).nextEventId).toBe(2);
+    expect(JSON.parse(readFileSync(join(state, "watch", "stable.json"), "utf8")).nextEventId).toBe(
+      1,
+    );
+  });
+
   it("exits with a settle event and a status beat against its saved state", async () => {
     const state = tempDir();
     made.push(state);
@@ -628,6 +708,7 @@ describe("watch due events", () => {
       discussed: [],
       idle: {},
       capacity: {},
+      harnessPolicy: JSON.stringify({ enabled: ["pi", "claude"], default: null }),
       outbox: [],
       nextEventId: 2,
     });

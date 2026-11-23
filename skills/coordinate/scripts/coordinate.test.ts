@@ -136,6 +136,50 @@ describe("coordinate CLI Done history", () => {
   }, 30_000);
 });
 
+describe("coordinate CLI harness policy", () => {
+  it("accepts an omitted harness flag and refuses when legacy state has no default", () => {
+    const state = tempDir("coordinate-harness-cli-");
+    made.push(state);
+    const env = cliEnv(state, COORDINATOR);
+    const run = (args: string[]): Result => {
+      const result = Bun.spawnSync(["bun", cli, ...args], {
+        env,
+        stdout: "pipe",
+        stderr: "pipe",
+        timeout: 10_000,
+      });
+      return {
+        args,
+        exit: result.exitCode ?? 1,
+        stdout: result.stdout.toString(),
+        stderr: result.stderr.toString(),
+      };
+    };
+    expect(run(["start", "app"]).exit).toBe(0);
+    expect(run(["item", "add", "work", "--domain", "app"]).exit).toBe(0);
+    const refused = run([
+      "delegate",
+      "fix-a",
+      "--task",
+      "test policy default",
+      "--cwd",
+      state,
+      "--skill",
+      "implement",
+      "--domain",
+      "app",
+      "--item",
+      "i1",
+    ]);
+    expect(refused.exit).toBe(1);
+    expect(refused.stderr).toContain(
+      "refused: no harness was selected for app: pass --harness pi|claude or configure an enabled default with coordinate harness-policy",
+    );
+    const calls = readFileSync(join(state, "bin", "calls.log"), "utf8").split("\n");
+    expect(calls.filter((call) => call.includes("fix-a"))).toEqual([]);
+  });
+});
+
 describe("coordinate CLI parity", () => {
   it("records representative invocations across every command", () => {
     const state = tempDir("coordinate-cli-parity-");
@@ -374,7 +418,7 @@ describe("coordinate CLI parity", () => {
       {
         exit: 0,
         stdout:
-          "labelled t1: fleet.role=coordinator fleet.domain=app\\ncreated backlog <state>/backlogs/app.json\\nwatcher starting (t-watch)\\n\\napp: 0 live delegates, 0 ended\\n\\nsweep:\\nnothing to sweep: no worktrees, landed branches, stale scratch or stray processes\\n\\nno delegate of app has been quiet for 24h\\n",
+          "labelled t1: fleet.role=coordinator fleet.domain=app\\ncreated backlog <state>/backlogs/app.json\\nwatcher starting (t-watch)\\nharness policy revision 0 (<state>/delegate-harness-policy.json)\\nglobal (legacy): enabled pi, claude; default none\\ndomain app (inherit): enabled pi, claude; default none\\n\\napp: 0 live delegates, 0 ended\\n\\nsweep:\\nnothing to sweep: no worktrees, landed branches, stale scratch or stray processes\\n\\nno delegate of app has been quiet for 24h\\n",
         stderr: "",
       },
       {
@@ -398,7 +442,7 @@ describe("coordinate CLI parity", () => {
       {
         exit: 0,
         stdout:
-          "app: 0 live delegates, 0 ended\\n\\n# app backlog\\n\\n## Boundary\\n\\n- Owned: (none)\\n- Adjacent: (none)\\n\\n## Policies\\n\\n(none)\\n\\n## Open\\n\\n(none)\\n\\n## Findings\\n\\n(none)\\n\\n## Done\\n\\nwatcher starting (t-watch)\\n",
+          "app: 0 live delegates, 0 ended\\n\\n# app backlog\\n\\n## Boundary\\n\\n- Owned: (none)\\n- Adjacent: (none)\\n\\n## Policies\\n\\n(none)\\n\\n## Open\\n\\n(none)\\n\\n## Findings\\n\\n(none)\\n\\n## Done\\n\\nharness policy revision 0 (<state>/delegate-harness-policy.json)\\nglobal (legacy): enabled pi, claude; default none\\ndomain app (inherit): enabled pi, claude; default none\\n\\nwatcher starting (t-watch)\\n",
         stderr: "",
       },
       {

@@ -1,5 +1,5 @@
 import { afterAll, afterEach, beforeEach, describe, expect, it } from "bun:test";
-import { existsSync, readFileSync, rmSync } from "node:fs";
+import { existsSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { hostname } from "node:os";
 import { Effect } from "effect";
@@ -9,6 +9,7 @@ import { failureOf, g, initRepo, runWith, tempDir } from "./fixture.ts";
 import { delegate, start, type DelegateOptions } from "./lifecycle.ts";
 import { fakeProc, ok, type RunOutput } from "./proc.ts";
 import { capacityQueuePath, enqueueCapacityWait, readCapacityQueue } from "./capacity-queue.ts";
+import { HarnessPolicyError, harnessPolicyPath, setHarnessPolicy } from "./harness-policy.ts";
 import { liveDelegateCount } from "./delegate-capacity.ts";
 import type { ListedTerminal } from "./herdr.ts";
 
@@ -300,6 +301,99 @@ describe("fleet delegate budget", () => {
     expect(fake.calls.filter(({ argv }) => argv[1] === "run").length).toBe(0);
   });
 
+  it("uses an enabled configured default when a new launch omits --harness", async () => {
+    const state = dir();
+    const { cfg } = await withItem(state);
+    await Effect.runPromise(
+      setHarnessPolicy(cfg, {
+        scope: "global",
+        domain: undefined,
+        selection: { enabled: ["claude"], default: "claude" },
+        expectedRevision: 0,
+        json: true,
+      }),
+    );
+    const fake = fleet(COORDINATOR, []);
+    await runWith(
+      delegate(cfg, options({ cwd: state, item: "i1", harness: undefined }), () => 3),
+      fake.layer,
+    );
+    const run = fake.calls.find(({ argv }) => argv[1] === "run");
+    expect(run?.argv).toContain("fleet.harness=claude");
+    expect(run?.argv).toContain("claude");
+  });
+
+  it("refuses an omitted harness in legacy state before launch side effects", async () => {
+    const state = dir();
+    const { cfg, path } = await withItem(state);
+    const before = readFileSync(path, "utf8");
+    const fake = fleet(COORDINATOR, []);
+    const error = await failureOf(
+      delegate(cfg, options({ cwd: state, item: "i1", harness: undefined }), () => 3),
+      fake.layer,
+    );
+    expect(error instanceof Error ? error.message : String(error)).toBe(
+      "no harness was selected for app: pass --harness pi|claude or configure an enabled default with coordinate harness-policy",
+    );
+    expect(fake.calls.filter(({ argv }) => argv[1] === "run")).toEqual([]);
+    expect(readFileSync(path, "utf8")).toBe(before);
+  });
+
+  it("fails closed on malformed policy before creating a worktree or launching", async () => {
+    const state = dir();
+    const { cfg, path: backlogPath } = await withItem(state);
+    const before = readFileSync(backlogPath, "utf8");
+    const policyPath = harnessPolicyPath(state);
+    writeFileSync(policyPath, "{");
+    const repo = initRepo();
+    dirs.push(repo);
+    const fake = fleet(COORDINATOR, []);
+    const error = await failureOf(
+      delegate(cfg, options({ repo, item: "i1", harness: "pi" }), () => 3),
+      fake.layer,
+    );
+    expect(error instanceof HarnessPolicyError).toBe(true);
+    expect(existsSync(join(repo, ".claude", "worktrees", "new-delegate"))).toBe(false);
+    expect(g(repo, "branch", "--format=%(refname:short)")).toBe("main");
+    expect(fake.calls.filter(({ argv }) => argv[1] === "run")).toEqual([]);
+    expect(readFileSync(backlogPath, "utf8")).toBe(before);
+  });
+
+  it("does not let --over-budget bypass a disabled harness or block child policy checks", async () => {
+    const state = dir();
+    const { cfg, path } = await withItem(state);
+    await Effect.runPromise(
+      setHarnessPolicy(cfg, {
+        scope: "global",
+        domain: undefined,
+        selection: { enabled: ["claude"], default: "claude" },
+        expectedRevision: 0,
+        json: true,
+      }),
+    );
+    const before = readFileSync(path, "utf8");
+    const coordinator = fleet(COORDINATOR, []);
+    const error = await failureOf(
+      delegate(cfg, options({ cwd: state, item: "i1", overBudget: true }), () => 3),
+      coordinator.layer,
+    );
+    expect(error instanceof Error ? error.message : String(error)).toBe(
+      "harness pi is disabled by global policy for app; enabled harnesses: claude",
+    );
+    expect(coordinator.calls.filter(({ argv }) => argv[1] === "run")).toEqual([]);
+    expect(readFileSync(path, "utf8")).toBe(before);
+
+    const child = fleet(DELEGATE, []);
+    const childError = await failureOf(
+      delegate(cfg, options({ cwd: state, domain: "app", harness: "pi" }), () => 3),
+      child.layer,
+    );
+    expect(childError instanceof Error ? childError.message : String(childError)).toBe(
+      "harness pi is disabled by global policy for app; enabled harnesses: claude",
+    );
+    expect(child.calls.filter(({ argv }) => argv[1] === "run")).toEqual([]);
+  });
+
   it("queues a full-pool launch with only item, machine and order metadata", async () => {
     const state = dir();
     const { cfg } = await withItem(state);
@@ -402,6 +496,69 @@ describe("fleet delegate budget", () => {
     const run = available.calls.find(({ argv }) => argv[1] === "run");
     expect(run?.argv).toContain("fleet.queue=app:i1:1");
     expect((await runWith(readCapacityQueue(cfg, "app"))).entries).toEqual([]);
+  });
+
+  it("requires the original harness explicitly on retry and preserves the queue entry", async () => {
+    const state = dir();
+    const { cfg } = await withItem(state);
+    const full = fleet(COORDINATOR, [
+      { address: "t2", domain: "app" },
+      { address: "t3", domain: "infra" },
+    ]);
+    await runWith(
+      delegate(cfg, options({ cwd: state, item: "i1", queueIfFull: true }), () => 3),
+      full.layer,
+    );
+    const retry = fleet(COORDINATOR, []);
+    const error = await failureOf(
+      delegate(
+        cfg,
+        options({ cwd: state, item: "i1", retryQueued: true, harness: undefined }),
+        () => 3,
+      ),
+      retry.layer,
+    );
+    expect(error instanceof Error ? error.message : String(error)).toBe(
+      "--retry-queued requires the original authorized harness explicitly: pass --harness pi|claude when retrying app's queued item",
+    );
+    expect(retry.calls.filter(({ argv }) => argv[1] === "run")).toEqual([]);
+    expect((await runWith(readCapacityQueue(cfg, "app"))).entries).toEqual([
+      { item: "i1", machine: hostname(), order: 1 },
+    ]);
+  });
+
+  it("rechecks current policy on a queued retry without dropping a blocked entry", async () => {
+    const state = dir();
+    const { cfg } = await withItem(state);
+    const full = fleet(COORDINATOR, [
+      { address: "t2", domain: "app" },
+      { address: "t3", domain: "infra" },
+    ]);
+    await runWith(
+      delegate(cfg, options({ cwd: state, item: "i1", queueIfFull: true }), () => 3),
+      full.layer,
+    );
+    await Effect.runPromise(
+      setHarnessPolicy(cfg, {
+        scope: "global",
+        domain: undefined,
+        selection: { enabled: ["claude"], default: "claude" },
+        expectedRevision: 0,
+        json: true,
+      }),
+    );
+    const retry = fleet(COORDINATOR, []);
+    const error = await failureOf(
+      delegate(cfg, options({ cwd: state, item: "i1", retryQueued: true, harness: "pi" }), () => 3),
+      retry.layer,
+    );
+    expect(error instanceof Error ? error.message : String(error)).toBe(
+      "harness pi is disabled by global policy for app; enabled harnesses: claude",
+    );
+    expect(retry.calls.filter(({ argv }) => argv[1] === "run")).toEqual([]);
+    expect((await runWith(readCapacityQueue(cfg, "app"))).entries).toEqual([
+      { item: "i1", machine: hostname(), order: 1 },
+    ]);
   });
 
   it("does not relaunch a queued delegate whose terminal ended before acknowledgement", async () => {

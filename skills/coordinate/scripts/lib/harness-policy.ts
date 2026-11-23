@@ -1,7 +1,7 @@
 import { existsSync } from "node:fs";
 import { readFile } from "node:fs/promises";
 import { join } from "node:path";
-import { Effect, Schema } from "effect";
+import { Effect, Result, Schema } from "effect";
 import { BacklogError, holdingLocks, writeAtomic } from "./backlog-doc.ts";
 import { documentPath } from "./backlog-store/paths.ts";
 import type { Config } from "./config.ts";
@@ -41,6 +41,16 @@ export type HarnessPolicyDocument = {
   revision: number;
   global: HarnessSelection | undefined;
   domains: Record<string, HarnessSelection>;
+};
+
+/**
+ * The effective policy for a domain and the source that supplied it.
+ */
+export type EffectiveHarnessPolicy = {
+  domain: string;
+  revision: number;
+  source: "legacy" | "global" | "domain";
+  selection: HarnessSelection;
 };
 
 /**
@@ -197,16 +207,26 @@ const readDocument = Effect.fn("readHarnessPolicyDocument")(function* (config: C
   }
 });
 
+const policyOf = (state: HarnessPolicyDocument, domain: string): EffectiveHarnessPolicy => {
+  const domainPolicy = Object.hasOwn(state.domains, domain) ? state.domains[domain] : undefined;
+  const globalPolicy = state.global ?? LEGACY_HARNESS_SELECTION;
+  return {
+    domain,
+    revision: state.revision,
+    source:
+      domainPolicy === undefined ? (state.global === undefined ? "legacy" : "global") : "domain",
+    selection: domainPolicy ?? globalPolicy,
+  };
+};
+
 const viewOf = (
   config: Config,
   state: HarnessPolicyDocument,
   domain: string | undefined,
 ): HarnessPolicyView => {
   const globalPolicy = state.global ?? LEGACY_HARNESS_SELECTION;
-  const domainPolicy =
-    domain !== undefined && Object.hasOwn(state.domains, domain)
-      ? state.domains[domain]
-      : undefined;
+  const effective = domain === undefined ? undefined : policyOf(state, domain);
+  const domainPolicy = effective?.source === "domain" ? effective.selection : undefined;
   return {
     schemaVersion: 1,
     revision: state.revision,
@@ -222,7 +242,7 @@ const viewOf = (
             name: domain,
             mode: domainPolicy === undefined ? "inherit" : "replace",
             override: domainPolicy ?? null,
-            effective: domainPolicy ?? globalPolicy,
+            effective: effective?.selection ?? globalPolicy,
           },
   };
 };
@@ -304,6 +324,89 @@ export const showHarnessPolicy = Effect.fn("showHarnessPolicy")(function* (
   if (domain !== undefined) yield* validateDomainArgument(domain);
   const state = yield* readDocument(config);
   return renderView(viewOf(config, state, domain), json);
+});
+
+/**
+ * Resolve the current effective harness policy for one domain.
+ * @param config Coordinate configuration.
+ * @param domain Domain whose policy applies.
+ * @returns The effective selection, its source, and the file revision.
+ */
+export const resolveEffectiveHarnessPolicy = Effect.fn("resolveEffectiveHarnessPolicy")(function* (
+  config: Config,
+  domain: string,
+) {
+  yield* validateDomainArgument(domain);
+  return policyOf(yield* readDocument(config), domain);
+});
+
+/**
+ * Resolve a new launch's explicit harness or configured default, refusing disabled or unselected choices.
+ * @param config Coordinate configuration.
+ * @param domain Domain whose policy applies.
+ * @param requested Explicitly requested harness, if any.
+ * @param requireExplicit Require a named choice, used when retrying a queued launch.
+ * @returns The authorized harness.
+ */
+export const resolveHarnessForLaunch = Effect.fn("resolveHarnessForLaunch")(function* (
+  config: Config,
+  domain: string,
+  requested: DelegateHarness | undefined,
+  requireExplicit: boolean,
+) {
+  if (requireExplicit && requested === undefined)
+    return yield* new Refused({
+      message: `--retry-queued requires the original authorized harness explicitly: pass --harness pi|claude when retrying ${domain}'s queued item`,
+    });
+  const effective = yield* resolveEffectiveHarnessPolicy(config, domain);
+  if (requested !== undefined) {
+    if (!effective.selection.enabled.includes(requested))
+      return yield* new Refused({
+        message: `harness ${requested} is disabled by ${effective.source} policy for ${domain}; enabled harnesses: ${effective.selection.enabled.join(", ") || "none"}`,
+      });
+    return requested;
+  }
+  if (effective.selection.default !== null) return effective.selection.default;
+  return yield* new Refused({
+    message: `no harness was selected for ${domain}: pass --harness pi|claude or configure an enabled default with coordinate harness-policy`,
+  });
+});
+
+/**
+ * Require a recorded resume harness to remain enabled without substituting the current default.
+ * @param config Coordinate configuration.
+ * @param domain Domain whose policy applies.
+ * @param harness Harness recorded for the ended session.
+ * @param name Delegate name, for the refusal message.
+ * @returns Nothing when the recorded harness is enabled.
+ */
+export const requireRecordedHarnessEnabled = Effect.fn("requireRecordedHarnessEnabled")(function* (
+  config: Config,
+  domain: string,
+  harness: DelegateHarness,
+  name: string,
+) {
+  const effective = yield* resolveEffectiveHarnessPolicy(config, domain);
+  if (!effective.selection.enabled.includes(harness))
+    return yield* new Refused({
+      message: `cannot resume ${name}: its recorded harness ${harness} is disabled by ${effective.source} policy for ${domain}; enable it explicitly before resuming`,
+    });
+});
+
+/**
+ * Render startup or resume status for the effective policy, reporting malformed state without hiding status.
+ * @param config Coordinate configuration.
+ * @param domain Domain whose policy to show.
+ * @returns Policy status lines, or a visible error line when policy state is invalid.
+ */
+export const harnessPolicyStatus = Effect.fn("harnessPolicyStatus")(function* (
+  config: Config,
+  domain: string,
+) {
+  const result = yield* showHarnessPolicy(config, domain, false).pipe(Effect.result);
+  return Result.isSuccess(result)
+    ? result.success
+    : [`harness policy unavailable: ${result.failure.message}`];
 });
 
 /**

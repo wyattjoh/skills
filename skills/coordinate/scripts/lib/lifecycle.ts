@@ -59,6 +59,11 @@ import {
   withCapacityClaim,
 } from "./capacity-queue.ts";
 import { liveDelegateCount, machineDelegateBudget, machineOfAddress } from "./delegate-capacity.ts";
+import {
+  harnessPolicyStatus,
+  requireRecordedHarnessEnabled,
+  resolveHarnessForLaunch,
+} from "./harness-policy.ts";
 
 const loginShell = (): string => {
   try {
@@ -102,6 +107,7 @@ export const start = Effect.fn("start")(function* (
       lines.push(`recorded legacy Markdown backlog ${made.legacy} (reference only, not read)`);
   }
   lines.push(watcherInfoLine(yield* armWatcher(config, domain, address)));
+  lines.push(...(yield* harnessPolicyStatus(config, domain)));
   return lines;
 });
 
@@ -114,7 +120,7 @@ export type DelegateOptions = {
   repo: string | undefined;
   cwd: string | undefined;
   base: string | undefined;
-  harness: Harness;
+  harness: Harness | undefined;
   model: string | undefined;
   effort: string | undefined;
   message: FirstMessage;
@@ -225,15 +231,17 @@ export const delegate = Effect.fn("delegate")(function* (
     return yield* new Refused({
       message: `${options.name} is not a terminal name: 1 to 32 of a-z, 0-9, - and _`,
     });
-  const efforts = options.harness === "pi" ? PI_THINKING : CLAUDE_EFFORTS;
-  if (options.effort && !efforts.has(options.effort))
-    return yield* new Refused({
-      message: `${options.effort} is not a ${options.harness} ${options.harness === "pi" ? "thinking level" : "effort"}: ${[...efforts].join(", ")}`,
-    });
   if ((options.repo === undefined) === (options.cwd === undefined))
     return yield* new Refused({
       message: "pass exactly one of --repo (new worktree) or --cwd (a folder with no repo work)",
     });
+  if (options.harness !== undefined && options.effort !== undefined) {
+    const efforts = options.harness === "pi" ? PI_THINKING : CLAUDE_EFFORTS;
+    if (!efforts.has(options.effort))
+      return yield* new Refused({
+        message: `${options.effort} is not a ${options.harness} ${options.harness === "pi" ? "thinking level" : "effort"}: ${[...efforts].join(", ")}`,
+      });
+  }
   // Fails closed: a caller whose role cannot be checked is neither filed nor exempt.
   const caller = yield* callerRole();
   const coordinator = caller.kind === "coordinator" ? caller : undefined;
@@ -262,6 +270,10 @@ export const delegate = Effect.fn("delegate")(function* (
     });
   if (options.retryQueued && options.item === undefined)
     return yield* new Refused({ message: "--retry-queued needs --item <id>" });
+  if (options.retryQueued && options.harness === undefined)
+    return yield* new Refused({
+      message: `--retry-queued requires the original authorized harness explicitly: pass --harness pi|claude when retrying ${domain}'s queued item`,
+    });
 
   const targetMachine = machineOfAddress(caller.address);
   const perform = Effect.gen(function* () {
@@ -309,6 +321,18 @@ export const delegate = Effect.fn("delegate")(function* (
         ];
       }
     }
+    const harness = yield* resolveHarnessForLaunch(
+      config,
+      domain,
+      options.harness,
+      options.retryQueued,
+    );
+    const efforts = harness === "pi" ? PI_THINKING : CLAUDE_EFFORTS;
+    if (options.effort && !efforts.has(options.effort))
+      return yield* new Refused({
+        message: `${options.effort} is not a ${harness} ${harness === "pi" ? "thinking level" : "effort"}: ${[...efforts].join(", ")}`,
+      });
+
     const taken = terminals.find((terminal) => terminal.live && terminal.name === options.name);
     if (taken)
       return yield* new Refused({
@@ -422,7 +446,7 @@ export const delegate = Effect.fn("delegate")(function* (
       [L.domain]: domain,
       [L.task]: options.task,
       [L.session]: session,
-      [L.harness]: options.harness,
+      [L.harness]: harness,
       [L.worktree]: cwd,
       ...(queued ? { [L.queue]: `${domain}:${queued.item}:${queued.order}` } : {}),
       ...(options.model ? { [L.model]: options.model } : {}),
@@ -431,13 +455,13 @@ export const delegate = Effect.fn("delegate")(function* (
       ...(baseSha ? { [L.base]: baseSha } : {}),
     };
     const argv = agentArgv({
-      harness: options.harness,
+      harness,
       name: options.name,
       session,
       model: options.model,
       effort: options.effort,
-      extraArgs: options.harness === "pi" ? config.delegatePiArgs : config.delegateClaudeArgs,
-      message: firstMessage(options.harness, message),
+      extraArgs: harness === "pi" ? config.delegatePiArgs : config.delegateClaudeArgs,
+      message: firstMessage(harness, message),
       resume: false,
     });
     const coordinatorTerminal = coordinator?.terminal;
@@ -731,6 +755,7 @@ export const resumeDelegate = Effect.fn("resumeDelegate")(function* (
     return yield* new Refused({
       message: `${name} ran ${record.program}, which this skill cannot resume`,
     });
+  yield* requireRecordedHarnessEnabled(config, record.domain, harness, name);
   if (!existsSync(record.cwd))
     return yield* new Refused({ message: `${name}'s folder is gone: ${record.cwd}` });
   const taken = (yield* hc.list()).find((terminal) => terminal.name === name);

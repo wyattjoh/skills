@@ -74,6 +74,9 @@ describe("start", () => {
       `created backlog ${path}`,
       `recorded legacy Markdown backlog ${join(state, "md", "app-backlog.md")} (reference only, not read)`,
       "watcher starting (t-watch)",
+      `harness policy revision 0 (${join(state, "delegate-harness-policy.json")})`,
+      "global (legacy): enabled pi, claude; default none",
+      "domain app (inherit): enabled pi, claude; default none",
     ]);
     expect(read(path).legacy).toBe(join(state, "md", "app-backlog.md"));
     expect(read(path).items).toEqual([]);
@@ -83,7 +86,13 @@ describe("start", () => {
     const { cfg, path } = await started();
     await runWith(itemAdd(cfg, "app", { title: "keep me", json: false, now: NOW }));
     const lines = await runWith(start(cfg, "app", { HC_TERMINAL_ID: "t9" }), hcFake().layer);
-    expect(lines.slice(1)).toEqual([`backlog ${path}`, "watcher starting (t-watch)"]);
+    expect(lines.slice(1)).toEqual([
+      `backlog ${path}`,
+      "watcher starting (t-watch)",
+      `harness policy revision 0 (${join(cfg.stateDir, "delegate-harness-policy.json")})`,
+      "global (legacy): enabled pi, claude; default none",
+      "domain app (inherit): enabled pi, claude; default none",
+    ]);
     expect(read(path).items.map((item: { title: string }) => item.title)).toEqual(["keep me"]);
   });
 
@@ -958,6 +967,10 @@ describe("status --resume", () => {
       "app: 0 live delegates, 0 ended",
       "",
       ...(await runWith(showBacklog(cfg, "app", false))),
+      "",
+      `harness policy revision 0 (${join(cfg.stateDir, "delegate-harness-policy.json")})`,
+      "global (legacy): enabled pi, claude; default none",
+      "domain app (inherit): enabled pi, claude; default none",
       "",
       "no watcher running",
     ]);
