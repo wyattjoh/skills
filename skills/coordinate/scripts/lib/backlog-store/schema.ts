@@ -35,9 +35,10 @@ export type Dated = { text: string; at: string };
 export const isDiscussion = (text: string): boolean => text.startsWith('Discuss "');
 
 /**
- * A reusable policy recorded with its stable short id and date.
+ * A reusable policy recorded with its stable short id and date. `wiki` names the domain or shared
+ * wiki page that explains it, and is absent when the policy cites none.
  */
-export type Policy = { id: string; text: string; at: string };
+export type Policy = { id: string; text: string; at: string; wiki?: string };
 
 /**
  * A request to discuss an ask before the user decides it.
@@ -244,6 +245,7 @@ export const validateBacklog = (value: unknown): Validated => {
     }
     nonEmpty(`${where}.text`, policy.text);
     nonEmpty(`${where}.at`, policy.at);
+    if ("wiki" in policy) nonEmpty(`${where}.wiki`, policy.wiki);
   });
   const nextId = candidate.nextId;
   if (typeof nextId !== "number" || !Number.isInteger(nextId) || nextId < 1)

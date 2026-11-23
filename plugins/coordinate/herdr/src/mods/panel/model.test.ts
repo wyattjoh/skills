@@ -565,3 +565,20 @@ test("rebaseHarnessPolicyDraft carries a draft onto a newer revision only when i
   const changed = globalView(3, { enabled: ["pi"], default: null });
   expect(rebaseHarnessPolicyDraft({ base, draft }, changed)).toEqual({ base, draft });
 });
+
+test("readDocument keeps a policy's wiki citation and rejects an empty one", () => {
+  const cited = {
+    ...emptyBacklog("alpha", null),
+    policies: [
+      { id: "p1", text: "poll every 5s", at: "2026-11-23", wiki: "poll-interval" },
+      { id: "p2", text: "plain", at: "2026-11-23" },
+    ],
+    nextPolicyId: 3,
+  };
+  expect(readDocument(JSON.stringify(cited))).toEqual({ kind: "loaded", backlog: cited });
+  const empty = { ...cited, policies: [{ id: "p1", text: "rule", at: "2026-11-23", wiki: "" }] };
+  expect(readDocument(JSON.stringify(empty))).toEqual({
+    kind: "invalid",
+    reason: "policies[0].wiki must be a non-empty string",
+  });
+});

@@ -1753,6 +1753,9 @@ const policiesPage = (t: Theme, backlog: Backlog, model: PanelModel): Element =>
             detailRow(t, `policy-${entry.id}`)
               .when(index === 0, (row) => row.border_t(0))
               .child(div().child(entry.text))
+              .when(entry.wiki !== undefined, (row) =>
+                row.child(small(t, t.dim, `wiki: [[${entry.wiki}]]`).id(`policy-wiki-${entry.id}`)),
+              )
               .child(small(t, t.dim, entry.at.slice(0, 10))),
           ),
     ),

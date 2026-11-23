@@ -568,17 +568,24 @@ export const removeBoundary = (
 /**
  * Add a reusable policy with a stable short id.
  * @param backlog Current document.
- * @param input The policy text and date as YYYY-MM-DD.
+ * @param input The policy text, date as YYYY-MM-DD, and the wiki page it cites, if any.
  * @returns The next document and the new policy.
  */
 export const addPolicy = (
   backlog: Backlog,
-  input: { text: string; at: string },
+  input: { text: string; at: string; wiki?: string | undefined },
 ): OpResult<Policy> => {
-  const problem = oneLine("text", input.text);
+  const problem =
+    oneLine("text", input.text) ??
+    (input.wiki === undefined ? undefined : oneLine("--wiki", input.wiki));
   if (problem) return { ok: false, reason: problem };
   if (!isDate(input.at)) return { ok: false, reason: "--at must be YYYY-MM-DD" };
-  const policy: Policy = { id: `p${backlog.nextPolicyId}`, text: input.text, at: input.at };
+  const policy: Policy = {
+    id: `p${backlog.nextPolicyId}`,
+    text: input.text,
+    at: input.at,
+    ...(input.wiki === undefined ? {} : { wiki: input.wiki }),
+  };
   return {
     ok: true,
     backlog: {

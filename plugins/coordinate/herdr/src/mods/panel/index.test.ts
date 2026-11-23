@@ -3434,6 +3434,29 @@ test("paginates Unfiled delegates while preserving nested rows", async () => {
   expect([ids(get(root, "unfiled"), "term-").length, ids(root, "load-more-")]).toEqual([11, []]);
 });
 
+test("shows a policy's wiki citation beside it", async () => {
+  focusDomain("alpha");
+  host.files.set(
+    DOC,
+    JSON.stringify({
+      ...emptyBacklog("alpha", null),
+      policies: [
+        { id: "p1", text: "Poll every 5s", at: "2026-11-23", wiki: "poll-interval" },
+        { id: "p2", text: "Plain rule", at: "2026-11-23" },
+      ],
+      nextPolicyId: 3,
+    }),
+  );
+  const { ctx, render } = await mount();
+  openPage(render(), "policies", ctx.cx);
+  const root = render();
+  expect(["policy-p1", "policy-p2"].map((id) => text(get(root, id)))).toEqual([
+    "Poll every 5s wiki: [[poll-interval]] 2026-11-23",
+    "Plain rule 2026-11-23",
+  ]);
+  expect(ids(root, "policy-wiki-")).toEqual(["policy-wiki-p1"]);
+});
+
 test("paginates Policies ten at a time", async () => {
   focusDomain("alpha");
   host.files.set(

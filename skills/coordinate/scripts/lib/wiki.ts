@@ -444,6 +444,31 @@ export const readWiki = (path: string) =>
   });
 
 /**
+ * Check that a policy's `--wiki` citation names a page in the domain's wiki or the shared wiki,
+ * matching page names as `readWiki` lists them (so `index` and paths never match). A missing
+ * wiki has no pages; neither wiki is created.
+ * @param config Config.
+ * @param domain The policy's domain.
+ * @param page The cited page name.
+ * @returns The page name, or a refusal naming both wikis.
+ */
+export const citedPage = Effect.fn("citedPage")(function* (
+  config: Config,
+  domain: string,
+  page: string,
+) {
+  const folders = [wikiDir(config.stateDir, domain), wikiDir(config.stateDir, SHARED_WIKI)];
+  for (const folder of folders) {
+    if (!existsSync(folder)) continue;
+    const { pages } = yield* readWiki(folder);
+    if (pages.some((entry) => entry.name === page)) return page;
+  }
+  return yield* new Refused({
+    message: `no page [[${page}]] in the ${domain} wiki (${folders[0]}) or the shared wiki (${folders[1]})`,
+  });
+});
+
+/**
  * The Boundary paths covers are resolved against: the domain's owned and adjacent paths, or for
  * the shared wiki every domain's.
  * @param config Config.

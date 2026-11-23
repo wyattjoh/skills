@@ -6,20 +6,20 @@ One JSON document per domain at `<state_dir>/backlogs/<domain>.json` (default `~
 
 ## Document
 
-| Field           | Holds                                                                          | Set with                                                              |
-| --------------- | ------------------------------------------------------------------------------ | --------------------------------------------------------------------- |
-| `schemaVersion` | Always `1`                                                                     | `start`                                                               |
-| `domain`        | The domain name                                                                | `start`, `backlog rename <new>`                                       |
-| `focus`         | One line on what the domain is doing now, or null                              | `backlog focus "<text>"`, `--clear`                                   |
-| `legacy`        | Path of the old Markdown backlog, reference only, or null                      | `start`                                                               |
-| `boundary`      | `owned` and `adjacent` absolute paths; only `owned` feeds status, watch, sweep | `backlog boundary add\|rm <path> [--adjacent]`                        |
-| `policies`      | `{ id, text, at }[]`: reusable rules with stable short ids (`p1`, `p2`, ...)   | `backlog policy add\|ls\|rm\|replace`                                 |
-| `items`         | The work (below)                                                               | `item add`, `item update`, `item close`, `item attach`, `item detach` |
-| `findings`      | Issues and opportunities noticed outside an item's scope (below)               | `finding add`, `finding close`, `finding promote`                     |
-| `nextId`        | The next shared item/finding id number; items use `iN`, findings `fN`          | item and finding adds                                                 |
-| `nextPolicyId`  | The next policy id number (`p1`, `p2`, ...); removals do not reuse ids         | policy adds                                                           |
+| Field           | Holds                                                                                                                        | Set with                                                              |
+| --------------- | ---------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------- |
+| `schemaVersion` | Always `1`                                                                                                                   | `start`                                                               |
+| `domain`        | The domain name                                                                                                              | `start`, `backlog rename <new>`                                       |
+| `focus`         | One line on what the domain is doing now, or null                                                                            | `backlog focus "<text>"`, `--clear`                                   |
+| `legacy`        | Path of the old Markdown backlog, reference only, or null                                                                    | `start`                                                               |
+| `boundary`      | `owned` and `adjacent` absolute paths; only `owned` feeds status, watch, sweep                                               | `backlog boundary add\|rm <path> [--adjacent]`                        |
+| `policies`      | `{ id, text, at, wiki? }[]`: reusable rules with stable short ids (`p1`, `p2`, ...); `wiki` names the page that explains one | `backlog policy add\|ls\|rm\|replace`                                 |
+| `items`         | The work (below)                                                                                                             | `item add`, `item update`, `item close`, `item attach`, `item detach` |
+| `findings`      | Issues and opportunities noticed outside an item's scope (below)                                                             | `finding add`, `finding close`, `finding promote`                     |
+| `nextId`        | The next shared item/finding id number; items use `iN`, findings `fN`                                                        | item and finding adds                                                 |
+| `nextPolicyId`  | The next policy id number (`p1`, `p2`, ...); removals do not reuse ids                                                       | policy adds                                                           |
 
-**Policies**: `backlog policy add "<text>" [--at YYYY-MM-DD]` appends a policy and prints its id. `policy ls` lists ids, dates and text; `policy rm <id>` removes one; `policy replace <id> "<text>" [--at YYYY-MM-DD]` updates its text and date while preserving its id. IDs are not reused after removal. Dates default to today. Each command supports `--domain` and `--json`.
+**Policies**: `backlog policy add "<text>" [--at YYYY-MM-DD] [--wiki <page>]` appends a policy and prints its id. `--wiki` cites the page that explains the rule, by its name in the domain wiki or the shared wiki (the domain's is checked first); it refuses (exit 1, nothing written, no wiki created) when neither wiki has that page. The citation is stored as `wiki` and printed after the text as `(wiki: [[<page>]])` by `policy add`, `policy ls`, `policy replace` and `backlog show`, and beside the policy in the Backlog panel; `backlog show --json` includes it. `policy ls` lists ids, dates and text; `policy rm <id>` removes one; `policy replace <id> "<text>" [--at YYYY-MM-DD]` updates its text and date while preserving its id and citation. IDs are not reused after removal. Dates default to today. Each command supports `--domain` and `--json`.
 
 A document that has `standingYes` but no `policies` migrates in memory when read: entries become `p1`, `p2`, ... in their existing order, preserving their text and date. Items without `answered` migrate in memory to `answered: []`; asks without `discuss` migrate to `discuss: null`, including asks in `answered` history. Read-only commands leave the source file untouched; its next successful write stores the `policies` field and no `standingYes` field, and stores `answered` and `discuss` for each item and ask. The panel uses the same validator and accepts both shapes.
 

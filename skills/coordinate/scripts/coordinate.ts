@@ -75,7 +75,7 @@ import {
   stopDeletedFolders,
 } from "./lib/sweep.ts";
 import { mainCheckout } from "./lib/git.ts";
-import { commitWiki, lintLines, lintWiki, wikiPath } from "./lib/wiki.ts";
+import { citedPage, commitWiki, lintLines, lintWiki, wikiPath } from "./lib/wiki.ts";
 
 /**
  * The failure to report from a cause: its typed error, else a `MissingFolder` thrown while
@@ -870,21 +870,33 @@ const policyAddCommand = Command.make(
   {
     text: argument("text", "the policy, on one line"),
     at: optionalStringFlag("at", "date it was set, YYYY-MM-DD (default: today)"),
+    wiki: optionalStringFlag(
+      "wiki",
+      "the domain or shared wiki page that explains it, by name; refused when no such page exists",
+    ),
     domain: optionalStringFlag("domain", "domain (default: this coordinator's label)"),
     json: booleanFlag("json", "print the policy as JSON"),
   },
   (options) =>
     execute((config) =>
-      Effect.flatMap(coordinatorDomain(Option.getOrUndefined(options.domain)), (domain) =>
-        policyAdd(config, domain, {
+      Effect.gen(function* () {
+        const domain = yield* coordinatorDomain(Option.getOrUndefined(options.domain));
+        const wiki = Option.getOrUndefined(options.wiki);
+        if (wiki !== undefined) yield* citedPage(config, domain, wiki);
+        return yield* policyAdd(config, domain, {
           text: options.text,
           at: Option.getOrUndefined(options.at),
+          wiki,
           json: options.json,
           now: new Date().toISOString(),
-        }),
-      ),
+        });
+      }),
     ),
-).pipe(Command.withDescription("add a reusable policy; prints its short id"));
+).pipe(
+  Command.withDescription(
+    "add a reusable policy, optionally citing a wiki page; prints its short id",
+  ),
+);
 
 const policyRmCommand = Command.make(
   "rm",

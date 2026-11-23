@@ -30,7 +30,7 @@ import {
   updateItem,
 } from "./backlog-store/ops.ts";
 import { backlogsDir, documentPath } from "./backlog-store/paths.ts";
-import { renderBacklog } from "./backlog-store/render.ts";
+import { policyCitation, renderBacklog } from "./backlog-store/render.ts";
 import {
   type Backlog,
   type DelegateRef,
@@ -660,25 +660,40 @@ export const policyLs = Effect.fn("policyLs")(function* (
     ? json(backlog.policies)
     : backlog.policies.length === 0
       ? ["(none)"]
-      : backlog.policies.map(({ id, at, text }) => `${id} ${at}: ${text}`);
+      : backlog.policies.map(
+          (policy) => `${policy.id} ${policy.at}: ${policy.text}${policyCitation(policy)}`,
+        );
 });
 
 /**
- * `coordinate backlog policy add`: add a reusable policy with its date.
+ * `coordinate backlog policy add`: add a reusable policy with its date and, with `--wiki`, the
+ * wiki page that explains it. The caller checks the page exists first.
  * @param config Config.
  * @param domain Domain.
- * @param input Text, `--at`, `--json`, and the time.
+ * @param input Text, `--at`, `--wiki`, `--json`, and the time.
  * @returns Lines to print.
  */
 export const policyAdd = Effect.fn("policyAdd")(function* (
   config: Config,
   domain: string,
-  input: { text: string; at: string | undefined; json: boolean; now: string },
+  input: {
+    text: string;
+    at: string | undefined;
+    wiki?: string | undefined;
+    json: boolean;
+    now: string;
+  },
 ) {
   const policy = yield* change(config, domain, (backlog) =>
-    addPolicy(backlog, { text: input.text, at: input.at ?? input.now.slice(0, 10) }),
+    addPolicy(backlog, {
+      text: input.text,
+      at: input.at ?? input.now.slice(0, 10),
+      wiki: input.wiki,
+    }),
   );
-  return input.json ? json(policy) : [`added policy ${policy.id}: ${policy.text}`];
+  return input.json
+    ? json(policy)
+    : [`added policy ${policy.id}: ${policy.text}${policyCitation(policy)}`];
 });
 
 /**
@@ -716,7 +731,9 @@ export const policyReplace = Effect.fn("policyReplace")(function* (
       at: input.at ?? input.now.slice(0, 10),
     }),
   );
-  return input.json ? json(policy) : [`replaced policy ${policy.id}: ${policy.text}`];
+  return input.json
+    ? json(policy)
+    : [`replaced policy ${policy.id}: ${policy.text}${policyCitation(policy)}`];
 });
 
 /**

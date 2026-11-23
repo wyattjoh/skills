@@ -1,5 +1,5 @@
 import { afterAll, describe, expect, it } from "bun:test";
-import { mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { cliEnv, g, initRepo, tempDir } from "./lib/fixture.ts";
 
@@ -509,5 +509,97 @@ describe("coordinate delegate WIKI.md", () => {
     expect(launched.slice(launched.indexOf("/implement-spec"))).toBe(
       `/implement-spec spec 1 Also read ${join(scratch, "BRIEF.md")} and follow its Boundary, Stop points and Report sections.`,
     );
+  }, 30_000);
+});
+
+describe("coordinate backlog policy add --wiki", () => {
+  it("cites a domain or shared wiki page and shows the citation in show, ls and --json", () => {
+    const { state, run, wiki } = linted();
+    writeFileSync(join(wiki, "poll-interval.md"), page(fields("poll-interval"), "Why 5s.\n"));
+    const shared = join(state, "wiki", "_shared");
+    mkdirSync(shared, { recursive: true });
+    writeFileSync(join(shared, "no-push.md"), page(fields("no-push"), "Why local only.\n"));
+
+    expect(
+      run([
+        "backlog",
+        "policy",
+        "add",
+        "poll every 5s",
+        "--at",
+        "2026-11-23",
+        "--wiki",
+        "poll-interval",
+      ]),
+    ).toEqual({
+      exit: 0,
+      stdout: "added policy p1: poll every 5s (wiki: [[poll-interval]])\n",
+      stderr: "",
+    });
+    const json = run([
+      "backlog",
+      "policy",
+      "add",
+      "never push",
+      "--at",
+      "2026-11-23",
+      "--wiki",
+      "no-push",
+      "--json",
+    ]);
+    expect([json.exit, JSON.parse(json.stdout)]).toEqual([
+      0,
+      { id: "p2", text: "never push", at: "2026-11-23", wiki: "no-push" },
+    ]);
+    expect(run(["backlog", "policy", "add", "plain", "--at", "2026-11-23"]).exit).toBe(0);
+
+    const shown = run(["backlog", "show"]);
+    expect(shown.stdout.split("## Policies\n\n")[1]?.split("\n\n")[0]).toBe(
+      [
+        "- p1 2026-11-23: poll every 5s (wiki: [[poll-interval]])",
+        "- p2 2026-11-23: never push (wiki: [[no-push]])",
+        "- p3 2026-11-23: plain",
+      ].join("\n"),
+    );
+    expect(JSON.parse(run(["backlog", "show", "--json"]).stdout).policies).toEqual([
+      { id: "p1", text: "poll every 5s", at: "2026-11-23", wiki: "poll-interval" },
+      { id: "p2", text: "never push", at: "2026-11-23", wiki: "no-push" },
+      { id: "p3", text: "plain", at: "2026-11-23" },
+    ]);
+    expect(run(["backlog", "policy", "ls"]).stdout).toBe(
+      "p1 2026-11-23: poll every 5s (wiki: [[poll-interval]])\np2 2026-11-23: never push (wiki: [[no-push]])\np3 2026-11-23: plain\n",
+    );
+    expect(
+      run(["backlog", "policy", "replace", "p1", "poll every 10s", "--at", "2026-11-24"]).stdout,
+    ).toBe("replaced policy p1: poll every 10s (wiki: [[poll-interval]])\n");
+  }, 30_000);
+
+  it("refuses a page missing from both wikis and leaves the backlog unchanged", () => {
+    const { state, run, wiki } = linted();
+    writeFileSync(join(wiki, "index.md"), "# app wiki\n\n- [[ghost]]\n");
+    const documentFile = join(state, "backlogs", "app.json");
+    const before = readFileSync(documentFile, "utf8");
+    const shared = join(state, "wiki", "_shared");
+    for (const ref of ["ghost", "index", "../app/index"])
+      expect(run(["backlog", "policy", "add", "rule", "--wiki", ref])).toEqual({
+        exit: 1,
+        stdout: "",
+        stderr: `refused: no page [[${ref}]] in the app wiki (${wiki}) or the shared wiki (${shared})\n`,
+      });
+    expect(readFileSync(documentFile, "utf8")).toBe(before);
+    expect(existsSync(shared)).toBe(false);
+  }, 30_000);
+
+  it("refuses a citation when no wiki exists yet, without creating one", () => {
+    const { state, run } = sandbox();
+    expect(run(["start", "app"]).exit).toBe(0);
+    const result = run(["backlog", "policy", "add", "rule", "--wiki", "poll-interval"]);
+    expect(result).toEqual({
+      exit: 1,
+      stdout: "",
+      stderr: `refused: no page [[poll-interval]] in the app wiki (${state}/wiki/app) or the shared wiki (${state}/wiki/_shared)\n`,
+    });
+    expect(existsSync(join(state, "wiki"))).toBe(false);
+    expect(JSON.parse(run(["backlog", "show", "--json"]).stdout).policies).toEqual([]);
   }, 30_000);
 });

@@ -1,4 +1,11 @@
-import { isDiscussion, ITEM_STATUSES, type Ask, type Backlog, type Item } from "./schema.ts";
+import {
+  isDiscussion,
+  ITEM_STATUSES,
+  type Ask,
+  type Backlog,
+  type Item,
+  type Policy,
+} from "./schema.ts";
 
 const askLines = (ask: Ask, header: string): string[] => {
   const lines = [header];
@@ -79,6 +86,14 @@ const closedLines = (item: Item, verbose: boolean): string[] => [
 
 const closed = (item: Item): boolean => item.status === "done" || item.status === "dismissed";
 
+/**
+ * A policy's wiki citation as printed after its text, or nothing when it cites no page.
+ * @param policy The policy.
+ * @returns ` (wiki: [[page]])` or an empty string.
+ */
+export const policyCitation = (policy: Policy): string =>
+  policy.wiki === undefined ? "" : ` (wiki: [[${policy.wiki}]])`;
+
 const list = (paths: string[]): string => (paths.length > 0 ? paths.join(", ") : "(none)");
 
 /**
@@ -115,7 +130,9 @@ export const renderBacklog = (
     "## Policies",
     "",
     ...(backlog.policies.length > 0
-      ? backlog.policies.map((policy) => `- ${policy.id} ${policy.at}: ${policy.text}`)
+      ? backlog.policies.map(
+          (policy) => `- ${policy.id} ${policy.at}: ${policy.text}${policyCitation(policy)}`,
+        )
       : ["(none)"]),
     "",
     "## Open",
