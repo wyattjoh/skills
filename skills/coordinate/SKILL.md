@@ -113,6 +113,10 @@ The CLI is the backlog's only writer; it validates, locks and writes atomically,
 
 The Backlog panel may edit Boundary paths from outside a Herdr terminal with `backlog boundary add <path> [--adjacent] --domain <d>` and `backlog boundary rm <path> --domain <d>`. Every command takes `--json`; `--help` has the flags. Read it back with `coordinate backlog show` (`--json` for the document, `--done` to include closed items). Fields, statuses and invariants: [backlog.md](references/backlog.md).
 
+## Manage the fleet
+
+The `manager` domain coordinates the other coordinators instead of a repo: it watches the fleet, relays their asks and results, keeps tab titles aligned with each focus, and tells harness handoffs from crashes. When the user names that role, read [manage.md](references/manage.md) and run its fleet monitor, `bun $SKILL_DIR/scripts/fleet-monitor.ts`.
+
 ## Restart
 
 Before a restart (`/clear` then `/coordinate <domain>`): answer or close what the backlog already resolves, make sure every open item, decision and ask is recorded (`backlog show` is what the next session sees), and run `coordinate watch --stop`. Reply "ready for restart". After it, run Start and raise the open asks again within the five-ask limit.
