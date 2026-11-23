@@ -56,6 +56,7 @@ import * as hc from "./herdr.ts";
 import { defaultStop, scanProcesses, type StopOptions, teardownEnded } from "./processes.ts";
 import { countResume, readSession } from "./sessions.ts";
 import { armWatcher, WATCHER_DOMAIN_LABEL, watcherInfoLine } from "./watch-terminal.ts";
+import { writeDelegateWiki } from "./wiki.ts";
 import {
   capacityItemEligible,
   enqueueCapacityWait,
@@ -737,9 +738,11 @@ export const delegate = Effect.fn("delegate")(function* (
     let cwd: string;
     let branch: string | undefined;
     let baseSha: string | undefined;
+    let checkout: string | undefined;
     if (options.repo !== undefined) {
       const repo = yield* mainCheckout(absolutePath(options.repo));
       if (!repo) return yield* new Refused({ message: `${options.repo} is not a Git checkout` });
+      checkout = repo;
       branch = `${config.branchPrefix}${options.name}`;
       cwd = join(repo, ".claude", "worktrees", options.name);
       if (existsSync(cwd)) return yield* new Refused({ message: `${cwd} already exists` });
@@ -797,6 +800,12 @@ export const delegate = Effect.fn("delegate")(function* (
       }
       message = message.kind === "brief" ? { kind: "brief", path: brief } : { ...message, brief };
     }
+    const wiki = yield* writeDelegateWiki(config, domain, {
+      name: options.name,
+      scratch,
+      place: checkout !== undefined ? { repo: checkout } : { cwd },
+    });
+    if (wiki !== undefined) message = { ...message, wiki };
     const report = brief ? join(scratch, "REPORT.md") : undefined;
     const session = crypto.randomUUID();
     const tabLabel = options.task;

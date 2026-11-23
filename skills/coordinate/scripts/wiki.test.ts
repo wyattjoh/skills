@@ -1,5 +1,5 @@
 import { afterAll, describe, expect, it } from "bun:test";
-import { mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { cliEnv, g, initRepo, tempDir } from "./lib/fixture.ts";
 
@@ -278,6 +278,236 @@ describe("coordinate wiki commit", () => {
     expect([refused.exit, refused.stdout]).toEqual([1, ""]);
     expect(refused.stderr).toContain(
       'refused: only the manager coordinator writes the shared wiki; request the change as an item in the manager domain: coordinate item add "<change> (from app)" --domain manager\n',
+    );
+  }, 30_000);
+});
+
+const DELEGATE_TERMINALS = {
+  "t-watch": { address: "t-watch", state: "live", status: { state: "working" }, labels: {} },
+};
+
+/**
+ * A coordinator of app whose domain wiki and shared wiki both hold pages, and whose fake hc answers
+ * the new delegate terminal as working, so `delegate` returns at once.
+ */
+const launching = () => {
+  const state = tempDir("coordinate-wiki-launch-");
+  made.push(state);
+  const env = cliEnv(
+    state,
+    { "fleet.role": "coordinator", "fleet.domain": "app" },
+    undefined,
+    DELEGATE_TERMINALS,
+  );
+  const run = (args: string[]): Result => {
+    const result = Bun.spawnSync(["bun", cli, ...args], {
+      env,
+      stdout: "pipe",
+      stderr: "pipe",
+      timeout: 15_000,
+    });
+    return {
+      exit: result.exitCode ?? 1,
+      stdout: result.stdout.toString(),
+      stderr: result.stderr.toString(),
+    };
+  };
+  expect(run(["start", "app"]).exit).toBe(0);
+  expect(run(["item", "add", "work"]).exit).toBe(0);
+  const wiki = join(state, "wiki", "app");
+  const shared = join(state, "wiki", "_shared");
+  mkdirSync(wiki, { recursive: true });
+  mkdirSync(shared, { recursive: true });
+  const firstMessage = (): string => {
+    const calls = readFileSync(join(state, "bin", "calls.log"), "utf8").split("\n");
+    return calls.find((line) => line.startsWith("run ") && line.includes(" --name fix-")) ?? "";
+  };
+  return { state, run, wiki, shared, firstMessage };
+};
+
+describe("coordinate delegate WIKI.md", () => {
+  it("lists the domain and shared pages covering a --repo delegate's repo beside its brief", () => {
+    const { state, run, wiki, shared, firstMessage } = launching();
+    const repo = initRepo();
+    made.push(repo);
+    g(repo, "remote", "add", "origin", "git@github.com:Acme/Widgets.git");
+    const root = tempDir("coordinate-wiki-root-");
+    made.push(root);
+    writeFileSync(
+      join(wiki, "alpha.md"),
+      page(
+        fields("alpha", {
+          covers: [
+            { repo: "github.com/acme/widgets", globs: ["src/*.ts", "lib/*.ts"] },
+            { root, globs: ["herdr/*.toml"] },
+          ],
+        }),
+        "Alpha.\n",
+      ),
+    );
+    writeFileSync(
+      join(wiki, "beta.md"),
+      page(fields("beta", { covers: [{ repo: "github.com/acme/other", globs: ["*"] }] }), "B.\n"),
+    );
+    writeFileSync(join(wiki, "gamma.md"), page(fields("gamma"), "Unscoped.\n"));
+    writeFileSync(
+      join(shared, "house-style.md"),
+      page(
+        fields("house-style", {
+          type: "preference",
+          covers: [{ repo: "https://github.com/acme/widgets.git", globs: ["**/*.md"] }],
+        }),
+        "Style.\n",
+      ),
+    );
+    const source = join(state, "brief.md");
+    writeFileSync(source, "# Brief\n");
+    const started = run([
+      "delegate",
+      "fix-a",
+      "--task",
+      "fix a",
+      "--repo",
+      repo,
+      "--harness",
+      "claude",
+      "--brief",
+      source,
+      "--item",
+      "i1",
+      "--no-space",
+    ]);
+    expect([started.exit, started.stderr]).toEqual([0, ""]);
+    const scratch = join(repo, ".claude", "worktrees", "fix-a", ".scratch");
+    expect(readFileSync(join(scratch, "WIKI.md"), "utf8")).toBe(
+      [
+        "# Wiki pages for fix-a",
+        "",
+        "Pages from the app and shared wikis whose covers name github.com/acme/widgets. Open a page before you change the files its globs match. If a claim looks stale, say so in your report: only the coordinator edits the wiki.",
+        "",
+        "## app wiki",
+        "",
+        `- ${join(wiki, "alpha.md")}: about alpha`,
+        "  - globs: src/*.ts, lib/*.ts",
+        "",
+        "## shared wiki",
+        "",
+        `- ${join(shared, "house-style.md")}: about house-style`,
+        "  - globs: **/*.md",
+        "",
+      ].join("\n"),
+    );
+    const launched = firstMessage();
+    expect(launched.slice(launched.indexOf("Read "))).toBe(
+      `Read ${join(scratch, "BRIEF.md")} and do what it says. The wiki pages that cover this work are listed in ${join(scratch, "WIKI.md")}; open the ones your task touches.`,
+    );
+  }, 30_000);
+
+  it("matches root covers containing a --cwd delegate's folder for a pi skill start", () => {
+    const { run, wiki, shared, firstMessage } = launching();
+    const root = tempDir("coordinate-wiki-root-");
+    made.push(root);
+    const cwd = join(root, "herdr");
+    mkdirSync(cwd);
+    writeFileSync(
+      join(wiki, "alpha.md"),
+      page(
+        fields("alpha", {
+          covers: [
+            { repo: "github.com/acme/widgets", globs: ["src/*.ts"] },
+            { root, globs: ["herdr/*.toml"] },
+          ],
+        }),
+        "Alpha.\n",
+      ),
+    );
+    writeFileSync(
+      join(wiki, "beta.md"),
+      page(fields("beta", { covers: [{ root: join(root, "elsewhere"), globs: ["*"] }] }), "B.\n"),
+    );
+    writeFileSync(
+      join(shared, "infra.md"),
+      page(fields("infra", { covers: [{ root: cwd, globs: ["*.toml"] }] }), "I.\n"),
+    );
+    const started = run([
+      "delegate",
+      "fix-b",
+      "--task",
+      "fix b",
+      "--cwd",
+      cwd,
+      "--harness",
+      "pi",
+      "--skill",
+      "implement",
+      "--args",
+      "the ticket",
+      "--item",
+      "i1",
+      "--no-space",
+    ]);
+    expect([started.exit, started.stderr]).toEqual([0, ""]);
+    const scratch = join(cwd, ".scratch", "fix-b");
+    expect(readFileSync(join(scratch, "WIKI.md"), "utf8")).toBe(
+      [
+        "# Wiki pages for fix-b",
+        "",
+        `Pages from the app and shared wikis whose covers name ${cwd}. Open a page before you change the files its globs match. If a claim looks stale, say so in your report: only the coordinator edits the wiki.`,
+        "",
+        "## app wiki",
+        "",
+        `- ${join(wiki, "alpha.md")}: about alpha`,
+        "  - globs: herdr/*.toml",
+        "",
+        "## shared wiki",
+        "",
+        `- ${join(shared, "infra.md")}: about infra`,
+        "  - globs: *.toml",
+        "",
+      ].join("\n"),
+    );
+    const launched = firstMessage();
+    expect(launched.slice(launched.indexOf("/skill:"))).toBe(
+      `/skill:implement the ticket The wiki pages that cover this work are listed in ${join(scratch, "WIKI.md")}; open the ones your task touches.`,
+    );
+  }, 30_000);
+
+  it("writes no WIKI.md and adds no pointer when no page covers the delegate", () => {
+    const { state, run, wiki, firstMessage } = launching();
+    const repo = initRepo();
+    made.push(repo);
+    writeFileSync(join(wiki, "gamma.md"), page(fields("gamma"), "Unscoped.\n"));
+    writeFileSync(
+      join(wiki, "beta.md"),
+      page(fields("beta", { covers: [{ repo: "github.com/acme/other", globs: ["*"] }] }), "B.\n"),
+    );
+    const source = join(state, "brief.md");
+    writeFileSync(source, "# Brief\n");
+    const started = run([
+      "delegate",
+      "fix-c",
+      "--task",
+      "fix c",
+      "--repo",
+      repo,
+      "--harness",
+      "claude",
+      "--skill",
+      "implement-spec",
+      "--args",
+      "spec 1",
+      "--brief",
+      source,
+      "--item",
+      "i1",
+      "--no-space",
+    ]);
+    expect([started.exit, started.stderr]).toEqual([0, ""]);
+    const scratch = join(repo, ".claude", "worktrees", "fix-c", ".scratch");
+    expect(readdirSync(scratch)).toEqual(["BRIEF.md"]);
+    const launched = firstMessage();
+    expect(launched.slice(launched.indexOf("/implement-spec"))).toBe(
+      `/implement-spec spec 1 Also read ${join(scratch, "BRIEF.md")} and follow its Boundary, Stop points and Report sections.`,
     );
   }, 30_000);
 });

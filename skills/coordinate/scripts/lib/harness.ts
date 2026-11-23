@@ -21,10 +21,11 @@ export const skillPrefix = (harness: Harness, skill: string): string =>
 /**
  * What a new delegate is told first: read its brief, or run an implement skill with arguments. A
  * skill start may carry a brief too, for the boundary, stop points and report the skill does not know.
+ * `wiki` is the WIKI.md listing the wiki pages that cover its work, when any do.
  */
 export type DelegateFirstMessage =
-  | { kind: "brief"; path: string }
-  | { kind: "skill"; skill: ImplementSkill; args: string; brief?: string };
+  | { kind: "brief"; path: string; wiki?: string }
+  | { kind: "skill"; skill: ImplementSkill; args: string; brief?: string; wiki?: string };
 
 /**
  * What a new agent is told first: a delegate's message, or `coordinate` (args: the domain), which
@@ -41,12 +42,17 @@ export type FirstMessage =
  * @returns Text sent as the agent's initial prompt.
  */
 export const firstMessage = (harness: Harness, message: FirstMessage): string => {
-  if (message.kind === "brief") return `Read ${message.path} and do what it says.`;
+  const wiki =
+    "wiki" in message && message.wiki
+      ? `The wiki pages that cover this work are listed in ${message.wiki}; open the ones your task touches.`
+      : "";
+  if (message.kind === "brief")
+    return [`Read ${message.path} and do what it says.`, wiki].filter(Boolean).join(" ");
   const brief =
     "brief" in message && message.brief
       ? `Also read ${message.brief} and follow its Boundary, Stop points and Report sections.`
       : "";
-  return [skillPrefix(harness, message.skill), message.args.trim(), brief]
+  return [skillPrefix(harness, message.skill), message.args.trim(), brief, wiki]
     .filter((part) => part !== "")
     .join(" ");
 };

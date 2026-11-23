@@ -365,6 +365,18 @@ export const normalizeSlug = (value: string): string => {
 };
 
 /**
+ * The normalized slug (`github.com/owner/name`) of a checkout's origin remote, else of its first
+ * remote.
+ * @param path Checkout.
+ * @returns The slug, or undefined when it has no remote.
+ */
+const checkoutSlug = Effect.fn("checkoutSlug")(function* (path: string) {
+  const url = yield* remoteUrl(path);
+  const remote = url === undefined ? undefined : parseRemote(url);
+  return remote ? normalizeSlug(`${remote.host}/${remote.slug}`) : undefined;
+});
+
+/**
  * The local checkout of each repo the Boundary names, keyed by its origin remote's normalized
  * slug (`github.com/owner/name`); a checkout with no remote is keyed by its real path.
  * @param boundaries Boundary paths, owned and adjacent.
@@ -376,9 +388,7 @@ export const boundaryCheckouts = Effect.fn("boundaryCheckouts")(function* (
   const checkouts = new Map<string, string>();
   for (const path of boundaries) {
     if (!existsSync(path)) continue;
-    const url = yield* remoteUrl(path);
-    const remote = url === undefined ? undefined : parseRemote(url);
-    const key = remote ? normalizeSlug(`${remote.host}/${remote.slug}`) : real(path);
+    const key = (yield* checkoutSlug(path)) ?? real(path);
     if (!checkouts.has(key)) checkouts.set(key, path);
   }
   return checkouts;
@@ -565,10 +575,9 @@ export const settledWikiPages = Effect.fn("settledWikiPages")(function* (
 ) {
   const changed = yield* changedFiles(cwd, base);
   if (changed === undefined || changed.files.length === 0) return [];
-  const url = yield* remoteUrl(changed.top);
-  const remote = url === undefined ? undefined : parseRemote(url);
+  const slug = yield* checkoutSlug(changed.top);
   const checkouts = new Map([[changed.top, changed.top]]);
-  if (remote) checkouts.set(normalizeSlug(`${remote.host}/${remote.slug}`), changed.top);
+  if (slug !== undefined) checkouts.set(slug, changed.top);
   const absolute = changed.files.map((file) => join(changed.top, file));
   const matches = (cover: Cover): boolean => {
     const { folder } = coverFolder(cover, checkouts);
@@ -639,4 +648,109 @@ export const commitWiki = Effect.fn("commitWiki")(function* (
   yield* gitOk(target.path, [...commitArgs, "commit", "-q", "-m", message]);
   const committed = yield* gitOk(target.path, ["rev-parse", "--short", "HEAD"]);
   return { path: target.path, committed, problems: [] as Problem[] };
+});
+
+/**
+ * Where a delegate works, for matching covers: a repo (its main checkout) or a folder outside one.
+ */
+export type DelegatePlace = { repo: string } | { cwd: string };
+
+/**
+ * The page a delegate's WIKI.md lists: its file, description, and the globs of the covers that
+ * name the delegate's repo or a root containing its folder.
+ */
+type CoveringPage = { file: string; description: string; globs: string[] };
+
+/**
+ * The globs of a page's covers that apply to a delegate: for a repo, covers naming its origin slug
+ * or its path; for a folder, `root` covers containing it. Undefined when none apply.
+ * @param meta The page's frontmatter.
+ * @param checkouts The repo's checkout keyed by its slug and real path, or undefined for a folder.
+ * @param cwd The folder's real path, for a `--cwd` delegate.
+ * @returns The globs, in covers order.
+ */
+const coveringGlobs = (
+  meta: PageMeta,
+  checkouts: ReadonlyMap<string, string> | undefined,
+  cwd: string | undefined,
+): string[] | undefined => {
+  const globs = meta.covers.flatMap((cover) => {
+    if ("root" in cover) {
+      const { folder } = coverFolder(cover, new Map());
+      return cwd !== undefined && folder !== undefined && inside(cwd, folder) ? cover.globs : [];
+    }
+    if (checkouts === undefined) return [];
+    return coverFolder(cover, checkouts).folder !== undefined ? cover.globs : [];
+  });
+  return globs.length === 0 ? undefined : [...new Set(globs)];
+};
+
+/**
+ * Write WIKI.md into a new delegate's scratch folder: the pages of the domain wiki and the shared
+ * wiki whose covers name the delegate's repo (by origin slug, or path when it has no remote) or,
+ * for a `--cwd` delegate, a root containing its folder. Pages without covers stay out. Nothing is
+ * written when no page matches, and neither wiki is created.
+ * @param config Config.
+ * @param domain The delegate's domain.
+ * @param input The delegate's name, scratch folder, and where it works.
+ * @returns The WIKI.md path, or undefined when no page covers the delegate.
+ */
+export const writeDelegateWiki = Effect.fn("writeDelegateWiki")(function* (
+  config: Config,
+  domain: string,
+  input: { name: string; scratch: string; place: DelegatePlace },
+) {
+  let label: string;
+  let checkouts: Map<string, string> | undefined;
+  let cwd: string | undefined;
+  if ("repo" in input.place) {
+    const path = real(input.place.repo);
+    label = (yield* checkoutSlug(path)) ?? path;
+    checkouts = new Map([
+      [label, path],
+      [path, path],
+    ]);
+  } else {
+    cwd = real(input.place.cwd);
+    label = cwd;
+  }
+  const wikis = [
+    { title: `${domain} wiki`, path: wikiDir(config.stateDir, domain) },
+    { title: "shared wiki", path: wikiDir(config.stateDir, SHARED_WIKI) },
+  ];
+  const sections: { title: string; pages: CoveringPage[] }[] = [];
+  for (const wiki of wikis) {
+    if (!existsSync(wiki.path)) continue;
+    const { pages } = yield* readWiki(wiki.path);
+    const covering = pages.flatMap((page): CoveringPage[] => {
+      if (page.meta === undefined) return [];
+      const globs = coveringGlobs(page.meta, checkouts, cwd);
+      return globs === undefined
+        ? []
+        : [{ file: join(wiki.path, page.file), description: page.meta.description, globs }];
+    });
+    if (covering.length > 0) sections.push({ title: wiki.title, pages: covering });
+  }
+  if (sections.length === 0) return undefined;
+  const text = [
+    `# Wiki pages for ${input.name}`,
+    "",
+    `Pages from the ${domain} and shared wikis whose covers name ${label}. Open a page before you change the files its globs match. If a claim looks stale, say so in your report: only the coordinator edits the wiki.`,
+    ...sections.flatMap((section) => [
+      "",
+      `## ${section.title}`,
+      "",
+      ...section.pages.flatMap((page) => [
+        `- ${page.file}: ${page.description}`,
+        `  - globs: ${page.globs.join(", ")}`,
+      ]),
+    ]),
+    "",
+  ].join("\n");
+  const destination = join(input.scratch, "WIKI.md");
+  yield* Effect.promise(async () => {
+    await mkdir(input.scratch, { recursive: true });
+    await writeFile(destination, text);
+  });
+  return destination;
 });
