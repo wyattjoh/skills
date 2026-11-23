@@ -225,7 +225,11 @@ export const copyBackSettled = Effect.fn("copyBackSettled")(function* (
   domain: string,
   terminal: hc.Terminal,
 ) {
-  const machine = remoteMachineOf(terminal.address) ?? "";
+  const machine = remoteMachineOf(terminal.address);
+  if (machine === undefined)
+    return yield* new Refused({
+      message: `${terminal.address} runs on this machine; there is no remote .scratch to copy back`,
+    });
   const delegate = remoteDelegateOf(terminal, machine, domain);
   const repo = yield* localRepoOf(config, domain, machine, delegate.worktree);
   return yield* copyScratch(repo, delegate);
