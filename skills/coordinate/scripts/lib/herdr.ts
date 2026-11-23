@@ -36,6 +36,7 @@ const ListDocument = Schema.Struct({ terminals: Schema.Array(Listed) });
 
 const Got = Schema.Struct({
   address: Schema.String,
+  pid: Schema.optionalKey(Schema.NullOr(Schema.Number)),
   name: Schema.optionalKey(Schema.NullOr(Schema.String)),
   cwd: Schema.optionalKey(Schema.NullOr(Schema.String)),
   parent: Schema.optionalKey(Schema.NullOr(Schema.String)),
@@ -92,6 +93,8 @@ export type Terminal = {
   app: string | undefined;
   labels: Record<string, string>;
   argv: string[];
+  /** The terminal's root process. */
+  pid: number | undefined;
 };
 
 const decodeJson = <A>(schema: Schema.Decoder<A>, command: string, text: string) =>
@@ -182,6 +185,7 @@ export const parseGet = (text: string) =>
     app: terminal.status?.app ?? undefined,
     labels: { ...terminal.labels },
     argv: [...(terminal.foreground?.argv ?? [])],
+    pid: terminal.pid ?? undefined,
   }));
 
 /**

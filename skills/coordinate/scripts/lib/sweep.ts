@@ -20,6 +20,15 @@ import {
   worktrees,
 } from "./git.ts";
 import * as hc from "./herdr.ts";
+import {
+  type Held,
+  ownedBy,
+  type ProcessTable,
+  type PsRow,
+  scanProcesses,
+  type StopOptions,
+  stopProcesses,
+} from "./processes.ts";
 import { Proc } from "./proc.ts";
 import { branchState, repoPullRequests, type RepoPrs } from "./prs.ts";
 
@@ -32,14 +41,17 @@ export type Verdict = "SAFE" | "CLOSE" | "ASK" | "KEEP" | "INFO";
 /**
  * One line of the sweep report.
  */
-export type Row = { verdict: Verdict; text: string; path: string | undefined };
+export type Row = {
+  verdict: Verdict;
+  text: string;
+  path: string | undefined;
+  /** Processes of an ended delegate that `sweep remove` stops. */
+  stop?: readonly PsRow[];
+};
 
 const ORDER: Record<Verdict, number> = { SAFE: 0, CLOSE: 1, ASK: 2, KEEP: 3, INFO: 4 };
 const SELF_EXITING = new Set(["caffeinate"]);
 const SCRATCH_STALE_DAYS = 7;
-const HERDR_CORE = new Set(["hc", "herdr-core"]);
-const HERDR_CORE_ARGS = /(?:^|\/)(?:hc|herdr-core) (?:hold|connect)(?:\s|$)/;
-const HERDR_LAUNCHD = /(?:^|\/)(?:hc|herdr-core)(?:\s.*)?\s--hc-launchd(?:\s|$)/;
 
 /**
  * A live agent session, by the folder it runs in.
@@ -47,85 +59,32 @@ const HERDR_LAUNCHD = /(?:^|\/)(?:hc|herdr-core)(?:\s.*)?\s--hc-launchd(?:\s|$)/
 export type Session = { name: string; where: string; cwd: string };
 
 /**
- * A process and a folder it holds (cwd or executable).
- */
-export type Held = { pid: string; command: string; path: string };
-
-/**
  * What every verdict reads: sessions, processes, and per repo its bases and PRs.
  */
 export type SweepContext = {
   sessions: Session[];
   processes: Held[];
+  table: ProcessTable;
   repos: Map<string, { bases: string[]; prs: RepoPrs }>;
   keep: string[];
   ended: Set<string>;
   creationBases: Map<string, string>;
 };
 
-/**
- * Parse `lsof -d cwd,txt -Fpcn`.
- * @param text lsof output.
- * @returns Held folders.
- */
-export const parseLsof = (text: string): Held[] => {
-  const rows: Held[] = [];
-  let pid = "";
-  let command = "";
-  for (const line of text.split("\n")) {
-    const tag = line[0];
-    const value = line.slice(1);
-    if (tag === "p") pid = value;
-    else if (tag === "c") command = value;
-    else if (tag === "n") rows.push({ pid, command, path: value });
-  }
-  return rows;
-};
-
-/**
- * One line of `ps -axww -o pid=,ppid=,args=`.
- */
-export type PsRow = { pid: string; ppid: string; args: string };
-
-/**
- * Parse `ps -axww -o pid=,ppid=,args=`.
- * @param text ps output.
- * @returns One row per process.
- */
-export const parsePs = (text: string): PsRow[] =>
-  text.split("\n").flatMap((line) => {
-    const match = /^\s*(\d+)\s+(\d+)\s+(.*)$/.exec(line);
-    return match ? [{ pid: match[1] ?? "", ppid: match[2] ?? "", args: match[3] ?? "" }] : [];
-  });
-
-/**
- * Herdr core's own processes, which hold live terminals and must never be offered for killing:
- * an `hc` or `herdr-core` executable run with `--hc-launchd`, `hold` or `connect`, plus the
- * direct children of a `--hc-launchd` server (its ssh connections to remote cores).
- * The basename comes from lsof's command field, because the executable path can hold spaces.
- * @param held Processes from lsof.
- * @param ps Processes from ps.
- * @returns Their pids.
- */
-export const herdrCorePids = (held: readonly Held[], ps: readonly PsRow[]): Set<string> => {
-  const named = new Set(
-    held.filter((entry) => HERDR_CORE.has(entry.command)).map((entry) => entry.pid),
-  );
-  const core = ps.filter(
-    (row) => named.has(row.pid) && (HERDR_CORE_ARGS.test(row.args) || HERDR_LAUNCHD.test(row.args)),
-  );
-  const servers = new Set(core.filter((row) => HERDR_LAUNCHD.test(row.args)).map((row) => row.pid));
-  return new Set([
-    ...core.map((row) => row.pid),
-    ...ps.filter((row) => servers.has(row.ppid)).map((row) => row.pid),
-  ]);
-};
-
 const ENV = (): Record<string, string> => ({ ...process.env }) as Record<string, string>;
 
 /**
- * Live agent sessions and every process's folders. Fails rather than guessing when either cannot be read.
- * @returns Sessions and processes.
+ * A folder's real path, or for a folder that is gone, its real parent joined with its name.
+ * @param path Folder.
+ * @returns The path.
+ */
+const canonical = (path: string): string =>
+  existsSync(path) ? real(path) : join(real(dirname(path)), basename(path));
+
+/**
+ * Live agent sessions and every process's folders, Herdr core's own left out. Fails rather than
+ * guessing when either cannot be read.
+ * @returns Sessions, processes and the full process table.
  */
 export const observe = Effect.fn("observe")(function* () {
   const listed = yield* hc.list();
@@ -136,32 +95,12 @@ export const observe = Effect.fn("observe")(function* () {
       where: terminal.where || "no tab",
       cwd: terminal.cwd ? real(terminal.cwd) : "",
     }));
-  const proc = yield* Proc;
-  const lsof = yield* proc.run(["lsof", "-d", "cwd,txt", "-Fpcn"], {
-    timeoutMs: 30_000,
-    env: ENV(),
-  });
-  // lsof exits 1 when some processes could not be read; its output is still complete for ours.
-  if (lsof.exitCode > 1 || lsof.stdout === "")
-    return yield* new hc.HerdrError({
-      command: "lsof",
-      kind: "command_failed",
-      message: lsof.stderr.slice(0, 200),
-    });
-  const held = parseLsof(lsof.stdout);
-  if (!held.some((entry) => HERDR_CORE.has(entry.command))) return { sessions, processes: held };
-  const ps = yield* proc.run(["ps", "-axww", "-o", "pid=,ppid=,args="], {
-    timeoutMs: 30_000,
-    env: ENV(),
-  });
-  if (ps.exitCode !== 0)
-    return yield* new hc.HerdrError({
-      command: "ps",
-      kind: "command_failed",
-      message: ps.stderr.slice(0, 200),
-    });
-  const core = herdrCorePids(held, parsePs(ps.stdout));
-  return { sessions, processes: held.filter((entry) => !core.has(entry.pid)) };
+  const table = yield* scanProcesses();
+  return {
+    sessions,
+    processes: table.held.filter((entry) => !table.core.has(entry.pid)),
+    table,
+  };
 });
 
 /**
@@ -187,14 +126,17 @@ export const context = Effect.fn("sweepContext")(function* (
     });
   }
   const endedRecords = (yield* readEnded(config.stateDir)).records;
-  const ended = new Set(endedRecords.map((entry) => real(entry.record.cwd)));
+  const ended = new Set(endedRecords.map((entry) => canonical(entry.record.cwd)));
   const creationBases = new Map(
     endedRecords
       .filter((entry) => entry.record.base_sha)
-      .map((entry) => [real(entry.record.cwd), entry.record.base_sha ?? ""]),
+      .map((entry) => [canonical(entry.record.cwd), entry.record.base_sha ?? ""]),
   );
   return { ...seen, repos: map, keep: keep.map(real), ended, creationBases } satisfies SweepContext;
 });
+
+const label = (entries: readonly Held[]): string[] =>
+  [...new Set(entries.map((held) => `${held.pid} ${held.command}`))].toSorted();
 
 /**
  * Judge one linked worktree.
@@ -222,13 +164,15 @@ export const worktreeRow = Effect.fn("worktreeRow")(function* (
   const unsaved = existsSync(path) ? yield* unsavedCommits(path, info.bases) : undefined;
   const gitFailed = dirty === undefined || unsaved === undefined;
   const here = ctx.sessions.filter((session) => session.cwd !== "" && inside(session.cwd, path));
-  const pids = [
-    ...new Set(
-      ctx.processes
-        .filter((held) => inside(held.path, path) && !SELF_EXITING.has(held.command))
-        .map((held) => `${held.pid} ${held.command}`),
-    ),
-  ].toSorted();
+  const holding = ctx.processes.filter(
+    (held) => inside(held.path, path) && !SELF_EXITING.has(held.command),
+  );
+  // Processes an ended delegate provably left here are stopped by remove; only the rest need an ask.
+  const owned = ctx.ended.has(path) ? ownedBy(ctx.table, path) : new Set<string>();
+  const allPids = label(holding);
+  const pids = label(holding.filter((held) => !owned.has(held.pid)));
+  const ownedPids = label(holding.filter((held) => owned.has(held.pid)));
+  const stop = ctx.table.ps.filter((row) => owned.has(row.pid));
   const baseNames = new Set(info.bases.map((base) => base.split("/").at(-1)));
   const onBase = branch !== undefined && (PROTECTED_BRANCHES.has(branch) || baseNames.has(branch));
   const noOwnCommits = state?.hasCommits === false;
@@ -248,7 +192,7 @@ export const worktreeRow = Effect.fn("worktreeRow")(function* (
   else if (!branch || gitFailed) verdict = here.length > 0 ? "KEEP" : "ASK";
   else if (here.length > 0 && ((dirty?.length ?? 0) > 0 || lost > 0)) verdict = "KEEP";
   else if ((dirty?.length ?? 0) > 0 || lost > 0) verdict = "ASK";
-  else if (endedNoCommits && (here.length > 0 || pids.length > 0)) verdict = "KEEP";
+  else if (endedNoCommits && (here.length > 0 || allPids.length > 0)) verdict = "KEEP";
   else if (here.length > 0) verdict = finished ? "CLOSE" : "KEEP";
   else if (pids.length > 0) verdict = "ASK";
   else if (openPr) verdict = "KEEP";
@@ -272,11 +216,16 @@ export const worktreeRow = Effect.fn("worktreeRow")(function* (
   if (lost > 0) notes.push(`${lost} ${lost === 1 ? "commit" : "commits"} on no remote or base`);
   for (const session of here) notes.push(`session ${session.name} in "${session.where}"`);
   if (pids.length > 0 && here.length === 0) notes.push(`processes: ${pids.slice(0, 4).join("; ")}`);
+  if (ownedPids.length > 0 && here.length === 0)
+    notes.push(
+      `ended delegate's processes, sweep remove stops them: ${ownedPids.slice(0, 4).join("; ")}`,
+    );
   if (ctx.ended.has(path)) notes.push("ended delegate record");
   return {
     verdict,
     path,
     text: `worktree ${path} [${branch ?? "detached"}] ${notes.join(" · ")}`,
+    stop,
   } satisfies Row;
 });
 
@@ -396,12 +345,17 @@ export const report = Effect.fn("sweepReport")(function* (
       pids.set(held.pid, held.command);
       byFolder.set(folder, pids);
     }
-    for (const [folder, pids] of byFolder)
+    for (const [folder, pids] of byFolder) {
+      const owned = ctx.ended.has(folder) ? ownedBy(ctx.table, folder) : new Set<string>();
       rows.push({
         verdict: "SAFE",
         path: undefined,
-        text: `processes in deleted folder ${folder}: ${[...pids].map(([pid, command]) => `${pid} ${command}`).join(", ")} · stop them: kill ${[...pids.keys()].join(" ")}`,
+        text:
+          `processes in deleted folder ${folder}: ${[...pids].map(([pid, command]) => `${pid} ${command}`).join(", ")} · stop them: kill ${[...pids.keys()].join(" ")}` +
+          (owned.size > 0 ? " · an ended delegate's: sweep remove --all-safe stops them" : ""),
+        stop: ctx.table.ps.filter((row) => owned.has(row.pid)),
       });
+    }
   }
   return rows.toSorted((a, b) => ORDER[a.verdict] - ORDER[b.verdict]);
 });
@@ -497,12 +451,14 @@ const unpark = (moves: ReadonlyArray<[string, string]>) =>
  * @param config Config.
  * @param worktreePath Worktree.
  * @param ctx Sweep context (must include its repo).
+ * @param options How an ended delegate's processes are stopped.
  * @returns Removed or kept, with lines.
  */
 export const removeOne = Effect.fn("removeOne")(function* (
   config: Config,
   worktreePath: string,
   ctx: SweepContext,
+  options: StopOptions,
 ) {
   const path = real(worktreePath);
   const repo = yield* mainCheckout(path);
@@ -520,6 +476,15 @@ export const removeOne = Effect.fn("removeOne")(function* (
     return {
       removed: false,
       lines: [`kept ${path}: ${row.verdict}, ${row.text.replace(/^worktree \S+ /, "")}`],
+    };
+  const stopped = yield* stopProcesses(row.stop ?? [], options);
+  if (stopped.survivors.length > 0)
+    return {
+      removed: false,
+      lines: [
+        `kept ${path}: ${stopped.survivors.length} of its ended delegate's processes still run`,
+        ...stopped.lines.map((line) => `  ${line}`),
+      ],
     };
 
   const ignored = yield* ignoredFiles(path, config.buildOutput);
@@ -539,7 +504,7 @@ export const removeOne = Effect.fn("removeOne")(function* (
       ],
     };
   }
-  const lines = [`removed worktree ${path}`];
+  const lines = [`removed worktree ${path}`, ...stopped.lines.map((line) => `  ${line}`)];
   if (parked) lines.push(`  parked ${listed(ignored.park)} in ${parked.destination}`);
   if (ignored.drop.length > 0) lines.push(`  dropped build output: ${listed(ignored.drop)}`);
   if (ignored.discard.length > 0)
@@ -576,18 +541,20 @@ export const removeOne = Effect.fn("removeOne")(function* (
  * @param config Config.
  * @param paths Worktrees.
  * @param ctx Sweep context.
+ * @param options How an ended delegate's processes are stopped.
  * @returns Lines, ending with "removed N of M".
  */
 export const removeMany = Effect.fn("removeMany")(function* (
   config: Config,
   paths: readonly string[],
   ctx: SweepContext,
+  options: StopOptions,
 ) {
   const lines: string[] = [];
   const kept: string[] = [];
   let removed = 0;
   for (const path of paths) {
-    const result = yield* removeOne(config, path, ctx);
+    const result = yield* removeOne(config, path, ctx, options);
     lines.push(...result.lines);
     if (result.removed) removed += 1;
     else kept.push(result.lines[0]?.replace(/^kept /, "") ?? path);
@@ -596,6 +563,28 @@ export const removeMany = Effect.fn("removeMany")(function* (
     `removed ${removed} of ${paths.length}` +
       (kept.length > 0 ? `; ${kept.length} kept because: ${kept.join("; ")}` : ""),
   );
+  return lines;
+});
+
+/**
+ * Stop the ended delegates' processes the report found in deleted worktree folders.
+ * @param rows Report rows.
+ * @param options Stop options.
+ * @returns Lines, one block per folder.
+ */
+export const stopDeletedFolders = Effect.fn("stopDeletedFolders")(function* (
+  rows: readonly Row[],
+  options: StopOptions,
+) {
+  const lines: string[] = [];
+  for (const row of rows) {
+    if (!row.text.startsWith("processes in deleted folder ") || (row.stop ?? []).length === 0)
+      continue;
+    const folder = row.text.slice("processes in deleted folder ".length).split(":")[0] ?? "";
+    const stopped = yield* stopProcesses(row.stop ?? [], options);
+    lines.push(`ended delegate's processes in deleted folder ${folder}:`);
+    lines.push(...stopped.lines.map((line) => `  ${line}`));
+  }
   return lines;
 });
 

@@ -114,7 +114,7 @@ export const gitAndFake = (
 
 /**
  * An environment for spawning the coordinate CLI against `state`: a config file naming it, a stub
- * `hc`, a stub `herdr-app` and a stub `lsof` first on PATH, and `HC_TERMINAL_ID=t1`. The stub's `hc get` answers t1 with `labels`,
+ * `hc`, a stub `herdr-app`, and stub `lsof`, `ps` and `kill` first on PATH, and `HC_TERMINAL_ID=t1`. The stub's `hc get` answers t1 with `labels`,
  * or, given `getError`, fails the way herdr-core reports an error; `hc get` answers each address in
  * `terminals` with its document; `hc ls` lists the first entry of `lists` whose `key=value` label
  * filter the call passes, else nothing. Every call's arguments are appended to `<state>/bin/calls.log`.
@@ -170,6 +170,19 @@ export const cliEnv = (
   // so the CLI never depends on the host's lsof or its live process table.
   writeFileSync(join(bin, "lsof"), `#!/bin/sh\nprintf 'p1\\ncinit\\nn/\\n'\n`);
   chmodSync(join(bin, "lsof"), 0o755);
+  // end and sweep remove read the process table from ps and may signal with kill: answer that read
+  // with an empty table and record kill calls, so no CLI test targets a host process. Other ps
+  // reads (a watcher's pid check) pass through.
+  writeFileSync(
+    join(bin, "ps"),
+    '#!/bin/sh\ncase "$*" in *lstart*) exit 0 ;; esac\nexec /bin/ps "$@"\n',
+  );
+  chmodSync(join(bin, "ps"), 0o755);
+  writeFileSync(
+    join(bin, "kill"),
+    `#!/bin/sh\nprintf '%s\\n' "$*" >> '${join(bin, "kill-calls.log")}'\n`,
+  );
+  chmodSync(join(bin, "kill"), 0o755);
   return {
     ...(process.env as Record<string, string>),
     COORDINATE_CONFIG: configFile,
@@ -177,4 +190,54 @@ export const cliEnv = (
     HC_TERMINAL_ID: "t1",
     PATH: `${bin}:${process.env.PATH ?? ""}`,
   };
+};
+
+/**
+ * One fake process: pid, parent pid, command line and working folder.
+ */
+export type FakeProcess = { pid: number; ppid: number; args: string; cwd: string };
+
+/**
+ * A scripted process table answering `ps`, `lsof` and `kill`: `kill` removes a pid unless it is
+ * listed as ignoring that signal. Every other argv falls through to `rest`.
+ * @param processes Processes alive at the start.
+ * @param ignores Signal name (TERM, KILL) to the pids that ignore it.
+ * @param rest Answers for other argv.
+ * @returns The answer function, the live pids and every kill argv.
+ */
+export const processMachine = (
+  processes: readonly FakeProcess[],
+  ignores: Record<string, readonly number[]> = {},
+  rest: (argv: readonly string[]) => RunOutput = () => ({ exitCode: 0, stdout: "{}", stderr: "" }),
+) => {
+  const alive = new Set(processes.map((entry) => entry.pid));
+  const kills: string[][] = [];
+  const live = () => processes.filter((entry) => alive.has(entry.pid));
+  const answer = (argv: readonly string[]): RunOutput => {
+    if (argv[0] === "ps")
+      return {
+        exitCode: 0,
+        stdout: live()
+          .map((entry) => `${entry.pid} ${entry.ppid} Mon Nov 23 04:50:09 2026 ${entry.args}\n`)
+          .join(""),
+        stderr: "",
+      };
+    if (argv[0] === "lsof")
+      return {
+        exitCode: 0,
+        stdout: live()
+          .map((entry) => `p${entry.pid}\nc${entry.args.split(" ")[0]}\nfcwd\nn${entry.cwd}\n`)
+          .join(""),
+        stderr: "",
+      };
+    if (argv[0] === "kill") {
+      kills.push([...argv]);
+      const name = (argv[1] ?? "").replace(/^-/, "");
+      for (const pid of argv.slice(2).map(Number))
+        if (!(ignores[name] ?? []).includes(pid)) alive.delete(pid);
+      return { exitCode: 0, stdout: "", stderr: "" };
+    }
+    return rest(argv);
+  };
+  return { answer, alive, kills };
 };

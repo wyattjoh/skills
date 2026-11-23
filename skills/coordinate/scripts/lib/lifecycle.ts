@@ -53,6 +53,7 @@ import {
   PI_THINKING,
 } from "./harness.ts";
 import * as hc from "./herdr.ts";
+import { defaultStop, scanProcesses, type StopOptions, teardownEnded } from "./processes.ts";
 import { armWatcher, WATCHER_DOMAIN_LABEL, watcherInfoLine } from "./watch-terminal.ts";
 import {
   capacityItemEligible,
@@ -964,6 +965,7 @@ const statusUpdate = (id: string, status: ItemStatus, now: string): ItemUpdate =
  * @param target Name or address.
  * @param now End even while working.
  * @param itemStatus Next status for the item left with no live delegate.
+ * @param stop How the delegate's left-over processes are stopped.
  * @returns Lines to print.
  */
 export const endDelegate = Effect.fn("endDelegate")(function* (
@@ -971,6 +973,7 @@ export const endDelegate = Effect.fn("endDelegate")(function* (
   target: string,
   now: boolean,
   itemStatus: ItemStatus | undefined = undefined,
+  stop: StopOptions = defaultStop(),
 ) {
   if (itemStatus !== undefined && !NEXT_STATUSES.some((known) => known === itemStatus))
     return yield* new Refused({
@@ -1028,12 +1031,34 @@ export const endDelegate = Effect.fn("endDelegate")(function* (
     space: terminal.labels[L.space] !== undefined,
   };
   const path = yield* writeEnded(config.stateDir, record);
+  // Read the terminal's process tree while it still has one: once it ends, survivors move to launchd.
+  // A remote terminal (machine/address) has pids and folders on another machine: leave them alone.
+  const remote = terminal.address.includes("/");
+  const before = remote ? Option.none() : yield* scanProcesses().pipe(Effect.option);
   yield* hc.end(terminal.address).pipe(Effect.tapError(() => removeEnded(path)));
   const space = terminal.labels[L.space];
   if (space) yield* hc.closeSpace(space).pipe(Effect.ignore);
+  // Only a worktree of its own: a shared checkout's processes may be anyone's.
+  const worktree = terminal.labels[L.worktree];
+  const ownWorktree =
+    worktree !== undefined && real(worktree) !== real(record.repo ?? "")
+      ? real(worktree)
+      : undefined;
+  const stopped = remote
+    ? [`stopped no processes: ${record.name} ran on ${machineOfAddress(terminal.address)}`]
+    : yield* teardownEnded(
+        { name: record.name, rootPid: terminal.pid, worktree: ownWorktree },
+        Option.getOrUndefined(before),
+        stop,
+      ).pipe(
+        Effect.catch((error) =>
+          Effect.succeed([`stopped no processes: the process scan failed (${error.message})`]),
+        ),
+      );
   const lines = [
     `ended ${record.name} (${terminal.address}); record ${path}`,
     `worktree, branch and session stay; resume with: coordinate resume ${record.name}`,
+    ...stopped,
   ];
   if (orphan === undefined) {
     if (itemStatus !== undefined && filed?.status !== "delegated")

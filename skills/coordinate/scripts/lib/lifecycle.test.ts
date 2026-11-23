@@ -12,7 +12,7 @@ import { join } from "node:path";
 import { boundaryAdd, createDocument, itemAdd, itemClose } from "./backlog-doc.ts";
 import { resolveConfig } from "./config.ts";
 import { Effect } from "effect";
-import { failureOf, g, gitAndFake, initRepo, runWith, tempDir } from "./fixture.ts";
+import { failureOf, g, gitAndFake, initRepo, processMachine, runWith, tempDir } from "./fixture.ts";
 import { writeEnded } from "./fleet.ts";
 import { setHarnessPolicy } from "./harness-policy.ts";
 import {
@@ -1251,10 +1251,83 @@ describe("endDelegate", () => {
     expect(fake.calls.map((call) => call.argv.slice(0, 3).join(" "))).toEqual([
       "hc get fix-a",
       "git -c commit.gpgsign=false",
+      "lsof -d cwd,txt",
+      "ps -axww -o",
       "hc kill t2",
       "hc rm t2",
       "herdr-app do space.close",
+      "lsof -d cwd,txt",
+      "ps -axww -o",
     ]);
+  });
+
+  it("stops what the delegate left running: its terminal's tree and its worktree's orphans", async () => {
+    const state = dir();
+    const HOLD = "/Apps/Herdr Core.app/Contents/MacOS/herdr-core hold --socket /s.sock";
+    const machine = processMachine(
+      [
+        { pid: 5, ppid: 1, args: HOLD, cwd: "/" },
+        { pid: 10, ppid: 5, args: "pi --session s-1", cwd: "/nonexistent/wt" },
+        { pid: 11, ppid: 10, args: "chrome --headless --remote-debugging-port=9333", cwd: "/" },
+        { pid: 20, ppid: 1, args: "pnpm dev", cwd: "/nonexistent/wt" },
+        { pid: 60, ppid: 5, args: "sh preview", cwd: "/nonexistent/wt" },
+      ],
+      { TERM: [11] },
+      endAnswers,
+    );
+    const fake = fakeProc((argv) => {
+      if (argv[0] === "hc" && argv[1] === "get")
+        return ok(
+          terminal({
+            status: { state: "idle" },
+            status_ms: 0,
+            labels: endLabels,
+            cwd: "/nonexistent/wt",
+            pid: 10,
+          }),
+        );
+      const out = machine.answer(argv);
+      return argv[0] === "lsof"
+        ? { ...out, stdout: out.stdout.replace("c/Apps/Herdr", "cherdr-core") }
+        : out;
+    });
+    const lines = await runWith(
+      endDelegate(await config(state), "fix-a", false, undefined, {
+        graceMs: 0,
+        pollMs: 0,
+        selfPid: "999999",
+      }),
+      fake.layer,
+    );
+    expect(lines.slice(2)).toEqual([
+      "processes of fix-a:",
+      "  stopped 10 pi --session s-1",
+      "  stopped 11 chrome --headless --remote-debugging-port=9333 (SIGKILL)",
+      "  stopped 20 pnpm dev",
+    ]);
+    expect([...machine.alive].toSorted()).toEqual([5, 60]);
+  });
+
+  it("leaves a remote delegate's processes alone", async () => {
+    const fake = fakeProc((argv) =>
+      argv[0] === "hc" && argv[1] === "get"
+        ? ok(
+            terminal({
+              address: "strix/t2",
+              status: { state: "idle" },
+              status_ms: 0,
+              labels: endLabels,
+              cwd: "/nonexistent/wt",
+              pid: 10,
+            }),
+          )
+        : ok("{}"),
+    );
+    const lines = await runWith(endDelegate(await config(dir()), "fix-a", false), fake.layer);
+    expect(lines.slice(2)).toEqual(["stopped no processes: fix-a ran on strix"]);
+    expect(
+      fake.calls.filter((call) => ["lsof", "ps", "kill"].includes(call.argv[0] ?? "")),
+    ).toEqual([]);
   });
 });
 

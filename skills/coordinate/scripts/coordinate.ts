@@ -61,7 +61,17 @@ import {
   watcherInfoLine,
 } from "./lib/watch-terminal.ts";
 import type { WatchView } from "./lib/watch-terminal.ts";
-import { context, pruneBranches, pruneEnded, removeMany, renderRows, report } from "./lib/sweep.ts";
+import { defaultStop } from "./lib/processes.ts";
+import {
+  context,
+  pruneBranches,
+  pruneEnded,
+  removeMany,
+  renderRows,
+  report,
+  type Row,
+  stopDeletedFolders,
+} from "./lib/sweep.ts";
 import { mainCheckout } from "./lib/git.ts";
 import { resolve } from "node:path";
 
@@ -1458,8 +1468,9 @@ const sweepRemoveCommand = Command.make(
           ))
             if (!repos.includes(repo)) repos.push(repo);
         const ctx = yield* context(config, repos, options.base, []);
+        let rows: readonly Row[] = [];
         if (options.allSafe) {
-          const rows = yield* report(config, repos, {
+          rows = yield* report(config, repos, {
             bases: options.base,
             keep: [],
             sizes: false,
@@ -1474,8 +1485,10 @@ const sweepRemoveCommand = Command.make(
             )
               targets.push(row.path);
         }
-        if (targets.length === 0) return ["no worktree to remove"];
-        return yield* removeMany(config, targets, ctx);
+        const stop = defaultStop();
+        const deleted = options.allSafe ? yield* stopDeletedFolders(rows, stop) : [];
+        if (targets.length === 0) return deleted.length > 0 ? deleted : ["no worktree to remove"];
+        return [...(yield* removeMany(config, targets, ctx, stop)), ...deleted];
       }),
     ),
 ).pipe(

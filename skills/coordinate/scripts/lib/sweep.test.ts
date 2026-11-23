@@ -3,19 +3,31 @@ import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node
 import { join } from "node:path";
 import { Effect } from "effect";
 import { resolveConfig } from "./config.ts";
-import { commitFile, g, gitAndFake, initRepo, runWith, tempDir } from "./fixture.ts";
+import {
+  commitFile,
+  g,
+  gitAndFake,
+  initRepo,
+  processMachine,
+  runWith,
+  tempDir,
+} from "./fixture.ts";
 import { ok, type RunOutput } from "./proc.ts";
 import { real } from "./git.ts";
+import { herdrCorePids, parseLsof, parsePs, type StopOptions } from "./processes.ts";
 import {
   context,
-  herdrCorePids,
-  parseLsof,
-  parsePs,
   pruneBranches,
   pruneEnded,
   removeMany,
   report,
+  stopDeletedFolders,
 } from "./sweep.ts";
+
+const STOP: StopOptions = { graceMs: 0, pollMs: 0, selfPid: "999999" };
+const STARTED = "Mon Nov 23 04:50:09 2026";
+const ps = (lines: ReadonlyArray<readonly [number, number, string]>): string =>
+  lines.map(([pid, ppid, args]) => `${pid} ${ppid} ${STARTED} ${args}\n`).join("");
 
 const made: string[] = [];
 const track = (path: string): string => {
@@ -116,11 +128,11 @@ const verdicts = async (repo: string, sessions: Array<{ address: string; cwd: st
   (await worktreeRows(repo, sessions)).map((row) => row.verdict);
 
 describe("parseLsof", () => {
-  it("reads pid, command and name fields", () => {
-    expect(parseLsof("p12\ncnode\nn/a\nn/b\np13\ncsh\nn/c\n")).toEqual([
-      { pid: "12", command: "node", path: "/a" },
-      { pid: "12", command: "node", path: "/b" },
-      { pid: "13", command: "sh", path: "/c" },
+  it("reads pid, command, fd and name fields", () => {
+    expect(parseLsof("p12\ncnode\nfcwd\nn/a\nftxt\nn/b\np13\ncsh\nn/c\n")).toEqual([
+      { pid: "12", command: "node", fd: "cwd", path: "/a" },
+      { pid: "12", command: "node", fd: "txt", path: "/b" },
+      { pid: "13", command: "sh", fd: "", path: "/c" },
     ]);
   });
 });
@@ -132,42 +144,46 @@ const HOLD =
 describe("herdrCorePids", () => {
   it("names the launchd server, its ssh children, hold and connect, and leaves the rest", () => {
     const held = [
-      { pid: "10", command: "hc", path: "/gone" },
-      { pid: "11", command: "ssh", path: "/gone" },
-      { pid: "12", command: "herdr-core", path: "/gone" },
-      { pid: "13", command: "herdr-core", path: "/gone" },
-      { pid: "14", command: "zsh", path: "/gone" },
-      { pid: "15", command: "hc", path: "/gone" },
-      { pid: "16", command: "node", path: "/gone" },
+      { pid: "10", command: "hc", fd: "cwd", path: "/gone" },
+      { pid: "11", command: "ssh", fd: "cwd", path: "/gone" },
+      { pid: "12", command: "herdr-core", fd: "cwd", path: "/gone" },
+      { pid: "13", command: "herdr-core", fd: "cwd", path: "/gone" },
+      { pid: "14", command: "zsh", fd: "cwd", path: "/gone" },
+      { pid: "15", command: "hc", fd: "cwd", path: "/gone" },
+      { pid: "16", command: "node", fd: "cwd", path: "/gone" },
     ];
-    const ps = parsePs(
-      [
-        `   10     1 ${LAUNCHD}`,
-        "   11    10 ssh -T strix sh -c 'exec herdr-core connect'",
-        `   12    10 ${HOLD}`,
-        "   13     9 /Users/u/.local/bin/herdr-core connect",
-        "   14    12 /bin/zsh",
-        "   15    14 hc wait t1 --timeout 60",
-        "   16    14 node server.js --hc-launchd",
-        "",
-      ].join("\n"),
+    const rows = parsePs(
+      ps([
+        [10, 1, LAUNCHD],
+        [11, 10, "ssh -T strix sh -c 'exec herdr-core connect'"],
+        [12, 10, HOLD],
+        [13, 9, "/Users/u/.local/bin/herdr-core connect"],
+        [14, 12, "/bin/zsh"],
+        [15, 14, "hc wait t1 --timeout 60"],
+        [16, 14, "node server.js --hc-launchd"],
+      ]),
     );
-    expect([...herdrCorePids(held, ps)].toSorted()).toEqual(["10", "11", "12", "13"]);
+    expect([...herdrCorePids(held, rows)].toSorted()).toEqual(["10", "11", "12", "13"]);
   });
 });
 
-const deletedFolderRows = async (lsof: string, ps: string) => {
+const deletedFolderRows = async (lsof: string, psText: string, endedName?: string) => {
   const repo = track(initRepo());
   const root = join(repo, ".claude", "worktrees");
   mkdirSync(root, { recursive: true });
   const gone = join(real(root), "gone");
+  const state = track(tempDir());
+  if (endedName) {
+    mkdirSync(join(state, "ended"), { recursive: true });
+    writeFileSync(join(state, "ended", `${endedName}.json`), endedRecord(endedName, gone));
+  }
   const fake = gitAndFake((argv) => {
     if (argv[0] === "lsof") return ok(lsof.replaceAll("<gone>", gone));
-    if (argv[0] === "ps") return ok(ps);
+    if (argv[0] === "ps") return ok(psText);
     return fakes()(argv);
   });
-  const rows = await runWith(
-    report(await config(track(tempDir())), [repo], {
+  const all = await runWith(
+    report(await config(state), [repo], {
       bases: [],
       keep: [],
       sizes: false,
@@ -175,11 +191,12 @@ const deletedFolderRows = async (lsof: string, ps: string) => {
     }),
     fake.layer,
   );
+  const rows = all.filter((row) => row.text.startsWith("processes in deleted folder"));
   return {
     gone,
-    rows: rows
-      .filter((row) => row.text.startsWith("processes in deleted folder"))
-      .map((row) => [row.verdict, row.text]),
+    fake,
+    found: rows,
+    rows: rows.map((row) => [row.verdict, row.text]),
   };
 };
 
@@ -187,7 +204,12 @@ describe("report processes in deleted folders", () => {
   it("offers to kill a stray dev server but never Herdr core", async () => {
     const { gone, rows } = await deletedFolderRows(
       "p10\nchc\nn<gone>\np11\ncssh\nn<gone>\np12\ncherdr-core\nn<gone>\np16\ncnode\nn<gone>/web\n",
-      `10 1 ${LAUNCHD}\n11 10 ssh -T strix\n12 10 ${HOLD}\n16 12 node server.js\n`,
+      ps([
+        [10, 1, LAUNCHD],
+        [11, 10, "ssh -T strix"],
+        [12, 10, HOLD],
+        [16, 12, "node server.js"],
+      ]),
     );
     expect(rows).toEqual([
       ["SAFE", `processes in deleted folder ${gone}: 16 node · stop them: kill 16`],
@@ -197,7 +219,10 @@ describe("report processes in deleted folders", () => {
   it("lists no row when only Herdr core holds the deleted folder", async () => {
     const { rows } = await deletedFolderRows(
       "p10\nchc\nn<gone>\np12\ncherdr-core\nn<gone>\n",
-      `10 1 ${LAUNCHD}\n12 10 ${HOLD}\n`,
+      ps([
+        [10, 1, LAUNCHD],
+        [12, 10, HOLD],
+      ]),
     );
     expect(rows).toEqual([]);
   });
@@ -308,7 +333,7 @@ describe("remove", () => {
     const cfg = await config(track(tempDir()));
     const fake = gitAndFake(fakes());
     const lines = await runWith(
-      Effect.flatMap(context(cfg, [repo], [], []), (ctx) => removeMany(cfg, [wt], ctx)),
+      Effect.flatMap(context(cfg, [repo], [], []), (ctx) => removeMany(cfg, [wt], ctx, STOP)),
       fake.layer,
     );
     expect(lines[0]).toBe(`removed worktree ${wt}`);
@@ -328,7 +353,7 @@ describe("remove", () => {
     const cfg = await config(track(tempDir()));
     const fake = gitAndFake(fakes());
     const lines = await runWith(
-      Effect.flatMap(context(cfg, [repo], [], []), (ctx) => removeMany(cfg, [wt], ctx)),
+      Effect.flatMap(context(cfg, [repo], [], []), (ctx) => removeMany(cfg, [wt], ctx, STOP)),
       fake.layer,
     );
     expect(lines[0]?.startsWith(`kept ${wt}: ASK,`)).toBe(true);
@@ -347,7 +372,7 @@ describe("remove", () => {
     let lines: string[] = [];
     try {
       lines = await runWith(
-        Effect.flatMap(context(cfg, [repo], [], []), (ctx) => removeMany(cfg, [wt], ctx)),
+        Effect.flatMap(context(cfg, [repo], [], []), (ctx) => removeMany(cfg, [wt], ctx, STOP)),
         fake.layer,
       );
     } finally {
@@ -403,5 +428,129 @@ describe("pruneEnded", () => {
     const lines = await runWith(pruneEnded(await config(state)));
     expect(lines).toEqual(["pruned 1 of 2 ended records whose folder is gone", "  gone"]);
     expect(existsSync(join(state, "ended", "here.json"))).toBe(true);
+  });
+});
+
+const endedState = (cwd: string): string => {
+  const state = track(tempDir());
+  mkdirSync(join(state, "ended"), { recursive: true });
+  writeFileSync(join(state, "ended", "fix-a.json"), endedRecord("fix-a", cwd));
+  return state;
+};
+
+describe("ended delegate processes", () => {
+  it("removes a landed worktree after stopping the processes its ended delegate left", async () => {
+    const { repo, wt } = repoWithWorktree();
+    squashIntoMain(repo);
+    const machine = processMachine(
+      [
+        { pid: 20, ppid: 1, args: "sh -c pnpm dev", cwd: real(wt) },
+        { pid: 21, ppid: 20, args: "node wrangler dev", cwd: join(real(wt), "apps") },
+      ],
+      {},
+      fakes(),
+    );
+    const cfg = await config(endedState(wt));
+    const fake = gitAndFake(machine.answer);
+    const rows = await runWith(
+      report(cfg, [repo], { bases: [], keep: [], sizes: false, nowMs: Date.now() }),
+      fake.layer,
+    );
+    expect(
+      rows.filter((row) => row.path === real(wt)).map((row) => [row.verdict, row.text]),
+    ).toEqual([
+      [
+        "SAFE",
+        `worktree ${real(wt)} [x] PRs unknown: no remote · on base (rebase) · ended delegate's processes, sweep remove stops them: 20 sh; 21 node · ended delegate record`,
+      ],
+    ]);
+    const lines = await runWith(
+      Effect.flatMap(context(cfg, [repo], [], []), (ctx) => removeMany(cfg, [wt], ctx, STOP)),
+      fake.layer,
+    );
+    expect(lines.slice(0, 3)).toEqual([
+      `removed worktree ${real(wt)}`,
+      "  stopped 20 sh -c pnpm dev",
+      "  stopped 21 node wrangler dev",
+    ]);
+    expect(machine.kills).toEqual([["kill", "-TERM", "20", "21"]]);
+    expect(existsSync(wt)).toBe(false);
+  });
+
+  it("still asks about a process a live terminal runs in an ended delegate's worktree", async () => {
+    const { repo, wt } = repoWithWorktree();
+    squashIntoMain(repo);
+    const machine = processMachine(
+      [
+        { pid: 5, ppid: 1, args: HOLD, cwd: "/" },
+        { pid: 60, ppid: 5, args: "sh preview", cwd: real(wt) },
+      ],
+      {},
+      fakes(),
+    );
+    const cfg = await config(endedState(wt));
+    const fake = gitAndFake((argv) => {
+      const out = machine.answer(argv);
+      return argv[0] === "lsof"
+        ? { ...out, stdout: out.stdout.replace(/^c\/Users\/u\/.*$/m, "cherdr-core") }
+        : out;
+    });
+    const lines = await runWith(
+      Effect.flatMap(context(cfg, [repo], [], []), (ctx) => removeMany(cfg, [wt], ctx, STOP)),
+      fake.layer,
+    );
+    expect(lines[0]).toBe(
+      `kept ${real(wt)}: ASK, [x] PRs unknown: no remote · on base (rebase) · processes: 60 sh · ended delegate record`,
+    );
+    expect(machine.kills).toEqual([]);
+    expect(existsSync(wt)).toBe(true);
+  });
+
+  it("keeps the worktree when a process outlives SIGKILL", async () => {
+    const { repo, wt } = repoWithWorktree();
+    squashIntoMain(repo);
+    const machine = processMachine(
+      [{ pid: 20, ppid: 1, args: "bun stubborn.ts", cwd: real(wt) }],
+      { TERM: [20], KILL: [20] },
+      fakes(),
+    );
+    const cfg = await config(endedState(wt));
+    const fake = gitAndFake(machine.answer);
+    const lines = await runWith(
+      Effect.flatMap(context(cfg, [repo], [], []), (ctx) => removeMany(cfg, [wt], ctx, STOP)),
+      fake.layer,
+    );
+    expect(lines.slice(0, 2)).toEqual([
+      `kept ${real(wt)}: 1 of its ended delegate's processes still run`,
+      "  could not stop 20 bun stubborn.ts: still running after SIGKILL",
+    ]);
+    expect(existsSync(wt)).toBe(true);
+  });
+
+  it("signals only an ended delegate's own processes in its deleted folder", async () => {
+    const { gone, found, rows, fake } = await deletedFolderRows(
+      "p20\ncnode\nfcwd\nn<gone>\np30\ncnode\nfcwd\nn<gone>\np31\nczsh\nfcwd\nn/\n",
+      ps([
+        [20, 1, "node dev"],
+        [31, 1, "zsh"],
+        [30, 31, "node other"],
+      ]),
+      "fix-a",
+    );
+    expect(rows).toEqual([
+      [
+        "SAFE",
+        `processes in deleted folder ${gone}: 20 node, 30 node · stop them: kill 20 30 · an ended delegate's: sweep remove --all-safe stops them`,
+      ],
+    ]);
+    const lines = await runWith(stopDeletedFolders(found, STOP), fake.layer);
+    expect(lines).toEqual([
+      `ended delegate's processes in deleted folder ${gone}:`,
+      "  could not stop 20 node dev: still running after SIGKILL",
+    ]);
+    expect(fake.calls.filter((argv) => argv[0] === "kill")).toEqual([
+      ["kill", "-TERM", "20"],
+      ["kill", "-KILL", "20"],
+    ]);
   });
 });

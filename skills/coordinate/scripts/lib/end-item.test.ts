@@ -85,6 +85,7 @@ const answers =
 const ENDED = [
   "ended fix-a (t2); record STATE/ended/s-1.json",
   "worktree, branch and session stay; resume with: coordinate resume fix-a",
+  "no processes of fix-a were left running",
 ];
 const endedLines = (state: string): string[] => ENDED.map((line) => line.replace("STATE", state));
 
