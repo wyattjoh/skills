@@ -89,6 +89,7 @@ import {
   markdownPlain,
   promotedItemId,
   rankedOptions,
+  tildePath,
 } from "./model.ts";
 import type {
   AnswerDraft,
@@ -123,6 +124,8 @@ const HOME_CRUMB_LABEL = "All domains";
  */
 export type PanelModel = {
   domain: string | undefined;
+  // The user's home folder, shown as ~ at the start of a displayed path; "" when unknown.
+  home: string;
   doc: DocumentState;
   listing: ListingState;
   // The breadcrumb trail to the screen shown, and what opens a crumb's screen.
@@ -240,6 +243,8 @@ export type AnswerFlowMotion = {
 
 export type AnswerFlowModel = {
   domain: string;
+  // The user's home folder, shown as ~ at the start of a displayed path; "" when unknown.
+  home: string;
   cards: AnswerFlowCardModel[];
   currentIndex: number;
   viewport: { width: number; height: number } | undefined;
@@ -703,7 +708,8 @@ const detailCard = (t: Theme, id: string, name: string, rows: Element[]): Elemen
 const small = (t: Theme, tone: Color, value: string): Element =>
   div().text_size(TEXT.label).text_color(tone).child(value);
 
-// A labelled fact: a muted label, then its values, or None in dim.
+// A labelled fact: a muted label, then its values one per row at full width (paths are long, so
+// never side by side), or None in dim.
 const fact = (
   t: Theme,
   id: string,
@@ -716,15 +722,14 @@ const fact = (
     .child(
       values.length === 0
         ? div().text_color(t.dim).child("None")
-        : h_flex()
+        : v_flex()
             .id(`${id}-values`)
             .w_full()
             .min_w_0()
-            .flex_wrap()
             .gap(BUTTON_STYLE.gap)
             .children(
               values.map((value, index) =>
-                div().id(`${id}-value-${index}`).flex_1().min_w_0().child(value),
+                div().id(`${id}-value-${index}`).w_full().min_w_0().child(value),
               ),
             ),
     );
@@ -1196,9 +1201,14 @@ const askCard = (
   ),
 ];
 
-const askCards = (t: Theme, item: Item, answer: AnswerModel | undefined): Element[] => {
-  const cards =
-    item.ask === null ? [] : askCard(t, "ask", item.ask, answer, undefined, item.touches);
+const askCards = (
+  t: Theme,
+  item: Item,
+  answer: AnswerModel | undefined,
+  home: string,
+): Element[] => {
+  const touches = item.touches.map((path) => tildePath(path, home));
+  const cards = item.ask === null ? [] : askCard(t, "ask", item.ask, answer, undefined, touches);
   for (let index = item.answered.length - 1; index >= 0; index -= 1) {
     const answered = item.answered[index]!;
     cards.push(...askCard(t, `ask-answered-${index}`, answered, undefined, answered, undefined));
@@ -1232,7 +1242,16 @@ const decidedCard = (t: Theme, item: Item): Element[] => {
       ];
 };
 
-const delegatesCard = (t: Theme, item: Item, rows: DelegateRow[]): Element[] =>
+// A delegate's labelled path: the label, then the path on its own full-width row.
+const delegatePath = (t: Theme, id: string, label: string, path: string, home: string): Element =>
+  v_flex()
+    .id(id)
+    .w_full()
+    .min_w_0()
+    .child(small(t, t.muted, label))
+    .child(small(t, t.foreground, tildePath(path, home)).id(`${id}-path`).w_full().min_w_0());
+
+const delegatesCard = (t: Theme, item: Item, rows: DelegateRow[], home: string): Element[] =>
   item.delegates.length === 0
     ? []
     : [
@@ -1255,18 +1274,8 @@ const delegatesCard = (t: Theme, item: Item, rows: DelegateRow[]): Element[] =>
                       .map((row) => small(t, delegateTone(t, row.state), delegateLabel(row.state))),
                   ),
               )
-              .child(
-                h_flex()
-                  .gap(BUTTON_STYLE.gap)
-                  .child(small(t, t.muted, "Brief"))
-                  .child(small(t, t.foreground, ref.brief)),
-              )
-              .child(
-                h_flex()
-                  .gap(BUTTON_STYLE.gap)
-                  .child(small(t, t.muted, "Report"))
-                  .child(small(t, t.foreground, ref.report)),
-              ),
+              .child(delegatePath(t, `delegate-${ref.session}-brief`, "Brief", ref.brief, home))
+              .child(delegatePath(t, `delegate-${ref.session}-report`, "Report", ref.report, home)),
           ),
         ),
       ];
@@ -1384,7 +1393,12 @@ const findingScreen = (t: Theme, finding: Finding, model: PanelModel): Element =
           "Detail",
           proseValues(t, "fact-detail-markdown", finding.detail, finding.detailMarkdown),
         ),
-        fact(t, "fact-path", "Path", finding.path === null ? [] : [finding.path]),
+        fact(
+          t,
+          "fact-path",
+          "Path",
+          finding.path === null ? [] : [tildePath(finding.path, model.home)],
+        ),
         originFact(t, finding.from, model.origin, model.open),
         ...(finding.closedAt === null
           ? []
@@ -1507,6 +1521,7 @@ const detailScreen = (
   delegates: DelegateJoin,
   answer: AnswerModel | undefined,
   statusChange: StatusChangeModel | undefined,
+  home: string,
 ): Element =>
   v_flex()
     .id("detail")
@@ -1521,12 +1536,19 @@ const detailScreen = (
         role(t, STATUS_TONES[item.status]),
       ),
     )
-    .children(askCards(t, item, answer))
+    .children(askCards(t, item, answer, home))
     .child(
       detailCard(t, "facts", "Details", [
         fact(t, "fact-due", "Due", item.due === null ? [] : [item.due]),
         ...(item.ask === null || item.touches.length === 0
-          ? [fact(t, "fact-touches", "Touches", item.touches)]
+          ? [
+              fact(
+                t,
+                "fact-touches",
+                "Touches",
+                item.touches.map((path) => tildePath(path, home)),
+              ),
+            ]
           : []),
         fact(t, "fact-created", "Created", [item.createdAt.slice(0, 10)]),
         ...((item.status === "done" || item.status === "dismissed") && item.closedAt !== null
@@ -1545,7 +1567,7 @@ const detailScreen = (
       ]),
     )
     .children(decidedCard(t, item))
-    .children(delegatesCard(t, item, delegates.byItem.get(item.id) ?? []))
+    .children(delegatesCard(t, item, delegates.byItem.get(item.id) ?? [], home))
     .when(statusChange !== undefined, (el) => el.children(statusChangeRows(t, statusChange!)));
 
 const answerFlowKey = (
@@ -1708,6 +1730,7 @@ const flowAskCard = (
   answer: AnswerModel | undefined,
   detailPrefix: string,
   askPrefix: string,
+  home: string,
 ): Element[] => {
   if (item === undefined)
     return [
@@ -1717,8 +1740,9 @@ const flowAskCard = (
         .child("Question unavailable. Go back to the domain."),
     ];
   if (item.ask === null) return flowAnsweredRows(t, item, detailPrefix);
-  return askCardRows(t, askPrefix, item.ask, answer, undefined, item.touches, true).map(
-    (row, index) => (index === 0 ? row.border_t(0) : row),
+  const touches = item.touches.map((path) => tildePath(path, home));
+  return askCardRows(t, askPrefix, item.ask, answer, undefined, touches, true).map((row, index) =>
+    index === 0 ? row.border_t(0) : row,
   );
 };
 
@@ -1859,7 +1883,7 @@ const flowExpandedBody = (
     .children(
       cardModel.kind === "summary"
         ? flowDoneRows(t, flow, detailPrefix)
-        : flowAskCard(t, item, answer, detailPrefix, askPrefix),
+        : flowAskCard(t, item, answer, detailPrefix, askPrefix, flow.home),
     );
 };
 
@@ -2194,6 +2218,7 @@ const wikiListPage = (t: Theme, model: PanelModel): Element =>
 const wikiPageScreen = (
   t: Theme,
   wikiPage: { page: WikiPage; body: string | undefined },
+  home: string,
 ): Element => {
   const { page, body } = wikiPage;
   return v_flex()
@@ -2210,7 +2235,7 @@ const wikiPageScreen = (
           t,
           "wiki-fact-covers",
           "Covers",
-          page.covers.map((cover) => `${cover.place}: ${cover.globs.join(", ")}`),
+          page.covers.map((cover) => `${tildePath(cover.place, home)}: ${cover.globs.join(", ")}`),
         ),
         fact(t, "wiki-fact-sources", "Sources", page.sources),
         fact(t, "wiki-fact-supersedes", "Supersedes", page.supersedes),
@@ -2231,10 +2256,14 @@ const wikiPageScreen = (
 };
 
 // Each event's kind and attributes head its row; its fields and action text wrap beneath.
-const outboxRow = (t: Theme, event: OutboxEvent, first: boolean): Element => {
-  const attrs = Object.entries(event.attrs).map(([name, value]) => `${name}=${value}`);
+const outboxRow = (t: Theme, event: OutboxEvent, first: boolean, home: string): Element => {
+  const attrs = Object.entries(event.attrs).map(
+    ([name, value]) => `${name}=${tildePath(value, home)}`,
+  );
   const fields = Object.entries(event.fields).flatMap(([name, value]) =>
-    (typeof value === "string" ? [value] : value).map((entry) => `${name}: ${entry}`),
+    (typeof value === "string" ? [value] : value).map(
+      (entry) => `${name}: ${tildePath(entry, home)}`,
+    ),
   );
   return detailRow(t, `outbox-${event.id}`)
     .when(first, (row) => row.border_t(0))
@@ -2259,13 +2288,18 @@ const outboxPage = (t: Theme, model: PanelModel): Element =>
       model.outbox.length === 0
         ? [emptyRow(t, "outbox-empty", "None")]
         : pagedRows(t, "outbox", model.outbox, model, ROW.list, (event, index) =>
-            outboxRow(t, event, index === 0),
+            outboxRow(t, event, index === 0, model.home),
           ),
     ),
   );
 
 // The paths the domain owns and those next to it, in separate editable cards.
-const boundaryCard = (t: Theme, boundary: Backlog["boundary"], model: BoundaryModel): Element[] => {
+const boundaryCard = (
+  t: Theme,
+  boundary: Backlog["boundary"],
+  model: BoundaryModel,
+  home: string,
+): Element[] => {
   const section = (list: BoundaryList, label: string, paths: string[]) => {
     const id = `boundary-${list}`;
     const rows = paths.map((path, index) => {
@@ -2274,13 +2308,13 @@ const boundaryCard = (t: Theme, boundary: Backlog["boundary"], model: BoundaryMo
       const checkouts = Object.entries(list === "owned" ? (boundary.checkouts?.[path] ?? {}) : {})
         .sort(([a], [b]) => a.localeCompare(b))
         .map(([machine, checkout]) =>
-          rowNote(t, `${machine}: ${checkout}`).id(
+          rowNote(t, `${machine}: ${tildePath(checkout, home)}`).id(
             `boundary-${model.domain}-${list}-${path}-on-${machine}`,
           ),
         );
       const row = listRow(t, {
         id: `boundary-${model.domain}-${list}-${path}`,
-        title: path,
+        title: tildePath(path, home),
         first: index === 0,
         height: ROW.list,
         trailing: hovered
@@ -2432,7 +2466,7 @@ const domainPage = (t: Theme, backlog: Backlog, model: PanelModel): Element => {
     case "boundary":
       content = v_flex()
         .gap(PANEL.sectionGap)
-        .children(boundaryCard(t, backlog.boundary, model.boundary));
+        .children(boundaryCard(t, backlog.boundary, model.boundary, model.home));
       break;
     case "outbox":
       content = outboxPage(t, model);
@@ -2585,7 +2619,14 @@ const domainScreens = (t: Theme, model: PanelModel): Element =>
           .child(
             paneScrollRegion(
               "detail-scroll",
-              detailScreen(t, model.detail!, model.delegates, model.answer, model.statusChange),
+              detailScreen(
+                t,
+                model.detail!,
+                model.delegates,
+                model.answer,
+                model.statusChange,
+                model.home,
+              ),
               PANEL.padding,
             ),
           ),
@@ -2617,7 +2658,11 @@ const domainScreens = (t: Theme, model: PanelModel): Element =>
           .bg(t.surface)
           .when(model.flow !== undefined, (page) => page.invisible())
           .child(
-            paneScrollRegion("wiki-page-scroll", wikiPageScreen(t, model.wikiPage!), PANEL.padding),
+            paneScrollRegion(
+              "wiki-page-scroll",
+              wikiPageScreen(t, model.wikiPage!, model.home),
+              PANEL.padding,
+            ),
           ),
       ),
     )

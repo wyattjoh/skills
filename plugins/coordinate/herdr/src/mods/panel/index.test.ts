@@ -3147,11 +3147,11 @@ test("wraps long finding metadata values within the panel width", async () => {
   ]).toEqual([`f3 ${title}`, `Detail ${detail}`, `Path ${path}`]);
   expect(get(root, "fact-detail-values").styles).toMatchObject({ w_full: true, min_w_0: true });
   expect(get(root, "fact-detail-value-0").styles).toMatchObject({
-    flex_1: true,
+    w_full: true,
     min_w_0: true,
   });
   expect(get(root, "fact-path-value-0").styles).toMatchObject({
-    flex_1: true,
+    w_full: true,
     min_w_0: true,
   });
   expect((get(root, "finding-title").nodes[1] as Node).styles).toMatchObject({
@@ -5706,4 +5706,96 @@ test("links a policy's wiki citation to the page the domain wiki lists, else lea
   root = render();
   expect(trail(root)).toBe("⌂ › alpha › Wiki › poll-interval");
   expect(get(root, "wiki-page-markdown-poll-interval").styles.markdown).toBe("Why.\n");
+});
+
+// The renderer's herdr mock reports /Users/test as the home folder.
+test("stacks an item's Touches one per row and shows the home folder as ~", async () => {
+  focusDomain("alpha");
+  host.files.set(
+    DOC,
+    JSON.stringify(
+      add(emptyBacklog("alpha", null), "Long paths", {
+        touches: ["/Users/test/Code/skills/view.ts", "/Users/test2/Code/b.ts", "/opt/c.ts"],
+      }),
+    ),
+  );
+  const { ctx, view, render } = await mount();
+  openDetail(view, "i1", ctx.cx);
+  const root = render();
+  const values = get(root, "fact-touches-values");
+  expect(values.kind).toBe("v_flex");
+  expect(ids(root, "fact-touches-value-")).toEqual([
+    "fact-touches-value-0",
+    "fact-touches-value-1",
+    "fact-touches-value-2",
+  ]);
+  expect(
+    [0, 1, 2].map((index) => {
+      const value = get(root, `fact-touches-value-${index}`);
+      return [text(value), value.styles.w_full, value.styles.flex_1];
+    }),
+  ).toEqual([
+    ["~/Code/skills/view.ts", true, undefined],
+    ["/Users/test2/Code/b.ts", true, undefined],
+    ["/opt/c.ts", true, undefined],
+  ]);
+});
+
+test("stacks a delegate's brief and report under their labels, home shown as ~", async () => {
+  focusDomain("alpha");
+  host.files.set(
+    DOC,
+    JSON.stringify(
+      add(emptyBacklog("alpha", null), "Delegated", {
+        status: "delegated",
+        delegates: [
+          {
+            ...ref("runner", "s-w"),
+            brief: "/Users/test/Code/wt/.scratch/BRIEF.md",
+            report: "/Users/test2/REPORT.md",
+          },
+        ],
+      }),
+    ),
+  );
+  const { ctx, render } = await mount();
+  get(render(), "item-i1").click!({}, ctx.cx);
+  const root = render();
+  expect(get(root, "delegate-s-w-brief").kind).toBe("v_flex");
+  expect([text(get(root, "delegate-s-w-brief")), text(get(root, "delegate-s-w-report"))]).toEqual([
+    "Brief ~/Code/wt/.scratch/BRIEF.md",
+    "Report /Users/test2/REPORT.md",
+  ]);
+});
+
+test("shows a home boundary path as ~ but removes it by its full path", async () => {
+  focusDomain("alpha");
+  host.files.set(
+    DOC,
+    JSON.stringify({
+      ...emptyBacklog("alpha", null),
+      boundary: {
+        owned: ["/Users/test/Code/repo"],
+        adjacent: ["/Users/test2/repo"],
+        checkouts: { "/Users/test/Code/repo": { strix: "/Users/test/src/repo" } },
+      },
+    }),
+  );
+  const { ctx, render } = await mount();
+  openPage(render(), "boundary", ctx.cx);
+  let root = render();
+  expect(
+    ["boundary-alpha-owned-/Users/test/Code/repo", "boundary-alpha-adjacent-/Users/test2/repo"].map(
+      (id) => text(get(root, id)),
+    ),
+  ).toEqual(["~/Code/repo strix: ~/src/repo", "/Users/test2/repo"]);
+  const hover = get(root, "boundary-alpha-owned-/Users/test/Code/repo").styles.on_hover;
+  if (typeof hover !== "function") throw new Error("boundary row has no hover handler");
+  (hover as (hovering: boolean, cx: unknown) => void)(true, ctx.cx);
+  root = render();
+  get(root, "boundary-alpha-owned-remove-/Users/test/Code/repo").click!({}, ctx.cx);
+  await settle();
+  expect(host.execs.map((exec) => exec.args.slice(4))).toEqual([
+    ["backlog", "boundary", "rm", "/Users/test/Code/repo", "--domain", "alpha", "--json"],
+  ]);
 });

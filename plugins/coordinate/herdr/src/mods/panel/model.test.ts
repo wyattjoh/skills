@@ -34,6 +34,7 @@ import {
   inlineMarkdown,
   markdownPlain,
   rebaseHarnessPolicyDraft,
+  tildePath,
   policyDialogProps,
   policyDialogSpec,
   readDocument,
@@ -936,5 +937,32 @@ test("trailOf runs through the Wiki page to an open wiki page", () => {
     ["crumb-domain-alpha", "alpha", { kind: "domain", domain: "alpha" }],
     ["crumb-wiki", "Wiki", { kind: "wiki", domain: "alpha" }],
     ["crumb-wiki-page-poll-interval", "poll-interval", undefined],
+  ]);
+});
+
+test("tildePath shows only a whole leading home folder as ~", () => {
+  const home = "/Users/wyatt.johnson";
+  expect(
+    [
+      "/Users/wyatt.johnson",
+      "/Users/wyatt.johnson/Code/skills",
+      "/Users/wyatt.johnson2/Code/skills",
+      "/opt/Users/wyatt.johnson/x",
+      "skills/coordinate",
+    ].map((path) => tildePath(path, home)),
+  ).toEqual([
+    "~",
+    "~/Code/skills",
+    "/Users/wyatt.johnson2/Code/skills",
+    "/opt/Users/wyatt.johnson/x",
+    "skills/coordinate",
+  ]);
+  expect(tildePath("/Users/wyatt.johnson/Code", `${home}/`)).toBe("~/Code");
+});
+
+test("tildePath leaves paths unchanged without a usable home folder", () => {
+  expect([tildePath("/Users/me/a", ""), tildePath("/etc/hosts", "/")]).toEqual([
+    "/Users/me/a",
+    "/etc/hosts",
   ]);
 });

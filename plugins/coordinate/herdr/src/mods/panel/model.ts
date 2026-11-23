@@ -340,6 +340,21 @@ export const targetDomain = (
 export const configPath = (home: string): string => `${home}/.config/coordinate/config.json`;
 
 /**
+ * A path for display, with the user's home folder shown as `~`. Only a whole leading home
+ * folder is replaced: the home itself, or the home followed by `/`. Display only: the panel
+ * keeps the full path for CLI calls and keys.
+ * @param path The path as stored.
+ * @param home The user's home folder, or "" when the mod has none; then the path is unchanged.
+ * @returns The path to show.
+ */
+export const tildePath = (path: string, home: string): string => {
+  const root = home.replace(/\/+$/, "");
+  if (root === "") return path;
+  if (path === root) return "~";
+  return path.startsWith(`${root}/`) ? `~${path.slice(root.length)}` : path;
+};
+
+/**
  * The coordinate state folder: the config's `state_dir` with a leading `~` expanded, else the
  * CLI's default. A missing or unreadable config means the default.
  * @param configText The config file's text, or null when it is absent.

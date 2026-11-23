@@ -1448,6 +1448,7 @@ export default class Panel extends View {
     const queue = this.queueFor(flow.domain);
     return {
       domain: flow.domain,
+      home: home(),
       cards,
       currentIndex: flow.current,
       viewport:
@@ -2119,6 +2120,7 @@ export default class Panel extends View {
           })();
     return panel(theme() as Theme, {
       domain,
+      home: home(),
       doc,
       listing: this.listing,
       trail,
