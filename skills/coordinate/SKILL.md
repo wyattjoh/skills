@@ -117,7 +117,7 @@ The CLI is the backlog's only writer; it validates, locks and writes atomically,
 | The domain renamed                 | `backlog rename <new>` (`--domain <old>` from any terminal); refused while it has a live delegate or watcher                                                                                                                                                      |
 | A finding opened or closed         | `finding add --kind issue\|opportunity "<title>"`, `finding close <id> --outcome ...`                                                                                                                                                                             |
 
-The Backlog panel may edit Boundary paths from outside a Herdr terminal with `backlog boundary add <path> [--adjacent] --domain <d>` and `backlog boundary rm <path> --domain <d>`. Every command takes `--json`; `--help` has the flags. Read it back with `coordinate backlog show` (`--json` for the document, `--done` to include closed items). Fields, statuses and invariants: [backlog.md](references/backlog.md).
+The Backlog panel may edit Boundary paths from outside a Herdr terminal with `backlog boundary add <path> [--adjacent] --domain <d>` and `backlog boundary rm <path> --domain <d>`, and dismiss an item with `item close --dismissed --outcome "<line>" --domain <d> -- <id>`. Every command takes `--json`; `--help` has the flags. Read it back with `coordinate backlog show` (`--json` for the document, `--done` to include closed items). Fields, statuses and invariants: [backlog.md](references/backlog.md).
 
 ## Manage the fleet
 

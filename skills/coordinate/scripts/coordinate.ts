@@ -1165,7 +1165,7 @@ const itemAnswerCommand = Command.make(
     ),
 ).pipe(
   Command.withDescription(
-    "record the user's answer or Discuss request for an item's ask, as item update --answer does; this and backlog boundary add/rm are allowed outside a Herdr terminal with --domain",
+    "record the user's answer or Discuss request for an item's ask, as item update --answer does; this, item close and backlog boundary add/rm are allowed outside a Herdr terminal with --domain",
   ),
 );
 
@@ -1177,12 +1177,15 @@ const itemCloseCommand = Command.make(
       Flag.withDefault(""),
     ),
     dismissed: booleanFlag("dismissed", "close as dismissed instead of done"),
-    domain: optionalStringFlag("domain", "domain (default: this coordinator's label)"),
+    domain: optionalStringFlag(
+      "domain",
+      "domain (default: this coordinator's label; required outside a terminal)",
+    ),
     json: booleanFlag("json", "print the closed item as JSON"),
   },
   (options) =>
     execute((config) =>
-      Effect.flatMap(coordinatorDomain(Option.getOrUndefined(options.domain)), (domain) =>
+      Effect.flatMap(answerDomain(Option.getOrUndefined(options.domain)), (domain) =>
         itemClose(config, domain, {
           id: options.id,
           outcome: options.outcome,
@@ -1192,7 +1195,11 @@ const itemCloseCommand = Command.make(
         }),
       ),
     ),
-).pipe(Command.withDescription("close an item as done (or dismissed) with an outcome"));
+).pipe(
+  Command.withDescription(
+    "close an item as done (or dismissed) with an outcome; allowed outside a Herdr terminal with --domain, as item answer is",
+  ),
+);
 
 const delegateArgumentDescription =
   "delegate name or Herdr terminal address (detach also takes a session id)";

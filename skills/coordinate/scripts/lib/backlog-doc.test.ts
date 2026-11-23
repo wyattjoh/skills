@@ -1876,12 +1876,43 @@ describe("coordinator-only mutations", () => {
     expect(readFileSync(path, "utf8")).toBe(before);
   });
 
+  it("closes an item from outside a terminal with --domain, and refuses it without", async () => {
+    const { state, path } = await prepared();
+    const { HC_TERMINAL_ID: _unset, ...outside } = cliEnv(state, COORDINATOR);
+    const before = readFileSync(path, "utf8");
+    expect(
+      spawn(outside, ["item", "close", "--dismissed", "--outcome", "Dismissed", "--", "i1"]),
+    ).toEqual([
+      1,
+      "refused: a backlog change from outside a Herdr terminal names its domain: pass --domain\n",
+    ]);
+    expect(readFileSync(path, "utf8")).toBe(before);
+    expect(
+      spawn(outside, [
+        "item",
+        "close",
+        "--domain",
+        "app",
+        "--dismissed",
+        "--outcome",
+        "Dismissed from the answer flow",
+        "--",
+        "i1",
+      ]),
+    ).toEqual([0, "dismissed i1: Dismissed from the answer flow\n"]);
+    expect([read(path).items[0].status, read(path).items[0].outcome]).toEqual([
+      "dismissed",
+      "Dismissed from the answer flow",
+    ]);
+  });
+
   it("refuses every other mutation from outside a terminal", async () => {
     const { state, path } = await prepared();
     const { HC_TERMINAL_ID: _unset, ...outside } = cliEnv(state, COORDINATOR);
     const before = readFileSync(path, "utf8");
-    expect(mutations().map((args) => spawn(outside, [...args, "--domain", "app"])[0])).toEqual(
-      mutations().map(() => 2),
+    const others = mutations().filter(([group, verb]) => !(group === "item" && verb === "close"));
+    expect(others.map((args) => spawn(outside, [...args, "--domain", "app"])[0])).toEqual(
+      others.map(() => 2),
     );
     expect(readFileSync(path, "utf8")).toBe(before);
   });
@@ -1891,7 +1922,7 @@ describe("coordinator-only mutations", () => {
     const before = readFileSync(path, "utf8");
     const { HC_TERMINAL_ID: _unset, ...outside } = cliEnv(state, COORDINATOR);
     expect([
-      spawn(outside, ["item", "close", "i1", "--outcome", "shipped", "--domain", "app"]),
+      spawn(outside, ["item", "update", "i1", "--decided", "scope is api only", "--domain", "app"]),
       spawn(cliEnv(state, COORDINATOR, "unavailable"), [
         "item",
         "close",
