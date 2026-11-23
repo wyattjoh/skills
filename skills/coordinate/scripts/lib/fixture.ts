@@ -120,7 +120,7 @@ export const gitAndFake = (
  * filter the call passes, else nothing. Every call's arguments are appended to `<state>/bin/calls.log`.
  * The `herdr-app` stub makes space sp9 (tab tab9, shell t6) on `space.new`, lists no spaces, answers
  * anything else with `{}`, and appends its arguments to `<state>/bin/app-calls.log`, so no test
- * reaches the real Herdr app.
+ * reaches the real Herdr app. HOME is `<state>/home`, whose `.local/bin` is not on PATH.
  * @param state State dir.
  * @param labels The calling terminal's labels.
  * @param getError An error kind for `hc get` to fail with.
@@ -185,6 +185,8 @@ export const cliEnv = (
   chmodSync(join(bin, "kill"), 0o755);
   return {
     ...(process.env as Record<string, string>),
+    // A sandboxed HOME keeps start and status --resume from writing the real ~/.local/bin.
+    HOME: join(state, "home"),
     COORDINATE_CONFIG: configFile,
     XDG_STATE_HOME: join(state, "xdg"),
     HC_TERMINAL_ID: "t1",

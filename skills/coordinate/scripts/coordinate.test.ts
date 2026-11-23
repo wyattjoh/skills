@@ -1,6 +1,5 @@
 import { afterAll, describe, expect, it } from "bun:test";
 import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
-import { homedir } from "node:os";
 import { join } from "node:path";
 import { cliEnv, tempDir } from "./lib/fixture.ts";
 
@@ -649,7 +648,7 @@ describe("coordinate CLI parity", () => {
       {
         exit: 0,
         stdout:
-          "labelled t1: fleet.role=coordinator fleet.domain=app\\ncreated backlog <state>/backlogs/app.json\\nwatcher starting (t-watch)\\nharness policy revision 0 (<state>/delegate-harness-policy.json)\\nglobal (legacy): enabled pi, claude; default none\\ndomain app (inherit): enabled pi, claude; default none\\n\\napp: 0 live delegates, 0 ended\\n\\nsweep:\\nnothing to sweep: no worktrees, landed branches, stale scratch or stray processes\\n\\nno delegate of app has been quiet for 24h\\n",
+          "labelled t1: fleet.role=coordinator fleet.domain=app\\ncreated backlog <state>/backlogs/app.json\\nwatcher starting (t-watch)\\nharness policy revision 0 (<state>/delegate-harness-policy.json)\\nglobal (legacy): enabled pi, claude; default none\\ndomain app (inherit): enabled pi, claude; default none\\n\\napp: 0 live delegates, 0 ended\\n\\nsweep:\\nnothing to sweep: no worktrees, landed branches, stale scratch or stray processes\\n\\nno delegate of app has been quiet for 24h\\nshort name coordinate unavailable: <state>/home/.local/bin is not on PATH; add it and run coordinate start again\\n",
         stderr: "",
       },
       {
@@ -673,7 +672,7 @@ describe("coordinate CLI parity", () => {
       {
         exit: 0,
         stdout:
-          "app: 0 live delegates, 0 ended\\n\\n# app backlog\\n\\n## Boundary\\n\\n- Owned: (none)\\n- Adjacent: (none)\\n\\n## Policies\\n\\n(none)\\n\\n## Open\\n\\n(none)\\n\\n## Findings\\n\\n(none)\\n\\n## Done\\n\\nharness policy revision 0 (<state>/delegate-harness-policy.json)\\nglobal (legacy): enabled pi, claude; default none\\ndomain app (inherit): enabled pi, claude; default none\\n\\nwatcher starting (t-watch)\\n",
+          "app: 0 live delegates, 0 ended\\n\\n# app backlog\\n\\n## Boundary\\n\\n- Owned: (none)\\n- Adjacent: (none)\\n\\n## Policies\\n\\n(none)\\n\\n## Open\\n\\n(none)\\n\\n## Findings\\n\\n(none)\\n\\n## Done\\n\\nharness policy revision 0 (<state>/delegate-harness-policy.json)\\nglobal (legacy): enabled pi, claude; default none\\ndomain app (inherit): enabled pi, claude; default none\\n\\nwatcher starting (t-watch)\\nshort name coordinate unavailable: <state>/home/.local/bin is not on PATH; add it and run coordinate start again\\n",
         stderr: "",
       },
       {
@@ -1136,7 +1135,7 @@ describe("coordinate CLI from a removed current folder", () => {
     expect(start.exit).toBe(0);
     expect(start.stderr).toBe("");
     expect(readFileSync(join(state, "bin", "calls.log"), "utf8")).toContain(
-      `run --bg --json --name watch-app --cwd ${homedir()} `,
+      `run --bg --json --name watch-app --cwd ${join(state, "home")} `,
     );
     expect(run(["item", "add", "first"]).stdout).toBe("added i1: first\n");
     expect(run(["item", "update", "i1", "--decided", "kept"]).stdout).toBe(

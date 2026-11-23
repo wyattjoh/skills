@@ -2,6 +2,7 @@
 import { Cause, Effect, Exit, FileSystem, Layer, Option, Path, Stdio, Terminal } from "effect";
 import { Argument, CliConfig, CliError, Command, Flag, GlobalFlag } from "effect/cli";
 import { ChildProcessSpawner } from "effect/process";
+import { join } from "node:path";
 import {
   boundaryAdd,
   boundaryRm,
@@ -75,6 +76,7 @@ import {
   stopDeletedFolders,
 } from "./lib/sweep.ts";
 import { mainCheckout } from "./lib/git.ts";
+import { pathWrapper } from "./lib/path-wrapper.ts";
 import {
   citedPage,
   commitWiki,
@@ -433,6 +435,9 @@ const normalizeArgs = (args: readonly string[]) =>
     normalizeDueOverrides(normalizeResumeSpace(normalizeStandingAlias(args))),
   );
 
+/** The skill folder this CLI runs from (Bun reports its real path, not the link). */
+const SKILL_DIR = join(import.meta.dir, "..");
+
 const startCommand = Command.make(
   "start",
   { domain: argument("domain", "domain name, also the backlog's file name") },
@@ -454,6 +459,7 @@ const startCommand = Command.make(
           ),
         );
         lines.push("", ...(yield* listIdle(config, domain, Date.now())));
+        lines.push(...(yield* pathWrapper(SKILL_DIR)));
         return lines;
       }),
     ),
@@ -760,6 +766,7 @@ const statusCommand = Command.make(
             watcher,
             options.verbose,
           );
+          if (options.resume) lines.push(...(yield* pathWrapper(SKILL_DIR)));
           const line = watcher ? undefined : yield* watcherBanner(config);
           return line ? [line, ...lines] : lines;
         }),
