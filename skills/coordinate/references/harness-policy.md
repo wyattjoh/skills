@@ -8,7 +8,7 @@ Only Pi and Claude are represented. A missing policy file preserves the legacy s
 
 Policy state is checked before launch side effects. Invalid policy files fail closed. A queued retry must pass the same authorized `--harness` explicitly, then rechecks current policy and capacity; a refused retry leaves its queue entry intact. `--over-budget` affects only the capacity limit and never bypasses harness policy.
 
-Resume uses the harness recorded for the ended session and refuses if that harness is currently disabled. It never substitutes the current default. Policy edits affect later launches and resumes only; they do not stop, relabel, or otherwise change running sessions. `coordinate start` and `coordinate status --resume` show effective policy. The existing watcher coalesces policy notifications and sends them only to domains whose effective enabled/default selection changed. There is no panel editor or Codex adapter.
+Resume uses the harness recorded for the ended session and refuses if that harness is currently disabled. It never substitutes the current default. Policy edits affect later launches and resumes only; they do not stop, relabel, or otherwise change running sessions. `coordinate start` and `coordinate status --resume` show effective policy. The existing watcher coalesces policy notifications and sends them only to domains whose effective enabled/default selection changed. The Backlog panel edits global and domain policy through the same `harness-policy` commands; there is no Codex adapter.
 
 ## Policy document
 
