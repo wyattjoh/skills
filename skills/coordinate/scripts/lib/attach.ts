@@ -119,6 +119,8 @@ export const attachDelegate = Effect.fn("attachDelegate")(function* (
     brief: scratch ? join(scratch, "BRIEF.md") : "",
     report: scratch ? join(scratch, "REPORT.md") : "",
   };
+  // Read before filing, so a Herdr failure here files nothing.
+  const machine = machineOfAddress(terminal.address, yield* localMachine());
   const item = yield* recordDelegate(config, domain, { id: options.id, ref });
   const wanted: Record<string, string> = {
     [L.domain]: domain,
@@ -128,7 +130,7 @@ export const attachDelegate = Effect.fn("attachDelegate")(function* (
     // The folder the session runs in, as `delegate` labels it, so `end` and `resume` start there.
     [L.worktree]: terminal.cwd,
     ...(place.branch ? { [L.branch]: place.branch } : {}),
-    [L.machine]: machineOfAddress(terminal.address, yield* localMachine()),
+    [L.machine]: machine,
   };
   const missing = Object.fromEntries(
     Object.entries(wanted).filter(([key, value]) => value !== "" && !(key in terminal.labels)),
