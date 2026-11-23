@@ -1,6 +1,7 @@
+import { homedir } from "node:os";
 import { basename, join } from "node:path";
 import { Effect } from "effect";
-import type { Config } from "./config.ts";
+import { currentFolder, type Config } from "./config.ts";
 import { checkDomainName, domainNamePart, L } from "./fleet.ts";
 import * as hc from "./herdr.ts";
 import { watcherAlive } from "./watch-lock.ts";
@@ -296,7 +297,8 @@ export const armWatcher = Effect.fn("armWatcher")(function* (
   const launched = yield* hc
     .run({
       name: watcherName(domain),
-      cwd: coordinator.cwd || process.cwd(),
+      // A removed current folder cannot host the watcher terminal; home always exists.
+      cwd: coordinator.cwd || currentFolder() || homedir(),
       labels: { [WATCHER_DOMAIN_LABEL]: domain, [L.role]: "watcher" },
       parent: owner,
       outliveParent: false,

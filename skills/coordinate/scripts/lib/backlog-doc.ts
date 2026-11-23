@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 import { existsSync } from "node:fs";
 import { appendFile, mkdir, open, readFile, rename, rmdir, unlink } from "node:fs/promises";
 import { homedir, hostname } from "node:os";
-import { join, resolve } from "node:path";
+import { join } from "node:path";
 import { setTimeout as sleep } from "node:timers/promises";
 import { Effect, Option, Schema } from "effect";
 import {
@@ -37,7 +37,7 @@ import {
   type Item,
   validateBacklog,
 } from "./backlog-store/schema.ts";
-import type { Config } from "./config.ts";
+import { absolutePath, type Config } from "./config.ts";
 import { backlogPath, members, Refused } from "./fleet.ts";
 
 /**
@@ -556,7 +556,7 @@ export const itemUpdate = Effect.fn("itemUpdate")(function* (
 export const normalizeBoundary = (path: string, home: string = homedir()): string => {
   if (path.trim() === "" || /[\r\n]/.test(path)) return path.trim() === "" ? "" : path;
   const expanded = path === "~" ? home : path.startsWith("~/") ? join(home, path.slice(2)) : path;
-  const absolute = resolve(expanded);
+  const absolute = absolutePath(expanded);
   return absolute === "/" ? absolute : absolute.replace(/\/+$/, "");
 };
 

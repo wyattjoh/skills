@@ -19,7 +19,7 @@ import {
   showBacklog,
 } from "./lib/backlog-doc.ts";
 import { ITEM_STATUSES, type ItemStatus } from "./lib/backlog-store/schema.ts";
-import { loadConfig, type Config } from "./lib/config.ts";
+import { absolutePath, loadConfig, MissingFolder, type Config } from "./lib/config.ts";
 import {
   DELEGATE_HARNESSES,
   resetHarnessPolicy,
@@ -73,7 +73,21 @@ import {
   stopDeletedFolders,
 } from "./lib/sweep.ts";
 import { mainCheckout } from "./lib/git.ts";
-import { resolve } from "node:path";
+
+/**
+ * The failure to report from a cause: its typed error, else a `MissingFolder` thrown while
+ * resolving a relative path (a defect, since path resolution is synchronous).
+ * @param cause Cause of a failed exit.
+ * @returns The error, or `undefined` to print the whole cause.
+ */
+const reportedFailure = (cause: Cause.Cause<unknown>): unknown => {
+  const failed = cause.reasons.find(Cause.isFailReason);
+  if (failed) return failed.error;
+  return cause.reasons.find(
+    (reason): reason is Cause.Die =>
+      Cause.isDieReason(reason) && reason.defect instanceof MissingFolder,
+  )?.defect;
+};
 
 /**
  * Run one command at the CLI boundary: print its lines, exit 0; a `Refused` exits 1; anything else exits 2.
@@ -106,9 +120,7 @@ const main = async <E extends { message: string }>(
     if (exit.value.length > 0) console.log(exit.value.join("\n"));
     return;
   }
-  const failure: { message: string } | undefined = exit.cause.reasons.find(
-    Cause.isFailReason,
-  )?.error;
+  const failure = reportedFailure(exit.cause) as { message: string } | undefined;
   if (failure instanceof Refused) {
     console.error(`refused: ${failure.message}`);
     process.exit(1);
@@ -1401,7 +1413,7 @@ const reposFor = (paths: readonly string[], domain: string | undefined, config: 
     if (paths.length === 0) return yield* domainRepos(config, yield* resolveDomain(domain));
     const repos: string[] = [];
     for (const path of paths) {
-      const checkout = yield* mainCheckout(resolve(path));
+      const checkout = yield* mainCheckout(absolutePath(path));
       if (checkout && !repos.includes(checkout)) repos.push(checkout);
       if (!checkout) return yield* new Refused({ message: `${path} is not a Git checkout` });
     }
@@ -1454,7 +1466,7 @@ const sweepRemoveCommand = Command.make(
   (options) =>
     execute((config) =>
       Effect.gen(function* () {
-        const targets = options.worktrees.map((path) => resolve(path));
+        const targets = options.worktrees.map((path) => absolutePath(path));
         const repos: string[] = [];
         for (const path of targets) {
           const repo = yield* mainCheckout(path);
@@ -1596,7 +1608,7 @@ const cliExit = await Effect.runPromiseExit(
   ),
 );
 if (Exit.isFailure(cliExit)) {
-  const failure = cliExit.cause.reasons.find(Cause.isFailReason)?.error;
+  const failure = reportedFailure(cliExit.cause);
   if (failure instanceof CliError.ShowHelp) {
     process.exitCode = failure.errors.length > 0 ? 1 : 0;
   } else {

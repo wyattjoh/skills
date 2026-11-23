@@ -1,7 +1,7 @@
 import { existsSync } from "node:fs";
 import { copyFile, mkdir, readFile, rename } from "node:fs/promises";
 import { loadavg, userInfo } from "node:os";
-import { dirname, join, resolve } from "node:path";
+import { dirname, join } from "node:path";
 import { Effect, Option } from "effect";
 import {
   BacklogError,
@@ -17,7 +17,7 @@ import {
 import { filedUnder, idleDelegated, updateItem, type ItemUpdate } from "./backlog-store/ops.ts";
 import type { ItemStatus } from "./backlog-store/schema.ts";
 import { documentPath } from "./backlog-store/paths.ts";
-import type { Config } from "./config.ts";
+import { absolutePath, type Config } from "./config.ts";
 import {
   backlogPath,
   checkDomainName,
@@ -737,7 +737,7 @@ export const delegate = Effect.fn("delegate")(function* (
     let branch: string | undefined;
     let baseSha: string | undefined;
     if (options.repo !== undefined) {
-      const repo = yield* mainCheckout(resolve(options.repo));
+      const repo = yield* mainCheckout(absolutePath(options.repo));
       if (!repo) return yield* new Refused({ message: `${options.repo} is not a Git checkout` });
       branch = `${config.branchPrefix}${options.name}`;
       cwd = join(repo, ".claude", "worktrees", options.name);
@@ -752,7 +752,7 @@ export const delegate = Effect.fn("delegate")(function* (
       // After the name and collision checks, so a refused start changes nothing in the repo.
       if (yield* excludeScratch(cwd)) lines.push("added .scratch/ to the repo's info/exclude");
     } else {
-      cwd = real(resolve(options.cwd ?? "."));
+      cwd = real(absolutePath(options.cwd ?? "."));
       if (!existsSync(cwd)) return yield* new Refused({ message: `${cwd} does not exist` });
     }
 
@@ -763,7 +763,7 @@ export const delegate = Effect.fn("delegate")(function* (
     let message = options.message;
     const briefSource = message.kind === "brief" ? message.path : message.brief;
     if (briefSource !== undefined) {
-      const source = resolve(briefSource);
+      const source = absolutePath(briefSource);
       if (!existsSync(source)) return yield* new Refused({ message: `no brief at ${source}` });
       brief = join(scratch, "BRIEF.md");
       const destination = brief;

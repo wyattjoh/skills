@@ -1,5 +1,5 @@
 import { availableParallelism, homedir } from "node:os";
-import { join, resolve } from "node:path";
+import { isAbsolute, join, resolve } from "node:path";
 import { Effect, Schema } from "effect";
 
 /**
@@ -123,6 +123,48 @@ export const DEFAULT_FORGES: Readonly<Record<string, ForgeKind>> = {
 };
 
 /**
+ * The shell's current folder no longer exists, so a relative path has nothing to resolve against.
+ */
+export class MissingFolder extends Schema.TaggedError<MissingFolder>()("MissingFolder", {
+  path: Schema.String,
+  message: Schema.String,
+}) {}
+
+/**
+ * The current folder, or `undefined` when it was removed (Bun's `process.cwd()` throws then).
+ * @returns The folder.
+ */
+export const currentFolder = (): string | undefined => {
+  try {
+    return process.cwd();
+  } catch {
+    return undefined;
+  }
+};
+
+/**
+ * Make a path absolute against the current folder. An absolute path never consults it. When the
+ * current folder was removed, Bun's `resolve` silently falls back to its own binary's folder, so
+ * this throws `MissingFolder` instead; the CLI boundary reports it and exits 2.
+ * @param path Any path.
+ * @param env Environment (`PWD`, to name the missing folder).
+ * @returns The absolute path.
+ */
+export const absolutePath = (
+  path: string,
+  env: Record<string, string | undefined> = process.env,
+): string => {
+  if (isAbsolute(path)) return resolve(path);
+  const folder = currentFolder();
+  if (folder !== undefined) return resolve(folder, path);
+  const missing = env.PWD ?? "the current folder";
+  throw new MissingFolder({
+    path,
+    message: `${missing} no longer exists, so the relative path ${JSON.stringify(path)} cannot be resolved: cd to an existing folder or pass an absolute path`,
+  });
+};
+
+/**
  * Expand a leading `~`.
  * @param path A path that may start with `~`.
  * @returns The absolute path.
@@ -182,9 +224,9 @@ export const resolveConfig = Effect.fn("resolveConfig")(function* (
     maxFleetDelegates: file.max_fleet_delegates ?? Math.max(2, Math.floor(cores / 4)),
     maxFleetDelegatesOverride: file.max_fleet_delegates,
     maxFleetDelegatesByMachine: { ...file.max_fleet_delegates_by_machine },
-    backlogDir: expandHome(file.backlog_dir ?? "~/.config/coordinate/backlogs"),
+    backlogDir: absolutePath(expandHome(file.backlog_dir ?? "~/.config/coordinate/backlogs")),
     // Resolved, so paths built on it by string (backlog-store/paths.ts) never double a slash.
-    stateDir: resolve(expandHome(file.state_dir ?? "~/.local/state/coordinate")),
+    stateDir: absolutePath(expandHome(file.state_dir ?? "~/.local/state/coordinate")),
     keepRunning: [...(file.keep_running ?? [])],
     delegateClaudeArgs: [...(file.delegate_claude_args ?? [])],
     delegatePiArgs: [...(file.delegate_pi_args ?? [])],

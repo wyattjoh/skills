@@ -1,5 +1,6 @@
 import { afterAll, describe, expect, it } from "bun:test";
-import { existsSync, mkdirSync, readFileSync, rmSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { homedir } from "node:os";
 import { join } from "node:path";
 import { cliEnv, tempDir } from "./lib/fixture.ts";
 
@@ -1047,5 +1048,102 @@ describe("coordinate CLI harness policy", () => {
     expect(reset.exit).toBe(0);
     expect(JSON.parse(reset.stdout).domain.mode).toBe("inherit");
     expect(JSON.parse(reset.stdout).revision).toBe(3);
+  });
+});
+
+// Each call runs from its own folder, removed before the CLI starts: the shell cd's into it,
+// removes it, then execs the CLI there. Spawning with a removed `cwd` would fail before the CLI ran.
+const fromRemoved = (state: string, env: Record<string, string>) => {
+  let calls = 0;
+  return (args: string[]): Result => {
+    const folder = join(state, `removed-${calls++}`);
+    mkdirSync(folder);
+    const result = Bun.spawnSync(
+      [
+        "sh",
+        "-c",
+        'cd "$1" && rmdir "$1" && shift && exec "$@"',
+        "sh",
+        folder,
+        "bun",
+        cli,
+        ...args,
+      ],
+      { cwd: state, env, stdout: "pipe", stderr: "pipe", timeout: 10_000 },
+    );
+    return {
+      args,
+      exit: result.exitCode ?? 1,
+      stdout: result.stdout.toString(),
+      stderr: result.stderr.toString(),
+    };
+  };
+};
+
+describe("coordinate CLI from a removed current folder", () => {
+  it("writes the backlog with every backlog command, resolving the domain from the label", () => {
+    const state = tempDir("coordinate-removed-cwd-");
+    made.push(state);
+    const run = fromRemoved(state, cliEnv(state, COORDINATOR));
+    const start = run(["start", "app"]);
+    expect(start.exit).toBe(0);
+    expect(start.stderr).toBe("");
+    expect(readFileSync(join(state, "bin", "calls.log"), "utf8")).toContain(
+      `run --bg --json --name watch-app --cwd ${homedir()} `,
+    );
+    expect(run(["item", "add", "first"]).stdout).toBe("added i1: first\n");
+    expect(run(["item", "update", "i1", "--decided", "kept"]).stdout).toBe(
+      "updated i1 [open] first\n",
+    );
+    expect(run(["finding", "add", "noticed", "--kind", "issue"]).stdout).toBe(
+      "added f2: noticed\n",
+    );
+    expect(run(["finding", "close", "f2", "--outcome", "acted on"]).stdout).toBe(
+      "acted f2: acted on\n",
+    );
+    expect(run(["backlog", "focus", "steady"]).stdout).toBe("focus: steady\n");
+    expect(run(["backlog", "boundary", "add", state]).stdout).toBe(`owned: added ${state}\n`);
+    const close = run(["item", "close", "i1", "--outcome", "done"]);
+    expect([close.exit, close.stdout, close.stderr]).toEqual([0, "done i1: done\n", ""]);
+    expect(run(["status", "--resume"]).exit).toBe(0);
+
+    const backlog = JSON.parse(readFileSync(join(state, "backlogs", "app.json"), "utf8"));
+    expect(
+      backlog.items.map((item: { id: string; status: string }) => [item.id, item.status]),
+    ).toEqual([["i1", "done"]]);
+    expect(
+      backlog.findings.map((finding: { id: string; status: string }) => [
+        finding.id,
+        finding.status,
+      ]),
+    ).toEqual([["f2", "acted"]]);
+    expect(backlog.focus).toBe("steady");
+    expect(backlog.boundary.owned).toEqual([state]);
+  });
+
+  it("exits 2 naming the removed folder when a relative path needs it", () => {
+    const state = tempDir("coordinate-removed-cwd-rel-");
+    made.push(state);
+    const env = cliEnv(state, COORDINATOR);
+    const run = fromRemoved(state, env);
+    expect(run(["start", "app"]).exit).toBe(0);
+
+    const boundary = run(["backlog", "boundary", "add", "rel/path"]);
+    expect([boundary.exit, boundary.stdout, boundary.stderr]).toEqual([
+      2,
+      "",
+      `could not check: MissingFolder: ${join(state, "removed-1")} no longer exists, so the relative path "rel/path" cannot be resolved: cd to an existing folder or pass an absolute path\n`,
+    ]);
+    expect(
+      JSON.parse(readFileSync(join(state, "backlogs", "app.json"), "utf8")).boundary.owned,
+    ).toEqual([]);
+
+    writeFileSync(env.COORDINATE_CONFIG, JSON.stringify({ state_dir: "relative-state" }));
+    const relativeState = run(["item", "add", "lost"]);
+    expect([relativeState.exit, relativeState.stdout, relativeState.stderr]).toEqual([
+      2,
+      "",
+      `could not check: MissingFolder: ${join(state, "removed-2")} no longer exists, so the relative path "relative-state" cannot be resolved: cd to an existing folder or pass an absolute path\n`,
+    ]);
   });
 });
