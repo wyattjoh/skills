@@ -20,11 +20,13 @@ import {
   cardHeader,
   cardItem,
   cardNote,
+  cardRow,
   cardSection,
   crumb,
   crumbBand,
   emptyState,
   errorState,
+  foldChevron,
   groupBlock,
   labelChip,
   listRow,
@@ -1744,6 +1746,8 @@ const boundaryCard = (t: Theme, boundary: Backlog["boundary"], model: BoundaryMo
   ];
 };
 
+// A Lists row: the name, its count or summary just beside it in the dim note style, and a
+// right-pointing chevron at the far right, like a collapsed group's. The whole row opens the list.
 const sectionRow = (
   t: Theme,
   id: string,
@@ -1752,13 +1756,13 @@ const sectionRow = (
   screen: DomainPage,
   model: PanelModel,
 ): Element =>
-  listRow(t, {
-    id,
-    title: label,
-    height: ROW.list,
-    trailing: [rowNote(t, String(count))],
-    onClick: (cx) => model.go(screen, cx),
-  });
+  cardRow(t, id, t.hover)
+    .h(ROW.list)
+    .on_click((_event, cx) => model.go(screen, cx))
+    .child(div().flex_none().truncate().text_size(TEXT.body).text_color(t.foreground).child(label))
+    .child(rowNote(t, String(count)))
+    .child(div().flex_1())
+    .child(foldChevron(t, false));
 
 const sectionLinks = (t: Theme, domain: string, backlog: Backlog, model: PanelModel): Element =>
   cardSection(

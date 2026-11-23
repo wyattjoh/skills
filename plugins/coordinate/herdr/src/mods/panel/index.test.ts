@@ -1884,6 +1884,28 @@ test("starts nothing under herdr-app check", async () => {
   ]);
 });
 
+test("each Lists row puts its count beside the name in the dim note style and a right chevron at the far right", async () => {
+  focusDomain("alpha");
+  host.files.set(DOC, JSON.stringify(withFindings()));
+  const { ctx, render } = await mount();
+  const root = render();
+  for (const [id, name, info] of [
+    ["page-policies", "Policies", "0"],
+    ["page-findings", "Findings", "1 issue · 1 opportunity"],
+    ["page-boundary", "Boundary", "0"],
+  ] as const) {
+    const row = get(root, id);
+    const [label, note, spacer, chevron] = row.children as Node[];
+    expect([text(label!), text(note!)]).toEqual([name, info]);
+    expect(label!.styles.flex_none).toBe(true);
+    expect(note!.styles.text_color).toBe(theme().dim);
+    expect(spacer!.styles.flex_1).toBe(true);
+    expect([row.children.length, chevron!.styles.asset]).toEqual([4, HERDR_ICONS.chevronRight]);
+  }
+  get(root, "page-findings").click!({}, ctx.cx);
+  expect(trail(render())).toBe("⌂ › alpha › Findings");
+});
+
 test("shows page buttons on the main list and lists only open findings on the Findings page", async () => {
   focusDomain("alpha");
   host.files.set(DOC, JSON.stringify(withFindings()));
