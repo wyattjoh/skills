@@ -1,5 +1,5 @@
-// coordinate-panel: one coordinate domain's backlog, following the focused terminal. Its one
-// write is answering an item's ask, through the coordinate CLI.
+// coordinate-panel: one coordinate domain's backlog, following the focused terminal. Backlog
+// answers and delegate-harness policy edits go through the coordinate CLI.
 import { View } from "gpui-kit";
 import { InputState } from "gpui-base";
 import { createAnswerInput } from "./textarea.ts";
@@ -23,12 +23,19 @@ import {
   endedDate,
   endedPath,
   groupItems,
+  harnessPolicyFailure,
+  harnessPolicyOutput,
+  harnessPolicyResetCommand,
+  harnessPolicySetCommand,
+  harnessPolicyShowCommand,
+  changedHarnessPolicy,
   joinDelegates,
   mergeEnded,
   missingSessions,
   openFindings,
   parseListing,
   readDocument,
+  sameHarnessSelection,
   stateDirOf,
   summarize,
   targetDomain,
@@ -36,11 +43,15 @@ import {
 } from "./model.ts";
 import type {
   AnswerDraft,
+  DelegateHarness,
   DelegateJoin,
   DocumentState,
   DomainPage,
   DomainSummary,
   EndedRecords,
+  HarnessPolicyDraft,
+  HarnessPolicyState,
+  HarnessSelection,
   ItemGroup,
   ListingState,
   Screen,
@@ -50,7 +61,14 @@ import type { AnswerFlow } from "./answer-flow.ts";
 import { backlogsDir, documentPath } from "../../lib/store.ts";
 import type { Finding, Item } from "../../lib/store.ts";
 import { panel } from "./view.ts";
-import type { AnswerFlowModel, AnswerModel, BoundaryList, BoundaryModel, Theme } from "./view.ts";
+import type {
+  AnswerFlowModel,
+  AnswerModel,
+  BoundaryList,
+  BoundaryModel,
+  HarnessPolicyEditorModel,
+  Theme,
+} from "./view.ts";
 
 // How often the panel checks whether focus moved to another domain, and how often it rereads
 // the document in case a folder watch was reclaimed.
@@ -95,6 +113,16 @@ export default class Panel extends View {
   // The backlogs folder being watched, and the pending watch on it.
   watched: string | undefined;
   watch: FolderWatch | undefined;
+  // The Coordinate state folder is also watched for policy writes from another panel or CLI.
+  policyWatched: string | undefined;
+  policyWatch: FolderWatch | undefined;
+  policyScope: string | null = null;
+  policyStateDir: string | undefined;
+  policyGeneration = 0;
+  harnessPolicyState: HarnessPolicyState = { kind: "loading" };
+  harnessPolicyDraft: HarnessPolicyDraft | undefined;
+  harnessPolicyBusy = false;
+  policyFailure: { domain: string | undefined; message: string } | undefined;
   // The item or finding whose detail is open, by domain and id, so a reload shows its latest
   // copy and a vanished record falls back to the lists.
   selected: { kind: "item" | "finding"; domain: string; id: string } | undefined;
@@ -139,7 +167,7 @@ export default class Panel extends View {
     if (checking()) return;
     this.load(cx);
     cx.timer.every(FOLLOW_MS, (tick) => this.follow(tick));
-    cx.timer.every(REFRESH_MS, (tick) => this.load(tick, true));
+    cx.timer.every(REFRESH_MS, (tick) => this.refresh(tick));
   }
 
   // The domain focus names now.
@@ -163,6 +191,12 @@ export default class Panel extends View {
     if (followed === undefined) return;
     this.picked = undefined;
     this.listed = false;
+  }
+
+  // The slow refresh checks both the visible document and CLI-owned policy state.
+  refresh(cx: AsyncContext) {
+    this.load(cx, true);
+    if (this.stateDir !== undefined) this.loadHarnessPolicy(this.stateDir, this.target(), cx, true);
   }
 
   // Load again only when focus moved to another domain.
@@ -262,6 +296,9 @@ export default class Panel extends View {
       }
       this.stateDir = stateDir;
       this.watchBacklogs(backlogsDir(stateDir), task);
+      this.watchHarnessPolicy(stateDir, task);
+      if (this.policyScope !== (domain ?? "") || this.policyStateDir !== stateDir)
+        this.loadHarnessPolicy(stateDir, domain, task);
       if (domain !== this.domain) {
         this.domain = domain;
         this.selected = undefined;
@@ -392,8 +429,88 @@ export default class Panel extends View {
     });
   }
 
+  // The policy file is a direct child of the configured state directory. Reload only for that
+  // file or a directory event; backlog and ended-record changes do not alter editor state.
+  watchHarnessPolicy(stateDir: string, cx: AsyncContext) {
+    if (this.policyWatched === stateDir) return;
+    this.policyWatch?.cancel();
+    this.policyWatched = stateDir;
+    let current = watchFolder(stateDir);
+    this.policyWatch = current;
+    cx.spawn(async (task) => {
+      try {
+        for (;;) {
+          const changed = await current;
+          if (this.policyWatch !== current || changed.length === 0) break;
+          current = watchFolder(stateDir);
+          this.policyWatch = current;
+          if (changedHarnessPolicy(changed, stateDir))
+            this.loadHarnessPolicy(stateDir, this.target(), task, true);
+        }
+      } catch {
+        // Fall through: the watch is gone either way.
+      }
+      if (this.policyWatch !== current) return;
+      this.policyWatch = undefined;
+      this.policyWatched = undefined;
+    });
+  }
+
+  loadHarnessPolicy(
+    stateDir: string,
+    domain: string | undefined,
+    cx: Context,
+    refresh = false,
+    showLoading = false,
+  ) {
+    const scope = domain ?? "";
+    const scopeChanged = this.policyScope !== scope || this.policyStateDir !== stateDir;
+    if (!refresh && !scopeChanged) return;
+    if (scopeChanged) {
+      this.harnessPolicyDraft = undefined;
+      this.policyFailure = undefined;
+      this.harnessPolicyBusy = false;
+      this.harnessPolicyState = { kind: "loading" };
+    } else if (showLoading) {
+      this.harnessPolicyState = { kind: "loading" };
+    }
+    this.policyScope = scope;
+    this.policyStateDir = stateDir;
+    const generation = ++this.policyGeneration;
+    cx.spawn(async (task) => {
+      const state = await this.readHarnessPolicy(domain);
+      if (
+        generation !== this.policyGeneration ||
+        this.policyScope !== (domain ?? "") ||
+        this.policyStateDir !== stateDir
+      )
+        return;
+      this.harnessPolicyState = state;
+      task.notify();
+    });
+  }
+
+  async readHarnessPolicy(domain: string | undefined): Promise<HarnessPolicyState> {
+    const { command, args } = harnessPolicyShowCommand(home(), domain);
+    try {
+      const ran = await exec(command, args);
+      if (ran.code !== 0) return { kind: "error", message: harnessPolicyFailure(ran) };
+      const view = harnessPolicyOutput(ran.stdout, domain);
+      return view === undefined
+        ? {
+            kind: "error",
+            message:
+              "Coordinate returned invalid harness policy data. Update the Coordinate skill, then reopen this panel.",
+          }
+        : { kind: "loaded", view };
+    } catch (failure) {
+      return { kind: "error", message: `could not run coordinate: ${String(failure)}` };
+    }
+  }
+
   close() {
     this.watch?.cancel();
+    this.policyWatch?.cancel();
   }
 
   // A config that can't be read counts as absent.
@@ -760,6 +877,203 @@ export default class Panel extends View {
     };
   }
 
+  policyViewFor(domain: string | undefined) {
+    if (
+      this.policyScope !== (domain ?? "") ||
+      this.policyStateDir !== this.stateDir ||
+      this.harnessPolicyState.kind !== "loaded"
+    )
+      return undefined;
+    const view = this.harnessPolicyState.view;
+    if (domain === undefined) return view.domain === null ? view : undefined;
+    return view.domain?.name === domain ? view : undefined;
+  }
+
+  policyDraftFor(domain: string | undefined): HarnessPolicyDraft | undefined {
+    const draft = this.harnessPolicyDraft;
+    return draft?.domain === domain ? draft : undefined;
+  }
+
+  beginHarnessPolicyOverride(domain: string | undefined, cx: Context) {
+    if (domain === undefined || domain !== this.target() || this.harnessPolicyBusy) return;
+    const view = this.policyViewFor(domain);
+    if (view?.domain?.mode !== "inherit" || this.policyDraftFor(domain) !== undefined) return;
+    this.harnessPolicyDraft = {
+      scope: "domain",
+      domain,
+      revision: view.revision,
+      selection: {
+        enabled: [...view.domain.effective.enabled],
+        default: view.domain.effective.default,
+      },
+    };
+    this.policyFailure = undefined;
+    cx.notify();
+  }
+
+  toggleHarnessPolicy(domain: string | undefined, harness: DelegateHarness, cx: Context) {
+    if (domain !== this.target() || this.harnessPolicyBusy) return;
+    const view = this.policyViewFor(domain);
+    if (view === undefined) return;
+    const draft = this.policyDraftFor(domain);
+    if (draft !== undefined && draft.revision !== view.revision) return;
+    if (domain !== undefined && view.domain?.mode === "inherit" && draft === undefined) return;
+    const current =
+      draft?.selection ?? (domain === undefined ? view.global.policy : view.domain!.effective);
+    const enabled = new Set(current.enabled);
+    if (enabled.has(harness)) enabled.delete(harness);
+    else enabled.add(harness);
+    const next: HarnessSelection = {
+      enabled: (["pi", "claude"] as const).filter((entry) => enabled.has(entry)),
+      default: current.default === harness && !enabled.has(harness) ? null : current.default,
+    };
+    this.harnessPolicyDraft = {
+      scope: domain === undefined ? "global" : "domain",
+      domain,
+      revision: draft?.revision ?? view.revision,
+      selection: next,
+    };
+    this.policyFailure = undefined;
+    cx.notify();
+  }
+
+  setHarnessPolicyDefault(
+    domain: string | undefined,
+    defaultHarness: DelegateHarness | null,
+    cx: Context,
+  ) {
+    if (domain !== this.target() || this.harnessPolicyBusy) return;
+    const view = this.policyViewFor(domain);
+    if (view === undefined) return;
+    const draft = this.policyDraftFor(domain);
+    if (draft !== undefined && draft.revision !== view.revision) return;
+    if (domain !== undefined && view.domain?.mode === "inherit" && draft === undefined) return;
+    const current =
+      draft?.selection ?? (domain === undefined ? view.global.policy : view.domain!.effective);
+    if (
+      defaultHarness === current.default ||
+      (defaultHarness !== null && !current.enabled.includes(defaultHarness))
+    )
+      return;
+    this.harnessPolicyDraft = {
+      scope: domain === undefined ? "global" : "domain",
+      domain,
+      revision: draft?.revision ?? view.revision,
+      selection: { ...current, enabled: [...current.enabled], default: defaultHarness },
+    };
+    this.policyFailure = undefined;
+    cx.notify();
+  }
+
+  cancelHarnessPolicyDraft(domain: string | undefined, cx: Context) {
+    if (domain !== this.target() || this.harnessPolicyBusy) return;
+    this.harnessPolicyDraft = undefined;
+    this.policyFailure = undefined;
+    cx.notify();
+  }
+
+  reloadHarnessPolicy(domain: string | undefined, cx: Context) {
+    if (domain !== this.target() || this.harnessPolicyBusy || this.stateDir === undefined) return;
+    this.harnessPolicyDraft = undefined;
+    this.policyFailure = undefined;
+    this.loadHarnessPolicy(this.stateDir, domain, cx, true, true);
+    cx.notify();
+  }
+
+  saveHarnessPolicy(domain: string | undefined, cx: Context) {
+    if (domain !== this.target() || this.harnessPolicyBusy) return;
+    const view = this.policyViewFor(domain);
+    const draft = this.policyDraftFor(domain);
+    if (view === undefined || draft === undefined || draft.revision !== view.revision) return;
+    const original = domain === undefined ? view.global.policy : view.domain?.effective;
+    const explicitOverride = domain !== undefined && view.domain?.mode === "inherit";
+    if (
+      original === undefined ||
+      (!explicitOverride && sameHarnessSelection(draft.selection, original))
+    )
+      return;
+    const command = harnessPolicySetCommand(home(), domain, draft.selection, draft.revision);
+    this.runHarnessPolicyMutation(domain, command, cx);
+  }
+
+  resetHarnessPolicy(domain: string | undefined, cx: Context) {
+    if (domain === undefined || domain !== this.target() || this.harnessPolicyBusy) return;
+    const view = this.policyViewFor(domain);
+    if (view?.domain?.mode !== "replace") return;
+    const command = harnessPolicyResetCommand(home(), domain, view.revision);
+    this.runHarnessPolicyMutation(domain, command, cx);
+  }
+
+  runHarnessPolicyMutation(
+    domain: string | undefined,
+    command: { command: string; args: string[] },
+    cx: Context,
+  ) {
+    const stateDir = this.stateDir;
+    if (stateDir === undefined) return;
+    const scope = domain ?? "";
+    const current = () =>
+      this.target() === domain && this.policyScope === scope && this.policyStateDir === stateDir;
+    this.harnessPolicyBusy = true;
+    this.policyFailure = undefined;
+    cx.notify();
+    cx.spawn(async (task) => {
+      let failure: string | undefined;
+      let stale = false;
+      try {
+        const ran = await exec(command.command, command.args);
+        if (ran.code !== 0) {
+          failure = harnessPolicyFailure(ran);
+          stale = /stale harness policy revision/i.test(`${ran.stderr}\n${ran.stdout}`);
+        }
+      } catch (error) {
+        failure = `could not run coordinate: ${String(error)}`;
+      }
+      if (!current()) return;
+      if (failure === undefined) {
+        this.harnessPolicyDraft = undefined;
+        this.policyFailure = undefined;
+        this.harnessPolicyState = await this.readHarnessPolicy(domain);
+      } else {
+        this.policyFailure = { domain, message: failure };
+        if (stale) this.harnessPolicyState = await this.readHarnessPolicy(domain);
+      }
+      if (!current()) return;
+      this.harnessPolicyBusy = false;
+      task.notify();
+    });
+  }
+
+  harnessPolicyModel(domain: string | undefined): HarnessPolicyEditorModel {
+    const inScope = this.policyScope === (domain ?? "") && this.policyStateDir === this.stateDir;
+    const state = inScope ? this.harnessPolicyState : { kind: "loading" as const };
+    const draft = this.policyDraftFor(domain);
+    const failure =
+      this.policyFailure !== undefined && this.policyFailure.domain === domain
+        ? this.policyFailure.message
+        : undefined;
+    const conflict =
+      (state.kind === "loaded" && draft !== undefined && draft.revision !== state.view.revision) ||
+      (draft !== undefined &&
+        failure?.startsWith("Policy changed while you were editing") === true);
+    return {
+      scope: domain === undefined ? "global" : "domain",
+      domain,
+      state,
+      draft,
+      busy: inScope && this.harnessPolicyBusy,
+      failure,
+      conflict,
+      beginOverride: (cx) => this.beginHarnessPolicyOverride(domain, cx),
+      toggle: (harness, cx) => this.toggleHarnessPolicy(domain, harness, cx),
+      setDefault: (harness, cx) => this.setHarnessPolicyDefault(domain, harness, cx),
+      save: (cx) => this.saveHarnessPolicy(domain, cx),
+      reset: (cx) => this.resetHarnessPolicy(domain, cx),
+      cancel: (cx) => this.cancelHarnessPolicyDraft(domain, cx),
+      reload: (cx) => this.reloadHarnessPolicy(domain, cx),
+    };
+  }
+
   // The open item as the document now has it, if it is still there.
   detail(domain: string | undefined, doc: DocumentState): Item | undefined {
     const selected = this.selected;
@@ -862,6 +1176,7 @@ export default class Panel extends View {
       answer: this.answerModel(),
       flow,
       boundary: this.boundaryModel(domain),
+      harnessPolicy: this.harnessPolicyModel(domain),
     });
   }
 }

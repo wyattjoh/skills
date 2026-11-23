@@ -664,6 +664,223 @@ declare const COORDINATE_BUN: string | undefined;
 export const coordinateCli = (home: string): string =>
   `${home}/.claude/skills/coordinate/scripts/coordinate.ts`;
 
+export type DelegateHarness = "pi" | "claude";
+
+export type HarnessSelection = {
+  enabled: DelegateHarness[];
+  default: DelegateHarness | null;
+};
+
+export type HarnessPolicyView = {
+  schemaVersion: 1;
+  revision: number;
+  path: string;
+  global: {
+    source: "legacy" | "configured";
+    policy: HarnessSelection;
+  };
+  domain: {
+    name: string;
+    mode: "inherit" | "replace";
+    override: HarnessSelection | null;
+    effective: HarnessSelection;
+  } | null;
+};
+
+export type HarnessPolicyState =
+  | { kind: "loading" }
+  | { kind: "loaded"; view: HarnessPolicyView }
+  | { kind: "error"; message: string };
+
+export type HarnessPolicyDraft = {
+  scope: "global" | "domain";
+  domain: string | undefined;
+  revision: number;
+  selection: HarnessSelection;
+};
+
+const runner = (home: string, args: string[]) => ({
+  command: "/usr/bin/env",
+  args: [
+    "-u",
+    "HC_TERMINAL_ID",
+    typeof COORDINATE_BUN === "string" ? COORDINATE_BUN : "bun",
+    coordinateCli(home),
+    ...args,
+  ],
+});
+
+/**
+ * Build a canonical policy read through the Coordinate CLI, optionally scoped to one domain.
+ * @param home The user's home directory.
+ * @param domain The domain to show, or undefined for global defaults.
+ * @returns The program and its arguments for exec.
+ */
+export const harnessPolicyShowCommand = (home: string, domain: string | undefined) =>
+  runner(home, [
+    "harness-policy",
+    "show",
+    ...(domain === undefined ? [] : ["--domain", domain]),
+    "--json",
+  ]);
+
+/**
+ * Build a revision-checked complete replacement policy command.
+ * @param home The user's home directory.
+ * @param domain The domain to replace, or undefined to replace global defaults.
+ * @param selection The complete enabled set and optional default.
+ * @param revision The revision read before editing.
+ * @returns The program and its arguments for exec.
+ */
+export const harnessPolicySetCommand = (
+  home: string,
+  domain: string | undefined,
+  selection: HarnessSelection,
+  revision: number,
+) =>
+  runner(home, [
+    "harness-policy",
+    ...(domain === undefined ? ["global-set"] : ["domain-set", domain]),
+    "--enabled",
+    selection.enabled.length === 0 ? "none" : selection.enabled.join(","),
+    ...(selection.default === null ? ["--no-default"] : ["--default", selection.default]),
+    "--expected-revision",
+    String(revision),
+    "--json",
+  ]);
+
+/**
+ * Build a revision-checked command that restores a domain to global inheritance.
+ * @param home The user's home directory.
+ * @param domain The domain to reset.
+ * @param revision The revision read before editing.
+ * @returns The program and its arguments for exec.
+ */
+export const harnessPolicyResetCommand = (home: string, domain: string, revision: number) =>
+  runner(home, [
+    "harness-policy",
+    "domain-reset",
+    domain,
+    "--expected-revision",
+    String(revision),
+    "--json",
+  ]);
+
+const harnessOf = (value: unknown): value is DelegateHarness =>
+  value === "pi" || value === "claude";
+
+const selectionOf = (value: unknown): HarnessSelection | undefined => {
+  if (!isRecord(value) || !Array.isArray(value.enabled)) return undefined;
+  const enabledValues = value.enabled;
+  if (!enabledValues.every(harnessOf) || new Set(enabledValues).size !== enabledValues.length)
+    return undefined;
+  const enabled = (["pi", "claude"] as const).filter((harness) => enabledValues.includes(harness));
+  const defaultHarness = value.default;
+  if (defaultHarness !== null && (!harnessOf(defaultHarness) || !enabled.includes(defaultHarness)))
+    return undefined;
+  return { enabled, default: defaultHarness };
+};
+
+/**
+ * Whether two complete selections have the same enabled order and default.
+ * @param left First selection.
+ * @param right Second selection.
+ * @returns Whether they match.
+ */
+export const sameHarnessSelection = (left: HarnessSelection, right: HarnessSelection): boolean =>
+  left.default === right.default &&
+  left.enabled.length === right.enabled.length &&
+  left.enabled.every((harness) => right.enabled.includes(harness));
+
+/**
+ * Parse and validate the canonical JSON view printed by `coordinate harness-policy show`.
+ * @param text The CLI's stdout.
+ * @param domain The requested domain, or undefined for the global view.
+ * @returns The policy view, or undefined when the output is invalid or has the wrong scope.
+ */
+export const harnessPolicyOutput = (
+  text: string,
+  domain: string | undefined,
+): HarnessPolicyView | undefined => {
+  try {
+    const parsed: unknown = JSON.parse(text);
+    if (!isRecord(parsed) || parsed.schemaVersion !== 1) return undefined;
+    if (!Number.isSafeInteger(parsed.revision) || (parsed.revision as number) < 0) return undefined;
+    if (typeof parsed.path !== "string" || parsed.path === "") return undefined;
+    if (!isRecord(parsed.global)) return undefined;
+    if (parsed.global.source !== "legacy" && parsed.global.source !== "configured")
+      return undefined;
+    const globalPolicy = selectionOf(parsed.global.policy);
+    if (globalPolicy === undefined) return undefined;
+    if (parsed.domain === null) {
+      if (domain !== undefined) return undefined;
+      return {
+        schemaVersion: 1,
+        revision: parsed.revision as number,
+        path: parsed.path,
+        global: { source: parsed.global.source, policy: globalPolicy },
+        domain: null,
+      };
+    }
+    if (!isRecord(parsed.domain) || domain === undefined || parsed.domain.name !== domain)
+      return undefined;
+    if (parsed.domain.mode !== "inherit" && parsed.domain.mode !== "replace") return undefined;
+    const override =
+      parsed.domain.override === null ? null : (selectionOf(parsed.domain.override) ?? undefined);
+    const effective = selectionOf(parsed.domain.effective);
+    if (override === undefined || effective === undefined) return undefined;
+    if ((parsed.domain.mode === "inherit") !== (override === null)) return undefined;
+    const expectedEffective = override ?? globalPolicy;
+    if (!sameHarnessSelection(effective, expectedEffective)) return undefined;
+    return {
+      schemaVersion: 1,
+      revision: parsed.revision as number,
+      path: parsed.path,
+      global: { source: parsed.global.source, policy: globalPolicy },
+      domain: {
+        name: domain,
+        mode: parsed.domain.mode,
+        override,
+        effective,
+      },
+    };
+  } catch {
+    return undefined;
+  }
+};
+
+/**
+ * Turn a policy CLI failure into an actionable editor message.
+ * @param result The failed command's exit code and output.
+ * @returns The user-facing message.
+ */
+export const harnessPolicyFailure = (result: {
+  code: number;
+  stdout: string;
+  stderr: string;
+}): string => {
+  const output = result.stderr.trim() || result.stdout.trim();
+  if (/stale harness policy revision/i.test(output))
+    return "Policy changed while you were editing. Reload the policy and reapply your choices.";
+  if (
+    /(unknown|unrecognized|no) (command|subcommand)/i.test(output) &&
+    /(harness-policy|global-set|domain-set|domain-reset)/i.test(output)
+  )
+    return "The installed Coordinate CLI is too old for harness policy. Update the Coordinate skill, then reopen this panel.";
+  return output || `coordinate exited ${result.code}`;
+};
+
+/**
+ * Whether a state-directory watch event could include a policy change.
+ * @param paths Changed paths from Herdr.
+ * @param stateDir Coordinate's configured state directory.
+ * @returns Whether to reload the canonical policy view.
+ */
+export const changedHarnessPolicy = (paths: string[], stateDir: string): boolean => {
+  const policy = `${stateDir}/delegate-harness-policy.json`;
+  return paths.some((path) => path === stateDir || path === policy);
+};
+
 /**
  * Parse and validate the JSON Boundary printed by the coordinate CLI.
  * @param text The CLI's stdout.

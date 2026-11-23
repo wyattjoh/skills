@@ -14,9 +14,11 @@ running build.
 ## Exception: `plugins/coordinate`
 
 `plugins/coordinate/herdr/` builds `coordinate-panel`, a Herdr mod for the coordinate skill's
-backlog. It is read-only except for answering an ask and follows the focused terminal. It is not a
-Claude Code plugin: no `.claude-plugin/`, no marketplace entry, no mod or pi extension. It is its
-own project with its own `package.json`, `bunfig.toml` and `justfile`. Root `bun test` and `knip` skip it, and root `bun run check` skips its `src/` (its
+backlog. The backlog is read-only except for answering an ask; the separate delegate-harness
+policy editor delegates all policy writes to the Coordinate CLI. The panel follows the focused
+terminal. It is not a Claude Code plugin: no `.claude-plugin/`, no marketplace entry, no mod or pi
+extension. It is its own project with its own `package.json`, `bunfig.toml` and `justfile`. Root
+`bun test` and `knip` skip it, and root `bun run check` skips its `src/` (its
 tests need the renderer preload and its mod sources need Herdr's host `.d.ts` files); root
 `check` still type-checks its Bun `scripts/`, and root lint and format cover all of it. It depends on
 `@wyattjoh/herdr-ui`, which the root install does not provide. CI runs `bun install --frozen-lockfile`
@@ -30,13 +32,16 @@ person's `keys.json` when the plugin defines any, refusing a key they already bi
 Point `HERDR_APP_HOME` at a scratch folder to exercise it.
 
 The mods never write the backlog document or message a terminal: the coordinate CLI is the
-document's only writer. The panel's one write is the Answer button on an item's detail screen. It runs
-`coordinate item answer --domain <d> -- <id> <answer>`, the one mutation the CLI accepts from
-outside a Herdr terminal, as `/usr/bin/env -u HC_TERMINAL_ID <bun> ~/.claude/skills/coordinate/scripts/coordinate.ts`.
-Unsetting the variable keeps the panel that caller even in an app started from a terminal. A
-mod's `exec` runs with the app's environment, whose PATH has no bun, so `scripts/build.ts` bakes
-`<bun>` from the build's own PATH as `COORDINATE_BUN`; reinstall after moving bun. The panel shows
-the CLI's message on a non-zero exit or a failed start, and reloads only after exit 0. The mods share the backlog schema and validator by relative import from
+document's only writer. The panel's one backlog write is the Answer button on an item's detail
+screen. It runs `coordinate item answer --domain <d> -- <id> <answer>`, a mutation the CLI accepts
+from outside a Herdr terminal. Delegate-harness policy reads and edits also go through the CLI:
+`harness-policy show --json [--domain <d>]`, `global-set`, `domain-set`, and `domain-reset`, with
+`--expected-revision` on every mutation. Never read or write the policy JSON from the mod. Both
+write paths run as `/usr/bin/env -u HC_TERMINAL_ID <bun>
+~/.claude/skills/coordinate/scripts/coordinate.ts`. Unsetting the variable keeps the panel that
+caller even in an app started from a terminal. A mod's `exec` runs with the app's environment,
+whose PATH has no bun, so `scripts/build.ts` bakes `<bun>` from the build's own PATH as
+`COORDINATE_BUN`; reinstall after moving bun. The answer flow shows the CLI's message on a non-zero exit or failed start and reloads the backlog only after exit 0. Policy writes use revision checks; on a stale revision the panel rereads canonical policy to surface a conflict, while other failures preserve the draft and show the CLI message. The mods share the backlog schema and validator by relative import from
 `skills/coordinate/scripts/lib/backlog-store/`, which must stay dependency-free (Herdr has no
 `TextEncoder`, so Effect Schema cannot load in a mod).
 

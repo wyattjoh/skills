@@ -26,6 +26,7 @@ import {
   labelChip,
   listRow,
   loadingState,
+  togglePill,
   paneScrollRegion,
   panelBody,
   panelFrame,
@@ -53,6 +54,7 @@ import {
   FINDING_KIND_LABELS,
   FINDING_STATUS_LABELS,
   GROUP_LABELS,
+  sameHarnessSelection,
   chosenAnswer,
   delegateLabel,
   delegateLine,
@@ -61,12 +63,16 @@ import {
 import type {
   AnswerDraft,
   Crumb,
+  DelegateHarness,
   DelegateJoin,
   DomainPage,
   DelegateRow,
   DelegateState,
   DocumentState,
   DomainSummary,
+  HarnessPolicyDraft,
+  HarnessPolicyState,
+  HarnessSelection,
   ItemGroup,
   ListingState,
   Screen,
@@ -117,6 +123,7 @@ export type PanelModel = {
   openWaiting: (item: Item, cx: Context) => void;
   // Boundary paths can be edited on either card.
   boundary: BoundaryModel;
+  harnessPolicy: HarnessPolicyEditorModel;
   openDomain: (domain: string, cx: Context) => void;
 };
 
@@ -164,6 +171,23 @@ export type BoundaryModel = {
   cancel: (cx: Context) => void;
   remove: (list: BoundaryList, path: string, cx: Context) => void;
   hover: (list: BoundaryList, path: string, hovered: boolean, cx: Context) => void;
+};
+
+export type HarnessPolicyEditorModel = {
+  scope: "global" | "domain";
+  domain: string | undefined;
+  state: HarnessPolicyState;
+  draft: HarnessPolicyDraft | undefined;
+  busy: boolean;
+  failure: string | undefined;
+  conflict: boolean;
+  beginOverride: (cx: Context) => void;
+  toggle: (harness: DelegateHarness, cx: Context) => void;
+  setDefault: (harness: DelegateHarness | null, cx: Context) => void;
+  save: (cx: Context) => void;
+  reset: (cx: Context) => void;
+  cancel: (cx: Context) => void;
+  reload: (cx: Context) => void;
 };
 
 /**
@@ -510,6 +534,223 @@ const ANSWER_BUTTON_STYLE: ButtonStyle = {
   background: "solid",
   text: "solid_foreground",
   hover: "accent",
+};
+
+const HARNESS_LABELS: Readonly<Record<DelegateHarness, string>> = {
+  pi: "Pi",
+  claude: "Claude Code",
+};
+
+const harnessPolicyCard = (t: Theme, model: HarnessPolicyEditorModel): Element => {
+  const id =
+    model.scope === "global" ? "harness-policy-global" : `harness-policy-domain-${model.domain}`;
+  const title = model.scope === "global" ? "Delegate harness defaults" : "Delegate harness policy";
+  const rows: Element[] = [];
+  if (model.state.kind === "loading") {
+    rows.push(detailRow(t, `${id}-loading`).text_color(t.muted).child("Loading policy…"));
+  } else if (model.state.kind === "error") {
+    rows.push(
+      detailRow(t, `${id}-error`).text_color(role(t, "ansi1")).child(model.state.message),
+      detailRow(t, `${id}-reload`).child(
+        button(t, {
+          id: `${id}-reload-button`,
+          label: "Reload policy",
+          style: { ...ANSWER_BUTTON_STYLE, background: "raised" },
+          onClick: model.busy ? undefined : (cx) => model.reload(cx),
+        }),
+      ),
+    );
+  } else {
+    const view = model.state.view;
+    const domainPolicy = view.domain;
+    const original = model.scope === "global" ? view.global.policy : domainPolicy?.effective;
+    const selection: HarnessSelection | undefined = model.draft?.selection ?? original;
+    if (selection === undefined || (model.scope === "domain" && domainPolicy === null)) {
+      rows.push(
+        detailRow(t, `${id}-error`)
+          .text_color(role(t, "ansi1"))
+          .child("Coordinate returned policy data for the wrong scope."),
+        detailRow(t, `${id}-reload`).child(
+          button(t, {
+            id: `${id}-reload-button`,
+            label: "Reload policy",
+            style: { ...ANSWER_BUTTON_STYLE, background: "raised" },
+            onClick: model.busy ? undefined : (cx) => model.reload(cx),
+          }),
+        ),
+      );
+    } else {
+      const inherited = model.scope === "domain" && domainPolicy?.mode === "inherit";
+      const editable = model.scope === "global" || !inherited || model.draft !== undefined;
+      const canEdit = editable && !model.busy && !model.conflict;
+      const source =
+        model.scope === "global"
+          ? view.global.source === "legacy"
+            ? "Legacy defaults"
+            : "Global policy"
+          : model.draft !== undefined
+            ? "Unsaved domain override"
+            : inherited
+              ? view.global.source === "legacy"
+                ? "Inherited from legacy defaults"
+                : "Inherited from global policy"
+              : "Domain override";
+      rows.push(
+        detailRow(t, `${id}-source`)
+          .child(small(t, t.muted, "Source"))
+          .child(div().text_color(t.dim).child(source)),
+      );
+      const enabled = h_flex()
+        .flex_wrap()
+        .gap(BUTTON_STYLE.gap)
+        .children([
+          ...(["pi", "claude"] as const).map((harness) =>
+            togglePill(t, {
+              id: `${id}-enabled-${harness}`,
+              label: HARNESS_LABELS[harness],
+              lit: selection.enabled.includes(harness),
+              onClick: canEdit ? (cx) => model.toggle(harness, cx) : undefined,
+              tooltip: `Enable or disable ${HARNESS_LABELS[harness]}`,
+            }),
+          ),
+          h_flex()
+            .items_center()
+            .gap(BUTTON_STYLE.gap)
+            .child(
+              togglePill(t, {
+                id: `${id}-codex-unavailable`,
+                label: "Codex",
+                lit: false,
+                tooltip: "Codex is not available in Coordinate",
+              }),
+            )
+            .child(small(t, t.dim, "Unavailable")),
+          ...(selection.enabled.length === 0 ? [small(t, t.dim, "None enabled")] : []),
+        ]);
+      rows.push(
+        detailRow(t, `${id}-enabled`)
+          .child(small(t, t.muted, "Enabled"))
+          .child(enabled),
+      );
+      const defaults = h_flex()
+        .flex_wrap()
+        .gap(BUTTON_STYLE.gap)
+        .children([
+          togglePill(t, {
+            id: `${id}-default-none`,
+            label: "No default",
+            lit: selection.default === null,
+            onClick: canEdit ? (cx) => model.setDefault(null, cx) : undefined,
+          }),
+          ...(["pi", "claude"] as const).map((harness) => {
+            const available = selection.enabled.includes(harness);
+            return togglePill(t, {
+              id: `${id}-default-${harness}`,
+              label: HARNESS_LABELS[harness],
+              lit: selection.default === harness,
+              onClick: canEdit && available ? (cx) => model.setDefault(harness, cx) : undefined,
+              tooltip: available
+                ? `${HARNESS_LABELS[harness]} default`
+                : `Enable ${HARNESS_LABELS[harness]} before choosing it as the default`,
+            });
+          }),
+        ]);
+      rows.push(
+        detailRow(t, `${id}-default`)
+          .child(small(t, t.muted, "Default"))
+          .child(defaults),
+      );
+      if (model.conflict || model.failure !== undefined) {
+        rows.push(
+          detailRow(t, `${id}-failure`)
+            .text_size(TEXT.label)
+            .text_color(role(t, "ansi1"))
+            .child(
+              model.conflict
+                ? "Policy changed while this draft was open. Reload to discard it, then reapply your choices."
+                : model.failure!,
+            ),
+          detailRow(t, `${id}-reload`).child(
+            button(t, {
+              id: `${id}-reload-button`,
+              label: "Reload policy",
+              style: { ...ANSWER_BUTTON_STYLE, background: "raised" },
+              onClick: model.busy ? undefined : (cx) => model.reload(cx),
+            }),
+          ),
+        );
+      }
+      if (model.scope === "domain" && inherited && model.draft === undefined) {
+        rows.push(
+          detailRow(t, `${id}-override`).child(
+            button(t, {
+              id: `${id}-override-button`,
+              label: "Override global",
+              style: ANSWER_BUTTON_STYLE,
+              onClick: model.busy ? undefined : (cx) => model.beginOverride(cx),
+            }),
+          ),
+        );
+      }
+      if (model.draft !== undefined) {
+        const dirty =
+          original !== undefined &&
+          ((model.scope === "domain" && domainPolicy?.mode === "inherit") ||
+            !sameHarnessSelection(model.draft.selection, original));
+        const saveLabel = model.busy
+          ? "Saving…"
+          : model.scope === "global"
+            ? "Save defaults"
+            : "Save override";
+        rows.push(
+          detailRow(t, `${id}-actions`).child(
+            h_flex()
+              .flex_wrap()
+              .gap(BUTTON_STYLE.gap)
+              .children([
+                button(t, {
+                  id: `${id}-save`,
+                  label: saveLabel,
+                  style:
+                    dirty && canEdit
+                      ? ANSWER_BUTTON_STYLE
+                      : { ...ANSWER_BUTTON_STYLE, background: "raised" },
+                  onClick: dirty && canEdit ? (cx) => model.save(cx) : undefined,
+                }),
+                button(t, {
+                  id: `${id}-cancel`,
+                  label: "Cancel",
+                  style: { ...ANSWER_BUTTON_STYLE, background: "raised" },
+                  onClick: model.busy ? undefined : (cx) => model.cancel(cx),
+                }),
+                ...(model.scope === "domain" && domainPolicy?.mode === "replace"
+                  ? [
+                      button(t, {
+                        id: `${id}-reset`,
+                        label: "Reset to global",
+                        style: { ...ANSWER_BUTTON_STYLE, background: "raised" },
+                        onClick: model.busy || model.conflict ? undefined : (cx) => model.reset(cx),
+                      }),
+                    ]
+                  : []),
+              ]),
+          ),
+        );
+      } else if (model.scope === "domain" && domainPolicy?.mode === "replace") {
+        rows.push(
+          detailRow(t, `${id}-reset-row`).child(
+            button(t, {
+              id: `${id}-reset-button`,
+              label: "Reset to global",
+              style: { ...ANSWER_BUTTON_STYLE, background: "raised" },
+              onClick: model.busy ? undefined : (cx) => model.reset(cx),
+            }),
+          ),
+        );
+      }
+    }
+  }
+  return detailCard(t, id, title, rows);
 };
 
 // The answer field is app-specific; the package owns its surrounding card item and button.
@@ -1236,7 +1477,14 @@ const domainBody = (t: Theme, domain: string, doc: DocumentState, model: PanelMo
     .child(focusCard(t, doc.backlog.focus))
     .children([...waitingCard(t, model), itemsCard(t, model)])
     .children(unfiledCard(t, model.delegates.unfiled, model))
-    .child(sectionLinks(t, domain, doc.backlog, model));
+    .child(sectionLinks(t, domain, doc.backlog, model))
+    .when(
+      model.page === undefined &&
+        model.detail === undefined &&
+        model.finding === undefined &&
+        model.flow === undefined,
+      (body) => body.child(harnessPolicyCard(t, model.harnessPolicy)),
+    );
 };
 
 const COUNT_LABELS = [
@@ -1271,25 +1519,32 @@ const domainRow = (
   });
 
 const listingBody = (t: Theme, listing: ListingState, model: PanelModel): Element => {
-  if (listing.kind === "loading")
-    return message(t, "loading", "Loading…", "Listing the backlogs.", "loading");
-  if (listing.kind === "unreadable")
-    return message(t, "listing-error", "Couldn't list the backlogs", listing.reason, "error");
-  if (listing.domains.length === 0)
-    return message(
+  let domains: Element;
+  if (listing.kind === "loading") {
+    domains = message(t, "loading", "Loading…", "Listing the backlogs.", "loading");
+  } else if (listing.kind === "unreadable") {
+    domains = message(t, "listing-error", "Couldn't list the backlogs", listing.reason, "error");
+  } else if (listing.domains.length === 0) {
+    domains = message(
       t,
       "no-backlogs",
       "No backlogs yet",
       "Run coordinate start <domain> to create one.",
     );
-  return cardSection(
-    cardHeader(t, "domains-header", "Domains"),
-    card(t, "domains").children(
-      pagedRows(t, "domains", listing.domains, model, ROW.list, (row, index) =>
-        domainRow(t, row, (cx) => model.openDomain(row.domain, cx), index === 0),
+  } else {
+    domains = cardSection(
+      cardHeader(t, "domains-header", "Domains"),
+      card(t, "domains").children(
+        pagedRows(t, "domains", listing.domains, model, ROW.list, (row, index) =>
+          domainRow(t, row, (cx) => model.openDomain(row.domain, cx), index === 0),
+        ),
       ),
-    ),
-  );
+    );
+  }
+  return v_flex()
+    .gap(PANEL.sectionGap)
+    .child(harnessPolicyCard(t, model.harnessPolicy))
+    .child(domains);
 };
 
 const domainScreens = (t: Theme, model: PanelModel): Element =>

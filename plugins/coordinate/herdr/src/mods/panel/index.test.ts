@@ -32,11 +32,61 @@ setAnswerTextareaTestApi({
   render: (state) => Input.new(state as ReturnType<typeof InputState.new>),
 });
 const { default: Panel } = await import("./index.ts");
-const { LIST_SCRIPT } = await import("./model.ts");
+const {
+  LIST_SCRIPT,
+  changedHarnessPolicy,
+  harnessPolicyFailure,
+  harnessPolicyOutput,
+  harnessPolicyResetCommand,
+  harnessPolicySetCommand,
+  harnessPolicyShowCommand,
+} = await import("./model.ts");
 
 const STATE = "/Users/test/.local/state/coordinate";
 const DOC = `${STATE}/backlogs/alpha.json`;
 const NOW = "2026-11-17T12:00:00.000Z";
+type PolicySelection = { enabled: ("pi" | "claude")[]; default: "pi" | "claude" | null };
+const LEGACY_POLICY: PolicySelection = { enabled: ["pi", "claude"], default: null };
+
+const policyOutput = (
+  options: {
+    revision?: number;
+    global?: PolicySelection;
+    source?: "legacy" | "configured";
+    domain?: string;
+    mode?: "inherit" | "replace";
+    override?: PolicySelection | null;
+  } = {},
+): string => {
+  const global = options.global ?? LEGACY_POLICY;
+  const mode = options.mode ?? "inherit";
+  const override = options.override ?? null;
+  const domain =
+    options.domain === undefined
+      ? null
+      : {
+          name: options.domain,
+          mode,
+          override,
+          effective: mode === "replace" && override !== null ? override : global,
+        };
+  return JSON.stringify({
+    schemaVersion: 1,
+    revision: options.revision ?? 1,
+    path: `${STATE}/delegate-harness-policy.json`,
+    global: { source: options.source ?? "legacy", policy: global },
+    domain,
+  });
+};
+
+const setPolicyOutput = (stdout: string, code = 0, stderr = "") => {
+  const result = { code, stderr, stdout };
+  host.execExit = result;
+};
+
+const latestWatch = (path: string) => host.watches.filter((watch) => watch.path === path).at(-1);
+const backlogWatch = () => latestWatch(`${STATE}/backlogs`);
+const policyWatch = () => latestWatch(STATE);
 
 beforeEach(() => {
   resetHost();
@@ -167,11 +217,17 @@ const press = (root: Node, id: string, cx: unknown) => get(root, id).click!({}, 
 const openPage = (root: Node, page: string, cx: unknown) =>
   get(root, `page-${page}`).click!({}, cx);
 
-const mount = async () => {
+const mount = async (preservePolicyReads = false) => {
   const ctx = context();
   const view = new Panel();
   view.init(undefined, ctx.cx as never);
   await settle();
+  if (!preservePolicyReads)
+    host.execs.splice(
+      0,
+      host.execs.length,
+      ...host.execs.filter(({ args }) => args[args.indexOf("harness-policy") + 1] !== "show"),
+    );
   return { ctx, view, render: () => view.render(ctx.cx as never) as never };
 };
 
@@ -418,14 +474,15 @@ test("refreshes a same-size replacement when the watch reports the document path
   expect(newText).toHaveLength(oldText.length);
   host.files.set(DOC, oldText);
   const { render } = await mount();
-  expect(host.watches.map((watch) => watch.path)).toEqual([`${STATE}/backlogs`]);
+  expect(host.watches.map((watch) => watch.path)).toEqual([`${STATE}/backlogs`, STATE]);
   host.files.set(DOC, newText);
-  host.watches[0]!.fire([DOC]);
+  backlogWatch()!.fire([DOC]);
   await settle();
   expect(text(get(render(), "focus"))).toBe("New focus");
   expect(host.reads.filter((path) => path === DOC)).toHaveLength(2);
   expect(host.watches.map((watch) => watch.path)).toEqual([
     `${STATE}/backlogs`,
+    STATE,
     `${STATE}/backlogs`,
   ]);
 });
@@ -437,13 +494,13 @@ test("ignores archive and other-domain watch events until that domain is selecte
   host.files.set(betaPath, JSON.stringify({ ...emptyBacklog("beta", null), focus: "Old beta" }));
   const { ctx, render } = await mount();
   const archive = `${STATE}/backlogs/alpha.archive.jsonl`;
-  host.watches[0]!.fire([archive]);
+  backlogWatch()!.fire([archive]);
   await settle();
   expect(host.reads.filter((path) => path === DOC)).toHaveLength(1);
-  expect(host.watches).toHaveLength(2);
+  expect(host.watches).toHaveLength(3);
 
   host.files.set(betaPath, JSON.stringify({ ...emptyBacklog("beta", null), focus: "New beta" }));
-  host.watches[1]!.fire([betaPath]);
+  backlogWatch()!.fire([betaPath]);
   await settle();
   expect(host.reads.filter((path) => path === DOC)).toHaveLength(1);
   expect(host.reads.filter((path) => path === betaPath)).toHaveLength(0);
@@ -459,14 +516,14 @@ test("rereads the document on the slow timer and rearms a reclaimed watch", asyn
   focusDomain("alpha");
   host.files.set(DOC, JSON.stringify(everyStatus()));
   const { ctx, render } = await mount();
-  host.watches[0]!.fire([]);
+  backlogWatch()!.fire([]);
   await settle();
-  expect(host.watches).toHaveLength(1);
+  expect(host.watches).toHaveLength(2);
   host.files.set(DOC, JSON.stringify({ ...everyStatus(), focus: "Timer change" }));
   ctx.tick(30_000);
   await settle();
   expect(text(get(render(), "focus"))).toBe("Timer change");
-  expect(host.watches).toHaveLength(2);
+  expect(host.watches).toHaveLength(3);
 });
 
 test("the slow timer checks file text but reuses parsed state when it is unchanged", async () => {
@@ -529,7 +586,7 @@ test("a failed watched reread replaces the domain's last read", async () => {
   host.files.set(DOC, JSON.stringify(everyStatus()));
   const { render } = await mount();
   host.files.set(DOC, JSON.stringify({ ...everyStatus(), items: "none" }));
-  host.watches[0]!.fire([DOC]);
+  backlogWatch()!.fire([DOC]);
   await settle();
   expect(text(get(render(), "invalid"))).toBe("alpha's backlog is invalid items must be a list");
 });
@@ -551,7 +608,10 @@ test("reads the state folder from the coordinate config", async () => {
   host.files.set("/Users/test/state/backlogs/alpha.json", JSON.stringify(everyStatus()));
   const { render } = await mount();
   expect(text(get(render(), "focus"))).toBe("Ship the panel tracer");
-  expect(host.watches.map((watch) => watch.path)).toEqual(["/Users/test/state/backlogs"]);
+  expect(host.watches.map((watch) => watch.path)).toEqual([
+    "/Users/test/state/backlogs",
+    "/Users/test/state",
+  ]);
 });
 
 // A focused terminal with no fleet.domain label.
@@ -609,7 +669,7 @@ test("refreshes the changed domain summary while the listing is shown", async ()
   const { render } = await mount();
   expect(text(get(render(), "domain-beta"))).toBe("beta 1 open");
   host.files.set(betaPath, JSON.stringify(add(betaBacklog(), "Another beta item")));
-  host.watches[0]!.fire([betaPath]);
+  backlogWatch()!.fire([betaPath]);
   await settle();
   expect(text(get(render(), "domain-beta"))).toBe("beta 2 open");
   expect(host.reads.filter((path) => path === DOC)).toHaveLength(1);
@@ -627,7 +687,7 @@ test("refreshes every listed summary when the watcher reports the folder root", 
     betaPath,
     JSON.stringify(add(add(emptyBacklog("beta", null), "Beta one"), "Beta two")),
   );
-  host.watches[0]!.fire([`${STATE}/backlogs`]);
+  backlogWatch()!.fire([`${STATE}/backlogs`]);
   await settle();
   expect(text(get(render(), "domain-alpha"))).toBe("alpha 1 open");
   expect(text(get(render(), "domain-beta"))).toBe("beta 2 open");
@@ -827,7 +887,7 @@ test("relists the domains when the watched backlogs folder changes", async () =>
   const { render } = await mount();
   expect(ids(render(), "no-backlogs")).toEqual(["no-backlogs"]);
   host.files.set(`${STATE}/backlogs/beta.json`, JSON.stringify(betaBacklog()));
-  host.watches[0]!.fire([`${STATE}/backlogs/beta.json`]);
+  backlogWatch()!.fire([`${STATE}/backlogs/beta.json`]);
   await settle();
   expect(ids(render(), "domain-")).toEqual(["domain-beta"]);
 });
@@ -1172,7 +1232,7 @@ test("shows a recorded note beneath completed answers and discussions", async ()
     ),
   };
   host.files.set(DOC, JSON.stringify(discussion));
-  host.watches.at(-1)!.fire([DOC]);
+  backlogWatch()!.fire([DOC]);
   await settle();
   expect(text(get(render(), "ask-answered-0-answer-note"))).toContain("Compare deployment options");
 });
@@ -1448,7 +1508,7 @@ test("falls back to the list when the open item leaves the document or focus cha
   expect(ids(render(), "screen-item")).toEqual([]);
   openDetail(view, "i2", ctx.cx);
   host.files.set(DOC, JSON.stringify({ ...withAsk(), items: withAsk().items.slice(0, 1) }));
-  host.watches.at(-1)!.fire([DOC]);
+  backlogWatch()!.fire([DOC]);
   await settle();
   const root = render();
   expect(ids(root, "screen-item")).toEqual([]);
@@ -1747,7 +1807,7 @@ test("a finding that leaves the document falls back to the lists", async () => {
   openPage(render(), "findings", ctx.cx);
   get(render(), "finding-f2").click!({}, ctx.cx);
   host.files.set(DOC, JSON.stringify({ ...withFindings(), findings: [] }));
-  host.watches.at(-1)!.fire([DOC]);
+  backlogWatch()!.fire([DOC]);
   await settle();
   const root = render();
   expect([ids(root, "screen-finding"), trail(root)]).toEqual([[], "⌂ › alpha › Findings"]);
@@ -2149,4 +2209,270 @@ test("paginates the Done status group ten rows at a time", async () => {
   get(root, "load-more-group-done").click!({}, ctx.cx);
   root = render();
   expect([ids(root, "item-").length, ids(root, "load-more-")]).toEqual([12, []]);
+});
+
+const harnessPolicyCalls = () => host.execs.filter(({ args }) => args.includes("harness-policy"));
+const policyCommandArgs = (args: string[]) => args.slice(args.indexOf("harness-policy"));
+
+test("builds scoped policy CLI commands with revision checks", () => {
+  const home = "/Users/test";
+  expect(harnessPolicyShowCommand(home, undefined)).toEqual({
+    command: "/usr/bin/env",
+    args: [
+      "-u",
+      "HC_TERMINAL_ID",
+      "bun",
+      `${home}/.claude/skills/coordinate/scripts/coordinate.ts`,
+      "harness-policy",
+      "show",
+      "--json",
+    ],
+  });
+  expect(
+    harnessPolicySetCommand(home, undefined, { enabled: [], default: null }, 4).args.slice(4),
+  ).toEqual([
+    "harness-policy",
+    "global-set",
+    "--enabled",
+    "none",
+    "--no-default",
+    "--expected-revision",
+    "4",
+    "--json",
+  ]);
+  expect(
+    harnessPolicySetCommand(home, "alpha", { enabled: ["pi"], default: "pi" }, 5).args.slice(4),
+  ).toEqual([
+    "harness-policy",
+    "domain-set",
+    "alpha",
+    "--enabled",
+    "pi",
+    "--default",
+    "pi",
+    "--expected-revision",
+    "5",
+    "--json",
+  ]);
+  expect(harnessPolicyResetCommand(home, "alpha", 6).args.slice(4)).toEqual([
+    "harness-policy",
+    "domain-reset",
+    "alpha",
+    "--expected-revision",
+    "6",
+    "--json",
+  ]);
+});
+
+test("validates canonical policy views and classifies stale and older CLI errors", () => {
+  const global = harnessPolicyOutput(policyOutput(), undefined);
+  expect(global?.global).toEqual({ source: "legacy", policy: LEGACY_POLICY });
+  const inherited = harnessPolicyOutput(policyOutput({ domain: "alpha" }), "alpha");
+  expect(inherited?.domain?.effective).toEqual(LEGACY_POLICY);
+  const invalid = JSON.parse(policyOutput()) as {
+    global: { policy: PolicySelection };
+  };
+  invalid.global.policy = { enabled: ["pi"], default: "claude" };
+  expect(harnessPolicyOutput(JSON.stringify(invalid), undefined)).toBeUndefined();
+  expect(harnessPolicyOutput(policyOutput({ domain: "alpha" }), undefined)).toBeUndefined();
+  expect(changedHarnessPolicy([`${STATE}/delegate-harness-policy.json`], STATE)).toBe(true);
+  expect(changedHarnessPolicy([`${STATE}/ended/s-a.json`], STATE)).toBe(false);
+  expect(
+    harnessPolicyFailure({
+      code: 1,
+      stdout: "",
+      stderr: "stale harness policy revision: expected 4, current 5",
+    }),
+  ).toBe("Policy changed while you were editing. Reload the policy and reapply your choices.");
+  expect(
+    harnessPolicyFailure({ code: 1, stdout: "", stderr: "Unknown command: harness-policy" }),
+  ).toBe(
+    "The installed Coordinate CLI is too old for harness policy. Update the Coordinate skill, then reopen this panel.",
+  );
+});
+
+test("edits global defaults on Domains with no entries and persists an explicit empty policy", async () => {
+  focusPlain();
+  setPolicyOutput(policyOutput({ revision: 4 }));
+  const { ctx, render } = await mount(true);
+  let root = render();
+  expect([ids(root, "domain-"), text(get(root, "no-backlogs"))]).toEqual([
+    [],
+    "No backlogs yet Run coordinate start <domain> to create one.",
+  ]);
+  expect(text(get(root, "harness-policy-global-source"))).toBe("Source Legacy defaults");
+  expect(text(get(root, "harness-policy-global-codex-unavailable"))).toBe("Codex");
+  expect(text(get(root, "harness-policy-global-enabled"))).toContain("Unavailable");
+  get(root, "harness-policy-global-enabled-pi").click!({}, ctx.cx);
+  get(render(), "harness-policy-global-enabled-claude").click!({}, ctx.cx);
+  root = render();
+  expect(text(get(root, "harness-policy-global-enabled"))).toContain("None enabled");
+  expect(get(root, "harness-policy-global-default-pi").click).toBe(undefined);
+  get(root, "harness-policy-global-save").click!({}, ctx.cx);
+  setPolicyOutput(
+    policyOutput({
+      revision: 5,
+      source: "configured",
+      global: { enabled: [], default: null },
+    }),
+  );
+  await settle();
+  const commands = harnessPolicyCalls().map(({ args }) => policyCommandArgs(args));
+  expect(commands).toEqual([
+    ["harness-policy", "show", "--json"],
+    [
+      "harness-policy",
+      "global-set",
+      "--enabled",
+      "none",
+      "--no-default",
+      "--expected-revision",
+      "4",
+      "--json",
+    ],
+    ["harness-policy", "show", "--json"],
+  ]);
+  expect(text(get(render(), "harness-policy-global-source"))).toBe("Source Global policy");
+});
+
+test("creates a domain override and reloads canonical state after save", async () => {
+  focusDomain("alpha");
+  host.files.set(DOC, JSON.stringify(emptyBacklog("alpha", null)));
+  setPolicyOutput(policyOutput({ revision: 7, domain: "alpha" }));
+  const { ctx, render } = await mount(true);
+  let root = render();
+  expect(text(get(root, "harness-policy-domain-alpha-source"))).toBe(
+    "Source Inherited from legacy defaults",
+  );
+  expect(ids(root, "harness-policy-global")).toEqual([]);
+  get(root, "harness-policy-domain-alpha-override-button").click!({}, ctx.cx);
+  expect(text(get(render(), "harness-policy-domain-alpha-source"))).toBe(
+    "Source Unsaved domain override",
+  );
+  get(render(), "harness-policy-domain-alpha-enabled-claude").click!({}, ctx.cx);
+  get(render(), "harness-policy-domain-alpha-default-pi").click!({}, ctx.cx);
+  root = render();
+  get(root, "harness-policy-domain-alpha-save").click!({}, ctx.cx);
+  setPolicyOutput(
+    policyOutput({
+      revision: 8,
+      source: "configured",
+      domain: "alpha",
+      mode: "replace",
+      override: { enabled: ["pi"], default: "pi" },
+    }),
+  );
+  await settle();
+  const commands = harnessPolicyCalls().map(({ args }) => policyCommandArgs(args));
+  expect(commands).toEqual([
+    ["harness-policy", "show", "--domain", "alpha", "--json"],
+    [
+      "harness-policy",
+      "domain-set",
+      "alpha",
+      "--enabled",
+      "pi",
+      "--default",
+      "pi",
+      "--expected-revision",
+      "7",
+      "--json",
+    ],
+    ["harness-policy", "show", "--domain", "alpha", "--json"],
+  ]);
+  expect(text(get(render(), "harness-policy-domain-alpha-source"))).toBe("Source Domain override");
+});
+
+test("resets a domain override to inherited global policy", async () => {
+  focusDomain("alpha");
+  host.files.set(DOC, JSON.stringify(emptyBacklog("alpha", null)));
+  setPolicyOutput(
+    policyOutput({
+      revision: 10,
+      source: "configured",
+      domain: "alpha",
+      mode: "replace",
+      override: { enabled: ["claude"], default: "claude" },
+    }),
+  );
+  const { ctx, render } = await mount(true);
+  get(render(), "harness-policy-domain-alpha-reset-button").click!({}, ctx.cx);
+  setPolicyOutput(policyOutput({ revision: 11, source: "configured", domain: "alpha" }));
+  await settle();
+  const commands = harnessPolicyCalls().map(({ args }) => policyCommandArgs(args));
+  expect(commands).toEqual([
+    ["harness-policy", "show", "--domain", "alpha", "--json"],
+    ["harness-policy", "domain-reset", "alpha", "--expected-revision", "10", "--json"],
+    ["harness-policy", "show", "--domain", "alpha", "--json"],
+  ]);
+  const root = render();
+  expect(text(get(root, "harness-policy-domain-alpha-source"))).toBe(
+    "Source Inherited from global policy",
+  );
+  expect(ids(root, "harness-policy-domain-alpha-reset")).toEqual([]);
+});
+
+test("keeps a validation error actionable and preserves the policy draft", async () => {
+  focusPlain();
+  setPolicyOutput(policyOutput({ revision: 2 }));
+  const { ctx, render } = await mount(true);
+  get(render(), "harness-policy-global-default-pi").click!({}, ctx.cx);
+  setPolicyOutput("", 1, "refused: policy default must be enabled");
+  get(render(), "harness-policy-global-save").click!({}, ctx.cx);
+  await settle();
+  expect(text(get(render(), "harness-policy-global-failure"))).toBe(
+    "refused: policy default must be enabled",
+  );
+  expect(ids(render(), "harness-policy-global-cancel")).toEqual(["harness-policy-global-cancel"]);
+});
+
+test("turns a stale save into a reloadable conflict and explains an older CLI", async () => {
+  focusPlain();
+  setPolicyOutput(policyOutput({ revision: 3 }));
+  const { ctx, render } = await mount(true);
+  get(render(), "harness-policy-global-enabled-pi").click!({}, ctx.cx);
+  setPolicyOutput("", 1, "stale harness policy revision: expected 3, current 4");
+  get(render(), "harness-policy-global-save").click!({}, ctx.cx);
+  setPolicyOutput(policyOutput({ revision: 4, source: "configured" }));
+  await settle();
+  expect(text(get(render(), "harness-policy-global-failure"))).toBe(
+    "Policy changed while this draft was open. Reload to discard it, then reapply your choices.",
+  );
+  expect(get(render(), "harness-policy-global-reload-button").click).toBeDefined();
+
+  focusPlain();
+  setPolicyOutput("", 1, "Unknown command: harness-policy");
+  const older = await mount(true);
+  expect(text(get(older.render(), "harness-policy-global-error"))).toBe(
+    "The installed Coordinate CLI is too old for harness policy. Update the Coordinate skill, then reopen this panel.",
+  );
+});
+
+test("reloads the policy card when the state-directory watcher sees the policy file", async () => {
+  focusPlain();
+  setPolicyOutput(policyOutput({ revision: 1 }));
+  const { render } = await mount(true);
+  setPolicyOutput(
+    policyOutput({
+      revision: 2,
+      source: "configured",
+      global: { enabled: ["claude"], default: "claude" },
+    }),
+  );
+  policyWatch()!.fire([`${STATE}/delegate-harness-policy.json`]);
+  await settle();
+  expect(text(get(render(), "harness-policy-global-source"))).toBe("Source Global policy");
+  expect(text(get(render(), "harness-policy-global-default-claude"))).toBe("Claude Code");
+});
+
+test("keeps policy editors out of domain subpages and item details", async () => {
+  focusDomain("alpha");
+  host.files.set(DOC, JSON.stringify(add(emptyBacklog("alpha", null), "A work item")));
+  setPolicyOutput(policyOutput({ revision: 1, domain: "alpha" }));
+  const { ctx, render } = await mount();
+  openPage(render(), "policies", ctx.cx);
+  expect(ids(render(), "harness-policy-domain-alpha")).toEqual([]);
+  press(render(), "crumb-domain-alpha", ctx.cx);
+  get(render(), "item-i1").click!({}, ctx.cx);
+  expect(ids(render(), "harness-policy-domain-alpha")).toEqual([]);
 });
