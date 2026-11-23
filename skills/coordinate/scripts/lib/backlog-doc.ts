@@ -839,7 +839,8 @@ export const policyRm = Effect.fn("policyRm")(function* (
  * `coordinate backlog policy replace`: replace text and date while preserving the id.
  * @param config Config.
  * @param domain Domain.
- * @param input Policy id, text, `--at`, `--json`, and the time.
+ * @param input Policy id, text, `--at`, `--wiki` (undefined keeps the citation), `--json`, and
+ * the time.
  * @returns Lines to print.
  */
 export const policyReplace = Effect.fn("policyReplace")(function* (
@@ -850,6 +851,7 @@ export const policyReplace = Effect.fn("policyReplace")(function* (
     text: string | undefined;
     markdown?: string | undefined;
     at: string | undefined;
+    wiki: string | undefined;
     json: boolean;
     now: string;
   },
@@ -860,6 +862,7 @@ export const policyReplace = Effect.fn("policyReplace")(function* (
       text: input.text,
       markdown: input.markdown,
       at: input.at ?? input.now.slice(0, 10),
+      wiki: input.wiki,
     }),
   );
   return input.json

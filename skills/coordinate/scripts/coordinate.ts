@@ -91,7 +91,9 @@ import {
   lintLines,
   lintWiki,
   markLint,
+  wikiList,
   wikiPath,
+  wikiShow,
 } from "./lib/wiki.ts";
 
 /**
@@ -1040,25 +1042,33 @@ const policyReplaceCommand = Command.make(
     ),
     md: optionalStringFlag("md", "the replacement policy as Markdown"),
     at: optionalStringFlag("at", "date it was replaced, YYYY-MM-DD (default: today)"),
+    wiki: optionalStringFlag(
+      "wiki",
+      "cite this domain or shared wiki page instead (default: keep its citation); refused when no such page exists",
+    ),
     domain: optionalStringFlag("domain", "domain (default: this coordinator's label)"),
     json: booleanFlag("json", "print the replacement policy as JSON"),
   },
   (options) =>
     execute((config) =>
-      Effect.flatMap(coordinatorDomain(Option.getOrUndefined(options.domain)), (domain) =>
-        policyReplace(config, domain, {
+      Effect.gen(function* () {
+        const domain = yield* coordinatorDomain(Option.getOrUndefined(options.domain));
+        const wiki = Option.getOrUndefined(options.wiki);
+        if (wiki !== undefined) yield* citedPage(config, domain, wiki);
+        return yield* policyReplace(config, domain, {
           id: options.id,
           text: Option.getOrUndefined(options.text),
           markdown: Option.getOrUndefined(options.md),
           at: Option.getOrUndefined(options.at),
+          wiki,
           json: options.json,
           now: new Date().toISOString(),
-        }),
-      ),
+        });
+      }),
     ),
 ).pipe(
   Command.withDescription(
-    "replace a policy (Markdown with --md) and its date while keeping its id",
+    "replace a policy (Markdown with --md) and its date while keeping its id, optionally citing another wiki page",
   ),
 );
 
@@ -1762,11 +1772,65 @@ const wikiCommitCommand = Command.make(
   ),
 );
 
+const wikiReadDomainFlag = optionalStringFlag(
+  "domain",
+  "domain (default: the calling terminal's label)",
+);
+
+const wikiListCommand = Command.make(
+  "list",
+  {
+    domain: wikiReadDomainFlag,
+    json: booleanFlag(
+      "json",
+      "print { domain, path, lastLint, pages, invalid }: each valid page's frontmatter in index order, and the names of pages with invalid frontmatter",
+    ),
+  },
+  (options) =>
+    execute((config) =>
+      Effect.flatMap(domainOfCaller(Option.getOrUndefined(options.domain)), (domain) =>
+        wikiList(config, domain, options.json),
+      ),
+    ),
+).pipe(
+  Command.withDescription(
+    "list the domain wiki's pages in index order with their type and description, and the last lint; read-only, a missing wiki lists none and is not created",
+  ),
+);
+
+const wikiShowCommand = Command.make(
+  "show",
+  {
+    name: argument("name", "page name, as wiki list prints it"),
+    domain: wikiReadDomainFlag,
+    json: booleanFlag(
+      "json",
+      "print { domain, name, file, meta, errors, body }: meta is null when the frontmatter is invalid",
+    ),
+  },
+  (options) =>
+    execute((config) =>
+      Effect.flatMap(domainOfCaller(Option.getOrUndefined(options.domain)), (domain) =>
+        wikiShow(config, domain, { name: options.name, json: options.json }),
+      ),
+    ),
+).pipe(
+  Command.withDescription(
+    "print one domain wiki page's frontmatter and Markdown body; read-only, refused for a name wiki list does not print",
+  ),
+);
+
 const wikiCommand = Command.make("wiki").pipe(
   Command.withDescription(
-    "locate, lint and commit the domain's wiki of dated knowledge pages (the coordinator is its only writer)",
+    "locate, read, lint and commit the domain's wiki of dated knowledge pages (the coordinator is its only writer)",
   ),
-  Command.withSubcommands([wikiPathCommand, wikiLintCommand, wikiCommitCommand]),
+  Command.withSubcommands([
+    wikiPathCommand,
+    wikiListCommand,
+    wikiShowCommand,
+    wikiLintCommand,
+    wikiCommitCommand,
+  ]),
 );
 
 const watchOutboxCommand = Command.make(

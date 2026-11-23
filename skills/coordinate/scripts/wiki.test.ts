@@ -664,3 +664,202 @@ describe("coordinate backlog policy add --wiki", () => {
     expect(JSON.parse(run(["backlog", "show", "--json"]).stdout).policies).toEqual([]);
   }, 30_000);
 });
+
+// Run the CLI as the Backlog panel does: outside every Herdr terminal, HC_TERMINAL_ID unset.
+const outside = (env: Record<string, string>, args: string[]): Result => {
+  const { HC_TERMINAL_ID: _, ...rest } = env;
+  const result = Bun.spawnSync(["bun", cli, ...args], {
+    env: rest,
+    stdout: "pipe",
+    stderr: "pipe",
+    timeout: 15_000,
+  });
+  return {
+    exit: result.exitCode ?? 1,
+    stdout: result.stdout.toString(),
+    stderr: result.stderr.toString(),
+  };
+};
+
+describe("coordinate wiki list and show", () => {
+  it("lists no pages for a missing wiki and creates nothing", () => {
+    const { state, run, env } = sandbox();
+    expect(JSON.parse(run(["wiki", "list", "--json"]).stdout)).toEqual({
+      domain: "app",
+      path: join(state, "wiki", "app"),
+      lastLint: null,
+      pages: [],
+      invalid: [],
+    });
+    expect(run(["wiki", "list"])).toEqual({
+      exit: 0,
+      stdout: `no pages in the app wiki (${state}/wiki/app)\n`,
+      stderr: "",
+    });
+    expect(outside(env, ["wiki", "show", "poll-interval", "--domain", "app"])).toEqual({
+      exit: 1,
+      stdout: "",
+      stderr: `refused: no page [[poll-interval]] in the app wiki (${state}/wiki/app)\n`,
+    });
+    expect(existsSync(join(state, "wiki"))).toBe(false);
+  }, 30_000);
+
+  it("lists pages in index order with their frontmatter and the last lint, from outside a terminal", () => {
+    const { state, env, run } = sandbox();
+    const wiki = run(["wiki", "path"]).stdout.trim();
+    writeFileSync(
+      join(wiki, "index.md"),
+      "# app wiki\n\n## problem\n\n- [[zeta]]: z\n\n## subsystem\n\n- [[alpha]]: a\n",
+    );
+    writeFileSync(join(wiki, "alpha.md"), page(fields("alpha"), "# Alpha\n\nSee [[zeta]].\n"));
+    writeFileSync(
+      join(wiki, "zeta.md"),
+      page(
+        fields("zeta", {
+          type: "problem",
+          covers: [{ repo: "github.com/acme/widgets", globs: ["src/*.ts"] }],
+        }),
+        "Zeta.\n",
+      ),
+    );
+    writeFileSync(join(wiki, "middle.md"), page(fields("middle"), "Unindexed.\n"));
+    writeFileSync(join(wiki, "broken.md"), "no frontmatter\n");
+    mkdirSync(join(state, "wiki-lint"), { recursive: true });
+    writeFileSync(join(state, "wiki-lint", "app.json"), '{"lastLint":"2026-11-22"}\n');
+
+    const meta = (name: string, extra: Record<string, unknown> = {}) => ({
+      ...fields(name),
+      covers: [],
+      ...extra,
+    });
+    const listed = outside(env, ["wiki", "list", "--domain", "app", "--json"]);
+    expect([listed.exit, JSON.parse(listed.stdout)]).toEqual([
+      0,
+      {
+        domain: "app",
+        path: wiki,
+        lastLint: "2026-11-22",
+        pages: [
+          meta("zeta", {
+            type: "problem",
+            covers: [{ repo: "github.com/acme/widgets", globs: ["src/*.ts"] }],
+          }),
+          meta("alpha"),
+          meta("middle"),
+        ],
+        invalid: ["broken"],
+      },
+    ]);
+    expect(Object.keys(JSON.parse(listed.stdout).pages[1])).toEqual([
+      "name",
+      "description",
+      "type",
+      "covers",
+      "created",
+      "updated",
+      "sources",
+      "supersedes",
+    ]);
+    expect(run(["wiki", "list"]).stdout).toBe(
+      [
+        "zeta (problem): about zeta",
+        "alpha (subsystem): about alpha",
+        "middle (subsystem): about middle",
+        "broken: invalid frontmatter, run coordinate wiki lint",
+        "last lint: 2026-11-22",
+        "",
+      ].join("\n"),
+    );
+
+    // The panel's form: flags first, then the name after --.
+    const shown = outside(env, ["wiki", "show", "--domain", "app", "--json", "--", "alpha"]);
+    expect([shown.exit, JSON.parse(shown.stdout)]).toEqual([
+      0,
+      {
+        domain: "app",
+        name: "alpha",
+        file: join(wiki, "alpha.md"),
+        meta: meta("alpha"),
+        errors: [],
+        body: "# Alpha\n\nSee [[zeta]].\n",
+      },
+    ]);
+    expect(run(["wiki", "show", "alpha"]).stdout).toBe(
+      "alpha (subsystem): about alpha\ncreated 2026-11-20, updated 2026-11-21\n\n# Alpha\n\nSee [[zeta]].\n",
+    );
+    const invalid = JSON.parse(run(["wiki", "show", "broken", "--json"]).stdout);
+    expect([invalid.meta, invalid.errors, invalid.body]).toEqual([
+      null,
+      ["the page does not start with a --- frontmatter block"],
+      "no frontmatter\n",
+    ]);
+    for (const ref of ["index", "../app/alpha", "ghost"])
+      expect(run(["wiki", "show", ref])).toEqual({
+        exit: 1,
+        stdout: "",
+        stderr: `refused: no page [[${ref}]] in the app wiki (${wiki})\n`,
+      });
+  }, 30_000);
+});
+
+describe("coordinate backlog policy replace --wiki", () => {
+  it("cites a new page, keeps the citation without the flag, and refuses an unknown page", () => {
+    const { state, run, wiki } = linted();
+    writeFileSync(join(wiki, "old-reason.md"), page(fields("old-reason"), "Old.\n"));
+    writeFileSync(join(wiki, "new-reason.md"), page(fields("new-reason"), "New.\n"));
+    expect(
+      run(["backlog", "policy", "add", "rule", "--at", "2026-11-23", "--wiki", "old-reason"]).exit,
+    ).toBe(0);
+    expect(run(["backlog", "policy", "add", "plain", "--at", "2026-11-23"]).exit).toBe(0);
+
+    const documentFile = join(state, "backlogs", "app.json");
+    const before = readFileSync(documentFile, "utf8");
+    const shared = join(state, "wiki", "_shared");
+    for (const ref of ["ghost", "index"])
+      expect(run(["backlog", "policy", "replace", "p1", "rule 2", "--wiki", ref])).toEqual({
+        exit: 1,
+        stdout: "",
+        stderr: `refused: no page [[${ref}]] in the app wiki (${wiki}) or the shared wiki (${shared})\n`,
+      });
+    expect(readFileSync(documentFile, "utf8")).toBe(before);
+
+    expect(
+      run([
+        "backlog",
+        "policy",
+        "replace",
+        "p1",
+        "rule 2",
+        "--at",
+        "2026-11-24",
+        "--wiki",
+        "new-reason",
+      ]),
+    ).toEqual({
+      exit: 0,
+      stdout: "replaced policy p1: rule 2 (wiki: [[new-reason]])\n",
+      stderr: "",
+    });
+    const cited = run([
+      "backlog",
+      "policy",
+      "replace",
+      "p2",
+      "plain 2",
+      "--at",
+      "2026-11-24",
+      "--wiki",
+      "old-reason",
+      "--json",
+    ]);
+    expect(JSON.parse(cited.stdout)).toEqual({
+      id: "p2",
+      text: "plain 2",
+      at: "2026-11-24",
+      wiki: "old-reason",
+    });
+    expect(run(["backlog", "policy", "replace", "p1", "rule 3", "--at", "2026-11-25"]).stdout).toBe(
+      "replaced policy p1: rule 3 (wiki: [[new-reason]])\n",
+    );
+  }, 30_000);
+});

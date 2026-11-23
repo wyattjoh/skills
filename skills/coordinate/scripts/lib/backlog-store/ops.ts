@@ -899,25 +899,36 @@ export const removePolicy = (backlog: Backlog, id: string): OpResult<Policy> => 
 };
 
 /**
- * Replace a policy's text or Markdown and date while preserving its stable id and wiki citation.
+ * Replace a policy's text or Markdown and date while preserving its stable id, and its wiki
+ * citation unless a new one is given.
  * @param backlog Current document.
- * @param input The policy id, replacement text or Markdown, and date.
+ * @param input The policy id, replacement text or Markdown, date, and the page to cite instead,
+ * if any.
  * @returns The next document and the updated policy.
  */
 export const replacePolicy = (
   backlog: Backlog,
-  input: { id: string; text: string | undefined; markdown?: string | undefined; at: string },
+  input: {
+    id: string;
+    text: string | undefined;
+    markdown?: string | undefined;
+    at: string;
+    wiki: string | undefined;
+  },
 ): OpResult<Policy> => {
   const found = backlog.policies.find((entry) => entry.id === input.id);
   if (!found) return { ok: false, reason: `no policy ${input.id} in ${backlog.domain}` };
   const body = policyBody(input.text, input.markdown);
   if (typeof body === "string") return { ok: false, reason: body };
+  const problem = input.wiki === undefined ? undefined : oneLine("--wiki", input.wiki);
+  if (problem) return { ok: false, reason: problem };
   if (!isDate(input.at)) return { ok: false, reason: "--at must be YYYY-MM-DD" };
+  const cited = input.wiki ?? found.wiki;
   const policy: Policy = {
     id: found.id,
     ...body,
     at: input.at,
-    ...(found.wiki === undefined ? {} : { wiki: found.wiki }),
+    ...(cited === undefined ? {} : { wiki: cited }),
   };
   return {
     ok: true,

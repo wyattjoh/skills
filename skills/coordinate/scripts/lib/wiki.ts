@@ -468,6 +468,121 @@ export const readWiki = (path: string) =>
   });
 
 /**
+ * A valid page's frontmatter in a fixed key order, so its JSON reads the same whatever order the
+ * file wrote its keys in.
+ * @param meta The page's frontmatter.
+ * @returns The same fields, ordered as the schema lists them.
+ */
+const orderedMeta = (meta: PageMeta): PageMeta => ({
+  name: meta.name,
+  description: meta.description,
+  type: meta.type,
+  covers: meta.covers,
+  created: meta.created,
+  updated: meta.updated,
+  sources: meta.sources,
+  supersedes: meta.supersedes,
+});
+
+/**
+ * Pages in index order: those `index.md` links to, in the order of its first link to each, then
+ * the rest by name.
+ * @param pages Pages as `readWiki` lists them, sorted by name.
+ * @param index The index text.
+ * @returns The pages, reordered.
+ */
+const inIndexOrder = (pages: readonly Page[], index: string): Page[] => {
+  const linked = linksIn(prose(index.split("\n").map((text, at) => ({ line: at + 1, text }))));
+  const rank = new Map(linked.map((name, at) => [name, at] as const));
+  const place = (page: Page) => rank.get(page.name) ?? linked.length;
+  return pages.toSorted((a, b) => place(a) - place(b));
+};
+
+/**
+ * The domain wiki's pages, read without creating the wiki: none when its folder does not exist.
+ * @param config Config.
+ * @param domain Domain.
+ * @returns The wiki's folder and its pages in index order.
+ */
+const domainPages = Effect.fn("domainPages")(function* (config: Config, domain: string) {
+  const path = wikiDir(config.stateDir, domain);
+  if (!existsSync(path)) return { path, pages: [] as Page[] };
+  const { pages, index } = yield* readWiki(path);
+  return { path, pages: inIndexOrder(pages, index) };
+});
+
+/**
+ * `coordinate wiki list`: the domain wiki's pages in index order with their frontmatter, the
+ * pages whose frontmatter is invalid, and the last recorded passing lint. Read-only: a missing
+ * wiki lists no pages and is not created.
+ * @param config Config.
+ * @param domain Domain.
+ * @param json `--json`.
+ * @returns Lines to print.
+ */
+export const wikiList = Effect.fn("wikiList")(function* (
+  config: Config,
+  domain: string,
+  json: boolean,
+) {
+  const { path, pages } = yield* domainPages(config, domain);
+  const valid = pages.flatMap((page) => (page.meta === undefined ? [] : [orderedMeta(page.meta)]));
+  const invalid = pages.filter((page) => page.meta === undefined).map((page) => page.name);
+  const linted = (yield* lastLint(config, domain)) ?? null;
+  if (json)
+    return [JSON.stringify({ domain, path, lastLint: linted, pages: valid, invalid }, null, 2)];
+  if (pages.length === 0) return [`no pages in the ${domain} wiki (${path})`];
+  return [
+    ...valid.map((meta) => `${meta.name} (${meta.type}): ${meta.description}`),
+    ...invalid.map((name) => `${name}: invalid frontmatter, run coordinate wiki lint`),
+    `last lint: ${linted ?? "never"}`,
+  ];
+});
+
+/**
+ * `coordinate wiki show`: one domain wiki page's frontmatter (null when invalid, with the
+ * reasons) and its Markdown body. Names match as `wiki list` lists them, so `index` and paths
+ * are refused; a missing wiki is not created.
+ * @param config Config.
+ * @param domain Domain.
+ * @param input The page name and `--json`.
+ * @returns Lines to print.
+ */
+export const wikiShow = Effect.fn("wikiShow")(function* (
+  config: Config,
+  domain: string,
+  input: { name: string; json: boolean },
+) {
+  const { path, pages } = yield* domainPages(config, domain);
+  const page = pages.find((entry) => entry.name === input.name);
+  if (page === undefined)
+    return yield* new Refused({
+      message: `no page [[${input.name}]] in the ${domain} wiki (${path})`,
+    });
+  const body = page.body
+    .map((entry) => entry.text)
+    .join("\n")
+    .replace(/^\n+/, "");
+  const meta = page.meta === undefined ? null : orderedMeta(page.meta);
+  if (input.json)
+    return [
+      JSON.stringify(
+        { domain, name: page.name, file: join(path, page.file), meta, errors: page.errors, body },
+        null,
+        2,
+      ),
+    ];
+  const head =
+    meta === null
+      ? [`${page.name}: invalid frontmatter: ${page.errors.join("; ")}`]
+      : [
+          `${meta.name} (${meta.type}): ${meta.description}`,
+          `created ${meta.created}, updated ${meta.updated}`,
+        ];
+  return [...head, "", body.replace(/\n+$/, "")];
+});
+
+/**
  * Check that a policy's `--wiki` citation names a page in the domain's wiki or the shared wiki,
  * matching page names as `readWiki` lists them (so `index` and paths never match). A missing
  * wiki has no pages; neither wiki is created.
