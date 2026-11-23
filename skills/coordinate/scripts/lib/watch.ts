@@ -23,7 +23,7 @@ import {
 } from "./capacity-queue.ts";
 import { liveDelegateCount, machineDelegateBudget } from "./delegate-capacity.ts";
 import { resolveEffectiveHarnessPolicy } from "./harness-policy.ts";
-import { settledWikiPages } from "./wiki.ts";
+import { lastLint, LINT_INTERVAL_DAYS, settledWikiPages, wikiCreated } from "./wiki.ts";
 
 /**
  * What the watcher remembers about one delegate terminal.
@@ -136,6 +136,8 @@ export type WatchSnapshot = {
   capacity: Record<string, { order: number; ready: boolean }>;
   /** Last effective policy signature, or its current read error. */
   harnessPolicy: string | undefined;
+  /** The last `lint-due` date that fired; absent until the first one. */
+  lintDue: string | undefined;
 };
 
 /** The watcher's committed snapshot, pending events, and recovery point. */
@@ -157,6 +159,7 @@ export const emptyState = (): WatchState => ({
   idle: {},
   capacity: {},
   harnessPolicy: undefined,
+  lintDue: undefined,
   outbox: [],
   nextEventId: 1,
   staged: undefined,
@@ -364,6 +367,44 @@ export const capacityWakeEvents = (
   return { events, capacity };
 };
 
+const DAY_MS = 86_400_000;
+
+/**
+ * The weekly wiki-hygiene event: once the latest lapsed interval since the last marked lint (or,
+ * before any, the wiki's creation) is due on or before `today`, fire it unless that due date, or
+ * a later one, already fired. Only the latest lapsed date fires, so weeks missed while no watcher
+ * ran do not flood.
+ * @param base The last lint date, or the wiki's creation date; undefined when there is no wiki.
+ * @param last The last lint date, or undefined when none is recorded.
+ * @param today Today, `YYYY-MM-DD`.
+ * @param fired The last due date that fired.
+ * @returns The events and the fired due date to keep.
+ */
+const lintDueEvents = (
+  base: string | undefined,
+  last: string | undefined,
+  today: string,
+  fired: string | undefined,
+) => {
+  if (base === undefined) return { events: [], fired };
+  const start = Date.parse(`${base}T00:00:00Z`);
+  const days = Math.floor((Date.parse(`${today}T00:00:00Z`) - start) / DAY_MS);
+  const intervals = Math.floor(days / LINT_INTERVAL_DAYS);
+  if (!Number.isFinite(intervals) || intervals < 1) return { events: [], fired };
+  const due = new Date(start + intervals * LINT_INTERVAL_DAYS * DAY_MS).toISOString().slice(0, 10);
+  if (fired !== undefined && fired >= due) return { events: [], fired };
+  return {
+    events: [
+      watchEvent(
+        "lint-due",
+        { due, last: last ?? "never" },
+        "run wiki lint, close stale findings and look for contradictions between pages, then run wiki lint --mark",
+      ),
+    ],
+    fired: due,
+  };
+};
+
 /**
  * Due events for open items due on or before `today`, oldest first, skipping keys already fired.
  * The key is the item id plus its date, so a title edit never re-fires and a new date fires once.
@@ -470,6 +511,7 @@ const readState = (path: string) =>
         idle: parsed.idle ?? {},
         capacity: parsed.capacity ?? {},
         harnessPolicy: parsed.harnessPolicy,
+        lintDue: parsed.lintDue,
         outbox: (parsed.outbox ?? []).map(persistedEvent),
         nextEventId: parsed.nextEventId ?? 1,
         staged: parsed.staged,
@@ -658,6 +700,8 @@ export const watch = Effect.fn("watch")(function* (config: Config, options: Watc
     let failures = 0;
     let failureMessage = "";
     let first = saved === undefined;
+    // A wiki's creation date never changes, so it is read from git once, after the wiki exists.
+    let wikiStart: string | undefined;
 
     const appendLog = (event: WatchEvent, delivery: string, at: number) => {
       log.push({ at, event, delivery });
@@ -743,6 +787,7 @@ export const watch = Effect.fn("watch")(function* (config: Config, options: Watc
           Object.entries(state.capacity).map(([machine, ready]) => [machine, { ...ready }]),
         ),
         harnessPolicy: state.harnessPolicy,
+        lintDue: state.lintDue,
       };
       const lines: WatchEventData[] = [];
       const policy = yield* resolveEffectiveHarnessPolicy(config, options.domain).pipe(
@@ -869,6 +914,18 @@ export const watch = Effect.fn("watch")(function* (config: Config, options: Watc
         lines.push(...discussed.events);
         snapshot.discussed = discussed.fired;
       }
+      // The lint clock is read every tick: `wiki lint --mark` writes it while this watcher runs.
+      // No wiki, no lint-due, even when a lint was marked.
+      wikiStart ??= yield* wikiCreated(config, options.domain);
+      const linted = wikiStart === undefined ? undefined : yield* lastLint(config, options.domain);
+      const lint = lintDueEvents(
+        wikiStart === undefined ? undefined : (linted ?? wikiStart),
+        linted,
+        options.today(),
+        snapshot.lintDue,
+      );
+      lines.push(...lint.events);
+      snapshot.lintDue = lint.fired;
       const readQueue = yield* readCapacityQueue(config, options.domain).pipe(Effect.result);
       if (Result.isFailure(readQueue)) {
         lines.push(

@@ -1,8 +1,8 @@
 import { existsSync } from "node:fs";
 import { mkdir, readdir, readFile, writeFile } from "node:fs/promises";
-import { isAbsolute, join, relative } from "node:path";
+import { dirname, isAbsolute, join, relative } from "node:path";
 import { Effect, Option } from "effect";
-import { readDocument } from "./backlog-doc.ts";
+import { readDocument, writeAtomic } from "./backlog-doc.ts";
 import { backlogsDir } from "./backlog-store/paths.ts";
 import type { Backlog } from "./backlog-store/schema.ts";
 import { expandHome, type Config } from "./config.ts";
@@ -778,4 +778,73 @@ export const writeDelegateWiki = Effect.fn("writeDelegateWiki")(function* (
     await writeFile(destination, text);
   });
   return destination;
+});
+
+/**
+ * How many days after the last lint (or the wiki's creation) the watcher fires `lint-due`.
+ */
+export const LINT_INTERVAL_DAYS = 7;
+
+/**
+ * Where `wiki lint --mark` records a domain's last passing lint: its own folder, apart from the
+ * watcher's snapshot, which the running watcher rewrites every tick. The CLI is this file's only
+ * writer, and the watcher reads it each tick.
+ * @param stateDir Coordinate state directory.
+ * @param domain Domain.
+ * @returns The file.
+ */
+export const lintClockPath = (stateDir: string, domain: string): string =>
+  join(stateDir, "wiki-lint", `${domain}.json`);
+
+/**
+ * The domain's last recorded passing lint, as `YYYY-MM-DD`; undefined when none is recorded or
+ * the file cannot be read.
+ * @param config Config.
+ * @param domain Domain.
+ * @returns The date.
+ */
+export const lastLint = (config: Config, domain: string) =>
+  Effect.promise(async (): Promise<string | undefined> => {
+    try {
+      const parsed = JSON.parse(await readFile(lintClockPath(config.stateDir, domain), "utf8")) as {
+        lastLint?: unknown;
+      };
+      return typeof parsed.lastLint === "string" && DATE.test(parsed.lastLint)
+        ? parsed.lastLint
+        : undefined;
+    } catch {
+      return undefined;
+    }
+  });
+
+/**
+ * Record a passing lint of the domain wiki, which restarts the watcher's `lint-due` clock.
+ * @param config Config.
+ * @param domain Domain.
+ * @param today The date to record, `YYYY-MM-DD` (UTC, like the watcher's).
+ */
+export const markLint = Effect.fn("markLint")(function* (
+  config: Config,
+  domain: string,
+  today: string,
+) {
+  const path = lintClockPath(config.stateDir, domain);
+  yield* Effect.promise(() => mkdir(dirname(path), { recursive: true }));
+  yield* writeAtomic(path, `${JSON.stringify({ lastLint: today })}\n`);
+});
+
+/**
+ * The UTC date of the domain wiki's first commit, the `lint-due` clock's start before any lint is
+ * recorded; undefined when the wiki does not exist yet.
+ * @param config Config.
+ * @param domain Domain.
+ * @returns `YYYY-MM-DD`, or undefined.
+ */
+export const wikiCreated = Effect.fn("wikiCreated")(function* (config: Config, domain: string) {
+  const path = wikiDir(config.stateDir, domain);
+  if (!existsSync(join(path, ".git"))) return undefined;
+  const out = yield* gitTry(path, ["log", "--max-parents=0", "--format=%ct", "-1"]);
+  const seconds = Number(out);
+  if (out === undefined || out === "" || !Number.isFinite(seconds)) return undefined;
+  return new Date(seconds * 1000).toISOString().slice(0, 10);
 });

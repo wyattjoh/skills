@@ -75,7 +75,15 @@ import {
   stopDeletedFolders,
 } from "./lib/sweep.ts";
 import { mainCheckout } from "./lib/git.ts";
-import { citedPage, commitWiki, lintLines, lintWiki, wikiPath } from "./lib/wiki.ts";
+import {
+  citedPage,
+  commitWiki,
+  LINT_INTERVAL_DAYS,
+  lintLines,
+  lintWiki,
+  markLint,
+  wikiPath,
+} from "./lib/wiki.ts";
 
 /**
  * The failure to report from a cause: its typed error, else a `MissingFolder` thrown while
@@ -1455,22 +1463,41 @@ const wikiLintCommand = Command.make(
     shared: sharedFlag,
     domain: wikiDomainFlag,
     json: booleanFlag("json", "print path, page count and problems as JSON"),
+    mark: booleanFlag(
+      "mark",
+      "when lint passes, record today as the last lint, restarting the watcher's weekly lint-due",
+    ),
   },
   (options) =>
     execute((config) =>
-      Effect.flatMap(coordinatorDomain(Option.getOrUndefined(options.domain)), (domain) =>
-        lintWiki(config, domain, { shared: options.shared, now: new Date() }).pipe(
-          Effect.map((result) => {
-            // Problems exit 1: fix the pages (or close the findings) and lint again.
-            if (result.problems.length > 0) process.exitCode = 1;
-            return options.json ? [JSON.stringify(result, null, 2)] : lintLines(result);
-          }),
-        ),
-      ),
+      Effect.gen(function* () {
+        const domain = yield* coordinatorDomain(Option.getOrUndefined(options.domain));
+        if (options.mark && options.shared)
+          return yield* new Refused({
+            message: "--mark records the domain wiki's lint clock; run it without --shared",
+          });
+        const now = new Date();
+        const result = yield* lintWiki(config, domain, { shared: options.shared, now });
+        // Problems exit 1: fix the pages (or close the findings) and lint again.
+        if (result.problems.length > 0) process.exitCode = 1;
+        const marked =
+          options.mark && result.problems.length === 0 ? now.toISOString().slice(0, 10) : null;
+        if (marked !== null) yield* markLint(config, domain, marked);
+        if (options.json)
+          return [JSON.stringify(options.mark ? { ...result, marked } : result, null, 2)];
+        return [
+          ...lintLines(result),
+          ...(marked === null
+            ? []
+            : [
+                `recorded the last lint as ${marked}; the watcher's next lint-due is ${LINT_INTERVAL_DAYS} days later`,
+              ]),
+        ];
+      }),
     ),
 ).pipe(
   Command.withDescription(
-    "check the wiki: frontmatter, orphans, index.md, [[links]], undated claims about code, covers globs, findings open over 14 days; exit 1 on problems",
+    "check the wiki: frontmatter, orphans, index.md, [[links]], undated claims about code, covers globs, findings open over 14 days; exit 1 on problems; --mark records a pass for the watcher's weekly lint-due",
   ),
 );
 

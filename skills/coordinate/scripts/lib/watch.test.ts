@@ -25,6 +25,7 @@ import {
   type WatchEventData,
 } from "./watch.ts";
 import { acquireLock, lockPath, releaseLock } from "./watch-lock.ts";
+import { markLint } from "./wiki.ts";
 
 const made: string[] = [];
 afterAll(() => {
@@ -1057,6 +1058,113 @@ describe("watch due events", () => {
       '<event kind="due" item="i1" due="2026-11-12"><title>Fix login</title></event>',
     ]);
     expect(await arm("2026-11-12")).toEqual(alive);
+  });
+});
+
+const CREATED = Date.UTC(2026, 10, 1, 12) / 1000;
+
+/** Answer the wiki's root-commit query with a creation on 2026-11-01, and an empty Herdr. */
+const wikiHc = (argv: readonly string[]): RunOutput => {
+  if (argv[0] === "hc" && argv[1] === "ls") return ok('{"terminals":[]}');
+  if (argv[0] === "git" && argv.includes("--max-parents=0")) return ok(`${CREATED}\n`);
+  throw new Error(`unexpected command: ${argv.join(" ")}`);
+};
+
+const lintDomain = async (withWiki = true) => {
+  const state = tempDir();
+  made.push(state);
+  const config = await Effect.runPromise(
+    resolveConfig({ state_dir: state, backlog_dir: join(state, "md") }, "/c"),
+  );
+  await runWith(createDocument(config, "app"));
+  if (withWiki) mkdirSync(join(state, "wiki", "app", ".git"), { recursive: true });
+  const options = (today: string, emit: (line: string) => void) => ({
+    domain: "app",
+    intervalMs: 5,
+    forgeIntervalMs: 60_000,
+    maxMs: 20,
+    owner: undefined,
+    replace: false,
+    deliver: false,
+    today: () => today,
+    follow: false,
+    emit,
+  });
+  const fake = fakeProc(wikiHc);
+  const arm = async (today: string) => {
+    const emitted: string[] = [];
+    const returned = await runWith(
+      watch(
+        config,
+        options(today, (line) => {
+          emitted.push(line);
+        }),
+      ),
+      fake.layer,
+    );
+    return [...returned, ...emitted.map(eventText)];
+  };
+  return { config, state, arm, options, fake, stateFile: join(state, "watch", "app.json") };
+};
+
+const lintDue = (due: string, last: string) =>
+  `<event kind="lint-due" due="${due}" last="${last}">run wiki lint, close stale findings and look for contradictions between pages, then run wiki lint --mark</event>`;
+
+describe("watch lint-due events", () => {
+  it("fires once per lapsed week from the wiki's creation, then from each marked lint", async () => {
+    const { config, state, arm, stateFile } = await lintDomain();
+    expect(await arm("2026-11-07")).toEqual(alive);
+    expect(await arm("2026-11-08")).toEqual([lintDue("2026-11-08", "never")]);
+    expect(await arm("2026-11-08")).toEqual(alive);
+    expect(await arm("2026-11-14")).toEqual(alive);
+    expect(await arm("2026-11-15")).toEqual([lintDue("2026-11-15", "never")]);
+    // Several weeks lapsed while nothing watched: one event for the latest, not one per week.
+    expect(await arm("2026-11-30")).toEqual([lintDue("2026-11-29", "never")]);
+    expect(JSON.parse(readFileSync(stateFile, "utf8")).lintDue).toBe("2026-11-29");
+
+    await runWith(markLint(config, "app", "2026-11-30"));
+    expect(await arm("2026-12-06")).toEqual(alive);
+    expect(JSON.parse(readFileSync(join(state, "wiki-lint", "app.json"), "utf8"))).toEqual({
+      lastLint: "2026-11-30",
+    });
+    expect(await arm("2026-12-07")).toEqual([lintDue("2026-12-07", "2026-11-30")]);
+    expect(await arm("2026-12-13")).toEqual(alive);
+    expect(await arm("2026-12-14")).toEqual([lintDue("2026-12-14", "2026-11-30")]);
+  });
+
+  it("fires nothing for a domain without a wiki, even with a marked lint, and asks git nothing", async () => {
+    const { config, arm, fake } = await lintDomain(false);
+    await runWith(markLint(config, "app", "2026-11-01"));
+    expect(await arm("2026-12-31")).toEqual(alive);
+    expect(fake.calls.filter((call) => call.argv[0] === "git")).toEqual([]);
+  });
+
+  it("redelivers a lint-due that stdout refused with the same id, then never again", async () => {
+    const { config, options, fake, stateFile } = await lintDomain();
+    const refused: string[] = [];
+    await expect(
+      runWith(
+        watch(
+          config,
+          options("2026-11-08", (line) => {
+            refused.push(line);
+            throw new Error("stdout unavailable");
+          }),
+        ),
+        fake.layer,
+      ),
+    ).rejects.toThrow("stdout unavailable");
+    const line = lintDue("2026-11-08", "never").replace("<event ", '<event id="e1" ');
+    expect(refused).toEqual([line]);
+    const delivered: string[] = [];
+    const emit = (sent: string) => {
+      delivered.push(sent);
+    };
+    expect(await runWith(watch(config, options("2026-11-08", emit)), fake.layer)).toEqual([]);
+    expect(await runWith(watch(config, options("2026-11-09", emit)), fake.layer)).toEqual(alive);
+    expect(delivered).toEqual([line]);
+    const saved = JSON.parse(readFileSync(stateFile, "utf8"));
+    expect([saved.lintDue, saved.outbox, saved.nextEventId]).toEqual(["2026-11-08", [], 2]);
   });
 });
 

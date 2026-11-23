@@ -213,6 +213,42 @@ describe("coordinate wiki lint", () => {
   }, 30_000);
 });
 
+describe("coordinate wiki lint --mark", () => {
+  it("records the last-lint date only when lint passes, for the domain wiki only", () => {
+    const { state, run, wiki } = linted();
+    const clock = join(state, "wiki-lint", "app.json");
+    writeFileSync(join(wiki, "index.md"), "# app wiki\n\n- [[ghost]]\n");
+    expect(run(["wiki", "lint", "--mark"])).toEqual({
+      exit: 1,
+      stdout: `broken link: index.md: [[ghost]] names no page\nwiki lint: 1 problems in ${wiki}\n`,
+      stderr: "",
+    });
+    expect(existsSync(clock)).toBe(false);
+
+    writeFileSync(join(wiki, "index.md"), "# app wiki\n");
+    const today = new Date().toISOString().slice(0, 10);
+    expect(run(["wiki", "lint", "--mark"])).toEqual({
+      exit: 0,
+      stdout: `wiki lint: ${wiki} is clean (0 pages)\nrecorded the last lint as ${today}; the watcher's next lint-due is 7 days later\n`,
+      stderr: "",
+    });
+    expect(JSON.parse(readFileSync(clock, "utf8"))).toEqual({ lastLint: today });
+    expect(JSON.parse(run(["wiki", "lint", "--mark", "--json"]).stdout)).toEqual({
+      path: wiki,
+      pages: 0,
+      problems: [],
+      marked: today,
+    });
+
+    mkdirSync(join(state, "wiki", "_shared"), { recursive: true });
+    const shared = run(["wiki", "lint", "--mark", "--shared"]);
+    expect([shared.exit, shared.stdout]).toEqual([1, ""]);
+    expect(shared.stderr).toContain(
+      "refused: --mark records the domain wiki's lint clock; run it without --shared\n",
+    );
+  }, 30_000);
+});
+
 describe("coordinate wiki commit", () => {
   it("refuses a commit while lint fails and commits once it passes", () => {
     const { run, wiki, env } = linted();
