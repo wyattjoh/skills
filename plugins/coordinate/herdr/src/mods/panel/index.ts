@@ -183,6 +183,9 @@ export default class Panel extends View {
   answerFlowMotion: AnswerFlowTransition | undefined;
   answerFlowMotionGeneration = 0;
   answerFlowCardSizes = new Map<string, FlowCardSize>();
+  // Sizes a card reported while a motion ran. Layout holds still during the motion, so these wait
+  // here: a size callback fires only when the size changes, so a dropped report is never repeated.
+  answerFlowDeferredSizes = new Map<string, FlowCardSize>();
   answerFlowViewport: { domain: string; width: number; height: number } | undefined;
   boundaryInput: InputState | undefined;
   boundaryEditing: { domain: string; list: BoundaryList } | undefined;
@@ -613,9 +616,26 @@ export default class Panel extends View {
     cx.notify();
   }
 
+  // Make the sizes reported during a motion the measured ones. Nothing remeasures a card whose
+  // size already changed, so a stale size would outlive the content it measured.
+  applyDeferredAnswerFlowSizes() {
+    for (const [key, sizes] of this.answerFlowDeferredSizes) {
+      const previous = this.answerFlowCardSizes.get(key) ?? {
+        compact: undefined,
+        expanded: undefined,
+      };
+      this.answerFlowCardSizes.set(key, {
+        compact: sizes.compact ?? previous.compact,
+        expanded: sizes.expanded ?? previous.expanded,
+      });
+    }
+    this.answerFlowDeferredSizes.clear();
+  }
+
   invalidateAnswerFlowMotion() {
     this.answerFlowMotionGeneration += 1;
     this.answerFlowMotion = undefined;
+    this.applyDeferredAnswerFlowSizes();
     this.clearAnswerFlowLayoutPending();
   }
 
@@ -693,8 +713,15 @@ export default class Panel extends View {
     size: FlowCardMeasurement,
     cx: Context,
   ) {
-    if (this.answerFlowMotion !== undefined || size.width <= 0 || size.height <= 0) return;
+    if (size.width <= 0 || size.height <= 0) return;
     const key = this.flowCardSizeKey(domain, id);
+    if (this.answerFlowMotion !== undefined) {
+      this.answerFlowDeferredSizes.set(key, {
+        ...(this.answerFlowDeferredSizes.get(key) ?? { compact: undefined, expanded: undefined }),
+        [kind]: size,
+      });
+      return;
+    }
     const previous = this.answerFlowCardSizes.get(key) ?? {
       compact: undefined,
       expanded: undefined,
@@ -915,6 +942,7 @@ export default class Panel extends View {
       this.selected = id === undefined ? undefined : { kind: "item", domain: next.domain, id };
       this.clearDraft();
       this.answerFlowMotion = undefined;
+      this.applyDeferredAnswerFlowSizes();
       if (motion.action === "answered") this.load(tick, true);
       else this.reconcileAnswerFlow(next.domain, this.doc);
       tick.notify();
@@ -960,6 +988,7 @@ export default class Panel extends View {
     if (this.answerFlowMotion?.generation !== motion.generation) return;
     const domain = this.answerFlow?.domain;
     this.answerFlowMotion = undefined;
+    this.answerFlowDeferredSizes.clear();
     this.answerFlow = undefined;
     this.clearAnswerFlowLayoutPending();
     this.clearDraft();

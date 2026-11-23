@@ -3907,3 +3907,39 @@ test("keeps policy editors out of domain subpages and item details", async () =>
   get(render(), "item-i1").click!({}, ctx.cx);
   expect(ids(render(), "harness-policy-domain-alpha")).toEqual([]);
 });
+
+test("a card's remeasured size is kept when it arrives during an answer motion", async () => {
+  focusDomain("alpha");
+  let backlog = withManyAsks(2);
+  host.files.set(DOC, JSON.stringify(backlog));
+  const { ctx, view, render } = await mount();
+  get(render(), "item-i1").click!({}, ctx.cx);
+  let root = measureFlow(render(), ctx.cx, render, [
+    { id: "i1", expandedHeight: 300 },
+    { id: "i2", expandedHeight: 300 },
+  ]);
+  const expandedWidth = 360 * ANSWER_CAROUSEL.compactWidthRatio;
+  const key = view.flowCardSizeKey("alpha", "i1");
+  get(root, "answer-flow-ask-i1-option-1").click!({}, ctx.cx);
+  backlog = recordAnswer(backlog, "i1", "No");
+  host.files.set(DOC, JSON.stringify(backlog));
+  get(render(), "answer-flow-ask-i1-answer-submit").click!({}, ctx.cx);
+  await settle();
+  expect(view.answerFlowMotion?.action).toBe("answered");
+
+  // The answered card is now one line, and its hidden measurement reports that mid-motion.
+  reportSize(render(), "answer-flow-measure-expanded-i1", ctx.cx, 100, expandedWidth);
+  expect(view.answerFlowCardSizes.get(key)?.expanded?.height).toBe(300);
+
+  ctx.tick(600);
+  await settle();
+  expect(view.answerFlowCardSizes.get(key)?.expanded?.height).toBe(100);
+
+  root = render();
+  get(root, "answer-flow-card-i1").click!({}, ctx.cx);
+  root = render();
+  expect(get(root, "answer-flow-card-i1").styles.h).toBe(100);
+  expect(ids(root, "answer-flow-detail-i1-already-answered")).toEqual([
+    "answer-flow-detail-i1-already-answered",
+  ]);
+});
