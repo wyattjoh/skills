@@ -776,7 +776,7 @@ const parseOutboxLine = (line: string): OutboxLine => {
 /**
  * Drain each remote delegate's outbox (`OUTBOX.jsonl` in its scratch folder on its machine) into
  * the backlog: a finding line becomes an open finding whose source is the delegate, a notify line
- * becomes a `notify` event, and a line that cannot be applied becomes an `outbox-invalid` event.
+ * becomes a `notify` event, and a line that cannot be applied becomes a `delegate-outbox-invalid` event.
  * Only newline-terminated lines count, so a line still being written waits. A machine that is down
  * or a file that cannot be read keeps its cursor for the next tick.
  * @param config Config.
@@ -834,7 +834,7 @@ export const drainOutboxes = Effect.fn("drainOutboxes")(function* (
       const parsed = parseOutboxLine(raw);
       const invalid = (error: string) =>
         watchEvent(
-          "outbox-invalid",
+          "delegate-outbox-invalid",
           { ...attrs, line: String(line) },
           "skipped; ask the delegate to append a corrected line",
           { error },

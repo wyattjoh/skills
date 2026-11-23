@@ -262,7 +262,7 @@ export const remoteProc = (machine: string, local: Proc["Service"]): Proc["Servi
 export const outboxPath = (worktree: string): string => `${worktree}/.scratch/OUTBOX.jsonl`;
 
 /**
- * The brief a remote delegate reads: the coordinator's brief plus an Outbox section that replaces
+ * The brief a remote delegate reads: the coordinator's brief plus a Delegate outbox section that replaces
  * the coordinate CLI, which its machine does not have.
  * @param brief The brief's text.
  * @param machine The delegate's Herdr machine.
@@ -272,7 +272,7 @@ export const outboxPath = (worktree: string): string => `${worktree}/.scratch/OU
 export const remoteBrief = (brief: string, machine: string, outbox: string): string =>
   [
     brief.endsWith("\n") || brief === "" ? brief : `${brief}\n`,
-    "## Outbox",
+    "## Delegate outbox",
     "",
     `This delegate runs on ${machine}, which has no coordinate CLI. Do not run \`coordinate finding add\` or \`coordinate notify\`: wherever this brief says to run one, append one JSON object on its own line to \`${outbox}\` instead, and never change earlier lines. Your coordinator's watcher reads the file and applies each line once.`,
     "",

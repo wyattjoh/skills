@@ -2220,8 +2220,8 @@ describe("watch remote outboxes", () => {
     run.setOutbox(`${first}\n{"type":"notify","te`);
     expect(await run.tick()).toEqual([
       notify("rem-a: done, report at /r"),
-      '<event kind="outbox-invalid" delegate="rem-a" address="strix/t5" line="3"><error>unknown type nope</error>skipped; ask the delegate to append a corrected line</event>',
-      '<event kind="outbox-invalid" delegate="rem-a" address="strix/t5" line="4"><error>not a JSON object</error>skipped; ask the delegate to append a corrected line</event>',
+      '<event kind="delegate-outbox-invalid" delegate="rem-a" address="strix/t5" line="3"><error>unknown type nope</error>skipped; ask the delegate to append a corrected line</event>',
+      '<event kind="delegate-outbox-invalid" delegate="rem-a" address="strix/t5" line="4"><error>not a JSON object</error>skipped; ask the delegate to append a corrected line</event>',
     ]);
     const applied = {
       id: "f1",

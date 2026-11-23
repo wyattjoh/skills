@@ -842,7 +842,7 @@ describe.skipIf(!ready)("strix: remote send, end and resume", () => {
 const outboxSection = (outbox: string): string =>
   [
     "",
-    "## Outbox",
+    "## Delegate outbox",
     "",
     `This delegate runs on strix, which has no coordinate CLI. Do not run \`coordinate finding add\` or \`coordinate notify\`: wherever this brief says to run one, append one JSON object on its own line to \`${outbox}\` instead, and never change earlier lines. Your coordinator's watcher reads the file and applies each line once.`,
     "",
@@ -977,7 +977,8 @@ describe.skipIf(!ready)("strix: draining a remote delegate's outbox", () => {
     // Each pass is a new watcher process, so later passes are restarts reading the same outbox.
     const outboxEvents = () =>
       watchEvents(run as StrixRun, () => true, 0, 5).filter(
-        (event) => event.includes(' kind="notify"') || event.includes(' kind="outbox-invalid"'),
+        (event) =>
+          event.includes(' kind="notify"') || event.includes(' kind="delegate-outbox-invalid"'),
       );
     expect(outboxEvents()).toEqual([]);
     expect(findings()).toEqual([applied]);
