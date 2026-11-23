@@ -43,8 +43,72 @@ export type IdleReminder = {
   interval: number;
 };
 
-/** One pending event with its stable delivery identifier. */
-export type WatchEvent = { id: string; line: string };
+/**
+ * One watcher event before it is queued: its kind, identifying attributes, free-text fields (titles,
+ * answers, errors) rendered as child elements, and the action text for the coordinator.
+ */
+export type WatchEventData = {
+  kind: string;
+  attrs: Record<string, string>;
+  fields: Record<string, string>;
+  text: string;
+};
+
+/**
+ * One pending event with its stable delivery identifier.
+ */
+export type WatchEvent = WatchEventData & { id: string };
+
+const watchEvent = (
+  kind: string,
+  attrs: Record<string, string>,
+  text = "",
+  fields: Record<string, string> = {},
+): WatchEventData => ({ kind, attrs, fields, text });
+
+const oneLine = (value: string): string => value.replace(/[\r\n]+/gu, " ").trim();
+const escapeText = (value: string): string =>
+  oneLine(value).replace(/&/gu, "&amp;").replace(/</gu, "&lt;").replace(/>/gu, "&gt;");
+const escapeAttr = (value: string): string => escapeText(value).replace(/"/gu, "&quot;");
+
+/**
+ * Render one event as a single-line `<event>` element, escaping every value so free text such as a
+ * backlog title cannot close the element or forge another one.
+ * @param event Queued event.
+ * @returns The element.
+ */
+export const renderEvent = (event: WatchEvent): string => {
+  const attrs = Object.entries({ id: `e${event.id}`, kind: event.kind, ...event.attrs })
+    .map(([name, value]) => ` ${name}="${escapeAttr(value)}"`)
+    .join("");
+  const body = [
+    ...Object.entries(event.fields).map(
+      ([name, value]) => `<${name}>${escapeText(value)}</${name}>`,
+    ),
+    escapeText(event.text),
+  ].join("");
+  return body === "" ? `<event${attrs}/>` : `<event${attrs}>${body}</event>`;
+};
+
+/**
+ * A plain one-line summary of an event for the watcher's own terminal view.
+ * @param event Queued event.
+ * @returns Kind, attribute and field values, then the action text.
+ */
+export const eventSummary = (event: WatchEvent): string => {
+  const head = [event.kind, ...Object.values(event.attrs), ...Object.values(event.fields)]
+    .map(oneLine)
+    .join(" ");
+  const text = oneLine(event.text);
+  return text === "" ? head : `${head}: ${text}`;
+};
+
+/**
+ * Read a persisted outbox entry, wrapping an entry from before events were structured as a
+ * `legacy` event whose text is the old line, so a re-armed watcher still delivers it.
+ */
+const persistedEvent = (entry: WatchEvent | { id: string; line: string }): WatchEvent =>
+  "kind" in entry ? entry : { id: entry.id, ...watchEvent("legacy", {}, entry.line) };
 
 /** The watcher's last committed snapshot, separate from its staged update. */
 export type WatchSnapshot = {
@@ -95,17 +159,17 @@ export const emptyState = (): WatchState => ({
 });
 
 /**
- * Lines for delegate changes between two snapshots. A delegate that settles (or takes another settled
+ * Events for delegate changes between two snapshots. A delegate that settles (or takes another settled
  * turn) fires; so do blocked, errored and gone ones.
  * @param previous Last snapshot.
  * @param next Current snapshot.
- * @returns Event lines.
+ * @returns Events.
  */
 export const delegateEvents = (
   previous: Readonly<Record<string, SeenDelegate>>,
   next: Readonly<Record<string, SeenDelegate>>,
-): string[] => {
-  const lines: string[] = [];
+): WatchEventData[] => {
+  const lines: WatchEventData[] = [];
   for (const [address, now] of Object.entries(next)) {
     const before = previous[address];
     const changed =
@@ -113,21 +177,35 @@ export const delegateEvents = (
     if (!changed) continue;
     if (now.status === "blocked")
       lines.push(
-        `blocked ${now.name} (${address}): a dialog or question; read it with hc read ${address}`,
+        watchEvent(
+          "blocked",
+          { delegate: now.name, address },
+          `a dialog or question; read it with hc read ${address}`,
+        ),
       );
     else if (now.status === "error")
-      lines.push(`error ${now.name} (${address}): read its terminal`);
+      lines.push(watchEvent("error", { delegate: now.name, address }, "read its terminal"));
     else if (
       (now.status === "idle" || now.status === "done") &&
       before !== undefined &&
       (before.status === "working" || before.turn !== now.turn)
     )
-      lines.push(`settled ${now.name} (${address}): read its REPORT.md, verify, then report`);
+      lines.push(
+        watchEvent(
+          "settled",
+          { delegate: now.name, address },
+          "read its REPORT.md, verify, then report",
+        ),
+      );
   }
   for (const [address, before] of Object.entries(previous))
     if (next[address] === undefined)
       lines.push(
-        `gone ${before.name} (${address}): resume with coordinate resume ${before.name}, or record it ended`,
+        watchEvent(
+          "gone",
+          { delegate: before.name, address },
+          `resume with coordinate resume ${before.name}, or record it ended`,
+        ),
       );
   return lines;
 };
@@ -139,8 +217,8 @@ export const idleEvents = (
   items: readonly Item[],
   reminders: Record<string, IdleReminder>,
   now: number,
-): string[] => {
-  const lines: string[] = [];
+): WatchEventData[] => {
+  const lines: WatchEventData[] = [];
   for (const address of Object.keys(reminders))
     if (delegates[address] === undefined) delete reminders[address];
   for (const [address, delegate] of Object.entries(delegates)) {
@@ -184,7 +262,7 @@ export const idleEvents = (
       delegate.status === "blocked"
         ? `read its terminal with hc read ${address}`
         : "read its REPORT.md and give it a next step or end it";
-    lines.push(`idle ${delegate.name} (${address}) ${age}: ${next}`);
+    lines.push(watchEvent("idle", { delegate: delegate.name, address, age }, next));
     reminder.next = now + reminder.interval * 60_000;
     reminder.interval = Math.min(reminder.interval * 2, 60);
   }
@@ -192,30 +270,28 @@ export const idleEvents = (
 };
 
 /**
- * Lines for PR changes. Only PRs seen before fire, so arming never floods with history.
+ * Events for PR changes. Only PRs seen before fire, so arming never floods with history.
  * @param previous Last snapshot.
  * @param next Current snapshot.
- * @returns Event lines.
+ * @returns Events.
  */
 export const prEvents = (
   previous: Readonly<Record<string, SeenPr>>,
   next: Readonly<Record<string, SeenPr>>,
-): string[] => {
-  const lines: string[] = [];
+): WatchEventData[] => {
+  const lines: WatchEventData[] = [];
   for (const [key, now] of Object.entries(next)) {
+    const change = (name: string, text = "") =>
+      lines.push(watchEvent("pr", { pr: key, change: name, url: now.url }, text));
     const before = previous[key];
     if (before === undefined) continue;
-    if (before.state === "open" && now.state === "merged")
-      lines.push(`pr ${key} merged: sweep its worktree ${now.url}`);
-    else if (before.state === "open" && now.state === "closed")
-      lines.push(`pr ${key} closed unmerged ${now.url}`);
+    if (before.state === "open" && now.state === "merged") change("merged", "sweep its worktree");
+    else if (before.state === "open" && now.state === "closed") change("closed-unmerged");
     if (now.state !== "open") continue;
-    if (now.checks === "fail" && before.checks !== "fail")
-      lines.push(`pr ${key} checks failed ${now.url}`);
+    if (now.checks === "fail" && before.checks !== "fail") change("checks-failed");
     if (now.review === "changes_requested" && before.review !== "changes_requested")
-      lines.push(`pr ${key} changes requested ${now.url}`);
-    if (now.review === "approved" && before.review !== "approved")
-      lines.push(`pr ${key} approved ${now.url}`);
+      change("changes-requested");
+    if (now.review === "approved" && before.review !== "approved") change("approved");
   }
   return lines;
 };
@@ -225,7 +301,7 @@ export const prEvents = (
  * @param delegates Current snapshot.
  * @returns The status beat.
  */
-export const statusBeat = (delegates: Readonly<Record<string, SeenDelegate>>): string => {
+export const statusBeat = (delegates: Readonly<Record<string, SeenDelegate>>): WatchEventData => {
   const counts = new Map<string, number>();
   for (const delegate of Object.values(delegates))
     counts.set(
@@ -235,7 +311,11 @@ export const statusBeat = (delegates: Readonly<Record<string, SeenDelegate>>): s
   const parts = [...counts]
     .toSorted(([a], [b]) => a.localeCompare(b))
     .map(([status, count]) => `${count} ${status}`);
-  return `status: ${parts.length === 0 ? "no live delegates" : parts.join(", ")}; give the user a short status in your next reply`;
+  return watchEvent(
+    "status",
+    { fleet: parts.length === 0 ? "no live delegates" : parts.join(", ") },
+    "give the user a short status in your next reply",
+  );
 };
 
 const CLOSED: ReadonlySet<Item["status"]> = new Set(["done", "dismissed"]);
@@ -245,18 +325,18 @@ const CLOSED: ReadonlySet<Item["status"]> = new Set(["done", "dismissed"]);
  * @param entries Current capacity queue entries.
  * @param observations Live and budget counts by machine; missing entries mean the machine could not be checked.
  * @param previous Previously committed readiness state.
- * @returns Wake lines and the next durable readiness snapshot.
+ * @returns Wake events and the next durable readiness snapshot.
  */
 export const capacityWakeEvents = (
   entries: readonly CapacityWait[],
   observations: Readonly<Record<string, { live: number; budget: number } | undefined>>,
   previous: Readonly<Record<string, { order: number; ready: boolean }>>,
-): { lines: string[]; capacity: Record<string, { order: number; ready: boolean }> } => {
+): { events: WatchEventData[]; capacity: Record<string, { order: number; ready: boolean }> } => {
   const oldestByMachine = new Map<string, CapacityWait>();
   for (const entry of entries.toSorted((left, right) => left.order - right.order))
     if (!oldestByMachine.has(entry.machine)) oldestByMachine.set(entry.machine, entry);
   const capacity: Record<string, { order: number; ready: boolean }> = {};
-  const lines: string[] = [];
+  const events: WatchEventData[] = [];
   for (const [machine, entry] of oldestByMachine) {
     const observed = observations[machine];
     if (observed === undefined) {
@@ -266,11 +346,15 @@ export const capacityWakeEvents = (
     const ready = observed.live < observed.budget;
     capacity[machine] = { order: entry.order, ready };
     if (ready && (previous[machine]?.order !== entry.order || previous[machine]?.ready !== true))
-      lines.push(
-        `capacity available on ${machine}: retry queued item ${entry.item} (order ${entry.order}) with coordinate delegate --retry-queued; the regular budget gate still applies`,
+      events.push(
+        watchEvent(
+          "capacity",
+          { machine, item: entry.item, order: String(entry.order) },
+          "retry it with coordinate delegate --retry-queued; the regular budget gate still applies",
+        ),
       );
   }
-  return { lines, capacity };
+  return { events, capacity };
 };
 
 /**
@@ -285,7 +369,9 @@ const dueEvents = (items: readonly Item[], today: string, fired: readonly string
   const seen = new Set(fired);
   const fresh = due.filter((item) => !seen.has(`${item.id} ${item.due}`));
   return {
-    lines: fresh.map((item) => `due ${item.due}: ${item.id} ${item.title}`),
+    events: fresh.map((item) =>
+      watchEvent("due", { item: item.id, due: item.due ?? "" }, "", { title: item.title }),
+    ),
     fired: [...fired, ...fresh.map((item) => `${item.id} ${item.due}`)],
   };
 };
@@ -307,15 +393,18 @@ const answeredEvents = (items: readonly Item[], fired: readonly string[] | null)
         seen.set(base, ordinal);
         return {
           key: `${item.id} ${decision.at} #${ordinal} ${decision.text}`,
-          line: `answered ${item.id} ${item.title}: ${decision.text}`,
+          event: watchEvent("answered", { item: item.id }, "", {
+            title: item.title,
+            answer: decision.text,
+          }),
         };
       });
   });
-  if (fired === null) return { lines: [], fired: answers.map((answer) => answer.key) };
+  if (fired === null) return { events: [], fired: answers.map((answer) => answer.key) };
   const seen = new Set(fired);
   const fresh = answers.filter((answer) => !seen.has(answer.key));
   return {
-    lines: fresh.map((answer) => answer.line),
+    events: fresh.map((answer) => answer.event),
     fired: [...fired, ...fresh.map((answer) => answer.key)],
   };
 };
@@ -335,15 +424,18 @@ const discussionEvents = (items: readonly Item[], fired: readonly string[] | nul
         seen.set(base, ordinal);
         return {
           key: `${item.id} ${decision.at} #${ordinal} ${decision.text}`,
-          line: `discuss ${item.id} ${item.title}: ${decision.text.slice("Discuss ".length)}`,
+          event: watchEvent("discuss", { item: item.id }, "", {
+            title: item.title,
+            request: decision.text.slice("Discuss ".length),
+          }),
         };
       });
   });
-  if (fired === null) return { lines: [], fired: discussions.map((entry) => entry.key) };
+  if (fired === null) return { events: [], fired: discussions.map((entry) => entry.key) };
   const seen = new Set(fired);
   const fresh = discussions.filter((entry) => !seen.has(entry.key));
   return {
-    lines: fresh.map((entry) => entry.line),
+    events: fresh.map((entry) => entry.event),
     fired: [...fired, ...fresh.map((entry) => entry.key)],
   };
 };
@@ -371,7 +463,7 @@ const readState = (path: string) =>
         idle: parsed.idle ?? {},
         capacity: parsed.capacity ?? {},
         harnessPolicy: parsed.harnessPolicy,
-        outbox: parsed.outbox ?? [],
+        outbox: (parsed.outbox ?? []).map(persistedEvent),
         nextEventId: parsed.nextEventId ?? 1,
         staged: parsed.staged,
       };
@@ -484,7 +576,8 @@ export type WatchOptions = {
    */
   follow: boolean;
   /**
-   * Write one already-identified outbox event to stdout. A rejected promise leaves it pending.
+   * Write one rendered `<event>` element, or a plain control line, to stdout. A rejected promise
+   * leaves the event pending.
    */
   emit: (line: string) => void | Promise<void>;
   /**
@@ -494,7 +587,6 @@ export type WatchOptions = {
   render?: (view: WatchView) => void;
 };
 
-const eventLine = (event: WatchEvent): string => `${event.line} [e${event.id}]`;
 // Keep a watcher alive through a Herdr restart without retrying more than once per minute.
 const MAX_RETRY_DELAY_MS = 60_000;
 
@@ -599,7 +691,7 @@ export const watch = Effect.fn("watch")(function* (config: Config, options: Watc
         if (state.outbox.length === 0) return { sent: true, failure: undefined };
         if (options.deliver) {
           const result = yield* hc
-            .send(options.owner ?? "", state.outbox.map(eventLine).join("\n"))
+            .send(options.owner ?? "", state.outbox.map(renderEvent).join("\n"))
             .pipe(Effect.result);
           if (Result.isFailure(result))
             return {
@@ -612,7 +704,7 @@ export const watch = Effect.fn("watch")(function* (config: Config, options: Watc
         }
         for (const event of state.outbox) {
           yield* Effect.promise(async () => {
-            await options.emit(eventLine(event));
+            await options.emit(renderEvent(event));
           });
           state = { ...state, outbox: state.outbox.filter((pending) => pending.id !== event.id) };
           yield* writeState(path, state);
@@ -645,7 +737,7 @@ export const watch = Effect.fn("watch")(function* (config: Config, options: Watc
         ),
         harnessPolicy: state.harnessPolicy,
       };
-      const lines: string[] = [];
+      const lines: WatchEventData[] = [];
       const policy = yield* resolveEffectiveHarnessPolicy(config, options.domain).pipe(
         Effect.result,
       );
@@ -659,10 +751,18 @@ export const watch = Effect.fn("watch")(function* (config: Config, options: Watc
         if (Result.isSuccess(policy)) {
           const enabled = policy.success.selection.enabled.join(", ") || "none";
           lines.push(
-            `harness policy changed for ${options.domain}: enabled ${enabled}; default ${policy.success.selection.default ?? "none"}`,
+            watchEvent("harness-policy", {
+              domain: options.domain,
+              enabled,
+              default: policy.success.selection.default ?? "none",
+            }),
           );
         } else {
-          lines.push(`harness policy unavailable for ${options.domain}: ${policy.failure.message}`);
+          lines.push(
+            watchEvent("harness-policy-unavailable", { domain: options.domain }, "", {
+              error: policy.failure.message,
+            }),
+          );
         }
       }
       snapshot.harnessPolicy = policySignature;
@@ -683,8 +783,14 @@ export const watch = Effect.fn("watch")(function* (config: Config, options: Watc
         if (first)
           for (const [address, current] of Object.entries(polled.success))
             if (current.status === "blocked" || current.status === "error")
-              events.push(`${current.status} ${current.name} (${address}): read its terminal`);
-        if (events.some((line) => line.startsWith("settled ")))
+              events.push(
+                watchEvent(
+                  current.status,
+                  { delegate: current.name, address },
+                  "read its terminal",
+                ),
+              );
+        if (events.some((event) => event.kind === "settled"))
           events.push(statusBeat(polled.success));
         lines.push(...events);
         snapshot.delegates = polled.success;
@@ -720,24 +826,26 @@ export const watch = Effect.fn("watch")(function* (config: Config, options: Watc
           clock(),
         );
         lines.push(...idle);
-        if (idle.length > 0 && !lines.some((line) => line.startsWith("status: ")))
+        if (idle.length > 0 && !lines.some((event) => event.kind === "status"))
           lines.push(statusBeat(polled.success));
       }
       if (Option.isSome(document)) {
         const due = dueEvents(document.value.backlog.items, options.today(), snapshot.due);
-        lines.push(...due.lines);
+        lines.push(...due.events);
         snapshot.due = due.fired;
         const answered = answeredEvents(document.value.backlog.items, snapshot.answered);
-        lines.push(...answered.lines);
+        lines.push(...answered.events);
         snapshot.answered = answered.fired;
         const discussed = discussionEvents(document.value.backlog.items, snapshot.discussed);
-        lines.push(...discussed.lines);
+        lines.push(...discussed.events);
         snapshot.discussed = discussed.fired;
       }
       const readQueue = yield* readCapacityQueue(config, options.domain).pipe(Effect.result);
       if (Result.isFailure(readQueue)) {
         lines.push(
-          `capacity queue unavailable: ${readQueue.failure.message}; capacity was not checked`,
+          watchEvent("capacity-unavailable", {}, "capacity was not checked", {
+            error: readQueue.failure.message,
+          }),
         );
       } else {
         let waits = readQueue.success.entries;
@@ -749,9 +857,12 @@ export const watch = Effect.fn("watch")(function* (config: Config, options: Watc
           );
           const removed = yield* pruneCapacityWaits(config, options.domain, keep);
           lines.push(
-            ...removed.map(
-              (entry) =>
-                `removed queued delegate for ${entry.item}: its backlog item is closed or missing`,
+            ...removed.map((entry) =>
+              watchEvent(
+                "capacity-removed",
+                { item: entry.item },
+                "its backlog item is closed or missing, so its queued delegate was removed",
+              ),
             ),
           );
           if (removed.length > 0)
@@ -767,13 +878,19 @@ export const watch = Effect.fn("watch")(function* (config: Config, options: Watc
         if (waits.length > 0) {
           const listed = yield* hc.list().pipe(Effect.result);
           if (Result.isFailure(listed)) {
-            lines.push(`capacity check unavailable: ${listed.failure.message}`);
+            lines.push(
+              watchEvent("capacity-unavailable", {}, "", { error: listed.failure.message }),
+            );
           } else {
             const machines = [...new Set(waits.map((entry) => entry.machine))];
             for (const machine of machines) {
               const count = yield* liveDelegateCount(machine, listed.success).pipe(Effect.result);
               if (Result.isFailure(count)) {
-                lines.push(`capacity check unavailable for ${machine}: ${count.failure.message}`);
+                lines.push(
+                  watchEvent("capacity-unavailable", { machine }, "", {
+                    error: count.failure.message,
+                  }),
+                );
                 continue;
               }
               const budget = yield* machineDelegateBudget(config, machine, machine === hostname());
@@ -782,7 +899,7 @@ export const watch = Effect.fn("watch")(function* (config: Config, options: Watc
           }
         }
         const wakes = capacityWakeEvents(waits, observations, snapshot.capacity);
-        lines.push(...wakes.lines);
+        lines.push(...wakes.events);
         snapshot.capacity = wakes.capacity;
       }
       first = false;
@@ -792,9 +909,9 @@ export const watch = Effect.fn("watch")(function* (config: Config, options: Watc
       const ownerNotice = ownerGone
         ? `owner gone: ${options.owner} no longer runs; nothing will read these events`
         : undefined;
-      const events = lines.map((line, index) => ({
+      const events: WatchEvent[] = lines.map((event, index) => ({
+        ...event,
         id: (state.nextEventId + index).toString(36),
-        line: line.replace(/[\r\n]+/gu, " ").trim(),
       }));
       const newEventIds = new Set(events.map((event) => event.id));
       const staged: WatchState = {

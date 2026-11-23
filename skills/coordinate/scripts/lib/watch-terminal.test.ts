@@ -167,7 +167,13 @@ const view: WatchView = {
   log: [
     {
       at: Date.parse("2026-11-20T10:00:05.000Z"),
-      event: { id: "a", line: "due 2026-11-22: i7 Review deployment" },
+      event: {
+        id: "a",
+        kind: "due",
+        attrs: { item: "i7", due: "2026-11-22" },
+        fields: { title: "Review deployment" },
+        text: "",
+      },
       delivery: "refused: dialog; retry in 5s",
     },
   ],
@@ -187,7 +193,7 @@ describe("watch terminal view", () => {
     expect(lines[8]).toContain(`next forge ${localTime(view.nextForge)}`);
     expect(lines[8]).toContain(`next due ${localTime(view.nextDue)}`);
     expect(lines.at(-1)).toBe(
-      `${localTime(view.log[0]?.at)} due 2026-11-22: i7 Review deployment [ea] | refused: dialog; retry in 5s`,
+      `${localTime(view.log[0]?.at)} due i7 2026-11-22 Review deployment [ea] | refused: dialog; retry in 5s`,
     );
     expect(lines[1]).toContain(`started ${localDateTime(view.started)}`);
   });
@@ -219,7 +225,7 @@ describe("watch terminal view", () => {
     expect(output.startsWith("\u001b[2J\u001b[r\u001b[1;1H")).toBe(true);
     expect(output).toContain("coordinate watch: app");
     expect(output).toContain(
-      `\u001b[11;1H${localTime(view.log[0]?.at)} due 2026-11-22: i7 Review deployment [ea]`,
+      `\u001b[11;1H${localTime(view.log[0]?.at)} due i7 2026-11-22 Review deployment [ea]`,
     );
   });
 
@@ -238,7 +244,7 @@ describe("watch terminal view", () => {
         ...view.log,
         {
           at: Date.parse("2026-11-20T10:00:10.000Z"),
-          event: { id: "b", line: "answered i7" },
+          event: { id: "b", kind: "answered", attrs: { item: "i7" }, fields: {}, text: "" },
           delivery: "replayed from outbox, sent to t1",
         },
       ],

@@ -6,7 +6,7 @@ import { checkDomainName, domainNamePart, L } from "./fleet.ts";
 import * as hc from "./herdr.ts";
 import { watcherAlive } from "./watch-lock.ts";
 import type { Item } from "./backlog-store/schema.ts";
-import type { SeenDelegate, SeenPr, WatchEvent } from "./watch.ts";
+import { eventSummary, type SeenDelegate, type SeenPr, type WatchEvent } from "./watch.ts";
 
 /**
  * One watcher event as displayed in the terminal's append-only log.
@@ -113,7 +113,8 @@ export const watchViewLines = (view: WatchView): string[] => {
     `last tick ${time(view.lastTick)} | next forge ${time(view.nextForge)} | next due ${time(view.nextDue)} | outbox ${view.outboxDepth} | delivery ${view.lastDelivery}`,
     "events (newest at bottom):",
     ...view.log.map(
-      (entry) => `${time(entry.at)} ${entry.event.line} [e${entry.event.id}] | ${entry.delivery}`,
+      (entry) =>
+        `${time(entry.at)} ${eventSummary(entry.event)} [e${entry.event.id}] | ${entry.delivery}`,
     ),
   ];
   return lines;
@@ -138,7 +139,7 @@ const headerOutput = (
 };
 
 const eventLine = (entry: WatchLogEntry): string =>
-  `${time(entry.at)} ${entry.event.line} [e${entry.event.id}] | ${entry.delivery}`;
+  `${time(entry.at)} ${eventSummary(entry.event)} [e${entry.event.id}] | ${entry.delivery}`;
 
 const appendLogOutput = (
   entries: readonly WatchLogEntry[],
