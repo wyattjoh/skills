@@ -913,7 +913,7 @@ export const replacePolicy = (
     text: string | undefined;
     markdown?: string | undefined;
     at: string;
-    wiki: string | undefined;
+    wiki?: string | undefined;
   },
 ): OpResult<Policy> => {
   const found = backlog.policies.find((entry) => entry.id === input.id);
