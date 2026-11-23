@@ -707,3 +707,98 @@ describe("coordinate status --resume", () => {
     expect(existsSync(join(state, "bin", "calls.log"))).toBe(false);
   });
 });
+
+describe("coordinate CLI harness policy", () => {
+  it("shows legacy state, uses revision checks, replaces domain policy, and resets to inheritance", () => {
+    const state = tempDir("coordinate-harness-policy-cli-");
+    made.push(state);
+    const env = cliEnv(state, COORDINATOR);
+    const run = (args: string[], commandEnv = env): Result => {
+      const result = Bun.spawnSync(["bun", cli, ...args], {
+        env: commandEnv,
+        stdout: "pipe",
+        stderr: "pipe",
+        timeout: 10_000,
+      });
+      return {
+        args,
+        exit: result.exitCode ?? 1,
+        stdout: result.stdout.toString(),
+        stderr: result.stderr.toString(),
+      };
+    };
+
+    expect(run(["start", "app"]).exit).toBe(0);
+    const localEnv = { ...env };
+    delete localEnv.HC_TERMINAL_ID;
+    const legacy = JSON.parse(run(["harness-policy", "show", "--json"], localEnv).stdout);
+    expect(legacy.revision).toBe(0);
+    expect(legacy.global).toEqual({
+      source: "legacy",
+      policy: { enabled: ["pi", "claude"], default: null },
+    });
+
+    const global = run(
+      [
+        "harness-policy",
+        "global-set",
+        "--enabled",
+        "pi,claude",
+        "--no-default",
+        "--expected-revision",
+        "0",
+        "--json",
+      ],
+      localEnv,
+    );
+    expect(global.exit).toBe(0);
+    expect(JSON.parse(global.stdout).revision).toBe(1);
+
+    const domain = run(
+      [
+        "harness-policy",
+        "domain-set",
+        "app",
+        "--enabled",
+        "claude",
+        "--default",
+        "claude",
+        "--expected-revision",
+        "1",
+        "--json",
+      ],
+      localEnv,
+    );
+    expect(domain.exit).toBe(0);
+    expect(JSON.parse(domain.stdout).domain).toEqual({
+      name: "app",
+      mode: "replace",
+      override: { enabled: ["claude"], default: "claude" },
+      effective: { enabled: ["claude"], default: "claude" },
+    });
+
+    const stale = run(
+      [
+        "harness-policy",
+        "global-set",
+        "--enabled",
+        "pi",
+        "--default",
+        "pi",
+        "--expected-revision",
+        "1",
+      ],
+      localEnv,
+    );
+    expect(stale.exit).toBe(1);
+    expect(stale.stderr).toContain("refused: stale harness policy revision: expected 1, current 2");
+
+    const reset = run(
+      ["harness-policy", "domain-reset", "app", "--expected-revision", "2", "--json"],
+      localEnv,
+    );
+    expect(reset.exit).toBe(0);
+    expect(JSON.parse(reset.stdout).domain.mode).toBe("inherit");
+    expect(JSON.parse(reset.stdout).revision).toBe(3);
+  });
+});

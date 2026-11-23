@@ -237,6 +237,38 @@ describe("backlog rename", () => {
       expect(error).toBe(`no backlog for nope at ${join(state, "backlogs", "nope.json")}`);
     });
 
+    it("a source domain with a harness replacement", async () => {
+      const { error, refused } = await refusal({}, [], (state) =>
+        writeFileSync(
+          join(state, "delegate-harness-policy.json"),
+          JSON.stringify({
+            schemaVersion: 1,
+            revision: 1,
+            domains: { "tracked-prs": { enabled: ["pi"], default: "pi" } },
+          }),
+        ),
+      );
+      expect(refused).toBe(true);
+      expect(error).toBe(
+        "cannot rename tracked-prs to clerk while tracked-prs has a harness policy replacement; inspect it with coordinate harness-policy show --domain tracked-prs, then reset it explicitly with coordinate harness-policy domain-reset tracked-prs --expected-revision 1",
+      );
+    });
+
+    it("a target domain with an orphaned harness replacement", async () => {
+      const { error, refused } = await refusal({}, [], (state) =>
+        writeFileSync(
+          join(state, "delegate-harness-policy.json"),
+          JSON.stringify({
+            schemaVersion: 1,
+            revision: 1,
+            domains: { clerk: { enabled: ["claude"], default: null } },
+          }),
+        ),
+      );
+      expect(refused).toBe(true);
+      expect(error).toContain("while clerk has a harness policy replacement");
+    });
+
     it("an old domain with a live delegate, naming it", async () => {
       const { error } = await refusal({}, [DELEGATE]);
       expect(error).toBe(

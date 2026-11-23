@@ -4,7 +4,6 @@ import { dirname } from "node:path";
 import { Effect, Result } from "effect";
 import {
   archivePath,
-  holdingLocks,
   readDocument,
   refSessions,
   writeAtomic,
@@ -17,6 +16,7 @@ import * as hc from "./herdr.ts";
 import { lockPath, watcherAlive } from "./watch-lock.ts";
 import { statePath } from "./watch.ts";
 import { capacityQueuePath } from "./capacity-queue.ts";
+import { checkHarnessPolicyDomainRename, holdingHarnessPolicyLocks } from "./harness-policy.ts";
 
 /**
  * Options for `coordinate backlog rename`.
@@ -133,11 +133,12 @@ export const renameDomain = Effect.fn("renameDomain")(function* (
   yield* refuseLiveWatcher(config, from);
   yield* refuseLiveWatcher(config, to);
 
-  const result = yield* holdingLocks(
+  const result = yield* holdingHarnessPolicyLocks(
     config,
     [from, to],
     Effect.gen(function* () {
       yield* refuseExisting(config, from, to);
+      yield* checkHarnessPolicyDomainRename(config, from, to);
       yield* refuseLiveWatcher(config, from);
       const state = config.stateDir;
       const { backlog } = yield* readDocument(config, from);

@@ -21,6 +21,14 @@ import {
 import { ITEM_STATUSES, type ItemStatus } from "./lib/backlog-store/schema.ts";
 import { loadConfig, type Config } from "./lib/config.ts";
 import {
+  DELEGATE_HARNESSES,
+  resetHarnessPolicy,
+  setHarnessPolicy,
+  showHarnessPolicy,
+  type DelegateHarness,
+  type HarnessSelection,
+} from "./lib/harness-policy.ts";
+import {
   answerDomain,
   coordinatorDomain,
   domainOfCaller,
@@ -105,10 +113,10 @@ const execute = <E extends { message: string }>(
 ) => Effect.promise(() => main(build, banner));
 
 const writeWatchLine = (line: string): Promise<void> =>
-  new Promise((resolve, reject) => {
+  new Promise((complete, reject) => {
     process.stdout.write(`${line}\n`, (error?: Error | null) => {
       if (error) reject(error);
-      else resolve();
+      else complete();
     });
   });
 
@@ -161,6 +169,45 @@ const optionalChoiceFlag = <const Values extends ReadonlyArray<string>>(
   description: string,
 ) => choiceFlag(name, values, description).pipe(Flag.optional);
 
+const parsePolicyRevision = (value: string): Effect.Effect<number, Refused> => {
+  if (!/^(0|[1-9]\d*)$/.test(value) || !Number.isSafeInteger(Number(value)))
+    return Effect.fail(
+      new Refused({ message: "--expected-revision must be a non-negative safe integer" }),
+    );
+  return Effect.succeed(Number(value));
+};
+
+const parseHarnessSelection = (
+  enabledInput: string,
+  defaultInput: string | undefined,
+  noDefault: boolean,
+): Effect.Effect<HarnessSelection, Refused> => {
+  if ((defaultInput !== undefined) === noDefault)
+    return Effect.fail(new Refused({ message: "pass exactly one of --default or --no-default" }));
+  const values =
+    enabledInput === "none" ? [] : enabledInput.split(",").map((value) => value.trim());
+  if (values.some((value) => value === ""))
+    return Effect.fail(
+      new Refused({ message: "--enabled must be none, pi, claude, or a comma-separated list" }),
+    );
+  if (new Set(values).size !== values.length)
+    return Effect.fail(new Refused({ message: "--enabled must not repeat a harness" }));
+  const unsupported = values.find(
+    (value) => !DELEGATE_HARNESSES.includes(value as DelegateHarness),
+  );
+  if (unsupported !== undefined)
+    return Effect.fail(
+      new Refused({
+        message: `unsupported harness ${unsupported}; supported harnesses: ${DELEGATE_HARNESSES.join(", ")}`,
+      }),
+    );
+  const enabled = DELEGATE_HARNESSES.filter((harness) => values.includes(harness));
+  const defaultHarness = noDefault ? null : (defaultInput as DelegateHarness);
+  if (defaultHarness !== null && !enabled.includes(defaultHarness))
+    return Effect.fail(new Refused({ message: "--default must also be listed in --enabled" }));
+  return Effect.succeed({ enabled, default: defaultHarness });
+};
+
 const repeatedStringFlag = (name: string, description: string) =>
   Flag.atMost(stringFlag(name, description), Number.MAX_SAFE_INTEGER);
 
@@ -188,6 +235,9 @@ const valueOptions = new Set([
   "--ask",
   "--context",
   "--option",
+  "--enabled",
+  "--default",
+  "--expected-revision",
   "--rec",
   "--why",
   "--answer",
@@ -216,6 +266,7 @@ const switchOptions = new Set([
   "--list",
   "--list-idle",
   "--no-due",
+  "--no-default",
   "--no-space",
   "--now",
   "--over-budget",
@@ -621,7 +672,7 @@ const backlogRenameCommand = Command.make(
     ),
 ).pipe(
   Command.withDescription(
-    "rename the domain: its backlog, archive, watcher snapshot, ended-delegate records and fleet.domain labels; refused while it has a live delegate or watcher",
+    "rename the domain: its backlog, archive, watcher snapshot, ended-delegate records and fleet.domain labels; refused while it has a live delegate, watcher, or source/target harness replacement",
   ),
 );
 
@@ -797,6 +848,126 @@ const backlogCommand = Command.make("backlog").pipe(
     boundaryCommand,
     policyCommand,
     focusCommand,
+  ]),
+);
+
+const harnessPolicyShowCommand = Command.make(
+  "show",
+  {
+    domain: optionalStringFlag("domain", "domain whose effective policy to show"),
+    json: booleanFlag("json", "print policy state as JSON"),
+  },
+  (options) =>
+    execute((config) =>
+      showHarnessPolicy(config, Option.getOrUndefined(options.domain), options.json),
+    ),
+).pipe(
+  Command.withDescription(
+    "show the global harness policy and, optionally, one domain's inherited or replacement policy",
+  ),
+);
+
+const harnessPolicyGlobalSetCommand = Command.make(
+  "global-set",
+  {
+    enabled: stringFlag("enabled", "complete enabled set: pi, claude, pi,claude, or none"),
+    defaultHarness: optionalChoiceFlag(
+      "default",
+      DELEGATE_HARNESSES,
+      "default harness, which must also be enabled",
+    ),
+    noDefault: booleanFlag("no-default", "leave the default unset"),
+    expectedRevision: stringFlag(
+      "expected-revision",
+      "revision from the latest harness-policy show",
+    ),
+    json: booleanFlag("json", "print the committed policy state as JSON"),
+  },
+  (options) =>
+    execute((config) =>
+      Effect.gen(function* () {
+        const expectedRevision = yield* parsePolicyRevision(options.expectedRevision);
+        const selection = yield* parseHarnessSelection(
+          options.enabled,
+          Option.getOrUndefined(options.defaultHarness),
+          options.noDefault,
+        );
+        return yield* setHarnessPolicy(config, {
+          scope: "global",
+          domain: undefined,
+          selection,
+          expectedRevision,
+          json: options.json,
+        });
+      }),
+    ),
+).pipe(Command.withDescription("replace the complete global harness policy"));
+
+const harnessPolicyDomainSetCommand = Command.make(
+  "domain-set",
+  {
+    domain: argument("domain", "existing domain to give a complete replacement policy"),
+    enabled: stringFlag("enabled", "complete enabled set: pi, claude, pi,claude, or none"),
+    defaultHarness: optionalChoiceFlag(
+      "default",
+      DELEGATE_HARNESSES,
+      "default harness, which must also be enabled",
+    ),
+    noDefault: booleanFlag("no-default", "leave the default unset"),
+    expectedRevision: stringFlag(
+      "expected-revision",
+      "revision from the latest harness-policy show",
+    ),
+    json: booleanFlag("json", "print the committed policy state as JSON"),
+  },
+  (options) =>
+    execute((config) =>
+      Effect.gen(function* () {
+        const expectedRevision = yield* parsePolicyRevision(options.expectedRevision);
+        const selection = yield* parseHarnessSelection(
+          options.enabled,
+          Option.getOrUndefined(options.defaultHarness),
+          options.noDefault,
+        );
+        return yield* setHarnessPolicy(config, {
+          scope: "domain",
+          domain: options.domain,
+          selection,
+          expectedRevision,
+          json: options.json,
+        });
+      }),
+    ),
+).pipe(Command.withDescription("replace one domain's complete harness policy"));
+
+const harnessPolicyDomainResetCommand = Command.make(
+  "domain-reset",
+  {
+    domain: argument("domain", "domain whose replacement policy is removed"),
+    expectedRevision: stringFlag(
+      "expected-revision",
+      "revision from the latest harness-policy show",
+    ),
+    json: booleanFlag("json", "print the committed policy state as JSON"),
+  },
+  (options) =>
+    execute((config) =>
+      Effect.gen(function* () {
+        const expectedRevision = yield* parsePolicyRevision(options.expectedRevision);
+        return yield* resetHarnessPolicy(config, options.domain, expectedRevision, options.json);
+      }),
+    ),
+).pipe(Command.withDescription("remove a domain replacement and restore global inheritance"));
+
+const harnessPolicyCommand = Command.make("harness-policy").pipe(
+  Command.withDescription(
+    "read and edit the local versioned delegate harness policy; edits do not change launch behavior in this phase",
+  ),
+  Command.withSubcommands([
+    harnessPolicyShowCommand,
+    harnessPolicyGlobalSetCommand,
+    harnessPolicyDomainSetCommand,
+    harnessPolicyDomainResetCommand,
   ]),
 );
 
@@ -1322,6 +1493,7 @@ const program = Command.make("coordinate")
       resumeCommand,
       statusCommand,
       backlogCommand,
+      harnessPolicyCommand,
       itemCommand,
       findingCommand,
       watchCommand,
