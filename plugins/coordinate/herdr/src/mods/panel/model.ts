@@ -775,13 +775,6 @@ export type HarnessPolicyState =
   | { kind: "loaded"; view: HarnessPolicyView }
   | { kind: "error"; message: string };
 
-export type HarnessPolicyDraft = {
-  scope: "global" | "domain";
-  domain: string | undefined;
-  revision: number;
-  selection: HarnessSelection;
-};
-
 const runner = (home: string, args: string[]) => ({
   command: "/usr/bin/env",
   args: [
@@ -944,7 +937,7 @@ export const harnessPolicyFailure = (result: {
 }): string => {
   const output = result.stderr.trim() || result.stdout.trim();
   if (/stale harness policy revision/i.test(output))
-    return "Policy changed while you were editing. Reload the policy and reapply your choices.";
+    return "Policy changed elsewhere. The latest is shown; reapply your change.";
   if (
     /(unknown|unrecognized|no) (command|subcommand)/i.test(output) &&
     /(harness-policy|global-set|domain-set|domain-reset)/i.test(output)

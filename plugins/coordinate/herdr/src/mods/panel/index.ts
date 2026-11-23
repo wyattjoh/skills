@@ -16,7 +16,7 @@ import {
   theme,
   watchFolder,
 } from "herdr";
-import { closeOverlay, openOverlay } from "./overlay.ts";
+import { closeOverlay, openHerdrSettingsPage, openOverlay } from "./overlay.ts";
 import type { FolderWatch } from "herdr";
 import {
   FOLDED_BY_DEFAULT,
@@ -49,7 +49,6 @@ import {
   policyDialogProps,
   policyDialogSpec,
   readDocument,
-  sameHarnessSelection,
   stateDirOf,
   summarize,
   targetDomain,
@@ -63,7 +62,6 @@ import type {
   DomainPage,
   DomainSummary,
   EndedRecords,
-  HarnessPolicyDraft,
   HarnessPolicyState,
   HarnessSelection,
   ItemGroup,
@@ -161,7 +159,9 @@ export default class Panel extends View {
   policyStateDir: string | undefined;
   policyGeneration = 0;
   harnessPolicyState: HarnessPolicyState = { kind: "loading" };
-  harnessPolicyDraft: HarnessPolicyDraft | undefined;
+  // The domains the dialog's picker lists, and whether that menu is open.
+  policyDomains: string[] = [];
+  policyDomainMenuOpen = false;
   harnessPolicyBusy = false;
   policyFailure: { domain: string | undefined; message: string } | undefined;
   // The item or finding whose detail is open, by domain and id, so a reload shows its latest
@@ -279,21 +279,42 @@ export default class Panel extends View {
       this.load(cx, true);
       return;
     }
-    if (this.stateDir !== undefined) this.loadHarnessPolicy(this.stateDir, this.target(), cx, true);
+    if (this.stateDir === undefined) return;
+    this.loadHarnessPolicy(this.stateDir, this.target(), cx, true);
+    this.loadPolicyDomains(this.stateDir, cx);
   }
 
-  // The dialog copy reads only the state folder and the policy the CLI reports for its scope.
+  // The dialog copy reads only the state folder, the domain names for its picker, and the policy
+  // the CLI reports for its scope.
   loadPolicyDialog(cx: Context) {
     cx.spawn(async (task) => {
       const stateDir = stateDirOf(await this.read(configPath(home())), home());
       this.stateDir = stateDir;
       this.watchHarnessPolicy(stateDir, task);
       this.loadHarnessPolicy(stateDir, this.target(), task);
+      this.loadPolicyDomains(stateDir, task);
     });
   }
 
-  // Open the editor as Herdr's centered dialog: a fresh copy of this mod, so its draft is gone
-  // when the dialog closes.
+  loadPolicyDomains(stateDir: string, cx: Context) {
+    cx.spawn(async (task) => {
+      try {
+        const listed = await exec("sh", [
+          "-c",
+          LIST_SCRIPT,
+          "coordinate-panel",
+          backlogsDir(stateDir),
+        ]);
+        this.policyDomains = listed.code === 0 ? parseListing(listed.stdout) : [];
+      } catch {
+        this.policyDomains = [];
+      }
+      task.notify();
+    });
+  }
+
+  // Open the editor as Herdr's centered dialog: a fresh copy of this mod, so it starts from the
+  // policy on disk.
   openHarnessPolicyDialog(domain: string | undefined) {
     openOverlay(policyDialogSpec(domain));
   }
@@ -599,7 +620,6 @@ export default class Panel extends View {
     const scopeChanged = this.policyScope !== scope || this.policyStateDir !== stateDir;
     if (!refresh && !scopeChanged) return;
     if (scopeChanged) {
-      this.harnessPolicyDraft = undefined;
       this.policyFailure = undefined;
       this.harnessPolicyBusy = false;
       this.harnessPolicyState = { kind: "loading" };
@@ -1475,52 +1495,39 @@ export default class Panel extends View {
     return view.domain?.name === domain ? view : undefined;
   }
 
-  policyDraftFor(domain: string | undefined): HarnessPolicyDraft | undefined {
-    const draft = this.harnessPolicyDraft;
-    return draft?.domain === domain ? draft : undefined;
+  // Every policy control applies at once: the new selection goes to the CLI with the revision
+  // this view was read at, and the canonical policy is read back after it.
+  applyHarnessPolicy(domain: string | undefined, selection: HarnessSelection, cx: Context) {
+    const view = this.policyViewFor(domain);
+    if (view === undefined) return;
+    const command = harnessPolicySetCommand(home(), domain, selection, view.revision);
+    this.runHarnessPolicyMutation(domain, command, cx);
   }
 
-  beginHarnessPolicyOverride(domain: string | undefined, cx: Context) {
-    if (domain === undefined || domain !== this.target() || this.harnessPolicyBusy) return;
+  // The selection a control changes: the global policy, or a domain's own override. A domain that
+  // inherits has none to change.
+  editableSelection(domain: string | undefined): HarnessSelection | undefined {
     const view = this.policyViewFor(domain);
-    if (view?.domain?.mode !== "inherit" || this.policyDraftFor(domain) !== undefined) return;
-    this.harnessPolicyDraft = {
-      scope: "domain",
-      domain,
-      revision: view.revision,
-      selection: {
-        enabled: [...view.domain.effective.enabled],
-        default: view.domain.effective.default,
-      },
-    };
-    this.policyFailure = undefined;
-    cx.notify();
+    if (view === undefined) return undefined;
+    if (domain === undefined) return view.global.policy;
+    return view.domain?.mode === "replace" ? view.domain.effective : undefined;
   }
 
   toggleHarnessPolicy(domain: string | undefined, harness: DelegateHarness, cx: Context) {
     if (domain !== this.target() || this.harnessPolicyBusy) return;
-    const view = this.policyViewFor(domain);
-    if (view === undefined) return;
-    const draft = this.policyDraftFor(domain);
-    if (draft !== undefined && draft.revision !== view.revision) return;
-    if (domain !== undefined && view.domain?.mode === "inherit" && draft === undefined) return;
-    const current =
-      draft?.selection ?? (domain === undefined ? view.global.policy : view.domain!.effective);
+    const current = this.editableSelection(domain);
+    if (current === undefined) return;
     const enabled = new Set(current.enabled);
     if (enabled.has(harness)) enabled.delete(harness);
     else enabled.add(harness);
-    const next: HarnessSelection = {
-      enabled: (["pi", "claude"] as const).filter((entry) => enabled.has(entry)),
-      default: current.default === harness && !enabled.has(harness) ? null : current.default,
-    };
-    this.harnessPolicyDraft = {
-      scope: domain === undefined ? "global" : "domain",
+    this.applyHarnessPolicy(
       domain,
-      revision: draft?.revision ?? view.revision,
-      selection: next,
-    };
-    this.policyFailure = undefined;
-    cx.notify();
+      {
+        enabled: (["pi", "claude"] as const).filter((entry) => enabled.has(entry)),
+        default: current.default === harness && !enabled.has(harness) ? null : current.default,
+      },
+      cx,
+    );
   }
 
   setHarnessPolicyDefault(
@@ -1529,66 +1536,73 @@ export default class Panel extends View {
     cx: Context,
   ) {
     if (domain !== this.target() || this.harnessPolicyBusy) return;
-    const view = this.policyViewFor(domain);
-    if (view === undefined) return;
-    const draft = this.policyDraftFor(domain);
-    if (draft !== undefined && draft.revision !== view.revision) return;
-    if (domain !== undefined && view.domain?.mode === "inherit" && draft === undefined) return;
-    const current =
-      draft?.selection ?? (domain === undefined ? view.global.policy : view.domain!.effective);
+    const current = this.editableSelection(domain);
     if (
+      current === undefined ||
       defaultHarness === current.default ||
       (defaultHarness !== null && !current.enabled.includes(defaultHarness))
     )
       return;
-    this.harnessPolicyDraft = {
-      scope: domain === undefined ? "global" : "domain",
-      domain,
-      revision: draft?.revision ?? view.revision,
-      selection: { ...current, enabled: [...current.enabled], default: defaultHarness },
-    };
-    this.policyFailure = undefined;
-    cx.notify();
+    this.applyHarnessPolicy(domain, { enabled: [...current.enabled], default: defaultHarness }, cx);
   }
 
-  cancelHarnessPolicyDraft(domain: string | undefined, cx: Context) {
-    if (domain !== this.target() || this.harnessPolicyBusy) return;
-    this.harnessPolicyDraft = undefined;
-    this.policyFailure = undefined;
-    cx.notify();
-    if (this.policyDialog !== undefined) closeOverlay(this.policyDialog.overlay);
+  // The Inherit global switch: off gives the domain an override seeded from the policy it has
+  // now, on removes the override.
+  setHarnessPolicyInherit(domain: string | undefined, inherit: boolean, cx: Context) {
+    if (domain === undefined || domain !== this.target() || this.harnessPolicyBusy) return;
+    const view = this.policyViewFor(domain);
+    if (view?.domain === undefined || view.domain === null) return;
+    if (inherit && view.domain.mode === "replace") {
+      this.runHarnessPolicyMutation(
+        domain,
+        harnessPolicyResetCommand(home(), domain, view.revision),
+        cx,
+      );
+      return;
+    }
+    if (!inherit && view.domain.mode === "inherit")
+      this.applyHarnessPolicy(
+        domain,
+        { enabled: [...view.domain.effective.enabled], default: view.domain.effective.default },
+        cx,
+      );
   }
 
   reloadHarnessPolicy(domain: string | undefined, cx: Context) {
     if (domain !== this.target() || this.harnessPolicyBusy || this.stateDir === undefined) return;
-    this.harnessPolicyDraft = undefined;
     this.policyFailure = undefined;
     this.loadHarnessPolicy(this.stateDir, domain, cx, true, true);
     cx.notify();
   }
 
-  saveHarnessPolicy(domain: string | undefined, cx: Context) {
-    if (domain !== this.target() || this.harnessPolicyBusy) return;
-    const view = this.policyViewFor(domain);
-    const draft = this.policyDraftFor(domain);
-    if (view === undefined || draft === undefined || draft.revision !== view.revision) return;
-    const original = domain === undefined ? view.global.policy : view.domain?.effective;
-    const explicitOverride = domain !== undefined && view.domain?.mode === "inherit";
-    if (
-      original === undefined ||
-      (!explicitOverride && sameHarnessSelection(draft.selection, original))
-    )
-      return;
-    const command = harnessPolicySetCommand(home(), domain, draft.selection, draft.revision);
-    this.runHarnessPolicyMutation(domain, command, cx);
+  closePolicyDialog() {
+    if (this.policyDialog !== undefined) closeOverlay(this.policyDialog.overlay);
   }
 
-  resetHarnessPolicy(domain: string | undefined, cx: Context) {
-    if (domain === undefined || domain !== this.target() || this.harnessPolicyBusy) return;
-    const view = this.policyViewFor(domain);
-    if (view?.domain?.mode !== "replace") return;
-    const command = harnessPolicyResetCommand(home(), domain, view.revision);
-    this.runHarnessPolicyMutation(domain, command, cx);
+  // Show another scope in the dialog: the global defaults, or one domain.
+  selectPolicyDomain(domain: string | undefined, cx: Context) {
+    if (this.policyDialog === undefined || this.harnessPolicyBusy) return;
+    this.policyDomainMenuOpen = false;
+    this.policyFailure = undefined;
+    if (domain !== this.policyDialog.domain) {
+      this.policyDialog = { ...this.policyDialog, domain };
+      if (this.stateDir !== undefined) this.loadHarnessPolicy(this.stateDir, domain, cx);
+    }
+    this.policyDialogFocus?.focus();
+    cx.notify();
+  }
+
+  setPolicyDomainMenuOpen(open: boolean, cx: Context) {
+    if (this.policyDialog === undefined || this.policyDomainMenuOpen === open) return;
+    this.policyDomainMenuOpen = open;
+    if (!open) this.policyDialogFocus?.focus();
+    cx.notify();
+  }
+
+  // The dialog's Herdr Settings button: close the dialog, then open Herdr's own settings.
+  openHerdrSettings() {
+    this.closePolicyDialog();
+    openHerdrSettingsPage();
   }
 
   runHarnessPolicyMutation(
@@ -1618,7 +1632,6 @@ export default class Panel extends View {
       }
       if (!current()) return;
       if (failure === undefined) {
-        this.harnessPolicyDraft = undefined;
         this.policyFailure = undefined;
         this.harnessPolicyState = await this.readHarnessPolicy(domain);
       } else {
@@ -1633,32 +1646,27 @@ export default class Panel extends View {
 
   harnessPolicyModel(domain: string | undefined): HarnessPolicyEditorModel {
     const inScope = this.policyScope === (domain ?? "") && this.policyStateDir === this.stateDir;
-    const state = inScope ? this.harnessPolicyState : { kind: "loading" as const };
-    const draft = this.policyDraftFor(domain);
-    const failure =
-      this.policyFailure !== undefined && this.policyFailure.domain === domain
-        ? this.policyFailure.message
-        : undefined;
-    const conflict =
-      (state.kind === "loaded" && draft !== undefined && draft.revision !== state.view.revision) ||
-      (draft !== undefined &&
-        failure?.startsWith("Policy changed while you were editing") === true);
     return {
       scope: domain === undefined ? "global" : "domain",
       domain,
-      state,
-      draft,
+      domains: this.policyDomains,
+      domainMenuOpen: this.policyDomainMenuOpen,
+      state: inScope ? this.harnessPolicyState : { kind: "loading" as const },
       busy: inScope && this.harnessPolicyBusy,
+      failure:
+        this.policyFailure !== undefined && this.policyFailure.domain === domain
+          ? this.policyFailure.message
+          : undefined,
       focus: this.policyDialogFocus!,
-      failure,
-      conflict,
-      beginOverride: (cx) => this.beginHarnessPolicyOverride(domain, cx),
+      selectGlobal: (cx) => this.selectPolicyDomain(undefined, cx),
+      selectDomain: (name, cx) => this.selectPolicyDomain(name, cx),
+      setDomainMenuOpen: (open, cx) => this.setPolicyDomainMenuOpen(open, cx),
       toggle: (harness, cx) => this.toggleHarnessPolicy(domain, harness, cx),
       setDefault: (harness, cx) => this.setHarnessPolicyDefault(domain, harness, cx),
-      save: (cx) => this.saveHarnessPolicy(domain, cx),
-      reset: (cx) => this.resetHarnessPolicy(domain, cx),
-      cancel: (cx) => this.cancelHarnessPolicyDraft(domain, cx),
+      setInherit: (inherit, cx) => this.setHarnessPolicyInherit(domain, inherit, cx),
       reload: (cx) => this.reloadHarnessPolicy(domain, cx),
+      close: () => this.closePolicyDialog(),
+      openHerdrSettings: () => this.openHerdrSettings(),
     };
   }
 

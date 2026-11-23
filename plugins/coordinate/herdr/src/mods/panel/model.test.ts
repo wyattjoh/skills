@@ -332,8 +332,8 @@ test("opens the harness policy editor as a centered dialog of this mod", () => {
   expect(policyDialogSpec(undefined)).toEqual({
     mod: "coordinate-panel",
     kind: "dialog",
-    width: 400,
-    height: 300,
+    width: 880,
+    height: 620,
     props: { harnessPolicy: { domain: null } },
   });
   expect(policyDialogSpec("alpha").props).toEqual({ harnessPolicy: { domain: "alpha" } });

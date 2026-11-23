@@ -214,8 +214,8 @@ export const ANSWER_FLOW_LAYOUT_GEOMETRY = {
  * tallest editor state: failure and reload rows above the action row.
  */
 export const HARNESS_DIALOG = {
-  width: 400,
-  height: 300,
+  width: 880,
+  height: 620,
 } as const;
 
 /**

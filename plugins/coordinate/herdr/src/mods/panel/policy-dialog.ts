@@ -1,38 +1,38 @@
-// The harness policy editor as a Herdr dialog. Its structure, spacing, header, controls and
-// buttons follow herdr-finbar's tag editor dialog (a padded popover surface, a 15px semibold
-// title, dim-labelled rows, 28px raised buttons with one solid primary), so the two dialogs read
-// as one family. The editor's state and CLI calls live in the panel View; this file only draws.
-import { div } from "gpui-kit";
+// The harness policy settings window, drawn by the dialog copy of the panel mod. It mirrors
+// herdr-finbar's settings window (a sidebar with a title, section entries and a Herdr Settings
+// button pinned at the bottom; a right pane with an uppercase dim label, then rows of a title, a
+// dim description and a right-aligned switch or segmented picker, separated by hairlines), copying
+// its pieces rather than importing them. The editor's state and CLI calls live in the panel View.
+import { div, svg } from "gpui-kit";
 import type { Context, Element, FocusHandle } from "gpui-kit";
-import { h_flex, v_flex } from "gpui-base";
+import { Popover, h_flex, v_flex } from "gpui-base";
+import { HERDR_ICONS, MENU, menuPanel, menuRow } from "@wyattjoh/herdr-ui";
 import type { Theme } from "@wyattjoh/herdr-ui";
-import { sameHarnessSelection } from "./model.ts";
-import type {
-  DelegateHarness,
-  HarnessPolicyDraft,
-  HarnessPolicyState,
-  HarnessSelection,
-} from "./model.ts";
+import { HARNESS_DIALOG, HERDR_SETTINGS_ICON } from "./look.ts";
+import type { DelegateHarness, HarnessPolicyState } from "./model.ts";
 
 /**
- * What the dialog draws and calls: the editor's state for one scope, and its actions.
+ * What the window draws and calls: the editor's state for the selected scope, and its actions.
+ * Every control applies at once through the Coordinate CLI; there is no draft.
  */
 export type HarnessPolicyEditorModel = {
   scope: "global" | "domain";
   domain: string | undefined;
+  domains: string[];
+  domainMenuOpen: boolean;
   state: HarnessPolicyState;
-  draft: HarnessPolicyDraft | undefined;
   busy: boolean;
   failure: string | undefined;
-  conflict: boolean;
   focus: FocusHandle;
-  beginOverride: (cx: Context) => void;
+  selectGlobal: (cx: Context) => void;
+  selectDomain: (domain: string, cx: Context) => void;
+  setDomainMenuOpen: (open: boolean, cx: Context) => void;
   toggle: (harness: DelegateHarness, cx: Context) => void;
   setDefault: (harness: DelegateHarness | null, cx: Context) => void;
-  save: (cx: Context) => void;
-  reset: (cx: Context) => void;
-  cancel: (cx: Context) => void;
+  setInherit: (inherit: boolean, cx: Context) => void;
   reload: (cx: Context) => void;
+  close: (cx: Context) => void;
+  openHerdrSettings: (cx: Context) => void;
 };
 
 const HARNESS_LABELS: Readonly<Record<DelegateHarness, string>> = {
@@ -40,347 +40,475 @@ const HARNESS_LABELS: Readonly<Record<DelegateHarness, string>> = {
   claude: "Claude Code",
 };
 
-// Finbar's dialog metrics: surface padding, row gap, control height and radius, label column.
-const DIALOG = {
-  padding: 18,
-  gap: 12,
-  titleSize: 15,
-  rowGap: 10,
-  labelSize: 11.5,
-  labelWidth: 56,
-  controlHeight: 28,
-  controlRadius: 7,
-  controlSize: 12,
-  buttonPaddingX: 12,
-  buttonSize: 12.5,
-  pillPaddingX: 9,
-  footerGap: 8,
+const FOLDER_ICON = "mods/workspace-chrome/folder.svg";
+// A transparent fill, so a nav entry that is not selected keeps its layout without a color.
+const CLEAR = "#00000000";
+// A control that cannot be used right now keeps its place, dimmed.
+const INERT_OPACITY = 0.45;
+
+// Finbar's settings metrics: nav width and padding, entry padding and radius, pane padding, row
+// padding and gap, and its switch and segment sizes.
+const SETTINGS = {
+  navWidth: 190,
+  navPadding: 10,
+  navGap: 2,
+  titleSize: 16,
+  entryGap: 10,
+  entryPaddingX: 10,
+  entryPaddingY: 7,
+  entryRadius: 7,
+  entryIcon: 15,
+  entryText: 13.5,
+  panePaddingX: 28,
+  panePaddingY: 22,
+  headingSize: 12,
+  rowGap: 16,
+  rowPaddingY: 12,
+  rowTitle: 14,
+  rowAbout: 12.5,
+  rowAboutLine: "18px",
+  segmentPaddingX: 10,
+  segmentPaddingY: 6,
+  segmentRadius: 5,
+  segmentText: 12,
+  segmentGap: 4,
+  switchWidth: 36,
+  switchHeight: 20,
+  switchKnob: 16,
+  actionPaddingX: 12,
+  actionPaddingY: 5,
+  actionRadius: 7,
+  actionText: 13,
+  menuMaxHeight: 240,
 } as const;
 
-/**
- * A dialog button: the raised secondary look, or the solid primary fill for the one main action.
- * Without a handler it is inert: dimmed, with no pointer or hover.
- * @param t The theme.
- * @param id The element id.
- * @param label The button text.
- * @param onClick Runs on click with that click's context.
- * @param primary Whether this is the dialog's main action.
- * @returns The button.
- */
-const dialogButton = (
-  t: Theme,
-  id: string,
-  label: string,
-  onClick: ((cx: Context) => void) | undefined,
-  primary = false,
-): Element =>
+// The uppercase dim label that opens the right pane.
+const heading = (t: Theme, id: string, label: string): Element =>
   div()
     .id(id)
-    .flex_none()
-    .px(DIALOG.buttonPaddingX)
-    .h(DIALOG.controlHeight)
-    .flex()
-    .items_center()
-    .rounded(DIALOG.controlRadius)
-    .text_size(DIALOG.buttonSize)
-    .when(primary, (el) =>
-      el.bg(t.solid).text_color(onClick === undefined ? t.dim : t.solid_foreground),
-    )
-    .when(!primary, (el) =>
-      el.bg(t.raised ?? t.selected).text_color(onClick === undefined ? t.dim : t.foreground),
-    )
-    .when(onClick !== undefined, (el) =>
-      el
-        .cursor_pointer()
-        .hover((style) => style.opacity(0.85))
-        .on_click((_event, cx) => onClick!(cx)),
-    )
-    .child(label);
+    .pt(6)
+    .pb(8)
+    .text_size(SETTINGS.headingSize)
+    .font_semibold()
+    .text_color(t.dim)
+    .child(label.toUpperCase());
 
-/**
- * A labelled dialog row: a fixed-width dim label, then its control.
- * @param t The theme.
- * @param id The row's element id.
- * @param label The row's label.
- * @param body The control.
- * @returns The row.
- */
-const dialogSection = (t: Theme, id: string, label: string, body: Element): Element =>
+// One setting: a title over a dim description, with its control at the right, over a hairline.
+const row = (t: Theme, id: string, title: string, about: string, control: Element): Element =>
   h_flex()
     .id(id)
-    .gap(DIALOG.rowGap)
+    .w_full()
+    .gap(SETTINGS.rowGap)
+    .py(SETTINGS.rowPaddingY)
     .items_center()
+    .border_b(1)
+    .border_color(t.border)
     .child(
-      div()
-        .w(DIALOG.labelWidth)
-        .flex_none()
-        .text_size(DIALOG.labelSize)
-        .text_color(t.dim)
-        .child(label),
+      v_flex()
+        .flex_1()
+        .min_w(0)
+        .gap(3)
+        .child(div().text_size(SETTINGS.rowTitle).text_color(t.foreground).child(title))
+        .child(
+          div()
+            .text_size(SETTINGS.rowAbout)
+            .line_height(SETTINGS.rowAboutLine)
+            .text_color(t.dim)
+            .child(about),
+        ),
     )
-    .child(body);
+    .child(control);
 
-/**
- * A choice pill in the dialog's raised look; the chosen one is outlined in the accent.
- * @param t The theme.
- * @param id The element id.
- * @param label The pill text.
- * @param on Whether it is the current choice.
- * @param onClick The press handler; without one the pill is inert.
- * @param tooltip What it does, when the label does not say.
- * @returns The pill.
- */
-const dialogPill = (
+// Finbar's settings switch: an accent track with a knob at the end when on. Without a handler it
+// is inert and dimmed.
+const settingsSwitch = (
   t: Theme,
   id: string,
-  label: string,
-  on: boolean,
+  checked: boolean,
   onClick: ((cx: Context) => void) | undefined,
-  tooltip: string | undefined,
 ): Element =>
   div()
     .id(id)
+    .w(SETTINGS.switchWidth)
+    .h(SETTINGS.switchHeight)
     .flex_none()
-    .px(DIALOG.pillPaddingX)
-    .h(DIALOG.controlHeight)
+    .rounded(SETTINGS.switchHeight / 2)
+    .p(2)
+    .bg(checked ? t.accent : t.hover)
     .flex()
+    .when(checked, (el) => el.justify_end())
+    .when(onClick === undefined, (el) => el.opacity(INERT_OPACITY))
+    .when(onClick !== undefined, (el) =>
+      el.cursor_pointer().on_click((_event, cx) => {
+        cx.stop_propagation();
+        onClick!(cx);
+      }),
+    )
+    .child(
+      div()
+        .w(SETTINGS.switchKnob)
+        .h(SETTINGS.switchKnob)
+        .rounded(SETTINGS.switchKnob / 2)
+        .bg(checked ? t.accent_foreground : t.muted),
+    );
+
+// A switch with its harness name beside it, for the enabled-harnesses row.
+const harnessSwitch = (
+  t: Theme,
+  id: string,
+  label: string,
+  checked: boolean,
+  onClick: ((cx: Context) => void) | undefined,
+  note: string | undefined,
+): Element =>
+  h_flex()
+    .id(`${id}-group`)
+    .gap(8)
     .items_center()
-    .rounded(DIALOG.controlRadius)
-    .text_size(DIALOG.controlSize)
+    .child(div().text_size(SETTINGS.segmentText).text_color(t.dim).child(label))
+    .child(settingsSwitch(t, id, checked, onClick))
+    .when(note !== undefined, (el) =>
+      el.child(div().text_size(SETTINGS.segmentText).text_color(t.dim).child(note!)),
+    );
+
+// One segment of a segmented picker: the chosen one is filled with the accent.
+const segment = (
+  t: Theme,
+  id: string,
+  label: string,
+  selected: boolean,
+  onClick: ((cx: Context) => void) | undefined,
+): Element =>
+  div()
+    .id(id)
+    .px(SETTINGS.segmentPaddingX)
+    .py(SETTINGS.segmentPaddingY)
+    .rounded(SETTINGS.segmentRadius)
+    .text_size(SETTINGS.segmentText)
+    .text_color(selected ? t.accent_foreground : t.dim)
+    .bg(selected ? t.accent : t.surface)
+    .when(onClick === undefined && !selected, (el) => el.opacity(INERT_OPACITY))
+    .when(onClick !== undefined, (el) => el.cursor_pointer().on_click((_event, cx) => onClick!(cx)))
+    .child(label);
+
+// Finbar's settings action: a bordered raised button.
+const settingsAction = (
+  t: Theme,
+  id: string,
+  label: string,
+  onClick: ((cx: Context) => void) | undefined,
+): Element =>
+  h_flex()
+    .id(id)
+    .gap(8)
+    .items_center()
+    .px(SETTINGS.actionPaddingX)
+    .py(SETTINGS.actionPaddingY)
+    .rounded(SETTINGS.actionRadius)
     .border_1()
-    .border_color(on ? t.accent : (t.raised ?? t.selected))
-    .bg(on ? t.selected : (t.raised ?? t.background))
+    .border_color(t.border)
+    .bg(t.raised ?? t.selected)
+    .text_size(SETTINGS.actionText)
     .text_color(onClick === undefined ? t.dim : t.foreground)
     .when(onClick !== undefined, (el) =>
       el
         .cursor_pointer()
         .hover((style) => style.bg(t.hover))
-        .on_click((_event, cx) => onClick!(cx)),
+        .on_click((_event, cx) => onClick!(cx))
+        .on_mouse_down("left", (_event, cx) => cx.stop_propagation()),
     )
-    .when(tooltip !== undefined, (el) => el.tooltip(tooltip!))
-    .child(label);
+    .child(div().flex_1().child(label));
 
-// The text of one row of notes under the controls: an error in the blocked color.
-const dialogNote = (t: Theme, id: string, message: string): Element =>
-  div().id(id).text_size(DIALOG.controlSize).text_color(t.blocked).child(message);
+// A sidebar entry: an icon and a label, raised when it is the one shown.
+const navEntry = (t: Theme, id: string, icon: string, label: string, on: boolean): Element =>
+  h_flex()
+    .id(id)
+    .gap(SETTINGS.entryGap)
+    .px(SETTINGS.entryPaddingX)
+    .py(SETTINGS.entryPaddingY)
+    .items_center()
+    .rounded(SETTINGS.entryRadius)
+    .cursor_pointer()
+    .bg(on ? (t.raised ?? t.selected) : CLEAR)
+    .hover((style) => style.bg(t.raised ?? t.selected))
+    .child(
+      svg(icon)
+        .size(SETTINGS.entryIcon)
+        .text_color(on ? t.accent : t.dim),
+    )
+    .child(
+      div()
+        .flex_1()
+        .min_w_0()
+        .truncate()
+        .text_size(SETTINGS.entryText)
+        .text_color(on ? t.foreground : t.muted)
+        .child(label),
+    );
+
+// The domain picker: a sidebar entry that opens a menu of every domain.
+const domainPicker = (t: Theme, model: HarnessPolicyEditorModel): Element => {
+  const trigger = navEntry(
+    t,
+    "harness-policy-domain-trigger",
+    FOLDER_ICON,
+    model.domain ?? "Domain",
+    model.domain !== undefined,
+  )
+    .on_click((_event, cx) => model.setDomainMenuOpen(!model.domainMenuOpen, cx))
+    .child(
+      svg(HERDR_ICONS.chevronDown)
+        .size(SETTINGS.entryIcon - 3)
+        .text_color(t.dim),
+    );
+  return Popover.new("harness-policy-domain-popover")
+    .id("harness-policy-domain-popover")
+    .open(model.domainMenuOpen)
+    .on_open_change((open, cx) => model.setDomainMenuOpen(open, cx))
+    .trigger(trigger)
+    .when(model.domainMenuOpen, (el) =>
+      el.content(
+        menuPanel(t, SETTINGS.navWidth - 2 * SETTINGS.navPadding, MENU.padding)
+          .id("harness-policy-domain-options")
+          .role("menu")
+          .accessibility_label("Domain")
+          .max_h(SETTINGS.menuMaxHeight)
+          .overflow_y_scroll()
+          .children(
+            model.domains.length === 0
+              ? [div().px(SETTINGS.entryPaddingX).py(6).text_color(t.dim).child("No backlogs yet")]
+              : model.domains.map((name, index) =>
+                  menuRow(t, {
+                    id: `harness-policy-domain-${name}`,
+                    label: name,
+                    selected: false,
+                    checked: model.domain === name,
+                    onClick: (cx) => model.selectDomain(name, cx),
+                  })
+                    .role("menu_item")
+                    .set_position(index + 1, model.domains.length),
+                ),
+          ),
+      ),
+    );
+};
+
+// The sidebar: the title, the Global entry, the domain picker, and Herdr Settings at the bottom.
+const sidebar = (t: Theme, model: HarnessPolicyEditorModel): Element =>
+  v_flex()
+    .id("harness-policy-nav")
+    .flex_none()
+    .w(SETTINGS.navWidth)
+    .h_full()
+    .p(SETTINGS.navPadding)
+    .gap(SETTINGS.navGap)
+    .border_r(1)
+    .border_color(t.border)
+    .child(
+      div()
+        .px(SETTINGS.entryPaddingX)
+        .pt(6)
+        .pb(12)
+        .text_size(SETTINGS.titleSize)
+        .font_semibold()
+        .text_color(t.foreground)
+        .child("Backlog"),
+    )
+    .child(
+      navEntry(
+        t,
+        "harness-policy-nav-global",
+        HERDR_SETTINGS_ICON,
+        "Global",
+        model.scope === "global",
+      ).on_click((_event, cx) => model.selectGlobal(cx)),
+    )
+    .child(domainPicker(t, model))
+    .child(div().flex_1())
+    .child(
+      settingsAction(t, "harness-policy-herdr-settings", "Herdr Settings", (cx) =>
+        model.openHerdrSettings(cx),
+      ),
+    );
+
+// The failure line and its Reload button, inline in the pane.
+const failureRows = (t: Theme, message: string, model: HarnessPolicyEditorModel): Element[] => [
+  div()
+    .id("harness-policy-failure")
+    .py(SETTINGS.rowPaddingY)
+    .text_size(SETTINGS.rowAbout)
+    .line_height(SETTINGS.rowAboutLine)
+    .text_color(t.blocked)
+    .child(message),
+  h_flex()
+    .id("harness-policy-reload-row")
+    .pb(SETTINGS.rowPaddingY)
+    .child(
+      settingsAction(
+        t,
+        "harness-policy-reload",
+        "Reload policy",
+        model.busy ? undefined : (cx) => model.reload(cx),
+      ),
+    ),
+];
+
+// The pane for the scope shown: rows of switches and segments for its policy.
+const paneRows = (t: Theme, model: HarnessPolicyEditorModel): Element[] => {
+  if (model.state.kind === "loading")
+    return [
+      div()
+        .id("harness-policy-loading")
+        .py(SETTINGS.rowPaddingY)
+        .text_color(t.dim)
+        .child("Loading policy…"),
+    ];
+  if (model.state.kind === "error") return failureRows(t, model.state.message, model);
+  const view = model.state.view;
+  const domainPolicy = view.domain;
+  const selection = model.scope === "global" ? view.global.policy : domainPolicy?.effective;
+  if (selection === undefined || (model.scope === "domain" && domainPolicy === null))
+    return failureRows(t, "Coordinate returned policy data for the wrong scope.", model);
+  const inheriting = model.scope === "domain" && domainPolicy?.mode === "inherit";
+  const canEdit = !model.busy && !inheriting;
+  const source =
+    model.scope === "global"
+      ? view.global.source === "legacy"
+        ? "Legacy defaults"
+        : "Global policy"
+      : inheriting
+        ? view.global.source === "legacy"
+          ? "Inherited from legacy defaults"
+          : "Inherited from global policy"
+        : "Domain override";
+  const rows: Element[] = [
+    div()
+      .id("harness-policy-source")
+      .pb(SETTINGS.rowPaddingY)
+      .text_size(SETTINGS.rowAbout)
+      .text_color(t.dim)
+      .child(source),
+  ];
+  if (model.scope === "domain")
+    rows.push(
+      row(
+        t,
+        "harness-policy-row-inherit",
+        "Inherit global",
+        "Use the global harness policy for this domain. Turn it off to give the domain its own.",
+        settingsSwitch(
+          t,
+          "harness-policy-inherit-toggle",
+          inheriting,
+          model.busy ? undefined : (cx) => model.setInherit(!inheriting, cx),
+        ),
+      ),
+    );
+  rows.push(
+    row(
+      t,
+      "harness-policy-row-enabled",
+      "Enabled harnesses",
+      "Harnesses delegates may be launched with. A disabled harness is refused, including on resume.",
+      h_flex()
+        .id("harness-policy-enabled")
+        .flex_none()
+        .gap(18)
+        .items_center()
+        .children([
+          ...(["pi", "claude"] as const).map((harness) =>
+            harnessSwitch(
+              t,
+              `harness-policy-enabled-${harness}`,
+              HARNESS_LABELS[harness],
+              selection.enabled.includes(harness),
+              canEdit ? (cx) => model.toggle(harness, cx) : undefined,
+              undefined,
+            ),
+          ),
+          harnessSwitch(
+            t,
+            "harness-policy-enabled-codex",
+            "Codex",
+            false,
+            undefined,
+            "Unavailable",
+          ),
+        ]),
+    ),
+    row(
+      t,
+      "harness-policy-row-default",
+      "Default harness",
+      "Used when a delegate is launched without naming a harness. Only enabled harnesses can be the default.",
+      h_flex()
+        .id("harness-policy-default")
+        .flex_none()
+        .gap(SETTINGS.segmentGap)
+        .children([
+          segment(
+            t,
+            "harness-policy-default-none",
+            "No default",
+            selection.default === null,
+            canEdit && selection.default !== null ? (cx) => model.setDefault(null, cx) : undefined,
+          ),
+          ...(["pi", "claude"] as const).map((harness) =>
+            segment(
+              t,
+              `harness-policy-default-${harness}`,
+              HARNESS_LABELS[harness],
+              selection.default === harness,
+              canEdit && selection.enabled.includes(harness) && selection.default !== harness
+                ? (cx) => model.setDefault(harness, cx)
+                : undefined,
+            ),
+          ),
+        ]),
+    ),
+  );
+  if (model.failure !== undefined) rows.push(...failureRows(t, model.failure, model));
+  return rows;
+};
 
 /**
- * The dialog's whole surface, drawn by the dialog copy of the panel mod. Escape closes it, as
- * Cancel does, and either discards an unsaved draft.
+ * The whole settings window. Escape closes the domain menu when it is open, and the window
+ * otherwise; a click beside the window closes it too, which Herdr handles for a dialog.
  * @param t The theme.
  * @param model The editor's state and actions.
  * @returns The element.
  */
-export const harnessPolicyDialog = (t: Theme, model: HarnessPolicyEditorModel): Element => {
-  const id =
-    model.scope === "global" ? "harness-policy-global" : `harness-policy-domain-${model.domain}`;
-  const title = model.scope === "global" ? "Delegate harness defaults" : "Delegate harness policy";
-  const reload = dialogButton(
-    t,
-    `${id}-reload-button`,
-    "Reload policy",
-    model.busy ? undefined : (cx) => model.reload(cx),
-  );
-  const body: Element[] = [];
-  const secondary: Element[] = [];
-  let footerSave: Element | undefined;
-  if (model.state.kind === "loading") {
-    body.push(div().id(`${id}-loading`).text_color(t.dim).child("Loading policy…"));
-  } else if (model.state.kind === "error") {
-    body.push(dialogNote(t, `${id}-error`, model.state.message));
-    secondary.push(reload);
-  } else {
-    const view = model.state.view;
-    const domainPolicy = view.domain;
-    const original = model.scope === "global" ? view.global.policy : domainPolicy?.effective;
-    const selection: HarnessSelection | undefined = model.draft?.selection ?? original;
-    if (selection === undefined || (model.scope === "domain" && domainPolicy === null)) {
-      body.push(
-        dialogNote(t, `${id}-error`, "Coordinate returned policy data for the wrong scope."),
-      );
-      secondary.push(reload);
-    } else {
-      const inherited = model.scope === "domain" && domainPolicy?.mode === "inherit";
-      const editable = model.scope === "global" || !inherited || model.draft !== undefined;
-      const canEdit = editable && !model.busy && !model.conflict;
-      const source =
-        model.scope === "global"
-          ? view.global.source === "legacy"
-            ? "Legacy defaults"
-            : "Global policy"
-          : model.draft !== undefined
-            ? "Unsaved domain override"
-            : inherited
-              ? view.global.source === "legacy"
-                ? "Inherited from legacy defaults"
-                : "Inherited from global policy"
-              : "Domain override";
-      body.push(
-        dialogSection(t, `${id}-source`, "Source", div().text_color(t.dim).child(source)),
-        dialogSection(
-          t,
-          `${id}-enabled`,
-          "Enabled",
-          h_flex()
-            .flex_wrap()
-            .gap(DIALOG.footerGap)
-            .items_center()
-            .children([
-              ...(["pi", "claude"] as const).map((harness) =>
-                dialogPill(
-                  t,
-                  `${id}-enabled-${harness}`,
-                  HARNESS_LABELS[harness],
-                  selection.enabled.includes(harness),
-                  canEdit ? (cx) => model.toggle(harness, cx) : undefined,
-                  `Enable or disable ${HARNESS_LABELS[harness]}`,
-                ),
-              ),
-              dialogPill(
-                t,
-                `${id}-codex-unavailable`,
-                "Codex",
-                false,
-                undefined,
-                "Codex is not available in Coordinate",
-              ),
-              div()
-                .text_size(DIALOG.labelSize)
-                .text_color(t.dim)
-                .child(selection.enabled.length === 0 ? "None enabled" : "Unavailable"),
-            ]),
-        ),
-        dialogSection(
-          t,
-          `${id}-default`,
-          "Default",
-          h_flex()
-            .flex_wrap()
-            .gap(DIALOG.footerGap)
-            .items_center()
-            .children([
-              dialogPill(
-                t,
-                `${id}-default-none`,
-                "No default",
-                selection.default === null,
-                canEdit ? (cx) => model.setDefault(null, cx) : undefined,
-                undefined,
-              ),
-              ...(["pi", "claude"] as const).map((harness) => {
-                const available = selection.enabled.includes(harness);
-                return dialogPill(
-                  t,
-                  `${id}-default-${harness}`,
-                  HARNESS_LABELS[harness],
-                  selection.default === harness,
-                  canEdit && available ? (cx) => model.setDefault(harness, cx) : undefined,
-                  available
-                    ? `${HARNESS_LABELS[harness]} default`
-                    : `Enable ${HARNESS_LABELS[harness]} before choosing it as the default`,
-                );
-              }),
-            ]),
-        ),
-      );
-      if (model.conflict || model.failure !== undefined) {
-        body.push(
-          dialogNote(
-            t,
-            `${id}-failure`,
-            model.conflict
-              ? "Policy changed while this draft was open. Reload to discard it, then reapply your choices."
-              : model.failure!,
-          ),
-        );
-        secondary.push(reload);
-      }
-      if (model.scope === "domain" && inherited && model.draft === undefined)
-        secondary.push(
-          dialogButton(
-            t,
-            `${id}-override-button`,
-            "Override global",
-            model.busy ? undefined : (cx) => model.beginOverride(cx),
-          ),
-        );
-      if (model.scope === "domain" && domainPolicy?.mode === "replace")
-        secondary.push(
-          dialogButton(
-            t,
-            `${id}-reset-button`,
-            "Reset to global",
-            model.busy || model.conflict ? undefined : (cx) => model.reset(cx),
-          ),
-        );
-      if (model.draft !== undefined) {
-        const dirty =
-          original !== undefined &&
-          ((model.scope === "domain" && domainPolicy?.mode === "inherit") ||
-            !sameHarnessSelection(model.draft.selection, original));
-        footerSave = dialogButton(
-          t,
-          `${id}-save`,
-          model.busy ? "Saving…" : model.scope === "global" ? "Save defaults" : "Save override",
-          dirty && canEdit ? (cx) => model.save(cx) : undefined,
-          dirty && canEdit,
-        );
-      }
-    }
-  }
-  return v_flex()
+export const harnessPolicyDialog = (t: Theme, model: HarnessPolicyEditorModel): Element =>
+  h_flex()
     .id("harness-policy-dialog")
+    .key_context("modal")
     .track_focus(model.focus)
     .w_full()
-    .p(DIALOG.padding)
-    .gap(DIALOG.gap)
-    .bg(t.popover)
-    .text_size(13)
+    .h(HARNESS_DIALOG.height)
+    .min_h(0)
+    .items_start()
     .text_color(t.foreground)
     .on_key_down((event, cx) => {
-      if (event.key === "escape") model.cancel(cx);
+      if (event.key !== "escape") return;
+      if (model.domainMenuOpen) model.setDomainMenuOpen(false, cx);
+      else model.close(cx);
     })
+    .child(sidebar(t, model))
     .child(
-      h_flex()
-        .id(`${id}-header`)
-        .items_center()
-        .gap(DIALOG.footerGap)
+      v_flex()
+        .id("harness-policy-pane")
+        .flex_1()
+        .min_w(0)
+        .h_full()
+        .px(SETTINGS.panePaddingX)
+        .py(SETTINGS.panePaddingY)
+        .overflow_y_scroll()
         .child(
-          div()
-            .flex_1()
-            .text_size(DIALOG.titleSize)
-            .font_semibold()
-            .text_color(t.foreground)
-            .child(title),
-        )
-        .when(model.domain !== undefined, (el) =>
-          el.child(
-            div()
-              .id(`${id}-scope`)
-              .max_w(160)
-              .truncate()
-              .text_size(DIALOG.controlSize)
-              .text_color(t.dim)
-              .child(model.domain!),
-          ),
-        ),
-    )
-    .children(body)
-    .child(
-      h_flex()
-        .id(`${id}-footer`)
-        .gap(DIALOG.footerGap)
-        .items_center()
-        .children(secondary)
-        .child(div().flex_1())
-        .child(
-          dialogButton(
+          heading(
             t,
-            `${id}-cancel`,
-            "Cancel",
-            model.busy ? undefined : (cx) => model.cancel(cx),
+            "harness-policy-title",
+            model.scope === "global" ? "Global" : (model.domain ?? "Global"),
           ),
         )
-        .when(footerSave !== undefined, (el) => el.child(footerSave!)),
+        .children(paneRows(t, model)),
     );
-};
