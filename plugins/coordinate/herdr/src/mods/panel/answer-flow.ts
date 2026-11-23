@@ -70,6 +70,44 @@ export const advanceAnswerFlow = (flow: AnswerFlow, result: "answered" | "skippe
 };
 
 /**
+ * What the live backlog says about a queued question.
+ */
+export type FlowAskState = "open" | "cleared" | "missing";
+
+/**
+ * Drop the questions whose ask cleared outside the flow, so the stack never shows a card for
+ * something already answered elsewhere. A question answered in this flow stays, because Back
+ * returns to it. A missing item stays too: its card says the question is unavailable.
+ * @param flow The flow to repair.
+ * @param stateOf The live state of each queued id.
+ * @param keep An id never to drop, such as the question being answered right now.
+ * @returns The repaired flow, with the same current question when it survives and otherwise the
+ * next open one, and the ids dropped. The flow itself, unchanged, when nothing was dropped.
+ */
+export const dropClearedQuestions = (
+  flow: AnswerFlow,
+  stateOf: (id: string) => FlowAskState,
+  keep?: string,
+): { flow: AnswerFlow; dropped: string[] } => {
+  const dropped = flow.ids.filter(
+    (id) => id !== keep && !flow.answered.includes(id) && stateOf(id) === "cleared",
+  );
+  if (dropped.length === 0) return { flow, dropped };
+  const ids = flow.ids.filter((id) => !dropped.includes(id));
+  const skipped = flow.skipped.filter((id) => !dropped.includes(id));
+  const currentId = flow.ids[flow.current];
+  const isOpen = (id: string) => !flow.answered.includes(id) && !skipped.includes(id);
+  let current = ids.length;
+  if (currentId !== undefined) {
+    const kept = ids.indexOf(currentId);
+    const after = flow.ids.slice(flow.current + 1).find((id) => ids.includes(id) && isOpen(id));
+    const open = after ?? ids.find(isOpen);
+    current = kept >= 0 ? kept : open === undefined ? ids.length : ids.indexOf(open);
+  }
+  return { flow: { ...flow, ids, skipped, current }, dropped };
+};
+
+/**
  * Place every queued card in one vertically ordered stack around a fixed focus-card center.
  * Neighbor cards use their measured compact height and a centered inset width; the active card
  * uses the focus width and its measured expanded height. Compact-card opacity follows viewport overlap

@@ -4095,3 +4095,149 @@ test("the dialog follows finbar's structure: header, labelled rows, then a foote
   expect(get(root, "harness-policy-dialog").styles.bg).toBe(theme().popover);
   expect(get(root, "harness-policy-domain-alpha-cancel").styles.bg).toBe(theme().raised);
 });
+
+const flowSetup = async (count: number) => {
+  focusDomain("alpha");
+  let backlog = withManyAsks(count);
+  host.files.set(DOC, JSON.stringify(backlog));
+  const mounted = await mount();
+  get(mounted.render(), "item-i1").click!({}, mounted.ctx.cx);
+  const questionIds = Array.from({ length: count }, (_, index) => `i${index + 1}`);
+  const root = measureFlow(
+    mounted.render(),
+    mounted.ctx.cx,
+    mounted.render,
+    questionIds.map((id) => ({ id, expandedHeight: 300 })),
+  );
+  return { ...mounted, root, backlog, questionIds };
+};
+
+const flowCardIds = (root: Node) =>
+  ids(root, "answer-flow-card-").filter((id) => !id.includes("-content-"));
+
+test("a question answered outside the flow is dropped wherever it sits, with its sizes and focus handle", async () => {
+  const { ctx, view, render, backlog } = await flowSetup(3);
+  const key = view.flowCardSizeKey("alpha", "i2");
+  expect(view.answerFlowCardSizes.has(key)).toBe(true);
+  expect(view.answerFlowRationaleFocus.has("i2")).toBe(true);
+
+  host.files.set(DOC, JSON.stringify(recordAnswer(backlog, "i2", "Yes")));
+  backlogWatch()!.fire([DOC]);
+  await settle();
+  const root = render();
+
+  expect(flowCardIds(root)).toEqual([
+    "answer-flow-card-i1",
+    "answer-flow-card-i3",
+    "answer-flow-card-done",
+  ]);
+  expect(text(get(root, "answer-flow-progress"))).toBe("Question 1 of 2");
+  expect(view.answerFlow?.ids).toEqual(["i1", "i3"]);
+  expect(view.answerFlowCardSizes.has(key)).toBe(false);
+  expect(view.answerFlowRationaleFocus.has("i2")).toBe(false);
+  expect(ids(root, "answer-flow-detail-i2")).toEqual([]);
+  expect(ctx.notified > 0).toBe(true);
+});
+
+test("a current question answered outside the flow is dropped and the next open one is shown", async () => {
+  const { view, render, backlog } = await flowSetup(3);
+
+  host.files.set(DOC, JSON.stringify(recordAnswer(backlog, "i1", "Yes")));
+  backlogWatch()!.fire([DOC]);
+  await settle();
+  const root = render();
+
+  expect(view.answerFlow?.ids).toEqual(["i2", "i3"]);
+  expect([view.answerFlow?.current, view.answerFlow?.answered]).toEqual([0, []]);
+  expect(view.selected).toEqual({ kind: "item", domain: "alpha", id: "i2" });
+  expect(text(get(root, "answer-flow-progress"))).toBe("Question 1 of 2");
+});
+
+test("the summary counts only what was answered or skipped in the flow", async () => {
+  const { ctx, view, render, backlog } = await flowSetup(3);
+
+  host.files.set(DOC, JSON.stringify(recordAnswer(backlog, "i3", "No")));
+  backlogWatch()!.fire([DOC]);
+  await settle();
+  get(render(), "answer-flow-card-i2").click!({}, ctx.cx);
+  ctx.tick(600);
+  await settle();
+  get(render(), "answer-flow-card-done").click!({}, ctx.cx);
+  ctx.tick(600);
+  await settle();
+  const root = render();
+
+  expect(view.answerFlow?.ids).toEqual(["i1", "i2"]);
+  expect(text(get(root, "answer-flow-progress"))).toBe("Done");
+  expect(text(get(root, "answer-flow-detail-done-count"))).toBe("0 answered, 2 skipped.");
+});
+
+test("a question cleared while the flow is not looking is dropped before a skip chooses its target", async () => {
+  const { ctx, view, render, backlog } = await flowSetup(3);
+
+  // A read the flow has not reconciled yet, as one that arrived during a motion would be.
+  view.doc = { kind: "loaded", backlog: recordAnswer(backlog, "i2", "Yes") };
+  get(render(), "answer-flow-card-i2").click!({}, ctx.cx);
+
+  expect(view.answerFlow?.ids).toEqual(["i1", "i3"]);
+  expect(view.answerFlowMotion?.targetFlow?.current).toBe(1);
+  expect(flowCardIds(render())).toEqual([
+    "answer-flow-card-i1",
+    "answer-flow-card-i3",
+    "answer-flow-card-done",
+  ]);
+});
+
+test("answering the current question keeps it, even when the document already shows it answered", async () => {
+  const { ctx, view, render, backlog } = await flowSetup(3);
+
+  get(render(), "answer-flow-ask-i1-option-1").click!({}, ctx.cx);
+  const answered = recordAnswer(backlog, "i1", "No");
+  host.files.set(DOC, JSON.stringify(answered));
+  get(render(), "answer-flow-ask-i1-answer-submit").click!({}, ctx.cx);
+  // The read that follows the CLI's write lands first: while the answer is in flight the flow
+  // leaves its own question alone, then keeps it when it moves on.
+  view.reconcileAnswerFlow("alpha", { kind: "loaded", backlog: answered });
+  expect([view.answerFlow?.ids, view.answerFlow?.current]).toEqual([["i1", "i2", "i3"], 0]);
+  view.doc = { kind: "loaded", backlog: answered };
+  await settle();
+
+  expect(view.answerFlowMotion?.action).toBe("answered");
+  expect(view.answerFlowMotion?.targetFlow?.answered).toEqual(["i1"]);
+  expect(view.answerFlow?.ids).toEqual(["i1", "i2", "i3"]);
+});
+
+test("a question answered in the flow is read-only on Back: the answer on record, sized to its content", async () => {
+  const { ctx, view, render, root: measured, backlog } = await flowSetup(2);
+  const expandedWidth = 360 * ANSWER_CAROUSEL.compactWidthRatio;
+
+  get(measured, "answer-flow-ask-i1-option-1").click!({}, ctx.cx);
+  const answered = recordAnswer(backlog, "i1", "No");
+  host.files.set(DOC, JSON.stringify(answered));
+  get(render(), "answer-flow-ask-i1-answer-submit").click!({}, ctx.cx);
+  await settle();
+  reportSize(render(), "answer-flow-measure-expanded-i1", ctx.cx, 100, expandedWidth);
+  ctx.tick(600);
+  await settle();
+  expect(view.answerFlow?.ids).toEqual(["i1", "i2"]);
+  get(render(), "answer-flow-card-i1").click!({}, ctx.cx);
+  const root = render();
+
+  expect(text(get(root, "answer-flow-detail-i1-answered"))).toBe("Answered: No");
+  expect(get(root, "answer-flow-card-i1").styles.h).toBe(100);
+  expect(text(get(root, "answer-flow-preview-i1"))).toContain("Question 1?");
+});
+
+test("a missing item's card still says the question is unavailable", async () => {
+  const { view, render, backlog } = await flowSetup(3);
+
+  view.doc = {
+    kind: "loaded",
+    backlog: { ...backlog, items: backlog.items.filter((item) => item.id !== "i2") },
+  };
+  const root = render();
+
+  expect(text(get(root, "answer-flow-measure-expanded-i2-detail-missing"))).toBe(
+    "Question unavailable. Go back to the domain.",
+  );
+});

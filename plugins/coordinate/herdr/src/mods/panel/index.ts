@@ -71,8 +71,8 @@ import type {
   PolicyDialogProps,
   Screen,
 } from "./model.ts";
-import { advanceAnswerFlow, startAnswerFlow } from "./answer-flow.ts";
-import type { AnswerFlow } from "./answer-flow.ts";
+import { advanceAnswerFlow, dropClearedQuestions, startAnswerFlow } from "./answer-flow.ts";
+import type { AnswerFlow, FlowAskState } from "./answer-flow.ts";
 import {
   ANSWER_CAROUSEL,
   ANSWER_FLOW_SPEED_OPTIONS,
@@ -421,22 +421,50 @@ export default class Panel extends View {
     });
   }
 
-  reconcileAnswerFlow(domain: string, document: DocumentState) {
+  // Repair the flow against the live document: a question answered outside the flow is dropped,
+  // wherever it sits, and a current question whose item vanished is skipped. Waits while a motion
+  // runs or the flow's own answer is in flight; the motion's end reconciles again.
+  reconcileAnswerFlow(domain: string, document: DocumentState, keep?: string) {
     const flow = this.answerFlow;
     if (
       this.answerFlowMotion !== undefined ||
+      this.draft?.busy === true ||
       flow === undefined ||
       flow.domain !== domain ||
       document.kind !== "loaded"
     )
       return;
-    const currentId = flow.ids[flow.current];
-    if (currentId === undefined || flow.answered.includes(currentId)) return;
-    const item = document.backlog.items.find((candidate) => candidate.id === currentId);
-    if (item !== undefined && item.ask !== null) return;
-    this.answerFlow = advanceAnswerFlow(flow, item === undefined ? "skipped" : "answered");
-    const next = this.answerFlow.ids[this.answerFlow.current];
-    if (next !== undefined) this.selected = { kind: "item", domain, id: next };
+    const items = new Map(document.backlog.items.map((item) => [item.id, item] as const));
+    const stateOf = (id: string): FlowAskState => {
+      const item = items.get(id);
+      return item === undefined ? "missing" : item.ask === null ? "cleared" : "open";
+    };
+    const { flow: repaired, dropped } = dropClearedQuestions(flow, stateOf, keep);
+    let next = repaired;
+    const currentId = next.ids[next.current];
+    if (
+      currentId !== undefined &&
+      !next.answered.includes(currentId) &&
+      stateOf(currentId) === "missing"
+    )
+      next = advanceAnswerFlow(next, "skipped");
+    if (next === flow) return;
+    this.answerFlow = next;
+    for (const id of dropped) this.forgetAnswerFlowCard(domain, id);
+    const id = next.ids[next.current];
+    if (id !== undefined) this.selected = { kind: "item", domain, id };
+  }
+
+  // Release what a dropped question held: its measured sizes, any size reported mid-motion, its
+  // pending layout measurement, and its rationale focus handle.
+  forgetAnswerFlowCard(domain: string, id: string) {
+    const key = this.flowCardSizeKey(domain, id);
+    this.answerFlowCardSizes.delete(key);
+    this.answerFlowDeferredSizes.delete(key);
+    this.answerFlowPendingExpandedSizes.delete(id);
+    this.answerFlowRationaleFocus.get(id)?.release();
+    this.answerFlowRationaleFocus.delete(id);
+    if (this.answerFlowRationaleOpenFor === id) this.answerFlowRationaleOpenFor = undefined;
   }
 
   // One domain's document. A rejected read (permissions, too large) is unreadable.
@@ -996,15 +1024,29 @@ export default class Panel extends View {
     });
   }
 
+  // The document the flow's questions are read from.
+  flowDocument(domain: string): DocumentState {
+    return domain === this.domain ? this.doc : cachedDocument(this.docs, domain);
+  }
+
   transitionAnswerFlow(action: AnswerFlowTransitionAction, cx: Context) {
-    const flow = this.answerFlow;
-    if (
-      flow === undefined ||
-      this.answerFlowMotion !== undefined ||
-      this.draft?.busy === true ||
-      !this.answerFlowReady(flow.domain, flow.ids)
-    )
+    let flow = this.answerFlow;
+    if (flow === undefined || this.answerFlowMotion !== undefined || this.draft?.busy === true)
       return;
+    // Repair the flow before choosing a target, so a question answered elsewhere is never the
+    // card the motion lands on. The question being answered here is not one of those.
+    const startedAt = flow.ids[flow.current];
+    this.reconcileAnswerFlow(
+      flow.domain,
+      this.flowDocument(flow.domain),
+      action === "answered" ? startedAt : undefined,
+    );
+    flow = this.answerFlow ?? flow;
+    if (action !== "answered" && flow.ids[flow.current] !== startedAt) {
+      cx.notify();
+      return;
+    }
+    if (!this.answerFlowReady(flow.domain, flow.ids)) return;
     let nextAction = action;
     let targetFlow: AnswerFlow | undefined;
     if (action === "answered" || action === "skipped") targetFlow = advanceAnswerFlow(flow, action);
@@ -1212,7 +1254,7 @@ export default class Panel extends View {
   answerFlowModel(): AnswerFlowModel | undefined {
     const flow = this.answerFlow;
     if (flow === undefined || flow.domain !== this.target()) return undefined;
-    const doc = flow.domain === this.domain ? this.doc : cachedDocument(this.docs, flow.domain);
+    const doc = this.flowDocument(flow.domain);
     const backlog = doc.kind === "loaded" ? doc.backlog : undefined;
     const itemFor = (id: string) => backlog?.items.find((candidate) => candidate.id === id);
     const cards: AnswerFlowModel["cards"] = flow.ids.map((id) => {

@@ -1659,6 +1659,23 @@ const flowCardHeader = (
       (cardModel.kind === "summary" ? "All caught up" : "Question unavailable"),
   }).px(CARD.paddingX);
 
+// A question answered in this flow, reached again with Back: the answer on record, read-only.
+const flowAnsweredRows = (t: Theme, item: Item, detailPrefix: string): Element[] => {
+  const answered = item.answered.at(-1);
+  const rows = [
+    detailRow(t, `${detailPrefix}-answered`)
+      .border_t(0)
+      .child(answered === undefined ? "Answered" : `Answered: ${answered.answer}`),
+  ];
+  if (answered?.note !== null && answered?.note !== undefined && answered.note !== "")
+    rows.push(
+      detailRow(t, `${detailPrefix}-answered-note`)
+        .text_color(t.muted)
+        .child(`Note: ${answered.note}`),
+    );
+  return rows;
+};
+
 const flowAskCard = (
   t: Theme,
   flow: AnswerFlowModel,
@@ -1678,13 +1695,7 @@ const flowAskCard = (
         .text_color(t.muted)
         .child("Question unavailable. Go back to the domain."),
     ];
-  if (item.ask === null)
-    return [
-      detailRow(t, `${detailPrefix}-already-answered`)
-        .border_t(0)
-        .text_color(t.muted)
-        .child("This question was answered outside this flow."),
-    ];
+  if (item.ask === null) return flowAnsweredRows(t, item, detailPrefix);
   return askCardRows(t, askPrefix, item.ask, answer, undefined, item.touches, {
     layout,
     width,
@@ -1712,7 +1723,7 @@ const flowPreviewBody = (
   const subtitle =
     cardModel.kind === "summary"
       ? `${flow.answeredCount} answered, ${flow.skippedCount} skipped`
-      : (cardModel.item?.ask?.question ?? "Already answered");
+      : (cardModel.item?.ask?.question ?? cardModel.item?.answered.at(-1)?.question ?? "Answered");
   return v_flex()
     .id(id)
     .w_full()

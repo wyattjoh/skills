@@ -1,5 +1,11 @@
 import { describe, expect, test } from "bun:test";
-import { advanceAnswerFlow, layoutAnswerFlowCards, startAnswerFlow } from "./answer-flow.ts";
+import {
+  advanceAnswerFlow,
+  dropClearedQuestions,
+  layoutAnswerFlowCards,
+  startAnswerFlow,
+} from "./answer-flow.ts";
+import type { FlowAskState } from "./answer-flow.ts";
 
 describe("answer flow", () => {
   test("starts at the selected question and preserves domain order", () => {
@@ -204,5 +210,73 @@ describe("answer flow", () => {
     expect(placements.map(({ opacity }) => opacity)).toEqual([0, 0, 0]);
     expect(placements.map(({ expanded }) => expanded)).toEqual([false, false, false]);
     expect(placements[1]).toMatchObject({ top: 260, height: 80, left: 30, width: 300 });
+  });
+});
+
+describe("dropping questions answered outside the flow", () => {
+  const states =
+    (cleared: string[], missing: string[] = []) =>
+    (id: string): FlowAskState =>
+      cleared.includes(id) ? "cleared" : missing.includes(id) ? "missing" : "open";
+
+  test("returns the same flow when nothing cleared", () => {
+    const flow = startAnswerFlow("demo", ["i1", "i2", "i3"], "i2");
+
+    expect(dropClearedQuestions(flow, states([]))).toEqual({ flow, dropped: [] });
+    expect(dropClearedQuestions(flow, states([])).flow).toBe(flow);
+  });
+
+  test("drops a cleared question after the current one and keeps the current question", () => {
+    const flow = startAnswerFlow("demo", ["i1", "i2", "i3"], "i1");
+
+    expect(dropClearedQuestions(flow, states(["i2"]))).toEqual({
+      flow: { domain: "demo", ids: ["i1", "i3"], current: 0, answered: [], skipped: [] },
+      dropped: ["i2"],
+    });
+  });
+
+  test("keeps the current question's place when an earlier question is dropped", () => {
+    const flow = startAnswerFlow("demo", ["i1", "i2", "i3"], "i3");
+
+    const { flow: repaired } = dropClearedQuestions(flow, states(["i1"]));
+    expect([repaired.ids, repaired.current]).toEqual([["i2", "i3"], 1]);
+  });
+
+  test("moves to the next open question when the current one is dropped", () => {
+    const started = startAnswerFlow("demo", ["i1", "i2", "i3", "i4"], "i2");
+    const flow = { ...started, answered: ["i1"], skipped: ["i3"] };
+
+    const { flow: repaired, dropped } = dropClearedQuestions(flow, states(["i2"]));
+    expect([repaired.ids, repaired.current, dropped]).toEqual([["i1", "i3", "i4"], 2, ["i2"]]);
+  });
+
+  test("wraps to the first open question, then to the summary, when none follows", () => {
+    const started = startAnswerFlow("demo", ["i1", "i2", "i3"], "i3");
+    const flow = { ...started, answered: ["i2"] };
+
+    expect(dropClearedQuestions(flow, states(["i3"])).flow.current).toBe(0);
+    expect(
+      dropClearedQuestions({ ...flow, answered: ["i1", "i2"] }, states(["i3"])).flow.current,
+    ).toBe(2);
+  });
+
+  test("keeps questions answered in the flow, missing items and the protected id", () => {
+    const started = startAnswerFlow("demo", ["i1", "i2", "i3", "i4"], "i1");
+    const flow = { ...started, answered: ["i1"] };
+
+    const { flow: repaired, dropped } = dropClearedQuestions(
+      flow,
+      states(["i1", "i2", "i3"], ["i4"]),
+      "i2",
+    );
+    expect([repaired.ids, dropped]).toEqual([["i1", "i2", "i4"], ["i3"]]);
+  });
+
+  test("forgets dropped questions that were skipped and leaves the summary position", () => {
+    const started = startAnswerFlow("demo", ["i1", "i2"], "i1");
+    const flow = { ...started, skipped: ["i1"], current: 2 };
+
+    const { flow: repaired } = dropClearedQuestions(flow, states(["i1"]));
+    expect([repaired.ids, repaired.skipped, repaired.current]).toEqual([["i2"], [], 1]);
   });
 });
