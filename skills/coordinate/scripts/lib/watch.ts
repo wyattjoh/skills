@@ -781,24 +781,26 @@ const parseOutboxLine = (line: string): OutboxLine => {
  * or a file that cannot be read keeps its cursor for the next tick.
  * @param config Config.
  * @param domain Domain.
- * @param delegates This tick's delegate snapshot.
- * @param down Machines Herdr lists as not connected.
- * @param cursors Cursors by session, from the last committed snapshot.
- * @param intents Finding lines a stopped watcher may already have added.
- * @param now Clock, for each new finding's time.
- * @param recordIntent Save an intent durably before its finding is added.
+ * @param tick This tick's delegate snapshot (`delegates`), the machines Herdr lists as not
+ * connected (`down`), the cursors by session from the last committed snapshot (`cursors`), the
+ * finding lines a stopped watcher may already have added (`intents`), the clock for each new
+ * finding's time (`now`), and `recordIntent`, which saves an intent durably before its finding is
+ * added.
  * @returns The new cursors and the events to queue with them.
  */
 export const drainOutboxes = Effect.fn("drainOutboxes")(function* (
   config: Config,
   domain: string,
-  delegates: Readonly<Record<string, SeenDelegate>>,
-  down: readonly string[],
-  cursors: Readonly<Record<string, OutboxCursor>>,
-  intents: readonly OutboxIntent[],
-  now: () => number,
-  recordIntent: (intent: OutboxIntent) => Effect.Effect<void>,
+  tick: {
+    delegates: Readonly<Record<string, SeenDelegate>>;
+    down: readonly string[];
+    cursors: Readonly<Record<string, OutboxCursor>>;
+    intents: readonly OutboxIntent[];
+    now: () => number;
+    recordIntent: (intent: OutboxIntent) => Effect.Effect<void>;
+  },
 ) {
+  const { delegates, down, cursors, intents, now, recordIntent } = tick;
   const next: Record<string, OutboxCursor> = Object.fromEntries(
     Object.entries(cursors).map(([session, cursor]) => [session, { ...cursor }]),
   );
@@ -1251,20 +1253,18 @@ export const watch = Effect.fn("watch")(function* (config: Config, options: Watc
         if (events.some((event) => event.kind === "settled")) sampled.events.push(statusBeat(seen));
         lines.push(...sampled.events);
         snapshot.delegates = seen;
-        const drained = yield* drainOutboxes(
-          config,
-          options.domain,
-          seen,
-          polled.success.down,
-          snapshot.remoteOutboxes,
-          state.outboxIntents,
-          clock,
-          (intent) =>
+        const drained = yield* drainOutboxes(config, options.domain, {
+          delegates: seen,
+          down: polled.success.down,
+          cursors: snapshot.remoteOutboxes,
+          intents: state.outboxIntents,
+          now: clock,
+          recordIntent: (intent) =>
             Effect.gen(function* () {
               state = { ...state, outboxIntents: [...state.outboxIntents, intent] };
               yield* writeState(path, state);
             }),
-        );
+        });
         snapshot.remoteOutboxes = drained.cursors;
         lines.push(...drained.events);
       }

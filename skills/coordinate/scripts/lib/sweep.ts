@@ -149,13 +149,18 @@ export const remoteCheckouts = Effect.fn("remoteCheckouts")(function* (
   return found;
 });
 
-const onPlace = <A, E, R>(
-  remote: RemotePlace | undefined,
-  effect: Effect.Effect<A, E, R>,
-): Effect.Effect<A, E, R> =>
-  remote === undefined
-    ? effect
-    : (effect.pipe(Effect.provideService(Proc, remote.proc)) as Effect.Effect<A, E, R>);
+/**
+ * Run a git helper where a worktree lives: through the remote's `Proc` on another machine, else
+ * through this one's.
+ * @param remote The remote checkout, or undefined for this machine.
+ * @param effect The helper.
+ * @returns The helper, its `Proc` provided.
+ */
+const onPlace = <A, E, R>(remote: RemotePlace | undefined, effect: Effect.Effect<A, E, R>) =>
+  Effect.gen(function* () {
+    const proc = remote?.proc ?? (yield* Proc);
+    return yield* effect.pipe(Effect.provideService(Proc, proc));
+  });
 
 /**
  * Read one remote checkout: whether its machine answers, its bases and its process table.
