@@ -181,7 +181,7 @@ export const renameDomain = Effect.fn("renameDomain")(function* (
       yield* checkHarnessPolicyDomainRename(config, from, to);
       yield* refuseLiveWatcher(config, from);
       const state = config.stateDir;
-      const { backlog } = yield* readDocument(config, from);
+      const { backlog, version: copied } = yield* readDocument(config, from);
 
       // New files first: until the old backlog is removed below, the old domain stays whole.
       const backlogPath = store.location(keys.backlog(to));
@@ -223,7 +223,9 @@ export const renameDomain = Effect.fn("renameDomain")(function* (
         }
 
       // The old backlog goes first: once it is gone the rename is done, and what follows is cleanup.
-      yield* replace(config, session, keys.backlog(from), null);
+      // Deleted only at the version copied above, never retried: an edit that landed since would be
+      // lost, so a moved document refuses (exit 1) and stays.
+      yield* session.write(keys.backlog(from), null, copied);
       for (const path of [archivePath(state, from), statePath(state, from)])
         yield* Effect.promise(() => rm(path, { force: true }));
       yield* replace(config, session, keys.queue(from), null);

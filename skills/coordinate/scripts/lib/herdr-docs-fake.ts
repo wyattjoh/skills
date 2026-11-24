@@ -35,6 +35,11 @@ export type FakeDocCores = {
    * loses the race (as for `contended`) while its count is above zero, counting it down.
    */
   races: Record<string, number>;
+  /**
+   * Edits another writer lands on a document just before the next set on it: that set finds the
+   * document holding this value at a new version, and conflicts. Each edit lands once.
+   */
+  interject: Record<string, unknown>;
 };
 
 /**
@@ -46,7 +51,14 @@ export type FakeDocCores = {
 export const fakeDocCores = (
   self: string,
   machines: Record<string, "up" | "down"> = {},
-): FakeDocCores => ({ self, docs: {}, machines: { ...machines }, contended: [], races: {} });
+): FakeDocCores => ({
+  self,
+  docs: {},
+  machines: { ...machines },
+  contended: [],
+  races: {},
+  interject: {},
+});
 
 const error = (kind: string, message: string): DocReply => ({ ok: false, kind, message });
 
@@ -94,6 +106,15 @@ export const answerDocRequest = (cores: FakeDocCores, request: DocRequest): DocR
   const docs = (cores.docs[target] ??= {});
   const current = docs[name] ?? { value: null, version: 0 };
   if (request.method === "doc.get") return { ok: true, result: { ...current } };
+  if (name in cores.interject) {
+    const edit = cores.interject[name];
+    delete cores.interject[name];
+    docs[name] = { value: structuredClone(edit), version: current.version + 1 };
+    return error(
+      "conflict",
+      `document "${name}" is at version ${current.version + 1}, not ${request.params.version}`,
+    );
+  }
   const races = cores.races[name] ?? 0;
   if (cores.contended.includes(name) || races > 0) {
     if (races > 0) cores.races[name] = races - 1;

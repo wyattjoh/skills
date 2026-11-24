@@ -246,7 +246,8 @@ describe("coordinate CLI on the herdr-doc backend", () => {
     expect(run(["start", "app"]).exit).toBe(0);
     expect(run(["item", "add", "fix parser", "--domain", "app"]).exit).toBe(0);
     setCores((current) => {
-      current.races = { "cs.b.web": 2, "cs.b.app": 2, "cs.domains": 2 };
+      // Not cs.b.app: the old backlog's delete is never retried (the next test).
+      current.races = { "cs.b.web": 2, "cs.domains": 2 };
     });
     const renamed = run(["backlog", "rename", "web", "--domain", "app"]);
     expect([renamed.exit, renamed.stderr]).toEqual([0, ""]);
@@ -268,6 +269,31 @@ describe("coordinate CLI on the herdr-doc backend", () => {
       1,
       "",
       `refused: herdr-doc://${FAKE_CORE}/cs.b.api kept changing: 3 attempts lost a write race; run the command again\n`,
+    ]);
+  }, 60_000);
+
+  it("refuses a rename whose old backlog changed after the copy, keeping that edit", () => {
+    const { state, run, cores, setCores } = sandbox("herdr-doc", "coordinate-backend-rename-edit-");
+    const configFile = join(state, "config.json");
+    const config = JSON.parse(readFileSync(configFile, "utf8")) as Record<string, unknown>;
+    writeFileSync(configFile, JSON.stringify({ ...config, state_home: FAKE_CORE }));
+    expect(run(["start", "app"]).exit).toBe(0);
+    const stored = cores().docs[FAKE_CORE]?.["cs.b.app"];
+    if (stored === undefined) throw new Error("app has no backlog on the home");
+    const edited = { ...(stored.value as Record<string, unknown>), focus: "edited mid-rename" };
+    setCores((current) => {
+      current.interject = { "cs.b.app": edited };
+    });
+    const renamed = run(["backlog", "rename", "web", "--domain", "app"]);
+    expect([renamed.exit, renamed.stdout, renamed.stderr]).toEqual([
+      1,
+      "",
+      `refused: herdr-doc://${FAKE_CORE}/cs.b.app changed while the command ran; run the command again\n`,
+    ]);
+    const docs = cores().docs[FAKE_CORE] ?? {};
+    expect([docs["cs.b.app"]?.value, docs["cs.b.app"]?.version]).toEqual([
+      edited,
+      stored.version + 1,
     ]);
   }, 60_000);
 

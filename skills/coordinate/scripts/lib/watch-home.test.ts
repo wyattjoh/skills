@@ -72,6 +72,7 @@ const machine = async (self: string, cores: FakeDocCores, subscribe?: DocSubscri
     ),
     contended: cores.contended,
     races: cores.races,
+    interject: cores.interject,
   };
   const store = herdrStore({
     home: "homebase",

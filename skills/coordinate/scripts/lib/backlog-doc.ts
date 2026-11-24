@@ -266,7 +266,7 @@ export const readDocument = Effect.fn("readDocument")(function* (config: Config,
     .pipe(Effect.catchTag("StoreUnreadable", (error) => Effect.fail(unreadable(error))));
   if (stored.value === null) return yield* missing(path, domain);
   const backlog = yield* decode(path, stored.value);
-  return { path, backlog };
+  return { path, backlog, version: stored.version };
 });
 
 /**
