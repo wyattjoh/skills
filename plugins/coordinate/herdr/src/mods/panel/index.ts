@@ -148,7 +148,7 @@ const ROW_PAGE_SIZE = 10;
 type DomainRead = {
   document: DocumentState;
   // On the herdr-doc backend, the ended records the CLI read gave with the document.
-  ended?: (readonly [string, string | null | undefined])[];
+  ended: (readonly [string, string | null | undefined])[] | undefined;
   text: string | null | undefined;
 };
 
@@ -734,24 +734,33 @@ export default class Panel extends View {
   // One domain's document. A rejected read (permissions, too large) is unreadable.
   async readDomain(stateDir: string, domain: string, refresh: boolean): Promise<DomainRead> {
     const cached = this.docs.get(domain);
-    if (!refresh && !this.dirtyDocs.has(domain) && cached !== undefined)
-      return { document: cached, text: this.rawDocs.get(domain) };
+    // On herdr-doc no folder watch marks a cached document stale, so every load asks the CLI.
     if (this.backend === "herdr-doc") {
       const listed = await this.listCli(domain);
       if (listed.kind === "unreadable")
-        return { document: { kind: "unreadable", reason: listed.reason }, text: undefined };
+        return {
+          document: { kind: "unreadable", reason: listed.reason },
+          text: undefined,
+          ended: undefined,
+        };
       const row = listed.rows.find((candidate) => candidate.domain === domain);
       return this.listedRead(
         row ?? { domain, text: null, unreadable: null, coordinator: null, ended: [] },
       );
     }
+    if (!refresh && !this.dirtyDocs.has(domain) && cached !== undefined)
+      return { document: cached, text: this.rawDocs.get(domain), ended: undefined };
     try {
       const text = await readTextFile(documentPath(stateDir, domain));
       if (cached !== undefined && this.rawDocs.has(domain) && this.rawDocs.get(domain) === text)
-        return { document: cached, text };
-      return { document: readDocument(text), text };
+        return { document: cached, text, ended: undefined };
+      return { document: readDocument(text), text, ended: undefined };
     } catch (error) {
-      return { document: { kind: "unreadable", reason: String(error) }, text: undefined };
+      return {
+        document: { kind: "unreadable", reason: String(error) },
+        text: undefined,
+        ended: undefined,
+      };
     }
   }
 
@@ -779,7 +788,11 @@ export default class Panel extends View {
   listedRead(row: ListedBacklog): DomainRead {
     this.coordinators.set(row.domain, row.coordinator);
     if (row.unreadable !== null)
-      return { document: { kind: "unreadable", reason: row.unreadable }, text: undefined };
+      return {
+        document: { kind: "unreadable", reason: row.unreadable },
+        text: undefined,
+        ended: [],
+      };
     const cached = this.docs.get(row.domain);
     const document =
       cached !== undefined && this.rawDocs.get(row.domain) === row.text

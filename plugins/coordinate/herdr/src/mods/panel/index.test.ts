@@ -6440,22 +6440,24 @@ test("a Boundary path's Edit saves through boundary replace", async () => {
   ]);
 });
 
+// The panel's herdr-doc read of every domain, or one, with its document and lease.
+const listArgs = (domain?: string) => [
+  "-u",
+  "HC_TERMINAL_ID",
+  "bun",
+  "/Users/test/.claude/skills/coordinate/scripts/coordinate.ts",
+  "backlog",
+  "list",
+  "--json",
+  "--documents",
+  ...(domain === undefined ? [] : ["--domain", domain]),
+];
+
 // On the herdr-doc backend the panel reads backlogs, the domain list and ended records through
 // `coordinate backlog list --json --documents` on its own machine, never from files.
 describe("on the herdr-doc backend", () => {
   const CONFIG = "/Users/test/.config/coordinate/config.json";
   const LIVE = "2099-01-01T00:00:00.000Z";
-  const listArgs = (domain?: string) => [
-    "-u",
-    "HC_TERMINAL_ID",
-    "bun",
-    "/Users/test/.claude/skills/coordinate/scripts/coordinate.ts",
-    "backlog",
-    "list",
-    "--json",
-    "--documents",
-    ...(domain === undefined ? [] : ["--domain", domain]),
-  ];
   type Row = { domain: string; document: unknown; lease?: unknown; ended?: Record<string, string> };
   const listing = (rows: Row[]) =>
     JSON.stringify({
@@ -6547,6 +6549,34 @@ describe("on the herdr-doc backend", () => {
       ]),
     );
     ctx.tick(30_000);
+    await settle();
+    expect(ids(render(), "item-i1")).toEqual(["item-i1"]);
+  });
+
+  test("asks the CLI again when focus returns to a domain it showed before", async () => {
+    useHerdrDoc();
+    focusDomain("alpha");
+    host.terminals.push({
+      address: "t2",
+      state: "live",
+      labels: { "fleet.role": "coordinator", "fleet.domain": "beta" },
+    });
+    watchData.set(
+      "list:alpha",
+      listing([{ domain: "alpha", document: emptyBacklog("alpha", null) }]),
+    );
+    watchData.set("list:beta", listing([{ domain: "beta", document: emptyBacklog("beta", null) }]));
+    const { ctx, render } = await mount();
+    expect(ids(render(), "item-")).toEqual([]);
+    host.focused = { space: "s1", tab: "tab1", pane: "p2", terminal: "t2" };
+    ctx.tick(1_000);
+    await settle();
+    watchData.set(
+      "list:alpha",
+      listing([{ domain: "alpha", document: add(emptyBacklog("alpha", null), "Added elsewhere") }]),
+    );
+    host.focused = { space: "s1", tab: "tab1", pane: "p1", terminal: "t1" };
+    ctx.tick(1_000);
     await settle();
     expect(ids(render(), "item-i1")).toEqual(["item-i1"]);
   });
