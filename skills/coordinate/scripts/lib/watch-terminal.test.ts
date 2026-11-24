@@ -77,7 +77,16 @@ describe("domain watcher terminal", () => {
       throw new Error(`unexpected command: ${argv.join(" ")}`);
     });
     const script = join(import.meta.dir, "..", "coordinate.ts");
-    const watch = ["watch", "--deliver", "--domain", "app", "--owner", "t1"];
+    const watch = [
+      "watch",
+      "--deliver",
+      "--domain",
+      "app",
+      "--owner",
+      "t1",
+      "--role",
+      "coordinator",
+    ];
     const command = async (env: Record<string, string | undefined>) => {
       await runWith(armWatcher(cfg, "app", "t1", false, env), fake.layer);
       const argv = fake.calls.findLast((call) => call.argv[1] === "run")?.argv ?? [];
@@ -91,6 +100,33 @@ describe("domain watcher terminal", () => {
       ...watch,
     ]);
     expect(await command({})).toEqual([process.execPath, script, ...watch]);
+  });
+
+  it("arms the manager domain's watcher with --role manager", async () => {
+    const cfg = await config();
+    const manager = JSON.stringify({
+      address: "t1",
+      state: "live",
+      labels: { "fleet.role": "coordinator", "fleet.domain": "manager" },
+    });
+    const fake = fakeProc((argv) => {
+      if (argv[1] === "get" && argv[2] === "t1") return ok(manager);
+      if (argv[1] === "ls") return ok('{"terminals":[]}');
+      if (argv[1] === "run") return ok('{"address":"t7"}');
+      throw new Error(`unexpected command: ${argv.join(" ")}`);
+    });
+    await runWith(armWatcher(cfg, "manager", "t1", false, {}), fake.layer);
+    const argv = fake.calls.find((call) => call.argv[1] === "run")?.argv ?? [];
+    expect(argv.slice(argv.indexOf("--") + 3)).toEqual([
+      "watch",
+      "--deliver",
+      "--domain",
+      "manager",
+      "--owner",
+      "t1",
+      "--role",
+      "manager",
+    ]);
   });
 
   it("reuses a live watcher instead of launching a second terminal", async () => {
@@ -221,6 +257,16 @@ describe("watch terminal view", () => {
       `${localTime(view.log[0]?.at)} due i7 2026-11-22 Review deployment [ea] | refused: dialog; retry in 5s`,
     );
     expect(lines[1]).toContain(`started ${localDateTime(view.started)}`);
+  });
+
+  it("shows a manager's coordinator fleet in place of owned repos", () => {
+    const lines = watchViewLines({
+      ...view,
+      repos: [],
+      fleet: ["app t3 [settled]", "ops t4 [lease]"],
+    });
+    expect(lines[4]).toBe("coordinators (2): app t3 [settled], ops t4 [lease]");
+    expect(watchViewLines({ ...view, fleet: [] })[4]).toBe("coordinators (0): none");
   });
 
   it("uses a plain-text snapshot without ANSI controls when requested", () => {

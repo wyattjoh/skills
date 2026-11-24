@@ -6,7 +6,14 @@ import { checkDomainName, domainNamePart, L } from "./fleet.ts";
 import * as hc from "./herdr.ts";
 import { watcherAlive } from "./watch-lock.ts";
 import { questionOf, type Item } from "./backlog-store/schema.ts";
-import { eventSummary, type SeenDelegate, type SeenPr, type WatchEvent } from "./watch.ts";
+import {
+  eventSummary,
+  type SeenDelegate,
+  type SeenPr,
+  type WatchEvent,
+  type WatchRole,
+} from "./watch.ts";
+import { MANAGER_DOMAIN } from "./wiki.ts";
 
 /**
  * One watcher event as displayed in the terminal's append-only log.
@@ -38,6 +45,8 @@ export type WatchView = {
   prs: Readonly<Record<string, SeenPr>>;
   items: readonly Item[];
   log: readonly WatchLogEntry[];
+  /** A manager watcher's coordinator fleet, one entry each; absent for a coordinator's. */
+  fleet?: readonly string[];
 };
 
 /** A watcher-domain label that is deliberately separate from the delegate fleet label. */
@@ -108,7 +117,10 @@ export const watchViewLines = (view: WatchView): string[] => {
     `owner: ${view.owner} (${view.ownerState}) | pid ${view.pid} | started ${startedTime(view.started)}`,
     `poll: delegates/backlog ${interval(view.intervalMs)} | forge/PRs ${interval(view.forgeIntervalMs)}`,
     `live delegates (${delegates.length}): ${delegates.join(", ") || "none"}`,
-    `owned repos (${view.repos.length}): ${view.repos.map(repoName).join(", ") || "none"}`,
+    // A manager owns no repos; its watcher shows the coordinator fleet in that row instead.
+    view.fleet === undefined
+      ? `owned repos (${view.repos.length}): ${view.repos.map(repoName).join(", ") || "none"}`
+      : `coordinators (${view.fleet.length}): ${view.fleet.join(", ") || "none"}`,
     `PRs (${prs.length}): ${prs.join(", ") || "none"}`,
     `due dates (${due.length}): ${due.join(", ") || "none"}`,
     `asks waiting on user (${asks.length}): ${asks.join(", ") || "none"}`,
@@ -248,10 +260,19 @@ export const watcherInfo = Effect.fn("watcherInfo")(function* (config: Config, d
   } satisfies WatcherInfo;
 });
 
+/**
+ * The role a domain's watcher runs with.
+ * @param domain Domain.
+ * @returns `manager` for the manager domain, else `coordinator`.
+ */
+export const watcherRole = (domain: string): WatchRole =>
+  domain === MANAGER_DOMAIN ? "manager" : "coordinator";
+
 const watcherName = (domain: string): string => `watch-${domainNamePart(domain, 26, 14)}`;
 
 /**
  * Ensure the domain has one long-lived child terminal delivering watcher events to its coordinator.
+ * Its role follows the domain: the manager domain's watcher also watches the coordinator fleet.
  * @param config Coordinate config.
  * @param domain Domain to watch.
  * @param owner Coordinator terminal address, passed explicitly to the child.
@@ -299,6 +320,8 @@ export const armWatcher = Effect.fn("armWatcher")(function* (
     domain,
     "--owner",
     owner,
+    "--role",
+    watcherRole(domain),
     ...(replace ? ["--replace"] : []),
   ];
   const launched = yield* hc

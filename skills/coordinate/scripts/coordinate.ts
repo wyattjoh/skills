@@ -72,7 +72,7 @@ import { verifyDelegate } from "./lib/sessions.ts";
 import { migrateState } from "./lib/migrate.ts";
 import { renameDomain } from "./lib/rename.ts";
 import { listBacklogs } from "./lib/backlog-list.ts";
-import { showOutbox, watch } from "./lib/watch.ts";
+import { showOutbox, watch, WATCH_ROLES } from "./lib/watch.ts";
 import { showCapacityQueue } from "./lib/capacity-queue.ts";
 import {
   armWatcher,
@@ -326,6 +326,7 @@ const valueOptions = new Set([
   "--from",
   "--interval",
   "--owner",
+  "--role",
   "--forge-interval",
   "--max-minutes",
   "--keep",
@@ -2128,6 +2129,10 @@ const watchCommand = Command.make(
   {
     domain: optionalStringFlag("domain", "domain (default: this coordinator's label)"),
     owner: optionalStringFlag("owner", "coordinator terminal address (required with --deliver)"),
+    role: stringFlag(
+      "role",
+      "coordinator, or manager to also watch the coordinator fleet (labels, plus leases on herdr-doc)",
+    ).pipe(Flag.withDefault("coordinator")),
     interval: stringFlag("interval", "herdr-core poll interval").pipe(Flag.withDefault("5")),
     forgeInterval: stringFlag("forge-interval", "GitHub/Forgejo and due-date poll interval").pipe(
       Flag.withDefault("90"),
@@ -2160,6 +2165,11 @@ const watchCommand = Command.make(
               message:
                 "watch --deliver requires explicit --domain <domain> and --owner <coordinator address>",
             });
+          const role = WATCH_ROLES.find((candidate) => candidate === options.role);
+          if (role === undefined)
+            return yield* new Refused({
+              message: `--role must be one of ${WATCH_ROLES.join(", ")}, not ${options.role}`,
+            });
           const domain = yield* resolveDomain(domainFlag);
           const owner = ownerFlag ?? process.env.HC_TERMINAL_ID;
           if (options.arm) {
@@ -2178,6 +2188,7 @@ const watchCommand = Command.make(
           }
           return yield* watch(config, {
             domain,
+            role,
             intervalMs: Number(options.interval) * 1000,
             forgeIntervalMs: Number(options.forgeInterval) * 1000,
             maxMs: Number(options.maxMinutes) * 60_000,

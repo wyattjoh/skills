@@ -2592,3 +2592,150 @@ describe("watch coordinator lease", () => {
     expect(await leaseWatch(strix)).toEqual(strix);
   });
 });
+
+describe("watch --role manager", () => {
+  const managerDomain = async () => {
+    const state = tempDir();
+    made.push(state);
+    const config = await Effect.runPromise(
+      resolveConfig({ state_dir: state, backlog_dir: join(state, "backlogs") }, "/c"),
+    );
+    mkdirSync(join(state, "backlogs"), { recursive: true });
+    writeFileSync(
+      join(state, "backlogs", "manager.json"),
+      JSON.stringify(emptyBacklog("manager", null)),
+    );
+    return config;
+  };
+  const domains: Record<string, string> = { t3: "app", t4: "web", t5: "ops" };
+  // One tick per members listing; the coordinator listing, read after it, gives that tick's fleet.
+  const fleetHc = (fleetTicks: Array<Array<Record<string, string>>>, liveTicks: number) => {
+    let tick = 0;
+    return fakeProc((argv) => {
+      if (argv[1] === "ls" && argv.includes("fleet.role=coordinator"))
+        return ok(
+          JSON.stringify({
+            terminals: [
+              { address: "t9", status: "working" },
+              ...(fleetTicks[Math.min(tick - 1, fleetTicks.length - 1)] ?? []),
+            ],
+          }),
+        );
+      if (argv[1] === "ls") {
+        tick += 1;
+        return ok('{"terminals":[]}');
+      }
+      if (argv[1] === "get" && argv[2] === "t9")
+        return tick <= liveTicks
+          ? ok(JSON.stringify({ address: "t9", state: "live" }))
+          : { exitCode: 1, stdout: "", stderr: '{"error":{"kind":"not_found","message":"gone"}}' };
+      if (argv[1] === "get")
+        return ok(
+          JSON.stringify({
+            address: argv[2],
+            state: "live",
+            labels: { "fleet.role": "coordinator", "fleet.domain": domains[argv[2] ?? ""] ?? "" },
+          }),
+        );
+      return ok("");
+    });
+  };
+  const options = (emitted: string[], extra: Partial<Parameters<typeof watch>[1]> = {}) => ({
+    domain: "manager",
+    role: "manager" as const,
+    intervalMs: 1,
+    forgeIntervalMs: 60_000,
+    maxMs: 0,
+    owner: "t9",
+    replace: false,
+    deliver: false,
+    today: () => "2026-11-24",
+    follow: true,
+    emit: (line: string) => {
+      emitted.push(line);
+    },
+    ...extra,
+  });
+
+  it("takes a silent baseline, then delivers settled, arrived, state and departed events, never its owner", async () => {
+    const config = await managerDomain();
+    const fake = fleetHc(
+      [
+        [
+          { address: "t3", status: "working" },
+          { address: "t4", status: "idle" },
+        ],
+        [
+          { address: "t3", status: "idle" },
+          { address: "t4", status: "working" },
+          { address: "t5", status: "blocked" },
+        ],
+        [
+          { address: "t3", status: "blocked" },
+          { address: "t4", status: "working" },
+        ],
+      ],
+      3,
+    );
+    const emitted: string[] = [];
+    expect(await runWith(watch(config, options(emitted)), fake.layer)).toEqual([]);
+    expect(emitted.map(eventText)).toEqual([
+      `<event kind="fleet-settled" source="terminal" address="t3" domain="app" machine="${FAKE_CORE}" from="working">read its last output and backlog; relay a new ask or result, or report stranded work</event>`,
+      `<event kind="fleet-arrived" source="terminal" address="t5" domain="ops" machine="${FAKE_CORE}" state="blocked">verify it with hc get (domain, tab, harness) before trusting it</event>`,
+      `<event kind="fleet-state" source="terminal" address="t3" domain="app" machine="${FAKE_CORE}" from="settled" to="blocked">relay its question, options and recommendation, and leave the answer to the user</event>`,
+      `<event kind="fleet-departed" source="terminal" address="t5" domain="ops" machine="${FAKE_CORE}">hc get says why; an arrival with the same domain and tab is a harness handoff, otherwise report it and ask whether to spawn it again</event>`,
+      "owner gone: t9 no longer runs; nothing will read these events",
+    ]);
+  });
+
+  it("follows leases, keeping the last good ones through failed reads, and reports blind and cleared", async () => {
+    const config = await managerDomain();
+    const always: Array<[string, string]> = [
+      ["l:manager", "t9"],
+      ["l:web", "t3"],
+    ];
+    const readings: Array<Array<[string, string]> | "down"> = [
+      [...always, ["l:app", "t1"]],
+      [...always, ["l:app", "t1"], ["l:ops", "nigelsheldon/t4"]],
+      "down",
+      "down",
+      "down",
+      [...always, ["l:ops", "nigelsheldon/t4"]],
+    ];
+    let read = 0;
+    const leases = Effect.suspend(() => {
+      const reading = readings[Math.min(read, readings.length - 1)];
+      read += 1;
+      return reading === "down" || reading === undefined
+        ? Effect.fail(new Error("homebase is unreachable"))
+        : Effect.succeed(new Map(reading));
+    });
+    const fake = fleetHc([[{ address: "t3", status: "idle" }]], readings.length);
+    const emitted: string[] = [];
+    await runWith(
+      watch(
+        config,
+        options(emitted, { fleetLeases: { read: leases, everyMs: 0, home: "homebase" } }),
+      ),
+      fake.layer,
+    );
+    expect(emitted.map(eventText)).toEqual([
+      '<event kind="fleet-arrived" source="lease" domain="ops" address="nigelsheldon/t4" machine="nigelsheldon">a coordinator this machine does not list; verify it and read it through the home</event>',
+      '<event kind="fleet-blind" home="homebase" reads="3"><error>homebase is unreachable</error>lease entries are from the last good read; treat every lease-only coordinator as stale</event>',
+      '<event kind="fleet-blind-cleared" home="homebase">lease entries are current again; rediscover the fleet</event>',
+      `<event kind="fleet-departed" source="lease" domain="app" address="t1" machine="${FAKE_CORE}">its lease lapsed; report it and ask whether to spawn it again</event>`,
+      "owner gone: t9 no longer runs; nothing will read these events",
+    ]);
+  });
+
+  it("reads no fleet in the coordinator role", async () => {
+    const config = await managerDomain();
+    const fake = fleetHc([[{ address: "t3", status: "idle" }]], 2);
+    const emitted: string[] = [];
+    await runWith(watch(config, options(emitted, { role: "coordinator" })), fake.layer);
+    expect(emitted).toEqual(["owner gone: t9 no longer runs; nothing will read these events"]);
+    expect(fake.calls.filter((call) => call.argv[1] === "get" && call.argv[2] !== "t9")).toEqual(
+      [],
+    );
+  });
+});

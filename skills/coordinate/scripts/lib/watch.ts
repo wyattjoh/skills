@@ -33,6 +33,17 @@ import { isOffline, keys, optionUnlessOffline, type StoreOffline } from "./state
 import { outboxPath } from "./remote-launch.ts";
 import { lastLint, LINT_INTERVAL_DAYS, settledWikiPages, wikiCreated } from "./wiki.ts";
 import { renewWatchedLease } from "./lease.ts";
+import {
+  fleetEvents,
+  fleetSummary,
+  joinFleet,
+  LEASE_BLIND_READS,
+  LEASE_INTERVAL_MS,
+  readFleet,
+  readLeaseFleet,
+  type FleetSnapshot,
+  type LeaseSource,
+} from "./fleet-watch.ts";
 import { markSettled, readSession, retroDue, type RetroMarker } from "./sessions.ts";
 
 /**
@@ -1058,10 +1069,31 @@ export const snapshotPrs = Effect.fn("snapshotPrs")(function* (
 });
 
 /**
+ * What a watcher watches: a `coordinator` its domain, a `manager` its domain and the coordinator
+ * fleet too.
+ */
+export type WatchRole = "coordinator" | "manager";
+
+/** Every watcher role, the default first. */
+export const WATCH_ROLES: readonly WatchRole[] = ["coordinator", "manager"];
+
+const failureText = (error: unknown): string =>
+  typeof error === "object" && error !== null && "message" in error
+    ? String(error.message)
+    : String(error);
+
+/**
  * Options for one watch loop.
  */
 export type WatchOptions = {
   domain: string;
+  /** Defaults to `coordinator`. */
+  role?: WatchRole;
+  /**
+   * Where a manager reads coordinator leases (tests inject it); defaults to the home store on
+   * herdr-doc and none on files, where labels alone find the fleet.
+   */
+  fleetLeases?: LeaseSource;
   intervalMs: number;
   forgeIntervalMs: number;
   maxMs: number;
@@ -1209,6 +1241,31 @@ export const watch = Effect.fn("watch")(function* (config: Config, options: Watc
         }),
       );
     let first = saved === undefined;
+    // A manager also watches the coordinator fleet. Its first good reading is a silent baseline in
+    // each watcher process, as is a coordinator entering working.
+    const manager = options.role === "manager";
+    const leaseSource: LeaseSource | undefined = !manager
+      ? undefined
+      : (options.fleetLeases ??
+        (config.stateBackend !== "herdr-doc" || config.stateHome === undefined
+          ? undefined
+          : {
+              read: Effect.suspend(() =>
+                Effect.flatMap(localMachine(), (reader) =>
+                  readLeaseFleet(stateStore(config.stateDir), reader, clock()),
+                ),
+              ),
+              everyMs: LEASE_INTERVAL_MS,
+              home: config.stateHome,
+            }));
+    const fleetExclude: ReadonlySet<string> = new Set(options.owner ? [options.owner] : []);
+    let fleet: FleetSnapshot | undefined;
+    let fleetLeases: FleetSnapshot = new Map();
+    const fleetDomains = new Map<string, string>();
+    const fleetLooked = new Set<string>();
+    let fleetMachine: string | undefined;
+    let lastLeaseRead = Number.NEGATIVE_INFINITY;
+    let leaseFailures = 0;
     // A wiki's creation date never changes, so it is read from git once, after the wiki exists.
     let wikiStart: string | undefined;
 
@@ -1238,6 +1295,7 @@ export const watch = Effect.fn("watch")(function* (config: Config, options: Watc
           prs: state.prs,
           items,
           log: [...log],
+          ...(manager ? { fleet: fleetSummary(fleet, fleetDomains) } : {}),
         });
       } catch {
         // The terminal view is observational; a renderer failure must never affect delivery.
@@ -1306,6 +1364,7 @@ export const watch = Effect.fn("watch")(function* (config: Config, options: Watc
       };
       const lines: WatchEventData[] = [];
       let marks: SettleMark[] = [];
+      let nextFleet = fleet;
       const policy = yield* resolveEffectiveHarnessPolicy(config, options.domain).pipe(
         Effect.result,
       );
@@ -1626,6 +1685,67 @@ export const watch = Effect.fn("watch")(function* (config: Config, options: Watc
           snapshot.capacity = wakes.capacity;
         }
       }
+      if (manager) {
+        if (leaseSource !== undefined && clock() - lastLeaseRead >= leaseSource.everyMs) {
+          lastLeaseRead = clock();
+          const read = yield* leaseSource.read.pipe(Effect.result);
+          if (Result.isSuccess(read)) {
+            if (leaseFailures >= LEASE_BLIND_READS)
+              lines.push(
+                watchEvent(
+                  "fleet-blind-cleared",
+                  { home: leaseSource.home },
+                  "lease entries are current again; rediscover the fleet",
+                ),
+              );
+            leaseFailures = 0;
+            fleetLeases = read.success;
+          } else {
+            // An unreachable home also counts toward the watcher's own blind ticks.
+            if (isOffline(read.failure)) homeDown ??= read.failure;
+            leaseFailures += 1;
+            if (leaseFailures === LEASE_BLIND_READS)
+              lines.push(
+                watchEvent(
+                  "fleet-blind",
+                  { home: leaseSource.home, reads: String(LEASE_BLIND_READS) },
+                  "lease entries are from the last good read; treat every lease-only coordinator as stale",
+                  { error: failureText(read.failure) },
+                ),
+              );
+          }
+        }
+        // A failed or empty reading keeps the last good one.
+        const labelled = yield* readFleet(fleetExclude).pipe(Effect.option);
+        const current = Option.map(labelled, (listed) =>
+          joinFleet(listed, fleetLeases, fleetExclude),
+        );
+        if (Option.isSome(current) && current.value.size > 0) {
+          for (const [key, address] of fleetLeases) fleetDomains.set(address, key.slice(2));
+          for (const key of current.value.keys()) {
+            const address = key.slice(2);
+            if (!key.startsWith("t:") || fleetDomains.has(address) || fleetLooked.has(address))
+              continue;
+            fleetLooked.add(address);
+            const terminal = yield* hc
+              .get(address)
+              .pipe(Effect.catch(() => Effect.succeed(undefined)));
+            const domain = terminal?.labels[L.domain];
+            if (domain !== undefined) fleetDomains.set(address, domain);
+          }
+          if (fleet !== undefined) {
+            const changes = fleetEvents(fleet, current.value, {
+              domains: fleetDomains,
+              machine: (fleetMachine ??= yield* localMachine().pipe(
+                Effect.option,
+                Effect.map(Option.getOrUndefined),
+              )),
+            });
+            lines.push(...changes);
+          }
+          nextFleet = current.value;
+        }
+      }
       first = false;
       homeFailures = homeDown === undefined ? 0 : homeFailures + 1;
       homeMessage = homeDown?.message ?? "";
@@ -1651,6 +1771,7 @@ export const watch = Effect.fn("watch")(function* (config: Config, options: Watc
       yield* writeState(path, staged);
       state = { ...staged, ...snapshot, staged: undefined, outboxIntents: [] };
       yield* writeState(path, state);
+      fleet = nextFleet;
       // The user's edits leave the document only once their events are committed to the outbox. A
       // failed clear retries next tick; the fired keys keep the events from queuing twice.
       if (Option.isSome(document) && snapshot.edited.length > 0)

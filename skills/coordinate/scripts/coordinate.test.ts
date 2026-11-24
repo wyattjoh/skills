@@ -856,7 +856,10 @@ eachBackend("coordinate CLI parity", () => {
         ["finding", "promote"],
         ["id", "--title", "--domain", "--json", "promoted to"],
       ],
-      [["watch"], ["--interval", "--forge-interval", "--max-minutes", "--follow", "--replace"]],
+      [
+        ["watch"],
+        ["--interval", "--forge-interval", "--max-minutes", "--follow", "--replace", "--role"],
+      ],
       [
         ["sweep", "report"],
         ["repos", "--base", "--keep", "--sizes"],
@@ -999,6 +1002,9 @@ eachBackend("coordinate watch delivery", () => {
     );
     expect(run(["watch", "--deliver", "--owner", "t1"]).stderr).toBe(
       "refused: watch --deliver requires explicit --domain <domain> and --owner <coordinator address>\n",
+    );
+    expect(run(["watch", "--domain", "app", "--role", "boss"]).stderr).toBe(
+      "refused: --role must be one of coordinator, manager, not boss\n",
     );
   }, 30_000);
 });
