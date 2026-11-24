@@ -295,8 +295,7 @@ const label = (entries: readonly Held[]): string[] =>
  * @param worktree The worktree.
  * @param ctx Sweep context.
  * @param remote The checkout on another machine it belongs to; its git and processes are read there.
- * @returns Its row, and for a remote worktree whose exact tip is on a base of its repo on this Mac
- * (fetched and landed here), that base.
+ * @returns Its row.
  */
 const judgeWorktree = Effect.fn("judgeWorktree")(function* (
   repo: string,
@@ -417,7 +416,7 @@ const judgeWorktree = Effect.fn("judgeWorktree")(function* (
     text: `worktree ${key} [${branch ?? "detached"}] ${notes.join(" · ")}`,
     stop,
   } satisfies Row;
-  return { row, landedHere };
+  return row;
 });
 
 /**
@@ -449,7 +448,7 @@ export const worktreeRow = (
   worktree: Worktree,
   ctx: SweepContext,
   remote: RemotePlace | undefined = undefined,
-) => judgeWorktree(repo, worktree, ctx, remote).pipe(Effect.map((judged) => judged.row));
+) => judgeWorktree(repo, worktree, ctx, remote);
 
 /**
  * Local branches whose work is on a base or whose PR merged, not checked out and with no open PR.
@@ -544,10 +543,10 @@ export const report = Effect.fn("sweepReport")(function* (
     const landed = yield* landedBranches(repo, ctx);
     if (landed.length > 0)
       rows.push({
-        verdict: "SAFE",
+        verdict: "INFO",
         path: repo,
         stop: [],
-        text: `${landed.length} landed branches in ${repo} · list them: coordinate sweep prune-branches ${repo} --list`,
+        text: `${landed.length} landed branches kept in ${repo}`,
       });
     rows.push(...scratchRows(repo, options.nowMs));
     const ahead = yield* aheadOfUpstream(repo);
@@ -776,11 +775,7 @@ export const removeOne = Effect.fn("removeOne")(function* (
   if (branch && !PROTECTED_BRANCHES.has(branch)) {
     const sha = (yield* gitTry(repo, ["rev-parse", "--short", branch])) ?? "";
     const refusal = yield* deleteBranch(repo, branch);
-    if (refusal === undefined) lines.push(`  deleted branch ${branch} ${sha}`);
-    else
-      lines.push(
-        `  kept branch ${branch} ${sha}: git branch -d refused (${refusal.split("\n")[0]}). Its work is on a base by squash or rebase; to delete it, the user runs: cd ${repo} && git branch -D ${branch}`,
-      );
+    lines.push(`  ${refusal === undefined ? "deleted" : "kept"} branch ${branch} ${sha}`);
   }
   const spaces = yield* hc.appSpaces().pipe(Effect.catch(() => Effect.succeed([])));
   for (const space of spaces.filter(
@@ -830,7 +825,7 @@ const removeRemote = Effect.fn("removeRemote")(function* (
   const worktree = found?.slice(1).find((candidate) => candidate.path.replace(/\/+$/, "") === path);
   if (!worktree)
     return kept(`git does not list it as a worktree of ${remote.checkout} on ${machine}`);
-  const { row, landedHere } = yield* judgeWorktree(remote.checkout, worktree, ctx, remote);
+  const row = yield* judgeWorktree(remote.checkout, worktree, ctx, remote);
   if (row.verdict !== "SAFE")
     return kept(`${row.verdict}, ${row.text.replace(/^worktree \S+ /, "")}`);
   const stopped = yield* remoteHost(machine).stop(row.stop, options);
@@ -868,16 +863,7 @@ const removeRemote = Effect.fn("removeRemote")(function* (
     const sha =
       (yield* onPlace(remote, gitTry(remote.checkout, ["rev-parse", "--short", branch]))) ?? "";
     const refusal = yield* onPlace(remote, deleteBranch(remote.checkout, branch));
-    if (refusal === undefined) lines.push(`  deleted branch ${branch} ${sha}`);
-    else {
-      const why =
-        landedHere === undefined
-          ? "Its work is on a base by squash or rebase"
-          : `Its tip is on ${landedHere} on this Mac, not on a base on ${machine}`;
-      lines.push(
-        `  kept branch ${branch} ${sha}: git branch -d refused (${refusal.split("\n")[0]}). ${why}; to delete it, the user runs on ${machine}: cd ${remote.checkout} && git branch -D ${branch}`,
-      );
-    }
+    lines.push(`  ${refusal === undefined ? "deleted" : "kept"} branch ${branch} ${sha}`);
   }
   const spaces = yield* hc.appSpaces().pipe(Effect.catch(() => Effect.succeed([])));
   for (const space of spaces.filter(
@@ -984,7 +970,7 @@ export const pruneBranches = Effect.fn("pruneBranches")(function* (
     lines.push(
       refusal === undefined
         ? `deleted branch ${branch} ${found.sha}`
-        : `kept ${branch} ${found.sha}: git branch -d refused (${found.how}); the user runs: cd ${repo} && git branch -D ${branch}`,
+        : `kept ${branch} ${found.sha}: git branch -d refused (${found.how})`,
     );
   }
   return lines;

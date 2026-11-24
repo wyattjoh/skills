@@ -334,7 +334,7 @@ describe("report", () => {
 });
 
 describe("remove", () => {
-  it("drops .devenv, parks .scratch, keeps the squash branch with the -D command for the user", async () => {
+  it("drops .devenv, parks .scratch, and quietly keeps the squash branch", async () => {
     const { repo, wt } = repoWithWorktree();
     squashIntoMain(repo);
     mkdirSync(join(wt, ".devenv", "state"), { recursive: true });
@@ -350,7 +350,7 @@ describe("remove", () => {
     expect(lines[0]).toBe(`removed worktree ${wt}`);
     expect(lines[1]).toBe(`  parked .scratch in ${join(repo, ".scratch", "parked", "x")}`);
     expect(lines[2]).toBe("  dropped build output: .devenv");
-    expect(lines[3]?.endsWith(`the user runs: cd ${repo} && git branch -D x`)).toBe(true);
+    expect(lines[3]).toBe(`  kept branch x ${g(repo, "rev-parse", "--short", "x")}`);
     expect(lines.at(-1)).toBe("removed 1 of 1");
     expect(existsSync(wt)).toBe(false);
     expect(
@@ -397,7 +397,7 @@ describe("remove", () => {
 });
 
 describe("pruneBranches", () => {
-  it("lists a squash-landed branch and prints -D when -d refuses", async () => {
+  it("lists a squash-landed branch and keeps it when -d refuses", async () => {
     const { repo, wt } = repoWithWorktree();
     squashIntoMain(repo);
     g(repo, "worktree", "remove", wt);
@@ -410,12 +410,21 @@ describe("pruneBranches", () => {
         ),
         fake.layer,
       );
+    const rows = await runWith(
+      report(cfg, [repo], { bases: [], keep: [], sizes: false, nowMs: Date.now() }),
+      fake.layer,
+    );
+    expect(rows.map((row) => [row.verdict, row.text])).toEqual([
+      ["INFO", `1 landed branches kept in ${repo}`],
+      ["INFO", `PRs for ${repo} unknown: no remote`],
+    ]);
     const listed = await run([], true);
     expect(listed.length).toBe(1);
     // One squashed commit carries the same patch as the branch's one commit, so git cherry sees it first.
     expect(listed[0]?.endsWith("on base (rebase)")).toBe(true);
     const deleted = await run(["x"], false);
-    expect(deleted[0]?.endsWith(`the user runs: cd ${repo} && git branch -D x`)).toBe(true);
+    const sha = g(repo, "rev-parse", "--short", "x");
+    expect(deleted).toEqual([`kept x ${sha}: git branch -d refused (on base (rebase))`]);
   });
 });
 

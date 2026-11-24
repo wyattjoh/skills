@@ -1450,7 +1450,7 @@ describe.skipIf(!ready)("strix: sweep a remote worktree fetched and landed here"
       output: [
         `removed worktree strix:${worktree}`,
         `  copied .scratch of ${name} from strix to ${parked}`,
-        `  kept branch ${branch} ${sha}: git branch -d refused (error: the branch '${branch}' is not fully merged). Its tip is on main on this Mac, not on a base on strix; to delete it, the user runs on strix: cd ${remote} && git branch -D ${branch}`,
+        `  kept branch ${branch} ${sha}`,
         `  pruned ended record ${name}`,
         "removed 1 of 1",
         "",
