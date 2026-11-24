@@ -24,6 +24,7 @@ import {
   removeCheckout,
   removePolicy,
   replacePolicy,
+  requestStart,
   RETAINED_CLOSED,
   retain,
   setFocus,
@@ -495,6 +496,31 @@ export const itemClose = Effect.fn("itemClose")(function* (
   return input.json
     ? json(item)
     : [`${item.status} ${item.id}: ${proseSource(item.outcome, item.outcomeMarkdown)}`];
+});
+
+/**
+ * `coordinate item start`: record the user's request that the coordinator start an item now. The
+ * watcher delivers it as a `start` event. A request already pending is kept as it was.
+ * @param config Config.
+ * @param domain Domain.
+ * @param input Item id, `--json`, and the time.
+ * @returns Lines to print.
+ */
+export const itemStart = Effect.fn("itemStart")(function* (
+  config: Config,
+  domain: string,
+  input: { id: string; json: boolean; now: string },
+) {
+  const { item, requested } = yield* change(config, domain, (backlog) =>
+    requestStart(backlog, { id: input.id, now: input.now }),
+  );
+  if (input.json) return json(item);
+  const at = item.startRequested?.at ?? input.now;
+  return [
+    requested
+      ? `start requested for ${item.id} at ${at}: ${item.title}`
+      : `start already requested for ${item.id} at ${at}: ${item.title}`,
+  ];
 });
 
 /**

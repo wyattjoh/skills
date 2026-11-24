@@ -140,6 +140,11 @@ export type WatchSnapshot = {
    * Discussion requests already fired, keyed like answers.
    */
   discussed: string[] | null;
+  /**
+   * Start requests already fired, keyed `<item id> <request time>`. Only requests still pending
+   * are kept, and none is seeded on arm: a pending request is live, so a first read fires it.
+   */
+  started: string[];
   idle: Record<string, IdleReminder>;
   capacity: Record<string, { order: number; ready: boolean }>;
   /** Last effective policy signature, or its current read error. */
@@ -174,6 +179,7 @@ export const emptyState = (): WatchState => ({
   due: [],
   answered: null,
   discussed: null,
+  started: [],
   idle: {},
   capacity: {},
   harnessPolicy: undefined,
@@ -574,6 +580,36 @@ const discussionEvents = (items: readonly Item[], fired: readonly string[] | nul
 };
 
 /**
+ * Start events for the user's pending start requests (`item start`, the Backlog panel's Start),
+ * in document order, skipping keys already fired. Unlike answers and discussions, a request is
+ * pending state rather than history, so a first read fires every pending one instead of seeding
+ * it, and the fired keys keep only requests still pending. A new request after one clears has a
+ * new time, so it fires again.
+ */
+export const startEvents = (items: readonly Item[], fired: readonly string[]) => {
+  const pending = items.flatMap((item) =>
+    item.startRequested === undefined
+      ? []
+      : [
+          {
+            key: `${item.id} ${item.startRequested.at}`,
+            event: watchEvent(
+              "start",
+              { item: item.id },
+              "the user asked you to start this item: route it per the skill and policies",
+              { title: item.title, requested: item.startRequested.at },
+            ),
+          },
+        ],
+  );
+  const seen = new Set(fired);
+  return {
+    events: pending.filter((entry) => !seen.has(entry.key)).map((entry) => entry.event),
+    fired: pending.map((entry) => entry.key),
+  };
+};
+
+/**
  * The watcher's snapshot for a domain.
  * @param stateDir State dir.
  * @param domain Domain.
@@ -593,6 +629,7 @@ const readState = (path: string) =>
         due: parsed.due ?? [],
         answered: parsed.answered ?? null,
         discussed: parsed.discussed ?? null,
+        started: parsed.started ?? [],
         idle: parsed.idle ?? {},
         capacity: parsed.capacity ?? {},
         harnessPolicy: parsed.harnessPolicy,
@@ -1140,6 +1177,7 @@ export const watch = Effect.fn("watch")(function* (config: Config, options: Watc
         due: [...state.due],
         answered: state.answered === null ? null : [...state.answered],
         discussed: state.discussed === null ? null : [...state.discussed],
+        started: [...state.started],
         idle: Object.fromEntries(
           Object.entries(state.idle).map(([address, reminder]) => [address, { ...reminder }]),
         ),
@@ -1330,6 +1368,9 @@ export const watch = Effect.fn("watch")(function* (config: Config, options: Watc
         const discussed = discussionEvents(document.value.backlog.items, snapshot.discussed);
         lines.push(...discussed.events);
         snapshot.discussed = discussed.fired;
+        const started = startEvents(document.value.backlog.items, snapshot.started);
+        lines.push(...started.events);
+        snapshot.started = started.fired;
       }
       // The lint clock is read every tick: `wiki lint --mark` writes it while this watcher runs.
       // No wiki, no lint-due, even when a lint was marked.

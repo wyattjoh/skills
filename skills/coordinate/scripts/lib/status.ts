@@ -333,6 +333,8 @@ export const domainStatus = Effect.fn("domainStatus")(function* (
             `  discuss ${item.id} ${item.title}: "${questionOf(item.ask)}" (${item.ask.discuss.at}${note})`,
           );
         }
+        if (item.startRequested !== undefined)
+          lines.push(`  start ${item.id} ${item.title}: requested ${item.startRequested.at}`);
         for (const answered of item.answered) {
           const note = proseSource(answered.note, answered.noteMarkdown);
           if (answered.note !== null || note !== "")

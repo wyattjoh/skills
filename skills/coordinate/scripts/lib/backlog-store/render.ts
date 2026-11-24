@@ -99,6 +99,8 @@ const itemLines = (item: Item, idle: ReadonlySet<string>, verbose: boolean): str
   const lines = [
     `- ${item.id} [${item.status}${idle.has(item.id) ? ", none live" : ""}] ${item.title}${facts.map((fact) => ` · ${fact}`).join("")}`,
   ];
+  if (item.startRequested)
+    lines.push(`  - start requested ${item.startRequested.at}, not yet acted on`);
   if (item.ask) lines.push(...askLines(item.ask, `  - ask: ${questionOf(item.ask)}`));
   lines.push(...answeredLines(item, verbose));
   for (const entry of item.decided)

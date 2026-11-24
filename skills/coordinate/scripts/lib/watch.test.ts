@@ -3,7 +3,7 @@ import { chmodSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync }
 import { join } from "node:path";
 import { hostname } from "node:os";
 import { Effect } from "effect";
-import { createDocument, itemAdd, itemClose, itemUpdate } from "./backlog-doc.ts";
+import { createDocument, itemAdd, itemClose, itemStart, itemUpdate } from "./backlog-doc.ts";
 import { emptyBacklog, type ItemUpdate } from "./backlog-store/ops.ts";
 import { FINDING_DETAIL_SHAPE, type Item } from "./backlog-store/schema.ts";
 import { resolveConfig } from "./config.ts";
@@ -1140,6 +1140,7 @@ describe("watch due events", () => {
       due: ["2026-11-01 **Fix** due: 2026-11-01", "i1 2026-11-12"],
       answered: [],
       discussed: [],
+      started: [],
       idle: {},
       capacity: {},
       harnessPolicy: JSON.stringify({ enabled: ["pi", "claude"], default: null }),
@@ -1406,6 +1407,48 @@ describe("watch discussion events", () => {
     expect(await arm("2026-11-10")).toEqual([
       '<event kind="discuss" item="i1"><title>Fix login</title><request>"Which session store?"</request></event>',
     ]);
+  });
+});
+
+describe("watch start events", () => {
+  const AT = "2026-11-10T09:00:00.000Z";
+  const startLine = (at: string) =>
+    `<event kind="start" item="i1"><title>Fix login</title><requested>${at}</requested>the user asked you to start this item: route it per the skill and policies</event>`;
+
+  it("fires one start event per request, keeps none fired after it clears, and fires a new one", async () => {
+    const { config, arm, stateFile } = await dueDomain();
+    expect(await arm("2026-11-10")).toEqual(alive);
+    await runWith(itemStart(config, "app", { id: "i1", json: false, now: AT }));
+    expect(await arm("2026-11-10")).toEqual([startLine(AT)]);
+    expect(await arm("2026-11-10")).toEqual(alive);
+    expect(JSON.parse(readFileSync(stateFile, "utf8")).started).toEqual([`i1 ${AT}`]);
+
+    // A second press while the request is pending changes nothing, so nothing fires again.
+    await runWith(
+      itemStart(config, "app", { id: "i1", json: false, now: "2026-11-10T10:00:00.000Z" }),
+    );
+    expect(await arm("2026-11-10")).toEqual(alive);
+
+    await runWith(itemUpdate(config, "app", update("i1", { status: "building" })));
+    expect(await arm("2026-11-10")).toEqual(alive);
+    expect(JSON.parse(readFileSync(stateFile, "utf8")).started).toEqual([]);
+
+    const later = "2026-11-10T11:00:00.000Z";
+    await runWith(itemStart(config, "app", { id: "i1", json: false, now: later }));
+    expect(await arm("2026-11-10")).toEqual([startLine(later)]);
+  });
+
+  it("fires a request pending before the first arm, and on a state file from before starts fired", async () => {
+    const { config, arm, stateFile } = await dueDomain();
+    await runWith(itemStart(config, "app", { id: "i1", json: false, now: AT }));
+    expect(await arm("2026-11-10")).toEqual([startLine(AT)]);
+    const state = JSON.parse(readFileSync(stateFile, "utf8"));
+    writeFileSync(
+      stateFile,
+      JSON.stringify({ delegates: state.delegates, prs: state.prs, due: state.due }),
+    );
+    expect(await arm("2026-11-10")).toEqual([startLine(AT)]);
+    expect(await arm("2026-11-10")).toEqual(alive);
   });
 });
 

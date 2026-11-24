@@ -1,4 +1,5 @@
 import {
+  canStartItem,
   questionOf,
   type Ask,
   type Backlog,
@@ -147,7 +148,7 @@ export const closeItem = (
   const outcome = closingOutcome(input.id, input.outcome, input.outcomeMarkdown);
   if (typeof outcome === "string") return { ok: false, reason: outcome };
   const item: Item = {
-    ...without(found, "outcomeMarkdown"),
+    ...without(without(found, "outcomeMarkdown"), "startRequested"),
     status: input.dismissed ? "dismissed" : "done",
     ask: null,
     closedAt: input.now,
@@ -160,6 +161,35 @@ export const closeItem = (
       items: backlog.items.map((entry) => (entry.id === item.id ? item : entry)),
     },
     value: item,
+  };
+};
+
+/**
+ * Record the user's request that the coordinator start an item now, for the watcher's `start`
+ * event. Refused for a done, dismissed or delegated item. While a request is pending another one
+ * changes nothing, so the watcher fires once per request.
+ * @param backlog Current document.
+ * @param input Item id and the time as an ISO string.
+ * @returns The next document, the item, and whether this call recorded a new request.
+ */
+export const requestStart = (
+  backlog: Backlog,
+  input: { id: string; now: string },
+): OpResult<{ item: Item; requested: boolean }> => {
+  const found = backlog.items.find((item) => item.id === input.id);
+  if (!found) return { ok: false, reason: `no item ${input.id} in ${backlog.domain}` };
+  if (!canStartItem(found))
+    return { ok: false, reason: `${input.id} is ${found.status}, so there is nothing to start` };
+  if (found.startRequested !== undefined)
+    return { ok: true, backlog, value: { item: found, requested: false } };
+  const item: Item = { ...found, startRequested: { at: input.now } };
+  return {
+    ok: true,
+    backlog: {
+      ...backlog,
+      items: backlog.items.map((entry) => (entry.id === item.id ? item : entry)),
+    },
+    value: { item, requested: true },
   };
 };
 
@@ -624,6 +654,9 @@ export const updateItem = (backlog: Backlog, input: ItemUpdate): OpResult<Item> 
     }
   } else if (isClosed(found.status))
     item = { ...without(item, "outcomeMarkdown"), closedAt: null, outcome: null };
+  // Moving the item, or asking the user about it, answers a pending start request.
+  if (item.startRequested !== undefined && (item.status !== found.status || asked !== undefined))
+    item = without(item, "startRequested");
   if (item.status === "delegated" && item.delegates.length === 0)
     return refuse(
       `${input.id} cannot be delegated without a delegate; coordinate delegate --item ${input.id} records one`,
@@ -1029,7 +1062,11 @@ export const fileDelegate = (
         : `${held?.name ?? input.ref.name} is already filed under ${holder.id}; detach it first: coordinate item detach ${holder.id} ${held?.name ?? input.ref.session}`,
     );
   }
-  const filed: Item = { ...item, status: "delegated", delegates: [...item.delegates, input.ref] };
+  const filed: Item = {
+    ...without(item, "startRequested"),
+    status: "delegated",
+    delegates: [...item.delegates, input.ref],
+  };
   return {
     ok: true,
     backlog: {

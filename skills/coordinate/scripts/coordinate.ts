@@ -14,6 +14,7 @@ import {
   focusSet,
   itemAdd,
   itemClose,
+  itemStart,
   itemUpdate,
   policyAdd,
   policyLs,
@@ -1489,6 +1490,32 @@ const itemCloseCommand = Command.make(
   ),
 );
 
+const itemStartCommand = Command.make(
+  "start",
+  {
+    id: argument("id", "item id, such as i3"),
+    domain: optionalStringFlag(
+      "domain",
+      "domain (default: this coordinator's label; required outside a terminal)",
+    ),
+    json: booleanFlag("json", "print the item as JSON"),
+  },
+  (options) =>
+    execute((config) =>
+      Effect.flatMap(answerDomain(Option.getOrUndefined(options.domain)), (domain) =>
+        itemStart(config, domain, {
+          id: options.id,
+          json: options.json,
+          now: new Date().toISOString(),
+        }),
+      ),
+    ),
+).pipe(
+  Command.withDescription(
+    "record the user's request that the coordinator start an item now, which the watcher delivers as a start event; refused for a done, dismissed or delegated item, and a pending request is kept; allowed outside a Herdr terminal with --domain, as item answer is",
+  ),
+);
+
 const delegateArgumentDescription =
   "delegate name or Herdr terminal address (detach also takes a session id)";
 const itemAttachCommand = Command.make(
@@ -1550,6 +1577,7 @@ const itemCommand = Command.make("item").pipe(
     itemUpdateCommand,
     itemAnswerCommand,
     itemCloseCommand,
+    itemStartCommand,
     itemAttachCommand,
     itemDetachCommand,
   ]),

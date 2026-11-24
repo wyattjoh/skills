@@ -35,6 +35,24 @@ export const OUTSIDE_TERMINAL_STATUSES = [
 ] as const satisfies readonly ItemStatus[];
 
 /**
+ * The statuses `item start` refuses: a closed item has nothing to start, and a delegated one is
+ * already being worked.
+ */
+export const START_REFUSED_STATUSES = [
+  "done",
+  "dismissed",
+  "delegated",
+] as const satisfies readonly ItemStatus[];
+
+/**
+ * Whether the user may ask the coordinator to start an item (the Backlog panel's Start button).
+ * @param item The item.
+ * @returns True unless it is done, dismissed or delegated.
+ */
+export const canStartItem = (item: { status: ItemStatus }): boolean =>
+  !START_REFUSED_STATUSES.some((status) => status === item.status);
+
+/**
  * A prose field as a reader shows it: Markdown when the record has the Markdown sibling, else the
  * deprecated plain text.
  */
@@ -163,6 +181,13 @@ export type DelegateRef = {
 };
 
 /**
+ * The user's pending request that the coordinator start an item now, recorded by `item start`
+ * with the request's ISO time. It clears when the item's status changes, an ask is set, a
+ * delegate is filed, or the item closes.
+ */
+export type StartRequest = { at: string };
+
+/**
  * One unit of work the domain tracks.
  */
 export type Item = {
@@ -182,6 +207,10 @@ export type Item = {
    * The outcome as Markdown; the deprecated `outcome` is then null.
    */
   outcomeMarkdown?: string;
+  /**
+   * A pending start request; absent when there is none. Older documents never have it.
+   */
+  startRequested?: StartRequest;
 };
 
 /**
@@ -563,6 +592,10 @@ export const validateBacklog = (value: unknown): Validated => {
       if (ref.machine !== undefined) nonEmpty(`${refWhere}.machine`, ref.machine);
     });
     nonEmpty(`${where}.createdAt`, item.createdAt);
+    if ("startRequested" in item) {
+      if (!isRecord(item.startRequested)) errors.push(`${where}.startRequested must be an object`);
+      else nonEmpty(`${where}.startRequested.at`, item.startRequested.at);
+    }
     closed(where, item, status === "done" || status === "dismissed");
     if (status === "delegated" && delegates.length === 0)
       errors.push(`${where} is delegated but has no delegate`);

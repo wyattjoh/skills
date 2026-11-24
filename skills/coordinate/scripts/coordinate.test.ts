@@ -818,6 +818,10 @@ describe("coordinate CLI parity", () => {
         ["id", "--outcome", "--dismissed", "--json"],
       ],
       [
+        ["item", "start"],
+        ["id", "--domain", "--json", "start event"],
+      ],
+      [
         ["item", "attach"],
         ["id", "delegate", "--session", "--json"],
       ],
@@ -1583,6 +1587,75 @@ describe("coordinate CLI finding add detail", () => {
     const help = run(["finding", "add", "--help"]);
     expect(help.exit).toBe(0);
     expect(`${help.stdout}\n${help.stderr}`.replace(/\s+/g, " ")).toContain(FINDING_DETAIL_SHAPE);
+  });
+});
+
+describe("coordinate CLI item start", () => {
+  it("records a start request from outside a terminal, refuses closed and delegate callers, and keeps a pending one", () => {
+    const state = tempDir("coordinate-item-start-");
+    made.push(state);
+    const inside = cliEnv(state, COORDINATOR);
+    const outside = { ...inside };
+    delete outside.HC_TERMINAL_ID;
+    const run = (
+      args: string[],
+      env: Record<string, string> = outside,
+    ): [number | null, string, string] => {
+      const done = Bun.spawnSync(["bun", cli, ...args], {
+        env,
+        stdout: "pipe",
+        stderr: "pipe",
+        timeout: 10_000,
+      });
+      return [done.exitCode, done.stdout.toString(), done.stderr.toString()];
+    };
+    const stored = () =>
+      JSON.parse(readFileSync(join(state, "backlogs", "app.json"), "utf8")).items.map(
+        (item: { id: string; startRequested?: { at: string } }) => [item.id, item.startRequested],
+      );
+    expect(run(["start", "app"], inside)[0]).toBe(0);
+    expect(run(["item", "add", "fix parser", "--domain", "app"], inside)[0]).toBe(0);
+    expect(run(["item", "add", "drop me", "--domain", "app"], inside)[0]).toBe(0);
+    expect(
+      run(["item", "close", "i2", "--outcome", "not needed", "--dismissed", "--domain", "app"])[0],
+    ).toBe(0);
+
+    expect(run(["item", "start", "i1"])).toEqual([
+      1,
+      "",
+      "refused: a backlog change from outside a Herdr terminal names its domain: pass --domain\n",
+    ]);
+    const first = run(["item", "start", "--domain", "app", "--", "i1"]);
+    const [[, request]] = stored();
+    expect(request.at).toMatch(/^\d{4}-\d\d-\d\dT/);
+    expect(first).toEqual([0, `start requested for i1 at ${request.at}: fix parser\n`, ""]);
+    expect(run(["item", "start", "--domain", "app", "--", "i1"])).toEqual([
+      0,
+      `start already requested for i1 at ${request.at}: fix parser\n`,
+      "",
+    ]);
+    expect(run(["item", "start", "--domain", "app", "--", "i2"])).toEqual([
+      1,
+      "",
+      "refused: i2 is dismissed, so there is nothing to start\n",
+    ]);
+    const delegate = cliEnv(state, { "fleet.domain": "app" });
+    expect(run(["item", "start", "--domain", "app", "--", "i1"], delegate)[0]).toBe(1);
+    expect(stored()).toEqual([
+      ["i1", request],
+      ["i2", undefined],
+    ]);
+    expect(
+      run(["backlog", "show", "--domain", "app"], inside)[1]
+        .split("\n")
+        .filter((line: string) => line.includes("start requested")),
+    ).toEqual([`  - start requested ${request.at}, not yet acted on`]);
+
+    expect(run(["item", "update", "--domain", "app", "--status", "parked", "--", "i1"])[0]).toBe(0);
+    expect(stored()).toEqual([
+      ["i1", undefined],
+      ["i2", undefined],
+    ]);
   });
 });
 
