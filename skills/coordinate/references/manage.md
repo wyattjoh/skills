@@ -48,7 +48,7 @@ Verify identity with `hc get` (`fleet.role`, `fleet.domain`) before each `coordi
 
 ## Spawn
 
-Spawn a coordinator only when the user explicitly asks for one and names its domain: `coordinate spawn <domain>`, with the flags in SKILL.md's Spawn section. Never revive a departed coordinator on your own; report the departure and ask instead. Report spawn's `ready` or `not ready` line, then verify the new terminal when the fleet monitor reports it `arrived`, as for any arrival.
+Spawn a coordinator only when the user explicitly asks for one and names its domain: `coordinate spawn <domain>`, with the flags in SKILL.md's Spawn section. Never revive a departed coordinator on your own; report the departure and ask instead. A departed coordinator's lease lasts up to three minutes after its watcher stopped, so spawn and start refuse until then, naming it. Report spawn's `ready` or `not ready` line, then verify the new terminal when the fleet monitor reports it `arrived`, as for any arrival.
 
 ## Stop
 

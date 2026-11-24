@@ -509,7 +509,7 @@ const startCommand = Command.make(
     ),
 ).pipe(
   Command.withDescription(
-    "label this terminal as the domain's coordinator, create the backlog document if missing, then print status",
+    "take the domain's coordinator lease (refused while another coordinator holds a live one), label this terminal as its coordinator, create the backlog document if missing, then print status",
   ),
 );
 
@@ -662,7 +662,7 @@ const spawnCommand = Command.make(
     ),
 ).pipe(
   Command.withDescription(
-    "from a coordinator: seed the domain's backlog, then start its coordinator in its own unfocused Herdr space, labelled at launch with no parent; refused while the domain has a live coordinator; waits about 120s for its watcher, exit 1 if not ready",
+    "from a coordinator: seed the domain's backlog, then start its coordinator in its own unfocused Herdr space, labelled at launch with no parent; refused while the domain has a live coordinator or another live lease; waits about 120s for its watcher, exit 1 if not ready",
   ),
 );
 
