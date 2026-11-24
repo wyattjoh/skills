@@ -19,7 +19,6 @@ import {
   delegateUrgency,
   draftFor,
   findingStatusLabel,
-  formatFindingCounts,
   groupFindings,
   groupItems,
   promotedItemId,
@@ -43,6 +42,8 @@ import {
   policyDialogProps,
   policyDialogSpec,
   readDocument,
+  listTabs,
+  shownListTab,
   trailOf,
   wikiListCommand,
   wikiListOutput,
@@ -190,27 +191,17 @@ test("trailOf links the home icon and domain, then leaves the current page or re
     home,
     { id: "crumb-domain-skills", label: "skills", to: undefined, icon: undefined },
   ]);
+  // A list's screen is the domain page with that tab selected, so its trail ends at the domain.
   expect(
     [{ kind: "policies", domain: "skills" }, findings, { kind: "boundary", domain: "skills" }].map(
       (screen) => trailOf(screen),
     ),
-  ).toEqual([
-    [
+  ).toEqual(
+    Array.from({ length: 3 }, () => [
       home,
-      { id: "crumb-domain-skills", label: "skills", to: lists, icon: undefined },
-      { id: "crumb-policies", label: "Policies", to: undefined, icon: undefined },
-    ],
-    [
-      home,
-      { id: "crumb-domain-skills", label: "skills", to: lists, icon: undefined },
-      { id: "crumb-findings", label: "Findings", to: undefined, icon: undefined },
-    ],
-    [
-      home,
-      { id: "crumb-domain-skills", label: "skills", to: lists, icon: undefined },
-      { id: "crumb-boundary", label: "Boundary", to: undefined, icon: undefined },
-    ],
-  ]);
+      { id: "crumb-domain-skills", label: "skills", to: undefined, icon: undefined },
+    ]),
+  );
   expect(trailOf({ kind: "item", domain: "skills", id: "i4" })).toEqual([
     home,
     { id: "crumb-domain-skills", label: "skills", to: lists, icon: undefined },
@@ -247,11 +238,6 @@ test("groups open findings by kind and formats singular and plural counts", () =
   expect(groupFindings([finding("i1", "issue")])).toEqual([
     { kind: "issue", label: "Issues", findings: [finding("i1", "issue")] },
   ]);
-  expect(formatFindingCounts(findings)).toBe("5 issues · 2 opportunities");
-  expect(formatFindingCounts([finding("i1", "issue"), finding("o1", "opportunity")])).toBe(
-    "1 issue · 1 opportunity",
-  );
-  expect(formatFindingCounts([])).toBe("0 issues · 0 opportunities");
 });
 
 test("mergeEnded keeps known records, lays each lookup over them and drops a vanished one", () => {
@@ -930,7 +916,7 @@ test("the wiki reads run the CLI's read-only wiki list and show for the domain",
   ]);
 });
 
-test("trailOf runs through the Wiki page to an open wiki page", () => {
+test("trailOf runs through the Wiki tab to an open wiki page", () => {
   expect(
     trailOf({ kind: "wiki-page", domain: "alpha", name: "poll-interval" }).map((crumb) => [
       crumb.id,
@@ -943,6 +929,35 @@ test("trailOf runs through the Wiki page to an open wiki page", () => {
     ["crumb-wiki", "Wiki", { kind: "wiki", domain: "alpha" }],
     ["crumb-wiki-page-poll-interval", "poll-interval", undefined],
   ]);
+});
+
+test("listTabs lists every list in order with its count, and Outbox only above 0", () => {
+  const counts = { policies: 3, findings: 2, boundary: 4, outbox: 0, wiki: 1 };
+  expect(listTabs(counts)).toEqual([
+    { id: "policies", label: "Policies 3" },
+    { id: "findings", label: "Findings 2" },
+    { id: "boundary", label: "Boundary 4" },
+    { id: "wiki", label: "Wiki 1" },
+  ]);
+  expect(listTabs({ ...counts, outbox: 2 }).map((tab) => tab.label)).toEqual([
+    "Policies 3",
+    "Findings 2",
+    "Boundary 4",
+    "Outbox 2",
+    "Wiki 1",
+  ]);
+});
+
+test("shownListTab keeps a shown choice and falls back to the first tab otherwise", () => {
+  const counts = { policies: 0, findings: 0, boundary: 0, outbox: 0, wiki: 0 };
+  const hidden = listTabs(counts);
+  const shown = listTabs({ ...counts, outbox: 1 });
+  expect([
+    shownListTab(undefined, shown),
+    shownListTab("wiki", shown),
+    shownListTab("outbox", shown),
+    shownListTab("outbox", hidden),
+  ]).toEqual(["policies", "wiki", "outbox", "policies"]);
 });
 
 test("tildePath shows only a whole leading home folder as ~", () => {

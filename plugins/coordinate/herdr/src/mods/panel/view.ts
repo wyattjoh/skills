@@ -25,7 +25,6 @@ import {
   crumbBand,
   emptyState,
   errorState,
-  foldChevron,
   groupBlock,
   labelChip,
   listRow,
@@ -37,6 +36,7 @@ import {
   rowNote,
   staticRow,
   titleRow,
+  tabBar,
   togglePill,
   letThrough,
 } from "@wyattjoh/herdr-ui";
@@ -77,14 +77,11 @@ import {
 import {
   FINDING_KIND_LABELS,
   GROUP_LABELS,
-  OUTBOX_LABEL,
-  WIKI_LABEL,
   canDismissItem,
   chosenAnswer,
   delegateLabel,
   delegateLine,
   findingStatusLabel,
-  formatFindingCounts,
   groupFindings,
   idLinkTarget,
   inlineMarkdown,
@@ -100,7 +97,6 @@ import type {
   AnswerDraft,
   Crumb,
   DelegateJoin,
-  DomainPage,
   DelegateRow,
   DelegateState,
   DocumentState,
@@ -108,6 +104,8 @@ import type {
   ItemGroup,
   ItemOrder,
   ListingState,
+  ListTab,
+  ListTabEntry,
   OutboxEvent,
   QueuedEntry,
   Screen,
@@ -151,16 +149,18 @@ export type PanelModel = {
   itemOrder: ItemOrder;
   toggleItemOrder: (cx: Context) => void;
   // The domain's capacity queue, which the Queued group's rows read their machine and place from,
-  // and its watcher events not yet delivered, for the Outbox row and page.
+  // and its watcher events not yet delivered, for the Outbox tab.
   queued: QueuedEntry[];
   outbox: OutboxEvent[];
-  // The domain wiki's pages in index order, for the Wiki row and page; the open page, while the
+  // The domain wiki's pages in index order, for the Wiki tab; the open page, while the
   // list still has it, with its Markdown body once read; and what opens a page.
   wiki: WikiPage[];
   wikiPage: { page: WikiPage; body: string | undefined } | undefined;
   openWikiPage: (name: string, cx: Context) => void;
-  // The active list page, or undefined while the domain's main list is shown.
-  page: DomainPage["kind"] | undefined;
+  // The Lists card's tabs, the one shown, and what selects one.
+  listTabs: ListTabEntry[];
+  listTab: ListTab;
+  selectListTab: (tab: ListTab, cx: Context) => void;
   // The open findings.
   findings: Finding[];
   // The finding whose detail screen is on top of the lists, if any, the item it came from and
@@ -646,6 +646,10 @@ const itemsCard = (t: Theme, model: PanelModel): Element =>
 
 const emptyRow = (t: Theme, id: string, label: string): Element => cardNote(t, label).id(id);
 
+// An empty list's note in the Lists card, ruled off from the tab row like a row.
+const listEmptyRow = (t: Theme, id: string, label: string): Element =>
+  emptyRow(t, id, label).border_t(1).border_color(t.border);
+
 const loadMoreRow = (t: Theme, groupId: string, model: PanelModel, rowHeight: number): Element =>
   staticRow(t, `pagination-row-${groupId}`)
     .h(rowHeight)
@@ -731,33 +735,27 @@ const unfiledCard = (t: Theme, rows: DelegateRow[], model: PanelModel): Element[
         ),
       ];
 
-// Open findings in one card per non-empty kind, with each kind paged on its own.
-const findingsPage = (t: Theme, model: PanelModel): Element => {
+// A titled part of a Lists tab, such as a findings kind or a boundary list: a static row with
+// its muted name and any controls after it, ruled off like a row.
+const listPartHeader = (t: Theme, id: string, name: string): Element =>
+  staticRow(t, id)
+    .h(CARD.headerHeight)
+    .child(div().text_size(TEXT.label).font_medium().text_color(t.muted).child(name));
+
+// Open findings in one part per non-empty kind, with each kind paged on its own.
+const findingsRows = (t: Theme, model: PanelModel): Element[] => {
   const groups = groupFindings(model.findings);
-  if (groups.length === 0)
-    return v_flex()
-      .id("findings-page")
-      .child(emptyRow(t, "findings-empty", "No open findings"));
-  return v_flex()
-    .id("findings-page")
-    .gap(PANEL.sectionGap)
-    .children(
-      groups.map((group) =>
-        cardSection(
-          cardHeader(t, `findings-${group.kind}-header`, group.label),
-          card(t, `findings-${group.kind}`).children(
-            pagedRows(
-              t,
-              `findings-${group.kind}`,
-              group.findings,
-              model,
-              ROW.compact,
-              (finding, index) => findingRow(t, finding, model.openFinding, index === 0),
-            ),
-          ),
+  if (groups.length === 0) return [listEmptyRow(t, "findings-empty", "No open findings")];
+  return groups.flatMap((group) => [
+    listPartHeader(t, `findings-${group.kind}-header`, group.label),
+    v_flex()
+      .id(`findings-${group.kind}`)
+      .children(
+        pagedRows(t, `findings-${group.kind}`, group.findings, model, ROW.compact, (finding) =>
+          findingRow(t, finding, model.openFinding),
         ),
       ),
-    );
+  ]);
 };
 
 // A detail card item wraps naturally; herdr-ui owns its padding, gap and separator.
@@ -2349,33 +2347,27 @@ const answerFlowScreen = (t: Theme, flow: AnswerFlowModel): Element =>
     .when(flow.queuedCount > 0, (el) => el.child(flowFooter(t, flow)));
 
 // Policy text wraps, so use the package's card pieces instead of fixed-height groupBlock.
-const policiesPage = (t: Theme, backlog: Backlog, model: PanelModel): Element => {
+const policiesRows = (t: Theme, backlog: Backlog, model: PanelModel): Element[] => {
   const entries = backlog.policies;
-  return cardSection(
-    cardHeader(t, "policies-header", "Policies"),
-    card(t, "policies").children(
-      entries.length === 0
-        ? [emptyRow(t, "policies-empty", "None")]
-        : pagedRows(t, "policies", entries, model, ROW.list, (entry, index) =>
-            detailRow(t, `policy-${entry.id}`)
-              .when(index === 0, (row) => row.border_t(0))
-              .child(
-                div().child(
-                  proseChild(
-                    t,
-                    `policy-${entry.id}-markdown`,
-                    prose(entry.text, entry.markdown) ?? { markdown: false, value: "" },
-                    model.links,
-                  ),
-                ),
-              )
-              .when(entry.wiki !== undefined, (row) =>
-                row.child(policyWiki(t, entry.id, entry.wiki!, model)),
-              )
-              .child(small(t, t.dim, entry.at.slice(0, 10))),
-          ),
-    ),
-  );
+  return entries.length === 0
+    ? [listEmptyRow(t, "policies-empty", "None")]
+    : pagedRows(t, "policies", entries, model, ROW.list, (entry) =>
+        detailRow(t, `policy-${entry.id}`)
+          .child(
+            div().child(
+              proseChild(
+                t,
+                `policy-${entry.id}-markdown`,
+                prose(entry.text, entry.markdown) ?? { markdown: false, value: "" },
+                model.links,
+              ),
+            ),
+          )
+          .when(entry.wiki !== undefined, (row) =>
+            row.child(policyWiki(t, entry.id, entry.wiki!, model)),
+          )
+          .child(small(t, t.dim, entry.at.slice(0, 10))),
+      );
 };
 
 // A policy's wiki citation: a link to the page while the domain wiki lists it, else plain text
@@ -2415,17 +2407,10 @@ const wikiRow = (t: Theme, page: WikiPage, model: PanelModel, first: boolean): E
     );
 
 // The domain wiki's pages in index order; each opens its page.
-const wikiListPage = (t: Theme, model: PanelModel): Element =>
-  cardSection(
-    cardHeader(t, "wiki-header", "Wiki pages"),
-    card(t, "wiki").children(
-      model.wiki.length === 0
-        ? [emptyRow(t, "wiki-empty", "None")]
-        : pagedRows(t, "wiki", model.wiki, model, ROW.list, (page, index) =>
-            wikiRow(t, page, model, index === 0),
-          ),
-    ),
-  );
+const wikiRows = (t: Theme, model: PanelModel): Element[] =>
+  model.wiki.length === 0
+    ? [listEmptyRow(t, "wiki-empty", "None")]
+    : pagedRows(t, "wiki", model.wiki, model, ROW.list, (page) => wikiRow(t, page, model, false));
 
 // A wiki page: its frontmatter as facts, then its body as native Markdown once read. A body
 // that failed to read, or is empty, shows no card.
@@ -2494,7 +2479,7 @@ const wikiPageScreen = (
 };
 
 // Each event's kind and attributes head its row; its fields and action text wrap beneath.
-const outboxRow = (t: Theme, event: OutboxEvent, first: boolean, home: string): Element => {
+const outboxRow = (t: Theme, event: OutboxEvent, home: string): Element => {
   const attrs = Object.entries(event.attrs).map(
     ([name, value]) => `${name}=${tildePath(value, home)}`,
   );
@@ -2504,7 +2489,6 @@ const outboxRow = (t: Theme, event: OutboxEvent, first: boolean, home: string): 
     ),
   );
   return detailRow(t, `outbox-${event.id}`)
-    .when(first, (row) => row.border_t(0))
     .child(div().child(`e${event.id} ${event.kind}`))
     .when(attrs.length > 0, (row) =>
       row.child(small(t, t.dim, attrs.join(" ")).id(`outbox-attrs-${event.id}`)),
@@ -2519,28 +2503,23 @@ const outboxRow = (t: Theme, event: OutboxEvent, first: boolean, home: string): 
 
 // The watcher's events not yet delivered to the coordinator, oldest first. Event text wraps, so
 // this uses the card pieces as Policies does.
-const outboxPage = (t: Theme, model: PanelModel): Element =>
-  cardSection(
-    cardHeader(t, "outbox-header", "Undelivered watcher events"),
-    card(t, "outbox").children(
-      model.outbox.length === 0
-        ? [emptyRow(t, "outbox-empty", "None")]
-        : pagedRows(t, "outbox", model.outbox, model, ROW.list, (event, index) =>
-            outboxRow(t, event, index === 0, model.home),
-          ),
-    ),
-  );
+const outboxRows = (t: Theme, model: PanelModel): Element[] =>
+  model.outbox.length === 0
+    ? [listEmptyRow(t, "outbox-empty", "None")]
+    : pagedRows(t, "outbox", model.outbox, model, ROW.list, (event) =>
+        outboxRow(t, event, model.home),
+      );
 
-// The paths the domain owns and those next to it, in separate editable cards.
-const boundaryCard = (
+// The paths the domain owns and those next to it, in separate editable parts.
+const boundaryRows = (
   t: Theme,
   boundary: Backlog["boundary"],
   model: BoundaryModel,
   home: string,
 ): Element[] => {
-  const section = (list: BoundaryList, label: string, paths: string[]) => {
+  const section = (list: BoundaryList, label: string, paths: string[]): Element[] => {
     const id = `boundary-${list}`;
-    const rows = paths.map((path, index) => {
+    const rows = paths.map((path) => {
       const hovered = model.hovered === `${model.domain}\\0${list}\\0${path}`;
       // An owned repo's checkouts on other machines, by machine name, beside its path.
       const checkouts = Object.entries(list === "owned" ? (boundary.checkouts?.[path] ?? {}) : {})
@@ -2553,7 +2532,6 @@ const boundaryCard = (
       const row = listRow(t, {
         id: `boundary-${model.domain}-${list}-${path}`,
         title: tildePath(path, home),
-        first: index === 0,
         height: ROW.list,
         trailing: hovered
           ? [
@@ -2613,7 +2591,7 @@ const boundaryCard = (
           .text_color(role(t, "ansi1"))
           .child(error.message),
       );
-    const header = cardHeader(t, `${id}-header`, label)
+    const header = listPartHeader(t, `${id}-header`, label)
       .child(div().flex_1())
       .child(
         button(t, {
@@ -2623,100 +2601,51 @@ const boundaryCard = (
           onClick: model.busy ? undefined : (cx) => model.begin(list, cx),
         }),
       );
-    return cardSection(
-      header,
-      card(t, id).children(rows.map((row, index) => (index === 0 ? row.border_t(0) : row))),
-    );
+    return [header, v_flex().id(id).children(rows)];
   };
   return [
-    section("owned", "Owned", boundary.owned),
-    section("adjacent", "Adjacent", boundary.adjacent),
+    ...section("owned", "Owned", boundary.owned),
+    ...section("adjacent", "Adjacent", boundary.adjacent),
   ];
 };
 
-// A Lists row: the name, its count or summary just beside it in the dim note style, and a
-// right-pointing chevron at the far right, like a collapsed group's. The whole row opens the list.
-const sectionRow = (
-  t: Theme,
-  id: string,
-  label: string,
-  count: number | string,
-  screen: DomainPage,
-  model: PanelModel,
-): Element =>
-  cardRow(t, id, t.hover)
-    .h(ROW.list)
-    .on_click((_event, cx) => model.go(screen, cx))
-    .child(div().flex_none().truncate().text_size(TEXT.body).text_color(t.foreground).child(label))
-    .child(rowNote(t, String(count)))
-    .child(div().flex_1())
-    .child(foldChevron(t, false));
+// The selected Lists tab's rows.
+const listRows = (t: Theme, backlog: Backlog, model: PanelModel): Element[] => {
+  switch (model.listTab) {
+    case "policies":
+      return policiesRows(t, backlog, model);
+    case "findings":
+      return findingsRows(t, model);
+    case "boundary":
+      return boundaryRows(t, backlog.boundary, model.boundary, model.home);
+    case "outbox":
+      return outboxRows(t, model);
+    case "wiki":
+      return wikiRows(t, model);
+  }
+};
 
-const sectionLinks = (t: Theme, domain: string, backlog: Backlog, model: PanelModel): Element =>
+// The domain's lists in one card: a tab per list, then the selected list's rows.
+const listsCard = (t: Theme, backlog: Backlog, model: PanelModel): Element =>
   cardSection(
     cardHeader(t, "lists-header", "Lists"),
-    card(t, "lists").children([
-      sectionRow(
-        t,
-        "page-policies",
-        "Policies",
-        backlog.policies.length,
-        { kind: "policies", domain },
-        model,
-      ),
-      sectionRow(
-        t,
-        "page-findings",
-        "Findings",
-        formatFindingCounts(model.findings),
-        { kind: "findings", domain },
-        model,
-      ),
-      sectionRow(
-        t,
-        "page-boundary",
-        "Boundary",
-        backlog.boundary.owned.length + backlog.boundary.adjacent.length,
-        { kind: "boundary", domain },
-        model,
-      ),
-      sectionRow(
-        t,
-        "page-outbox",
-        OUTBOX_LABEL,
-        model.outbox.length,
-        { kind: "outbox", domain },
-        model,
-      ),
-      sectionRow(t, "page-wiki", WIKI_LABEL, model.wiki.length, { kind: "wiki", domain }, model),
-    ]),
+    card(t, "lists")
+      .child(
+        staticRow(t, "lists-tabs", true)
+          .py(CARD.rowGap)
+          .child(
+            // The bar wraps onto a second line rather than clip a tab in a narrow panel.
+            tabBar(t, {
+              id: "page",
+              tabs: model.listTabs.map((tab) => ({ ...tab, selected: tab.id === model.listTab })),
+              onTab: (tab, cx) => model.selectListTab(tab, cx),
+            })
+              .flex_1()
+              .flex_wrap(),
+          ),
+      )
+      .children(listRows(t, backlog, model)),
   );
-
-const domainPage = (t: Theme, backlog: Backlog, model: PanelModel): Element => {
-  let content: Element;
-  switch (model.page) {
-    case "policies":
-      content = policiesPage(t, backlog, model);
-      break;
-    case "findings":
-      content = findingsPage(t, model);
-      break;
-    case "boundary":
-      content = v_flex()
-        .gap(PANEL.sectionGap)
-        .children(boundaryCard(t, backlog.boundary, model.boundary, model.home));
-      break;
-    case "outbox":
-      content = outboxPage(t, model);
-      break;
-    case "wiki":
-      content = wikiListPage(t, model);
-      break;
-    default:
-      content = message(t, "page-unavailable", "Page unavailable", "Return to the domain list.");
-  }
-  return v_flex().id("domain-page").gap(PANEL.sectionGap).child(content);
-};
 
 const domainBody = (t: Theme, domain: string, doc: DocumentState, model: PanelModel): Element => {
   if (doc.kind === "loading")
@@ -2738,7 +2667,7 @@ const domainBody = (t: Theme, domain: string, doc: DocumentState, model: PanelMo
     .child(focusCard(t, model.links, prose(doc.backlog.focus, doc.backlog.focusMarkdown)))
     .children([...waitingCard(t, model), itemsCard(t, model)])
     .children(unfiledCard(t, model.delegates.unfiled, model))
-    .child(sectionLinks(t, domain, doc.backlog, model));
+    .child(listsCard(t, doc.backlog, model));
 };
 
 const COUNT_LABELS = [
@@ -2806,8 +2735,7 @@ const domainScreens = (t: Theme, model: PanelModel): Element =>
         .absolute()
         .inset_0()
         .when(
-          model.page !== undefined ||
-            model.detail !== undefined ||
+          model.detail !== undefined ||
             model.finding !== undefined ||
             model.wikiPage !== undefined ||
             model.flow !== undefined,
@@ -2820,31 +2748,6 @@ const domainScreens = (t: Theme, model: PanelModel): Element =>
             PANEL.padding,
           ),
         ),
-    )
-    .when(model.page !== undefined, (screens) =>
-      screens.child(
-        v_flex()
-          .id("screen-page")
-          .absolute()
-          .inset_0()
-          .bg(t.surface)
-          .when(
-            model.detail !== undefined ||
-              model.finding !== undefined ||
-              model.wikiPage !== undefined ||
-              model.flow !== undefined,
-            (page) => page.invisible(),
-          )
-          .child(
-            paneScrollRegion(
-              "page-scroll",
-              model.doc.kind === "loaded"
-                ? domainPage(t, model.doc.backlog, model)
-                : domainBody(t, model.domain!, model.doc, model),
-              PANEL.padding,
-            ),
-          ),
-      ),
     )
     .when(model.detail !== undefined && model.flow === undefined, (screens) =>
       screens.child(
