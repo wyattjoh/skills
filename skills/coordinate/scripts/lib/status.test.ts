@@ -2,7 +2,14 @@ import { afterAll, describe, expect, it } from "bun:test";
 import { rmSync } from "node:fs";
 import { join } from "node:path";
 import { Effect } from "effect";
-import { boundaryAdd, createDocument, itemAdd, itemClose, itemUpdate } from "./backlog-doc.ts";
+import {
+  boundaryAdd,
+  createDocument,
+  itemAdd,
+  itemClose,
+  itemStart,
+  itemUpdate,
+} from "./backlog-doc.ts";
 import { resolveConfig } from "./config.ts";
 import { commitFile, g, gitAndFake, initRepo, runWith, tempDir } from "./fixture.ts";
 import { domainStatus } from "./status.ts";
@@ -101,6 +108,7 @@ describe("domainStatus discussion requests", () => {
         json: false,
       }),
     );
+    await runWith(itemStart(config, "app", { id: "i1", json: false, now: "2026-11-18T08:00:00Z" }));
     await runWith(
       itemUpdate(config, "app", {
         id: "i1",
@@ -130,6 +138,10 @@ describe("domainStatus discussion requests", () => {
     expect(lines).toContain(
       '  discuss i1 Choose store: "Which store?" (2026-11-18; compare migrations)',
     );
+    // A Discuss answer keeps the item waiting-user, so the start request stays pending.
+    expect(lines.filter((line) => line.startsWith("  start "))).toEqual([
+      "  start i1 Choose store: requested 2026-11-18T08:00:00Z",
+    ]);
     expect(lines.filter((line) => line.includes("answer"))).toEqual([]);
   });
 });

@@ -654,8 +654,12 @@ export const updateItem = (backlog: Backlog, input: ItemUpdate): OpResult<Item> 
     }
   } else if (isClosed(found.status))
     item = { ...without(item, "outcomeMarkdown"), closedAt: null, outcome: null };
-  // Moving the item, or asking the user about it, answers a pending start request.
-  if (item.startRequested !== undefined && (item.status !== found.status || asked !== undefined))
+  // Setting a status (even the one it has, as a coordinator already building it does), a status
+  // change from a Discuss answer, or an ask answers a pending start request.
+  if (
+    item.startRequested !== undefined &&
+    (input.status !== undefined || item.status !== found.status || asked !== undefined)
+  )
     item = without(item, "startRequested");
   if (item.status === "delegated" && item.delegates.length === 0)
     return refuse(

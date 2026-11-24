@@ -182,8 +182,8 @@ export type DelegateRef = {
 
 /**
  * The user's pending request that the coordinator start an item now, recorded by `item start`
- * with the request's ISO time. It clears when the item's status changes, an ask is set, a
- * delegate is filed, or the item closes.
+ * with the request's ISO time. It clears when `item update` sets a status (even the current one)
+ * or an ask, when a delegate is filed, and when the item closes.
  */
 export type StartRequest = { at: string };
 

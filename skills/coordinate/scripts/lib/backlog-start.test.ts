@@ -121,6 +121,22 @@ describe("a pending start request", () => {
     ]);
   });
 
+  it("clears when a coordinator sets the status the item already has", () => {
+    const building = unwrap(updateItem(oneItem(), update("i1", { status: "building" }))).backlog;
+    const requested = unwrap(requestStart(building, { id: "i1", now: NOW })).backlog;
+    const kept = unwrap(updateItem(requested, update("i1", { status: "building" }))).backlog;
+    expect([item(kept)?.status, item(kept)?.startRequested]).toEqual(["building", undefined]);
+  });
+
+  it("stays through an answer that leaves the status alone", () => {
+    const asked = unwrap(
+      updateItem(oneItem(), update("i1", { ask: "Which provider?", options: ["A", "B"] })),
+    ).backlog;
+    const requested = unwrap(requestStart(asked, { id: "i1", now: NOW })).backlog;
+    const answered = unwrap(updateItem(requested, update("i1", { answer: "A" }))).backlog;
+    expect(item(answered)?.startRequested).toEqual({ at: NOW });
+  });
+
   it("stays through an update that keeps the status, such as a decision", () => {
     const decided = unwrap(updateItem(started(), update("i1", { decided: ["use SSO"] }))).backlog;
     expect(item(decided)?.startRequested).toEqual({ at: NOW });
