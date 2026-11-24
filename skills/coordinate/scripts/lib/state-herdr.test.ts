@@ -393,6 +393,48 @@ describe("herdr-doc follow", () => {
     ]).toEqual([1, undefined]);
   });
 
+  test("on the home, the watcher's own lease renewals never wake it; another machine's take does", async () => {
+    const cores = fakeDocCores("homebase", { strix: "up" });
+    const options = {
+      home: "homebase",
+      prefix: "ct.",
+      appendRemote: noRemote,
+      readRemote: noRemote,
+      stateDir: tempDir("coordinate-herdr-lease-follow-"),
+    };
+    const home = herdrStore({
+      ...options,
+      transport: memoryDocTransport(cores),
+      subscribe: memoryDocSubscriber(cores),
+      self: Effect.succeed("homebase"),
+    });
+    const strixCores = { ...cores, self: "strix", machines: { homebase: "up" as const } };
+    const away = herdrStore({
+      ...options,
+      transport: memoryDocTransport(strixCores),
+      self: Effect.succeed("strix"),
+    });
+    await put(home, keys.backlog("app"), { domain: "app" });
+    let notices = 0;
+    const followed = await run(
+      home.follow?.([keys.backlog("app")], () => {
+        notices += 1;
+      }) ?? Effect.succeed(undefined),
+    );
+    const delivered = () => new Promise((resolve) => setTimeout(resolve, 0));
+    const now = Date.parse("2026-11-23T12:00:00.000Z");
+    const here = { machine: "homebase", address: "t3" };
+    await run(takeLease(home, "app", here, now));
+    await run(renewLease(home, "app", here, now + 60_000));
+    await run(renewLease(home, "app", here, now + 120_000));
+    await delivered();
+    const own = notices;
+    await run(takeLease(away, "app", { machine: "strix", address: "t1fn" }, now + 600_000));
+    await delivered();
+    followed?.close();
+    expect([own, notices]).toEqual([0, 1]);
+  });
+
   test("reads the subscribe reply, doc events and nothing else from a subscription line", () => {
     expect(
       [
