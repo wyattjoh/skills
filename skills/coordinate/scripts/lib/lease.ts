@@ -5,7 +5,13 @@ import { localMachine } from "./delegate-capacity.ts";
 import { Refused } from "./fleet.ts";
 import { stateStore } from "./state.ts";
 import * as hc from "./herdr.ts";
-import { keys, optionUnlessOffline, runCommand, type StateStore } from "./state-store.ts";
+import {
+  keys,
+  optionUnlessOffline,
+  runCommand,
+  StoreUnreadable,
+  type StateStore,
+} from "./state-store.ts";
 
 /**
  * How long a coordinator lease lasts after it was last taken or renewed.
@@ -153,6 +159,55 @@ export const renewLease = (store: StateStore, domain: string, holder: LeaseHolde
       write: true as const,
       next: { ...current.value, lease },
       value: { renewed: true, lease } satisfies Renewal as Renewal,
+    });
+  });
+
+/**
+ * The coordinator address a reader on `reader` uses for a lease's holder: the bare address when the
+ * holder runs on the reader's own machine, else `<machine>/<address>`. This assumes the reader's
+ * Herdr names each machine by that machine's own core name.
+ * @param lease Lease.
+ * @param reader The reading machine's own Herdr core name.
+ * @returns The address.
+ */
+export const leaseAddress = (lease: Lease, reader: string): string =>
+  lease.machine === reader ? lease.address : leaseHolderName(lease);
+
+/**
+ * One domain's coordinator as its lease records it: the lease (null without one), whether it is
+ * live, and the live holder's address as the reader names it (null when not live).
+ */
+export type DomainLease = {
+  domain: string;
+  lease: Lease | null;
+  live: boolean;
+  coordinator: string | null;
+};
+
+/**
+ * Every domain in the store with its coordinator lease, in name order: the fleet's coordinators on
+ * every machine, seen from `reader`. A document that cannot be read counts as having no lease; an
+ * unreachable home fails (`StoreOffline`).
+ * @param store The store holding the backlogs.
+ * @param reader The reading machine's own Herdr core name.
+ * @param now Milliseconds since the epoch.
+ * @returns The domains and their leases.
+ */
+export const domainLeases = (store: StateStore, reader: string, now: number) =>
+  Effect.gen(function* () {
+    const domains = [...(yield* store.list("backlog"))].toSorted();
+    const stored = yield* store.readMany(domains.map(keys.backlog));
+    return domains.map((domain, index): DomainLease => {
+      const read = stored[index];
+      const lease =
+        read === undefined || read instanceof StoreUnreadable ? undefined : leaseOf(read.value);
+      const live = lease !== undefined && leaseLive(lease, now);
+      return {
+        domain,
+        lease: lease ?? null,
+        live,
+        coordinator: live ? leaseAddress(lease, reader) : null,
+      };
     });
   });
 

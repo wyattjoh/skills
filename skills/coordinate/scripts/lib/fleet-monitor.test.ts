@@ -1,9 +1,22 @@
 import { describe, expect, it } from "bun:test";
 import { Effect } from "effect";
 import { failureOf, runWith } from "./fixture.ts";
-import { fleetEvents, foldStatus, parseFleet, readFleet } from "./fleet-monitor.ts";
+import {
+  fleetEvents,
+  foldStatus,
+  monitorFleet,
+  parseFleet,
+  readFleet,
+  readLeaseFleet,
+} from "./fleet-monitor.ts";
 import { HerdrError } from "./herdr.ts";
+import { fakeDocCores, memoryDocTransport } from "./herdr-docs-fake.ts";
+import { emptyBacklog } from "./backlog-store/ops.ts";
+import { takeLease } from "./lease.ts";
 import { fakeProc, ok } from "./proc.ts";
+import { herdrStore } from "./state-herdr.ts";
+import { keys, runCommand } from "./state-store.ts";
+import { tempDir } from "./fixture.ts";
 
 const snapshot = (entries: Array<[string, string]>) => new Map(entries);
 
@@ -86,5 +99,121 @@ describe("readFleet", () => {
     const fake = fakeProc(() => ok("not json"));
     const failure = await failureOf(readFleet(new Set()), fake.layer);
     expect(failure instanceof HerdrError).toBe(true);
+  });
+});
+
+const T0 = Date.parse("2026-11-23T12:00:00.000Z");
+
+const noRemote = () => Effect.die(new Error("no archive in this test"));
+
+describe("readLeaseFleet", () => {
+  it("names every live coordinator by domain, on any machine, as the manager's machine does", async () => {
+    const cores = fakeDocCores("strix", { homebase: "up" });
+    const store = herdrStore({
+      home: "homebase",
+      prefix: "ct.",
+      appendRemote: noRemote,
+      readRemote: noRemote,
+      transport: memoryDocTransport(cores),
+      self: Effect.succeed("strix"),
+      stateDir: tempDir("coordinate-fleet-leases-"),
+    });
+    const leased = async (
+      domain: string,
+      machine: string | undefined,
+      address: string,
+      at = T0,
+    ) => {
+      await Effect.runPromise(
+        runCommand(store, keys.backlog(domain), () =>
+          Effect.succeed({ write: true as const, next: emptyBacklog(domain, null), value: domain }),
+        ),
+      );
+      if (machine !== undefined)
+        await Effect.runPromise(takeLease(store, domain, { machine, address }, at));
+    };
+    await leased("app", "strix", "t1");
+    await leased("ops", "nigelsheldon", "t4");
+    await leased("web", "homebase", "t7");
+    await leased("lab", "homebase", "t2", T0 - 600_000);
+    await leased("docs", undefined, "");
+    const fleet = await Effect.runPromise(readLeaseFleet(store, "strix", T0));
+    expect([...fleet]).toEqual([
+      ["l:app", "t1"],
+      ["l:ops", "nigelsheldon/t4"],
+      ["l:web", "homebase/t7"],
+    ]);
+  });
+});
+
+describe("monitorFleet with leases", () => {
+  it("reports coordinators arriving and leaving by lease, keeping the last good leases through a failed read", async () => {
+    const fake = fakeProc(() =>
+      ok(JSON.stringify({ terminals: [{ address: "t3", status: "idle" }] })),
+    );
+    const readings: Array<Array<[string, string]> | "down"> = [
+      [["l:app", "t1"]],
+      [
+        ["l:app", "t1"],
+        ["l:ops", "nigelsheldon/t4"],
+      ],
+      "down",
+      [["l:ops", "nigelsheldon/t4"]],
+    ];
+    let read = 0;
+    const leases = Effect.suspend(() => {
+      const reading = readings[Math.min(read, readings.length - 1)];
+      read += 1;
+      return reading === "down" || reading === undefined
+        ? Effect.fail(new Error("homebase is unreachable"))
+        : Effect.succeed(new Map(reading));
+    });
+    const lines: string[] = [];
+    await runWith(
+      monitorFleet({
+        intervalMs: 1,
+        durationMs: 300,
+        exclude: new Set(),
+        emit: (line) => Effect.sync(() => void lines.push(line)),
+        leases: { read: leases, everyMs: 0 },
+      }),
+      fake.layer,
+    );
+    expect([read >= readings.length, lines]).toEqual([
+      true,
+      ["arrived l:ops=nigelsheldon/t4", "departed l:app", "monitor expired"],
+    ]);
+  });
+
+  it("leaves out the manager's own lease and a coordinator this core already lists", async () => {
+    const fake = fakeProc(() =>
+      ok(JSON.stringify({ terminals: [{ address: "t3", status: "idle" }] })),
+    );
+    const readings: Array<Array<[string, string]>> = [
+      [],
+      [
+        ["l:manager", "t9"],
+        ["l:app", "t3"],
+        ["l:ops", "nigelsheldon/t4"],
+      ],
+    ];
+    let read = 0;
+    const leases = Effect.suspend(() => {
+      const reading = readings[Math.min(read, readings.length - 1)] ?? [];
+      read += 1;
+      return Effect.succeed(new Map(reading));
+    });
+    const lines: string[] = [];
+    await runWith(
+      monitorFleet({
+        intervalMs: 1,
+        durationMs: 200,
+        exclude: new Set(["t9"]),
+        emit: (line) => Effect.sync(() => void lines.push(line)),
+        leases: { read: leases, everyMs: 0 },
+      }),
+      fake.layer,
+    );
+    expect(lines).toEqual(["arrived l:ops=nigelsheldon/t4", "monitor expired"]);
   });
 });

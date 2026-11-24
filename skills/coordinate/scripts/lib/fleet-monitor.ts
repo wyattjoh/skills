@@ -1,8 +1,12 @@
 import { Effect, Option, Schema } from "effect";
 import { HerdrError, herdr } from "./herdr.ts";
+import { domainLeases } from "./lease.ts";
+import type { Proc } from "./proc.ts";
+import type { StateStore } from "./state-store.ts";
 
 /**
- * One fleet reading: `m:<machine>` and `t:<address>` keys mapped to a state.
+ * One fleet reading: `m:<machine>` and `t:<address>` keys mapped to a state, and (from the store's
+ * leases) `l:<domain>` keys mapped to that domain's live coordinator address.
  * Terminal states fold `idle` and `done` into `settled`.
  */
 export type FleetSnapshot = ReadonlyMap<string, string>;
@@ -92,13 +96,43 @@ export const readFleet = Effect.fn("fleet.read")(function* (exclude: ReadonlySet
 });
 
 /**
- * How long and how often to watch, and where lines go.
+ * Every live coordinator lease in the store as `l:<domain>` mapped to its holder's address as the
+ * reader names it (bare on the reader's machine, else `<machine>/<address>`), so coordinators on
+ * machines this core cannot list are still found.
+ * @param store The store holding the backlogs.
+ * @param reader The reading machine's own Herdr core name.
+ * @param now Milliseconds since the epoch.
+ * @returns The lease entries.
+ */
+export const readLeaseFleet = (store: StateStore, reader: string, now: number) =>
+  Effect.map(
+    domainLeases(store, reader, now),
+    (domains): FleetSnapshot =>
+      new Map(
+        domains.flatMap((entry) =>
+          entry.coordinator === null ? [] : [[`l:${entry.domain}`, entry.coordinator] as const],
+        ),
+      ),
+  );
+
+/**
+ * Where the monitor reads leases from, and how often. A failed read keeps the last good leases,
+ * so an unreachable home never reports every coordinator departed.
+ */
+export type LeaseSource = {
+  read: Effect.Effect<FleetSnapshot, unknown, Proc>;
+  everyMs: number;
+};
+
+/**
+ * How long and how often to watch, where lines go, and the leases to add (undefined: labels only).
  */
 export type MonitorOptions = {
   intervalMs: number;
   durationMs: number;
   exclude: ReadonlySet<string>;
   emit: (line: string) => Effect.Effect<void>;
+  leases: LeaseSource | undefined;
 };
 
 /**
@@ -109,8 +143,26 @@ export type MonitorOptions = {
 export const monitorFleet = Effect.fn("fleet.monitor")(function* (options: MonitorOptions) {
   const deadline = Date.now() + options.durationMs;
   let previous: FleetSnapshot | undefined;
+  let leases: FleetSnapshot = new Map();
+  let leasesRead = Number.NEGATIVE_INFINITY;
   while (Date.now() < deadline) {
-    const current = yield* readFleet(options.exclude).pipe(Effect.option);
+    if (options.leases !== undefined && Date.now() - leasesRead >= options.leases.everyMs) {
+      leasesRead = Date.now();
+      const read = yield* options.leases.read.pipe(Effect.option);
+      if (Option.isSome(read)) leases = read.value;
+    }
+    const labelled = yield* readFleet(options.exclude).pipe(Effect.option);
+    // A lease adds only a coordinator this core does not list itself, never the manager's own.
+    const current = Option.map(
+      labelled,
+      (fleet): FleetSnapshot =>
+        new Map([
+          ...fleet,
+          ...[...leases].filter(
+            ([, address]) => !options.exclude.has(address) && !fleet.has(`t:${address}`),
+          ),
+        ]),
+    );
     if (Option.isSome(current) && current.value.size > 0) {
       if (previous !== undefined)
         for (const line of fleetEvents(previous, current.value)) yield* options.emit(line);
