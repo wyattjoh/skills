@@ -13,6 +13,7 @@ import { appendArchiveFile, filesStore, readArchiveFile } from "./state-files.ts
 import {
   BacklogError,
   ClaimBusy,
+  claimHeld,
   type ListedKind,
   type StateKey,
   type StateStore,
@@ -130,15 +131,6 @@ type Claim = { token: string; pid: number; host: string; expires?: number };
 const claimsOf = (value: unknown): Record<string, Claim> =>
   ((value as { claims?: Record<string, Claim> } | null)?.claims ?? {}) as Record<string, Claim>;
 
-const ownerIsLive = (pid: number): boolean => {
-  try {
-    process.kill(pid, 0);
-    return true;
-  } catch (error) {
-    return (error as NodeJS.ErrnoException).code === "EPERM";
-  }
-};
-
 // The index and claims documents change by small idempotent edits, so a lost race just re-reads.
 const SMALL_EDIT_ATTEMPTS = 5;
 
@@ -158,12 +150,16 @@ export const herdrStore = (options: HerdrStoreOptions): StateStore => {
   const index = `${prefix}domains`;
   const host = options.host ?? hostname();
   const now = options.now ?? Date.now;
-  // On this host the owner's pid says whether it still runs; from another host only the expiry
-  // can, and a claim without one is taken over.
-  const claimHeld = (current: Claim): boolean =>
-    current.host === host
-      ? ownerIsLive(current.pid)
-      : typeof current.expires === "number" && now() < current.expires;
+  // A claim from another host without an expiry is taken over.
+  const isHeld = (current: Claim): boolean =>
+    claimHeld(
+      {
+        host: current.host,
+        pid: current.pid,
+        expires: typeof current.expires === "number" ? current.expires : undefined,
+      },
+      { host, now: now(), foreignWithoutExpiry: false },
+    );
 
   const isLocal = (key: StateKey) => key.kind === "session" || key.kind === "lint";
 
@@ -473,7 +469,7 @@ export const herdrStore = (options: HerdrStoreOptions): StateStore => {
           return yield* new ClaimBusy({ message: `queued launch claim is unreadable: ${where}` });
         const claims = claimsOf(doc.value);
         const current = claims[item];
-        if (current !== undefined && claimHeld(current))
+        if (current !== undefined && isHeld(current))
           return yield* new ClaimBusy({
             message: `queued item is already being retried (pid ${current.pid}${current.host === host ? "" : ` on ${current.host}, until ${new Date(current.expires ?? 0).toISOString()}`})`,
           });
@@ -533,7 +529,7 @@ export const herdrStore = (options: HerdrStoreOptions): StateStore => {
         const name = `${prefix}k.${domains[position] ?? ""}`;
         if ("error" in doc) return [at(name)];
         return Object.entries(claimsOf(doc.value))
-          .filter(([, held]) => claimHeld(held))
+          .filter(([, held]) => isHeld(held))
           .map(([item]) => `${at(name)}#${item}`);
       }),
     );

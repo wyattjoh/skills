@@ -1,5 +1,5 @@
 import { Effect, Option } from "effect";
-import { isRecord } from "./backlog-store/schema.ts";
+import { isRecord, type Lease } from "./backlog-store/schema.ts";
 import type { Config } from "./config.ts";
 import { localMachine } from "./delegate-capacity.ts";
 import { Refused } from "./fleet.ts";
@@ -22,12 +22,6 @@ export const LEASE_TTL_MS = 180_000;
  * How often a watcher renews its coordinator's lease.
  */
 export const LEASE_RENEW_MS = 60_000;
-
-/**
- * The coordinator that holds a domain: its Herdr machine (that core's own name), its terminal
- * address on that machine (bare, as its own core names it), and when the lease expires (ISO).
- */
-export type Lease = { machine: string; address: string; expiry: string };
 
 /**
  * Who takes or renews a lease: a coordinator terminal on a machine.

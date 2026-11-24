@@ -18,6 +18,7 @@ import { archivePath, backlogsDir, documentPath } from "./backlog-store/paths.ts
 import {
   BacklogError,
   ClaimBusy,
+  claimHeld,
   type ListedKind,
   type StateKey,
   type StateStore,
@@ -225,14 +226,12 @@ const failure = (path: string) => (cause: unknown) =>
 const claimPath = (stateDir: string, domain: string, item: string): string =>
   join(stateDir, "capacity", "claims", `${domain}-${item}.lock`);
 
-const ownerIsLive = (pid: number): boolean => {
-  try {
-    process.kill(pid, 0);
-    return true;
-  } catch (error) {
-    return (error as NodeJS.ErrnoException).code === "EPERM";
-  }
-};
+// Files claims carry no expiry, so a claim from another host stays held.
+const isHeld = (host: string, pid: number): boolean =>
+  claimHeld(
+    { host, pid, expires: undefined },
+    { host: hostname(), now: Date.now(), foreignWithoutExpiry: true },
+  );
 
 const acquireClaim = async (path: string): Promise<StoreClaim> => {
   await mkdir(join(path, ".."), { recursive: true });
@@ -267,7 +266,7 @@ const acquireClaim = async (path: string): Promise<StoreClaim> => {
         typeof current.token !== "string"
       )
         throw new Error(`queued launch claim has an invalid owner: ${path}`, { cause: error });
-      if (ownerIsLive(current.pid))
+      if (isHeld(current.hostname, current.pid))
         throw new Error(`queued item is already being retried (pid ${current.pid})`, {
           cause: error,
         });
@@ -296,12 +295,12 @@ const heldClaimFiles = async (stateDir: string): Promise<string[]> => {
     const owner = await readFile(join(path, "owner.json"), "utf8")
       .then((text) => JSON.parse(text) as { pid?: unknown; hostname?: unknown })
       .catch(() => undefined);
-    const dead =
-      owner !== undefined &&
-      owner.hostname === hostname() &&
-      typeof owner.pid === "number" &&
-      !ownerIsLive(owner.pid);
-    if (!dead) held.push(path);
+    if (
+      owner === undefined ||
+      typeof owner.pid !== "number" ||
+      isHeld(String(owner.hostname), owner.pid)
+    )
+      held.push(path);
   }
   return held;
 };

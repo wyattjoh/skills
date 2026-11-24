@@ -2,7 +2,7 @@ import { chmod, mkdir, readdir, rename } from "node:fs/promises";
 import { dirname, join, relative } from "node:path";
 import { isDeepStrictEqual } from "node:util";
 import { Effect } from "effect";
-import { type Config, configPath } from "./config.ts";
+import { type Config, configPath, type StateBackend } from "./config.ts";
 import { members, Refused } from "./fleet.ts";
 import { homeStore } from "./state.ts";
 import { filesPath, filesStore } from "./state-files.ts";
@@ -15,11 +15,6 @@ import {
   StoreUnreadable,
 } from "./state-store.ts";
 import { watcherInfo } from "./watch-terminal.ts";
-
-/**
- * Where `coordinate state migrate` moves the shared documents.
- */
-export type MigrateTarget = "herdr-doc" | "files";
 
 const label = (key: StateKey): string => {
   switch (key.kind) {
@@ -237,7 +232,7 @@ const backUp = (stateDir: string, paths: readonly string[], now: Date) =>
  */
 export const migrateState = Effect.fn("migrateState")(function* (
   config: Config,
-  to: MigrateTarget,
+  to: StateBackend,
   now: Date = new Date(),
 ) {
   const home = homeStore(config);

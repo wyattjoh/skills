@@ -1,6 +1,7 @@
 import { Effect } from "effect";
 import { isRecord } from "./backlog-store/schema.ts";
-import { leaseAddress, storedDomainLeases, type Lease, type StoredDomainLease } from "./lease.ts";
+import type { Lease } from "./backlog-store/schema.ts";
+import { leaseAddress, storedDomainLeases, type StoredDomainLease } from "./lease.ts";
 import type { Config } from "./config.ts";
 import { localMachine } from "./delegate-capacity.ts";
 import { stateStore } from "./state.ts";

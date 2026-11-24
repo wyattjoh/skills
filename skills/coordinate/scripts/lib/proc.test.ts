@@ -1,5 +1,5 @@
 import { afterAll, expect, test } from "bun:test";
-import { chmodSync, rmSync, writeFileSync } from "node:fs";
+import { chmodSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { Effect } from "effect";
 import { tempDir } from "./fixture.ts";
@@ -14,7 +14,7 @@ const program = (path: string, name: string) => {
   chmodSync(path, 0o755);
 };
 const onPath = join(dir, "bin");
-Bun.spawnSync(["mkdir", "-p", onPath]);
+mkdirSync(onPath, { recursive: true });
 program(join(onPath, "hc"), "path-hc");
 const baked = join(dir, "baked-hc");
 program(baked, "baked-hc");

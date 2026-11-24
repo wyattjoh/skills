@@ -1,4 +1,5 @@
 import { Effect, Option, Schema } from "effect";
+import type { StateBackend } from "./config.ts";
 import { Refused } from "./fleet.ts";
 
 /**
@@ -113,6 +114,39 @@ export class ClaimBusy extends Schema.TaggedError<ClaimBusy>()("ClaimBusy", {
 }) {}
 
 /**
+ * Who holds a capacity claim: the host and pid of the retry that took it, and when the claim
+ * lapses for readers on other hosts (undefined when the backend sets no expiry).
+ */
+export type ClaimOwner = { host: string; pid: number; expires: number | undefined };
+
+const ownerIsLive = (pid: number): boolean => {
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch (error) {
+    return (error as NodeJS.ErrnoException).code === "EPERM";
+  }
+};
+
+/**
+ * Whether a capacity claim is still held, the one rule both backends' `claim` and `heldClaims`
+ * use. On this host the owner's pid says whether its retry still runs. From another host only an
+ * expiry can: the claim is held until it passes, and a claim with none is held only when
+ * `foreignWithoutExpiry` says so (files: true, since its claims never expire; herdr-doc: false, so
+ * a retry that died on another machine never blocks the slot for good).
+ * @param owner The claim's owner.
+ * @param here This host, the time now, and what a foreign claim without an expiry means.
+ * @returns True while the claim is held.
+ */
+export const claimHeld = (
+  owner: ClaimOwner,
+  here: { host: string; now: number; foreignWithoutExpiry: boolean },
+): boolean => {
+  if (owner.host === here.host) return ownerIsLive(owner.pid);
+  return owner.expires === undefined ? here.foreignWithoutExpiry : here.now < owner.expires;
+};
+
+/**
  * A held capacity claim, returned to `release`.
  */
 export type StoreClaim = { readonly location: string; readonly token: string };
@@ -142,7 +176,7 @@ export type StateStore = {
   /**
    * Which backend this is.
    */
-  readonly backend: "files" | "herdr-doc";
+  readonly backend: StateBackend;
   /**
    * A human-readable location for messages: the file path, or the document's address.
    */

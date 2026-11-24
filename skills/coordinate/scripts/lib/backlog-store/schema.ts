@@ -362,8 +362,14 @@ export type Backlog = {
   /**
    * The coordinator lease (lease.ts): which machine and terminal coordinate the domain, until when.
    */
-  lease?: { machine: string; address: string; expiry: string };
+  lease?: Lease;
 };
+
+/**
+ * The coordinator that holds a domain: its Herdr machine (that core's own name), its terminal
+ * address on that machine (bare, as its own core names it), and when the lease expires (ISO).
+ */
+export type Lease = { machine: string; address: string; expiry: string };
 
 /**
  * A validation result: the typed document, or every reason it is not one.
