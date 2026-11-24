@@ -4,6 +4,7 @@ import {
   mkdirSync,
   mkdtempSync,
   realpathSync,
+  symlinkSync,
   writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
@@ -141,7 +142,7 @@ export const gitAndFake = (
  * With the herdr-doc backend (`stateBackend`, by default from `COORDINATE_TEST_STATE_BACKEND`), the
  * config keeps shared state on the home `FAKE_HOME`, and the stub's `hc connect` answers document
  * calls from fake cores in `<state>/herdr-docs.json` (and `hc file read` finds no file) (this core `FAKE_CORE`, which knows the home and
- * strix, both up).
+ * strix, both up), and HOME has a Claude Code coordinate skill link to this checkout.
  * @param state State dir.
  * @param labels The calling terminal's labels.
  * @param getError An error kind for `hc get` to fail with.
@@ -172,6 +173,12 @@ export const cliEnv = (
         : {}),
     }),
   );
+  // A coordinator machine on the herdr-doc backend needs a coordinate skill link (preflight).
+  const skillLink = join(state, "home", ".claude", "skills", "coordinate");
+  if (stateBackend === "herdr-doc" && !existsSync(skillLink)) {
+    mkdirSync(join(skillLink, ".."), { recursive: true });
+    symlinkSync(join(import.meta.dir, "..", ".."), skillLink);
+  }
   // Kept across calls: a test may build the environment again for each command.
   if (stateBackend === "herdr-doc" && !existsSync(docs))
     writeFileSync(

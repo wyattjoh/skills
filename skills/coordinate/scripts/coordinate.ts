@@ -95,6 +95,7 @@ import {
 } from "./lib/sweep.ts";
 import { mainCheckout } from "./lib/git.ts";
 import { pathWrapper } from "./lib/path-wrapper.ts";
+import { preflightStart } from "./lib/preflight.ts";
 import {
   citedPage,
   commitWiki,
@@ -483,6 +484,7 @@ const startCommand = Command.make(
   ({ domain }) =>
     execute((config) =>
       Effect.gen(function* () {
+        yield* preflightStart(config, domain, process.env);
         const lines = [...(yield* start(config, domain))];
         lines.push("", ...(yield* domainStatus(config, domain, false, Date.now())));
         lines.push(

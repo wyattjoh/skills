@@ -34,7 +34,7 @@ export const remoteCheckout = Effect.fn("remoteCheckout")(function* (
  * @param items Items.
  * @returns The list.
  */
-const spoken = (items: readonly string[]): string =>
+export const spoken = (items: readonly string[]): string =>
   items.length < 3 ? items.join(" and ") : `${items.slice(0, -1).join(", ")}, and ${items.at(-1)}`;
 
 // What copy-back, fetch and the process scan run on a remote, besides git and sha256sum or shasum.

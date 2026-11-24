@@ -26,7 +26,7 @@ const sandbox = (backend: StateBackend, prefix: string) => {
   const outside = { ...env };
   delete outside.HC_TERMINAL_ID;
   const run = (args: string[], commandEnv = env): Result => {
-    const done = Bun.spawnSync(["bun", cli, ...args], {
+    const done = Bun.spawnSync([process.execPath, cli, ...args], {
       env: commandEnv,
       stdout: "pipe",
       stderr: "pipe",
@@ -301,5 +301,48 @@ describe.each<StateBackend>(["files", "herdr-doc"])("coordinator leases on %s", 
     expect(
       Date.parse(expiry) - before >= 180_000 && Date.parse(expiry) - Date.now() <= 180_000,
     ).toBe(true);
+  }, 60_000);
+});
+
+describe("coordinate start preflight on herdr-doc", () => {
+  it("refuses on a machine missing bun, the coordinate skill and a route to the home, naming each and whose fix it is", () => {
+    const box = sandbox("herdr-doc", "coordinate-preflight-");
+    rmSync(join(box.state, "home", ".claude"), { recursive: true, force: true });
+    box.setCores((current) => {
+      delete current.machines[FAKE_HOME];
+    });
+    const started = box.run(["start", "app"], {
+      ...box.outside,
+      HC_TERMINAL_ID: "t1",
+      PATH: `${join(box.state, "bin")}:/usr/bin:/bin`,
+    });
+    expect([started.exit, started.stdout, started.stderr]).toEqual([
+      1,
+      "",
+      `refused: ${FAKE_CORE} lacks bun on its PATH, the coordinate skill (no link at ${join(box.state, "home", ".claude/skills/coordinate")}, ${join(box.state, "home", ".pi/agent/skills/coordinate")} or ${join(box.state, "home", ".agents/skills/coordinate")}), and a Herdr route to the state home ${FAKE_HOME} (unknown machine "${FAKE_HOME}"); setting up ${FAKE_CORE} belongs to ${FAKE_CORE}'s own domain, so file it there\n`,
+    ]);
+    // Nothing was labelled or written.
+    expect(
+      readFileSync(join(box.state, "bin", "calls.log"), "utf8")
+        .split("\n")
+        .filter((line) => line.startsWith("label")),
+    ).toEqual([]);
+    expect(Object.keys(box.cores().docs[FAKE_HOME] ?? {})).toEqual([]);
+  }, 60_000);
+
+  it("refuses when only the home is unreachable, then starts once it is back", () => {
+    const box = sandbox("herdr-doc", "coordinate-preflight-home-");
+    box.setCores((current) => {
+      current.machines[FAKE_HOME] = "down";
+    });
+    const refused = box.run(["start", "app"]);
+    expect([refused.exit, refused.stderr]).toEqual([
+      1,
+      `refused: ${FAKE_CORE} lacks a Herdr route to the state home ${FAKE_HOME} (${FAKE_HOME} is unreachable: cannot reach ${FAKE_HOME}); setting up ${FAKE_CORE} belongs to ${FAKE_CORE}'s own domain, so file it there\n`,
+    ]);
+    box.setCores((current) => {
+      current.machines[FAKE_HOME] = "up";
+    });
+    expect(box.run(["start", "app"]).exit).toBe(0);
   }, 60_000);
 });
