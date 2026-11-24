@@ -158,7 +158,7 @@ The backlog holds state; the **wiki** holds knowledge: why a decision was made, 
 
 ## Manage the fleet
 
-The `manager` domain coordinates the other coordinators instead of a repo: it watches the fleet, relays their asks and results, keeps tab titles aligned with each focus, tells harness handoffs from crashes, and spawns a coordinator only when the user asks for it. When the user names that role, read [manage.md](references/manage.md) and run its fleet monitor, `bun $SKILL_DIR/scripts/fleet-monitor.ts`.
+The `manager` domain coordinates the other coordinators instead of a repo: it watches the fleet, relays their asks and results, keeps tab titles aligned with each focus, tells harness handoffs from crashes, and spawns a coordinator only when the user asks for it. When the user names that role, read [manage.md](references/manage.md) and run its fleet monitor, `bun $SKILL_DIR/scripts/fleet-monitor.ts`. On herdr-doc it may run on any coordinator machine: it finds coordinators by their leases and reaches those on other machines through the home.
 
 ## Restart
 
