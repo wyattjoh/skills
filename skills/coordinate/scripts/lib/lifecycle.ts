@@ -15,7 +15,7 @@ import {
   seedDocument,
   documentExists,
 } from "./backlog-doc.ts";
-import { leaseLive, leaseOf, leaseRefusal, takeLease } from "./lease.ts";
+import { abandonedLease, currentLease, leaseLive, leaseRefusal, takeLease } from "./lease.ts";
 import { stateStore } from "./state.ts";
 import { keys, optionUnlessOffline } from "./state-store.ts";
 import { filedUnder, idleDelegated, updateItem, type ItemUpdate } from "./backlog-store/ops.ts";
@@ -126,12 +126,15 @@ export const start = Effect.fn("start")(function* (
       message: "HC_TERMINAL_ID is unset: run this inside a Herdr terminal",
     });
   const made = yield* createDocument(config, domain);
-  yield* takeLease(
-    stateStore(config.stateDir),
-    domain,
-    { machine: yield* localMachine(), address },
-    now,
-  );
+  const store = stateStore(config.stateDir);
+  const machine = yield* localMachine();
+  const found = yield* currentLease(store, domain);
+  // A live lease another terminal on this machine left behind (a harness handoff) is taken over.
+  const abandoned =
+    found !== undefined && leaseLive(found, now) && found.address !== address
+      ? yield* abandonedLease(found, machine)
+      : undefined;
+  yield* takeLease(store, domain, { machine, address }, now, abandoned);
   const lines: string[] = [];
   const others = (yield* coordinators(domain)).filter((terminal) => terminal.address !== address);
   if (others.length > 0)
@@ -525,9 +528,12 @@ export const spawn = Effect.fn("spawn")(function* (
     return yield* new Refused({
       message: `${domain} already has a live coordinator: ${running.name ?? running.address} (${running.address}); go to it instead of spawning another`,
     });
-  const held = yield* optionUnlessOffline(stateStore(config.stateDir).read(keys.backlog(domain)));
-  const lease = Option.isSome(held) ? leaseOf(held.value.value) : undefined;
-  if (lease !== undefined && leaseLive(lease, Date.parse(options.now)))
+  const lease = yield* currentLease(stateStore(config.stateDir), domain);
+  const abandoned =
+    lease !== undefined && leaseLive(lease, Date.parse(options.now))
+      ? yield* abandonedLease(lease, yield* localMachine())
+      : undefined;
+  if (lease !== undefined && leaseLive(lease, Date.parse(options.now)) && abandoned === undefined)
     return yield* new Refused({ message: leaseRefusal(domain, lease) });
   const taken = (yield* hc.list()).find((terminal) => terminal.live && terminal.name === name);
   if (taken)
@@ -576,6 +582,7 @@ export const spawn = Effect.fn("spawn")(function* (
       domain,
       { machine, address: launched.address },
       Date.parse(options.now),
+      abandoned,
     );
   }).pipe(Effect.ignore);
   const ready = yield* awaitWatcher(domain, launched.address, wait);

@@ -170,6 +170,71 @@ describe("start", () => {
     });
   });
 
+  const handoffFake = (holder: Record<string, unknown> | undefined) =>
+    fakeProc((argv) => {
+      if (argv[1] === "ls") return ok('{"terminals":[]}');
+      if (argv[1] === "get" && argv[2] === "t9")
+        return ok(
+          terminal({
+            address: "t9",
+            labels: { "fleet.role": "coordinator", "fleet.domain": "app" },
+          }),
+        );
+      if (argv[1] === "get" && argv[2] === "t3")
+        return holder === undefined
+          ? {
+              exitCode: 1,
+              stdout: "",
+              stderr: JSON.stringify({ error: { kind: "not_found", message: "no terminal t3" } }),
+            }
+          : ok(terminal({ address: "t3", ...holder }));
+      if (argv[1] === "run") return ok('{"address":"t10"}');
+      return ok("{}");
+    });
+  const sameCore = { machine: "fake-core", address: "t3", expiry: "2026-11-23T12:02:00.000Z" };
+
+  it.each([
+    { holder: "gone from Herdr", terminal: undefined },
+    { holder: "exited", terminal: { state: "exited" } },
+  ])(
+    "takes over a live lease on this machine whose terminal is $holder",
+    async ({ terminal: t3 }) => {
+      const state = dir();
+      const { cfg, path } = await leasedBy(state, sameCore);
+      const fake = handoffFake(t3);
+      const lines = await runWith(
+        start(cfg, "app", { HC_TERMINAL_ID: "t9" }, START_NOW),
+        fake.layer,
+      );
+      expect(lines[0]).toBe("labelled t9: fleet.role=coordinator fleet.domain=app");
+      expect(JSON.parse(readFileSync(path, "utf8")).lease).toEqual({
+        machine: "fake-core",
+        address: "t9",
+        expiry: "2026-11-23T12:03:00.000Z",
+      });
+    },
+  );
+
+  it("refuses a live lease on this machine whose terminal still runs", async () => {
+    const state = dir();
+    const { cfg } = await leasedBy(state, sameCore);
+    const error = await failureOf(
+      start(cfg, "app", { HC_TERMINAL_ID: "t9" }, START_NOW),
+      handoffFake({ state: "live" }).layer,
+    );
+    expect(messageOf(error)).toBe(
+      "app already has a coordinator: fake-core/t3 holds its lease until 2026-11-23T12:02:00.000Z; go to it, or wait for that lease to expire (3 minutes after its watcher last renewed it)",
+    );
+  });
+
+  it("never asks Herdr about a holder on another machine, which stays authoritative until expiry", async () => {
+    const state = dir();
+    const { cfg } = await leasedBy(state, { ...sameCore, machine: "strix" });
+    const fake = handoffFake(undefined);
+    await failureOf(start(cfg, "app", { HC_TERMINAL_ID: "t9" }, START_NOW), fake.layer);
+    expect(fake.calls.map((call) => call.argv)).toEqual([["hc", "server", "status", "--json"]]);
+  });
+
   it("takes over a lease its holder has not renewed for three minutes", async () => {
     const state = dir();
     const { cfg, path } = await leasedBy(state, {
@@ -630,6 +695,13 @@ const spawnFake = (
     if (argv[0] === "hc") {
       if (argv[1] === "get" && argv[2] === "t1") return ok(spawnCaller(callerLabels));
       if (argv[1] === "get" && argv[2] === "t7") return ok(JSON.stringify(launched));
+      // t4: a coordinator that has left Herdr, whose lease may still be live.
+      if (argv[1] === "get" && argv[2] === "t4")
+        return {
+          exitCode: 1,
+          stdout: "",
+          stderr: JSON.stringify({ error: { kind: "not_found", message: "no terminal t4" } }),
+        };
       if (argv[1] === "ls" && argv.includes(`coordinate.watch-domain=${domain}`))
         return ok(JSON.stringify({ terminals: watchers }));
       if (argv[1] === "ls" && argv.includes("fleet.role=coordinator"))
@@ -1080,6 +1152,24 @@ describe("spawn", () => {
       machine: "fake-core",
       address: "t7",
       expiry: "2026-11-23T00:04:00.000Z",
+    });
+  });
+
+  it("spawns over a lease on this machine whose terminal is gone, leaving it with the new coordinator", async () => {
+    const state = dir();
+    const cfg = await withDefaultHarness(state, "claude");
+    await ownedBy(cfg, "tasks", [state]);
+    const gone = { machine: "fake-core", address: "t4", expiry: "2026-11-23T00:02:00.000Z" };
+    writeFileSync(
+      tasksDocument(state),
+      JSON.stringify({ ...readJson(tasksDocument(state)), lease: gone }),
+    );
+    const result = await runWith(spawn(cfg, spawnOptions(), ENV), spawnFake(MANAGER).layer);
+    expect([result.terminal, result.status]).toEqual(["t7", "ready"]);
+    expect(readJson(tasksDocument(state)).lease).toEqual({
+      machine: "fake-core",
+      address: "t7",
+      expiry: "2026-11-23T00:03:00.000Z",
     });
   });
 

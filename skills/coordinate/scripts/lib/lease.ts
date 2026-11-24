@@ -1,10 +1,11 @@
-import { Effect } from "effect";
+import { Effect, Option } from "effect";
 import { isRecord } from "./backlog-store/schema.ts";
 import type { Config } from "./config.ts";
 import { localMachine } from "./delegate-capacity.ts";
 import { Refused } from "./fleet.ts";
 import { stateStore } from "./state.ts";
-import { keys, runCommand, type StateStore } from "./state-store.ts";
+import * as hc from "./herdr.ts";
+import { keys, optionUnlessOffline, runCommand, type StateStore } from "./state-store.ts";
 
 /**
  * How long a coordinator lease lasts after it was last taken or renewed.
@@ -51,6 +52,9 @@ export const leaseLive = (lease: Lease, now: number): boolean => Date.parse(leas
 const sameHolder = (lease: Lease, holder: LeaseHolder): boolean =>
   lease.machine === holder.machine && lease.address === holder.address;
 
+const sameLease = (left: Lease, right: Lease): boolean =>
+  sameHolder(left, right) && left.expiry === right.expiry;
+
 /**
  * A lease's holder as `<machine>/<address>`.
  * @param lease Lease.
@@ -81,16 +85,29 @@ const fresh = (holder: LeaseHolder, now: number): Lease => ({
  * @param domain Domain.
  * @param holder The coordinator taking it.
  * @param now Milliseconds since the epoch.
+ * @param abandoned A live lease the caller found abandoned (`abandonedLease`): replaced only while
+ *   the document still holds exactly it.
  * @returns The lease written.
  */
-export const takeLease = (store: StateStore, domain: string, holder: LeaseHolder, now: number) =>
+export const takeLease = (
+  store: StateStore,
+  domain: string,
+  holder: LeaseHolder,
+  now: number,
+  abandoned: Lease | undefined = undefined,
+) =>
   runCommand(store, keys.backlog(domain), (current) => {
     if (!isRecord(current.value))
       return Effect.fail(
         new Refused({ message: `no backlog for ${domain}; run coordinate start ${domain}` }),
       );
     const held = leaseOf(current.value);
-    if (held !== undefined && leaseLive(held, now) && !sameHolder(held, holder))
+    if (
+      held !== undefined &&
+      leaseLive(held, now) &&
+      !sameHolder(held, holder) &&
+      !(abandoned !== undefined && sameLease(held, abandoned))
+    )
       return Effect.fail(new Refused({ message: leaseRefusal(domain, held) }));
     const lease = fresh(holder, now);
     return Effect.succeed({
@@ -162,3 +179,36 @@ export const renewWatchedLease = (
         const machine = yield* localMachine();
         yield* renewLease(stateStore(config.stateDir), domain, { machine, address: owner }, now);
       }).pipe(Effect.ignore, Effect.as(now));
+
+/**
+ * A domain's lease as stored now, when it has one.
+ * @param store The store holding the backlog.
+ * @param domain Domain.
+ * @returns The lease, or undefined (no backlog, unreadable, or no lease).
+ */
+export const currentLease = (store: StateStore, domain: string) =>
+  optionUnlessOffline(store.read(keys.backlog(domain))).pipe(
+    Effect.map((stored) => (Option.isSome(stored) ? leaseOf(stored.value.value) : undefined)),
+  );
+
+/**
+ * Whether a live lease was left behind on this machine: its holder is on this core and Herdr
+ * reports that terminal gone or ended, as after a harness handoff. A holder on another machine is
+ * never asked about and stays authoritative until its lease expires; a Herdr that cannot answer
+ * leaves the lease standing.
+ * @param lease The lease.
+ * @param machine This core's Herdr machine name.
+ * @returns The lease when abandoned, else undefined.
+ */
+export const abandonedLease = Effect.fn("abandonedLease")(function* (
+  lease: Lease,
+  machine: string,
+) {
+  if (lease.machine !== machine) return undefined;
+  const found = yield* hc.get(lease.address).pipe(
+    Effect.map((terminal) => ({ terminal })),
+    Effect.catch(() => Effect.succeed(undefined)),
+  );
+  if (found === undefined) return undefined;
+  return found.terminal === undefined || !found.terminal.live ? lease : undefined;
+});

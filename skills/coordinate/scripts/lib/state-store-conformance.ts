@@ -337,6 +337,26 @@ export const storeConformance = (
         ]);
       });
 
+      test("a take may replace the exact lease its caller found abandoned, and no other", async () => {
+        const { store } = await withBacklog();
+        await run(takeLease(store, "app", { machine: "finbar", address: "t3" }, NOW));
+        const found = {
+          machine: "finbar",
+          address: "t3",
+          expiry: "2026-11-23T12:03:00.000Z",
+        };
+        const stale = { ...found, expiry: "2026-11-23T12:02:00.000Z" };
+        const refused = await fail(takeLease(store, "app", here, NOW + 1, stale));
+        expect(refused.message).toBe(
+          "app already has a coordinator: finbar/t3 holds its lease until 2026-11-23T12:03:00.000Z; go to it, or wait for that lease to expire (3 minutes after its watcher last renewed it)",
+        );
+        expect(await run(takeLease(store, "app", here, NOW + 1, found))).toEqual({
+          machine: "finbar",
+          address: "t1",
+          expiry: "2026-11-23T12:03:00.001Z",
+        });
+      });
+
       test("renew takes no lease the document lacks, so only a start can create one", async () => {
         const { store } = await withBacklog();
         const before = await run(store.read(keys.backlog("app")));

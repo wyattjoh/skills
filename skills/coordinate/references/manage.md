@@ -28,7 +28,7 @@ Rediscover the whole fleet (`hc ls --json --label fleet.role=coordinator`); the 
 
 - **Settled**: read its last output (`hc read <address>`) and its backlog (`coordinate backlog show --domain <domain> --json`). A settled coordinator waiting on a recorded ask, or with live delegates, is fine; relay a new ask or result to the user in a few lines. A settled coordinator with neither is stranded work: say so.
 - **Blocked**: it shows a question or permission dialog. Relay the question, its options and the recommendation, name the tab, and leave the answer to the user. Call out warnings the dialog shows (for example a flagged shell argument).
-- **Departed**: `hc get <address>` says why. A killed coordinator followed by an `arrived` terminal with the same `fleet.domain` and `herdr.tab` is a harness handoff, not a crash. Report a departure with nothing arriving, and any risk it leaves unwatched, then ask whether to spawn it again (below).
+- **Departed**: `hc get <address>` says why. A killed coordinator followed by an `arrived` terminal with the same `fleet.domain` and `herdr.tab` is a harness handoff, not a crash; the new terminal's `coordinate start` takes over the old one's lease at once, since that terminal is gone on the same machine. Report a departure with nothing arriving, and any risk it leaves unwatched, then ask whether to spawn it again (below).
 - **Arrived**: verify it with `hc get` (domain, tab, harness) before trusting it.
 
 Report each wake to the user in two to four lines: what changed, and what waits on them. Repeat nothing unchanged.
