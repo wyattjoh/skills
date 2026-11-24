@@ -63,10 +63,12 @@ import {
   DELEGATE_INDENT,
   DELEGATE_ROW_HEIGHT,
   DELEGATE_TONES,
+  EDIT_CHIN_INSET,
   FINDING_GLYPHS,
   FINDING_LINE_HEIGHT,
   FINDING_STATUS_TONES,
   FINDING_TITLE_MAX_LINES,
+  GHOST_FILL,
   GLOBE_ICON,
   PROMOTED_TONE,
   QUEUED_TONE,
@@ -326,17 +328,14 @@ export type AnswerFlowModel = {
 /**
  * Edit and Delete on a record's text fields, each field named by its `editKey`: the field being
  * edited and its editor's state, the list entry waiting on its Delete? confirmation, the field
- * whose save or delete is running, the hovered field (its controls show), the CLI's last refusal,
- * and what each control does.
+ * whose save or delete is running, the CLI's last refusal, and what each control does.
  */
 export type FieldEditModel = {
   editing: string | undefined;
   input: AnswerInputState | undefined;
   confirming: string | undefined;
   running: string | undefined;
-  hovered: string | undefined;
   error: { key: string; message: string } | undefined;
-  hover: (key: string, hovered: boolean, cx: Context) => void;
   begin: (target: EditTarget, cx: Context) => void;
   cancel: (cx: Context) => void;
   save: (cx: Context) => void;
@@ -350,13 +349,11 @@ export type BoundaryModel = {
   editing: BoundaryList | undefined;
   input: InputState | undefined;
   busy: boolean;
-  hovered: string | undefined;
   error:
     | { domain: string; list: BoundaryList; path: string | undefined; message: string }
     | undefined;
   begin: (list: BoundaryList, cx: Context) => void;
   cancel: (cx: Context) => void;
-  hover: (list: BoundaryList, path: string, hovered: boolean, cx: Context) => void;
 };
 
 /**
@@ -885,102 +882,104 @@ const answerField = (
       el.child(answerInputElement(input!).w_full().text_size(TEXT.body).text_color(t.foreground)),
     );
 
-// A field's Edit and, for a list entry, Delete, shown while the row is hovered; a pending delete
-// shows its Delete? confirmation instead, and a running save or delete keeps the controls inert.
-const editControls = (
-  t: Theme,
-  edit: FieldEditModel,
-  target: EditTarget,
-  shown: boolean,
-): Element[] => {
+// A ghost button: the panel button's metrics and hover fill with no fill or border at rest.
+const ghostButton = (t: Theme, options: Parameters<typeof button>[1]): Element =>
+  button(t, { ...options, style: BUTTON_STYLE }).bg(GHOST_FILL);
+
+// A field's chin: a full-width bar ruled off from the field above it, holding the field's ghost
+// buttons at its right end. Displayed, it shows Delete (on a list entry) then Edit; while the
+// editor is open, Cancel then Save; while a delete asks, Delete? with Cancel then Delete. A running
+// save or delete keeps every button inert.
+const editChin = (t: Theme, edit: FieldEditModel, target: EditTarget): Element => {
   const key = editKey(target);
   const busy = edit.running !== undefined;
-  if (edit.confirming === key)
-    return [
-      small(t, t.muted, edit.running === key ? "Deleting…" : "Delete?").id(`delete-ask-${key}`),
-      button(t, {
-        id: `delete-confirm-${key}`,
-        label: "Delete",
-        onClick: busy ? undefined : (cx) => edit.remove(target, cx),
-      }),
-      button(t, {
-        id: `delete-cancel-${key}`,
-        label: "Cancel",
-        onClick: busy ? undefined : (cx) => edit.cancel(cx),
-      }),
-    ];
-  if (!shown) return [];
-  return [
-    button(t, {
-      id: `edit-${key}`,
-      label: "Edit",
-      tooltip: "Edit",
-      onClick: busy ? undefined : (cx) => edit.begin(target, cx),
-    }),
-    ...(canDeleteField(target)
+  const buttons =
+    edit.editing === key
       ? [
-          button(t, {
-            id: `delete-${key}`,
-            label: "Delete",
-            icon: HERDR_ICONS.close,
-            labelled: false,
-            tooltip: "Delete",
-            onClick: busy ? undefined : (cx) => edit.remove(target, cx),
+          ghostButton(t, {
+            id: `editor-${key}-cancel`,
+            label: "Cancel",
+            onClick: busy ? undefined : (cx) => edit.cancel(cx),
+          }),
+          ghostButton(t, {
+            id: `editor-${key}-save`,
+            label: edit.running === key ? "Saving…" : "Save",
+            onClick: busy ? undefined : (cx) => edit.save(cx),
           }),
         ]
-      : []),
-  ];
+      : edit.confirming === key
+        ? [
+            small(t, t.muted, edit.running === key ? "Deleting…" : "Delete?").id(
+              `delete-ask-${key}`,
+            ),
+            ghostButton(t, {
+              id: `delete-cancel-${key}`,
+              label: "Cancel",
+              onClick: busy ? undefined : (cx) => edit.cancel(cx),
+            }),
+            ghostButton(t, {
+              id: `delete-confirm-${key}`,
+              label: "Delete",
+              onClick: busy ? undefined : (cx) => edit.remove(target, cx),
+            }),
+          ]
+        : [
+            ...(canDeleteField(target)
+              ? [
+                  ghostButton(t, {
+                    id: `delete-${key}`,
+                    label: "Delete",
+                    icon: HERDR_ICONS.close,
+                    labelled: false,
+                    tooltip: "Delete",
+                    onClick: busy ? undefined : (cx) => edit.remove(target, cx),
+                  }),
+                ]
+              : []),
+            ghostButton(t, {
+              id: `edit-${key}`,
+              label: "Edit",
+              tooltip: "Edit",
+              onClick: busy ? undefined : (cx) => edit.begin(target, cx),
+            }),
+          ];
+  return staticRow(t, `edit-chin-${key}`)
+    .w_full()
+    .h(BUTTON_STYLE.height + EDIT_CHIN_INSET * 2)
+    .justify_end()
+    .gap(BUTTON_STYLE.gap)
+    .children(buttons);
 };
 
-const editError = (t: Theme, edit: FieldEditModel, key: string): Element[] =>
+// The CLI's last refusal for a field, on its own row above the field's chin.
+const editErrorRows = (t: Theme, edit: FieldEditModel, key: string): Element[] =>
   edit.error?.key === key
     ? [
-        div()
-          .id(`edit-error-${key}`)
-          .text_size(TEXT.label)
-          .text_color(role(t, "ansi1"))
-          .child(edit.error.message),
+        detailRow(t, `edit-error-row-${key}`).child(
+          div()
+            .id(`edit-error-${key}`)
+            .text_size(TEXT.label)
+            .text_color(role(t, "ansi1"))
+            .child(edit.error.message),
+        ),
       ]
     : [];
 
-// The open editor in place of a field: the multi-line field (the answer field's), then Save and
-// Cancel right-aligned as the answer flow's actions are, then any refusal.
-const fieldEditorRows = (t: Theme, edit: FieldEditModel, key: string): Element[] => {
-  const busy = edit.running !== undefined;
+// The open editor in place of a field: the multi-line field (the answer field's), any refusal,
+// then the chin with Cancel and Save.
+const fieldEditorRows = (t: Theme, edit: FieldEditModel, target: EditTarget): Element[] => {
+  const key = editKey(target);
   return [
     detailRow(t, `editor-${key}`)
       .flex_col()
       .items_stretch()
-      .gap(ANSWER.gap)
-      .child(answerField(t, `editor-${key}-field`, edit.input, true))
-      .child(
-        h_flex()
-          .id(`editor-${key}-actions`)
-          .gap(ANSWER.gap)
-          .justify_end()
-          .child(
-            button(t, {
-              id: `editor-${key}-save`,
-              label: edit.running === key ? "Saving…" : "Save",
-              style: ANSWER_BUTTON_STYLE,
-              onClick: busy ? undefined : (cx) => edit.save(cx),
-            }),
-          )
-          .child(
-            button(t, {
-              id: `editor-${key}-cancel`,
-              label: "Cancel",
-              style: ANSWER_SECONDARY_BUTTON_STYLE,
-              onClick: busy ? undefined : (cx) => edit.cancel(cx),
-            }),
-          ),
-      )
-      .children(editError(t, edit, key)),
+      .child(answerField(t, `editor-${key}-field`, edit.input, true)),
+    ...editErrorRows(t, edit, key),
+    editChin(t, edit, target),
   ];
 };
 
-// A field's display row with its hover controls at the row's end and any refusal below, or its
-// editor while it is being edited.
+// A field's display row, any refusal, then its chin; or its editor while it is being edited.
 const editableRows = (
   t: Theme,
   edit: FieldEditModel,
@@ -988,18 +987,8 @@ const editableRows = (
   row: Element,
 ): Element[] => {
   const key = editKey(target);
-  if (edit.editing === key) return fieldEditorRows(t, edit, key);
-  const controls = editControls(t, edit, target, edit.hovered === key);
-  return [
-    row
-      .on_hover((hovering, cx) => edit.hover(key, hovering, cx))
-      .when(controls.length > 0, (el) =>
-        el.child(
-          h_flex().id(`edit-controls-${key}`).flex_none().gap(BUTTON_STYLE.gap).children(controls),
-        ),
-      ),
-    ...editError(t, edit, key).map((error) => detailRow(t, `edit-error-row-${key}`).child(error)),
-  ];
+  if (edit.editing === key) return fieldEditorRows(t, edit, target);
+  return [row, ...editErrorRows(t, edit, key), editChin(t, edit, target)];
 };
 
 // One element for a slot that takes a single child: the row itself, or the rows stacked.
@@ -1533,19 +1522,17 @@ const decidedCard = (t: Theme, links: IdLinks, item: Item, edit: FieldEditModel)
       ];
 };
 
-// A record's title row with its Edit control beside the status, then its editor and any refusal.
+// A record's title row, then its editor while it is being edited, any refusal, and its chin.
 const editableTitle = (
   t: Theme,
   edit: FieldEditModel,
   target: EditTarget,
-  title: (controls: Element[]) => Element,
+  title: Element,
 ): Element[] => {
   const key = editKey(target);
-  const controls = editControls(t, edit, target, edit.hovered === key && edit.editing !== key);
-  return [
-    title(controls).on_hover((hovering, cx) => edit.hover(key, hovering, cx)),
-    ...(edit.editing === key ? fieldEditorRows(t, edit, key) : editError(t, edit, key)),
-  ];
+  return edit.editing === key
+    ? [title, ...fieldEditorRows(t, edit, target)]
+    : [title, ...editErrorRows(t, edit, key), editChin(t, edit, target)];
 };
 
 // A delegate's labelled path: the label, then the path on its own full-width row.
@@ -1594,24 +1581,13 @@ const detailHead = (
   title: string,
   status: string,
   tone: Color,
-  controls: Element[] = [],
 ): Element =>
   titleRow(t, {
     id: `${prefix}-title`,
     trailingId: `${prefix}-status-slot`,
     identifier: id,
     title,
-    trailing:
-      controls.length === 0
-        ? div().id(`${prefix}-status`).text_size(TEXT.label).text_color(tone).child(status)
-        : h_flex()
-            .id(`${prefix}-status-controls`)
-            .gap(BUTTON_STYLE.gap)
-            .items_center()
-            .children(controls)
-            .child(
-              div().id(`${prefix}-status`).text_size(TEXT.label).text_color(tone).child(status),
-            ),
+    trailing: div().id(`${prefix}-status`).text_size(TEXT.label).text_color(tone).child(status),
   });
 
 // An item a finding names (the one it came from, or the one it was promoted into): a link to
@@ -1704,21 +1680,7 @@ const findingScreen = (t: Theme, finding: Finding, model: PanelModel): Element =
         t,
         model.edit,
         { kind: "finding", id: finding.id, field: "title" },
-        (controls) =>
-          titleRow(t, {
-            id: "finding-title",
-            identifier: finding.id,
-            title: finding.title,
-            ...(controls.length === 0
-              ? {}
-              : {
-                  trailingId: "finding-title-controls-slot",
-                  trailing: h_flex()
-                    .id("finding-title-controls")
-                    .gap(BUTTON_STYLE.gap)
-                    .children(controls),
-                }),
-          }),
+        titleRow(t, { id: "finding-title", identifier: finding.id, title: finding.title }),
       ),
     )
     .child(findingStatusCard(t, finding, promotedId, model))
@@ -1914,7 +1876,10 @@ const detailScreen = (t: Theme, item: Item, model: PanelModel): Element =>
     .id("detail")
     .gap(PANEL.sectionGap)
     .children(
-      editableTitle(t, model.edit, { kind: "item", id: item.id, field: "title" }, (controls) =>
+      editableTitle(
+        t,
+        model.edit,
+        { kind: "item", id: item.id, field: "title" },
         detailHead(
           t,
           "detail",
@@ -1922,7 +1887,6 @@ const detailScreen = (t: Theme, item: Item, model: PanelModel): Element =>
           item.title,
           item.startRequested === undefined ? GROUP_LABELS[item.status] : "Starting",
           role(t, item.startRequested === undefined ? STATUS_TONES[item.status] : STARTING_TONE),
-          controls,
         ),
       ),
     )
@@ -2573,7 +2537,7 @@ const policiesPage = (t: Theme, backlog: Backlog, model: PanelModel): Element =>
         ? [emptyRow(t, "policies-empty", "None")]
         : pagedRows(t, "policies", entries, model, ROW.list, (entry, index) =>
             oneOf(
-              `policy-${entry.id}-rows`,
+              `entry-policy-${entry.id}`,
               editableRows(
                 t,
                 model.edit,
@@ -2767,8 +2731,7 @@ const boundaryCard = (
     const rows = paths.flatMap((path, index) => {
       const target: EditTarget = { kind: "boundary", list, path };
       const key = editKey(target);
-      if (edit.editing === key) return fieldEditorRows(t, edit, key);
-      const hovered = model.hovered === `${model.domain}\\0${list}\\0${path}`;
+      if (edit.editing === key) return fieldEditorRows(t, edit, target);
       // An owned repo's checkouts on other machines, by machine name, beside its path.
       const checkouts = Object.entries(list === "owned" ? (boundary.checkouts?.[path] ?? {}) : {})
         .sort(([a], [b]) => a.localeCompare(b))
@@ -2782,14 +2745,9 @@ const boundaryCard = (
         title: tildePath(path, home),
         first: index === 0,
         height: ROW.list,
-        trailing: [...checkouts, ...editControls(t, edit, target, hovered)],
+        trailing: checkouts,
       });
-      return [
-        row.on_hover((hovering, cx) => model.hover(list, path, hovering, cx)),
-        ...editError(t, edit, key).map((error) =>
-          detailRow(t, `edit-error-row-${key}`).child(error),
-        ),
-      ];
+      return [row, ...editErrorRows(t, edit, key), editChin(t, edit, target)];
     });
     if (paths.length === 0)
       rows.push(

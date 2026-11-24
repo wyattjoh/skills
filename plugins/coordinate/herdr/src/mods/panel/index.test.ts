@@ -25,11 +25,13 @@ import {
   useRenderer,
 } from "@wyattjoh/herdr-dev/test/renderer";
 import type { Node } from "@wyattjoh/herdr-dev/test/renderer";
-import { CARD, HERDR_ICONS, PANEL } from "@wyattjoh/herdr-ui";
+import { BUTTON_STYLE, CARD, HERDR_ICONS, PANEL } from "@wyattjoh/herdr-ui";
 import {
   ANSWER_CAROUSEL,
   ANSWER_FLOW_SPEED_OPTIONS,
   ANSWER_FLOW_OUTLINE,
+  EDIT_CHIN_INSET,
+  GHOST_FILL,
   HARNESS_DIALOG,
 } from "./look.ts";
 const { setAnswerTextareaTestApi } = await import("./textarea.ts");
@@ -3865,7 +3867,7 @@ test("shows each owned path's machine checkouts beside it", async () => {
   ]);
 });
 
-test("shows a hovered X on boundary rows and, after Delete?, runs rm with the row path and domain", async () => {
+test("shows an always-present X on boundary rows and, after Delete?, runs rm with the row path and domain", async () => {
   focusDomain("alpha");
   host.files.set(
     DOC,
@@ -3877,13 +3879,12 @@ test("shows a hovered X on boundary rows and, after Delete?, runs rm with the ro
   const { ctx, render } = await mount();
   openPage(render(), "boundary", ctx.cx);
   let root = render();
-  expect(ids(root, "delete-boundary-owned-")).toEqual([]);
-  const hover = get(root, "boundary-alpha-owned-plugins/coordinate").styles.on_hover;
-  if (typeof hover !== "function") throw new Error("boundary row has no hover handler");
-  (hover as (hovering: boolean, cx: unknown) => void)(true, ctx.cx);
-  root = render();
-  expect(ids(root, "edit-boundary-owned-plugins/coordinate")).toEqual([
-    "edit-boundary-owned-plugins/coordinate",
+  expect([
+    typeof get(root, "boundary-alpha-owned-plugins/coordinate").styles.on_hover,
+    ids(get(root, "edit-chin-boundary-owned-plugins/coordinate"), "").slice(1),
+  ]).toEqual([
+    "undefined",
+    ["delete-boundary-owned-plugins/coordinate", "edit-boundary-owned-plugins/coordinate"],
   ]);
   const remove = get(root, "delete-boundary-owned-plugins/coordinate");
   expect((remove.nodes[0] as Node).styles.asset).toBe("mods/workspace-chrome/x.svg");
@@ -6011,10 +6012,6 @@ test("shows a home boundary path as ~ but removes it by its full path", async ()
       (id) => text(get(root, id)),
     ),
   ).toEqual(["~/Code/repo strix: ~/src/repo", "/Users/test2/repo"]);
-  const hover = get(root, "boundary-alpha-owned-/Users/test/Code/repo").styles.on_hover;
-  if (typeof hover !== "function") throw new Error("boundary row has no hover handler");
-  (hover as (hovering: boolean, cx: unknown) => void)(true, ctx.cx);
-  root = render();
   get(root, "delete-boundary-owned-/Users/test/Code/repo").click!({}, ctx.cx);
   get(render(), "delete-confirm-boundary-owned-/Users/test/Code/repo").click!({}, ctx.cx);
   await settle();
@@ -6137,11 +6134,6 @@ const editable = (): Backlog => {
   backlog = add(backlog, "Old work");
   return close(backlog, "i2", false);
 };
-const hoverOn = (root: Node, id: string, cx: unknown) => {
-  const hover = get(root, id).styles.on_hover;
-  if (typeof hover !== "function") throw new Error(`${id} has no hover handler`);
-  (hover as (hovering: boolean, cx: unknown) => void)(true, cx);
-};
 const openEditable = async (id: string) => {
   focusDomain("alpha");
   host.files.set(DOC, JSON.stringify(editable()));
@@ -6151,31 +6143,96 @@ const openEditable = async (id: string) => {
 };
 const keyAt = (index: number) => decisionKey(editable().items[0]!.decided[index]!, index);
 
-test("a hovered coordinator decision offers Edit and Delete; an answer record and the title offer less", async () => {
-  const { ctx, render } = await openEditable("i1");
-  expect(ids(render(), "edit-")).toEqual([]);
-  hoverOn(render(), "decided-0", ctx.cx);
-  expect(ids(render(), "edit-controls-")).toEqual([`edit-controls-decision-i1-${keyAt(0)}`]);
-  expect([...ids(render(), "edit-decision-"), ...ids(render(), "delete-decision-")]).toEqual([
-    `edit-decision-i1-${keyAt(0)}`,
-    `delete-decision-i1-${keyAt(0)}`,
+// A field's chin: its buttons in order, with no hover handler on the field's row.
+const chinOf = (root: Node, key: string, row: string) => [
+  typeof get(root, row).styles.on_hover,
+  ids(get(root, `edit-chin-${key}`), "").slice(1),
+];
+
+test("every editable field on an item shows its chin at once; only a decision has Delete", async () => {
+  const { render } = await openEditable("i1");
+  const root = render();
+  const decision = `decision-i1-${keyAt(0)}`;
+  expect([
+    chinOf(root, decision, "decided-0"),
+    chinOf(root, "item-i1-title", "detail-title"),
+    ids(get(root, "detail"), "edit-chin-"),
+  ]).toEqual([
+    ["undefined", [`delete-${decision}`, `edit-${decision}`]],
+    ["undefined", ["edit-item-i1-title"]],
+    ["edit-chin-item-i1-title", `edit-chin-${decision}`, `edit-chin-decision-i1-${keyAt(1)}`],
   ]);
-  // The answer record is read-only: no hover handler, so no controls.
-  expect(typeof get(render(), "decided-2").styles.on_hover).toBe("undefined");
-  hoverOn(render(), "detail-title", ctx.cx);
-  expect([ids(render(), "edit-item-i1-title"), ids(render(), "delete-item-i1-title")]).toEqual([
-    ["edit-item-i1-title"],
-    [],
+  // The answer record is read-only: no chin.
+  expect(text(get(root, "decided-2"))).toBe('Re "Ship it?": yes 2026-11-20');
+});
+
+test("a closed item's outcome carries Edit alone in its chin", async () => {
+  const { render } = await openEditable("i2");
+  expect(chinOf(render(), "item-i2-outcome", "fact-outcome")).toEqual([
+    "undefined",
+    ["edit-item-i2-outcome"],
+  ]);
+});
+
+test("chin buttons are ghost buttons: no fill at rest, the hover fill under the pointer", async () => {
+  const { render } = await openEditable("i1");
+  const root = render();
+  const decision = `decision-i1-${keyAt(0)}`;
+  const chin = get(root, `edit-chin-${decision}`);
+  expect(
+    [`edit-${decision}`, `delete-${decision}`].map((id) => [
+      get(root, id).styles.bg,
+      get(root, id).hoverStyles.bg,
+    ]),
+  ).toEqual([
+    [GHOST_FILL, theme().hover],
+    [GHOST_FILL, theme().hover],
+  ]);
+  expect([
+    chin.styles.h,
+    chin.styles.justify_content ?? chin.calls.includes("justify_end"),
+  ]).toEqual([BUTTON_STYLE.height + EDIT_CHIN_INSET * 2, true]);
+  expect((get(root, `delete-${decision}`).nodes[0] as Node).styles.asset).toBe(
+    "mods/workspace-chrome/x.svg",
+  );
+});
+
+test("an open editor's chin holds Cancel then Save, and a refusal sits above the chin", async () => {
+  const { ctx, view, render } = await openEditable("i1");
+  const key = `decision-i1-${keyAt(0)}`;
+  get(render(), `edit-${key}`).click!({}, ctx.cx);
+  expect(ids(get(render(), `edit-chin-${key}`), "").slice(1)).toEqual([
+    `editor-${key}-cancel`,
+    `editor-${key}-save`,
+  ]);
+  view.fieldInput!.set_value("x");
+  host.execExit = { code: 1, stdout: "", stderr: "refused" };
+  get(render(), `editor-${key}-save`).click!({}, ctx.cx);
+  await settle();
+  host.execExit = undefined;
+  const order = ids(render(), "").filter((id) =>
+    [`editor-${key}`, `edit-error-row-${key}`, `edit-chin-${key}`].includes(id),
+  );
+  expect(order).toEqual([`editor-${key}`, `edit-error-row-${key}`, `edit-chin-${key}`]);
+});
+
+test("Delete? replaces the chin's buttons while it asks", async () => {
+  const { ctx, render } = await openEditable("i1");
+  const key = `decision-i1-${keyAt(0)}`;
+  get(render(), `delete-${key}`).click!({}, ctx.cx);
+  expect(ids(get(render(), `edit-chin-${key}`), "").slice(1)).toEqual([
+    `delete-ask-${key}`,
+    `delete-cancel-${key}`,
+    `delete-confirm-${key}`,
   ]);
 });
 
 test("Edit opens the field's editor with its current Markdown, and Cancel closes it without a call", async () => {
   const { ctx, view, render } = await openEditable("i1");
-  hoverOn(render(), "decided-1", ctx.cx);
   get(render(), `edit-decision-i1-${keyAt(1)}`).click!({}, ctx.cx);
   const key = `decision-i1-${keyAt(1)}`;
   expect([ids(render(), `editor-${key}-`), view.fieldInput?.value()]).toEqual([
-    [`editor-${key}-field`, `editor-${key}-actions`, `editor-${key}-save`, `editor-${key}-cancel`],
+    [`editor-${key}-field`, `editor-${key}-cancel`, `editor-${key}-save`],
     "**no** ui",
   ]);
   get(render(), `editor-${key}-cancel`).click!({}, ctx.cx);
@@ -6184,7 +6241,6 @@ test("Edit opens the field's editor with its current Markdown, and Cancel closes
 
 test("Save runs item edit with the decision's key and the Markdown, then reloads", async () => {
   const { ctx, view, render } = await openEditable("i1");
-  hoverOn(render(), "decided-0", ctx.cx);
   get(render(), `edit-decision-i1-${keyAt(0)}`).click!({}, ctx.cx);
   view.fieldInput!.set_value("api **and** cli");
   const reads = host.reads.length;
@@ -6210,13 +6266,11 @@ test("Save runs item edit with the decision's key and the Markdown, then reloads
 
 test("a title saves as plain text and a closed item's outcome as Markdown", async () => {
   const { ctx, view, render } = await openEditable("i2");
-  hoverOn(render(), "detail-title", ctx.cx);
   get(render(), "edit-item-i2-title").click!({}, ctx.cx);
   expect(view.fieldInput?.value()).toBe("Old work");
   view.fieldInput!.set_value("Older work");
   get(render(), "editor-item-i2-title-save").click!({}, ctx.cx);
   await settle();
-  hoverOn(render(), "fact-outcome", ctx.cx);
   expect(ids(render(), "delete-item-i2-outcome")).toEqual([]);
   get(render(), "edit-item-i2-outcome").click!({}, ctx.cx);
   expect(view.fieldInput?.value()).toBe("wrapped up");
@@ -6232,7 +6286,6 @@ test("a title saves as plain text and a closed item's outcome as Markdown", asyn
 test("Delete asks Delete? first and removes the decision only after its Delete", async () => {
   const { ctx, render } = await openEditable("i1");
   const key = `decision-i1-${keyAt(0)}`;
-  hoverOn(render(), "decided-0", ctx.cx);
   get(render(), `delete-${key}`).click!({}, ctx.cx);
   expect([text(get(render(), `delete-ask-${key}`)), host.execs]).toEqual(["Delete?", []]);
   get(render(), `delete-cancel-${key}`).click!({}, ctx.cx);
@@ -6248,7 +6301,6 @@ test("Delete asks Delete? first and removes the decision only after its Delete",
 test("a refused save keeps the editor open and shows the CLI's message", async () => {
   const { ctx, view, render } = await openEditable("i1");
   const key = `decision-i1-${keyAt(0)}`;
-  hoverOn(render(), "decided-0", ctx.cx);
   get(render(), `edit-${key}`).click!({}, ctx.cx);
   view.fieldInput!.set_value("x");
   host.execExit = { code: 1, stdout: "", stderr: "refused: i1 has no decision 0:x" };
@@ -6289,7 +6341,6 @@ const mountRecords = async () => {
 
 test("the focus saves through backlog focus --md", async () => {
   const { ctx, view, render } = await mountRecords();
-  hoverOn(render(), "focus", ctx.cx);
   expect(ids(render(), "delete-focus")).toEqual([]);
   get(render(), "edit-focus").click!({}, ctx.cx);
   expect(view.fieldInput?.value()).toBe("Ship the panel");
@@ -6304,13 +6355,11 @@ test("the focus saves through backlog focus --md", async () => {
 test("a policy saves through policy replace and deletes through policy rm after Delete?", async () => {
   const { ctx, view, render } = await mountRecords();
   openPage(render(), "policies", ctx.cx);
-  hoverOn(render(), "policy-p1", ctx.cx);
   get(render(), "edit-policy-p1").click!({}, ctx.cx);
   expect(view.fieldInput?.value()).toBe("ship **it**");
   view.fieldInput!.set_value("ship it **now**");
   get(render(), "editor-policy-p1-save").click!({}, ctx.cx);
   await settle();
-  hoverOn(render(), "policy-p1", ctx.cx);
   get(render(), "delete-policy-p1").click!({}, ctx.cx);
   get(render(), "delete-confirm-policy-p1").click!({}, ctx.cx);
   await settle();
@@ -6324,7 +6373,6 @@ test("a finding's detail saves through finding edit --detail-md", async () => {
   const { ctx, view, render } = await mountRecords();
   openPage(render(), "findings", ctx.cx);
   get(render(), "finding-f3").click!({}, ctx.cx);
-  hoverOn(render(), "fact-detail", ctx.cx);
   expect(ids(render(), "delete-finding-f3-detail")).toEqual([]);
   get(render(), "edit-finding-f3-detail").click!({}, ctx.cx);
   expect(view.fieldInput?.value()).toBe("fails often");
@@ -6333,6 +6381,35 @@ test("a finding's detail saves through finding edit --detail-md", async () => {
   await settle();
   expect(host.execs.map(({ args }) => args.slice(4))).toEqual([
     ["finding", "edit", "--domain", "alpha", "--detail-md=fails **often**", "--", "f3"],
+  ]);
+});
+
+test("the focus, a policy and a finding's title and detail each show a chin", async () => {
+  const { ctx, render } = await mountRecords();
+  expect(chinOf(render(), "focus", "focus")).toEqual(["undefined", ["edit-focus"]]);
+  openPage(render(), "policies", ctx.cx);
+  expect(chinOf(render(), "policy-p1", "policy-p1")).toEqual([
+    "undefined",
+    ["delete-policy-p1", "edit-policy-p1"],
+  ]);
+  press(render(), "crumb-domain-alpha", ctx.cx);
+  openPage(render(), "findings", ctx.cx);
+  get(render(), "finding-f3").click!({}, ctx.cx);
+  const root = render();
+  expect([
+    chinOf(root, "finding-f3-title", "finding-title"),
+    chinOf(root, "finding-f3-detail", "fact-detail"),
+  ]).toEqual([
+    ["undefined", ["edit-finding-f3-title"]],
+    ["undefined", ["edit-finding-f3-detail"]],
+  ]);
+});
+
+test("a closed finding's outcome shows a chin with Edit", async () => {
+  const { render } = await closeOpenFinding("f2", "fixed");
+  expect(chinOf(render(), "finding-f2-outcome", "fact-outcome")).toEqual([
+    "undefined",
+    ["edit-finding-f2-outcome"],
   ]);
 });
 
@@ -6347,7 +6424,6 @@ test("a Boundary path's Edit saves through boundary replace", async () => {
   );
   const { ctx, view, render } = await mount();
   openPage(render(), "boundary", ctx.cx);
-  hoverOn(render(), "boundary-alpha-adjacent-/repo", ctx.cx);
   get(render(), "edit-boundary-adjacent-/repo").click!({}, ctx.cx);
   expect(view.fieldInput?.value()).toBe("/repo");
   view.fieldInput!.set_value(" /repo2 ");

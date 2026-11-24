@@ -129,6 +129,18 @@ export const ANSWER_FLOW_OUTLINE = {
 export const ANSWER_FLOW_MENU_WIDTH = 216;
 
 /**
+ * A ghost button's resting fill: fully transparent, so the button shows only its label until the
+ * pointer is over it, when the panel button's hover fill shows. herdr-ui's ButtonStyle takes a
+ * theme role for its fill and no theme role is transparent, so this is a literal.
+ */
+export const GHOST_FILL = "#00000000";
+
+/**
+ * How far an edit chin's buttons sit in from its top and bottom edges, in px.
+ */
+export const EDIT_CHIN_INSET = 2;
+
+/**
  * The width of an item detail's Change status menu, which lists at most four statuses.
  */
 export const STATUS_MENU_WIDTH = 160;

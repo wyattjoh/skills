@@ -270,16 +270,14 @@ export default class Panel extends View {
   boundaryInput: InputState | undefined;
   boundaryEditing: { domain: string; list: BoundaryList } | undefined;
   boundaryBusy = false;
-  boundaryHovered: string | undefined;
   boundaryError: BoundaryModel["error"];
   // Edit and Delete on a text field: the editor's retained text, the field it is open on, the
-  // list entry waiting on Delete?, the field whose save or delete is running, the hovered field,
-  // and the CLI's last refusal, each by domain and the field's `editKey`.
+  // list entry waiting on Delete?, the field whose save or delete is running, and the CLI's last
+  // refusal, each by domain and the field's `editKey`.
   fieldInput: ReturnType<typeof createAnswerInput> | undefined;
   fieldEdit: { domain: string; target: EditTarget; key: string } | undefined;
   fieldConfirm: { domain: string; target: EditTarget; key: string } | undefined;
   fieldRunning: { domain: string; key: string } | undefined;
-  fieldHovered: { domain: string; key: string } | undefined;
   fieldError: { domain: string; key: string; message: string } | undefined;
   // The finding Approve or Dismiss last ran on: which one is still running, or the CLI's refusal.
   findingAction:
@@ -1544,18 +1542,6 @@ export default class Panel extends View {
     cx.notify();
   }
 
-  hoverBoundary(domain: string, list: BoundaryList, path: string, hovered: boolean, cx: Context) {
-    const key = `${domain}\\0${list}\\0${path}`;
-    if (hovered) {
-      if (this.boundaryHovered === key) return;
-      this.boundaryHovered = key;
-    } else {
-      if (this.boundaryHovered !== key) return;
-      this.boundaryHovered = undefined;
-    }
-    cx.notify();
-  }
-
   applyBoundary(domain: string, boundary: NonNullable<ReturnType<typeof boundaryOutput>>) {
     const current = this.docs.get(domain) ?? (this.domain === domain ? this.doc : undefined);
     if (current?.kind !== "loaded") return;
@@ -1801,14 +1787,6 @@ export default class Panel extends View {
     cx.notify();
   }
 
-  hoverField(domain: string, key: string, hovered: boolean, cx: Context) {
-    const current = this.fieldHovered;
-    const same = current?.domain === domain && current.key === key;
-    if (hovered === same) return;
-    this.fieldHovered = hovered ? { domain, key } : undefined;
-    cx.notify();
-  }
-
   // Save the open editor's text through the CLI; the editor closes and the backlog reloads after
   // exit 0, and stays open with the CLI's message otherwise.
   saveFieldEdit(cx: Context) {
@@ -1880,11 +1858,7 @@ export default class Panel extends View {
       input: this.fieldInput,
       confirming: mine(this.fieldConfirm)?.key,
       running: mine(this.fieldRunning)?.key,
-      hovered: mine(this.fieldHovered)?.key,
       error: error === undefined ? undefined : { key: error.key, message: error.message },
-      hover: (key, hovered, cx) => {
-        if (domain !== undefined) this.hoverField(domain, key, hovered, cx);
-      },
       begin: (target, cx) => this.beginFieldEdit(target, cx),
       cancel: (cx) => this.cancelFieldEdit(cx),
       save: (cx) => this.saveFieldEdit(cx),
@@ -1900,13 +1874,9 @@ export default class Panel extends View {
       editing: domain !== undefined && editing?.domain === domain ? editing.list : undefined,
       input: this.boundaryInput,
       busy: this.boundaryBusy,
-      hovered: this.boundaryHovered,
       error: domain !== undefined && error?.domain === domain ? error : undefined,
       begin: (list, cx) => this.beginBoundary(list, cx),
       cancel: (cx) => this.cancelBoundary(cx),
-      hover: (list, path, hovered, cx) => {
-        if (domain !== undefined) this.hoverBoundary(domain, list, path, hovered, cx);
-      },
     };
   }
 
