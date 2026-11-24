@@ -319,7 +319,7 @@ describe("coordinate start preflight on herdr-doc", () => {
     expect([started.exit, started.stdout, started.stderr]).toEqual([
       1,
       "",
-      `refused: ${FAKE_CORE} lacks bun on its PATH, the coordinate skill (no link at ${join(box.state, "home", ".claude/skills/coordinate")}, ${join(box.state, "home", ".pi/agent/skills/coordinate")} or ${join(box.state, "home", ".agents/skills/coordinate")}), and a Herdr route to the state home ${FAKE_HOME} (unknown machine "${FAKE_HOME}"); setting up ${FAKE_CORE} belongs to ${FAKE_CORE}'s own domain, so file it there\n`,
+      `refused: ${FAKE_CORE} lacks bun on its login PATH, the coordinate skill (no link at ${join(box.state, "home", ".claude/skills/coordinate")}, ${join(box.state, "home", ".pi/agent/skills/coordinate")} or ${join(box.state, "home", ".agents/skills/coordinate")}), and a Herdr route to the state home ${FAKE_HOME} (unknown machine "${FAKE_HOME}"); setting up ${FAKE_CORE} belongs to ${FAKE_CORE}'s own domain, so file it there\n`,
     ]);
     // Nothing was labelled or written.
     expect(

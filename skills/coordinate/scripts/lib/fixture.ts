@@ -142,7 +142,7 @@ export const gitAndFake = (
  * With the herdr-doc backend (`stateBackend`, by default from `COORDINATE_TEST_STATE_BACKEND`), the
  * config keeps shared state on the home `FAKE_HOME`, and the stub's `hc connect` answers document
  * calls from fake cores in `<state>/herdr-docs.json` (and `hc file read` finds no file) (this core `FAKE_CORE`, which knows the home and
- * strix, both up), and HOME has a Claude Code coordinate skill link to this checkout.
+ * strix, both up), and HOME has a Claude Code coordinate skill link to this checkout. SHELL is a stub login shell that keeps the given PATH.
  * @param state State dir.
  * @param labels The calling terminal's labels.
  * @param getError An error kind for `hc get` to fail with.
@@ -235,6 +235,13 @@ export const cliEnv = (
     `#!/bin/sh\nprintf '%s\\n' "$*" >> '${join(bin, "kill-calls.log")}'\n`,
   );
   chmodSync(join(bin, "kill"), 0o755);
+  // A login shell that keeps the caller's PATH, so the preflight's bun check sees the test's PATH
+  // rather than the host's profile.
+  writeFileSync(
+    join(bin, "login-shell"),
+    `#!/bin/sh\n[ "$1" = -lc ] && shift\nexec /bin/sh -c "$1"\n`,
+  );
+  chmodSync(join(bin, "login-shell"), 0o755);
   return {
     ...(process.env as Record<string, string>),
     // A sandboxed HOME keeps start and status --resume from writing the real ~/.local/bin.
@@ -242,6 +249,7 @@ export const cliEnv = (
     COORDINATE_CONFIG: configFile,
     XDG_STATE_HOME: join(state, "xdg"),
     HC_TERMINAL_ID: "t1",
+    SHELL: join(bin, "login-shell"),
     PATH: `${bin}:${process.env.PATH ?? ""}`,
   };
 };

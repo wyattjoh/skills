@@ -7,6 +7,23 @@ import { skillLinks } from "./path-wrapper.ts";
 import { spoken } from "./remote-launch.ts";
 import { stateStore } from "./state.ts";
 import { keys } from "./state-store.ts";
+import { Proc } from "./proc.ts";
+
+/**
+ * Whether this machine's login shell finds bun: Herdr starts terminals, and so delegates and
+ * watchers, with that PATH, which can lack a bun the calling shell has (a mise shim, say).
+ * @param env Environment (SHELL names the login shell; the rest is passed to it).
+ * @returns True when `command -v bun` prints a path.
+ */
+const loginBun = Effect.fn("loginBun")(function* (env: Record<string, string | undefined>) {
+  const passed = Object.fromEntries(
+    Object.entries(env).filter((entry): entry is [string, string] => entry[1] !== undefined),
+  );
+  const found = yield* (yield* Proc)
+    .run([env.SHELL || "/bin/sh", "-lc", "command -v bun"], { env: passed, timeoutMs: 30_000 })
+    .pipe(Effect.catch(() => Effect.succeed({ exitCode: 1, stdout: "", stderr: "" })));
+  return found.exitCode === 0 && found.stdout.trim() !== "";
+});
 
 /**
  * What the home's unreachable message says went wrong, without its framing.
@@ -18,13 +35,13 @@ const offlineCause = (message: string): string =>
 
 /**
  * Before `coordinate start` on the herdr-doc backend, where a coordinator may run on any machine:
- * confirm this machine has bun on its PATH (delegates and briefs run `bun <skill>/scripts/...`),
+ * confirm this machine's login shell finds bun (delegates and briefs run `bun <skill>/scripts/...`),
  * a coordinate skill link, and a Herdr route to the state home (one document read). Refuses (exit
  * 1) naming everything missing and that the machine's own domain owns the fix. The files backend
  * keeps every coordinator on the machine that holds the state, so it is not checked.
  * @param config Config.
  * @param domain Domain being started.
- * @param env Environment (PATH and HOME are read from it).
+ * @param env Environment (SHELL, PATH and HOME are read from it).
  */
 export const preflightStart = Effect.fn("preflightStart")(function* (
   config: Config,
@@ -47,7 +64,7 @@ export const preflightStart = Effect.fn("preflightStart")(function* (
       }),
     );
   const lacks = [
-    ...(Bun.which("bun", { PATH: env.PATH ?? "" }) === null ? ["bun on its PATH"] : []),
+    ...((yield* loginBun(env)) ? [] : ["bun on its login PATH"]),
     ...(env.HOME !== undefined && links.some((link) => existsSync(link))
       ? []
       : [`the coordinate skill (no link at ${links.slice(0, -1).join(", ")} or ${links.at(-1)})`]),
