@@ -8,7 +8,15 @@ import {
   questionOf,
   validateBacklog,
 } from "../../lib/store.ts";
-import type { Ask, Backlog, DelegateRef, Finding, Item, ItemStatus } from "../../lib/store.ts";
+import type {
+  Ask,
+  Backlog,
+  DelegateRef,
+  Finding,
+  Item,
+  ItemStatus,
+  Prose,
+} from "../../lib/store.ts";
 
 /**
  * The terminal label naming the coordinate domain a coordinator or delegate belongs to.
@@ -1557,6 +1565,256 @@ export const markdownPlain = (markdown: string): string =>
     .replace(/(^|[^\w*])\*(?!\s)(.+?)\*(?!\w)/g, "$1$2")
     .replace(/\s+/g, " ")
     .trim();
+
+/**
+ * The scheme of an in-panel link to a backlog record. It is not http(s), so the host's own URL
+ * opening refuses it when no handler takes the click.
+ */
+export const ID_LINK_SCHEME = "coordinate-panel";
+
+/**
+ * Every item, finding and policy id in a backlog, closed records included.
+ * @param backlog The shown domain's backlog.
+ * @returns The ids.
+ */
+export const backlogIds = (backlog: Backlog): Set<string> =>
+  new Set([
+    ...backlog.items.map((item) => item.id),
+    ...backlog.findings.map((finding) => finding.id),
+    ...backlog.policies.map((policy) => policy.id),
+  ]);
+
+const RECORD_ID = /^[ifp][1-9][0-9]*/;
+const ID_CHAR = /[A-Za-z0-9_-]/;
+const FENCE = /^ {0,3}(`{3,}|~{3,})/;
+const BARE_URL = /^(?:https?:\/\/|www\.)[^\s<]*/;
+const HTML_TAG = /^<\/?[A-Za-z][^<>]*>/;
+const AUTOLINK = /^<[A-Za-z][A-Za-z0-9+.-]*:[^\s<>]*>/;
+const MARKDOWN_PUNCTUATION = /[!-/:-@[-`{-~]/;
+const BACKTICKS = /`+/g;
+
+const idLink = (label: string, id: string): string => `[${label}](${ID_LINK_SCHEME}:${id})`;
+
+// The index just past the bracket closing the one at start, or -1 when it never closes.
+const closing = (source: string, start: number, open: string, close: string): number => {
+  let depth = 0;
+  for (let index = start; index < source.length; index += 1) {
+    const char = source[index];
+    if (char === "\\") index += 1;
+    else if (char === open) depth += 1;
+    else if (char === close && --depth === 0) return index + 1;
+  }
+  return -1;
+};
+
+// Where a code span opened by a backtick run of this length closes: the next run of exactly
+// that length, or -1.
+const spanClose = (source: string, from: number, length: number): number => {
+  BACKTICKS.lastIndex = from;
+  for (let run = BACKTICKS.exec(source); run !== null; run = BACKTICKS.exec(source))
+    if (run[0].length === length) return run.index;
+  return -1;
+};
+
+// Whether the text at an index continues a token: an id character, or an escaped "-" or "_",
+// which an earlier pass or the author wrote as "\-" or "\_".
+const joins = (source: string, index: number): boolean => {
+  const char = source[index];
+  if (char === undefined) return false;
+  if (ID_CHAR.test(char)) return true;
+  return char === "\\" && /[-_]/.test(source[index + 1] ?? "");
+};
+
+// The known id starting at an index, when it is a whole token.
+const idAt = (source: string, index: number, known: ReadonlySet<string>): string | undefined => {
+  if (index > 0 && ID_CHAR.test(source[index - 1]!)) return undefined;
+  const id = RECORD_ID.exec(source.slice(index, index + 12))?.[0];
+  if (id === undefined || joins(source, index + id.length) || !known.has(id)) return undefined;
+  return id;
+};
+
+// One run of text outside fenced code. A whole-token known id becomes a link. In Markdown,
+// constructs that carry their own meaning (escapes, code spans, links, autolinks, HTML, bare
+// URLs) pass through; in plain text every other ASCII punctuation mark is escaped.
+const linkRun = (
+  source: string,
+  known: ReadonlySet<string>,
+  markdown: boolean,
+): { text: string; linked: boolean } => {
+  let out = "";
+  let linked = false;
+  let index = 0;
+  while (index < source.length) {
+    const char = source[index]!;
+    const id =
+      char === "i" || char === "f" || char === "p" ? idAt(source, index, known) : undefined;
+    if (id !== undefined) {
+      out += idLink(id, id);
+      linked = true;
+      index += id.length;
+      continue;
+    }
+    if (!markdown) {
+      out += MARKDOWN_PUNCTUATION.test(char) ? `\\${char}` : char;
+      index += 1;
+      continue;
+    }
+    if (char === "\\") {
+      out += source.slice(index, index + 2);
+      index += 2;
+      continue;
+    }
+    if (char === "`") {
+      const ticks = /^`+/.exec(source.slice(index))![0];
+      const close = spanClose(source, index + ticks.length, ticks.length);
+      if (close === -1) {
+        out += ticks;
+        index += ticks.length;
+        continue;
+      }
+      const span = source.slice(index, close + ticks.length);
+      const inner = source.slice(index + ticks.length, close).trim();
+      if (RECORD_ID.exec(inner)?.[0] === inner && known.has(inner)) {
+        out += idLink(span, inner);
+        linked = true;
+      } else out += span;
+      index = close + ticks.length;
+      continue;
+    }
+    const rest = char === "<" || char === "h" || char === "w" ? source.slice(index) : undefined;
+    const tag = char === "<" ? (AUTOLINK.exec(rest!)?.[0] ?? HTML_TAG.exec(rest!)?.[0]) : undefined;
+    if (tag !== undefined) {
+      out += tag;
+      index += tag.length;
+      continue;
+    }
+    if (char === "[" || (char === "!" && source[index + 1] === "[")) {
+      const textEnd = closing(source, char === "!" ? index + 1 : index, "[", "]");
+      const next = textEnd === -1 ? undefined : source[textEnd];
+      const end =
+        next === "("
+          ? closing(source, textEnd, "(", ")")
+          : next === "["
+            ? closing(source, textEnd, "[", "]")
+            : -1;
+      if (end !== -1) {
+        out += source.slice(index, end);
+        index = end;
+        continue;
+      }
+    }
+    const url =
+      (char === "h" || char === "w") && !(index > 0 && ID_CHAR.test(source[index - 1]!))
+        ? BARE_URL.exec(rest!)?.[0]
+        : undefined;
+    if (url !== undefined) {
+      out += url;
+      index += url.length;
+      continue;
+    }
+    out += char;
+    index += 1;
+  }
+  return { text: out, linked };
+};
+
+// Plain text as Markdown that renders as written: each line linked and escaped, leading spaces
+// kept as no-break spaces, and a hard break between two non-blank lines.
+const linkPlain = (source: string, known: ReadonlySet<string>): string | undefined => {
+  const lines = source.split("\n").map((line) => {
+    const run = linkRun(line, known, false);
+    return { ...run, text: run.text.replace(/^ +/, (spaces) => "\u{a0}".repeat(spaces.length)) };
+  });
+  if (!lines.some((line) => line.linked)) return undefined;
+  return lines
+    .map((line, index) => {
+      if (index === 0) return line.text;
+      const blank = line.text.trim() === "" || lines[index - 1]!.text.trim() === "";
+      return (blank ? "\n" : "  \n") + line.text;
+    })
+    .join("");
+};
+
+/**
+ * Turn each whole-token item, finding or policy id the shown domain knows (`i42`, `f13`,
+ * `p8`) into an in-panel link: the one processor for plain and Markdown prose. A token joined
+ * to letters, digits, `_` or `-` stays as it is, and so does an unknown id. In Markdown,
+ * fenced code, links, autolinks, HTML and bare URLs are left alone, and an inline code span that
+ * is exactly a known id links. Plain text comes back as Markdown that renders as written.
+ * @param source The prose.
+ * @param known The shown domain's ids.
+ * @param markdown Whether the prose is Markdown.
+ * @returns The Markdown to render, or undefined when no id was linked.
+ */
+export const linkIds = (
+  source: string,
+  known: ReadonlySet<string>,
+  markdown: boolean,
+): string | undefined => {
+  if (known.size === 0) return undefined;
+  if (!markdown) return linkPlain(source, known);
+  const out: string[] = [];
+  let prose: string[] = [];
+  let linked = false;
+  let fence: string | undefined;
+  const flush = () => {
+    if (prose.length === 0) return;
+    const run = linkRun(prose.join("\n"), known, true);
+    linked ||= run.linked;
+    out.push(run.text);
+    prose = [];
+  };
+  for (const line of source.split("\n")) {
+    const marker = FENCE.exec(line)?.[1];
+    if (fence !== undefined) {
+      out.push(line);
+      const closes =
+        marker !== undefined &&
+        marker[0] === fence[0] &&
+        marker.length >= fence.length &&
+        line.trim() === marker;
+      if (closes) fence = undefined;
+      continue;
+    }
+    if (marker !== undefined) {
+      flush();
+      fence = marker;
+      out.push(line);
+      continue;
+    }
+    prose.push(line);
+  }
+  flush();
+  return linked ? out.join("\n") : undefined;
+};
+
+/**
+ * A prose field with the shown domain's ids linked: Markdown when any id links (plain text
+ * converted as {@link linkIds} does), else the field as it was.
+ * @param value The prose field.
+ * @param known The shown domain's ids.
+ * @returns The prose to render.
+ */
+export const linkProse = (value: Prose, known: ReadonlySet<string>): Prose => {
+  const linked = linkIds(value.value, known, value.markdown);
+  return linked === undefined ? value : { markdown: true, value: linked };
+};
+
+const ID_LINK_URL = new RegExp(`^${ID_LINK_SCHEME}:(?://)?([ifp][1-9][0-9]*)/?$`);
+
+/**
+ * The record an in-panel link opens.
+ * @param url The URL a Markdown view reports for a clicked link.
+ * @returns The item, finding or policy id, or undefined for any other URL.
+ */
+export const idLinkTarget = (url: string): string | undefined => ID_LINK_URL.exec(url.trim())?.[1];
+
+/**
+ * Whether a clicked link is a web address the system browser may open.
+ * @param url The URL.
+ * @returns True for an absolute http or https URL with a host.
+ */
+export const isWebUrl = (url: string): boolean => /^https?:\/\/[^\s/]+/i.test(url);
 
 /**
  * The draft for a key: the one kept when it matches, else a fresh one with nothing picked, so

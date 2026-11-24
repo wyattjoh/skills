@@ -31,7 +31,12 @@ import {
   overridingDomains,
   domainOverrides,
   harnessPolicyNotices,
+  backlogIds,
+  idLinkTarget,
   inlineMarkdown,
+  isWebUrl,
+  linkIds,
+  linkProse,
   markdownPlain,
   rebaseHarnessPolicyDraft,
   tildePath,
@@ -965,4 +970,115 @@ test("tildePath leaves paths unchanged without a usable home folder", () => {
     "/Users/me/a",
     "/etc/hosts",
   ]);
+});
+
+const KNOWN = new Set(["i42", "f13", "p8"]);
+const link = (id: string, label = id) => "[" + label + "](coordinate-panel:" + id + ")";
+
+test("links whole-token known ids in plain text and leaves joined or unknown tokens alone", () => {
+  expect(linkIds("see i42, f13 and p8.", KNOWN, false)).toBe(
+    "see " + link("i42") + "\\, " + link("f13") + " and " + link("p8") + "\\.",
+  );
+  expect(linkIds("api42 i42x ui-i42 i42_b i7 f1", KNOWN, false)).toBe(undefined);
+  expect(linkIds("(i42)", KNOWN, false)).toBe("\\(" + link("i42") + "\\)");
+});
+
+test("keeps plain text's punctuation, line breaks and leading spaces when it links", () => {
+  expect(linkIds("*i42* [x]\n  two\n\nthree", KNOWN, false)).toBe(
+    "\\*" + link("i42") + "\\* \\[x\\]  \n\u{a0}\u{a0}two\n\nthree",
+  );
+});
+
+test("links ids in Markdown prose but not in fenced code, links, autolinks or URLs", () => {
+  const source = [
+    "Fix i42 now",
+    "```ts",
+    "const i42 = 1;",
+    "```",
+    "[i42](https://x.test/i42) <https://x.test/f13> https://x.test/p8 <b title=i42>",
+    "~~~",
+    "p8",
+    "~~~",
+    "after f13",
+  ].join("\n");
+  expect(linkIds(source, KNOWN, true)).toBe(
+    [
+      "Fix " + link("i42") + " now",
+      "```ts",
+      "const i42 = 1;",
+      "```",
+      "[i42](https://x.test/i42) <https://x.test/f13> https://x.test/p8 <b title=i42>",
+      "~~~",
+      "p8",
+      "~~~",
+      "after " + link("f13"),
+    ].join("\n"),
+  );
+});
+
+test("links an inline code span that is exactly a known id, and no other span", () => {
+  const source = "`i42` ` i42 ` `i42 = 1` ``p8`` `i7`";
+  expect(linkIds(source, KNOWN, true)).toBe(
+    link("i42", "`i42`") +
+      " " +
+      link("i42", "` i42 `") +
+      " `i42 = 1` " +
+      link("p8", "``p8``") +
+      " `i7`",
+  );
+});
+
+test("returns nothing for Markdown with no known id, and is stable on its own output", () => {
+  expect(linkIds("**bold** `i42`", new Set(), true)).toBe(undefined);
+  const once = linkIds("see i42 and \\i42", KNOWN, true)!;
+  expect(once).toBe("see " + link("i42") + " and \\i42");
+  expect(linkIds(once, KNOWN, true)).toBe(undefined);
+});
+
+test("linkProse turns linked plain prose into Markdown and leaves the rest as it was", () => {
+  expect(linkProse({ markdown: false, value: "i42" }, KNOWN)).toEqual({
+    markdown: true,
+    value: link("i42"),
+  });
+  expect(linkProse({ markdown: false, value: "none" }, KNOWN)).toEqual({
+    markdown: false,
+    value: "none",
+  });
+  expect(linkProse({ markdown: true, value: "**p8**" }, KNOWN)).toEqual({
+    markdown: true,
+    value: "**" + link("p8") + "**",
+  });
+});
+
+test("reads the record an in-panel link opens, and nothing from any other URL", () => {
+  expect(
+    [
+      "coordinate-panel:i42",
+      "coordinate-panel://f13",
+      "coordinate-panel://p8/",
+      "https://x.test/i42",
+      "coordinate-panel:x1",
+    ].map(idLinkTarget),
+  ).toEqual(["i42", "f13", "p8", undefined, undefined]);
+  expect(
+    ["https://x.test", "http://a.b/c", "coordinate-panel:i1", "mailto:a@b"].map(isWebUrl),
+  ).toEqual([true, true, false, false]);
+});
+
+test("collects every item, finding and policy id, closed ones included", () => {
+  let backlog = emptyBacklog("alpha", null);
+  const added = addItem(backlog, { title: "a", now: "2026-11-23T00:00:00.000Z" });
+  if (!added.ok) throw new Error(added.reason);
+  backlog = {
+    ...added.backlog,
+    policies: [{ id: "p1", text: "x", at: "2026-11-23" }],
+  };
+  expect([...backlogIds(backlog)]).toEqual(["i1", "p1"]);
+});
+
+test("keeps an id joined by an escaped - or _ plain, so a second pass links nothing new", () => {
+  expect(linkIds("i42\\-b i42\\_c", KNOWN, true)).toBe(undefined);
+  const once = linkProse({ markdown: false, value: "i42-b and i7 then f13" }, KNOWN);
+  expect(once).toEqual({ markdown: true, value: "i42\\-b and i7 then " + link("f13") });
+  expect(linkProse(once, KNOWN)).toEqual(once);
 });

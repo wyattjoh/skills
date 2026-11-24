@@ -85,7 +85,11 @@ import {
   findingStatusLabel,
   formatFindingCounts,
   groupFindings,
+  idLinkTarget,
   inlineMarkdown,
+  isWebUrl,
+  linkIds,
+  linkProse,
   markdownPlain,
   promotedItemId,
   rankedOptions,
@@ -122,10 +126,20 @@ const HOME_CRUMB_LABEL = "All domains";
 /**
  * What the panel draws: the followed domain, its document, and which groups are open.
  */
+/**
+ * The shown domain's backlog ids that prose links, and what opens the record one names.
+ */
+export type IdLinks = {
+  known: ReadonlySet<string>;
+  open: (id: string, cx: Context) => void;
+};
+
 export type PanelModel = {
   domain: string | undefined;
   // The user's home folder, shown as ~ at the start of a displayed path; "" when unknown.
   home: string;
+  // The ids prose links to, and what a clicked one opens.
+  links: IdLinks;
   doc: DocumentState;
   listing: ListingState;
   // The breadcrumb trail to the screen shown, and what opens a crumb's screen.
@@ -249,6 +263,7 @@ export type AnswerFlowModel = {
   domain: string;
   // The user's home folder, shown as ~ at the start of a displayed path; "" when unknown.
   home: string;
+  links: IdLinks;
   cards: AnswerFlowCardModel[];
   currentIndex: number;
   viewport: { width: number; height: number } | undefined;
@@ -371,29 +386,47 @@ const proseChild = (
   t: Theme,
   id: string,
   value: Prose,
+  links: IdLinks,
   options: { inline?: boolean; size?: number; color?: Color } = {},
-): Element | string =>
-  value.markdown
-    ? TextView.markdown(id, options.inline ? inlineMarkdown(value.value) : value.value)
+): Element | string => {
+  const shown = linkProse(value, links.known);
+  return shown.markdown
+    ? linkedMarkdown(id, options.inline ? inlineMarkdown(shown.value) : shown.value, links)
         .selectable()
         .text_size(options.size ?? TEXT.body)
         .text_color(options.color ?? t.foreground)
-    : value.value;
+    : shown.value;
+};
+
+// A prose field with the shown domain's ids linked, for a caller that draws plain text itself.
+const linkedProse = (value: Prose | null, links: IdLinks): Prose | null =>
+  value === null ? null : linkProse(value, links.known);
+
+// Native Markdown whose links open in the panel: an id link opens its record, a web link the
+// system browser, and anything else nothing.
+const linkedMarkdown = (id: string, markdown: string, links: IdLinks) =>
+  TextView.markdown(id, markdown).on_link_click((url, cx) => {
+    const target = idLinkTarget(url);
+    if (target !== undefined) links.open(target, cx);
+    else if (isWebUrl(url)) cx.open_url(url);
+  });
 
 // A detail row gives the focus text the card's inner padding, like every other card row.
-const focusHeader = (t: Theme, focus: Prose | null): Element =>
+const focusHeader = (t: Theme, links: IdLinks, focus: Prose | null): Element =>
   detailRow(t, "focus")
     .border_t(0)
     .text_size(TEXT.body)
     .text_color(focus === null ? t.dim : t.foreground)
     .child(
-      focus === null ? "No focus set" : proseChild(t, "focus-markdown", focus, { inline: true }),
+      focus === null
+        ? "No focus set"
+        : proseChild(t, "focus-markdown", focus, links, { inline: true }),
     );
 
-const focusCard = (t: Theme, focus: Prose | null): Element =>
+const focusCard = (t: Theme, links: IdLinks, focus: Prose | null): Element =>
   cardSection(
     cardHeader(t, "focus-header", "Focus"),
-    card(t, "focus-card").child(focusHeader(t, focus)),
+    card(t, "focus-card").child(focusHeader(t, links, focus)),
   );
 
 const delegateTone = (t: Theme, state: DelegateState): Color =>
@@ -741,12 +774,13 @@ const fact = (
 // A fact's values for one prose field: none, or its Markdown or text.
 const proseValues = (
   t: Theme,
+  links: IdLinks,
   id: string,
   text: string | null,
   markdown: string | undefined,
 ): (string | Element)[] => {
   const value = prose(text, markdown);
-  return value === null ? [] : [proseChild(t, id, value)];
+  return value === null ? [] : [proseChild(t, id, value, links)];
 };
 
 const ANSWER_BUTTON_STYLE: ButtonStyle = {
@@ -871,22 +905,28 @@ const answerRows = (t: Theme, answer: AnswerModel, prefix = "ask"): Element[] =>
   ];
 };
 
-const questionChild = (t: Theme, id: string, ask: Ask): Element | string =>
-  proseChild(t, id, prose(ask.question, ask.questionMarkdown) ?? { markdown: false, value: "" }, {
-    inline: true,
-  });
+const questionChild = (t: Theme, links: IdLinks, id: string, ask: Ask): Element | string =>
+  proseChild(
+    t,
+    id,
+    prose(ask.question, ask.questionMarkdown) ?? { markdown: false, value: "" },
+    links,
+    {
+      inline: true,
+    },
+  );
 
 // The answer flow's question card: a block prompt, then choices ruled off from each other that take
 // the selected fill and a check when picked, and the recommendation's reason inline under its choice.
 // No part of an ask card has its own border or rounded corners; the card's outline holds them all.
-const answerFlowPrompt = (t: Theme, id: string, ask: Ask): Element => {
+const answerFlowPrompt = (t: Theme, links: IdLinks, id: string, ask: Ask): Element => {
   const question = div()
     .id(`${id}-question`)
     .min_w_0()
     .font_medium()
     .text_size(TEXT.body)
     .text_color(t.foreground)
-    .child(questionChild(t, `${id}-question-markdown`, ask));
+    .child(questionChild(t, links, `${id}-question-markdown`, ask));
   const contextProse = prose(ask.context, ask.contextMarkdown);
   const context =
     contextProse === null
@@ -896,7 +936,7 @@ const answerFlowPrompt = (t: Theme, id: string, ask: Ask): Element => {
           .min_w_0()
           .text_size(TEXT.body)
           .text_color(t.muted)
-          .child(proseChild(t, `${id}-context-markdown`, contextProse, { color: t.muted }));
+          .child(proseChild(t, `${id}-context-markdown`, contextProse, links, { color: t.muted }));
   return v_flex()
     .id(`${id}-question-block`)
     .min_w_0()
@@ -920,16 +960,23 @@ const answerFlowOptionStyle = (row: Element, t: Theme, selected: boolean): Eleme
     .border_color(t.border)
     .when(selected, (el) => el.font_semibold());
 
-const answerChild = (t: Theme, id: string, answered: AnsweredAsk): Element | string =>
+const answerChild = (
+  t: Theme,
+  links: IdLinks,
+  id: string,
+  answered: AnsweredAsk,
+): Element | string =>
   proseChild(
     t,
     id,
     prose(answered.answer, answered.answerMarkdown) ?? { markdown: false, value: "" },
+    links,
     { inline: true },
   );
 
 const askCardRows = (
   t: Theme,
+  links: IdLinks,
   id: string,
   ask: Ask,
   answer: AnswerModel | undefined,
@@ -947,18 +994,20 @@ const askCardRows = (
           ? undefined
           : answer.draft.choice;
   const question = flowHeader
-    ? answerFlowPrompt(t, id, ask)
+    ? answerFlowPrompt(t, links, id, ask)
     : detailRow(t, `${id}-question`)
         .bg(t.popover)
         .font_medium()
-        .child(questionChild(t, `${id}-question-markdown`, ask));
+        .child(questionChild(t, links, `${id}-question-markdown`, ask));
   const contextProse = prose(ask.context, ask.contextMarkdown);
   const context =
     !flowHeader && contextProse !== null
       ? [
           askBodyRow(t, `${id}-context`)
             .text_color(t.muted)
-            .child(proseChild(t, `${id}-context-markdown`, contextProse, { color: t.muted })),
+            .child(
+              proseChild(t, `${id}-context-markdown`, contextProse, links, { color: t.muted }),
+            ),
         ]
       : [];
   const reasonProse = prose(ask.recReason, ask.recReasonMarkdown);
@@ -992,7 +1041,7 @@ const askCardRows = (
             .text_size(TEXT.label)
             .text_color(tagTone ?? t.muted)
             .child(
-              proseChild(t, `${id}-detail-${index}-markdown`, detailProse, {
+              proseChild(t, `${id}-detail-${index}-markdown`, detailProse, links, {
                 size: TEXT.label,
                 color: tagTone ?? t.muted,
               }),
@@ -1015,7 +1064,7 @@ const askCardRows = (
                   div()
                     .min_w_0()
                     .child(
-                      proseChild(t, `${id}-rec-reason-markdown`, reasonProse!, {
+                      proseChild(t, `${id}-rec-reason-markdown`, reasonProse!, links, {
                         size: TEXT.label,
                         color: t.muted,
                       }),
@@ -1076,7 +1125,9 @@ const askCardRows = (
       );
   });
   const discussNote =
-    ask.discuss === null ? null : prose(ask.discuss.note, ask.discuss.noteMarkdown);
+    ask.discuss === null
+      ? null
+      : linkedProse(prose(ask.discuss.note, ask.discuss.noteMarkdown), links);
   const discussion =
     completed === undefined
       ? [
@@ -1126,7 +1177,7 @@ const askCardRows = (
                               .gap(BUTTON_STYLE.gap)
                               .child(small(t, t.muted, "Note"))
                               .child(
-                                proseChild(t, `${id}-discuss-note-markdown`, discussNote!, {
+                                proseChild(t, `${id}-discuss-note-markdown`, discussNote!, links, {
                                   size: TEXT.label,
                                   color: t.muted,
                                 }),
@@ -1158,7 +1209,7 @@ const askCardRows = (
                 div()
                   .flex_1()
                   .min_w_0()
-                  .child(answerChild(t, `${id}-answer-markdown`, completed)),
+                  .child(answerChild(t, links, `${id}-answer-markdown`, completed)),
               )
               .child(small(t, t.muted, completed.answeredAt)),
           ];
@@ -1172,7 +1223,7 @@ const askCardRows = (
           div()
             .flex_1()
             .min_w_0()
-            .child(proseChild(t, `${id}-answer-note-markdown`, completedNote)),
+            .child(proseChild(t, `${id}-answer-note-markdown`, completedNote, links)),
         ),
     );
   return [question, ...context, ...touches, ...optionItems, ...discussion, ...completion];
@@ -1202,6 +1253,7 @@ const askRevealRow = (
 
 const askCard = (
   t: Theme,
+  links: IdLinks,
   id: string,
   ask: Ask,
   answer: AnswerModel | undefined,
@@ -1212,7 +1264,7 @@ const askCard = (
     t,
     id,
     completed === undefined ? "Ask" : "Answered ask",
-    askCardRows(t, id, ask, answer, completed, itemTouches),
+    askCardRows(t, links, id, ask, answer, completed, itemTouches),
   ),
 ];
 
@@ -1220,12 +1272,13 @@ const askCard = (
 // it is the full answered card with the same row below.
 const answeredAskCard = (
   t: Theme,
+  links: IdLinks,
   id: string,
   answered: AnsweredAsk,
   expanded: boolean,
   toggle: (cx: Context) => void,
 ): Element => {
-  const rows = askCardRows(t, id, answered, undefined, answered, undefined);
+  const rows = askCardRows(t, links, id, answered, undefined, answered, undefined);
   const contextRows = prose(answered.context, answered.contextMarkdown) === null ? 0 : 1;
   const shown = expanded ? rows : rows.slice(0, 1 + contextRows);
   return detailCard(t, id, "Answered ask", [...shown, askRevealRow(t, id, expanded, toggle)]);
@@ -1233,6 +1286,7 @@ const answeredAskCard = (
 
 const askCards = (
   t: Theme,
+  links: IdLinks,
   item: Item,
   answer: AnswerModel | undefined,
   home: string,
@@ -1240,18 +1294,24 @@ const askCards = (
   toggle: (index: number, cx: Context) => void,
 ): Element[] => {
   const touches = item.touches.map((path) => tildePath(path, home));
-  const cards = item.ask === null ? [] : askCard(t, "ask", item.ask, answer, undefined, touches);
+  const cards =
+    item.ask === null ? [] : askCard(t, links, "ask", item.ask, answer, undefined, touches);
   for (let index = item.answered.length - 1; index >= 0; index -= 1) {
     cards.push(
-      answeredAskCard(t, `ask-answered-${index}`, item.answered[index]!, expanded(index), (cx) =>
-        toggle(index, cx),
+      answeredAskCard(
+        t,
+        links,
+        `ask-answered-${index}`,
+        item.answered[index]!,
+        expanded(index),
+        (cx) => toggle(index, cx),
       ),
     );
   }
   return cards;
 };
 
-const decidedCard = (t: Theme, item: Item): Element[] => {
+const decidedCard = (t: Theme, links: IdLinks, item: Item): Element[] => {
   const decisions = item.decided.filter((entry) => !isDiscussion(entry.text));
   return decisions.length === 0
     ? []
@@ -1268,6 +1328,7 @@ const decidedCard = (t: Theme, item: Item): Element[] => {
                     t,
                     `decided-${index}-markdown`,
                     prose(entry.text, entry.markdown) ?? { markdown: false, value: "" },
+                    links,
                   ),
                 ),
               )
@@ -1426,7 +1487,13 @@ const findingScreen = (t: Theme, finding: Finding, model: PanelModel): Element =
           t,
           "fact-detail",
           "Detail",
-          proseValues(t, "fact-detail-markdown", finding.detail, finding.detailMarkdown),
+          proseValues(
+            t,
+            model.links,
+            "fact-detail-markdown",
+            finding.detail,
+            finding.detailMarkdown,
+          ),
         ),
         fact(
           t,
@@ -1447,7 +1514,13 @@ const findingScreen = (t: Theme, finding: Finding, model: PanelModel): Element =
                 t,
                 "fact-outcome",
                 "Outcome",
-                proseValues(t, "fact-outcome-markdown", finding.outcome, finding.outcomeMarkdown),
+                proseValues(
+                  t,
+                  model.links,
+                  "fact-outcome-markdown",
+                  finding.outcome,
+                  finding.outcomeMarkdown,
+                ),
               ),
             ]),
       ]),
@@ -1567,6 +1640,7 @@ const detailScreen = (t: Theme, item: Item, model: PanelModel): Element =>
     .children(
       askCards(
         t,
+        model.links,
         item,
         model.answer,
         model.home,
@@ -1598,12 +1672,18 @@ const detailScreen = (t: Theme, item: Item, model: PanelModel): Element =>
                 t,
                 "fact-outcome",
                 "Outcome",
-                proseValues(t, "fact-outcome-markdown", item.outcome, item.outcomeMarkdown),
+                proseValues(
+                  t,
+                  model.links,
+                  "fact-outcome-markdown",
+                  item.outcome,
+                  item.outcomeMarkdown,
+                ),
               ),
             ]),
       ]),
     )
-    .children(decidedCard(t, item))
+    .children(decidedCard(t, model.links, item))
     .children(delegatesCard(t, item, model.delegates.byItem.get(item.id) ?? [], model.home))
     .when(model.statusChange !== undefined, (el) =>
       el.children(statusChangeRows(t, model.statusChange!)),
@@ -1725,9 +1805,17 @@ const flowCardHeader = (
   }).px(CARD.paddingX);
 
 // A question answered in this flow, reached again with Back: the answer on record, read-only.
-const flowAnsweredRows = (t: Theme, item: Item, detailPrefix: string): Element[] => {
+const flowAnsweredRows = (
+  t: Theme,
+  links: IdLinks,
+  item: Item,
+  detailPrefix: string,
+): Element[] => {
   const answered = item.answered.at(-1);
-  const answer = answered === undefined ? null : prose(answered.answer, answered.answerMarkdown);
+  const answer =
+    answered === undefined
+      ? null
+      : linkedProse(prose(answered.answer, answered.answerMarkdown), links);
   const rows = [
     detailRow(t, `${detailPrefix}-answered`)
       .border_t(0)
@@ -1738,11 +1826,16 @@ const flowAnsweredRows = (t: Theme, item: Item, detailPrefix: string): Element[]
             ? h_flex()
                 .gap(BUTTON_STYLE.gap)
                 .child("Answered:")
-                .child(proseChild(t, `${detailPrefix}-answered-markdown`, answer, { inline: true }))
+                .child(
+                  proseChild(t, `${detailPrefix}-answered-markdown`, answer, links, {
+                    inline: true,
+                  }),
+                )
             : `Answered: ${answer.value}`,
       ),
   ];
-  const note = answered === undefined ? null : prose(answered.note, answered.noteMarkdown);
+  const note =
+    answered === undefined ? null : linkedProse(prose(answered.note, answered.noteMarkdown), links);
   if (note !== null)
     rows.push(
       detailRow(t, `${detailPrefix}-answered-note`)
@@ -1753,7 +1846,7 @@ const flowAnsweredRows = (t: Theme, item: Item, detailPrefix: string): Element[]
                 .gap(BUTTON_STYLE.gap)
                 .child("Note:")
                 .child(
-                  proseChild(t, `${detailPrefix}-answered-note-markdown`, note, {
+                  proseChild(t, `${detailPrefix}-answered-note-markdown`, note, links, {
                     color: t.muted,
                   }),
                 )
@@ -1765,6 +1858,7 @@ const flowAnsweredRows = (t: Theme, item: Item, detailPrefix: string): Element[]
 
 const flowAskCard = (
   t: Theme,
+  links: IdLinks,
   item: Item | undefined,
   answer: AnswerModel | undefined,
   detailPrefix: string,
@@ -1778,10 +1872,10 @@ const flowAskCard = (
         .text_color(t.muted)
         .child("Question unavailable. Go back to the domain."),
     ];
-  if (item.ask === null) return flowAnsweredRows(t, item, detailPrefix);
+  if (item.ask === null) return flowAnsweredRows(t, links, item, detailPrefix);
   const touches = item.touches.map((path) => tildePath(path, home));
-  return askCardRows(t, askPrefix, item.ask, answer, undefined, touches, true).map((row, index) =>
-    index === 0 ? row.border_t(0) : row,
+  return askCardRows(t, links, askPrefix, item.ask, answer, undefined, touches, true).map(
+    (row, index) => (index === 0 ? row.border_t(0) : row),
   );
 };
 
@@ -1922,7 +2016,7 @@ const flowExpandedBody = (
     .children(
       cardModel.kind === "summary"
         ? flowDoneRows(t, flow, detailPrefix)
-        : flowAskCard(t, item, answer, detailPrefix, askPrefix, flow.home),
+        : flowAskCard(t, flow.links, item, answer, detailPrefix, askPrefix, flow.home),
     );
 };
 
@@ -2191,6 +2285,7 @@ const policiesPage = (t: Theme, backlog: Backlog, model: PanelModel): Element =>
                     t,
                     `policy-${entry.id}-markdown`,
                     prose(entry.text, entry.markdown) ?? { markdown: false, value: "" },
+                    model.links,
                   ),
                 ),
               )
@@ -2256,6 +2351,7 @@ const wikiListPage = (t: Theme, model: PanelModel): Element =>
 // that failed to read, or is empty, shows no card.
 const wikiPageScreen = (
   t: Theme,
+  links: IdLinks,
   wikiPage: { page: WikiPage; body: string | undefined },
   home: string,
 ): Element => {
@@ -2266,7 +2362,14 @@ const wikiPageScreen = (
     .child(titleRow(t, { id: "wiki-page-title", identifier: page.type, title: page.name }))
     .child(
       detailCard(t, "wiki-page-facts", "Details", [
-        fact(t, "wiki-fact-description", "Description", [page.description]),
+        fact(t, "wiki-fact-description", "Description", [
+          proseChild(
+            t,
+            "wiki-fact-description-markdown",
+            { markdown: false, value: page.description },
+            links,
+          ),
+        ]),
         fact(t, "wiki-fact-type", "Type", [page.type]),
         fact(t, "wiki-fact-created", "Created", [page.created]),
         fact(t, "wiki-fact-updated", "Updated", [page.updated]),
@@ -2276,7 +2379,19 @@ const wikiPageScreen = (
           "Covers",
           page.covers.map((cover) => `${tildePath(cover.place, home)}: ${cover.globs.join(", ")}`),
         ),
-        fact(t, "wiki-fact-sources", "Sources", page.sources),
+        fact(
+          t,
+          "wiki-fact-sources",
+          "Sources",
+          page.sources.map((source, index) =>
+            proseChild(
+              t,
+              `wiki-fact-sources-${index}-markdown`,
+              { markdown: false, value: source },
+              links,
+            ),
+          ),
+        ),
         fact(t, "wiki-fact-supersedes", "Supersedes", page.supersedes),
       ]),
     )
@@ -2284,7 +2399,11 @@ const wikiPageScreen = (
       el.child(
         detailCard(t, "wiki-page-body", "Page", [
           detailRow(t, "wiki-page-body-row").child(
-            TextView.markdown(`wiki-page-markdown-${page.name}`, body!)
+            linkedMarkdown(
+              `wiki-page-markdown-${page.name}`,
+              linkIds(body!, links.known, true) ?? body!,
+              links,
+            )
               .selectable()
               .text_size(TEXT.body)
               .text_color(t.foreground),
@@ -2536,7 +2655,7 @@ const domainBody = (t: Theme, domain: string, doc: DocumentState, model: PanelMo
   return v_flex()
     .id("domain")
     .gap(PANEL.sectionGap)
-    .child(focusCard(t, prose(doc.backlog.focus, doc.backlog.focusMarkdown)))
+    .child(focusCard(t, model.links, prose(doc.backlog.focus, doc.backlog.focusMarkdown)))
     .children([...waitingCard(t, model), itemsCard(t, model)])
     .children(unfiledCard(t, model.delegates.unfiled, model))
     .child(sectionLinks(t, domain, doc.backlog, model));
@@ -2688,7 +2807,7 @@ const domainScreens = (t: Theme, model: PanelModel): Element =>
           .child(
             paneScrollRegion(
               "wiki-page-scroll",
-              wikiPageScreen(t, model.wikiPage!, model.home),
+              wikiPageScreen(t, model.links, model.wikiPage!, model.home),
               PANEL.padding,
             ),
           ),

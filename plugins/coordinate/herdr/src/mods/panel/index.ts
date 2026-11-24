@@ -23,6 +23,7 @@ import {
   LIST_SCRIPT,
   answerCommand,
   answerFailure,
+  backlogIds,
   canDismissItem,
   dismissCommand,
   dismissFindingCommand,
@@ -118,6 +119,7 @@ import type {
   BoundaryList,
   BoundaryModel,
   FindingActionsModel,
+  IdLinks,
   StatusChangeModel,
   Theme,
 } from "./view.ts";
@@ -1452,6 +1454,7 @@ export default class Panel extends View {
     return {
       domain: flow.domain,
       home: home(),
+      links: this.idLinks(flow.domain, doc),
       cards,
       currentIndex: flow.current,
       viewport:
@@ -2083,6 +2086,34 @@ export default class Panel extends View {
     cx.notify();
   }
 
+  // The shown domain's ids that prose links, and what opens the record a clicked one names.
+  idLinks(domain: string | undefined, doc: DocumentState): IdLinks {
+    return {
+      known: doc.kind === "loaded" ? backlogIds(doc.backlog) : new Set(),
+      open: (id, cx) => {
+        if (domain !== undefined) this.openId(domain, doc, id, cx);
+      },
+    };
+  }
+
+  // Open the record a prose link names: an item or finding's detail, or the Policies page with
+  // enough rows revealed to show that policy.
+  openId(domain: string, doc: DocumentState, id: string, cx: Context) {
+    if (!id.startsWith("p")) {
+      this.go({ kind: id.startsWith("f") ? "finding" : "item", domain, id }, cx);
+      return;
+    }
+    const index = doc.kind === "loaded" ? doc.backlog.policies.findIndex((p) => p.id === id) : -1;
+    if (domain !== this.paginationDomain) {
+      this.paginationDomain = domain;
+      this.revealedRows.clear();
+    }
+    const needed = Math.ceil((index + 1) / ROW_PAGE_SIZE) * ROW_PAGE_SIZE;
+    if (needed > (this.revealedRows.get("policies") ?? ROW_PAGE_SIZE))
+      this.revealedRows.set("policies", needed);
+    this.go({ kind: "policies", domain }, cx);
+  }
+
   queuedFor(domain: string | undefined): QueuedEntry[] {
     return domain === undefined ? [] : (this.queues.get(domain) ?? []);
   }
@@ -2135,6 +2166,7 @@ export default class Panel extends View {
     return panel(theme() as Theme, {
       domain,
       home: home(),
+      links: this.idLinks(domain, doc),
       doc,
       listing: this.listing,
       trail,

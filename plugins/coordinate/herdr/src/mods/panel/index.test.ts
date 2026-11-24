@@ -5738,9 +5738,10 @@ test("opens a wiki page with its frontmatter facts and its body as Markdown", as
     "Created 2026-11-20",
     "Updated 2026-11-21",
     "Covers github.com/acme/widgets: src/*.ts, lib/**",
-    "Sources item:i1 policy:p1",
+    "Sources policy:p1",
     "Supersedes None",
   ]);
+  expect(markdownOf(root, "wiki-fact-sources-0-markdown")).toBe("item\\:[i1](coordinate-panel:i1)");
   expect(get(root, "wiki-page-markdown-poll-interval").styles.markdown).toBe(
     "# Poll\n\nWhy **5s**.\n",
   );
@@ -5873,4 +5874,104 @@ test("shows a home boundary path as ~ but removes it by its full path", async ()
   expect(host.execs.map((exec) => exec.args.slice(4))).toEqual([
     ["backlog", "boundary", "rm", "/Users/test/Code/repo", "--domain", "alpha", "--json"],
   ]);
+});
+
+// A prose link's click, as the Markdown view reports it.
+const clickLink = (root: Node, id: string, url: string, cx: unknown) => {
+  const onLinkClick = get(root, id).styles.on_link_click;
+  if (typeof onLinkClick !== "function") throw new Error(id + " has no link handler");
+  onLinkClick(url, cx);
+};
+
+test("links a known id in a plain decision and opens that item when clicked", async () => {
+  focusDomain("alpha");
+  let backlog = add(emptyBacklog("alpha", null), "Pick a store", {
+    decided: [
+      { text: "Follow i2, not i99", at: "2026-11-16" },
+      { text: "No ids here", at: "2026-11-16" },
+    ],
+  });
+  backlog = add(backlog, "Write the store");
+  host.files.set(DOC, JSON.stringify(backlog));
+  const { ctx, view, render } = await mount();
+  openDetail(view, "i1", ctx.cx);
+  const root = render();
+  expect(markdownOf(root, "decided-0-markdown")).toBe(
+    "Follow [i2](coordinate-panel:i2)\\, not i99",
+  );
+  expect(ids(root, "decided-1-markdown")).toEqual([]);
+  expect(text(get(root, "decided-1"))).toBe("No ids here 2026-11-16");
+  clickLink(root, "decided-0-markdown", "coordinate-panel:i2", ctx.cx);
+  expect(trail(render())).toBe("⌂ › alpha › i2");
+  expect(text(get(render(), "detail-title"))).toBe("i2 Write the store Open");
+});
+
+test("links a finding id in a Markdown detail and opens that finding when clicked", async () => {
+  focusDomain("alpha");
+  const original = withFindings();
+  host.files.set(
+    DOC,
+    JSON.stringify({
+      ...original,
+      findings: original.findings.map((finding) =>
+        finding.id === "f3"
+          ? { ...finding, detail: null, detailMarkdown: "Same as **f4**, see `f2`" }
+          : finding,
+      ),
+    }),
+  );
+  const { ctx, render } = await mount();
+  openPage(render(), "findings", ctx.cx);
+  get(render(), "finding-f3").click!({}, ctx.cx);
+  const root = render();
+  expect(markdownOf(root, "fact-detail-markdown")).toBe(
+    "Same as **[f4](coordinate-panel:f4)**, see [`f2`](coordinate-panel:f2)",
+  );
+  clickLink(root, "fact-detail-markdown", "coordinate-panel:f4", ctx.cx);
+  expect(text(get(render(), "finding-title"))).toBe("f4 Old crash");
+});
+
+test("opens the Policies page with a linked policy's row revealed", async () => {
+  focusDomain("alpha");
+  const policies = Array.from({ length: 12 }, (_, index) => ({
+    id: "p" + (index + 1),
+    text: "rule " + (index + 1),
+    at: "2026-11-01",
+  }));
+  const backlog: Backlog = {
+    ...emptyBacklog("alpha", null),
+    focusMarkdown: "Follow p12",
+    policies,
+    nextPolicyId: 13,
+  };
+  host.files.set(DOC, JSON.stringify(backlog));
+  const { ctx, render } = await mount();
+  let root = render();
+  expect(markdownOf(root, "focus-markdown")).toBe("Follow [p12](coordinate-panel:p12)");
+  clickLink(root, "focus-markdown", "coordinate-panel:p12", ctx.cx);
+  root = render();
+  expect(trail(root)).toBe("⌂ › alpha › Policies");
+  expect(text(get(root, "policy-p12"))).toBe("rule 12 2026-11-01");
+});
+
+test("links ids in a wiki page body, and a web link still opens in the browser", async () => {
+  focusDomain("alpha");
+  host.files.set(DOC, JSON.stringify(withQueue()));
+  watchData.set("wiki:alpha", WIKI);
+  watchData.set("wiki-show:alpha:poll-interval", wikiShow("poll-interval", "From i1.\n"));
+  const opened: string[] = [];
+  const { ctx, render } = await mount();
+  Object.assign(ctx.cx, { open_url: (url: string) => opened.push(url) });
+  openPage(render(), "wiki", ctx.cx);
+  press(render(), "wiki-row-poll-interval", ctx.cx);
+  await settle();
+  const root = render();
+  expect(markdownOf(root, "wiki-page-markdown-poll-interval")).toBe(
+    "From [i1](coordinate-panel:i1).\n",
+  );
+  clickLink(root, "wiki-page-markdown-poll-interval", "https://x.test/", ctx.cx);
+  clickLink(root, "wiki-page-markdown-poll-interval", "file:///etc/passwd", ctx.cx);
+  expect(opened).toEqual(["https://x.test/"]);
+  clickLink(root, "wiki-page-markdown-poll-interval", "coordinate-panel:i1", ctx.cx);
+  expect(trail(render())).toBe("⌂ › alpha › i1");
 });
