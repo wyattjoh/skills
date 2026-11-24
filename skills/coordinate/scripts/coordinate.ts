@@ -5,15 +5,18 @@ import { ChildProcessSpawner } from "effect/process";
 import { join } from "node:path";
 import {
   boundaryAdd,
+  boundaryReplace,
   boundaryRm,
   checkoutAdd,
   checkoutRm,
   findingAdd,
   findingClose,
+  findingEdit,
   findingPromote,
   focusSet,
   itemAdd,
   itemClose,
+  itemEdit,
   itemStart,
   itemUpdate,
   policyAdd,
@@ -924,6 +927,11 @@ const boundaryAddCommand = Command.make(
   ),
 );
 
+// The time to record a backlog change at as the user's edit: only outside every Herdr terminal (the
+// Backlog panel). A coordinator's own edits record nothing; it made them.
+const editedAt = (): string | undefined =>
+  process.env.HC_TERMINAL_ID ? undefined : new Date().toISOString();
+
 const boundaryRmCommand = Command.make(
   "rm",
   {
@@ -954,11 +962,13 @@ const boundaryRmCommand = Command.make(
             machine,
             json: options.json,
           });
+        const outsideTerminal = !process.env.HC_TERMINAL_ID;
         return yield* boundaryRm(config, domain, {
           path: options.path,
           adjacent: options.adjacent,
           json: options.json,
-          outsideTerminal: !process.env.HC_TERMINAL_ID,
+          outsideTerminal,
+          editedAt: outsideTerminal ? new Date().toISOString() : undefined,
         });
       }),
     ),
@@ -968,9 +978,39 @@ const boundaryRmCommand = Command.make(
   ),
 );
 
+const boundaryReplaceCommand = Command.make(
+  "replace",
+  {
+    path: argument("path", "the listed repo or folder path"),
+    next: argument("new", "the existing path to list in its place (~ expands)"),
+    adjacent: booleanFlag("adjacent", "the path is in the adjacent list"),
+    domain: optionalStringFlag(
+      "domain",
+      "domain (default: this coordinator's label; required outside a terminal)",
+    ),
+    json: booleanFlag("json", "print the Boundary as JSON"),
+  },
+  (options) =>
+    execute((config) =>
+      Effect.flatMap(answerDomain(Option.getOrUndefined(options.domain)), (domain) =>
+        boundaryReplace(config, domain, {
+          from: options.path,
+          to: options.next,
+          adjacent: options.adjacent,
+          json: options.json,
+          editedAt: editedAt(),
+        }),
+      ),
+    ),
+).pipe(
+  Command.withDescription(
+    "list another existing path in place of a Boundary path, keeping its place and an owned path's checkouts; allowed outside a Herdr terminal with --domain, recorded for the watcher's edited event",
+  ),
+);
+
 const boundaryCommand = Command.make("boundary").pipe(
   Command.withDescription(boundaryDescription),
-  Command.withSubcommands([boundaryAddCommand, boundaryRmCommand]),
+  Command.withSubcommands([boundaryAddCommand, boundaryRmCommand, boundaryReplaceCommand]),
 );
 
 const policyLsCommand = Command.make(
@@ -1031,11 +1071,15 @@ const policyRmCommand = Command.make(
   },
   (options) =>
     execute((config) =>
-      Effect.flatMap(coordinatorDomain(Option.getOrUndefined(options.domain)), (domain) =>
-        policyRm(config, domain, { id: options.id, json: options.json }),
+      Effect.flatMap(answerDomain(Option.getOrUndefined(options.domain)), (domain) =>
+        policyRm(config, domain, { id: options.id, json: options.json, editedAt: editedAt() }),
       ),
     ),
-).pipe(Command.withDescription("remove a policy by id"));
+).pipe(
+  Command.withDescription(
+    "remove a policy by id; allowed outside a Herdr terminal with --domain, recorded for the watcher's edited event",
+  ),
+);
 
 const policyReplaceCommand = Command.make(
   "replace",
@@ -1057,10 +1101,11 @@ const policyReplaceCommand = Command.make(
   (options) =>
     execute((config) =>
       Effect.gen(function* () {
-        const domain = yield* coordinatorDomain(Option.getOrUndefined(options.domain));
+        const domain = yield* answerDomain(Option.getOrUndefined(options.domain));
         const wiki = Option.getOrUndefined(options.wiki);
         if (wiki !== undefined) yield* citedPage(config, domain, wiki);
         return yield* policyReplace(config, domain, {
+          editedAt: editedAt(),
           id: options.id,
           text: Option.getOrUndefined(options.text),
           markdown: Option.getOrUndefined(options.md),
@@ -1073,7 +1118,7 @@ const policyReplaceCommand = Command.make(
     ),
 ).pipe(
   Command.withDescription(
-    "replace a policy (Markdown with --md) and its date while keeping its id, optionally citing another wiki page",
+    "replace a policy (Markdown with --md) and its date while keeping its id, optionally citing another wiki page; allowed outside a Herdr terminal with --domain, recorded for the watcher's edited event",
   ),
 );
 
@@ -1107,12 +1152,21 @@ const focusCommand = Command.make(
       process.exit(1);
     }
     return execute((config) =>
-      Effect.flatMap(coordinatorDomain(Option.getOrUndefined(options.domain)), (domain) =>
-        focusSet(config, domain, { focus: text ?? null, markdown, json: options.json }),
+      Effect.flatMap(answerDomain(Option.getOrUndefined(options.domain)), (domain) =>
+        focusSet(config, domain, {
+          focus: text ?? null,
+          markdown,
+          json: options.json,
+          editedAt: editedAt(),
+        }),
       ),
     );
   },
-).pipe(Command.withDescription("set the domain's focus line, or clear it with --clear"));
+).pipe(
+  Command.withDescription(
+    "set the domain's focus line, or clear it with --clear; allowed outside a Herdr terminal with --domain, recorded for the watcher's edited event",
+  ),
+);
 
 const backlogCommand = Command.make("backlog").pipe(
   Command.withDescription(
@@ -1516,6 +1570,64 @@ const itemStartCommand = Command.make(
   ),
 );
 
+const itemEditCommand = Command.make(
+  "edit",
+  {
+    id: argument("id", "item id, such as i3"),
+    title: optionalStringFlag("title", "the new title, one plain-text line"),
+    outcomeMd: optionalStringFlag("outcome-md", "a closed item's new outcome, as Markdown"),
+    decision: optionalStringFlag(
+      "decision",
+      "the decision to change, by its key (<index>:<fingerprint>; an unknown key is refused with the item's current keys)",
+    ),
+    md: optionalStringFlag("md", "with --decision: the decision's new text, as Markdown"),
+    remove: booleanFlag("remove", "with --decision: delete the decision"),
+    domain: optionalStringFlag(
+      "domain",
+      "domain (default: this coordinator's label; required outside a terminal)",
+    ),
+    json: booleanFlag("json", "print the item as JSON"),
+  },
+  (options) =>
+    execute((config) =>
+      Effect.gen(function* () {
+        const title = Option.getOrUndefined(options.title);
+        const outcome = Option.getOrUndefined(options.outcomeMd);
+        const key = Option.getOrUndefined(options.decision);
+        const md = Option.getOrUndefined(options.md);
+        const picked = [title, outcome, key].filter((value) => value !== undefined).length;
+        if (picked !== 1)
+          return yield* new Refused({
+            message: "pass exactly one of --title, --outcome-md or --decision",
+          });
+        if (
+          key === undefined
+            ? md !== undefined || options.remove
+            : (md === undefined) === !options.remove
+        )
+          return yield* new Refused({
+            message: "--decision takes exactly one of --md or --remove, and they need --decision",
+          });
+        const domain = yield* answerDomain(Option.getOrUndefined(options.domain));
+        return yield* itemEdit(config, domain, {
+          id: options.id,
+          edit:
+            key !== undefined
+              ? { field: "decision", key, markdown: options.remove ? null : (md ?? "") }
+              : title !== undefined
+                ? { field: "title", value: title }
+                : { field: "outcome", value: outcome ?? "" },
+          json: options.json,
+          editedAt: editedAt(),
+        });
+      }),
+    ),
+).pipe(
+  Command.withDescription(
+    "edit an item's title, a closed item's outcome, or one coordinator decision (by key), or delete that decision; answers and discussion requests stay as recorded; allowed outside a Herdr terminal with --domain, recorded for the watcher's edited event",
+  ),
+);
+
 const delegateArgumentDescription =
   "delegate name or Herdr terminal address (detach also takes a session id)";
 const itemAttachCommand = Command.make(
@@ -1578,6 +1690,7 @@ const itemCommand = Command.make("item").pipe(
     itemAnswerCommand,
     itemCloseCommand,
     itemStartCommand,
+    itemEditCommand,
     itemAttachCommand,
     itemDetachCommand,
   ]),
@@ -1687,11 +1800,59 @@ const findingPromoteCommand = Command.make(
   ),
 );
 
+const findingEditCommand = Command.make(
+  "edit",
+  {
+    id: argument("id", "finding id, such as f2"),
+    title: optionalStringFlag("title", "the new title, one plain-text line"),
+    detailMd: optionalStringFlag("detail-md", "the new detail, as Markdown"),
+    outcomeMd: optionalStringFlag("outcome-md", "a closed finding's new outcome, as Markdown"),
+    domain: optionalStringFlag(
+      "domain",
+      "domain (default: this coordinator's label; required outside a terminal)",
+    ),
+    json: booleanFlag("json", "print the finding as JSON"),
+  },
+  (options) =>
+    execute((config) =>
+      Effect.gen(function* () {
+        const fields = [
+          ["title", Option.getOrUndefined(options.title)],
+          ["detail", Option.getOrUndefined(options.detailMd)],
+          ["outcome", Option.getOrUndefined(options.outcomeMd)],
+        ] as const;
+        const given = fields.filter(([, value]) => value !== undefined);
+        const [picked] = given;
+        if (given.length !== 1 || picked === undefined)
+          return yield* new Refused({
+            message: "pass exactly one of --title, --detail-md or --outcome-md",
+          });
+        const domain = yield* answerDomain(Option.getOrUndefined(options.domain));
+        return yield* findingEdit(config, domain, {
+          id: options.id,
+          field: picked[0],
+          value: picked[1] ?? "",
+          json: options.json,
+          editedAt: editedAt(),
+        });
+      }),
+    ),
+).pipe(
+  Command.withDescription(
+    "edit a finding's title, detail, or a closed finding's outcome; allowed outside a Herdr terminal with --domain, recorded for the watcher's edited event",
+  ),
+);
+
 const findingCommand = Command.make("finding").pipe(
   Command.withDescription(
     "record, promote and close issues and opportunities noticed outside an item's scope",
   ),
-  Command.withSubcommands([findingAddCommand, findingCloseCommand, findingPromoteCommand]),
+  Command.withSubcommands([
+    findingAddCommand,
+    findingCloseCommand,
+    findingPromoteCommand,
+    findingEditCommand,
+  ]),
 );
 
 const sharedFlag = booleanFlag(

@@ -15,14 +15,20 @@ import {
   closeFinding,
   promoteFinding,
   closeItem,
+  clearEdits,
+  editDecision,
+  editFinding,
+  editItem,
   emptyBacklog,
   fileDelegate,
   idleDelegated,
   type ItemUpdate,
   type OpResult,
+  recordEdit,
   removeBoundary,
   removeCheckout,
   removePolicy,
+  replaceBoundary,
   replacePolicy,
   requestStart,
   RETAINED_CLOSED,
@@ -42,6 +48,7 @@ import {
   type Item,
   type Policy,
   proseSource,
+  type RecordEdit,
   validateBacklog,
 } from "./backlog-store/schema.ts";
 
@@ -415,6 +422,22 @@ const change = <A>(config: Config, domain: string, operation: (backlog: Backlog)
 const json = (value: unknown): string[] => [JSON.stringify(value, null, 2)];
 
 /**
+ * An applied operation with the user's change recorded beside it, when `editedAt` is set (the
+ * caller is outside every Herdr terminal) and the text really changed. The coordinator's own
+ * edits pass no time and record nothing: it made them.
+ */
+const withEdit = <A>(
+  applied: OpResult<A>,
+  editedAt: string | undefined,
+  edit: (value: A) => Omit<RecordEdit, "id" | "at">,
+): OpResult<A> => {
+  if (!applied.ok || editedAt === undefined) return applied;
+  const change = edit(applied.value);
+  if (change.old === change.new) return applied;
+  return { ...applied, backlog: recordEdit(applied.backlog, { ...change, at: editedAt }) };
+};
+
+/**
  * `coordinate backlog show`: the document rendered as Markdown, or printed as JSON.
  * @param config Config.
  * @param domain Domain.
@@ -521,6 +544,93 @@ export const itemStart = Effect.fn("itemStart")(function* (
       ? `start requested for ${item.id} at ${at}: ${item.title}`
       : `start already requested for ${item.id} at ${at}: ${item.title}`,
   ];
+});
+
+/**
+ * `coordinate item edit`: change an item's title, a closed item's outcome, or one decision (by
+ * its `decisionKey`), or delete that decision. With `editedAt` (outside a terminal) the change is
+ * recorded for the watcher's `edited` event.
+ * @param config Config.
+ * @param domain Domain.
+ * @param input Item id, the field and its value (`null` deletes a decision), the decision key,
+ * `--json`, and the time to record the user's edit at.
+ * @returns Lines to print.
+ */
+export const itemEdit = Effect.fn("itemEdit")(function* (
+  config: Config,
+  domain: string,
+  input: {
+    id: string;
+    edit:
+      | { field: "title" | "outcome"; value: string }
+      | { field: "decision"; key: string; markdown: string | null };
+    json: boolean;
+    editedAt: string | undefined;
+  },
+) {
+  const { edit } = input;
+  const { item } = yield* change(config, domain, (backlog) =>
+    withEdit(
+      edit.field === "decision"
+        ? editDecision(backlog, { id: input.id, key: edit.key, markdown: edit.markdown })
+        : editItem(backlog, { id: input.id, field: edit.field, value: edit.value }),
+      input.editedAt,
+      ({ change: changed }) => ({ record: input.id, field: edit.field, ...changed }),
+    ),
+  );
+  if (input.json) return json(item);
+  if (edit.field === "decision")
+    return [
+      edit.markdown === null
+        ? `removed decision ${edit.key} from ${item.id}`
+        : `replaced decision ${edit.key} on ${item.id}`,
+    ];
+  return [`edited ${edit.field} of ${item.id}: ${item.title}`];
+});
+
+/**
+ * `coordinate finding edit`: change a finding's title, detail, or a closed finding's outcome.
+ * With `editedAt` (outside a terminal) the change is recorded for the watcher's `edited` event.
+ * @param config Config.
+ * @param domain Domain.
+ * @param input Finding id, the field and its value, `--json`, and the time to record the user's
+ * edit at.
+ * @returns Lines to print.
+ */
+export const findingEdit = Effect.fn("findingEdit")(function* (
+  config: Config,
+  domain: string,
+  input: {
+    id: string;
+    field: "title" | "detail" | "outcome";
+    value: string;
+    json: boolean;
+    editedAt: string | undefined;
+  },
+) {
+  const { finding } = yield* change(config, domain, (backlog) =>
+    withEdit(
+      editFinding(backlog, { id: input.id, field: input.field, value: input.value }),
+      input.editedAt,
+      ({ change: changed }) => ({ record: input.id, field: input.field, ...changed }),
+    ),
+  );
+  return input.json ? json(finding) : [`edited ${input.field} of ${finding.id}: ${finding.title}`];
+});
+
+/**
+ * Drop the user's edits the watcher has queued for delivery.
+ * @param config Config.
+ * @param domain Domain.
+ * @param ids The delivered edits' ids.
+ * @returns How many it dropped.
+ */
+export const editsClear = Effect.fn("editsClear")(function* (
+  config: Config,
+  domain: string,
+  ids: readonly string[],
+) {
+  return yield* change(config, domain, (backlog) => clearEdits(backlog, ids));
 });
 
 /**
@@ -688,7 +798,13 @@ export const boundaryAdd = Effect.fn("boundaryAdd")(function* (
 export const boundaryRm = Effect.fn("boundaryRm")(function* (
   config: Config,
   domain: string,
-  input: { path: string; adjacent: boolean; json: boolean; outsideTerminal: boolean },
+  input: {
+    path: string;
+    adjacent: boolean;
+    json: boolean;
+    outsideTerminal: boolean;
+    editedAt?: string | undefined;
+  },
 ) {
   const path = normalizeBoundary(input.path);
   const list: BoundaryList = input.adjacent ? "adjacent" : "owned";
@@ -701,11 +817,54 @@ export const boundaryRm = Effect.fn("boundaryRm")(function* (
       backlog.boundary[other].includes(path)
         ? other
         : list;
-    const applied = removeBoundary(backlog, { path, list: selected });
+    const applied = withEdit(
+      removeBoundary(backlog, { path, list: selected }),
+      input.editedAt,
+      () => ({ record: "boundary", field: selected, old: path, new: null }),
+    );
     if (applied.ok) boundary = applied.backlog.boundary;
     return applied;
   });
   return input.json ? json(boundary) : [`${list}: removed ${path}`];
+});
+
+/**
+ * `coordinate backlog boundary replace`: list another existing path in place of one, keeping
+ * its position and an owned path's checkouts.
+ * @param config Config.
+ * @param domain Domain.
+ * @param input The listed path, the path to list instead, `--adjacent`, `--json`, and the time
+ * to record the user's edit at (outside a terminal only).
+ * @returns Lines to print.
+ */
+export const boundaryReplace = Effect.fn("boundaryReplace")(function* (
+  config: Config,
+  domain: string,
+  input: {
+    from: string;
+    to: string;
+    adjacent: boolean;
+    json: boolean;
+    editedAt: string | undefined;
+  },
+) {
+  const from = normalizeBoundary(input.from);
+  const to = normalizeBoundary(input.to);
+  const list: BoundaryList = input.adjacent ? "adjacent" : "owned";
+  if (to.startsWith("/") && !/[\r\n]/.test(to) && !existsSync(to))
+    return yield* new Refused({ message: `${to} does not exist` });
+  let boundary: Backlog["boundary"] | undefined;
+  yield* change(config, domain, (backlog) => {
+    const applied = withEdit(replaceBoundary(backlog, { list, from, to }), input.editedAt, () => ({
+      record: "boundary",
+      field: list,
+      old: from,
+      new: to,
+    }));
+    if (applied.ok) boundary = applied.backlog.boundary;
+    return applied;
+  });
+  return input.json ? json(boundary) : [`${list}: replaced ${from} with ${to}`];
 });
 
 const MACHINE_NAME = /^[A-Za-z0-9][A-Za-z0-9._-]*$/;
@@ -862,9 +1021,16 @@ export const policyAdd = Effect.fn("policyAdd")(function* (
 export const policyRm = Effect.fn("policyRm")(function* (
   config: Config,
   domain: string,
-  input: { id: string; json: boolean },
+  input: { id: string; json: boolean; editedAt?: string | undefined },
 ) {
-  const policy = yield* change(config, domain, (backlog) => removePolicy(backlog, input.id));
+  const policy = yield* change(config, domain, (backlog) =>
+    withEdit(removePolicy(backlog, input.id), input.editedAt, (removed) => ({
+      record: removed.id,
+      field: "policy",
+      old: policyBodyOf(removed),
+      new: null,
+    })),
+  );
   return input.json ? json(policy) : [`removed policy ${policy.id}: ${policyBodyOf(policy)}`];
 });
 
@@ -887,17 +1053,28 @@ export const policyReplace = Effect.fn("policyReplace")(function* (
     wiki: string | undefined;
     json: boolean;
     now: string;
+    editedAt?: string | undefined;
   },
 ) {
-  const policy = yield* change(config, domain, (backlog) =>
-    replacePolicy(backlog, {
-      id: input.id,
-      text: input.text,
-      markdown: input.markdown,
-      at: input.at ?? input.now.slice(0, 10),
-      wiki: input.wiki,
-    }),
-  );
+  const policy = yield* change(config, domain, (backlog) => {
+    const before = backlog.policies.find((entry) => entry.id === input.id);
+    return withEdit(
+      replacePolicy(backlog, {
+        id: input.id,
+        text: input.text,
+        markdown: input.markdown,
+        at: input.at ?? input.now.slice(0, 10),
+        wiki: input.wiki,
+      }),
+      input.editedAt,
+      (replaced) => ({
+        record: replaced.id,
+        field: "policy",
+        old: before === undefined ? null : policyBodyOf(before),
+        new: policyBodyOf(replaced),
+      }),
+    );
+  });
   return input.json
     ? json(policy)
     : [`replaced policy ${policy.id}: ${policyBodyOf(policy)}${policyCitation(policy)}`];
@@ -913,10 +1090,24 @@ export const policyReplace = Effect.fn("policyReplace")(function* (
 export const focusSet = Effect.fn("focusSet")(function* (
   config: Config,
   domain: string,
-  input: { focus: string | null; markdown?: string | undefined; json: boolean },
+  input: {
+    focus: string | null;
+    markdown?: string | undefined;
+    json: boolean;
+    editedAt?: string | undefined;
+  },
 ) {
   const focus = yield* change(config, domain, (backlog) =>
-    setFocus(backlog, { focus: input.focus, markdown: input.markdown }),
+    withEdit(
+      setFocus(backlog, { focus: input.focus, markdown: input.markdown }),
+      input.editedAt,
+      (after) => ({
+        record: "focus",
+        field: "focus",
+        old: proseSource(backlog.focus, backlog.focusMarkdown) || null,
+        new: after,
+      }),
+    ),
   );
   if (input.json) return json({ focus });
   return [focus === null ? "focus cleared" : `focus: ${focus}`];

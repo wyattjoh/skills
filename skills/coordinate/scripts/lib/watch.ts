@@ -3,10 +3,9 @@ import { randomUUID } from "node:crypto";
 import { mkdir, open, readFile, rename, unlink } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { Effect, Option, Result } from "effect";
-import { findingAdd, readDocument } from "./backlog-doc.ts";
-import { isAnswer } from "./backlog-store/ops.ts";
-import { FINDING_DETAIL_SHAPE, isDiscussion } from "./backlog-store/schema.ts";
-import type { Item } from "./backlog-store/schema.ts";
+import { editsClear, findingAdd, readDocument } from "./backlog-doc.ts";
+import { FINDING_DETAIL_SHAPE, isAnswer, isDiscussion } from "./backlog-store/schema.ts";
+import type { Item, RecordEdit } from "./backlog-store/schema.ts";
 import type { Config } from "./config.ts";
 import { checkDomainName, L, Refused, sessionOf } from "./fleet.ts";
 import * as hc from "./herdr.ts";
@@ -145,6 +144,11 @@ export type WatchSnapshot = {
    * are kept, and none is seeded on arm: a pending request is live, so a first read fires it.
    */
   started: string[];
+  /**
+   * The user's edits already queued, keyed `<edit id> <time>`. Only edits still in the document are
+   * kept; none is seeded on arm, since a pending edit is undelivered.
+   */
+  edited: string[];
   idle: Record<string, IdleReminder>;
   capacity: Record<string, { order: number; ready: boolean }>;
   /** Last effective policy signature, or its current read error. */
@@ -180,6 +184,7 @@ export const emptyState = (): WatchState => ({
   answered: null,
   discussed: null,
   started: [],
+  edited: [],
   idle: {},
   capacity: {},
   harnessPolicy: undefined,
@@ -610,6 +615,49 @@ export const startEvents = (items: readonly Item[], fired: readonly string[]) =>
 };
 
 /**
+ * How much of an edit's old or new text an `edited` event carries; the new text stays in the
+ * document, so a longer value is cut with an ellipsis.
+ */
+export const EDIT_TEXT_LIMIT = 2000;
+
+const clip = (value: string): string =>
+  value.length > EDIT_TEXT_LIMIT ? `${value.slice(0, EDIT_TEXT_LIMIT)}…` : value;
+
+/**
+ * Edited events for the user's pending edits (the Backlog panel's Edit and Delete), in document
+ * order, skipping keys already queued. Like start requests, a pending edit is undelivered state, so
+ * a first read queues every pending one, and the queued keys keep only edits still pending.
+ * @param edits The document's pending edits.
+ * @param fired Keys already queued.
+ * @returns The events to queue and the keys queued so far.
+ */
+export const editEvents = (edits: readonly RecordEdit[], fired: readonly string[]) => {
+  const pending = edits.map((edit) => ({
+    key: `${edit.id} ${edit.at}`,
+    event: watchEvent(
+      "edited",
+      {
+        change: edit.id,
+        record: edit.record,
+        field: edit.field,
+        action: edit.new === null ? "delete" : "edit",
+      },
+      "the user changed this record: adjust any running work or brief that relied on the old text",
+      {
+        ...(edit.old === null ? {} : { old: clip(edit.old) }),
+        ...(edit.new === null ? {} : { new: clip(edit.new) }),
+        at: edit.at,
+      },
+    ),
+  }));
+  const seen = new Set(fired);
+  return {
+    events: pending.filter((entry) => !seen.has(entry.key)).map((entry) => entry.event),
+    fired: pending.map((entry) => entry.key),
+  };
+};
+
+/**
  * The watcher's snapshot for a domain.
  * @param stateDir State dir.
  * @param domain Domain.
@@ -630,6 +678,7 @@ const readState = (path: string) =>
         answered: parsed.answered ?? null,
         discussed: parsed.discussed ?? null,
         started: parsed.started ?? [],
+        edited: parsed.edited ?? [],
         idle: parsed.idle ?? {},
         capacity: parsed.capacity ?? {},
         harnessPolicy: parsed.harnessPolicy,
@@ -1178,6 +1227,7 @@ export const watch = Effect.fn("watch")(function* (config: Config, options: Watc
         answered: state.answered === null ? null : [...state.answered],
         discussed: state.discussed === null ? null : [...state.discussed],
         started: [...state.started],
+        edited: [...state.edited],
         idle: Object.fromEntries(
           Object.entries(state.idle).map(([address, reminder]) => [address, { ...reminder }]),
         ),
@@ -1371,6 +1421,9 @@ export const watch = Effect.fn("watch")(function* (config: Config, options: Watc
         const started = startEvents(document.value.backlog.items, snapshot.started);
         lines.push(...started.events);
         snapshot.started = started.fired;
+        const edited = editEvents(document.value.backlog.edits ?? [], snapshot.edited);
+        lines.push(...edited.events);
+        snapshot.edited = edited.fired;
       }
       // The lint clock is read every tick: `wiki lint --mark` writes it while this watcher runs.
       // No wiki, no lint-due, even when a lint was marked.
@@ -1496,6 +1549,14 @@ export const watch = Effect.fn("watch")(function* (config: Config, options: Watc
       yield* writeState(path, staged);
       state = { ...staged, ...snapshot, staged: undefined, outboxIntents: [] };
       yield* writeState(path, state);
+      // The user's edits leave the document only once their events are committed to the outbox. A
+      // failed clear retries next tick; the fired keys keep the events from queuing twice.
+      if (Option.isSome(document) && snapshot.edited.length > 0)
+        yield* editsClear(
+          config,
+          options.domain,
+          snapshot.edited.map((key) => key.split(" ")[0] ?? ""),
+        ).pipe(Effect.ignore);
       // Markers follow the committed events: a crash before them re-samples the session later,
       // duplicating a retro rather than losing one.
       for (const mark of marks) yield* markSettled(config.stateDir, mark.session, mark.retro);

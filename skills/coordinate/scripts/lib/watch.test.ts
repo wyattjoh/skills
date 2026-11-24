@@ -3,9 +3,17 @@ import { chmodSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync }
 import { join } from "node:path";
 import { hostname } from "node:os";
 import { Effect } from "effect";
-import { createDocument, itemAdd, itemClose, itemStart, itemUpdate } from "./backlog-doc.ts";
+import {
+  createDocument,
+  itemAdd,
+  itemClose,
+  itemEdit,
+  itemStart,
+  itemUpdate,
+  readDocument,
+} from "./backlog-doc.ts";
 import { emptyBacklog, type ItemUpdate } from "./backlog-store/ops.ts";
-import { FINDING_DETAIL_SHAPE, type Item } from "./backlog-store/schema.ts";
+import { decisionKey, FINDING_DETAIL_SHAPE, type Item } from "./backlog-store/schema.ts";
 import { resolveConfig } from "./config.ts";
 import { cliEnv, commitFile, g, gitAndFake, initRepo, runWith, tempDir } from "./fixture.ts";
 import { FAKE_CORE, fakeProc, ok, type RunOutput } from "./proc.ts";
@@ -14,6 +22,7 @@ import { setHarnessPolicy } from "./harness-policy.ts";
 import {
   capacityWakeEvents,
   delegateEvents,
+  EDIT_TEXT_LIMIT,
   emptyState,
   eventSummary,
   idleEvents,
@@ -1141,6 +1150,7 @@ describe("watch due events", () => {
       answered: [],
       discussed: [],
       started: [],
+      edited: [],
       idle: {},
       capacity: {},
       harnessPolicy: JSON.stringify({ enabled: ["pi", "claude"], default: null }),
@@ -1449,6 +1459,87 @@ describe("watch start events", () => {
     );
     expect(await arm("2026-11-10")).toEqual([startLine(AT)]);
     expect(await arm("2026-11-10")).toEqual(alive);
+  });
+});
+
+describe("watch edited events", () => {
+  const AT = "2026-11-10T09:00:00.000Z";
+  const ACTION =
+    "the user changed this record: adjust any running work or brief that relied on the old text";
+  const pending = async (config: Parameters<typeof readDocument>[0]) =>
+    (await runWith(readDocument(config, "app"))).backlog.edits;
+  const retitle = (
+    config: Parameters<typeof readDocument>[0],
+    title: string,
+    at: string | undefined,
+  ) =>
+    runWith(
+      itemEdit(config, "app", {
+        id: "i1",
+        edit: { field: "title", value: title },
+        json: false,
+        editedAt: at,
+      }),
+    );
+
+  it("queues one edited event per change, then clears it from the document", async () => {
+    const { config, arm, stateFile } = await dueDomain();
+    expect(await arm("2026-11-10")).toEqual(alive);
+    await retitle(config, "Fix signup", AT);
+    await retitle(config, "Fix signup flow", "2026-11-10T09:05:00.000Z");
+    expect(await arm("2026-11-10")).toEqual([
+      `<event kind="edited" change="c1" record="i1" field="title" action="edit"><old>Fix login</old><new>Fix signup</new><at>${AT}</at>${ACTION}</event>`,
+      `<event kind="edited" change="c2" record="i1" field="title" action="edit"><old>Fix signup</old><new>Fix signup flow</new><at>2026-11-10T09:05:00.000Z</at>${ACTION}</event>`,
+    ]);
+    expect(await pending(config)).toEqual(undefined);
+    expect(await arm("2026-11-10")).toEqual(alive);
+    expect(JSON.parse(readFileSync(stateFile, "utf8")).edited).toEqual([]);
+    // The next edit takes a new id, never one already delivered.
+    await retitle(config, "Fix login", AT);
+    expect(await arm("2026-11-10")).toEqual([
+      `<event kind="edited" change="c3" record="i1" field="title" action="edit"><old>Fix signup flow</old><new>Fix login</new><at>${AT}</at>${ACTION}</event>`,
+    ]);
+  });
+
+  it("queues nothing for the coordinator's own edit", async () => {
+    const { config, arm } = await dueDomain();
+    expect(await arm("2026-11-10")).toEqual(alive);
+    await retitle(config, "Fix signup", undefined);
+    expect(await pending(config)).toEqual(undefined);
+    expect(await arm("2026-11-10")).toEqual(alive);
+  });
+
+  it("does not queue an edit twice when a watcher stopped before clearing it", async () => {
+    const { config, arm, stateFile } = await dueDomain();
+    expect(await arm("2026-11-10")).toEqual(alive);
+    await retitle(config, "Fix signup", AT);
+    const state = JSON.parse(readFileSync(stateFile, "utf8"));
+    writeFileSync(stateFile, JSON.stringify({ ...state, edited: [`c1 ${AT}`] }));
+    expect(await arm("2026-11-10")).toEqual(alive);
+    expect(await pending(config)).toEqual(undefined);
+  });
+
+  it("delivers a deleted decision with its old text on one line, cut past the limit", async () => {
+    const { config, arm } = await dueDomain();
+    const long = "x".repeat(EDIT_TEXT_LIMIT + 5);
+    await runWith(
+      itemUpdate(config, "app", update("i1", { decidedMarkdown: ["keep\nscope small", long] })),
+    );
+    const { backlog } = await runWith(readDocument(config, "app"));
+    const decided = backlog.items[0]!.decided;
+    for (const index of [1, 0])
+      await runWith(
+        itemEdit(config, "app", {
+          id: "i1",
+          edit: { field: "decision", key: decisionKey(decided[index]!, index), markdown: null },
+          json: false,
+          editedAt: AT,
+        }),
+      );
+    expect(await arm("2026-11-10")).toEqual([
+      `<event kind="edited" change="c1" record="i1" field="decision" action="delete"><old>${"x".repeat(EDIT_TEXT_LIMIT)}…</old><at>${AT}</at>${ACTION}</event>`,
+      `<event kind="edited" change="c2" record="i1" field="decision" action="delete"><old>keep scope small</old><at>${AT}</at>${ACTION}</event>`,
+    ]);
   });
 });
 

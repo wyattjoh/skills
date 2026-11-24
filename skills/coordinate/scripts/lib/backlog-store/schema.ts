@@ -109,6 +109,44 @@ export const isDiscussion = (text: string | undefined): text is string =>
   text !== undefined && text.startsWith('Discuss "');
 
 /**
+ * Whether a decision records the answer to an ask, so the watcher can wake the coordinator on it.
+ * @param text A decision's text; a Markdown decision has none.
+ * @returns True for a decision `answerDecision` wrote.
+ */
+export const isAnswer = (text: string | undefined): text is string =>
+  text !== undefined && /^Re ".*": /s.test(text);
+
+/**
+ * Whether the user may edit or delete a decision from the Backlog panel: a coordinator's decision,
+ * not the record of an answer or a discussion request, which stay read-only.
+ * @param entry The decision.
+ * @returns True for a coordinator's decision.
+ */
+export const isEditableDecision = (entry: Dated): boolean =>
+  !isAnswer(entry.text) && !isDiscussion(entry.text);
+
+// FNV-1a over UTF-16 code units: no TextEncoder or crypto, so a Herdr mod computes the same value.
+const fingerprint = (value: string): string => {
+  let hash = 0x811c9dc5;
+  for (let index = 0; index < value.length; index += 1) {
+    hash ^= value.charCodeAt(index);
+    hash = Math.imul(hash, 0x01000193) >>> 0;
+  }
+  return hash.toString(16).padStart(8, "0");
+};
+
+/**
+ * A decision's stable key for an edit or delete: its index in the stored `decided` list and a
+ * fingerprint of its date and text, `<index>:<fingerprint>`. Decisions are dated by day, so the
+ * fingerprint is what tells a stale key (the list shifted, or the entry changed) from a live one.
+ * @param entry The decision.
+ * @param index Its index in the item's stored `decided` list.
+ * @returns The key.
+ */
+export const decisionKey = (entry: Dated, index: number): string =>
+  `${index}:${fingerprint(`${entry.at}\n${entry.text ?? ""}\n${entry.markdown ?? ""}`)}`;
+
+/**
  * A reusable policy recorded with its stable short id and date: `markdown`, or the deprecated plain
  * `text`, never both. `wiki` names the domain or shared wiki page that explains it, and is absent
  * when the policy cites none.
@@ -186,6 +224,43 @@ export type DelegateRef = {
  * or an ask, when a delegate is filed, and when the item closes.
  */
 export type StartRequest = { at: string };
+
+/**
+ * Which record field a pending edit changed: an item's or finding's `title` or `outcome`, an
+ * item's `decision`, a finding's `detail`, a `policy`'s text, the domain's `focus`, or a path in
+ * the `owned` or `adjacent` Boundary.
+ */
+export const EDIT_FIELDS = [
+  "title",
+  "outcome",
+  "decision",
+  "detail",
+  "policy",
+  "focus",
+  "owned",
+  "adjacent",
+] as const;
+
+/**
+ * A field a pending edit names.
+ */
+export type EditField = (typeof EDIT_FIELDS)[number];
+
+/**
+ * A change the user made from outside every Herdr terminal (the Backlog panel), waiting for the
+ * watcher to deliver it to the coordinator as an `edited` event, which then clears it. `record` is
+ * the item, finding or policy id, `focus`, or `boundary`; `old` is the text before (null when the
+ * field was empty) and `new` the text after, or null when the entry was deleted; `at` is the ISO
+ * time. The id (`c<n>`) is never reused.
+ */
+export type RecordEdit = {
+  id: string;
+  record: string;
+  field: EditField;
+  old: string | null;
+  new: string | null;
+  at: string;
+};
 
 /**
  * One unit of work the domain tracks.
@@ -274,6 +349,16 @@ export type Backlog = {
   findings: Finding[];
   nextId: number;
   nextPolicyId: number;
+  /**
+   * The user's edits not yet delivered to the coordinator; absent when there are none. Older
+   * documents never have it.
+   */
+  edits?: RecordEdit[];
+  /**
+   * The next pending edit's number, kept after its edits clear so an id is never reused; absent
+   * until the first edit.
+   */
+  nextEditId?: number;
 };
 
 /**
@@ -446,6 +531,34 @@ export const validateBacklog = (value: unknown): Validated => {
   const nextPolicyId = candidate.nextPolicyId;
   if (typeof nextPolicyId !== "number" || !Number.isInteger(nextPolicyId) || nextPolicyId < 1)
     errors.push("nextPolicyId must be a positive integer");
+
+  if ("edits" in candidate) {
+    const edits = list("edits", candidate.edits);
+    const nextEditId = candidate.nextEditId;
+    if (typeof nextEditId !== "number" || !Number.isInteger(nextEditId) || nextEditId < 1)
+      errors.push("nextEditId must be a positive integer when there are edits");
+    edits.forEach((entry: unknown, index) => {
+      const where = `edits[${index}]`;
+      if (!isRecord(entry)) {
+        errors.push(`${where} must be an object`);
+        return;
+      }
+      const match = typeof entry.id === "string" ? /^c([1-9]\d*)$/.exec(entry.id) : null;
+      if (match === null) errors.push(`${where}.id must look like c1`);
+      else if (typeof nextEditId === "number" && Number(match[1]) >= nextEditId)
+        errors.push(`${where}.id ${String(entry.id)} is not below nextEditId ${nextEditId}`);
+      nonEmpty(`${where}.record`, entry.record);
+      if (!EDIT_FIELDS.some((field) => field === entry.field))
+        errors.push(`${where}.field must be one of ${EDIT_FIELDS.join(", ")}`);
+      textOrNull(`${where}.old`, entry.old);
+      textOrNull(`${where}.new`, entry.new);
+      nonEmpty(`${where}.at`, entry.at);
+    });
+  } else if ("nextEditId" in candidate) {
+    const nextEditId = candidate.nextEditId;
+    if (typeof nextEditId !== "number" || !Number.isInteger(nextEditId) || nextEditId < 1)
+      errors.push("nextEditId must be a positive integer");
+  }
 
   const ids = new Set<string>();
   const checkId = (where: string, id: unknown, prefix: "i" | "f" | "p"): void => {

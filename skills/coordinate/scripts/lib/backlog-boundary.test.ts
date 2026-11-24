@@ -6,6 +6,7 @@ import { Effect } from "effect";
 import {
   BacklogError,
   boundaryAdd,
+  boundaryReplace,
   boundaryRm,
   checkoutAdd,
   checkoutRm,
@@ -310,6 +311,55 @@ describe("backlog boundary checkouts", () => {
       await runWith(checkoutRm(cfg, "app", { path: owned, machine: "nigelsheldon", json: false })),
     ).toEqual([`owned: removed checkout of ${owned} on nigelsheldon`]);
     expect(read(path).boundary).toEqual({ owned: [owned], adjacent: [] });
+  });
+
+  it("replaces a path in place with its checkouts, and records the panel's replace and remove", async () => {
+    const { cfg, path } = await started();
+    const [first, second, next] = [dir(), dir(), dir()];
+    await add(cfg, first);
+    await add(cfg, second);
+    await addCheckout(cfg, first, "strix", "/srv/app");
+    expect(
+      await runWith(
+        boundaryReplace(cfg, "app", {
+          from: first,
+          to: next,
+          adjacent: false,
+          json: false,
+          editedAt: NOW,
+        }),
+      ),
+    ).toEqual([`owned: replaced ${first} with ${next}`]);
+    await runWith(
+      boundaryRm(cfg, "app", {
+        path: second,
+        adjacent: false,
+        json: false,
+        outsideTerminal: true,
+        editedAt: NOW,
+      }),
+    );
+    const doc = read(path);
+    expect([doc.boundary, doc.edits]).toEqual([
+      { owned: [next], adjacent: [], checkouts: { [next]: { strix: "/srv/app" } } },
+      [
+        { id: "c1", record: "boundary", field: "owned", old: first, new: next, at: NOW },
+        { id: "c2", record: "boundary", field: "owned", old: second, new: null, at: NOW },
+      ],
+    ]);
+    expect(
+      tagged(
+        await failureOf(
+          boundaryReplace(cfg, "app", {
+            from: next,
+            to: join(next, "missing"),
+            adjacent: false,
+            json: false,
+            editedAt: NOW,
+          }),
+        ),
+      ),
+    ).toEqual({ tag: "Refused", message: `${join(next, "missing")} does not exist` });
   });
 
   it("drops a path's checkouts when the path leaves the owned Boundary", async () => {

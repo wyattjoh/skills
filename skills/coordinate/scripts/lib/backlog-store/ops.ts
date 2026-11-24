@@ -1,5 +1,7 @@
 import {
   canStartItem,
+  decisionKey,
+  isEditableDecision,
   questionOf,
   type Ask,
   type Backlog,
@@ -10,6 +12,7 @@ import {
   type Item,
   type ItemStatus,
   type Policy,
+  type RecordEdit,
 } from "./schema.ts";
 
 /**
@@ -354,14 +357,6 @@ export type ItemUpdate = {
  */
 export const answerDecision = (question: string, answer: string): string =>
   `Re "${question}": ${answer}`;
-
-/**
- * Whether a decision records the answer to an ask, so the watcher can wake the coordinator on it.
- * @param text A decision's text; a Markdown decision has none.
- * @returns True for a decision `answerDecision` wrote.
- */
-export const isAnswer = (text: string | undefined): text is string =>
-  text !== undefined && /^Re ".*": /s.test(text);
 
 /**
  * Read the reserved Discuss answer form, or return undefined for a real answer.
@@ -1005,6 +1000,239 @@ export const setFocus = (
   if (problem) return { ok: false, reason: problem };
   const focus = input.focus.trim();
   return { ok: true, backlog: { ...rest, focus }, value: focus };
+};
+
+/**
+ * How many undelivered edits a document keeps; the oldest drop past this, so a domain whose
+ * coordinator never runs does not grow without bound.
+ */
+export const RETAINED_EDITS = 100;
+
+/**
+ * Record a change the user made from outside every Herdr terminal, for the watcher's `edited`
+ * event, with the next never-reused id.
+ * @param backlog The document after the change.
+ * @param edit What changed, without its id.
+ * @returns The document with the pending edit appended.
+ */
+export const recordEdit = (backlog: Backlog, edit: Omit<RecordEdit, "id">): Backlog => {
+  const next = backlog.nextEditId ?? 1;
+  const edits = [...(backlog.edits ?? []), { id: `c${next}`, ...edit }];
+  return {
+    ...backlog,
+    edits: edits.slice(Math.max(0, edits.length - RETAINED_EDITS)),
+    nextEditId: next + 1,
+  };
+};
+
+/**
+ * Drop delivered edits by id; the key goes away with the last one. Ids not pending are ignored.
+ * @param backlog Current document.
+ * @param ids The delivered edits' ids.
+ * @returns The next document and how many edits it dropped.
+ */
+export const clearEdits = (backlog: Backlog, ids: readonly string[]): OpResult<number> => {
+  const gone = new Set(ids);
+  const pending = backlog.edits ?? [];
+  const kept = pending.filter((edit) => !gone.has(edit.id));
+  if (kept.length === pending.length) return { ok: true, backlog, value: 0 };
+  const rest = without(backlog, "edits");
+  return {
+    ok: true,
+    backlog: kept.length === 0 ? rest : { ...rest, edits: kept },
+    value: pending.length - kept.length,
+  };
+};
+
+/**
+ * One field's change, before and after, for the caller to record as a pending edit.
+ */
+export type FieldChange = { old: string | null; new: string | null };
+
+const blockMarkdown = (flag: string, value: string): string | { problem: string } =>
+  value.trim() === "" ? { problem: `${flag} is empty` } : trimMarkdown(value);
+
+/**
+ * Edit an item's title (one plain line: titles have no Markdown form) or, on a closed item, its
+ * outcome (Markdown, replacing the plain text).
+ * @param backlog Current document.
+ * @param input Item id, which field, and the new value.
+ * @returns The next document, the item, and the change.
+ */
+export const editItem = (
+  backlog: Backlog,
+  input: { id: string; field: "title" | "outcome"; value: string },
+): OpResult<{ item: Item; change: FieldChange }> => {
+  const found = backlog.items.find((item) => item.id === input.id);
+  if (!found) return { ok: false, reason: `no item ${input.id} in ${backlog.domain}` };
+  let item: Item;
+  let change: FieldChange;
+  if (input.field === "title") {
+    const problem = oneLine("--title", input.value);
+    if (problem) return { ok: false, reason: problem };
+    item = { ...found, title: input.value.trim() };
+    change = { old: found.title, new: item.title };
+  } else {
+    if (!isClosed(found.status))
+      return {
+        ok: false,
+        reason: `${input.id} is ${found.status}; only a closed item has an outcome`,
+      };
+    const markdown = blockMarkdown("--outcome-md", input.value);
+    if (typeof markdown !== "string") return { ok: false, reason: markdown.problem };
+    item = { ...found, outcome: null, outcomeMarkdown: markdown };
+    change = { old: proseOf(found.outcome, found.outcomeMarkdown), new: markdown };
+  }
+  return {
+    ok: true,
+    backlog: {
+      ...backlog,
+      items: backlog.items.map((entry) => (entry.id === item.id ? item : entry)),
+    },
+    value: { item, change },
+  };
+};
+
+const proseOf = (text: string | null | undefined, markdown: string | undefined): string | null =>
+  markdown !== undefined && markdown !== ""
+    ? markdown
+    : text === undefined || text === ""
+      ? null
+      : text;
+
+/**
+ * Replace (with Markdown, keeping its date) or delete one of an item's decisions, addressed by
+ * `decisionKey`. A key that no longer matches the stored entry is refused as stale, so two
+ * writers cannot change the wrong decision. Answer and discussion records are read-only, and a
+ * waiting-user item keeps the decision it waits on when it has no ask.
+ * @param backlog Current document.
+ * @param input Item id, the decision's key, and its new Markdown, or null to delete it.
+ * @returns The next document, the item, and the change.
+ */
+export const editDecision = (
+  backlog: Backlog,
+  input: { id: string; key: string; markdown: string | null },
+): OpResult<{ item: Item; change: FieldChange }> => {
+  const found = backlog.items.find((item) => item.id === input.id);
+  if (!found) return { ok: false, reason: `no item ${input.id} in ${backlog.domain}` };
+  const index = Number(/^(\d+):/.exec(input.key)?.[1] ?? Number.NaN);
+  const entry = Number.isInteger(index) ? found.decided[index] : undefined;
+  if (entry === undefined || decisionKey(entry, index) !== input.key)
+    return {
+      ok: false,
+      reason: `${input.id} has no decision ${input.key}; it changed since it was read, so reload and try again (its decisions now: ${
+        found.decided.map((current, at) => decisionKey(current, at)).join(", ") || "none"
+      })`,
+    };
+  if (!isEditableDecision(entry))
+    return {
+      ok: false,
+      reason: `decision ${input.key} on ${input.id} records an answer or discussion request, which stays as recorded`,
+    };
+  const old = proseOf(entry.text, entry.markdown);
+  let decided: Item["decided"];
+  let after: string | null;
+  if (input.markdown === null) {
+    decided = found.decided.filter((_entry, at) => at !== index);
+    if (found.status === "waiting-user" && found.ask === null && decided.length === 0)
+      return {
+        ok: false,
+        reason: `${input.id} is waiting-user on this decision with no ask; change its status before deleting it`,
+      };
+    after = null;
+  } else {
+    const markdown = blockMarkdown("--md", input.markdown);
+    if (typeof markdown !== "string") return { ok: false, reason: markdown.problem };
+    decided = found.decided.map((current, at) =>
+      at === index ? { markdown, at: current.at } : current,
+    );
+    after = markdown;
+  }
+  const item: Item = { ...found, decided };
+  return {
+    ok: true,
+    backlog: {
+      ...backlog,
+      items: backlog.items.map((current) => (current.id === item.id ? item : current)),
+    },
+    value: { item, change: { old, new: after } },
+  };
+};
+
+/**
+ * Edit a finding's title (one plain line), detail (Markdown), or, on a closed finding, its
+ * outcome (Markdown), each Markdown value replacing the plain text.
+ * @param backlog Current document.
+ * @param input Finding id, which field, and the new value.
+ * @returns The next document, the finding, and the change.
+ */
+export const editFinding = (
+  backlog: Backlog,
+  input: { id: string; field: "title" | "detail" | "outcome"; value: string },
+): OpResult<{ finding: Finding; change: FieldChange }> => {
+  const found = backlog.findings.find((finding) => finding.id === input.id);
+  if (!found) return { ok: false, reason: `no finding ${input.id} in ${backlog.domain}` };
+  let finding: Finding;
+  let change: FieldChange;
+  if (input.field === "title") {
+    const problem = oneLine("--title", input.value);
+    if (problem) return { ok: false, reason: problem };
+    finding = { ...found, title: input.value.trim() };
+    change = { old: found.title, new: finding.title };
+  } else if (input.field === "detail") {
+    const markdown = blockMarkdown("--detail-md", input.value);
+    if (typeof markdown !== "string") return { ok: false, reason: markdown.problem };
+    finding = { ...found, detail: null, detailMarkdown: markdown };
+    change = { old: proseOf(found.detail, found.detailMarkdown), new: markdown };
+  } else {
+    if (found.status === "open")
+      return { ok: false, reason: `${input.id} is open; only a closed finding has an outcome` };
+    const markdown = blockMarkdown("--outcome-md", input.value);
+    if (typeof markdown !== "string") return { ok: false, reason: markdown.problem };
+    finding = { ...found, outcome: null, outcomeMarkdown: markdown };
+    change = { old: proseOf(found.outcome, found.outcomeMarkdown), new: markdown };
+  }
+  return {
+    ok: true,
+    backlog: {
+      ...backlog,
+      findings: backlog.findings.map((entry) => (entry.id === finding.id ? finding : entry)),
+    },
+    value: { finding, change },
+  };
+};
+
+/**
+ * Replace a Boundary path in place, keeping its position and, for an owned path, its checkouts.
+ * The new path must not already be in either list.
+ * @param backlog Current document.
+ * @param input Which list, the path now listed, and the absolute path to list instead.
+ * @returns The next document.
+ */
+export const replaceBoundary = (
+  backlog: Backlog,
+  input: { list: BoundaryList; from: string; to: string },
+): OpResult<null> => {
+  if (!backlog.boundary[input.list].includes(input.from))
+    return { ok: false, reason: `${input.from} is not in the ${input.list} Boundary` };
+  const problem = boundaryPath(input.to);
+  if (problem) return { ok: false, reason: problem };
+  if (input.to === input.from) return { ok: true, backlog, value: null };
+  if (backlog.boundary.owned.includes(input.to) || backlog.boundary.adjacent.includes(input.to))
+    return { ok: false, reason: `${input.to} is already in the Boundary` };
+  const paths = backlog.boundary[input.list].map((path) => (path === input.from ? input.to : path));
+  const checkouts = { ...backlog.boundary.checkouts };
+  const moved = checkouts[input.from];
+  delete checkouts[input.from];
+  if (moved !== undefined) checkouts[input.to] = moved;
+  return {
+    ok: true,
+    backlog: {
+      ...backlog,
+      boundary: withCheckouts({ ...backlog.boundary, [input.list]: paths }, checkouts),
+    },
+    value: null,
+  };
 };
 
 /**

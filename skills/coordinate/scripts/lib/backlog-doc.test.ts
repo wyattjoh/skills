@@ -16,7 +16,7 @@ import {
 import { resolveConfig } from "./config.ts";
 import { cliEnv, failureOf, runWith, tempDir } from "./fixture.ts";
 import { domainOfCaller, Refused } from "./fleet.ts";
-import { FINDING_DETAIL_SHAPE, validateBacklog } from "./backlog-store/schema.ts";
+import { decisionKey, FINDING_DETAIL_SHAPE, validateBacklog } from "./backlog-store/schema.ts";
 import { start } from "./lifecycle.ts";
 import { fakeProc, ok } from "./proc.ts";
 import { domainStatus } from "./status.ts";
@@ -2209,11 +2209,118 @@ describe("coordinator-only mutations", () => {
     const others = mutations().filter(
       ([group, verb]) =>
         !(group === "item" && verb === "close") &&
-        !(group === "finding" && (verb === "close" || verb === "promote")),
+        !(group === "finding" && (verb === "close" || verb === "promote")) &&
+        !(group === "backlog" && verb === "focus"),
     );
     expect(others.map((args) => spawn(outside, [...args, "--domain", "app"])[0])).toEqual(
       others.map(() => 2),
     );
+    expect(readFileSync(path, "utf8")).toBe(before);
+  });
+
+  it("accepts the panel's edits from outside a terminal and records each for the watcher", async () => {
+    const { state, path } = await prepared();
+    const { HC_TERMINAL_ID: _unset, ...outside } = cliEnv(state, COORDINATOR);
+    const inside = cliEnv(state, COORDINATOR);
+    expect(
+      spawn(inside, ["item", "update", "i1", "--decided-md", "api only", "--domain", "app"])[0],
+    ).toBe(0);
+    expect(
+      spawn(inside, ["backlog", "policy", "add", "--md", "ship it", "--domain", "app"])[0],
+    ).toBe(0);
+    const key = decisionKey(read(path).items[0].decided[0], 0);
+    const runs = [
+      ["item", "edit", "i1", "--title", "fix signup"],
+      ["item", "edit", "i1", "--decision", key, "--md", "api **and** cli"],
+      ["finding", "edit", "f2", "--detail-md", "fails **often**"],
+      ["backlog", "policy", "replace", "p1", "--md", "ship it **now**"],
+      ["backlog", "focus", "--md", "login v2"],
+    ].map((args) => spawn(outside, [...args, "--domain", "app"]));
+    expect(runs.map(([code]) => code)).toEqual([0, 0, 0, 0, 0]);
+    const doc = read(path);
+    expect(
+      doc.edits.map((edit: Record<string, unknown>) => [
+        edit.id,
+        edit.record,
+        edit.field,
+        edit.old,
+        edit.new,
+      ]),
+    ).toEqual([
+      ["c1", "i1", "title", "fix login", "fix signup"],
+      ["c2", "i1", "decision", "api only", "api **and** cli"],
+      ["c3", "f2", "detail", doc.edits[2].old, "fails **often**"],
+      ["c4", "p1", "policy", "ship it", "ship it **now**"],
+      ["c5", "focus", "focus", null, "login v2"],
+    ]);
+    // A stale key is refused, and deleting by the live key records the delete.
+    const liveKey = decisionKey(doc.items[0].decided[0], 0);
+    expect(
+      spawn(outside, ["item", "edit", "i1", "--decision", key, "--remove", "--domain", "app"]),
+    ).toEqual([
+      1,
+      `refused: i1 has no decision ${key}; it changed since it was read, so reload and try again (its decisions now: ${liveKey})\n`,
+    ]);
+    expect(
+      spawn(outside, ["item", "edit", "i1", "--decision", liveKey, "--remove", "--domain", "app"]),
+    ).toEqual([0, `removed decision ${liveKey} from i1\n`]);
+    expect(spawn(outside, ["backlog", "policy", "rm", "p1", "--domain", "app"])[0]).toBe(0);
+    expect(
+      read(path)
+        .edits.slice(5)
+        .map((edit: Record<string, unknown>) => [edit.field, edit.new]),
+    ).toEqual([
+      ["decision", null],
+      ["policy", null],
+    ]);
+  });
+
+  it("records nothing for the coordinator's own edits, and refuses bad edit flags", async () => {
+    const { state, path } = await prepared();
+    const inside = cliEnv(state, COORDINATOR);
+    const { HC_TERMINAL_ID: _unset, ...outside } = cliEnv(state, COORDINATOR);
+    expect(
+      spawn(inside, ["item", "edit", "i1", "--title", "fix signup", "--domain", "app"]),
+    ).toEqual([0, "edited title of i1: fix signup\n"]);
+    expect(read(path).edits).toBe(undefined);
+    const before = readFileSync(path, "utf8");
+    expect([
+      spawn(outside, [
+        "item",
+        "edit",
+        "i1",
+        "--title",
+        "a",
+        "--outcome-md",
+        "b",
+        "--domain",
+        "app",
+      ]),
+      spawn(outside, ["item", "edit", "i1", "--decision", "0:x", "--domain", "app"]),
+      spawn(outside, ["item", "edit", "i1", "--outcome-md", "done", "--domain", "app"]),
+      spawn(outside, ["finding", "edit", "f2", "--domain", "app"]),
+      spawn(outside, ["item", "edit", "i1", "--title", "x"]),
+    ]).toEqual([
+      [1, "refused: pass exactly one of --title, --outcome-md or --decision\n"],
+      [1, "refused: --decision takes exactly one of --md or --remove, and they need --decision\n"],
+      [1, "refused: i1 is open; only a closed item has an outcome\n"],
+      [1, "refused: pass exactly one of --title, --detail-md or --outcome-md\n"],
+      [
+        1,
+        "refused: a backlog change from outside a Herdr terminal names its domain: pass --domain\n",
+      ],
+    ]);
+    expect(readFileSync(path, "utf8")).toBe(before);
+  });
+
+  it("refuses an edit from a delegate terminal, even with --domain", async () => {
+    const { state, path } = await prepared();
+    const before = readFileSync(path, "utf8");
+    const env = cliEnv(state, { "fleet.domain": "app", "fleet.session": "s-parent" });
+    expect(spawn(env, ["item", "edit", "i1", "--title", "x", "--domain", "app"])).toEqual([
+      1,
+      "refused: only a coordinator changes the backlog, and terminal t1 is not labelled as one; a delegate records what it notices with coordinate finding add\n",
+    ]);
     expect(readFileSync(path, "utf8")).toBe(before);
   });
 
