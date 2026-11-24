@@ -197,6 +197,20 @@ describe("herdr-doc capacity claims across machines", () => {
     await run(strix.release(stale));
     expect(claimsOf(cores).i1?.token).toBe(taken.token);
   });
+
+  test("lists another machine's claim as held until it expires", async () => {
+    const cores = fakeDocCores("strix", { homebase: "up" });
+    const clock = { now: Date.parse("2026-11-23T10:00:00.000Z") };
+    await run(coordinator(cores, "strix", clock).claim("app", "i1"));
+    const finbar = coordinator(cores, "finbar", clock);
+    clock.now += CLAIM_TTL_MS - 1;
+    const before = await run(finbar.heldClaims(["app"]));
+    clock.now += 1;
+    expect([before, await run(finbar.heldClaims(["app"]))]).toEqual([
+      ["herdr-doc://homebase/ct.k.app#i1"],
+      [],
+    ]);
+  });
 });
 
 describe("herdr-doc store", () => {

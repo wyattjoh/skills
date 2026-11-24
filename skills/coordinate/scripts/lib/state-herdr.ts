@@ -510,7 +510,7 @@ export const herdrStore = (options: HerdrStoreOptions): StateStore => {
         const name = `${prefix}k.${domains[position] ?? ""}`;
         if ("error" in doc) return [at(name)];
         return Object.entries(claimsOf(doc.value))
-          .filter(([, held]) => held.host !== hostname() || ownerIsLive(held.pid))
+          .filter(([, held]) => claimHeld(held))
           .map(([item]) => `${at(name)}#${item}`);
       }),
     );
