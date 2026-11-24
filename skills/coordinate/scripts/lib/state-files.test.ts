@@ -22,6 +22,8 @@ storeConformance("files", async () => {
       await writeFile(path, JSON.stringify(value));
     },
     offline: undefined,
+    // Two coordinators on this host share the state directory; mkdir decides the race.
+    rivals: () => [filesStore(stateDir), filesStore(stateDir)],
   };
 });
 

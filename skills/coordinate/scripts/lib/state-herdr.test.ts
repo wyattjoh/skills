@@ -6,7 +6,7 @@ import { tempDir } from "./fixture.ts";
 import { hcConnectTransport, type DocRequest, type DocTransport } from "./herdr-docs.ts";
 import { fakeDocCores, memoryDocTransport, type FakeDocCores } from "./herdr-docs-fake.ts";
 import { storeConformance } from "./state-store-conformance.ts";
-import { herdrStore } from "./state-herdr.ts";
+import { CLAIM_TTL_MS, herdrStore } from "./state-herdr.ts";
 import { keys, type StateKey, type StateStore } from "./state-store.ts";
 
 const noRemote = () => Effect.die(new Error("this test touches no remote archive"));
@@ -47,6 +47,40 @@ const fakeStore = (
   };
 };
 
+/**
+ * A transport that holds the reply to the first claims-document reads until `parties` callers have
+ * read, so rival coordinators all read the same claims before any of them writes.
+ * @param inner The transport to pass the requests to.
+ * @param parties How many first reads to gather.
+ * @returns The transport.
+ */
+const lockstep = (inner: DocTransport, parties = 2): DocTransport => {
+  let waiting: Array<() => void> = [];
+  let open = false;
+  return (requests) => {
+    const claimRead = requests.some(
+      (request) => request.method === "doc.get" && request.params.name.includes(".k."),
+    );
+    if (!claimRead || open) return inner(requests);
+    // Read first, then hold the reply, so every party's read lands before any party writes.
+    return Effect.flatMap(inner(requests), (replies) =>
+      Effect.as(
+        Effect.promise(
+          () =>
+            new Promise<void>((resolve) => {
+              waiting.push(resolve);
+              if (waiting.length < parties) return;
+              open = true;
+              for (const release of waiting) release();
+              waiting = [];
+            }),
+        ),
+        replies,
+      ),
+    );
+  };
+};
+
 const put = async (store: StateStore, key: StateKey, value: unknown) =>
   run(store.write(key, value, (await run(store.read(key))).version));
 
@@ -64,10 +98,25 @@ storeConformance(
       self: Effect.succeed("strix"),
       stateDir: tempDir("coordinate-herdr-other-"),
     });
+    const coordinatorOn = (self: string, host: string, transport: DocTransport) =>
+      herdrStore({
+        home: "homebase",
+        prefix: "ct.",
+        appendRemote: noRemote,
+        readRemote: noRemote,
+        transport,
+        self: Effect.succeed(self),
+        host,
+        stateDir: tempDir("coordinate-herdr-rival-"),
+      });
     return {
       store,
       interfere: async (key, value) => {
         await put(other, key, value);
+      },
+      rivals: () => {
+        const shared = lockstep(memoryDocTransport(cores));
+        return [coordinatorOn("strix", "strix", shared), coordinatorOn("finbar", "finbar", shared)];
       },
       offline: {
         home: "homebase",
@@ -79,6 +128,76 @@ storeConformance(
   },
   { offline: true },
 );
+
+const claimsOf = (cores: FakeDocCores): Record<string, Record<string, unknown>> =>
+  (cores.docs.homebase?.["ct.k.app"]?.value as { claims?: Record<string, Record<string, unknown>> })
+    ?.claims ?? {};
+
+describe("herdr-doc capacity claims across machines", () => {
+  const coordinator = (cores: FakeDocCores, host: string, clock: { now: number }) =>
+    herdrStore({
+      home: "homebase",
+      prefix: "ct.",
+      appendRemote: noRemote,
+      readRemote: noRemote,
+      transport: memoryDocTransport(cores),
+      self: Effect.succeed(host),
+      host,
+      now: () => clock.now,
+      stateDir: tempDir("coordinate-herdr-claim-"),
+    });
+
+  test("a claim held from another machine refuses until it expires, then another machine takes it", async () => {
+    const cores = fakeDocCores("strix", { homebase: "up" });
+    const clock = { now: Date.parse("2026-11-23T10:00:00.000Z") };
+    const strix = coordinator(cores, "strix", clock);
+    const finbar = coordinator(cores, "finbar", clock);
+    await run(strix.claim("app", "i1"));
+    clock.now += CLAIM_TTL_MS - 1;
+    const busy = await fail(finbar.claim("app", "i1"));
+    expect([busy._tag, busy.message]).toEqual([
+      "ClaimBusy",
+      "queued item is already being retried (pid " +
+        process.pid +
+        " on strix, until 2026-11-23T10:15:00.000Z)",
+    ]);
+    clock.now += 1;
+    const taken = await run(finbar.claim("app", "i1"));
+    expect(claimsOf(cores)).toEqual({
+      i1: {
+        token: taken.token,
+        pid: process.pid,
+        host: "finbar",
+        expires: Date.parse("2026-11-23T10:30:00.000Z"),
+      },
+    });
+  });
+
+  test("a claim another machine left without an expiry is taken over", async () => {
+    const cores = fakeDocCores("strix", { homebase: "up" });
+    cores.docs.homebase = {
+      "ct.k.app": {
+        value: { claims: { i1: { token: "old", pid: 1, host: "strix" } } },
+        version: 1,
+      },
+    };
+    const clock = { now: Date.parse("2026-11-23T10:00:00.000Z") };
+    const taken = await run(coordinator(cores, "finbar", clock).claim("app", "i1"));
+    expect(taken.location).toBe("herdr-doc://homebase/ct.k.app#i1");
+  });
+
+  test("the expired claim's first owner does not release the new owner's claim", async () => {
+    const cores = fakeDocCores("strix", { homebase: "up" });
+    const clock = { now: Date.parse("2026-11-23T10:00:00.000Z") };
+    const strix = coordinator(cores, "strix", clock);
+    const finbar = coordinator(cores, "finbar", clock);
+    const stale = await run(strix.claim("app", "i1"));
+    clock.now += CLAIM_TTL_MS;
+    const taken = await run(finbar.claim("app", "i1"));
+    await run(strix.release(stale));
+    expect(claimsOf(cores).i1?.token).toBe(taken.token);
+  });
+});
 
 describe("herdr-doc store", () => {
   test("keeps each kind under the prefix: one document per backlog and queue, an index of domains, and ended records in shards", async () => {
@@ -265,11 +384,24 @@ storeConformance(
       self: Effect.succeed("local-core"),
       stateDir: tempDir("coordinate-herdr-real-other-"),
     });
+    const shared = lockstep(recording);
+    const rival = (host: string) =>
+      herdrStore({
+        home: "local-core",
+        prefix: `${prefix}${runIndex.toString(36)}.`,
+        appendRemote: noRemote,
+        readRemote: noRemote,
+        transport: shared,
+        self: Effect.succeed("local-core"),
+        host,
+        stateDir: tempDir("coordinate-herdr-real-rival-"),
+      });
     return {
       store,
       interfere: async (key, value) => {
         await put(other, key, value);
       },
+      rivals: () => [rival("sim-a"), rival("sim-b")],
       offline: undefined,
     };
   },

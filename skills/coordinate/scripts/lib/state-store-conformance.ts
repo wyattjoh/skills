@@ -16,6 +16,11 @@ export type ConformanceBackend = {
    * For a backend with a home that can go away: its name, and a way to make it unreachable.
    */
   offline: { home: string; cut: () => void } | undefined;
+  /**
+   * Two coordinators over the same shared state, arranged where the backend can so that both read
+   * a claim before either writes one.
+   */
+  rivals: () => [StateStore, StateStore];
 };
 
 const run = <A, E>(effect: Effect.Effect<A, E>): Promise<A> => Effect.runPromise(effect);
@@ -211,6 +216,28 @@ export const storeConformance = (
           ),
         );
         expect((await run(store.read(key))).value).toEqual({ entries: ["i1", "i2"] });
+      });
+    });
+
+    describe("capacity claim race", () => {
+      test("two coordinators claiming the same queue slot at once never both succeed", async () => {
+        const { rivals, store } = await make();
+        const [first, second] = rivals();
+        const outcomes = await Promise.all(
+          [first, second].map((coordinator) =>
+            run(
+              coordinator.claim("app", "i1").pipe(
+                Effect.map((claim) => ({ won: true as const, claim })),
+                Effect.catchTag("ClaimBusy", () => Effect.succeed({ won: false as const })),
+              ),
+            ),
+          ),
+        );
+        expect(outcomes.map((outcome) => outcome.won).toSorted()).toEqual([false, true]);
+        const winner = outcomes.findIndex((outcome) => outcome.won);
+        const held = outcomes[winner];
+        if (held?.won) await run([first, second][winner]!.release(held.claim));
+        await run(store.release(await run(store.claim("app", "i1"))));
       });
     });
 

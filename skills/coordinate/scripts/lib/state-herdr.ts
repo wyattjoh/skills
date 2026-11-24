@@ -31,6 +31,12 @@ export const ENDED_SHARDS = 8;
 export const PRODUCTION_PREFIX = "cs.";
 
 /**
+ * How long a capacity claim stays held when its owner is on another machine, where its pid cannot
+ * be checked. A queued retry holds its claim only while it launches one delegate.
+ */
+export const CLAIM_TTL_MS = 15 * 60_000;
+
+/**
  * What a herdr-doc store needs.
  */
 export type HerdrStoreOptions = {
@@ -50,6 +56,14 @@ export type HerdrStoreOptions = {
    * This core's Herdr machine name, read once; documents go to `on: home` only when it differs.
    */
   self: Effect.Effect<string, { message: string }>;
+  /**
+   * This machine's OS hostname, recorded in the claims it takes (default `hostname()`).
+   */
+  host?: string;
+  /**
+   * The clock claim expiries are set and checked by (default `Date.now`).
+   */
+  now?: () => number;
   /**
    * The local state directory: session state and the wiki lint clock stay files here, and so do
    * archives when this machine is the home.
@@ -100,7 +114,7 @@ const domainsOf = (value: unknown): string[] | undefined => {
     : undefined;
 };
 
-type Claim = { token: string; pid: number; host: string };
+type Claim = { token: string; pid: number; host: string; expires?: number };
 
 const claimsOf = (value: unknown): Record<string, Claim> =>
   ((value as { claims?: Record<string, Claim> } | null)?.claims ?? {}) as Record<string, Claim>;
@@ -131,6 +145,14 @@ export const herdrStore = (options: HerdrStoreOptions): StateStore => {
   const { home, prefix, transport, stateDir } = options;
   const local = filesStore(stateDir);
   const index = `${prefix}domains`;
+  const host = options.host ?? hostname();
+  const now = options.now ?? Date.now;
+  // On this host the owner's pid says whether it still runs; from another host only the expiry
+  // can, and a claim without one is taken over.
+  const claimHeld = (current: Claim): boolean =>
+    current.host === host
+      ? ownerIsLive(current.pid)
+      : typeof current.expires === "number" && now() < current.expires;
 
   const isLocal = (key: StateKey) => key.kind === "session" || key.kind === "lint";
 
@@ -428,13 +450,16 @@ export const herdrStore = (options: HerdrStoreOptions): StateStore => {
           return yield* new ClaimBusy({ message: `queued launch claim is unreadable: ${where}` });
         const claims = claimsOf(doc.value);
         const current = claims[item];
-        if (current !== undefined && (current.host !== hostname() || ownerIsLive(current.pid)))
+        if (current !== undefined && claimHeld(current))
           return yield* new ClaimBusy({
-            message: `queued item is already being retried (pid ${current.pid}${current.host === hostname() ? "" : ` on ${current.host}`})`,
+            message: `queued item is already being retried (pid ${current.pid}${current.host === host ? "" : ` on ${current.host}, until ${new Date(current.expires ?? 0).toISOString()}`})`,
           });
         const token = randomUUID();
         const next = {
-          claims: { ...claims, [item]: { token, pid: process.pid, host: hostname() } },
+          claims: {
+            ...claims,
+            [item]: { token, pid: process.pid, host, expires: now() + CLAIM_TTL_MS },
+          },
         };
         const won: boolean = yield* setDoc(name, next, doc.version, where).pipe(
           Effect.as(true),
