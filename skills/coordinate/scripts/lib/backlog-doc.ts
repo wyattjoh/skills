@@ -432,9 +432,9 @@ const withEdit = <A>(
   edit: (value: A) => Omit<RecordEdit, "id" | "at">,
 ): OpResult<A> => {
   if (!applied.ok || editedAt === undefined) return applied;
-  const change = edit(applied.value);
-  if (change.old === change.new) return applied;
-  return { ...applied, backlog: recordEdit(applied.backlog, { ...change, at: editedAt }) };
+  const changed = edit(applied.value);
+  if (changed.old === changed.new) return applied;
+  return { ...applied, backlog: recordEdit(applied.backlog, { ...changed, at: editedAt }) };
 };
 
 /**

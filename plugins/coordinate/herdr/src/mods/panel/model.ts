@@ -1,10 +1,13 @@
 // What the panel shows, decided without Herdr: which domain it follows, whether that domain's
 // document is usable, and how its items group. Where the document lives is the store's paths.
 import {
+  decisionKey,
   emptyBacklog,
   ITEM_STATUSES,
   OUTSIDE_TERMINAL_STATUSES,
+  isEditableDecision,
   isRecord,
+  proseSource,
   questionOf,
   validateBacklog,
 } from "../../lib/store.ts";
@@ -1502,6 +1505,216 @@ export const promoteFindingCommand = (
   id: string,
 ): { command: string; args: string[] } =>
   panelCli(home, ["finding", "promote", "--domain", domain, "--", id]);
+
+/**
+ * A text field the Backlog panel can edit, and delete where it is a list entry: an item's title or
+ * outcome, one of its decisions (by `decisionKey`), a finding's title, detail or outcome, a policy,
+ * the domain's focus, or a Boundary path.
+ */
+export type EditTarget =
+  | { kind: "item"; id: string; field: "title" | "outcome" }
+  | { kind: "decision"; id: string; key: string }
+  | { kind: "finding"; id: string; field: "title" | "detail" | "outcome" }
+  | { kind: "policy"; id: string }
+  | { kind: "focus" }
+  | { kind: "boundary"; list: "owned" | "adjacent"; path: string };
+
+/**
+ * A target's stable key, for element ids and the panel's edit state.
+ * @param target The field.
+ * @returns The key, such as `item-i1-title` or `decision-i1-0:1a2b3c4d`.
+ */
+export const editKey = (target: EditTarget): string => {
+  switch (target.kind) {
+    case "item":
+    case "finding":
+      return `${target.kind}-${target.id}-${target.field}`;
+    case "decision":
+      return `decision-${target.id}-${target.key}`;
+    case "policy":
+      return `policy-${target.id}`;
+    case "focus":
+      return "focus";
+    case "boundary":
+      return `boundary-${target.list}-${target.path}`;
+  }
+};
+
+/**
+ * Whether a target is a list entry, so it has Delete beside Edit.
+ * @param target The field.
+ * @returns True for a decision, a policy or a Boundary path.
+ */
+export const canDeleteField = (target: EditTarget): boolean =>
+  target.kind === "decision" || target.kind === "policy" || target.kind === "boundary";
+
+/**
+ * The editable decisions of an item with their keys, in stored order: the coordinator's own, not
+ * the records of answers or discussion requests.
+ * @param item The item.
+ * @returns Each decision and its key.
+ */
+export const editableDecisions = (item: Item): { entry: Item["decided"][number]; key: string }[] =>
+  item.decided.flatMap((entry, index) =>
+    isEditableDecision(entry) ? [{ entry, key: decisionKey(entry, index) }] : [],
+  );
+
+/**
+ * A field's current source, Markdown or plain text, to open the editor with; "" for an empty
+ * focus, and undefined when the record or entry is gone.
+ * @param backlog The shown domain's document.
+ * @param target The field.
+ * @returns The text.
+ */
+export const editSource = (backlog: Backlog, target: EditTarget): string | undefined => {
+  switch (target.kind) {
+    case "item": {
+      const item = backlog.items.find((entry) => entry.id === target.id);
+      if (item === undefined) return undefined;
+      return target.field === "title"
+        ? item.title
+        : proseSource(item.outcome, item.outcomeMarkdown);
+    }
+    case "decision": {
+      const item = backlog.items.find((entry) => entry.id === target.id);
+      const found = item?.decided.find((entry, index) => decisionKey(entry, index) === target.key);
+      return found === undefined ? undefined : proseSource(found.text, found.markdown);
+    }
+    case "finding": {
+      const finding = backlog.findings.find((entry) => entry.id === target.id);
+      if (finding === undefined) return undefined;
+      if (target.field === "title") return finding.title;
+      return target.field === "detail"
+        ? proseSource(finding.detail, finding.detailMarkdown)
+        : proseSource(finding.outcome, finding.outcomeMarkdown);
+    }
+    case "policy": {
+      const policy = backlog.policies.find((entry) => entry.id === target.id);
+      return policy === undefined ? undefined : proseSource(policy.text, policy.markdown);
+    }
+    case "focus":
+      return proseSource(backlog.focus, backlog.focusMarkdown);
+    case "boundary":
+      return backlog.boundary[target.list].includes(target.path) ? target.path : undefined;
+  }
+};
+
+/**
+ * Build the CLI call behind an editor's Save: `item edit`, `finding edit`, `backlog policy
+ * replace`, `backlog focus --md` or `backlog boundary replace`. Titles go as plain text, every
+ * other field as Markdown. It runs as `dismissCommand` does, so the CLI records the change for
+ * the coordinator's watcher.
+ * @param home The user's home directory.
+ * @param domain The record's domain.
+ * @param target The field.
+ * @param value The editor's text.
+ * @returns The program and its arguments for exec.
+ */
+export const editCommand = (
+  home: string,
+  domain: string,
+  target: EditTarget,
+  value: string,
+): { command: string; args: string[] } => {
+  switch (target.kind) {
+    case "item":
+      return panelCli(home, [
+        "item",
+        "edit",
+        "--domain",
+        domain,
+        target.field === "title" ? "--title" : "--outcome-md",
+        value,
+        "--",
+        target.id,
+      ]);
+    case "decision":
+      return panelCli(home, [
+        "item",
+        "edit",
+        "--domain",
+        domain,
+        "--decision",
+        target.key,
+        "--md",
+        value,
+        "--",
+        target.id,
+      ]);
+    case "finding":
+      return panelCli(home, [
+        "finding",
+        "edit",
+        "--domain",
+        domain,
+        target.field === "title" ? "--title" : `--${target.field}-md`,
+        value,
+        "--",
+        target.id,
+      ]);
+    case "policy":
+      return panelCli(home, [
+        "backlog",
+        "policy",
+        "replace",
+        "--domain",
+        domain,
+        "--md",
+        value,
+        "--",
+        target.id,
+      ]);
+    case "focus":
+      return panelCli(home, ["backlog", "focus", "--domain", domain, "--md", value]);
+    case "boundary":
+      return panelCli(home, [
+        "backlog",
+        "boundary",
+        "replace",
+        "--domain",
+        domain,
+        ...(target.list === "adjacent" ? ["--adjacent"] : []),
+        "--",
+        target.path,
+        value.trim(),
+      ]);
+  }
+};
+
+/**
+ * Build the CLI call behind a confirmed Delete: `item edit --decision <key> --remove`, `backlog
+ * policy rm` or `backlog boundary rm`; undefined for a field that is not a list entry.
+ * @param home The user's home directory.
+ * @param domain The record's domain.
+ * @param target The field.
+ * @returns The program and its arguments for exec.
+ */
+export const deleteCommand = (
+  home: string,
+  domain: string,
+  target: EditTarget,
+): { command: string; args: string[] } | undefined => {
+  switch (target.kind) {
+    case "decision":
+      return panelCli(home, [
+        "item",
+        "edit",
+        "--domain",
+        domain,
+        "--decision",
+        target.key,
+        "--remove",
+        "--",
+        target.id,
+      ]);
+    case "policy":
+      return panelCli(home, ["backlog", "policy", "rm", "--domain", domain, "--", target.id]);
+    case "boundary":
+      return boundaryCommand(home, domain, "rm", target.path, false);
+    default:
+      return undefined;
+  }
+};
 
 /**
  * Build the `coordinate finding close --dismissed` call behind a finding's Dismiss. It runs as

@@ -29,6 +29,10 @@ import {
   dismissFindingCommand,
   promoteFindingCommand,
   canTriageFinding,
+  deleteCommand,
+  editCommand,
+  editKey,
+  editSource,
   startCommand,
   statusCommand,
   statusTargets,
@@ -84,6 +88,7 @@ import type {
   DocumentState,
   DomainPage,
   DomainSummary,
+  EditTarget,
   EndedRecords,
   HarnessPolicyState,
   HarnessSelection,
@@ -119,6 +124,7 @@ import type {
   AnswerModel,
   BoundaryList,
   BoundaryModel,
+  FieldEditModel,
   FindingActionsModel,
   IdLinks,
   StartModel,
@@ -266,6 +272,15 @@ export default class Panel extends View {
   boundaryBusy = false;
   boundaryHovered: string | undefined;
   boundaryError: BoundaryModel["error"];
+  // Edit and Delete on a text field: the editor's retained text, the field it is open on, the
+  // list entry waiting on Delete?, the field whose save or delete is running, the hovered field,
+  // and the CLI's last refusal, each by domain and the field's `editKey`.
+  fieldInput: ReturnType<typeof createAnswerInput> | undefined;
+  fieldEdit: { domain: string; target: EditTarget; key: string } | undefined;
+  fieldConfirm: { domain: string; target: EditTarget; key: string } | undefined;
+  fieldRunning: { domain: string; key: string } | undefined;
+  fieldHovered: { domain: string; key: string } | undefined;
+  fieldError: { domain: string; key: string; message: string } | undefined;
   // The finding Approve or Dismiss last ran on: which one is still running, or the CLI's refusal.
   findingAction:
     | {
@@ -317,6 +332,7 @@ export default class Panel extends View {
     noteInput.on("focus", (_event, gained) => this.setNoteTyping(true, gained));
     noteInput.on("blur", (_event, lost) => this.setNoteTyping(false, lost));
     this.noteInput = noteInput;
+    this.fieldInput = createAnswerInput("");
     const boundaryInput = InputState.new({ placeholder: "Path" });
     boundaryInput.on("submit", (_event, submitted) => this.addBoundary(submitted));
     this.boundaryInput = boundaryInput;
@@ -1569,12 +1585,6 @@ export default class Panel extends View {
     this.runBoundary("add", list, path, domain, cx);
   }
 
-  removeBoundary(list: BoundaryList, path: string, cx: Context) {
-    const domain = this.target();
-    if (domain === undefined || this.boundaryBusy) return;
-    this.runBoundary("rm", list, path, domain, cx);
-  }
-
   runBoundary(action: "add" | "rm", list: BoundaryList, path: string, domain: string, cx: Context) {
     const { command, args } = boundaryCommand(home(), domain, action, path, list === "adjacent");
     this.boundaryBusy = true;
@@ -1764,6 +1774,124 @@ export default class Panel extends View {
     };
   }
 
+  // Open the editor on a field with its current Markdown or text; another field's editor, pending
+  // Delete? or refusal is dropped.
+  beginFieldEdit(target: EditTarget, cx: Context) {
+    const domain = this.target();
+    const doc =
+      domain === undefined
+        ? undefined
+        : (this.docs.get(domain) ?? (this.domain === domain ? this.doc : undefined));
+    if (domain === undefined || doc?.kind !== "loaded" || this.fieldRunning !== undefined) return;
+    const source = editSource(doc.backlog, target);
+    if (source === undefined) return;
+    this.fieldEdit = { domain, target, key: editKey(target) };
+    this.fieldConfirm = undefined;
+    this.fieldError = undefined;
+    this.fieldInput?.set_value(source);
+    this.fieldInput?.focus();
+    cx.notify();
+  }
+
+  cancelFieldEdit(cx: Context) {
+    if (this.fieldRunning !== undefined) return;
+    this.fieldEdit = undefined;
+    this.fieldConfirm = undefined;
+    this.fieldError = undefined;
+    cx.notify();
+  }
+
+  hoverField(domain: string, key: string, hovered: boolean, cx: Context) {
+    const current = this.fieldHovered;
+    const same = current?.domain === domain && current.key === key;
+    if (hovered === same) return;
+    this.fieldHovered = hovered ? { domain, key } : undefined;
+    cx.notify();
+  }
+
+  // Save the open editor's text through the CLI; the editor closes and the backlog reloads after
+  // exit 0, and stays open with the CLI's message otherwise.
+  saveFieldEdit(cx: Context) {
+    const editing = this.fieldEdit;
+    if (editing === undefined || this.fieldRunning !== undefined) return;
+    const value = this.fieldInput?.value() ?? "";
+    this.runFieldCommand(
+      editing.domain,
+      editing.key,
+      editCommand(home(), editing.domain, editing.target, value),
+      cx,
+    );
+  }
+
+  // Delete asks first: the first press shows Delete? on the entry, its Delete runs the CLI.
+  removeField(target: EditTarget, cx: Context) {
+    const domain = this.target();
+    if (domain === undefined || this.fieldRunning !== undefined) return;
+    const key = editKey(target);
+    const command = deleteCommand(home(), domain, target);
+    if (command === undefined) return;
+    if (this.fieldConfirm?.domain !== domain || this.fieldConfirm.key !== key) {
+      this.fieldConfirm = { domain, target, key };
+      this.fieldEdit = undefined;
+      this.fieldError = undefined;
+      cx.notify();
+      return;
+    }
+    this.runFieldCommand(domain, key, command, cx);
+  }
+
+  runFieldCommand(
+    domain: string,
+    key: string,
+    { command, args }: { command: string; args: string[] },
+    cx: Context,
+  ) {
+    const running = { domain, key };
+    this.fieldRunning = running;
+    this.fieldError = undefined;
+    cx.notify();
+    cx.spawn(async (task) => {
+      let error: string | undefined;
+      try {
+        const ran = await exec(command, args);
+        if (ran.code !== 0) error = answerFailure(ran);
+      } catch (failure) {
+        error = `could not run coordinate: ${String(failure)}`;
+      }
+      if (this.fieldRunning !== running) return;
+      this.fieldRunning = undefined;
+      if (error === undefined) {
+        this.fieldEdit = undefined;
+        this.fieldConfirm = undefined;
+        this.load(task, true);
+      } else {
+        this.fieldError = { domain, key, message: error };
+      }
+      task.notify();
+    });
+  }
+
+  fieldEditModel(domain: string | undefined): FieldEditModel {
+    const mine = <A extends { domain: string; key: string }>(state: A | undefined) =>
+      domain !== undefined && state?.domain === domain ? state : undefined;
+    const error = mine(this.fieldError);
+    return {
+      editing: mine(this.fieldEdit)?.key,
+      input: this.fieldInput,
+      confirming: mine(this.fieldConfirm)?.key,
+      running: mine(this.fieldRunning)?.key,
+      hovered: mine(this.fieldHovered)?.key,
+      error: error === undefined ? undefined : { key: error.key, message: error.message },
+      hover: (key, hovered, cx) => {
+        if (domain !== undefined) this.hoverField(domain, key, hovered, cx);
+      },
+      begin: (target, cx) => this.beginFieldEdit(target, cx),
+      cancel: (cx) => this.cancelFieldEdit(cx),
+      save: (cx) => this.saveFieldEdit(cx),
+      remove: (target, cx) => this.removeField(target, cx),
+    };
+  }
+
   boundaryModel(domain: string | undefined): BoundaryModel {
     const editing = this.boundaryEditing;
     const error = this.boundaryError;
@@ -1776,7 +1904,6 @@ export default class Panel extends View {
       error: domain !== undefined && error?.domain === domain ? error : undefined,
       begin: (list, cx) => this.beginBoundary(list, cx),
       cancel: (cx) => this.cancelBoundary(cx),
-      remove: (list, path, cx) => this.removeBoundary(list, path, cx),
       hover: (list, path, hovered, cx) => {
         if (domain !== undefined) this.hoverBoundary(domain, list, path, hovered, cx);
       },
@@ -2260,6 +2387,7 @@ export default class Panel extends View {
       toggleAsk: (item, index, cx) => this.toggleAsk(domain, item, index, cx),
       flow,
       boundary: this.boundaryModel(domain),
+      edit: this.fieldEditModel(domain),
       openHarnessPolicy: () => this.openHarnessPolicyDialog(domain),
     });
   }

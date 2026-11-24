@@ -3,8 +3,10 @@ import { Input, InputState } from "gpui-base";
 import {
   addFinding,
   addItem,
+  addPolicy,
   closeFinding,
   closeItem,
+  decisionKey,
   emptyBacklog,
   promoteFinding,
   requestStart,
@@ -3863,7 +3865,7 @@ test("shows each owned path's machine checkouts beside it", async () => {
   ]);
 });
 
-test("shows a hovered X on boundary rows and runs rm with the row path and domain", async () => {
+test("shows a hovered X on boundary rows and, after Delete?, runs rm with the row path and domain", async () => {
   focusDomain("alpha");
   host.files.set(
     DOC,
@@ -3875,15 +3877,24 @@ test("shows a hovered X on boundary rows and runs rm with the row path and domai
   const { ctx, render } = await mount();
   openPage(render(), "boundary", ctx.cx);
   let root = render();
-  expect(ids(root, "boundary-alpha-owned-remove-")).toEqual([]);
+  expect(ids(root, "delete-boundary-owned-")).toEqual([]);
   const hover = get(root, "boundary-alpha-owned-plugins/coordinate").styles.on_hover;
   if (typeof hover !== "function") throw new Error("boundary row has no hover handler");
   (hover as (hovering: boolean, cx: unknown) => void)(true, ctx.cx);
   root = render();
-  const remove = get(root, "boundary-alpha-owned-remove-plugins/coordinate");
+  expect(ids(root, "edit-boundary-owned-plugins/coordinate")).toEqual([
+    "edit-boundary-owned-plugins/coordinate",
+  ]);
+  const remove = get(root, "delete-boundary-owned-plugins/coordinate");
   expect((remove.nodes[0] as Node).styles.asset).toBe("mods/workspace-chrome/x.svg");
   expect(remove.calls).toContain("on_click");
   remove.click!({}, ctx.cx);
+  root = render();
+  expect([text(get(root, "delete-ask-boundary-owned-plugins/coordinate")), host.execs]).toEqual([
+    "Delete?",
+    [],
+  ]);
+  get(root, "delete-confirm-boundary-owned-plugins/coordinate").click!({}, ctx.cx);
   await settle();
   expect(host.execs).toEqual([
     {
@@ -6004,7 +6015,8 @@ test("shows a home boundary path as ~ but removes it by its full path", async ()
   if (typeof hover !== "function") throw new Error("boundary row has no hover handler");
   (hover as (hovering: boolean, cx: unknown) => void)(true, ctx.cx);
   root = render();
-  get(root, "boundary-alpha-owned-remove-/Users/test/Code/repo").click!({}, ctx.cx);
+  get(root, "delete-boundary-owned-/Users/test/Code/repo").click!({}, ctx.cx);
+  get(render(), "delete-confirm-boundary-owned-/Users/test/Code/repo").click!({}, ctx.cx);
   await settle();
   expect(host.execs.map((exec) => exec.args.slice(4))).toEqual([
     ["backlog", "boundary", "rm", "/Users/test/Code/repo", "--domain", "alpha", "--json"],
@@ -6109,4 +6121,240 @@ test("links ids in a wiki page body, and a web link still opens in the browser",
   expect(opened).toEqual(["https://x.test/"]);
   clickLink(root, "wiki-page-markdown-poll-interval", "coordinate-panel:i1", ctx.cx);
   expect(trail(render())).toBe("⌂ › alpha › i1");
+});
+
+// Edit and Delete on text fields.
+const DECIDED_AT = "2026-11-20";
+const editable = (): Backlog => {
+  let backlog: Backlog = { ...emptyBacklog("alpha", null), focus: "Ship the panel" };
+  backlog = add(backlog, "Pick a store", {
+    decided: [
+      { text: "api only", at: DECIDED_AT },
+      { markdown: "**no** ui", at: DECIDED_AT },
+      { text: 'Re "Ship it?": yes', at: DECIDED_AT },
+    ],
+  });
+  backlog = add(backlog, "Old work");
+  return close(backlog, "i2", false);
+};
+const hoverOn = (root: Node, id: string, cx: unknown) => {
+  const hover = get(root, id).styles.on_hover;
+  if (typeof hover !== "function") throw new Error(`${id} has no hover handler`);
+  (hover as (hovering: boolean, cx: unknown) => void)(true, cx);
+};
+const openEditable = async (id: string) => {
+  focusDomain("alpha");
+  host.files.set(DOC, JSON.stringify(editable()));
+  const mounted = await mount();
+  openDetail(mounted.view, id, mounted.ctx.cx);
+  return mounted;
+};
+const keyAt = (index: number) => decisionKey(editable().items[0]!.decided[index]!, index);
+
+test("a hovered coordinator decision offers Edit and Delete; an answer record and the title offer less", async () => {
+  const { ctx, render } = await openEditable("i1");
+  expect(ids(render(), "edit-")).toEqual([]);
+  hoverOn(render(), "decided-0", ctx.cx);
+  expect(ids(render(), "edit-controls-")).toEqual([`edit-controls-decision-i1-${keyAt(0)}`]);
+  expect([...ids(render(), "edit-decision-"), ...ids(render(), "delete-decision-")]).toEqual([
+    `edit-decision-i1-${keyAt(0)}`,
+    `delete-decision-i1-${keyAt(0)}`,
+  ]);
+  // The answer record is read-only: no hover handler, so no controls.
+  expect(typeof get(render(), "decided-2").styles.on_hover).toBe("undefined");
+  hoverOn(render(), "detail-title", ctx.cx);
+  expect([ids(render(), "edit-item-i1-title"), ids(render(), "delete-item-i1-title")]).toEqual([
+    ["edit-item-i1-title"],
+    [],
+  ]);
+});
+
+test("Edit opens the field's editor with its current Markdown, and Cancel closes it without a call", async () => {
+  const { ctx, view, render } = await openEditable("i1");
+  hoverOn(render(), "decided-1", ctx.cx);
+  get(render(), `edit-decision-i1-${keyAt(1)}`).click!({}, ctx.cx);
+  const key = `decision-i1-${keyAt(1)}`;
+  expect([ids(render(), `editor-${key}-`), view.fieldInput?.value()]).toEqual([
+    [`editor-${key}-field`, `editor-${key}-actions`, `editor-${key}-save`, `editor-${key}-cancel`],
+    "**no** ui",
+  ]);
+  get(render(), `editor-${key}-cancel`).click!({}, ctx.cx);
+  expect([ids(render(), `editor-${key}`), host.execs]).toEqual([[], []]);
+});
+
+test("Save runs item edit with the decision's key and the Markdown, then reloads", async () => {
+  const { ctx, view, render } = await openEditable("i1");
+  hoverOn(render(), "decided-0", ctx.cx);
+  get(render(), `edit-decision-i1-${keyAt(0)}`).click!({}, ctx.cx);
+  view.fieldInput!.set_value("api **and** cli");
+  const reads = host.reads.length;
+  get(render(), `editor-decision-i1-${keyAt(0)}-save`).click!({}, ctx.cx);
+  expect(text(get(render(), `editor-decision-i1-${keyAt(0)}-save`))).toBe("Saving…");
+  await settle();
+  expect(host.execs.map(({ command, args }) => [command, ...args])).toEqual([
+    [
+      ...cliPrefix,
+      "item",
+      "edit",
+      "--domain",
+      "alpha",
+      "--decision",
+      keyAt(0),
+      "--md",
+      "api **and** cli",
+      "--",
+      "i1",
+    ],
+  ]);
+  expect([ids(render(), "editor-"), host.reads.length > reads]).toEqual([[], true]);
+});
+
+test("a title saves as plain text and a closed item's outcome as Markdown", async () => {
+  const { ctx, view, render } = await openEditable("i2");
+  hoverOn(render(), "detail-title", ctx.cx);
+  get(render(), "edit-item-i2-title").click!({}, ctx.cx);
+  expect(view.fieldInput?.value()).toBe("Old work");
+  view.fieldInput!.set_value("Older work");
+  get(render(), "editor-item-i2-title-save").click!({}, ctx.cx);
+  await settle();
+  hoverOn(render(), "fact-outcome", ctx.cx);
+  expect(ids(render(), "delete-item-i2-outcome")).toEqual([]);
+  get(render(), "edit-item-i2-outcome").click!({}, ctx.cx);
+  expect(view.fieldInput?.value()).toBe("wrapped up");
+  view.fieldInput!.set_value("wrapped **up**");
+  get(render(), "editor-item-i2-outcome-save").click!({}, ctx.cx);
+  await settle();
+  expect(host.execs.map(({ args }) => args.slice(4))).toEqual([
+    ["item", "edit", "--domain", "alpha", "--title", "Older work", "--", "i2"],
+    ["item", "edit", "--domain", "alpha", "--outcome-md", "wrapped **up**", "--", "i2"],
+  ]);
+});
+
+test("Delete asks Delete? first and removes the decision only after its Delete", async () => {
+  const { ctx, render } = await openEditable("i1");
+  const key = `decision-i1-${keyAt(0)}`;
+  hoverOn(render(), "decided-0", ctx.cx);
+  get(render(), `delete-${key}`).click!({}, ctx.cx);
+  expect([text(get(render(), `delete-ask-${key}`)), host.execs]).toEqual(["Delete?", []]);
+  get(render(), `delete-cancel-${key}`).click!({}, ctx.cx);
+  expect(ids(render(), `delete-ask-${key}`)).toEqual([]);
+  get(render(), `delete-${key}`).click!({}, ctx.cx);
+  get(render(), `delete-confirm-${key}`).click!({}, ctx.cx);
+  await settle();
+  expect(host.execs.map(({ args }) => args.slice(4))).toEqual([
+    ["item", "edit", "--domain", "alpha", "--decision", keyAt(0), "--remove", "--", "i1"],
+  ]);
+});
+
+test("a refused save keeps the editor open and shows the CLI's message", async () => {
+  const { ctx, view, render } = await openEditable("i1");
+  const key = `decision-i1-${keyAt(0)}`;
+  hoverOn(render(), "decided-0", ctx.cx);
+  get(render(), `edit-${key}`).click!({}, ctx.cx);
+  view.fieldInput!.set_value("x");
+  host.execExit = { code: 1, stdout: "", stderr: "refused: i1 has no decision 0:x" };
+  get(render(), `editor-${key}-save`).click!({}, ctx.cx);
+  await settle();
+  host.execExit = undefined;
+  expect([text(get(render(), `edit-error-${key}`)), ids(render(), `editor-${key}-save`)]).toEqual([
+    "refused: i1 has no decision 0:x",
+    [`editor-${key}-save`],
+  ]);
+});
+
+const withRecords = (): Backlog => {
+  const policy = addPolicy(editable(), {
+    text: undefined,
+    markdown: "ship **it**",
+    at: DECIDED_AT,
+    wiki: undefined,
+  });
+  if (!policy.ok) throw new Error(policy.reason);
+  const finding = addFinding(policy.backlog, {
+    kind: "issue",
+    title: "flaky",
+    detail: "fails often",
+    path: undefined,
+    from: undefined,
+    source: undefined,
+    now: NOW,
+  });
+  if (!finding.ok) throw new Error(finding.reason);
+  return finding.backlog;
+};
+const mountRecords = async () => {
+  focusDomain("alpha");
+  host.files.set(DOC, JSON.stringify(withRecords()));
+  return mount();
+};
+
+test("the focus saves through backlog focus --md", async () => {
+  const { ctx, view, render } = await mountRecords();
+  hoverOn(render(), "focus", ctx.cx);
+  expect(ids(render(), "delete-focus")).toEqual([]);
+  get(render(), "edit-focus").click!({}, ctx.cx);
+  expect(view.fieldInput?.value()).toBe("Ship the panel");
+  view.fieldInput!.set_value("Ship **v2**");
+  get(render(), "editor-focus-save").click!({}, ctx.cx);
+  await settle();
+  expect(host.execs.map(({ args }) => args.slice(4))).toEqual([
+    ["backlog", "focus", "--domain", "alpha", "--md", "Ship **v2**"],
+  ]);
+});
+
+test("a policy saves through policy replace and deletes through policy rm after Delete?", async () => {
+  const { ctx, view, render } = await mountRecords();
+  openPage(render(), "policies", ctx.cx);
+  hoverOn(render(), "policy-p1", ctx.cx);
+  get(render(), "edit-policy-p1").click!({}, ctx.cx);
+  expect(view.fieldInput?.value()).toBe("ship **it**");
+  view.fieldInput!.set_value("ship it **now**");
+  get(render(), "editor-policy-p1-save").click!({}, ctx.cx);
+  await settle();
+  hoverOn(render(), "policy-p1", ctx.cx);
+  get(render(), "delete-policy-p1").click!({}, ctx.cx);
+  get(render(), "delete-confirm-policy-p1").click!({}, ctx.cx);
+  await settle();
+  expect(host.execs.map(({ args }) => args.slice(4))).toEqual([
+    ["backlog", "policy", "replace", "--domain", "alpha", "--md", "ship it **now**", "--", "p1"],
+    ["backlog", "policy", "rm", "--domain", "alpha", "--", "p1"],
+  ]);
+});
+
+test("a finding's detail saves through finding edit --detail-md", async () => {
+  const { ctx, view, render } = await mountRecords();
+  openPage(render(), "findings", ctx.cx);
+  get(render(), "finding-f3").click!({}, ctx.cx);
+  hoverOn(render(), "fact-detail", ctx.cx);
+  expect(ids(render(), "delete-finding-f3-detail")).toEqual([]);
+  get(render(), "edit-finding-f3-detail").click!({}, ctx.cx);
+  expect(view.fieldInput?.value()).toBe("fails often");
+  view.fieldInput!.set_value("fails **often**");
+  get(render(), "editor-finding-f3-detail-save").click!({}, ctx.cx);
+  await settle();
+  expect(host.execs.map(({ args }) => args.slice(4))).toEqual([
+    ["finding", "edit", "--domain", "alpha", "--detail-md", "fails **often**", "--", "f3"],
+  ]);
+});
+
+test("a Boundary path's Edit saves through boundary replace", async () => {
+  focusDomain("alpha");
+  host.files.set(
+    DOC,
+    JSON.stringify({
+      ...emptyBacklog("alpha", null),
+      boundary: { owned: [], adjacent: ["/repo"] },
+    }),
+  );
+  const { ctx, view, render } = await mount();
+  openPage(render(), "boundary", ctx.cx);
+  hoverOn(render(), "boundary-alpha-adjacent-/repo", ctx.cx);
+  get(render(), "edit-boundary-adjacent-/repo").click!({}, ctx.cx);
+  expect(view.fieldInput?.value()).toBe("/repo");
+  view.fieldInput!.set_value(" /repo2 ");
+  get(render(), "editor-boundary-adjacent-/repo-save").click!({}, ctx.cx);
+  await settle();
+  expect(host.execs.map(({ args }) => args.slice(4))).toEqual([
+    ["backlog", "boundary", "replace", "--domain", "alpha", "--adjacent", "--", "/repo", "/repo2"],
+  ]);
 });

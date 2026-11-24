@@ -79,8 +79,11 @@ import {
   GROUP_LABELS,
   OUTBOX_LABEL,
   WIKI_LABEL,
+  canDeleteField,
   canDismissItem,
   chosenAnswer,
+  editKey,
+  editableDecisions,
   delegateLabel,
   delegateLine,
   findingStatusLabel,
@@ -105,6 +108,7 @@ import type {
   DelegateState,
   DocumentState,
   DomainSummary,
+  EditTarget,
   ItemGroup,
   ItemOrder,
   ListingState,
@@ -195,6 +199,8 @@ export type PanelModel = {
   openWaiting: (item: Item, cx: Context) => void;
   // Boundary paths can be edited on either card.
   boundary: BoundaryModel;
+  // Edit and Delete on the shown domain's text fields.
+  edit: FieldEditModel;
   openHarnessPolicy: (cx: Context) => void;
   openDomain: (domain: string, cx: Context) => void;
 };
@@ -317,6 +323,26 @@ export type AnswerFlowModel = {
   skip: (cx: Context) => void;
 };
 
+/**
+ * Edit and Delete on a record's text fields, each field named by its `editKey`: the field being
+ * edited and its editor's state, the list entry waiting on its Delete? confirmation, the field
+ * whose save or delete is running, the hovered field (its controls show), the CLI's last refusal,
+ * and what each control does.
+ */
+export type FieldEditModel = {
+  editing: string | undefined;
+  input: AnswerInputState | undefined;
+  confirming: string | undefined;
+  running: string | undefined;
+  hovered: string | undefined;
+  error: { key: string; message: string } | undefined;
+  hover: (key: string, hovered: boolean, cx: Context) => void;
+  begin: (target: EditTarget, cx: Context) => void;
+  cancel: (cx: Context) => void;
+  save: (cx: Context) => void;
+  remove: (target: EditTarget, cx: Context) => void;
+};
+
 export type BoundaryList = "owned" | "adjacent";
 
 export type BoundaryModel = {
@@ -330,7 +356,6 @@ export type BoundaryModel = {
     | undefined;
   begin: (list: BoundaryList, cx: Context) => void;
   cancel: (cx: Context) => void;
-  remove: (list: BoundaryList, path: string, cx: Context) => void;
   hover: (list: BoundaryList, path: string, hovered: boolean, cx: Context) => void;
 };
 
@@ -439,10 +464,12 @@ const focusHeader = (t: Theme, links: IdLinks, focus: Prose | null): Element =>
         : proseChild(t, "focus-markdown", focus, links, { inline: true }),
     );
 
-const focusCard = (t: Theme, links: IdLinks, focus: Prose | null): Element =>
+const focusCard = (t: Theme, links: IdLinks, focus: Prose | null, edit: FieldEditModel): Element =>
   cardSection(
     cardHeader(t, "focus-header", "Focus"),
-    card(t, "focus-card").child(focusHeader(t, links, focus)),
+    card(t, "focus-card").children(
+      editableRows(t, edit, { kind: "focus" }, focusHeader(t, links, focus)),
+    ),
   );
 
 const delegateTone = (t: Theme, state: DelegateState): Color =>
@@ -857,6 +884,127 @@ const answerField = (
     .when(input !== undefined, (el) =>
       el.child(answerInputElement(input!).w_full().text_size(TEXT.body).text_color(t.foreground)),
     );
+
+// A field's Edit and, for a list entry, Delete, shown while the row is hovered; a pending delete
+// shows its Delete? confirmation instead, and a running save or delete keeps the controls inert.
+const editControls = (
+  t: Theme,
+  edit: FieldEditModel,
+  target: EditTarget,
+  shown: boolean,
+): Element[] => {
+  const key = editKey(target);
+  const busy = edit.running !== undefined;
+  if (edit.confirming === key)
+    return [
+      small(t, t.muted, edit.running === key ? "Deleting…" : "Delete?").id(`delete-ask-${key}`),
+      button(t, {
+        id: `delete-confirm-${key}`,
+        label: "Delete",
+        onClick: busy ? undefined : (cx) => edit.remove(target, cx),
+      }),
+      button(t, {
+        id: `delete-cancel-${key}`,
+        label: "Cancel",
+        onClick: busy ? undefined : (cx) => edit.cancel(cx),
+      }),
+    ];
+  if (!shown) return [];
+  return [
+    button(t, {
+      id: `edit-${key}`,
+      label: "Edit",
+      tooltip: "Edit",
+      onClick: busy ? undefined : (cx) => edit.begin(target, cx),
+    }),
+    ...(canDeleteField(target)
+      ? [
+          button(t, {
+            id: `delete-${key}`,
+            label: "Delete",
+            icon: HERDR_ICONS.close,
+            labelled: false,
+            tooltip: "Delete",
+            onClick: busy ? undefined : (cx) => edit.remove(target, cx),
+          }),
+        ]
+      : []),
+  ];
+};
+
+const editError = (t: Theme, edit: FieldEditModel, key: string): Element[] =>
+  edit.error?.key === key
+    ? [
+        div()
+          .id(`edit-error-${key}`)
+          .text_size(TEXT.label)
+          .text_color(role(t, "ansi1"))
+          .child(edit.error.message),
+      ]
+    : [];
+
+// The open editor in place of a field: the multi-line field (the answer field's), then Save and
+// Cancel right-aligned as the answer flow's actions are, then any refusal.
+const fieldEditorRows = (t: Theme, edit: FieldEditModel, key: string): Element[] => {
+  const busy = edit.running !== undefined;
+  return [
+    detailRow(t, `editor-${key}`)
+      .flex_col()
+      .items_stretch()
+      .gap(ANSWER.gap)
+      .child(answerField(t, `editor-${key}-field`, edit.input, true))
+      .child(
+        h_flex()
+          .id(`editor-${key}-actions`)
+          .gap(ANSWER.gap)
+          .justify_end()
+          .child(
+            button(t, {
+              id: `editor-${key}-save`,
+              label: edit.running === key ? "Saving…" : "Save",
+              style: ANSWER_BUTTON_STYLE,
+              onClick: busy ? undefined : (cx) => edit.save(cx),
+            }),
+          )
+          .child(
+            button(t, {
+              id: `editor-${key}-cancel`,
+              label: "Cancel",
+              style: ANSWER_SECONDARY_BUTTON_STYLE,
+              onClick: busy ? undefined : (cx) => edit.cancel(cx),
+            }),
+          ),
+      )
+      .children(editError(t, edit, key)),
+  ];
+};
+
+// A field's display row with its hover controls at the row's end and any refusal below, or its
+// editor while it is being edited.
+const editableRows = (
+  t: Theme,
+  edit: FieldEditModel,
+  target: EditTarget,
+  row: Element,
+): Element[] => {
+  const key = editKey(target);
+  if (edit.editing === key) return fieldEditorRows(t, edit, key);
+  const controls = editControls(t, edit, target, edit.hovered === key);
+  return [
+    row
+      .on_hover((hovering, cx) => edit.hover(key, hovering, cx))
+      .when(controls.length > 0, (el) =>
+        el.child(
+          h_flex().id(`edit-controls-${key}`).flex_none().gap(BUTTON_STYLE.gap).children(controls),
+        ),
+      ),
+    ...editError(t, edit, key).map((error) => detailRow(t, `edit-error-row-${key}`).child(error)),
+  ];
+};
+
+// One element for a slot that takes a single child: the row itself, or the rows stacked.
+const oneOf = (id: string, rows: Element[]): Element =>
+  rows.length === 1 ? rows[0]! : v_flex().id(id).w_full().children(rows);
 
 const answerRows = (t: Theme, answer: AnswerModel, prefix = "ask"): Element[] => {
   const { draft } = answer;
@@ -1352,7 +1500,9 @@ const askCards = (
   return cards;
 };
 
-const decidedCard = (t: Theme, links: IdLinks, item: Item): Element[] => {
+// A coordinator's decisions have Edit and Delete; answer records stay read-only.
+const decidedCard = (t: Theme, links: IdLinks, item: Item, edit: FieldEditModel): Element[] => {
+  const keys = new Map(editableDecisions(item).map(({ entry, key }) => [entry, key]));
   const decisions = item.decided.filter((entry) => !isDiscussion(entry.text));
   return decisions.length === 0
     ? []
@@ -1361,8 +1511,8 @@ const decidedCard = (t: Theme, links: IdLinks, item: Item): Element[] => {
           t,
           "decided",
           "Decided",
-          decisions.map((entry, index) =>
-            detailRow(t, `decided-${index}`)
+          decisions.flatMap((entry, index) => {
+            const row = detailRow(t, `decided-${index}`)
               .child(
                 div().child(
                   proseChild(
@@ -1373,10 +1523,29 @@ const decidedCard = (t: Theme, links: IdLinks, item: Item): Element[] => {
                   ),
                 ),
               )
-              .child(small(t, t.dim, entry.at.slice(0, 10))),
-          ),
+              .child(small(t, t.dim, entry.at.slice(0, 10)));
+            const key = keys.get(entry);
+            return key === undefined
+              ? [row]
+              : editableRows(t, edit, { kind: "decision", id: item.id, key }, row);
+          }),
         ),
       ];
+};
+
+// A record's title row with its Edit control beside the status, then its editor and any refusal.
+const editableTitle = (
+  t: Theme,
+  edit: FieldEditModel,
+  target: EditTarget,
+  title: (controls: Element[]) => Element,
+): Element[] => {
+  const key = editKey(target);
+  const controls = editControls(t, edit, target, edit.hovered === key && edit.editing !== key);
+  return [
+    title(controls).on_hover((hovering, cx) => edit.hover(key, hovering, cx)),
+    ...(edit.editing === key ? fieldEditorRows(t, edit, key) : editError(t, edit, key)),
+  ];
 };
 
 // A delegate's labelled path: the label, then the path on its own full-width row.
@@ -1425,13 +1594,24 @@ const detailHead = (
   title: string,
   status: string,
   tone: Color,
+  controls: Element[] = [],
 ): Element =>
   titleRow(t, {
     id: `${prefix}-title`,
     trailingId: `${prefix}-status-slot`,
     identifier: id,
     title,
-    trailing: div().id(`${prefix}-status`).text_size(TEXT.label).text_color(tone).child(status),
+    trailing:
+      controls.length === 0
+        ? div().id(`${prefix}-status`).text_size(TEXT.label).text_color(tone).child(status)
+        : h_flex()
+            .id(`${prefix}-status-controls`)
+            .gap(BUTTON_STYLE.gap)
+            .items_center()
+            .children(controls)
+            .child(
+              div().id(`${prefix}-status`).text_size(TEXT.label).text_color(tone).child(status),
+            ),
   });
 
 // An item a finding names (the one it came from, or the one it was promoted into): a link to
@@ -1519,21 +1699,47 @@ const findingScreen = (t: Theme, finding: Finding, model: PanelModel): Element =
   return v_flex()
     .id("finding")
     .gap(PANEL.sectionGap)
-    .child(titleRow(t, { id: "finding-title", identifier: finding.id, title: finding.title }))
+    .children(
+      editableTitle(
+        t,
+        model.edit,
+        { kind: "finding", id: finding.id, field: "title" },
+        (controls) =>
+          titleRow(t, {
+            id: "finding-title",
+            identifier: finding.id,
+            title: finding.title,
+            ...(controls.length === 0
+              ? {}
+              : {
+                  trailingId: "finding-title-controls-slot",
+                  trailing: h_flex()
+                    .id("finding-title-controls")
+                    .gap(BUTTON_STYLE.gap)
+                    .children(controls),
+                }),
+          }),
+      ),
+    )
     .child(findingStatusCard(t, finding, promotedId, model))
     .child(
       detailCard(t, "finding-facts", "Details", [
         fact(t, "fact-kind", "Kind", [FINDING_KIND_LABELS[finding.kind]]),
-        fact(
+        ...editableRows(
           t,
-          "fact-detail",
-          "Detail",
-          proseValues(
+          model.edit,
+          { kind: "finding", id: finding.id, field: "detail" },
+          fact(
             t,
-            model.links,
-            "fact-detail-markdown",
-            finding.detail,
-            finding.detailMarkdown,
+            "fact-detail",
+            "Detail",
+            proseValues(
+              t,
+              model.links,
+              "fact-detail-markdown",
+              finding.detail,
+              finding.detailMarkdown,
+            ),
           ),
         ),
         fact(
@@ -1550,7 +1756,10 @@ const findingScreen = (t: Theme, finding: Finding, model: PanelModel): Element =
         prose(finding.outcome, finding.outcomeMarkdown) === null ||
         promotedId !== undefined
           ? []
-          : [
+          : editableRows(
+              t,
+              model.edit,
+              { kind: "finding", id: finding.id, field: "outcome" },
               fact(
                 t,
                 "fact-outcome",
@@ -1563,7 +1772,7 @@ const findingScreen = (t: Theme, finding: Finding, model: PanelModel): Element =
                   finding.outcomeMarkdown,
                 ),
               ),
-            ]),
+            )),
       ]),
     )
     .when(model.findingActions !== undefined, (el) =>
@@ -1704,14 +1913,17 @@ const detailScreen = (t: Theme, item: Item, model: PanelModel): Element =>
   v_flex()
     .id("detail")
     .gap(PANEL.sectionGap)
-    .child(
-      detailHead(
-        t,
-        "detail",
-        item.id,
-        item.title,
-        item.startRequested === undefined ? GROUP_LABELS[item.status] : "Starting",
-        role(t, item.startRequested === undefined ? STATUS_TONES[item.status] : STARTING_TONE),
+    .children(
+      editableTitle(t, model.edit, { kind: "item", id: item.id, field: "title" }, (controls) =>
+        detailHead(
+          t,
+          "detail",
+          item.id,
+          item.title,
+          item.startRequested === undefined ? GROUP_LABELS[item.status] : "Starting",
+          role(t, item.startRequested === undefined ? STATUS_TONES[item.status] : STARTING_TONE),
+          controls,
+        ),
       ),
     )
     .children(
@@ -1747,7 +1959,10 @@ const detailScreen = (t: Theme, item: Item, model: PanelModel): Element =>
           : []),
         ...(prose(item.outcome, item.outcomeMarkdown) === null
           ? []
-          : [
+          : editableRows(
+              t,
+              model.edit,
+              { kind: "item", id: item.id, field: "outcome" },
               fact(
                 t,
                 "fact-outcome",
@@ -1760,10 +1975,10 @@ const detailScreen = (t: Theme, item: Item, model: PanelModel): Element =>
                   item.outcomeMarkdown,
                 ),
               ),
-            ]),
+            )),
       ]),
     )
-    .children(decidedCard(t, model.links, item))
+    .children(decidedCard(t, model.links, item, model.edit))
     .children(delegatesCard(t, item, model.delegates.byItem.get(item.id) ?? [], model.home))
     .when(model.statusChange !== undefined || model.start !== undefined, (el) =>
       el.children(itemActionRows(t, model.statusChange, model.start)),
@@ -2357,22 +2572,30 @@ const policiesPage = (t: Theme, backlog: Backlog, model: PanelModel): Element =>
       entries.length === 0
         ? [emptyRow(t, "policies-empty", "None")]
         : pagedRows(t, "policies", entries, model, ROW.list, (entry, index) =>
-            detailRow(t, `policy-${entry.id}`)
-              .when(index === 0, (row) => row.border_t(0))
-              .child(
-                div().child(
-                  proseChild(
-                    t,
-                    `policy-${entry.id}-markdown`,
-                    prose(entry.text, entry.markdown) ?? { markdown: false, value: "" },
-                    model.links,
-                  ),
-                ),
-              )
-              .when(entry.wiki !== undefined, (row) =>
-                row.child(policyWiki(t, entry.id, entry.wiki!, model)),
-              )
-              .child(small(t, t.dim, entry.at.slice(0, 10))),
+            oneOf(
+              `policy-${entry.id}-rows`,
+              editableRows(
+                t,
+                model.edit,
+                { kind: "policy", id: entry.id },
+                detailRow(t, `policy-${entry.id}`)
+                  .when(index === 0, (row) => row.border_t(0))
+                  .child(
+                    div().child(
+                      proseChild(
+                        t,
+                        `policy-${entry.id}-markdown`,
+                        prose(entry.text, entry.markdown) ?? { markdown: false, value: "" },
+                        model.links,
+                      ),
+                    ),
+                  )
+                  .when(entry.wiki !== undefined, (row) =>
+                    row.child(policyWiki(t, entry.id, entry.wiki!, model)),
+                  )
+                  .child(small(t, t.dim, entry.at.slice(0, 10))),
+              ),
+            ),
           ),
     ),
   );
@@ -2536,11 +2759,15 @@ const boundaryCard = (
   t: Theme,
   boundary: Backlog["boundary"],
   model: BoundaryModel,
+  edit: FieldEditModel,
   home: string,
 ): Element[] => {
   const section = (list: BoundaryList, label: string, paths: string[]) => {
     const id = `boundary-${list}`;
-    const rows = paths.map((path, index) => {
+    const rows = paths.flatMap((path, index) => {
+      const target: EditTarget = { kind: "boundary", list, path };
+      const key = editKey(target);
+      if (edit.editing === key) return fieldEditorRows(t, edit, key);
       const hovered = model.hovered === `${model.domain}\\0${list}\\0${path}`;
       // An owned repo's checkouts on other machines, by machine name, beside its path.
       const checkouts = Object.entries(list === "owned" ? (boundary.checkouts?.[path] ?? {}) : {})
@@ -2555,21 +2782,14 @@ const boundaryCard = (
         title: tildePath(path, home),
         first: index === 0,
         height: ROW.list,
-        trailing: hovered
-          ? [
-              ...checkouts,
-              button(t, {
-                id: `boundary-${model.domain}-${list}-remove-${path}`,
-                label: "Remove path",
-                icon: HERDR_ICONS.close,
-                labelled: false,
-                tooltip: "Remove path",
-                onClick: model.busy ? undefined : (cx) => model.remove(list, path, cx),
-              }),
-            ]
-          : checkouts,
+        trailing: [...checkouts, ...editControls(t, edit, target, hovered)],
       });
-      return row.on_hover((hovering, cx) => model.hover(list, path, hovering, cx));
+      return [
+        row.on_hover((hovering, cx) => model.hover(list, path, hovering, cx)),
+        ...editError(t, edit, key).map((error) =>
+          detailRow(t, `edit-error-row-${key}`).child(error),
+        ),
+      ];
     });
     if (paths.length === 0)
       rows.push(
@@ -2704,7 +2924,7 @@ const domainPage = (t: Theme, backlog: Backlog, model: PanelModel): Element => {
     case "boundary":
       content = v_flex()
         .gap(PANEL.sectionGap)
-        .children(boundaryCard(t, backlog.boundary, model.boundary, model.home));
+        .children(boundaryCard(t, backlog.boundary, model.boundary, model.edit, model.home));
       break;
     case "outbox":
       content = outboxPage(t, model);
@@ -2735,7 +2955,9 @@ const domainBody = (t: Theme, domain: string, doc: DocumentState, model: PanelMo
   return v_flex()
     .id("domain")
     .gap(PANEL.sectionGap)
-    .child(focusCard(t, model.links, prose(doc.backlog.focus, doc.backlog.focusMarkdown)))
+    .child(
+      focusCard(t, model.links, prose(doc.backlog.focus, doc.backlog.focusMarkdown), model.edit),
+    )
     .children([...waitingCard(t, model), itemsCard(t, model)])
     .children(unfiledCard(t, model.delegates.unfiled, model))
     .child(sectionLinks(t, domain, doc.backlog, model));
