@@ -175,13 +175,61 @@ describe("monitorFleet with leases", () => {
         durationMs: 300,
         exclude: new Set(),
         emit: (line) => Effect.sync(() => void lines.push(line)),
-        leases: { read: leases, everyMs: 0 },
+        leases: { read: leases, everyMs: 0, home: "homebase" },
       }),
       fake.layer,
     );
     expect([read >= readings.length, lines]).toEqual([
       true,
       ["arrived l:ops=nigelsheldon/t4", "departed l:app", "monitor expired"],
+    ]);
+  });
+
+  it("prints blind naming the home after three failed lease reads in a row, and clears it on the next good read", async () => {
+    const fake = fakeProc(() =>
+      ok(JSON.stringify({ terminals: [{ address: "t3", status: "idle" }] })),
+    );
+    const readings: Array<Array<[string, string]> | "down"> = [
+      [["l:app", "t1"]],
+      "down",
+      "down",
+      [["l:app", "t1"]],
+      "down",
+      "down",
+      "down",
+      "down",
+      [
+        ["l:app", "t1"],
+        ["l:ops", "nigelsheldon/t4"],
+      ],
+    ];
+    let read = 0;
+    const leases = Effect.suspend(() => {
+      const reading = readings[Math.min(read, readings.length - 1)];
+      read += 1;
+      return reading === "down" || reading === undefined
+        ? Effect.fail(new Error("homebase is unreachable"))
+        : Effect.succeed(new Map(reading));
+    });
+    const lines: string[] = [];
+    await runWith(
+      monitorFleet({
+        intervalMs: 1,
+        durationMs: 300,
+        exclude: new Set(),
+        emit: (line) => Effect.sync(() => void lines.push(line)),
+        leases: { read: leases, everyMs: 0, home: "homebase" },
+      }),
+      fake.layer,
+    );
+    expect([read >= readings.length, lines]).toEqual([
+      true,
+      [
+        "blind: state home homebase unreachable 3 times: homebase is unreachable; lease entries are from the last good read",
+        "blind cleared: state home homebase readable again",
+        "arrived l:ops=nigelsheldon/t4",
+        "monitor expired",
+      ],
     ]);
   });
 
@@ -210,7 +258,7 @@ describe("monitorFleet with leases", () => {
         durationMs: 200,
         exclude: new Set(["t9"]),
         emit: (line) => Effect.sync(() => void lines.push(line)),
-        leases: { read: leases, everyMs: 0 },
+        leases: { read: leases, everyMs: 0, home: "homebase" },
       }),
       fake.layer,
     );

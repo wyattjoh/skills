@@ -13,11 +13,15 @@ import { stateStore, useStateBackend } from "./lib/state.ts";
 const leaseSource = (everyMs: number) =>
   Effect.gen(function* () {
     const config = yield* loadConfig();
-    if (config.stateBackend !== "herdr-doc") return undefined;
+    if (config.stateBackend !== "herdr-doc" || config.stateHome === undefined) return undefined;
     useStateBackend(config);
     const reader = yield* localMachine();
     const store = stateStore(config.stateDir);
-    return { read: Effect.suspend(() => readLeaseFleet(store, reader, Date.now())), everyMs };
+    return {
+      read: Effect.suspend(() => readLeaseFleet(store, reader, Date.now())),
+      everyMs,
+      home: config.stateHome,
+    };
   });
 
 const fleetMonitor = Command.make(

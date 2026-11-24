@@ -1,4 +1,4 @@
-import { Effect, Option, Schema } from "effect";
+import { Effect, Option, Result, Schema } from "effect";
 import { HerdrError, herdr } from "./herdr.ts";
 import { domainLeases } from "./lease.ts";
 import type { Proc } from "./proc.ts";
@@ -116,13 +116,25 @@ export const readLeaseFleet = (store: StateStore, reader: string, now: number) =
   );
 
 /**
- * Where the monitor reads leases from, and how often. A failed read keeps the last good leases,
- * so an unreachable home never reports every coordinator departed.
+ * Where the monitor reads leases from, how often, and the home that holds them. A failed read
+ * keeps the last good leases, so an unreachable home never reports every coordinator departed;
+ * `LEASE_BLIND_READS` failures in a row print a blind line naming `home`.
  */
 export type LeaseSource = {
   read: Effect.Effect<FleetSnapshot, unknown, Proc>;
   everyMs: number;
+  home: string;
 };
+
+/**
+ * How many lease reads in a row may fail before the monitor says it is blind, as the watcher does.
+ */
+export const LEASE_BLIND_READS = 3;
+
+const failureText = (error: unknown): string =>
+  typeof error === "object" && error !== null && "message" in error
+    ? String(error.message)
+    : String(error);
 
 /**
  * How long and how often to watch, where lines go, and the leases to add (undefined: labels only).
@@ -137,7 +149,9 @@ export type MonitorOptions = {
 
 /**
  * Poll the fleet until the duration runs out, emitting only changes. The first good read is a
- * silent baseline; a failed or empty read keeps the last good snapshot.
+ * silent baseline; a failed or empty read keeps the last good snapshot. After
+ * `LEASE_BLIND_READS` failed lease reads in a row it emits one `blind:` line naming the home, and
+ * `blind cleared:` on the next good read.
  * @param options Interval, duration, exclusions and output.
  */
 export const monitorFleet = Effect.fn("fleet.monitor")(function* (options: MonitorOptions) {
@@ -145,11 +159,24 @@ export const monitorFleet = Effect.fn("fleet.monitor")(function* (options: Monit
   let previous: FleetSnapshot | undefined;
   let leases: FleetSnapshot = new Map();
   let leasesRead = Number.NEGATIVE_INFINITY;
+  let failedReads = 0;
   while (Date.now() < deadline) {
     if (options.leases !== undefined && Date.now() - leasesRead >= options.leases.everyMs) {
       leasesRead = Date.now();
-      const read = yield* options.leases.read.pipe(Effect.option);
-      if (Option.isSome(read)) leases = read.value;
+      const { home } = options.leases;
+      const read = yield* options.leases.read.pipe(Effect.result);
+      if (Result.isSuccess(read)) {
+        leases = read.success;
+        if (failedReads >= LEASE_BLIND_READS)
+          yield* options.emit(`blind cleared: state home ${home} readable again`);
+        failedReads = 0;
+      } else {
+        failedReads += 1;
+        if (failedReads === LEASE_BLIND_READS)
+          yield* options.emit(
+            `blind: state home ${home} unreachable ${LEASE_BLIND_READS} times: ${failureText(read.failure)}; lease entries are from the last good read`,
+          );
+      }
     }
     const labelled = yield* readFleet(options.exclude).pipe(Effect.option);
     // A lease adds only a coordinator this core does not list itself, never the manager's own.
