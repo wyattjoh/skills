@@ -106,6 +106,7 @@ const fleet = (
   delegates: ReadonlyArray<{ address: string; domain: string }>,
   callerAddress = "t1",
   coreAnswers: Record<string, RunOutput> = {},
+  where: { core?: string; machines?: ReadonlyArray<{ name: string; state: string }> } = {},
 ) => {
   const terminals = new Map<string, ReturnType<typeof terminalDoc>>([
     [callerAddress, terminalDoc(callerAddress, callerLabels)],
@@ -117,42 +118,46 @@ const fleet = (
         ] as const,
     ),
   ]);
-  const fake = fakeProc((argv): RunOutput => {
-    if (argv[0] === "hc" && argv[1] === "ls")
-      return ok(
-        JSON.stringify({
-          terminals: [...terminals.values()].map((terminal) => ({
-            address: terminal.address,
-            name: terminal.name,
-            state: "live",
-          })),
-        }),
-      );
-    if (argv[0] === "hc" && argv[1] === "get") {
-      const terminal = terminals.get(argv[2] ?? "");
-      return terminal
-        ? ok(JSON.stringify(terminal))
-        : { exitCode: 1, stdout: "", stderr: "not found" };
-    }
-    if (argv[0] === "hc" && argv[1] === "exec") {
-      const machine = argv[argv.indexOf("--on") + 1] ?? "";
-      return coreAnswers[machine] ?? { exitCode: 1, stdout: "", stderr: "machine unavailable" };
-    }
-    if (argv[0] === "hc" && argv[1] === "run") {
-      const address = "t-new";
-      const labels: Record<string, string> = {};
-      for (let index = 0; index < argv.length; index += 1) {
-        if (argv[index] !== "--label") continue;
-        const [key, value] = argv[index + 1]?.split("=", 2) ?? [];
-        if (key && value) labels[key] = value;
+  const fake = fakeProc(
+    (argv): RunOutput => {
+      if (argv[0] === "hc" && argv[1] === "ls")
+        return ok(
+          JSON.stringify({
+            terminals: [...terminals.values()].map((terminal) => ({
+              address: terminal.address,
+              name: terminal.name,
+              state: "live",
+            })),
+            machines: where.machines ?? [{ name: "strix", state: "connected" }],
+          }),
+        );
+      if (argv[0] === "hc" && argv[1] === "get") {
+        const terminal = terminals.get(argv[2] ?? "");
+        return terminal
+          ? ok(JSON.stringify(terminal))
+          : { exitCode: 1, stdout: "", stderr: "not found" };
       }
-      terminals.set(address, terminalDoc(address, labels));
-      return ok(JSON.stringify({ address }));
-    }
-    if (argv[0] === "hc" && argv[1] === "label") return ok("{}");
-    if (argv[0] === "herdr-app") return ok("{}");
-    throw new Error(`unexpected command: ${argv.join(" ")}`);
-  });
+      if (argv[0] === "hc" && argv[1] === "exec") {
+        const machine = argv[argv.indexOf("--on") + 1] ?? "";
+        return coreAnswers[machine] ?? { exitCode: 1, stdout: "", stderr: "machine unavailable" };
+      }
+      if (argv[0] === "hc" && argv[1] === "run") {
+        const address = "t-new";
+        const labels: Record<string, string> = {};
+        for (let index = 0; index < argv.length; index += 1) {
+          if (argv[index] !== "--label") continue;
+          const [key, value] = argv[index + 1]?.split("=", 2) ?? [];
+          if (key && value) labels[key] = value;
+        }
+        terminals.set(address, terminalDoc(address, labels));
+        return ok(JSON.stringify({ address }));
+      }
+      if (argv[0] === "hc" && argv[1] === "label") return ok("{}");
+      if (argv[0] === "herdr-app") return ok("{}");
+      throw new Error(`unexpected command: ${argv.join(" ")}`);
+    },
+    { core: where.core ?? FAKE_CORE },
+  );
   return fake;
 };
 
@@ -232,6 +237,76 @@ describe("fleet delegate budget", () => {
     expect(lines[0]).toBe("started new-delegate (t-new)");
     expect(fake.calls.filter(({ argv }) => argv[1] === "exec").length).toBe(1);
     expect(fake.calls.filter(({ argv }) => argv[1] === "run").length).toBe(1);
+  });
+
+  describe("a coordinator on strix", () => {
+    const onStrix = [
+      { address: "t2", domain: "app" },
+      { address: "t3", domain: "infra" },
+      { address: "finbar/t4", domain: "app" },
+      { address: "finbar/t5", domain: "app" },
+      { address: "finbar/t6", domain: "infra" },
+    ];
+    const strixFleet = () =>
+      fleet(
+        COORDINATOR,
+        onStrix,
+        "t1",
+        {},
+        {
+          core: "strix",
+          machines: [{ name: "finbar", state: "connected" }],
+        },
+      );
+
+    it("launches local delegates on strix by default, under strix's own budget", async () => {
+      const state = dir();
+      const { cfg } = await withItem(state, 2, 8, { strix: 3, finbar: 1 });
+      const fake = strixFleet();
+      const lines = await runWith(
+        delegate(cfg, options({ cwd: state, item: "i1" }), () => 3),
+        fake.layer,
+      );
+      expect(lines[0]).toBe("started new-delegate (t-new)");
+      const runs = fake.calls.filter(({ argv }) => argv[1] === "run");
+      expect(runs.map(({ argv }) => argv.includes("--on"))).toEqual([false]);
+    });
+
+    it("refuses at budget counting only strix's live delegates", async () => {
+      const state = dir();
+      const { cfg } = await withItem(state, 2, 8, { strix: 2, finbar: 9 });
+      const error = await failureOf(
+        delegate(cfg, options({ cwd: state, item: "i1" }), () => 3),
+        strixFleet().layer,
+      );
+      expect(error instanceof Error ? error.message : String(error)).toBe(
+        "machine strix has 2 live delegates (budget 2); refusing new-delegate for item i1; pass --over-budget to start anyway",
+      );
+    });
+  });
+
+  it("refuses to count a remote target Herdr lists as not connected rather than count none", async () => {
+    const state = dir();
+    const callerAddress = "strix/t1";
+    const { cfg } = await withItem(state, 2, 8, {}, callerAddress);
+    process.env.HC_TERMINAL_ID = callerAddress;
+    const fake = fleet(
+      COORDINATOR,
+      [],
+      callerAddress,
+      {},
+      {
+        machines: [{ name: "strix", state: "disconnected" }],
+      },
+    );
+    const error = await failureOf(
+      delegate(cfg, options({ cwd: state, item: "i1" }), () => 3),
+      fake.layer,
+    );
+    expect(error instanceof Error ? error.message : String(error)).toBe(
+      "cannot count live delegates on machine strix: Herdr lists it as disconnected; refusing new-delegate for item i1",
+    );
+    expect(fake.calls.filter(({ argv }) => argv[1] === "run").length).toBe(0);
   });
 
   it.each(["local", hostname(), FAKE_CORE])(
@@ -697,7 +772,12 @@ describe("fleet delegate budget", () => {
         );
       throw new Error(`unexpected command: ${argv.join(" ")}`);
     });
-    expect(await runWith(liveDelegateCount(FAKE_CORE, terminals, FAKE_CORE), fake.layer)).toBe(2);
+    expect(
+      await runWith(
+        liveDelegateCount(FAKE_CORE, { terminals, machines: [] }, FAKE_CORE),
+        fake.layer,
+      ),
+    ).toBe(2);
     expect(fake.calls.filter(({ argv }) => argv[1] === "get").map(({ argv }) => argv[2])).toEqual([
       "t2",
       "t3",

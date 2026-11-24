@@ -1059,6 +1059,39 @@ describe("watch capacity queue", () => {
     });
   });
 
+  it("reports capacity unavailable for a wait on a machine Herdr lists as not connected, never a wake", async () => {
+    const { config } = await queuedDomain();
+    await runWith(enqueueCapacityWait(config, "app", { item: "i1", machine: "strix" }));
+    const fake = fakeProc((argv) => {
+      if (argv[1] === "ls")
+        return ok(
+          JSON.stringify({ terminals: [], machines: [{ name: "strix", state: "disconnected" }] }),
+        );
+      throw new Error(`unexpected command: ${argv.join(" ")}`);
+    });
+    const emitted: string[] = [];
+    await runWith(
+      watch(config, {
+        domain: "app",
+        intervalMs: 1,
+        forgeIntervalMs: 60_000,
+        maxMs: 0,
+        owner: undefined,
+        replace: false,
+        deliver: false,
+        today: () => "2026-11-10",
+        follow: false,
+        emit: (line) => {
+          emitted.push(eventText(line));
+        },
+      }),
+      fake.layer,
+    );
+    expect(emitted).toEqual([
+      '<event kind="capacity-unavailable" machine="strix"><error>cannot count live delegates on machine strix: Herdr lists it as disconnected</error></event>',
+    ]);
+  });
+
   it("reports capacity unavailable when this core's Herdr machine name cannot be read", async () => {
     const { config } = await queuedDomain();
     const fake = fakeProc(

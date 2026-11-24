@@ -736,7 +736,8 @@ export const delegate = Effect.fn("delegate")(function* (
         });
     }
 
-    const terminals = yield* hc.list([], queued !== undefined);
+    const listing = yield* hc.listing([], queued !== undefined);
+    const terminals = listing.terminals;
     if (queued) {
       const marker = `${domain}:${queued.item}:${queued.order}`;
       for (const listed of terminals) {
@@ -778,7 +779,15 @@ export const delegate = Effect.fn("delegate")(function* (
       away = { machine: remote, checkout: checkoutThere, shell };
     }
 
-    const liveDelegates = yield* liveDelegateCount(targetMachine, terminals, core);
+    const liveDelegates = yield* liveDelegateCount(targetMachine, listing, core).pipe(
+      Effect.mapError((error) =>
+        error._tag === "Refused"
+          ? new Refused({
+              message: `${error.message}; refusing ${options.name} for item ${options.item ?? "?"}`,
+            })
+          : error,
+      ),
+    );
     const { budget, warning: budgetWarning } = yield* machineDelegateBudget(
       config,
       targetMachine,

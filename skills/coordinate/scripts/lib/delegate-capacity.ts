@@ -3,7 +3,7 @@ import { Effect } from "effect";
 import type { ListedTerminal } from "./herdr.ts";
 import * as hc from "./herdr.ts";
 import type { Config } from "./config.ts";
-import { L } from "./fleet.ts";
+import { L, Refused } from "./fleet.ts";
 
 /**
  * The config key that names this machine whatever its Herdr name.
@@ -71,19 +71,32 @@ export const endedRecordMachines = Effect.fn("endedRecordMachines")(function* (
 });
 
 /**
- * Count the target machine's live delegates, including settled delegates that still have live terminals.
+ * Count the target machine's live delegates, including settled delegates that still have live
+ * terminals. Another machine's delegates are its own Herdr's answer, relayed in this core's
+ * listing; a machine that listing does not show connected lists none of its terminals, so it is
+ * refused rather than counted as idle.
  * @param machine Target Herdr machine name.
- * @param terminals Herdr's current live-terminal listing.
+ * @param listing Herdr's current live-terminal listing, with the machines it reaches.
  * @param core This core's Herdr machine name.
  * @returns Number of live delegates on the target machine, across all domains.
  */
 export const liveDelegateCount = Effect.fn("liveDelegateCount")(function* (
   machine: string,
-  terminals: readonly ListedTerminal[],
+  listing: {
+    terminals: readonly ListedTerminal[];
+    machines: readonly { name: string; state: string }[];
+  },
   core: string,
 ) {
+  if (machine !== core) {
+    const state = listing.machines.find((known) => known.name === machine)?.state;
+    if (state !== "connected")
+      return yield* new Refused({
+        message: `cannot count live delegates on machine ${machine}: ${state === undefined ? "Herdr does not list it" : `Herdr lists it as ${state}`}`,
+      });
+  }
   let count = 0;
-  for (const listed of terminals) {
+  for (const listed of listing.terminals) {
     if (!listed.live || machineOfAddress(listed.address, core) !== machine) continue;
     const terminal = yield* hc.get(listed.address);
     if (terminal?.live && terminal.labels[L.domain] && terminal.labels[L.role] !== "coordinator")

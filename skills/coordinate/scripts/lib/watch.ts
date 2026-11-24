@@ -1495,7 +1495,7 @@ export const watch = Effect.fn("watch")(function* (config: Config, options: Watc
                 seen,
               ]),
             );
-            const listed = yield* hc.list().pipe(Effect.result);
+            const listed = yield* hc.listing().pipe(Effect.result);
             if (Result.isFailure(listed)) {
               lines.push(
                 watchEvent("capacity-unavailable", {}, "", { error: listed.failure.message }),
