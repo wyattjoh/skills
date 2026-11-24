@@ -792,7 +792,7 @@ export const removeOne = Effect.fn("removeOne")(function* (
   for (const entry of (yield* readEnded(config.stateDir)).records.filter(
     (candidate) => real(candidate.record.cwd) === path,
   )) {
-    yield* removeEnded(entry.path);
+    yield* removeEnded(config.stateDir, entry.id);
     lines.push(`  pruned ended record ${entry.record.name}`);
   }
   return { removed: true, lines };
@@ -895,7 +895,7 @@ const removeRemote = Effect.fn("removeRemote")(function* (
     (candidate) =>
       machineOf(candidate.record) === machine && candidate.record.cwd.replace(/\/+$/, "") === path,
   )) {
-    yield* removeEnded(entry.path);
+    yield* removeEnded(config.stateDir, entry.id);
     lines.push(`  pruned ended record ${entry.record.name}`);
   }
   return { removed: true, lines };
@@ -1025,7 +1025,7 @@ export const pruneEnded = Effect.fn("pruneEnded")(function* (config: Config) {
       unknown.push(`${entry.record.name} (${machine} did not answer)`);
     } else if (!exists) gone.push(entry);
   }
-  for (const entry of gone) yield* removeEnded(entry.path);
+  for (const entry of gone) yield* removeEnded(config.stateDir, entry.id);
   const lines = [`pruned ${gone.length} of ${records.length} ended records whose folder is gone`];
   if (gone.length > 0)
     lines.push(

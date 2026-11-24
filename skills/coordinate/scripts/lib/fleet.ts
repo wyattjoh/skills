@@ -1,10 +1,11 @@
 import { createHash } from "node:crypto";
-import { mkdir, readdir, rm, writeFile } from "node:fs/promises";
-import { join } from "node:path";
+import { basename, join } from "node:path";
 import { Effect, Option, Schema } from "effect";
 import { type Harness, harnessOf } from "./harness.ts";
 import { OUTSIDE_TERMINAL_STATUSES, type ItemStatus } from "./backlog-store/schema.ts";
 import * as hc from "./herdr.ts";
+import { stateStore } from "./state.ts";
+import { keys, runCommand } from "./state-store.ts";
 
 /**
  * Labels this skill reads and writes on herdr-core terminals.
@@ -338,59 +339,60 @@ const EndedRecordSchema = Schema.Struct({
 export type EndedRecord = typeof EndedRecordSchema.Type;
 
 /**
- * Folder of ended records.
- * @param stateDir State dir.
- * @returns Path.
- */
-export const endedDir = (stateDir: string): string => join(stateDir, "ended");
-
-/**
- * Every readable ended record, with its file path. Unreadable files are skipped and reported.
+ * Every readable ended record, with its location and the name it is stored under. Unreadable
+ * records are skipped and reported by file name.
  * @param stateDir State dir.
  * @returns Records and skipped file names.
  */
 export const readEnded = Effect.fn("readEnded")(function* (stateDir: string) {
-  const dir = endedDir(stateDir);
-  const names = yield* Effect.promise(() => readdir(dir).catch((): string[] => []));
-  const records: Array<{ path: string; record: EndedRecord }> = [];
+  const store = stateStore(stateDir);
+  const ids = yield* store.list("ended").pipe(Effect.orElseSucceed((): readonly string[] => []));
+  const records: Array<{ id: string; path: string; record: EndedRecord }> = [];
   const skipped: string[] = [];
-  for (const name of names.filter((file) => file.endsWith(".json")).toSorted()) {
-    const path = join(dir, name);
-    const decoded = yield* Effect.tryPromise(() => Bun.file(path).json()).pipe(
-      Effect.flatMap(Schema.decodeUnknownEffect(EndedRecordSchema)),
+  for (const id of ids) {
+    const key = keys.ended(id);
+    const path = store.location(key);
+    const decoded = yield* store.read(key).pipe(
+      Effect.flatMap((stored) => Schema.decodeUnknownEffect(EndedRecordSchema)(stored.value)),
       Effect.option,
     );
-    if (Option.isSome(decoded)) records.push({ path, record: decoded.value });
-    else skipped.push(name);
+    if (Option.isSome(decoded)) records.push({ id, path, record: decoded.value });
+    else skipped.push(basename(path));
   }
   return { records, skipped };
 });
 
 /**
- * Write an ended record as `<state>/ended/<session>.json`.
+ * Write an ended record under its session.
  * @param stateDir State dir.
  * @param record Record.
- * @returns Its path.
+ * @returns Its location.
  */
 export const writeEnded = Effect.fn("writeEnded")(function* (
   stateDir: string,
   record: EndedRecord,
 ) {
-  const dir = endedDir(stateDir);
-  const path = join(dir, `${record.session}.json`);
-  yield* Effect.promise(async () => {
-    await mkdir(dir, { recursive: true });
-    await writeFile(path, `${JSON.stringify(record, null, 1)}\n`);
-  });
-  return path;
+  const store = stateStore(stateDir);
+  const key = keys.ended(record.session);
+  yield* runCommand(store, key, () =>
+    Effect.succeed({ write: true as const, next: record, value: undefined }),
+  ).pipe(Effect.orDie);
+  return store.location(key);
 });
 
 /**
  * Delete one ended record.
- * @param path Record file.
+ * @param stateDir State dir.
+ * @param id The name it is stored under (`readEnded`'s `id`, or its session).
  */
-export const removeEnded = Effect.fn("removeEnded")(function* (path: string) {
-  yield* Effect.promise(() => rm(path, { force: true }));
+export const removeEnded = Effect.fn("removeEnded")(function* (stateDir: string, id: string) {
+  yield* runCommand(stateStore(stateDir), keys.ended(id), (current) =>
+    Effect.succeed(
+      current.value === null
+        ? { write: false as const, value: undefined }
+        : { write: true as const, next: null, value: undefined },
+    ),
+  ).pipe(Effect.orDie);
 });
 
 /**

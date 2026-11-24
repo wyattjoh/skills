@@ -13,10 +13,12 @@ import {
   recordDelegate,
   refSessions,
   seedDocument,
+  documentExists,
 } from "./backlog-doc.ts";
+import { stateStore } from "./state.ts";
+import { keys } from "./state-store.ts";
 import { filedUnder, idleDelegated, updateItem, type ItemUpdate } from "./backlog-store/ops.ts";
 import type { ItemStatus } from "./backlog-store/schema.ts";
-import { documentPath } from "./backlog-store/paths.ts";
 import { absolutePath, type Config } from "./config.ts";
 import {
   backlogPath,
@@ -309,7 +311,7 @@ const spawnFolder = Effect.fn("spawnFolder")(function* (config: Config, options:
   const owned =
     options.cwd === undefined
       ? yield* Effect.gen(function* () {
-          if (!existsSync(documentPath(config.stateDir, domain)))
+          if (!(yield* documentExists(config, domain)))
             return yield* new Refused({ message: `${domain} has no backlog yet; ${passCwd}` });
           const { backlog } = yield* readDocument(config, domain);
           return (
@@ -1169,7 +1171,9 @@ export const endDelegate = Effect.fn("endDelegate")(function* (
   // Read the terminal's process tree while it still has one: once it ends, survivors are adopted
   // by launchd (or, on a Linux machine, the user's service manager).
   const before = yield* host.scan().pipe(Effect.option);
-  yield* hc.end(terminal.address).pipe(Effect.tapError(() => removeEnded(path)));
+  yield* hc
+    .end(terminal.address)
+    .pipe(Effect.tapError(() => removeEnded(config.stateDir, record.session)));
   const space = terminal.labels[L.space];
   if (space) yield* hc.closeSpace(space).pipe(Effect.ignore);
   // Only a worktree coordinate made for it (`delegate --repo` sets the base label): a --cwd folder or
@@ -1337,7 +1341,7 @@ export const resumeDelegate = Effect.fn("resumeDelegate")(function* (
     return yield* new Refused({
       message: `${name} did not show an agent status in ${launched.address} within 60s; read it with hc read ${launched.address}`,
     });
-  yield* removeEnded(found.path);
+  yield* removeEnded(config.stateDir, found.id);
   const counted = yield* countResume(config.stateDir, record.session);
   return [
     `resumed ${name} in ${launched.address} (resume ${counted.resumes} of session ${record.session})`,
@@ -1356,8 +1360,9 @@ export const requireBacklog = Effect.fn("requireBacklog")(function* (
   config: Config,
   domain: string,
 ) {
-  const document = documentPath(config.stateDir, domain);
-  if (existsSync(document) || existsSync(backlogPath(config.backlogDir, domain))) return;
+  const document = stateStore(config.stateDir).location(keys.backlog(domain));
+  if ((yield* documentExists(config, domain)) || existsSync(backlogPath(config.backlogDir, domain)))
+    return;
   return yield* new Refused({
     message: `no backlog for ${domain} at ${document}; run coordinate start ${domain}`,
   });

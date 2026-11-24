@@ -1,9 +1,10 @@
 import { existsSync } from "node:fs";
 import { mkdir, readdir, readFile, writeFile } from "node:fs/promises";
-import { dirname, isAbsolute, join, relative } from "node:path";
+import { isAbsolute, join, relative } from "node:path";
 import { Effect, Option, Schema } from "effect";
-import { readDocument, writeAtomic } from "./backlog-doc.ts";
-import { backlogsDir } from "./backlog-store/paths.ts";
+import { listDomains, readDocument } from "./backlog-doc.ts";
+import { stateStore } from "./state.ts";
+import { BacklogError, keys, runCommand } from "./state-store.ts";
 import type { Backlog } from "./backlog-store/schema.ts";
 import { expandHome, type Config } from "./config.ts";
 import { Refused } from "./fleet.ts";
@@ -638,13 +639,7 @@ const coverBoundaries = Effect.fn("coverBoundaries")(function* (
 ) {
   const own = [...backlog.boundary.owned, ...backlog.boundary.adjacent];
   if (!target.shared) return own;
-  const dir = backlogsDir(config.stateDir);
-  const domains = yield* Effect.promise(async () =>
-    (await readdir(dir).catch(() => [] as string[]))
-      .filter((name) => name.endsWith(".json"))
-      .map((name) => name.slice(0, -".json".length))
-      .toSorted(),
-  );
+  const domains = yield* listDomains(config);
   const others: string[] = [];
   for (const domain of domains) {
     const read = yield* readDocument(config, domain).pipe(Effect.option);
@@ -926,20 +921,12 @@ export const writeDelegateWiki = Effect.fn("writeDelegateWiki")(function* (
  */
 export const LINT_INTERVAL_DAYS = 7;
 
-/**
- * Where `wiki lint --mark` records a domain's last passing lint: its own folder, apart from the
- * watcher's snapshot, which the running watcher rewrites every tick. The CLI is this file's only
- * writer, and the watcher reads it each tick.
- * @param stateDir Coordinate state directory.
- * @param domain Domain.
- * @returns The file.
- */
-export const lintClockPath = (stateDir: string, domain: string): string =>
-  join(stateDir, "wiki-lint", `${domain}.json`);
-
 const LintClockSchema = Schema.Struct({ lastLint: Schema.String });
 
 /**
+ * The lint clock is its own document, apart from the watcher's snapshot: the CLI is its only
+ * writer (`wiki lint --mark`), and the watcher reads it each tick.
+ *
  * The domain's last recorded passing lint, as `YYYY-MM-DD`; undefined when none is recorded or
  * the file cannot be read.
  * @param config Config.
@@ -947,18 +934,18 @@ const LintClockSchema = Schema.Struct({ lastLint: Schema.String });
  * @returns The date.
  */
 export const lastLint = (config: Config, domain: string) =>
-  Effect.tryPromise(async () =>
-    JSON.parse(await readFile(lintClockPath(config.stateDir, domain), "utf8")),
-  ).pipe(
-    Effect.flatMap(Schema.decodeUnknownEffect(LintClockSchema)),
-    Effect.option,
-    Effect.map((decoded) =>
-      Option.match(decoded, {
-        onNone: () => undefined,
-        onSome: (clock) => (DATE.test(clock.lastLint) ? clock.lastLint : undefined),
-      }),
-    ),
-  );
+  stateStore(config.stateDir)
+    .read(keys.lint(domain))
+    .pipe(
+      Effect.flatMap((stored) => Schema.decodeUnknownEffect(LintClockSchema)(stored.value)),
+      Effect.option,
+      Effect.map((decoded) =>
+        Option.match(decoded, {
+          onNone: () => undefined,
+          onSome: (clock) => (DATE.test(clock.lastLint) ? clock.lastLint : undefined),
+        }),
+      ),
+    );
 
 /**
  * Record a passing lint of the domain wiki, which restarts the watcher's `lint-due` clock.
@@ -971,9 +958,15 @@ export const markLint = Effect.fn("markLint")(function* (
   domain: string,
   today: string,
 ) {
-  const path = lintClockPath(config.stateDir, domain);
-  yield* Effect.promise(() => mkdir(dirname(path), { recursive: true }));
-  yield* writeAtomic(path, `${JSON.stringify({ lastLint: today })}\n`);
+  yield* runCommand(stateStore(config.stateDir), keys.lint(domain), () =>
+    Effect.succeed({ write: true as const, next: { lastLint: today }, value: undefined }),
+  ).pipe(
+    Effect.mapError((error) =>
+      error._tag === "StoreUnreadable"
+        ? new BacklogError({ path: error.location, message: error.message })
+        : error,
+    ),
+  );
 });
 
 /**

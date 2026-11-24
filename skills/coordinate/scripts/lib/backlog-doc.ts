@@ -1,10 +1,8 @@
-import { randomUUID } from "node:crypto";
 import { existsSync } from "node:fs";
-import { appendFile, mkdir, open, readFile, rename, rmdir, unlink } from "node:fs/promises";
-import { homedir, hostname } from "node:os";
+import { appendFile, open } from "node:fs/promises";
+import { homedir } from "node:os";
 import { join } from "node:path";
-import { setTimeout as sleep } from "node:timers/promises";
-import { Effect, Option, Schema } from "effect";
+import { Effect, Option } from "effect";
 import {
   addBoundary,
   addCheckout,
@@ -38,7 +36,7 @@ import {
   unfileDelegate,
   updateItem,
 } from "./backlog-store/ops.ts";
-import { backlogsDir, documentPath } from "./backlog-store/paths.ts";
+import { backlogsDir } from "./backlog-store/paths.ts";
 import { policyCitation, renderBacklog } from "./backlog-store/render.ts";
 import {
   type Backlog,
@@ -57,54 +55,35 @@ import { absolutePath, type Config } from "./config.ts";
 import { canonicalMachine, localMachine } from "./delegate-capacity.ts";
 import { backlogPath, members, Refused } from "./fleet.ts";
 import { machineNames } from "./herdr.ts";
+import { stateStore } from "./state.ts";
+import {
+  BacklogError,
+  keys,
+  runCommand,
+  type CommandStep,
+  type StateStore,
+  type StoreUnreadable,
+} from "./state-store.ts";
 
-/**
- * The backlog document could not be read, locked or written (exit 2, not a refusal).
- */
-export class BacklogError extends Schema.TaggedError<BacklogError>()("BacklogError", {
-  path: Schema.String,
-  message: Schema.String,
-}) {}
+export { BacklogError };
 
-const hasCode = (error: unknown, code: string): boolean =>
-  error instanceof Error && "code" in error && error.code === code;
+const storeOf = (config: Config): StateStore => stateStore(config.stateDir);
 
-const parse = (path: string, json: string): Backlog => {
-  let value: unknown;
-  try {
-    value = JSON.parse(json);
-  } catch (cause) {
-    throw new Error(`${path} is not JSON: ${String(cause)}`, { cause });
-  }
+const unreadable = (error: StoreUnreadable): BacklogError =>
+  new BacklogError({
+    path: error.location,
+    message:
+      error.stage === "parse" ? `${error.location} is not JSON: ${error.detail}` : error.message,
+  });
+
+const decode = (path: string, value: unknown): Effect.Effect<Backlog, BacklogError> => {
   const checked = validateBacklog(value);
-  if (!checked.ok) throw new Error(`${path} is invalid: ${checked.errors.join("; ")}`);
-  return checked.backlog;
+  return checked.ok
+    ? Effect.succeed(checked.backlog)
+    : Effect.fail(
+        new BacklogError({ path, message: `${path} is invalid: ${checked.errors.join("; ")}` }),
+      );
 };
-
-/**
- * Write a file durably: a temp file in the same folder, fsync, rename, then fsync the folder.
- */
-const commitText = async (path: string, text: string): Promise<void> => {
-  const dir = join(path, "..");
-  const temp = join(dir, `.${randomUUID()}.tmp`);
-  const file = await open(temp, "wx", 0o600);
-  try {
-    await file.writeFile(text);
-    await file.sync();
-  } finally {
-    await file.close();
-  }
-  await rename(temp, path);
-  const parent = await open(dir, "r");
-  try {
-    await parent.sync();
-  } finally {
-    await parent.close();
-  }
-};
-
-const commit = (path: string, backlog: Backlog): Promise<void> =>
-  commitText(path, `${JSON.stringify(backlog, null, 2)}\n`);
 
 /**
  * The domain's append-only archive of closed records, one JSON record per line.
@@ -132,150 +111,58 @@ const appendArchive = async (path: string, records: unknown[]): Promise<void> =>
   }
 };
 
-/**
- * A lock left by a writer that died on this host is moved aside to a name unique to its token,
- * never deleted, so two recoveries cannot remove a lock a third writer just took.
- */
-const recoverDeadWriter = async (lock: string): Promise<void> => {
-  let owner: { pid: unknown; token: unknown; hostname: unknown };
-  try {
-    owner = JSON.parse(await readFile(join(lock, "owner.json"), "utf8"));
-  } catch {
-    return;
-  }
-  if (
-    owner.hostname !== hostname() ||
-    typeof owner.token !== "string" ||
-    !/^[a-f0-9-]{36}$/.test(owner.token) ||
-    typeof owner.pid !== "number" ||
-    !Number.isInteger(owner.pid) ||
-    owner.pid <= 0
-  )
-    return;
-  try {
-    process.kill(owner.pid, 0);
-    return;
-  } catch (error) {
-    if (!hasCode(error, "ESRCH")) return;
-  }
-  try {
-    await rename(lock, `${lock}.abandoned-${owner.token}`);
-  } catch (error) {
-    if (!["ENOENT", "EEXIST", "ENOTEMPTY"].some((code) => hasCode(error, code))) throw error;
-  }
-};
+const missing = (location: string, domain: string) =>
+  new Refused({
+    message: `no backlog for ${domain} at ${location}; run coordinate start ${domain}`,
+  });
 
 /**
- * Take the domain's exclusive write lock (a directory next to the document).
- * @returns The lock directory, for `dropLock`.
+ * Run a backlog command through the store, reporting an unreadable document as a `BacklogError`.
  */
-const takeLock = async (path: string, timeoutMs: number): Promise<string> => {
-  const lock = path.replace(/\.json$/, ".lock");
-  await mkdir(join(path, ".."), { recursive: true });
-  const deadline = Date.now() + timeoutMs;
-  while (true) {
-    try {
-      await mkdir(lock, { mode: 0o700 });
-      break;
-    } catch (error) {
-      if (!hasCode(error, "EEXIST")) throw error;
-      if (Date.now() >= deadline)
-        throw new Error(`backlog lock timed out: ${lock}; inspect its owner.json`, {
-          cause: error,
-        });
-      await recoverDeadWriter(lock);
-      await sleep(Math.min(25, Math.max(1, deadline - Date.now())));
-    }
-  }
-  const owner = join(lock, "owner.json");
-  try {
-    const file = await open(owner, "wx", 0o600);
-    try {
-      await file.writeFile(
-        JSON.stringify({
-          pid: process.pid,
-          token: randomUUID(),
-          hostname: hostname(),
-          createdAt: new Date().toISOString(),
-        }),
-      );
-      await file.sync();
-    } finally {
-      await file.close();
-    }
-  } catch (error) {
-    await dropLock(lock);
-    throw error;
-  }
-  return lock;
-};
-
-const dropLock = async (lock: string): Promise<void> => {
-  await unlink(join(lock, "owner.json")).catch(() => undefined);
-  await rmdir(lock);
-};
-
-/**
- * Run an operation holding the domain's exclusive write lock.
- */
-const locked = async <A>(path: string, timeoutMs: number, operation: () => Promise<A>) => {
-  const lock = await takeLock(path, timeoutMs);
-  try {
-    return await operation();
-  } finally {
-    await dropLock(lock);
-  }
-};
-
-// A burst of writers serializes fsync-backed commits, so allow time for a loaded filesystem.
-const LOCK_TIMEOUT_MS = 30_000;
-
-const failure = (path: string) => (cause: unknown) =>
-  new BacklogError({ path, message: cause instanceof Error ? cause.message : String(cause) });
-
-/**
- * Run an effect holding the backlog locks of several domains. They are taken in name order, so two
- * callers locking the same pair cannot deadlock, and released in reverse.
- * @param config Config.
- * @param domains Domains to lock.
- * @param effect What to run under the locks.
- * @returns The effect's value.
- */
-export const holdingLocks = <A, E, R>(
+const command = <A>(
   config: Config,
-  domains: readonly string[],
-  effect: Effect.Effect<A, E, R>,
-): Effect.Effect<A, E | BacklogError, R> =>
-  [...new Set(domains)]
-    .toSorted()
-    .reduceRight<Effect.Effect<A, E | BacklogError, R>>((inner, domain) => {
-      const path = documentPath(config.stateDir, domain);
-      return Effect.acquireUseRelease(
-        Effect.tryPromise({ try: () => takeLock(path, LOCK_TIMEOUT_MS), catch: failure(path) }),
-        () => inner,
-        (lock) => Effect.promise(() => dropLock(lock)),
-      );
-    }, effect);
+  domain: string,
+  step: (current: unknown, path: string) => Effect.Effect<CommandStep<A>, BacklogError | Refused>,
+): Effect.Effect<A, BacklogError | Refused> => {
+  const store = storeOf(config);
+  const key = keys.backlog(domain);
+  const path = store.location(key);
+  return runCommand(store, key, (current) => step(current.value, path)).pipe(
+    Effect.mapError((error) => (error._tag === "StoreUnreadable" ? unreadable(error) : error)),
+  );
+};
 
 /**
- * Write a file with the backlog's atomic write (temp file, fsync, rename). The caller holds the lock.
- * @param path File.
- * @param text Contents.
+ * What a refusable backlog command returns from inside the store: a reason, or its value.
  */
-export const writeAtomic = Effect.fn("writeAtomic")(function* (path: string, text: string) {
-  yield* Effect.tryPromise({ try: () => commitText(path, text), catch: failure(path) });
-});
+type Outcome<A> = { ok: false; reason: string } | { ok: true; value: A };
 
 /**
- * Write a whole document atomically, validated first. The caller holds the domain's lock.
- * @param path Document path.
- * @param backlog Document.
+ * Whether the domain has a backlog document. One that exists but cannot be read still counts.
+ * @param config Config.
+ * @param domain Domain.
+ * @returns True when present.
  */
-export const writeDocument = Effect.fn("writeDocument")(function* (path: string, backlog: Backlog) {
-  const checked = validateBacklog(backlog);
-  if (!checked.ok) return yield* new Refused({ message: checked.errors.join("; ") });
-  yield* Effect.tryPromise({ try: () => commit(path, checked.backlog), catch: failure(path) });
-});
+export const documentExists = (config: Config, domain: string): Effect.Effect<boolean> =>
+  storeOf(config)
+    .read(keys.backlog(domain))
+    .pipe(
+      Effect.map((stored) => stored.value !== null),
+      Effect.catchTag("StoreUnreadable", () => Effect.succeed(true)),
+    );
+
+/**
+ * The domains with a backlog document, in name order.
+ * @param config Config.
+ * @returns Domain names.
+ */
+export const listDomains = (config: Config): Effect.Effect<string[]> =>
+  storeOf(config)
+    .list("backlog")
+    .pipe(
+      Effect.map((domains) => [...domains].toSorted()),
+      Effect.catchTag("StoreUnreadable", () => Effect.succeed([] as string[])),
+    );
 
 /**
  * Create the domain's document when it is missing. An existing document is left untouched.
@@ -287,18 +174,22 @@ export const createDocument = Effect.fn("createDocument")(function* (
   config: Config,
   domain: string,
 ) {
-  const path = documentPath(config.stateDir, domain);
   const markdown = backlogPath(config.backlogDir, domain);
-  return yield* Effect.tryPromise({
-    try: () =>
-      locked(path, LOCK_TIMEOUT_MS, async () => {
-        if (existsSync(path)) return { path, created: false, legacy: null };
+  return yield* command<{ path: string; created: boolean; legacy: string | null }>(
+    config,
+    domain,
+    (current, path) =>
+      Effect.sync(() => {
+        if (current !== null)
+          return { write: false as const, value: { path, created: false, legacy: null } };
         const legacy = existsSync(markdown) ? markdown : null;
-        await commit(path, emptyBacklog(domain, legacy));
-        return { path, created: true, legacy };
+        return {
+          write: true as const,
+          next: emptyBacklog(domain, legacy),
+          value: { path, created: true, legacy },
+        };
       }),
-    catch: failure(path),
-  });
+  );
 });
 
 /**
@@ -317,52 +208,60 @@ export const seedDocument = Effect.fn("seedDocument")(function* (
   domain: string,
   input: { owned: string; titles: readonly string[]; now: string },
 ) {
-  const path = documentPath(config.stateDir, domain);
   const markdown = backlogPath(config.backlogDir, domain);
-  const result = yield* Effect.tryPromise({
-    try: () =>
-      locked(path, LOCK_TIMEOUT_MS, async () => {
-        const created = !existsSync(path);
-        const current = created
-          ? emptyBacklog(domain, existsSync(markdown) ? markdown : null)
-          : parse(path, await readFile(path, "utf8"));
-        const bounded = addBoundary(current, { path: input.owned, list: "owned" });
-        if (!bounded.ok) return { ok: false as const, reason: bounded.reason };
-        const seeded = input.titles.reduce<OpResult<{ items: Item[]; present: Item[] }>>(
-          (previous, title) => {
-            if (!previous.ok) return previous;
-            const present = previous.backlog.items.find(
-              (item) =>
-                item.title === title.trim() &&
-                item.status !== "done" &&
-                item.status !== "dismissed",
-            );
-            if (present)
-              return {
-                ...previous,
-                value: { ...previous.value, present: [...previous.value.present, present] },
-              };
-            const added = addItem(previous.backlog, { title, now: input.now });
-            if (!added.ok) return { ok: false, reason: `--item: ${added.reason}` };
+  type Seeded = {
+    path: string;
+    created: boolean;
+    added: boolean;
+    items: Item[];
+    present: Item[];
+  };
+  const result = yield* command<Outcome<Seeded>>(config, domain, (stored, path) =>
+    Effect.gen(function* () {
+      const created = stored === null;
+      const current = created
+        ? emptyBacklog(domain, existsSync(markdown) ? markdown : null)
+        : yield* decode(path, stored);
+      const refused = (reason: string): CommandStep<Outcome<Seeded>> => ({
+        write: false,
+        value: { ok: false, reason },
+      });
+      const bounded = addBoundary(current, { path: input.owned, list: "owned" });
+      if (!bounded.ok) return refused(bounded.reason);
+      const seeded = input.titles.reduce<OpResult<{ items: Item[]; present: Item[] }>>(
+        (previous, title) => {
+          if (!previous.ok) return previous;
+          const present = previous.backlog.items.find(
+            (item) =>
+              item.title === title.trim() && item.status !== "done" && item.status !== "dismissed",
+          );
+          if (present)
             return {
-              ok: true,
-              backlog: added.backlog,
-              value: { ...previous.value, items: [...previous.value.items, added.value] },
+              ...previous,
+              value: { ...previous.value, present: [...previous.value.present, present] },
             };
-          },
-          { ok: true, backlog: bounded.backlog, value: { items: [], present: [] } },
-        );
-        if (!seeded.ok) return { ok: false as const, reason: seeded.reason };
-        const value = { path, created, added: bounded.value.added, ...seeded.value };
-        if (!created && !bounded.value.added && seeded.value.items.length === 0)
-          return { ok: true as const, value };
-        const checked = validateBacklog(seeded.backlog);
-        if (!checked.ok) return { ok: false as const, reason: checked.errors.join("; ") };
-        await commit(path, checked.backlog);
-        return { ok: true as const, value };
-      }),
-    catch: failure(path),
-  });
+          const added = addItem(previous.backlog, { title, now: input.now });
+          if (!added.ok) return { ok: false, reason: `--item: ${added.reason}` };
+          return {
+            ok: true,
+            backlog: added.backlog,
+            value: { ...previous.value, items: [...previous.value.items, added.value] },
+          };
+        },
+        { ok: true, backlog: bounded.backlog, value: { items: [], present: [] } },
+      );
+      if (!seeded.ok) return refused(seeded.reason);
+      const value: Outcome<Seeded> = {
+        ok: true,
+        value: { path, created, added: bounded.value.added, ...seeded.value },
+      };
+      if (!created && !bounded.value.added && seeded.value.items.length === 0)
+        return { write: false as const, value };
+      const checked = validateBacklog(seeded.backlog);
+      if (!checked.ok) return refused(checked.errors.join("; "));
+      return { write: true as const, next: checked.backlog, value };
+    }),
+  );
   if (!result.ok) return yield* new Refused({ message: result.reason });
   return result.value;
 });
@@ -374,15 +273,12 @@ export const seedDocument = Effect.fn("seedDocument")(function* (
  * @returns The document and its path; refused when missing, a `BacklogError` when unreadable.
  */
 export const readDocument = Effect.fn("readDocument")(function* (config: Config, domain: string) {
-  const path = documentPath(config.stateDir, domain);
-  if (!existsSync(path))
-    return yield* new Refused({
-      message: `no backlog for ${domain} at ${path}; run coordinate start ${domain}`,
-    });
-  const backlog = yield* Effect.tryPromise({
-    try: async () => parse(path, await readFile(path, "utf8")),
-    catch: failure(path),
-  });
+  const store = storeOf(config);
+  const key = keys.backlog(domain);
+  const path = store.location(key);
+  const stored = yield* store.read(key).pipe(Effect.mapError(unreadable));
+  if (stored.value === null) return yield* missing(path, domain);
+  const backlog = yield* decode(path, stored.value);
   return { path, backlog };
 });
 
@@ -396,25 +292,38 @@ export const readDocument = Effect.fn("readDocument")(function* (config: Config,
  */
 const change = <A>(config: Config, domain: string, operation: (backlog: Backlog) => OpResult<A>) =>
   Effect.gen(function* () {
-    const path = documentPath(config.stateDir, domain);
-    if (!existsSync(path))
-      return yield* new Refused({
-        message: `no backlog for ${domain} at ${path}; run coordinate start ${domain}`,
-      });
-    const result = yield* Effect.tryPromise({
-      try: () =>
-        locked(path, LOCK_TIMEOUT_MS, async () => {
-          const applied = operation(parse(path, await readFile(path, "utf8")));
-          if (!applied.ok) return { ok: false as const, reason: applied.reason };
-          const checked = validateBacklog(applied.backlog);
-          if (!checked.ok) return { ok: false as const, reason: checked.errors.join("; ") };
-          const kept = retain(checked.backlog, RETAINED_CLOSED);
-          await appendArchive(archivePath(config.stateDir, domain), kept.archived);
-          await commit(path, kept.backlog);
-          return { ok: true as const, value: applied.value };
-        }),
-      catch: failure(path),
-    });
+    // Checked before the lock too, so a missing domain is refused without touching the state dir.
+    if (!(yield* documentExists(config, domain)))
+      return yield* missing(storeOf(config).location(keys.backlog(domain)), domain);
+    const result = yield* command<Outcome<A>>(config, domain, (stored, path) =>
+      Effect.gen(function* () {
+        if (stored === null) return yield* missing(path, domain);
+        const applied = operation(yield* decode(path, stored));
+        if (!applied.ok)
+          return { write: false as const, value: { ok: false as const, reason: applied.reason } };
+        const checked = validateBacklog(applied.backlog);
+        if (!checked.ok)
+          return {
+            write: false as const,
+            value: { ok: false as const, reason: checked.errors.join("; ") },
+          };
+        const kept = retain(checked.backlog, RETAINED_CLOSED);
+        // Before the write, so a crash between the two repeats a line rather than losing one.
+        yield* Effect.tryPromise({
+          try: () => appendArchive(archivePath(config.stateDir, domain), kept.archived),
+          catch: (cause) =>
+            new BacklogError({
+              path,
+              message: cause instanceof Error ? cause.message : String(cause),
+            }),
+        });
+        return {
+          write: true as const,
+          next: kept.backlog,
+          value: { ok: true as const, value: applied.value },
+        };
+      }),
+    );
     if (!result.ok) return yield* new Refused({ message: result.reason });
     return result.value;
   });

@@ -1,11 +1,17 @@
-import { existsSync } from "node:fs";
-import { readFile } from "node:fs/promises";
-import { join } from "node:path";
 import { Effect, Result, Schema } from "effect";
-import { BacklogError, holdingLocks, writeAtomic } from "./backlog-doc.ts";
-import { documentPath } from "./backlog-store/paths.ts";
+import { documentExists } from "./backlog-doc.ts";
 import type { Config } from "./config.ts";
 import { Refused } from "./fleet.ts";
+import { stateStore } from "./state.ts";
+import { filesPath } from "./state-files.ts";
+import {
+  type BacklogError,
+  type CommandStep,
+  keys,
+  runCommand,
+  type StoreSession,
+  type StoreUnreadable,
+} from "./state-store.ts";
 
 /**
  * Delegate harnesses currently supported by Coordinate.
@@ -92,8 +98,6 @@ export type HarnessPolicyView = {
   } | null;
 };
 
-const POLICY_LOCK_DOMAIN = "@delegate-harness-policy";
-const POLICY_FILE = "delegate-harness-policy.json";
 const DOMAIN_NAME = /^[a-z0-9][a-z0-9._-]*$/;
 const HARNESS_ORDER = DELEGATE_HARNESSES;
 
@@ -110,7 +114,7 @@ export const LEGACY_HARNESS_SELECTION: HarnessSelection = {
  * @param stateDir Coordinate state directory.
  * @returns The policy file path.
  */
-export const harnessPolicyPath = (stateDir: string): string => join(stateDir, POLICY_FILE);
+export const harnessPolicyPath = (stateDir: string): string => filesPath(stateDir, keys.policy());
 
 /**
  * Serialize a policy edit and the domain-rename policy guard against the same reserved lock,
@@ -124,12 +128,9 @@ export const harnessPolicyPath = (stateDir: string): string => join(stateDir, PO
 export const holdingHarnessPolicyLocks = <A, E, R>(
   config: Config,
   domains: readonly string[],
-  effect: Effect.Effect<A, E, R>,
+  use: (session: StoreSession) => Effect.Effect<A, E, R>,
 ): Effect.Effect<A, E | BacklogError, R> =>
-  holdingLocks(config, [POLICY_LOCK_DOMAIN, ...domains], effect);
-
-const hasCode = (error: unknown, code: string): boolean =>
-  error instanceof Error && "code" in error && error.code === code;
+  stateStore(config.stateDir).exclusive([keys.policy(), ...domains.map(keys.backlog)], use);
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>
   typeof value === "object" && value !== null && !Array.isArray(value);
@@ -196,36 +197,67 @@ const missingDocument = (): HarnessPolicyDocument => ({
   domains: {},
 });
 
-const readDocument = Effect.fn("readHarnessPolicyDocument")(function* (config: Config) {
-  const path = harnessPolicyPath(config.stateDir);
-  const text = yield* Effect.tryPromise({
-    try: async () => {
-      try {
-        return await readFile(path, "utf8");
-      } catch (error) {
-        if (hasCode(error, "ENOENT")) return null;
-        throw error;
-      }
-    },
-    catch: (cause) =>
-      new HarnessPolicyError({
+const decodeDocument = (path: string, value: unknown) =>
+  Effect.gen(function* () {
+    if (value === null) return missingDocument();
+    try {
+      return validateDocument(value);
+    } catch (cause) {
+      return yield* new HarnessPolicyError({
         path,
-        message: `${path}: cannot read: ${cause instanceof Error ? cause.message : String(cause)}`,
-      }),
+        message: `${path}: ${cause instanceof Error ? cause.message : String(cause)}`,
+      });
+    }
   });
-  if (text === null) return missingDocument();
 
-  let parsed: unknown;
-  try {
-    parsed = JSON.parse(text);
-    return validateDocument(parsed);
-  } catch (cause) {
-    return yield* new HarnessPolicyError({
-      path,
-      message: `${path}: ${cause instanceof Error ? cause.message : String(cause)}`,
-    });
-  }
+const policyLocation = (config: Config): string =>
+  stateStore(config.stateDir).location(keys.policy());
+
+const unreadablePolicy = (error: StoreUnreadable): HarnessPolicyError =>
+  new HarnessPolicyError({
+    path: error.location,
+    message:
+      error.stage === "read"
+        ? `${error.location}: cannot read: ${error.message}`
+        : `${error.location}: ${error.message}`,
+  });
+
+const readDocument = Effect.fn("readHarnessPolicyDocument")(function* (config: Config) {
+  const stored = yield* stateStore(config.stateDir)
+    .read(keys.policy())
+    .pipe(Effect.mapError(unreadablePolicy));
+  return yield* decodeDocument(policyLocation(config), stored.value);
 });
+
+/**
+ * Change the policy document through the store: decode it, apply `step`, and write the result
+ * when `step` returns one, re-run on a lost write race.
+ */
+const changePolicy = (
+  config: Config,
+  step: (
+    current: HarnessPolicyDocument,
+  ) => Effect.Effect<HarnessPolicyDocument | { unchanged: HarnessPolicyDocument }, Refused>,
+) => {
+  const path = policyLocation(config);
+  return runCommand(stateStore(config.stateDir), keys.policy(), (stored) =>
+    Effect.gen(function* () {
+      const current = yield* decodeDocument(path, stored.value);
+      const next = yield* step(current);
+      if ("unchanged" in next)
+        return { write: false, value: next.unchanged } satisfies CommandStep<HarnessPolicyDocument>;
+      return {
+        write: true,
+        next: documentValue(next),
+        value: next,
+      } satisfies CommandStep<HarnessPolicyDocument>;
+    }),
+  ).pipe(
+    Effect.mapError((error) =>
+      error._tag === "StoreUnreadable" ? unreadablePolicy(error) : error,
+    ),
+  );
+};
 
 /**
  * The harnesses a domain replacement enables that the global selection disables.
@@ -273,7 +305,7 @@ const viewOf = (
   return {
     schemaVersion: 1,
     revision: state.revision,
-    path: harnessPolicyPath(config.stateDir),
+    path: policyLocation(config),
     global: {
       source: state.global === undefined ? "legacy" : "configured",
       policy: globalPolicy,
@@ -345,17 +377,12 @@ const checkExpectedRevision = (
   return Effect.void;
 };
 
-const serializeDocument = (state: HarnessPolicyDocument): string =>
-  `${JSON.stringify(
-    {
-      schemaVersion: 1,
-      revision: state.revision,
-      ...(state.global === undefined ? {} : { global: state.global }),
-      domains: state.domains,
-    },
-    null,
-    2,
-  )}\n`;
+const documentValue = (state: HarnessPolicyDocument) => ({
+  schemaVersion: 1,
+  revision: state.revision,
+  ...(state.global === undefined ? {} : { global: state.global }),
+  domains: state.domains,
+});
 
 const validateDomainArgument = (domain: string): Effect.Effect<void, Refused> =>
   validDomain(domain)
@@ -497,17 +524,14 @@ export const setHarnessPolicy = Effect.fn("setHarnessPolicy")(function* (
       message: `invalid harness policy: ${cause instanceof Error ? cause.message : String(cause)}`,
     });
   }
-  const state = yield* holdingHarnessPolicyLocks(
-    config,
-    [],
+  const state = yield* changePolicy(config, (current) =>
     Effect.gen(function* () {
-      const current = yield* readDocument(config);
       yield* checkExpectedRevision(current, input.expectedRevision);
       if (input.scope === "domain") {
         const domain = input.domain ?? "";
-        if (!existsSync(documentPath(config.stateDir, domain)))
+        if (!(yield* documentExists(config, domain)))
           return yield* new Refused({
-            message: `no backlog for ${domain} at ${documentPath(config.stateDir, domain)}; create the domain before setting an override`,
+            message: `no backlog for ${domain} at ${stateStore(config.stateDir).location(keys.backlog(domain))}; create the domain before setting an override`,
           });
         return {
           ...current,
@@ -520,11 +544,7 @@ export const setHarnessPolicy = Effect.fn("setHarnessPolicy")(function* (
         revision: current.revision + 1,
         global: selection,
       } satisfies HarnessPolicyDocument;
-    }).pipe(
-      Effect.tap((next) =>
-        writeAtomic(harnessPolicyPath(config.stateDir), serializeDocument(next)),
-      ),
-    ),
+    }),
   );
   return renderView(viewOf(config, state, input.domain), input.json);
 });
@@ -544,18 +564,13 @@ export const resetHarnessPolicy = Effect.fn("resetHarnessPolicy")(function* (
   json: boolean,
 ) {
   yield* validateDomainArgument(domain);
-  const state = yield* holdingHarnessPolicyLocks(
-    config,
-    [],
+  const state = yield* changePolicy(config, (current) =>
     Effect.gen(function* () {
-      const current = yield* readDocument(config);
       yield* checkExpectedRevision(current, expectedRevision);
-      if (!Object.hasOwn(current.domains, domain)) return current;
+      if (!Object.hasOwn(current.domains, domain)) return { unchanged: current };
       const domains = { ...current.domains };
       delete domains[domain];
-      const next = { ...current, revision: current.revision + 1, domains };
-      yield* writeAtomic(harnessPolicyPath(config.stateDir), serializeDocument(next));
-      return next;
+      return { ...current, revision: current.revision + 1, domains };
     }),
   );
   return renderView(viewOf(config, state, domain), json);

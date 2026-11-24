@@ -1,21 +1,16 @@
 import { existsSync } from "node:fs";
-import { mkdir, readFile, rm } from "node:fs/promises";
-import { dirname } from "node:path";
+import { readFile, rm } from "node:fs/promises";
 import { Effect, Result } from "effect";
-import {
-  archivePath,
-  readDocument,
-  refSessions,
-  writeAtomic,
-  writeDocument,
-} from "./backlog-doc.ts";
-import { documentPath } from "./backlog-store/paths.ts";
+import { archivePath, BacklogError, readDocument, refSessions } from "./backlog-doc.ts";
+import { validateBacklog } from "./backlog-store/schema.ts";
+import { stateStore } from "./state.ts";
+import { writeFileAtomic } from "./state-files.ts";
+import { keys, type StateKey, type StoreSession } from "./state-store.ts";
 import { type Config, configPath } from "./config.ts";
 import { checkDomainName, L, members, readEnded, Refused, resolveDomain } from "./fleet.ts";
 import * as hc from "./herdr.ts";
 import { lockPath, watcherAlive } from "./watch-lock.ts";
 import { statePath } from "./watch.ts";
-import { capacityQueuePath } from "./capacity-queue.ts";
 import { checkHarnessPolicyDomainRename, holdingHarnessPolicyLocks } from "./harness-policy.ts";
 
 /**
@@ -62,32 +57,60 @@ const refuseLiveWatcher = Effect.fn("refuseLiveWatcher")(function* (
     });
 });
 
+/**
+ * Whether a shared document exists; one that exists but cannot be read still counts.
+ */
+const present = (config: Config, key: StateKey) =>
+  stateStore(config.stateDir)
+    .read(key)
+    .pipe(
+      Effect.map((stored) => stored.value !== null),
+      Effect.catchTag("StoreUnreadable", () => Effect.succeed(true)),
+    );
+
 const refuseExisting = (config: Config, from: string, to: string) =>
   Effect.gen(function* () {
-    if (!existsSync(documentPath(config.stateDir, from)))
+    const store = stateStore(config.stateDir);
+    if (!(yield* present(config, keys.backlog(from))))
       return yield* new Refused({
-        message: `no backlog for ${from} at ${documentPath(config.stateDir, from)}`,
+        message: `no backlog for ${from} at ${store.location(keys.backlog(from))}`,
       });
-    for (const [what, path] of [
-      ["a backlog", documentPath(config.stateDir, to)],
-      ["an archive", archivePath(config.stateDir, to)],
-      ["a capacity queue", capacityQueuePath(config.stateDir, to)],
-    ] as const)
-      if (existsSync(path))
-        return yield* new Refused({ message: `${what} for ${to} already exists at ${path}` });
+    if (yield* present(config, keys.backlog(to)))
+      return yield* new Refused({
+        message: `a backlog for ${to} already exists at ${store.location(keys.backlog(to))}`,
+      });
+    const archive = archivePath(config.stateDir, to);
+    if (existsSync(archive))
+      return yield* new Refused({ message: `an archive for ${to} already exists at ${archive}` });
+    if (yield* present(config, keys.queue(to)))
+      return yield* new Refused({
+        message: `a capacity queue for ${to} already exists at ${store.location(keys.queue(to))}`,
+      });
   });
 
 /**
- * Copy a file to its new name with the atomic write, when it exists.
+ * Copy a local file (an archive or watcher snapshot) to its new name with the atomic write, when
+ * it exists.
  * @returns The new path, or null when there was nothing to copy.
  */
 const copyIfPresent = Effect.fn("copyIfPresent")(function* (source: string, target: string) {
   if (!existsSync(source)) return null;
   const text = yield* Effect.promise(() => readFile(source, "utf8"));
-  yield* Effect.promise(() => mkdir(dirname(target), { recursive: true }));
-  yield* writeAtomic(target, text);
+  yield* writeFileAtomic(target, text);
   return target;
 });
+
+const unreadable = (error: { location: string; message: string }) =>
+  new BacklogError({ path: error.location, message: error.message });
+
+/**
+ * Replace a shared document whatever it holds now, inside the rename's exclusive section.
+ */
+const replace = (session: StoreSession, key: StateKey, value: unknown) =>
+  session.read(key).pipe(
+    Effect.flatMap((current) => session.write(key, value, current.version)),
+    Effect.mapError((error) => (error._tag === "StoreUnreadable" ? unreadable(error) : error)),
+  );
 
 const lines = (result: RenameResult): string[] => [
   `renamed ${result.from} to ${result.to}: backlog ${result.backlog}`,
@@ -133,9 +156,8 @@ export const renameDomain = Effect.fn("renameDomain")(function* (
   yield* refuseLiveWatcher(config, from);
   yield* refuseLiveWatcher(config, to);
 
-  const result = yield* holdingHarnessPolicyLocks(
-    config,
-    [from, to],
+  const store = stateStore(config.stateDir);
+  const result = yield* holdingHarnessPolicyLocks(config, [from, to], (session) =>
     Effect.gen(function* () {
       yield* refuseExisting(config, from, to);
       yield* checkHarnessPolicyDomainRename(config, from, to);
@@ -144,22 +166,28 @@ export const renameDomain = Effect.fn("renameDomain")(function* (
       const { backlog } = yield* readDocument(config, from);
 
       // New files first: until the old backlog is removed below, the old domain stays whole.
-      const backlogPath = documentPath(state, to);
-      yield* writeDocument(backlogPath, { ...backlog, domain: to });
+      const backlogPath = store.location(keys.backlog(to));
+      const checked = validateBacklog({ ...backlog, domain: to });
+      if (!checked.ok) return yield* new Refused({ message: checked.errors.join("; ") });
+      yield* replace(session, keys.backlog(to), checked.backlog);
       const archive = yield* copyIfPresent(archivePath(state, from), archivePath(state, to));
       const snapshot = yield* copyIfPresent(statePath(state, from), statePath(state, to));
-      const capacityQueue = yield* copyIfPresent(
-        capacityQueuePath(state, from),
-        capacityQueuePath(state, to),
-      );
+      const queue = yield* session.read(keys.queue(from)).pipe(Effect.mapError(unreadable));
+      const capacityQueue =
+        queue.value === null
+          ? null
+          : yield* replace(session, keys.queue(to), queue.value).pipe(
+              Effect.as(store.location(keys.queue(to))),
+            );
 
       // In place: each ended record is rewritten whole, keeping fields this CLI does not read.
       const { records, skipped } = yield* readEnded(state);
       const ended: string[] = [];
-      for (const { path, record } of records) {
+      for (const { id, path, record } of records) {
         if (record.domain !== from) continue;
-        const raw = yield* Effect.promise(async () => JSON.parse(await readFile(path, "utf8")));
-        yield* writeAtomic(path, `${JSON.stringify({ ...raw, domain: to }, null, 1)}\n`);
+        const key = keys.ended(id);
+        const raw = yield* session.read(key).pipe(Effect.mapError(unreadable));
+        yield* session.write(key, { ...(raw.value as object), domain: to }, raw.version);
         ended.push(path);
       }
 
@@ -176,13 +204,10 @@ export const renameDomain = Effect.fn("renameDomain")(function* (
         }
 
       // The old backlog goes first: once it is gone the rename is done, and what follows is cleanup.
-      yield* Effect.promise(() => rm(documentPath(state, from), { force: true }));
-      for (const path of [
-        archivePath(state, from),
-        statePath(state, from),
-        capacityQueuePath(state, from),
-      ])
+      yield* replace(session, keys.backlog(from), null);
+      for (const path of [archivePath(state, from), statePath(state, from)])
         yield* Effect.promise(() => rm(path, { force: true }));
+      yield* replace(session, keys.queue(from), null);
       const pidFile = lockPath(state, from);
       const stalePid = existsSync(pidFile) ? pidFile : null;
       if (stalePid) yield* Effect.promise(() => rm(stalePid, { force: true }));

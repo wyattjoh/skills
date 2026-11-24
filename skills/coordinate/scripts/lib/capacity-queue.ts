@@ -1,12 +1,17 @@
-import { randomUUID } from "node:crypto";
-import { hostname } from "node:os";
-import { mkdir, open, readFile, rename, rm } from "node:fs/promises";
-import { dirname, join } from "node:path";
 import { Effect } from "effect";
-import { BacklogError, holdingLocks, writeAtomic } from "./backlog-doc.ts";
 import type { Config } from "./config.ts";
 import type { ItemStatus } from "./backlog-store/schema.ts";
 import { checkDomainName, Refused } from "./fleet.ts";
+import { stateStore } from "./state.ts";
+import { filesPath } from "./state-files.ts";
+import {
+  BacklogError,
+  type CommandStep,
+  keys,
+  runCommand,
+  type StateStore,
+  type StoreUnreadable,
+} from "./state-store.ts";
 
 /**
  * The only durable data retained for a capacity-blocked delegate.
@@ -17,11 +22,6 @@ export type CapacityWait = { item: string; machine: string; order: number };
  * One domain's durable capacity queue.
  */
 export type CapacityQueue = { version: 1; nextOrder: number; entries: CapacityWait[] };
-
-/**
- * The lock held while one queued delegate is rechecked and launched.
- */
-type CapacityClaim = { path: string; token: string };
 
 const emptyQueue = (): CapacityQueue => ({ version: 1, nextOrder: 1, entries: [] });
 
@@ -41,21 +41,40 @@ export const capacityItemEligible = (status: ItemStatus): boolean => ELIGIBLE_ST
  * @returns Queue path.
  */
 export const capacityQueuePath = (stateDir: string, domain: string): string =>
-  join(stateDir, "capacity", `${domain}.json`);
+  filesPath(stateDir, keys.queue(domain));
+
+const store = (config: Config): StateStore => stateStore(config.stateDir);
 
 const failure = (path: string) => (cause: unknown) =>
   new BacklogError({ path, message: cause instanceof Error ? cause.message : String(cause) });
 
-const persistQueue = Effect.fn("persistCapacityQueue")(function* (
-  path: string,
-  queue: CapacityQueue,
-) {
-  yield* Effect.tryPromise({
-    try: () => mkdir(dirname(path), { recursive: true }),
-    catch: failure(path),
-  });
-  yield* writeAtomic(path, `${JSON.stringify(queue, null, 2)}\n`);
-});
+const unreadable = (error: StoreUnreadable): BacklogError =>
+  new BacklogError({ path: error.location, message: error.message });
+
+const decodeQueue = (path: string, value: unknown): Effect.Effect<CapacityQueue, BacklogError> =>
+  value === null
+    ? Effect.succeed(emptyQueue())
+    : Effect.try({ try: () => parseQueue(value), catch: failure(path) });
+
+/**
+ * Change a domain's queue under its backlog lock, re-run on a lost write race.
+ */
+const changeQueue = <A>(
+  config: Config,
+  domain: string,
+  step: (queue: CapacityQueue) => { next: CapacityQueue | undefined; value: A },
+): Effect.Effect<A, BacklogError | Refused> => {
+  const key = keys.queue(domain);
+  const path = store(config).location(key);
+  return runCommand(store(config), key, (current) =>
+    Effect.map(decodeQueue(path, current.value), (queue): CommandStep<A> => {
+      const { next, value } = step(queue);
+      return next === undefined ? { write: false, value } : { write: true, next, value };
+    }),
+  ).pipe(
+    Effect.mapError((error) => (error._tag === "StoreUnreadable" ? unreadable(error) : error)),
+  );
+};
 
 const validItem = (value: unknown): value is string =>
   typeof value === "string" && /^i[1-9][0-9]*$/u.test(value);
@@ -105,15 +124,6 @@ const parseQueue = (value: unknown): CapacityQueue => {
   return { version: 1, nextOrder: queue.nextOrder as number, entries };
 };
 
-const readQueue = async (path: string): Promise<CapacityQueue> => {
-  try {
-    return parseQueue(JSON.parse(await readFile(path, "utf8")));
-  } catch (cause) {
-    if (cause instanceof Error && "code" in cause && cause.code === "ENOENT") return emptyQueue();
-    throw cause;
-  }
-};
-
 /**
  * Read the queue, validating that it contains no launch payload or unknown metadata.
  * @param config Coordinate config.
@@ -125,8 +135,9 @@ export const readCapacityQueue = Effect.fn("readCapacityQueue")(function* (
   domain: string,
 ) {
   yield* checkDomainName(domain);
-  const path = capacityQueuePath(config.stateDir, domain);
-  return yield* Effect.tryPromise({ try: () => readQueue(path), catch: failure(path) });
+  const key = keys.queue(domain);
+  const stored = yield* store(config).read(key).pipe(Effect.mapError(unreadable));
+  return yield* decodeQueue(store(config).location(key), stored.value);
 });
 
 /**
@@ -188,33 +199,25 @@ export const enqueueCapacityWait = Effect.fn("enqueueCapacityWait")(function* (
     return yield* new Refused({ message: `${input.item} is not an item id such as i1` });
   if (!validMachine(input.machine))
     return yield* new Refused({ message: `${input.machine} is not a Herdr machine name` });
-  const path = capacityQueuePath(config.stateDir, domain);
-  return yield* holdingLocks(
-    config,
-    [domain],
-    Effect.gen(function* () {
-      const queue = yield* readCapacityQueue(config, domain);
-      const existing = queue.entries.find((entry) => entry.item === input.item);
-      if (existing) {
-        if (existing.machine === input.machine) return existing;
-        const updated = { ...existing, machine: input.machine };
-        const next = {
+  return yield* changeQueue(config, domain, (queue) => {
+    const existing = queue.entries.find((entry) => entry.item === input.item);
+    if (existing) {
+      if (existing.machine === input.machine) return { next: undefined, value: existing };
+      const updated = { ...existing, machine: input.machine };
+      return {
+        next: {
           ...queue,
           entries: queue.entries.map((entry) => (entry.item === input.item ? updated : entry)),
-        };
-        yield* persistQueue(path, next);
-        return updated;
-      }
-      const entry = { ...input, order: queue.nextOrder };
-      const next: CapacityQueue = {
-        ...queue,
-        nextOrder: queue.nextOrder + 1,
-        entries: [...queue.entries, entry],
+        },
+        value: updated,
       };
-      yield* persistQueue(path, next);
-      return entry;
-    }),
-  );
+    }
+    const entry = { ...input, order: queue.nextOrder };
+    return {
+      next: { ...queue, nextOrder: queue.nextOrder + 1, entries: [...queue.entries, entry] },
+      value: entry,
+    };
+  });
 });
 
 /**
@@ -230,23 +233,16 @@ export const pruneCapacityWaits = Effect.fn("pruneCapacityWaits")(function* (
   keep: ReadonlySet<string>,
 ) {
   yield* checkDomainName(domain);
-  const path = capacityQueuePath(config.stateDir, domain);
-  return yield* holdingLocks(
-    config,
-    [domain],
-    Effect.gen(function* () {
-      const queue = yield* readCapacityQueue(config, domain);
-      const removed = queue.entries.filter((entry) => !keep.has(entry.item));
-      if (removed.length > 0) {
-        const next = {
-          ...queue,
-          entries: queue.entries.filter((entry) => keep.has(entry.item)),
-        };
-        yield* persistQueue(path, next);
-      }
-      return removed;
-    }),
-  );
+  return yield* changeQueue(config, domain, (queue) => {
+    const removed = queue.entries.filter((entry) => !keep.has(entry.item));
+    return {
+      next:
+        removed.length > 0
+          ? { ...queue, entries: queue.entries.filter((entry) => keep.has(entry.item)) }
+          : undefined,
+      value: removed,
+    };
+  });
 });
 
 /**
@@ -262,96 +258,16 @@ export const removeCapacityWait = Effect.fn("removeCapacityWait")(function* (
   item: string,
 ) {
   yield* checkDomainName(domain);
-  const path = capacityQueuePath(config.stateDir, domain);
-  return yield* holdingLocks(
-    config,
-    [domain],
-    Effect.gen(function* () {
-      const queue = yield* readCapacityQueue(config, domain);
-      const removed = queue.entries.find((entry) => entry.item === item);
-      if (removed)
-        yield* persistQueue(path, {
-          ...queue,
-          entries: queue.entries.filter((entry) => entry.item !== item),
-        });
-      return removed;
-    }),
-  );
-});
-
-const hasCode = (error: unknown, code: string): boolean =>
-  error instanceof Error && "code" in error && error.code === code;
-
-const claimPath = (stateDir: string, domain: string, item: string): string =>
-  join(stateDir, "capacity", "claims", `${domain}-${item}.lock`);
-
-const ownerIsLive = (pid: number): boolean => {
-  try {
-    process.kill(pid, 0);
-    return true;
-  } catch (error) {
-    return (error as NodeJS.ErrnoException).code === "EPERM";
-  }
-};
-
-const acquireClaim = async (path: string): Promise<CapacityClaim> => {
-  await mkdir(join(path, ".."), { recursive: true });
-  for (let attempt = 0; attempt < 2; attempt += 1) {
-    try {
-      await mkdir(path, { mode: 0o700 });
-      const token = randomUUID();
-      const owner = await open(join(path, "owner.json"), "wx", 0o600);
-      try {
-        await owner.writeFile(JSON.stringify({ pid: process.pid, hostname: hostname(), token }));
-        await owner.sync();
-      } finally {
-        await owner.close();
-      }
-      return { path, token };
-    } catch (error) {
-      if (!hasCode(error, "EEXIST")) {
-        await rm(path, { recursive: true, force: true });
-        throw error;
-      }
-      let current: { pid?: unknown; hostname?: unknown; token?: unknown };
-      try {
-        current = JSON.parse(await readFile(join(path, "owner.json"), "utf8"));
-      } catch (cause) {
-        throw new Error(`queued launch claim is unreadable: ${path}`, { cause });
-      }
-      if (
-        current.hostname !== hostname() ||
-        typeof current.pid !== "number" ||
-        !Number.isInteger(current.pid) ||
-        current.pid <= 0 ||
-        typeof current.token !== "string"
-      )
-        throw new Error(`queued launch claim has an invalid owner: ${path}`, { cause: error });
-      if (ownerIsLive(current.pid))
-        throw new Error(`queued item is already being retried (pid ${current.pid})`, {
-          cause: error,
-        });
-      const abandoned = `${path}.abandoned-${current.token}`;
-      try {
-        await rename(path, abandoned);
-      } catch (renameError) {
-        if (!hasCode(renameError, "ENOENT") && !hasCode(renameError, "EEXIST")) throw renameError;
-      }
-    }
-  }
-  throw new Error(`could not acquire queued launch claim: ${path}`);
-};
-
-const releaseClaim = async (claim: CapacityClaim): Promise<void> => {
-  try {
-    const owner = JSON.parse(await readFile(join(claim.path, "owner.json"), "utf8")) as {
-      token?: unknown;
+  return yield* changeQueue(config, domain, (queue) => {
+    const removed = queue.entries.find((entry) => entry.item === item);
+    return {
+      next: removed
+        ? { ...queue, entries: queue.entries.filter((entry) => entry.item !== item) }
+        : undefined,
+      value: removed,
     };
-    if (owner.token === claim.token) await rm(claim.path, { recursive: true, force: true });
-  } catch {
-    // A replaced or removed claim belongs to its new owner, not this release.
-  }
-};
+  });
+});
 
 /**
  * Serialize retries of the same queued item across coordinators and recover claims left by a dead process.
@@ -367,14 +283,12 @@ export const withCapacityClaim = <A, E, R>(
   item: string,
   use: Effect.Effect<A, E, R>,
 ): Effect.Effect<A, E | Refused, R> => {
-  const path = claimPath(config.stateDir, domain, item);
+  const claims = store(config);
   return Effect.acquireUseRelease(
-    Effect.tryPromise({
-      try: () => acquireClaim(path),
-      catch: (cause) =>
-        new Refused({ message: cause instanceof Error ? cause.message : String(cause) }),
-    }),
+    claims
+      .claim(domain, item)
+      .pipe(Effect.mapError((busy) => new Refused({ message: busy.message }))),
     () => use,
-    (claim) => Effect.promise(() => releaseClaim(claim)),
+    (claim) => claims.release(claim),
   );
 };

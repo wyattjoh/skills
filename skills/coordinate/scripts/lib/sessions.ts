@@ -1,10 +1,9 @@
-import { mkdir, readFile } from "node:fs/promises";
-import { join } from "node:path";
 import { Effect, Option, Schema } from "effect";
-import { writeAtomic } from "./backlog-doc.ts";
 import type { Config } from "./config.ts";
 import { L, readEnded, Refused, sessionOf, VerdictSchema, writeEnded } from "./fleet.ts";
 import * as hc from "./herdr.ts";
+import { stateStore } from "./state.ts";
+import { BacklogError, keys, runCommand } from "./state-store.ts";
 
 /**
  * Why a retro is due: a problem verdict, two or more resumes, or the domain's fifth settled delegate.
@@ -72,23 +71,19 @@ export const markSettled = Effect.fn("markSettled")(function* (
   session: string,
   retro: RetroMarker | undefined,
 ) {
-  const state = yield* readSession(stateDir, session);
-  return yield* writeSession(stateDir, {
+  return yield* changeSession(stateDir, session, (state) => ({
     ...state,
     counted: true,
     ...(retro === undefined ? {} : { retro }),
-  });
+  }));
 });
 
-/**
- * Folder of per-session state, beside the ended records.
- * @param stateDir State dir.
- * @returns Path.
- */
-const sessionsDir = (stateDir: string): string => join(stateDir, "sessions");
-
-const sessionPath = (stateDir: string, session: string): string =>
-  join(sessionsDir(stateDir), `${session}.json`);
+const decodeSession = (session: string, value: unknown): SessionState =>
+  Option.getOrElse(Schema.decodeUnknownOption(SessionStateSchema)(value), () => ({
+    session,
+    resumes: 0,
+    verdict: null,
+  }));
 
 /**
  * One session's state; a session never verified or resumed reads as zero resumes and no verdict.
@@ -97,18 +92,28 @@ const sessionPath = (stateDir: string, session: string): string =>
  * @returns Its state.
  */
 export const readSession = Effect.fn("readSession")(function* (stateDir: string, session: string) {
-  const fresh: SessionState = { session, resumes: 0, verdict: null };
-  const decoded = yield* Effect.tryPromise(async () =>
-    JSON.parse(await readFile(sessionPath(stateDir, session), "utf8")),
-  ).pipe(Effect.flatMap(Schema.decodeUnknownEffect(SessionStateSchema)), Effect.option);
-  return Option.getOrElse(decoded, () => fresh);
+  const stored = yield* stateStore(stateDir).read(keys.session(session)).pipe(Effect.option);
+  return decodeSession(session, Option.isSome(stored) ? stored.value.value : null);
 });
 
-const writeSession = Effect.fn("writeSession")(function* (stateDir: string, state: SessionState) {
-  yield* Effect.promise(() => mkdir(sessionsDir(stateDir), { recursive: true }));
-  yield* writeAtomic(sessionPath(stateDir, state.session), `${JSON.stringify(state, null, 1)}\n`);
-  return state;
-});
+/**
+ * Change one session's state: re-read it, apply `update`, and write the result.
+ */
+const changeSession = (
+  stateDir: string,
+  session: string,
+  update: (state: SessionState) => SessionState,
+) =>
+  runCommand(stateStore(stateDir), keys.session(session), (current) => {
+    const next = update(decodeSession(session, current.value));
+    return Effect.succeed({ write: true as const, next, value: next });
+  }).pipe(
+    Effect.mapError((error) =>
+      error._tag === "StoreUnreadable"
+        ? new BacklogError({ path: error.location, message: error.message })
+        : error,
+    ),
+  );
 
 /**
  * Count one more resume of a session.
@@ -117,8 +122,10 @@ const writeSession = Effect.fn("writeSession")(function* (stateDir: string, stat
  * @returns The updated state.
  */
 export const countResume = Effect.fn("countResume")(function* (stateDir: string, session: string) {
-  const state = yield* readSession(stateDir, session);
-  return yield* writeSession(stateDir, { ...state, resumes: state.resumes + 1 });
+  return yield* changeSession(stateDir, session, (state) => ({
+    ...state,
+    resumes: state.resumes + 1,
+  }));
 });
 
 /**
@@ -155,15 +162,14 @@ export const verifyDelegate = Effect.fn("verifyDelegate")(function* (
       message: `no delegate ${target}: no live delegate terminal or ended record has that name`,
     });
   const name = ended?.record.name ?? terminal?.name ?? target;
-  const state = yield* readSession(config.stateDir, session);
-  const recorded = yield* writeSession(config.stateDir, {
+  const recorded = yield* changeSession(config.stateDir, session, (state) => ({
     ...state,
     verdict: {
       result: verdict.result,
       reason: verdict.result === "problem" ? verdict.reason : null,
       at: new Date().toISOString(),
     },
-  });
+  }));
   if (ended)
     yield* writeEnded(config.stateDir, {
       ...ended.record,
