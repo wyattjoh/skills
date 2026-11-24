@@ -1602,8 +1602,9 @@ export const editSource = (backlog: Backlog, target: EditTarget): string | undef
 /**
  * Build the CLI call behind an editor's Save: `item edit`, `finding edit`, `backlog policy
  * replace`, `backlog focus --md` or `backlog boundary replace`. Titles go as plain text, every
- * other field as Markdown. It runs as `dismissCommand` does, so the CLI records the change for
- * the coordinator's watcher.
+ * other field as Markdown. Each value rides in its flag (`--md=<value>`), since the CLI reads a
+ * separate value that starts with a dash, such as a Markdown list, as a flag. It runs as
+ * `dismissCommand` does, so the CLI records the change for the coordinator's watcher.
  * @param home The user's home directory.
  * @param domain The record's domain.
  * @param target The field.
@@ -1623,8 +1624,7 @@ export const editCommand = (
         "edit",
         "--domain",
         domain,
-        target.field === "title" ? "--title" : "--outcome-md",
-        value,
+        `${target.field === "title" ? "--title" : "--outcome-md"}=${value}`,
         "--",
         target.id,
       ]);
@@ -1636,8 +1636,7 @@ export const editCommand = (
         domain,
         "--decision",
         target.key,
-        "--md",
-        value,
+        `--md=${value}`,
         "--",
         target.id,
       ]);
@@ -1647,8 +1646,7 @@ export const editCommand = (
         "edit",
         "--domain",
         domain,
-        target.field === "title" ? "--title" : `--${target.field}-md`,
-        value,
+        `${target.field === "title" ? "--title" : `--${target.field}-md`}=${value}`,
         "--",
         target.id,
       ]);
@@ -1659,13 +1657,12 @@ export const editCommand = (
         "replace",
         "--domain",
         domain,
-        "--md",
-        value,
+        `--md=${value}`,
         "--",
         target.id,
       ]);
     case "focus":
-      return panelCli(home, ["backlog", "focus", "--domain", domain, "--md", value]);
+      return panelCli(home, ["backlog", "focus", "--domain", domain, `--md=${value}`]);
     case "boundary":
       return panelCli(home, [
         "backlog",

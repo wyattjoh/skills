@@ -6200,8 +6200,7 @@ test("Save runs item edit with the decision's key and the Markdown, then reloads
       "alpha",
       "--decision",
       keyAt(0),
-      "--md",
-      "api **and** cli",
+      "--md=api **and** cli",
       "--",
       "i1",
     ],
@@ -6225,8 +6224,8 @@ test("a title saves as plain text and a closed item's outcome as Markdown", asyn
   get(render(), "editor-item-i2-outcome-save").click!({}, ctx.cx);
   await settle();
   expect(host.execs.map(({ args }) => args.slice(4))).toEqual([
-    ["item", "edit", "--domain", "alpha", "--title", "Older work", "--", "i2"],
-    ["item", "edit", "--domain", "alpha", "--outcome-md", "wrapped **up**", "--", "i2"],
+    ["item", "edit", "--domain", "alpha", "--title=Older work", "--", "i2"],
+    ["item", "edit", "--domain", "alpha", "--outcome-md=wrapped **up**", "--", "i2"],
   ]);
 });
 
@@ -6298,7 +6297,7 @@ test("the focus saves through backlog focus --md", async () => {
   get(render(), "editor-focus-save").click!({}, ctx.cx);
   await settle();
   expect(host.execs.map(({ args }) => args.slice(4))).toEqual([
-    ["backlog", "focus", "--domain", "alpha", "--md", "Ship **v2**"],
+    ["backlog", "focus", "--domain", "alpha", "--md=Ship **v2**"],
   ]);
 });
 
@@ -6316,7 +6315,7 @@ test("a policy saves through policy replace and deletes through policy rm after 
   get(render(), "delete-confirm-policy-p1").click!({}, ctx.cx);
   await settle();
   expect(host.execs.map(({ args }) => args.slice(4))).toEqual([
-    ["backlog", "policy", "replace", "--domain", "alpha", "--md", "ship it **now**", "--", "p1"],
+    ["backlog", "policy", "replace", "--domain", "alpha", "--md=ship it **now**", "--", "p1"],
     ["backlog", "policy", "rm", "--domain", "alpha", "--", "p1"],
   ]);
 });
@@ -6333,7 +6332,7 @@ test("a finding's detail saves through finding edit --detail-md", async () => {
   get(render(), "editor-finding-f3-detail-save").click!({}, ctx.cx);
   await settle();
   expect(host.execs.map(({ args }) => args.slice(4))).toEqual([
-    ["finding", "edit", "--domain", "alpha", "--detail-md", "fails **often**", "--", "f3"],
+    ["finding", "edit", "--domain", "alpha", "--detail-md=fails **often**", "--", "f3"],
   ]);
 });
 

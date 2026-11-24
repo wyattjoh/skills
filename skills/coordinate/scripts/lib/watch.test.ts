@@ -1462,26 +1462,27 @@ describe("watch start events", () => {
   });
 });
 
+const EDIT_AT = "2026-11-10T09:00:00.000Z";
+const pending = async (config: Parameters<typeof readDocument>[0]) =>
+  (await runWith(readDocument(config, "app"))).backlog.edits;
+const retitle = (
+  config: Parameters<typeof readDocument>[0],
+  title: string,
+  at: string | undefined,
+) =>
+  runWith(
+    itemEdit(config, "app", {
+      id: "i1",
+      edit: { field: "title", value: title },
+      json: false,
+      editedAt: at,
+    }),
+  );
+
 describe("watch edited events", () => {
-  const AT = "2026-11-10T09:00:00.000Z";
+  const AT = EDIT_AT;
   const ACTION =
     "the user changed this record: adjust any running work or brief that relied on the old text";
-  const pending = async (config: Parameters<typeof readDocument>[0]) =>
-    (await runWith(readDocument(config, "app"))).backlog.edits;
-  const retitle = (
-    config: Parameters<typeof readDocument>[0],
-    title: string,
-    at: string | undefined,
-  ) =>
-    runWith(
-      itemEdit(config, "app", {
-        id: "i1",
-        edit: { field: "title", value: title },
-        json: false,
-        editedAt: at,
-      }),
-    );
-
   it("queues one edited event per change, then clears it from the document", async () => {
     const { config, arm, stateFile } = await dueDomain();
     expect(await arm("2026-11-10")).toEqual(alive);

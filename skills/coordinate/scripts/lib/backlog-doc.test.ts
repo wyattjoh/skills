@@ -2275,6 +2275,58 @@ describe("coordinator-only mutations", () => {
     ]);
   });
 
+  it("accepts the panel's exact argv, including Markdown that starts with a dash", async () => {
+    const { state, path } = await prepared();
+    const inside = cliEnv(state, COORDINATOR);
+    const { HC_TERMINAL_ID: _unset, ...outside } = cliEnv(state, COORDINATOR);
+    const [owned, next] = [dir(), dir()];
+    expect(
+      [
+        ["item", "update", "i1", "--decided-md", "api only", "--domain", "app"],
+        ["backlog", "policy", "add", "--md", "ship it", "--domain", "app"],
+        ["backlog", "boundary", "add", owned, "--adjacent", "--domain", "app"],
+      ].map((args) => spawn(inside, args)[0]),
+    ).toEqual([0, 0, 0]);
+    const key = decisionKey(read(path).items[0].decided[0], 0);
+    const runs = [
+      ["item", "edit", "--domain", "app", "--title=- fix signup", "--", "i1"],
+      ["item", "edit", "--domain", "app", "--decision", key, "--md=- a\n- b", "--", "i1"],
+      ["finding", "edit", "--domain", "app", "--detail-md=---", "--", "f2"],
+      ["backlog", "policy", "replace", "--domain", "app", "--md=- ship it", "--", "p1"],
+      ["backlog", "focus", "--domain", "app", "--md=-login v2"],
+      ["backlog", "boundary", "replace", "--domain", "app", "--adjacent", "--", owned, next],
+    ].map((args) => spawn(outside, args)[0]);
+    expect(runs).toEqual([0, 0, 0, 0, 0, 0]);
+    const doc = read(path);
+    expect([
+      doc.items[0].title,
+      doc.items[0].decided[0].markdown,
+      doc.findings[0].detailMarkdown,
+      doc.policies[0].markdown,
+      doc.focusMarkdown,
+      doc.boundary.adjacent,
+    ]).toEqual(["- fix signup", "- a\n- b", "---", "- ship it", "-login v2", [next]]);
+    const liveKey = decisionKey(doc.items[0].decided[0], 0);
+    expect(
+      [
+        ["item", "edit", "--domain", "app", "--decision", liveKey, "--remove", "--", "i1"],
+        ["backlog", "policy", "rm", "--domain", "app", "--", "p1"],
+        ["backlog", "boundary", "rm", next, "--domain", "app", "--json"],
+      ].map((args) => spawn(outside, args)[0]),
+    ).toEqual([0, 0, 0]);
+    expect(read(path).edits.map((edit: Record<string, unknown>) => edit.field)).toEqual([
+      "title",
+      "decision",
+      "detail",
+      "policy",
+      "focus",
+      "adjacent",
+      "decision",
+      "policy",
+      "adjacent",
+    ]);
+  });
+
   it("records nothing for the coordinator's own edits, and refuses bad edit flags", async () => {
     const { state, path } = await prepared();
     const inside = cliEnv(state, COORDINATOR);
