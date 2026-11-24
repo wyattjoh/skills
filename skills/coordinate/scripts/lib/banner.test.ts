@@ -1,10 +1,10 @@
-import { afterAll, describe, expect, it } from "bun:test";
+import { afterAll, expect, it } from "bun:test";
 import { mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { Effect } from "effect";
 import { createDocument } from "./backlog-doc.ts";
 import { resolveConfig } from "./config.ts";
-import { cliEnv, runWith, tempDir } from "./fixture.ts";
+import { cliEnv, cliState, eachBackend, runWith, tempDir } from "./fixture.ts";
 
 const made: string[] = [];
 const children: Bun.Subprocess[] = [];
@@ -22,6 +22,7 @@ const delegate = { address: "t2", state: "live", name: "fix-a", status: "working
 const domain = async () => {
   const state = tempDir();
   made.push(state);
+  cliState(state);
   const config = await Effect.runPromise(
     resolveConfig({ state_dir: state, backlog_dir: join(state, "md") }, "/c"),
   );
@@ -46,14 +47,14 @@ const members = (listing: unknown[]) => ({
 
 const SHOW = ["backlog", "show", "--json", "--domain", "app"];
 
-describe("watcher-down banner", () => {
+eachBackend("watcher-down banner", () => {
   it("goes to stderr from a coordinator with a live delegate, leaving --json stdout as it was", async () => {
     const state = await domain();
     const quiet = run(cliEnv(state, COORDINATOR, undefined, {}, members([self])), SHOW);
     const shown = run(cliEnv(state, COORDINATOR, undefined, {}, members([self, delegate])), SHOW);
     expect(shown).toEqual({ exit: 0, stdout: quiet.stdout, stderr: BANNER });
     expect(JSON.parse(shown.stdout).domain).toBe("app");
-  });
+  }, 30_000);
 
   it("keeps a refusal's exit code and message", async () => {
     const state = await domain();
@@ -63,12 +64,12 @@ describe("watcher-down banner", () => {
       stdout: "",
       stderr: `${BANNER}refused: title is empty\n`,
     });
-  });
+  }, 30_000);
 
   it("is absent with no live delegate", async () => {
     const state = await domain();
     expect(run(cliEnv(state, COORDINATOR, undefined, {}, members([self])), SHOW).stderr).toBe("");
-  });
+  }, 30_000);
 
   it("is absent while a watcher holds the domain's pid file", async () => {
     const state = await domain();
@@ -89,7 +90,7 @@ describe("watcher-down banner", () => {
     expect(calls.split("\n").filter((line) => line.startsWith("ls "))).toEqual([
       "ls --json --label coordinate.watch-domain=app",
     ]);
-  });
+  }, 30_000);
 
   it("is absent from a delegate terminal, item answer and watch", async () => {
     const state = await domain();
@@ -102,7 +103,7 @@ describe("watcher-down banner", () => {
     run(env, ["item", "update", "i1", "--ask", "Which provider?"]);
     expect(run(env, ["item", "answer", "i1", "okta"]).stderr).toBe("");
     expect(run(env, ["watch", "--max-minutes", "0"]).stderr).toBe("");
-  });
+  }, 30_000);
 
   it("is the first line of coordinate status, and not repeated on stderr", async () => {
     const state = await domain();
@@ -119,5 +120,5 @@ describe("watcher-down banner", () => {
       BANNER.trim(),
       "",
     ]);
-  });
+  }, 30_000);
 });

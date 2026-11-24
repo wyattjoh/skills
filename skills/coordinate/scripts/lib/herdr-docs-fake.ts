@@ -160,6 +160,20 @@ const lock = async (path: string): Promise<string> => {
   }
 };
 
+// Read the cores file under its lock, let `use` change them, and write them back.
+const withCoresFile = async <A>(path: string, use: (cores: FakeDocCores) => A): Promise<A> => {
+  const held = await lock(path);
+  try {
+    const cores = JSON.parse(await readFile(path, "utf8")) as FakeDocCores;
+    const result = use(cores);
+    await writeFile(`${path}.tmp`, JSON.stringify(cores));
+    await rename(`${path}.tmp`, path);
+    return result;
+  } finally {
+    await rmdir(held);
+  }
+};
+
 /**
  * Serve `hc connect` from a JSON file of fake cores: read one JSON-RPC request per stdin line,
  * answer each against the file under a lock, and print one reply line per request. The CLI test
@@ -168,10 +182,8 @@ const lock = async (path: string): Promise<string> => {
  * @param input The request lines.
  * @returns The reply lines.
  */
-export const serveDocFile = async (path: string, input: string): Promise<string> => {
-  const held = await lock(path);
-  try {
-    const cores = JSON.parse(await readFile(path, "utf8")) as FakeDocCores;
+export const serveDocFile = (path: string, input: string): Promise<string> =>
+  withCoresFile(path, (cores) => {
     const lines = input
       .split("\n")
       .filter((line) => line.trim() !== "")
@@ -198,13 +210,21 @@ export const serveDocFile = async (path: string, input: string): Promise<string>
               },
         );
       });
-    await writeFile(`${path}.tmp`, JSON.stringify(cores));
-    await rename(`${path}.tmp`, path);
     return lines.map((line) => `${line}\n`).join("");
-  } finally {
-    await rmdir(held);
-  }
-};
+  });
+
+/**
+ * A doc transport over a JSON file of fake cores, answering under the same lock `serveDocFile`
+ * takes, so a test process and the CLIs it spawns share one set of documents.
+ * @param path The fake cores file (`FakeDocCores` as JSON).
+ * @returns The transport.
+ */
+export const fileDocTransport =
+  (path: string): DocTransport =>
+  (requests) =>
+    Effect.promise(() =>
+      withCoresFile(path, (cores) => requests.map((request) => answerDocRequest(cores, request))),
+    );
 
 if (import.meta.main) {
   const path = process.argv[2];

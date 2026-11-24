@@ -17,7 +17,10 @@ import {
 import { resolveConfig } from "./config.ts";
 import {
   cliEnv,
+  cliState,
   commitFile,
+  eachBackend,
+  readState,
   failureOf,
   g,
   gitAndFake,
@@ -29,6 +32,7 @@ import { Refused, writeEnded } from "./fleet.ts";
 import { start } from "./lifecycle.ts";
 import { FAKE_CORE, fakeProc, ok, type RunOutput } from "./proc.ts";
 import { domainRepos, domainStatus } from "./status.ts";
+import { keys } from "./state-store.ts";
 import { report } from "./sweep.ts";
 
 const dirs: string[] = [];
@@ -43,8 +47,9 @@ const config = (state: string) =>
   Effect.runPromise(resolveConfig({ backlog_dir: join(state, "md"), state_dir: state }, "/c"));
 const NOW = "2026-11-17T10:00:00.000Z";
 
-const started = async () => {
+const started = async (prepare: (state: string) => void = () => undefined) => {
   const state = dir();
+  prepare(state);
   const cfg = await config(state);
   await runWith(
     start(cfg, "app", { HC_TERMINAL_ID: "t9" }),
@@ -646,9 +651,10 @@ describe("owned-only domain repos", () => {
   });
 });
 
-describe("coordinate CLI", () => {
+eachBackend("coordinate CLI", () => {
   it("wires policy, Boundary and focus, refusing focus with neither text nor --clear", async () => {
-    const { state, path } = await started();
+    const { state } = await started((made) => cliState(made));
+    const backlog = () => readState(state, keys.backlog("app"));
     const env = cliEnv(state, { "fleet.role": "coordinator", "fleet.domain": "app" });
     const script = join(import.meta.dir, "..", "coordinate.ts");
     const run = (...args: string[]) => {
@@ -705,7 +711,7 @@ describe("coordinate CLI", () => {
     expect(
       run("backlog", "boundary", "add", state, "--machine", "strix", "--checkout", "/srv/app"),
     ).toEqual([0, `owned: added checkout of ${state} on strix: /srv/app\n`]);
-    expect(read(path).boundary).toEqual({
+    expect(backlog().boundary).toEqual({
       owned: [state],
       adjacent: [],
       checkouts: { [state]: { strix: "/srv/app" } },
@@ -719,13 +725,13 @@ describe("coordinate CLI", () => {
       0,
       `adjacent: added ${state}\n`,
     ]);
-    expect(read(path)).toEqual({
-      ...read(path),
+    expect(backlog()).toEqual({
+      ...backlog(),
       focus: "login v2",
       boundary: { owned: [], adjacent: [state] },
       policies: [{ id: "p1", text: "ship it", at: "2026-11-01" }],
     });
-  });
+  }, 30_000);
 });
 
 describe("status without a readable document", () => {

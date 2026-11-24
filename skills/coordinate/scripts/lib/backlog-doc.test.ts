@@ -14,11 +14,21 @@ import {
   showBacklog,
 } from "./backlog-doc.ts";
 import { resolveConfig } from "./config.ts";
-import { cliEnv, failureOf, runWith, tempDir } from "./fixture.ts";
+import {
+  cliEnv,
+  cliState,
+  eachBackend,
+  failureOf,
+  readState,
+  runWith,
+  stateSnapshot,
+  tempDir,
+} from "./fixture.ts";
 import { domainOfCaller, Refused } from "./fleet.ts";
 import { decisionKey, FINDING_DETAIL_SHAPE, validateBacklog } from "./backlog-store/schema.ts";
 import { start } from "./lifecycle.ts";
 import { fakeProc, ok } from "./proc.ts";
+import { keys } from "./state-store.ts";
 import { domainStatus } from "./status.ts";
 
 const dirs: string[] = [];
@@ -48,11 +58,13 @@ const hcFake = () =>
     throw new Error(`unexpected command: ${argv.join(" ")}`);
   });
 const NOW = "2026-11-17T10:00:00.000Z";
+const APP = keys.backlog("app");
 const COORDINATOR = { "fleet.role": "coordinator", "fleet.domain": "app" };
 const LATER = "2026-11-18T09:30:00.000Z";
 
-const started = async () => {
+const started = async (prepare: (state: string) => void = () => undefined) => {
   const state = dir();
+  prepare(state);
   const cfg = await config(state);
   await runWith(start(cfg, "app", { HC_TERMINAL_ID: "t9" }, Date.parse(NOW)), hcFake().layer);
   return { state, cfg, path: join(state, "backlogs", "app.json") };
@@ -1315,9 +1327,11 @@ describe("backlog policies", () => {
       "schemaVersion",
     ]);
   });
+});
 
+eachBackend("backlog policies (CLI)", () => {
   it("adds, lists, replaces and removes policies by id, refusing unknown ids", async () => {
-    const { state, path } = await started();
+    const { state } = await started((made) => cliState(made));
     const env = cliEnv(state, COORDINATOR);
     const script = join(import.meta.dir, "..", "coordinate.ts");
     const run = (args: string[]) => {
@@ -1374,19 +1388,19 @@ describe("backlog policies", () => {
     expect(
       run(["backlog", "policy", "add", "fourth", "--at", "2026-11-22", "--domain", "app"]),
     ).toEqual([0, "added policy p4: fourth\n", ""]);
-    expect(read(path).policies).toEqual([
+    expect(readState(state, APP).policies).toEqual([
       { id: "p2", text: "second", at: "2026-11-19" },
       { id: "p4", text: "fourth", at: "2026-11-22" },
     ]);
-    expect(read(path).nextPolicyId).toBe(5);
-    const beforeUnknown = readFileSync(path, "utf8");
+    expect(readState(state, APP).nextPolicyId).toBe(5);
+    const beforeUnknown = stateSnapshot(state, APP);
     expect(run(["backlog", "policy", "rm", "p9", "--domain", "app"])).toEqual([
       1,
       "",
       "refused: no policy p9 in app\n",
     ]);
-    expect(readFileSync(path, "utf8")).toBe(beforeUnknown);
-  });
+    expect(stateSnapshot(state, APP)).toBe(beforeUnknown);
+  }, 30_000);
 });
 
 describe("coordinator lease", () => {
@@ -1711,12 +1725,12 @@ describe("backlog-store", () => {
   });
 });
 
-describe("coordinate CLI", () => {
+eachBackend("coordinate CLI", () => {
   it("exits 1 with the reason on invalid input, and 0 for backlog show --json", async () => {
-    const { state, path } = await started();
+    const { state } = await started((made) => cliState(made));
     const env = cliEnv(state, COORDINATOR);
     const script = join(import.meta.dir, "..", "coordinate.ts");
-    const before = readFileSync(path, "utf8");
+    const before = stateSnapshot(state, APP);
     const refused = Bun.spawnSync(["bun", script, "item", "add", "", "--domain", "app"], {
       env,
       stdout: "pipe",
@@ -1724,18 +1738,21 @@ describe("coordinate CLI", () => {
       timeout: 10_000,
     });
     expect([refused.exitCode, refused.stderr.toString()]).toEqual([1, "refused: title is empty\n"]);
-    expect(readFileSync(path, "utf8")).toBe(before);
+    expect(stateSnapshot(state, APP)).toBe(before);
     const shown = Bun.spawnSync(["bun", script, "backlog", "show", "--json", "--domain", "app"], {
       env,
       stdout: "pipe",
       stderr: "pipe",
       timeout: 10_000,
     });
-    expect([shown.exitCode, JSON.parse(shown.stdout.toString())]).toEqual([0, read(path)]);
-  });
+    expect([shown.exitCode, JSON.parse(shown.stdout.toString())]).toEqual([
+      0,
+      readState(state, APP),
+    ]);
+  }, 30_000);
 
   it("parses finding add and finding close flags", async () => {
-    const { state, cfg, path } = await started();
+    const { state, cfg } = await started((made) => cliState(made));
     await runWith(itemAdd(cfg, "app", { title: "fix login", json: false, now: NOW }));
     const env = cliEnv(state, COORDINATOR);
     const script = join(import.meta.dir, "..", "coordinate.ts");
@@ -1768,7 +1785,7 @@ describe("coordinate CLI", () => {
     expect(
       run(["finding", "close", "f2", "--outcome", "duplicate", "--dismissed", "--domain", "app"]),
     ).toEqual([0, "dismissed f2: duplicate\n", ""]);
-    const [stored] = read(path).findings;
+    const [stored] = readState(state, APP).findings;
     expect([stored.kind, stored.detail, stored.path, stored.from, stored.status]).toEqual([
       "issue",
       "fails one run in ten",
@@ -1776,17 +1793,17 @@ describe("coordinate CLI", () => {
       "i1",
       "dismissed",
     ]);
-    const before = readFileSync(path, "utf8");
+    const before = stateSnapshot(state, APP);
     const [code, , stderr] = run(["finding", "add", "x", "--kind", "bug", "--domain", "app"]);
     expect([code, String(stderr).split("\n").filter(Boolean).at(-1)]).toEqual([
       1,
       '  Invalid value for flag --kind: "bug". Expected: "issue" | "opportunity"',
     ]);
-    expect(readFileSync(path, "utf8")).toBe(before);
-  });
+    expect(stateSnapshot(state, APP)).toBe(before);
+  }, 30_000);
 
   it("runs item update with every ask flag, and exits 1 with no write on a bad rec", async () => {
-    const { cfg, state, path } = await started();
+    const { cfg, state } = await started((made) => cliState(made));
     await runWith(itemAdd(cfg, "app", { title: "a", json: false, now: NOW }));
     const env = cliEnv(state, COORDINATOR);
     const script = join(import.meta.dir, "..", "coordinate.ts");
@@ -1798,13 +1815,13 @@ describe("coordinate CLI", () => {
         timeout: 10_000,
       });
     const flags = ["--status", "waiting-user", "--ask", "Which?", "--context", "c"];
-    const before = readFileSync(path, "utf8");
+    const before = stateSnapshot(state, APP);
     const refused = run([...flags, "--option", "a", "--option", "b", "--rec", "z"]);
     expect([refused.exitCode, refused.stderr.toString()]).toEqual([
       1,
       "refused: --rec z must be one of the --option values: a, b\n",
     ]);
-    expect(readFileSync(path, "utf8")).toBe(before);
+    expect(stateSnapshot(state, APP)).toBe(before);
     const updated = run([
       ...flags,
       "--option",
@@ -1825,9 +1842,9 @@ describe("coordinate CLI", () => {
     ]);
     expect([updated.exitCode, JSON.parse(updated.stdout.toString())]).toEqual([
       0,
-      read(path).items[0],
+      readState(state, APP).items[0],
     ]);
-    expect(read(path).items[0]).toMatchObject({
+    expect(readState(state, APP).items[0]).toMatchObject({
       status: "waiting-user",
       ask: {
         question: "Which?",
@@ -1849,11 +1866,11 @@ describe("coordinate CLI", () => {
     const cleared = run(["--no-due", "--answer", "a"]);
     expect([
       cleared.exitCode,
-      read(path).items[0].due,
-      read(path).items[0].ask,
-      read(path).items[0].decided.map((entry: { text: string }) => entry.text),
+      readState(state, APP).items[0].due,
+      readState(state, APP).items[0].ask,
+      readState(state, APP).items[0].decided.map((entry: { text: string }) => entry.text),
     ]).toEqual([0, null, null, ["scope is api only", 'Re "Which?": a']]);
-  });
+  }, 30_000);
 });
 
 const cli = join(import.meta.dir, "..", "coordinate.ts");
@@ -1867,10 +1884,10 @@ const spawn = (env: Record<string, string>, args: string[]) => {
   return [done.exitCode, done.stdout.toString() + done.stderr.toString()];
 };
 const prepared = async () => {
-  const { state, cfg, path } = await started();
+  const { state, cfg } = await started((made) => cliState(made));
   await runWith(itemAdd(cfg, "app", { title: "fix login", json: false, now: NOW }));
   await runWith(findingAdd(cfg, "app", finding({ from: "i1" })));
-  return { state, path };
+  return { state };
 };
 const mutations = (): string[][] => [
   ["backlog", "policy", "add", "ship it"],
@@ -1882,18 +1899,18 @@ const mutations = (): string[][] => [
   ["finding", "promote", "f2"],
 ];
 
-describe("coordinator-only mutations", () => {
+eachBackend("coordinator-only mutations", () => {
   it("refuses every mutation but finding add from a delegate, even with --domain", async () => {
-    const { state, path } = await prepared();
+    const { state } = await prepared();
     const env = cliEnv(state, { "fleet.domain": "app", "fleet.session": "s-parent" });
-    const before = readFileSync(path, "utf8");
+    const before = stateSnapshot(state, APP);
     expect(mutations().map((args) => spawn(env, [...args, "--domain", "app"]))).toEqual(
       mutations().map(() => [
         1,
         "refused: only a coordinator changes the backlog, and terminal t1 is not labelled as one; a delegate records what it notices with coordinate finding add\n",
       ]),
     );
-    expect(readFileSync(path, "utf8")).toBe(before);
+    expect(stateSnapshot(state, APP)).toBe(before);
     expect(
       spawn(env, [
         "finding",
@@ -1909,23 +1926,23 @@ describe("coordinator-only mutations", () => {
         "app",
       ]),
     ).toEqual([0, "added f3: flaky test\n"]);
-  });
+  }, 30_000);
 
   it("lets another domain's coordinator route an item in with --domain", async () => {
-    const { state, path } = await prepared();
+    const { state } = await prepared();
     const env = cliEnv(state, { "fleet.role": "coordinator", "fleet.domain": "web" });
     expect(spawn(env, ["item", "add", "rotate keys (from web)", "--domain", "app"])).toEqual([
       0,
       "added i3: rotate keys (from web)\n",
     ]);
-    expect(read(path).items.map((item: { title: string }) => item.title)).toEqual([
+    expect(readState(state, APP).items.map((item: { title: string }) => item.title)).toEqual([
       "fix login",
       "rotate keys (from web)",
     ]);
-  });
+  }, 30_000);
 
   it("lets the domain's coordinator run them, with or without --domain", async () => {
-    const { state, path } = await prepared();
+    const { state } = await prepared();
     const env = cliEnv(state, COORDINATOR);
     expect([
       spawn(env, ["backlog", "focus", "login v2"]),
@@ -1934,11 +1951,14 @@ describe("coordinator-only mutations", () => {
       [0, "focus: login v2\n"],
       [0, "done i1: shipped\n"],
     ]);
-    expect([read(path).focus, read(path).items[0].status]).toEqual(["login v2", "done"]);
-  });
+    expect([readState(state, APP).focus, readState(state, APP).items[0].status]).toEqual([
+      "login v2",
+      "done",
+    ]);
+  }, 30_000);
 
   it("records an answer from outside a terminal with --domain, and nothing else", async () => {
-    const { state, path } = await prepared();
+    const { state } = await prepared();
     expect(
       spawn(cliEnv(state, COORDINATOR), [
         "item",
@@ -1954,7 +1974,7 @@ describe("coordinator-only mutations", () => {
         "okta",
       ]),
     ).toEqual([0, "updated i1 [waiting-user] fix login\n"]);
-    expect(read(path).items[0].ask).toEqual({
+    expect(readState(state, APP).items[0].ask).toEqual({
       question: "Which provider?",
       context: null,
       options: ["-none-", "okta"],
@@ -1963,7 +1983,7 @@ describe("coordinator-only mutations", () => {
       discuss: null,
     });
     const { HC_TERMINAL_ID: _unset, ...outside } = cliEnv(state, COORDINATOR);
-    const before = readFileSync(path, "utf8");
+    const before = stateSnapshot(state, APP);
     expect(spawn(outside, ["item", "answer", "i1", "okta"])).toEqual([
       1,
       "refused: a backlog change from outside a Herdr terminal names its domain: pass --domain\n",
@@ -1971,22 +1991,22 @@ describe("coordinator-only mutations", () => {
     expect(spawn(outside, ["item", "update", "i1", "--answer", "okta", "--domain", "app"])[0]).toBe(
       2,
     );
-    expect(readFileSync(path, "utf8")).toBe(before);
+    expect(stateSnapshot(state, APP)).toBe(before);
     expect(spawn(outside, ["item", "answer", "--domain", "app", "--", "i1", "-none-"])).toEqual([
       0,
       "updated i1 [waiting-user] fix login\n",
     ]);
     expect([
-      read(path).items[0].ask,
-      read(path).items[0].decided.map((d: { text: string }) => d.text),
+      readState(state, APP).items[0].ask,
+      readState(state, APP).items[0].decided.map((d: { text: string }) => d.text),
     ]).toEqual([null, ['Re "Which provider?": -none-']]);
-  });
+  }, 30_000);
 
   it("promotes and closes findings from outside a terminal with --domain", async () => {
-    const { state, path } = await prepared();
+    const { state } = await prepared();
     await runWith(findingAdd(await config(state), "app", finding({ title: "old crash" })));
     const { HC_TERMINAL_ID: _unset, ...outside } = cliEnv(state, COORDINATOR);
-    const before = readFileSync(path, "utf8");
+    const before = stateSnapshot(state, APP);
     expect([
       spawn(outside, ["finding", "promote", "f2"]),
       spawn(outside, ["finding", "close", "f3", "--outcome", "duplicate", "--dismissed"]),
@@ -2000,7 +2020,7 @@ describe("coordinator-only mutations", () => {
         "refused: a backlog change from outside a Herdr terminal names its domain: pass --domain\n",
       ],
     ]);
-    expect(readFileSync(path, "utf8")).toBe(before);
+    expect(stateSnapshot(state, APP)).toBe(before);
     expect([
       spawn(outside, ["finding", "promote", "--domain", "app", "--", "f2"]),
       spawn(outside, [
@@ -2019,25 +2039,27 @@ describe("coordinator-only mutations", () => {
       [0, "dismissed f3: Dismissed from the Backlog panel\n"],
     ]);
     expect(
-      read(path).findings.map((entry: { id: string; status: string; outcome: string }) => [
-        entry.id,
-        entry.status,
-        entry.outcome,
-      ]),
+      readState(state, APP).findings.map(
+        (entry: { id: string; status: string; outcome: string }) => [
+          entry.id,
+          entry.status,
+          entry.outcome,
+        ],
+      ),
     ).toEqual([
       ["f2", "acted", "promoted to i4"],
       ["f3", "dismissed", "Dismissed from the Backlog panel"],
     ]);
-  });
+  }, 30_000);
 
   it("runs finding promote with --title and --json, and refuses unknown or closed findings with no write", async () => {
-    const { state, path } = await prepared();
+    const { state } = await prepared();
     const env = cliEnv(state, COORDINATOR);
     const promoted = Bun.spawnSync(
       ["bun", cli, "finding", "promote", "f2", "--title", "stabilize the test", "--json"],
       { env, stdout: "pipe", stderr: "pipe", timeout: 10_000 },
     );
-    const after = read(path);
+    const after = readState(state, APP);
     expect([promoted.exitCode, JSON.parse(promoted.stdout.toString())]).toEqual([
       0,
       { item: after.items[1], finding: after.findings[0] },
@@ -2047,7 +2069,7 @@ describe("coordinator-only mutations", () => {
       "stabilize the test",
       "promoted to i3",
     ]);
-    const before = readFileSync(path, "utf8");
+    const before = stateSnapshot(state, APP);
     expect([
       spawn(env, ["finding", "promote", "f2"]),
       spawn(env, ["finding", "promote", "f9"]),
@@ -2057,11 +2079,11 @@ describe("coordinator-only mutations", () => {
       [1, "refused: no finding f9 in app\n"],
       [1, "refused: no finding i1 in app\n"],
     ]);
-    expect(readFileSync(path, "utf8")).toBe(before);
-  });
+    expect(stateSnapshot(state, APP)).toBe(before);
+  }, 30_000);
 
   it("allows boundary edits from outside a terminal with --domain", async () => {
-    const { state, path } = await prepared();
+    const { state } = await prepared();
     const owned = join(dir(), "owned");
     const adjacent = join(dir(), "adjacent");
     const missing = join(dir(), "missing");
@@ -2093,7 +2115,7 @@ describe("coordinator-only mutations", () => {
         "--json",
       ]),
     ).toEqual([0, `${JSON.stringify({ owned: [owned], adjacent: [adjacent] }, null, 2)}\n`]);
-    expect(read(path).boundary).toEqual({ owned: [owned], adjacent: [adjacent] });
+    expect(readState(state, APP).boundary).toEqual({ owned: [owned], adjacent: [adjacent] });
 
     expect(spawn(outside, ["backlog", "boundary", "add", owned, "--domain", "app"])).toEqual([
       1,
@@ -2109,17 +2131,17 @@ describe("coordinator-only mutations", () => {
     expect(
       spawn(outside, ["backlog", "boundary", "rm", adjacent, "--domain", "app", "--json"]),
     ).toEqual([0, `${JSON.stringify({ owned: [], adjacent: [] }, null, 2)}\n`]);
-    expect(read(path).boundary).toEqual({ owned: [], adjacent: [] });
+    expect(readState(state, APP).boundary).toEqual({ owned: [], adjacent: [] });
     expect(spawn(outside, ["backlog", "boundary", "rm", missing, "--domain", "app"])).toEqual([
       1,
       `refused: ${missing} is not in the owned Boundary\n`,
     ]);
-  });
+  }, 30_000);
 
   it("refuses an answer from a delegate or another non-coordinator terminal, even with --domain", async () => {
-    const { state, path } = await prepared();
+    const { state } = await prepared();
     spawn(cliEnv(state, COORDINATOR), ["item", "update", "i1", "--ask", "Which provider?"]);
-    const before = readFileSync(path, "utf8");
+    const before = stateSnapshot(state, APP);
     expect([
       spawn(cliEnv(state, { "fleet.domain": "app", "fleet.session": "s-parent" }), [
         "item",
@@ -2140,20 +2162,20 @@ describe("coordinator-only mutations", () => {
         "refused: only a coordinator changes the backlog, and terminal t1 is not labelled as one; a delegate records what it notices with coordinate finding add\n",
       ],
     ]);
-    expect(readFileSync(path, "utf8")).toBe(before);
-  });
+    expect(stateSnapshot(state, APP)).toBe(before);
+  }, 30_000);
 
   it("closes an item from outside a terminal with --domain, and refuses it without", async () => {
-    const { state, path } = await prepared();
+    const { state } = await prepared();
     const { HC_TERMINAL_ID: _unset, ...outside } = cliEnv(state, COORDINATOR);
-    const before = readFileSync(path, "utf8");
+    const before = stateSnapshot(state, APP);
     expect(
       spawn(outside, ["item", "close", "--dismissed", "--outcome", "Dismissed", "--", "i1"]),
     ).toEqual([
       1,
       "refused: a backlog change from outside a Herdr terminal names its domain: pass --domain\n",
     ]);
-    expect(readFileSync(path, "utf8")).toBe(before);
+    expect(stateSnapshot(state, APP)).toBe(before);
     expect(
       spawn(outside, [
         "item",
@@ -2167,16 +2189,15 @@ describe("coordinator-only mutations", () => {
         "i1",
       ]),
     ).toEqual([0, "dismissed i1: Dismissed from the answer flow\n"]);
-    expect([read(path).items[0].status, read(path).items[0].outcome]).toEqual([
-      "dismissed",
-      "Dismissed from the answer flow",
-    ]);
-  });
+    expect([readState(state, APP).items[0].status, readState(state, APP).items[0].outcome]).toEqual(
+      ["dismissed", "Dismissed from the answer flow"],
+    );
+  }, 30_000);
 
   it("changes only an item's status from outside a terminal with --domain", async () => {
-    const { state, path } = await prepared();
+    const { state } = await prepared();
     const { HC_TERMINAL_ID: _unset, ...outside } = cliEnv(state, COORDINATOR);
-    const before = readFileSync(path, "utf8");
+    const before = stateSnapshot(state, APP);
     expect([
       spawn(outside, ["item", "update", "--status", "parked", "--", "i1"]),
       spawn(outside, [
@@ -2208,21 +2229,21 @@ describe("coordinator-only mutations", () => {
         "refused: from outside a Herdr terminal, item update sets only --status open, building, in-review, parked; close an item with item close\n",
       ]),
     ]);
-    expect(readFileSync(path, "utf8")).toBe(before);
+    expect(stateSnapshot(state, APP)).toBe(before);
     expect(
       spawn(outside, ["item", "update", "--status", "parked", "--domain", "app", "--", "i1"]),
     ).toEqual([0, "updated i1 [parked] fix login\n"]);
-    expect(read(path).items[0].status).toBe("parked");
+    expect(readState(state, APP).items[0].status).toBe("parked");
     expect(
       spawn(outside, ["item", "update", "--status", "open", "--domain", "app", "--", "i1"]),
     ).toEqual([0, "updated i1 [open] fix login\n"]);
-    expect(read(path).items[0].status).toBe("open");
-  });
+    expect(readState(state, APP).items[0].status).toBe("open");
+  }, 30_000);
 
   it("treats a -md flag beside --status as a full update from outside a terminal", async () => {
-    const { state, path } = await prepared();
+    const { state } = await prepared();
     const { HC_TERMINAL_ID: _unset, ...outside } = cliEnv(state, COORDINATOR);
-    const before = readFileSync(path, "utf8");
+    const before = stateSnapshot(state, APP);
     expect(
       ["--decided-md", "--outcome-md", "--note-md", "--answer-md", "--ask-md"].map((flag) =>
         spawn(outside, [
@@ -2244,12 +2265,12 @@ describe("coordinator-only mutations", () => {
         "could not check: Unchecked: HC_TERMINAL_ID is unset, so this terminal's role cannot be checked: run this inside a Herdr terminal\n",
       ]),
     );
-    expect(readFileSync(path, "utf8")).toBe(before);
-  });
+    expect(stateSnapshot(state, APP)).toBe(before);
+  }, 30_000);
 
   it("refuses a status change from a delegate terminal, even with --domain", async () => {
-    const { state, path } = await prepared();
-    const before = readFileSync(path, "utf8");
+    const { state } = await prepared();
+    const before = stateSnapshot(state, APP);
     expect(
       spawn(cliEnv(state, { "fleet.domain": "app", "fleet.session": "s-parent" }), [
         "item",
@@ -2265,13 +2286,13 @@ describe("coordinator-only mutations", () => {
       1,
       "refused: only a coordinator changes the backlog, and terminal t1 is not labelled as one; a delegate records what it notices with coordinate finding add\n",
     ]);
-    expect(readFileSync(path, "utf8")).toBe(before);
-  });
+    expect(stateSnapshot(state, APP)).toBe(before);
+  }, 30_000);
 
   it("refuses every other mutation from outside a terminal", async () => {
-    const { state, path } = await prepared();
+    const { state } = await prepared();
     const { HC_TERMINAL_ID: _unset, ...outside } = cliEnv(state, COORDINATOR);
-    const before = readFileSync(path, "utf8");
+    const before = stateSnapshot(state, APP);
     const others = mutations().filter(
       ([group, verb]) =>
         !(group === "item" && verb === "close") &&
@@ -2281,11 +2302,11 @@ describe("coordinator-only mutations", () => {
     expect(others.map((args) => spawn(outside, [...args, "--domain", "app"])[0])).toEqual(
       others.map(() => 2),
     );
-    expect(readFileSync(path, "utf8")).toBe(before);
-  });
+    expect(stateSnapshot(state, APP)).toBe(before);
+  }, 30_000);
 
   it("accepts the panel's edits from outside a terminal and records each for the watcher", async () => {
-    const { state, path } = await prepared();
+    const { state } = await prepared();
     const { HC_TERMINAL_ID: _unset, ...outside } = cliEnv(state, COORDINATOR);
     const inside = cliEnv(state, COORDINATOR);
     expect(
@@ -2294,7 +2315,7 @@ describe("coordinator-only mutations", () => {
     expect(
       spawn(inside, ["backlog", "policy", "add", "--md", "ship it", "--domain", "app"])[0],
     ).toBe(0);
-    const key = decisionKey(read(path).items[0].decided[0], 0);
+    const key = decisionKey(readState(state, APP).items[0].decided[0], 0);
     const runs = [
       ["item", "edit", "i1", "--title", "fix signup"],
       ["item", "edit", "i1", "--decision", key, "--md", "api **and** cli"],
@@ -2303,7 +2324,7 @@ describe("coordinator-only mutations", () => {
       ["backlog", "focus", "--md", "login v2"],
     ].map((args) => spawn(outside, [...args, "--domain", "app"]));
     expect(runs.map(([code]) => code)).toEqual([0, 0, 0, 0, 0]);
-    const doc = read(path);
+    const doc = readState(state, APP);
     expect(
       doc.edits.map((edit: Record<string, unknown>) => [
         edit.id,
@@ -2332,17 +2353,17 @@ describe("coordinator-only mutations", () => {
     ).toEqual([0, `removed decision ${liveKey} from i1\n`]);
     expect(spawn(outside, ["backlog", "policy", "rm", "p1", "--domain", "app"])[0]).toBe(0);
     expect(
-      read(path)
+      readState(state, APP)
         .edits.slice(5)
         .map((edit: Record<string, unknown>) => [edit.field, edit.new]),
     ).toEqual([
       ["decision", null],
       ["policy", null],
     ]);
-  });
+  }, 30_000);
 
   it("accepts the panel's exact argv, including Markdown that starts with a dash", async () => {
-    const { state, path } = await prepared();
+    const { state } = await prepared();
     const inside = cliEnv(state, COORDINATOR);
     const { HC_TERMINAL_ID: _unset, ...outside } = cliEnv(state, COORDINATOR);
     const [owned, next] = [dir(), dir()];
@@ -2353,7 +2374,7 @@ describe("coordinator-only mutations", () => {
         ["backlog", "boundary", "add", owned, "--adjacent", "--domain", "app"],
       ].map((args) => spawn(inside, args)[0]),
     ).toEqual([0, 0, 0]);
-    const key = decisionKey(read(path).items[0].decided[0], 0);
+    const key = decisionKey(readState(state, APP).items[0].decided[0], 0);
     const runs = [
       ["item", "edit", "--domain", "app", "--title=- fix signup", "--", "i1"],
       ["item", "edit", "--domain", "app", "--decision", key, "--md=- a\n- b", "--", "i1"],
@@ -2363,7 +2384,7 @@ describe("coordinator-only mutations", () => {
       ["backlog", "boundary", "replace", "--domain", "app", "--adjacent", "--", owned, next],
     ].map((args) => spawn(outside, args)[0]);
     expect(runs).toEqual([0, 0, 0, 0, 0, 0]);
-    const doc = read(path);
+    const doc = readState(state, APP);
     expect([
       doc.items[0].title,
       doc.items[0].decided[0].markdown,
@@ -2380,7 +2401,7 @@ describe("coordinator-only mutations", () => {
         ["backlog", "boundary", "rm", next, "--domain", "app", "--json"],
       ].map((args) => spawn(outside, args)[0]),
     ).toEqual([0, 0, 0]);
-    expect(read(path).edits.map((edit: Record<string, unknown>) => edit.field)).toEqual([
+    expect(readState(state, APP).edits.map((edit: Record<string, unknown>) => edit.field)).toEqual([
       "title",
       "decision",
       "detail",
@@ -2391,17 +2412,17 @@ describe("coordinator-only mutations", () => {
       "policy",
       "adjacent",
     ]);
-  });
+  }, 30_000);
 
   it("records nothing for the coordinator's own edits, and refuses bad edit flags", async () => {
-    const { state, path } = await prepared();
+    const { state } = await prepared();
     const inside = cliEnv(state, COORDINATOR);
     const { HC_TERMINAL_ID: _unset, ...outside } = cliEnv(state, COORDINATOR);
     expect(
       spawn(inside, ["item", "edit", "i1", "--title", "fix signup", "--domain", "app"]),
     ).toEqual([0, "edited title of i1: fix signup\n"]);
-    expect(read(path).edits).toBe(undefined);
-    const before = readFileSync(path, "utf8");
+    expect(readState(state, APP).edits).toBe(undefined);
+    const before = stateSnapshot(state, APP);
     expect([
       spawn(outside, [
         "item",
@@ -2428,23 +2449,23 @@ describe("coordinator-only mutations", () => {
         "refused: a backlog change from outside a Herdr terminal names its domain: pass --domain\n",
       ],
     ]);
-    expect(readFileSync(path, "utf8")).toBe(before);
-  });
+    expect(stateSnapshot(state, APP)).toBe(before);
+  }, 30_000);
 
   it("refuses an edit from a delegate terminal, even with --domain", async () => {
-    const { state, path } = await prepared();
-    const before = readFileSync(path, "utf8");
+    const { state } = await prepared();
+    const before = stateSnapshot(state, APP);
     const env = cliEnv(state, { "fleet.domain": "app", "fleet.session": "s-parent" });
     expect(spawn(env, ["item", "edit", "i1", "--title", "x", "--domain", "app"])).toEqual([
       1,
       "refused: only a coordinator changes the backlog, and terminal t1 is not labelled as one; a delegate records what it notices with coordinate finding add\n",
     ]);
-    expect(readFileSync(path, "utf8")).toBe(before);
-  });
+    expect(stateSnapshot(state, APP)).toBe(before);
+  }, 30_000);
 
   it("exits 2 when the caller's role cannot be checked", async () => {
-    const { state, path } = await prepared();
-    const before = readFileSync(path, "utf8");
+    const { state } = await prepared();
+    const before = stateSnapshot(state, APP);
     const { HC_TERMINAL_ID: _unset, ...outside } = cliEnv(state, COORDINATOR);
     expect([
       spawn(outside, ["item", "update", "i1", "--decided", "scope is api only", "--domain", "app"]),
@@ -2464,6 +2485,6 @@ describe("coordinator-only mutations", () => {
       ],
       [2, "could not check: HerdrError: herdr-core is not answering\n"],
     ]);
-    expect(readFileSync(path, "utf8")).toBe(before);
-  });
+    expect(stateSnapshot(state, APP)).toBe(before);
+  }, 30_000);
 });

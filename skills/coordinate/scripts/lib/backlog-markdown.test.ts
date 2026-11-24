@@ -1,5 +1,5 @@
 import { afterAll, describe, expect, it } from "bun:test";
-import { readFileSync, rmSync } from "node:fs";
+import { rmSync } from "node:fs";
 import { join } from "node:path";
 import { Effect } from "effect";
 import {
@@ -16,7 +16,8 @@ import {
 import { renderBacklog } from "./backlog-store/render.ts";
 import { prose, validateBacklog, type Backlog, type Item } from "./backlog-store/schema.ts";
 import { resolveConfig } from "./config.ts";
-import { cliEnv, runWith, tempDir } from "./fixture.ts";
+import { cliEnv, cliState, eachBackend, readState, runWith, tempDir } from "./fixture.ts";
+import { keys } from "./state-store.ts";
 import { start } from "./lifecycle.ts";
 import { fakeProc, ok } from "./proc.ts";
 
@@ -499,10 +500,11 @@ describe("renderBacklog with Markdown", () => {
   });
 });
 
-describe("coordinate CLI Markdown flags", () => {
+eachBackend("coordinate CLI Markdown flags", () => {
   it("writes each -md flag to its sibling and refuses a flag beside its text form", async () => {
     const state = tempDir();
     dirs.push(state);
+    cliState(state);
     const cfg = await Effect.runPromise(
       resolveConfig({ backlog_dir: join(state, "md"), state_dir: state }, "/c"),
     );
@@ -522,7 +524,6 @@ describe("coordinate CLI Markdown flags", () => {
         return ok("{}");
       }).layer,
     );
-    const path = join(state, "backlogs", "app.json");
     const env = cliEnv(state, { "fleet.role": "coordinator", "fleet.domain": "app" });
     const script = join(import.meta.dir, "..", "coordinate.ts");
     const run = (...args: string[]) => {
@@ -534,7 +535,7 @@ describe("coordinate CLI Markdown flags", () => {
       });
       return [done.exitCode, done.stdout.toString() + done.stderr.toString()];
     };
-    const read = (): Backlog => JSON.parse(readFileSync(path, "utf8"));
+    const read = (): Backlog => readState(state, keys.backlog("app"));
 
     expect(run("item", "add", "pick a store")).toEqual([0, "added i1: pick a store\n"]);
     expect(

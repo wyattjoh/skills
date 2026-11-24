@@ -3,17 +3,24 @@ import {
   existsSync,
   mkdirSync,
   mkdtempSync,
+  readFileSync,
   realpathSync,
+  rmSync,
   symlinkSync,
   writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { afterAll, beforeAll, describe } from "bun:test";
 import { Effect, Layer } from "effect";
 import { spawnGit } from "./git-env.ts";
 import type { StateBackend } from "./config.ts";
-import { fakeDocCores } from "./herdr-docs-fake.ts";
+import { type FakeDocCores, fakeDocCores, fileDocTransport } from "./herdr-docs-fake.ts";
 import { coreStatus, FAKE_CORE, isCoreNameRead, Proc, realProc, type RunOutput } from "./proc.ts";
+import { registerStateStore } from "./state.ts";
+import { filesPath } from "./state-files.ts";
+import { documentAddress, herdrStore, PRODUCTION_PREFIX } from "./state-herdr.ts";
+import type { StateKey } from "./state-store.ts";
 
 /**
  * The home machine `cliEnv` names for the herdr-doc backend.
@@ -130,6 +137,204 @@ export const gitAndFake = (
 };
 
 /**
+ * Both state backends, in the order `eachBackend` runs them.
+ */
+export const BACKENDS: readonly StateBackend[] = ["files", "herdr-doc"];
+
+let backendInUse: StateBackend | undefined;
+
+/**
+ * Run a describe block once per backend (named `<name> on <backend>`): inside it, `cliEnv` and
+ * `cliState` default to that backend, so the same CLI tests cover files and herdr-doc.
+ * @param name Block name.
+ * @param body The block's tests, given the backend.
+ */
+export const eachBackend = (name: string, body: (backend: StateBackend) => void): void =>
+  describe.each([...BACKENDS])(`${name} on %s`, (backend) => {
+    beforeAll(() => {
+      backendInUse = backend;
+    });
+    afterAll(() => {
+      backendInUse = undefined;
+    });
+    body(backend);
+  });
+
+/**
+ * The backend `cliEnv` uses by default: the one `eachBackend` runs, else files.
+ * @returns The backend.
+ */
+export const testBackend = (): StateBackend => backendInUse ?? "files";
+
+const noRemote = () => Effect.succeed(undefined);
+
+/**
+ * Point `state` at a backend: write the config file the CLI reads, and on herdr-doc the fake
+ * cores (kept when present) and a coordinate skill link, and register an in-process herdr-doc
+ * store over those cores (on `home`, as this core `FAKE_CORE`), so seeds and reads made through
+ * lib functions or `readState` see the documents the spawned CLI sees. Archives on another home
+ * are dropped and read as absent, as the `hc` stub does. `cliEnv` calls this; call it first when
+ * a test seeds state before building the environment.
+ * @param state State dir.
+ * @param stateBackend Which backend the config selects.
+ * @param home The herdr-doc home: `FAKE_HOME` (another machine), or `FAKE_CORE` for this one.
+ */
+export const cliState = (
+  state: string,
+  stateBackend: StateBackend = testBackend(),
+  home: string = FAKE_HOME,
+): void => {
+  const configFile = join(state, "config.json");
+  const docs = join(state, "herdr-docs.json");
+  writeFileSync(
+    configFile,
+    JSON.stringify({
+      state_dir: state,
+      backlog_dir: join(state, "md"),
+      ...(stateBackend === "herdr-doc" ? { state_backend: "herdr-doc", state_home: home } : {}),
+    }),
+  );
+  if (stateBackend !== "herdr-doc") return;
+  // A coordinator machine on the herdr-doc backend needs a coordinate skill link (preflight).
+  const skillLink = join(state, "home", ".claude", "skills", "coordinate");
+  if (!existsSync(skillLink)) {
+    mkdirSync(join(skillLink, ".."), { recursive: true });
+    symlinkSync(join(import.meta.dir, "..", ".."), skillLink);
+  }
+  // Kept across calls: a test may build the environment again for each command.
+  if (!existsSync(docs))
+    writeFileSync(
+      docs,
+      JSON.stringify(fakeDocCores(FAKE_CORE, { [FAKE_HOME]: "up", strix: "up" })),
+    );
+  registerStateStore(
+    state,
+    herdrStore({
+      home,
+      prefix: PRODUCTION_PREFIX,
+      transport: fileDocTransport(docs),
+      self: Effect.succeed(FAKE_CORE),
+      stateDir: state,
+      appendRemote: () => Effect.void,
+      readRemote: noRemote,
+    }),
+  );
+};
+
+type CliConfigFile = { state_backend?: string; state_home?: string; state_prefix?: string };
+
+// Where a key of `state` is kept: a file, or a document (and field) in the fake cores file.
+type Slot =
+  | { kind: "file"; file: string }
+  | { kind: "doc"; cores: string; home: string; name: string; field: string | undefined };
+
+const slotOf = (state: string, key: StateKey): Slot => {
+  const config = JSON.parse(readFileSync(join(state, "config.json"), "utf8")) as CliConfigFile;
+  const address =
+    config.state_backend === "herdr-doc"
+      ? documentAddress(config.state_prefix ?? PRODUCTION_PREFIX, key)
+      : undefined;
+  if (address === undefined) return { kind: "file", file: filesPath(state, key) };
+  return {
+    kind: "doc",
+    cores: join(state, "herdr-docs.json"),
+    home: config.state_home ?? FAKE_HOME,
+    name: address.name,
+    field: address.field,
+  };
+};
+
+const readCores = (path: string): FakeDocCores =>
+  JSON.parse(readFileSync(path, "utf8")) as FakeDocCores;
+
+/**
+ * One shared document's value (null when absent), read straight from where `state`'s backend
+ * keeps it: its file, or its document in the fake cores. Read between CLI runs.
+ * @param state State dir (after `cliState` or `cliEnv`).
+ * @param key Document.
+ * @returns The value.
+ */
+export const readState = (state: string, key: StateKey): any => {
+  const slot = slotOf(state, key);
+  if (slot.kind === "file")
+    return existsSync(slot.file) ? JSON.parse(readFileSync(slot.file, "utf8")) : null;
+  const value = readCores(slot.cores).docs[slot.home]?.[slot.name]?.value ?? null;
+  if (slot.field === undefined) return value;
+  return (value as { records?: Record<string, unknown> } | null)?.records?.[slot.field] ?? null;
+};
+
+/**
+ * Everything that marks a change to one shared document: its file's bytes, or its document's
+ * value and version. Equal snapshots mean nothing wrote it.
+ * @param state State dir (after `cliState` or `cliEnv`).
+ * @param key Document.
+ * @returns The snapshot.
+ */
+export const stateSnapshot = (state: string, key: StateKey): string => {
+  const slot = slotOf(state, key);
+  if (slot.kind === "file") return existsSync(slot.file) ? readFileSync(slot.file, "utf8") : "";
+  return JSON.stringify(readCores(slot.cores).docs[slot.home]?.[slot.name] ?? null);
+};
+
+/**
+ * Write a shared document behind the CLI's back, as another machine or a hand edit would: its file,
+ * or its document in the fake cores with the version moved on. null deletes it. Write between CLI
+ * runs.
+ * @param state State dir (after `cliState` or `cliEnv`).
+ * @param key Document.
+ * @param value The new value.
+ */
+export const writeState = (state: string, key: StateKey, value: unknown): void => {
+  const slot = slotOf(state, key);
+  if (slot.kind === "file") {
+    if (value === null) rmSync(slot.file, { force: true });
+    else {
+      mkdirSync(join(slot.file, ".."), { recursive: true });
+      writeFileSync(slot.file, JSON.stringify(value));
+    }
+    return;
+  }
+  const cores = readCores(slot.cores);
+  const docs = (cores.docs[slot.home] ??= {});
+  const current = docs[slot.name] ?? { value: null, version: 0 };
+  const next =
+    slot.field === undefined
+      ? value
+      : {
+          records: {
+            ...(current.value as { records?: Record<string, unknown> } | null)?.records,
+            [slot.field]: value,
+          },
+        };
+  docs[slot.name] = { value: next, version: current.version + 1 };
+  writeFileSync(slot.cores, JSON.stringify(cores));
+};
+
+/**
+ * Text with herdr-doc addresses on `FAKE_HOME` written as the files under `state` they stand
+ * for, so one expected output fits both backends.
+ * @param text CLI output.
+ * @param state State dir.
+ * @returns The text.
+ */
+export const asFileAddresses = (text: string, state: string): string =>
+  text
+    .replaceAll(
+      new RegExp(`herdr-doc://${FAKE_HOME}/cs\\.b\\.([a-z0-9._-]+)`, "g"),
+      `${state}/backlogs/$1.json`,
+    )
+    .replaceAll(
+      new RegExp(`herdr-doc://${FAKE_HOME}/cs\\.q\\.([a-z0-9._-]+)`, "g"),
+      `${state}/capacity/$1.json`,
+    )
+    .replaceAll(
+      new RegExp(`herdr-doc://${FAKE_HOME}/cs\\.ended\\.\\d+#([A-Za-z0-9._-]+)`, "g"),
+      `${state}/ended/$1.json`,
+    )
+    .replaceAll(`herdr-doc://${FAKE_HOME}/cs.policy`, `${state}/delegate-harness-policy.json`)
+    .replaceAll(new RegExp(`herdr-doc://${FAKE_HOME}(?![/\\w])`, "g"), `${state}/ended`);
+
+/**
  * An environment for spawning the coordinate CLI against `state`: a config file naming it, a stub
  * `hc`, a stub `herdr-app`, and stub `lsof`, `ps` and `kill` first on PATH, and `HC_TERMINAL_ID=t1`. The stub's `hc get` answers t1 with `labels`,
  * or, given `getError`, fails the way herdr-core reports an error; `hc get` answers each address in
@@ -139,16 +344,19 @@ export const gitAndFake = (
  * The `herdr-app` stub makes space sp9 (tab tab9, shell t6) on `space.new`, lists no spaces, answers
  * anything else with `{}`, and appends its arguments to `<state>/bin/app-calls.log`, so no test
  * reaches the real Herdr app. HOME is `<state>/home`, whose `.local/bin` is not on PATH.
- * With the herdr-doc backend (`stateBackend`, by default from `COORDINATE_TEST_STATE_BACKEND`), the
- * config keeps shared state on the home `FAKE_HOME`, and the stub's `hc connect` answers document
- * calls from fake cores in `<state>/herdr-docs.json` (and `hc file read` finds no file) (this core `FAKE_CORE`, which knows the home and
- * strix, both up), and HOME has a Claude Code coordinate skill link to this checkout. SHELL is a stub login shell that keeps the given PATH.
+ * With the herdr-doc backend (`stateBackend`, by default the one `eachBackend` runs), the config
+ * keeps shared state on `home` (`FAKE_HOME` by default), the stub's `hc connect` answers document
+ * calls from fake cores in `<state>/herdr-docs.json` (and `hc file read` finds no file) (this core
+ * `FAKE_CORE`, which knows the home and strix, both up), HOME has a Claude Code coordinate skill
+ * link to this checkout, and this process reads the same documents (`cliState`). SHELL is a stub
+ * login shell that keeps the given PATH.
  * @param state State dir.
  * @param labels The calling terminal's labels.
  * @param getError An error kind for `hc get` to fail with.
  * @param terminals Other terminals `hc get` knows, by address.
  * @param lists Terminals `hc ls` lists, by label filter, checked in order.
  * @param stateBackend Which backend the config selects.
+ * @param home The herdr-doc home (`cliState`).
  * @returns The environment.
  */
 export const cliEnv = (
@@ -157,34 +365,12 @@ export const cliEnv = (
   getError: string | undefined = undefined,
   terminals: Record<string, unknown> = {},
   lists: Record<string, unknown[]> = {},
-  stateBackend: StateBackend = process.env.COORDINATE_TEST_STATE_BACKEND === "herdr-doc"
-    ? "herdr-doc"
-    : "files",
+  stateBackend: StateBackend = testBackend(),
+  home: string = FAKE_HOME,
 ): Record<string, string> => {
+  cliState(state, stateBackend, home);
   const configFile = join(state, "config.json");
   const docs = join(state, "herdr-docs.json");
-  writeFileSync(
-    configFile,
-    JSON.stringify({
-      state_dir: state,
-      backlog_dir: join(state, "md"),
-      ...(stateBackend === "herdr-doc"
-        ? { state_backend: "herdr-doc", state_home: FAKE_HOME }
-        : {}),
-    }),
-  );
-  // A coordinator machine on the herdr-doc backend needs a coordinate skill link (preflight).
-  const skillLink = join(state, "home", ".claude", "skills", "coordinate");
-  if (stateBackend === "herdr-doc" && !existsSync(skillLink)) {
-    mkdirSync(join(skillLink, ".."), { recursive: true });
-    symlinkSync(join(import.meta.dir, "..", ".."), skillLink);
-  }
-  // Kept across calls: a test may build the environment again for each command.
-  if (stateBackend === "herdr-doc" && !existsSync(docs))
-    writeFileSync(
-      docs,
-      JSON.stringify(fakeDocCores(FAKE_CORE, { [FAKE_HOME]: "up", strix: "up" })),
-    );
   const bin = join(state, "bin");
   mkdirSync(bin, { recursive: true });
   const got =

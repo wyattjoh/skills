@@ -15,7 +15,17 @@ import {
 import { emptyBacklog, type ItemUpdate } from "./backlog-store/ops.ts";
 import { decisionKey, FINDING_DETAIL_SHAPE, type Item } from "./backlog-store/schema.ts";
 import { resolveConfig } from "./config.ts";
-import { cliEnv, commitFile, g, gitAndFake, initRepo, runWith, tempDir } from "./fixture.ts";
+import {
+  cliEnv,
+  cliState,
+  commitFile,
+  eachBackend,
+  g,
+  gitAndFake,
+  initRepo,
+  runWith,
+  tempDir,
+} from "./fixture.ts";
 import { FAKE_CORE, fakeProc, ok, type RunOutput } from "./proc.ts";
 import { enqueueCapacityWait } from "./capacity-queue.ts";
 import { setHarnessPolicy } from "./harness-policy.ts";
@@ -812,9 +822,10 @@ const update = (id: string, change: Partial<ItemUpdate>): ItemUpdate & { json: b
   ...change,
 });
 
-const dueDomain = async () => {
+const dueDomain = async (prepare: (state: string) => void = () => undefined) => {
   const state = tempDir();
   made.push(state);
+  prepare(state);
   const config = await Effect.runPromise(
     resolveConfig({ state_dir: state, backlog_dir: join(state, "md") }, "/c"),
   );
@@ -1860,9 +1871,11 @@ describe("watch --follow", () => {
     ).toEqual([]);
     expect(emitted).toEqual(["blind: herdr-core unreadable 3 times: down; re-arm the watcher"]);
   });
+});
 
+eachBackend("watch --follow (CLI)", () => {
   it("prints a line to stdout while the CLI keeps running", async () => {
-    const { config } = await dueDomain();
+    const { config } = await dueDomain((made) => cliState(made));
     const state = config.stateDir;
     await runWith(itemUpdate(config, "app", ask("Which login provider?")));
     const env = cliEnv(state, { "fleet.role": "coordinator", "fleet.domain": "app" });
@@ -1900,7 +1913,7 @@ describe("watch --follow", () => {
       await child.exited;
     }
     expect(existsSync(lockPath(state, "app"))).toBe(false);
-  });
+  }, 30_000);
 });
 
 const settledLine = (name: string, address: string, retro = "") =>

@@ -98,7 +98,35 @@ export type HerdrStoreOptions = {
   subscribe?: DocSubscriber;
 };
 
+/**
+ * Where a herdr-doc store keeps a key: its document name, and the field inside it for a key that
+ * shares a document (an ended record in its shard).
+ */
 type Address = { name: string; field: string | undefined };
+
+/**
+ * The document a key lives in under `prefix`, or undefined for the keys that stay local files
+ * (session state and the wiki lint clock).
+ * @param prefix Document name prefix.
+ * @param key Key.
+ * @returns Its document name and field.
+ */
+export const documentAddress = (prefix: string, key: StateKey): Address | undefined => {
+  switch (key.kind) {
+    case "backlog":
+      return { name: `${prefix}b.${key.domain}`, field: undefined };
+    case "queue":
+      return { name: `${prefix}q.${key.domain}`, field: undefined };
+    case "policy":
+      return { name: `${prefix}policy`, field: undefined };
+    case "ended": {
+      const shard = (createHash("sha256").update(key.session).digest()[0] ?? 0) % ENDED_SHARDS;
+      return { name: `${prefix}ended.${shard}`, field: key.session };
+    }
+    default:
+      return undefined;
+  }
+};
 type Doc = { value: unknown; version: number };
 
 const encode = (version: number, value: unknown): Version =>
@@ -164,20 +192,9 @@ export const herdrStore = (options: HerdrStoreOptions): StateStore => {
   const isLocal = (key: StateKey) => key.kind === "session" || key.kind === "lint";
 
   const addressOf = (key: StateKey): Address => {
-    switch (key.kind) {
-      case "backlog":
-        return { name: `${prefix}b.${key.domain}`, field: undefined };
-      case "queue":
-        return { name: `${prefix}q.${key.domain}`, field: undefined };
-      case "policy":
-        return { name: `${prefix}policy`, field: undefined };
-      case "ended": {
-        const shard = (createHash("sha256").update(key.session).digest()[0] ?? 0) % ENDED_SHARDS;
-        return { name: `${prefix}ended.${shard}`, field: key.session };
-      }
-      default:
-        throw new Error(`${key.kind} documents stay local`);
-    }
+    const address = documentAddress(prefix, key);
+    if (address === undefined) throw new Error(`${key.kind} documents stay local`);
+    return address;
   };
 
   const at = (name: string) => `herdr-doc://${home}/${name}`;

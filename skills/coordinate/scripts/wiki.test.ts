@@ -1,7 +1,17 @@
-import { afterAll, describe, expect, it } from "bun:test";
+import { afterAll, expect, it } from "bun:test";
 import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { cliEnv, g, initRepo, tempDir } from "./lib/fixture.ts";
+import {
+  cliEnv,
+  eachBackend,
+  g,
+  initRepo,
+  readState,
+  stateSnapshot,
+  tempDir,
+  writeState,
+} from "./lib/fixture.ts";
+import { keys } from "./lib/state-store.ts";
 
 const made: string[] = [];
 afterAll(() => {
@@ -34,7 +44,7 @@ const sandbox = (domain = "app") => {
 
 const log = (dir: string): string[] => g(dir, "log", "--format=%s").split("\n");
 
-describe("coordinate wiki path", () => {
+eachBackend("coordinate wiki path", () => {
   it("creates and git-initializes the domain wiki once and prints its path", () => {
     const { state, run } = sandbox();
     const first = run(["wiki", "path"]);
@@ -113,7 +123,7 @@ const linted = () => {
   return { ...box, repo, root, wiki };
 };
 
-describe("coordinate wiki lint", () => {
+eachBackend("coordinate wiki lint", () => {
   it("passes a wiki whose pages are indexed, linked, dated and covered", () => {
     const { run, wiki, root } = linted();
     writeFileSync(join(wiki, "index.md"), "# app wiki\n\n- [[alpha]]\n- [[beta]]\n");
@@ -179,12 +189,11 @@ describe("coordinate wiki lint", () => {
     expect(
       run(["finding", "add", "new thing", "--kind", "opportunity", "--detail-md", "new"]).exit,
     ).toBe(0);
-    const documentFile = join(state, "backlogs", "app.json");
-    const document = JSON.parse(readFileSync(documentFile, "utf8"));
+    const document = readState(state, keys.backlog("app"));
     expect(document.findings[1].createdAt).toMatch(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/);
     const old = new Date(Date.now() - 20 * 86_400_000).toISOString();
     document.findings[0].createdAt = old;
-    writeFileSync(documentFile, JSON.stringify(document, null, 2));
+    writeState(state, keys.backlog("app"), document);
 
     const expected = [
       "invalid frontmatter: bad.md: description must be one non-empty line",
@@ -216,7 +225,7 @@ describe("coordinate wiki lint", () => {
   }, 30_000);
 });
 
-describe("coordinate wiki lint --mark", () => {
+eachBackend("coordinate wiki lint --mark", () => {
   it("records the last-lint date only when lint passes, for the domain wiki only", () => {
     const { state, run, wiki } = linted();
     const clock = join(state, "wiki-lint", "app.json");
@@ -252,7 +261,7 @@ describe("coordinate wiki lint --mark", () => {
   }, 30_000);
 });
 
-describe("coordinate wiki commit", () => {
+eachBackend("coordinate wiki commit", () => {
   it("refuses a commit while lint fails and commits once it passes", () => {
     const { run, wiki, env } = linted();
     writeFileSync(join(wiki, "alpha.md"), page(fields("alpha"), "First notes.\n"));
@@ -364,7 +373,7 @@ const launching = () => {
   return { state, run, wiki, shared, firstMessage };
 };
 
-describe("coordinate delegate WIKI.md", () => {
+eachBackend("coordinate delegate WIKI.md", () => {
   it("lists the domain and shared pages covering a --repo delegate's repo beside its brief", () => {
     const { state, run, wiki, shared, firstMessage } = launching();
     const repo = initRepo();
@@ -577,7 +586,7 @@ describe("coordinate delegate WIKI.md", () => {
   }, 30_000);
 });
 
-describe("coordinate backlog policy add --wiki", () => {
+eachBackend("coordinate backlog policy add --wiki", () => {
   it("cites a domain or shared wiki page and shows the citation in show, ls and --json", () => {
     const { state, run, wiki } = linted();
     writeFileSync(join(wiki, "poll-interval.md"), page(fields("poll-interval"), "Why 5s.\n"));
@@ -642,8 +651,7 @@ describe("coordinate backlog policy add --wiki", () => {
   it("refuses a page missing from both wikis and leaves the backlog unchanged", () => {
     const { state, run, wiki } = linted();
     writeFileSync(join(wiki, "index.md"), "# app wiki\n\n- [[ghost]]\n");
-    const documentFile = join(state, "backlogs", "app.json");
-    const before = readFileSync(documentFile, "utf8");
+    const before = stateSnapshot(state, keys.backlog("app"));
     const shared = join(state, "wiki", "_shared");
     for (const ref of ["ghost", "index", "../app/index"])
       expect(run(["backlog", "policy", "add", "rule", "--wiki", ref])).toEqual({
@@ -651,7 +659,7 @@ describe("coordinate backlog policy add --wiki", () => {
         stdout: "",
         stderr: `refused: no page [[${ref}]] in the app wiki (${wiki}) or the shared wiki (${shared})\n`,
       });
-    expect(readFileSync(documentFile, "utf8")).toBe(before);
+    expect(stateSnapshot(state, keys.backlog("app"))).toBe(before);
     expect(existsSync(shared)).toBe(false);
   }, 30_000);
 
@@ -685,7 +693,7 @@ const outside = (env: Record<string, string>, args: string[]): Result => {
   };
 };
 
-describe("coordinate wiki list and show", () => {
+eachBackend("coordinate wiki list and show", () => {
   it("lists no pages for a missing wiki and creates nothing", () => {
     const { state, run, env } = sandbox();
     expect(JSON.parse(run(["wiki", "list", "--json"]).stdout)).toEqual({
@@ -806,7 +814,7 @@ describe("coordinate wiki list and show", () => {
   }, 30_000);
 });
 
-describe("coordinate backlog policy replace --wiki", () => {
+eachBackend("coordinate backlog policy replace --wiki", () => {
   it("cites a new page, keeps the citation without the flag, and refuses an unknown page", () => {
     const { state, run, wiki } = linted();
     writeFileSync(join(wiki, "old-reason.md"), page(fields("old-reason"), "Old.\n"));
@@ -816,8 +824,7 @@ describe("coordinate backlog policy replace --wiki", () => {
     ).toBe(0);
     expect(run(["backlog", "policy", "add", "plain", "--at", "2026-11-23"]).exit).toBe(0);
 
-    const documentFile = join(state, "backlogs", "app.json");
-    const before = readFileSync(documentFile, "utf8");
+    const before = stateSnapshot(state, keys.backlog("app"));
     const shared = join(state, "wiki", "_shared");
     for (const ref of ["ghost", "index"])
       expect(run(["backlog", "policy", "replace", "p1", "rule 2", "--wiki", ref])).toEqual({
@@ -825,7 +832,7 @@ describe("coordinate backlog policy replace --wiki", () => {
         stdout: "",
         stderr: `refused: no page [[${ref}]] in the app wiki (${wiki}) or the shared wiki (${shared})\n`,
       });
-    expect(readFileSync(documentFile, "utf8")).toBe(before);
+    expect(stateSnapshot(state, keys.backlog("app"))).toBe(before);
 
     expect(
       run([

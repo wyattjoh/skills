@@ -6,8 +6,20 @@ import { type AttachOptions, attachDelegate, detachDelegate } from "./attach.ts"
 import { itemAdd, itemClose, recordDelegate } from "./backlog-doc.ts";
 import { fileDelegate } from "./backlog-store/ops.ts";
 import { resolveConfig } from "./config.ts";
-import { cliEnv, failureOf, g, gitAndFake, initRepo, runWith, tempDir } from "./fixture.ts";
+import {
+  cliEnv,
+  cliState,
+  eachBackend,
+  failureOf,
+  g,
+  gitAndFake,
+  initRepo,
+  readState,
+  runWith,
+  tempDir,
+} from "./fixture.ts";
 import { HerdrError } from "./herdr.ts";
+import { keys } from "./state-store.ts";
 import { endDelegate, start } from "./lifecycle.ts";
 import { FAKE_CORE, fakeProc, ok, type RunOutput } from "./proc.ts";
 
@@ -66,8 +78,9 @@ const answers =
     throw new Error(`unexpected command: ${argv.join(" ")}`);
   };
 
-const started = async () => {
+const started = async (prepare: (state: string) => void = () => undefined) => {
   const state = dir();
+  prepare(state);
   const cfg = await config(state);
   await runWith(start(cfg, "app", ENV), fakeProc(answers(undefined)).layer);
   await runWith(itemAdd(cfg, "app", { title: "fix login", json: false, now: NOW }));
@@ -474,9 +487,9 @@ describe("one session, one item", () => {
   });
 });
 
-describe("coordinate item attach and detach CLI", () => {
+eachBackend("coordinate item attach and detach CLI", () => {
   it("exits 0 when filed and 1 when refused", async () => {
-    const { state, path } = await started();
+    const { state } = await started((made) => cliState(made));
     const env = cliEnv(state, COORDINATOR, undefined, {
       t4: handStarted(state, { labels: { "fleet.domain": "app", "fleet.session": SESSION } }),
     });
@@ -507,6 +520,6 @@ describe("coordinate item attach and detach CLI", () => {
       [0, `detached manual (session ${SESSION}) from i1 [open]\n`],
       [1, `refused: t4 runs session ${SESSION}, not s-other\n`],
     ]);
-    expect(read(path).items[0].delegates).toEqual([]);
-  });
+    expect(readState(state, keys.backlog("app")).items[0].delegates).toEqual([]);
+  }, 30_000);
 });

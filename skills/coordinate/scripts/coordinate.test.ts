@@ -1,8 +1,17 @@
-import { afterAll, describe, expect, it } from "bun:test";
+import { afterAll, expect, it } from "bun:test";
 import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { FINDING_DETAIL_SHAPE } from "./lib/backlog-store/schema.ts";
-import { cliEnv, tempDir } from "./lib/fixture.ts";
+import {
+  asFileAddresses,
+  cliEnv,
+  eachBackend,
+  readState,
+  stateSnapshot,
+  tempDir,
+  writeState,
+} from "./lib/fixture.ts";
+import { keys } from "./lib/state-store.ts";
 
 const made: string[] = [];
 afterAll(() => {
@@ -19,7 +28,7 @@ type Result = {
   stderr: string;
 };
 
-describe("coordinate CLI answer notes", () => {
+eachBackend("coordinate CLI answer notes", () => {
   it("accepts notes for answer and update, renders them, and preserves Discuss", () => {
     const state = tempDir("coordinate-note-cli-");
     made.push(state);
@@ -94,10 +103,10 @@ describe("coordinate CLI answer notes", () => {
     const shown = run(["backlog", "show", "--domain", "app"]).stdout;
     expect(shown).toContain("discussion requested");
     expect(shown).toContain("talk more");
-  });
+  }, 30_000);
 });
 
-describe("coordinate CLI Done history", () => {
+eachBackend("coordinate CLI Done history", () => {
   it("hides closed items from text views unless --done and keeps JSON unchanged", () => {
     const state = tempDir("coordinate-done-cli-");
     made.push(state);
@@ -137,7 +146,7 @@ describe("coordinate CLI Done history", () => {
   }, 30_000);
 });
 
-describe("coordinate CLI harness policy", () => {
+eachBackend("coordinate CLI harness policy", () => {
   it("accepts an omitted harness flag and refuses when legacy state has no default", () => {
     const state = tempDir("coordinate-harness-cli-");
     made.push(state);
@@ -178,10 +187,10 @@ describe("coordinate CLI harness policy", () => {
     );
     const calls = readFileSync(join(state, "bin", "calls.log"), "utf8").split("\n");
     expect(calls.filter((call) => call.includes("fix-a"))).toEqual([]);
-  });
+  }, 30_000);
 });
 
-describe("coordinate CLI delegate --skill", () => {
+eachBackend("coordinate CLI delegate --skill", () => {
   it("refuses coordinate, which only spawn starts with", () => {
     const state = tempDir("coordinate-skill-cli-");
     made.push(state);
@@ -213,7 +222,7 @@ describe("coordinate CLI delegate --skill", () => {
       "refused: --skill coordinate starts a coordinator, which only coordinate spawn does\n",
     );
     expect(existsSync(join(state, "bin", "calls.log"))).toBe(false);
-  });
+  }, 30_000);
 
   it("refuses a name with a leading slash or a space before any launch", () => {
     const state = tempDir("coordinate-skill-name-cli-");
@@ -253,10 +262,10 @@ describe("coordinate CLI delegate --skill", () => {
       ],
     ]);
     expect(existsSync(join(state, "bin", "calls.log"))).toBe(false);
-  });
+  }, 30_000);
 });
 
-describe("coordinate CLI spawn", () => {
+eachBackend("coordinate CLI spawn", () => {
   const watcherLive = {
     "coordinate.watch-domain=tasks": [{ address: "t-w", state: "live", parent: "t-watch" }],
   };
@@ -267,7 +276,6 @@ describe("coordinate CLI spawn", () => {
     made.push(state);
     const cwd = join(state, "work");
     mkdirSync(cwd);
-    const document = join(state, "backlogs", "tasks.json");
     const result = Bun.spawnSync(
       [
         "bun",
@@ -294,14 +302,15 @@ describe("coordinate CLI spawn", () => {
         timeout: 10_000,
       },
     );
-    const stdout = result.stdout.toString();
+    const stdout = asFileAddresses(result.stdout.toString(), state);
     const session = /session (\S+)\n/.exec(stdout)?.[1] ?? "";
+    const document = join(state, "backlogs", "tasks.json");
     expect({ exit: result.exitCode, stdout, stderr: result.stderr.toString() }).toEqual({
       exit: 0,
       stdout: `created backlog ${document}\nowned: added ${cwd}\nadded i1: first\nadded i2: second\nstarted coordinator tasks-coordinator for tasks (t-watch) in its own space sp9, claude session ${session}\nready: tasks-coordinator (t-watch) armed watcher t-w\n`,
       stderr: "",
     });
-    const seeded = JSON.parse(readFileSync(document, "utf8"));
+    const seeded = readState(state, keys.backlog("tasks"));
     expect({
       owned: seeded.boundary.owned,
       items: seeded.items.map((item: { id: string; title: string; status: string }) => [
@@ -331,7 +340,7 @@ describe("coordinate CLI spawn", () => {
     expect(readFileSync(join(state, "bin", "app-calls.log"), "utf8")).toBe(
       `do space.new {"name":"tasks","folder":"${cwd}","focus":false}\nls\ndo tab.rename {"id":"tab9","name":"Tasks · No active focus"}\n`,
     );
-  });
+  }, 30_000);
 
   it("prints the same fields as JSON with --json", () => {
     const state = tempDir("coordinate-spawn-cli-json-");
@@ -345,7 +354,10 @@ describe("coordinate CLI spawn", () => {
         timeout: 10_000,
       },
     );
-    const printed = JSON.parse(result.stdout.toString()) as Record<string, unknown>;
+    const printed = JSON.parse(asFileAddresses(result.stdout.toString(), state)) as Record<
+      string,
+      unknown
+    >;
     expect({ exit: result.exitCode, stderr: result.stderr.toString() }).toEqual({
       exit: 0,
       stderr: "",
@@ -368,7 +380,7 @@ describe("coordinate CLI spawn", () => {
       status: "ready",
       timeoutMs: 120_000,
     });
-  });
+  }, 30_000);
 
   it("refuses with exit 1 from a plain shell, launching nothing", () => {
     const state = tempDir("coordinate-spawn-cli-shell-");
@@ -385,7 +397,7 @@ describe("coordinate CLI spawn", () => {
         "refused: spawn runs from a coordinator terminal, and HC_TERMINAL_ID is unset: this is not a Herdr terminal\n",
     });
     expect(existsSync(join(state, "bin", "calls.log"))).toBe(false);
-  });
+  }, 30_000);
 
   it("exits 1 with the last state when the new terminal ends before its watcher is armed", () => {
     const state = tempDir("coordinate-spawn-cli-gone-");
@@ -401,17 +413,17 @@ describe("coordinate CLI spawn", () => {
         timeout: 10_000,
       },
     );
-    const stdout = result.stdout.toString();
+    const stdout = asFileAddresses(result.stdout.toString(), state);
     const session = /session (\S+)\n/.exec(stdout)?.[1] ?? "";
     expect({ exit: result.exitCode, stdout, stderr: result.stderr.toString() }).toEqual({
       exit: 1,
       stdout: `created backlog ${join(state, "backlogs", "tasks.json")}\nowned: added ${state}\nstarted coordinator tasks-coordinator for tasks (t-watch) in its own space sp9, claude session ${session}\nnot ready: tasks-coordinator (t-watch) is gone, it ended before arming its watcher\n`,
       stderr: "",
     });
-  });
+  }, 30_000);
 });
 
-describe("coordinate CLI parity", () => {
+eachBackend("coordinate CLI parity", () => {
   it("records representative invocations across every command", () => {
     const state = tempDir("coordinate-cli-parity-");
     made.push(state);
@@ -642,11 +654,11 @@ describe("coordinate CLI parity", () => {
 
     const observed = results.map(({ exit, stdout, stderr }) => ({
       exit,
-      stdout: stdout
+      stdout: asFileAddresses(stdout, state)
         .replaceAll(state, "<state>")
         .replaceAll(/"expiry": "[^"]+"/g, '"expiry": "<time>"')
         .replaceAll("\n", "\\n"),
-      stderr: stderr.replaceAll(state, "<state>").replaceAll("\n", "\\n"),
+      stderr: asFileAddresses(stderr, state).replaceAll(state, "<state>").replaceAll("\n", "\\n"),
     }));
     expect(observed).toEqual([
       {
@@ -881,7 +893,7 @@ describe("coordinate CLI parity", () => {
   }, 60_000);
 });
 
-describe("coordinate Discuss answers", () => {
+eachBackend("coordinate Discuss answers", () => {
   it("keeps the ask open through both answer commands and clears discussion on revision or answer", () => {
     const state = tempDir("coordinate-discuss-");
     made.push(state);
@@ -924,8 +936,8 @@ describe("coordinate Discuss answers", () => {
     expect(
       run(["item", "answer", "--domain", "app", "i1", "Discuss: compare migrations"]).exit,
     ).toBe(0);
-    const path = join(state, "backlogs", "app.json");
-    const discussedByAnswer = JSON.parse(readFileSync(path, "utf8")).items[0];
+    const backlog = () => readState(state, keys.backlog("app"));
+    const discussedByAnswer = backlog().items[0];
     expect(discussedByAnswer.status).toBe("waiting-user");
     expect(discussedByAnswer.ask.discuss.note).toBe("compare migrations");
     expect(discussedByAnswer.ask.discuss.at).toMatch(/^\d{4}-\d{2}-\d{2}$/);
@@ -946,22 +958,22 @@ describe("coordinate Discuss answers", () => {
         "app",
       ]).exit,
     ).toBe(0);
-    expect(JSON.parse(readFileSync(path, "utf8")).items[0].ask.discuss).toBe(null);
+    expect(backlog().items[0].ask.discuss).toBe(null);
 
     expect(run(["item", "update", "i1", "--answer", "Discuss", "--domain", "app"]).exit).toBe(0);
-    const discussedByUpdate = JSON.parse(readFileSync(path, "utf8")).items[0];
+    const discussedByUpdate = backlog().items[0];
     expect(discussedByUpdate.status).toBe("waiting-user");
     expect(discussedByUpdate.ask.discuss.note).toBe("");
     expect(discussedByUpdate.answered).toEqual([]);
 
     expect(run(["item", "answer", "--domain", "app", "i1", "C"]).exit).toBe(0);
-    const answered = JSON.parse(readFileSync(path, "utf8")).items[0];
+    const answered = backlog().items[0];
     expect(answered.ask).toBe(null);
     expect(answered.answered[0]).toMatchObject({ discuss: null, answer: "C" });
   }, 60_000);
 });
 
-describe("coordinate watch delivery", () => {
+eachBackend("coordinate watch delivery", () => {
   it("requires explicit domain and owner flags instead of inferring them from the child terminal", () => {
     const state = tempDir("coordinate-watch-cli-");
     made.push(state);
@@ -988,10 +1000,10 @@ describe("coordinate watch delivery", () => {
     expect(run(["watch", "--deliver", "--owner", "t1"]).stderr).toBe(
       "refused: watch --deliver requires explicit --domain <domain> and --owner <coordinator address>\n",
     );
-  });
+  }, 30_000);
 });
 
-describe("coordinate status --resume", () => {
+eachBackend("coordinate status --resume", (backend) => {
   it("does not arm a watcher before validating that the domain has a backlog", () => {
     const state = tempDir("coordinate-status-resume-");
     made.push(state);
@@ -1005,14 +1017,23 @@ describe("coordinate status --resume", () => {
 
     expect(result.exitCode).toBe(1);
     expect(result.stdout.toString()).toBe("");
-    expect(result.stderr.toString()).toBe(
+    expect(asFileAddresses(result.stderr.toString(), state)).toBe(
       `refused: no backlog for app at ${join(state, "backlogs", "app.json")}; run coordinate start app\n`,
     );
-    expect(existsSync(join(state, "bin", "calls.log"))).toBe(false);
-  });
+    // No watcher armed: on files no hc call at all; on herdr-doc the read itself goes through hc
+    // (connect, server status), but nothing runs.
+    const calls = join(state, "bin", "calls.log");
+    if (backend === "files") expect(existsSync(calls)).toBe(false);
+    else
+      expect(
+        readFileSync(calls, "utf8")
+          .split("\n")
+          .filter((line) => line.startsWith("run ")),
+      ).toEqual([]);
+  }, 30_000);
 });
 
-describe("coordinate CLI harness policy", () => {
+eachBackend("coordinate CLI harness policy", () => {
   it("shows legacy state, uses revision checks, replaces domain policy, and resets to inheritance", () => {
     const state = tempDir("coordinate-harness-policy-cli-");
     made.push(state);
@@ -1106,7 +1127,7 @@ describe("coordinate CLI harness policy", () => {
     expect(reset.exit).toBe(0);
     expect(JSON.parse(reset.stdout).domain.mode).toBe("inherit");
     expect(JSON.parse(reset.stdout).revision).toBe(3);
-  });
+  }, 30_000);
 });
 
 // Each call runs from its own folder, removed before the CLI starts: the shell cd's into it,
@@ -1138,7 +1159,7 @@ const fromRemoved = (state: string, env: Record<string, string>) => {
   };
 };
 
-describe("coordinate CLI from a removed current folder", () => {
+eachBackend("coordinate CLI from a removed current folder", () => {
   it("writes the backlog with every backlog command, resolving the domain from the label", () => {
     const state = tempDir("coordinate-removed-cwd-");
     made.push(state);
@@ -1165,7 +1186,7 @@ describe("coordinate CLI from a removed current folder", () => {
     expect([close.exit, close.stdout, close.stderr]).toEqual([0, "done i1: done\n", ""]);
     expect(run(["status", "--resume"]).exit).toBe(0);
 
-    const backlog = JSON.parse(readFileSync(join(state, "backlogs", "app.json"), "utf8"));
+    const backlog = readState(state, keys.backlog("app"));
     expect(
       backlog.items.map((item: { id: string; status: string }) => [item.id, item.status]),
     ).toEqual([["i1", "done"]]);
@@ -1177,7 +1198,7 @@ describe("coordinate CLI from a removed current folder", () => {
     ).toEqual([["f2", "acted"]]);
     expect(backlog.focus).toBe("steady");
     expect(backlog.boundary.owned).toEqual([state]);
-  });
+  }, 30_000);
 
   it("exits 2 naming the removed folder when a relative path needs it", () => {
     const state = tempDir("coordinate-removed-cwd-rel-");
@@ -1192,9 +1213,7 @@ describe("coordinate CLI from a removed current folder", () => {
       "",
       `could not check: MissingFolder: ${join(state, "removed-1")} no longer exists, so the relative path "rel/path" cannot be resolved: cd to an existing folder or pass an absolute path\n`,
     ]);
-    expect(
-      JSON.parse(readFileSync(join(state, "backlogs", "app.json"), "utf8")).boundary.owned,
-    ).toEqual([]);
+    expect(readState(state, keys.backlog("app")).boundary.owned).toEqual([]);
 
     writeFileSync(env.COORDINATE_CONFIG, JSON.stringify({ state_dir: "relative-state" }));
     const relativeState = run(["item", "add", "lost"]);
@@ -1203,10 +1222,10 @@ describe("coordinate CLI from a removed current folder", () => {
       "",
       `could not check: MissingFolder: ${join(state, "removed-2")} no longer exists, so the relative path "relative-state" cannot be resolved: cd to an existing folder or pass an absolute path\n`,
     ]);
-  });
+  }, 30_000);
 });
 
-describe("coordinate CLI verify verdicts and resume counts", () => {
+eachBackend("coordinate CLI verify verdicts and resume counts", () => {
   const ENDED = (cwd: string) => ({
     name: "fix-a",
     domain: "app",
@@ -1241,12 +1260,9 @@ describe("coordinate CLI verify verdicts and resume counts", () => {
     expect(run(["start", "app"]).exit).toBe(0);
     return { state, worktree, run };
   };
-  const seedEnded = (state: string, record: Record<string, unknown>) => {
-    mkdirSync(join(state, "ended"), { recursive: true });
-    writeFileSync(join(state, "ended", `${String(record.session)}.json`), JSON.stringify(record));
-  };
-  const readEndedFile = (state: string, session: string) =>
-    JSON.parse(readFileSync(join(state, "ended", `${session}.json`), "utf8"));
+  const seedEnded = (state: string, record: Record<string, unknown>) =>
+    writeState(state, keys.ended(String(record.session)), record);
+  const readEndedFile = (state: string, session: string) => readState(state, keys.ended(session));
   const stamped = (verdict: { at: string } | null): unknown =>
     verdict === null
       ? null
@@ -1461,7 +1477,7 @@ describe("coordinate CLI verify verdicts and resume counts", () => {
   }, 60_000);
 });
 
-describe("coordinate CLI finding add --source", () => {
+eachBackend("coordinate CLI finding add --source", () => {
   it("stores the source and shows it in backlog show and --json", () => {
     const state = tempDir("coordinate-finding-source-");
     made.push(state);
@@ -1539,10 +1555,10 @@ describe("coordinate CLI finding add --source", () => {
       "app",
     ]);
     expect([empty.exit, empty.stdout, empty.stderr]).toEqual([1, "", "refused: source is empty\n"]);
-  });
+  }, 30_000);
 });
 
-describe("coordinate CLI finding add detail", () => {
+eachBackend("coordinate CLI finding add detail", () => {
   it("refuses a finding without a detail, accepts either form, and names the shape in --help", () => {
     const state = tempDir("coordinate-finding-detail-");
     made.push(state);
@@ -1594,10 +1610,10 @@ describe("coordinate CLI finding add detail", () => {
     const help = run(["finding", "add", "--help"]);
     expect(help.exit).toBe(0);
     expect(`${help.stdout}\n${help.stderr}`.replace(/\s+/g, " ")).toContain(FINDING_DETAIL_SHAPE);
-  });
+  }, 30_000);
 });
 
-describe("coordinate CLI item start", () => {
+eachBackend("coordinate CLI item start", () => {
   it("records a start request from outside a terminal, refuses closed and delegate callers, and keeps a pending one", () => {
     const state = tempDir("coordinate-item-start-");
     made.push(state);
@@ -1617,7 +1633,7 @@ describe("coordinate CLI item start", () => {
       return [done.exitCode, done.stdout.toString(), done.stderr.toString()];
     };
     const stored = () =>
-      JSON.parse(readFileSync(join(state, "backlogs", "app.json"), "utf8")).items.map(
+      readState(state, keys.backlog("app")).items.map(
         (item: { id: string; startRequested?: { at: string } }) => [item.id, item.startRequested],
       );
     expect(run(["start", "app"], inside)[0]).toBe(0);
@@ -1663,10 +1679,10 @@ describe("coordinate CLI item start", () => {
       ["i1", undefined],
       ["i2", undefined],
     ]);
-  });
+  }, 30_000);
 });
 
-describe("coordinate CLI read-only queue and outbox views", () => {
+eachBackend("coordinate CLI read-only queue and outbox views", () => {
   it("shows capacity entries with per-machine positions and undelivered events, writing nothing", () => {
     const state = tempDir("coordinate-queue-outbox-cli-");
     made.push(state);
@@ -1703,8 +1719,8 @@ describe("coordinate CLI read-only queue and outbox views", () => {
       false,
     ]);
 
-    mkdirSync(join(state, "capacity"));
-    const queue = JSON.stringify({
+    expect(readState(state, keys.queue("app"))).toBe(null);
+    writeState(state, keys.queue("app"), {
       version: 1,
       nextOrder: 4,
       entries: [
@@ -1713,7 +1729,7 @@ describe("coordinate CLI read-only queue and outbox views", () => {
         { item: "i7", machine: "local", order: 3 },
       ],
     });
-    writeFileSync(join(state, "capacity", "app.json"), queue);
+    const queue = stateSnapshot(state, keys.queue("app"));
     mkdirSync(join(state, "watch"));
     const watchState = JSON.stringify({
       outbox: [
@@ -1763,7 +1779,7 @@ describe("coordinate CLI read-only queue and outbox views", () => {
       "e4 settled fix t9 Fix it a b: verify the report\ne5 legacy: an old line\n",
     );
     expect([
-      readFileSync(join(state, "capacity", "app.json"), "utf8"),
+      stateSnapshot(state, keys.queue("app")),
       readFileSync(join(state, "watch", "app.json"), "utf8"),
     ]).toEqual([queue, watchState]);
 
@@ -1781,5 +1797,5 @@ describe("coordinate CLI read-only queue and outbox views", () => {
       1,
       "refused: HC_TERMINAL_ID is unset: run this in the coordinator terminal\n",
     ]);
-  });
+  }, 30_000);
 });

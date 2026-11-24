@@ -2,7 +2,7 @@ import { afterAll, describe, expect, it } from "bun:test";
 import { readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import type { StateBackend } from "./lib/config.ts";
-import { cliEnv, FAKE_HOME, tempDir } from "./lib/fixture.ts";
+import { asFileAddresses, cliEnv, FAKE_HOME, tempDir } from "./lib/fixture.ts";
 import type { FakeDocCores } from "./lib/herdr-docs-fake.ts";
 import { FAKE_CORE } from "./lib/proc.ts";
 
@@ -54,17 +54,8 @@ const sandbox = (backend: StateBackend, prefix: string) => {
  * files they stand for, so both backends' outputs compare equal when they behave the same.
  */
 const normalize = (text: string, state: string): string =>
-  text
+  asFileAddresses(text, state)
     .replaceAll(state, "<state>")
-    .replaceAll(
-      new RegExp(`herdr-doc://${FAKE_HOME}/cs\\.b\\.([a-z0-9._-]+)`, "g"),
-      "<state>/backlogs/$1.json",
-    )
-    .replaceAll(
-      new RegExp(`herdr-doc://${FAKE_HOME}/cs\\.q\\.([a-z0-9._-]+)`, "g"),
-      "<state>/capacity/$1.json",
-    )
-    .replaceAll(`herdr-doc://${FAKE_HOME}/cs.policy`, "<state>/delegate-harness-policy.json")
     .replaceAll(/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/g, "<uuid>")
     .replaceAll(/\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z/g, "<time>");
 

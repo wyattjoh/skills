@@ -4,11 +4,12 @@ import { join } from "node:path";
 import { Effect } from "effect";
 import { createDocument, itemAdd, readDocument } from "./backlog-doc.ts";
 import { configPath, resolveConfig } from "./config.ts";
-import { cliEnv, failureOf, runWith, tempDir } from "./fixture.ts";
+import { cliEnv, eachBackend, failureOf, readState, runWith, tempDir } from "./fixture.ts";
 import { Refused } from "./fleet.ts";
 import { capacityQueuePath, enqueueCapacityWait, readCapacityQueue } from "./capacity-queue.ts";
-import { fakeProc, ok, type RunOutput } from "./proc.ts";
+import { FAKE_CORE, fakeProc, ok, type RunOutput } from "./proc.ts";
 import { type RenameOptions, renameDomain } from "./rename.ts";
+import { keys } from "./state-store.ts";
 
 const dirs: string[] = [];
 const dir = () => {
@@ -296,7 +297,8 @@ describe("backlog rename", () => {
   });
 });
 
-describe("coordinate backlog rename (CLI)", () => {
+// On herdr-doc the home is this machine: rename refuses anywhere else (state-backend.test.ts).
+eachBackend("coordinate backlog rename (CLI)", (backend) => {
   const cli = join(import.meta.dir, "..", "coordinate.ts");
   const spawn = (env: Record<string, string>, args: string[]) => {
     const done = Bun.spawnSync(["bun", cli, ...args], {
@@ -310,22 +312,27 @@ describe("coordinate backlog rename (CLI)", () => {
 
   it("renames this coordinator's domain by default and exits 0", async () => {
     const state = dir();
-    const env = cliEnv(state, COORDINATOR.labels);
+    const env = cliEnv(state, COORDINATOR.labels, undefined, {}, {}, backend, FAKE_CORE);
     await runWith(createDocument(await config(state), "tracked-prs"));
     expect(spawn(env, ["backlog", "rename", "clerk"])).toEqual([
       0,
-      `renamed tracked-prs to clerk: backlog ${join(state, "backlogs", "clerk.json")}\n`,
+      `renamed tracked-prs to clerk: backlog ${backend === "files" ? join(state, "backlogs", "clerk.json") : `herdr-doc://${FAKE_CORE}/cs.b.clerk`}\n`,
     ]);
-    expect(listing(join(state, "backlogs"))).toEqual(["clerk.json"]);
-  });
+    expect([
+      readState(state, keys.backlog("tracked-prs")),
+      readState(state, keys.backlog("clerk")).domain,
+    ]).toEqual([null, "clerk"]);
+    // Files only: no backlog file of the old name is left beside the new one.
+    if (backend === "files") expect(listing(join(state, "backlogs"))).toEqual(["clerk.json"]);
+  }, 30_000);
 
   it("exits 1 with the cause when refused", async () => {
     const state = dir();
-    const env = cliEnv(state, COORDINATOR.labels);
+    const env = cliEnv(state, COORDINATOR.labels, undefined, {}, {}, backend, FAKE_CORE);
     await runWith(createDocument(await config(state), "tracked-prs"));
     expect(spawn(env, ["backlog", "rename", "tracked-prs"])).toEqual([
       1,
       "refused: tracked-prs is already named tracked-prs\n",
     ]);
-  });
+  }, 30_000);
 });
