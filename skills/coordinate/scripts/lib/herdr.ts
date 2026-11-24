@@ -426,6 +426,10 @@ export type RunSpec = {
   name: string;
   cwd: string;
   labels: Record<string, string>;
+  /**
+   * Parent terminal on this core. With `machine`, only the terminal running this process
+   * (`HC_TERMINAL_ID`) can be the parent; any other gets none.
+   */
   parent: string | undefined;
   outliveParent: boolean;
   notifyParent: boolean;
@@ -442,14 +446,20 @@ export type RunSpec = {
  * @returns The new terminal's address.
  */
 export const run = Effect.fn("hc.run")(function* (spec: RunSpec) {
-  const lineage = spec.parent
-    ? [
-        "--parent",
-        spec.parent,
-        ...(spec.outliveParent ? ["--outlive-parent"] : []),
-        ...(spec.notifyParent ? [] : ["--no-notify"]),
-      ]
-    : ["--no-parent"];
+  const flags = [
+    ...(spec.outliveParent ? ["--outlive-parent"] : []),
+    ...(spec.notifyParent ? [] : ["--no-notify"]),
+  ];
+  // With --on, another machine's core resolves --parent and knows none of ours, but a terminal
+  // run from one of ours takes the calling terminal as its parent across machines.
+  const lineage =
+    spec.parent === undefined
+      ? ["--no-parent"]
+      : spec.machine === undefined
+        ? ["--parent", spec.parent, ...flags]
+        : spec.parent === process.env.HC_TERMINAL_ID
+          ? flags
+          : ["--no-parent"];
   const argv = [
     "hc",
     "run",

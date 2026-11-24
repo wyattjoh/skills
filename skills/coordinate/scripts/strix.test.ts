@@ -120,6 +120,7 @@ describe.skipIf(!ready)("strix: remote delegate launch", () => {
   let brief = "";
   let item = "";
   let queuedItem = "";
+  let coordinatorAddress = "";
   beforeAll(() => {
     run = strixRun();
     local = initRepo();
@@ -127,7 +128,7 @@ describe.skipIf(!ready)("strix: remote delegate launch", () => {
     brief = join(run.stateDir, "brief.md");
     writeFileSync(brief, run.brief);
     run.seed({ owned: [local], adjacent: [] });
-    run.becomeCoordinator();
+    coordinatorAddress = run.becomeCoordinator();
     const added = run.cli(["item", "add", "strix launch"]);
     expect(added.exitCode).toBe(0);
     item = /\bi\d+\b/.exec(added.output)?.[0] ?? "";
@@ -286,8 +287,23 @@ describe.skipIf(!ready)("strix: remote delegate launch", () => {
       name: string;
       state: string;
       cwd: string;
+      parent: string | null;
       labels: Record<string, string>;
     };
+    // Its coordinator is its parent across machines; strix records it machine-qualified, and the
+    // delegate neither dies with it nor types notes into it.
+    expect(terminal.parent).toBe(coordinatorAddress);
+    const there = onStrix(`hc get ${shellWord(address.slice(`${STRIX}/`.length))} --json`, 20);
+    const remoteSide = JSON.parse(there.output) as {
+      parent: string;
+      die_with_parent: boolean;
+      notify: boolean;
+    };
+    expect([
+      remoteSide.parent.endsWith(`/${coordinatorAddress}`),
+      remoteSide.die_with_parent,
+      remoteSide.notify,
+    ]).toEqual([true, false, false]);
     const fleet = Object.fromEntries(
       Object.entries(terminal.labels).filter(([key]) => key.startsWith("fleet.")),
     );

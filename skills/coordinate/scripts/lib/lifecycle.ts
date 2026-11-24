@@ -950,11 +950,7 @@ export const delegate = Effect.fn("delegate")(function* (
       tabLabel,
       spaceName: `${domain} [${options.task}]`,
       labels,
-      // A terminal's parent must be on its own core, so one on another machine has none.
-      parent:
-        away !== undefined
-          ? undefined
-          : (coordinatorTerminal?.address ?? process.env.HC_TERMINAL_ID),
+      parent: coordinatorTerminal?.address ?? process.env.HC_TERMINAL_ID,
       argv,
       ownSpace: options.space,
       coordinatorSpace: coordinatorTerminal?.labels["herdr.space"],
@@ -1320,9 +1316,7 @@ export const resumeDelegate = Effect.fn("resumeDelegate")(function* (
     tabLabel: task,
     spaceName: `${record.domain} [${task}]`,
     labels,
-    // A terminal's parent must be on its own core, so one on another machine has none.
-    parent:
-      away === undefined ? (coordinatorTerminal?.address ?? process.env.HC_TERMINAL_ID) : undefined,
+    parent: coordinatorTerminal?.address ?? process.env.HC_TERMINAL_ID,
     machine: away,
     shell,
     argv: agentArgv({

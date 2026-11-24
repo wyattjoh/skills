@@ -1,4 +1,4 @@
-import { describe, expect, it } from "bun:test";
+import { afterEach, beforeEach, describe, expect, it } from "bun:test";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { Effect } from "effect";
@@ -137,6 +137,49 @@ describe("run", () => {
       "pi",
       "go",
     ]);
+  });
+
+  describe("on another machine", () => {
+    let originalTerminal: string | undefined;
+    beforeEach(() => {
+      originalTerminal = process.env.HC_TERMINAL_ID;
+      process.env.HC_TERMINAL_ID = "t1";
+    });
+    afterEach(() => {
+      if (originalTerminal === undefined) delete process.env.HC_TERMINAL_ID;
+      else process.env.HC_TERMINAL_ID = originalTerminal;
+    });
+
+    const lineageFor = async (parent: string | undefined) => {
+      const fake = fakeProc(() => ok('{"address":"strix/t9"}'));
+      await runWith(
+        run({
+          name: "fix-a",
+          cwd: "/w",
+          labels: {},
+          machine: "strix",
+          parent,
+          outliveParent: true,
+          notifyParent: false,
+          argv: ["pi"],
+        }),
+        fake.layer,
+      );
+      const argv = fake.calls[0]?.argv ?? [];
+      return argv.slice(argv.indexOf("strix") + 1, argv.indexOf("--"));
+    };
+
+    it("takes the calling terminal as parent by leaving --parent out", async () => {
+      expect(await lineageFor("t1")).toEqual(["--outlive-parent", "--no-notify"]);
+    });
+
+    it("starts with no parent when the parent is another terminal than the caller", async () => {
+      expect(await lineageFor("t3")).toEqual(["--no-parent"]);
+    });
+
+    it("starts with no parent when none is given", async () => {
+      expect(await lineageFor(undefined)).toEqual(["--no-parent"]);
+    });
   });
 });
 
