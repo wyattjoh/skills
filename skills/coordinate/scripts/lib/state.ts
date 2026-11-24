@@ -16,9 +16,10 @@ const registered = new Map<string, StateStore>();
  * HOME when it is under this user's HOME (so the default `~/.local/state/coordinate` maps to the
  * home's default), else the same absolute path.
  * @param stateDir This machine's state directory.
+ * @param home This user's HOME.
  * @returns A shell word that expands to the home's backlogs folder.
  */
-export const homeBacklogsDir = (stateDir: string, home: string = homedir()): string => {
+const homeBacklogsDir = (stateDir: string, home: string = homedir()): string => {
   const inside = relative(home, stateDir);
   const quoted = (text: string) => `'${text.replaceAll("'", "'\\''")}'`;
   return inside.startsWith("..") || inside.startsWith("/")
@@ -27,15 +28,32 @@ export const homeBacklogsDir = (stateDir: string, home: string = homedir()): str
 };
 
 /**
+ * The shell script that appends archive lines on the home: an O_APPEND write of a base64 payload
+ * into the home's backlogs folder, made when missing.
+ * @param stateDir This machine's state directory.
+ * @param domain Domain.
+ * @param lines Lines, without newlines.
+ * @param home This user's HOME, which the state directory is relative to.
+ * @returns A POSIX shell script.
+ */
+export const archiveAppendScript = (
+  stateDir: string,
+  domain: string,
+  lines: readonly string[],
+  home: string = homedir(),
+): string => {
+  const payload = Buffer.from(lines.map((line) => `${line}\n`).join("")).toString("base64");
+  const dir = homeBacklogsDir(stateDir, home);
+  return `set -e; mkdir -p ${dir}; printf %s '${payload}' | base64 -d >> ${dir}/'${domain}.archive.jsonl'`;
+};
+
+/**
  * Append archive lines on the home through `hc exec`: an O_APPEND shell write of a base64
  * payload, so concurrent appends from several machines never overwrite each other.
  */
 const appendArchiveOn =
   (stateDir: string) => (home: string, domain: string, lines: readonly string[]) => {
-    const payload = Buffer.from(lines.map((line) => `${line}\n`).join("")).toString("base64");
-    const dir = homeBacklogsDir(stateDir);
-    const script = `set -e; mkdir -p ${dir}; printf %s '${payload}' | base64 -d >> ${dir}/'${domain}.archive.jsonl'`;
-    return execOn(home, script, 60).pipe(
+    return execOn(home, archiveAppendScript(stateDir, domain, lines), 60).pipe(
       Effect.asVoid,
       Effect.provide(Proc.layer),
       Effect.mapError((error) =>

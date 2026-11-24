@@ -4,6 +4,7 @@ import { join } from "node:path";
 import type { StateBackend } from "./lib/config.ts";
 import { cliEnv, FAKE_HOME, tempDir } from "./lib/fixture.ts";
 import type { FakeDocCores } from "./lib/herdr-docs-fake.ts";
+import { FAKE_CORE } from "./lib/proc.ts";
 
 const made: string[] = [];
 afterAll(() => {
@@ -208,6 +209,22 @@ describe("coordinate CLI on the herdr-doc backend", () => {
       1,
       `refused: app's archive is a file on the state home that holds herdr-doc://${FAKE_HOME}/cs.b.app; run coordinate backlog rename on that machine\n`,
     ]);
+  }, 60_000);
+
+  it("renames a domain on the home itself, moving its documents and its index entry", () => {
+    const { state, run, cores } = sandbox("herdr-doc", "coordinate-backend-home-");
+    const configFile = join(state, "config.json");
+    const config = JSON.parse(readFileSync(configFile, "utf8")) as Record<string, unknown>;
+    writeFileSync(configFile, JSON.stringify({ ...config, state_home: FAKE_CORE }));
+    expect(run(["start", "app"]).exit).toBe(0);
+    const renamed = run(["backlog", "rename", "web", "--domain", "app"]);
+    expect([renamed.exit, renamed.stderr]).toEqual([0, ""]);
+    const docs = cores().docs[FAKE_CORE] ?? {};
+    expect([docs["cs.b.app"]?.value, docs["cs.domains"]?.value]).toEqual([
+      null,
+      { domains: ["web"] },
+    ]);
+    expect((docs["cs.b.web"] as { value: { domain: string } }).value.domain).toBe("web");
   }, 60_000);
 
   it("refuses a domain whose document name would pass Herdr's 32-character limit", () => {

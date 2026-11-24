@@ -1276,7 +1276,8 @@ export const resumeDelegate = Effect.fn("resumeDelegate")(function* (
     .toSorted((a, b) => b.record.ended_at.localeCompare(a.record.ended_at))[0];
   if (!found)
     return yield* new Refused({
-      message: `no ended record for ${name} in ${config.stateDir}/ended`,
+      // Where the ended records live: the ended folder, or the home's document store.
+      message: `no ended record for ${name} in ${dirname(stateStore(config.stateDir).location(keys.ended(name)))}`,
     });
   const { record } = found;
   const harness = harnessOf(record.program ?? "claude");

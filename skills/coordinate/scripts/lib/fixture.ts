@@ -1,4 +1,11 @@
-import { chmodSync, mkdirSync, mkdtempSync, realpathSync, writeFileSync } from "node:fs";
+import {
+  chmodSync,
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  realpathSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { Effect, Layer } from "effect";
@@ -165,7 +172,8 @@ export const cliEnv = (
         : {}),
     }),
   );
-  if (stateBackend === "herdr-doc")
+  // Kept across calls: a test may build the environment again for each command.
+  if (stateBackend === "herdr-doc" && !existsSync(docs))
     writeFileSync(
       docs,
       JSON.stringify(fakeDocCores(FAKE_CORE, { [FAKE_HOME]: "up", strix: "up" })),
