@@ -134,7 +134,7 @@ const views = (box: ReturnType<typeof sandbox>) =>
   });
 
 const stamp = (text: string) =>
-  text.replaceAll(/files-backup-\d{8}T\d{6}Z/g, "files-backup-<stamp>");
+  text.replaceAll(/files-backup-\d{8}T\d{6}Z(-\d+)?/g, "files-backup-<stamp>");
 
 describe("coordinate state migrate", () => {
   it("moves the shared state to the home and back, and every reader sees the same documents", () => {
@@ -280,5 +280,47 @@ describe("coordinate state migrate", () => {
       `refused: herdr-doc://${FAKE_CORE}/cs.b.app already holds a different document; nothing was moved, so compare it with backlog app and remove the stale one\n`,
     ]);
     expect(readdirSync(join(box.state, "backlogs"))).toEqual(["app.json"]);
+  }, 60_000);
+
+  it("writes nothing to the home when a later document is refused", () => {
+    const box = sandbox();
+    const long = "zz-a-domain-name-that-is-long";
+    for (const domain of ["app", long]) expect(box.run(["start", domain]).exit).toBe(0);
+    const result = box.run(["state", "migrate", "--to", "herdr-doc"]);
+    expect([result.exit, result.stdout, result.stderr]).toEqual([
+      1,
+      "",
+      `refused: domain ${long} cannot be stored in the herdr-doc backend: cs.b.${long} is 34 characters, over Herdr's 32-character document name limit\n`,
+    ]);
+    expect({
+      documents: Object.keys(box.cores().docs[FAKE_CORE] ?? {}),
+      files: readdirSync(join(box.state, "backlogs")).toSorted(),
+    }).toEqual({ documents: [], files: ["app.json", `${long}.json`] });
+  }, 60_000);
+
+  it("skips a document the target already holds, as after an interrupted run", () => {
+    const box = sandbox();
+    const { state, run, configFile } = box;
+    expect(run(["start", "app"]).exit).toBe(0);
+    expect(run(["state", "migrate", "--to", "herdr-doc"]).exit).toBe(0);
+    const [backup] = readdirSync(state).filter((name) => name.startsWith("files-backup-"));
+    writeFileSync(
+      join(state, "backlogs", "app.json"),
+      readFileSync(join(state, backup ?? "", "backlogs", "app.json")),
+    );
+    const again = run(["state", "migrate", "--to", "herdr-doc"]);
+    expect({ ...again, stdout: stamp(again.stdout) }).toEqual({
+      exit: 0,
+      stderr: "",
+      stdout: [
+        `migrated shared state from files to herdr-doc on ${FAKE_CORE}:`,
+        `  backlog app: ${state}/backlogs/app.json -> herdr-doc://${FAKE_CORE}/cs.b.app (already there)`,
+        "copied 1 document; no queued launch claim is held, and claims are never copied",
+        `backup: the source files moved to ${state}/files-backup-<stamp>, read-only`,
+        `archives, session state, the wiki lint clock and watcher files stay files in ${state}`,
+        `next: set "state_backend": "herdr-doc" in ${configFile} (migrate does not edit the config)`,
+        "",
+      ].join("\n"),
+    });
   }, 60_000);
 });

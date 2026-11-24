@@ -144,12 +144,52 @@ const copyTo = (target: StateStore, session: StoreSession, key: StateKey, value:
       .read(key)
       .pipe(Effect.catchTag("StoreUnreadable", (error) => Effect.fail(unreadable(error))));
     if (isDeepStrictEqual(current.value, value)) return false;
-    if (current.value !== null)
-      return yield* new Refused({
-        message: `${target.location(key)} already holds a different document; nothing was moved, so compare it with ${label(key)} and remove the stale one`,
-      });
+    if (current.value !== null) return yield* differs(target, key);
     yield* session.write(key, value, current.version);
     return true;
+  });
+
+/**
+ * Read several documents, refusing when any cannot be read.
+ */
+const readAll = (store: StateStore, wanted: readonly StateKey[]) =>
+  Effect.gen(function* () {
+    const read = yield* store.readMany(wanted);
+    const stored: Stored[] = [];
+    for (const entry of read) {
+      if (entry instanceof StoreUnreadable) return yield* unreadable(entry);
+      stored.push(entry);
+    }
+    return stored;
+  });
+
+/**
+ * Refuse when the target cannot hold a document or already holds a different one, before
+ * anything is written.
+ */
+const preflight = (
+  target: StateStore,
+  documents: ReadonlyArray<{ key: StateKey; stored: Stored }>,
+) =>
+  Effect.gen(function* () {
+    for (const { key } of documents) {
+      const refusal = target.refusal(key);
+      if (refusal !== undefined) return yield* new Refused({ message: refusal });
+    }
+    const current = yield* readAll(
+      target,
+      documents.map(({ key }) => key),
+    );
+    for (const [index, { key, stored }] of documents.entries()) {
+      const value = current[index]?.value ?? null;
+      if (value !== null && !isDeepStrictEqual(value, stored.value))
+        return yield* differs(target, key);
+    }
+  });
+
+const differs = (target: StateStore, key: StateKey) =>
+  new Refused({
+    message: `${target.location(key)} already holds a different document; nothing was moved, so compare it with ${label(key)} and remove the stale one`,
   });
 
 const backupStamp = (now: Date) =>
@@ -221,6 +261,9 @@ export const migrateState = Effect.fn("migrateState")(function* (
     Effect.gen(function* () {
       const targetSession: StoreSession = to === "files" ? session : target;
       const sourceSession: StoreSession = to === "files" ? source : session;
+      // Every refusal is found before the first write, so a refused migrate leaves the target as
+      // it was.
+      yield* preflight(target, documents);
       for (const { key, stored } of documents)
         if (!(yield* copyTo(target, targetSession, key, stored.value))) present.add(key);
       for (const { key, stored } of documents) {
@@ -236,14 +279,18 @@ export const migrateState = Effect.fn("migrateState")(function* (
           documents.map(({ key }) => source.location(key)),
           now,
         );
-      for (const { key, stored } of documents) {
-        const current = yield* readOne(source, key);
-        if (!isDeepStrictEqual(current.value, stored.value))
+      // The home is cleared only when no document moved on since it was copied.
+      const current = yield* readAll(
+        source,
+        documents.map(({ key }) => key),
+      );
+      for (const [index, { key, stored }] of documents.entries())
+        if (!isDeepStrictEqual(current[index]?.value, stored.value))
           return yield* new Refused({
-            message: `${source.location(key)} changed while migrating; migrate again`,
+            message: `${source.location(key)} changed while migrating, so nothing on ${config.stateHome} was cleared; remove the older copy at ${target.location(key)} and migrate again`,
           });
-        yield* sourceSession.write(key, null, current.version);
-      }
+      for (const [index, { key }] of documents.entries())
+        yield* sourceSession.write(key, null, (current[index] as Stored).version);
       return undefined;
     }),
   );
