@@ -29,6 +29,7 @@ import {
   dismissFindingCommand,
   promoteFindingCommand,
   canTriageFinding,
+  startCommand,
   statusCommand,
   statusTargets,
   boundaryCommand,
@@ -107,7 +108,7 @@ import {
 } from "./answer-flow.ts";
 import type { AnswerFlow, FlowAskState, QueuedAnswer } from "./answer-flow.ts";
 import { ANSWER_CAROUSEL, ANSWER_FLOW_SPEED_OPTIONS } from "./look.ts";
-import { backlogsDir, documentPath } from "../../lib/store.ts";
+import { backlogsDir, canStartItem, documentPath } from "../../lib/store.ts";
 import type { Finding, Item, ItemStatus } from "../../lib/store.ts";
 import { harnessPolicyDialog } from "./policy-dialog.ts";
 import type { HarnessPolicyEditorModel } from "./policy-dialog.ts";
@@ -120,6 +121,7 @@ import type {
   BoundaryModel,
   FindingActionsModel,
   IdLinks,
+  StartModel,
   StatusChangeModel,
   Theme,
 } from "./view.ts";
@@ -276,6 +278,12 @@ export default class Panel extends View {
 
   // The item whose Change status was last used: its menu is open, a status is being set, or the
   // CLI refused one.
+  // The item whose Start was last pressed: `item start` is running, or the CLI refused it. A
+  // pending request itself is read from the document, never kept here.
+  itemStart:
+    | { domain: string; id: string; running: boolean; error: string | undefined }
+    | undefined;
+
   statusChange:
     | {
         domain: string;
@@ -1648,7 +1656,7 @@ export default class Panel extends View {
 
   // Open or close an item's Change status menu. Another item's menu or refusal is dropped.
   toggleStatusMenu(domain: string, item: Item, cx: Context) {
-    if (this.statusChange?.running !== undefined) return;
+    if (this.actionRunning()) return;
     const state =
       this.statusChange?.domain === domain && this.statusChange.id === item.id
         ? this.statusChange
@@ -1666,7 +1674,7 @@ export default class Panel extends View {
   // Set an item's status with the coordinate CLI, as a finding's actions do: a reload after exit 0
   // shows the new status, and a refusal shows inline and leaves the item as it was.
   changeStatus(domain: string, item: Item, status: ItemStatus, cx: Context) {
-    if (this.statusChange?.running !== undefined || !statusTargets(item).includes(status)) return;
+    if (this.actionRunning() || !statusTargets(item).includes(status)) return;
     const { command, args } = statusCommand(home(), domain, item.id, status);
     const running = { domain, id: item.id, open: false, running: status, error: undefined };
     this.statusChange = running;
@@ -1689,6 +1697,51 @@ export default class Panel extends View {
     });
   }
 
+  // Whether Start or Change status is running: each leaves the other inert until it ends.
+  actionRunning(): boolean {
+    return this.statusChange?.running !== undefined || this.itemStart?.running === true;
+  }
+
+  // Ask the coordinator to start an item through the coordinate CLI. A reload after exit 0 shows
+  // the pending request from the document; a refusal shows inline and leaves the item as it was.
+  startItem(domain: string, item: Item, cx: Context) {
+    if (this.actionRunning() || !canStartItem(item) || item.startRequested !== undefined) return;
+    const { command, args } = startCommand(home(), domain, item.id);
+    const running = { domain, id: item.id, running: true, error: undefined };
+    this.itemStart = running;
+    this.statusChange = undefined;
+    cx.notify();
+    cx.spawn(async (task) => {
+      let error: string | undefined;
+      try {
+        const ran = await exec(command, args);
+        if (ran.code !== 0) error = answerFailure(ran);
+      } catch (failure) {
+        error = `could not run coordinate: ${String(failure)}`;
+      }
+      if (this.itemStart !== running) return;
+      this.itemStart =
+        error === undefined ? undefined : { domain, id: item.id, running: false, error };
+      if (error === undefined) this.load(task, true);
+      task.notify();
+    });
+  }
+
+  startModel(domain: string | undefined, item: Item | undefined): StartModel | undefined {
+    if (domain === undefined || item === undefined || !canStartItem(item)) return undefined;
+    const state =
+      this.itemStart?.domain === domain && this.itemStart.id === item.id
+        ? this.itemStart
+        : undefined;
+    return {
+      pending: item.startRequested?.at,
+      running: state?.running ?? false,
+      busy: this.actionRunning(),
+      error: state?.error,
+      start: (cx) => this.startItem(domain, item, cx),
+    };
+  }
+
   statusChangeModel(
     domain: string | undefined,
     item: Item | undefined,
@@ -1704,7 +1757,7 @@ export default class Panel extends View {
       targets,
       open: state?.open ?? false,
       running: state?.running,
-      busy: this.statusChange?.running !== undefined,
+      busy: this.actionRunning(),
       error: state?.error,
       toggle: (cx) => this.toggleStatusMenu(domain, item, cx),
       change: (status, cx) => this.changeStatus(domain, item, status, cx),
@@ -2199,6 +2252,7 @@ export default class Panel extends View {
       loadMore: (group, cx) => this.revealMore(domain, group, cx),
       detail,
       statusChange: this.statusChangeModel(domain, detail),
+      start: this.startModel(domain, detail),
       open: (item, cx) => this.open(item, cx),
       openWaiting: (item, cx) => this.openWaiting(item, cx),
       answer: this.answerModel(),

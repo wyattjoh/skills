@@ -1462,6 +1462,21 @@ export const statusCommand = (
   panelCli(home, ["item", "update", "--domain", domain, "--status", status, "--", id]);
 
 /**
+ * Build the `coordinate item start` call behind an item detail's Start: it records the user's
+ * request, and the domain's watcher tells the coordinator. It runs as `dismissCommand` does.
+ * @param home The user's home directory.
+ * @param domain The item's domain.
+ * @param id The item id.
+ * @returns The program and its arguments for exec.
+ */
+export const startCommand = (
+  home: string,
+  domain: string,
+  id: string,
+): { command: string; args: string[] } =>
+  panelCli(home, ["item", "start", "--domain", domain, "--", id]);
+
+/**
  * The one-line outcome recorded when a finding is dismissed from its detail screen.
  */
 export const DISMISS_FINDING_OUTCOME = "Dismissed from the Backlog panel";

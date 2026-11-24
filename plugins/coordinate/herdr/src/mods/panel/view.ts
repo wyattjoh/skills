@@ -182,6 +182,8 @@ export type PanelModel = {
   open: (item: Item, cx: Context) => void;
   // The open item's Change status control, absent when the item takes no other status.
   statusChange: StatusChangeModel | undefined;
+  // The open item's Start, absent for a done, dismissed or delegated item.
+  start: StartModel | undefined;
   // The answer being written on the open item's ask, when it has one.
   answer: AnswerModel | undefined;
   // Whether an answered ask on the open item shows in full, by its index in `answered`, and what
@@ -222,6 +224,19 @@ export type StatusChangeModel = {
   error: string | undefined;
   toggle: (cx: Context) => void;
   change: (status: ItemStatus, cx: Context) => void;
+};
+
+/**
+ * An item detail's Start: when the user's pending request was recorded (from the document),
+ * whether `item start` is running, the CLI's last refusal, and what the button does.
+ */
+export type StartModel = {
+  pending: string | undefined;
+  running: boolean;
+  // Whether Start or Change status is running on any item; both stay inert until it ends.
+  busy: boolean;
+  error: string | undefined;
+  start: (cx: Context) => void;
 };
 
 /**
@@ -1566,27 +1581,63 @@ const findingActionRows = (t: Theme, actions: FindingActionsModel): Element[] =>
   ];
 };
 
-// Change status, right-aligned like a finding's actions. Its menu is plain state drawn in the
-// flow below the button (not a Popover, which also reacts to its trigger's press), then any refusal.
-const statusChangeRows = (t: Theme, change: StatusChangeModel): Element[] => {
-  const { busy } = change;
-  return [
-    h_flex()
-      .id("item-actions")
-      .gap(ANSWER.gap)
-      .justify_end()
-      .child(
+// Start's label: running, then a pending request (the button is inert until it clears), then idle.
+const startLabel = (start: StartModel): string =>
+  start.running ? "Starting…" : start.pending === undefined ? "Start" : "Start requested";
+
+// Start and Change status, right-aligned like a finding's actions, Start first as the primary
+// action. Change status's menu is plain state drawn in the flow below the buttons (not a Popover,
+// which also reacts to its trigger's press), then any refusal.
+const itemActionRows = (
+  t: Theme,
+  change: StatusChangeModel | undefined,
+  start: StartModel | undefined,
+): Element[] => [
+  h_flex()
+    .id("item-actions")
+    .gap(ANSWER.gap)
+    .justify_end()
+    .when(start !== undefined, (el) => {
+      const enabled = !start!.busy && start!.pending === undefined;
+      return el.child(
+        button(t, {
+          id: "item-actions-start",
+          label: startLabel(start!),
+          style: enabled ? ANSWER_BUTTON_STYLE : { ...ANSWER_BUTTON_STYLE, background: "raised" },
+          onClick: enabled ? (cx) => start!.start(cx) : undefined,
+        }),
+      );
+    })
+    .when(change !== undefined, (el) =>
+      el.child(
         button(t, {
           id: "item-actions-status",
           label:
-            change.running === undefined
+            change!.running === undefined
               ? "Change status"
-              : `Moving to ${GROUP_LABELS[change.running]}…`,
+              : `Moving to ${GROUP_LABELS[change!.running]}…`,
           icon: HERDR_ICONS.chevronDown,
           style: ANSWER_SECONDARY_BUTTON_STYLE,
-          onClick: busy ? undefined : (cx) => change.toggle(cx),
+          onClick: change!.busy ? undefined : (cx) => change!.toggle(cx),
         }),
       ),
+    ),
+  ...(start?.error === undefined
+    ? []
+    : [
+        div()
+          .id("item-start-error")
+          .text_size(TEXT.label)
+          .text_color(role(t, "ansi1"))
+          .child(start.error),
+      ]),
+  ...(change === undefined ? [] : statusMenuRows(t, change)),
+];
+
+// Change status's open menu, then its refusal.
+const statusMenuRows = (t: Theme, change: StatusChangeModel): Element[] => {
+  const { busy } = change;
+  return [
     ...(change.open && !busy
       ? [
           h_flex()
@@ -1662,6 +1713,9 @@ const detailScreen = (t: Theme, item: Item, model: PanelModel): Element =>
             ]
           : []),
         fact(t, "fact-created", "Created", [item.createdAt.slice(0, 10)]),
+        ...(item.startRequested === undefined
+          ? []
+          : [fact(t, "fact-start", "Start requested", [item.startRequested.at.slice(0, 10)])]),
         ...((item.status === "done" || item.status === "dismissed") && item.closedAt !== null
           ? [fact(t, "fact-closed", "Closed", [item.closedAt.slice(0, 10)])]
           : []),
@@ -1685,8 +1739,8 @@ const detailScreen = (t: Theme, item: Item, model: PanelModel): Element =>
     )
     .children(decidedCard(t, model.links, item))
     .children(delegatesCard(t, item, model.delegates.byItem.get(item.id) ?? [], model.home))
-    .when(model.statusChange !== undefined, (el) =>
-      el.children(statusChangeRows(t, model.statusChange!)),
+    .when(model.statusChange !== undefined || model.start !== undefined, (el) =>
+      el.children(itemActionRows(t, model.statusChange, model.start)),
     );
 
 const answerFlowKey = (

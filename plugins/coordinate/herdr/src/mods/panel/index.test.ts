@@ -7,6 +7,7 @@ import {
   closeItem,
   emptyBacklog,
   promoteFinding,
+  requestStart,
   updateItem,
 } from "../../lib/store.ts";
 import type { Backlog, Item } from "../../lib/store.ts";
@@ -3524,7 +3525,11 @@ const openStatusDetail = async (id: string) => {
 test("a parked item's detail ends with Change status, whose menu offers the other statuses", async () => {
   const { ctx, render } = await openStatusDetail("i6");
   const root = render();
-  expect(ids(root, "item-actions")).toEqual(["item-actions", "item-actions-status"]);
+  expect(ids(root, "item-actions")).toEqual([
+    "item-actions",
+    "item-actions-start",
+    "item-actions-status",
+  ]);
   expect([
     text(get(root, "item-actions-status")),
     get(root, "item-actions").styles.justify_end,
@@ -3581,6 +3586,88 @@ test("choosing a status runs item update with the exact arguments, then reloads 
     "item-status-option-in-review",
     "item-status-option-parked",
   ]);
+});
+
+const startExecs = () =>
+  host.execs
+    .filter(({ args }) => args.includes("start"))
+    .map(({ command, args }) => [command, ...args]);
+const withStart = (backlog: Backlog, id: string): Backlog => {
+  const started = requestStart(backlog, { id, now: NOW });
+  if (!started.ok) throw new Error(started.reason);
+  return started.backlog;
+};
+
+test("Start shows beside Change status unless the item is done, dismissed or delegated", async () => {
+  const { ctx, view, render } = await openStatusDetail("i1");
+  const shown: [string, string[]][] = [];
+  for (const id of ["i1", "i2", "i3", "i4", "i6", "i7", "i8"]) {
+    openDetail(view, id, ctx.cx);
+    shown.push([id, ids(render(), "item-actions-start")]);
+  }
+  expect(shown).toEqual([
+    ["i1", ["item-actions-start"]],
+    ["i2", ["item-actions-start"]],
+    ["i3", []],
+    ["i4", ["item-actions-start"]],
+    ["i6", ["item-actions-start"]],
+    ["i7", []],
+    ["i8", []],
+  ]);
+  openDetail(view, "i6", ctx.cx);
+  const root = render();
+  expect([
+    text(get(root, "item-actions-start")),
+    get(root, "item-actions-start").styles.bg,
+    typeof get(root, "item-actions-start").click,
+  ]).toEqual(["Start", theme().solid, "function"]);
+});
+
+test("Start runs item start with the exact arguments, shows Starting…, then the pending request", async () => {
+  const { ctx, render } = await openStatusDetail("i6");
+  host.files.set(DOC, JSON.stringify(withStart(everyStatus(), "i6")));
+  get(render(), "item-actions-start").click!({}, ctx.cx);
+  const busy = render();
+  expect([
+    text(get(busy, "item-actions-start")),
+    get(busy, "item-actions-start").click,
+    get(busy, "item-actions-status").click,
+  ]).toEqual(["Starting…", undefined, undefined]);
+  await settle();
+  expect(startExecs()).toEqual([[...cliPrefix, "item", "start", "--domain", "alpha", "--", "i6"]]);
+  const root = render();
+  expect([
+    text(get(root, "item-actions-start")),
+    get(root, "item-actions-start").click,
+    get(root, "item-actions-start").styles.bg,
+    text(get(root, "fact-start")),
+    typeof get(root, "item-actions-status").click,
+  ]).toEqual([
+    "Start requested",
+    undefined,
+    theme().raised,
+    `Start requested ${NOW.slice(0, 10)}`,
+    "function",
+  ]);
+});
+
+test("a refused Start shows the CLI's message and keeps the button", async () => {
+  const { ctx, render } = await openStatusDetail("i6");
+  host.execExit = {
+    code: 1,
+    stdout: "",
+    stderr: "refused: i6 is delegated, so there is nothing to start",
+  };
+  get(render(), "item-actions-start").click!({}, ctx.cx);
+  await settle();
+  host.execExit = undefined;
+  const root = render();
+  expect([
+    text(get(root, "item-start-error")),
+    text(get(root, "item-actions-start")),
+    typeof get(root, "item-actions-start").click,
+    ids(root, "fact-start"),
+  ]).toEqual(["refused: i6 is delegated, so there is nothing to start", "Start", "function", []]);
 });
 
 test("a refused status change shows the CLI's message below the control and keeps the item", async () => {
