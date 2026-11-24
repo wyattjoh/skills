@@ -1,14 +1,19 @@
 import { afterAll, beforeAll, describe, expect, it } from "bun:test";
 import { createHash } from "node:crypto";
-import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
+import { homedir } from "node:os";
 import { join } from "node:path";
 import { FINDING_DETAIL_SHAPE } from "./lib/backlog-store/schema.ts";
 import { g, initRepo } from "./lib/fixture.ts";
 import { shellWord } from "./lib/git-env.ts";
 import {
   answerTrustDialog,
+  nullTestDocuments,
   onStrix,
   STRIX,
+  strixCoordinator,
+  strixCoordinatorReadiness,
+  type StrixCoordinator,
   strixReadiness,
   strixRun,
   SUITE_LABEL,
@@ -1467,3 +1472,267 @@ describe.skipIf(!ready)("strix: sweep a remote worktree fetched and landed here"
     });
   }, 600_000);
 });
+
+// A coordinator on strix also needs a Herdr route to this Mac's store, bun on its login PATH,
+// herdr-app and a current coordinate skill there; the scenario names what is missing and skips.
+const coordinatorReadiness = ready
+  ? strixCoordinatorReadiness()
+  : ({ ready: false, reason: readiness.ready ? "" : readiness.reason } as const);
+if (ready && !coordinatorReadiness.ready)
+  console.log(`strix coordinator scenario skipped: ${coordinatorReadiness.reason}`);
+
+// The JSON object in a CLI output that may carry banner lines around it.
+const jsonOf = <T>(output: string): T =>
+  JSON.parse(output.slice(output.indexOf("{"), output.lastIndexOf("}") + 1)) as T;
+
+type Listed = {
+  machine: string | null;
+  domains: {
+    domain: string;
+    lease: { machine: string; address: string; live: boolean; terminal: string | null } | null;
+    document?: {
+      items: { id: string; title: string; delegates: { name: string; machine?: string }[] }[];
+    } | null;
+    unreadable?: string | null;
+  }[];
+};
+
+// Whether strix has a PATH wrapper for coordinate, compared before and after the scenario.
+const wrapper = () =>
+  onStrix('[ -e "$HOME/.local/bin/coordinate" ] && echo present || echo absent', 15).output;
+
+// The settled event a one-shot watch pass prints for a delegate.
+const settled = (name: string, address: string) =>
+  `<event kind="settled" delegate="${name}" address="${address}">read its REPORT.md, verify, then report</event>`;
+
+describe.skipIf(!coordinatorReadiness.ready)(
+  "strix: a coordinator on strix with the herdr-doc backend",
+  () => {
+    let run: StrixRun | undefined;
+    let coordinator: StrixCoordinator | undefined;
+    let home = "";
+    let local = "";
+    let remote = "";
+    let brief = "";
+    let item = "";
+    const strixSpaces: string[] = [];
+    const claudeFolders: string[] = [];
+    let wrapperBefore = "";
+    beforeAll(() => {
+      if (!coordinatorReadiness.ready) return;
+      home = coordinatorReadiness.home;
+      run = strixRun();
+      local = initRepo();
+      remote = run.remoteRepo("app");
+      brief = `${run.remoteRoot}/brief.md`;
+      expect(
+        onStrix(`printf '%s' ${shellWord(run.brief)} > ${shellWord(brief)}`, 15).exitCode,
+      ).toBe(0);
+      coordinator = strixCoordinator(run, coordinatorReadiness);
+      // This Mac's CLI reads the same documents as the home itself.
+      run.configure({
+        state_backend: "herdr-doc",
+        state_home: "local",
+        state_prefix: coordinator.prefix,
+      });
+      wrapperBefore = wrapper();
+    }, 120_000);
+    afterAll(() => {
+      coordinator?.cli(["watch", "--stop", "--domain", run?.domain ?? ""], 60_000);
+      for (const space of strixSpaces)
+        onStrix(
+          `herdr-app do space.close ${shellWord(JSON.stringify({ id: space, confirmed: true }))}`,
+          20,
+        );
+      const held = run && coordinator ? nullTestDocuments(coordinator.prefix, run.domain) : [];
+      for (const folder of claudeFolders) rmSync(folder, { recursive: true, force: true });
+      if (local !== "") rmSync(local, { recursive: true, force: true });
+      const left = run?.teardown() ?? [];
+      expect([held, left]).toEqual([[], []]);
+    }, 240_000);
+
+    it("starts with an empty test namespace, takes its lease, and writes to this Mac's store", () => {
+      if (!run || !coordinator) return;
+      // Nothing is written until the namespace is shown to be the run's own and empty.
+      const before = coordinator.cli(["backlog", "list", "--json"]);
+      expect([before.exitCode, jsonOf<Listed>(before.output)]).toEqual([
+        0,
+        { machine: STRIX, domains: [] },
+      ]);
+
+      const started = coordinator.cli(["start", run.domain], 120_000);
+      const lines = started.output.split("\n");
+      expect([
+        started.exitCode,
+        lines.includes(
+          `labelled ${coordinator.bare}: fleet.role=coordinator fleet.domain=${run.domain}`,
+        ),
+        lines.includes(`created backlog herdr-doc://${home}/${coordinator.prefix}b.${run.domain}`),
+      ]).toEqual([0, true, true]);
+      // Its armed watcher reads the run's config; the scenario drives one-shot passes instead.
+      expect(coordinator.cli(["watch", "--stop", "--domain", run.domain], 60_000).exitCode).toBe(0);
+      expect(wrapper()).toBe(wrapperBefore);
+
+      const added = coordinator.cli(["item", "add", "strix coordinator", "--domain", run.domain]);
+      expect(added.exitCode).toBe(0);
+      item = /\bi\d+\b/.exec(added.output)?.[0] ?? "";
+
+      // This Mac reads the lease and the item from its own core under the same prefix.
+      const listed = run.bare(["backlog", "list", "--json", "--domain", run.domain]);
+      const lease = jsonOf<Listed>(listed.output).domains[0]?.lease;
+      expect([
+        listed.exitCode,
+        lease?.machine,
+        lease?.address,
+        lease?.live,
+        lease?.terminal,
+      ]).toEqual([0, STRIX, coordinator.bare, true, coordinator.address]);
+      const shown = run.cli(["backlog", "show", "--json"]);
+      expect(
+        jsonOf<{ items: { id: string; title: string }[] }>(shown.output).items.map((entry) => [
+          entry.id,
+          entry.title,
+        ]),
+      ).toEqual([[item, "strix coordinator"]]);
+    }, 240_000);
+
+    it("launches a delegate on strix and one on this Mac, and receives both settled events", () => {
+      if (!run || !coordinator) return;
+      const cli = coordinator.cli;
+      const domain = ["--domain", run.domain];
+      expect(cli(["backlog", "boundary", "add", remote, ...domain]).exitCode).toBe(0);
+      expect(
+        cli([
+          "backlog",
+          "boundary",
+          "add",
+          remote,
+          "--machine",
+          home,
+          "--checkout",
+          local,
+          ...domain,
+        ]).exitCode,
+      ).toBe(0);
+      // A first pass seeds the watcher's snapshot, so the launches below are changes it sees.
+      expect(coordinator.watch(() => true, 0, 3)).toEqual([]);
+      const launch = (name: string, extra: readonly string[]) => {
+        const launched = cli(
+          [
+            "delegate",
+            name,
+            "--task",
+            "strix coordinator",
+            "--repo",
+            remote,
+            "--brief",
+            brief,
+            "--item",
+            item,
+            "--harness",
+            "claude",
+            ...extra,
+            ...domain,
+          ],
+          150_000,
+        );
+        const address = /\(((?:[a-z0-9-]+\/)?t[0-9a-z]+)\)/.exec(launched.output)?.[1] ?? "";
+        const space = / in its own space (\S+)/.exec(launched.output)?.[1] ?? "";
+        return { launched, address, space };
+      };
+      const here = launch(`cl-${run.id}`, []);
+      if (here.address !== "") run.trackTerminal(`${STRIX}/${here.address}`);
+      if (here.space !== "") strixSpaces.push(here.space);
+      const there = launch(`cr-${run.id}`, ["--machine", home]);
+      // Strix names this Mac's terminal and space `<home>/...`; this Mac names them bare.
+      const thereHere = there.address.slice(`${home}/`.length);
+      if (thereHere !== "") run.trackTerminal(thereHere);
+      if (there.space !== "") run.trackSpace(there.space.slice(`${home}/`.length));
+      const thereWorktree = `${local}/.claude/worktrees/cr-${run.id}`;
+      claudeFolders.push(
+        join(
+          homedir(),
+          ".claude",
+          "projects",
+          realpathSync(local).replaceAll(/[^a-zA-Z0-9]/g, "-") + `--claude-worktrees-cr-${run.id}`,
+        ),
+      );
+      expect([
+        here.launched.exitCode,
+        /^t[0-9a-z]+$/.test(here.address),
+        there.launched.exitCode,
+        there.address.startsWith(`${home}/t`),
+      ]).toEqual([0, true, 0, true]);
+
+      const want = [settled(`cl-${run.id}`, here.address), settled(`cr-${run.id}`, there.address)];
+      const both = (seen: string[]) => want.every((event) => seen.includes(event));
+      const seen: string[] = [];
+      const watchFor = () => {
+        seen.push(
+          ...coordinator!.watch((event) => both([...seen, event]) || blockedEvent(event), 300_000),
+        );
+      };
+      watchFor();
+      // Claude Code asks once whether to trust a folder it has never seen; these throwaway ones are
+      // the suite's own, so it answers yes in its own terminals.
+      if (!both(seen)) {
+        const answered = [
+          answerTrustDialog(`${STRIX}/${here.address}`, `${remote}/.claude/worktrees/cl-${run.id}`),
+          answerTrustDialog(thereHere, thereWorktree),
+        ];
+        if (answered.includes(true)) watchFor();
+      }
+      if (!both(seen)) console.log(`events: ${JSON.stringify(seen)}`);
+      expect(seen.filter((event) => event.includes(' kind="settled"')).toSorted()).toEqual(
+        want.toSorted(),
+      );
+      expect([
+        onStrix(
+          `cat ${shellWord(`${remote}/.claude/worktrees/cl-${run.id}/.scratch/REPORT.md`)}`,
+          20,
+        ).output,
+        readFileSync(join(thereWorktree, ".scratch", "REPORT.md"), "utf8"),
+      ]).toEqual(["done\n", "done\n"]);
+    }, 900_000);
+
+    it("shows the backlog in its panel read on strix", () => {
+      if (!run || !coordinator) return;
+      const read = coordinator.cli(
+        ["backlog", "list", "--json", "--documents", "--domain", run.domain],
+        60_000,
+      );
+      const listed = jsonOf<Listed>(read.output);
+      const entry = listed.domains[0];
+      expect([
+        read.exitCode,
+        listed.machine,
+        entry?.domain,
+        entry?.lease?.terminal,
+        entry?.lease?.live,
+        entry?.unreadable,
+        entry?.document?.items.map((each) => [
+          each.id,
+          each.title,
+          each.delegates.map((delegate) => [delegate.name, delegate.machine ?? null]),
+        ]),
+      ]).toEqual([
+        0,
+        STRIX,
+        run.domain,
+        coordinator.bare,
+        true,
+        null,
+        [
+          [
+            item,
+            "strix coordinator",
+            [
+              [`cl-${run.id}`, null],
+              [`cr-${run.id}`, home],
+            ],
+          ],
+        ],
+      ]);
+    }, 120_000);
+  },
+);

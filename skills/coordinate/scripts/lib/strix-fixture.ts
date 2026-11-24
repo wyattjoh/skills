@@ -6,6 +6,8 @@ import { documentPath } from "./backlog-store/paths.ts";
 import type { Backlog } from "./backlog-store/schema.ts";
 import { tempDir } from "./fixture.ts";
 import { cleanGitEnv, shellWord, spawnGit, UNSET_GIT } from "./git-env.ts";
+import { spoken } from "./remote-launch.ts";
+import { WATCHER_DOMAIN_LABEL } from "./watch-terminal.ts";
 
 // Helpers for the real-strix integration suite. Every remote call has an explicit timeout, every
 // run owns a unique domain, state dir and strix folder, and teardown removes what the run made.
@@ -143,6 +145,106 @@ export const strixReadiness = (): { ready: true } | { ready: false; reason: stri
 };
 
 /**
+ * This Mac's Herdr core name: the home a coordinator on strix stores its documents on.
+ * @returns The name, or undefined when `hc server status` cannot be read.
+ */
+export const thisCore = (): string | undefined => {
+  const status = spawn(["hc", "server", "status", "--json"], hostEnv(), 15_000);
+  try {
+    return (JSON.parse(status.output) as { core: { name: string } }).core.name;
+  } catch {
+    return undefined;
+  }
+};
+
+const SKILL_LINKS = [
+  "~/.claude/skills/coordinate",
+  "~/.pi/agent/skills/coordinate",
+  "~/.agents/skills/coordinate",
+] as const;
+
+// One `key=value` line of a probe's output, or "" when it printed none.
+const probeField = (probe: string, key: string): string =>
+  probe
+    .split("\n")
+    .find((line) => line.startsWith(`${key}=`))
+    ?.slice(key.length + 1)
+    .trim() ?? "";
+
+/**
+ * What strix lacks to run a coordinator on the herdr-doc backend, read from the probe
+ * `strixCoordinatorReadiness` runs there (`key=value` lines: route, bun, app, skill, prefix).
+ * @param probe The probe's output.
+ * @param home The home core's name.
+ * @returns Each missing prerequisite, in a fixed order; empty when strix is ready.
+ */
+export const coordinatorMissing = (probe: string, home: string): string[] => {
+  const field = (key: string) => probeField(probe, key);
+  const route = field("route");
+  const skill = field("skill");
+  return [
+    ...(route === "ok" ? [] : [`a Herdr route to ${home}'s store (${route || "no answer"})`]),
+    ...(field("bun") === "" ? ["bun on its login PATH"] : []),
+    ...(field("app") === "no"
+      ? ["a herdr-app answering there (delegates get their own space)"]
+      : []),
+    ...(skill === ""
+      ? [
+          `the coordinate skill (no link at ${SKILL_LINKS.slice(0, -1).join(", ")} or ${SKILL_LINKS.at(-1)})`,
+        ]
+      : field("prefix") === "yes"
+        ? []
+        : [`a coordinate skill that knows state_prefix (${skill} predates it)`]),
+  ];
+};
+
+/**
+ * Whether strix can run a coordinator against this Mac's store: one read-only probe there for a
+ * document read from this core (a throwaway name, never written), bun in the login shell
+ * coordinate's preflight uses, herdr-app, and a coordinate skill link new enough to take
+ * `state_prefix`. Call it only once `strixReadiness` is ready.
+ * @returns Ready with the home, strix's skill folder and bun, or the one-line reason it skips.
+ */
+export const strixCoordinatorReadiness = ():
+  | { ready: true; home: string; skill: string; bun: string }
+  | { ready: false; reason: string } => {
+  const home = thisCore();
+  if (home === undefined)
+    return { ready: false, reason: "this Mac's Herdr core name is unreadable" };
+  const request = JSON.stringify({
+    jsonrpc: "2.0",
+    id: 1,
+    method: "doc.get",
+    params: { name: "ct000000.domains", on: home },
+  });
+  const probe = onStrix(
+    [
+      `reply=$(printf '%s\\n' ${shellWord(request)} | hc connect 2>&1 | tr '\\n' ' ')`,
+      `case "$reply" in *'"result"'*) echo route=ok ;; *) printf 'route=%s\\n' "$reply" ;; esac`,
+      "printf 'bun=%s\\n' \"$(\"${SHELL:-/bin/sh}\" -lc 'command -v bun' 2>/dev/null)\"",
+      "if herdr-app ls >/dev/null 2>&1; then echo app=ok; else echo app=no; fi",
+      "skill=",
+      `for link in ${SKILL_LINKS.map((link) => `"$HOME"/${shellWord(link.slice(2))}`).join(" ")}; do`,
+      '  if [ -e "$link" ]; then skill=$(cd "$link" && pwd -P); break; fi',
+      "done",
+      "printf 'skill=%s\\n' \"$skill\"",
+      'if [ -n "$skill" ] && grep -q state_prefix "$skill/scripts/lib/config.ts"; then echo prefix=yes; else echo prefix=no; fi',
+    ].join("\n"),
+    40,
+  );
+  if (probe.exitCode !== 0)
+    return { ready: false, reason: `strix is unreachable: ${probe.output.trim()}` };
+  const missing = coordinatorMissing(probe.output, home);
+  if (missing.length > 0) return { ready: false, reason: `strix lacks ${spoken(missing)}` };
+  return {
+    ready: true,
+    home,
+    skill: probeField(probe.output, "skill"),
+    bun: probeField(probe.output, "bun"),
+  };
+};
+
+/**
  * One watch event line as `coordinate watch` prints it, without its delivery id.
  * @param line A printed line.
  * @returns The event text.
@@ -163,11 +265,19 @@ export const watchEvents = (
   until: (event: string) => boolean,
   deadlineMs: number,
   passSeconds = 20,
+): string[] => watchWith(run.cli, until, deadlineMs, passSeconds);
+
+// `watchEvents` through any coordinate runner that adds the run's `--domain`.
+const watchWith = (
+  cli: (args: readonly string[], timeoutMs?: number) => Ran,
+  until: (event: string) => boolean,
+  deadlineMs: number,
+  passSeconds: number,
 ): string[] => {
   const seen: string[] = [];
   const stop = Date.now() + deadlineMs;
   for (;;) {
-    const ran = run.cli(
+    const ran = cli(
       ["watch", "--interval", "2", "--max-minutes", String(passSeconds / 60)],
       (passSeconds + 40) * 1000,
     );
@@ -405,6 +515,9 @@ export const strixRun = (): StrixRun => {
         if (!terminals.includes(listed.address)) terminals.push(listed.address);
       for (const listed of labelled(`${SUITE_LABEL}=${id}`))
         if (!terminals.includes(listed.address)) terminals.push(listed.address);
+      // A coordinator started on strix arms a watcher terminal there, labelled by domain only.
+      for (const listed of labelled(`${WATCHER_DOMAIN_LABEL}=${domain}`))
+        if (!terminals.includes(listed.address)) terminals.push(listed.address);
       for (const space of suiteSpaces(terminals)) if (!spaces.includes(space)) spaces.push(space);
       // Spaces first: closing one ends its terminals, which are then removed below.
       const open = openSpaces();
@@ -454,4 +567,154 @@ export const answerTrustDialog = (address: string, folder: string): boolean => {
     screen.includes("Yes, I trust this folder");
   if (!asking) return false;
   return spawn(["hc", "keys", address, "down", "enter"], hostEnv(), 15_000).exitCode === 0;
+};
+
+/**
+ * Every document name a herdr-doc store under `prefix` can write for one domain: the index, the
+ * policy, the domain's backlog, queue and claims, and the ended-record shards.
+ * @param prefix Throwaway test prefix.
+ * @param domain The run's domain.
+ * @returns The names.
+ */
+export const testDocumentNames = (prefix: string, domain: string): string[] => [
+  `${prefix}domains`,
+  `${prefix}policy`,
+  `${prefix}b.${domain}`,
+  `${prefix}q.${domain}`,
+  `${prefix}k.${domain}`,
+  ...Array.from({ length: 8 }, (_, shard) => `${prefix}ended.${shard}`),
+];
+
+// One batch of document calls on this Mac's core through `hc connect`, replies by request.
+const docCalls = (requests: readonly Record<string, unknown>[]): Record<string, unknown>[] => {
+  if (requests.length === 0) return [];
+  const input = requests
+    .map((request, index) => `${JSON.stringify({ jsonrpc: "2.0", id: index + 1, ...request })}\n`)
+    .join("");
+  const done = Bun.spawnSync(["hc", "connect"], {
+    env: hostEnv(),
+    stdin: Buffer.from(input),
+    stdout: "pipe",
+    stderr: "pipe",
+    timeout: 30_000,
+  });
+  const replies = done.stdout
+    .toString()
+    .split("\n")
+    .flatMap((line) => {
+      try {
+        return [JSON.parse(line) as { id?: number; result?: Record<string, unknown> }];
+      } catch {
+        return [];
+      }
+    });
+  return requests.map((_, index) => replies.find((reply) => reply.id === index + 1)?.result ?? {});
+};
+
+/**
+ * Null every test document under `prefix` that holds a value. A name never written is left alone,
+ * since nulling it would add a tombstone; the written ones keep theirs (Herdr cannot remove one).
+ * @param prefix Throwaway test prefix (never `cs.`).
+ * @param domain The run's domain.
+ * @returns The names that still hold a value afterwards.
+ */
+export const nullTestDocuments = (prefix: string, domain: string): string[] => {
+  if (prefix === "cs.") return ["refused to null production documents"];
+  const names = testDocumentNames(prefix, domain);
+  const read = () => docCalls(names.map((name) => ({ method: "doc.get", params: { name } })));
+  const held = read().flatMap((result, index) =>
+    result.value === null || result.value === undefined
+      ? []
+      : [{ name: names[index] ?? "", version: result.version }],
+  );
+  docCalls(
+    held.map(({ name, version }) => ({
+      method: "doc.set",
+      params: { name, value: null, version },
+    })),
+  );
+  return read().flatMap((result, index) =>
+    result.value === null || result.value === undefined ? [] : [names[index] ?? ""],
+  );
+};
+
+/**
+ * A coordinator run on strix with the herdr-doc backend against this Mac's core, isolated like the
+ * rest of the suite: its config and state under the run's strix folder, its documents under a
+ * throwaway prefix, its archives in the run's state dir here.
+ */
+export type StrixCoordinator = {
+  prefix: string;
+  /**
+   * Its placeholder terminal, as this Mac names it (`strix/tN`), and as strix names it.
+   */
+  address: string;
+  bare: string;
+  /**
+   * Run strix's coordinate CLI as that terminal, with the run's config.
+   */
+  cli: (args: readonly string[], timeoutMs?: number) => Ran;
+  /**
+   * `watchEvents` for the coordinator on strix: one-shot passes there, which renew its lease.
+   */
+  watch: (until: (event: string) => boolean, deadlineMs: number, passSeconds?: number) => string[];
+};
+
+/**
+ * Start a coordinator's placeholder terminal on strix and write its config there.
+ * @param run The suite run (its domain, strix folder and state dir).
+ * @param ready What `strixCoordinatorReadiness` found.
+ * @param ready.home The home core's name.
+ * @param ready.skill Strix's coordinate skill folder.
+ * @param ready.bun Bun on strix's login PATH.
+ * @returns The coordinator.
+ */
+export const strixCoordinator = (
+  run: StrixRun,
+  ready: { home: string; skill: string; bun: string },
+): StrixCoordinator => {
+  const prefix = `ct${run.id.slice(0, 6)}.`;
+  const dir = `${run.remoteRoot}/coordinator`;
+  const config = {
+    state_dir: `${dir}/state`,
+    backlog_dir: `${dir}/md`,
+    state_backend: "herdr-doc",
+    state_home: ready.home,
+    state_prefix: prefix,
+    // Archives append on the home: into the run's state dir there, never the live one.
+    home_state_dir: run.stateDir,
+    max_fleet_delegates_by_machine: { [STRIX]: 99, [ready.home]: 99 },
+  };
+  const wrote = onStrix(
+    `mkdir -p ${shellWord(dir)} && printf '%s' ${shellWord(JSON.stringify(config))} > ${shellWord(`${dir}/config.json`)}`,
+    15,
+  );
+  if (wrote.exitCode !== 0) throw new Error(`could not write the strix config: ${wrote.output}`);
+  const address = run.placeholder(STRIX, {});
+  const bare = address.slice(`${STRIX}/`.length);
+  // ~/.local/bin leaves PATH, so `coordinate start` writes no PATH wrapper on strix; hc is passed
+  // by its absolute path, as the Backlog panel passes it.
+  const cli = (args: readonly string[], timeoutMs = 30_000): Ran =>
+    onStrix(
+      [
+        `cd ${shellWord(run.remoteRoot)}`,
+        "hc_path=$(command -v hc)",
+        "PATH=$(printf '%s' \"$PATH\" | tr ':' '\\n' | grep -vx \"$HOME/.local/bin\" | paste -sd: -)",
+        `COORDINATE_HC="$hc_path" COORDINATE_CONFIG=${shellWord(`${dir}/config.json`)} HC_TERMINAL_ID=${shellWord(bare)} exec ${[ready.bun, `${ready.skill}/scripts/coordinate.ts`, ...args].map(shellWord).join(" ")}`,
+      ].join(" && "),
+      Math.ceil(timeoutMs / 1000),
+    );
+  return {
+    prefix,
+    address,
+    bare,
+    cli,
+    watch: (until, deadlineMs, passSeconds = 20) =>
+      watchWith(
+        (args, timeoutMs) => cli([...args, "--domain", run.domain], timeoutMs),
+        until,
+        deadlineMs,
+        passSeconds,
+      ),
+  };
 };
