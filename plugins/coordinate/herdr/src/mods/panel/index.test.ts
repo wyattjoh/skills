@@ -3651,6 +3651,28 @@ test("Start runs item start with the exact arguments, shows Starting…, then th
   ]);
 });
 
+test("a pending start request reads Starting on the item's row and detail until it clears", async () => {
+  const { ctx, view, render } = await openStatusDetail("i6");
+  host.files.set(DOC, JSON.stringify(withStart(everyStatus(), "i6")));
+  backlogWatch()!.fire([DOC]);
+  await settle();
+  const pending = render();
+  const chip = get(pending, "starting-i6");
+  expect([
+    text(get(pending, "detail-status")),
+    get(pending, "detail-status").styles.text_color,
+    text(chip),
+    chip.styles.text_color,
+    ids(get(pending, "alpha-group-parked-body"), "starting-"),
+  ]).toEqual(["Starting", "#3b82f6", "Starting", "#3b82f6", ["starting-i6"]]);
+  host.files.set(DOC, JSON.stringify(everyStatus()));
+  backlogWatch()!.fire([DOC]);
+  await settle();
+  openDetail(view, "i6", ctx.cx);
+  const cleared = render();
+  expect([text(get(cleared, "detail-status")), ids(cleared, "starting-")]).toEqual(["Parked", []]);
+});
+
 test("a refused Start shows the CLI's message and keeps the button", async () => {
   const { ctx, render } = await openStatusDetail("i6");
   host.execExit = {

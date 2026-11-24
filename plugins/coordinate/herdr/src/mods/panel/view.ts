@@ -70,6 +70,7 @@ import {
   GLOBE_ICON,
   PROMOTED_TONE,
   QUEUED_TONE,
+  STARTING_TONE,
   STATUS_MENU_WIDTH,
   STATUS_TONES,
 } from "./look.ts";
@@ -478,7 +479,18 @@ const delegateChip = (
   }).text_color(tone);
 };
 
-// The item id leads the title on the package row; a delegated item's state chip stays at the end.
+// An item with a pending start request reads Starting, in the building tone, until the request
+// clears; the row stays in its stored status's group.
+const startingChip = (t: Theme, item: Item): Element =>
+  labelChip(t, {
+    id: `starting-${item.id}`,
+    label: "Starting",
+    icon: HERDR_ICONS.clock,
+    color: role(t, STARTING_TONE),
+  }).text_color(role(t, STARTING_TONE));
+
+// The item id leads the title on the package row; a Starting or delegated item's chip stays at the
+// end.
 const itemRow = (
   t: Theme,
   item: Item,
@@ -497,6 +509,7 @@ const itemRow = (
     height: ROW.compact,
     trailing: [
       ...(note === undefined ? [] : [note]),
+      ...(item.startRequested === undefined ? [] : [startingChip(t, item)]),
       ...(line === undefined ? [] : [delegateChip(t, item, line)]),
     ],
     onClick: (cx) => open(item, cx),
@@ -1684,8 +1697,8 @@ const detailScreen = (t: Theme, item: Item, model: PanelModel): Element =>
         "detail",
         item.id,
         item.title,
-        GROUP_LABELS[item.status],
-        role(t, STATUS_TONES[item.status]),
+        item.startRequested === undefined ? GROUP_LABELS[item.status] : "Starting",
+        role(t, item.startRequested === undefined ? STATUS_TONES[item.status] : STARTING_TONE),
       ),
     )
     .children(

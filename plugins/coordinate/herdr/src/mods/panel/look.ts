@@ -35,6 +35,12 @@ export const STATUS_TONES: Readonly<Record<ItemStatus, string>> = {
 };
 
 /**
+ * A pending start request's tone, the building tone: the Starting badge on an item's row and the
+ * Starting status on its detail screen.
+ */
+export const STARTING_TONE = "working";
+
+/**
  * The Queued group's header tone: the terminal palette's cyan, which no item status uses.
  */
 export const QUEUED_TONE = "ansi6";
