@@ -211,6 +211,12 @@ export type StateStore = {
    * Release a claim; one replaced or removed meanwhile is left to its new owner.
    */
   release: (claim: StoreClaim) => Effect.Effect<void>;
+  /**
+   * The locations of the capacity claims still held: every claim except one whose owner died on
+   * this host. herdr-doc reads the claims of `domains`; files reads every claim, since a claim
+   * file's name does not split back into its domain.
+   */
+  heldClaims: (domains: readonly string[]) => Effect.Effect<readonly string[], StoreOffline>;
 };
 
 /**

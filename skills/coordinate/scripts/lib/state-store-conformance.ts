@@ -197,6 +197,14 @@ export const storeConformance = (
         await run(store.release(await run(store.claim("app", "i1"))));
       });
 
+      test("lists the claims still held, and none once they are released", async () => {
+        const { store } = await make();
+        const claim = await run(store.claim("app", "i1"));
+        const held = await run(store.heldClaims(["app"]));
+        await run(store.release(claim));
+        expect([held, await run(store.heldClaims(["app"]))]).toEqual([[claim.location], []]);
+      });
+
       test("a version-checked queue entry survives a concurrent enqueue", async () => {
         const { store, interfere } = await make();
         const key = keys.queue("app");

@@ -504,6 +504,17 @@ export const herdrStore = (options: HerdrStoreOptions): StateStore => {
       held.delete(taken.token);
     }).pipe(Effect.ignore);
 
+  const heldClaims = (domains: readonly string[]) =>
+    Effect.map(getDocs(domains.map((domain) => `${prefix}k.${domain}`)), (docs) =>
+      docs.flatMap((doc, position) => {
+        const name = `${prefix}k.${domains[position] ?? ""}`;
+        if ("error" in doc) return [at(name)];
+        return Object.entries(claimsOf(doc.value))
+          .filter(([, held]) => held.host !== hostname() || ownerIsLive(held.pid))
+          .map(([item]) => `${at(name)}#${item}`);
+      }),
+    );
+
   const appendArchive = (domain: string, lines: readonly string[]) =>
     lines.length === 0
       ? Effect.void
@@ -534,5 +545,6 @@ export const herdrStore = (options: HerdrStoreOptions): StateStore => {
     exclusive: (_keys, use) => use(session),
     claim,
     release,
+    heldClaims,
   };
 };

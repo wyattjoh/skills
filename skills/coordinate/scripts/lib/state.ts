@@ -119,23 +119,29 @@ const readArchiveOn = (paths: HomePaths) => (home: string, domain: string) =>
  * @param config Loaded config.
  */
 export const useStateBackend = (config: Config): void => {
-  if (config.stateBackend !== "herdr-doc" || config.stateHome === undefined) {
-    registered.delete(config.stateDir);
-    return;
-  }
-  registered.set(
-    config.stateDir,
-    herdrStore({
-      home: config.stateHome,
-      prefix: PRODUCTION_PREFIX,
-      transport: hcConnectTransport,
-      self: coreName().pipe(Effect.provide(Proc.layer)),
-      stateDir: config.stateDir,
-      appendRemote: appendArchiveOn(config),
-      readRemote: readArchiveOn(config),
-    }),
-  );
+  const home = config.stateBackend === "herdr-doc" ? homeStore(config) : undefined;
+  if (home === undefined) registered.delete(config.stateDir);
+  else registered.set(config.stateDir, home);
 };
+
+/**
+ * The herdr-doc store on the config's `state_home`, whichever backend the config selects, so
+ * `state migrate` can reach it before the config is switched.
+ * @param config Loaded config.
+ * @returns The store, or undefined when the config names no home.
+ */
+export const homeStore = (config: Config): StateStore | undefined =>
+  config.stateHome === undefined
+    ? undefined
+    : herdrStore({
+        home: config.stateHome,
+        prefix: PRODUCTION_PREFIX,
+        transport: hcConnectTransport,
+        self: coreName().pipe(Effect.provide(Proc.layer)),
+        stateDir: config.stateDir,
+        appendRemote: appendArchiveOn(config),
+        readRemote: readArchiveOn(config),
+      });
 
 /**
  * The store that holds a state directory's shared documents: the one `useStateBackend`

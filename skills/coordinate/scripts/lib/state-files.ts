@@ -282,6 +282,30 @@ const acquireClaim = async (path: string): Promise<StoreClaim> => {
   throw new Error(`could not acquire queued launch claim: ${path}`);
 };
 
+/**
+ * Every claim folder whose owner is not known to have died on this host.
+ */
+const heldClaimFiles = async (stateDir: string): Promise<string[]> => {
+  const dir = join(stateDir, "capacity", "claims");
+  const names = (await readdir(dir).catch((): string[] => [])).filter((name) =>
+    name.endsWith(".lock"),
+  );
+  const held: string[] = [];
+  for (const name of names.toSorted()) {
+    const path = join(dir, name);
+    const owner = await readFile(join(path, "owner.json"), "utf8")
+      .then((text) => JSON.parse(text) as { pid?: unknown; hostname?: unknown })
+      .catch(() => undefined);
+    const dead =
+      owner !== undefined &&
+      owner.hostname === hostname() &&
+      typeof owner.pid === "number" &&
+      !ownerIsLive(owner.pid);
+    if (!dead) held.push(path);
+  }
+  return held;
+};
+
 const releaseClaim = async (claim: StoreClaim): Promise<void> => {
   try {
     const owner = JSON.parse(await readFile(join(claim.location, "owner.json"), "utf8")) as {
@@ -473,5 +497,6 @@ export const filesStore = (stateDir: string): StateStore => {
         catch: (cause) => new ClaimBusy({ message: message(cause) }),
       }),
     release: (claim) => Effect.promise(() => releaseClaim(claim)),
+    heldClaims: () => Effect.promise(() => heldClaimFiles(stateDir)),
   };
 };
