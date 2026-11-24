@@ -1,4 +1,4 @@
-import { beforeEach, expect, mock, test } from "bun:test";
+import { beforeEach, describe, expect, mock, test } from "bun:test";
 import { Input, InputState } from "gpui-base";
 import {
   addFinding,
@@ -129,6 +129,8 @@ const watchReadKey = (args: string[]): string | undefined => {
   if (args.includes("watch") && args.includes("outbox")) return `outbox:${domain}`;
   if (args.includes("wiki") && args.includes("list")) return `wiki:${domain}`;
   if (args.includes("wiki") && args.includes("show")) return `wiki-show:${domain}:${args.at(-1)}`;
+  if (args.includes("backlog") && args.includes("list"))
+    return `list:${args.includes("--domain") ? domain : "*"}`;
   return undefined;
 };
 // The shared renderer's own exec, for every other call: record it, then answer from the host.
@@ -152,6 +154,10 @@ const watchAwareExec = (command: string, args: string[] = []) => {
   if (kind === "wiki-show")
     return stored === undefined
       ? { code: 1, stdout: "", stderr: `refused: no page [[${name}]] in the ${domain} wiki` }
+      : { code: 0, stdout: stored, stderr: "" };
+  if (kind === "list")
+    return stored === undefined
+      ? { code: 2, stdout: "", stderr: "could not check: the state home finbar is unreachable" }
       : { code: 0, stdout: stored, stderr: "" };
   const empty = JSON.stringify(
     kind === "queue"
@@ -6432,4 +6438,176 @@ test("a Boundary path's Edit saves through boundary replace", async () => {
   expect(host.execs.map(({ args }) => args.slice(4))).toEqual([
     ["backlog", "boundary", "replace", "--domain", "alpha", "--adjacent", "--", "/repo", "/repo2"],
   ]);
+});
+
+// On the herdr-doc backend the panel reads backlogs, the domain list and ended records through
+// `coordinate backlog list --json --documents` on its own machine, never from files.
+describe("on the herdr-doc backend", () => {
+  const CONFIG = "/Users/test/.config/coordinate/config.json";
+  const LIVE = "2099-01-01T00:00:00.000Z";
+  const listArgs = (domain?: string) => [
+    "-u",
+    "HC_TERMINAL_ID",
+    "bun",
+    "/Users/test/.claude/skills/coordinate/scripts/coordinate.ts",
+    "backlog",
+    "list",
+    "--json",
+    "--documents",
+    ...(domain === undefined ? [] : ["--domain", domain]),
+  ];
+  type Row = { domain: string; document: unknown; lease?: unknown; ended?: Record<string, string> };
+  const listing = (rows: Row[]) =>
+    JSON.stringify({
+      machine: "strix",
+      domains: rows.map(({ domain, document, lease = null, ended = {} }) => ({
+        domain,
+        lease,
+        document,
+        unreadable: null,
+        ended,
+      })),
+    });
+  const strixLease = {
+    machine: "finbar",
+    address: "t3",
+    expiry: LIVE,
+    live: true,
+    terminal: "finbar/t3",
+  };
+  const useHerdrDoc = () =>
+    host.files.set(CONFIG, JSON.stringify({ state_backend: "herdr-doc", state_home: "finbar" }));
+
+  test("lists every domain from the CLI and watches no folder", async () => {
+    useHerdrDoc();
+    const alpha = add(emptyBacklog("alpha", null), "Open work");
+    watchData.set(
+      "list:*",
+      listing([
+        { domain: "alpha", document: alpha },
+        { domain: "beta", document: emptyBacklog("beta", null) },
+      ]),
+    );
+    const { render } = await mount();
+    const root = render();
+    expect(ids(root, "domain-")).toEqual(["domain-alpha", "domain-beta"]);
+    expect(watchReads).toEqual([listArgs()]);
+    expect([host.reads, host.watches, host.execs]).toEqual([[CONFIG], [], []]);
+  });
+
+  test("shows a domain read through the CLI, with ended records from the same read", async () => {
+    useHerdrDoc();
+    focusDomain("alpha");
+    let backlog = add(emptyBacklog("alpha", null), "Finished work", {
+      status: "delegated",
+      delegates: [ref("closer", "s-end")],
+    });
+    backlog = add(backlog, "Lost work", {
+      status: "delegated",
+      delegates: [ref("lost", "s-lost")],
+    });
+    watchData.set(
+      "list:alpha",
+      listing([
+        { domain: "alpha", document: backlog, ended: { "s-end": "2026-11-16T08:00:00.000Z" } },
+      ]),
+    );
+    const { render } = await mount();
+    const root = render();
+    expect([lineOf(root, "i1"), lineOf(root, "i2")]).toEqual([
+      ["ended", "#737373"],
+      ["gone", "#eab308"],
+    ]);
+    expect(watchReads.filter((args) => args.includes("backlog"))).toEqual([listArgs("alpha")]);
+    expect([host.reads, host.watches, host.execs]).toEqual([[CONFIG], [], []]);
+  });
+
+  test("shows the CLI's refusal when the home cannot be read", async () => {
+    useHerdrDoc();
+    focusDomain("alpha");
+    const { render } = await mount();
+    expect(text(get(render(), "unreadable"))).toContain(
+      "could not check: the state home finbar is unreachable",
+    );
+  });
+
+  test("rereads the domain through the CLI on the slow refresh", async () => {
+    useHerdrDoc();
+    focusDomain("alpha");
+    watchData.set(
+      "list:alpha",
+      listing([{ domain: "alpha", document: emptyBacklog("alpha", null) }]),
+    );
+    const { ctx, render } = await mount();
+    expect(ids(render(), "item-")).toEqual([]);
+    watchData.set(
+      "list:alpha",
+      listing([
+        { domain: "alpha", document: add(emptyBacklog("alpha", null), "Answered elsewhere") },
+      ]),
+    );
+    ctx.tick(30_000);
+    await settle();
+    expect(ids(render(), "item-i1")).toEqual(["item-i1"]);
+  });
+
+  test("Open coordinator focuses the lease holder's terminal on another machine", async () => {
+    useHerdrDoc();
+    focusDomain("alpha");
+    host.terminals.push({ address: "finbar/t3", state: "live", labels: {} });
+    watchData.set(
+      "list:alpha",
+      listing([{ domain: "alpha", document: emptyBacklog("alpha", null), lease: strixLease }]),
+    );
+    const { ctx, render } = await mount();
+    press(render(), "coordinator-open", ctx.cx);
+    expect(host.runs).toEqual([{ command: "agent.focus", args: { terminal: "finbar/t3" } }]);
+  });
+
+  test("offers no Open coordinator while the lease holder's terminal is not live here", async () => {
+    useHerdrDoc();
+    focusDomain("alpha");
+    watchData.set(
+      "list:alpha",
+      listing([{ domain: "alpha", document: emptyBacklog("alpha", null), lease: strixLease }]),
+    );
+    const { render } = await mount();
+    expect(ids(get(render(), "toolbar"), "coordinator-")).toEqual([]);
+  });
+
+  test("the policy dialog lists its domains through the CLI", async () => {
+    useHerdrDoc();
+    watchData.set(
+      "list:*",
+      listing([
+        { domain: "alpha", document: emptyBacklog("alpha", null) },
+        { domain: "beta", document: emptyBacklog("beta", null) },
+      ]),
+    );
+    useRenderer({
+      herdr: {
+        props: () => dialogPropsFor(policyDialogSpec(undefined), "overlay-1"),
+        exec: watchAwareExec,
+      },
+    });
+    const { view } = await mount(true);
+    expect([view.policyDomains, host.watches]).toEqual([["alpha", "beta"], []]);
+  });
+});
+
+test("Open coordinator focuses the terminal a files-backend lease names, on this machine", async () => {
+  focusDomain("alpha");
+  host.terminals.push({ address: "t5", state: "live", labels: {} });
+  host.files.set(
+    DOC,
+    JSON.stringify({
+      ...emptyBacklog("alpha", null),
+      lease: { machine: "finbar", address: "t5", expiry: "2099-01-01T00:00:00.000Z" },
+    }),
+  );
+  const { ctx, render } = await mount();
+  const toolbar = get(render(), "toolbar");
+  expect(ids(toolbar, "coordinator-")).toEqual(["coordinator-open"]);
+  press(render(), "coordinator-open", ctx.cx);
+  expect(host.runs).toEqual([{ command: "agent.focus", args: { terminal: "t5" } }]);
 });

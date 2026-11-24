@@ -2323,3 +2323,103 @@ export const wikiShowOutput = (text: string, domain: string, name: string): stri
     return undefined;
   }
 };
+
+/**
+ * Where the coordinate CLI keeps shared state: `files` in the state folder (the panel reads those
+ * files itself), or `herdr-doc` in the home Herdr core (the panel reads through the CLI).
+ */
+export type StateBackend = "files" | "herdr-doc";
+
+/**
+ * The state backend a coordinate config names; anything else, or no config, is `files`, as the
+ * CLI reads it.
+ * @param configText The config file's text, or null when absent.
+ * @returns The backend.
+ */
+export const stateBackendOf = (configText: string | null): StateBackend => {
+  if (configText === null) return "files";
+  try {
+    const parsed: unknown = JSON.parse(configText);
+    return isRecord(parsed) && parsed.state_backend === "herdr-doc" ? "herdr-doc" : "files";
+  } catch {
+    return "files";
+  }
+};
+
+/**
+ * One domain as `backlog list --json --documents` gives it: its document as text (null when it
+ * has none), why it could not be read, the terminal its lease names from this machine, and the
+ * date each of its delegates' ended records names.
+ */
+export type ListedBacklog = {
+  domain: string;
+  text: string | null;
+  unreadable: string | null;
+  coordinator: string | null;
+  ended: [string, string | null][];
+};
+
+/**
+ * Build the read of every domain, or one, with its document, lease and ended records, through the
+ * Coordinate CLI (the herdr-doc backend's read).
+ * @param home The user's home directory.
+ * @param domain Only this domain, or every domain when undefined.
+ * @returns The program and its arguments for exec.
+ */
+export const backlogListCommand = (home: string, domain: string | undefined) =>
+  panelCli(home, [
+    "backlog",
+    "list",
+    "--json",
+    "--documents",
+    ...(domain === undefined ? [] : ["--domain", domain]),
+  ]);
+
+/**
+ * Parse `backlog list --json --documents` output. Rows that are not well formed are left out.
+ * @param text The CLI's stdout.
+ * @returns The domains in the CLI's order, or undefined when the output is not a listing.
+ */
+export const backlogListOutput = (text: string): ListedBacklog[] | undefined => {
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(text);
+  } catch {
+    return undefined;
+  }
+  if (!isRecord(parsed) || !Array.isArray(parsed.domains)) return undefined;
+  return parsed.domains.flatMap((row): ListedBacklog[] => {
+    if (!isRecord(row) || typeof row.domain !== "string") return [];
+    const lease = isRecord(row.lease) ? row.lease : undefined;
+    const ended = isRecord(row.ended) ? row.ended : {};
+    return [
+      {
+        domain: row.domain,
+        text:
+          row.document === null || row.document === undefined ? null : JSON.stringify(row.document),
+        unreadable: typeof row.unreadable === "string" ? row.unreadable : null,
+        coordinator: typeof lease?.terminal === "string" ? lease.terminal : null,
+        ended: Object.entries(ended).map(([session, at]) => [
+          session,
+          typeof at === "string" && at.length >= 10 ? at.slice(0, 10) : null,
+        ]),
+      },
+    ];
+  });
+};
+
+/**
+ * The coordinator terminal Open coordinator focuses: the one the domain's lease names, while
+ * Herdr lists it live here. A files-backend lease is always this machine's, so its bare address
+ * is the terminal. With no lease, or its terminal not live, there is none.
+ * @param leased The terminal the lease names from this machine, or null for none.
+ * @param terminals Herdr's `terminals()`.
+ * @returns The terminal address, or undefined.
+ */
+export const coordinatorTerminal = (
+  leased: string | null,
+  terminals: readonly Terminal[],
+): string | undefined =>
+  leased !== null && liveTerminals(terminals).some((terminal) => terminal.address === leased)
+    ? leased
+    : undefined;

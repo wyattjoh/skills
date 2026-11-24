@@ -204,6 +204,9 @@ export type PanelModel = {
   // Edit and Delete on the shown domain's text fields.
   edit: FieldEditModel;
   openHarnessPolicy: (cx: Context) => void;
+  // Focuses the shown domain's coordinator, the terminal its lease names; undefined when there is
+  // no lease or its terminal is not live here.
+  openCoordinator: ((cx: Context) => void) | undefined;
   openDomain: (domain: string, cx: Context) => void;
 };
 
@@ -378,7 +381,11 @@ export const message = (
 
 // Match Files' plain header row, with the harness policy cog in the trailing slot. The domain
 // the panel shows is already the breadcrumb's last crumb.
-const toolbar = (t: Theme, openHarnessPolicy: (cx: Context) => void): Element =>
+const toolbar = (
+  t: Theme,
+  openHarnessPolicy: (cx: Context) => void,
+  openCoordinator: ((cx: Context) => void) | undefined,
+): Element =>
   h_flex()
     .id("toolbar")
     .h(42)
@@ -390,6 +397,19 @@ const toolbar = (t: Theme, openHarnessPolicy: (cx: Context) => void): Element =>
     .border_color(t.border)
     .child(div().font_semibold().child("Backlog"))
     .child(div().flex_1())
+    .children(
+      openCoordinator === undefined
+        ? []
+        : [
+            button(t, {
+              id: "coordinator-open",
+              label: "Open coordinator",
+              labelled: false,
+              icon: HERDR_ICONS.terminal,
+              onClick: openCoordinator,
+            }),
+          ],
+    )
     .child(
       button(t, {
         id: "harness-policy-open",
@@ -3095,7 +3115,7 @@ export const panel = (t: Theme, model: PanelModel): Element =>
   panelFrame(t, "coordinate-panel")
     .text_color(t.foreground)
     .text_size(13)
-    .child(toolbar(t, model.openHarnessPolicy))
+    .child(toolbar(t, model.openHarnessPolicy, model.openCoordinator))
     .child(trailBand(t, model.trail, model.go))
     .child(
       panelBody({

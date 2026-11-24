@@ -12,6 +12,7 @@ import {
   home,
   props,
   readTextFile,
+  run,
   terminals,
   theme,
   watchFolder,
@@ -23,6 +24,11 @@ import {
   LIST_SCRIPT,
   answerCommand,
   answerFailure,
+  backlogListCommand,
+  backlogListOutput,
+  coordinatorTerminal,
+  stateBackendOf,
+  referencedSessions,
   backlogIds,
   canDismissItem,
   dismissCommand,
@@ -95,6 +101,8 @@ import type {
   HarnessPolicyDraft,
   HarnessPolicyDraftEntry,
   ItemGroup,
+  ListedBacklog,
+  StateBackend,
   ItemOrder,
   ListingState,
   OutboxEvent,
@@ -139,6 +147,8 @@ const REFRESH_MS = 30_000;
 const ROW_PAGE_SIZE = 10;
 type DomainRead = {
   document: DocumentState;
+  // On the herdr-doc backend, the ended records the CLI read gave with the document.
+  ended?: (readonly [string, string | null | undefined])[];
   text: string | null | undefined;
 };
 
@@ -228,6 +238,11 @@ export default class Panel extends View {
   // no live terminal then, and which sessions those were, so a delegate that loses its terminal
   // between document changes is looked up again.
   stateDir: string | undefined;
+  // Where the CLI keeps shared state, from the same config: on herdr-doc every backlog, listing
+  // and ended-record read goes through the CLI, and no folder is watched.
+  backend: StateBackend = "files";
+  // On herdr-doc, the terminal each domain's lease names from this machine, from the CLI's read.
+  coordinators = new Map<string, string | null>();
   // Each domain's capacity queue and undelivered watcher events, read through the CLI after each
   // backlog load. A failed or invalid read leaves the domain with none.
   queues = new Map<string, QueuedEntry[]>();
@@ -382,9 +397,10 @@ export default class Panel extends View {
   // CLI reports for its scope, and each listed domain's scoped policy for the override tags.
   loadPolicyDialog(cx: Context) {
     cx.spawn(async (task) => {
-      const stateDir = stateDirOf(await this.read(configPath(home())), home());
+      const { stateDir, backend } = await this.readConfig();
       this.stateDir = stateDir;
-      this.watchHarnessPolicy(stateDir, task);
+      this.backend = backend;
+      if (backend === "files") this.watchHarnessPolicy(stateDir, task);
       this.loadHarnessPolicy(stateDir, this.target(), task);
       this.loadPolicyDomains(stateDir, task);
     });
@@ -392,17 +408,21 @@ export default class Panel extends View {
 
   loadPolicyDomains(stateDir: string, cx: Context) {
     cx.spawn(async (task) => {
-      try {
-        const listed = await exec("sh", [
-          "-c",
-          LIST_SCRIPT,
-          "coordinate-panel",
-          backlogsDir(stateDir),
-        ]);
-        this.policyDomains = listed.code === 0 ? parseListing(listed.stdout) : [];
-      } catch {
-        this.policyDomains = [];
-      }
+      if (this.backend === "herdr-doc") {
+        const listed = await this.readCli(backlogListCommand(home(), undefined), backlogListOutput);
+        this.policyDomains = listed.map((row) => row.domain);
+      } else
+        try {
+          const listed = await exec("sh", [
+            "-c",
+            LIST_SCRIPT,
+            "coordinate-panel",
+            backlogsDir(stateDir),
+          ]);
+          this.policyDomains = listed.code === 0 ? parseListing(listed.stdout) : [];
+        } catch {
+          this.policyDomains = [];
+        }
       task.notify();
       this.loadPolicyOverrides(task);
     });
@@ -437,7 +457,8 @@ export default class Panel extends View {
       this.load(cx);
       return;
     }
-    if (this.doc.kind !== "loaded" || this.stateDir === undefined) return;
+    if (this.doc.kind !== "loaded" || this.stateDir === undefined || this.backend !== "files")
+      return;
     const missing = missingSessions(this.doc.backlog, terminals());
     if (missing.join("\0") !== this.endedFor) this.lookUpEnded(this.stateDir, missing, cx);
   }
@@ -528,9 +549,9 @@ export default class Panel extends View {
       this.revealedRows.clear();
     }
     cx.spawn(async (task) => {
-      const stateDir = stateDirOf(await this.read(configPath(home())), home());
+      const { stateDir, backend } = await this.readConfig();
       if (generation !== this.generation) return;
-      if (this.stateDir !== undefined && this.stateDir !== stateDir) {
+      if ((this.stateDir !== undefined && this.stateDir !== stateDir) || this.backend !== backend) {
         this.docs.clear();
         this.rawDocs.clear();
         this.dirtyDocs.clear();
@@ -538,9 +559,11 @@ export default class Panel extends View {
         this.outboxes.clear();
         this.wikis.clear();
         this.wikiBodies.clear();
+        this.coordinators.clear();
       }
       this.stateDir = stateDir;
-      this.watchBacklogs(backlogsDir(stateDir), task);
+      this.backend = backend;
+      if (backend === "files") this.watchBacklogs(backlogsDir(stateDir), task);
       if (domain !== this.domain) {
         this.domain = domain;
         this.selected = undefined;
@@ -562,7 +585,8 @@ export default class Panel extends View {
       this.reconcileAnswerFlow(domain, read.document);
       task.notify();
       if (read.document.kind !== "loaded") return;
-      this.lookUpEnded(stateDir, missingSessions(read.document.backlog, terminals()), task);
+      if (read.ended !== undefined) this.ended = mergeEnded(this.ended, read.ended);
+      else this.lookUpEnded(stateDir, missingSessions(read.document.backlog, terminals()), task);
       this.loadWatchData(stateDir, domain, task);
     });
   }
@@ -712,6 +736,15 @@ export default class Panel extends View {
     const cached = this.docs.get(domain);
     if (!refresh && !this.dirtyDocs.has(domain) && cached !== undefined)
       return { document: cached, text: this.rawDocs.get(domain) };
+    if (this.backend === "herdr-doc") {
+      const listed = await this.listCli(domain);
+      if (listed.kind === "unreadable")
+        return { document: { kind: "unreadable", reason: listed.reason }, text: undefined };
+      const row = listed.rows.find((candidate) => candidate.domain === domain);
+      return this.listedRead(
+        row ?? { domain, text: null, unreadable: null, coordinator: null, ended: [] },
+      );
+    }
     try {
       const text = await readTextFile(documentPath(stateDir, domain));
       if (cached !== undefined && this.rawDocs.has(domain) && this.rawDocs.get(domain) === text)
@@ -719,6 +752,65 @@ export default class Panel extends View {
       return { document: readDocument(text), text };
     } catch (error) {
       return { document: { kind: "unreadable", reason: String(error) }, text: undefined };
+    }
+  }
+
+  // The domain list or one domain through `backlog list`; a failed or invalid read is unreadable,
+  // with the CLI's message.
+  async listCli(
+    domain: string | undefined,
+  ): Promise<{ kind: "loaded"; rows: ListedBacklog[] } | { kind: "unreadable"; reason: string }> {
+    try {
+      const { command, args } = backlogListCommand(home(), domain);
+      const ran = await exec(command, args);
+      if (ran.code !== 0)
+        return { kind: "unreadable", reason: ran.stderr.trim() || `coordinate exited ${ran.code}` };
+      const rows = backlogListOutput(ran.stdout);
+      return rows === undefined
+        ? { kind: "unreadable", reason: "coordinate printed no backlog listing" }
+        : { kind: "loaded", rows };
+    } catch (error) {
+      return { kind: "unreadable", reason: `could not run coordinate: ${String(error)}` };
+    }
+  }
+
+  // One listed domain as a read: its lease's terminal is kept, and every session its delegate
+  // refs name is looked up in the ended records that came with it.
+  listedRead(row: ListedBacklog): DomainRead {
+    this.coordinators.set(row.domain, row.coordinator);
+    if (row.unreadable !== null)
+      return { document: { kind: "unreadable", reason: row.unreadable }, text: undefined };
+    const cached = this.docs.get(row.domain);
+    const document =
+      cached !== undefined && this.rawDocs.get(row.domain) === row.text
+        ? cached
+        : readDocument(row.text);
+    const found = new Map(row.ended);
+    const ended =
+      document.kind === "loaded"
+        ? referencedSessions(document.backlog).map(
+            (session) => [session, found.get(session)] as const,
+          )
+        : [];
+    return { document, text: row.text, ended };
+  }
+
+  // The coordinator terminal Open coordinator focuses for the shown domain, if any.
+  coordinatorOf(domain: string | undefined, doc: DocumentState): string | undefined {
+    if (domain === undefined || doc.kind !== "loaded") return undefined;
+    const leased =
+      this.backend === "herdr-doc"
+        ? (this.coordinators.get(domain) ?? null)
+        : (doc.backlog.lease?.address ?? null);
+    return coordinatorTerminal(leased, terminals());
+  }
+
+  // Focus the domain's coordinator. Herdr refuses while that machine's layout is unavailable.
+  openCoordinator(terminal: string) {
+    try {
+      run("agent.focus", { terminal });
+    } catch {
+      // Nothing to show: the focus simply does not move.
     }
   }
 
@@ -732,6 +824,25 @@ export default class Panel extends View {
   // Every domain document, listed through the shell, each read and summarized on its own so
   // one bad document only marks its own row.
   async list(stateDir: string, refresh: boolean, generation: number): Promise<ListingState> {
+    if (this.backend === "herdr-doc") {
+      const listed = await this.listCli(undefined);
+      if (listed.kind === "unreadable") return listed;
+      const live = terminals();
+      const rows = listed.rows.map((row) => {
+        const read = this.listedRead(row);
+        if (generation === this.generation) this.cacheDomain(row.domain, read);
+        if (read.ended !== undefined) this.ended = mergeEnded(this.ended, read.ended);
+        const agents =
+          read.document.kind === "loaded"
+            ? countLiveDelegates(joinDelegates(read.document.backlog, live, this.ended, row.domain))
+            : 0;
+        return summarize(row.domain, read.document, agents);
+      });
+      return {
+        kind: "loaded",
+        domains: rows.filter((row): row is DomainSummary => row !== undefined),
+      };
+    }
     let names: string[];
     try {
       const listed = await exec("sh", [
@@ -885,6 +996,12 @@ export default class Panel extends View {
   close() {
     this.watch?.cancel();
     this.policyWatch?.cancel();
+  }
+
+  // The state folder and backend the coordinate config names.
+  async readConfig(): Promise<{ stateDir: string; backend: StateBackend }> {
+    const text = await this.read(configPath(home()));
+    return { stateDir: stateDirOf(text, home()), backend: stateBackendOf(text) };
   }
 
   // A config that can't be read counts as absent.
@@ -2283,6 +2400,7 @@ export default class Panel extends View {
     const domain = this.target();
     const doc = domain === this.domain ? this.doc : cachedDocument(this.docs, domain);
     const detail = this.detail(domain, doc);
+    const coordinator = this.coordinatorOf(domain, doc);
     const finding = this.findingDetail(domain, doc);
     const wikiPage = this.wikiPageDetail(domain);
     const origin =
@@ -2359,6 +2477,8 @@ export default class Panel extends View {
       boundary: this.boundaryModel(domain),
       edit: this.fieldEditModel(domain),
       openHarnessPolicy: () => this.openHarnessPolicyDialog(domain),
+      openCoordinator:
+        coordinator === undefined ? undefined : () => this.openCoordinator(coordinator),
     });
   }
 }
