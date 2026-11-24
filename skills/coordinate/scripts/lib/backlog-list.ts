@@ -14,22 +14,28 @@ import { keys, StoreUnreadable, type StateStore, type StoreOffline } from "./sta
 export type ListedLease = Lease & { live: boolean; terminal: string | null };
 
 /**
- * One domain in `backlog list --json`. With documents, also its stored backlog (null when it has
+ * One domain in `backlog list --json`: its name and its lease.
+ */
+export type ListedDomain = { domain: string; lease: ListedLease | null };
+
+/**
+ * One domain in `backlog list --json --documents`: also its stored backlog (null when it has
  * none), why it could not be read (null when it could), and the `ended_at` of each ended record a
  * delegate ref in it names.
  */
-export type ListedDomain = {
-  domain: string;
-  lease: ListedLease | null;
-  document?: unknown;
-  unreadable?: string | null;
-  ended?: Record<string, string>;
+export type DocumentedDomain = ListedDomain & {
+  document: unknown;
+  unreadable: string | null;
+  ended: Record<string, string>;
 };
 
 /**
  * What `backlog list --json` prints: this core's name (null when unknown) and the domains.
  */
-export type BacklogListing = { machine: string | null; domains: ListedDomain[] };
+export type BacklogListing = {
+  machine: string | null;
+  domains: (ListedDomain | DocumentedDomain)[];
+};
 
 /**
  * What to list.

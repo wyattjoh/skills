@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { Effect } from "effect";
-import { backlogList } from "./backlog-list.ts";
+import { backlogList, type DocumentedDomain } from "./backlog-list.ts";
 import { addItem, emptyBacklog, updateItem } from "./backlog-store/ops.ts";
 import type { Backlog } from "./backlog-store/schema.ts";
 import { tempDir } from "./fixture.ts";
@@ -239,7 +239,7 @@ describe("backlogList", () => {
     });
     if (!answered.ok) throw new Error(answered.reason);
     await put(strix, keys.backlog("alpha"), answered.backlog);
-    const seen = (await listed(home, "homebase"))[0]?.document as Backlog;
+    const seen = ((await listed(home, "homebase"))[0] as DocumentedDomain).document as Backlog;
     expect(seen.items[0]?.answered.map((entry) => [entry.question, entry.answer])).toEqual([
       ["Which?", "a"],
     ]);
