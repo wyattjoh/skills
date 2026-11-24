@@ -6,7 +6,7 @@ import { hcConnectSubscriber, hcConnectTransport } from "./herdr-docs.ts";
 import { coreName, execOn, type HerdrError, readFileOn } from "./herdr.ts";
 import { Proc } from "./proc.ts";
 import { filesStore } from "./state-files.ts";
-import { herdrStore, PRODUCTION_PREFIX } from "./state-herdr.ts";
+import { herdrStore } from "./state-herdr.ts";
 import { BacklogError, type StateStore, StoreOffline } from "./state-store.ts";
 
 const registered = new Map<string, StateStore>();
@@ -135,7 +135,7 @@ export const homeStore = (config: Config): StateStore | undefined =>
     ? undefined
     : herdrStore({
         home: config.stateHome,
-        prefix: PRODUCTION_PREFIX,
+        prefix: config.statePrefix,
         transport: hcConnectTransport,
         subscribe: hcConnectSubscriber,
         self: coreName().pipe(Effect.provide(Proc.layer)),

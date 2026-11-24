@@ -43,6 +43,17 @@ describe("resolveConfig", () => {
     );
   });
 
+  it("prefixes herdr-doc document names with cs. unless state_prefix names a test namespace", async () => {
+    const [defaulted, chosen] = await Promise.all([
+      resolve({}),
+      resolve({ state_prefix: "ct1a2b3c." }),
+    ]);
+    expect([defaulted.statePrefix, chosen.statePrefix]).toEqual(["cs.", "ct1a2b3c."]);
+    expect((await fail({ state_prefix: "Test." })).message).toBe(
+      "state_prefix must start valid Herdr document names: Test.domains is not a Herdr document name (a-z 0-9 - _ . starting with a letter or digit)",
+    );
+  });
+
   it("refuses the herdr-doc backend without a home, and an unknown backend", async () => {
     const invalid = await Promise.all([
       fail({ state_backend: "herdr-doc" }),

@@ -1,6 +1,8 @@
 import { availableParallelism, homedir } from "node:os";
 import { isAbsolute, join, resolve } from "node:path";
 import { Effect, Schema } from "effect";
+import { docNameProblem } from "./herdr-docs.ts";
+import { PRODUCTION_PREFIX } from "./state-herdr.ts";
 
 /**
  * Which CLI answers pull-request questions for a remote host.
@@ -37,6 +39,10 @@ export type Config = {
    * `state_dir` mapped onto the home user's HOME.
    */
   homeStateDir: string | undefined;
+  /**
+   * Prefix of every herdr-doc document name: `cs.`, or a throwaway test namespace.
+   */
+  statePrefix: string;
 };
 
 /**
@@ -72,6 +78,7 @@ const ConfigFile = Schema.Struct({
   state_backend: Schema.optionalKey(Schema.Literals(["files", "herdr-doc"])),
   state_home: Schema.optionalKey(Schema.String),
   home_state_dir: Schema.optionalKey(Schema.String),
+  state_prefix: Schema.optionalKey(Schema.String),
 });
 
 const KNOWN_KEYS = new Set([
@@ -89,6 +96,7 @@ const KNOWN_KEYS = new Set([
   "state_backend",
   "state_home",
   "home_state_dir",
+  "state_prefix",
 ]);
 
 /**
@@ -255,8 +263,16 @@ export const resolveConfig = Effect.fn("resolveConfig")(function* (
       path,
       message: "home_state_dir must be an absolute path on the home machine",
     });
+  const statePrefix = file.state_prefix ?? PRODUCTION_PREFIX;
+  const prefixProblem = docNameProblem(`${statePrefix}domains`);
+  if (prefixProblem !== undefined)
+    return yield* new ConfigError({
+      path,
+      message: `state_prefix must start valid Herdr document names: ${prefixProblem}`,
+    });
   return {
     stateBackend,
+    statePrefix,
     stateHome: file.state_home,
     // A path on the home, so it is normalized but never resolved against this machine.
     homeStateDir: file.home_state_dir === undefined ? undefined : resolve(file.home_state_dir),

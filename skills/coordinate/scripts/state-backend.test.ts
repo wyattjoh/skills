@@ -165,6 +165,26 @@ describe("coordinate CLI on the herdr-doc backend", () => {
     ).toEqual(["fix parser"]);
   }, 60_000);
 
+  it("names every document under state_prefix, so a test namespace never touches cs. names", () => {
+    const { state, run, cores } = sandbox("herdr-doc", "coordinate-backend-prefix-");
+    const configFile = join(state, "config.json");
+    const config = JSON.parse(readFileSync(configFile, "utf8")) as Record<string, unknown>;
+    writeFileSync(configFile, JSON.stringify({ ...config, state_prefix: "ct9f8e7d." }));
+    expect(run(["start", "app"]).exit).toBe(0);
+    expect(run(["item", "add", "fix parser", "--domain", "app"]).exit).toBe(0);
+    const listed = run(["backlog", "list", "--json"]);
+    expect([
+      listed.exit,
+      (JSON.parse(listed.stdout) as { domains: { domain: string }[] }).domains.map(
+        (entry) => entry.domain,
+      ),
+    ]).toEqual([0, ["app"]]);
+    expect(Object.keys(cores().docs[FAKE_HOME] ?? {}).toSorted()).toEqual([
+      "ct9f8e7d.b.app",
+      "ct9f8e7d.domains",
+    ]);
+  }, 60_000);
+
   it("refuses with exit 1 after three lost write races", () => {
     const { run, cores, setCores } = sandbox("herdr-doc", "coordinate-backend-race-");
     expect(run(["start", "app"]).exit).toBe(0);
