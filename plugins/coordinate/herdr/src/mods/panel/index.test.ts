@@ -406,6 +406,10 @@ const openDetail = (view: InstanceType<typeof Panel>, id: string, cx: unknown) =
   view.open(item, cx as never);
 };
 
+// The style keys that would give an ask card's part its own outline or rounded corners.
+const outlineStyles = (node: Node): string[] =>
+  Object.keys(node.styles).filter((key) => /^(rounded.*|border|border_1)$/.test(key));
+
 // Presses an answered ask's Show all / Show less row on the item detail screen.
 const toggleAnswered = (render: () => Node, index: number, cx: unknown) =>
   get(render(), `ask-answered-${index}-reveal`).click!({}, cx as never);
@@ -604,11 +608,11 @@ test("answer-flow cards share an item header while the body expands beneath it",
   const questionBlock = get(root, "answer-flow-ask-i1-question-block");
   expect(questionBlock.styles).toMatchObject({
     bg: "#292929",
-    rounded: CARD.innerRadius,
     px: CARD.paddingX,
     py: CARD.paddingY,
     min_w_0: true,
   });
+  expect(outlineStyles(questionBlock)).toEqual([]);
   expect(questionBlock.children.map((child) => (child as Node).styles.id)).toEqual([
     "answer-flow-ask-i1-question",
     "answer-flow-ask-i1-context",
@@ -748,11 +752,11 @@ test("the carousel keeps every question mounted and moves the stack in one fixed
   expect(text(get(root, "answer-flow-ask-i1-rec-reason"))).toBe("Why recommended fits this choice");
   expect(get(root, "answer-flow-ask-i1-rec-reason").styles).toMatchObject({
     bg: "#292929",
-    rounded: CARD.innerRadius,
     px: CARD.paddingX,
     py: CARD.paddingY,
     min_w_0: true,
   });
+  expect(outlineStyles(get(root, "answer-flow-ask-i1-rec-reason"))).toEqual([]);
   expect(ANSWER_CAROUSEL.transitionDuration).toBe(600);
   expect(ANSWER_CAROUSEL.easing).toBe("ease-in-out");
   expect(get(root, "answer-flow-card-i1").styles).toMatchObject({
@@ -1144,23 +1148,24 @@ test("answer-flow questions use the Outline treatment without a bottom action ba
     min_w_0: true,
     px: ANSWER_FLOW_OUTLINE.paddingX,
     py: ANSWER_FLOW_OUTLINE.paddingY,
-    bg: "#171717",
-    border: ANSWER_FLOW_OUTLINE.selectedBorderWidth,
-    border_color: "#3b82f6",
-    rounded: CARD.innerRadius,
+    bg: "#2563eb",
+    border_t: 1,
+    border_color: "#525252",
     text_color: "#f5f5f5",
     font_semibold: true,
   });
-  expect(selected.hoverStyles.bg).toBe("#171717");
+  expect(outlineStyles(selected)).toEqual([]);
+  expect(selected.hoverStyles.bg).toBe("#2563eb");
   expect(unselected.styles).toMatchObject({
     w_full: true,
     min_w_0: true,
     px: ANSWER_FLOW_OUTLINE.paddingX,
     py: ANSWER_FLOW_OUTLINE.paddingY,
     bg: "#171717",
-    border_1: true,
+    border_t: 1,
     border_color: "#525252",
   });
+  expect(outlineStyles(unselected)).toEqual([]);
   expect(unselected.hoverStyles.bg).toBe("#404040");
   expect(get(root, "answer-flow-ask-i1-option-1-selection-marker").styles.asset).toBe(
     HERDR_ICONS.circleCheck,
@@ -2356,11 +2361,11 @@ test("ask detail rows use the surface token and put the recommended option first
   expect(text(get(root, "ask-rec-reason-label"))).toBe("Why recommended");
   expect(get(root, "ask-rec-reason").styles).toMatchObject({
     bg: "#292929",
-    rounded: CARD.innerRadius,
     px: CARD.paddingX,
     py: CARD.paddingY,
     min_w_0: true,
   });
+  expect(outlineStyles(get(root, "ask-rec-reason"))).toEqual([]);
   expect(
     get(root, "ask-content-1").children.map((child) =>
       typeof child === "string" ? child : child.styles.id,
@@ -2502,10 +2507,10 @@ test("shows the open ask first and earlier answered asks read-only, newest first
   expect(text(get(root, "ask-answered-0-rec-reason-label"))).toBe("Why recommended");
   expect(get(root, "ask-answered-0-rec-reason").styles).toMatchObject({
     bg: "#292929",
-    rounded: CARD.innerRadius,
     px: CARD.paddingX,
     py: CARD.paddingY,
   });
+  expect(outlineStyles(get(root, "ask-answered-0-rec-reason"))).toEqual([]);
   expect(text(get(root, "ask-answered-0-answered-at"))).toBe("Answered 2026-11-15");
   expect(text(get(root, "ask-answered-1-answer"))).toBe(
     "Answer keep it beside the docs 2026-11-16",
@@ -2537,6 +2542,24 @@ test("shows answered asks compact, question and context only, until Show all", a
   ]).toEqual(["Show all", "Show all"]);
   expect(ids(compact, "ask-option-")).toEqual(["ask-option-1", "ask-option-0", "ask-option-2"]);
   expect(ids(compact, "ask-reveal")).toEqual([]);
+
+  expect(
+    [
+      "ask-question",
+      "ask-option-0",
+      "ask-option-1",
+      "ask-discuss",
+      "ask-answer",
+      "ask-rec-reason",
+      "ask-answered-0-question",
+      "ask-answered-0-context",
+      "ask-answered-0-reveal",
+    ].flatMap((id) => outlineStyles(get(compact, id))),
+  ).toEqual([]);
+  expect(get(compact, "ask-answered-0-reveal").styles).toMatchObject({
+    border_t: 1,
+  });
+  expect(outlineStyles(get(compact, "ask-answered-0-reveal"))).toEqual([]);
 
   toggleAnswered(render, 0, ctx.cx);
   const expanded = render();

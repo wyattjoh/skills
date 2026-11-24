@@ -876,8 +876,9 @@ const questionChild = (t: Theme, id: string, ask: Ask): Element | string =>
     inline: true,
   });
 
-// The answer flow's question card is the Outline layout: a block prompt, outlined choices that
-// take an accent border when picked, and the recommendation's reason inline under its choice.
+// The answer flow's question card: a block prompt, then choices ruled off from each other that take
+// the selected fill and a check when picked, and the recommendation's reason inline under its choice.
+// No part of an ask card has its own border or rounded corners; the card's outline holds them all.
 const answerFlowPrompt = (t: Theme, id: string, ask: Ask): Element => {
   const question = div()
     .id(`${id}-question`)
@@ -900,7 +901,6 @@ const answerFlowPrompt = (t: Theme, id: string, ask: Ask): Element => {
     .id(`${id}-question-block`)
     .min_w_0()
     .bg(t.popover)
-    .rounded(CARD.innerRadius)
     .px(CARD.paddingX)
     .py(CARD.paddingY)
     .child(question)
@@ -914,14 +914,11 @@ const answerFlowOptionStyle = (row: Element, t: Theme, selected: boolean): Eleme
     .px(ANSWER_FLOW_OUTLINE.paddingX)
     .py(ANSWER_FLOW_OUTLINE.paddingY)
     .gap(BUTTON_STYLE.gap)
-    .bg(role(t, ANSWER_FLOW_OUTLINE.optionSurface))
+    .bg(selected ? t.selected : role(t, ANSWER_FLOW_OUTLINE.optionSurface))
     .text_color(t.foreground)
-    .border_1()
-    .border_color(selected ? t.accent : t.border)
-    .rounded(CARD.innerRadius)
-    .when(selected, (el) =>
-      el.border(ANSWER_FLOW_OUTLINE.selectedBorderWidth).border_color(t.accent).font_semibold(),
-    );
+    .border_t(1)
+    .border_color(t.border)
+    .when(selected, (el) => el.font_semibold());
 
 const answerChild = (t: Theme, id: string, answered: AnsweredAsk): Element | string =>
   proseChild(
@@ -953,7 +950,6 @@ const askCardRows = (
     ? answerFlowPrompt(t, id, ask)
     : detailRow(t, `${id}-question`)
         .bg(t.popover)
-        .rounded_t(CARD.innerRadius)
         .font_medium()
         .child(questionChild(t, `${id}-question-markdown`, ask));
   const contextProse = prose(ask.context, ask.contextMarkdown);
@@ -1007,7 +1003,6 @@ const askCardRows = (
             .id(`${id}-rec-reason`)
             .min_w_0()
             .bg(t.popover)
-            .rounded(CARD.innerRadius)
             .px(CARD.paddingX)
             .py(CARD.paddingY)
             .text_size(TEXT.label)
@@ -1059,13 +1054,7 @@ const askCardRows = (
           .cursor_pointer()
           .hover((style) =>
             style.bg(
-              flowHeader
-                ? selected
-                  ? role(t, "surface")
-                  : t.hover
-                : selected
-                  ? t.selected
-                  : t.hover,
+              flowHeader ? (selected ? t.selected : t.hover) : selected ? t.selected : t.hover,
             ),
           )
           .on_click((_event, cx) => answer!.choose(option, cx)),
@@ -1201,7 +1190,6 @@ const askRevealRow = (
     .h(BUTTON_STYLE.height)
     .justify_center()
     .gap(BUTTON_STYLE.gap)
-    .rounded_b(CARD.innerRadius)
     .text_size(BUTTON_STYLE.textSize)
     .text_color(t.muted)
     .on_click((_event, cx) => toggle(cx))

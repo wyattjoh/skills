@@ -110,14 +110,13 @@ export const ANSWER = {
   gap: 8,
 } as const;
 
-/** Fixed spacing and selection geometry for the answer flow's Outline question card. */
+/** Fixed spacing and selection geometry for the answer flow's question card. */
 export const ANSWER_FLOW_OUTLINE = {
   cardSurface: "surface",
   optionSurface: "surface",
   paddingX: 12,
   paddingY: 10,
   markerSize: 14,
-  selectedBorderWidth: 2,
 } as const;
 
 /** The width of the answer flow's dropdown menus. */
