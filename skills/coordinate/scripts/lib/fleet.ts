@@ -5,7 +5,7 @@ import { type Harness, harnessOf } from "./harness.ts";
 import { OUTSIDE_TERMINAL_STATUSES, type ItemStatus } from "./backlog-store/schema.ts";
 import * as hc from "./herdr.ts";
 import { stateStore } from "./state.ts";
-import { keys, runCommand } from "./state-store.ts";
+import { keys, runCommand, StoreUnreadable } from "./state-store.ts";
 
 /**
  * Labels this skill reads and writes on herdr-core terminals.
@@ -346,16 +346,20 @@ export type EndedRecord = typeof EndedRecordSchema.Type;
  */
 export const readEnded = Effect.fn("readEnded")(function* (stateDir: string) {
   const store = stateStore(stateDir);
-  const ids = yield* store.list("ended").pipe(Effect.orElseSucceed((): readonly string[] => []));
+  // An unreadable listing reads as no records; an unreachable home still refuses.
+  const ids = yield* store
+    .list("ended")
+    .pipe(Effect.catchTag("StoreUnreadable", () => Effect.succeed([] as readonly string[])));
+  const stored = yield* store.readMany(ids.map(keys.ended));
   const records: Array<{ id: string; path: string; record: EndedRecord }> = [];
   const skipped: string[] = [];
-  for (const id of ids) {
-    const key = keys.ended(id);
-    const path = store.location(key);
-    const decoded = yield* store.read(key).pipe(
-      Effect.flatMap((stored) => Schema.decodeUnknownEffect(EndedRecordSchema)(stored.value)),
-      Effect.option,
-    );
+  for (const [index, id] of ids.entries()) {
+    const path = store.location(keys.ended(id));
+    const read = stored[index];
+    const decoded =
+      read === undefined || read instanceof StoreUnreadable
+        ? Option.none()
+        : Schema.decodeUnknownOption(EndedRecordSchema)(read.value);
     if (Option.isSome(decoded)) records.push({ id, path, record: decoded.value });
     else skipped.push(basename(path));
   }
@@ -379,7 +383,7 @@ export const writeEnded = Effect.fn("writeEnded")(function* (
     key,
     () => Effect.succeed({ write: true as const, next: record, value: undefined }),
     { replaceUnreadable: true },
-  ).pipe(Effect.orDie);
+  );
   return store.location(key);
 });
 
@@ -394,7 +398,7 @@ export const removeEnded = Effect.fn("removeEnded")(function* (stateDir: string,
     keys.ended(id),
     () => Effect.succeed({ write: true as const, next: null, value: undefined }),
     { replaceUnreadable: true },
-  ).pipe(Effect.orDie);
+  );
 });
 
 /**

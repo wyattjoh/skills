@@ -71,6 +71,13 @@ const present = (config: Config, key: StateKey) =>
 const refuseExisting = (config: Config, from: string, to: string) =>
   Effect.gen(function* () {
     const store = stateStore(config.stateDir);
+    const refusal = store.refusal(keys.backlog(to));
+    if (refusal !== undefined) return yield* new Refused({ message: refusal });
+    // The archive is a file beside the state, so only the machine that holds it can move it.
+    if (!(yield* store.archivesHere))
+      return yield* new Refused({
+        message: `${from}'s archive is a file on the state home that holds ${store.location(keys.backlog(from))}; run coordinate backlog rename on that machine`,
+      });
     if (!(yield* present(config, keys.backlog(from))))
       return yield* new Refused({
         message: `no backlog for ${from} at ${store.location(keys.backlog(from))}`,
@@ -172,7 +179,9 @@ export const renameDomain = Effect.fn("renameDomain")(function* (
       yield* replace(session, keys.backlog(to), checked.backlog);
       const archive = yield* copyIfPresent(archivePath(state, from), archivePath(state, to));
       const snapshot = yield* copyIfPresent(statePath(state, from), statePath(state, to));
-      const queue = yield* session.read(keys.queue(from)).pipe(Effect.mapError(unreadable));
+      const queue = yield* session
+        .read(keys.queue(from))
+        .pipe(Effect.catchTag("StoreUnreadable", (error) => Effect.fail(unreadable(error))));
       const capacityQueue =
         queue.value === null
           ? null
@@ -186,7 +195,9 @@ export const renameDomain = Effect.fn("renameDomain")(function* (
       for (const { id, path, record } of records) {
         if (record.domain !== from) continue;
         const key = keys.ended(id);
-        const raw = yield* session.read(key).pipe(Effect.mapError(unreadable));
+        const raw = yield* session
+          .read(key)
+          .pipe(Effect.catchTag("StoreUnreadable", (error) => Effect.fail(unreadable(error))));
         yield* session.write(key, { ...(raw.value as object), domain: to }, raw.version);
         ended.push(path);
       }

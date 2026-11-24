@@ -16,3 +16,12 @@ export const backlogsDir = (stateDir: string): string => `${stateDir}/backlogs`;
  */
 export const documentPath = (stateDir: string, domain: string): string =>
   `${backlogsDir(stateDir)}/${domain}.json`;
+
+/**
+ * The domain's append-only archive of closed records, one JSON record per line.
+ * @param stateDir State dir.
+ * @param domain Domain.
+ * @returns Path.
+ */
+export const archivePath = (stateDir: string, domain: string): string =>
+  `${backlogsDir(stateDir)}/${domain}.archive.jsonl`;

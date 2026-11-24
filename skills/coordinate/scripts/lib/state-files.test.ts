@@ -21,6 +21,7 @@ storeConformance("files", async () => {
       await mkdir(dirname(path), { recursive: true });
       await writeFile(path, JSON.stringify(value));
     },
+    offline: undefined,
   };
 });
 

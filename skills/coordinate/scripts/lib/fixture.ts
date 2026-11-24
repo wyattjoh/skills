@@ -3,7 +3,14 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { Effect, Layer } from "effect";
 import { spawnGit } from "./git-env.ts";
+import type { StateBackend } from "./config.ts";
+import { fakeDocCores } from "./herdr-docs-fake.ts";
 import { coreStatus, FAKE_CORE, isCoreNameRead, Proc, realProc, type RunOutput } from "./proc.ts";
+
+/**
+ * The home machine `cliEnv` names for the herdr-doc backend.
+ */
+export const FAKE_HOME = "homebase";
 
 /**
  * A fresh temporary directory (real path).
@@ -124,11 +131,16 @@ export const gitAndFake = (
  * The `herdr-app` stub makes space sp9 (tab tab9, shell t6) on `space.new`, lists no spaces, answers
  * anything else with `{}`, and appends its arguments to `<state>/bin/app-calls.log`, so no test
  * reaches the real Herdr app. HOME is `<state>/home`, whose `.local/bin` is not on PATH.
+ * With the herdr-doc backend (`stateBackend`, by default from `COORDINATE_TEST_STATE_BACKEND`), the
+ * config keeps shared state on the home `FAKE_HOME`, and the stub's `hc connect` answers document
+ * calls from fake cores in `<state>/herdr-docs.json` (this core `FAKE_CORE`, which knows the home and
+ * strix, both up).
  * @param state State dir.
  * @param labels The calling terminal's labels.
  * @param getError An error kind for `hc get` to fail with.
  * @param terminals Other terminals `hc get` knows, by address.
  * @param lists Terminals `hc ls` lists, by label filter, checked in order.
+ * @param stateBackend Which backend the config selects.
  * @returns The environment.
  */
 export const cliEnv = (
@@ -137,9 +149,27 @@ export const cliEnv = (
   getError: string | undefined = undefined,
   terminals: Record<string, unknown> = {},
   lists: Record<string, unknown[]> = {},
+  stateBackend: StateBackend = process.env.COORDINATE_TEST_STATE_BACKEND === "herdr-doc"
+    ? "herdr-doc"
+    : "files",
 ): Record<string, string> => {
   const configFile = join(state, "config.json");
-  writeFileSync(configFile, JSON.stringify({ state_dir: state, backlog_dir: join(state, "md") }));
+  const docs = join(state, "herdr-docs.json");
+  writeFileSync(
+    configFile,
+    JSON.stringify({
+      state_dir: state,
+      backlog_dir: join(state, "md"),
+      ...(stateBackend === "herdr-doc"
+        ? { state_backend: "herdr-doc", state_home: FAKE_HOME }
+        : {}),
+    }),
+  );
+  if (stateBackend === "herdr-doc")
+    writeFileSync(
+      docs,
+      JSON.stringify(fakeDocCores(FAKE_CORE, { [FAKE_HOME]: "up", strix: "up" })),
+    );
   const bin = join(state, "bin");
   mkdirSync(bin, { recursive: true });
   const got =
@@ -161,6 +191,7 @@ export const cliEnv = (
   writeFileSync(
     join(bin, "hc"),
     `#!/bin/sh\nprintf '%s\\n' "$*" >> '${join(bin, "calls.log")}'\ncase "$1" in\n  get) ${known}${got} ;;\n  ls) ${listed}printf '{"terminals":[]}' ;;\n  run) printf '{"address":"t-watch"}' ;;
+  connect) exec '${process.execPath}' '${join(import.meta.dir, "herdr-docs-fake.ts")}' '${docs}' ;;
   server) printf '%s' '${JSON.stringify({ core: { id: "0", name: FAKE_CORE } })}' ;;
   machine) printf '%s' '${JSON.stringify({ machines: [{ name: "strix", state: "connected" }] })}' ;;
   *) printf '{}' ;;\nesac\n`,

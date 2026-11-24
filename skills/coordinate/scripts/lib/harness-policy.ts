@@ -9,6 +9,7 @@ import {
   type CommandStep,
   keys,
   runCommand,
+  type StoreOffline,
   type StoreSession,
   type StoreUnreadable,
 } from "./state-store.ts";
@@ -225,7 +226,7 @@ const unreadablePolicy = (error: StoreUnreadable): HarnessPolicyError =>
 const readDocument = Effect.fn("readHarnessPolicyDocument")(function* (config: Config) {
   const stored = yield* stateStore(config.stateDir)
     .read(keys.policy())
-    .pipe(Effect.mapError(unreadablePolicy));
+    .pipe(Effect.catchTag("StoreUnreadable", (error) => Effect.fail(unreadablePolicy(error))));
   return yield* decodeDocument(policyLocation(config), stored.value);
 });
 
@@ -237,7 +238,10 @@ const changePolicy = (
   config: Config,
   step: (
     current: HarnessPolicyDocument,
-  ) => Effect.Effect<HarnessPolicyDocument | { unchanged: HarnessPolicyDocument }, Refused>,
+  ) => Effect.Effect<
+    HarnessPolicyDocument | { unchanged: HarnessPolicyDocument },
+    Refused | StoreOffline
+  >,
 ) => {
   const path = policyLocation(config);
   return runCommand(stateStore(config.stateDir), keys.policy(), (stored) =>

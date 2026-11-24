@@ -12,6 +12,10 @@ export type ConformanceBackend = {
    * Overwrite a document directly, bypassing every lock and version check.
    */
   interfere: (key: StateKey, value: unknown) => Promise<void>;
+  /**
+   * For a backend with a home that can go away: its name, and a way to make it unreachable.
+   */
+  offline: { home: string; cut: () => void } | undefined;
 };
 
 const run = <A, E>(effect: Effect.Effect<A, E>): Promise<A> => Effect.runPromise(effect);
@@ -21,12 +25,19 @@ const fail = <A, E>(effect: Effect.Effect<A, E>): Promise<E> =>
 /**
  * The behavior every state backend must share: versioned writes, conflict retry and refusal,
  * enumeration, and the capacity queue's claims. Run it once per backend with a factory that returns
- * a fresh store. Lease and offline-refusal cases join this suite with the tickets that add them.
+ * a fresh store. Lease cases join this suite with the ticket that adds them.
  * @param name Backend name, for the describe block.
  * @param make A fresh backend per test.
+ * @param capabilities `offline`: run the offline-refusal cases (the backend has a home).
+ * @param enabled Run the suite at all (an opt-in backend skips it).
  */
-export const storeConformance = (name: string, make: () => Promise<ConformanceBackend>) =>
-  describe(`${name} store conformance`, () => {
+export const storeConformance = (
+  name: string,
+  make: () => Promise<ConformanceBackend>,
+  capabilities: { offline: boolean } = { offline: false },
+  enabled = true,
+) =>
+  describe.if(enabled)(`${name} store conformance`, () => {
     describe("versioned writes", () => {
       test("a document never written reads as null", async () => {
         const { store } = await make();
@@ -43,14 +54,26 @@ export const storeConformance = (name: string, make: () => Promise<ConformanceBa
 
       test("a write with a stale version conflicts and leaves the document as it was", async () => {
         const { store, interfere } = await make();
-        const key = keys.queue("app");
-        const first = await run(store.read(key));
-        await run(store.write(key, { n: 1 }, first.version));
-        const read = await run(store.read(key));
-        await interfere(key, { n: 2 });
-        const error = await fail(store.write(key, { n: 3 }, read.version));
-        expect(error._tag).toBe("StoreConflict");
-        expect((await run(store.read(key))).value).toEqual({ n: 2 });
+        const outcomes: unknown[] = [];
+        for (const key of [
+          keys.queue("app"),
+          keys.backlog("app"),
+          keys.policy(),
+          keys.ended("s-1"),
+        ]) {
+          const first = await run(store.read(key));
+          await run(store.write(key, { n: 1 }, first.version));
+          const read = await run(store.read(key));
+          await interfere(key, { n: 2 });
+          const error = await fail(store.write(key, { n: 3 }, read.version));
+          outcomes.push([key.kind, error._tag, (await run(store.read(key))).value]);
+        }
+        expect(outcomes).toEqual([
+          ["queue", "StoreConflict", { n: 2 }],
+          ["backlog", "StoreConflict", { n: 2 }],
+          ["policy", "StoreConflict", { n: 2 }],
+          ["ended", "StoreConflict", { n: 2 }],
+        ]);
       });
 
       test("writing null deletes, and the version from that write recreates it", async () => {
@@ -62,6 +85,24 @@ export const storeConformance = (name: string, make: () => Promise<ConformanceBa
         expect((await run(store.read(key))).value).toBe(null);
         await run(store.write(key, { name: "b" }, deleted));
         expect((await run(store.read(key))).value).toEqual({ name: "b" });
+      });
+    });
+
+    describe("batched reads", () => {
+      test("reads several documents at once, each as a single read reports it", async () => {
+        const { store } = await make();
+        const put = async (key: StateKey, value: unknown) =>
+          run(store.write(key, value, (await run(store.read(key))).version));
+        await put(keys.backlog("app"), { domain: "app" });
+        await put(keys.ended("s-1"), { session: "s-1" });
+        const wanted = [keys.backlog("app"), keys.ended("s-2"), keys.ended("s-1")];
+        const single = await Promise.all(wanted.map((key) => run(store.read(key))));
+        expect(await run(store.readMany(wanted))).toEqual(single);
+        expect(single.map((stored) => stored.value)).toEqual([
+          { domain: "app" },
+          null,
+          { session: "s-1" },
+        ]);
       });
     });
 
@@ -170,6 +211,30 @@ export const storeConformance = (name: string, make: () => Promise<ConformanceBa
           ),
         );
         expect((await run(store.read(key))).value).toEqual({ entries: ["i1", "i2"] });
+      });
+    });
+
+    describe.if(capabilities.offline)("offline refusal", () => {
+      test("reads, writes, listing and commands fail naming the unreachable home", async () => {
+        const { store, offline } = await make();
+        if (offline === undefined) throw new Error("the backend has no home to cut off");
+        const key = keys.backlog("app");
+        const before = await run(store.read(key));
+        offline.cut();
+        const errors = [
+          await fail(store.read(key)),
+          await fail(store.write(key, { domain: "app" }, before.version)),
+          await fail(store.list("backlog")),
+          await fail(store.readMany([key])),
+          await fail(
+            runCommand(store, key, () =>
+              Effect.succeed({ write: true as const, next: { n: 1 }, value: undefined }),
+            ),
+          ),
+        ];
+        expect(
+          errors.map((error) => [error._tag, "home" in error ? error.home : undefined]),
+        ).toEqual(Array.from({ length: 5 }, () => ["StoreOffline", offline.home]));
       });
     });
   });

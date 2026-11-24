@@ -1,4 +1,4 @@
-import { Effect, Schema } from "effect";
+import { Effect, Option, Schema } from "effect";
 import { Refused } from "./fleet.ts";
 
 /**
@@ -72,6 +72,40 @@ export class BacklogError extends Schema.TaggedError<BacklogError>()("BacklogErr
 }) {}
 
 /**
+ * The home that holds the shared documents cannot be reached (herdr-doc backend). Every read and
+ * write refuses rather than act on a stale copy or queue a write; the CLI exits 2 naming the home.
+ */
+export class StoreOffline extends Schema.TaggedError<StoreOffline>()("StoreOffline", {
+  home: Schema.String,
+  message: Schema.String,
+}) {}
+
+/**
+ * Whether a failure is an unreachable home.
+ * @param error Any failure.
+ * @returns True for `StoreOffline`.
+ */
+export const isOffline = (error: unknown): error is StoreOffline => error instanceof StoreOffline;
+
+/**
+ * Pass an expected read failure through as none, but never an unreachable home: a caller that
+ * treats a missing or unreadable document as absent must still refuse when it cannot know.
+ * @param effect A read.
+ * @returns Its value as an option; `StoreOffline` still fails.
+ */
+export const optionUnlessOffline = <A, E, R>(
+  effect: Effect.Effect<A, E, R>,
+): Effect.Effect<Option.Option<A>, Extract<E, StoreOffline>, R> =>
+  effect.pipe(
+    Effect.map(Option.some),
+    Effect.catch((error) =>
+      isOffline(error)
+        ? Effect.fail(error as Extract<E, StoreOffline>)
+        : Effect.succeed(Option.none<A>()),
+    ),
+  );
+
+/**
  * A capacity claim is held by another live retry, or could not be taken.
  */
 export class ClaimBusy extends Schema.TaggedError<ClaimBusy>()("ClaimBusy", {
@@ -88,12 +122,12 @@ export type StoreClaim = { readonly location: string; readonly token: string };
  * needs for the keys it was given.
  */
 export type StoreSession = {
-  read: (key: StateKey) => Effect.Effect<Stored, StoreUnreadable>;
+  read: (key: StateKey) => Effect.Effect<Stored, StoreUnreadable | StoreOffline>;
   write: (
     key: StateKey,
     value: unknown,
     expected: Version,
-  ) => Effect.Effect<Version, StoreConflict | BacklogError>;
+  ) => Effect.Effect<Version, StoreConflict | BacklogError | StoreOffline>;
 };
 
 /**
@@ -101,23 +135,34 @@ export type StoreSession = {
  * queues and their claims, ended records, session state and the wiki lint clock. Archives and
  * per-machine watcher snapshots and pids are not documents and stay outside it.
  *
- * Extension points for later backends: offline refusal (an unreachable home) joins the error
- * channels of `read`, `write` and `list`; coordinator leases are fields of the backlog document
- * written with `runCommand`.
+ * A backend with a home (herdr-doc) fails with `StoreOffline` when the home is unreachable.
+ * Coordinator leases are fields of the backlog document written with `runCommand`.
  */
 export type StateStore = {
   /**
    * Which backend this is.
    */
-  readonly backend: "files";
+  readonly backend: "files" | "herdr-doc";
   /**
    * A human-readable location for messages: the file path, or the document's address.
    */
   location: (key: StateKey) => string;
   /**
+   * Why this backend cannot hold a document at all (herdr-doc: its name would pass Herdr's
+   * limit), or undefined. Commands that create a document refuse with it.
+   */
+  refusal: (key: StateKey) => string | undefined;
+  /**
    * Read a document with its version.
    */
-  read: (key: StateKey) => Effect.Effect<Stored, StoreUnreadable>;
+  read: (key: StateKey) => Effect.Effect<Stored, StoreUnreadable | StoreOffline>;
+  /**
+   * Read several documents at once (herdr-doc: one round trip). Each entry is what `read` would
+   * give for that key, or its `StoreUnreadable`; an unreachable home fails the whole read.
+   */
+  readMany: (
+    keys: readonly StateKey[],
+  ) => Effect.Effect<Array<Stored | StoreUnreadable>, StoreOffline>;
   /**
    * Write a document only when its version is still `expected`; null deletes it. Fails with
    * `StoreConflict` when the document changed since that version.
@@ -126,12 +171,25 @@ export type StateStore = {
     key: StateKey,
     value: unknown,
     expected: Version,
-  ) => Effect.Effect<Version, StoreConflict | BacklogError>;
+  ) => Effect.Effect<Version, StoreConflict | BacklogError | StoreOffline>;
   /**
    * The names of every present document of a kind (domains, or ended sessions), in the
    * backend's stable order.
    */
-  list: (kind: ListedKind) => Effect.Effect<readonly string[], StoreUnreadable>;
+  list: (kind: ListedKind) => Effect.Effect<readonly string[], StoreUnreadable | StoreOffline>;
+  /**
+   * Append lines to a domain's archive of closed records. Archives are append-only files that
+   * outgrow any document, so they stay files on the machine that holds the state (herdr-doc: the
+   * home).
+   */
+  appendArchive: (
+    domain: string,
+    lines: readonly string[],
+  ) => Effect.Effect<void, BacklogError | StoreOffline>;
+  /**
+   * Whether the archives are files on this machine (files: always; herdr-doc: on the home only).
+   */
+  archivesHere: Effect.Effect<boolean, StoreOffline>;
   /**
    * Run `use` with exclusive access to `keys` where the backend needs it (files: today's lock
    * directories, taken in name order; a version-checked backend runs it as is). Writes inside go
@@ -144,7 +202,7 @@ export type StateStore = {
   /**
    * Claim one queued capacity slot for a retry, refusing while another live retry holds it.
    */
-  claim: (domain: string, item: string) => Effect.Effect<StoreClaim, ClaimBusy>;
+  claim: (domain: string, item: string) => Effect.Effect<StoreClaim, ClaimBusy | StoreOffline>;
   /**
    * Release a claim; one replaced or removed meanwhile is left to its new owner.
    */
@@ -180,7 +238,7 @@ export const runCommand = <A, E, R>(
   key: StateKey,
   command: (current: Stored) => Effect.Effect<CommandStep<A>, E, R>,
   options: { also?: readonly StateKey[]; replaceUnreadable?: boolean } = {},
-): Effect.Effect<A, E | Refused | StoreUnreadable | BacklogError, R> =>
+): Effect.Effect<A, E | Refused | StoreUnreadable | BacklogError | StoreOffline, R> =>
   store.exclusive([key, ...(options.also ?? [])], (session) => {
     const read = options.replaceUnreadable
       ? session
@@ -195,7 +253,7 @@ export const runCommand = <A, E, R>(
       : session.read(key);
     const attempt = (
       left: number,
-    ): Effect.Effect<A, E | Refused | StoreUnreadable | BacklogError, R> =>
+    ): Effect.Effect<A, E | Refused | StoreUnreadable | BacklogError | StoreOffline, R> =>
       Effect.gen(function* () {
         const current = yield* read;
         const step = yield* command(current);

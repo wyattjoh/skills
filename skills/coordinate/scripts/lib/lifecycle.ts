@@ -16,7 +16,7 @@ import {
   documentExists,
 } from "./backlog-doc.ts";
 import { stateStore } from "./state.ts";
-import { keys } from "./state-store.ts";
+import { keys, optionUnlessOffline } from "./state-store.ts";
 import { filedUnder, idleDelegated, updateItem, type ItemUpdate } from "./backlog-store/ops.ts";
 import type { ItemStatus } from "./backlog-store/schema.ts";
 import { absolutePath, type Config } from "./config.ts";
@@ -1121,7 +1121,7 @@ export const endDelegate = Effect.fn("endDelegate")(function* (
       message: `${target} carries no ${L.session}/${L.domain} label, so it could not be resumed; end it with hc kill if the user agrees`,
     });
   // Before anything ends: find the item left with no live delegate, and refuse a status it cannot take.
-  const read = yield* readDocument(config, domain).pipe(Effect.option);
+  const read = yield* readDocument(config, domain).pipe(optionUnlessOffline);
   const filed = Option.isSome(read) ? filedUnder(read.value.backlog, session) : undefined;
   let orphan: string | undefined;
   if (Option.isSome(read) && filed?.status === "delegated") {

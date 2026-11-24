@@ -4,7 +4,7 @@ import { isAbsolute, join, relative } from "node:path";
 import { Effect, Option, Schema } from "effect";
 import { listDomains, readDocument } from "./backlog-doc.ts";
 import { stateStore } from "./state.ts";
-import { BacklogError, keys, runCommand } from "./state-store.ts";
+import { BacklogError, keys, optionUnlessOffline, runCommand } from "./state-store.ts";
 import type { Backlog } from "./backlog-store/schema.ts";
 import { expandHome, type Config } from "./config.ts";
 import { Refused } from "./fleet.ts";
@@ -642,7 +642,7 @@ const coverBoundaries = Effect.fn("coverBoundaries")(function* (
   const domains = yield* listDomains(config);
   const others: string[] = [];
   for (const domain of domains) {
-    const read = yield* readDocument(config, domain).pipe(Effect.option);
+    const read = yield* readDocument(config, domain).pipe(optionUnlessOffline);
     if (Option.isSome(read))
       others.push(...read.value.backlog.boundary.owned, ...read.value.backlog.boundary.adjacent);
   }

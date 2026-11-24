@@ -11,6 +11,7 @@ import {
   runCommand,
   type StateStore,
   type StoreUnreadable,
+  type StoreOffline,
 } from "./state-store.ts";
 
 /**
@@ -63,7 +64,7 @@ const changeQueue = <A>(
   config: Config,
   domain: string,
   step: (queue: CapacityQueue) => { next: CapacityQueue | undefined; value: A },
-): Effect.Effect<A, BacklogError | Refused> => {
+): Effect.Effect<A, BacklogError | Refused | StoreOffline> => {
   const key = keys.queue(domain);
   const path = store(config).location(key);
   return runCommand(store(config), key, (current) =>
@@ -136,7 +137,9 @@ export const readCapacityQueue = Effect.fn("readCapacityQueue")(function* (
 ) {
   yield* checkDomainName(domain);
   const key = keys.queue(domain);
-  const stored = yield* store(config).read(key).pipe(Effect.mapError(unreadable));
+  const stored = yield* store(config)
+    .read(key)
+    .pipe(Effect.catchTag("StoreUnreadable", (error) => Effect.fail(unreadable(error))));
   return yield* decodeQueue(store(config).location(key), stored.value);
 });
 

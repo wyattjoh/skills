@@ -1,10 +1,20 @@
 import { createHash, randomUUID } from "node:crypto";
-import { mkdir, open, readdir, readFile, rename, rm, rmdir, unlink } from "node:fs/promises";
+import {
+  appendFile,
+  mkdir,
+  open,
+  readdir,
+  readFile,
+  rename,
+  rm,
+  rmdir,
+  unlink,
+} from "node:fs/promises";
 import { hostname } from "node:os";
 import { dirname, join } from "node:path";
 import { setTimeout as sleep } from "node:timers/promises";
 import { Effect } from "effect";
-import { backlogsDir, documentPath } from "./backlog-store/paths.ts";
+import { archivePath, backlogsDir, documentPath } from "./backlog-store/paths.ts";
 import {
   BacklogError,
   ClaimBusy,
@@ -299,6 +309,32 @@ export const writeFileAtomic = (path: string, text: string): Effect.Effect<void,
   });
 
 /**
+ * Append lines to a local archive file and fsync it. Runs before the document is committed, so a
+ * crash between the two repeats a line rather than losing a record.
+ * @param path Archive file.
+ * @param lines Lines, without newlines.
+ */
+export const appendArchiveFile = (
+  path: string,
+  lines: readonly string[],
+): Effect.Effect<void, BacklogError> =>
+  lines.length === 0
+    ? Effect.void
+    : Effect.tryPromise({
+        try: async () => {
+          await mkdir(dirname(path), { recursive: true });
+          await appendFile(path, lines.map((line) => `${line}\n`).join(""), { mode: 0o600 });
+          const file = await open(path, "r");
+          try {
+            await file.sync();
+          } finally {
+            await file.close();
+          }
+        },
+        catch: failure(path),
+      });
+
+/**
  * Today's state files as a store: one JSON file per document under the state directory, written
  * with a temp file, fsync and rename, under the backlog lock directories the documents have always
  * used. A version is a hash of the file's bytes, so it detects any change between a read and a
@@ -402,8 +438,15 @@ export const filesStore = (stateDir: string): StateStore => {
   return {
     backend: "files",
     location,
+    refusal: () => undefined,
     read,
+    readMany: (wanted) =>
+      Effect.forEach(wanted, (key) =>
+        read(key).pipe(Effect.catchTag("StoreUnreadable", (error) => Effect.succeed(error))),
+      ),
     write,
+    appendArchive: (domain, lines) => appendArchiveFile(archivePath(stateDir, domain), lines),
+    archivesHere: Effect.succeed(true),
     list: (kind) =>
       Effect.promise(async () =>
         (await readdir(listedDir(stateDir, kind)).catch((): string[] => []))

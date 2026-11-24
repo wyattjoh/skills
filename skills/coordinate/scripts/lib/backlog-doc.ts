@@ -1,5 +1,4 @@
 import { existsSync } from "node:fs";
-import { appendFile, open } from "node:fs/promises";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import { Effect, Option } from "effect";
@@ -36,7 +35,7 @@ import {
   unfileDelegate,
   updateItem,
 } from "./backlog-store/ops.ts";
-import { backlogsDir } from "./backlog-store/paths.ts";
+import { archivePath } from "./backlog-store/paths.ts";
 import { policyCitation, renderBacklog } from "./backlog-store/render.ts";
 import {
   type Backlog,
@@ -59,9 +58,11 @@ import { stateStore } from "./state.ts";
 import {
   BacklogError,
   keys,
+  optionUnlessOffline,
   runCommand,
   type CommandStep,
   type StateStore,
+  type StoreOffline,
   type StoreUnreadable,
 } from "./state-store.ts";
 
@@ -85,31 +86,7 @@ const decode = (path: string, value: unknown): Effect.Effect<Backlog, BacklogErr
       );
 };
 
-/**
- * The domain's append-only archive of closed records, one JSON record per line.
- * @param stateDir State dir.
- * @param domain Domain.
- * @returns Path.
- */
-export const archivePath = (stateDir: string, domain: string): string =>
-  join(backlogsDir(stateDir), `${domain}.archive.jsonl`);
-
-/**
- * Append records to the archive and fsync it. Runs before the document is committed, so a crash
- * between the two repeats a line rather than losing a record.
- */
-const appendArchive = async (path: string, records: unknown[]): Promise<void> => {
-  if (records.length === 0) return;
-  await appendFile(path, records.map((record) => `${JSON.stringify(record)}\n`).join(""), {
-    mode: 0o600,
-  });
-  const file = await open(path, "r");
-  try {
-    await file.sync();
-  } finally {
-    await file.close();
-  }
-};
+export { archivePath };
 
 const missing = (location: string, domain: string) =>
   new Refused({
@@ -122,11 +99,16 @@ const missing = (location: string, domain: string) =>
 const command = <A>(
   config: Config,
   domain: string,
-  step: (current: unknown, path: string) => Effect.Effect<CommandStep<A>, BacklogError | Refused>,
-): Effect.Effect<A, BacklogError | Refused> => {
+  step: (
+    current: unknown,
+    path: string,
+  ) => Effect.Effect<CommandStep<A>, BacklogError | Refused | StoreOffline>,
+): Effect.Effect<A, BacklogError | Refused | StoreOffline> => {
   const store = storeOf(config);
   const key = keys.backlog(domain);
   const path = store.location(key);
+  const refusal = store.refusal(key);
+  if (refusal !== undefined) return Effect.fail(new Refused({ message: refusal }));
   return runCommand(store, key, (current) => step(current.value, path)).pipe(
     Effect.mapError((error) => (error._tag === "StoreUnreadable" ? unreadable(error) : error)),
   );
@@ -143,7 +125,10 @@ type Outcome<A> = { ok: false; reason: string } | { ok: true; value: A };
  * @param domain Domain.
  * @returns True when present.
  */
-export const documentExists = (config: Config, domain: string): Effect.Effect<boolean> =>
+export const documentExists = (
+  config: Config,
+  domain: string,
+): Effect.Effect<boolean, StoreOffline> =>
   storeOf(config)
     .read(keys.backlog(domain))
     .pipe(
@@ -156,7 +141,7 @@ export const documentExists = (config: Config, domain: string): Effect.Effect<bo
  * @param config Config.
  * @returns Domain names.
  */
-export const listDomains = (config: Config): Effect.Effect<string[]> =>
+export const listDomains = (config: Config): Effect.Effect<string[], StoreOffline> =>
   storeOf(config)
     .list("backlog")
     .pipe(
@@ -276,7 +261,9 @@ export const readDocument = Effect.fn("readDocument")(function* (config: Config,
   const store = storeOf(config);
   const key = keys.backlog(domain);
   const path = store.location(key);
-  const stored = yield* store.read(key).pipe(Effect.mapError(unreadable));
+  const stored = yield* store
+    .read(key)
+    .pipe(Effect.catchTag("StoreUnreadable", (error) => Effect.fail(unreadable(error))));
   if (stored.value === null) return yield* missing(path, domain);
   const backlog = yield* decode(path, stored.value);
   return { path, backlog };
@@ -309,14 +296,10 @@ const change = <A>(config: Config, domain: string, operation: (backlog: Backlog)
           };
         const kept = retain(checked.backlog, RETAINED_CLOSED);
         // Before the write, so a crash between the two repeats a line rather than losing one.
-        yield* Effect.tryPromise({
-          try: () => appendArchive(archivePath(config.stateDir, domain), kept.archived),
-          catch: (cause) =>
-            new BacklogError({
-              path,
-              message: cause instanceof Error ? cause.message : String(cause),
-            }),
-        });
+        yield* storeOf(config).appendArchive(
+          domain,
+          kept.archived.map((record) => JSON.stringify(record)),
+        );
         return {
           write: true as const,
           next: kept.backlog,
@@ -1076,7 +1059,7 @@ export const releaseDelegate = Effect.fn("releaseDelegate")(function* (
  * @returns Session ids.
  */
 export const refSessions = Effect.fn("refSessions")(function* (config: Config, domain: string) {
-  const read = yield* readDocument(config, domain).pipe(Effect.option);
+  const read = yield* readDocument(config, domain).pipe(optionUnlessOffline);
   if (Option.isNone(read)) return new Set<string>();
   return new Set(
     read.value.backlog.items.flatMap((item) => item.delegates.map((ref) => ref.session)),

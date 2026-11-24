@@ -10,6 +10,7 @@ import { endedRecordMachines, remoteMachineOf } from "./delegate-capacity.ts";
 import { currentBranch, defaultBases, mainCheckout } from "./git.ts";
 import { requireBacklog } from "./lifecycle.ts";
 import { readSession, type SessionState } from "./sessions.ts";
+import { optionUnlessOffline } from "./state-store.ts";
 import { branchState, type RepoPrs, repoPullRequests } from "./prs.ts";
 import { watcherInfo, watcherInfoLine, type WatcherInfo } from "./watch-terminal.ts";
 
@@ -318,7 +319,7 @@ export const domainStatus = Effect.fn("domainStatus")(function* (
     );
   }
   const live = new Set(delegates.map((delegate) => delegate.session));
-  const document = yield* readDocument(config, domain).pipe(Effect.option);
+  const document = yield* readDocument(config, domain).pipe(optionUnlessOffline);
   if (Option.isSome(document)) {
     for (const item of idleDelegated(document.value.backlog, live))
       lines.push(

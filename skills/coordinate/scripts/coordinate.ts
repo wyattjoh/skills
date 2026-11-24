@@ -32,6 +32,8 @@ import {
   type ItemStatus,
 } from "./lib/backlog-store/schema.ts";
 import { absolutePath, loadConfig, MissingFolder, type Config } from "./lib/config.ts";
+import { useStateBackend } from "./lib/state.ts";
+import { StoreConflict } from "./lib/state-store.ts";
 import {
   DELEGATE_HARNESSES,
   resetHarnessPolicy,
@@ -132,6 +134,7 @@ const main = async <E extends { message: string }>(
 ): Promise<void> => {
   const exit = await Effect.runPromiseExit(
     loadConfig().pipe(
+      Effect.tap((config) => Effect.sync(() => useStateBackend(config))),
       Effect.flatMap((config) =>
         build(config).pipe(
           Effect.ensuring(
@@ -153,6 +156,14 @@ const main = async <E extends { message: string }>(
   const failure = reportedFailure(exit.cause) as { message: string } | undefined;
   if (failure instanceof Refused) {
     console.error(`refused: ${failure.message}`);
+    process.exit(1);
+  }
+  // A write that lost a race outside the three-attempt retry (rename, policy-with-domains) is a
+  // refusal to run again, like one inside it.
+  if (failure instanceof StoreConflict) {
+    console.error(
+      `refused: ${failure.location} changed while the command ran; run the command again`,
+    );
     process.exit(1);
   }
   console.error(
