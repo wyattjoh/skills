@@ -28,6 +28,8 @@ import {
   remoteMachineOf,
 } from "./delegate-capacity.ts";
 import { resolveEffectiveHarnessPolicy } from "./harness-policy.ts";
+import { stateStore } from "./state.ts";
+import { isOffline, keys, optionUnlessOffline, type StoreOffline } from "./state-store.ts";
 import { outboxPath } from "./remote-launch.ts";
 import { lastLint, LINT_INTERVAL_DAYS, settledWikiPages, wikiCreated } from "./wiki.ts";
 import { markSettled, readSession, retroDue, type RetroMarker } from "./sessions.ts";
@@ -975,7 +977,8 @@ export const drainOutboxes = Effect.fn("drainOutboxes")(function* (
         now: at,
       }).pipe(Effect.result);
       if (Result.isSuccess(added)) continue;
-      if (added.failure._tag === "BacklogError") {
+      // An unreachable home is retried next tick like an unwritable backlog, never skipped.
+      if (added.failure._tag === "BacklogError" || added.failure._tag === "StoreOffline") {
         stopped = index;
         break;
       }
@@ -1067,6 +1070,10 @@ export type WatchOptions = {
   today: () => string;
   now?: () => number;
   /**
+   * Wait between ticks (tests inject it); defaults to `Effect.sleep`.
+   */
+  sleep?: (ms: number) => Effect.Effect<void>;
+  /**
    * Keep polling and emit every event batch until stopped or the owner is gone.
    */
   follow: boolean;
@@ -1119,7 +1126,9 @@ export const watch = Effect.fn("watch")(function* (config: Config, options: Watc
       message: `a watcher for ${options.domain} already runs (pid ${lock.holder ?? "?"}); pass --replace to take over`,
     });
   const release = releaseLock(config.stateDir, options.domain, pid);
+  let unfollow = () => {};
   const onSignal = () => {
+    unfollow();
     releaseLockSync(config.stateDir, options.domain, pid);
     console.log("stopped");
     process.exit(0);
@@ -1135,8 +1144,46 @@ export const watch = Effect.fn("watch")(function* (config: Config, options: Watc
       state = { ...state, ...state.staged, staged: undefined };
       yield* writeState(path, state);
     }
-    let repos = yield* domainRepos(config, options.domain);
+    // The home being unreachable at start is a blind tick to count, not a reason to stop.
+    let repos = yield* domainRepos(config, options.domain).pipe(
+      Effect.catch((error) => (isOffline(error) ? Effect.succeed([]) : Effect.fail(error))),
+    );
     const clock = options.now ?? Date.now;
+    const sleep = options.sleep ?? ((ms: number) => Effect.sleep(ms));
+    // On the home (herdr-doc), a change to a shared document this watcher reads ends the wait
+    // between ticks early. Every tick still reads them, so polling alone sees the same changes.
+    let changed = false;
+    let wake: (() => void) | undefined;
+    const followed = yield* (
+      stateStore(config.stateDir).follow?.(
+        [keys.backlog(options.domain), keys.policy(), keys.queue(options.domain)],
+        () => {
+          changed = true;
+          wake?.();
+        },
+      ) ?? Effect.succeed(undefined)
+    );
+    unfollow = () => followed?.close();
+    const pause = (ms: number) =>
+      Effect.suspend(() =>
+        changed
+          ? Effect.void
+          : Effect.race(
+              sleep(ms),
+              Effect.callback<void>((resume) => {
+                wake = () => resume(Effect.void);
+                // A change may land while the wait is starting.
+                if (changed) wake();
+              }),
+            ),
+      ).pipe(
+        Effect.ensuring(
+          Effect.sync(() => {
+            wake = undefined;
+            changed = false;
+          }),
+        ),
+      );
     const started = clock();
     let lastForge = Number.NEGATIVE_INFINITY;
     let lastTick: number | undefined;
@@ -1145,6 +1192,20 @@ export const watch = Effect.fn("watch")(function* (config: Config, options: Watc
     const log: WatchLogEntry[] = [];
     let failures = 0;
     let failureMessage = "";
+    // Consecutive ticks whose shared-state reads found the home unreachable (herdr-doc backend).
+    let homeFailures = 0;
+    let homeMessage = "";
+    let homeDown: StoreOffline | undefined;
+    // A read of shared state that gives `fallback` and marks this tick blind when the home is
+    // unreachable; any other failure is the read's own.
+    const homeRead = <A, E, R>(effect: Effect.Effect<A, E, R>, fallback: A) =>
+      effect.pipe(
+        Effect.catch((error) => {
+          if (!isOffline(error)) return Effect.fail(error as Exclude<E, StoreOffline>);
+          homeDown = error;
+          return Effect.succeed(fallback);
+        }),
+      );
     let first = saved === undefined;
     // A wiki's creation date never changes, so it is read from git once, after the wiki exists.
     let wikiStart: string | undefined;
@@ -1220,6 +1281,7 @@ export const watch = Effect.fn("watch")(function* (config: Config, options: Watc
       });
 
     for (;;) {
+      homeDown = undefined;
       const snapshot: WatchSnapshot = {
         delegates: state.delegates,
         prs: state.prs,
@@ -1245,6 +1307,7 @@ export const watch = Effect.fn("watch")(function* (config: Config, options: Watc
       const policy = yield* resolveEffectiveHarnessPolicy(config, options.domain).pipe(
         Effect.result,
       );
+      if (Result.isFailure(policy) && isOffline(policy.failure)) homeDown = policy.failure;
       const policySignature = Result.isSuccess(policy)
         ? JSON.stringify({
             enabled: policy.success.selection.enabled,
@@ -1255,7 +1318,11 @@ export const watch = Effect.fn("watch")(function* (config: Config, options: Watc
             ...(policy.success.reenabled.length > 0 ? { reenabled: policy.success.reenabled } : {}),
           })
         : `error:${policy.failure.message}`;
-      if (snapshot.harnessPolicy !== undefined && snapshot.harnessPolicy !== policySignature) {
+      if (
+        homeDown === undefined &&
+        snapshot.harnessPolicy !== undefined &&
+        snapshot.harnessPolicy !== policySignature
+      ) {
         if (Result.isSuccess(policy)) {
           const enabled = policy.success.selection.enabled.join(", ") || "none";
           lines.push(
@@ -1276,8 +1343,11 @@ export const watch = Effect.fn("watch")(function* (config: Config, options: Watc
           );
         }
       }
-      snapshot.harnessPolicy = policySignature;
-      const latestRepos = yield* domainRepos(config, options.domain);
+      if (homeDown === undefined) snapshot.harnessPolicy = policySignature;
+      const latestRepos =
+        homeDown === undefined
+          ? yield* homeRead(domainRepos(config, options.domain), repos)
+          : repos;
       const reposChanged =
         repos.length !== latestRepos.length ||
         repos.some((repo, index) => repo !== latestRepos[index]);
@@ -1372,8 +1442,15 @@ export const watch = Effect.fn("watch")(function* (config: Config, options: Watc
         snapshot.prs = prs.snapshot;
       }
       // The local backlog is read every tick, so an answer wakes within one interval, not forge cadence.
-      const document = yield* readDocument(config, options.domain).pipe(Effect.option);
-      if (Result.isSuccess(polled)) {
+      const document =
+        homeDown === undefined
+          ? yield* homeRead(
+              optionUnlessOffline(readDocument(config, options.domain)),
+              Option.none(),
+            )
+          : Option.none();
+      // With the home unreachable, reminders wait: the backlog that would suppress them is unread.
+      if (Result.isSuccess(polled) && homeDown === undefined) {
         const details: Record<string, { session: string; statusMs: number | undefined }> = {};
         // A delegate on a machine that is down is neither asked about nor reminded of; its
         // reminder waits for the machine to reconnect.
@@ -1437,8 +1514,15 @@ export const watch = Effect.fn("watch")(function* (config: Config, options: Watc
       );
       lines.push(...lint.events);
       snapshot.lintDue = lint.fired;
-      const readQueue = yield* readCapacityQueue(config, options.domain).pipe(Effect.result);
-      if (Result.isFailure(readQueue)) {
+      const readQueue =
+        homeDown === undefined
+          ? yield* readCapacityQueue(config, options.domain).pipe(Effect.result)
+          : undefined;
+      if (readQueue !== undefined && Result.isFailure(readQueue) && isOffline(readQueue.failure))
+        homeDown = readQueue.failure;
+      if (readQueue === undefined || homeDown !== undefined) {
+        // The queue lives on the home: capacity is checked once it answers again.
+      } else if (Result.isFailure(readQueue)) {
         lines.push(
           watchEvent("capacity-unavailable", {}, "capacity was not checked", {
             error: readQueue.failure.message,
@@ -1452,7 +1536,10 @@ export const watch = Effect.fn("watch")(function* (config: Config, options: Watc
               .filter((item) => !CLOSED.has(item.status))
               .map((item) => item.id),
           );
-          const removed = yield* pruneCapacityWaits(config, options.domain, keep);
+          const removed = yield* homeRead(
+            pruneCapacityWaits(config, options.domain, keep),
+            [] as readonly CapacityWait[],
+          );
           lines.push(
             ...removed.map((entry) =>
               watchEvent(
@@ -1463,7 +1550,10 @@ export const watch = Effect.fn("watch")(function* (config: Config, options: Watc
             ),
           );
           if (removed.length > 0)
-            waits = (yield* readCapacityQueue(config, options.domain)).entries;
+            waits = yield* homeRead(
+              readCapacityQueue(config, options.domain).pipe(Effect.map((queue) => queue.entries)),
+              waits,
+            );
           const eligibleItems = new Set(
             document.value.backlog.items
               .filter((item) => capacityItemEligible(item.status))
@@ -1527,6 +1617,8 @@ export const watch = Effect.fn("watch")(function* (config: Config, options: Watc
         }
       }
       first = false;
+      homeFailures = homeDown === undefined ? 0 : homeFailures + 1;
+      homeMessage = homeDown?.message ?? "";
 
       const owner = yield* ownerState();
       const ownerGone = owner === "gone";
@@ -1579,7 +1671,7 @@ export const watch = Effect.fn("watch")(function* (config: Config, options: Watc
         lastDelivery = `error: owner status unavailable; retry in ${Math.ceil(retryMs / 1000)}s`;
         for (const event of state.outbox) appendLog(event, lastDelivery, lastTick);
         renderView(items);
-        yield* Effect.sleep(retryMs);
+        yield* sleep(retryMs);
         continue;
       }
       const pendingEvents = [...state.outbox];
@@ -1605,8 +1697,11 @@ export const watch = Effect.fn("watch")(function* (config: Config, options: Watc
       if (ownerGone) return options.follow ? [] : [ownerNotice ?? "owner gone"];
       if (!options.follow && (pending || events.length > 0)) return [];
 
-      if (failures >= 3) {
-        const blind = `blind: herdr-core unreadable 3 times: ${failureMessage}; re-arm the watcher`;
+      if (failures >= 3 || homeFailures >= 3) {
+        const blind =
+          failures >= 3
+            ? `blind: herdr-core unreadable 3 times: ${failureMessage}; re-arm the watcher`
+            : `blind: state home ${homeDown?.home ?? "?"} unreachable 3 times: ${homeMessage}; re-arm the watcher`;
         if (!options.deliver) {
           if (options.follow) {
             yield* Effect.promise(async () => options.emit(blind));
@@ -1615,23 +1710,29 @@ export const watch = Effect.fn("watch")(function* (config: Config, options: Watc
           return [blind];
         }
         // Stay alive through Herdr restarts, backing off to at most one retry per minute.
-        yield* Effect.sleep(Math.min(options.intervalMs * 2 ** (failures - 1), MAX_RETRY_DELAY_MS));
+        yield* sleep(
+          Math.min(
+            options.intervalMs * 2 ** (Math.max(failures, homeFailures) - 1),
+            MAX_RETRY_DELAY_MS,
+          ),
+        );
         continue;
       }
       if (options.follow) {
-        yield* Effect.sleep(options.intervalMs);
+        yield* pause(options.intervalMs);
         continue;
       }
       if (clock() - started >= options.maxMs)
         return [`alive: no events in ${Math.round(options.maxMs / 60_000)}m; re-arm the watcher`];
       if (!delivery.sent && pending) return [];
-      yield* Effect.sleep(options.intervalMs);
+      yield* pause(options.intervalMs);
     }
   }).pipe(
     Effect.ensuring(
       Effect.gen(function* () {
         process.removeListener("SIGTERM", onSignal);
         process.removeListener("SIGINT", onSignal);
+        unfollow();
         yield* release;
       }),
     ),

@@ -2,7 +2,7 @@ import { homedir } from "node:os";
 import { relative } from "node:path";
 import { Effect } from "effect";
 import type { Config } from "./config.ts";
-import { hcConnectTransport } from "./herdr-docs.ts";
+import { hcConnectSubscriber, hcConnectTransport } from "./herdr-docs.ts";
 import { coreName, execOn, type HerdrError, readFileOn } from "./herdr.ts";
 import { Proc } from "./proc.ts";
 import { filesStore } from "./state-files.ts";
@@ -137,11 +137,26 @@ export const homeStore = (config: Config): StateStore | undefined =>
         home: config.stateHome,
         prefix: PRODUCTION_PREFIX,
         transport: hcConnectTransport,
+        subscribe: hcConnectSubscriber,
         self: coreName().pipe(Effect.provide(Proc.layer)),
         stateDir: config.stateDir,
         appendRemote: appendArchiveOn(config),
         readRemote: readArchiveOn(config),
       });
+
+/**
+ * Use `store` for a state directory's shared documents, as `useStateBackend` does for the
+ * configured backend. Tests register a herdr-doc store over fake cores this way.
+ * @param stateDir Coordinate state directory.
+ * @param store The store to use.
+ * @returns A function that removes the registration again.
+ */
+export const registerStateStore = (stateDir: string, store: StateStore): (() => void) => {
+  registered.set(stateDir, store);
+  return () => {
+    if (registered.get(stateDir) === store) registered.delete(stateDir);
+  };
+};
 
 /**
  * The store that holds a state directory's shared documents: the one `useStateBackend`

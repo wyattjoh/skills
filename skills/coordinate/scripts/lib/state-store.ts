@@ -195,6 +195,15 @@ export type StateStore = {
    */
   readArchive: (domain: string) => Effect.Effect<string | undefined, BacklogError | StoreOffline>;
   /**
+   * Call `onChange` whenever one of `keys` may have changed, without waiting for a poll, or give
+   * undefined when this backend cannot (files; herdr-doc with the home on another machine, since
+   * Herdr subscriptions reach only this core). Readers still poll; a notice only wakes them early.
+   */
+  follow?: (
+    keys: readonly StateKey[],
+    onChange: () => void,
+  ) => Effect.Effect<{ close: () => void } | undefined>;
+  /**
    * Run `use` with exclusive access to `keys` where the backend needs it (files: today's lock
    * directories, taken in name order; a version-checked backend runs it as is). Writes inside go
    * through the session `use` receives.

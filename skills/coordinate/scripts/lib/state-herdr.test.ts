@@ -3,8 +3,19 @@ import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { Effect } from "effect";
 import { tempDir } from "./fixture.ts";
-import { hcConnectTransport, type DocRequest, type DocTransport } from "./herdr-docs.ts";
-import { fakeDocCores, memoryDocTransport, type FakeDocCores } from "./herdr-docs-fake.ts";
+import {
+  hcConnectSubscriber,
+  hcConnectTransport,
+  subscriptionLine,
+  type DocRequest,
+  type DocTransport,
+} from "./herdr-docs.ts";
+import {
+  fakeDocCores,
+  memoryDocSubscriber,
+  memoryDocTransport,
+  type FakeDocCores,
+} from "./herdr-docs-fake.ts";
 import { storeConformance } from "./state-store-conformance.ts";
 import { CLAIM_TTL_MS, herdrStore } from "./state-herdr.ts";
 import { keys, type StateKey, type StateStore } from "./state-store.ts";
@@ -334,6 +345,60 @@ describe("herdr-doc store", () => {
   });
 });
 
+describe("herdr-doc follow", () => {
+  test("on the home, notices a write from another machine to a followed document only", async () => {
+    const cores = fakeDocCores("homebase", { strix: "up" });
+    const options = {
+      home: "homebase",
+      prefix: "ct.",
+      appendRemote: noRemote,
+      readRemote: noRemote,
+      stateDir: tempDir("coordinate-herdr-follow-"),
+    };
+    const home = herdrStore({
+      ...options,
+      transport: memoryDocTransport(cores),
+      subscribe: memoryDocSubscriber(cores),
+      self: Effect.succeed("homebase"),
+    });
+    const away = herdrStore({
+      ...options,
+      transport: memoryDocTransport({ ...cores, self: "strix", machines: { homebase: "up" } }),
+      subscribe: memoryDocSubscriber({ ...cores, self: "strix", machines: { homebase: "up" } }),
+      self: Effect.succeed("strix"),
+    });
+    let notices = 0;
+    const followed = await run(
+      home.follow?.([keys.backlog("app"), keys.session("s-1")], () => {
+        notices += 1;
+      }) ?? Effect.succeed(undefined),
+    );
+    await put(away, keys.backlog("app"), { domain: "app" });
+    await put(away, keys.backlog("web"), { domain: "web" });
+    await put(away, keys.policy(), { revision: 1 });
+    followed?.close();
+    await put(away, keys.backlog("app"), { domain: "app", again: true });
+    expect([
+      notices,
+      away.follow === undefined
+        ? "no follow"
+        : await run(away.follow([keys.backlog("app")], () => {})),
+    ]).toEqual([1, undefined]);
+  });
+
+  test("reads the subscribe reply, doc events and nothing else from a subscription line", () => {
+    expect(
+      [
+        '{"id":1,"jsonrpc":"2.0","result":{"channel":null,"seq":47417,"terminals":[]}}',
+        '{"id":1,"jsonrpc":"2.0","error":{"code":-32601,"data":{"kind":"unknown_method"},"message":"no"}}',
+        '{"jsonrpc":"2.0","method":"event","params":{"data":{"name":"cs.b.app","version":2},"seq":47419,"type":"doc"}}',
+        '{"jsonrpc":"2.0","method":"heartbeat","params":{"seq":47263}}',
+        "not json",
+      ].map(subscriptionLine),
+    ).toEqual([{ reply: true }, { reply: false }, { changed: "cs.b.app" }, undefined, undefined]);
+  });
+});
+
 // The opt-in run against this Mac's real core, under a short random prefix per run. Herdr cannot
 // remove a document, so teardown nulls every name the run wrote and leaves their tombstones.
 const realCore = process.env.COORDINATE_HERDR_DOCS === "1";
@@ -371,6 +436,21 @@ if (realCore) {
 describe.if(realCore)("herdr-doc real core", () => {
   test("uses a throwaway prefix, never the production one", () => {
     expect([prefix.startsWith("ct"), prefix.length, prefix === "cs."]).toEqual([true, 9, false]);
+  });
+
+  test("hears a document set on this core through its own subscription connection", async () => {
+    const heard: string[] = [];
+    const subscription = hcConnectSubscriber([`${prefix}f*`], (name) => heard.push(name));
+    try {
+      expect(await subscription.ready).toBe(true);
+      const name = `${prefix}fa`;
+      await run(recording([{ method: "doc.set", params: { name, value: { n: 1 }, version: 0 } }]));
+      // Herdr delivers doc events within tens of milliseconds; give it up to five seconds.
+      for (let waited = 0; heard.length === 0 && waited < 5_000; waited += 20) await Bun.sleep(20);
+      expect(heard).toEqual([name]);
+    } finally {
+      subscription.close();
+    }
   });
 });
 

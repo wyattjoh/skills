@@ -2,7 +2,13 @@ import { createHash, randomUUID } from "node:crypto";
 import { hostname } from "node:os";
 import { Effect } from "effect";
 import { archivePath } from "./backlog-store/paths.ts";
-import { docNameProblem, type DocReply, type DocRequest, type DocTransport } from "./herdr-docs.ts";
+import {
+  docNameProblem,
+  type DocReply,
+  type DocRequest,
+  type DocSubscriber,
+  type DocTransport,
+} from "./herdr-docs.ts";
 import { appendArchiveFile, filesStore, readArchiveFile } from "./state-files.ts";
 import {
   BacklogError,
@@ -84,6 +90,11 @@ export type HerdrStoreOptions = {
     home: string,
     domain: string,
   ) => Effect.Effect<string | undefined, BacklogError | StoreOffline>;
+  /**
+   * Subscribes to this core's document changes, used by `follow` when the home is this core.
+   * Without it, the store cannot notify and readers only poll.
+   */
+  subscribe?: DocSubscriber;
 };
 
 type Address = { name: string; field: string | undefined };
@@ -526,6 +537,24 @@ export const herdrStore = (options: HerdrStoreOptions): StateStore => {
 
   const session: StoreSession = { read, write };
 
+  // Herdr subscriptions reach only this core, so only a watcher on the home can be notified. A
+  // machine whose own name cannot be read polls.
+  const follow = (watched: readonly StateKey[], onChange: () => void) =>
+    Effect.gen(function* () {
+      const subscribe = options.subscribe;
+      if (subscribe === undefined) return undefined;
+      const on = yield* route.pipe(Effect.catch(() => Effect.succeed({ on: home })));
+      if (on.on !== undefined) return undefined;
+      const names = new Set(
+        watched.filter((key) => !isLocal(key)).map((key) => addressOf(key).name),
+      );
+      if (names.size === 0) return undefined;
+      const subscription = subscribe([`${prefix}*`], (name) => {
+        if (names.has(name)) onChange();
+      });
+      return { close: subscription.close };
+    });
+
   return {
     backend: "herdr-doc",
     location,
@@ -542,6 +571,7 @@ export const herdrStore = (options: HerdrStoreOptions): StateStore => {
           ? readArchiveFile(archivePath(stateDir, domain))
           : options.readRemote(home, domain),
       ),
+    follow,
     exclusive: (_keys, use) => use(session),
     claim,
     release,

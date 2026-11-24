@@ -5,6 +5,7 @@ import {
   docNameProblem,
   type DocReply,
   type DocRequest,
+  type DocSubscriber,
   type DocTransport,
 } from "./herdr-docs.ts";
 
@@ -43,6 +44,22 @@ export const fakeDocCores = (
 ): FakeDocCores => ({ self, docs: {}, machines: { ...machines }, contended: [] });
 
 const error = (kind: string, message: string): DocReply => ({ ok: false, kind, message });
+
+type Listener = { patterns: readonly string[]; onChange: (name: string) => void };
+
+// Subscribers per document set (shared by every view of the same cores) and core name. Kept
+// outside the cores so they stay plain JSON.
+const listeners = new WeakMap<FakeDocCores["docs"], Map<string, Set<Listener>>>();
+
+const matches = (patterns: readonly string[], name: string) =>
+  patterns.some((pattern) =>
+    pattern.endsWith("*") ? name.startsWith(pattern.slice(0, -1)) : pattern === name,
+  );
+
+const notify = (cores: FakeDocCores, core: string, name: string) => {
+  for (const listener of listeners.get(cores.docs)?.get(core) ?? [])
+    if (matches(listener.patterns, name)) listener.onChange(name);
+};
 
 /**
  * Answer one request the way herdr-core 0.1.22 does (as probed): a name rule of 1-32 characters,
@@ -85,6 +102,7 @@ export const answerDocRequest = (cores: FakeDocCores, request: DocRequest): DocR
     return error("invalid_params", "document exceeds 1 MiB of JSON");
   const version = current.version + 1;
   docs[name] = { value: structuredClone(request.params.value), version };
+  notify(cores, target, name);
   return { ok: true, result: { version } };
 };
 
@@ -97,6 +115,27 @@ export const memoryDocTransport =
   (cores: FakeDocCores): DocTransport =>
   (requests) =>
     Effect.sync(() => requests.map((request) => answerDocRequest(cores, request)));
+
+/**
+ * An in-memory subscriber on the fake core named `cores.self`: like herdr-core, it hears every set
+ * of a matching document on that core, whichever machine sent it, and nothing on other cores.
+ * @param cores Fake cores (any view sharing their documents).
+ * @returns The subscriber.
+ */
+export const memoryDocSubscriber =
+  (cores: FakeDocCores): DocSubscriber =>
+  (patterns, onChange) => {
+    let byCore = listeners.get(cores.docs);
+    if (byCore === undefined) {
+      byCore = new Map();
+      listeners.set(cores.docs, byCore);
+    }
+    const set = byCore.get(cores.self) ?? new Set<Listener>();
+    byCore.set(cores.self, set);
+    const listener: Listener = { patterns, onChange };
+    set.add(listener);
+    return { ready: Promise.resolve(true), close: () => set.delete(listener) };
+  };
 
 const lock = async (path: string): Promise<string> => {
   const dir = `${path}.lock`;

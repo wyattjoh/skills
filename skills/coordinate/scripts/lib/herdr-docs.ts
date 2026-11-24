@@ -129,3 +129,122 @@ export const hcConnectTransport: DocTransport = (requests) =>
     );
     return yield* parseDocReplies(out, requests.length);
   });
+
+/**
+ * A subscription to document changes on this core.
+ */
+export type DocSubscription = {
+  /**
+   * Resolves true once herdr-core accepted the subscription, false when it refused or the
+   * connection ended first.
+   */
+  ready: Promise<boolean>;
+  /**
+   * End the subscription.
+   */
+  close: () => void;
+};
+
+/**
+ * Subscribe to changes of documents on this core: `onChange` gets the name of each document set
+ * (or deleted) whose name matches a pattern (a trailing `*` matches a prefix). Herdr cannot
+ * subscribe to another machine's documents.
+ */
+export type DocSubscriber = (
+  patterns: readonly string[],
+  onChange: (name: string) => void,
+) => DocSubscription;
+
+const SubscriptionLine = Schema.Struct({
+  id: Schema.optionalKey(Schema.Number),
+  method: Schema.optionalKey(Schema.String),
+  result: Schema.optionalKey(Schema.Unknown),
+  error: Schema.optionalKey(Schema.Unknown),
+  params: Schema.optionalKey(
+    Schema.Struct({
+      type: Schema.optionalKey(Schema.String),
+      data: Schema.optionalKey(Schema.Struct({ name: Schema.optionalKey(Schema.String) })),
+    }),
+  ),
+});
+
+/**
+ * Parse one line of a subscription connection.
+ * @param line A JSON-RPC line from `hc connect`.
+ * @returns The subscribe reply (accepted or refused), a changed document's name, or nothing for
+ *   heartbeats and lines it cannot read.
+ */
+export const subscriptionLine = (
+  line: string,
+): { reply: boolean } | { changed: string } | undefined => {
+  try {
+    const parsed = Schema.decodeUnknownSync(SubscriptionLine)(JSON.parse(line));
+    if (parsed.id === 1) return { reply: parsed.error === undefined };
+    const name = parsed.params?.data?.name;
+    if (parsed.method === "event" && parsed.params?.type === "doc" && name !== undefined)
+      return { changed: name };
+    return undefined;
+  } catch {
+    return undefined;
+  }
+};
+
+/**
+ * The real subscriber: its own long-lived `hc connect` process (a subscribed connection carries
+ * only notifications), sending `events.subscribe` with the patterns and reading doc events until
+ * closed. A refusal or an ended connection only stops the notices; nothing is retried.
+ * @param patterns Document names or prefixes ending in `*`.
+ * @param onChange Called with each changed document's name.
+ * @returns The subscription.
+ */
+export const hcConnectSubscriber: DocSubscriber = (patterns, onChange) => {
+  let settle: (accepted: boolean) => void = () => {};
+  const ready = new Promise<boolean>((resolve) => {
+    settle = resolve;
+  });
+  let child: ReturnType<typeof Bun.spawn> | undefined;
+  try {
+    child = Bun.spawn(["hc", "connect"], {
+      stdin: "pipe",
+      stdout: "pipe",
+      stderr: "ignore",
+      env: process.env,
+    });
+  } catch {
+    settle(false);
+    return { ready, close: () => {} };
+  }
+  const process_ = child;
+  const stdin = process_.stdin as import("bun").FileSink;
+  stdin.write(
+    `${JSON.stringify({ jsonrpc: "2.0", id: 1, method: "events.subscribe", params: { docs: patterns } })}\n`,
+  );
+  stdin.flush();
+  void (async () => {
+    let buffered = "";
+    const decoder = new TextDecoder();
+    try {
+      for await (const chunk of process_.stdout as ReadableStream<Uint8Array>) {
+        buffered += decoder.decode(chunk, { stream: true });
+        const lines = buffered.split("\n");
+        buffered = lines.pop() ?? "";
+        for (const line of lines) {
+          const read = subscriptionLine(line);
+          if (read === undefined) continue;
+          if ("reply" in read) settle(read.reply);
+          else onChange(read.changed);
+        }
+      }
+    } catch {
+      // A closed or failed connection ends the notices; readers keep polling.
+    }
+    settle(false);
+  })();
+  return {
+    ready,
+    close: () => {
+      settle(false);
+      process_.kill();
+    },
+  };
+};
