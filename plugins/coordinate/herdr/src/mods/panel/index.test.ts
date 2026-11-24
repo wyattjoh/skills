@@ -2523,9 +2523,25 @@ test("shows the open ask first and earlier answered asks read-only, newest first
   expect(get(root, "ask-option-0").click).toBeDefined();
 });
 
-test("shows answered asks compact, question and context only, until Show all", async () => {
+test("shows answered asks compact, question, context and answer only, until Show all", async () => {
   focusDomain("alpha");
-  host.files.set(DOC, JSON.stringify(withAskHistory()));
+  const history = withAskHistory();
+  host.files.set(
+    DOC,
+    JSON.stringify({
+      ...history,
+      items: history.items.map((item) =>
+        item.id !== "i1"
+          ? item
+          : {
+              ...item,
+              answered: item.answered.map((entry, index) =>
+                index === 1 ? { ...entry, note: "see i1" } : entry,
+              ),
+            },
+      ),
+    }),
+  );
   const { ctx, view, render } = await mount();
   openDetail(view, "i1", ctx.cx);
   const compact = render();
@@ -2537,7 +2553,16 @@ test("shows answered asks compact, question and context only, until Show all", a
   expect(ids(compact, "ask-answered-0-option-")).toEqual([]);
   expect(ids(compact, "ask-answered-0-answered-at")).toEqual([]);
   expect(ids(compact, "ask-answered-0-rec-reason")).toEqual([]);
-  expect(ids(compact, "ask-answered-1-answer")).toEqual([]);
+  expect(ids(compact, "ask-answered-1-option-")).toEqual([]);
+  expect(ids(compact, "ask-answered-1-rec-reason")).toEqual([]);
+  expect(text(get(compact, "ask-answered-0-answer"))).toBe("Answer json 2026-11-15");
+  expect(ids(compact, "ask-answered-0-answer-note")).toEqual([]);
+  expect(text(get(compact, "ask-answered-1-answer"))).toBe(
+    "Answer keep it beside the docs 2026-11-16",
+  );
+  expect(get(compact, "ask-answered-1-answer-note-markdown").styles.markdown).toBe(
+    "see [i1](coordinate-panel:i1)",
+  );
   expect([
     text(get(compact, "ask-answered-0-reveal")),
     text(get(compact, "ask-answered-1-reveal")),
@@ -2570,6 +2595,7 @@ test("shows answered asks compact, question and context only, until Show all", a
     "ask-answered-0-option-0",
   ]);
   expect(text(get(expanded, "ask-answered-0-answered-at"))).toBe("Answered 2026-11-15");
+  expect(ids(expanded, "ask-answered-0-answer")).toEqual(["ask-answered-0-answered-at"]);
   expect(text(get(expanded, "ask-answered-0-reveal"))).toBe("Show less");
   expect(ids(expanded, "ask-answered-1-option-")).toEqual([]);
   expect(text(get(expanded, "ask-answered-1-reveal"))).toBe("Show all");

@@ -1002,6 +1002,35 @@ const answerChild = (
     { inline: true },
   );
 
+// An answered ask's answer line: the answer as prose, then when it was given.
+const answerRow = (t: Theme, links: IdLinks, id: string, answered: AnsweredAsk): Element =>
+  askBodyRow(t, `${id}-answer`)
+    .child(small(t, t.muted, "Answer"))
+    .child(
+      div()
+        .flex_1()
+        .min_w_0()
+        .child(answerChild(t, links, `${id}-answer-markdown`, answered)),
+    )
+    .child(small(t, t.muted, answered.answeredAt));
+
+// An answered ask's note row, when the answer carried one.
+const answerNoteRows = (t: Theme, links: IdLinks, id: string, answered: AnsweredAsk): Element[] => {
+  const note = prose(answered.note, answered.noteMarkdown);
+  return note === null
+    ? []
+    : [
+        askBodyRow(t, `${id}-answer-note`)
+          .child(small(t, t.muted, "Note"))
+          .child(
+            div()
+              .flex_1()
+              .min_w_0()
+              .child(proseChild(t, `${id}-answer-note-markdown`, note, links)),
+          ),
+      ];
+};
+
 const askCardRows = (
   t: Theme,
   links: IdLinks,
@@ -1230,30 +1259,8 @@ const askCardRows = (
               .child(small(t, t.muted, "Answered"))
               .child(div().child(completed.answeredAt)),
           ]
-        : [
-            askBodyRow(t, `${id}-answer`)
-              .child(small(t, t.muted, "Answer"))
-              .child(
-                div()
-                  .flex_1()
-                  .min_w_0()
-                  .child(answerChild(t, links, `${id}-answer-markdown`, completed)),
-              )
-              .child(small(t, t.muted, completed.answeredAt)),
-          ];
-  const completedNote =
-    completed === undefined ? null : prose(completed.note, completed.noteMarkdown);
-  if (completedNote !== null)
-    completion.push(
-      askBodyRow(t, `${id}-answer-note`)
-        .child(small(t, t.muted, "Note"))
-        .child(
-          div()
-            .flex_1()
-            .min_w_0()
-            .child(proseChild(t, `${id}-answer-note-markdown`, completedNote, links)),
-        ),
-    );
+        : [answerRow(t, links, id, completed)];
+  if (completed !== undefined) completion.push(...answerNoteRows(t, links, id, completed));
   return [question, ...context, ...touches, ...optionItems, ...discussion, ...completion];
 };
 
@@ -1296,8 +1303,8 @@ const askCard = (
   ),
 ];
 
-// An answered ask starts compact, its question and context only, above its reveal row; expanded,
-// it is the full answered card with the same row below.
+// An answered ask starts compact, its question, context and answer line (with its note) above its
+// reveal row; expanded, it is the full answered card with the same row below.
 const answeredAskCard = (
   t: Theme,
   links: IdLinks,
@@ -1308,7 +1315,13 @@ const answeredAskCard = (
 ): Element => {
   const rows = askCardRows(t, links, id, answered, undefined, answered, undefined);
   const contextRows = prose(answered.context, answered.contextMarkdown) === null ? 0 : 1;
-  const shown = expanded ? rows : rows.slice(0, 1 + contextRows);
+  const shown = expanded
+    ? rows
+    : [
+        ...rows.slice(0, 1 + contextRows),
+        answerRow(t, links, id, answered),
+        ...answerNoteRows(t, links, id, answered),
+      ];
   return detailCard(t, id, "Answered ask", [...shown, askRevealRow(t, id, expanded, toggle)]);
 };
 
