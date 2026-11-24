@@ -1,6 +1,6 @@
 import { afterAll, describe, expect, it } from "bun:test";
-import { rmSync } from "node:fs";
-import { join } from "node:path";
+import { mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { dirname, join } from "node:path";
 import { Effect } from "effect";
 import { createDocument, itemAdd, itemUpdate } from "./backlog-doc.ts";
 import type { ItemUpdate } from "./backlog-store/ops.ts";
@@ -174,12 +174,18 @@ describe("watch on the herdr-doc backend", () => {
   it("reports blind after three ticks with the home unreachable, and emits nothing else", async () => {
     const { watcher } = await twoMachines("strix");
     watcher.view.machines.homebase = "down";
+    // Started with the home down, it reads no repos; their PRs keep their last state.
+    const prs = { "h/o/r#1": { state: "open", checks: "pass", review: "none", url: "u" } };
+    const stateFile = join(watcher.config.stateDir, "watch", "app.json");
+    mkdirSync(dirname(stateFile), { recursive: true });
+    writeFileSync(stateFile, JSON.stringify({ delegates: {}, prs, due: [] }));
     expect(await follow(watcher.config, () => Effect.void, 0, undefined)).toEqual({
       returned: [],
       emitted: [
         "blind: state home homebase unreachable 3 times: the state home homebase is unreachable (homebase is unreachable: cannot reach homebase); shared state was not read or written; re-arm the watcher",
       ],
     });
+    expect(JSON.parse(readFileSync(stateFile, "utf8")).prs).toEqual(prs);
   });
 
   it("counts only consecutive unreachable ticks toward blind", async () => {
@@ -251,5 +257,62 @@ describe("watch on the herdr-doc backend", () => {
       emitted: [ownerGone],
     });
     expect(patterns).toEqual([["ct.*"]]);
+  });
+
+  it("keeps firing local delegate events while the home is down, then reports blind", async () => {
+    const { watcher } = await twoMachines("strix");
+    watcher.view.machines.homebase = "down";
+    const ticks = ["working", "idle", "idle"];
+    let tick = 0;
+    const hc = fakeProc((argv): RunOutput => {
+      if (argv[1] === "ls" && argv.includes("fleet.role=coordinator"))
+        return ok('{"terminals":[]}');
+      if (argv[1] === "ls") {
+        const status = ticks[Math.min(tick, ticks.length - 1)];
+        tick += 1;
+        return ok(
+          JSON.stringify({
+            terminals: [
+              { address: "t2", name: "fix-a", state: "live", cwd: "/nonexistent", status, turn: 1 },
+            ],
+          }),
+        );
+      }
+      if (argv[1] === "get")
+        return {
+          exitCode: 1,
+          stdout: "",
+          stderr: '{"error":{"kind":"not_found","message":"gone"}}',
+        };
+      throw new Error(`unexpected command: ${argv.join(" ")}`);
+    });
+    const emitted: string[] = [];
+    const returned = await runWith(
+      watch(watcher.config, {
+        domain: "app",
+        intervalMs: 600_000,
+        forgeIntervalMs: 600_000,
+        maxMs: 3_600_000,
+        owner: undefined,
+        replace: false,
+        deliver: false,
+        today: () => "2026-11-10",
+        now: () => 1_000_000,
+        sleep: () => Effect.void,
+        follow: true,
+        emit: (line) => {
+          emitted.push(line);
+        },
+      }),
+      hc.layer,
+    );
+    expect([returned, emitted.map(eventText)]).toEqual([
+      [],
+      [
+        '<event kind="settled" delegate="fix-a" address="t2">read its REPORT.md, verify, then report</event>',
+        '<event kind="status" fleet="1 idle">give the user a short status in your next reply</event>',
+        "blind: state home homebase unreachable 3 times: the state home homebase is unreachable (homebase is unreachable: cannot reach homebase); shared state was not read or written; re-arm the watcher",
+      ],
+    ]);
   });
 });

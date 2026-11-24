@@ -45,7 +45,7 @@ export const fakeDocCores = (
 
 const error = (kind: string, message: string): DocReply => ({ ok: false, kind, message });
 
-type Listener = { patterns: readonly string[]; onChange: (name: string) => void };
+type Listener = { patterns: readonly string[]; onChange: (name: string, version: number) => void };
 
 // Subscribers per document set (shared by every view of the same cores) and core name. Kept
 // outside the cores so they stay plain JSON.
@@ -56,9 +56,12 @@ const matches = (patterns: readonly string[], name: string) =>
     pattern.endsWith("*") ? name.startsWith(pattern.slice(0, -1)) : pattern === name,
   );
 
-const notify = (cores: FakeDocCores, core: string, name: string) => {
-  for (const listener of listeners.get(cores.docs)?.get(core) ?? [])
-    if (matches(listener.patterns, name)) listener.onChange(name);
+// Like herdr-core, events arrive after the write's reply, never inside it.
+const notify = (cores: FakeDocCores, core: string, name: string, version: number) => {
+  setTimeout(() => {
+    for (const listener of listeners.get(cores.docs)?.get(core) ?? [])
+      if (matches(listener.patterns, name)) listener.onChange(name, version);
+  }, 0);
 };
 
 /**
@@ -102,7 +105,7 @@ export const answerDocRequest = (cores: FakeDocCores, request: DocRequest): DocR
     return error("invalid_params", "document exceeds 1 MiB of JSON");
   const version = current.version + 1;
   docs[name] = { value: structuredClone(request.params.value), version };
-  notify(cores, target, name);
+  notify(cores, target, name, version);
   return { ok: true, result: { version } };
 };
 

@@ -236,13 +236,23 @@ export const herdrStore = (options: HerdrStoreOptions): StateStore => {
       return replies;
     });
 
+  // The newest version of each document this store has read or written, so `follow` can tell a
+  // change it has not seen yet from the event of one it already holds (its own write).
+  const known = new Map<string, number>();
+  const note = (name: string, version: number) => {
+    if (version > (known.get(name) ?? 0)) known.set(name, version);
+  };
+
   const getDocs = (names: readonly string[]) =>
     Effect.map(
       call(names.map((name) => ({ method: "doc.get" as const, params: { name } }))),
       (replies) =>
-        replies.map((reply): Doc | { error: string } =>
-          reply.ok ? (reply.result as Doc) : { error: reply.message },
-        ),
+        replies.map((reply, index): Doc | { error: string } => {
+          if (!reply.ok) return { error: reply.message };
+          const doc = reply.result as Doc;
+          note(names[index] ?? "", doc.version);
+          return doc;
+        }),
     );
 
   const setDoc = (
@@ -260,7 +270,9 @@ export const herdrStore = (options: HerdrStoreOptions): StateStore => {
           message: `${where}: ${reply?.message ?? "no reply"}`,
         });
       }
-      return (reply.result as { version: number }).version;
+      const written = (reply.result as { version: number }).version;
+      note(name, written);
+      return written;
     });
 
   const unreadable = (key: StateKey, message: string, stage: "read" | "parse" = "read") =>
@@ -549,8 +561,8 @@ export const herdrStore = (options: HerdrStoreOptions): StateStore => {
         watched.filter((key) => !isLocal(key)).map((key) => addressOf(key).name),
       );
       if (names.size === 0) return undefined;
-      const subscription = subscribe([`${prefix}*`], (name) => {
-        if (names.has(name)) onChange();
+      const subscription = subscribe([`${prefix}*`], (name, version) => {
+        if (names.has(name) && version > (known.get(name) ?? 0)) onChange();
       });
       return { close: subscription.close };
     });

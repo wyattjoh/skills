@@ -1146,7 +1146,7 @@ export const watch = Effect.fn("watch")(function* (config: Config, options: Watc
     }
     // The home being unreachable at start is a blind tick to count, not a reason to stop.
     let repos = yield* domainRepos(config, options.domain).pipe(
-      Effect.catch((error) => (isOffline(error) ? Effect.succeed([]) : Effect.fail(error))),
+      Effect.catchTag("StoreOffline", () => Effect.succeed([])),
     );
     const clock = options.now ?? Date.now;
     const sleep = options.sleep ?? ((ms: number) => Effect.sleep(ms));

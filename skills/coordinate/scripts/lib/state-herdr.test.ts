@@ -346,7 +346,7 @@ describe("herdr-doc store", () => {
 });
 
 describe("herdr-doc follow", () => {
-  test("on the home, notices a write from another machine to a followed document only", async () => {
+  test("on the home, notices a write from another machine to a followed document only, never its own", async () => {
     const cores = fakeDocCores("homebase", { strix: "up" });
     const options = {
       home: "homebase",
@@ -373,11 +373,17 @@ describe("herdr-doc follow", () => {
         notices += 1;
       }) ?? Effect.succeed(undefined),
     );
+    // The fake delivers events after a zero-delay timer, as herdr-core sends them after the reply.
+    const delivered = () => new Promise((resolve) => setTimeout(resolve, 0));
     await put(away, keys.backlog("app"), { domain: "app" });
     await put(away, keys.backlog("web"), { domain: "web" });
     await put(away, keys.policy(), { revision: 1 });
+    await delivered();
+    await put(home, keys.backlog("app"), { domain: "app", by: "home" });
+    await delivered();
     followed?.close();
     await put(away, keys.backlog("app"), { domain: "app", again: true });
+    await delivered();
     expect([
       notices,
       away.follow === undefined
@@ -395,7 +401,13 @@ describe("herdr-doc follow", () => {
         '{"jsonrpc":"2.0","method":"heartbeat","params":{"seq":47263}}',
         "not json",
       ].map(subscriptionLine),
-    ).toEqual([{ reply: true }, { reply: false }, { changed: "cs.b.app" }, undefined, undefined]);
+    ).toEqual([
+      { reply: true },
+      { reply: false },
+      { changed: "cs.b.app", version: 2 },
+      undefined,
+      undefined,
+    ]);
   });
 });
 

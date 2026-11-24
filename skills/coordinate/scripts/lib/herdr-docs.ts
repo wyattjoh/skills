@@ -146,13 +146,13 @@ export type DocSubscription = {
 };
 
 /**
- * Subscribe to changes of documents on this core: `onChange` gets the name of each document set
- * (or deleted) whose name matches a pattern (a trailing `*` matches a prefix). Herdr cannot
+ * Subscribe to changes of documents on this core: `onChange` gets the name and new version of
+ * each document set (or deleted) whose name matches a pattern (a trailing `*` matches a prefix). Herdr cannot
  * subscribe to another machine's documents.
  */
 export type DocSubscriber = (
   patterns: readonly string[],
-  onChange: (name: string) => void,
+  onChange: (name: string, version: number) => void,
 ) => DocSubscription;
 
 const SubscriptionLine = Schema.Struct({
@@ -163,7 +163,12 @@ const SubscriptionLine = Schema.Struct({
   params: Schema.optionalKey(
     Schema.Struct({
       type: Schema.optionalKey(Schema.String),
-      data: Schema.optionalKey(Schema.Struct({ name: Schema.optionalKey(Schema.String) })),
+      data: Schema.optionalKey(
+        Schema.Struct({
+          name: Schema.optionalKey(Schema.String),
+          version: Schema.optionalKey(Schema.Number),
+        }),
+      ),
     }),
   ),
 });
@@ -171,18 +176,24 @@ const SubscriptionLine = Schema.Struct({
 /**
  * Parse one line of a subscription connection.
  * @param line A JSON-RPC line from `hc connect`.
- * @returns The subscribe reply (accepted or refused), a changed document's name, or nothing for
- *   heartbeats and lines it cannot read.
+ * @returns The subscribe reply (accepted or refused), a changed document's name and version, or
+ *   nothing for heartbeats and lines it cannot read.
  */
 export const subscriptionLine = (
   line: string,
-): { reply: boolean } | { changed: string } | undefined => {
+): { reply: boolean } | { changed: string; version: number } | undefined => {
   try {
     const parsed = Schema.decodeUnknownSync(SubscriptionLine)(JSON.parse(line));
     if (parsed.id === 1) return { reply: parsed.error === undefined };
     const name = parsed.params?.data?.name;
-    if (parsed.method === "event" && parsed.params?.type === "doc" && name !== undefined)
-      return { changed: name };
+    const version = parsed.params?.data?.version;
+    if (
+      parsed.method === "event" &&
+      parsed.params?.type === "doc" &&
+      name !== undefined &&
+      version !== undefined
+    )
+      return { changed: name, version };
     return undefined;
   } catch {
     return undefined;
@@ -194,7 +205,7 @@ export const subscriptionLine = (
  * only notifications), sending `events.subscribe` with the patterns and reading doc events until
  * closed. A refusal or an ended connection only stops the notices; nothing is retried.
  * @param patterns Document names or prefixes ending in `*`.
- * @param onChange Called with each changed document's name.
+ * @param onChange Called with each changed document's name and version.
  * @returns The subscription.
  */
 export const hcConnectSubscriber: DocSubscriber = (patterns, onChange) => {
@@ -232,7 +243,7 @@ export const hcConnectSubscriber: DocSubscriber = (patterns, onChange) => {
           const read = subscriptionLine(line);
           if (read === undefined) continue;
           if ("reply" in read) settle(read.reply);
-          else onChange(read.changed);
+          else onChange(read.changed, read.version);
         }
       }
     } catch {
