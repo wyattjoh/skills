@@ -1,7 +1,7 @@
 import { homedir } from "node:os";
 import { basename, join } from "node:path";
 import { Effect } from "effect";
-import { currentFolder, type Config } from "./config.ts";
+import { configPath, currentFolder, type Config } from "./config.ts";
 import { checkDomainName, domainNamePart, L } from "./fleet.ts";
 import * as hc from "./herdr.ts";
 import { watcherAlive } from "./watch-lock.ts";
@@ -256,6 +256,8 @@ const watcherName = (domain: string): string => `watch-${domainNamePart(domain, 
  * @param domain Domain to watch.
  * @param owner Coordinator terminal address, passed explicitly to the child.
  * @param replace Stop existing watcher terminals and replace the process holding the watch lock.
+ * @param env Environment: a set `COORDINATE_CONFIG` is passed on, since Herdr starts the watcher's
+ * terminal with its own environment, and a watcher reading another config would watch other state.
  * @returns The resulting watcher state.
  */
 export const armWatcher = Effect.fn("armWatcher")(function* (
@@ -263,6 +265,7 @@ export const armWatcher = Effect.fn("armWatcher")(function* (
   domain: string,
   owner: string,
   replace = false,
+  env: Record<string, string | undefined> = process.env,
 ) {
   yield* checkDomainName(domain);
   const coordinator = yield* hc.get(owner);
@@ -287,6 +290,7 @@ export const armWatcher = Effect.fn("armWatcher")(function* (
   }
 
   const argv = [
+    ...(env.COORDINATE_CONFIG ? ["/usr/bin/env", `COORDINATE_CONFIG=${configPath(env)}`] : []),
     process.execPath,
     join(import.meta.dir, "..", "coordinate.ts"),
     "watch",

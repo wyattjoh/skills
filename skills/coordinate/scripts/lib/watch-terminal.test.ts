@@ -68,6 +68,31 @@ describe("domain watcher terminal", () => {
     expect(run?.argv.includes("--outlive-parent")).toBe(false);
   });
 
+  it("passes the coordinator's COORDINATE_CONFIG to the watcher, whose terminal Herdr starts without it", async () => {
+    const cfg = await config();
+    const fake = fakeProc((argv) => {
+      if (argv[1] === "get" && argv[2] === "t1") return ok(owner);
+      if (argv[1] === "ls") return ok('{"terminals":[]}');
+      if (argv[1] === "run") return ok('{"address":"t7"}');
+      throw new Error(`unexpected command: ${argv.join(" ")}`);
+    });
+    const script = join(import.meta.dir, "..", "coordinate.ts");
+    const watch = ["watch", "--deliver", "--domain", "app", "--owner", "t1"];
+    const command = async (env: Record<string, string | undefined>) => {
+      await runWith(armWatcher(cfg, "app", "t1", false, env), fake.layer);
+      const argv = fake.calls.findLast((call) => call.argv[1] === "run")?.argv ?? [];
+      return argv.slice(argv.indexOf("--") + 1);
+    };
+    expect(await command({ COORDINATE_CONFIG: "/sandbox/config.json" })).toEqual([
+      "/usr/bin/env",
+      "COORDINATE_CONFIG=/sandbox/config.json",
+      process.execPath,
+      script,
+      ...watch,
+    ]);
+    expect(await command({})).toEqual([process.execPath, script, ...watch]);
+  });
+
   it("reuses a live watcher instead of launching a second terminal", async () => {
     const cfg = await config();
     const fake = fakeProc((argv) => {
