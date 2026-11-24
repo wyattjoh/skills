@@ -20,6 +20,23 @@ describe("resolveConfig", () => {
     expect(config.maxFleetDelegates).toBe(2);
     expect(config.maxFleetDelegatesOverride).toBe(undefined);
     expect(config.maxFleetDelegatesByMachine).toEqual({});
+    expect([config.stateBackend, config.stateHome]).toEqual(["files", undefined]);
+  });
+
+  it("selects the herdr-doc backend with its home machine", async () => {
+    const config = await resolve({ state_backend: "herdr-doc", state_home: "finbar" });
+    expect([config.stateBackend, config.stateHome]).toEqual(["herdr-doc", "finbar"]);
+  });
+
+  it("refuses the herdr-doc backend without a home, and an unknown backend", async () => {
+    const invalid = await Promise.all([
+      fail({ state_backend: "herdr-doc" }),
+      fail({ state_backend: "sqlite" }),
+    ]);
+    expect(invalid[0]?.message).toBe(
+      "state_backend herdr-doc needs state_home, the Herdr machine name of the home that holds shared state",
+    );
+    expect(invalid[1]?.constructor.name).toBe("ConfigError");
   });
 
   it("sets the default fleet delegate budget from the injected core count", async () => {

@@ -24,7 +24,20 @@ export type Config = {
   maxFleetDelegates: number;
   maxFleetDelegatesOverride: number | undefined;
   maxFleetDelegatesByMachine: Record<string, number>;
+  /**
+   * Where shared state lives: local files, or the home Herdr core's document store.
+   */
+  stateBackend: StateBackend;
+  /**
+   * The home's Herdr machine name (herdr-doc only).
+   */
+  stateHome: string | undefined;
 };
+
+/**
+ * The storage backends for shared state.
+ */
+export type StateBackend = "files" | "herdr-doc";
 
 /**
  * The config file could not be read or does not match its schema.
@@ -51,6 +64,8 @@ const ConfigFile = Schema.Struct({
   branch_prefix: Schema.optionalKey(Schema.String),
   max_fleet_delegates: Schema.optionalKey(Schema.Number),
   max_fleet_delegates_by_machine: Schema.optionalKey(Schema.Record(Schema.String, Schema.Number)),
+  state_backend: Schema.optionalKey(Schema.Literals(["files", "herdr-doc"])),
+  state_home: Schema.optionalKey(Schema.String),
 });
 
 const KNOWN_KEYS = new Set([
@@ -65,6 +80,8 @@ const KNOWN_KEYS = new Set([
   "branch_prefix",
   "max_fleet_delegates",
   "max_fleet_delegates_by_machine",
+  "state_backend",
+  "state_home",
 ]);
 
 /**
@@ -219,7 +236,16 @@ export const resolveConfig = Effect.fn("resolveConfig")(function* (
       path,
       message: `max_fleet_delegates_by_machine.${invalidMachineBudget[0]} must be a positive integer`,
     });
+  const stateBackend = file.state_backend ?? "files";
+  if (stateBackend === "herdr-doc" && (file.state_home ?? "") === "")
+    return yield* new ConfigError({
+      path,
+      message:
+        "state_backend herdr-doc needs state_home, the Herdr machine name of the home that holds shared state",
+    });
   return {
+    stateBackend,
+    stateHome: file.state_home,
     cores,
     maxFleetDelegates: file.max_fleet_delegates ?? Math.max(2, Math.floor(cores / 4)),
     maxFleetDelegatesOverride: file.max_fleet_delegates,
