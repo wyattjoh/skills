@@ -1490,10 +1490,14 @@ type Listed = {
   domains: {
     domain: string;
     lease: { machine: string; address: string; live: boolean; terminal: string | null } | null;
-    document?: {
-      items: { id: string; title: string; delegates: { name: string; machine?: string }[] }[];
+    document: {
+      items: {
+        id: string;
+        title: string;
+        delegates: { name: string; machine: string | undefined }[];
+      }[];
     } | null;
-    unreadable?: string | null;
+    unreadable: string | null;
   }[];
 };
 

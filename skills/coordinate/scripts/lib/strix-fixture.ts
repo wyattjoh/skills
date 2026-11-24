@@ -621,20 +621,26 @@ const docCalls = (requests: readonly Record<string, unknown>[]): Record<string, 
 export const nullTestDocuments = (prefix: string, domain: string): string[] => {
   if (prefix === "cs.") return ["refused to null production documents"];
   const names = testDocumentNames(prefix, domain);
-  const read = () => docCalls(names.map((name) => ({ method: "doc.get", params: { name } })));
+  // A name with no reply (hc down, a refused call) counts as holding a value, so teardown never
+  // reports clean on documents it could not read.
+  const read = () =>
+    docCalls(names.map((name) => ({ method: "doc.get", params: { name } }))).map((result) =>
+      typeof result.version === "number"
+        ? { value: result.value, version: result.version }
+        : undefined,
+    );
   const held = read().flatMap((result, index) =>
-    result.value === null || result.value === undefined
+    result !== undefined && result.value === null
       ? []
-      : [{ name: names[index] ?? "", version: result.version }],
+      : [{ name: names[index] ?? "", version: result?.version }],
   );
   docCalls(
-    held.map(({ name, version }) => ({
-      method: "doc.set",
-      params: { name, value: null, version },
-    })),
+    held.flatMap(({ name, version }) =>
+      version === undefined ? [] : [{ method: "doc.set", params: { name, value: null, version } }],
+    ),
   );
   return read().flatMap((result, index) =>
-    result.value === null || result.value === undefined ? [] : [names[index] ?? ""],
+    result !== undefined && result.value === null ? [] : [names[index] ?? ""],
   );
 };
 
