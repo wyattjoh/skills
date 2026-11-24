@@ -3,6 +3,8 @@ import { addItem, emptyBacklog } from "../../lib/store.ts";
 import type { Backlog } from "../../lib/store.ts";
 import type { Finding } from "../../lib/store.ts";
 import {
+  answerCommand,
+  backlogListCommand,
   boundaryOutput,
   canDismissItem,
   dismissCommand,
@@ -1081,4 +1083,28 @@ test("keeps an id joined by an escaped - or _ plain, so a second pass links noth
   const once = linkProse({ markdown: false, value: "i42-b and i7 then f13" }, KNOWN);
   expect(once).toEqual({ markdown: true, value: "i42\\-b and i7 then " + link("f13") });
   expect(linkProse(once, KNOWN)).toEqual(once);
+});
+
+test("passes the hc the build baked to every CLI call, and nothing when none was baked", () => {
+  const home = "/Users/test";
+  const cli = "/Users/test/.claude/skills/coordinate/scripts/coordinate.ts";
+  expect(backlogListCommand(home, "alpha").args.slice(0, 4)).toEqual([
+    "-u",
+    "HC_TERMINAL_ID",
+    "bun",
+    cli,
+  ]);
+  const scope = globalThis as { COORDINATE_HC?: string };
+  scope.COORDINATE_HC = "/Users/test/.local/bin/hc";
+  try {
+    expect([
+      backlogListCommand(home, "alpha").args.slice(0, 5),
+      answerCommand(home, "alpha", "i1", "a", undefined).args.slice(0, 5),
+    ]).toEqual([
+      ["-u", "HC_TERMINAL_ID", "COORDINATE_HC=/Users/test/.local/bin/hc", "bun", cli],
+      ["-u", "HC_TERMINAL_ID", "COORDINATE_HC=/Users/test/.local/bin/hc", "bun", cli],
+    ]);
+  } finally {
+    delete scope.COORDINATE_HC;
+  }
 });

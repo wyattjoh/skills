@@ -858,6 +858,21 @@ export const delegateLine = (
 // runs with the app's environment, whose PATH (often /usr/bin:/bin:/usr/sbin:/sbin) has no bun.
 // Unbundled (in tests) it is undeclared, and the bare name stands in.
 declare const COORDINATE_BUN: string | undefined;
+// The hc the build found, baked in the same way; the CLI runs it in place of a bare `hc` (its
+// COORDINATE_HC override), since the app's PATH may not hold it either. Unset: no override.
+declare const COORDINATE_HC: string | undefined;
+
+// The /usr/bin/env arguments before the CLI's own: unset HC_TERMINAL_ID, pass the baked hc, then
+// the baked bun and the CLI.
+const cliPrefix = (home: string): string[] => [
+  "-u",
+  "HC_TERMINAL_ID",
+  ...(typeof COORDINATE_HC === "string" && COORDINATE_HC !== ""
+    ? [`COORDINATE_HC=${COORDINATE_HC}`]
+    : []),
+  typeof COORDINATE_BUN === "string" ? COORDINATE_BUN : "bun",
+  coordinateCli(home),
+];
 
 /**
  * The installed coordinate CLI, where the skill's installer links it under the user's home.
@@ -1012,13 +1027,7 @@ export const harnessPolicyNotices = (
 
 const runner = (home: string, args: string[]) => ({
   command: "/usr/bin/env",
-  args: [
-    "-u",
-    "HC_TERMINAL_ID",
-    typeof COORDINATE_BUN === "string" ? COORDINATE_BUN : "bun",
-    coordinateCli(home),
-    ...args,
-  ],
+  args: [...cliPrefix(home), ...args],
 });
 
 /**
@@ -1337,10 +1346,7 @@ export const boundaryCommand = (
 ): { command: string; args: string[] } => ({
   command: "/usr/bin/env",
   args: [
-    "-u",
-    "HC_TERMINAL_ID",
-    typeof COORDINATE_BUN === "string" ? COORDINATE_BUN : "bun",
-    coordinateCli(home),
+    ...cliPrefix(home),
     "backlog",
     "boundary",
     action,
@@ -1372,10 +1378,7 @@ export const answerCommand = (
 ): { command: string; args: string[] } => ({
   command: "/usr/bin/env",
   args: [
-    "-u",
-    "HC_TERMINAL_ID",
-    typeof COORDINATE_BUN === "string" ? COORDINATE_BUN : "bun",
-    coordinateCli(home),
+    ...cliPrefix(home),
     "item",
     "answer",
     "--domain",
@@ -1403,13 +1406,7 @@ export const canDismissItem = (item: Item): boolean =>
 // The coordinate CLI as the panel runs it: outside any Herdr terminal, so HC_TERMINAL_ID is unset.
 const panelCli = (home: string, args: string[]): { command: string; args: string[] } => ({
   command: "/usr/bin/env",
-  args: [
-    "-u",
-    "HC_TERMINAL_ID",
-    typeof COORDINATE_BUN === "string" ? COORDINATE_BUN : "bun",
-    coordinateCli(home),
-    ...args,
-  ],
+  args: [...cliPrefix(home), ...args],
 });
 
 /**

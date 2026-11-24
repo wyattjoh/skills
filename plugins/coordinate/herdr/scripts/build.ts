@@ -40,6 +40,17 @@ const bunDefine = (): string[] => {
 };
 
 /**
+ * The hc the coordinate CLI runs for the panel, baked into the bundle as `COORDINATE_HC` and passed
+ * to the CLI as its `COORDINATE_HC` override, for the same reason as bun. A build with no hc on
+ * its PATH bakes none, and the CLI then runs a bare `hc` as before.
+ * @returns The define flags.
+ */
+export const hcDefine = (which: (name: string) => string | null = Bun.which): string[] => {
+  const hc = which("hc");
+  return hc === null ? [] : ["--define", `COORDINATE_HC=${JSON.stringify(hc)}`];
+};
+
+/**
  * Bundle and check every mod in a fresh stage.
  * @returns The stage folder, laid out like a Herdr home (mods/<name>/).
  */
@@ -59,6 +70,7 @@ export const build = async (): Promise<string> => {
       join(folder, "main.js"),
       ...FLAGS,
       ...bunDefine(),
+      ...hcDefine(),
     ]);
     if (built !== 0) throw new Error(`Bundling ${mod.name} failed (${built})`);
     await copyIcons(folder);
