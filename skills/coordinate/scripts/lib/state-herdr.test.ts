@@ -18,6 +18,7 @@ import {
 } from "./herdr-docs-fake.ts";
 import { storeConformance } from "./state-store-conformance.ts";
 import { CLAIM_TTL_MS, herdrStore } from "./state-herdr.ts";
+import { LEASE_TTL_MS, renewLease, takeLease } from "./lease.ts";
 import { keys, type StateKey, type StateStore } from "./state-store.ts";
 
 const noRemote = () => Effect.die(new Error("this test touches no remote archive"));
@@ -514,3 +515,45 @@ storeConformance(
   { offline: false },
   realCore,
 );
+
+describe("coordinator leases across machines", () => {
+  test("a coordinator on strix holds the home's lease until it lapses, then loses it to the home", async () => {
+    const homeCores = fakeDocCores("homebase");
+    // strix reaches the same home documents through `on`.
+    const strixCores: FakeDocCores = { ...homeCores, self: "strix", machines: { homebase: "up" } };
+    const storeOn = (cores: FakeDocCores) =>
+      herdrStore({
+        home: "homebase",
+        prefix: "ct.",
+        appendRemote: noRemote,
+        readRemote: noRemote,
+        transport: memoryDocTransport(cores),
+        self: Effect.succeed(cores.self),
+        stateDir: tempDir("coordinate-herdr-lease-"),
+      });
+    const home = storeOn(homeCores);
+    const strix = storeOn(strixCores);
+    await put(strix, keys.backlog("app"), { domain: "app" });
+    const now = Date.parse("2026-11-23T12:00:00.000Z");
+    await run(takeLease(strix, "app", { machine: "strix", address: "t1fn" }, now));
+    const refused = await fail(
+      takeLease(home, "app", { machine: "homebase", address: "t3" }, now + LEASE_TTL_MS - 1),
+    );
+    expect(refused.message).toBe(
+      "app already has a coordinator: strix/t1fn holds its lease until 2026-11-23T12:03:00.000Z; go to it, or wait for that lease to expire (3 minutes after its watcher last renewed it)",
+    );
+    await run(takeLease(home, "app", { machine: "homebase", address: "t3" }, now + LEASE_TTL_MS));
+    expect(
+      await run(
+        renewLease(strix, "app", { machine: "strix", address: "t1fn" }, now + LEASE_TTL_MS),
+      ),
+    ).toEqual({
+      renewed: false,
+      lease: { machine: "homebase", address: "t3", expiry: "2026-11-23T12:06:00.000Z" },
+    });
+    expect(homeCores.docs.homebase?.["ct.b.app"]?.value).toEqual({
+      domain: "app",
+      lease: { machine: "homebase", address: "t3", expiry: "2026-11-23T12:06:00.000Z" },
+    });
+  });
+});
