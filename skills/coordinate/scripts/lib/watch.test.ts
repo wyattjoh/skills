@@ -2522,3 +2522,60 @@ describe("watch remote outboxes", () => {
     ]);
   });
 });
+
+describe("watch coordinator lease", () => {
+  const T0 = Date.parse("2026-11-23T12:00:00.000Z");
+  const leaseWatch = async (lease: Record<string, string> | undefined) => {
+    const state = tempDir();
+    made.push(state);
+    const config = await Effect.runPromise(
+      resolveConfig({ state_dir: state, backlog_dir: join(state, "md") }, "/c"),
+    );
+    const path = join(state, "backlogs", "app.json");
+    mkdirSync(join(state, "backlogs"), { recursive: true });
+    writeFileSync(
+      path,
+      JSON.stringify({ ...emptyBacklog("app", null), ...(lease ? { lease } : {}) }),
+    );
+    const fake = fakeProc((argv) => {
+      if (argv[1] === "ls") return ok('{"terminals":[]}');
+      if (argv[1] === "get" && argv[2] === "t9")
+        return ok(
+          JSON.stringify({
+            address: "t9",
+            state: "live",
+            labels: { "fleet.role": "coordinator", "fleet.domain": "app" },
+          }),
+        );
+      return ok("{}");
+    });
+    await runWith(
+      watch(config, {
+        domain: "app",
+        intervalMs: 10,
+        forgeIntervalMs: 60_000,
+        maxMs: 0,
+        owner: "t9",
+        replace: false,
+        deliver: false,
+        today: () => "2026-11-23",
+        now: () => T0,
+        follow: false,
+        emit: () => undefined,
+      }),
+      fake.layer,
+    );
+    return JSON.parse(readFileSync(path, "utf8")).lease;
+  };
+
+  it("renews its owner's lease on this machine for another three minutes", async () => {
+    expect(
+      await leaseWatch({ machine: FAKE_CORE, address: "t9", expiry: "2026-11-23T12:01:00.000Z" }),
+    ).toEqual({ machine: FAKE_CORE, address: "t9", expiry: "2026-11-23T12:03:00.000Z" });
+  });
+
+  it("leaves a lease another coordinator took", async () => {
+    const strix = { machine: "strix", address: "t1fn", expiry: "2026-11-23T12:02:00.000Z" };
+    expect(await leaseWatch(strix)).toEqual(strix);
+  });
+});

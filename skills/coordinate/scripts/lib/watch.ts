@@ -32,6 +32,7 @@ import { stateStore } from "./state.ts";
 import { isOffline, keys, optionUnlessOffline, type StoreOffline } from "./state-store.ts";
 import { outboxPath } from "./remote-launch.ts";
 import { lastLint, LINT_INTERVAL_DAYS, settledWikiPages, wikiCreated } from "./wiki.ts";
+import { renewWatchedLease } from "./lease.ts";
 import { markSettled, readSession, retroDue, type RetroMarker } from "./sessions.ts";
 
 /**
@@ -1186,6 +1187,7 @@ export const watch = Effect.fn("watch")(function* (config: Config, options: Watc
       );
     const started = clock();
     let lastForge = Number.NEGATIVE_INFINITY;
+    let lastLease = Number.NEGATIVE_INFINITY;
     let lastTick: number | undefined;
     let viewOwnerState: WatchView["ownerState"] = "live";
     let lastDelivery = state.outbox.length > 0 ? "pending from outbox" : "not sent yet";
@@ -1441,6 +1443,14 @@ export const watch = Effect.fn("watch")(function* (config: Config, options: Watc
         lines.push(...prEvents(snapshot.prs, prs.snapshot));
         snapshot.prs = prs.snapshot;
       }
+      if (options.owner !== undefined)
+        lastLease = yield* renewWatchedLease(
+          config,
+          options.domain,
+          options.owner,
+          clock(),
+          lastLease,
+        );
       // The local backlog is read every tick, so an answer wakes within one interval, not forge cadence.
       const document =
         homeDown === undefined
