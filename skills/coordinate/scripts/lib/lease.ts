@@ -102,15 +102,16 @@ export const takeLease = (store: StateStore, domain: string, holder: LeaseHolder
 
 /**
  * What a renewal found: `renewed` with the lease written, or not renewed with the lease another
- * holder has (undefined when the domain has no backlog).
+ * holder has (undefined when the domain has no backlog or no lease).
  */
 export type Renewal =
   | { renewed: true; lease: Lease }
   | { renewed: false; lease: Lease | undefined };
 
 /**
- * Renew the holder's lease: move its expiry when the holder still has it (live or lapsed), or take
- * it when the document has none. Never takes back a lease another holder took.
+ * Renew the holder's lease: move its expiry when the holder still has it (live or lapsed). Never
+ * creates a lease (only a start takes one, so a watcher with an unchecked owner cannot), and never
+ * takes back a lease another holder took.
  * @param store The store holding the backlog.
  * @param domain Domain.
  * @param holder The coordinator whose watcher renews it.
@@ -125,7 +126,7 @@ export const renewLease = (store: StateStore, domain: string, holder: LeaseHolde
         value: { renewed: false, lease: undefined } satisfies Renewal as Renewal,
       });
     const held = leaseOf(current.value);
-    if (held !== undefined && !sameHolder(held, holder))
+    if (held === undefined || !sameHolder(held, holder))
       return Effect.succeed({
         write: false as const,
         value: { renewed: false, lease: held } satisfies Renewal as Renewal,

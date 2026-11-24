@@ -337,6 +337,16 @@ export const storeConformance = (
         ]);
       });
 
+      test("renew takes no lease the document lacks, so only a start can create one", async () => {
+        const { store } = await withBacklog();
+        const before = await run(store.read(keys.backlog("app")));
+        expect(await run(renewLease(store, "app", here, NOW))).toEqual({
+          renewed: false,
+          lease: undefined,
+        });
+        expect(await run(store.read(keys.backlog("app")))).toEqual(before);
+      });
+
       test("renew never takes back a lease another holder took after it expired", async () => {
         const { store } = await withBacklog();
         await run(takeLease(store, "app", here, NOW));
