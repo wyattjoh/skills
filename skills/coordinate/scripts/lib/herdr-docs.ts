@@ -1,6 +1,6 @@
 import { Effect, Schema } from "effect";
 import { herdr } from "./herdr.ts";
-import { Proc } from "./proc.ts";
+import { Proc, resolveHc } from "./proc.ts";
 
 /**
  * The most serialized JSON a Herdr document may hold.
@@ -215,7 +215,7 @@ export const hcConnectSubscriber: DocSubscriber = (patterns, onChange) => {
   });
   let child: ReturnType<typeof Bun.spawn> | undefined;
   try {
-    child = Bun.spawn(["hc", "connect"], {
+    child = Bun.spawn(resolveHc(["hc", "connect"], process.env), {
       stdin: "pipe",
       stdout: "pipe",
       stderr: "ignore",

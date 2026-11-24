@@ -70,14 +70,31 @@ export const realProc: Proc["Service"] = {
     }),
 };
 
+/**
+ * The argv to spawn: `hc` becomes the hc `COORDINATE_HC` names when it is set (the Backlog
+ * panel passes the hc its build found, since a Herdr mod's exec has the app's PATH); every other
+ * argv, and `hc` with the variable unset, is unchanged.
+ * @param argv Program and arguments.
+ * @param env The environment the program runs with.
+ * @returns The argv.
+ */
+export const resolveHc = (
+  argv: readonly string[],
+  env: Record<string, string | undefined>,
+): string[] => {
+  const hc = env.COORDINATE_HC;
+  return argv[0] === "hc" && hc !== undefined && hc !== "" ? [hc, ...argv.slice(1)] : [...argv];
+};
+
 const bunRun = async (
   argv: readonly string[],
   options: Partial<RunOptions>,
 ): Promise<RunOutput> => {
   const timeoutMs = options.timeoutMs ?? DEFAULT_TIMEOUT_MS;
-  const child = Bun.spawn([...argv], {
+  const env = options.env ?? { ...process.env };
+  const child = Bun.spawn(resolveHc(argv, env), {
     ...(options.cwd === undefined ? {} : { cwd: options.cwd }),
-    env: options.env ?? { ...process.env },
+    env,
     stdin: options.stdin === undefined ? "ignore" : Buffer.from(options.stdin),
     stdout: "pipe",
     stderr: "pipe",
