@@ -71,6 +71,7 @@ import { fetchRemoteBranch } from "./lib/remote-fetch.ts";
 import { verifyDelegate } from "./lib/sessions.ts";
 import { migrateState } from "./lib/migrate.ts";
 import { renameDomain } from "./lib/rename.ts";
+import { listBacklogs } from "./lib/backlog-list.ts";
 import { showOutbox, watch } from "./lib/watch.ts";
 import { showCapacityQueue } from "./lib/capacity-queue.ts";
 import {
@@ -864,6 +865,35 @@ const backlogShowCommand = Command.make(
   ),
 );
 
+const backlogListCommand = Command.make(
+  "list",
+  {
+    domain: optionalStringFlag("domain", "only this domain (default: every domain)"),
+    json: booleanFlag(
+      "json",
+      "print { machine, domains: [{ domain, lease }] }: lease is { machine, address, expiry, live, terminal } or null, terminal the address to focus from this machine",
+    ),
+    documents: booleanFlag(
+      "documents",
+      "with --json, also give each domain's stored document, unreadable (the reason it could not be read, or null) and ended (ended_at per delegate session with an ended record)",
+    ),
+  },
+  (options) =>
+    execute(
+      (config) =>
+        listBacklogs(config, {
+          json: options.json,
+          documents: options.documents,
+          domain: Option.getOrUndefined(options.domain),
+        }),
+      false,
+    ),
+).pipe(
+  Command.withDescription(
+    "list every domain with a backlog and its coordinator lease; read-only, works from any coordinator machine",
+  ),
+);
+
 const backlogRenameCommand = Command.make(
   "rename",
   {
@@ -1188,6 +1218,7 @@ const backlogCommand = Command.make("backlog").pipe(
   ),
   Command.withSubcommands([
     backlogShowCommand,
+    backlogListCommand,
     backlogRenameCommand,
     boundaryCommand,
     policyCommand,

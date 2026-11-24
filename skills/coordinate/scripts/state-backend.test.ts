@@ -346,3 +346,108 @@ describe("coordinate start preflight on herdr-doc", () => {
     expect(box.run(["start", "app"]).exit).toBe(0);
   }, 60_000);
 });
+
+describe.each<StateBackend>(["files", "herdr-doc"])("backlog list on %s", (backend) => {
+  it("lists every domain with its lease, composed for this machine, and changes nothing", () => {
+    const box = sandbox(backend, `coordinate-list-${backend}-`);
+    expect(box.run(["start", "app"]).exit).toBe(0);
+    expect(box.run(["start", "web"], { ...box.outside, HC_TERMINAL_ID: "t1" }).exit).toBe(0);
+    const before = backend === "herdr-doc" ? JSON.stringify(box.cores().docs) : "";
+    const shown = box.run(["backlog", "list", "--json"], box.outside);
+    const app = JSON.parse(box.run(["backlog", "show", "--json", "--domain", "app"]).stdout) as {
+      lease: { expiry: string };
+    };
+    expect([shown.exit, shown.stderr]).toEqual([0, ""]);
+    expect(JSON.parse(shown.stdout)).toEqual({
+      machine: FAKE_CORE,
+      domains: [
+        {
+          domain: "app",
+          lease: {
+            machine: FAKE_CORE,
+            address: "t1",
+            expiry: app.lease.expiry,
+            live: true,
+            terminal: "t1",
+          },
+        },
+        {
+          domain: "web",
+          lease: {
+            machine: FAKE_CORE,
+            address: "t1",
+            expiry: (
+              JSON.parse(box.run(["backlog", "show", "--json", "--domain", "web"]).stdout) as {
+                lease: { expiry: string };
+              }
+            ).lease.expiry,
+            live: true,
+            terminal: "t1",
+          },
+        },
+      ],
+    });
+    const documents = box.run(
+      ["backlog", "list", "--json", "--documents", "--domain", "app"],
+      box.outside,
+    );
+    expect(documents.exit).toBe(0);
+    expect(JSON.parse(documents.stdout)).toEqual({
+      machine: FAKE_CORE,
+      domains: [
+        {
+          domain: "app",
+          lease: {
+            machine: FAKE_CORE,
+            address: "t1",
+            expiry: app.lease.expiry,
+            live: true,
+            terminal: "t1",
+          },
+          document: app,
+          unreadable: null,
+          ended: {},
+        },
+      ],
+    });
+    if (backend === "herdr-doc") expect(JSON.stringify(box.cores().docs)).toBe(before);
+  }, 60_000);
+});
+
+describe("backlog list off the home", () => {
+  it("names another machine's lease holder by machine and address, and exits 2 when the home is down", () => {
+    const box = sandbox("herdr-doc", "coordinate-list-remote-");
+    expect(box.run(["start", "app"]).exit).toBe(0);
+    box.setCores((current) => {
+      const stored = current.docs[FAKE_HOME]?.["cs.b.app"];
+      if (stored === undefined) throw new Error("app has no backlog on the home");
+      stored.value = {
+        ...(stored.value as Record<string, unknown>),
+        lease: { machine: "strix", address: "t1fn", expiry: "2099-01-01T00:00:00.000Z" },
+      };
+      stored.version += 1;
+    });
+    const shown = box.run(["backlog", "list", "--json"], box.outside);
+    expect(JSON.parse(shown.stdout)).toEqual({
+      machine: FAKE_CORE,
+      domains: [
+        {
+          domain: "app",
+          lease: {
+            machine: "strix",
+            address: "t1fn",
+            expiry: "2099-01-01T00:00:00.000Z",
+            live: true,
+            terminal: "strix/t1fn",
+          },
+        },
+      ],
+    });
+    box.setCores((current) => {
+      current.machines[FAKE_HOME] = "down";
+    });
+    const down = box.run(["backlog", "list", "--json"], box.outside);
+    expect([down.exit, down.stdout]).toEqual([2, ""]);
+    expect(down.stderr.includes(`the state home ${FAKE_HOME} is unreachable`)).toBe(true);
+  }, 60_000);
+});
