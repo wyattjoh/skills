@@ -185,6 +185,58 @@ export type DomainLease = {
 };
 
 /**
+ * A domain's lease with the backlog document it was read from.
+ */
+export type StoredDomainLease = DomainLease & {
+  /**
+   * The backlog document as stored (null when it has none or could not be read).
+   */
+  document: unknown;
+  /**
+   * Why the document could not be read, or null when it could.
+   */
+  unreadable: string | null;
+};
+
+/**
+ * Every domain in the store with its coordinator lease, in name order: the fleet's coordinators on
+ * every machine, seen from `reader`. A document that cannot be read counts as having no lease; an
+ * unreachable home fails (`StoreOffline`).
+ * @param store The store holding the backlogs.
+ * @param reader The reading machine's own Herdr core name.
+ * @param now Milliseconds since the epoch.
+ * @param only Read only this domain, or every domain when undefined.
+ * @returns The domains and their leases, each with the document it came from.
+ */
+export const storedDomainLeases = (
+  store: StateStore,
+  reader: string,
+  now: number,
+  only: string | undefined = undefined,
+) =>
+  Effect.gen(function* () {
+    const domains = [...(yield* store.list("backlog"))]
+      .filter((domain) => only === undefined || domain === only)
+      .toSorted();
+    const stored = yield* store.readMany(domains.map(keys.backlog));
+    return domains.map((domain, index): StoredDomainLease => {
+      const read = stored[index];
+      const document = read === undefined || read instanceof StoreUnreadable ? null : read.value;
+      const lease = leaseOf(document);
+      const live = lease !== undefined && leaseLive(lease, now);
+      return {
+        domain,
+        lease: lease ?? null,
+        live,
+        coordinator: live ? leaseAddress(lease, reader) : null,
+        document,
+        unreadable:
+          read instanceof StoreUnreadable ? read.message : read === undefined ? "not read" : null,
+      };
+    });
+  });
+
+/**
  * Every domain in the store with its coordinator lease, in name order: the fleet's coordinators on
  * every machine, seen from `reader`. A document that cannot be read counts as having no lease; an
  * unreachable home fails (`StoreOffline`).
@@ -194,22 +246,14 @@ export type DomainLease = {
  * @returns The domains and their leases.
  */
 export const domainLeases = (store: StateStore, reader: string, now: number) =>
-  Effect.gen(function* () {
-    const domains = [...(yield* store.list("backlog"))].toSorted();
-    const stored = yield* store.readMany(domains.map(keys.backlog));
-    return domains.map((domain, index): DomainLease => {
-      const read = stored[index];
-      const lease =
-        read === undefined || read instanceof StoreUnreadable ? undefined : leaseOf(read.value);
-      const live = lease !== undefined && leaseLive(lease, now);
-      return {
-        domain,
-        lease: lease ?? null,
-        live,
-        coordinator: live ? leaseAddress(lease, reader) : null,
-      };
-    });
-  });
+  Effect.map(storedDomainLeases(store, reader, now), (rows) =>
+    rows.map(({ domain, lease, live, coordinator }): DomainLease => ({
+      domain,
+      lease,
+      live,
+      coordinator,
+    })),
+  );
 
 /**
  * A watcher's renewal of its coordinator's lease on this machine, at most once per

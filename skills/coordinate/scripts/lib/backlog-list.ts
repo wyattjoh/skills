@@ -1,6 +1,6 @@
 import { Effect } from "effect";
 import { isRecord } from "./backlog-store/schema.ts";
-import { leaseLive, leaseOf, type Lease } from "./lease.ts";
+import { leaseAddress, storedDomainLeases, type Lease, type StoredDomainLease } from "./lease.ts";
 import type { Config } from "./config.ts";
 import { localMachine } from "./delegate-capacity.ts";
 import { stateStore } from "./state.ts";
@@ -59,17 +59,6 @@ export type BacklogListOptions = {
   domain: string | undefined;
 };
 
-const listedLease = (lease: Lease, machine: string | undefined, now: number): ListedLease => ({
-  ...lease,
-  live: leaseLive(lease, now),
-  terminal:
-    machine === undefined
-      ? null
-      : lease.machine === machine
-        ? lease.address
-        : `${lease.machine}/${lease.address}`,
-});
-
 // The sessions a stored document's delegate refs name, once each, in document order.
 const refSessions = (document: unknown): string[] => {
   if (!isRecord(document) || !Array.isArray(document.items)) return [];
@@ -87,8 +76,9 @@ const endedAt = (value: unknown): string | undefined =>
   isRecord(value) && typeof value.ended_at === "string" ? value.ended_at : undefined;
 
 /**
- * Every domain with a backlog in the store, in name order, with its coordinator lease, read in
- * one batch (two with documents, for the ended records). Read-only.
+ * Every domain with a backlog in the store, in name order, with its coordinator lease as
+ * `domainLeases` reads it, plus (with documents) each document and its delegates' ended records.
+ * Read-only.
  * @param store The state store.
  * @param options This core's name, the time, whether to include documents, and an optional domain.
  * @returns The listing.
@@ -97,28 +87,27 @@ export const backlogList = Effect.fn("backlogList")(function* (
   store: StateStore,
   options: BacklogListOptions,
 ) {
-  const all = yield* store
-    .list("backlog")
-    .pipe(Effect.catchTag("StoreUnreadable", () => Effect.succeed([] as readonly string[])));
-  const names = [...all]
-    .filter((name) => options.domain === undefined || name === options.domain)
-    .toSorted();
-  const read = yield* store.readMany(names.map(keys.backlog));
-  const rows = names.map((domain, index) => {
-    const stored = read[index];
-    const unreadable = stored === undefined || stored instanceof StoreUnreadable;
-    const value = unreadable ? null : stored.value;
-    const lease = leaseOf(value);
+  const rows = yield* storedDomainLeases(
+    store,
+    options.machine ?? "",
+    options.now,
+    options.domain,
+  ).pipe(Effect.catchTag("StoreUnreadable", () => Effect.succeed([] as StoredDomainLease[])));
+  const leaseOfRow = ({ lease, live }: StoredDomainLease): ListedLease | null =>
+    lease === null
+      ? null
+      : {
+          ...lease,
+          live,
+          terminal: options.machine === undefined ? null : leaseAddress(lease, options.machine),
+        };
+  const machine = options.machine ?? null;
+  if (!options.documents)
     return {
-      domain,
-      value,
-      reason: stored instanceof StoreUnreadable ? stored.message : unreadable ? "not read" : null,
-      lease: lease === undefined ? null : listedLease(lease, options.machine, options.now),
-    };
-  });
-  const domains: ListedDomain[] = rows.map(({ domain, lease }) => ({ domain, lease }));
-  if (!options.documents) return { machine: options.machine ?? null, domains } as BacklogListing;
-  const sessions = [...new Set(rows.flatMap((row) => refSessions(row.value)))];
+      machine,
+      domains: rows.map((row) => ({ domain: row.domain, lease: leaseOfRow(row) })),
+    } as BacklogListing;
+  const sessions = [...new Set(rows.flatMap((row) => refSessions(row.document)))];
   const records = yield* store.readMany(sessions.map(keys.ended));
   const ended = new Map<string, string>();
   for (const [index, session] of sessions.entries()) {
@@ -128,14 +117,14 @@ export const backlogList = Effect.fn("backlogList")(function* (
     if (at !== undefined) ended.set(session, at);
   }
   return {
-    machine: options.machine ?? null,
-    domains: rows.map(({ domain, lease, value, reason }) => ({
-      domain,
-      lease,
-      document: value,
-      unreadable: reason,
+    machine,
+    domains: rows.map((row) => ({
+      domain: row.domain,
+      lease: leaseOfRow(row),
+      document: row.document,
+      unreadable: row.unreadable,
       ended: Object.fromEntries(
-        refSessions(value).flatMap((session) => {
+        refSessions(row.document).flatMap((session) => {
           const at = ended.get(session);
           return at === undefined ? [] : [[session, at]];
         }),
