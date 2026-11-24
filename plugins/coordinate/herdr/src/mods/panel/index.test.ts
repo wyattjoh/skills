@@ -1101,7 +1101,7 @@ test("the answer flow header offers Speed only: the Layout comparison is gone", 
   expect(ids(root, "answer-flow-ask-i1-options-")).toEqual([]);
 });
 
-test("answer-flow questions use the Outline treatment without a bottom action bar", async () => {
+test("answer-flow questions rule their choices off without a bottom action bar", async () => {
   focusDomain("alpha");
   const backlog = withManyAsks(2, "fits the choice");
   host.files.set(
@@ -1167,9 +1167,10 @@ test("answer-flow questions use the Outline treatment without a bottom action ba
   });
   expect(outlineStyles(unselected)).toEqual([]);
   expect(unselected.hoverStyles.bg).toBe("#404040");
-  expect(get(root, "answer-flow-ask-i1-option-1-selection-marker").styles.asset).toBe(
-    HERDR_ICONS.circleCheck,
-  );
+  expect(get(root, "answer-flow-ask-i1-option-1-selection-marker").styles).toMatchObject({
+    asset: HERDR_ICONS.circleCheck,
+    text_color: "#f5f5f5",
+  });
   expect(get(root, "answer-flow-ask-i1-option-0-selection-marker").styles.asset).toBe(undefined);
   expect(text(unselected)).toContain("Recommended");
   expect(get(root, "answer-flow-card-i1").styles.w).toBe(252);
@@ -5137,9 +5138,10 @@ test("a queued question stays editable on Back, and answering it again replaces 
 
   expect(view.answerFlow?.current).toBe(0);
   expect(view.draft?.choice).toBe("No");
-  expect(get(root, "answer-flow-ask-i1-option-1-selection-marker").styles.asset).toBe(
-    HERDR_ICONS.circleCheck,
-  );
+  expect(get(root, "answer-flow-ask-i1-option-1-selection-marker").styles).toMatchObject({
+    asset: HERDR_ICONS.circleCheck,
+    text_color: "#f5f5f5",
+  });
   expect(typeof get(root, "answer-flow-ask-i1-answer-submit").click).toBe("function");
 
   get(root, "answer-flow-ask-i1-option-0").click!({}, ctx.cx);

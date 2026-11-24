@@ -1041,7 +1041,7 @@ const askCardRows = (
             .id(`${optionId}-selection-marker`)
             .size(ANSWER_FLOW_OUTLINE.markerSize)
             .flex_none()
-            .text_color(t.accent)
+            .text_color(t.foreground)
         : div()
             .id(`${optionId}-selection-marker`)
             .w(ANSWER_FLOW_OUTLINE.markerSize)
