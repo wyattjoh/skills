@@ -140,7 +140,7 @@ export const gitAndFake = (
  * reaches the real Herdr app. HOME is `<state>/home`, whose `.local/bin` is not on PATH.
  * With the herdr-doc backend (`stateBackend`, by default from `COORDINATE_TEST_STATE_BACKEND`), the
  * config keeps shared state on the home `FAKE_HOME`, and the stub's `hc connect` answers document
- * calls from fake cores in `<state>/herdr-docs.json` (this core `FAKE_CORE`, which knows the home and
+ * calls from fake cores in `<state>/herdr-docs.json` (and `hc file read` finds no file) (this core `FAKE_CORE`, which knows the home and
  * strix, both up).
  * @param state State dir.
  * @param labels The calling terminal's labels.
@@ -199,6 +199,7 @@ export const cliEnv = (
   writeFileSync(
     join(bin, "hc"),
     `#!/bin/sh\nprintf '%s\\n' "$*" >> '${join(bin, "calls.log")}'\ncase "$1" in\n  get) ${known}${got} ;;\n  ls) ${listed}printf '{"terminals":[]}' ;;\n  run) printf '{"address":"t-watch"}' ;;
+  file) [ "$2" = read ] && { printf '{"error":{"kind":"not_found","message":"no such file"}}' >&2; exit 1; }; printf '{}' ;;
   connect) exec '${process.execPath}' '${join(import.meta.dir, "herdr-docs-fake.ts")}' '${docs}' ;;
   server) printf '%s' '${JSON.stringify({ core: { id: "0", name: FAKE_CORE } })}' ;;
   machine) printf '%s' '${JSON.stringify({ machines: [{ name: "strix", state: "connected" }] })}' ;;

@@ -1544,6 +1544,35 @@ describe("retention", () => {
     expect(archived(path)).toEqual([fifty[0]]);
   });
 
+  it("lists archived closed items under Done with --done, after the ones the document keeps", async () => {
+    const { cfg, path } = await started();
+    const fifty = Array.from({ length: 50 }, (_, index) => closedItem(index + 1, at(index + 1)));
+    seed(path, [...fifty, openItem(51)], [], 52);
+    await runWith(
+      itemClose(cfg, "app", {
+        id: "i51",
+        outcome: "last",
+        dismissed: false,
+        json: false,
+        now: at(60),
+      }),
+    );
+    const done = (await runWith(showBacklog(cfg, "app", false, new Set(), true)))
+      .join("\n")
+      .split("## Done\n\n")[1]
+      ?.split("\n");
+    expect([done?.length, done?.[0], done?.at(-2), done?.at(-1)]).toEqual([
+      51,
+      "- i51 [done 2026-01-01] item 51: last",
+      "- i2 [done 2026-01-01] item 2: shipped 2",
+      "- i1 [done 2026-01-01] item 1: shipped 1",
+    ]);
+    const hidden = (await runWith(showBacklog(cfg, "app", false)))
+      .join("\n")
+      .split("## Done\n\n")[1];
+    expect(hidden).toBe("50 closed items hidden (coordinate backlog show --done)");
+  });
+
   it("archives closed items and findings from one pool in close order and keeps open ones", async () => {
     const { cfg, path } = await started();
     const closedFinding = (n: number, closedAt: string | null) => ({

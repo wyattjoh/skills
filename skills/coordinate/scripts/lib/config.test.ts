@@ -28,6 +28,21 @@ describe("resolveConfig", () => {
     expect([config.stateBackend, config.stateHome]).toEqual(["herdr-doc", "finbar"]);
   });
 
+  it("takes the home's state dir as an absolute path, refusing a relative one", async () => {
+    const config = await resolve({
+      state_backend: "herdr-doc",
+      state_home: "finbar",
+      home_state_dir: "/Users/someone/.local/state/coordinate",
+    });
+    expect([config.homeStateDir, (await resolve({})).homeStateDir]).toEqual([
+      "/Users/someone/.local/state/coordinate",
+      undefined,
+    ]);
+    expect((await fail({ home_state_dir: "state" })).message).toBe(
+      "home_state_dir must be an absolute path on the home machine",
+    );
+  });
+
   it("refuses the herdr-doc backend without a home, and an unknown backend", async () => {
     const invalid = await Promise.all([
       fail({ state_backend: "herdr-doc" }),

@@ -9,7 +9,7 @@ import { storeConformance } from "./state-store-conformance.ts";
 import { herdrStore } from "./state-herdr.ts";
 import { keys, type StateKey, type StateStore } from "./state-store.ts";
 
-const noRemote = () => Effect.die(new Error("this test appends no remote archive"));
+const noRemote = () => Effect.die(new Error("this test touches no remote archive"));
 const run = <A, E>(effect: Effect.Effect<A, E>): Promise<A> => Effect.runPromise(effect);
 const fail = <A, E>(effect: Effect.Effect<A, E>): Promise<E> =>
   Effect.runPromise(Effect.flip(effect));
@@ -39,6 +39,7 @@ const fakeStore = (
       home: "homebase",
       prefix: "ct.",
       appendRemote: noRemote,
+      readRemote: noRemote,
       transport,
       self: Effect.succeed(cores.self),
       stateDir,
@@ -58,6 +59,7 @@ storeConformance(
       home: "homebase",
       prefix: "ct.",
       appendRemote: noRemote,
+      readRemote: noRemote,
       transport: memoryDocTransport(cores),
       self: Effect.succeed("strix"),
       stateDir: tempDir("coordinate-herdr-other-"),
@@ -158,7 +160,7 @@ describe("herdr-doc store", () => {
     expect((await run(store.read(keys.backlog("app")))).value).toEqual({ domain: "app" });
   });
 
-  test("appends archive lines to a local file on the home and through the home from elsewhere", async () => {
+  test("keeps archives in local files on the home and reaches them through the home from elsewhere", async () => {
     const home = fakeStore({ remote: false });
     await run(home.store.appendArchive("app", ['{"id":"i1"}']));
     const appended: unknown[] = [];
@@ -167,6 +169,7 @@ describe("herdr-doc store", () => {
       prefix: "ct.",
       appendRemote: (machine, domain, lines) =>
         Effect.sync(() => void appended.push([machine, domain, lines])),
+      readRemote: (machine, domain) => Effect.succeed(`read ${domain} on ${machine}\n`),
       transport: memoryDocTransport(fakeDocCores("strix", { homebase: "up" })),
       self: Effect.succeed("strix"),
       stateDir: tempDir("coordinate-herdr-away-"),
@@ -175,7 +178,16 @@ describe("herdr-doc store", () => {
     expect([
       readFileSync(join(home.stateDir, "backlogs", "app.archive.jsonl"), "utf8"),
       appended,
-    ]).toEqual(['{"id":"i1"}\n', [["homebase", "app", ['{"id":"i2"}']]]]);
+      await run(home.store.readArchive("app")),
+      await run(home.store.readArchive("web")),
+      await run(away.readArchive("app")),
+    ]).toEqual([
+      '{"id":"i1"}\n',
+      [["homebase", "app", ['{"id":"i2"}']]],
+      '{"id":"i1"}\n',
+      undefined,
+      "read app on homebase\n",
+    ]);
   });
 
   test("names the home when it is unreachable", async () => {
@@ -239,6 +251,7 @@ storeConformance(
       home: "local-core",
       prefix: `${prefix}${runIndex.toString(36)}.`,
       appendRemote: noRemote,
+      readRemote: noRemote,
       transport: recording,
       self: Effect.succeed("local-core"),
       stateDir: tempDir("coordinate-herdr-real-"),
@@ -247,6 +260,7 @@ storeConformance(
       home: "local-core",
       prefix: `${prefix}${runIndex.toString(36)}.`,
       appendRemote: noRemote,
+      readRemote: noRemote,
       transport: recording,
       self: Effect.succeed("local-core"),
       stateDir: tempDir("coordinate-herdr-real-other-"),

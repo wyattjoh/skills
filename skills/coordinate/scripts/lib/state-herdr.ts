@@ -3,7 +3,7 @@ import { hostname } from "node:os";
 import { Effect } from "effect";
 import { archivePath } from "./backlog-store/paths.ts";
 import { docNameProblem, type DocReply, type DocRequest, type DocTransport } from "./herdr-docs.ts";
-import { appendArchiveFile, filesStore } from "./state-files.ts";
+import { appendArchiveFile, filesStore, readArchiveFile } from "./state-files.ts";
 import {
   BacklogError,
   ClaimBusy,
@@ -63,6 +63,13 @@ export type HerdrStoreOptions = {
     domain: string,
     lines: readonly string[],
   ) => Effect.Effect<void, BacklogError | StoreOffline>;
+  /**
+   * Read a domain's archive on the home when it is another machine.
+   */
+  readRemote: (
+    home: string,
+    domain: string,
+  ) => Effect.Effect<string | undefined, BacklogError | StoreOffline>;
 };
 
 type Address = { name: string; field: string | undefined };
@@ -493,6 +500,12 @@ export const herdrStore = (options: HerdrStoreOptions): StateStore => {
     list,
     appendArchive,
     archivesHere: Effect.map(route, (on) => on.on === undefined),
+    readArchive: (domain) =>
+      Effect.flatMap(route, (on) =>
+        on.on === undefined
+          ? readArchiveFile(archivePath(stateDir, domain))
+          : options.readRemote(home, domain),
+      ),
     exclusive: (_keys, use) => use(session),
     claim,
     release,

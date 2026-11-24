@@ -191,6 +191,10 @@ export type StateStore = {
    */
   archivesHere: Effect.Effect<boolean, StoreOffline>;
   /**
+   * A domain's whole archive, or undefined when it has none (herdr-doc: read on the home).
+   */
+  readArchive: (domain: string) => Effect.Effect<string | undefined, BacklogError | StoreOffline>;
+  /**
    * Run `use` with exclusive access to `keys` where the backend needs it (files: today's lock
    * directories, taken in name order; a version-checked backend runs it as is). Writes inside go
    * through the session `use` receives.

@@ -335,6 +335,17 @@ export const appendArchiveFile = (
       });
 
 /**
+ * Read a local archive file whole.
+ * @param path Archive file.
+ * @returns Its text, or undefined when there is none.
+ */
+export const readArchiveFile = (path: string): Effect.Effect<string | undefined, BacklogError> =>
+  Effect.tryPromise({
+    try: async () => (await readText(path)) ?? undefined,
+    catch: failure(path),
+  });
+
+/**
  * Today's state files as a store: one JSON file per document under the state directory, written
  * with a temp file, fsync and rename, under the backlog lock directories the documents have always
  * used. A version is a hash of the file's bytes, so it detects any change between a read and a
@@ -447,6 +458,7 @@ export const filesStore = (stateDir: string): StateStore => {
     write,
     appendArchive: (domain, lines) => appendArchiveFile(archivePath(stateDir, domain), lines),
     archivesHere: Effect.succeed(true),
+    readArchive: (domain) => readArchiveFile(archivePath(stateDir, domain)),
     list: (kind) =>
       Effect.promise(async () =>
         (await readdir(listedDir(stateDir, kind)).catch((): string[] => []))

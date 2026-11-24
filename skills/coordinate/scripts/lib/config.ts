@@ -32,6 +32,11 @@ export type Config = {
    * The home's Herdr machine name (herdr-doc only).
    */
   stateHome: string | undefined;
+  /**
+   * The home machine's state directory (herdr-doc archives), when it is not this machine's
+   * `state_dir` mapped onto the home user's HOME.
+   */
+  homeStateDir: string | undefined;
 };
 
 /**
@@ -66,6 +71,7 @@ const ConfigFile = Schema.Struct({
   max_fleet_delegates_by_machine: Schema.optionalKey(Schema.Record(Schema.String, Schema.Number)),
   state_backend: Schema.optionalKey(Schema.Literals(["files", "herdr-doc"])),
   state_home: Schema.optionalKey(Schema.String),
+  home_state_dir: Schema.optionalKey(Schema.String),
 });
 
 const KNOWN_KEYS = new Set([
@@ -82,6 +88,7 @@ const KNOWN_KEYS = new Set([
   "max_fleet_delegates_by_machine",
   "state_backend",
   "state_home",
+  "home_state_dir",
 ]);
 
 /**
@@ -243,9 +250,16 @@ export const resolveConfig = Effect.fn("resolveConfig")(function* (
       message:
         "state_backend herdr-doc needs state_home, the Herdr machine name of the home that holds shared state",
     });
+  if (file.home_state_dir !== undefined && !isAbsolute(file.home_state_dir))
+    return yield* new ConfigError({
+      path,
+      message: "home_state_dir must be an absolute path on the home machine",
+    });
   return {
     stateBackend,
     stateHome: file.state_home,
+    // A path on the home, so it is normalized but never resolved against this machine.
+    homeStateDir: file.home_state_dir === undefined ? undefined : resolve(file.home_state_dir),
     cores,
     maxFleetDelegates: file.max_fleet_delegates ?? Math.max(2, Math.floor(cores / 4)),
     maxFleetDelegatesOverride: file.max_fleet_delegates,

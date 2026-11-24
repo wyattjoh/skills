@@ -330,6 +330,34 @@ const withEdit = <A>(
 };
 
 /**
+ * The backlog with the closed items its archive holds added back, for `--done`. The archive is
+ * read on the home (herdr-doc). A line repeated by a retried write counts once, a record the
+ * document still holds is not doubled, and an archive that does not validate is left out.
+ */
+const withArchivedItems = Effect.fn("withArchivedItems")(function* (
+  config: Config,
+  backlog: Backlog,
+) {
+  const text = yield* storeOf(config).readArchive(backlog.domain);
+  if (text === undefined) return backlog;
+  const held = new Set([...backlog.items, ...backlog.findings].map((record) => record.id));
+  const archived = new Map<string, unknown>();
+  for (const line of text.split("\n")) {
+    if (line.trim() === "") continue;
+    try {
+      const record = JSON.parse(line) as { id?: unknown; kind?: unknown };
+      if (typeof record.id === "string" && record.kind === undefined && !held.has(record.id))
+        archived.set(record.id, record);
+    } catch {
+      // A torn last line from a crash mid-append reads as nothing.
+    }
+  }
+  if (archived.size === 0) return backlog;
+  const checked = validateBacklog({ ...backlog, items: [...backlog.items, ...archived.values()] });
+  return checked.ok ? checked.backlog : backlog;
+});
+
+/**
  * `coordinate backlog show`: the document rendered as Markdown, or printed as JSON.
  * @param config Config.
  * @param domain Domain.
@@ -359,7 +387,8 @@ export const showBacklog = Effect.fn("showBacklog")(function* (
         )
       : undefined);
   const idle = sessions ? idleDelegated(backlog, sessions).map((item) => item.id) : [];
-  return [renderBacklog(backlog, new Set(idle), showDone, verbose).trimEnd()];
+  const shown = showDone ? yield* withArchivedItems(config, backlog) : backlog;
+  return [renderBacklog(shown, new Set(idle), showDone, verbose).trimEnd()];
 });
 
 /**
