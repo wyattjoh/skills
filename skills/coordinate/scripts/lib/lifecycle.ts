@@ -15,6 +15,7 @@ import {
   seedDocument,
   documentExists,
 } from "./backlog-doc.ts";
+import { leaseLive, leaseOf, leaseRefusal, takeLease } from "./lease.ts";
 import { stateStore } from "./state.ts";
 import { keys, optionUnlessOffline } from "./state-store.ts";
 import { filedUnder, idleDelegated, updateItem, type ItemUpdate } from "./backlog-store/ops.ts";
@@ -104,16 +105,19 @@ const loginShell = (): string => {
 };
 
 /**
- * Label this terminal as the domain's coordinator and make sure its backlog exists.
+ * Make sure the domain's backlog exists, take its coordinator lease for this terminal (refused
+ * while another coordinator's lease is live), then label this terminal as the domain's coordinator.
  * @param config Config.
  * @param domain Domain.
  * @param env Environment (`HC_TERMINAL_ID`).
+ * @param now Milliseconds since the epoch, for the lease.
  * @returns Lines to print.
  */
 export const start = Effect.fn("start")(function* (
   config: Config,
   domain: string,
   env: Record<string, string | undefined> = process.env,
+  now: number = Date.now(),
 ) {
   yield* checkDomainName(domain);
   const address = env.HC_TERMINAL_ID;
@@ -121,6 +125,13 @@ export const start = Effect.fn("start")(function* (
     return yield* new Refused({
       message: "HC_TERMINAL_ID is unset: run this inside a Herdr terminal",
     });
+  const made = yield* createDocument(config, domain);
+  yield* takeLease(
+    stateStore(config.stateDir),
+    domain,
+    { machine: yield* localMachine(), address },
+    now,
+  );
   const lines: string[] = [];
   const others = (yield* coordinators(domain)).filter((terminal) => terminal.address !== address);
   if (others.length > 0)
@@ -129,7 +140,6 @@ export const start = Effect.fn("start")(function* (
     );
   yield* hc.label(address, { [L.role]: "coordinator", [L.domain]: domain });
   lines.push(`labelled ${address}: fleet.role=coordinator fleet.domain=${domain}`);
-  const made = yield* createDocument(config, domain);
   if (!made.created) lines.push(`backlog ${made.path}`);
   else {
     lines.push(`created backlog ${made.path}`);
@@ -515,6 +525,10 @@ export const spawn = Effect.fn("spawn")(function* (
     return yield* new Refused({
       message: `${domain} already has a live coordinator: ${running.name ?? running.address} (${running.address}); go to it instead of spawning another`,
     });
+  const held = yield* optionUnlessOffline(stateStore(config.stateDir).read(keys.backlog(domain)));
+  const lease = Option.isSome(held) ? leaseOf(held.value.value) : undefined;
+  if (lease !== undefined && leaseLive(lease, Date.parse(options.now)))
+    return yield* new Refused({ message: leaseRefusal(domain, lease) });
   const taken = (yield* hc.list()).find((terminal) => terminal.live && terminal.name === name);
   if (taken)
     return yield* new Refused({
@@ -553,6 +567,13 @@ export const spawn = Effect.fn("spawn")(function* (
     machine: undefined,
     shell: undefined,
   });
+  // Recorded for the new terminal, so its own `coordinate start` takes the same lease again.
+  yield* takeLease(
+    stateStore(config.stateDir),
+    domain,
+    { machine: yield* localMachine(), address: launched.address },
+    Date.parse(options.now),
+  );
   const ready = yield* awaitWatcher(domain, launched.address, wait);
   const result: SpawnResult = {
     name,

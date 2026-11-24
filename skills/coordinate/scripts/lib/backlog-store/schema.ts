@@ -359,6 +359,10 @@ export type Backlog = {
    * until the first edit.
    */
   nextEditId?: number;
+  /**
+   * The coordinator lease (lease.ts): which machine and terminal coordinate the domain, until when.
+   */
+  lease?: { machine: string; address: string; expiry: string };
 };
 
 /**
@@ -531,6 +535,16 @@ export const validateBacklog = (value: unknown): Validated => {
   const nextPolicyId = candidate.nextPolicyId;
   if (typeof nextPolicyId !== "number" || !Number.isInteger(nextPolicyId) || nextPolicyId < 1)
     errors.push("nextPolicyId must be a positive integer");
+  if ("lease" in candidate) {
+    const lease = candidate.lease;
+    if (!isRecord(lease)) errors.push("lease must be an object");
+    else {
+      nonEmpty("lease.machine", lease.machine);
+      nonEmpty("lease.address", lease.address);
+      if (typeof lease.expiry !== "string" || Number.isNaN(Date.parse(lease.expiry)))
+        errors.push("lease.expiry must be an ISO time");
+    }
+  }
 
   if ("edits" in candidate) {
     const edits = list("edits", candidate.edits);

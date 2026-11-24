@@ -237,3 +237,69 @@ describe("coordinate CLI on the herdr-doc backend", () => {
     ]);
   }, 60_000);
 });
+
+describe.each<StateBackend>(["files", "herdr-doc"])("coordinator leases on %s", (backend) => {
+  /**
+   * Write a lease into app's backlog behind the CLI's back, the way a coordinator on another
+   * machine would have taken it.
+   */
+  const leased = (box: ReturnType<typeof sandbox>, lease: Record<string, string>) => {
+    if (backend === "files") {
+      const path = join(box.state, "backlogs", "app.json");
+      const document = JSON.parse(readFileSync(path, "utf8")) as Record<string, unknown>;
+      writeFileSync(path, JSON.stringify({ ...document, lease }));
+      return;
+    }
+    box.setCores((current) => {
+      const stored = current.docs[FAKE_HOME]?.["cs.b.app"];
+      if (stored === undefined) throw new Error("app has no backlog on the home");
+      stored.value = { ...(stored.value as Record<string, unknown>), lease };
+      stored.version += 1;
+    });
+  };
+  const leaseNow = (box: ReturnType<typeof sandbox>) =>
+    (
+      JSON.parse(box.run(["backlog", "show", "--json", "--domain", "app"]).stdout) as {
+        lease: { machine: string; address: string; expiry: string };
+      }
+    ).lease;
+
+  it("refuses a second start for a domain with a live lease, naming the holder", () => {
+    const box = sandbox(backend, `coordinate-lease-live-${backend}-`);
+    expect(box.run(["start", "app"]).exit).toBe(0);
+    const second = box.run(["start", "app"], { ...box.outside, HC_TERMINAL_ID: "t2" });
+    const held = leaseNow(box);
+    expect([second.exit, second.stdout, second.stderr]).toEqual([
+      1,
+      "",
+      `refused: app already has a coordinator: ${FAKE_CORE}/t1 holds its lease until ${held.expiry}; go to it, or wait for that lease to expire (3 minutes after its watcher last renewed it)\n`,
+    ]);
+    leased(box, { machine: "strix", address: "t1fn", expiry: "2099-01-01T00:00:00.000Z" });
+    const elsewhere = box.run(["start", "app"]);
+    expect([elsewhere.exit, elsewhere.stderr]).toEqual([
+      1,
+      "refused: app already has a coordinator: strix/t1fn holds its lease until 2099-01-01T00:00:00.000Z; go to it, or wait for that lease to expire (3 minutes after its watcher last renewed it)\n",
+    ]);
+    expect(leaseNow(box)).toEqual({
+      machine: "strix",
+      address: "t1fn",
+      expiry: "2099-01-01T00:00:00.000Z",
+    });
+  }, 60_000);
+
+  it("lets a new start take a lease its holder has not renewed for three minutes", () => {
+    const box = sandbox(backend, `coordinate-lease-lapsed-${backend}-`);
+    expect(box.run(["start", "app"]).exit).toBe(0);
+    const lapsed = new Date(Date.now() - 1000).toISOString();
+    leased(box, { machine: "strix", address: "t1fn", expiry: lapsed });
+    const before = Date.now();
+    const started = box.run(["start", "app"]);
+    expect([started.exit, started.stderr]).toEqual([0, ""]);
+    const { expiry, ...holder } = leaseNow(box);
+    expect(holder).toEqual({ machine: FAKE_CORE, address: "t1" });
+    // Three minutes from the start that took it.
+    expect(
+      Date.parse(expiry) - before >= 180_000 && Date.parse(expiry) - Date.now() <= 180_000,
+    ).toBe(true);
+  }, 60_000);
+});

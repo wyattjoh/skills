@@ -46,6 +46,8 @@ const config = (state: string) =>
 const terminal = (fields: Record<string, unknown>) =>
   JSON.stringify({ address: "t2", name: "fix-a", state: "live", labels: {}, ...fields });
 
+const START_NOW = Date.parse("2026-11-23T12:00:00.000Z");
+
 const messageOf = (error: unknown): string =>
   typeof error === "object" && error !== null && "message" in error
     ? String(error.message)
@@ -91,7 +93,7 @@ describe("start", () => {
       return ok("{}");
     });
     const lines = await runWith(
-      start(await config(state), "app", { HC_TERMINAL_ID: "t9" }),
+      start(await config(state), "app", { HC_TERMINAL_ID: "t9" }, START_NOW),
       fake.layer,
     );
     const path = join(state, "backlogs", "app.json");
@@ -114,16 +116,77 @@ describe("start", () => {
       findings: [],
       nextId: 1,
       nextPolicyId: 1,
+      lease: { machine: "fake-core", address: "t9", expiry: "2026-11-23T12:03:00.000Z" },
     });
     expect(existsSync(join(state, "backlogs", "app-backlog.md"))).toBe(false);
-    expect(fake.calls[1]?.argv).toEqual([
-      "hc",
-      "label",
-      "t9",
-      "fleet.role=coordinator",
-      "fleet.domain=app",
-      "--json",
+    expect(fake.calls.slice(0, 3).map((call) => call.argv)).toEqual([
+      ["hc", "server", "status", "--json"],
+      ["hc", "ls", "--json", "--label", "fleet.role=coordinator", "--label", "fleet.domain=app"],
+      ["hc", "label", "t9", "fleet.role=coordinator", "fleet.domain=app", "--json"],
     ]);
+  });
+
+  const leasedBy = async (state: string, lease: Record<string, string>) => {
+    const cfg = await config(state);
+    await Effect.runPromise(createDocument(cfg, "app"));
+    const path = join(state, "backlogs", "app.json");
+    writeFileSync(path, JSON.stringify({ ...JSON.parse(readFileSync(path, "utf8")), lease }));
+    return { cfg, path };
+  };
+  const startFake = () =>
+    fakeProc((argv) => {
+      if (argv[1] === "ls") return ok('{"terminals":[]}');
+      if (argv[1] === "get" && argv[2] === "t9")
+        return ok(
+          terminal({
+            address: "t9",
+            labels: { "fleet.role": "coordinator", "fleet.domain": "app" },
+          }),
+        );
+      if (argv[1] === "run") return ok('{"address":"t10"}');
+      return ok("{}");
+    });
+
+  it("refuses while another machine holds a live lease, naming it, and labels nothing", async () => {
+    const state = dir();
+    const { cfg, path } = await leasedBy(state, {
+      machine: "strix",
+      address: "t1fn",
+      expiry: "2026-11-23T12:00:00.001Z",
+    });
+    const fake = startFake();
+    const error = await failureOf(
+      start(cfg, "app", { HC_TERMINAL_ID: "t9" }, START_NOW),
+      fake.layer,
+    );
+    expect(messageOf(error)).toBe(
+      "app already has a coordinator: strix/t1fn holds its lease until 2026-11-23T12:00:00.001Z; go to it, or wait for that lease to expire (3 minutes after its watcher last renewed it)",
+    );
+    expect(fake.calls.map((call) => call.argv)).toEqual([["hc", "server", "status", "--json"]]);
+    expect(JSON.parse(readFileSync(path, "utf8")).lease).toEqual({
+      machine: "strix",
+      address: "t1fn",
+      expiry: "2026-11-23T12:00:00.001Z",
+    });
+  });
+
+  it("takes over a lease its holder has not renewed for three minutes", async () => {
+    const state = dir();
+    const { cfg, path } = await leasedBy(state, {
+      machine: "strix",
+      address: "t1fn",
+      expiry: "2026-11-23T12:00:00.000Z",
+    });
+    const lines = await runWith(
+      start(cfg, "app", { HC_TERMINAL_ID: "t9" }, START_NOW),
+      startFake().layer,
+    );
+    expect(lines[0]).toBe("labelled t9: fleet.role=coordinator fleet.domain=app");
+    expect(JSON.parse(readFileSync(path, "utf8")).lease).toEqual({
+      machine: "fake-core",
+      address: "t9",
+      expiry: "2026-11-23T12:03:00.000Z",
+    });
   });
 
   it("warns about a second coordinator of the same domain", async () => {
@@ -646,9 +709,13 @@ const withDefaultHarness = async (state: string, harness: "pi" | "claude") => {
 };
 
 const ENV = { HC_TERMINAL_ID: "t1" };
-/** The calls after the launch's tab rename: what spawn did while waiting for readiness. */
-const tailAfterRename = (calls: readonly (readonly string[])[]) =>
-  calls.slice(calls.findIndex((argv) => argv[2] === "tab.rename") + 1);
+/** The calls after the launch's tab rename and the lease's core-name read: the readiness wait. */
+const tailAfterRename = (calls: readonly (readonly string[])[]) => {
+  const renamed = calls.findIndex((argv) => argv[2] === "tab.rename");
+  expect(calls[renamed + 1]).toEqual(coreRead);
+  return calls.slice(renamed + 2);
+};
+const coreRead = ["hc", "server", "status", "--json"];
 /** A readiness wait of three polls that records each sleep instead of sleeping. */
 const fastWait = (sleeps: number[]) => ({
   timeoutMs: 3,
@@ -884,6 +951,7 @@ describe("spawn", () => {
       ["hc", "kill", "t6"],
       ["hc", "rm", "t6"],
       ["herdr-app", "do", "tab.rename", '{"id":"tab9","name":"Tasks · No active focus"}'],
+      coreRead,
       watcherList,
     ]);
     expect(spawnOutput(result)).toEqual([
@@ -963,7 +1031,59 @@ describe("spawn", () => {
     expect(readFileSync(join(state, "backlogs", "manager.json"), "utf8")).toBe(caller);
   });
 
-  it("starts an existing domain without --cwd in its first owned Boundary path, rewriting nothing", async () => {
+  it("refuses while another machine holds a live lease for the domain, before seeding or launching", async () => {
+    const state = dir();
+    const cfg = await withDefaultHarness(state, "claude");
+    await ownedBy(cfg, "tasks", [state]);
+    const lease = { machine: "strix", address: "t1fn", expiry: "2026-11-23T00:02:00.000Z" };
+    writeFileSync(
+      tasksDocument(state),
+      JSON.stringify({ ...readJson(tasksDocument(state)), lease }),
+    );
+    const before = readFileSync(tasksDocument(state), "utf8");
+    const fake = spawnFake(MANAGER);
+    const error = await failureOf(spawn(cfg, spawnOptions({ items: ["first"] }), ENV), fake.layer);
+    expect(messageOf(error)).toBe(
+      "tasks already has a coordinator: strix/t1fn holds its lease until 2026-11-23T00:02:00.000Z; go to it, or wait for that lease to expire (3 minutes after its watcher last renewed it)",
+    );
+    expect(
+      fake.calls.filter((call) => call.argv[1] === "run" || call.argv[0] === "herdr-app"),
+    ).toEqual([]);
+    expect(readFileSync(tasksDocument(state), "utf8")).toBe(before);
+  });
+
+  it("leaves the lease with the new coordinator, whose own start then takes it again", async () => {
+    const state = dir();
+    const cfg = await withDefaultHarness(state, "claude");
+    await runWith(spawn(cfg, spawnOptions({ cwd: state }), ENV), spawnFake(MANAGER).layer);
+    expect(readJson(tasksDocument(state)).lease).toEqual({
+      machine: "fake-core",
+      address: "t7",
+      expiry: "2026-11-23T00:03:00.000Z",
+    });
+    const own = fakeProc((argv) => {
+      if (argv[1] === "ls") return ok('{"terminals":[]}');
+      if (argv[1] === "get" && argv[2] === "t7")
+        return ok(
+          terminal({
+            address: "t7",
+            labels: { "fleet.role": "coordinator", "fleet.domain": "tasks" },
+          }),
+        );
+      if (argv[1] === "run") return ok('{"address":"t10"}');
+      return ok("{}");
+    });
+    const later = Date.parse("2026-11-23T00:01:00.000Z");
+    const lines = await runWith(start(cfg, "tasks", { HC_TERMINAL_ID: "t7" }, later), own.layer);
+    expect(lines[0]).toBe("labelled t7: fleet.role=coordinator fleet.domain=tasks");
+    expect(readJson(tasksDocument(state)).lease).toEqual({
+      machine: "fake-core",
+      address: "t7",
+      expiry: "2026-11-23T00:04:00.000Z",
+    });
+  });
+
+  it("starts an existing domain without --cwd in its first owned Boundary path, rewriting only the lease", async () => {
     const state = dir();
     const cfg = await withDefaultHarness(state, "claude");
     const first = join(state, "first");
@@ -984,7 +1104,9 @@ describe("spawn", () => {
     ]);
     expect(run.slice(6, 8)).toEqual(["--cwd", first]);
     expect(lines[0]).toBe(`backlog ${tasksDocument(state)}`);
-    expect(readFileSync(tasksDocument(state), "utf8")).toBe(before);
+    // Only the new coordinator's lease is written.
+    const { lease: _lease, ...after } = readJson(tasksDocument(state));
+    expect(after).toEqual(JSON.parse(before));
   });
 
   it("keeps an already owned --cwd once and appends --item after the existing items", async () => {

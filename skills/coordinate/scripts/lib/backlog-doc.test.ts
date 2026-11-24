@@ -54,7 +54,7 @@ const LATER = "2026-11-18T09:30:00.000Z";
 const started = async () => {
   const state = dir();
   const cfg = await config(state);
-  await runWith(start(cfg, "app", { HC_TERMINAL_ID: "t9" }), hcFake().layer);
+  await runWith(start(cfg, "app", { HC_TERMINAL_ID: "t9" }, Date.parse(NOW)), hcFake().layer);
   return { state, cfg, path: join(state, "backlogs", "app.json") };
 };
 const read = (path: string) => JSON.parse(readFileSync(path, "utf8"));
@@ -1386,6 +1386,43 @@ describe("backlog policies", () => {
       "refused: no policy p9 in app\n",
     ]);
     expect(readFileSync(path, "utf8")).toBe(beforeUnknown);
+  });
+});
+
+describe("coordinator lease", () => {
+  it("is kept by every later command on the document", async () => {
+    const { cfg, path } = await started();
+    await runWith(itemAdd(cfg, "app", { title: "a", json: false, now: NOW }));
+    await runWith(
+      policyAdd(cfg, "app", {
+        text: "say yes to renames",
+        at: undefined,
+        wiki: undefined,
+        json: false,
+        now: NOW,
+      }),
+    );
+    expect(read(path).lease).toEqual({
+      machine: "fake-core",
+      address: "t9",
+      expiry: "2026-11-17T10:03:00.000Z",
+    });
+  });
+
+  it("refuses a malformed lease", async () => {
+    const { path } = await started();
+    const backlog = read(path);
+    backlog.lease = { machine: "", address: 7, expiry: "soon" };
+    expect(validateBacklog(backlog)).toEqual({
+      ok: false,
+      errors: [
+        "lease.machine must be a non-empty string",
+        "lease.address must be a non-empty string",
+        "lease.expiry must be an ISO time",
+      ],
+    });
+    backlog.lease = "strix";
+    expect(validateBacklog(backlog)).toEqual({ ok: false, errors: ["lease must be an object"] });
   });
 });
 

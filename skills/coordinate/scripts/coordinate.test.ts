@@ -642,7 +642,10 @@ describe("coordinate CLI parity", () => {
 
     const observed = results.map(({ exit, stdout, stderr }) => ({
       exit,
-      stdout: stdout.replaceAll(state, "<state>").replaceAll("\n", "\\n"),
+      stdout: stdout
+        .replaceAll(state, "<state>")
+        .replaceAll(/"expiry": "[^"]+"/g, '"expiry": "<time>"')
+        .replaceAll("\n", "\\n"),
       stderr: stderr.replaceAll(state, "<state>").replaceAll("\n", "\\n"),
     }));
     expect(observed).toEqual([
@@ -679,7 +682,7 @@ describe("coordinate CLI parity", () => {
       {
         exit: 0,
         stdout:
-          '{\\n  "schemaVersion": 1,\\n  "domain": "app",\\n  "focus": null,\\n  "legacy": null,\\n  "boundary": {\\n    "owned": [],\\n    "adjacent": []\\n  },\\n  "policies": [],\\n  "items": [],\\n  "findings": [],\\n  "nextId": 1,\\n  "nextPolicyId": 1\\n}\\n',
+          '{\\n  "schemaVersion": 1,\\n  "domain": "app",\\n  "focus": null,\\n  "legacy": null,\\n  "boundary": {\\n    "owned": [],\\n    "adjacent": []\\n  },\\n  "policies": [],\\n  "items": [],\\n  "findings": [],\\n  "nextId": 1,\\n  "nextPolicyId": 1,\\n  "lease": {\\n    "machine": "fake-core",\\n    "address": "t1",\\n    "expiry": "<time>"\\n  }\\n}\\n',
         stderr: "",
       },
       { exit: 1, stdout: "", stderr: "refused: app is already named app\\n" },

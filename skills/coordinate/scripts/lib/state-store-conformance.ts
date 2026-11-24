@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { Effect } from "effect";
+import { LEASE_TTL_MS, renewLease, takeLease } from "./lease.ts";
 import { keys, runCommand, type StateKey, type StateStore } from "./state-store.ts";
 
 /**
@@ -30,7 +31,7 @@ const fail = <A, E>(effect: Effect.Effect<A, E>): Promise<E> =>
 /**
  * The behavior every state backend must share: versioned writes, conflict retry and refusal,
  * enumeration, and the capacity queue's claims. Run it once per backend with a factory that returns
- * a fresh store. Lease cases join this suite with the ticket that adds them.
+ * a fresh store.
  * @param name Backend name, for the describe block.
  * @param make A fresh backend per test.
  * @param capabilities `offline`: run the offline-refusal cases (the backend has a home).
@@ -246,6 +247,119 @@ export const storeConformance = (
         const held = outcomes[winner];
         if (held?.won) await run([first, second][winner]!.release(held.claim));
         await run(store.release(await run(store.claim("app", "i1"))));
+      });
+    });
+
+    describe("coordinator leases", () => {
+      const NOW = Date.parse("2026-11-23T12:00:00.000Z");
+      const here = { machine: "finbar", address: "t1" };
+      const strix = { machine: "strix", address: "t7" };
+      const withBacklog = async () => {
+        const backend = await make();
+        const key = keys.backlog("app");
+        const first = await run(backend.store.read(key));
+        await run(backend.store.write(key, { domain: "app", items: [] }, first.version));
+        return backend;
+      };
+
+      test("take writes the holder and an expiry three minutes out, keeping the document", async () => {
+        const { store } = await withBacklog();
+        const lease = await run(takeLease(store, "app", here, NOW));
+        expect(lease).toEqual({
+          machine: "finbar",
+          address: "t1",
+          expiry: "2026-11-23T12:03:00.000Z",
+        });
+        expect((await run(store.read(keys.backlog("app")))).value).toEqual({
+          domain: "app",
+          items: [],
+          lease: { machine: "finbar", address: "t1", expiry: "2026-11-23T12:03:00.000Z" },
+        });
+      });
+
+      test("a live lease of another holder refuses a take, naming its machine and terminal", async () => {
+        const { store } = await withBacklog();
+        await run(takeLease(store, "app", strix, NOW));
+        const refused = await Promise.all(
+          [here, { machine: "finbar", address: "t7" }, { machine: "other", address: "t7" }].map(
+            (holder) => fail(takeLease(store, "app", holder, NOW + LEASE_TTL_MS - 1)),
+          ),
+        );
+        expect(refused.map((error) => [error._tag, error.message])).toEqual(
+          Array.from({ length: 3 }, () => [
+            "Refused",
+            "app already has a coordinator: strix/t7 holds its lease until 2026-11-23T12:03:00.000Z; go to it, or wait for that lease to expire (3 minutes after its watcher last renewed it)",
+          ]),
+        );
+        expect(
+          ((await run(store.read(keys.backlog("app")))).value as { lease: unknown }).lease,
+        ).toEqual({
+          machine: "strix",
+          address: "t7",
+          expiry: "2026-11-23T12:03:00.000Z",
+        });
+      });
+
+      test("the holder takes its own lease again, moving the expiry", async () => {
+        const { store } = await withBacklog();
+        await run(takeLease(store, "app", here, NOW));
+        expect(await run(takeLease(store, "app", here, NOW + 30_000))).toEqual({
+          machine: "finbar",
+          address: "t1",
+          expiry: "2026-11-23T12:03:30.000Z",
+        });
+      });
+
+      test("a lease not renewed for three minutes lets another holder take it", async () => {
+        const { store } = await withBacklog();
+        await run(takeLease(store, "app", strix, NOW));
+        expect(await run(takeLease(store, "app", here, NOW + LEASE_TTL_MS))).toEqual({
+          machine: "finbar",
+          address: "t1",
+          expiry: "2026-11-23T12:06:00.000Z",
+        });
+      });
+
+      test("renew moves the holder's expiry and leaves another holder's lease alone", async () => {
+        const { store } = await withBacklog();
+        await run(takeLease(store, "app", here, NOW));
+        const renewed = await run(renewLease(store, "app", here, NOW + 60_000));
+        const refused = await run(renewLease(store, "app", strix, NOW + 60_000));
+        expect([renewed, refused]).toEqual([
+          {
+            renewed: true,
+            lease: { machine: "finbar", address: "t1", expiry: "2026-11-23T12:04:00.000Z" },
+          },
+          {
+            renewed: false,
+            lease: { machine: "finbar", address: "t1", expiry: "2026-11-23T12:04:00.000Z" },
+          },
+        ]);
+      });
+
+      test("renew never takes back a lease another holder took after it expired", async () => {
+        const { store } = await withBacklog();
+        await run(takeLease(store, "app", here, NOW));
+        await run(takeLease(store, "app", strix, NOW + LEASE_TTL_MS));
+        expect(await run(renewLease(store, "app", here, NOW + LEASE_TTL_MS + 1))).toEqual({
+          renewed: false,
+          lease: { machine: "strix", address: "t7", expiry: "2026-11-23T12:06:00.000Z" },
+        });
+      });
+
+      test("a lease another machine wrote behind this store's back refuses a take", async () => {
+        const { store, interfere } = await withBacklog();
+        const key = keys.backlog("app");
+        await interfere(key, {
+          domain: "app",
+          items: [],
+          lease: { machine: "strix", address: "t7", expiry: "2026-11-23T12:03:00.000Z" },
+        });
+        const error = await fail(takeLease(store, "app", here, NOW));
+        expect([error._tag, error.message]).toEqual([
+          "Refused",
+          "app already has a coordinator: strix/t7 holds its lease until 2026-11-23T12:03:00.000Z; go to it, or wait for that lease to expire (3 minutes after its watcher last renewed it)",
+        ]);
       });
     });
 
