@@ -71,6 +71,7 @@ import {
   remoteCheckout,
   remoteFolderExists,
   remoteMainCheckout,
+  remoteProc,
   remoteWorktree,
 } from "./remote-launch.ts";
 import { countResume, readSession } from "./sessions.ts";
@@ -89,7 +90,9 @@ import {
   localMachine,
   machineDelegateBudget,
   machineOfAddress,
+  remoteMachineOf,
 } from "./delegate-capacity.ts";
+import { Proc } from "./proc.ts";
 import {
   harnessPolicyStatus,
   requireRecordedHarnessEnabled,
@@ -1052,12 +1055,67 @@ export const delegate = Effect.fn("delegate")(function* (
 });
 
 /**
- * Send a message to a delegate. Refuses a terminal blocked on a dialog; hc itself waits for a draft.
+ * The home to relay a send through, when this core cannot reach the target's machine itself: on
+ * herdr-doc only, off the home, for an address on a machine other than this core and the home is
+ * the one route the fleet guarantees (every coordinator machine reaches the home). Undefined means
+ * send directly.
+ * @param config Config, or undefined for a caller without one (always direct).
  * @param target Name or address.
+ * @returns The home's Herdr machine name, or undefined.
+ */
+const relayHome = Effect.fn("relayHome")(function* (config: Config | undefined, target: string) {
+  const machine = remoteMachineOf(target);
+  if (config?.stateBackend !== "herdr-doc" || config.stateHome === undefined) return undefined;
+  if (machine === undefined) return undefined;
+  const core = yield* localMachine();
+  const home = canonicalMachine(config.stateHome, core);
+  if (home === core || machine === core) return undefined;
+  const { machines } = yield* hc.listing();
+  const reached = machines.some((known) => known.name === machine && known.state === "connected");
+  return reached ? undefined : home;
+});
+
+/**
+ * Send to a terminal on another machine through the home: `hc get` and `hc send` run there by
+ * `hc exec --on <home>`, naming the target as the home does (bare on the home itself, else
+ * `<machine>/<address>`, which assumes the home names each machine by its own core name).
+ * @param home The home's Herdr machine name.
+ * @param target `<machine>/<address>`.
  * @param text Message.
  * @returns Lines to print.
  */
-export const sendTo = Effect.fn("sendTo")(function* (target: string, text: string) {
+const relayTo = Effect.fn("relayTo")(function* (home: string, target: string, text: string) {
+  const onHome = remoteMachineOf(target) === home ? target.slice(home.length + 1) : target;
+  const there = Effect.provideService(Proc, remoteProc(home, yield* Proc));
+  const terminal = yield* there(hc.get(onHome));
+  if (!terminal || !terminal.live)
+    return yield* new Refused({ message: `no live terminal ${target} (asked through ${home})` });
+  if (terminal.status === "blocked")
+    return yield* new Refused({
+      message: `${target} is blocked on a dialog, which is the user's to answer in "${terminal.labels.where ?? target}"; read it with hc exec --on ${home} -- sh -lc 'hc read ${onHome}'`,
+    });
+  yield* there(hc.send(onHome, text));
+  return [
+    `sent to ${terminal.name ?? target} (${target} through ${home}, ${terminal.status ?? "no status"})`,
+  ];
+});
+
+/**
+ * Send a message to a terminal. Refuses a terminal blocked on a dialog; hc itself waits for a
+ * draft. With the herdr-doc backend, off the home, a `<machine>/<address>` this core does not
+ * reach is relayed through the home.
+ * @param target Name or address.
+ * @param text Message.
+ * @param config Config (relaying needs it); omitted, the send is always direct.
+ * @returns Lines to print.
+ */
+export const sendTo = Effect.fn("sendTo")(function* (
+  target: string,
+  text: string,
+  config?: Config,
+) {
+  const home = yield* relayHome(config, target);
+  if (home !== undefined) return yield* relayTo(home, target, text);
   const terminal = yield* findTerminal(target);
   if (!terminal || !terminal.live)
     return yield* new Refused({ message: `no live terminal ${target}` });

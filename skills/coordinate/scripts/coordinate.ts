@@ -669,13 +669,13 @@ const spawnCommand = Command.make(
 const sendCommand = Command.make(
   "send",
   {
-    target: argument("target", "delegate name or address"),
+    target: argument("target", "delegate name or address (<machine>/<address> on another machine)"),
     text: argument("text", "message"),
   },
-  ({ target, text }) => execute(() => sendTo(target, text)),
+  ({ target, text }) => execute((config) => sendTo(target, text, config)),
 ).pipe(
   Command.withDescription(
-    "send a delegate a message; refuses a terminal blocked on a dialog, waits for the user's draft",
+    "send a delegate or coordinator a message; refuses a terminal blocked on a dialog, waits for the user's draft; on herdr-doc, off the home, a <machine>/<address> this machine's Herdr does not reach is relayed through the home",
   ),
 );
 

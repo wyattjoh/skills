@@ -15,6 +15,7 @@ import { Effect } from "effect";
 import { failureOf, g, gitAndFake, initRepo, processMachine, runWith, tempDir } from "./fixture.ts";
 import { writeEnded } from "./fleet.ts";
 import { setHarnessPolicy } from "./harness-policy.ts";
+import { HerdrError } from "./herdr.ts";
 import {
   delegate,
   endDelegate,
@@ -73,6 +74,176 @@ describe("sendTo", () => {
     );
     expect(await runWith(sendTo("fix-a", "hi"), fake.layer)).toEqual(["sent to fix-a (t2, idle)"]);
     expect(fake.calls[1]?.argv).toEqual(["hc", "send", "t2", "hi", "--json"]);
+  });
+});
+
+describe("sendTo through the home", () => {
+  // A manager on strix whose shared state lives on the home, homebase.
+  const remoteConfig = (stateBackend: "files" | "herdr-doc") =>
+    Effect.runPromise(
+      resolveConfig(
+        {
+          state_dir: "/s",
+          backlog_dir: "/s/md",
+          ...(stateBackend === "herdr-doc"
+            ? { state_backend: "herdr-doc", state_home: "homebase" }
+            : {}),
+        },
+        "/c",
+      ),
+    );
+  const executed = (stdout: string, code = 0): RunOutput =>
+    ok(
+      JSON.stringify({
+        code,
+        stdout: Buffer.from(stdout).toString("base64"),
+        stderr: "",
+        timed_out: false,
+      }),
+    );
+  const coordinatorOn = (address: string, state: string) =>
+    terminal({
+      address,
+      name: "coordinator",
+      status: { state },
+      labels: { "fleet.role": "coordinator", "fleet.domain": "ops" },
+    });
+  // The relayed argv: hc exec's own flags, then the program run on the home.
+  const relayed = (argv: readonly string[]) =>
+    argv[1] === "exec" ? [...argv.slice(0, 7), ...argv.slice(13)] : [...argv];
+  const hostile = "it's $HOME `id` done\nsecond line";
+  const fleet = (machines: Array<{ name: string; state: string }>, get: string, sendCode = 0) =>
+    fakeProc(
+      (argv) => {
+        if (argv[1] === "ls") return ok(JSON.stringify({ machines, terminals: [] }));
+        if (argv[1] === "exec")
+          return argv[14] === "get" ? executed(get) : executed("{}", sendCode);
+        if (argv[1] === "get") return ok(get);
+        return ok("{}");
+      },
+      { core: "strix" },
+    );
+
+  it("relays to a coordinator on a machine this core cannot reach, through the home", async () => {
+    const fake = fleet([{ name: "homebase", state: "connected" }], coordinatorOn("t4", "idle"));
+    const lines = await runWith(
+      sendTo("nigelsheldon/t4", hostile, await remoteConfig("herdr-doc")),
+      fake.layer,
+    );
+    expect(lines).toEqual(["sent to coordinator (nigelsheldon/t4 through homebase, idle)"]);
+    expect(fake.calls.map((call) => relayed(call.argv))).toEqual([
+      ["hc", "server", "status", "--json"],
+      ["hc", "ls", "--json"],
+      [
+        "hc",
+        "exec",
+        "--on",
+        "homebase",
+        "--json",
+        "--timeout",
+        "30",
+        "hc",
+        "get",
+        "nigelsheldon/t4",
+        "--json",
+      ],
+      [
+        "hc",
+        "exec",
+        "--on",
+        "homebase",
+        "--json",
+        "--timeout",
+        "120",
+        "hc",
+        "send",
+        "nigelsheldon/t4",
+        hostile,
+        "--json",
+      ],
+    ]);
+  });
+
+  it("relays to a coordinator on the home by its bare address there", async () => {
+    const fake = fleet([], coordinatorOn("t7", "working"));
+    const lines = await runWith(
+      sendTo("homebase/t7", "refresh focus", await remoteConfig("herdr-doc")),
+      fake.layer,
+    );
+    expect(lines).toEqual(["sent to coordinator (homebase/t7 through homebase, working)"]);
+    expect(fake.calls.slice(2).map((call) => relayed(call.argv))).toEqual([
+      ["hc", "exec", "--on", "homebase", "--json", "--timeout", "30", "hc", "get", "t7", "--json"],
+      [
+        "hc",
+        "exec",
+        "--on",
+        "homebase",
+        "--json",
+        "--timeout",
+        "120",
+        "hc",
+        "send",
+        "t7",
+        "refresh focus",
+        "--json",
+      ],
+    ]);
+  });
+
+  it("refuses a relayed coordinator blocked on a dialog, and sends nothing", async () => {
+    const fake = fleet([], coordinatorOn("t4", "blocked"));
+    const error = await failureOf(
+      sendTo("nigelsheldon/t4", "hi", await remoteConfig("herdr-doc")),
+      fake.layer,
+    );
+    expect(messageOf(error)).toBe(
+      "nigelsheldon/t4 is blocked on a dialog, which is the user's to answer in \"nigelsheldon/t4\"; read it with hc exec --on homebase -- sh -lc 'hc read nigelsheldon/t4'",
+    );
+    expect(fake.calls.length).toBe(3);
+  });
+
+  it("fails rather than reporting sent when the relayed send fails on the home", async () => {
+    const fake = fleet([], coordinatorOn("t4", "idle"), 5);
+    const error = await failureOf(
+      sendTo("nigelsheldon/t4", "hi", await remoteConfig("herdr-doc")),
+      fake.layer,
+    );
+    expect(error instanceof HerdrError).toBe(true);
+  });
+
+  it("sends directly to a machine this core reaches", async () => {
+    const fake = fleet(
+      [{ name: "nigelsheldon", state: "connected" }],
+      coordinatorOn("nigelsheldon/t4", "idle"),
+    );
+    await runWith(sendTo("nigelsheldon/t4", "hi", await remoteConfig("herdr-doc")), fake.layer);
+    expect(fake.calls.map((call) => call.argv)).toEqual([
+      ["hc", "server", "status", "--json"],
+      ["hc", "ls", "--json"],
+      ["hc", "get", "nigelsheldon/t4", "--json"],
+      ["hc", "send", "nigelsheldon/t4", "hi", "--json"],
+    ]);
+  });
+
+  it("never relays on the home itself or on the files backend", async () => {
+    const onHome = fakeProc(
+      (argv) => (argv[1] === "get" ? ok(coordinatorOn("strix/t4", "idle")) : ok("{}")),
+      { core: "homebase" },
+    );
+    await runWith(sendTo("strix/t4", "hi", await remoteConfig("herdr-doc")), onHome.layer);
+    const files = fleet([], coordinatorOn("nigelsheldon/t4", "idle"));
+    await runWith(sendTo("nigelsheldon/t4", "hi", await remoteConfig("files")), files.layer);
+    expect([onHome.calls.map((call) => call.argv), files.calls.map((call) => call.argv)]).toEqual([
+      [
+        ["hc", "server", "status", "--json"],
+        ["hc", "get", "strix/t4", "--json"],
+        ["hc", "send", "strix/t4", "hi", "--json"],
+      ],
+      [
+        ["hc", "get", "nigelsheldon/t4", "--json"],
+        ["hc", "send", "nigelsheldon/t4", "hi", "--json"],
+      ],
+    ]);
   });
 });
 
