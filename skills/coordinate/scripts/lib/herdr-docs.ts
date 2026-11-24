@@ -214,8 +214,8 @@ export const hcConnectSubscriber: DocSubscriber = (patterns, onChange) => {
     settle(false);
     return { ready, close: () => {} };
   }
-  const process_ = child;
-  const stdin = process_.stdin as import("bun").FileSink;
+  const connection = child;
+  const stdin = connection.stdin as import("bun").FileSink;
   stdin.write(
     `${JSON.stringify({ jsonrpc: "2.0", id: 1, method: "events.subscribe", params: { docs: patterns } })}\n`,
   );
@@ -224,7 +224,7 @@ export const hcConnectSubscriber: DocSubscriber = (patterns, onChange) => {
     let buffered = "";
     const decoder = new TextDecoder();
     try {
-      for await (const chunk of process_.stdout as ReadableStream<Uint8Array>) {
+      for await (const chunk of connection.stdout as ReadableStream<Uint8Array>) {
         buffered += decoder.decode(chunk, { stream: true });
         const lines = buffered.split("\n");
         buffered = lines.pop() ?? "";
@@ -244,7 +244,7 @@ export const hcConnectSubscriber: DocSubscriber = (patterns, onChange) => {
     ready,
     close: () => {
       settle(false);
-      process_.kill();
+      connection.kill();
     },
   };
 };
