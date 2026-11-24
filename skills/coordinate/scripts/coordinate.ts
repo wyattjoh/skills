@@ -69,6 +69,7 @@ import { Proc } from "./lib/proc.ts";
 import { domainRepos, domainStatus, domainStatusJson } from "./lib/status.ts";
 import { fetchRemoteBranch } from "./lib/remote-fetch.ts";
 import { verifyDelegate } from "./lib/sessions.ts";
+import { migrateState } from "./lib/migrate.ts";
 import { renameDomain } from "./lib/rename.ts";
 import { showOutbox, watch } from "./lib/watch.ts";
 import { showCapacityQueue } from "./lib/capacity-queue.ts";
@@ -2351,6 +2352,23 @@ const sweepCommand = Command.make("sweep").pipe(
   ]),
 );
 
+const stateMigrateCommand = Command.make(
+  "migrate",
+  {
+    to: choiceFlag("to", ["herdr-doc", "files"], "where the shared documents go"),
+  },
+  (options) => execute((config) => migrateState(config, options.to), false),
+).pipe(
+  Command.withDescription(
+    "move every backlog, capacity queue, the harness policy and ended records between this machine's files and the home's document store (state_home); run it on the home, refused while any watcher, delegate or queued retry is live; the source files are kept as a read-only files-backup folder, and the config is not edited",
+  ),
+);
+
+const stateCommand = Command.make("state").pipe(
+  Command.withDescription("move coordinate's shared state between storage backends"),
+  Command.withSubcommands([stateMigrateCommand]),
+);
+
 const program = Command.make("coordinate")
   .pipe(
     Command.withDescription(
@@ -2377,6 +2395,7 @@ const program = Command.make("coordinate")
       watchCommand,
       queueCommand,
       sweepCommand,
+      stateCommand,
     ]),
   );
 

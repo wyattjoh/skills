@@ -855,6 +855,10 @@ describe("coordinate CLI parity", () => {
         ["repo", "branches", "--list", "--base"],
       ],
       [["sweep", "prune-ended"], ["delete ended-delegate records"]],
+      [
+        ["state", "migrate"],
+        ["--to", "herdr-doc", "files-backup", "config is not edited"],
+      ],
     ];
     for (const [path, markers] of helpCases) {
       const args = [...path, "--help"];
