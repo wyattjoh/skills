@@ -958,8 +958,11 @@ export const markLint = Effect.fn("markLint")(function* (
   domain: string,
   today: string,
 ) {
-  yield* runCommand(stateStore(config.stateDir), keys.lint(domain), () =>
-    Effect.succeed({ write: true as const, next: { lastLint: today }, value: undefined }),
+  yield* runCommand(
+    stateStore(config.stateDir),
+    keys.lint(domain),
+    () => Effect.succeed({ write: true as const, next: { lastLint: today }, value: undefined }),
+    { replaceUnreadable: true },
   ).pipe(
     Effect.mapError((error) =>
       error._tag === "StoreUnreadable"

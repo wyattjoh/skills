@@ -51,12 +51,15 @@ export class StoreConflict extends Schema.TaggedError<StoreConflict>()("StoreCon
 /**
  * A document could not be read (`stage: "read"`) or is not JSON (`stage: "parse"`). `message` is
  * the cause's message and `detail` its full text, so each caller can keep its own error wording.
+ * `version` is the unreadable document's version when the backend knows it (a parse failure on
+ * files), so a command that replaces the document whole can still overwrite it.
  */
 export class StoreUnreadable extends Schema.TaggedError<StoreUnreadable>()("StoreUnreadable", {
   location: Schema.String,
   stage: Schema.Literals(["read", "parse"]),
   message: Schema.String,
   detail: Schema.String,
+  version: Schema.NullOr(Schema.String),
 }) {}
 
 /**
@@ -167,21 +170,34 @@ export const COMMAND_ATTEMPTS = 3;
  * @param store The store.
  * @param key The document the command changes.
  * @param command Given the current document, what to write and what to return.
- * @param also Further keys the command needs exclusive access to (files: their locks).
+ * @param options `also`: further keys the command needs exclusive access to (files: their locks).
+ *   `replaceUnreadable`: give the command a document that is not JSON as null at its version, for a
+ *   command that writes the document whole and would otherwise be stuck behind a corrupt file.
  * @returns The command's value.
  */
 export const runCommand = <A, E, R>(
   store: StateStore,
   key: StateKey,
   command: (current: Stored) => Effect.Effect<CommandStep<A>, E, R>,
-  also: readonly StateKey[] = [],
+  options: { also?: readonly StateKey[]; replaceUnreadable?: boolean } = {},
 ): Effect.Effect<A, E | Refused | StoreUnreadable | BacklogError, R> =>
-  store.exclusive([key, ...also], (session) => {
+  store.exclusive([key, ...(options.also ?? [])], (session) => {
+    const read = options.replaceUnreadable
+      ? session
+          .read(key)
+          .pipe(
+            Effect.catchTag("StoreUnreadable", (error) =>
+              error.stage === "parse" && error.version !== null
+                ? Effect.succeed({ value: null, version: error.version as Version })
+                : Effect.fail(error),
+            ),
+          )
+      : session.read(key);
     const attempt = (
       left: number,
     ): Effect.Effect<A, E | Refused | StoreUnreadable | BacklogError, R> =>
       Effect.gen(function* () {
-        const current = yield* session.read(key);
+        const current = yield* read;
         const step = yield* command(current);
         if (!step.write) return step.value;
         yield* session.write(key, step.next, current.version);

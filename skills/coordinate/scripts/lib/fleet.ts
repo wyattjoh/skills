@@ -374,8 +374,11 @@ export const writeEnded = Effect.fn("writeEnded")(function* (
 ) {
   const store = stateStore(stateDir);
   const key = keys.ended(record.session);
-  yield* runCommand(store, key, () =>
-    Effect.succeed({ write: true as const, next: record, value: undefined }),
+  yield* runCommand(
+    store,
+    key,
+    () => Effect.succeed({ write: true as const, next: record, value: undefined }),
+    { replaceUnreadable: true },
   ).pipe(Effect.orDie);
   return store.location(key);
 });
@@ -386,12 +389,11 @@ export const writeEnded = Effect.fn("writeEnded")(function* (
  * @param id The name it is stored under (`readEnded`'s `id`, or its session).
  */
 export const removeEnded = Effect.fn("removeEnded")(function* (stateDir: string, id: string) {
-  yield* runCommand(stateStore(stateDir), keys.ended(id), (current) =>
-    Effect.succeed(
-      current.value === null
-        ? { write: false as const, value: undefined }
-        : { write: true as const, next: null, value: undefined },
-    ),
+  yield* runCommand(
+    stateStore(stateDir),
+    keys.ended(id),
+    () => Effect.succeed({ write: true as const, next: null, value: undefined }),
+    { replaceUnreadable: true },
   ).pipe(Effect.orDie);
 });
 

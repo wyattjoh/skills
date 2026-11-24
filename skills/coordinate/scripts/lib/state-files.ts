@@ -320,6 +320,7 @@ export const filesStore = (stateDir: string): StateStore => {
             stage: "read",
             message: message(cause),
             detail: String(cause),
+            version: null,
           }),
       });
       if (text === null) return { value: null, version: ABSENT };
@@ -331,6 +332,7 @@ export const filesStore = (stateDir: string): StateStore => {
           stage: "parse",
           message: message(cause),
           detail: String(cause),
+          version: versionOf(text),
         });
       }
     });

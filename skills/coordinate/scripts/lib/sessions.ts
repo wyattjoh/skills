@@ -104,10 +104,15 @@ const changeSession = (
   session: string,
   update: (state: SessionState) => SessionState,
 ) =>
-  runCommand(stateStore(stateDir), keys.session(session), (current) => {
-    const next = update(decodeSession(session, current.value));
-    return Effect.succeed({ write: true as const, next, value: next });
-  }).pipe(
+  runCommand(
+    stateStore(stateDir),
+    keys.session(session),
+    (current) => {
+      const next = update(decodeSession(session, current.value));
+      return Effect.succeed({ write: true as const, next, value: next });
+    },
+    { replaceUnreadable: true },
+  ).pipe(
     Effect.mapError((error) =>
       error._tag === "StoreUnreadable"
         ? new BacklogError({ path: error.location, message: error.message })
