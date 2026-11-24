@@ -5,7 +5,7 @@ import { archivePath, BacklogError, readDocument, refSessions } from "./backlog-
 import { validateBacklog } from "./backlog-store/schema.ts";
 import { stateStore } from "./state.ts";
 import { writeFileAtomic } from "./state-files.ts";
-import { keys, type StateKey, type StoreSession } from "./state-store.ts";
+import { keys, runInSession, type StateKey, type StoreSession } from "./state-store.ts";
 import { type Config, configPath } from "./config.ts";
 import { checkDomainName, L, members, readEnded, Refused, resolveDomain } from "./fleet.ts";
 import * as hc from "./herdr.ts";
@@ -111,13 +111,24 @@ const unreadable = (error: { location: string; message: string }) =>
   new BacklogError({ path: error.location, message: error.message });
 
 /**
- * Replace a shared document whatever it holds now, inside the rename's exclusive section.
+ * Change one shared document inside the rename's exclusive section, re-reading and re-applying
+ * `next` when another writer won the race (`runInSession`), then refusing after three.
  */
-const replace = (session: StoreSession, key: StateKey, value: unknown) =>
-  session.read(key).pipe(
-    Effect.flatMap((current) => session.write(key, value, current.version)),
-    Effect.mapError((error) => (error._tag === "StoreUnreadable" ? unreadable(error) : error)),
-  );
+const change = (
+  config: Config,
+  session: StoreSession,
+  key: StateKey,
+  next: (current: unknown) => unknown,
+) =>
+  runInSession(stateStore(config.stateDir), session, key, (current) =>
+    Effect.succeed({ write: true as const, next: next(current.value), value: undefined }),
+  ).pipe(Effect.catchTag("StoreUnreadable", (error) => Effect.fail(unreadable(error))));
+
+/**
+ * Replace a shared document whatever it holds now.
+ */
+const replace = (config: Config, session: StoreSession, key: StateKey, value: unknown) =>
+  change(config, session, key, () => value);
 
 const lines = (result: RenameResult): string[] => [
   `renamed ${result.from} to ${result.to}: backlog ${result.backlog}`,
@@ -176,7 +187,7 @@ export const renameDomain = Effect.fn("renameDomain")(function* (
       const backlogPath = store.location(keys.backlog(to));
       const checked = validateBacklog({ ...backlog, domain: to });
       if (!checked.ok) return yield* new Refused({ message: checked.errors.join("; ") });
-      yield* replace(session, keys.backlog(to), checked.backlog);
+      yield* replace(config, session, keys.backlog(to), checked.backlog);
       const archive = yield* copyIfPresent(archivePath(state, from), archivePath(state, to));
       const snapshot = yield* copyIfPresent(statePath(state, from), statePath(state, to));
       const queue = yield* session
@@ -185,7 +196,7 @@ export const renameDomain = Effect.fn("renameDomain")(function* (
       const capacityQueue =
         queue.value === null
           ? null
-          : yield* replace(session, keys.queue(to), queue.value).pipe(
+          : yield* replace(config, session, keys.queue(to), queue.value).pipe(
               Effect.as(store.location(keys.queue(to))),
             );
 
@@ -195,10 +206,7 @@ export const renameDomain = Effect.fn("renameDomain")(function* (
       for (const { id, path, record } of records) {
         if (record.domain !== from) continue;
         const key = keys.ended(id);
-        const raw = yield* session
-          .read(key)
-          .pipe(Effect.catchTag("StoreUnreadable", (error) => Effect.fail(unreadable(error))));
-        yield* session.write(key, { ...(raw.value as object), domain: to }, raw.version);
+        yield* change(config, session, key, (raw) => ({ ...(raw as object), domain: to }));
         ended.push(path);
       }
 
@@ -215,10 +223,10 @@ export const renameDomain = Effect.fn("renameDomain")(function* (
         }
 
       // The old backlog goes first: once it is gone the rename is done, and what follows is cleanup.
-      yield* replace(session, keys.backlog(from), null);
+      yield* replace(config, session, keys.backlog(from), null);
       for (const path of [archivePath(state, from), statePath(state, from)])
         yield* Effect.promise(() => rm(path, { force: true }));
-      yield* replace(session, keys.queue(from), null);
+      yield* replace(config, session, keys.queue(from), null);
       const pidFile = lockPath(state, from);
       const stalePid = existsSync(pidFile) ? pidFile : null;
       if (stalePid) yield* Effect.promise(() => rm(stalePid, { force: true }));

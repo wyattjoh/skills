@@ -71,6 +71,7 @@ const machine = async (self: string, cores: FakeDocCores, subscribe?: DocSubscri
         .map((name) => [name, "up" as const]),
     ),
     contended: cores.contended,
+    races: cores.races,
   };
   const store = herdrStore({
     home: "homebase",

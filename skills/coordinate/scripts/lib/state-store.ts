@@ -293,37 +293,59 @@ export const runCommand = <A, E, R>(
   command: (current: Stored) => Effect.Effect<CommandStep<A>, E, R>,
   options: { also?: readonly StateKey[]; replaceUnreadable?: boolean } = {},
 ): Effect.Effect<A, E | Refused | StoreUnreadable | BacklogError | StoreOffline, R> =>
-  store.exclusive([key, ...(options.also ?? [])], (session) => {
-    const read = options.replaceUnreadable
-      ? session
-          .read(key)
-          .pipe(
-            Effect.catchTag("StoreUnreadable", (error) =>
-              error.stage === "parse" && error.version !== null
-                ? Effect.succeed({ value: null, version: error.version as Version })
-                : Effect.fail(error),
+  store.exclusive([key, ...(options.also ?? [])], (session) =>
+    runInSession(store, session, key, command, options),
+  );
+
+/**
+ * `runCommand` for one document inside an `exclusive` section that already holds it, so a
+ * command that changes several documents under one section (a rename) retries each write the
+ * same way: a lost race re-runs `command` on a fresh read, at most `COMMAND_ATTEMPTS` times, then
+ * refuses (exit 1).
+ * @param store The store, for the refusal's location.
+ * @param session The section's session.
+ * @param key The document the command changes.
+ * @param command Given the current document, what to write and what to return.
+ * @param options `replaceUnreadable`, as for `runCommand`.
+ * @returns The command's value.
+ */
+export const runInSession = <A, E, R>(
+  store: StateStore,
+  session: StoreSession,
+  key: StateKey,
+  command: (current: Stored) => Effect.Effect<CommandStep<A>, E, R>,
+  options: { replaceUnreadable?: boolean } = {},
+): Effect.Effect<A, E | Refused | StoreUnreadable | BacklogError | StoreOffline, R> => {
+  const read = options.replaceUnreadable
+    ? session
+        .read(key)
+        .pipe(
+          Effect.catchTag("StoreUnreadable", (error) =>
+            error.stage === "parse" && error.version !== null
+              ? Effect.succeed({ value: null, version: error.version as Version })
+              : Effect.fail(error),
+          ),
+        )
+    : session.read(key);
+  const attempt = (
+    left: number,
+  ): Effect.Effect<A, E | Refused | StoreUnreadable | BacklogError | StoreOffline, R> =>
+    Effect.gen(function* () {
+      const current = yield* read;
+      const step = yield* command(current);
+      if (!step.write) return step.value;
+      yield* session.write(key, step.next, current.version);
+      return step.value;
+    }).pipe(
+      Effect.catchTag("StoreConflict", () =>
+        left > 1
+          ? attempt(left - 1)
+          : Effect.fail(
+              new Refused({
+                message: `${store.location(key)} kept changing: ${COMMAND_ATTEMPTS} attempts lost a write race; run the command again`,
+              }),
             ),
-          )
-      : session.read(key);
-    const attempt = (
-      left: number,
-    ): Effect.Effect<A, E | Refused | StoreUnreadable | BacklogError | StoreOffline, R> =>
-      Effect.gen(function* () {
-        const current = yield* read;
-        const step = yield* command(current);
-        if (!step.write) return step.value;
-        yield* session.write(key, step.next, current.version);
-        return step.value;
-      }).pipe(
-        Effect.catchTag("StoreConflict", () =>
-          left > 1
-            ? attempt(left - 1)
-            : Effect.fail(
-                new Refused({
-                  message: `${store.location(key)} kept changing: ${COMMAND_ATTEMPTS} attempts lost a write race; run the command again`,
-                }),
-              ),
-        ),
-      );
-    return attempt(COMMAND_ATTEMPTS);
-  });
+      ),
+    );
+  return attempt(COMMAND_ATTEMPTS);
+};

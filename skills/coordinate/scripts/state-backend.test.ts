@@ -247,6 +247,39 @@ describe("coordinate CLI on the herdr-doc backend", () => {
     expect((docs["cs.b.web"] as { value: { domain: string } }).value.domain).toBe("web");
   }, 60_000);
 
+  it("retries a rename that loses a write race, and refuses with exit 1 after three", () => {
+    const { state, run, cores, setCores } = sandbox("herdr-doc", "coordinate-backend-rename-race-");
+    const configFile = join(state, "config.json");
+    const config = JSON.parse(readFileSync(configFile, "utf8")) as Record<string, unknown>;
+    writeFileSync(configFile, JSON.stringify({ ...config, state_home: FAKE_CORE }));
+    expect(run(["start", "app"]).exit).toBe(0);
+    expect(run(["item", "add", "fix parser", "--domain", "app"]).exit).toBe(0);
+    setCores((current) => {
+      current.races = { "cs.b.web": 2, "cs.b.app": 2, "cs.domains": 2 };
+    });
+    const renamed = run(["backlog", "rename", "web", "--domain", "app"]);
+    expect([renamed.exit, renamed.stderr]).toEqual([0, ""]);
+    const docs = cores().docs[FAKE_CORE] ?? {};
+    expect([docs["cs.b.app"]?.value, docs["cs.domains"]?.value]).toEqual([
+      null,
+      { domains: ["web"] },
+    ]);
+    expect(
+      (docs["cs.b.web"] as { value: { domain: string; items: Array<{ title: string }> } }).value,
+    ).toMatchObject({ domain: "web", items: [{ title: "fix parser" }] });
+
+    expect(run(["start", "ops"]).exit).toBe(0);
+    setCores((current) => {
+      current.contended = ["cs.b.api"];
+    });
+    const refused = run(["backlog", "rename", "api", "--domain", "ops"]);
+    expect([refused.exit, refused.stdout, refused.stderr]).toEqual([
+      1,
+      "",
+      `refused: herdr-doc://${FAKE_CORE}/cs.b.api kept changing: 3 attempts lost a write race; run the command again\n`,
+    ]);
+  }, 60_000);
+
   it("refuses a domain whose document name would pass Herdr's 32-character limit", () => {
     const { run } = sandbox("herdr-doc", "coordinate-backend-long-");
     const domain = "a-domain-name-that-is-too-long";

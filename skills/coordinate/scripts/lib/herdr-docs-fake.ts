@@ -30,6 +30,11 @@ export type FakeDocCores = {
    * version moves on and the set conflicts).
    */
   contended: string[];
+  /**
+   * Documents another writer changes a set number of times more: each set on one of these names
+   * loses the race (as for `contended`) while its count is above zero, counting it down.
+   */
+  races: Record<string, number>;
 };
 
 /**
@@ -41,7 +46,7 @@ export type FakeDocCores = {
 export const fakeDocCores = (
   self: string,
   machines: Record<string, "up" | "down"> = {},
-): FakeDocCores => ({ self, docs: {}, machines: { ...machines }, contended: [] });
+): FakeDocCores => ({ self, docs: {}, machines: { ...machines }, contended: [], races: {} });
 
 const error = (kind: string, message: string): DocReply => ({ ok: false, kind, message });
 
@@ -89,7 +94,9 @@ export const answerDocRequest = (cores: FakeDocCores, request: DocRequest): DocR
   const docs = (cores.docs[target] ??= {});
   const current = docs[name] ?? { value: null, version: 0 };
   if (request.method === "doc.get") return { ok: true, result: { ...current } };
-  if (cores.contended.includes(name)) {
+  const races = cores.races[name] ?? 0;
+  if (cores.contended.includes(name) || races > 0) {
+    if (races > 0) cores.races[name] = races - 1;
     docs[name] = { value: current.value, version: current.version + 1 };
     return error(
       "conflict",
