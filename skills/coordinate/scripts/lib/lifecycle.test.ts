@@ -624,7 +624,7 @@ const spawnFake = (
   watchers: readonly Record<string, unknown>[] = [{ address: "t-w", state: "live", parent: "t7" }],
   launched: Record<string, unknown> = { address: "t7", state: "live" },
   domain = "tasks",
-  launch: RunOutput = ok('{"address":"t7"}'),
+  launch: RunOutput | (() => RunOutput) = ok('{"address":"t7"}'),
 ) =>
   fakeProc((argv) => {
     if (argv[0] === "hc") {
@@ -635,7 +635,7 @@ const spawnFake = (
       if (argv[1] === "ls" && argv.includes("fleet.role=coordinator"))
         return ok(JSON.stringify({ terminals: coordinatorsLive }));
       if (argv[1] === "ls") return ok(JSON.stringify({ terminals: live }));
-      if (argv[1] === "run") return launch;
+      if (argv[1] === "run") return typeof launch === "function" ? launch() : launch;
       if (argv[1] === "kill" || argv[1] === "rm") return ok("{}");
     }
     if (argv[0] === "herdr-app") {
@@ -1081,6 +1081,23 @@ describe("spawn", () => {
       address: "t7",
       expiry: "2026-11-23T00:04:00.000Z",
     });
+  });
+
+  it("still reports the launch when another coordinator takes the lease while it starts", async () => {
+    const state = dir();
+    const cfg = await withDefaultHarness(state, "claude");
+    const rival = { machine: "strix", address: "t1fn", expiry: "2026-11-23T00:03:00.000Z" };
+    const fake = spawnFake(MANAGER, [], [], undefined, undefined, "tasks", () => {
+      writeFileSync(
+        tasksDocument(state),
+        JSON.stringify({ ...readJson(tasksDocument(state)), lease: rival }),
+      );
+      return ok('{"address":"t7"}');
+    });
+    const result = await runWith(spawn(cfg, spawnOptions({ cwd: state }), ENV), fake.layer);
+    expect([result.terminal, result.status]).toEqual(["t7", "ready"]);
+    // The new coordinator's own start refuses itself against the rival's lease.
+    expect(readJson(tasksDocument(state)).lease).toEqual(rival);
   });
 
   it("starts an existing domain without --cwd in its first owned Boundary path, rewriting only the lease", async () => {

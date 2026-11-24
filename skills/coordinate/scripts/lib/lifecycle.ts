@@ -567,13 +567,17 @@ export const spawn = Effect.fn("spawn")(function* (
     machine: undefined,
     shell: undefined,
   });
-  // Recorded for the new terminal, so its own `coordinate start` takes the same lease again.
-  yield* takeLease(
-    stateStore(config.stateDir),
-    domain,
-    { machine: yield* localMachine(), address: launched.address },
-    Date.parse(options.now),
-  );
+  // Recorded for the new terminal, so its own `coordinate start` takes the same lease again. The
+  // terminal exists now, so a lost race or an unreachable home is left to that start to refuse.
+  yield* Effect.gen(function* () {
+    const machine = yield* localMachine();
+    yield* takeLease(
+      stateStore(config.stateDir),
+      domain,
+      { machine, address: launched.address },
+      Date.parse(options.now),
+    );
+  }).pipe(Effect.ignore);
   const ready = yield* awaitWatcher(domain, launched.address, wait);
   const result: SpawnResult = {
     name,
