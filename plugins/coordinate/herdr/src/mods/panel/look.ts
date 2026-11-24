@@ -46,13 +46,13 @@ export const STARTING_TONE = "working";
 export const QUEUED_TONE = "ansi6";
 
 /**
- * A Findings tab row's title wraps to at most this many lines. gpui-kit has no line clamp, so the
+ * A Findings page row's title wraps to at most this many lines. gpui-kit has no line clamp, so the
  * title's height is capped at that many line heights and clips its overflow.
  */
 export const FINDING_TITLE_MAX_LINES = 2;
 
 /**
- * The line height, in px, of a Findings tab row's glyph, id and title, so the glyph and id sit on
+ * The line height, in px, of a Findings page row's glyph, id and title, so the glyph and id sit on
  * the title's first line.
  */
 export const FINDING_LINE_HEIGHT = 18;

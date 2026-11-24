@@ -52,7 +52,6 @@ import {
   harnessPolicyShowCommand,
   changedHarnessPolicy,
   joinDelegates,
-  listTabs,
   mergeEnded,
   missingSessions,
   openFindings,
@@ -70,7 +69,6 @@ import {
   policyDialogSpec,
   readDocument,
   seedHarnessPolicyDraft,
-  shownListTab,
   overridingDomains,
   domainOverrides,
   rebaseHarnessPolicyDraft,
@@ -84,6 +82,7 @@ import type {
   DelegateHarness,
   DelegateJoin,
   DocumentState,
+  DomainPage,
   DomainSummary,
   EndedRecords,
   HarnessPolicyState,
@@ -93,7 +92,6 @@ import type {
   ItemGroup,
   ItemOrder,
   ListingState,
-  ListTab,
   OutboxEvent,
   PolicyDialogProps,
   QueuedEntry,
@@ -218,8 +216,8 @@ export default class Panel extends View {
   // copy and a vanished record falls back to the lists.
   // A wiki page's id is its name.
   selected: { kind: "item" | "finding" | "wiki-page"; domain: string; id: string } | undefined;
-  // Each domain's chosen Lists tab, kept while the panel lives; a domain with none shows the first.
-  listTabs = new Map<string, ListTab>();
+  // A domain page remains mounted beneath a finding detail so its scroll position is retained.
+  page: DomainPage | undefined;
   // The state folder the last load found, the ended records read for the delegate refs that had
   // no live terminal then, and which sessions those were, so a delegate that loses its terminal
   // between document changes is looked up again.
@@ -348,6 +346,7 @@ export default class Panel extends View {
     this.followed = followed;
     this.invalidateAnswerFlowMotion();
     this.answerFlow = undefined;
+    this.page = undefined;
     this.selected = undefined;
     if (followed === undefined) return;
     this.picked = undefined;
@@ -452,17 +451,19 @@ export default class Panel extends View {
     this.answerFlow = undefined;
     this.picked = domain;
     this.listed = false;
+    this.page = undefined;
     this.selected = undefined;
     this.load(cx);
   }
 
-  // Open a screen the trail or a link names. Details open over the domain page, a list shows the
-  // domain page with its Lists tab selected, and Domains shows the listing.
+  // Open a screen the trail or a link names. Details open over their list, pages open over the
+  // domain's main list, and Domains shows the listing.
   go(screen: Screen, cx: Context) {
     this.invalidateAnswerFlowMotion();
     this.answerFlow = undefined;
     if (screen.kind === "wiki-page") {
       this.selected = { kind: "wiki-page", domain: screen.domain, id: screen.name };
+      this.page = { kind: "wiki", domain: screen.domain };
       this.clearDraft();
       this.loadWikiBody(screen.domain, screen.name, cx);
       cx.notify();
@@ -470,6 +471,8 @@ export default class Panel extends View {
     }
     if (screen.kind === "item" || screen.kind === "finding") {
       this.selected = { kind: screen.kind, domain: screen.domain, id: screen.id };
+      this.page =
+        screen.kind === "finding" ? { kind: "findings", domain: screen.domain } : undefined;
       this.clearDraft();
       cx.notify();
       return;
@@ -477,12 +480,14 @@ export default class Panel extends View {
     this.selected = undefined;
     this.clearDraft();
     if (screen.kind === "domains") {
+      this.page = undefined;
       this.picked = undefined;
       this.listed = true;
       this.load(cx);
       return;
     }
     if (screen.kind === "domain") {
+      this.page = undefined;
       if (this.target() === screen.domain) {
         cx.notify();
         return;
@@ -490,7 +495,7 @@ export default class Panel extends View {
       this.openDomain(screen.domain, cx);
       return;
     }
-    this.listTabs.set(screen.domain, screen.kind);
+    this.page = screen;
     this.picked = screen.domain;
     this.listed = false;
     if (this.target() === screen.domain) {
@@ -918,6 +923,7 @@ export default class Panel extends View {
       this.queueFor(domain).map((entry) => entry.id),
     );
     this.selected = { kind: "item", domain, id: item.id };
+    this.page = undefined;
     this.restoreQueuedDraft();
     cx.notify();
   }
@@ -1160,6 +1166,7 @@ export default class Panel extends View {
     this.answerFlow = undefined;
     this.clearDraft();
     this.selected = undefined;
+    this.page = undefined;
     this.picked = domain;
     this.listed = false;
     cx.notify();
@@ -2093,12 +2100,14 @@ export default class Panel extends View {
     domain: string | undefined,
     item: Item | undefined,
     finding: Finding | undefined,
+    page: DomainPage | undefined,
     wikiPage: WikiPage | undefined = undefined,
   ): Screen {
     if (domain === undefined) return { kind: "domains" };
     if (item !== undefined) return { kind: "item", domain, id: item.id };
     if (finding !== undefined) return { kind: "finding", domain, id: finding.id };
     if (wikiPage !== undefined) return { kind: "wiki-page", domain, name: wikiPage.name };
+    if (page?.domain === domain) return page;
     return { kind: "domain", domain };
   }
 
@@ -2140,7 +2149,7 @@ export default class Panel extends View {
     };
   }
 
-  // Open the record a prose link names: an item or finding's detail, or the Policies tab with
+  // Open the record a prose link names: an item or finding's detail, or the Policies page with
   // enough rows revealed to show that policy.
   openId(domain: string, doc: DocumentState, id: string, cx: Context) {
     if (!id.startsWith("p")) {
@@ -2156,12 +2165,6 @@ export default class Panel extends View {
     if (needed > (this.revealedRows.get("policies") ?? ROW_PAGE_SIZE))
       this.revealedRows.set("policies", needed);
     this.go({ kind: "policies", domain }, cx);
-  }
-
-  // Show one of a domain's lists in its Lists tab; the choice outlives reloads of that domain.
-  selectListTab(domain: string, tab: ListTab, cx: Context) {
-    this.listTabs.set(domain, tab);
-    cx.notify();
   }
 
   queuedFor(domain: string | undefined): QueuedEntry[] {
@@ -2195,22 +2198,9 @@ export default class Panel extends View {
         ? undefined
         : doc.backlog.items.find((item) => item.id === promotedId);
     const flow = this.answerFlowModel();
-    const findings = doc.kind === "loaded" ? openFindings(doc.backlog) : [];
-    const outbox = domain === undefined ? [] : (this.outboxes.get(domain) ?? []);
-    const wiki = domain === undefined ? [] : (this.wikis.get(domain) ?? []);
-    const tabs = listTabs({
-      policies: doc.kind === "loaded" ? doc.backlog.policies.length : 0,
-      findings: findings.length,
-      boundary:
-        doc.kind === "loaded"
-          ? doc.backlog.boundary.owned.length + doc.backlog.boundary.adjacent.length
-          : 0,
-      outbox: outbox.length,
-      wiki: wiki.length,
-    });
     const trail =
       flow === undefined
-        ? trailOf(this.screen(domain, detail, finding, wikiPage?.page))
+        ? trailOf(this.screen(domain, detail, finding, this.page, wikiPage?.page))
         : (() => {
             const flowTrail = trailOf({
               kind: "item",
@@ -2241,18 +2231,14 @@ export default class Panel extends View {
       itemOrder: this.itemOrder,
       toggleItemOrder: (cx) => this.toggleItemOrder(cx),
       queued: this.queuedFor(domain),
-      outbox,
-      wiki,
+      outbox: domain === undefined ? [] : (this.outboxes.get(domain) ?? []),
+      wiki: domain === undefined ? [] : (this.wikis.get(domain) ?? []),
       wikiPage,
       openWikiPage: (name, cx) => {
         if (domain !== undefined) this.go({ kind: "wiki-page", domain, name }, cx);
       },
-      findings,
-      listTabs: tabs,
-      listTab: shownListTab(domain === undefined ? undefined : this.listTabs.get(domain), tabs),
-      selectListTab: (tab, cx) => {
-        if (domain !== undefined) this.selectListTab(domain, tab, cx);
-      },
+      findings: doc.kind === "loaded" ? openFindings(doc.backlog) : [],
+      page: this.page === undefined || this.page.domain !== domain ? undefined : this.page.kind,
       finding,
       origin,
       promoted,

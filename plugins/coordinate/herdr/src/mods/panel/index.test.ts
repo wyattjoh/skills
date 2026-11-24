@@ -298,14 +298,8 @@ const trail = (root: Node) =>
 
 // Press a crumb or a page row by its id.
 const press = (root: Node, id: string, cx: unknown) => get(root, id).click!({}, cx);
-// Select a Lists tab; the selected one has no click handler, so selecting it again does nothing.
-const openPage = (root: Node, page: string, cx: unknown) => {
-  const tab = get(root, `page-${page}`);
-  if (tab.click !== undefined) tab.click({}, cx);
-};
-// The selected Lists tab, the one with the theme's selected fill.
-const selectedTab = (root: Node) =>
-  ids(get(root, "lists"), "page-").find((id) => get(root, id).styles.bg === theme().selected);
+const openPage = (root: Node, page: string, cx: unknown) =>
+  get(root, `page-${page}`).click!({}, cx);
 
 const mount = async (preservePolicyReads = false) => {
   const ctx = context();
@@ -2140,46 +2134,51 @@ test("starts nothing under herdr-app check", async () => {
   ]);
 });
 
-test("the Lists card is a tab bar of each list with its count, the first selected by default", async () => {
+test("each Lists row puts its count beside the name in the dim note style and a right chevron at the far right", async () => {
   focusDomain("alpha");
   host.files.set(DOC, JSON.stringify(withFindings()));
-  const { render } = await mount();
+  const { ctx, render } = await mount();
   const root = render();
-  expect(ids(get(root, "lists"), "page-")).toEqual([
-    "page-policies",
-    "page-findings",
-    "page-boundary",
-    "page-wiki",
-  ]);
-  expect(
-    ["page-policies", "page-findings", "page-boundary", "page-wiki"].map((id) =>
-      text(get(root, id)),
-    ),
-  ).toEqual(["Policies 0", "Findings 2", "Boundary 0", "Wiki 0"]);
-  expect([selectedTab(root), text(get(root, "policies-empty"))]).toEqual(["page-policies", "None"]);
-  expect([get(root, "page").styles.flex_wrap, get(root, "policies-empty").styles.border_t]).toEqual(
-    [true, 1],
-  );
+  for (const [id, name, info] of [
+    ["page-policies", "Policies", "0"],
+    ["page-findings", "Findings", "1 issue · 1 opportunity"],
+    ["page-boundary", "Boundary", "0"],
+  ] as const) {
+    const row = get(root, id);
+    const [label, note, spacer, chevron] = row.children as Node[];
+    expect([text(label!), text(note!)]).toEqual([name, info]);
+    expect(label!.styles.flex_none).toBe(true);
+    expect(note!.styles.text_color).toBe(theme().dim);
+    expect(spacer!.styles.flex_1).toBe(true);
+    expect([row.children.length, chevron!.styles.asset]).toEqual([4, HERDR_ICONS.chevronRight]);
+  }
+  get(root, "page-findings").click!({}, ctx.cx);
+  expect(trail(render())).toBe("⌂ › alpha › Findings");
 });
 
-test("switching tabs draws that list in the Lists card and lists only open findings", async () => {
+test("shows page buttons on the main list and lists only open findings on the Findings page", async () => {
   focusDomain("alpha");
   host.files.set(DOC, JSON.stringify(withFindings()));
   const { ctx, render } = await mount();
   let root = render();
+  expect(ids(root, "page-")).toEqual([
+    "page-policies",
+    "page-findings",
+    "page-boundary",
+    "page-outbox",
+    "page-wiki",
+  ]);
+  expect(
+    ["page-policies", "page-findings", "page-boundary", "page-outbox", "page-wiki"].map((id) =>
+      text(get(root, id)),
+    ),
+  ).toEqual(["Policies 0", "Findings 1 issue · 1 opportunity", "Boundary 0", "Outbox 0", "Wiki 0"]);
   expect(ids(root, "finding-")).toEqual([]);
 
   openPage(root, "findings", ctx.cx);
   root = render();
-  expect([trail(root), selectedTab(root), ids(root, "policies-")]).toEqual([
-    "⌂ › alpha",
-    "page-findings",
-    [],
-  ]);
-  expect([
-    ids(get(root, "lists"), "findings-issue"),
-    ids(get(root, "lists"), "findings-opportunity"),
-  ]).toEqual([
+  expect(trail(root)).toBe("⌂ › alpha › Findings");
+  expect([ids(root, "findings-issue"), ids(root, "findings-opportunity")]).toEqual([
     ["findings-issue-header", "findings-issue"],
     ["findings-opportunity-header", "findings-opportunity"],
   ]);
@@ -2193,10 +2192,10 @@ test("switching tabs draws that list in the Lists card and lists only open findi
   expect([glyph("finding-f2"), glyph("finding-f3")]).toEqual(["#ef4444", "#f97316"]);
 });
 
-test("a Findings tab row wraps a long title to at most two lines and keeps a short one compact", async () => {
+test("a Findings page row wraps a long title to at most two lines and keeps a short one compact", async () => {
   focusDomain("alpha");
   const title =
-    "A long finding title that wraps onto a second line of the Findings tab row and then clips";
+    "A long finding title that wraps onto a second line of the Findings page row and then clips";
   const original = withFindings();
   const backlog: Backlog = {
     ...original,
@@ -3288,10 +3287,10 @@ test("finding detail links back to Findings, and its origin opens the item", asy
   expect([ids(root, "fact-outcome"), ids(root, "fact-closed")]).toEqual([[], []]);
   press(root, "crumb-findings", ctx.cx);
   root = render();
-  expect([ids(root, "screen-finding"), selectedTab(root), trail(root)]).toEqual([
+  expect([ids(root, "screen-finding"), ids(root, "screen-page"), trail(root)]).toEqual([
     [],
-    "page-findings",
-    "⌂ › alpha",
+    ["screen-page"],
+    "⌂ › alpha › Findings",
   ]);
   expect(text(get(root, "findings-opportunity"))).toContain("f3 Share the validator");
   get(root, "finding-f3").click!({}, ctx.cx);
@@ -3303,7 +3302,7 @@ test("finding detail links back to Findings, and its origin opens the item", asy
   expect(trail(root)).toBe("⌂ › alpha › i1");
 });
 
-test("the domain crumb returns from a finding detail to the domain list on the Findings tab", async () => {
+test("the domain crumb returns from a finding detail to the domain list", async () => {
   focusDomain("alpha");
   host.files.set(DOC, JSON.stringify(withFindings()));
   const { ctx, render } = await mount();
@@ -3313,10 +3312,13 @@ test("the domain crumb returns from a finding detail to the domain list on the F
   expect(trail(root)).toBe("⌂ › alpha › Findings › f3");
   press(root, "crumb-domain-alpha", ctx.cx);
   root = render();
-  expect([ids(root, "screen-finding"), ids(root, "item-"), trail(root), selectedTab(root)]).toEqual(
-    [[], ["item-i1"], "⌂ › alpha", "page-findings"],
-  );
-  expect(ids(root, "finding-")).toEqual(["finding-f2", "finding-f3"]);
+  expect([
+    ids(root, "screen-finding"),
+    ids(root, "screen-page"),
+    ids(root, "item-"),
+    trail(root),
+  ]).toEqual([[], [], ["item-i1"], "⌂ › alpha"]);
+  expect(ids(root, "finding-")).toEqual([]);
 });
 
 const cliPrefix = [
@@ -3742,11 +3744,7 @@ test("a finding that leaves the document falls back to the lists", async () => {
   backlogWatch()!.fire([DOC]);
   await settle();
   const root = render();
-  expect([ids(root, "screen-finding"), trail(root), selectedTab(root)]).toEqual([
-    [],
-    "⌂ › alpha",
-    "page-findings",
-  ]);
+  expect([ids(root, "screen-finding"), trail(root)]).toEqual([[], "⌂ › alpha › Findings"]);
 });
 
 test("shows a closed item's closing date beside its creation date", async () => {
@@ -3763,7 +3761,7 @@ test("shows a closed item's closing date beside its creation date", async () => 
   ]);
 });
 
-test("migrates legacy approvals and shows Policies and Boundary in their tabs", async () => {
+test("migrates legacy approvals and opens Policies and Boundary from count rows", async () => {
   focusDomain("alpha");
   host.files.set(
     DOC,
@@ -3788,15 +3786,23 @@ test("migrates legacy approvals and shows Policies and Boundary in their tabs", 
     "Policies 2",
     "Boundary 2",
   ]);
+  expect(ids(root, "policy-")).toEqual([]);
   expect(ids(root, "boundary-")).toEqual([]);
+
+  openPage(root, "policies", ctx.cx);
+  root = render();
+  expect(trail(root)).toBe("⌂ › alpha › Policies");
   expect(["policy-p1", "policy-p2"].map((id) => text(get(root, id)))).toEqual([
     "Merge doc fixes 2026-11-17",
     "Rebase local branches 2026-11-15",
   ]);
+  press(root, "crumb-domain-alpha", ctx.cx);
+  root = render();
+  expect([ids(root, "screen-page"), trail(root)]).toEqual([[], "⌂ › alpha"]);
 
   openPage(root, "boundary", ctx.cx);
   root = render();
-  expect([trail(root), ids(root, "policy-")]).toEqual(["⌂ › alpha", []]);
+  expect(trail(root)).toBe("⌂ › alpha › Boundary");
   expect(ids(root, "boundary-")).toEqual([
     "boundary-owned-header",
     "boundary-alpha-owned-add",
@@ -3970,7 +3976,7 @@ test("shows the boundary CLI refusal on the card and refuses a blank path locall
   );
 });
 
-test("shows None in an empty Policies tab", async () => {
+test("shows None on an empty Policies page", async () => {
   focusDomain("alpha");
   host.files.set(DOC, JSON.stringify(emptyBacklog("alpha", null)));
   const { ctx, render } = await mount();
@@ -4051,7 +4057,7 @@ test("reveals item rows ten at a time and resets pagination when the domain chan
   ]);
 });
 
-test("paginates open findings while leaving closed findings off the Findings tab", async () => {
+test("paginates open findings while leaving closed findings off the Findings page", async () => {
   let backlog = emptyBacklog("alpha", null);
   for (let index = 1; index <= 25; index++) backlog = find(backlog, "issue", `Finding ${index}`);
   const allIds = backlog.findings.map((finding) => finding.id);
@@ -5059,14 +5065,15 @@ test("the header cog replaces the domain label and opens the global policy on Do
   expect(harnessPolicyCalls()).toEqual([]);
 });
 
-test("on a domain page the cog opens that domain's policy, from the overview with a tab chosen and a detail", async () => {
+test("on a domain page the cog opens that domain's policy, from the overview, a subpage and a detail", async () => {
   focusDomain("alpha");
   host.files.set(DOC, JSON.stringify(add(emptyBacklog("alpha", null), "A work item")));
   const { ctx, render } = await mount();
   expect(text(get(render(), "toolbar"))).toBe("Backlog");
   expect(ids(render(), "harness-policy-")).toEqual(["harness-policy-open"]);
-  openPage(render(), "boundary", ctx.cx);
+  openPage(render(), "policies", ctx.cx);
   get(render(), "harness-policy-open").click!({}, ctx.cx);
+  press(render(), "crumb-domain-alpha", ctx.cx);
   get(render(), "item-i1").click!({}, ctx.cx);
   get(render(), "harness-policy-open").click!({}, ctx.cx);
   const domains = overlays.map(
@@ -5555,82 +5562,31 @@ test("shows no Queued group and an empty Outbox when the reads fail or return an
   const root = render();
   expect(ids(root, "group-queued")).toEqual([]);
   expect(ids(root, "item-")).toEqual(["item-i3", "item-i2", "item-i1", "item-i4"]);
-  expect(ids(root, "page-outbox")).toEqual([]);
+  expect(text(get(root, "page-outbox"))).toBe("Outbox 0");
 });
 
-test("shows the Outbox tab while events wait, listing each undelivered event", async () => {
+test("opens the Outbox page from the Lists card, listing each undelivered event", async () => {
   focusDomain("alpha");
   host.files.set(DOC, JSON.stringify(withQueue()));
   watchData.set("outbox:alpha", OUTBOX);
   const { ctx, render } = await mount();
-  expect(ids(get(render(), "lists"), "page-")).toEqual([
-    "page-policies",
-    "page-findings",
-    "page-boundary",
-    "page-outbox",
-    "page-wiki",
-  ]);
   expect(text(get(render(), "page-outbox"))).toBe("Outbox 2");
   openPage(render(), "outbox", ctx.cx);
   const root = render();
-  expect([trail(root), selectedTab(root)]).toEqual(["⌂ › alpha", "page-outbox"]);
+  expect(trail(root)).toBe("⌂ › alpha › Outbox");
+  expect(text(get(root, "outbox-header"))).toBe("Undelivered watcher events");
   expect(text(get(root, "outbox-4"))).toBe(
     "e4 settled delegate=fix address=t9 title: Fix it wiki: a wiki: b verify the report",
   );
   expect(text(get(root, "outbox-5"))).toBe("e5 legacy an old line");
 });
 
-test("a chosen Outbox tab falls back to the first while Outbox is empty, and returns with events", async () => {
+test("shows None on the Outbox page when nothing waits for delivery", async () => {
   focusDomain("alpha");
   host.files.set(DOC, JSON.stringify(withQueue()));
-  watchData.set("outbox:alpha", OUTBOX);
   const { ctx, render } = await mount();
   openPage(render(), "outbox", ctx.cx);
-  expect(selectedTab(render())).toBe("page-outbox");
-  watchData.set("outbox:alpha", JSON.stringify({ domain: "alpha", events: [] }));
-  backlogWatch()!.fire([DOC]);
-  await settle();
-  let root = render();
-  expect([ids(root, "page-outbox"), selectedTab(root)]).toEqual([[], "page-policies"]);
-  watchData.set("outbox:alpha", OUTBOX);
-  backlogWatch()!.fire([DOC]);
-  await settle();
-  root = render();
-  expect([selectedTab(root), ids(root, "outbox-")]).toEqual([
-    "page-outbox",
-    [
-      "outbox-4",
-      "outbox-attrs-4",
-      "outbox-field-4-0",
-      "outbox-field-4-1",
-      "outbox-field-4-2",
-      "outbox-text-4",
-      "outbox-5",
-      "outbox-text-5",
-    ],
-  ]);
-});
-
-test("the selected tab persists across reloads of the same domain and is kept per domain", async () => {
-  focusDomain("alpha");
-  host.files.set(DOC, JSON.stringify(withQueue()));
-  host.files.set(`${STATE}/backlogs/beta.json`, JSON.stringify(betaBacklog()));
-  const { ctx, render } = await mount();
-  openPage(render(), "wiki", ctx.cx);
-  backlogWatch()!.fire([DOC]);
-  await settle();
-  expect([trail(render()), selectedTab(render())]).toEqual(["⌂ › alpha", "page-wiki"]);
-  press(render(), "crumb-home", ctx.cx);
-  await settle();
-  get(render(), "domain-beta").click!({}, ctx.cx);
-  await settle();
-  expect([trail(render()), selectedTab(render())]).toEqual(["⌂ › beta", "page-policies"]);
-  openPage(render(), "boundary", ctx.cx);
-  press(render(), "crumb-home", ctx.cx);
-  await settle();
-  get(render(), "domain-alpha").click!({}, ctx.cx);
-  await settle();
-  expect([trail(render()), selectedTab(render())]).toEqual(["⌂ › alpha", "page-wiki"]);
+  expect(text(get(render(), "outbox-empty"))).toBe("None");
 });
 
 // TextView.markdown is the only factory the renderer records `styles.markdown` for.
@@ -5850,7 +5806,7 @@ const withPolicies = (): Backlog => ({
   nextPolicyId: 3,
 });
 
-test("shows the Wiki tab's pages in index order", async () => {
+test("opens the Wiki page from the Lists card, listing each page in index order", async () => {
   focusDomain("alpha");
   host.files.set(DOC, JSON.stringify(withQueue()));
   watchData.set("wiki:alpha", WIKI);
@@ -5858,7 +5814,8 @@ test("shows the Wiki tab's pages in index order", async () => {
   expect(text(get(render(), "page-wiki"))).toBe("Wiki 2");
   openPage(render(), "wiki", ctx.cx);
   const root = render();
-  expect([trail(root), selectedTab(root)]).toEqual(["⌂ › alpha", "page-wiki"]);
+  expect(trail(root)).toBe("⌂ › alpha › Wiki");
+  expect(text(get(root, "wiki-header"))).toBe("Wiki pages");
   expect(ids(root, "wiki-row-")).toEqual(["wiki-row-poll-interval", "wiki-row-flaky-ci"]);
   expect(text(get(root, "wiki-row-poll-interval"))).toBe(
     "poll-interval decision Why the watcher polls every 5s",
@@ -5866,7 +5823,7 @@ test("shows the Wiki tab's pages in index order", async () => {
   expect(text(get(root, "wiki-row-flaky-ci"))).toBe("flaky-ci problem CI times out under load");
 });
 
-test("shows None in the Wiki tab and a 0 count when the wiki read fails", async () => {
+test("shows None on the Wiki page and a 0 count when the wiki read fails", async () => {
   focusDomain("alpha");
   host.files.set(DOC, JSON.stringify(withQueue()));
   watchData.set("wiki:alpha", "not json");
@@ -5924,7 +5881,7 @@ test("opens a wiki page with its frontmatter facts and its body as Markdown", as
     "# Poll\n\nWhy **5s**.\n",
   );
   press(root, "crumb-wiki", ctx.cx);
-  expect([trail(render()), selectedTab(render())]).toEqual(["⌂ › alpha", "page-wiki"]);
+  expect(trail(render())).toBe("⌂ › alpha › Wiki");
 });
 
 test("shows a wiki page's facts and no body when its read fails", async () => {
@@ -6109,7 +6066,7 @@ test("links a finding id in a Markdown detail and opens that finding when clicke
   expect(text(get(render(), "finding-title"))).toBe("f4 Old crash");
 });
 
-test("a policy link selects the Policies tab with the linked policy's row revealed", async () => {
+test("opens the Policies page with a linked policy's row revealed", async () => {
   focusDomain("alpha");
   const policies = Array.from({ length: 12 }, (_, index) => ({
     id: "p" + (index + 1),
@@ -6128,7 +6085,7 @@ test("a policy link selects the Policies tab with the linked policy's row reveal
   expect(markdownOf(root, "focus-markdown")).toBe("Follow [p12](coordinate-panel:p12)");
   clickLink(root, "focus-markdown", "coordinate-panel:p12", ctx.cx);
   root = render();
-  expect([trail(root), selectedTab(root)]).toEqual(["⌂ › alpha", "page-policies"]);
+  expect(trail(root)).toBe("⌂ › alpha › Policies");
   expect(text(get(root, "policy-p12"))).toBe("rule 12 2026-11-01");
 });
 

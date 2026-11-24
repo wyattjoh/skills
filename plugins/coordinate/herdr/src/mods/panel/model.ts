@@ -168,6 +168,17 @@ export const groupFindings = (findings: readonly Finding[]): FindingGroup[] =>
   })).filter((group) => group.findings.length > 0);
 
 /**
+ * Format the open issue and opportunity counts for the domain's Findings row.
+ * @param findings The open findings.
+ * @returns Both counts, using singular labels for one and plural labels otherwise.
+ */
+export const formatFindingCounts = (findings: readonly Finding[]): string => {
+  const issues = findings.filter((finding) => finding.kind === "issue").length;
+  const opportunities = findings.filter((finding) => finding.kind === "opportunity").length;
+  return `${issues} ${issues === 1 ? "issue" : "issues"} · ${opportunities} ${opportunities === 1 ? "opportunity" : "opportunities"}`;
+};
+
+/**
  * The findings already acted on or dismissed, in document order.
  * @param backlog A validated document.
  * @returns The closed findings.
@@ -213,8 +224,7 @@ export const FINDING_KIND_LABELS: Readonly<Record<Finding["kind"], string>> = {
 };
 
 /**
- * One of a domain's lists, drawn in its tab of the domain page's Lists card. As a screen it
- * shows the domain page with that tab selected.
+ * A page within one domain's backlog.
  */
 export type DomainPage =
   | { kind: "policies"; domain: string }
@@ -247,9 +257,8 @@ export type Crumb = {
 };
 
 /**
- * The breadcrumb trail down to a screen, root first: a home icon, then the domain, then a
- * finding's Findings crumb or a wiki page's Wiki crumb (each selects that Lists tab), then the record
- * detail. A list's own screen is the domain page, so its trail ends at the domain.
+ * The breadcrumb trail down to a screen, root first: a home icon, then the domain, then its page,
+ * Findings page, or record detail.
  * @param screen The screen shown.
  * @returns The crumbs.
  */
@@ -260,6 +269,11 @@ export const trailOf = (screen: Screen): Crumb[] => {
   if (screen.kind !== "domains") {
     const lists: Screen = { kind: "domain", domain: screen.domain };
     steps.push({ id: `crumb-domain-${screen.domain}`, label: screen.domain, screen: lists });
+    if (screen.kind === "policies") steps.push({ id: "crumb-policies", label: "Policies", screen });
+    if (screen.kind === "findings") steps.push({ id: "crumb-findings", label: "Findings", screen });
+    if (screen.kind === "boundary") steps.push({ id: "crumb-boundary", label: "Boundary", screen });
+    if (screen.kind === "outbox") steps.push({ id: "crumb-outbox", label: OUTBOX_LABEL, screen });
+    if (screen.kind === "wiki") steps.push({ id: "crumb-wiki", label: WIKI_LABEL, screen });
     if (screen.kind === "wiki-page")
       steps.push(
         {
@@ -1859,54 +1873,14 @@ export const answerFailure = (result: { code: number; stdout: string; stderr: st
   result.stderr.trim() || result.stdout.trim() || `coordinate exited ${result.code}`;
 
 /**
- * The Lists tab name for the watcher events not yet delivered to the coordinator.
+ * The Lists row and page name for the watcher events not yet delivered to the coordinator.
  */
 export const OUTBOX_LABEL = "Outbox";
 
 /**
- * The Lists tab name for the domain wiki's pages.
+ * The Lists row and page name for the domain wiki's pages.
  */
 export const WIKI_LABEL = "Wiki";
-
-/**
- * One of the domain page's lists, each drawn in its own tab of the Lists card.
- */
-export type ListTab = DomainPage["kind"];
-
-/**
- * A Lists tab: the list it shows and its label, the list's name and count.
- */
-export type ListTabEntry = { id: ListTab; label: string };
-
-const LIST_TAB_NAMES: readonly (readonly [ListTab, string])[] = [
-  ["policies", "Policies"],
-  ["findings", "Findings"],
-  ["boundary", "Boundary"],
-  ["outbox", OUTBOX_LABEL],
-  ["wiki", WIKI_LABEL],
-];
-
-/**
- * The Lists card's tabs in order, each labelled with its list's count. Outbox shows only while
- * it holds an undelivered event.
- * @param counts Each list's count.
- * @returns The tabs.
- */
-export const listTabs = (counts: Readonly<Record<ListTab, number>>): ListTabEntry[] =>
-  LIST_TAB_NAMES.filter(([id]) => id !== "outbox" || counts.outbox > 0).map(([id, name]) => ({
-    id,
-    label: `${name} ${counts[id]}`,
-  }));
-
-/**
- * The tab the Lists card shows: the stored choice while it has a tab, else the first. The
- * fallback is never stored, so a hidden Outbox choice returns once Outbox shows again.
- * @param stored The domain's chosen tab, if any.
- * @param tabs The tabs shown, from {@link listTabs}.
- * @returns The selected tab.
- */
-export const shownListTab = (stored: ListTab | undefined, tabs: readonly ListTabEntry[]): ListTab =>
-  tabs.find((tab) => tab.id === stored)?.id ?? tabs[0]?.id ?? "policies";
 
 /**
  * One domain wiki page as `coordinate wiki list --json` reports it: its frontmatter, with each
