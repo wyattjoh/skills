@@ -168,24 +168,46 @@ export const closeItem = (
 };
 
 /**
+ * The decision a note given with Start records on its item: the user's words, marked as such.
+ * @param note The note's Markdown, trimmed.
+ * @returns The decision's Markdown.
+ */
+export const startNoteDecision = (note: string): string => `From the user, with Start:\n\n${note}`;
+
+/**
  * Record the user's request that the coordinator start an item now, for the watcher's `start`
  * event. Refused for a done, dismissed or delegated item. While a request is pending another one
- * changes nothing, so the watcher fires once per request.
+ * changes nothing, so the watcher fires once per request; one carrying a note is refused instead,
+ * so the note is never dropped unseen. A non-empty note is kept on the request and appended as a
+ * dated decision in the same write.
  * @param backlog Current document.
- * @param input Item id and the time as an ISO string.
+ * @param input Item id, the optional note's Markdown, and the time as an ISO string.
  * @returns The next document, the item, and whether this call recorded a new request.
  */
 export const requestStart = (
   backlog: Backlog,
-  input: { id: string; now: string },
+  input: { id: string; noteMarkdown?: string | undefined; now: string },
 ): OpResult<{ item: Item; requested: boolean }> => {
   const found = backlog.items.find((item) => item.id === input.id);
   if (!found) return { ok: false, reason: `no item ${input.id} in ${backlog.domain}` };
   if (!canStartItem(found))
     return { ok: false, reason: `${input.id} is ${found.status}, so there is nothing to start` };
+  const note = input.noteMarkdown === undefined ? "" : trimMarkdown(input.noteMarkdown);
   if (found.startRequested !== undefined)
-    return { ok: true, backlog, value: { item: found, requested: false } };
-  const item: Item = { ...found, startRequested: { at: input.now } };
+    return note === ""
+      ? { ok: true, backlog, value: { item: found, requested: false } }
+      : {
+          ok: false,
+          reason: `start already requested for ${input.id} at ${found.startRequested.at}, so the note was not recorded`,
+        };
+  const item: Item =
+    note === ""
+      ? { ...found, startRequested: { at: input.now } }
+      : {
+          ...found,
+          decided: [...found.decided, { markdown: startNoteDecision(note), at: input.now }],
+          startRequested: { at: input.now, noteMarkdown: note },
+        };
   return {
     ok: true,
     backlog: {

@@ -311,6 +311,10 @@ export default class Panel extends View {
   itemStart:
     | { domain: string; id: string; running: boolean; error: string | undefined }
     | undefined;
+  // The optional note field beside Start, emptied when another screen opens and after a Start
+  // the CLI accepted.
+  startNoteInput: ReturnType<typeof createAnswerInput> | undefined;
+  startNoteTyping = false;
 
   statusChange:
     | {
@@ -346,6 +350,10 @@ export default class Panel extends View {
     noteInput.on("blur", (_event, lost) => this.setNoteTyping(false, lost));
     this.noteInput = noteInput;
     this.fieldInput = createAnswerInput("");
+    const startNoteInput = createAnswerInput("Optional note");
+    startNoteInput.on("focus", (_event, gained) => this.setStartNoteTyping(true, gained));
+    startNoteInput.on("blur", (_event, lost) => this.setStartNoteTyping(false, lost));
+    this.startNoteInput = startNoteInput;
     const boundaryInput = InputState.new({ placeholder: "Path" });
     boundaryInput.on("submit", (_event, submitted) => this.addBoundary(submitted));
     this.boundaryInput = boundaryInput;
@@ -496,6 +504,8 @@ export default class Panel extends View {
   go(screen: Screen, cx: Context) {
     this.invalidateAnswerFlowMotion();
     this.answerFlow = undefined;
+    this.startNoteInput?.set_value("");
+    this.startNoteTyping = false;
     if (screen.kind === "wiki-page") {
       this.selected = { kind: "wiki-page", domain: screen.domain, id: screen.name };
       this.page = { kind: "wiki", domain: screen.domain };
@@ -1354,6 +1364,11 @@ export default class Panel extends View {
     cx.notify();
   }
 
+  setStartNoteTyping(typing: boolean, cx: Context) {
+    this.startNoteTyping = typing;
+    cx.notify();
+  }
+
   // The open item's ask and the draft for it now, or undefined when it has no ask.
   answering(): { item: Item; draft: AnswerDraft } | undefined {
     const domain = this.target();
@@ -1838,7 +1853,12 @@ export default class Panel extends View {
   // the pending request from the document; a refusal shows inline and leaves the item as it was.
   startItem(domain: string, item: Item, cx: Context) {
     if (this.actionRunning() || !canStartItem(item) || item.startRequested !== undefined) return;
-    const { command, args } = startCommand(home(), domain, item.id);
+    const { command, args } = startCommand(
+      home(),
+      domain,
+      item.id,
+      this.startNoteInput?.value() ?? "",
+    );
     const running = { domain, id: item.id, running: true, error: undefined };
     this.itemStart = running;
     this.statusChange = undefined;
@@ -1854,6 +1874,7 @@ export default class Panel extends View {
       if (this.itemStart !== running) return;
       this.itemStart =
         error === undefined ? undefined : { domain, id: item.id, running: false, error };
+      if (error === undefined) this.startNoteInput?.set_value("");
       if (error === undefined) this.load(task, true);
       task.notify();
     });
@@ -1870,6 +1891,8 @@ export default class Panel extends View {
       running: state?.running ?? false,
       busy: this.actionRunning(),
       error: state?.error,
+      noteInput: this.startNoteInput,
+      noteTyping: this.startNoteTyping,
       start: (cx) => this.startItem(domain, item, cx),
     };
   }

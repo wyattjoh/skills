@@ -220,10 +220,11 @@ export type DelegateRef = {
 
 /**
  * The user's pending request that the coordinator start an item now, recorded by `item start`
- * with the request's ISO time. It clears when `item update` sets a status (even the current one)
- * or an ask, when a delegate is filed, and when the item closes.
+ * with the request's ISO time and, when the user gave one with Start, the note's Markdown (also
+ * kept as a decision). It clears when `item update` sets a status (even the current one) or an
+ * ask, when a delegate is filed, and when the item closes.
  */
-export type StartRequest = { at: string };
+export type StartRequest = { at: string; noteMarkdown?: string };
 
 /**
  * Which record field a pending edit changed: an item's or finding's `title` or `outcome`, an
@@ -727,7 +728,11 @@ export const validateBacklog = (value: unknown): Validated => {
     nonEmpty(`${where}.createdAt`, item.createdAt);
     if ("startRequested" in item) {
       if (!isRecord(item.startRequested)) errors.push(`${where}.startRequested must be an object`);
-      else nonEmpty(`${where}.startRequested.at`, item.startRequested.at);
+      else {
+        nonEmpty(`${where}.startRequested.at`, item.startRequested.at);
+        if ("noteMarkdown" in item.startRequested)
+          nonEmpty(`${where}.startRequested.noteMarkdown`, item.startRequested.noteMarkdown);
+      }
     }
     closed(where, item, status === "done" || status === "dismissed");
     if (status === "delegated" && delegates.length === 0)

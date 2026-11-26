@@ -256,6 +256,9 @@ export type StartModel = {
   // Whether Start or Change status is running on any item; both stay inert until it ends.
   busy: boolean;
   error: string | undefined;
+  // The optional note field sent with Start, absent until the View's init made it.
+  noteInput: AnswerInputState | undefined;
+  noteTyping: boolean;
   start: (cx: Context) => void;
 };
 
@@ -1837,7 +1840,8 @@ const startLabel = (start: StartModel): string =>
   start.running ? "Starting…" : start.pending === undefined ? "Start" : "Start requested";
 
 // Start and Change status, right-aligned like a finding's actions, Start first as the primary
-// action. Change status's menu is plain state drawn in the flow below the buttons (not a Popover,
+// action. Until a request is pending, Start's optional note field fills the row before it, as the
+// answer field sits before Answer. Change status's menu is plain state drawn in the flow below the buttons (not a Popover,
 // which also reacts to its trigger's press), then any refusal.
 const itemActionRows = (
   t: Theme,
@@ -1848,6 +1852,10 @@ const itemActionRows = (
     .id("item-actions")
     .gap(ANSWER.gap)
     .justify_end()
+    .when(
+      start !== undefined && start.pending === undefined && start.noteInput !== undefined,
+      (el) => el.child(answerField(t, "item-start-note", start!.noteInput, start!.noteTyping)),
+    )
     .when(start !== undefined, (el) => {
       const enabled = !start!.busy && start!.pending === undefined;
       return el.child(

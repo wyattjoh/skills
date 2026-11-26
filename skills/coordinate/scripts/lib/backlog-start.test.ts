@@ -6,6 +6,7 @@ import {
   fileDelegate,
   type ItemUpdate,
   requestStart,
+  startNoteDecision,
   updateItem,
 } from "./backlog-store/ops.ts";
 import { renderBacklog } from "./backlog-store/render.ts";
@@ -63,6 +64,35 @@ describe("requestStart", () => {
     const again = unwrap(requestStart(first.backlog, { id: "i1", now: LATER }));
     expect([again.value.requested, again.value.item.startRequested]).toEqual([false, { at: NOW }]);
     expect(again.backlog).toBe(first.backlog);
+  });
+
+  it("keeps a note on the request and records it as a decision in the same write", () => {
+    const note = "Also cover **logout**.\n\n- keep the SSO path";
+    const first = unwrap(
+      requestStart(oneItem(), { id: "i1", noteMarkdown: `\n${note}  \n`, now: NOW }),
+    );
+    expect([
+      first.value.requested,
+      first.value.item.startRequested,
+      first.value.item.decided,
+    ]).toEqual([
+      true,
+      { at: NOW, noteMarkdown: note },
+      [{ markdown: `From the user, with Start:\n\n${note}`, at: NOW }],
+    ]);
+    expect(startNoteDecision("x")).toBe("From the user, with Start:\n\nx");
+    expect(validateBacklog(first.backlog).ok).toBe(true);
+  });
+
+  it("treats a blank note as none and refuses a note while a request is pending", () => {
+    const blank = unwrap(requestStart(oneItem(), { id: "i1", noteMarkdown: " \n ", now: NOW }));
+    expect([blank.value.item.startRequested, blank.value.item.decided]).toEqual([{ at: NOW }, []]);
+    expect(requestStart(started(), { id: "i1", noteMarkdown: "late", now: LATER })).toEqual({
+      ok: false,
+      reason: `start already requested for i1 at ${NOW}, so the note was not recorded`,
+    });
+    const again = unwrap(requestStart(started(), { id: "i1", noteMarkdown: "  ", now: LATER }));
+    expect(again.value.requested).toBe(false);
   });
 
   it("refuses a done, dismissed or delegated item and an unknown id", () => {
@@ -152,6 +182,14 @@ describe("a pending start request", () => {
     expect(validateBacklog(bad)).toEqual({
       ok: false,
       errors: ["items[0].startRequested.at must be a non-empty string"],
+    });
+    const emptyNote = {
+      ...started(),
+      items: [{ ...item(started()), startRequested: { at: NOW, noteMarkdown: "" } }],
+    };
+    expect(validateBacklog(emptyNote)).toEqual({
+      ok: false,
+      errors: ["items[0].startRequested.noteMarkdown must be a non-empty string"],
     });
     const notObject = { ...started(), items: [{ ...item(started()), startRequested: "soon" }] };
     expect(validateBacklog(notObject)).toEqual({

@@ -1463,18 +1463,29 @@ export const statusCommand = (
 
 /**
  * Build the `coordinate item start` call behind an item detail's Start: it records the user's
- * request, and the domain's watcher tells the coordinator. It runs as `dismissCommand` does.
+ * request, and the domain's watcher tells the coordinator. A non-empty note rides inline in
+ * `--note-md=`, as Edit's values do. It runs as `dismissCommand` does.
  * @param home The user's home directory.
  * @param domain The item's domain.
  * @param id The item id.
+ * @param note The optional note field's text; blank sends none.
  * @returns The program and its arguments for exec.
  */
 export const startCommand = (
   home: string,
   domain: string,
   id: string,
+  note = "",
 ): { command: string; args: string[] } =>
-  panelCli(home, ["item", "start", "--domain", domain, "--", id]);
+  panelCli(home, [
+    "item",
+    "start",
+    "--domain",
+    domain,
+    ...(note.trim() === "" ? [] : [`--note-md=${note.trim()}`]),
+    "--",
+    id,
+  ]);
 
 /**
  * The one-line outcome recorded when a finding is dismissed from its detail screen.

@@ -1685,6 +1685,31 @@ eachBackend("coordinate CLI item start", () => {
       ["i1", undefined],
       ["i2", undefined],
     ]);
+
+    const noted = run([
+      "item",
+      "start",
+      "--domain",
+      "app",
+      "--note-md=- also cover logout",
+      "--",
+      "i1",
+    ]);
+    const item = readState(state, keys.backlog("app")).items[0];
+    expect(noted).toEqual([
+      0,
+      `start requested for i1 at ${item.startRequested.at} with a note: fix parser\n`,
+      "",
+    ]);
+    expect([item.startRequested.noteMarkdown, item.decided.at(-1)]).toEqual([
+      "- also cover logout",
+      { markdown: "From the user, with Start:\n\n- also cover logout", at: item.startRequested.at },
+    ]);
+    expect(run(["item", "start", "--domain", "app", "--note-md=again", "--", "i1"])).toEqual([
+      1,
+      "",
+      `refused: start already requested for i1 at ${item.startRequested.at}, so the note was not recorded\n`,
+    ]);
   }, 30_000);
 });
 

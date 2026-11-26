@@ -1600,6 +1600,10 @@ const itemStartCommand = Command.make(
   "start",
   {
     id: argument("id", "item id, such as i3"),
+    noteMd: optionalStringFlag(
+      "note-md",
+      "the user's note given with Start, as Markdown: kept on the request and recorded as a decision",
+    ),
     domain: optionalStringFlag(
       "domain",
       "domain (default: this coordinator's label; required outside a terminal)",
@@ -1611,6 +1615,7 @@ const itemStartCommand = Command.make(
       Effect.flatMap(answerDomain(Option.getOrUndefined(options.domain)), (domain) =>
         itemStart(config, domain, {
           id: options.id,
+          noteMarkdown: Option.getOrUndefined(options.noteMd),
           json: options.json,
           now: new Date().toISOString(),
         }),
@@ -1618,7 +1623,7 @@ const itemStartCommand = Command.make(
     ),
 ).pipe(
   Command.withDescription(
-    "record the user's request that the coordinator start an item now, which the watcher delivers as a start event; refused for a done, dismissed or delegated item, and a pending request is kept; allowed outside a Herdr terminal with --domain, as item answer is",
+    "record the user's request that the coordinator start an item now, which the watcher delivers as a start event; a non-empty --note-md is stored on the request and as a decision in the same write and rides on the event; refused for a done, dismissed or delegated item, and a pending request is kept (one with a note is refused); allowed outside a Herdr terminal with --domain, as item answer is",
   ),
 );
 

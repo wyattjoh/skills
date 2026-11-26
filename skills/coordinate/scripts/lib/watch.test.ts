@@ -1522,6 +1522,21 @@ describe("watch start events", () => {
     expect(await arm("2026-11-10")).toEqual([startLine(later)]);
   });
 
+  it("carries a note given with Start as a note child", async () => {
+    const { config, arm } = await dueDomain();
+    await runWith(
+      itemStart(config, "app", {
+        id: "i1",
+        noteMarkdown: "use <b>SSO</b>\nfirst",
+        json: false,
+        now: AT,
+      }),
+    );
+    expect(await arm("2026-11-10")).toEqual([
+      `<event kind="start" item="i1"><title>Fix login</title><requested>${AT}</requested><note>use &lt;b&gt;SSO&lt;/b&gt; first</note>the user asked you to start this item: route it per the skill and policies</event>`,
+    ]);
+  });
+
   it("fires a request pending before the first arm, and on a state file from before starts fired", async () => {
     const { config, arm, stateFile } = await dueDomain();
     await runWith(itemStart(config, "app", { id: "i1", json: false, now: AT }));

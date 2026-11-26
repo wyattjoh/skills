@@ -447,22 +447,22 @@ export const itemClose = Effect.fn("itemClose")(function* (
  * watcher delivers it as a `start` event. A request already pending is kept as it was.
  * @param config Config.
  * @param domain Domain.
- * @param input Item id, `--json`, and the time.
+ * @param input Item id, the optional note's Markdown, `--json`, and the time.
  * @returns Lines to print.
  */
 export const itemStart = Effect.fn("itemStart")(function* (
   config: Config,
   domain: string,
-  input: { id: string; json: boolean; now: string },
+  input: { id: string; noteMarkdown?: string | undefined; json: boolean; now: string },
 ) {
   const { item, requested } = yield* change(config, domain, (backlog) =>
-    requestStart(backlog, { id: input.id, now: input.now }),
+    requestStart(backlog, { id: input.id, noteMarkdown: input.noteMarkdown, now: input.now }),
   );
   if (input.json) return json(item);
   const at = item.startRequested?.at ?? input.now;
   return [
     requested
-      ? `start requested for ${item.id} at ${at}: ${item.title}`
+      ? `start requested for ${item.id} at ${at}${item.startRequested?.noteMarkdown === undefined ? "" : " with a note"}: ${item.title}`
       : `start already requested for ${item.id} at ${at}: ${item.title}`,
   ];
 });

@@ -642,7 +642,7 @@ const discussionEvents = (items: readonly Item[], fired: readonly string[] | nul
  * in document order, skipping keys already fired. Unlike answers and discussions, a request is
  * pending state rather than history, so a first read fires every pending one instead of seeding
  * it, and the fired keys keep only requests still pending. A new request after one clears has a
- * new time, so it fires again.
+ * new time, so it fires again. A note given with Start rides as a `<note>` child.
  */
 export const startEvents = (items: readonly Item[], fired: readonly string[]) => {
   const pending = items.flatMap((item) =>
@@ -655,7 +655,13 @@ export const startEvents = (items: readonly Item[], fired: readonly string[]) =>
               "start",
               { item: item.id },
               "the user asked you to start this item: route it per the skill and policies",
-              { title: item.title, requested: item.startRequested.at },
+              {
+                title: item.title,
+                requested: item.startRequested.at,
+                ...(item.startRequested.noteMarkdown === undefined
+                  ? {}
+                  : { note: item.startRequested.noteMarkdown }),
+              },
             ),
           },
         ],

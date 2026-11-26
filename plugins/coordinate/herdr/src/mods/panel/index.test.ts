@@ -3688,6 +3688,47 @@ test("Start runs item start with the exact arguments, shows Starting…, then th
   ]);
 });
 
+test("Start sends the optional note inline, empties the field after exit 0, and hides it while pending", async () => {
+  const { ctx, view, render } = await openStatusDetail("i6");
+  const root = render();
+  expect([ids(root, "item-start-note"), get(root, "item-start-note").styles.border_color]).toEqual([
+    ["item-start-note"],
+    theme().border,
+  ]);
+  view.startNoteInput!.set_value("  Also cover **logout**  ");
+  host.files.set(DOC, JSON.stringify(withStart(everyStatus(), "i6")));
+  get(render(), "item-actions-start").click!({}, ctx.cx);
+  await settle();
+  expect(startExecs()).toEqual([
+    [
+      ...cliPrefix,
+      "item",
+      "start",
+      "--domain",
+      "alpha",
+      "--note-md=Also cover **logout**",
+      "--",
+      "i6",
+    ],
+  ]);
+  expect([view.startNoteInput!.value(), ids(render(), "item-start-note")]).toEqual(["", []]);
+});
+
+test("a refused Start keeps the note, and opening another item empties it", async () => {
+  const { ctx, view, render } = await openStatusDetail("i6");
+  host.execExit = { code: 1, stdout: "", stderr: "refused: no item i6 in alpha" };
+  view.startNoteInput!.set_value("keep me");
+  get(render(), "item-actions-start").click!({}, ctx.cx);
+  await settle();
+  host.execExit = undefined;
+  expect([text(get(render(), "item-start-error")), view.startNoteInput!.value()]).toEqual([
+    "refused: no item i6 in alpha",
+    "keep me",
+  ]);
+  openDetail(view, "i1", ctx.cx);
+  expect(view.startNoteInput!.value()).toBe("");
+});
+
 test("a pending start request reads Starting on the item's row and detail until it clears", async () => {
   const { ctx, view, render } = await openStatusDetail("i6");
   host.files.set(DOC, JSON.stringify(withStart(everyStatus(), "i6")));
