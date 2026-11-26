@@ -37,7 +37,7 @@ screen runs `coordinate item answer --domain <d> -- <id> <answer>` at once; in t
 from outside a Herdr terminal and records for the watcher's `edited` event; for `item update` only a lone `--status` from that list is. Delegate-harness policy reads and edits also go through the CLI:
 `harness-policy show --json [--domain <d>]`, `global-set`, `domain-set`, and `domain-reset`, with
 `--expected-revision` on every mutation. Never read or write the policy JSON from the mod. The domain
-page also reads `queue show --domain <d> --json` (the Queued item group: an open item in the
+page also reads the backlog of each other domain the shown one's `blockedBy` refs name, the same way it reads the shown one, for the Blocked item group (after Open: an item with an open or unreadable blocker shows only there, with a "waits on" note naming those blockers, and returns to its status group once they close; `isItemBlocked` and `blockerStates` from the store decide it) and the detail's Blocked by (each blocker as a `coordinate-panel:<ref>` link and where it stands) and Blocks (the items in every backlog read so far that wait on it) facts; a `coordinate-panel:<domain>:<id>` link opens that domain's item. It reads `queue show --domain <d> --json` (the Queued item group: an open item in the
 capacity queue shows only there, with its machine and place in that machine's queue, unless it
 has an ask) and `watch outbox --domain <d> --json` (the Lists card's Outbox row and page of
 undelivered watcher events) and `wiki list --domain <d> --json` (the Lists card's Wiki row and page:

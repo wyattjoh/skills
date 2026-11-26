@@ -6727,3 +6727,95 @@ test("pressing the toolbar's domain opens the focused domain's page from the lis
   await settle();
   expect(trail(render())).toBe("⌂ › alpha");
 });
+
+// alpha: i1 waits on i2 and beta's i1, i2 is open, i3 (parked) waits on i2.
+const withBlockers = (): Backlog => {
+  let backlog = add(emptyBacklog("alpha", null), "Ship login", { blockedBy: ["i2", "beta:i1"] });
+  backlog = add(backlog, "Migrate db");
+  return add(backlog, "Write docs", { status: "parked", blockedBy: ["i2"] });
+};
+const BETA = `${STATE}/backlogs/beta.json`;
+
+test("lists blocked items only in a Blocked group after Open, naming what each waits on", async () => {
+  focusDomain("alpha");
+  host.files.set(DOC, JSON.stringify(withBlockers()));
+  host.files.set(BETA, JSON.stringify(add(emptyBacklog("beta", null), "Cut release")));
+  const { render } = await mount();
+  await settle();
+  const root = render();
+  expect(ids(root, "group-").filter((id) => !id.includes("-", "group-".length))).toEqual([
+    "group-open",
+    "group-blocked",
+  ]);
+  expect(text(get(root, "group-blocked"))).toContain("Blocked");
+  expect(ids(get(root, "alpha-group-blocked-body"), "item-")).toEqual(["item-i3", "item-i1"]);
+  expect([text(get(root, "blocked-i1")), text(get(root, "blocked-i3"))]).toEqual([
+    "waits on i2, beta:i1",
+    "waits on i2",
+  ]);
+});
+
+test("an item leaves Blocked for its status group once every blocker closes", async () => {
+  focusDomain("alpha");
+  host.files.set(DOC, JSON.stringify(close(withBlockers(), "i2", false)));
+  host.files.set(
+    BETA,
+    JSON.stringify(close(add(emptyBacklog("beta", null), "Cut release"), "i1", true)),
+  );
+  const { render } = await mount();
+  await settle();
+  const root = render();
+  expect(ids(root, "group-").filter((id) => !id.includes("-", "group-".length))).toEqual([
+    "group-open",
+    "group-parked",
+    "group-done",
+  ]);
+  expect(ids(root, "blocked-")).toEqual([]);
+});
+
+test("a blocker in a backlog that cannot be read keeps its item Blocked, Not read", async () => {
+  focusDomain("alpha");
+  host.files.set(DOC, JSON.stringify(close(withBlockers(), "i2", false)));
+  const { ctx, view, render } = await mount();
+  await settle();
+  expect(text(get(render(), "blocked-i1"))).toBe("waits on beta:i1");
+  openDetail(view, "i1", ctx.cx);
+  expect(markdownOf(render(), "fact-blocked-by-1")).toBe(
+    "[beta:i1](coordinate-panel:beta:i1) · Not read",
+  );
+});
+
+test("the detail lists each blocker linked with its state and what the item blocks", async () => {
+  focusDomain("alpha");
+  host.files.set(DOC, JSON.stringify(withBlockers()));
+  host.files.set(
+    BETA,
+    JSON.stringify(add(emptyBacklog("beta", null), "Cut release", { status: "building" })),
+  );
+  const { ctx, view, render } = await mount();
+  await settle();
+  openDetail(view, "i1", ctx.cx);
+  const blocked = render();
+  expect([
+    markdownOf(blocked, "fact-blocked-by-0"),
+    markdownOf(blocked, "fact-blocked-by-1"),
+    ids(blocked, "fact-blocks"),
+  ]).toEqual([
+    "[i2](coordinate-panel:i2) · Open",
+    "[beta:i1](coordinate-panel:beta:i1) · Building",
+    [],
+  ]);
+  openDetail(view, "i2", ctx.cx);
+  const blocker = render();
+  expect([
+    ids(blocker, "fact-blocked-by"),
+    markdownOf(blocker, "fact-blocks-0"),
+    markdownOf(blocker, "fact-blocks-1"),
+  ]).toEqual([[], "[i1](coordinate-panel:i1)", "[i3](coordinate-panel:i3)"]);
+  clickLink(blocker, "fact-blocks-0", "coordinate-panel:i1", ctx.cx);
+  expect(trail(render())).toBe("⌂ › alpha › i1");
+  clickLink(render(), "fact-blocked-by-1", "coordinate-panel:beta:i1", ctx.cx);
+  await settle();
+  expect(trail(render())).toBe("⌂ › beta › i1");
+  expect(markdownOf(render(), "fact-blocks-0")).toBe("[alpha:i1](coordinate-panel:alpha:i1)");
+});

@@ -1,5 +1,7 @@
 import {
+  blockerRefText,
   canStartItem,
+  parseBlockerRef,
   decisionKey,
   isEditableDecision,
   questionOf,
@@ -354,6 +356,10 @@ export type ItemUpdate = {
   decidedMarkdown?: string[];
   touch: string[];
   untouch: string[];
+  /** Blocker refs to add (`<id>` or `<domain>:<id>`); another domain's are checked by the caller. */
+  blockedBy?: string[];
+  /** Blocker refs to remove. */
+  unblock?: string[];
   due: string | null | undefined;
   ask: string | undefined;
   askMarkdown?: string | undefined;
@@ -504,6 +510,59 @@ const askOf = (input: ItemUpdate): Ask | undefined | string => {
 };
 
 /**
+ * An item's blocker refs after an update: `unblock` removed, then `add` appended in order. Refused
+ * for a malformed ref, the item itself, an item this backlog does not hold, a ref to remove that
+ * is not listed, and a ref that closes a cycle within this backlog.
+ */
+const nextBlockers = (
+  backlog: Backlog,
+  found: Item,
+  add: readonly string[],
+  unblock: readonly string[],
+): string[] | string => {
+  const stored = (flag: string, ref: string): string | { problem: string } => {
+    const parsed = parseBlockerRef(ref);
+    if (parsed === undefined)
+      return { problem: `--${flag} ${ref.trim()} must look like i3 or <domain>:i3` };
+    return blockerRefText(parsed, backlog.domain);
+  };
+  const refs = [...(found.blockedBy ?? [])];
+  for (const ref of unblock) {
+    const text = stored("unblock", ref);
+    if (typeof text !== "string") return text.problem;
+    if (!refs.includes(text)) return `${found.id} is not blocked by ${text}`;
+    refs.splice(refs.indexOf(text), 1);
+  }
+  const local = new Map(backlog.items.map((item) => [item.id, item] as const));
+  for (const ref of add) {
+    const text = stored("blocked-by", ref);
+    if (typeof text !== "string") return text.problem;
+    if (text === found.id) return `${found.id} cannot be blocked by itself`;
+    if (!text.includes(":") && !local.has(text)) return `no item ${text} in ${backlog.domain}`;
+    if (!refs.includes(text)) refs.push(text);
+  }
+  // A cycle within this backlog: walk the local blockers of each new ref back to the item.
+  const waitsOn = (item: Item): string[] =>
+    (item.id === found.id ? refs : (item.blockedBy ?? [])).filter((ref) => !ref.includes(":"));
+  for (const start of refs.filter((ref) => !ref.includes(":"))) {
+    const seen = new Set<string>();
+    const path = [start];
+    const stack = [{ id: start, path }];
+    while (stack.length > 0) {
+      const next = stack.pop()!;
+      if (next.id === found.id)
+        return `${found.id} cannot wait on ${start}: ${[found.id, ...next.path].join(" waits on ")}`;
+      if (seen.has(next.id)) continue;
+      seen.add(next.id);
+      const item = local.get(next.id);
+      if (item !== undefined)
+        for (const ref of waitsOn(item)) stack.push({ id: ref, path: [...next.path, ref] });
+    }
+  }
+  return refs;
+};
+
+/**
  * Apply an update to an item, refusing a result that breaks an item invariant.
  * @param backlog Current document.
  * @param input The changes, and the time as an ISO string.
@@ -521,6 +580,8 @@ export const updateItem = (backlog: Backlog, input: ItemUpdate): OpResult<Item> 
     decidedMarkdown.length === 0 &&
     input.touch.length === 0 &&
     input.untouch.length === 0 &&
+    (input.blockedBy ?? []).length === 0 &&
+    (input.unblock ?? []).length === 0 &&
     input.due === undefined &&
     input.ask === undefined &&
     input.askMarkdown === undefined &&
@@ -586,6 +647,8 @@ export const updateItem = (backlog: Backlog, input: ItemUpdate): OpResult<Item> 
   }
   for (const path of input.touch.map((entry) => entry.trim()))
     if (!touches.includes(path)) touches.push(path);
+  const blockedBy = nextBlockers(backlog, found, input.blockedBy ?? [], input.unblock ?? []);
+  if (typeof blockedBy === "string") return refuse(blockedBy);
   if (typeof input.due === "string" && !isDate(input.due))
     return refuse("due must be a date as YYYY-MM-DD");
   if (outcome !== undefined && !(input.status && isClosed(input.status)))
@@ -601,7 +664,8 @@ export const updateItem = (backlog: Backlog, input: ItemUpdate): OpResult<Item> 
   });
   const noteSource = note === undefined ? undefined : (note.text ?? note.markdown);
   let item: Item = {
-    ...found,
+    ...without(found, "blockedBy"),
+    ...(blockedBy.length === 0 ? {} : { blockedBy }),
     status: discussionNote === undefined ? (input.status ?? found.status) : "waiting-user",
     touches,
     due: input.due === undefined ? found.due : input.due,

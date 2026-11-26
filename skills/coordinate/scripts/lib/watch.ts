@@ -4,8 +4,16 @@ import { mkdir, open, readFile, rename, unlink } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { Effect, Option, Result } from "effect";
 import { editsClear, findingAdd, readDocument } from "./backlog-doc.ts";
-import { FINDING_DETAIL_SHAPE, isAnswer, isDiscussion } from "./backlog-store/schema.ts";
-import type { Item, RecordEdit } from "./backlog-store/schema.ts";
+import {
+  blockerDomains,
+  blockerStates,
+  FINDING_DETAIL_SHAPE,
+  isAnswer,
+  isBlocking,
+  isDiscussion,
+  proseSource,
+} from "./backlog-store/schema.ts";
+import type { Backlog, Item, RecordEdit } from "./backlog-store/schema.ts";
 import type { Config } from "./config.ts";
 import { checkDomainName, L, readEnded, Refused, sessionOf } from "./fleet.ts";
 import * as hc from "./herdr.ts";
@@ -166,6 +174,11 @@ export type WatchSnapshot = {
    */
   started: string[];
   /**
+   * Each item still blocked on the last read, by id, with the blocker refs that held it back. Null
+   * until the first read seeds it, so arming never fires for items whose blockers closed earlier.
+   */
+  blocked: Record<string, string[]> | null;
+  /**
    * The user's edits already queued, keyed `<edit id> <time>`. Only edits still in the document are
    * kept; none is seeded on arm, since a pending edit is undelivered.
    */
@@ -205,6 +218,7 @@ export const emptyState = (): WatchState => ({
   answered: null,
   discussed: null,
   started: [],
+  blocked: null,
   edited: [],
   idle: {},
   capacity: {},
@@ -674,6 +688,63 @@ export const startEvents = (items: readonly Item[], fired: readonly string[]) =>
 };
 
 /**
+ * Unblocked events, one per open item whose last blocker closed since the last read, in document
+ * order. A blocker counts as closed once its item is done or dismissed, or gone from its backlog
+ * (archived); one whose backlog cannot be read still blocks. The event fires only when a ref that
+ * held the item back on the last read is still listed and now closed, so removing a blocker with
+ * `--unblock` fires nothing, and a null snapshot (first arm) seeds without firing. Each blocker
+ * rides as a `<resolved>` child with its state and outcome; a dismissed one is also named in
+ * `<dismissed>`, since the work it stood for may not have happened.
+ * @param backlog The domain's backlog.
+ * @param other Another domain's backlog, undefined when it could not be read.
+ * @param blocked The items blocked on the last read, or null before the first.
+ * @returns The events and the items still blocked.
+ */
+export const unblockedEvents = (
+  backlog: Backlog,
+  other: (domain: string) => Pick<Backlog, "items"> | undefined,
+  blocked: Readonly<Record<string, readonly string[]>> | null,
+) => {
+  const still: Record<string, string[]> = {};
+  const events: WatchEventData[] = [];
+  for (const item of backlog.items) {
+    if (item.status === "done" || item.status === "dismissed") continue;
+    const states = blockerStates(item, backlog, other);
+    const holding = states.filter(isBlocking).map((blocker) => blocker.ref);
+    if (holding.length > 0) {
+      still[item.id] = holding;
+      continue;
+    }
+    const before = blocked?.[item.id];
+    if (before === undefined || !before.some((ref) => states.some((s) => s.ref === ref))) continue;
+    const dismissed = states.filter((blocker) => blocker.state === "dismissed");
+    events.push(
+      watchEvent(
+        "unblocked",
+        { item: item.id },
+        dismissed.length === 0
+          ? "every item this one waited on has closed: route it per the skill and policies"
+          : "every item this one waited on has closed, but a blocker was dismissed rather than done: check the item still stands, then route it per the skill and policies",
+        {
+          title: item.title,
+          resolved: states.map((blocker) => {
+            const outcome =
+              blocker.item === undefined
+                ? ""
+                : proseSource(blocker.item.outcome, blocker.item.outcomeMarkdown);
+            return `${blocker.ref} ${blocker.state}${outcome === "" ? "" : `: ${outcome}`}`;
+          }),
+          ...(dismissed.length === 0
+            ? {}
+            : { dismissed: dismissed.map((blocker) => blocker.ref).join(", ") }),
+        },
+      ),
+    );
+  }
+  return { events, blocked: still };
+};
+
+/**
  * How much of an edit's old or new text an `edited` event carries; the new text stays in the
  * document, so a longer value is cut with an ellipsis.
  */
@@ -737,6 +808,7 @@ const readState = (path: string) =>
         answered: parsed.answered ?? null,
         discussed: parsed.discussed ?? null,
         started: parsed.started ?? [],
+        blocked: parsed.blocked ?? null,
         edited: parsed.edited ?? [],
         idle: parsed.idle ?? {},
         capacity: parsed.capacity ?? {},
@@ -1446,6 +1518,7 @@ export const watch = Effect.fn("watch")(function* (config: Config, options: Watc
         answered: state.answered === null ? null : [...state.answered],
         discussed: state.discussed === null ? null : [...state.discussed],
         started: [...state.started],
+        blocked: state.blocked === null ? null : { ...state.blocked },
         edited: [...state.edited],
         idle: Object.fromEntries(
           Object.entries(state.idle).map(([address, reminder]) => [address, { ...reminder }]),
@@ -1681,6 +1754,18 @@ export const watch = Effect.fn("watch")(function* (config: Config, options: Watc
         const started = startEvents(document.value.backlog.items, snapshot.started);
         lines.push(...started.events);
         snapshot.started = started.fired;
+        const others = new Map<string, Backlog>();
+        for (const domain of blockerDomains(document.value.backlog)) {
+          const read = yield* readDocument(config, domain).pipe(Effect.option);
+          if (Option.isSome(read)) others.set(domain, read.value.backlog);
+        }
+        const unblocked = unblockedEvents(
+          document.value.backlog,
+          (domain) => others.get(domain),
+          snapshot.blocked,
+        );
+        lines.push(...unblocked.events);
+        snapshot.blocked = unblocked.blocked;
         const edited = editEvents(document.value.backlog.edits ?? [], snapshot.edited);
         lines.push(...edited.events);
         snapshot.edited = edited.fired;

@@ -121,8 +121,15 @@ import {
 } from "./answer-flow.ts";
 import type { AnswerFlow, FlowAskState, QueuedAnswer } from "./answer-flow.ts";
 import { ANSWER_CAROUSEL, ANSWER_FLOW_SPEED_OPTIONS } from "./look.ts";
-import { backlogsDir, canStartItem, documentPath } from "../../lib/store.ts";
-import type { Finding, Item, ItemStatus } from "../../lib/store.ts";
+import {
+  backlogsDir,
+  blockedItems,
+  blockerDomains,
+  blockerStates,
+  canStartItem,
+  documentPath,
+} from "../../lib/store.ts";
+import type { Backlog, Finding, Item, ItemStatus } from "../../lib/store.ts";
 import { harnessPolicyDialog } from "./policy-dialog.ts";
 import type { HarnessPolicyEditorModel } from "./policy-dialog.ts";
 import { panel } from "./view.ts";
@@ -576,7 +583,8 @@ export default class Panel extends View {
       if (backend === "files") this.watchBacklogs(backlogsDir(stateDir), task);
       if (domain !== this.domain) {
         this.domain = domain;
-        this.selected = undefined;
+        // A record picked in the new domain (a blocker link to another backlog) stays open.
+        if (this.selected?.domain !== domain) this.selected = undefined;
         this.doc = cachedDocument(this.docs, domain);
         task.notify();
       }
@@ -598,6 +606,7 @@ export default class Panel extends View {
       if (read.ended !== undefined) this.ended = mergeEnded(this.ended, read.ended);
       else this.lookUpEnded(stateDir, missingSessions(read.document.backlog, terminals()), task);
       this.loadWatchData(stateDir, domain, task);
+      this.loadBlockerDomains(stateDir, read.document.backlog, refresh, task);
     });
   }
 
@@ -816,6 +825,36 @@ export default class Panel extends View {
           )
         : [];
     return { document, text: row.text, ended };
+  }
+
+  // A domain's backlog as last read, while it reads as a valid document.
+  loadedBacklog(domain: string) {
+    const doc = this.docs.get(domain);
+    return doc?.kind === "loaded" ? doc.backlog : undefined;
+  }
+
+  // The items in every backlog read so far that wait on one item, named as its domain sees them.
+  waitingOn(domain: string, id: string): string[] {
+    return [...this.docs.values()].flatMap((doc) =>
+      doc.kind === "loaded" ? blockedItems(doc.backlog, domain, id) : [],
+    );
+  }
+
+  // Read the other backlogs the shown one's blockers name, so the Blocked group and Blocked by
+  // know where each stands; a domain that cannot be read leaves its blockers Not read.
+  loadBlockerDomains(stateDir: string, backlog: Backlog, refresh: boolean, cx: Context) {
+    const domains = blockerDomains(backlog);
+    if (domains.length === 0) return;
+    cx.spawn(async (task) => {
+      const reads = await Promise.all(
+        domains.map(
+          async (name) => [name, await this.readDomain(stateDir, name, refresh)] as const,
+        ),
+      );
+      if (this.stateDir !== stateDir) return;
+      for (const [name, read] of reads) this.cacheDomain(name, read);
+      task.notify();
+    });
   }
 
   // The coordinator terminal Open coordinator focuses for the shown domain, if any.
@@ -2408,6 +2447,19 @@ export default class Panel extends View {
   // Open the record a prose link names: an item or finding's detail, or the Policies page with
   // enough rows revealed to show that policy.
   openId(domain: string, doc: DocumentState, id: string, cx: Context) {
+    const qualified = /^([^:]+):(i\d+)$/.exec(id);
+    if (qualified !== null) {
+      const other = qualified[1]!;
+      const item = { kind: "item" as const, domain: other, id: qualified[2]! };
+      if (other === this.target()) {
+        this.go(item, cx);
+        return;
+      }
+      // Another backlog's item: open its domain, keeping the item selected across the load.
+      this.openDomain(other, cx);
+      this.selected = item;
+      return;
+    }
     if (!id.startsWith("p")) {
       this.go({ kind: id.startsWith("f") ? "finding" : "item", domain, id }, cx);
       return;
@@ -2484,7 +2536,9 @@ export default class Panel extends View {
       go: (screen, cx) => this.go(screen, cx),
       groups:
         doc.kind === "loaded"
-          ? groupItems(doc.backlog, this.queuedFor(domain), this.itemOrder)
+          ? groupItems(doc.backlog, this.queuedFor(domain), this.itemOrder, (name) =>
+              this.loadedBacklog(name),
+            )
           : [],
       itemOrder: this.itemOrder,
       toggleItemOrder: (cx) => this.toggleItemOrder(cx),
@@ -2508,6 +2562,11 @@ export default class Panel extends View {
       toggle: (group, cx) => this.toggleFold(group, cx),
       visibleRows: (group, total) => this.visibleRows(domain, group, total),
       loadMore: (group, cx) => this.revealMore(domain, group, cx),
+      blockers: (item) =>
+        doc.kind === "loaded"
+          ? blockerStates(item, doc.backlog, (name) => this.loadedBacklog(name))
+          : [],
+      blocks: (item) => (domain === undefined ? [] : this.waitingOn(domain, item.id)),
       detail,
       statusChange: this.statusChangeModel(domain, detail),
       start: this.startModel(domain, detail),

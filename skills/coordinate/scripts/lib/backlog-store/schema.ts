@@ -53,6 +53,117 @@ export const canStartItem = (item: { status: ItemStatus }): boolean =>
   !START_REFUSED_STATUSES.some((status) => status === item.status);
 
 /**
+ * One item another item waits on: `domain` is undefined for the item's own backlog.
+ */
+export type BlockerRef = { domain: string | undefined; id: string };
+
+const BLOCKER_REF = /^(?:([a-z0-9][a-z0-9._-]*):)?(i[1-9]\d*)$/;
+
+/**
+ * Read a blocker ref: `<id>` in the item's own backlog, or `<domain>:<id>` in another.
+ * @param ref The ref as written.
+ * @returns The domain and id, or undefined when it is not a ref.
+ */
+export const parseBlockerRef = (ref: string): BlockerRef | undefined => {
+  const match = BLOCKER_REF.exec(ref.trim());
+  return match === null ? undefined : { domain: match[1], id: match[2]! };
+};
+
+/**
+ * A blocker ref as stored for an item in `domain`: the bare id for its own backlog.
+ * @param ref The parsed ref.
+ * @param domain The item's domain.
+ * @returns The stored ref.
+ */
+export const blockerRefText = (ref: BlockerRef, domain: string): string =>
+  ref.domain === undefined || ref.domain === domain ? ref.id : `${ref.domain}:${ref.id}`;
+
+/**
+ * Where a blocker stands: `open` while its item is not closed, `done` or `dismissed` once it
+ * closes, `archived` when its backlog no longer holds it (only closed items leave a document),
+ * and `unknown` when its backlog could not be read. Only `open` and `unknown` block.
+ */
+export type BlockerState = {
+  ref: string;
+  state: "open" | "done" | "dismissed" | "archived" | "unknown";
+  item: Item | undefined;
+};
+
+/**
+ * Each of an item's blockers with where it stands.
+ * @param item The waiting item.
+ * @param backlog The item's own backlog.
+ * @param other Another domain's backlog, or undefined when it could not be read.
+ * @returns One state per ref, in the item's order.
+ */
+export const blockerStates = (
+  item: Pick<Item, "blockedBy">,
+  backlog: Pick<Backlog, "domain" | "items">,
+  other: (domain: string) => Pick<Backlog, "items"> | undefined = () => undefined,
+): BlockerState[] =>
+  (item.blockedBy ?? []).map((ref) => {
+    const parsed = parseBlockerRef(ref);
+    const domain = parsed?.domain ?? backlog.domain;
+    const source = domain === backlog.domain ? backlog : other(domain);
+    if (parsed === undefined || source === undefined)
+      return { ref, state: "unknown", item: undefined };
+    const found = source.items.find((entry) => entry.id === parsed.id);
+    if (found === undefined) return { ref, state: "archived", item: undefined };
+    return {
+      ref,
+      state: found.status === "done" || found.status === "dismissed" ? found.status : "open",
+      item: found,
+    };
+  });
+
+/**
+ * Whether a blocker still holds its item back.
+ * @param blocker The blocker's state.
+ * @returns True while it is open or unreadable.
+ */
+export const isBlocking = (blocker: BlockerState): boolean =>
+  blocker.state === "open" || blocker.state === "unknown";
+
+/**
+ * The other domains an item's blockers live in.
+ * @param backlog The backlog.
+ * @returns Each named domain other than the backlog's own, once.
+ */
+export const blockerDomains = (backlog: Pick<Backlog, "domain" | "items">): string[] => [
+  ...new Set(
+    backlog.items.flatMap((item) =>
+      (item.blockedBy ?? []).flatMap((ref) => {
+        const domain = parseBlockerRef(ref)?.domain;
+        return domain === undefined || domain === backlog.domain ? [] : [domain];
+      }),
+    ),
+  ),
+];
+
+/**
+ * The items in `backlog` that wait on item `id` of `domain`.
+ * @param backlog The backlog searched.
+ * @param domain The blocker's domain.
+ * @param id The blocker's id.
+ * @returns The waiting items' refs as `domain` names them: a bare id from its own backlog.
+ */
+export const blockedItems = (
+  backlog: Pick<Backlog, "domain" | "items">,
+  domain: string,
+  id: string,
+): string[] =>
+  backlog.items
+    .filter((item) =>
+      (item.blockedBy ?? []).some((ref) => {
+        const parsed = parseBlockerRef(ref);
+        return (
+          parsed !== undefined && parsed.id === id && (parsed.domain ?? backlog.domain) === domain
+        );
+      }),
+    )
+    .map((item) => (backlog.domain === domain ? item.id : `${backlog.domain}:${item.id}`));
+
+/**
  * A prose field as a reader shows it: Markdown when the record has the Markdown sibling, else the
  * deprecated plain text.
  */
@@ -287,6 +398,12 @@ export type Item = {
    * A pending start request; absent when there is none. Older documents never have it.
    */
   startRequested?: StartRequest;
+  /**
+   * The items this one waits on, as blocker refs ({@link parseBlockerRef}): `<id>` in this
+   * backlog or `<domain>:<id>` in another. Resolved blockers stay listed; the item is blocked
+   * while any is unresolved ({@link blockerStates}). Absent when it names none.
+   */
+  blockedBy?: string[];
 };
 
 /**
@@ -726,6 +843,22 @@ export const validateBacklog = (value: unknown): Validated => {
       if (ref.machine !== undefined) nonEmpty(`${refWhere}.machine`, ref.machine);
     });
     nonEmpty(`${where}.createdAt`, item.createdAt);
+    if ("blockedBy" in item) {
+      const refs = item.blockedBy;
+      if (!Array.isArray(refs) || refs.length === 0)
+        errors.push(`${where}.blockedBy must be a non-empty array`);
+      else {
+        refs.forEach((ref: unknown, refIndex) => {
+          const parsed = typeof ref === "string" ? parseBlockerRef(ref) : undefined;
+          if (parsed === undefined || ref !== (ref as string).trim())
+            errors.push(`${where}.blockedBy[${refIndex}] must look like i1 or <domain>:i1`);
+          else if (parsed.domain === undefined && parsed.id === item.id)
+            errors.push(`${where}.blockedBy[${refIndex}] names the item itself`);
+        });
+        if (new Set(refs).size !== refs.length)
+          errors.push(`${where}.blockedBy has a repeated ref`);
+      }
+    }
     if ("startRequested" in item) {
       if (!isRecord(item.startRequested)) errors.push(`${where}.startRequested must be an object`);
       else {

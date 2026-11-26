@@ -1,4 +1,6 @@
 import {
+  blockerStates,
+  isBlocking,
   isDiscussion,
   ITEM_STATUSES,
   prose,
@@ -11,6 +13,15 @@ import {
   type Item,
   type Policy,
 } from "./schema.ts";
+
+/**
+ * What `backlog show` knows beyond the document: other domains' backlogs, for blockers there, and
+ * the items anywhere that wait on each of this backlog's items.
+ */
+export type BlockerContext = {
+  other?: (domain: string) => Pick<Backlog, "items"> | undefined;
+  blocks?: (id: string) => string[];
+};
 
 const multiLine = (text: string): boolean => /[\r\n]/.test(text);
 
@@ -91,14 +102,38 @@ const answeredLines = (item: Item, verbose: boolean): string[] => {
   return lines;
 };
 
-const itemLines = (item: Item, idle: ReadonlySet<string>, verbose: boolean): string[] => {
+const blockerLines = (item: Item, backlog: Backlog, context: BlockerContext) => {
+  const states = blockerStates(item, backlog, context.other);
+  const listed = states.map((blocker) => `${blocker.ref} [${blocker.state}]`).join(", ");
+  const blocked = states.some(isBlocking);
+  const blocks = context.blocks?.(item.id) ?? [];
+  return {
+    blocked,
+    lines: [
+      ...(states.length === 0
+        ? []
+        : [blocked ? `  - blocked by ${listed}` : `  - blockers resolved: ${listed}`]),
+      ...(blocks.length === 0 ? [] : [`  - blocks ${blocks.join(", ")}`]),
+    ],
+  };
+};
+
+const itemLines = (
+  item: Item,
+  idle: ReadonlySet<string>,
+  verbose: boolean,
+  backlog: Backlog,
+  context: BlockerContext,
+): string[] => {
+  const blockers = blockerLines(item, backlog, context);
   const facts = [
     ...(item.due ? [`due ${item.due}`] : []),
     ...(item.touches.length > 0 ? [`touches ${item.touches.join(", ")}`] : []),
   ];
   const lines = [
-    `- ${item.id} [${item.status}${idle.has(item.id) ? ", none live" : ""}] ${item.title}${facts.map((fact) => ` · ${fact}`).join("")}`,
+    `- ${item.id} [${item.status}${idle.has(item.id) ? ", none live" : ""}${blockers.blocked ? ", blocked" : ""}] ${item.title}${facts.map((fact) => ` · ${fact}`).join("")}`,
   ];
+  lines.push(...blockers.lines);
   if (item.startRequested)
     lines.push(`  - start requested ${item.startRequested.at}, not yet acted on`);
   if (item.ask) lines.push(...askLines(item.ask, `  - ask: ${questionOf(item.ask)}`));
@@ -157,6 +192,7 @@ const list = (paths: string[]): string => (paths.length > 0 ? paths.join(", ") :
  * Render a backlog as Markdown for reading; the document stays the only source of truth.
  * @param backlog Document.
  * @param idle Ids of delegated items with no live delegate, marked `[delegated, none live]`.
+ * @param blockers Other domains' backlogs and the items waiting on each item, for blocker lines.
  * @param showDone Include closed items instead of the hidden-count line.
  * @param verbose Render full context, options and recommendations for answered asks.
  * @returns Markdown, ending in a newline.
@@ -166,6 +202,7 @@ export const renderBacklog = (
   idle: ReadonlySet<string> = new Set(),
   showDone = false,
   verbose = false,
+  blockers: BlockerContext = {},
 ): string => {
   const open = ITEM_STATUSES.flatMap((status) =>
     backlog.items.filter((item) => item.status === status && !closed(item)),
@@ -202,7 +239,9 @@ export const renderBacklog = (
     "",
     "## Open",
     "",
-    ...(open.length > 0 ? open.flatMap((item) => itemLines(item, idle, verbose)) : ["(none)"]),
+    ...(open.length > 0
+      ? open.flatMap((item) => itemLines(item, idle, verbose, backlog, blockers))
+      : ["(none)"]),
     "",
     "## Findings",
     "",

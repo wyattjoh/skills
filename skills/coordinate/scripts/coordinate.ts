@@ -300,6 +300,8 @@ const valueOptions = new Set([
   "--decided",
   "--touch",
   "--untouch",
+  "--blocked-by",
+  "--unblock",
   "--due",
   "--ask",
   "--context",
@@ -1395,6 +1397,11 @@ const itemUpdateCommand = Command.make(
     ),
     touch: repeatedStringFlag("touch", "record a repo the item touches (repeatable)"),
     untouch: repeatedStringFlag("untouch", "remove a touched repo (repeatable)"),
+    blockedBy: repeatedStringFlag(
+      "blocked-by",
+      "record an item this one waits on: <id> in this backlog or <domain>:<id> in another (repeatable)",
+    ),
+    unblock: repeatedStringFlag("unblock", "remove a recorded blocker ref (repeatable)"),
     due: optionalStringFlag("due", "due date, YYYY-MM-DD"),
     noDue: booleanFlag("no-due", "clear the due date").pipe(Flag.withoutNegation),
     ask: optionalStringFlag("ask", "deprecated: a plain-text question; use --ask-md"),
@@ -1448,6 +1455,8 @@ const itemUpdateCommand = Command.make(
       options.decidedMd.length === 0 &&
       options.touch.length === 0 &&
       options.untouch.length === 0 &&
+      options.blockedBy.length === 0 &&
+      options.unblock.length === 0 &&
       Option.isNone(options.due) &&
       !options.noDue &&
       Option.isNone(options.ask) &&
@@ -1477,6 +1486,8 @@ const itemUpdateCommand = Command.make(
             decidedMarkdown: [...options.decidedMd],
             touch: [...options.touch],
             untouch: [...options.untouch],
+            blockedBy: [...options.blockedBy],
+            unblock: [...options.unblock],
             due: options.noDue ? null : Option.getOrUndefined(options.due),
             ask: Option.getOrUndefined(options.ask),
             askMarkdown: Option.getOrUndefined(options.askMd),
@@ -1499,7 +1510,7 @@ const itemUpdateCommand = Command.make(
   },
 ).pipe(
   Command.withDescription(
-    "change an item's status, decisions, touched repos, due date or ask; Discuss keeps an ask open for conversation; waiting-user needs an ask or a decision, delegated needs a delegate; --status open, building, in-review or parked alone is allowed outside a Herdr terminal with --domain",
+    "change an item's status, decisions, touched repos, blockers, due date or ask; Discuss keeps an ask open for conversation; waiting-user needs an ask or a decision, delegated needs a delegate; --status open, building, in-review or parked alone is allowed outside a Herdr terminal with --domain",
   ),
 );
 

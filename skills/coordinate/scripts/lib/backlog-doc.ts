@@ -39,11 +39,13 @@ import { archivePath } from "./backlog-store/paths.ts";
 import { policyCitation, renderBacklog } from "./backlog-store/render.ts";
 import {
   type Backlog,
+  blockedItems,
   type DelegateRef,
   FINDING_DETAIL_SHAPE,
   type Finding,
   type Item,
   type Policy,
+  parseBlockerRef,
   proseSource,
   type RecordEdit,
   validateBacklog,
@@ -388,7 +390,60 @@ export const showBacklog = Effect.fn("showBacklog")(function* (
       : undefined);
   const idle = sessions ? idleDelegated(backlog, sessions).map((item) => item.id) : [];
   const shown = showDone ? yield* withArchivedItems(config, backlog) : backlog;
-  return [renderBacklog(shown, new Set(idle), showDone, verbose).trimEnd()];
+  const blockers = yield* blockerContext(config, backlog);
+  return [renderBacklog(shown, new Set(idle), showDone, verbose, blockers).trimEnd()];
+});
+
+/**
+ * Every other domain's backlog, read side by side, for blockers named there and the items there
+ * that wait on this backlog's. A domain that cannot be read is left out, so its blockers show as
+ * unknown.
+ * @param config Config.
+ * @param backlog The shown backlog.
+ * @returns The other backlogs by domain, and what waits on each item of the shown one.
+ */
+const blockerContext = Effect.fn("blockerContext")(function* (config: Config, backlog: Backlog) {
+  const domains = yield* listDomains(config).pipe(Effect.orElseSucceed(() => [] as string[]));
+  const reads = yield* Effect.forEach(
+    domains.filter((domain) => domain !== backlog.domain),
+    (domain) =>
+      readDocument(config, domain).pipe(
+        Effect.map((read) => [domain, read.backlog] as const),
+        Effect.option,
+      ),
+    { concurrency: 8 },
+  );
+  const others = new Map(reads.flatMap((read) => (Option.isSome(read) ? [read.value] : [])));
+  const all = [backlog, ...others.values()];
+  return {
+    other: (domain: string) => others.get(domain),
+    blocks: (id: string) => all.flatMap((source) => blockedItems(source, backlog.domain, id)),
+  };
+});
+
+/**
+ * Refuse a blocker ref to another domain with no backlog, or to an item that backlog does not
+ * hold. Refs to this domain are checked by the update itself.
+ * @param config Config.
+ * @param domain The updated item's domain.
+ * @param refs The refs `--blocked-by` adds.
+ */
+const checkForeignBlockers = Effect.fn("checkForeignBlockers")(function* (
+  config: Config,
+  domain: string,
+  refs: readonly string[],
+) {
+  for (const ref of refs) {
+    const parsed = parseBlockerRef(ref);
+    if (parsed?.domain === undefined || parsed.domain === domain) continue;
+    if (!(yield* documentExists(config, parsed.domain)))
+      return yield* new Refused({
+        message: `no backlog for domain ${parsed.domain}, so ${ref.trim()} names no item`,
+      });
+    const { backlog } = yield* readDocument(config, parsed.domain);
+    if (!backlog.items.some((item) => item.id === parsed.id))
+      return yield* new Refused({ message: `no item ${parsed.id} in ${parsed.domain}` });
+  }
 });
 
 /**
@@ -663,6 +718,7 @@ export const itemUpdate = Effect.fn("itemUpdate")(function* (
   domain: string,
   input: ItemUpdate & { json: boolean },
 ) {
+  yield* checkForeignBlockers(config, domain, input.blockedBy ?? []);
   const item = yield* change(config, domain, (backlog) => updateItem(backlog, input));
   return input.json ? json(item) : [`updated ${item.id} [${item.status}] ${item.title}`];
 });

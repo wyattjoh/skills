@@ -1,7 +1,9 @@
 // What the panel shows, decided without Herdr: which domain it follows, whether that domain's
 // document is usable, and how its items group. Where the document lives is the store's paths.
 import {
+  blockerStates,
   decisionKey,
+  isBlocking,
   emptyBacklog,
   ITEM_STATUSES,
   OUTSIDE_TERMINAL_STATUSES,
@@ -14,6 +16,7 @@ import {
 import type {
   Ask,
   Backlog,
+  BlockerState,
   DelegateRef,
   Finding,
   Item,
@@ -47,12 +50,17 @@ export const GROUP_LABELS: Readonly<Record<ItemStatus, string>> = {
  * What keys a group of the Items card: an item status, or the panel-only Queued group of items
  * waiting in the capacity queue for a free delegate slot.
  */
-export type GroupKey = ItemStatus | "queued";
+export type GroupKey = ItemStatus | "queued" | "blocked";
 
 /**
  * The Queued group's heading.
  */
 export const QUEUED_LABEL = "Queued";
+
+/**
+ * The Blocked group's heading: open items waiting on another item, whatever their status.
+ */
+export const BLOCKED_LABEL = "Blocked";
 
 /**
  * Closed groups start folded; everything else starts open.
@@ -64,9 +72,10 @@ export const FOLDED_BY_DEFAULT: ReadonlySet<GroupKey> = new Set(["done", "dismis
  */
 export type ItemGroup = { status: GroupKey; label: string; items: Item[] };
 
-// The Queued group sits right after Delegated: its items are next in line for a delegate.
+// The Queued group sits right after Delegated: its items are next in line for a delegate. The
+// Blocked group sits after Open: its items cannot move until their blockers close.
 const GROUP_ORDER: readonly GroupKey[] = ITEM_STATUSES.flatMap((status): GroupKey[] =>
-  status === "delegated" ? [status, "queued"] : [status],
+  status === "delegated" ? [status, "queued"] : status === "open" ? [status, "blocked"] : [status],
 );
 
 /**
@@ -100,23 +109,27 @@ export const sortItems = (items: readonly Item[], order: ItemOrder): Item[] => {
 /**
  * The document's items grouped by status in routing order, leaving out empty groups, each
  * group's items sorted by {@link sortItems}. An item with an ask shows only under Waiting on you;
- * an open item in the capacity queue shows only under Queued; a closed one stays in its Done or
- * Dismissed group.
+ * an item still blocked ({@link isItemBlocked}) shows only under Blocked; an open item in the
+ * capacity queue shows only under Queued; a closed one stays in its Done or Dismissed group.
  * @param backlog A validated document.
  * @param queued The domain's capacity queue, empty when it could not be read.
  * @param order The order within each group.
+ * @param other Another domain's backlog, for blockers there; undefined while it is unread.
  * @returns The non-empty groups.
  */
 export const groupItems = (
   backlog: Backlog,
   queued: readonly QueuedEntry[] = [],
   order: ItemOrder = DEFAULT_ITEM_ORDER,
+  other: (domain: string) => Backlog | undefined = () => undefined,
 ): ItemGroup[] => {
   const shown = backlog.items.filter((item) => item.ask === null);
+  const blockedItems = shown.filter((item) => isItemBlocked(item, backlog, other));
+  const blocked = new Set(blockedItems.map((item) => item.id));
   const byId = new Map(shown.map((item) => [item.id, item] as const));
   const queuedItems = queued.flatMap((entry) => {
     const item = byId.get(entry.item);
-    return item === undefined || !canDismissItem(item) ? [] : [item];
+    return item === undefined || !canDismissItem(item) || blocked.has(item.id) ? [] : [item];
   });
   const inQueue = new Set(queuedItems.map((item) => item.id));
   return GROUP_ORDER.map((status) => ({
@@ -124,17 +137,39 @@ export const groupItems = (
     label:
       status === "queued"
         ? QUEUED_LABEL
-        : status === "waiting-user"
-          ? "Answered, waiting for coordinator"
-          : GROUP_LABELS[status],
+        : status === "blocked"
+          ? BLOCKED_LABEL
+          : status === "waiting-user"
+            ? "Answered, waiting for coordinator"
+            : GROUP_LABELS[status],
     items: sortItems(
       status === "queued"
         ? queuedItems
-        : shown.filter((item) => item.status === status && !inQueue.has(item.id)),
+        : status === "blocked"
+          ? blockedItems
+          : shown.filter(
+              (item) => item.status === status && !inQueue.has(item.id) && !blocked.has(item.id),
+            ),
       order,
     ),
   })).filter((group) => group.items.length > 0);
 };
+
+/**
+ * Whether an item is held back: not closed, with a blocker still open or in a backlog not read.
+ * @param item The item.
+ * @param backlog Its backlog.
+ * @param other Another domain's backlog, undefined while it is unread.
+ * @returns True while it belongs in the Blocked group.
+ */
+export const isItemBlocked = (
+  item: Item,
+  backlog: Backlog,
+  other: (domain: string) => Backlog | undefined = () => undefined,
+): boolean =>
+  item.status !== "done" &&
+  item.status !== "dismissed" &&
+  blockerStates(item, backlog, other).some(isBlocking);
 
 /**
  * The findings still open, in document order.
@@ -2033,12 +2068,42 @@ export const linkProse = (value: Prose, known: ReadonlySet<string>): Prose => {
   return linked === undefined ? value : { markdown: true, value: linked };
 };
 
-const ID_LINK_URL = new RegExp(`^${ID_LINK_SCHEME}:(?://)?([ifp][1-9][0-9]*)/?$`);
+// An item, finding or policy id, or a blocker's `<domain>:<item id>` in another backlog.
+const ID_LINK_URL = new RegExp(
+  `^${ID_LINK_SCHEME}:(?://)?((?:[a-z0-9][a-z0-9._-]*:)?i[1-9][0-9]*|[fp][1-9][0-9]*)/?$`,
+);
+
+/**
+ * A blocker as one line of Markdown: its ref linked (`<domain>:<id>` opens that domain's item),
+ * then where it stands: the open item's status group, Done, Dismissed, Archived (its backlog no
+ * longer holds it) or Not read (its backlog could not be read).
+ * @param blocker The blocker's state.
+ * @returns The Markdown.
+ */
+export const blockerMarkdown = (blocker: BlockerState): string => {
+  const state =
+    blocker.state === "open"
+      ? GROUP_LABELS[blocker.item?.status ?? "open"]
+      : blocker.state === "archived"
+        ? "Archived"
+        : blocker.state === "unknown"
+          ? "Not read"
+          : GROUP_LABELS[blocker.state];
+  return `${idLink(blocker.ref, blocker.ref)} · ${state}`;
+};
+
+/**
+ * A ref to an item waiting on another, linked as {@link blockerMarkdown} links a blocker.
+ * @param ref The waiting item's ref.
+ * @returns The Markdown link.
+ */
+export const refLink = (ref: string): string => idLink(ref, ref);
 
 /**
  * The record an in-panel link opens.
  * @param url The URL a Markdown view reports for a clicked link.
- * @returns The item, finding or policy id, or undefined for any other URL.
+ * @returns The item, finding or policy id (an item in another backlog as `<domain>:<id>`), or
+ *   undefined for any other URL.
  */
 export const idLinkTarget = (url: string): string | undefined => ID_LINK_URL.exec(url.trim())?.[1];
 

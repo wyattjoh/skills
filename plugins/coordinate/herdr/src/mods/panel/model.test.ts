@@ -772,6 +772,47 @@ test("groupItems moves open queued items into Queued, right after Delegated", ()
   expect(groupItems(backlog).map((group) => group.status)).toEqual(["open"]);
 });
 
+test("groupItems moves blocked items into Blocked, right after Open, ahead of Queued", () => {
+  let backlog: Backlog = emptyBacklog("alpha", null);
+  for (const title of ["One", "Two", "Three", "Four"]) {
+    const added = addItem(backlog, { title, now: "2026-11-23T00:00:00.000Z" });
+    if (!added.ok) throw new Error(added.reason);
+    backlog = added.backlog;
+  }
+  backlog = {
+    ...backlog,
+    items: backlog.items.map((item) =>
+      item.id === "i1"
+        ? { ...item, blockedBy: ["i2"] }
+        : item.id === "i3"
+          ? { ...item, status: "building" as const, blockedBy: ["beta:i1"] }
+          : item.id === "i4"
+            ? { ...item, blockedBy: ["beta:i2"] }
+            : item,
+    ),
+  };
+  const betaAdded = addItem(emptyBacklog("beta", null), {
+    title: "Release",
+    now: "2026-11-23T00:00:00.000Z",
+  });
+  if (!betaAdded.ok) throw new Error(betaAdded.reason);
+  const beta = betaAdded.backlog;
+  const queued = [{ item: "i1", machine: "local", order: 1, position: 1 }];
+  // beta holds i1 open; beta:i2 is gone from it (archived), so i4 is no longer blocked.
+  expect(
+    order(
+      groupItems(backlog, queued, "oldest", (domain) => (domain === "beta" ? beta : undefined)),
+    ),
+  ).toEqual([
+    ["open", ["i2", "i4"]],
+    ["blocked", ["i1", "i3"]],
+  ]);
+  expect(order(groupItems(backlog, queued, "oldest"))).toEqual([
+    ["open", ["i2"]],
+    ["blocked", ["i1", "i3", "i4"]],
+  ]);
+});
+
 const order = (groups: ReturnType<typeof groupItems>) =>
   groups.map((group) => [group.status, group.items.map((item) => item.id)]);
 
@@ -1060,8 +1101,10 @@ test("reads the record an in-panel link opens, and nothing from any other URL", 
       "coordinate-panel://p8/",
       "https://x.test/i42",
       "coordinate-panel:x1",
+      "coordinate-panel:beta:i3",
+      "coordinate-panel:beta:f3",
     ].map(idLinkTarget),
-  ).toEqual(["i42", "f13", "p8", undefined, undefined]);
+  ).toEqual(["i42", "f13", "p8", undefined, undefined, "beta:i3", undefined]);
   expect(
     ["https://x.test", "http://a.b/c", "coordinate-panel:i1", "mailto:a@b"].map(isWebUrl),
   ).toEqual([true, true, false, false]);

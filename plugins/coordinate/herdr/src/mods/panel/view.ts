@@ -48,6 +48,7 @@ import type {
   AnsweredAsk,
   Ask,
   Backlog,
+  BlockerState,
   Finding,
   Item,
   ItemStatus,
@@ -75,12 +76,15 @@ import {
   PROMOTED_TONE,
   QUEUED_TONE,
   STARTING_TONE,
+  BLOCKED_TONE,
   STATUS_MENU_WIDTH,
   STATUS_TONES,
 } from "./look.ts";
 import {
   FINDING_KIND_LABELS,
   GROUP_LABELS,
+  blockerMarkdown,
+  refLink,
   OUTBOX_LABEL,
   WIKI_LABEL,
   canDeleteField,
@@ -186,6 +190,9 @@ export type PanelModel = {
   // Rows shown by each list and the control that reveals its next page.
   visibleRows: (group: string, total: number) => number;
   loadMore: (group: string, cx: Context) => void;
+  // Each item's blockers with where they stand, and the refs of the items waiting on it.
+  blockers: (item: Item) => BlockerState[];
+  blocks: (item: Item) => string[];
   // The item whose detail screen is on top of the list, if any.
   detail: Item | undefined;
   open: (item: Item, cx: Context) => void;
@@ -615,7 +622,12 @@ const statusGroup = (
   return groupBlock(t, motionScope, {
     id,
     label: group.label,
-    tone: group.status === "queued" ? QUEUED_TONE : STATUS_TONES[group.status],
+    tone:
+      group.status === "queued"
+        ? QUEUED_TONE
+        : group.status === "blocked"
+          ? BLOCKED_TONE
+          : STATUS_TONES[group.status],
     count: group.items.length,
     rows: pagedRows(t, id, group.items, model, ROW.compact, (item) => {
       const entry = group.status === "queued" ? queued.get(item.id) : undefined;
@@ -625,7 +637,11 @@ const statusGroup = (
         delegates.byItem.get(item.id) ?? [],
         openItem,
         undefined,
-        entry === undefined ? undefined : queuedNote(t, entry),
+        entry !== undefined
+          ? queuedNote(t, entry)
+          : group.status === "blocked"
+            ? blockedNote(t, item, model.blockers(item))
+            : undefined,
       );
     }),
     rowHeight: ROW.compact,
@@ -635,6 +651,16 @@ const statusGroup = (
     toggle,
   });
 };
+
+// A Blocked row names the blockers still holding it back.
+const blockedNote = (t: Theme, item: Item, blockers: BlockerState[]): Element =>
+  rowNote(
+    t,
+    `waits on ${blockers
+      .filter((blocker) => blocker.state === "open" || blocker.state === "unknown")
+      .map((blocker) => blocker.ref)
+      .join(", ")}`,
+  ).id(`blocked-${item.id}`);
 
 // A Queued row's target machine and its place in that machine's queue.
 const queuedNote = (t: Theme, entry: QueuedEntry): Element =>
@@ -1933,6 +1959,43 @@ const statusMenuRows = (t: Theme, change: StatusChangeModel): Element[] => {
   ];
 };
 
+// Blocked by lists each blocker, linked, with where it stands; Blocks links the items waiting on
+// this one. Each shows only when it has an entry.
+const blockerFacts = (t: Theme, item: Item, model: PanelModel): Element[] => {
+  const blockers = model.blockers(item);
+  const blocks = model.blocks(item);
+  return [
+    ...(blockers.length === 0
+      ? []
+      : [
+          fact(
+            t,
+            "fact-blocked-by",
+            "Blocked by",
+            blockers.map((blocker, index) =>
+              linkedMarkdown(`fact-blocked-by-${index}`, blockerMarkdown(blocker), model.links)
+                .text_size(TEXT.body)
+                .text_color(t.foreground),
+            ),
+          ),
+        ]),
+    ...(blocks.length === 0
+      ? []
+      : [
+          fact(
+            t,
+            "fact-blocks",
+            "Blocks",
+            blocks.map((ref, index) =>
+              linkedMarkdown(`fact-blocks-${index}`, refLink(ref), model.links)
+                .text_size(TEXT.body)
+                .text_color(t.foreground),
+            ),
+          ),
+        ]),
+  ];
+};
+
 const detailScreen = (t: Theme, item: Item, model: PanelModel): Element =>
   v_flex()
     .id("detail")
@@ -1977,6 +2040,7 @@ const detailScreen = (t: Theme, item: Item, model: PanelModel): Element =>
             ]
           : []),
         fact(t, "fact-created", "Created", [item.createdAt.slice(0, 10)]),
+        ...blockerFacts(t, item, model),
         ...(item.startRequested === undefined
           ? []
           : [fact(t, "fact-start", "Start requested", [item.startRequested.at.slice(0, 10)])]),

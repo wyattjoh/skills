@@ -46,6 +46,11 @@ export const STARTING_TONE = "working";
 export const QUEUED_TONE = "ansi6";
 
 /**
+ * The Blocked group's header tone: the terminal palette's yellow, which no item status uses.
+ */
+export const BLOCKED_TONE = "ansi3";
+
+/**
  * A Findings page row's title wraps to at most this many lines. gpui-kit has no line clamp, so the
  * title's height is capped at that many line heights and clips its overflow.
  */

@@ -1224,6 +1224,7 @@ describe("watch due events", () => {
       answered: [],
       discussed: [],
       started: [],
+      blocked: {},
       edited: [],
       idle: {},
       capacity: {},
