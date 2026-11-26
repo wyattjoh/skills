@@ -16,7 +16,7 @@ running build.
 `plugins/coordinate/herdr/` builds `coordinate-panel`, a Herdr mod for the coordinate skill's
 backlog. The backlog is read-only except for answering an ask, dismissing an item, changing an item's status, starting an item, triaging a finding, and editing or deleting record text; the separate delegate-harness
 policy editor delegates all policy writes to the Coordinate CLI. The panel follows the focused
-terminal. It is not a Claude Code plugin: no `.claude-plugin/`, no marketplace entry, no mod or pi
+terminal. Its toolbar shows the focused domain's name as a muted crumb (pressing it opens that domain) left of Open coordinator, and a green dot marks a domain with a live coordinator there and on each Domains row. It is not a Claude Code plugin: no `.claude-plugin/`, no marketplace entry, no mod or pi
 extension. It is its own project with its own `package.json`, `bunfig.toml` and `justfile`. Root
 `bun test` and `knip` skip it, and root `bun run check` skips its `src/` (its
 tests need the renderer preload and its mod sources need Herdr's host `.d.ts` files); root
