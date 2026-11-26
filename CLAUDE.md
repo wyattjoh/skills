@@ -92,19 +92,15 @@ They are for read-only reference only; do not edit files inside these paths.
 | ----------------------- | ---------------- | -------------------------------------------------- | ---------------------------------------------------------------- | ------------------------------------------ |
 | Catppuccin              | `v0.2.0`         | `.claude/references/catppuccin`                    | https://github.com/catppuccin/catppuccin.git                     | `9de299f8f1702fe4fb4e439adfd04b5623e7b77f` |
 | Composable Architecture | `1.26.2`         | `.claude/references/swift-composable-architecture` | https://github.com/pointfreeco/swift-composable-architecture.git | `377da4061db10d26337a71bb279c506bb951f50f` |
-| Effect                  | `effect@3.22.4`  | `.claude/references/effect`                        | https://github.com/Effect-TS/effect.git                          | `5e8c4fe9e82fecdddb7812fa0090470b15a6fea0` |
 | Effect v4               | `effect@4.1.4`   | `.claude/references/effect-v4`                     | https://github.com/Effect-TS/effect.git                          | `289a53f7b1fc40049219c6e69022db2fb859c356` |
 | jev-doc-search          | main@7b1008c     | `.claude/references/jev-doc-search`                | https://github.com/VectifyAI/jev-doc-search.git                  | `7b1008c437c8c9a88da8a427a76052fb0454977a` |
 | Varlock                 | `varlock@1.25.0` | `.claude/references/varlock`                       | https://github.com/dmno-dev/varlock.git                          | `f6cc5938b2aa5d45a21d4fb3498399fbb0c4054c` |
 
-The Effect repository is vendored twice because this repository uses two incompatible major versions.
-The Effect references are documentation snapshots. `effect` supplies v3 source for the unchanged
-`workspaces`, `clean-storage`, `linked-docs`, `mermaid`, and `reference-submodules` scripts; `effect-v4` tracks the
-exact v4 release documented by the `effect-ts` skill. Migrated runtime scripts target the
-current Alchemy-compatible stable release separately from that documentation corpus. For script API
-changes, use the skill's package manifest and matching installed Effect source. The v4 checkout also
-carries upstream `MIGRATION.md`, `migration/`, `LLMS.md`, and `ai-docs/` directories that the v3 checkout
-does not.
+The `effect-v4` reference is a documentation snapshot of the exact v4 release documented by the
+`effect-ts` skill. Runtime scripts target the current Alchemy-compatible stable release separately from
+that documentation corpus. For script API changes, use the skill's package manifest and matching installed
+Effect source. The checkout carries upstream `MIGRATION.md`, `migration/`, `LLMS.md`, and `ai-docs/`
+directories.
 
 The `alchemy` and `effect-ts` skills must always target the same Effect release. The source of truth is
 upstream alchemy's exact pin (`overrides.effect` in its `pnpm-workspace.yaml`), which
