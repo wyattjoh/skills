@@ -651,6 +651,39 @@ describe("owned-only domain repos", () => {
   });
 });
 
+describe("remote ended records", () => {
+  it("maps a remote record's repo through the Boundary's checkout on its machine", async () => {
+    const { cfg, state } = await started();
+    const owned = landedRepo();
+    await add(cfg, owned.repo);
+    await addCheckout(cfg, owned.repo, "strix", "/home/w/code/app/");
+    const remote = (name: string, repo: string) =>
+      runWith(
+        writeEnded(state, {
+          name,
+          domain: "app",
+          session: `0b9c2a51-0000-4000-8000-00000000000${name === "far" ? 2 : 3}`,
+          cwd: join(repo, ".claude", "worktrees", name),
+          repo,
+          branch: name,
+          machine: "strix",
+          ended_at: NOW,
+        }),
+      );
+    await remote("far", "/home/w/code/app");
+    await remote("stray", "/home/w/code/other");
+    const layer = gitAndFake((argv) =>
+      argv[0] === "hc" && argv[1] === "ls" ? ok('{"terminals":[]}') : ok("{}"),
+    ).layer;
+    expect(await runWith(domainStatus(cfg, "app", false, Date.parse(NOW)), layer)).toEqual([
+      "app: 0 live delegates, 2 ended",
+      "  far [strix] ended 2026-11-17 · far · PRs unknown · resume: coordinate resume far",
+      "  stray [strix] ended 2026-11-17 · stray · repo /home/w/code/other is outside the owned Boundary · resume: coordinate resume stray",
+      `repo ${owned.repo}: could not read PRs: no remote`,
+    ]);
+  });
+});
+
 eachBackend("coordinate CLI", () => {
   it("wires policy, Boundary and focus, refusing focus with neither text nor --clear", async () => {
     const { state } = await started((made) => cliState(made));

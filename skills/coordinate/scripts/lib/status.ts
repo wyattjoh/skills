@@ -2,7 +2,7 @@ import { existsSync } from "node:fs";
 import { Effect, Option } from "effect";
 import { readDocument, refSessions, showBacklog } from "./backlog-doc.ts";
 import { idleDelegated } from "./backlog-store/ops.ts";
-import { proseSource, questionOf } from "./backlog-store/schema.ts";
+import { type Checkouts, proseSource, questionOf } from "./backlog-store/schema.ts";
 import type { Config } from "./config.ts";
 import { L, type Delegate, members, readEnded } from "./fleet.ts";
 import { harnessPolicyStatus } from "./harness-policy.ts";
@@ -46,6 +46,28 @@ const endedMachines = Effect.fn("endedMachines")(function* (
   };
 });
 const badge = (machine: string | undefined): string => (machine ? ` [${machine}]` : "");
+
+/**
+ * The owned path whose checkout on another machine holds a folder there, so a remote record's
+ * repo maps back to its main checkout on this Mac.
+ * @param checkouts The Boundary's recorded checkouts.
+ * @param machines The machine's names to look up, canonical first.
+ * @param path A folder on that machine.
+ * @returns The owned path, or undefined when no recorded checkout holds it.
+ */
+const ownedPathOf = (
+  checkouts: Checkouts,
+  machines: readonly string[],
+  path: string,
+): string | undefined => {
+  const folder = path.replace(/\/+$/, "");
+  return Object.entries(checkouts).find(([, byMachine]) =>
+    machines.some((machine) => {
+      const checkout = byMachine[machine]?.replace(/\/+$/, "");
+      return checkout !== undefined && (folder === checkout || folder.startsWith(`${checkout}/`));
+    }),
+  )?.[0];
+};
 
 /**
  * Who acts next for one delegate.
@@ -204,6 +226,22 @@ export const domainStatus = Effect.fn("domainStatus")(function* (
   // A remote delegate's folder is a path on its own machine, never one to look up here.
   const machineOf = remoteOf;
   const remoteRecord = yield* endedMachines(ended);
+  const document = yield* readDocument(config, domain).pipe(optionUnlessOffline);
+  const checkouts = Option.isSome(document)
+    ? (document.value.backlog.boundary.checkouts ?? {})
+    : {};
+  // A remote record's repo is that machine's main checkout: map it through the Boundary's
+  // recorded checkout for that machine to the repo on this Mac.
+  const endedRepoOf = Effect.fn("endedRepoOf")(function* (
+    record: (typeof ended)[number]["record"],
+  ) {
+    const machine = remoteRecord(record);
+    if (machine === undefined || !record.repo) return record.repo ?? undefined;
+    const names = [...new Set([machine, record.machine ?? machine])];
+    const owned = ownedPathOf(checkouts, names, record.repo);
+    if (owned === undefined) return record.repo;
+    return (existsSync(owned) ? yield* mainCheckout(owned) : undefined) ?? owned;
+  });
   const delegateRepos = new Map<Delegate, string | undefined>();
   for (const delegate of delegates)
     delegateRepos.set(
@@ -301,7 +339,7 @@ export const domainStatus = Effect.fn("domainStatus")(function* (
     );
   }
   for (const { record } of ended) {
-    const repo = record.repo ?? undefined;
+    const repo = yield* endedRepoOf(record);
     const info = yield* describe(
       repo,
       record.branch ?? undefined,
@@ -319,7 +357,6 @@ export const domainStatus = Effect.fn("domainStatus")(function* (
     );
   }
   const live = new Set(delegates.map((delegate) => delegate.session));
-  const document = yield* readDocument(config, domain).pipe(optionUnlessOffline);
   if (Option.isSome(document)) {
     for (const item of idleDelegated(document.value.backlog, live))
       lines.push(
