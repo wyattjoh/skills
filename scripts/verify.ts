@@ -313,27 +313,42 @@ const hasHerdrDeclarations = (): boolean => {
   return ["herdr.d.ts", "gpui-kit.d.ts"].every((name) => existsSync(join(resolve(home), name)));
 };
 
+export type PlannedCommand =
+  | { name: string; argv: string[]; cwd: string }
+  | { name: string; skipped: string };
+
 /**
  * The Herdr mod suite, `just check` in its folder. CI runners have no Herdr, whose
  * declarations its typecheck and staged build need, so there it runs the parts that need
- * only npm packages: the tests and render-sync. Elsewhere a missing Herdr fails the step.
+ * only npm packages: the tests and render-sync, from the Herdr folder's own install.
+ * Elsewhere a missing Herdr fails the step.
+ * @param ci Whether this is a CI run.
+ * @param declarations Whether Herdr's host declarations are installed.
  */
-const herdrSteps = (): Step[] => {
-  const env = withoutGitLocation(process.env);
-  if (process.env.CI === undefined || hasHerdrDeclarations()) {
-    return [{ name: "herdr just check", run: command(["just", "check"], herdrRoot, env) }];
+export const herdrPlan = (ci: boolean, declarations: boolean): PlannedCommand[] => {
+  if (!ci || declarations) {
+    return [{ name: "herdr just check", argv: ["just", "check"], cwd: herdrRoot }];
   }
   return [
-    { name: "herdr test", run: command(["bun", "run", "test"], herdrRoot, env) },
+    { name: "herdr test", argv: ["bun", "run", "test"], cwd: herdrRoot },
     {
       name: "herdr render-sync",
-      run: command([bin("herdr-render-sync"), "src/mods"], herdrRoot, env),
+      argv: [join(herdrRoot, "node_modules/.bin/herdr-render-sync"), "src/mods"],
+      cwd: herdrRoot,
     },
-    {
-      name: "herdr typecheck+build",
-      run: async () => ({ ok: true, skipped: "CI has no Herdr declarations", output: "" }),
-    },
+    { name: "herdr typecheck+build", skipped: "CI has no Herdr declarations" },
   ];
+};
+
+const herdrSteps = (): Step[] => {
+  const env = withoutGitLocation(process.env);
+  return herdrPlan(process.env.CI !== undefined, hasHerdrDeclarations()).map((planned) => {
+    if ("skipped" in planned) {
+      const outcome: Outcome = { ok: true, skipped: planned.skipped, output: "" };
+      return { name: planned.name, run: async () => outcome };
+    }
+    return { name: planned.name, run: command(planned.argv, planned.cwd, env) };
+  });
 };
 
 const timed = async (step: Step): Promise<StepResult> => {
@@ -375,9 +390,12 @@ const main = async (): Promise<number> => {
   for (const result of results) {
     writeFileSync(join(logs, `${result.name.replaceAll(/[^a-z0-9]+/gi, "-")}.log`), result.output);
   }
+  // CI keeps no .scratch logs, so there a failing step prints its whole output.
+  const shown = process.env.CI === undefined ? 40 : Infinity;
   for (const result of results.filter((entry) => !entry.ok)) {
-    const tail = result.output.trimEnd().split("\n").slice(-40).join("\n");
-    console.error(`\n--- ${result.name} (last 40 lines) ---\n${tail}`);
+    const lines = result.output.trimEnd().split("\n");
+    const label = lines.length > shown ? `last ${shown} lines` : "output";
+    console.error(`\n--- ${result.name} (${label}) ---\n${lines.slice(-shown).join("\n")}`);
   }
   console.log(`\n${formatTable(results)}\n\nLogs: ${logs}`);
   return results.every((result) => result.ok) ? 0 : 1;

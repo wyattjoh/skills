@@ -334,6 +334,39 @@ export const asFileAddresses = (text: string, state: string): string =>
     .replaceAll(`herdr-doc://${FAKE_HOME}/cs.policy`, `${state}/delegate-harness-policy.json`)
     .replaceAll(new RegExp(`herdr-doc://${FAKE_HOME}(?![/\\w])`, "g"), `${state}/ended`);
 
+let bundledFake: string | undefined;
+
+/**
+ * `herdr-docs-fake.ts` bundled into one file, built once per test process. The `hc` stub
+ * starts a fresh bun for every `hc connect`, and a CLI command makes many: loading the
+ * unbundled module graph (Effect included) cost about 45 ms of each roughly 55 ms spawn, which
+ * on a loaded CI runner pushed herdr-doc CLI tests past their timeouts. The bundle loads in
+ * about 10 ms and runs the same code.
+ * @returns The bundle's path.
+ */
+const fakeDocServer = (): string => {
+  if (bundledFake !== undefined) return bundledFake;
+  const dir = tempDir("coordinate-doc-fake-");
+  const outfile = join(dir, "herdr-docs-fake.js");
+  const built = Bun.spawnSync(
+    [
+      process.execPath,
+      "build",
+      join(import.meta.dir, "herdr-docs-fake.ts"),
+      "--target",
+      "bun",
+      "--minify",
+      "--outfile",
+      outfile,
+    ],
+    { env: process.env, stdout: "pipe", stderr: "pipe" },
+  );
+  if (built.exitCode !== 0) throw new Error(`bundling herdr-docs-fake.ts failed: ${built.stderr}`);
+  process.once("exit", () => rmSync(dir, { recursive: true, force: true }));
+  bundledFake = outfile;
+  return outfile;
+};
+
 /**
  * An environment for spawning the coordinate CLI against `state`: a config file naming it, a stub
  * `hc`, a stub `herdr-app`, and stub `lsof`, `ps` and `kill` first on PATH, and `HC_TERMINAL_ID=t1`. The stub's `hc get` answers t1 with `labels`,
@@ -393,7 +426,7 @@ export const cliEnv = (
     join(bin, "hc"),
     `#!/bin/sh\nprintf '%s\\n' "$*" >> '${join(bin, "calls.log")}'\ncase "$1" in\n  get) ${known}${got} ;;\n  ls) ${listed}printf '{"terminals":[]}' ;;\n  run) printf '{"address":"t-watch"}' ;;
   file) [ "$2" = read ] && { printf '{"error":{"kind":"not_found","message":"no such file"}}' >&2; exit 1; }; printf '{}' ;;
-  connect) exec '${process.execPath}' '${join(import.meta.dir, "herdr-docs-fake.ts")}' '${docs}' ;;
+  connect) exec '${process.execPath}' '${fakeDocServer()}' '${docs}' ;;
   server) printf '%s' '${JSON.stringify({ core: { id: "0", name: FAKE_CORE } })}' ;;
   machine) printf '%s' '${JSON.stringify({ machines: [{ name: "strix", state: "connected" }] })}' ;;
   *) printf '{}' ;;\nesac\n`,

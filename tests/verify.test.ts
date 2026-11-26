@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it } from "bun:test";
-import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
@@ -7,6 +7,7 @@ import {
   changedFiles,
   emDashLines,
   formatTable,
+  herdrPlan,
   type GitContext,
   newWarnings,
   parseAddedLines,
@@ -211,5 +212,26 @@ describe("git range", () => {
     ]);
     expect(emDashLines(addedLines(repo, "main"))).toEqual(["kept.ts:2", "new.md:2"]);
     expect(changedFiles(repo, "main")).toEqual(["kept.ts", "new.md"]);
+  });
+});
+
+describe("herdrPlan", () => {
+  it("runs just check off CI and wherever Herdr is installed", () => {
+    expect(herdrPlan(false, false).map((planned) => planned.name)).toEqual(["herdr just check"]);
+    expect(herdrPlan(true, true).map((planned) => planned.name)).toEqual(["herdr just check"]);
+  });
+
+  it("on CI without Herdr runs commands that exist in the Herdr folder's install", () => {
+    const plan = herdrPlan(true, false);
+    expect(plan.map((planned) => planned.name)).toEqual([
+      "herdr test",
+      "herdr render-sync",
+      "herdr typecheck+build",
+    ]);
+    const executables = plan.flatMap((planned) => ("argv" in planned ? [planned.argv[0]] : []));
+    expect(executables.map((path) => path === "bun" || existsSync(path ?? ""))).toEqual([
+      true,
+      true,
+    ]);
   });
 });
