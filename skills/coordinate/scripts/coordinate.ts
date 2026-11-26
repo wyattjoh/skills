@@ -71,6 +71,7 @@ import { fetchRemoteBranch } from "./lib/remote-fetch.ts";
 import { verifyDelegate } from "./lib/sessions.ts";
 import { migrateState } from "./lib/migrate.ts";
 import { renameDomain } from "./lib/rename.ts";
+import { renameCoordinatorTab } from "./lib/tab-title.ts";
 import { listBacklogs } from "./lib/backlog-list.ts";
 import { showOutbox, watch, WATCH_ROLES } from "./lib/watch.ts";
 import { showCapacityQueue } from "./lib/capacity-queue.ts";
@@ -1203,7 +1204,12 @@ const focusCommand = Command.make(
           markdown,
           json: options.json,
           editedAt: editedAt(),
-        }),
+        }).pipe(
+          // The coordinator's tab follows its focus; a missing tab or window leaves the focus set.
+          Effect.tap(() =>
+            renameCoordinatorTab(domain, markdown ?? text ?? null).pipe(Effect.ignore),
+          ),
+        ),
       ),
     );
   },

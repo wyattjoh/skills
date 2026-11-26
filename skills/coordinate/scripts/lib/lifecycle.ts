@@ -57,6 +57,7 @@ import {
   PI_THINKING,
 } from "./harness.ts";
 import * as hc from "./herdr.ts";
+import { coordinatorTabTitle } from "./tab-title.ts";
 import {
   defaultStop,
   localHost,
@@ -311,8 +312,7 @@ const coordinatorName = (domain: string): string => `${domainNamePart(domain, 20
  * @param domain Domain.
  * @returns `<Domain> · No active focus`.
  */
-const idleTabTitle = (domain: string): string =>
-  `${domain.charAt(0).toUpperCase()}${domain.slice(1)} · No active focus`;
+const idleTabTitle = (domain: string): string => coordinatorTabTitle(domain, null);
 
 /**
  * Decide the folder a spawned coordinator starts in, before anything is written or launched:

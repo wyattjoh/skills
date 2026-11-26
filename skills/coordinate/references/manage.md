@@ -43,7 +43,7 @@ Report each wake to the user in two to four lines: what changed, and what waits 
 
 ## Tab titles
 
-Each coordinator's visible tab reads `<Domain> · <short focus>`, or `<Domain> · No active focus`. On a wake, compare the domain's backlog focus with the tab's name (`herdr-app ls`). When they disagree:
+Each coordinator's visible tab reads `<Domain> · <short focus>`, or `<Domain> · No active focus`. `coordinate backlog focus` renames the domain's coordinator tab on the machine it runs on whenever the focus changes, so a current title is the norm. On a wake, compare the domain's backlog focus with the tab's name (`herdr-app ls`). When they still disagree (an older CLI, a coordinator on another machine's tab):
 
 - **Focus is current**: rename the tab `herdr.tab` names, `herdr-app do tab.rename --id <tab> --name "<title>"`, then read it back. Rename tabs only, never spaces or processes.
 - **Focus is stale** (it names finished or ended work): send the coordinator one `coordinate send` asking it to refresh `coordinate backlog focus`, then rename once it has. Send that nudge once per staleness.
