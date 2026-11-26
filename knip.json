@@ -7,7 +7,6 @@
     ".claude/worktrees/**",
     ".scratch/**"
   ],
-  "ignoreBinaries": ["du", "pgrep"],
   "workspaces": {
     ".": {},
     "skills/*": {

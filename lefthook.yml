@@ -14,16 +14,15 @@ pre-commit:
       run: bun run knip
 
 pre-push:
-  parallel: true
   commands:
-    typecheck:
-      run: bun run check
+    # One gate for local runs, this hook and CI (scripts/verify.ts).
     # Git exports GIT_DIR (and often GIT_INDEX_FILE) into hook environments, and
     # `git -C <dir>` does not override them. A test that shells out to git would
     # then operate on this repository instead of its temp fixture. The skills'
-    # git spawns sanitize their own environment; unsetting here is the net that
-    # also covers test files added later.
-    test:
+    # git spawns sanitize their own environment, and verify strips these from
+    # the suites it runs; unsetting here is the net that also covers test files
+    # added later.
+    verify:
       run: env -u GIT_DIR -u GIT_WORK_TREE -u GIT_INDEX_FILE -u GIT_COMMON_DIR
         -u GIT_OBJECT_DIRECTORY -u GIT_ALTERNATE_OBJECT_DIRECTORIES
-        -u GIT_CEILING_DIRECTORIES bun run test
+        -u GIT_CEILING_DIRECTORIES bun run verify

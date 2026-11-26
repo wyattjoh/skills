@@ -39,6 +39,7 @@ infrastructure, a second round of measurement, and after two failed attempts at 
 A version bump means the version this repo publishes; updating a dependency pin the task asks for is not one.
 The final verification is the run that gates your commit; red tests while you develop are not attempts.
 A lock timeout or a model usage-limit error is not a failed attempt: wait and retry.
+When the repo has one gate script, name only it: in wyattjoh/skills that is `bun run verify`, which runs the same checks as its pre-push hook and CI.
 List only fast checks (format, lint, typecheck, unit tests, bundle). Name native or machine-heavy gates as "coordinator runs at landing"; the coordinator runs each once before landing. Add task-specific stop points, including choices the user still has to make.
 
 ## Child review

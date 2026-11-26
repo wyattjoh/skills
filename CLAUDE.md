@@ -69,6 +69,7 @@ edits. `version` is intentionally omitted so installs track the commit SHA. Run
 
 | Command                | Description                                        |
 | ---------------------- | -------------------------------------------------- |
+| `bun run verify`       | The gate (pre-push and CI): see below              |
 | `bun test`             | Run all tests in the `skills/` directory           |
 | `bun run check`        | Type-check skill TypeScript files (`tsc --noEmit`) |
 | `bun run lint`         | Lint with oxlint (config: `.oxlintrc.json`)        |
@@ -77,6 +78,15 @@ edits. `version` is intentionally omitted so installs track the commit SHA. Run
 | `bun run knip`         | Find unused files, deps, and exports (`knip.json`) |
 | `just link`            | Symlink `agents/*.md` into `~/.claude/agents/`     |
 | `just unlink`          | Remove agent symlinks pointing at this checkout    |
+
+`bun run verify` (`scripts/verify.ts`) is the one gate: the pre-push hook and CI run it, and
+a passing run is what a commit or brief stop point means by "checks pass". It installs the root
+and `plugins/coordinate/herdr` dependencies when their `node_modules` is missing, then runs
+format:check, lint, knip, check, the test suite and `just check` in `plugins/coordinate/herdr`,
+plus two diff checks against `origin/main` (else `main`, or `VERIFY_BASE`): no added line
+contains an em dash, and the changed files gain no oxlint warning. It runs every step, prints a
+pass/fail table and writes each step's log to `.scratch/verify/`. CI has no Herdr, so there the
+Herdr step runs only its tests and render-sync.
 
 ## Documentation
 
