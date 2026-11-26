@@ -129,7 +129,7 @@ export function retrieve(
         Effect.gen(function* () {
           const result = yield* services.document(path.node.url!).pipe(
             Effect.map((document) => ({ document, error: undefined })),
-            Effect.catchAll((error) => Effect.succeed({ document: undefined, error })),
+            Effect.catch((error) => Effect.succeed({ document: undefined, error })),
           );
           if (!result.document) {
             warnings.push(result.error!.message);
@@ -216,12 +216,12 @@ const cacheSchema = Schema.Struct({
   fetchedAt: Schema.Number,
 });
 const responseSchema = Schema.Struct({
-  answers: Schema.Record({ key: Schema.String, value: Schema.Unknown }),
+  answers: Schema.Record(Schema.String, Schema.Unknown),
   usage: Schema.optional(Schema.Struct({ input_tokens: Schema.optional(Schema.Number) })),
 });
 const choiceSchema = Schema.Struct({
   type: Schema.Literal("choice"),
-  probabilities: Schema.Record({ key: Schema.String, value: Schema.Number }),
+  probabilities: Schema.Record(Schema.String, Schema.Number),
 });
 const noulSchema = Schema.Struct({ type: Schema.Literal("noul"), noul: Schema.Number });
 

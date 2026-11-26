@@ -455,7 +455,7 @@ const program = Effect.gen(function* () {
   }
 
   yield* Console.log("");
-  const [failures, removed] = yield* Effect.partition(deletable, cleanCandidate, {
+  const [removed, failures] = yield* Effect.partition(deletable, cleanCandidate, {
     concurrency: 4,
   });
   for (const item of removed) {

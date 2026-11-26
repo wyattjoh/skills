@@ -89,7 +89,7 @@ const formatError = (error: CliError): string =>
 const run = (program: Effect.Effect<void, CliError>): Promise<void> =>
   Effect.runPromise(
     program.pipe(
-      Effect.catchAll((error) =>
+      Effect.catch((error) =>
         Effect.sync(() => {
           console.error(`workspaces: ${formatError(error)}`);
           process.exitCode = 1;

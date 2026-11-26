@@ -113,14 +113,16 @@ const main = Effect.gen(function* () {
 if (import.meta.main) {
   await Effect.runPromise(
     main.pipe(
-      Effect.timeoutFail({
+      Effect.timeoutOrElse({
         duration: "180 seconds",
-        onTimeout: () =>
-          new RetrievalError({
-            message: "Search exceeded 180-second deadline; narrow the question or reduce --pages",
-          }),
+        orElse: () =>
+          Effect.fail(
+            new RetrievalError({
+              message: "Search exceeded 180-second deadline; narrow the question or reduce --pages",
+            }),
+          ),
       }),
-      Effect.catchAll((error) =>
+      Effect.catch((error) =>
         Effect.gen(function* () {
           yield* Console.error(error.message);
           process.exitCode = 1;

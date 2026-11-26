@@ -3,7 +3,7 @@ import { createHash } from "node:crypto";
 import { mkdir, writeFile } from "node:fs/promises";
 import { dirname, isAbsolute, join, relative, resolve } from "node:path";
 import { parseArgs } from "node:util";
-import { Console, Effect, Either } from "effect";
+import { Console, Effect, Result } from "effect";
 import { EVALS, PROFILES, grade, type EvalCase, type Grade } from "./evals.ts";
 import { createCachedServices, modelUsage } from "./model-cache.ts";
 import { RetrievalError, retrieve, type Policy } from "./retrieve.ts";
@@ -250,7 +250,7 @@ export function runBench(
               );
             });
           const before = performance.now();
-          const outcome = yield* Effect.either(
+          const outcome = yield* Effect.result(
             retrieve(test.index, test.question, services, profile.policy).pipe(
               Effect.timeout(Math.min(options.caseTimeoutMs, Math.max(1, deadline - Date.now()))),
             ),
@@ -258,7 +258,7 @@ export function runBench(
           // Include in-flight response usage even if a sibling request or validator failed.
           yield* Effect.promise(() => modelCache.drain());
           yield* Effect.promise(() => meter.drain());
-          const result = Either.isRight(outcome) ? outcome.right : undefined;
+          const result = Result.isSuccess(outcome) ? outcome.success : undefined;
           const row: BenchRow = {
             case: test.id,
             profile: profile.name,
@@ -266,7 +266,7 @@ export function runBench(
             expected: test.expected.kind,
             status: result?.status ?? "error",
             grade: result ? grade(result, test.expected) : undefined,
-            error: Either.isLeft(outcome) ? outcome.left.message : undefined,
+            error: Result.isFailure(outcome) ? outcome.failure.message : undefined,
             elapsedMs: Math.round(performance.now() - before),
             metrics: {
               ...meter.metrics,
@@ -467,7 +467,7 @@ const main = Effect.gen(function* () {
 if (import.meta.main)
   await Effect.runPromise(
     main.pipe(
-      Effect.catchAll((error) =>
+      Effect.catch((error) =>
         Effect.gen(function* () {
           yield* Console.error(error.message);
           process.exitCode = 1;

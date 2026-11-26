@@ -17,19 +17,19 @@ const entrySchema = Schema.Struct({
   response: Schema.String,
 });
 const requestSchema = Schema.Struct({
-  questions: Schema.Record({
-    key: Schema.String,
-    value: Schema.Union(
+  questions: Schema.Record(
+    Schema.String,
+    Schema.Union([
       Schema.Struct({
         type: Schema.Literal("choice"),
-        criteria: Schema.Record({ key: Schema.String, value: Schema.Unknown }),
+        criteria: Schema.Record(Schema.String, Schema.Unknown),
       }),
       Schema.Struct({ type: Schema.Literal("noul") }),
-    ),
-  }),
+    ]),
+  ),
 });
 const responseSchema = Schema.Struct({
-  answers: Schema.Record({ key: Schema.String, value: Schema.Unknown }),
+  answers: Schema.Record(Schema.String, Schema.Unknown),
   usage: Schema.optional(Schema.Unknown),
 });
 const usageSchema = Schema.Struct({ input_tokens: Schema.Number, output_tokens: Schema.Number });
