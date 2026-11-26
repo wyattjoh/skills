@@ -1,7 +1,14 @@
 import { Effect, Option, Schema } from "effect";
 import type { Config } from "./config.ts";
-import { L, readEnded, Refused, sessionOf, VerdictSchema, writeEnded } from "./fleet.ts";
-import * as hc from "./herdr.ts";
+import {
+  findTerminal,
+  L,
+  readEnded,
+  Refused,
+  sessionOf,
+  VerdictSchema,
+  writeEnded,
+} from "./fleet.ts";
 import { stateStore } from "./state.ts";
 import { BacklogError, keys, runCommand } from "./state-store.ts";
 
@@ -136,7 +143,8 @@ export const countResume = Effect.fn("countResume")(function* (stateDir: string,
 /**
  * Record a verify verdict for a delegate, live or ended: a live terminal by name or address that
  * runs a session (its label, else its `--session-id`/`--resume` argument), else the newest ended record with that name. An ended record is
- * rewritten with the verdict too, so the record shows it.
+ * rewritten with the verdict too, so the record shows it. Names resolve as `send` and `end` resolve
+ * them (`findTerminal`), so a live delegate on another machine is found by name too.
  * @param config Config.
  * @param target Delegate name or address.
  * @param verdict `ok`, or `problem` with a reason.
@@ -151,7 +159,7 @@ export const verifyDelegate = Effect.fn("verifyDelegate")(function* (
 ) {
   if (verdict.result === "problem" && verdict.reason.trim() === "")
     return yield* new Refused({ message: '--problem needs a reason: --problem "<why>"' });
-  const terminal = yield* hc.get(target);
+  const terminal = yield* findTerminal(target);
   const liveSession =
     terminal && terminal.labels[L.role] !== "coordinator"
       ? sessionOf(terminal) || undefined

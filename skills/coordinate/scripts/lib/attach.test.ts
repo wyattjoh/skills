@@ -375,6 +375,86 @@ const ref = (name: string, session: string) => ({
   report: "",
 });
 
+/**
+ * Answers for hc with a live delegate rem-a on strix: `hc get` knows t1 (the coordinator) and each
+ * `strix/tN` address in `remote`, but not the name, which only `hc ls` lists, as herdr-core does
+ * for another machine's terminal.
+ */
+const remoteAnswers =
+  (remote: Record<string, Record<string, unknown>>) =>
+  (argv: readonly string[]): RunOutput => {
+    if (argv[0] !== "hc") throw new Error(`unexpected command: ${argv.join(" ")}`);
+    if (argv[1] === "ls")
+      return ok(
+        JSON.stringify({
+          terminals: Object.values(remote).map(({ address, name }) => ({
+            address,
+            name,
+            state: "live",
+          })),
+        }),
+      );
+    if (argv[1] === "label") return ok("{}");
+    if (argv[1] === "get" && argv[2] === "t1")
+      return ok(JSON.stringify({ address: "t1", state: "live", labels: COORDINATOR }));
+    const known = argv[1] === "get" ? remote[argv[2] ?? ""] : undefined;
+    if (known) return ok(JSON.stringify(known));
+    if (argv[1] === "get")
+      return { exitCode: 3, stdout: "", stderr: '{"error":{"kind":"not_found","message":"no"}}' };
+    throw new Error(`unexpected command: ${argv.join(" ")}`);
+  };
+
+const remoteDelegate = (address: string, labels: Record<string, string> = {}) => ({
+  address,
+  name: "rem-a",
+  state: "live",
+  cwd: "/remote/wt",
+  status: { app: "claude", state: "idle" },
+  labels: { "fleet.worktree": "/remote/wt", "fleet.branch": "wyattjoh/rem-a", ...labels },
+  foreground: { argv: ["claude", "--session-id", SESSION], cwd: "/remote/wt" },
+});
+
+describe("a live delegate on another machine, by name", () => {
+  it("attaches it, labelling its machine/tN address", async () => {
+    const { cfg, path } = await started();
+    const fake = fakeProc(remoteAnswers({ "strix/t5": remoteDelegate("strix/t5") }));
+    const lines = await runWith(attachDelegate(cfg, options({ target: "rem-a" }), ENV), fake.layer);
+    expect(lines).toEqual([
+      `filed rem-a (strix/t5, session ${SESSION}) under i1 [delegated]`,
+      `labelled strix/t5: fleet.domain=app fleet.task=rem-a fleet.session=${SESSION} fleet.harness=claude fleet.machine=strix`,
+    ]);
+    expect(read(path).items[0].delegates.map((entry: { name: string }) => entry.name)).toEqual([
+      "rem-a",
+    ]);
+  });
+
+  it("detaches it by its name when the item files it under its session", async () => {
+    const { cfg, path } = await started();
+    await runWith(recordDelegate(cfg, "app", { id: "i1", ref: ref("other-name", SESSION) }));
+    const fake = fakeProc(remoteAnswers({ "strix/t5": remoteDelegate("strix/t5") }));
+    const lines = await runWith(detachDelegate(cfg, options({ target: "rem-a" }), ENV), fake.layer);
+    expect(lines).toEqual([`detached other-name (session ${SESSION}) from i1 [open]`]);
+    expect(read(path).items[0].delegates).toEqual([]);
+  });
+
+  it("refuses a name two live terminals share, naming their addresses", async () => {
+    const { cfg, path } = await started();
+    const before = readFileSync(path, "utf8");
+    const fake = fakeProc(
+      remoteAnswers({
+        "strix/t5": remoteDelegate("strix/t5"),
+        "mini/t2": remoteDelegate("mini/t2"),
+      }),
+    );
+    expect(
+      messageOf(
+        await failureOf(attachDelegate(cfg, options({ target: "rem-a" }), ENV), fake.layer),
+      ),
+    ).toBe("2 live terminals are named rem-a (strix/t5, mini/t2); give its address");
+    expect(readFileSync(path, "utf8")).toBe(before);
+  });
+});
+
 describe("item detach", () => {
   it("removes an ended delegate by name without asking Herdr, and reopens the item", async () => {
     const { cfg, path } = await started();

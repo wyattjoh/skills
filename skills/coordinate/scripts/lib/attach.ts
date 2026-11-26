@@ -5,7 +5,7 @@ import { readDocument, recordDelegate, releaseDelegate } from "./backlog-doc.ts"
 import { filedUnder, unfileable } from "./backlog-store/ops.ts";
 import type { DelegateRef } from "./backlog-store/schema.ts";
 import type { Config } from "./config.ts";
-import { coordinatorDomain, L, Refused, sessionOf } from "./fleet.ts";
+import { coordinatorDomain, findTerminal, L, Refused, sessionOf } from "./fleet.ts";
 import { currentBranch, gitTry } from "./git.ts";
 import { harnessOf } from "./harness.ts";
 import { localMachine, machineOfAddress } from "./delegate-capacity.ts";
@@ -16,12 +16,15 @@ const json = (value: unknown): string[] => [JSON.stringify(value, null, 2)];
 /**
  * Where a terminal works: its `fleet.worktree` and `fleet.branch` labels when set (what
  * `delegate --item` recorded), else the Git checkout holding its folder and that checkout's branch.
- * Outside Git both are null.
+ * Outside Git both are null. A terminal on another machine (`machine/tN`) has its folder there, so
+ * only its labels count: Git here would read a different checkout, or none.
  */
 const placeOf = Effect.fn("placeOf")(function* (terminal: hc.Terminal) {
   const labelled = terminal.labels[L.worktree];
   const dir = labelled ?? terminal.cwd;
-  const top = dir === "" ? undefined : yield* gitTry(dir, ["rev-parse", "--show-toplevel"]);
+  const remote = terminal.address.includes("/");
+  const top =
+    dir === "" || remote ? undefined : yield* gitTry(dir, ["rev-parse", "--show-toplevel"]);
   const worktree = labelled ?? top ?? null;
   const branch =
     terminal.labels[L.branch] ?? (top === undefined ? undefined : yield* currentBranch(top));
@@ -63,7 +66,7 @@ export const attachDelegate = Effect.fn("attachDelegate")(function* (
   const { backlog } = yield* readDocument(config, domain);
   const problem = unfileable(backlog, options.id);
   if (problem) return yield* new Refused({ message: problem });
-  const terminal = yield* hc.get(options.target);
+  const terminal = yield* findTerminal(options.target);
   if (!terminal || !terminal.live)
     return yield* new Refused({ message: `no live terminal ${options.target}` });
   if (terminal.labels[L.role] === "coordinator")
@@ -175,7 +178,7 @@ export const detachDelegate = Effect.fn("detachDelegate")(function* (
   );
   let key = options.target;
   if (found && !named) {
-    const terminal = yield* hc.get(options.target);
+    const terminal = yield* findTerminal(options.target);
     const session = terminal ? sessionOf(terminal) : "";
     if (session !== "") key = session;
   }
