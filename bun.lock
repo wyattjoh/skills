@@ -5,7 +5,7 @@
     "": {
       "name": "agent-toolkit",
       "dependencies": {
-        "effect": "4.1.4",
+        "effect": "4.1.5",
       },
       "devDependencies": {
         "@types/bun": "1.4.5",
@@ -22,7 +22,7 @@
       "version": "0.1.0",
       "dependencies": {
         "@typeonce/effect-machine": "0.46.0",
-        "effect": "4.1.4",
+        "effect": "4.1.5",
       },
       "devDependencies": {
         "@earendil-works/pi-coding-agent": "1.6.0",
@@ -37,7 +37,7 @@
       "name": "@wyattjoh/alchemy-skill",
       "version": "1.0.0",
       "dependencies": {
-        "effect": "4.1.4",
+        "effect": "4.1.5",
         "yaml": "^2.9.1",
       },
     },
@@ -46,7 +46,7 @@
       "version": "1.0.0",
       "dependencies": {
         "@effect/platform-bun": "4.1.4",
-        "effect": "4.1.4",
+        "effect": "4.1.5",
       },
     },
     "skills/claude-sessions": {
@@ -54,56 +54,56 @@
       "version": "1.0.0",
       "dependencies": {
         "@typesafe-ai/sdk": "^0.6.0",
-        "effect": "4.1.4",
+        "effect": "4.1.5",
       },
     },
     "skills/clean-storage": {
       "name": "@wyattjoh/clean-storage-skill",
       "version": "1.0.0",
       "dependencies": {
-        "effect": "4.1.4",
+        "effect": "4.1.5",
       },
     },
     "skills/code-walkthrough": {
       "name": "@wyattjoh/code-walkthrough-skill",
       "version": "1.0.0",
       "dependencies": {
-        "effect": "4.1.4",
+        "effect": "4.1.5",
       },
     },
     "skills/coordinate": {
       "name": "@wyattjoh/coordinate-skill",
       "version": "1.0.0",
       "dependencies": {
-        "effect": "4.1.4",
+        "effect": "4.1.5",
       },
     },
     "skills/devenv": {
       "name": "@wyattjoh/devenv-skill",
       "version": "1.0.0",
       "dependencies": {
-        "effect": "4.1.4",
+        "effect": "4.1.5",
       },
     },
     "skills/driving-ios-simulator": {
       "name": "@wyattjoh/driving-ios-simulator-skill",
       "version": "1.0.0",
       "dependencies": {
-        "effect": "4.1.4",
+        "effect": "4.1.5",
       },
     },
     "skills/icon-gen": {
       "name": "@wyattjoh/icon-gen-skill",
       "version": "1.0.0",
       "dependencies": {
-        "effect": "4.1.4",
+        "effect": "4.1.5",
       },
     },
     "skills/linked-docs": {
       "name": "@wyattjoh/linked-docs-skill",
       "version": "1.0.0",
       "dependencies": {
-        "effect": "4.1.4",
+        "effect": "4.1.5",
         "marked": "^18.2.1",
       },
     },
@@ -112,7 +112,7 @@
       "version": "1.0.0",
       "dependencies": {
         "@happy-dom/global-registrator": "^21.0.4",
-        "effect": "4.1.4",
+        "effect": "4.1.5",
         "mermaid": "^12.3.0",
       },
     },
@@ -120,42 +120,42 @@
       "name": "@wyattjoh/name-gen-skill",
       "version": "1.0.0",
       "dependencies": {
-        "effect": "4.1.4",
+        "effect": "4.1.5",
       },
     },
     "skills/network-topology": {
       "name": "@wyattjoh/network-topology-skill",
       "version": "1.0.0",
       "dependencies": {
-        "effect": "4.1.4",
+        "effect": "4.1.5",
       },
     },
     "skills/npm-info": {
       "name": "@wyattjoh/npm-info-skill",
       "version": "1.0.0",
       "dependencies": {
-        "effect": "4.1.4",
+        "effect": "4.1.5",
       },
     },
     "skills/pr-review": {
       "name": "@wyattjoh/pr-review-skill",
       "version": "1.0.0",
       "dependencies": {
-        "effect": "4.1.4",
+        "effect": "4.1.5",
       },
     },
     "skills/reference-submodules": {
       "name": "@wyattjoh/reference-submodules-skill",
       "version": "1.0.0",
       "dependencies": {
-        "effect": "4.1.4",
+        "effect": "4.1.5",
       },
     },
     "skills/setup-alchemy": {
       "name": "@wyattjoh/setup-alchemy-skill",
       "version": "1.0.0",
       "dependencies": {
-        "effect": "4.1.4",
+        "effect": "4.1.5",
       },
     },
     "skills/setup-forgejo-renovate": {
@@ -167,7 +167,7 @@
       "version": "1.0.0",
       "dependencies": {
         "commander": "^15.1.0",
-        "effect": "4.1.4",
+        "effect": "4.1.5",
         "yaml": "^2.9.1",
       },
     },
@@ -735,7 +735,7 @@
 
     "ecdsa-sig-formatter": ["ecdsa-sig-formatter@1.0.11", "", { "dependencies": { "safe-buffer": "^5.0.1" } }, "sha512-nagl3RYrbNv6kQkeJIpt6NJZy8twLB/2vtz6yN9Z4vRKHN4/QZJIEbqohALSgwKdnksuY3k5Addp5lg8sVoVcQ=="],
 
-    "effect": ["effect@4.1.4", "", {}, "sha512-Tgrv/9FN+TZYyOn8XSli+fVqAfwDrDAkiX5Uu9vztINb675VTQdhD0gWI5Kzvhlh9QqzjZvw72iugqw5pwoghQ=="],
+    "effect": ["effect@4.1.5", "", {}, "sha512-xyR20KhQI0vg2gD8ILUSQRTTESEYJ0JKdP+QD8J37xbwPTqXRxFM/l0+vUVD9fuSvoYruoTqyt33C4FZv1s4TQ=="],
 
     "elkjs": ["elkjs@0.12.1", "", {}, "sha512-IhMYKHE4S2vtx0QrhBP3lYOIKDeIiJXBrdq9MGYkuB8ZHqhrBnHNfSUndjXFewrX1CPK8chwq+2NA0K0hliYuw=="],
 

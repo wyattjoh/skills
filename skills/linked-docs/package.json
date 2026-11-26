@@ -9,7 +9,7 @@
     "bench": "bun scripts/bench.ts"
   },
   "dependencies": {
-    "effect": "4.1.4",
+    "effect": "4.1.5",
     "marked": "^18.2.1"
   }
 }
