@@ -1,7 +1,6 @@
 import { afterAll, afterEach, beforeEach, describe, expect, it } from "bun:test";
 import { existsSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { Effect } from "effect";
 import { BacklogError, itemAdd, itemClose } from "./backlog-doc.ts";
 import { resolveConfig, type Config } from "./config.ts";
 import { failureOf, g, gitAndFake, initRepo, runWith, tempDir } from "./fixture.ts";
@@ -12,7 +11,17 @@ import {
   resumeDelegate,
   start,
 } from "./lifecycle.ts";
-import { fakeProc, ok, type RunOutput } from "./proc.ts";
+import { Effect, Layer } from "effect";
+import {
+  coreStatus,
+  FAKE_CORE,
+  fakeProc,
+  isCoreNameRead,
+  ok,
+  Proc,
+  realProc,
+  type RunOutput,
+} from "./proc.ts";
 import { domainStatus } from "./status.ts";
 
 const dirs: string[] = [];
@@ -412,6 +421,65 @@ describe("delegate --item", () => {
       'send it what arrived: coordinate send fix-a "<message>"',
     ]);
     expect(readFileSync(path, "utf8")).toBe(before);
+  });
+});
+
+// Git and the setup's sh run for real; hc and herdr-app get the fake answers.
+const setupWorld = () => {
+  const calls: string[][] = [];
+  const answer = herdrAnswers(COORDINATOR);
+  const layer = Layer.succeed(
+    Proc,
+    Proc.of({
+      run: (argv, runOptions) => {
+        if (argv[0] === "git" || argv[0] === "sh") return realProc.run(argv, runOptions);
+        calls.push([...argv]);
+        return Effect.succeed(isCoreNameRead(argv) ? coreStatus(FAKE_CORE) : answer(argv));
+      },
+    }),
+  );
+  return { layer, calls };
+};
+const declaredRepo = (commands: string[]) => {
+  const repo = initRepo();
+  dirs.push(repo);
+  mkdirSync(join(repo, ".claude"));
+  writeFileSync(
+    join(repo, ".claude", "coordinate.json"),
+    JSON.stringify({ worktreeSetup: commands }),
+  );
+  g(repo, "add", ".claude/coordinate.json");
+  g(repo, "commit", "-q", "-m", "declare setup");
+  return repo;
+};
+
+describe("delegate --repo worktree setup", () => {
+  it("runs the declared commands in the new worktree before starting the harness", async () => {
+    const { cfg } = await started();
+    const repo = declaredRepo(["echo ready > setup-ran.txt"]);
+    const world = setupWorld();
+    const lines = await runWith(delegate(cfg, options({ repo, item: "i1" })), world.layer);
+    const worktree = join(repo, ".claude", "worktrees", "fix-a");
+    expect(readFileSync(join(worktree, "setup-ran.txt"), "utf8")).toBe("ready\n");
+    expect(lines).toContain(
+      `ran 1 worktree setup command from .claude/coordinate.json, log ${worktree}/.scratch/setup.log`,
+    );
+    expect(world.calls.filter((argv) => argv[1] === "run").length).toBe(1);
+  });
+
+  it("refuses when a command fails, keeping the worktree and starting no harness", async () => {
+    const { cfg, path } = await started();
+    const repo = declaredRepo(["exit 3"]);
+    const world = setupWorld();
+    const error = await failureOf(delegate(cfg, options({ repo, item: "i1" })), world.layer);
+    const worktree = join(repo, ".claude", "worktrees", "fix-a");
+    expect(tagOf(error)).toEqual([
+      "Refused",
+      `worktree setup command 1 of 1 (exit 3) exited 3; output in ${worktree}/.scratch/setup.log; the worktree ${worktree} stays and no harness was started`,
+    ]);
+    expect(existsSync(worktree)).toBe(true);
+    expect(world.calls.filter((argv) => argv[1] === "run").length).toBe(0);
+    expect(read(path).items[0].status).toBe("open");
   });
 });
 

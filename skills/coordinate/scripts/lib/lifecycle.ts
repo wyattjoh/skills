@@ -78,6 +78,7 @@ import {
 import { countResume, readSession } from "./sessions.ts";
 import { armWatcher, WATCHER_DOMAIN_LABEL, watcherInfoLine } from "./watch-terminal.ts";
 import { writeDelegateWiki } from "./wiki.ts";
+import { localSetupHost, remoteSetupHost, runWorktreeSetup } from "./worktree-setup.ts";
 import {
   capacityItemEligible,
   enqueueCapacityWait,
@@ -963,6 +964,17 @@ export const delegate = Effect.fn("delegate")(function* (
             place: checkout !== undefined ? { repo: checkout } : { cwd },
           });
     if (wiki !== undefined) message = { ...message, wiki };
+    // The repo's declared setup runs in the new worktree, where it lives, before any harness starts.
+    if (options.repo !== undefined) {
+      const local = yield* Proc;
+      lines.push(
+        ...(yield* runWorktreeSetup(
+          away === undefined ? localSetupHost(local) : remoteSetupHost(away.machine, local),
+          cwd,
+          away === undefined ? "" : ` on ${away.machine}`,
+        )),
+      );
+    }
     const report = brief ? join(scratch, "REPORT.md") : undefined;
     const session = crypto.randomUUID();
     const tabLabel = options.task;

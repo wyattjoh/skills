@@ -1,0 +1,6 @@
+{
+  "worktreeSetup": [
+    "bun install --frozen-lockfile",
+    "cd plugins/coordinate/herdr && bun install --frozen-lockfile"
+  ]
+}
