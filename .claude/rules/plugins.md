@@ -21,8 +21,8 @@ extension. It is its own project with its own `package.json`, `bunfig.toml` and 
 `bun test` and `knip` skip it, and root `bun run check` skips its `src/` (its
 tests need the renderer preload and its mod sources need Herdr's host `.d.ts` files); root
 `check` still type-checks its Bun `scripts/`, and root lint and format cover all of it. It depends on
-`@wyattjoh/herdr-ui`, which the root install does not provide. CI runs `bun install --frozen-lockfile`
-in that folder after the root install; run `bun install` there in every fresh worktree too before
+`@wyattjoh/herdr-ui`, which the root install does not provide. `bun run verify` (CI, pre-push) runs `bun install --frozen-lockfile`
+in that folder when it has no `node_modules`; run `bun install` there in every fresh worktree too before
 `just check`. Run `just check` there: tests, a typecheck against the installed declarations copied
 into `node_modules/.cache/`, and a build that stages each mod under `.scratch/` and runs
 `herdr-app check` with that stage as `HERDR_APP_HOME`. `just check` never writes the live Herdr
