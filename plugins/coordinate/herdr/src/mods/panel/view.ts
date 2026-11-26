@@ -7,6 +7,7 @@ import type { AnswerInputState } from "./textarea.ts";
 import {
   BUTTON_STYLE,
   CARD,
+  CHIP,
   HERDR_ICONS,
   MENU,
   PANEL,
@@ -39,6 +40,7 @@ import {
   titleRow,
   togglePill,
   letThrough,
+  TONES,
 } from "@wyattjoh/herdr-ui";
 import type { ButtonStyle, Theme } from "@wyattjoh/herdr-ui";
 import { isDiscussion, prose, questionOf } from "../../lib/store.ts";
@@ -208,6 +210,12 @@ export type PanelModel = {
   // no lease or its terminal is not live here.
   openCoordinator: ((cx: Context) => void) | undefined;
   openDomain: (domain: string, cx: Context) => void;
+  // The domain the focused terminal or space names, shown in the toolbar, and what pressing it
+  // does: open that domain's page. Undefined when focus names none.
+  current: string | undefined;
+  openCurrent: (cx: Context) => void;
+  // Whether a domain has a live coordinator: its lease names a terminal Herdr lists live here.
+  isActive: (domain: string) => boolean;
 };
 
 /**
@@ -379,14 +387,38 @@ export const message = (
   return emptyState(t, { id, title, detail });
 };
 
-// Match Files' plain header row, with the harness policy cog in the trailing slot. The domain
-// the panel shows is already the breadcrumb's last crumb.
-const toolbar = (
-  t: Theme,
-  openHarnessPolicy: (cx: Context) => void,
-  openCoordinator: ((cx: Context) => void) | undefined,
-): Element =>
-  h_flex()
+// A live coordinator's mark: the label chip's color dot, in the success tone.
+const activeDot = (t: Theme): Element =>
+  div()
+    .size(CHIP.dotSize)
+    .flex_none()
+    .rounded(CHIP.dotSize / 2)
+    .bg(role(t, TONES.success));
+
+// The focused domain's name, muted like a crumb, before Open coordinator: it opens that domain's
+// page, with the live-coordinator dot beside it.
+const currentDomain = (t: Theme, model: PanelModel): Element[] =>
+  model.current === undefined
+    ? []
+    : [
+        h_flex()
+          .min_w_0()
+          .text_color(t.muted)
+          .child(
+            crumb(t, {
+              id: "toolbar-domain",
+              label: model.current,
+              icon: model.isActive(model.current) ? activeDot(t) : undefined,
+              onClick: model.openCurrent,
+            }),
+          ),
+      ];
+
+// Match Files' plain header row, with the harness policy cog in the trailing slot, the focused
+// domain's name before it.
+const toolbar = (t: Theme, model: PanelModel): Element => {
+  const { openHarnessPolicy, openCoordinator } = model;
+  return h_flex()
     .id("toolbar")
     .h(42)
     .flex_none()
@@ -397,6 +429,7 @@ const toolbar = (
     .border_color(t.border)
     .child(div().font_semibold().child("Backlog"))
     .child(div().flex_1())
+    .children(currentDomain(t, model))
     .children(
       openCoordinator === undefined
         ? []
@@ -419,6 +452,7 @@ const toolbar = (
         onClick: openHarnessPolicy,
       }),
     );
+};
 
 // The breadcrumb band from @wyattjoh/herdr-ui: every crumb but the last opens its screen.
 const trailBand = (t: Theme, trail: Crumb[], go: (screen: Screen, cx: Context) => void): Element =>
@@ -2953,10 +2987,12 @@ const domainRow = (
   row: DomainSummary,
   open: (cx: Context) => void,
   first: boolean,
+  active: boolean,
 ): Element =>
   listRow(t, {
     id: `domain-${row.domain}`,
     title: row.domain,
+    mark: active ? activeDot(t) : undefined,
     height: ROW.list,
     first,
     onClick: (cx) => open(cx),
@@ -2988,7 +3024,13 @@ const listingBody = (t: Theme, listing: ListingState, model: PanelModel): Elemen
     cardHeader(t, "domains-header", "Domains"),
     card(t, "domains").children(
       listing.domains.map((row, index) =>
-        domainRow(t, row, (cx) => model.openDomain(row.domain, cx), index === 0),
+        domainRow(
+          t,
+          row,
+          (cx) => model.openDomain(row.domain, cx),
+          index === 0,
+          model.isActive(row.domain),
+        ),
       ),
     ),
   );
@@ -3115,7 +3157,7 @@ export const panel = (t: Theme, model: PanelModel): Element =>
   panelFrame(t, "coordinate-panel")
     .text_color(t.foreground)
     .text_size(13)
-    .child(toolbar(t, model.openHarnessPolicy, model.openCoordinator))
+    .child(toolbar(t, model))
     .child(trailBand(t, model.trail, model.go))
     .child(
       panelBody({

@@ -818,6 +818,12 @@ export default class Panel extends View {
     return coordinatorTerminal(leased, terminals());
   }
 
+  // Whether the domain has a live coordinator, from its last read and the live terminals.
+  isActive(domain: string): boolean {
+    const doc = domain === this.domain ? this.doc : cachedDocument(this.docs, domain);
+    return this.coordinatorOf(domain, doc) !== undefined;
+  }
+
   // Focus the domain's coordinator. Herdr refuses while that machine's layout is unavailable.
   openCoordinator(terminal: string) {
     try {
@@ -2411,6 +2417,7 @@ export default class Panel extends View {
         this.harnessPolicyModel(this.policyDialog.domain),
       );
     const domain = this.target();
+    const current = this.focusDomain();
     const doc = domain === this.domain ? this.doc : cachedDocument(this.docs, domain);
     const detail = this.detail(domain, doc);
     const coordinator = this.coordinatorOf(domain, doc);
@@ -2492,6 +2499,11 @@ export default class Panel extends View {
       openHarnessPolicy: () => this.openHarnessPolicyDialog(domain),
       openCoordinator:
         coordinator === undefined ? undefined : () => this.openCoordinator(coordinator),
+      current,
+      openCurrent: (cx) => {
+        if (current !== undefined) this.openDomain(current, cx);
+      },
+      isActive: (name) => this.isActive(name),
     });
   }
 }

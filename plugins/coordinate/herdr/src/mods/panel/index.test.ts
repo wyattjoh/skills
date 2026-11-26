@@ -446,9 +446,10 @@ test("renders the Files-style toolbar header", async () => {
     border_b: 1,
     border_color: "#525252",
   });
-  expect(header.children).toHaveLength(3);
+  expect(header.children).toHaveLength(4);
   expect([text(brand), brand.styles]).toEqual(["Backlog", { font_semibold: true }]);
   expect([text(spacer), spacer.styles]).toEqual(["", { flex_1: true }]);
+  expect(ids(header, "toolbar-")).toEqual(["toolbar-domain"]);
   expect(ids(header, "harness-policy-")).toEqual(["harness-policy-open"]);
 });
 
@@ -1754,7 +1755,7 @@ test("follows focus to another domain's document", async () => {
   await settle();
   const root = render();
   expect(trail(root)).toBe("⌂ › beta");
-  expect(text(get(root, "toolbar"))).toBe("Backlog");
+  expect(text(get(root, "toolbar"))).toBe("Backlog beta");
   expect(text(get(root, "focus"))).toBe("Beta focus");
   expect(text(get(root, "items-empty"))).toBe("No items");
 });
@@ -5087,7 +5088,7 @@ test("on a domain page the cog opens that domain's policy, from the overview, a 
   focusDomain("alpha");
   host.files.set(DOC, JSON.stringify(add(emptyBacklog("alpha", null), "A work item")));
   const { ctx, render } = await mount();
-  expect(text(get(render(), "toolbar"))).toBe("Backlog");
+  expect(text(get(render(), "toolbar"))).toBe("Backlog alpha");
   expect(ids(render(), "harness-policy-")).toEqual(["harness-policy-open"]);
   openPage(render(), "policies", ctx.cx);
   get(render(), "harness-policy-open").click!({}, ctx.cx);
@@ -6640,4 +6641,48 @@ test("Open coordinator focuses the terminal a files-backend lease names, on this
   expect(ids(toolbar, "coordinator-")).toEqual(["coordinator-open"]);
   press(render(), "coordinator-open", ctx.cx);
   expect(host.runs).toEqual([{ command: "agent.focus", args: { terminal: "t5" } }]);
+});
+
+const LIVE_DOT = { size: 8, flex_none: true, rounded: 4, bg: "#22c55e" };
+const leased = (backlog: Backlog, address: string): Backlog => ({
+  ...backlog,
+  lease: { machine: "finbar", address, expiry: "2099-01-01T00:00:00.000Z" },
+});
+
+test("the toolbar names the focused domain with a live dot, and Domains rows with a live coordinator carry one", async () => {
+  focusDomain("alpha");
+  host.files.set(DOC, JSON.stringify(leased(emptyBacklog("alpha", null), "t1")));
+  host.files.set(`${STATE}/backlogs/beta.json`, JSON.stringify(betaBacklog()));
+  host.files.set(`${STATE}/backlogs/gamma.json`, JSON.stringify(leased(betaBacklog(), "t9")));
+  const { ctx, render } = await mount();
+  const current = get(render(), "toolbar-domain");
+  expect([text(current), (current.children[0] as Node).styles]).toEqual(["alpha", LIVE_DOT]);
+  press(render(), "crumb-home", ctx.cx);
+  await settle();
+  const root = render();
+  expect(ids(root, "domain-")).toEqual(["domain-alpha", "domain-beta", "domain-gamma"]);
+  expect((get(root, "domain-alpha").children[0] as Node).styles).toEqual(LIVE_DOT);
+  expect((get(root, "domain-beta").children[0] as Node).styles.bg).toBe(undefined);
+  expect((get(root, "domain-gamma").children[0] as Node).styles.bg).toBe(undefined);
+});
+
+test("the toolbar's domain shows no dot while its coordinator's terminal is not live", async () => {
+  focusDomain("alpha");
+  host.files.set(DOC, JSON.stringify(leased(emptyBacklog("alpha", null), "t9")));
+  const { render } = await mount();
+  const current = get(render(), "toolbar-domain");
+  expect(current.children.map((child) => text(child))).toEqual(["alpha"]);
+});
+
+test("pressing the toolbar's domain opens the focused domain's page from the listing", async () => {
+  focusDomain("alpha");
+  host.files.set(DOC, JSON.stringify(emptyBacklog("alpha", null)));
+  host.files.set(`${STATE}/backlogs/beta.json`, JSON.stringify(betaBacklog()));
+  const { ctx, render } = await mount();
+  press(render(), "crumb-home", ctx.cx);
+  await settle();
+  expect(trail(render())).toBe("⌂");
+  press(render(), "toolbar-domain", ctx.cx);
+  await settle();
+  expect(trail(render())).toBe("⌂ › alpha");
 });
