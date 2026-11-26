@@ -15,6 +15,7 @@ import {
 import { emptyBacklog, type ItemUpdate } from "./backlog-store/ops.ts";
 import { decisionKey, FINDING_DETAIL_SHAPE, type Item } from "./backlog-store/schema.ts";
 import { resolveConfig } from "./config.ts";
+import { writeEnded } from "./fleet.ts";
 import {
   cliEnv,
   cliState,
@@ -40,6 +41,7 @@ import {
   renderEvent,
   statusBeat,
   watch,
+  withoutEndedGone,
   type IdleReminder,
   type WatchEventData,
 } from "./watch.ts";
@@ -156,6 +158,20 @@ describe("delegateEvents", () => {
   });
 });
 
+describe("withoutEndedGone", () => {
+  it("drops only the gone events whose address an ended record names", () => {
+    const events = [
+      ev("gone", { delegate: "a", address: "t1" }, "resume"),
+      ev("gone", { delegate: "b", address: "strix/t2" }, "resume"),
+      ev("settled", { delegate: "c", address: "t1" }, "read"),
+    ];
+    expect(withoutEndedGone(events, new Set(["t1", "strix/t2"]))).toEqual([
+      ev("settled", { delegate: "c", address: "t1" }, "read"),
+    ]);
+    expect(withoutEndedGone(events, new Set(["t9"]))).toEqual(events);
+  });
+});
+
 const seenPr = (state: string, checks = "pass", review = "none") => ({
   state,
   checks,
@@ -265,6 +281,20 @@ describe("idleEvents", () => {
     ]);
     expect(saved.t1?.interval).toBe(60);
     expect(saved.t1?.next).toBe(start + 45 * 60_000);
+  });
+
+  it("stays quiet for 120 seconds after a delegate's terminal starts", () => {
+    const reminders: Record<string, IdleReminder> = {};
+    const launched = { t1: { session: "s1", statusMs: start, createdMs: start } };
+    expect(idleEvents(delegates, launched, [], reminders, start + 119_000)).toEqual([]);
+    expect(reminders).toEqual({});
+    expect(idleEvents(delegates, launched, [], reminders, start + 120_000)).toEqual([
+      ev(
+        "idle",
+        { delegate: "fix-a", address: "t1", age: "2m" },
+        "read its REPORT.md and give it a next step or end it",
+      ),
+    ]);
   });
 
   it("suppresses parked, in-review and asked waiting-user items, but not waiting-user without an ask", () => {
@@ -2226,6 +2256,63 @@ describe("watch remote machines", () => {
     ]);
     // A machine that is down is never asked about its terminals.
     expect(remoteGets.filter((seen) => seen !== "connected")).toEqual([]);
+  });
+
+  it("reports no gone for a delegate coordinate end ended, and gone for one that vanished", async () => {
+    const state = tempDir();
+    made.push(state);
+    const config = await Effect.runPromise(
+      resolveConfig({ state_dir: state, backlog_dir: join(state, "backlogs") }, "/c"),
+    );
+    mkdirSync(join(state, "backlogs"), { recursive: true });
+    writeFileSync(join(state, "backlogs", "app.json"), JSON.stringify(emptyBacklog("app", null)));
+    mkdirSync(join(state, "watch"), { recursive: true });
+    writeFileSync(
+      join(state, "watch", "app.json"),
+      JSON.stringify({
+        delegates: {
+          t5: { name: "ended-a", status: "idle", turn: 2 },
+          t6: { name: "crashed-b", status: "working", turn: 1 },
+        },
+        prs: {},
+        due: [],
+      }),
+    );
+    const fake = fakeProc((argv) =>
+      argv[1] === "ls" ? ok(JSON.stringify({ terminals: [] })) : ok(""),
+    );
+    await runWith(
+      writeEnded(state, {
+        name: "ended-a",
+        domain: "app",
+        session: "s5",
+        cwd: "/nonexistent",
+        ended_at: "2026-11-23T00:00:00.000Z",
+        address: "t5",
+      }),
+      fake.layer,
+    );
+    const emitted: string[] = [];
+    await runWith(
+      watch(config, {
+        domain: "app",
+        intervalMs: 10,
+        forgeIntervalMs: 60_000,
+        maxMs: 30,
+        owner: undefined,
+        replace: false,
+        deliver: false,
+        today: () => "2026-11-23",
+        follow: false,
+        emit: (line) => {
+          emitted.push(line);
+        },
+      }),
+      fake.layer,
+    );
+    expect(emitted.map(eventText)).toEqual([
+      '<event kind="gone" delegate="crashed-b" address="t6">resume with coordinate resume crashed-b, or record it ended</event>',
+    ]);
   });
 
   it("reports nothing for a disconnected machine that hosts none of the domain's delegates", async () => {

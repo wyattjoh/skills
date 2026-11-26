@@ -48,6 +48,7 @@ const Got = Schema.Struct({
   state: Schema.optionalKey(Schema.NullOr(Schema.String)),
   turn: Schema.optionalKey(Schema.NullOr(Schema.Number)),
   status_ms: Schema.optionalKey(Schema.NullOr(Schema.Number)),
+  created_ms: Schema.optionalKey(Schema.NullOr(Schema.Number)),
   labels: Schema.optionalKey(Schema.NullOr(Schema.Record(Schema.String, Schema.String))),
   status: Schema.optionalKey(
     Schema.NullOr(
@@ -94,6 +95,8 @@ export type Terminal = {
   live: boolean;
   turn: number;
   statusMs: number | undefined;
+  /** When the terminal started, ms since the epoch; absent when hc did not say. */
+  createdMs?: number | undefined;
   status: string | undefined;
   app: string | undefined;
   labels: Record<string, string>;
@@ -202,6 +205,7 @@ export const parseGet = (text: string) =>
     live: (terminal.state ?? "live") === "live",
     turn: terminal.turn ?? 0,
     statusMs: terminal.status_ms ?? undefined,
+    createdMs: terminal.created_ms ?? undefined,
     status: terminal.status?.state ?? undefined,
     app: terminal.status?.app ?? undefined,
     labels: { ...terminal.labels },

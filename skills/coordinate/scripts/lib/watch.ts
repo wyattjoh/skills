@@ -7,7 +7,7 @@ import { editsClear, findingAdd, readDocument } from "./backlog-doc.ts";
 import { FINDING_DETAIL_SHAPE, isAnswer, isDiscussion } from "./backlog-store/schema.ts";
 import type { Item, RecordEdit } from "./backlog-store/schema.ts";
 import type { Config } from "./config.ts";
-import { checkDomainName, L, Refused, sessionOf } from "./fleet.ts";
+import { checkDomainName, L, readEnded, Refused, sessionOf } from "./fleet.ts";
 import * as hc from "./herdr.ts";
 import { repoPullRequests } from "./prs.ts";
 import { copyBackSettled } from "./remote-fetch.ts";
@@ -264,10 +264,32 @@ export const delegateEvents = (
   return lines;
 };
 
+/**
+ * Drop the `gone` events of delegates `coordinate end` ended: their ended records name the address.
+ * @param events Delegate events.
+ * @param ended Addresses ended records name.
+ * @returns The events a coordinator still needs.
+ */
+export const withoutEndedGone = (
+  events: readonly WatchEventData[],
+  ended: ReadonlySet<string>,
+): WatchEventData[] =>
+  events.filter((event) => event.kind !== "gone" || !ended.has(event.attrs.address ?? ""));
+
+/** How long after a delegate's terminal starts no idle reminder fires: it is still starting up. */
+export const LAUNCH_QUIET_MS = 120_000;
+
+/** What an idle reminder reads about one delegate terminal. */
+export type IdleDetail = {
+  session: string;
+  statusMs: number | undefined;
+  createdMs?: number | undefined;
+};
+
 /** Calculate idle reminders with an injected clock. */
 export const idleEvents = (
   delegates: Readonly<Record<string, SeenDelegate>>,
-  details: Readonly<Record<string, { session: string; statusMs: number | undefined }>>,
+  details: Readonly<Record<string, IdleDetail>>,
   items: readonly Item[],
   reminders: Record<string, IdleReminder>,
   now: number,
@@ -281,6 +303,10 @@ export const idleEvents = (
       continue;
     }
     const detail = details[address];
+    if (detail?.createdMs !== undefined && now - detail.createdMs < LAUNCH_QUIET_MS) {
+      delete reminders[address];
+      continue;
+    }
     const associated = detail?.session
       ? items.filter((item) => item.delegates.some((ref) => ref.session === detail.session))
       : [];
@@ -1430,7 +1456,20 @@ export const watch = Effect.fn("watch")(function* (config: Config, options: Watc
         const seen = outage.delegates;
         snapshot.unreachable = outage.unreachable;
         lines.push(...outage.events);
-        const events = first ? [] : delegateEvents(snapshot.delegates, seen);
+        const delegateChanges = first ? [] : delegateEvents(snapshot.delegates, seen);
+        // A delegate `coordinate end` ended leaves an ended record naming its address: not news.
+        const ended = delegateChanges.some((event) => event.kind === "gone")
+          ? yield* readEnded(config.stateDir).pipe(
+              Effect.map(
+                ({ records }) =>
+                  new Set(
+                    records.flatMap(({ record }) => (record.address ? [record.address] : [])),
+                  ),
+              ),
+              Effect.catch(() => Effect.succeed(new Set<string>())),
+            )
+          : new Set<string>();
+        const events = withoutEndedGone(delegateChanges, ended);
         if (first)
           for (const [address, current] of Object.entries(seen))
             if (current.status === "blocked" || current.status === "error")
@@ -1520,7 +1559,7 @@ export const watch = Effect.fn("watch")(function* (config: Config, options: Watc
           : Option.none();
       // With the home unreachable, reminders wait: the backlog that would suppress them is unread.
       if (Result.isSuccess(polled) && homeDown === undefined) {
-        const details: Record<string, { session: string; statusMs: number | undefined }> = {};
+        const details: Record<string, IdleDetail> = {};
         // A delegate on a machine that is down is neither asked about nor reminded of; its
         // reminder waits for the machine to reconnect.
         const down = (address: string) =>
@@ -1540,7 +1579,11 @@ export const watch = Effect.fn("watch")(function* (config: Config, options: Watc
             .get(address)
             .pipe(Effect.catch(() => Effect.succeed(undefined)));
           if (terminal)
-            details[address] = { session: sessionOf(terminal), statusMs: terminal.statusMs };
+            details[address] = {
+              session: sessionOf(terminal),
+              statusMs: terminal.statusMs,
+              createdMs: terminal.createdMs,
+            };
         }
         const idle = idleEvents(
           reachable,

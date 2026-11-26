@@ -1265,6 +1265,7 @@ export const endDelegate = Effect.fn("endDelegate")(function* (
     verdict: sessionState.verdict,
     resumes: sessionState.resumes,
     machine,
+    address: terminal.address,
   };
   const path = yield* writeEnded(config.stateDir, record);
   // Read the terminal's process tree while it still has one: once it ends, survivors are adopted

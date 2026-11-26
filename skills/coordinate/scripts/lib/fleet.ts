@@ -330,6 +330,8 @@ const EndedRecordSchema = Schema.Struct({
   verdict: Schema.optionalKey(Schema.NullOr(VerdictSchema)),
   resumes: Schema.optionalKey(Schema.Number),
   machine: Schema.optionalKey(Schema.NullOr(Schema.String)),
+  /** The ended terminal's address, so the watcher knows its departure was an end, not a crash. */
+  address: Schema.optionalKey(Schema.NullOr(Schema.String)),
 });
 
 /**
