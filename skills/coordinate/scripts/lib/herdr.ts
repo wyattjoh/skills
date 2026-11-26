@@ -525,6 +525,19 @@ export const appSpaces = Effect.fn("app.spaces")(function* () {
 });
 
 /**
+ * The tab the open Herdr window has focused, from `herdr-app status`.
+ * @returns Its id, or undefined when the window names none.
+ */
+export const focusedTab = Effect.fn("app.focusedTab")(function* () {
+  const status = yield* decodeJson(
+    Schema.Struct({ tab: Schema.optionalKey(Schema.NullOr(Schema.String)) }),
+    "herdr-app status",
+    yield* herdr(["herdr-app", "status"], 10_000),
+  );
+  return status.tab ?? undefined;
+});
+
+/**
  * Run one herdr-app command with a JSON argument object.
  * @param command Command name.
  * @param args Arguments.

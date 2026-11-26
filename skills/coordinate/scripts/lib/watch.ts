@@ -45,6 +45,13 @@ import {
   type LeaseSource,
 } from "./fleet-watch.ts";
 import { markSettled, readSession, retroDue, type RetroMarker } from "./sessions.ts";
+import {
+  digestDelta,
+  readDigest,
+  readLastMessage,
+  sameDigest,
+  type BacklogDigest,
+} from "./fleet-digest.ts";
 
 /**
  * What the watcher remembers about one delegate terminal.
@@ -275,6 +282,12 @@ export const withoutEndedGone = (
   ended: ReadonlySet<string>,
 ): WatchEventData[] =>
   events.filter((event) => event.kind !== "gone" || !ended.has(event.attrs.address ?? ""));
+
+/**
+ * How long after the window last focused a coordinator's tab the manager holds that coordinator's
+ * settle and blocked events, taking the focus as the user working in it.
+ */
+export const USER_ACTIVE_MS = 10 * 60_000;
 
 /** How long after a delegate's terminal starts no idle reminder fires: it is still starting up. */
 export const LAUNCH_QUIET_MS = 120_000;
@@ -1292,6 +1305,58 @@ export const watch = Effect.fn("watch")(function* (config: Config, options: Watc
     let fleetMachine: string | undefined;
     let lastLeaseRead = Number.NEGATIVE_INFINITY;
     let leaseFailures = 0;
+    // Each domain's backlog digest as of the manager's last wake about it, and each coordinator's tab.
+    const fleetDigests = new Map<string, BacklogDigest>();
+    const fleetTabs = new Map<string, string>();
+    // When the open window last had each tab focused, the proxy for the user typing in it (Herdr
+    // exposes no input source), and the settle or blocked event held for each coordinator meanwhile.
+    const tabFocused = new Map<string, number>();
+    const fleetHeld = new Map<string, WatchEventData>();
+    const userActive = (address: string) => {
+      const tab = fleetTabs.get(address);
+      const seen = tab === undefined ? undefined : tabFocused.get(tab);
+      return seen !== undefined && clock() - seen < USER_ACTIVE_MS;
+    };
+    const noteDigest = (domain: string, digest: BacklogDigest | undefined) => {
+      if (digest === undefined) fleetDigests.delete(domain);
+      else fleetDigests.set(domain, digest);
+    };
+    // Give a fleet event the coordinator's last message and backlog delta, or hold back a settle
+    // whose domain changed nothing since the last wake (undefined: recorded silently).
+    const fleetWake = (event: WatchEventData) =>
+      Effect.gen(function* () {
+        const domain = event.attrs.domain;
+        const address = event.attrs.address;
+        if (event.attrs.source !== "terminal" || domain === undefined || address === undefined)
+          return event;
+        if (event.kind === "fleet-arrived") {
+          noteDigest(domain, yield* readDigest(config, domain));
+          return event;
+        }
+        const settled = event.kind === "fleet-settled";
+        const blocked = event.kind === "fleet-state" && event.attrs.to === "blocked";
+        if (!settled && !blocked) return event;
+        const before = fleetDigests.get(domain);
+        const digest = yield* readDigest(config, domain);
+        if (settled && sameDigest(before, digest))
+          return "recorded silently: its backlog is unchanged since the last wake";
+        if (userActive(address)) {
+          fleetHeld.set(address, event);
+          return "held: the user is active in its tab; its open asks follow after 10m away";
+        }
+        fleetHeld.delete(address);
+        noteDigest(domain, digest);
+        const delta = digest === undefined ? [] : digestDelta(before, digest);
+        const message = yield* readLastMessage(address);
+        return {
+          ...event,
+          fields: {
+            ...event.fields,
+            ...(message === "" ? {} : { "last-message": message }),
+            ...(delta.length === 0 ? {} : { delta }),
+          },
+        };
+      });
     // A wiki's creation date never changes, so it is read from git once, after the wiki exists.
     let wikiStart: string | undefined;
 
@@ -1775,7 +1840,14 @@ export const watch = Effect.fn("watch")(function* (config: Config, options: Watc
               .pipe(Effect.catch(() => Effect.succeed(undefined)));
             const domain = terminal?.labels[L.domain];
             if (domain !== undefined) fleetDomains.set(address, domain);
+            const tab = terminal?.labels["herdr.tab"];
+            if (tab !== undefined) fleetTabs.set(address, tab);
           }
+          // The silent baseline also takes each domain's digest, so a first settle that changed
+          // nothing stays silent too.
+          if (fleet === undefined)
+            for (const domain of new Set(fleetDomains.values()))
+              if (!fleetDigests.has(domain)) noteDigest(domain, yield* readDigest(config, domain));
           if (fleet !== undefined) {
             const changes = fleetEvents(fleet, current.value, {
               domains: fleetDomains,
@@ -1784,7 +1856,44 @@ export const watch = Effect.fn("watch")(function* (config: Config, options: Watc
                 Effect.map(Option.getOrUndefined),
               )),
             });
-            lines.push(...changes);
+            const focused = yield* hc.focusedTab().pipe(Effect.option);
+            if (Option.isSome(focused) && focused.value !== undefined)
+              tabFocused.set(focused.value, clock());
+            for (const change of changes) {
+              const woken = yield* fleetWake(change);
+              if (typeof woken !== "string") lines.push(woken);
+              else appendLog({ ...change, id: "-" }, woken, clock());
+            }
+            // Once the user has left a held coordinator's tab for 10 minutes, relay its open asks once.
+            for (const [address, held] of fleetHeld) {
+              const state = current.value.get(`t:${address}`);
+              if (state !== undefined && userActive(address)) continue;
+              fleetHeld.delete(address);
+              const domain = held.attrs.domain;
+              if (state === undefined || domain === undefined) continue;
+              const before = fleetDigests.get(domain);
+              const digest = yield* readDigest(config, domain);
+              const asks = Object.entries(digest?.asks ?? {}).map(([id, ask]) => `${id}: ${ask}`);
+              if (asks.length === 0 && state !== "blocked") continue;
+              noteDigest(domain, digest);
+              const delta = digest === undefined ? [] : digestDelta(before, digest);
+              const message = yield* readLastMessage(address);
+              const about = Object.fromEntries(
+                Object.entries(held.attrs).filter(([name]) => name !== "from" && name !== "to"),
+              );
+              lines.push(
+                watchEvent(
+                  "fleet-relay",
+                  { ...about, state },
+                  "the user left its tab 10m ago; relay its open asks and any question it shows, once",
+                  {
+                    ...(message === "" ? {} : { "last-message": message }),
+                    ...(asks.length === 0 ? {} : { ask: asks }),
+                    ...(delta.length === 0 ? {} : { delta }),
+                  },
+                ),
+              );
+            }
           }
           nextFleet = current.value;
         }

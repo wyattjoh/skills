@@ -2696,9 +2696,15 @@ describe("watch --role manager", () => {
   };
   const domains: Record<string, string> = { t3: "app", t4: "web", t5: "ops" };
   // One tick per members listing; the coordinator listing, read after it, gives that tick's fleet.
-  const fleetHc = (fleetTicks: Array<Array<Record<string, string>>>, liveTicks: number) => {
+  const fleetHc = (
+    fleetTicks: Array<Array<Record<string, string>>>,
+    liveTicks: number,
+    extra: (argv: readonly string[], tick: number) => RunOutput | undefined = () => undefined,
+  ) => {
     let tick = 0;
     return fakeProc((argv) => {
+      const answered = extra(argv, tick);
+      if (answered !== undefined) return answered;
       if (argv[1] === "ls" && argv.includes("fleet.role=coordinator"))
         return ok(
           JSON.stringify({
@@ -2709,7 +2715,8 @@ describe("watch --role manager", () => {
           }),
         );
       if (argv[1] === "ls") {
-        tick += 1;
+        // The manager's own members listing starts each tick; a domain digest lists members too.
+        if (argv.includes("fleet.domain=manager")) tick += 1;
         return ok('{"terminals":[]}');
       }
       if (argv[1] === "get" && argv[2] === "t9")
@@ -2721,7 +2728,11 @@ describe("watch --role manager", () => {
           JSON.stringify({
             address: argv[2],
             state: "live",
-            labels: { "fleet.role": "coordinator", "fleet.domain": domains[argv[2] ?? ""] ?? "" },
+            labels: {
+              "fleet.role": "coordinator",
+              "fleet.domain": domains[argv[2] ?? ""] ?? "",
+              "herdr.tab": `tb-${argv[2] ?? ""}`,
+            },
           }),
         );
       return ok("");
@@ -2767,10 +2778,123 @@ describe("watch --role manager", () => {
     const emitted: string[] = [];
     expect(await runWith(watch(config, options(emitted)), fake.layer)).toEqual([]);
     expect(emitted.map(eventText)).toEqual([
-      `<event kind="fleet-settled" source="terminal" address="t3" domain="app" machine="${FAKE_CORE}" from="working">read its last output and backlog; relay a new ask or result, or report stranded work</event>`,
+      `<event kind="fleet-settled" source="terminal" address="t3" domain="app" machine="${FAKE_CORE}" from="working">read its last message and delta; relay a new ask or result, or report stranded work</event>`,
       `<event kind="fleet-arrived" source="terminal" address="t5" domain="ops" machine="${FAKE_CORE}" state="blocked">verify it with hc get (domain, tab, harness) before trusting it</event>`,
       `<event kind="fleet-state" source="terminal" address="t3" domain="app" machine="${FAKE_CORE}" from="settled" to="blocked">relay its question, options and recommendation, and leave the answer to the user</event>`,
       `<event kind="fleet-departed" source="terminal" address="t5" domain="ops" machine="${FAKE_CORE}">hc get says why; an arrival with the same domain and tab is a harness handoff, otherwise report it and ask whether to spawn it again</event>`,
+      "owner gone: t9 no longer runs; nothing will read these events",
+    ]);
+  });
+
+  it("keeps a settle whose backlog is unchanged silent, and gives a woken one its last message and delta", async () => {
+    const config = await managerDomain();
+    const appPath = join(config.stateDir, "backlogs", "app.json");
+    writeFileSync(appPath, JSON.stringify(emptyBacklog("app", null)));
+    const asked: Item = {
+      id: "i1",
+      title: "Ship it",
+      status: "waiting-user",
+      touches: [],
+      decided: [],
+      ask: {
+        question: "Ship it?",
+        context: null,
+        options: [],
+        rec: null,
+        recReason: null,
+        discuss: null,
+      },
+      answered: [],
+      due: null,
+      delegates: [],
+      createdAt: "2026-11-24T00:00:00.000Z",
+      closedAt: null,
+      outcome: null,
+    };
+    const fake = fleetHc(
+      [
+        [{ address: "t3", status: "working" }],
+        [{ address: "t3", status: "idle" }],
+        [{ address: "t3", status: "working" }],
+        [{ address: "t3", status: "idle" }],
+        [{ address: "t3", status: "blocked" }],
+      ],
+      5,
+      (argv, tick) => {
+        if (argv[1] === "ls" && argv.includes("fleet.domain=manager") && tick === 3)
+          writeFileSync(
+            appPath,
+            JSON.stringify({ ...emptyBacklog("app", null), items: [asked], nextId: 2 }),
+          );
+        if (argv[1] === "read") return ok("⏺ Waiting on i1.\n\n✻ Baked for 2s\n");
+        return undefined;
+      },
+    );
+    const emitted: string[] = [];
+    await runWith(watch(config, options(emitted)), fake.layer);
+    expect(emitted.map(eventText)).toEqual([
+      `<event kind="fleet-settled" source="terminal" address="t3" domain="app" machine="${FAKE_CORE}" from="working"><last-message>Waiting on i1.</last-message><delta>i1 added, waiting-user</delta><delta>i1 asks: Ship it?</delta>read its last message and delta; relay a new ask or result, or report stranded work</event>`,
+      `<event kind="fleet-state" source="terminal" address="t3" domain="app" machine="${FAKE_CORE}" from="settled" to="blocked"><last-message>Waiting on i1.</last-message>relay its question, options and recommendation, and leave the answer to the user</event>`,
+      "owner gone: t9 no longer runs; nothing will read these events",
+    ]);
+  });
+
+  it("holds a coordinator's events while the user is in its tab, then relays its open asks once", async () => {
+    const config = await managerDomain();
+    writeFileSync(
+      join(config.stateDir, "backlogs", "app.json"),
+      JSON.stringify({
+        ...emptyBacklog("app", null),
+        items: [
+          {
+            id: "i1",
+            title: "Ship it",
+            status: "waiting-user",
+            touches: [],
+            decided: [],
+            ask: {
+              question: "Ship it?",
+              context: null,
+              options: [],
+              rec: null,
+              recReason: null,
+              discuss: null,
+            },
+            answered: [],
+            due: null,
+            delegates: [],
+            createdAt: "2026-11-24T00:00:00.000Z",
+            closedAt: null,
+            outcome: null,
+          },
+        ],
+        nextId: 2,
+      }),
+    );
+    // Each tick is four minutes; the user's window shows t3's tab through tick 2.
+    let at = 0;
+    const fake = fleetHc(
+      [
+        [{ address: "t3", status: "working" }],
+        [{ address: "t3", status: "blocked" }],
+        [{ address: "t3", status: "blocked" }],
+        [{ address: "t3", status: "blocked" }],
+        [{ address: "t3", status: "blocked" }],
+        [{ address: "t3", status: "blocked" }],
+      ],
+      6,
+      (argv, tick) => {
+        if (argv[1] === "ls" && argv.includes("fleet.domain=manager")) at = (tick + 1) * 4 * 60_000;
+        if (argv[0] === "herdr-app" && argv[1] === "status")
+          return ok(JSON.stringify({ tab: at <= 8 * 60_000 ? "tb-t3" : "tb-other" }));
+        if (argv[1] === "read") return ok("⏺ Ship it?\n");
+        return undefined;
+      },
+    );
+    const emitted: string[] = [];
+    await runWith(watch(config, options(emitted, { now: () => at })), fake.layer);
+    expect(emitted.map(eventText)).toEqual([
+      `<event kind="fleet-relay" source="terminal" address="t3" domain="app" machine="${FAKE_CORE}" state="blocked"><last-message>Ship it?</last-message><ask>i1: Ship it?</ask>the user left its tab 10m ago; relay its open asks and any question it shows, once</event>`,
       "owner gone: t9 no longer runs; nothing will read these events",
     ]);
   });

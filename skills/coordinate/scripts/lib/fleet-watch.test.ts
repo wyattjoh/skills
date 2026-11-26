@@ -80,7 +80,7 @@ describe("fleetEvents", () => {
         kind: "fleet-settled",
         attrs: { source: "terminal", address: "a", domain: "app", machine: "mac", from: "working" },
         fields: {},
-        text: "read its last output and backlog; relay a new ask or result, or report stranded work",
+        text: "read its last message and delta; relay a new ask or result, or report stranded work",
       },
       {
         kind: "fleet-state",

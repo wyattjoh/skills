@@ -207,7 +207,7 @@ export const fleetEvents = (
       event(
         "fleet-settled",
         { ...about, from: before },
-        "read its last output and backlog; relay a new ask or result, or report stranded work",
+        "read its last message and delta; relay a new ask or result, or report stranded work",
       );
     else
       event("fleet-state", { ...about, from: before, to: state }, stateText(about.source, state));
