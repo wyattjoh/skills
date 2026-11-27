@@ -38,7 +38,6 @@ describe("local-link Effect pipeline", () => {
     const program = syncLocalLinksEffect(root);
     expect(existsSync(join(root, ".claude"))).toBe(false);
     expect(Effect.runSync(program)).toEqual([
-      "Created .claude/skills/example -> ../../skills/example",
       "Created .claude/agents/example.md -> ../../agents/example.md",
       "Created .agents/skills -> ../.claude/skills",
     ]);
@@ -47,13 +46,13 @@ describe("local-link Effect pipeline", () => {
 
   it("preserves the synchronous compatibility API", () => {
     const root = fixture();
-    expect(syncLocalLinks(root).length).toBe(3);
+    expect(syncLocalLinks(root).length).toBe(2);
     expect(syncLocalLinks(root)).toEqual([]);
   });
 
   it("returns typed ownership failures without modifying conflicting paths", () => {
     const root = fixture();
-    const path = join(root, ".claude", "skills", "example");
+    const path = join(root, ".claude", "agents", "example.md");
     mkdirSync(path, { recursive: true });
     writeFileSync(join(path, "keep.md"), "Keep this file.\n");
     const result = Effect.runSync(Effect.result(syncLocalLinksEffect(root)));
@@ -61,22 +60,19 @@ describe("local-link Effect pipeline", () => {
     if (!Result.isFailure(result)) throw new Error("Expected an ownership failure");
     expect(result.failure instanceof LocalLinkError).toBe(true);
     expect(result.failure.message).toBe(
-      "Refusing to replace existing path: .claude/skills/example",
+      "Refusing to replace existing path: .claude/agents/example.md",
     );
     expect(existsSync(join(path, "keep.md"))).toBe(true);
   });
 
-  it("refuses unmanaged targets and leaves them untouched", () => {
+  it("preserves unmanaged skill links", () => {
     const root = fixture();
     mkdirSync(join(root, ".claude", "skills"), { recursive: true });
     const path = join(root, ".claude", "skills", "example");
     symlinkSync("manual-target", path, "dir");
-    const result = Effect.runSync(Effect.result(syncLocalLinksEffect(root)));
-    expect(Result.isFailure(result)).toBe(true);
-    if (!Result.isFailure(result)) throw new Error("Expected an ownership failure");
-    expect(result.failure.message).toBe(
-      "Refusing to replace unmanaged symlink .claude/skills/example -> manual-target",
-    );
+
+    syncLocalLinks(root);
+
     expect(readlinkSync(path)).toBe("manual-target");
   });
 

@@ -39,6 +39,6 @@ unlink:
         fi
     done
 
-# Synchronize repo-local skill and agent links without installing them globally.
+# Synchronize repo-local agent links and remove legacy published-skill links.
 sync-local:
     bun run scripts/sync-local-links.ts

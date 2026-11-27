@@ -1,5 +1,4 @@
 import {
-  existsSync,
   lstatSync,
   mkdirSync,
   readdirSync,
@@ -128,23 +127,13 @@ export const syncLocalLinksEffect = Effect.fn("localLinks.sync")(function* (root
   const claudeAgentsDirectory = join(claudeDirectory, "agents");
   const changes: string[] = [];
 
-  const skillEntries = yield* attempt(() => readdirSync(skillsDirectory, { withFileTypes: true }));
-  const skillPaths: string[] = [];
-  for (const entry of skillEntries) {
-    if (!entry.isDirectory()) continue;
-    const sourcePath = join(skillsDirectory, entry.name);
-    const hasSkill = yield* attempt(() => existsSync(join(sourcePath, "SKILL.md")));
-    if (hasSkill) skillPaths.push(sourcePath);
-  }
-  skillPaths.sort();
-
   const agentEntries = yield* attempt(() => readdirSync(agentsDirectory, { withFileTypes: true }));
   const agentPaths = agentEntries
     .filter((entry) => entry.isFile() && entry.name.endsWith(".md"))
     .map((entry) => join(agentsDirectory, entry.name))
     .toSorted();
 
-  yield* syncManagedLinks(root, skillsDirectory, claudeSkillsDirectory, skillPaths, "dir", changes);
+  yield* syncManagedLinks(root, skillsDirectory, claudeSkillsDirectory, [], "dir", changes);
   yield* syncManagedLinks(
     root,
     agentsDirectory,
@@ -164,8 +153,7 @@ export const syncLocalLinksEffect = Effect.fn("localLinks.sync")(function* (root
 });
 
 /**
- * Synchronizes repo-local Claude and agent-discovery symlinks with the
- * canonical skills and agents directories.
+ * Synchronizes repo-local agent links and removes legacy published-skill links.
  *
  * @param root - Repository root whose links should be synchronized.
  * @returns Descriptions of links created or removed during synchronization.

@@ -63,16 +63,12 @@ afterEach(() => {
 });
 
 describe("repo-local discovery links", () => {
-  it("keeps skill links in sync with skills/ and points each link at its source", () => {
+  it("does not link published skills from skills/ into .claude/skills", () => {
     const skillNames = publicSkillNames(repositoryRoot);
     const claudeSkillsDirectory = join(repositoryRoot, ".claude", "skills");
 
-    expect(directSymlinkNames(claudeSkillsDirectory)).toEqual(skillNames);
-    for (const name of skillNames) {
-      expect(readlinkSync(join(claudeSkillsDirectory, name))).toBe(
-        relativeLinkTarget(claudeSkillsDirectory, join(repositoryRoot, "skills", name)),
-      );
-    }
+    expect(directSymlinkNames(claudeSkillsDirectory)).toEqual([]);
+    expect(skillNames.length).toBeGreaterThan(0);
   });
 
   it("keeps agent links in sync with agents/ and points each link at its source", () => {
@@ -101,16 +97,18 @@ describe("syncLocalLinks", () => {
     const changes = syncLocalLinks(root);
 
     expect(changes).toEqual([
-      "Created .claude/skills/example-skill -> ../../skills/example-skill",
       "Created .claude/agents/example-agent.md -> ../../agents/example-agent.md",
       "Created .agents/skills -> ../.claude/skills",
     ]);
+    expect(directSymlinkNames(join(root, ".claude", "skills"))).toEqual([]);
     expect(syncLocalLinks(root)).toEqual([]);
   });
 
   it("removes stale managed links but leaves unrelated symlinks intact", () => {
     const root = makeFixture();
     syncLocalLinks(root);
+    const staleLink = join(root, ".claude", "skills", "example-skill");
+    symlinkSync("../../skills/example-skill", staleLink, "dir");
     const manualLink = join(root, ".claude", "skills", "manual-skill");
     symlinkSync("manual-target", manualLink, "dir");
     rmSync(join(root, "skills", "example-skill"), { recursive: true });
@@ -125,12 +123,12 @@ describe("syncLocalLinks", () => {
 
   it("refuses to replace a path that is not one of its symlinks", () => {
     const root = makeFixture();
-    const conflictingPath = join(root, ".claude", "skills", "example-skill");
+    const conflictingPath = join(root, ".claude", "agents", "example-agent.md");
     mkdirSync(conflictingPath, { recursive: true });
     writeFileSync(join(conflictingPath, "local.md"), "Keep this file.\n");
 
     expect(() => syncLocalLinks(root)).toThrow(
-      "Refusing to replace existing path: .claude/skills/example-skill",
+      "Refusing to replace existing path: .claude/agents/example-agent.md",
     );
     expect(existsSync(join(conflictingPath, "local.md"))).toBe(true);
   });
