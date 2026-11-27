@@ -8,6 +8,8 @@ A `settled` event with `retro="due"` says why in `reason`: `problem` (a problem 
 
 ## Launch
 
+The retro reads the session transcript first through Pensieve: use Pensieve's `run_script` tool with `pensieve.session("claude-code", <session id>)`. If Pensieve cannot retrieve it on strix, look under `~/.local/share/agents/claude/projects/<slug>/` instead.
+
 After you verify the delegate, launch the retro as a read-only delegate filed under the item:
 
 ```sh
