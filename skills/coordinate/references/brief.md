@@ -25,7 +25,7 @@ Read first: <repo guides, the plan or spec, by absolute path>.
 
 ## Boundary
 
-Change only <files, apps or areas>. Write only inside this worktree. Anything else is a question
+Change only <files, apps or areas>. Every uncommitted change in this delegate's worktree is yours, including changes made by your sub-agents. Write only inside this worktree. Anything else is a question
 for the coordinator, not a change. Record an issue or opportunity you notice outside this task with
 `coordinate finding add "<title>" --kind issue|opportunity --from <item id> --detail-md "<detail>"`.
 The detail is Markdown with **What** (the problem or opportunity), **Where** (files, commands or screens), **Why it matters** and **Suggested fix**, plus evidence (a command, log path or commit) when there is one; keep it short when the finding is small.
