@@ -29,7 +29,7 @@ The manager domain's watcher runs with `--role manager` (`coordinate start manag
 
 A terminal's `fleet-settled` and its `fleet-state` to `blocked` carry `<last-message>`, the coordinator's last assistant message with the TUI around it stripped, and one `<delta>` per backlog change since the last wake (`i4 open -> building`, `i4 asks: ...`, `focus: ...`, `delegate <name> started`). Each carries `source` (`terminal`, `lease` or `machine`) and, where known, `address`, `domain` (from its `fleet.domain` label or its lease) and `machine`. A lease gives presence only, never `settled` or `blocked`: read such a coordinator through the home (above) when its event wakes you. A failed lease read keeps the last good leases; after three in a row `fleet-blind` (`home`, `reads`, `<error>`) arrives, so treat every lease entry as stale until `fleet-blind-cleared` follows the next good read. An unreachable home also counts toward the watcher's own `blind`.
 
-Without a Herdr watcher terminal, run SKILL.md's Watch fallback with `--role manager` added (`watch --follow --replace --role manager` in the Monitor tool, or one-shot `watch --role manager` in pi). A harness with neither: say coverage is missing before claiming the fleet is watched.
+Without a Herdr watcher terminal, run the Watch fallback for your harness ([Claude Code](harness-claude.md) or [pi](harness-pi.md)) with `--role manager` added (`watch --follow --replace --role manager` in the Monitor tool, or one-shot `watch --role manager` in pi). A harness with neither: say coverage is missing before claiming the fleet is watched.
 
 ## On each wake
 
@@ -58,7 +58,7 @@ Verify identity with `hc get` (`fleet.role`, `fleet.domain`) before each `coordi
 
 ## Spawn
 
-Spawn a coordinator only when the user explicitly asks for one and names its domain: `coordinate spawn <domain>`, with the flags in SKILL.md's Spawn section. Never revive a departed coordinator on your own; report the departure and ask instead. A departed coordinator's lease lasts up to three minutes after its watcher stopped, so spawn and start refuse until then, naming it. Report spawn's `ready` or `not ready` line, then verify the new terminal when the watcher reports it `fleet-arrived`, as for any arrival.
+Spawn a coordinator only when the user explicitly asks for one and names its domain: `coordinate spawn <domain>`, as [spawn.md](spawn.md) describes. Never revive a departed coordinator on your own; report the departure and ask instead. A departed coordinator's lease lasts up to three minutes after its watcher stopped, so spawn and start refuse until then, naming it. Report spawn's `ready` or `not ready` line, then verify the new terminal when the watcher reports it `fleet-arrived`, as for any arrival.
 
 ## Stop
 

@@ -8,7 +8,16 @@ Only Pi and Claude are represented. A missing policy file preserves the legacy s
 
 Policy state is checked before launch side effects. Invalid policy files fail closed. A queued retry must pass the same authorized `--harness` explicitly, then rechecks current policy and capacity; a refused retry leaves its queue entry intact. `--over-budget` affects only the capacity limit and never bypasses harness policy.
 
-Resume uses the harness recorded for the ended session and refuses if that harness is currently disabled. It never substitutes the current default. Policy edits affect later launches and resumes only; they do not stop, relabel, or otherwise change running sessions. `coordinate start` and `coordinate status --resume` show effective policy. The existing watcher coalesces policy notifications and sends them only to domains whose effective enabled/default selection, or the list of harnesses their override enables that global disables, changed; a domain with an override gets a `reenabled` attribute on that event. The Backlog panel edits global and domain policy through the same `harness-policy` commands; its domain pane warns when an override enables a harness global disables and notes when an override only copies global (it will not follow later global changes), and its global pane names each domain whose override keeps a harness that global disables. There is no Codex adapter.
+Resume uses the harness recorded for the ended session and refuses if that harness is currently disabled. It never substitutes the current default. Policy edits affect later launches and resumes only; they do not stop, relabel, or otherwise change running sessions. `coordinate start` and `coordinate status --resume` show effective policy. The existing watcher coalesces policy notifications and sends them only to domains whose effective enabled/default selection, or the list of harnesses their override enables that global disables, changed; a domain with an override gets a `reenabled` attribute on that event. The Backlog panel's header cog opens a settings window on the global defaults (on Domains) or the current domain (on a domain page), with an Inherit global switch per domain; Save writes the changes through the same `harness-policy` commands and revision checks. Its domain pane warns when an override enables a harness global disables and notes when an override only copies global (it will not follow later global changes), and its global pane names each domain whose override keeps a harness that global disables. There is no Codex adapter.
+
+## Models and harness quirks
+
+These follow the delegate's harness, whichever harness the coordinator runs in.
+
+- Omit `--model` by default. Never pass a specific model until its availability is verified for the chosen harness.
+- For pi, omit `--model` and `--provider` on ordinary launches so pi keeps its default `auto` model; pass an explicit model only for a concrete reason after verifying its ID with `pi --list-models`.
+- Claude Code may open its folder trust dialog in a worktree its machine has not trusted yet (a remote delegate's especially); like any dialog, it is the user's to answer in that tab.
+- Say the harness and model choice in one line.
 
 ## Policy document
 
