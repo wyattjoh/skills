@@ -42,6 +42,10 @@ A lock timeout or a model usage-limit error is not a failed attempt: wait and re
 When the repo has one gate script, name only it: in wyattjoh/skills that is `bun run verify`, which runs the same checks as its pre-push hook and CI.
 List only fast checks (format, lint, typecheck, unit tests, bundle). Name native or machine-heavy gates as "coordinator runs at landing"; the coordinator runs each once before landing. Add task-specific stop points, including choices the user still has to make.
 
+## Follow-up rounds
+
+When a round is independent of the delegate's live session and its `REPORT.md` is current, start a fresh agent in the same worktree and hand it the report plus a new brief. `coordinate delegate --repo` always creates a new worktree and refuses if that path or branch already exists; `--cwd` is for work without a repo, so it is not the supported path for reusing a repo worktree. Start the harness directly in the existing worktree instead, for example `hc run --bg --name <new name> --cwd <worktree> pi "Read <report> and <new brief>, then continue this round."` (use `claude` in place of `pi` for that harness). Use `coordinate item attach <id> <terminal>` to label the hand-started terminal so status, watch, end and resume track it. Track its report and checks with the item. Resume the existing session or use `coordinate send` when the round depends on live state.
+
 ## Child review
 
 After committing and passing checks, write `<absolute child brief path>`: review
