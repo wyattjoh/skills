@@ -527,6 +527,10 @@ const delegateCommand = Command.make(
       "repo",
       "repository: creates <repo>/.claude/worktrees/<name> on <branch_prefix><name>",
     ),
+    worktree: optionalStringFlag(
+      "worktree",
+      "existing linked Git worktree to use without creating a branch",
+    ),
     cwd: optionalStringFlag("cwd", "folder for work with no repo (no worktree is made)"),
     base: optionalStringFlag(
       "base",
@@ -604,6 +608,7 @@ const delegateCommand = Command.make(
         name: options.name,
         task: options.task,
         repo: Option.getOrUndefined(options.repo),
+        worktree: Option.getOrUndefined(options.worktree),
         cwd: Option.getOrUndefined(options.cwd),
         base: Option.getOrUndefined(options.base),
         harness: Option.getOrUndefined(options.harness) as Harness | undefined,
@@ -622,7 +627,7 @@ const delegateCommand = Command.make(
   },
 ).pipe(
   Command.withDescription(
-    "create the worktree and start an authorized pi or Claude Code delegate in its own Herdr space, recording it on the item",
+    "start an authorized pi or Claude Code delegate in a new or existing worktree, recording it on the item",
   ),
 );
 

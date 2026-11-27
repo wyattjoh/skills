@@ -44,7 +44,7 @@ List only fast checks (format, lint, typecheck, unit tests, bundle). Name native
 
 ## Follow-up rounds
 
-When a round is independent of the delegate's live session and its `REPORT.md` is current, start a fresh agent in the same worktree and hand it the report plus a new brief. `coordinate delegate --repo` always creates a new worktree and refuses if that path or branch already exists; `--cwd` is for work without a repo, so it is not the supported path for reusing a repo worktree. Start the harness directly in the existing worktree instead, for example `hc run --bg --name <new name> --cwd <worktree> pi "Read <report> and <new brief>, then continue this round."` (use `claude` in place of `pi` for that harness). Use `coordinate item attach <id> <terminal>` to label the hand-started terminal so status, watch, end and resume track it. Track its report and checks with the item. Resume the existing session or use `coordinate send` when the round depends on live state.
+When a round is independent of the delegate's live session and its `REPORT.md` is current, start a fresh agent in the same worktree and hand it the report plus a new brief: `coordinate delegate <new name> --item <id> --worktree <worktree> --harness pi|claude --brief <new brief>`. This records the new session, existing branch and worktree, brief, and report on the item. The existing worktree must be a linked worktree, and no live delegate may already use it. The brief copy rules still apply, so a different existing `BRIEF.md` is moved aside and an identical one is kept. Setup is not rerun for an existing worktree. Resume the existing session or use `coordinate send` when the round depends on live state.
 
 ## Child review
 

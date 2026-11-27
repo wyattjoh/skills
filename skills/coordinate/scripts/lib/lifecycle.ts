@@ -45,6 +45,7 @@ import {
   mainCheckout,
   real,
   refExists,
+  worktrees,
 } from "./git.ts";
 import {
   agentArgv,
@@ -166,6 +167,7 @@ export type DelegateOptions = {
   name: string;
   task: string;
   repo: string | undefined;
+  worktree?: string | undefined;
   cwd: string | undefined;
   base: string | undefined;
   harness: Harness | undefined;
@@ -677,10 +679,16 @@ export const delegate = Effect.fn("delegate")(function* (
     return yield* new Refused({
       message: `${options.name} is not a terminal name: 1 to 32 of a-z, 0-9, - and _`,
     });
-  if ((options.repo === undefined) === (options.cwd === undefined))
+  if (
+    [options.repo, options.worktree, options.cwd].filter((value) => value !== undefined).length !==
+    1
+  )
     return yield* new Refused({
-      message: "pass exactly one of --repo (new worktree) or --cwd (a folder with no repo work)",
+      message:
+        "pass exactly one of --repo (new worktree), --worktree (existing linked worktree), or --cwd (a folder with no repo work)",
     });
+  if (options.worktree !== undefined && options.base !== undefined)
+    return yield* new Refused({ message: "--base applies only to a new worktree, not --worktree" });
   if (options.harness !== undefined) yield* checkEffort(options.harness, options.effort);
   // Fails closed: a caller whose role cannot be checked is neither filed nor exempt.
   const caller = yield* callerRole();
@@ -723,7 +731,10 @@ export const delegate = Effect.fn("delegate")(function* (
   if (remote !== undefined) {
     if (options.repo === undefined)
       return yield* new Refused({
-        message: `--machine starts the delegate in a worktree of the repo's checkout on ${remote}: pass --repo, not --cwd`,
+        message:
+          options.worktree !== undefined
+            ? `--machine cannot be combined with --worktree; remote launches require --repo`
+            : `--machine starts the delegate in a worktree of the repo's checkout on ${remote}: pass --repo, not --cwd`,
       });
     if (!options.space)
       return yield* new Refused({
@@ -799,6 +810,33 @@ export const delegate = Effect.fn("delegate")(function* (
       return yield* new Refused({
         message: `a live terminal is already named ${options.name} (${taken.address})`,
       });
+
+    let linkedWorktree: { cwd: string; checkout: string; branch: string | undefined } | undefined;
+    if (options.worktree !== undefined) {
+      const cwd = real(absolutePath(options.worktree));
+      const checkout = existsSync(cwd) ? yield* mainCheckout(cwd) : undefined;
+      const entries = checkout === undefined ? [] : yield* worktrees(checkout);
+      const entry = entries.slice(1).find((candidate) => real(candidate.path) === cwd);
+      if (checkout === undefined || entry === undefined)
+        return yield* new Refused({
+          message: `${options.worktree} is not a linked Git worktree root`,
+        });
+      for (const listed of terminals) {
+        if (!listed.live || machineOfAddress(listed.address, core) !== targetMachine) continue;
+        const terminal = yield* hc.get(listed.address);
+        if (
+          terminal?.live &&
+          terminal.labels[L.domain] &&
+          terminal.labels[L.role] !== "coordinator" &&
+          terminal.labels[L.worktree] &&
+          real(terminal.labels[L.worktree]) === cwd
+        )
+          return yield* new Refused({
+            message: `a live delegate already uses worktree ${cwd} (${listed.address})`,
+          });
+      }
+      linkedWorktree = { cwd, checkout, branch: entry.branch };
+    }
 
     // Before the budget gate, so a machine that cannot host the delegate never queues one.
     let away: { machine: string; checkout: string; shell: string } | undefined;
@@ -882,6 +920,11 @@ export const delegate = Effect.fn("delegate")(function* (
       lines.push(`worktree ${cwd} on ${branch} from ${made.base} on ${away.machine}`);
       if (made.excluded)
         lines.push(`added .scratch/ to the repo's info/exclude on ${away.machine}`);
+    } else if (linkedWorktree !== undefined) {
+      cwd = linkedWorktree.cwd;
+      checkout = linkedWorktree.checkout;
+      branch = linkedWorktree.branch;
+      lines.push(`existing worktree ${cwd}${branch ? ` on ${branch}` : " (detached HEAD)"}`);
     } else if (options.repo !== undefined) {
       const repo = yield* mainCheckout(absolutePath(options.repo));
       if (!repo) return yield* new Refused({ message: `${options.repo} is not a Git checkout` });
@@ -903,9 +946,11 @@ export const delegate = Effect.fn("delegate")(function* (
       if (!existsSync(cwd)) return yield* new Refused({ message: `${cwd} does not exist` });
     }
 
-    // A --repo worktree is the delegate's own; a --cwd folder may host several, so each gets a subfolder.
+    // --repo and --worktree use the repo worktree's shared scratch folder; --cwd gets a delegate subfolder.
     const scratch =
-      options.repo !== undefined ? join(cwd, ".scratch") : join(cwd, ".scratch", options.name);
+      options.repo !== undefined || linkedWorktree !== undefined
+        ? join(cwd, ".scratch")
+        : join(cwd, ".scratch", options.name);
     let brief: string | undefined;
     let message = options.message;
     const briefSource = message.kind === "brief" ? message.path : message.brief;

@@ -671,7 +671,7 @@ eachBackend("coordinate CLI parity", () => {
         exit: 1,
         stdout: "",
         stderr:
-          "refused: pass exactly one of --repo (new worktree) or --cwd (a folder with no repo work)\\n",
+          "refused: pass exactly one of --repo (new worktree), --worktree (existing linked worktree), or --cwd (a folder with no repo work)\\n",
       },
       { exit: 1, stdout: "", stderr: "refused: no live terminal gone\\n" },
       {
@@ -1617,6 +1617,23 @@ eachBackend("coordinate CLI finding add detail", () => {
     expect(help.exit).toBe(0);
     expect(`${help.stdout}\n${help.stderr}`.replace(/\s+/g, " ")).toContain(FINDING_DETAIL_SHAPE);
   }, 30_000);
+});
+
+eachBackend("coordinate CLI delegate help", () => {
+  it("explains how to launch in an existing worktree", () => {
+    const state = tempDir("coordinate-delegate-help-");
+    made.push(state);
+    const done = Bun.spawnSync(["bun", cli, "delegate", "--help"], {
+      env: cliEnv(state, COORDINATOR),
+      stdout: "pipe",
+      stderr: "pipe",
+      timeout: 10_000,
+    });
+    expect(done.exitCode).toBe(0);
+    expect(`${done.stdout.toString()}\n${done.stderr.toString()}`).toContain(
+      "existing linked Git worktree to use without creating a branch",
+    );
+  });
 });
 
 eachBackend("coordinate CLI item start", () => {

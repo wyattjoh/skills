@@ -9,7 +9,7 @@ import {
   writeFileSync,
 } from "node:fs";
 import { join } from "node:path";
-import { boundaryAdd, createDocument, itemAdd, itemClose } from "./backlog-doc.ts";
+import { boundaryAdd, createDocument, itemAdd, itemClose, readDocument } from "./backlog-doc.ts";
 import { resolveConfig } from "./config.ts";
 import { Effect } from "effect";
 import { failureOf, g, gitAndFake, initRepo, processMachine, runWith, tempDir } from "./fixture.ts";
@@ -524,6 +524,199 @@ describe("delegate", () => {
     }
     const run = fake.calls.find((call) => call[0] === "hc" && call[1] === "run");
     expect(run?.includes(`fleet.base=${baseSha}`)).toBe(true);
+  });
+
+  it("starts a fresh delegate in an existing linked worktree and files the existing branch and paths", async () => {
+    const repo = initRepo();
+    dirs.push(repo);
+    const worktree = join(dir(), "existing-worktree");
+    g(repo, "worktree", "add", "-q", worktree, "-b", "existing-branch");
+    mkdirSync(join(worktree, ".scratch"), { recursive: true });
+    writeFileSync(join(worktree, ".scratch", "BRIEF.md"), "# Previous round\n");
+    const source = join(dir(), "brief.md");
+    writeFileSync(source, "# Follow-up\n");
+    const state = dir();
+    const cfg = await config(state);
+    await runWith(createDocument(cfg, "app"));
+    await runWith(itemAdd(cfg, "app", { title: "continue work", json: false, now: "x" }));
+    const fake = gitAndFake((argv) => {
+      if (argv[0] !== "hc") return ok("{}");
+      if (argv[1] === "ls") return ok('{"terminals":[]}');
+      if (argv[1] === "run") return ok('{"address":"t2"}');
+      if (argv[1] === "get" && argv[2] === "t1")
+        return ok(
+          terminal({
+            address: "t1",
+            labels: { "fleet.role": "coordinator", "fleet.domain": "app" },
+          }),
+        );
+      if (argv[1] === "get" && argv[2] === "t2")
+        return ok(terminal({ status: { state: "working" } }));
+      return ok("{}");
+    });
+    const saved = process.env.HC_TERMINAL_ID;
+    process.env.HC_TERMINAL_ID = "t1";
+    try {
+      await runWith(
+        delegate(cfg, {
+          name: "follow-up",
+          task: "continue work",
+          repo: undefined,
+          worktree,
+          cwd: undefined,
+          base: undefined,
+          harness: "pi",
+          model: undefined,
+          effort: undefined,
+          message: { kind: "brief", path: source },
+          space: false,
+          domain: undefined,
+          item: "i1",
+          overBudget: false,
+          queueIfFull: false,
+          retryQueued: false,
+          machine: undefined,
+        }),
+        fake.layer,
+      );
+    } finally {
+      if (saved === undefined) delete process.env.HC_TERMINAL_ID;
+      else process.env.HC_TERMINAL_ID = saved;
+    }
+    const scratch = join(worktree, ".scratch");
+    expect(readFileSync(join(scratch, "BRIEF.md"), "utf8")).toBe("# Follow-up\n");
+    expect(
+      readdirSync(scratch).some((name) => name.startsWith("BRIEF.") && name.endsWith(".md")),
+    ).toBe(true);
+    const run = fake.calls.find((call) => call[0] === "hc" && call[1] === "run");
+    expect(run?.includes(`fleet.branch=existing-branch`)).toBe(true);
+    expect(run?.includes(`fleet.worktree=${worktree}`)).toBe(true);
+    const { backlog } = await runWith(readDocument(cfg, "app"));
+    expect(backlog.items[0]?.delegates).toEqual([
+      {
+        name: "follow-up",
+        session: expect.any(String),
+        branch: "existing-branch",
+        worktree,
+        brief: join(scratch, "BRIEF.md"),
+        report: join(scratch, "REPORT.md"),
+      },
+    ]);
+    expect(g(repo, "worktree", "list", "--porcelain").split("\n\n")).toHaveLength(2);
+    expect(g(repo, "branch", "--list")).toContain("existing-branch");
+  });
+
+  it("refuses an unlinked worktree path", async () => {
+    const repo = initRepo();
+    dirs.push(repo);
+    const state = dir();
+    const outside = dir();
+    const cfg = await config(state);
+    await runWith(createDocument(cfg, "app"));
+    await runWith(itemAdd(cfg, "app", { title: "continue work", json: false, now: "x" }));
+    const fake = gitAndFake((argv) => {
+      if (argv[0] === "hc" && argv[1] === "ls") return ok('{"terminals":[]}');
+      if (argv[0] === "hc" && argv[1] === "get" && argv[2] === "t1")
+        return ok(
+          terminal({
+            address: "t1",
+            labels: { "fleet.role": "coordinator", "fleet.domain": "app" },
+          }),
+        );
+      return ok("{}");
+    });
+    const saved = process.env.HC_TERMINAL_ID;
+    process.env.HC_TERMINAL_ID = "t1";
+    try {
+      const error = await failureOf(
+        delegate(cfg, {
+          name: "follow-up",
+          task: "continue work",
+          repo: undefined,
+          worktree: outside,
+          cwd: undefined,
+          base: undefined,
+          harness: "pi",
+          model: undefined,
+          effort: undefined,
+          message: { kind: "skill", skill: "implement", args: "" },
+          space: false,
+          domain: undefined,
+          item: "i1",
+          overBudget: false,
+          queueIfFull: false,
+          retryQueued: false,
+          machine: undefined,
+        }),
+        fake.layer,
+      );
+      expect(messageOf(error)).toBe(`${outside} is not a linked Git worktree root`);
+      expect(fake.calls.some((call) => call[1] === "run")).toBe(false);
+    } finally {
+      if (saved === undefined) delete process.env.HC_TERMINAL_ID;
+      else process.env.HC_TERMINAL_ID = saved;
+    }
+  });
+
+  it("refuses an existing worktree already used by a live delegate", async () => {
+    const repo = initRepo();
+    dirs.push(repo);
+    const worktree = join(dir(), "existing-worktree");
+    g(repo, "worktree", "add", "-q", worktree, "-b", "existing-branch");
+    const state = dir();
+    const cfg = await config(state);
+    await runWith(createDocument(cfg, "app"));
+    await runWith(itemAdd(cfg, "app", { title: "continue work", json: false, now: "x" }));
+    const fake = gitAndFake((argv) => {
+      if (argv[0] === "hc" && argv[1] === "ls")
+        return ok('{"terminals":[{"address":"t9","state":"live"}]}');
+      if (argv[0] === "hc" && argv[1] === "get" && argv[2] === "t1")
+        return ok(
+          terminal({
+            address: "t1",
+            labels: { "fleet.role": "coordinator", "fleet.domain": "app" },
+          }),
+        );
+      if (argv[0] === "hc" && argv[1] === "get" && argv[2] === "t9")
+        return ok(
+          terminal({
+            address: "t9",
+            labels: { "fleet.domain": "app", "fleet.worktree": worktree },
+          }),
+        );
+      return ok("{}");
+    });
+    const saved = process.env.HC_TERMINAL_ID;
+    process.env.HC_TERMINAL_ID = "t1";
+    try {
+      const error = await failureOf(
+        delegate(cfg, {
+          name: "follow-up",
+          task: "continue work",
+          repo: undefined,
+          worktree,
+          cwd: undefined,
+          base: undefined,
+          harness: "pi",
+          model: undefined,
+          effort: undefined,
+          message: { kind: "skill", skill: "implement", args: "" },
+          space: false,
+          domain: undefined,
+          item: "i1",
+          overBudget: false,
+          queueIfFull: false,
+          retryQueued: false,
+          machine: undefined,
+        }),
+        fake.layer,
+      );
+      expect(messageOf(error)).toBe(`a live delegate already uses worktree ${worktree} (t9)`);
+      expect(fake.calls.some((call) => call[1] === "run")).toBe(false);
+    } finally {
+      if (saved === undefined) delete process.env.HC_TERMINAL_ID;
+      else process.env.HC_TERMINAL_ID = saved;
+    }
   });
 
   it("starts a skill delegate with its brief copied and named after the skill arguments", async () => {
